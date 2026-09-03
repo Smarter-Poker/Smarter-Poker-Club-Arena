@@ -37,7 +37,11 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { soundService } from '../../services/SoundService';
-import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
+import {
+  ANIMATION_SPEED_MIN,
+  getAnimationSpeed,
+  prefersReducedMotion,
+} from '../../utils/animationSpeed';
 import { fireVibration } from '../../utils/vibrationGate';
 import { reportError } from '../../utils/errorReporter';
 import {
@@ -314,6 +318,46 @@ export function chaseSchedule(
   return times;
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE CHASE CATCHES UP TOO (2026-08-31 audit)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Every other beat in this component is scheduled through `at()`, so a client
+ * that loads slowly or refreshes mid-spin joins the shared moment already in
+ * progress rather than replaying it. The chase's own light steps were the one
+ * exception: they were scheduled at their RAW offsets, always from step one,
+ * always over the full `chaseMs`.
+ *
+ * So a client that joined two seconds into the chase got the result card at
+ * the right instant — `at()` handled that — while the runner was still walking
+ * from the beginning, and its remaining `setLitIndex` calls then overwrote the
+ * winner highlight for the rest of the chase. The light lands on the winner,
+ * walks off it, and keeps going. On a table where three seats are supposed to
+ * be watching the same disc, the one player who reloaded sees it stop
+ * somewhere else.
+ *
+ * The ticking had the same shape: `playSpinTicking` was handed the full
+ * schedule, so the pegs kept striking past the announcement.
+ *
+ * This drops the steps already behind us, reports the last of them so the disc
+ * can be lit where the runner actually IS, and rebases the rest.
+ */
+export function chaseCatchUp(
+  schedule: number[],
+  elapsedIntoChaseMs: number
+): { litNow: number; remaining: Array<{ stepIdx: number; at: number }> } {
+  const behind = Number.isFinite(elapsedIntoChaseMs) ? Math.max(0, elapsedIntoChaseMs) : 0;
+  const remaining: Array<{ stepIdx: number; at: number }> = [];
+  let litNow = -1;
+  schedule.forEach((offset, stepIdx) => {
+    const at = offset - behind;
+    if (at > 0) remaining.push({ stepIdx, at });
+    else litNow = stepIdx;
+  });
+  return { litNow, remaining };
+}
+
 export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheelProps) {
   const lockedDetail = useMemo(() => {
     const map = new Map<number, SpinLockedTier>();
@@ -434,10 +478,31 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
       const budgetMs = Number.isFinite(deadline)
         ? Math.max(0, deadline - revealAt - spinPostRevealMs())
         : spinRevealTotalMs();
-      const factor = budgetMs > 0 ? budgetMs / spinRevealTotalMs() : 1;
-      /* Never stretch past the designed pace even when the server holds longer:
-         an over-long hold is dead air the engine owns, not slow motion. */
-      return Math.min(factor, 1);
+      /* WHEN THE BUDGET IS ALREADY GONE, RUN AS FAST AS THE SETTING ALLOWS,
+         NOT AS SLOW AS POSSIBLE (fixed 2026-09-02).
+
+         This read `: 1` — so a deadline that had ALREADY PASSED produced a
+         factor of 1 and, through the clamp below, the LONGEST sequence the
+         component can play. The one case where compression is mandatory was
+         the one case that got none, and the cards landed on a wheel still
+         turning. Measured on production the same day: 87% of Spins revealed
+         outside their 3-second window, so this was not a rare branch. */
+      const factor = budgetMs > 0 ? budgetMs / spinRevealTotalMs() : ANIMATION_SPEED_MIN;
+
+      /* THE PLAYER'S CHOSEN SPEED IS HONOURED, WHICH IS THE LAW (10.6).
+
+         This read `Math.min(factor, 1)`, and the hard-coded 1 discarded the
+         Animation Speed preference on every real reveal: `getAnimationSpeed()`
+         above is only reached when there is NO shared clock, and every live
+         reveal has one. A player set to 0.25x watched the same sequence as
+         everyone else. The comment fifteen lines up already promised the
+         correct behaviour — "Faster than the budget is allowed: that player's
+         wheel lands early and the felt simply waits" — it simply was not
+         implemented. Taking the min of the two keeps the one-sided cap exactly
+         as described: faster than the budget is honoured, slower is refused,
+         because slower means being dealt into a hand while the wheel is still
+         asking the question. */
+      return Math.min(factor, getAnimationSpeed());
     })();
 
     /**
@@ -516,16 +581,23 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
       setTimeout(
         () => {
           setPhase('chase');
+          /* How far into the CHASE this client already is. `at()` above put us
+             at the right phase; this puts the runner at the right segment. */
+          const intoChase = Math.max(0, elapsed - (leadInMs + countdownMs));
+          const schedule = reduced ? [] : chaseSchedule(order.length, targetIndex, chaseMs);
+          const { litNow, remaining } = chaseCatchUp(schedule, intoChase);
           if (playSounds) {
             try {
               // Dan: "CLICKING SOUNDS AS IT PASSES." Handing the sound the
               // light's OWN schedule is what makes that literally true — one
               // peg strike per segment crossed, on the same millisecond,
               // because it is the same array. Passing only a duration left the
-              // two to drift apart on any easing change.
+              // two to drift apart on any easing change. It is the CAUGHT-UP
+              // schedule for the same reason the light is: pegs for segments
+              // already crossed would strike after the result was announced.
               soundService.playSpinTicking(
-                chaseMs,
-                reduced ? [] : chaseSchedule(order.length, targetIndex, chaseMs)
+                Math.max(0, chaseMs - intoChase),
+                remaining.map((r) => r.at)
               );
             } catch {
               /* best effort */
@@ -534,10 +606,12 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
           if (reduced) {
             setLitIndex(targetIndex);
           } else {
-            const schedule = chaseSchedule(order.length, targetIndex, chaseMs);
-            schedule.forEach((offset, stepIdx) => {
-              timers.push(setTimeout(() => setLitIndex(stepIdx % order.length), offset));
-            });
+            /* Light where the runner actually is before scheduling the rest,
+               so a caught-up client never shows an empty disc. */
+            if (litNow >= 0) setLitIndex(litNow % order.length);
+            for (const step of remaining) {
+              timers.push(setTimeout(() => setLitIndex(step.stepIdx % order.length), step.at));
+            }
           }
         },
         at(leadInMs + countdownMs)
@@ -615,13 +689,61 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
      can never disagree about how rare this moment was. */
   const celebration = spinCelebration(data.multiplier);
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  WHAT A PLAYER WHO CANNOT SEE THE DISC IS TOLD (2026-08-31 audit)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * This component is `role="dialog" aria-modal="true"`, so a screen reader
+   * announces "Spin Multiplier Draw, dialog" and then — because every moving
+   * part below is correctly `aria-hidden` decoration — says NOTHING for the
+   * 16.6 seconds the engine holds the deal. The multiplier, the prize pool
+   * and who actually cashes were all visual-only. The player was then dealt
+   * into a tournament without ever being told what they were playing for.
+   *
+   * `aria-modal` makes it worse rather than better: it tells assistive tech
+   * to ignore everything outside this dialog, so the silence is total.
+   *
+   * CLAUDE.md 10.6 says a reduced-motion player loses the MOTION and keeps
+   * the MEANING. This is the same law on a different channel, and the wheel
+   * was failing it completely. `BBJHitNotification` is the house precedent —
+   * `role="status"`, `aria-live="polite"`, one sentence — and the platform
+   * was announcing a Bad Beat Jackpot to a blind player while staying silent
+   * about the moment the Spin format exists for.
+   *
+   * Two announcements, not a running commentary: one when the draw begins so
+   * the dialog is not silent, and one carrying the result. `aria-live` is
+   * polite so it never interrupts, and the region is rendered from the first
+   * frame — a live region inserted at the same time as its text is missed by
+   * several screen readers.
+   */
+  const announcement = (() => {
+    /* `idle` never reaches here — the component returns null above — so the
+       only two states are "the draw is running" and "here is the result". */
+    if (phase !== 'result') return 'Drawing Your Multiplier.';
+    const splits = (spinTier(data.multiplier)?.payouts ?? [1])
+      .map((pct, i) => {
+        const place = ['First', 'Second', 'Third'][i] ?? `Place ${i + 1}`;
+        return `${place} ${currency}${(Math.round(prize * pct * 100) / 100).toLocaleString()}`;
+      })
+      .join(', ');
+    return `${data.multiplier} Times. Prize Pool ${currency}${prize.toLocaleString()}. Paying ${splits}.`;
+  })();
+
   return (
     <div
       className={`sw sw--${phase} ${tierClass(data.multiplier)}`}
       role="dialog"
       aria-modal="true"
-      aria-label="Spin multiplier draw"
+      aria-label="Spin Multiplier Draw"
     >
+      {/* Rendered from the first frame and never removed: a live region that
+          appears at the same moment as its text is missed by several screen
+          readers. See "WHAT A PLAYER WHO CANNOT SEE THE DISC IS TOLD". */}
+      <div className="sr-only" role="status" aria-live="polite">
+        {announcement}
+      </div>
+
       {/* The table stays visible: a vignette dims it and a spotlight beam
           falls from the top of the screen, exactly like the reference. */}
       <div className="sw__dim" />
@@ -716,9 +838,9 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
                       </text>
                       {unlocksAt ? (
                         <title>
-                          {`${tier.multiplier}x unlocks at a ${currency}${Number(
+                          {`${tier.multiplier}x Unlocks At A ${currency}${Number(
                             unlocksAt
-                          ).toLocaleString(undefined, { maximumFractionDigits: 0 })} reserve`}
+                          ).toLocaleString(undefined, { maximumFractionDigits: 0 })} Reserve`}
                         </title>
                       ) : null}
                     </g>

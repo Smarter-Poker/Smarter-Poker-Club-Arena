@@ -40,7 +40,10 @@ describe('round 9: TableService', () => {
     expect(gate).toContain('return { success: false, chipsReturned: 0 }');
     // The cash-path fork must still sit BELOW the guard.
     const guardAt = TABLE_SERVICE.indexOf('leaveTable_table_context_read_failed');
-    const forkAt = TABLE_SERVICE.indexOf("'atomic_table_cashout'");
+    // CHIP STANDARD C1 (2026-09-02): the browser's cash-out RPC is now
+    // atomic_seat_cashout_locked (one cash-out path); the fork position pin
+    // is unchanged.
+    const forkAt = TABLE_SERVICE.indexOf("'atomic_seat_cashout_locked'");
     expect(guardAt).toBeGreaterThan(-1);
     expect(forkAt).toBeGreaterThan(guardAt);
   });
@@ -53,16 +56,20 @@ describe('round 9: TableService', () => {
     expect(block).toContain('sessionStorage.getItem(unionCacheKey)');
   });
 
-  it('the deleteTable count fallback reports both of its failure legs', () => {
-    expect(TABLE_SERVICE).toContain('deleteTable_count_fallback_read_failed');
-    expect(TABLE_SERVICE).toContain('deleteTable_count_fallback_update_failed');
+  it('the legacy delete entry point delegates to the authoritative close command', () => {
+    const block = sliceBlockAfter(TABLE_SERVICE, 'async deleteTable(');
+    expect(block).toContain("gameManagementService.close('table', tableId)");
+    expect(block).not.toContain(".from('tables')");
+    expect(block).not.toContain("status: 'deleted'");
   });
 });
 
 describe('round 9: ClubHomePage', () => {
-  it('reports failed union member-count, level re-read, and share-ref reads', () => {
+  it('reports remaining reads and never invokes the removed legacy level re-read', () => {
     expect(CLUB_HOME).toContain('union_member_counts_read_failed');
-    expect(CLUB_HOME).toContain('level_reread_failed');
+    expect(CLUB_HOME).not.toContain('level_reread_failed');
+    expect(CLUB_HOME).not.toContain("rpc('recompute_club_levels'");
+    expect(CLUB_HOME).toContain('getClubLevelInfoFromMembers(clubData.member_count || 0)');
     expect(CLUB_HOME).toContain('share_ref_profile_read_failed');
   });
 });

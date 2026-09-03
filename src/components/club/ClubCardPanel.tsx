@@ -3,14 +3,15 @@
  * ZONES: ID Plate → Image Viewport → Name Plate → Stats Bar
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { figureOr, readFigures, rememberFigures } from '../../lib/lobbyFigureCache';
 import './ClubCardPanel.css';
 
 interface ClubCardPanelProps {
   clubName: string;
-  totalMembers: number;
-  clubLevel: number;
-  activePlayers: number;
+  totalMembers: number | null;
+  clubLevel: number | null;
+  activePlayers: number | null;
   clubId?: number | string;
   /**
    * Where the club sits between its current level and the next, 0-100, on the
@@ -66,6 +67,47 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
   const isUnion = entityType === 'union';
   const idLabel = isUnion ? 'UNION ID' : 'CLUB ID';
 
+  /* ═══════════════════════════════════════════════════════════════════════
+     NO "UNAVAILABLE" IN A NUMBER BAY (Dan 2026-09-02)
+     -----------------------------------------------------------------------
+     "THE GAME CARDS SHOULD NEVER SAY UNAVAILABLE, THEY SHOULD HAVE 0'S UNTIL
+     THE CARD LOADS. BUT THIS SHOULD HAVE A CACHE FEATURE, THAT ALWAYS SAVES
+     THE LAST KNOWN NUMBERS, SAVED AS THE DEFAULT, AND UPDATES WHEN IT HAS
+     THE REAL NUMBERS UPDATED."
+
+     The three stats arrive from a separate live-stats read, so this card is
+     drawn with all of them null and printed the word three times across a
+     row of numerals. Now it opens with whatever it knew last, falls back to
+     0 when it has never seen this club, and overwrites with the live figure
+     the moment it lands.
+
+     This is a COUNT cache and nothing else - see the header of
+     lobbyFigureCache.ts. Members, level and active players are public facts
+     about a club; showing yesterday's briefly costs nobody anything. The
+     same trick on money would be the bug clubPageHardening.test.ts exists
+     to prevent, and no money passes through here. */
+  const scope = clubId != null && clubId !== '' ? `club:${clubId}` : '';
+  const cached = useMemo(() => readFigures(scope), [scope]);
+
+  useEffect(() => {
+    if (!scope) return;
+    rememberFigures(scope, {
+      members: totalMembers,
+      level: clubLevel == null ? null : Math.max(1, clubLevel),
+      active: activePlayers,
+    });
+  }, [scope, totalMembers, clubLevel, activePlayers]);
+
+  const membersText = figureOr(
+    totalMembers == null ? null : totalMembers.toLocaleString(),
+    cached.members
+  );
+  const levelText = figureOr(clubLevel == null ? null : Math.max(1, clubLevel), cached.level);
+  const activeText = figureOr(
+    activePlayers == null ? null : activePlayers.toLocaleString(),
+    cached.active
+  );
+
   return (
     <div className={`club-card-panel ${isUnion ? 'club-card-panel--union' : ''}`}>
       {!imgLoaded && <div className="club-card-skeleton" />}
@@ -86,7 +128,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
         {useBakedCard ? (
           <img
             src={cardImageUrl}
-            alt={`${clubName} card`}
+            alt={`${clubName} Card`}
             className="club-card-viewport-img"
             loading="lazy"
             decoding="async"
@@ -98,7 +140,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
             <div className="club-card-logo-backdrop"></div>
             <img
               src={logoUrl}
-              alt={`${clubName} logo`}
+              alt={`${clubName} Logo`}
               className="club-card-viewport-logo"
               loading="lazy"
               decoding="async"
@@ -126,9 +168,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
         <div className="club-card-stats-row">
           <div className="club-card-stat">
             <span className="club-card-stat-label">MEMBERS</span>
-            <span className="club-card-stat-value">
-              {Math.max(1, totalMembers).toLocaleString()}
-            </span>
+            <span className="club-card-stat-value">{membersText}</span>
           </div>
           {/* Dan 2026-08-20: level is now the 1-55 member ladder, so the bare
               number is worth explaining on hover — which tier it is, and how
@@ -138,19 +178,19 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
             title={
               levelTierLabel
                 ? membersToNextLevel != null
-                  ? `${levelTierLabel} - ${membersToNextLevel.toLocaleString()} more members to level ${Math.max(1, clubLevel) + 1}`
-                  : `${levelTierLabel} - maximum level`
+                  ? `${levelTierLabel} - ${membersToNextLevel.toLocaleString()} More Members To Level ${Math.max(1, clubLevel ?? 1) + 1}`
+                  : `${levelTierLabel} - Maximum Level`
                 : undefined
             }
           >
             <span className="club-card-stat-label">LEVEL</span>
-            <span className="club-card-stat-value club-card-stat-value--level">
-              {Math.max(1, clubLevel)}
-            </span>
+            <span className="club-card-stat-value club-card-stat-value--level">{levelText}</span>
           </div>
-          <div className={`club-card-stat ${activePlayers > 0 ? 'club-card-stat--active' : ''}`}>
+          <div
+            className={`club-card-stat ${(activePlayers ?? 0) > 0 ? 'club-card-stat--active' : ''}`}
+          >
             <span className="club-card-stat-label">ACTIVE</span>
-            <span className="club-card-stat-value">{activePlayers.toLocaleString()}</span>
+            <span className="club-card-stat-value">{activeText}</span>
           </div>
         </div>
 
@@ -164,7 +204,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
             aria-valuenow={Math.round(levelProgressPercent)}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label={`Progress to level ${Math.max(1, clubLevel) + 1}`}
+            aria-label={`Progress To Level ${Math.max(1, clubLevel ?? 1) + 1}`}
           >
             <span
               className="club-card-level-fill"

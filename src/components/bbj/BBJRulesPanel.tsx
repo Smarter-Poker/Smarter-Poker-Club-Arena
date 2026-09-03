@@ -79,7 +79,7 @@ export function BBJRulesPanel({ poolAmount = 0 }: BBJRulesPanelProps) {
         <div
           className="bbj-rules__tabs"
           role="tablist"
-          aria-label="Jackpot rules"
+          aria-label="Jackpot Rules"
           onKeyDown={(e) => {
             // Half a tablist is worse than none: a reader announced "tab 1 of 2"
             // and the arrow keys did nothing.
@@ -140,7 +140,7 @@ export function BBJRulesPanel({ poolAmount = 0 }: BBJRulesPanelProps) {
                 return (
                   <tr key={row.key} className={eligible ? '' : 'is-ineligible'}>
                     <td>{row.games}</td>
-                    <td>{eligible ? info.shortLabel : 'Jackpot not available'}</td>
+                    <td>{eligible ? info.shortLabel : 'Jackpot Not Available'}</td>
                   </tr>
                 );
               })}
@@ -153,8 +153,8 @@ export function BBJRulesPanel({ poolAmount = 0 }: BBJRulesPanelProps) {
             <li>Minimum Players Dealt In: {BBJ_RULES.minPlayersDealt}</li>
             {BBJ_RULES.requireBothHoleCards && (
               <li>
-                Both Hole Cards Must Play (In Omaha Games, Exactly Two) &mdash; For Both The Losing
-                And The Winning Hand
+                Both Hole Cards Must Play (In Omaha Games, Exactly Two) - For Both The Losing And
+                The Winning Hand
               </li>
             )}
             {BBJ_RULES.onlyFirstRunout && (
@@ -173,9 +173,9 @@ export function BBJRulesPanel({ poolAmount = 0 }: BBJRulesPanelProps) {
           tabIndex={0}
         >
           <p className="bbj-rules__note">
-            A Jackpot Hit Pays A Share Of The Main Pool Set By The Stakes You Were Playing &mdash;
-            Not The Whole Pool. That Share Is Then Split 50% To The Bad-Beat Hand, 25% To The Hand
-            That Won, And 25% Between Everyone Else Dealt Into The Hand.
+            A Jackpot Hit Pays A Share Of The Main Pool Set By The Stakes You Were Playing - Not The
+            Whole Pool. That Share Is Then Split 50% To The Bad-Beat Hand, 25% To The Hand That Won,
+            And 25% Between Everyone Else Dealt Into The Hand.
           </p>
 
           <table className="bbj-rules__table">

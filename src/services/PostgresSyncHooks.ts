@@ -1,7 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import { reportError } from '../utils/errorReporter';
 
 const USER_TABLE_SETTING_COLUMNS = [
   'highlight_active_players',
@@ -321,6 +320,28 @@ class PostgresSyncHooksService {
             const clubId = (payload.old as any)?.club_id || 'unknown';
             masterBus.emit('CLUB_LEFT', { clubId });
           }
+        }
+      )
+      // Recipient-filtered authorization invalidations. These remain readable
+      // after a role is revoked, allowing an already-open management screen or
+      // hamburger drawer to fail closed without waiting for navigation.
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'game_management_events',
+          filter: `recipient_id=eq.${userId}`,
+        },
+        (payload) => {
+          const row = (payload.new || {}) as Record<string, unknown>;
+          if (row.event_type !== 'management_access_changed') return;
+          masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', {
+            scope: row.scope_kind === 'union' ? 'union' : 'club',
+            scopeId: typeof row.scope_id === 'string' ? row.scope_id : undefined,
+            clubId: typeof row.club_id === 'string' ? row.club_id : undefined,
+            userId,
+          });
         }
       )
       // 9. Chip Ledger — REALTIME transaction notifications

@@ -17,6 +17,7 @@ import { DiamondService } from '../../services/DiamondService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import './DiamondWalletModal.css';
 import { reportError } from '../../utils/errorReporter';
+import { formatPopupText } from '../../utils/popupStyle';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -440,7 +441,9 @@ export default function DiamondWalletModal({
                   </div>
                   <div className="diamond-wallet-modal__tx-body">
                     <div className="diamond-wallet-modal__tx-label">{label}</div>
-                    <div className="diamond-wallet-modal__tx-desc">{tx.description || label}</div>
+                    <div className="diamond-wallet-modal__tx-desc">
+                      {formatPopupText(tx.description || label)}
+                    </div>
                   </div>
                   <div className="diamond-wallet-modal__tx-amount-col">
                     <span

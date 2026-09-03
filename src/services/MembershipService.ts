@@ -21,6 +21,11 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import {
+  playerDisplayName,
+  PLAYER_NAME_COLUMNS,
+  type NameableProfile,
+} from '../utils/playerDisplayName';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 // The seven roles the DATABASE uses. The MemberRole union below is a second,
@@ -118,11 +123,11 @@ export const MembershipService = {
 
     // Batch-fetch profiles separately (no FK hint needed)
     const userIds = data.map((m) => m.user_id);
-    const profileMap: Record<string, { display_name?: string; avatar_url?: string }> = {};
+    const profileMap: Record<string, NameableProfile & { avatar_url?: string }> = {};
     try {
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, display_name, avatar_url:arena_avatar_url')
+        .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
         .in('id', userIds);
       if (profiles) {
         for (const p of profiles) profileMap[p.id] = p;
@@ -142,7 +147,7 @@ export const MembershipService = {
       invitedBy: m.invited_by,
       agentId: m.agent_id,
       notes: m.notes,
-      displayName: profileMap[m.user_id]?.display_name,
+      displayName: playerDisplayName(profileMap[m.user_id]),
       avatarUrl: profileMap[m.user_id]?.avatar_url,
     }));
   },
@@ -230,6 +235,16 @@ export const MembershipService = {
    * an agent role to somebody who has no agents row yet - MemberManagementPage
    * is the screen that collects them.
    *
+   * `funding` is required alongside them, on the same terms. Dan, 2026-08-31:
+   * "THEY ALSO NEED TO BE ASSIGNED 'PRE PAID' OR CREDIT LINE, (AND IF SO, THEN
+   * HOW MUCH)". Omitting it returns needs_funding rather than storing a default,
+   * because a promotion that silently picks "not prepaid, zero limit" produces
+   * an agent who cannot send a single chip.
+   *
+   * Neither is defaulted from the agents row when the member is being PROMOTED
+   * rather than re-graded: a demoted agent's old deal does not return on its own
+   * (Dan's ruling on re-promotion, 2026-08-31).
+   *
    * Throws with the server's own reason so the caller can show it, rather than
    * returning false and leaving the user to guess.
    */
@@ -237,7 +252,8 @@ export const MembershipService = {
     clubId: string,
     userId: string,
     newRole: ClubRole,
-    rates?: { commissionRate: number; playerRakebackRate: number }
+    rates?: { commissionRate: number; playerRakebackRate: number },
+    funding?: { isPrepaid: boolean; creditLimit: number }
   ): Promise<boolean> {
     const resolvedId = await resolveClubUUID(clubId);
     const { data, error } = await supabase.rpc('fn_club_set_member_role', {
@@ -248,6 +264,12 @@ export const MembershipService = {
         ? {
             p_commission_rate: rates.commissionRate,
             p_player_rakeback_rate: rates.playerRakebackRate,
+          }
+        : {}),
+      ...(funding
+        ? {
+            p_is_prepaid: funding.isPrepaid,
+            p_credit_limit: funding.creditLimit,
           }
         : {}),
     });
@@ -320,11 +342,11 @@ export const MembershipService = {
 
     // Batch-fetch profiles separately (no FK hint needed)
     const userIds = data.map((m) => m.user_id);
-    const profileMap: Record<string, { display_name?: string; avatar_url?: string }> = {};
+    const profileMap: Record<string, NameableProfile & { avatar_url?: string }> = {};
     try {
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, display_name, avatar_url:arena_avatar_url')
+        .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
         .in('id', userIds);
       if (profiles) {
         for (const p of profiles) profileMap[p.id] = p;
@@ -341,7 +363,7 @@ export const MembershipService = {
       role: m.role as MemberRole,
       status: m.status as MemberStatus,
       joinedAt: m.joined_at,
-      displayName: profileMap[m.user_id]?.display_name || 'Unknown',
+      displayName: playerDisplayName(profileMap[m.user_id]),
       avatarUrl: profileMap[m.user_id]?.avatar_url,
     }));
   },

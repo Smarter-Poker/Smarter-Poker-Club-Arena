@@ -115,6 +115,16 @@ export async function logHandHistory(params: {
     holeCards: { rank: string; suit: string }[];
   }[];
   /**
+   * Server-authored Daily Missions facts for this hand. Persisting the facts
+   * on the same retryable hand-history row makes mission projection survive a
+   * transient database outage without delaying money settlement.
+   */
+  dailyMissionEvents?: Array<{
+    user_id: string;
+    amounts: Record<string, number>;
+    magnitudes: Record<string, number>;
+  }>;
+  /**
    * ASSISTANT FIX 2026-08-16: dealer/button seat for this hand.
    *
    * Without it no positional analysis is possible at all — seat 3 is UTG in
@@ -233,6 +243,7 @@ export async function logHandHistory(params: {
     // so "predates the column" and "no showdown happened" read the same as
     // every other nullable jsonb here.
     showdown: params.showdownReveal?.length ? params.showdownReveal : null,
+    daily_mission_events: params.dailyMissionEvents?.length ? params.dailyMissionEvents : null,
     // RETENTION FIX 2026-08-21: has_human has existed since the retention work
     // and NOTHING has ever set it — it was NULL on all 1,509,240 rows. It is
     // the flag sp_prune_hand_history() uses to spare hands with a human in

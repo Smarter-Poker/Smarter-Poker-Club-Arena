@@ -124,6 +124,34 @@ export const HAND_COMPLETION = {
    */
   BUTTON_MOVE_MS: 700,
   /**
+   * ── THE DISCARD IS AN ACT, AND IT NEEDS A BEAT (Phase 3, 2026-08-31) ──
+   *
+   * A Crazy Pineapple discard is the only decision the variant adds, and every
+   * other cadence on this table is a named number in this file. This one was
+   * not: `checkPineappleDiscardsComplete` called `advanceStage()` on the same
+   * synchronous tick as the last discard, so the flop's betting round opened
+   * on top of the card that was still leaving somebody's hand.
+   *
+   * Sized from the animation it is holding for, the way every other constant
+   * here is: `cardDiscardOut` in SeatSlot.css runs 420ms and SeatSlot's own
+   * removal window is 500ms (both scaled by --animation-speed). 600ms clears
+   * the slowest of those at speed 1 and leaves a short rest on top, so the
+   * toss finishes and is SEEN to finish before the table asks anyone to act.
+   *
+   * Note this is the only beat in this file the ENGINE holds for an action
+   * animation rather than for the end of a hand. That is because it is the
+   * only animation that must finish before a betting round can legally open.
+   */
+  DISCARD_SETTLE_MS: 600,
+  /**
+   * When several seats discard inside the same instant - a table of horses,
+   * or an all-in resolve - their tosses are staggered by this much so the
+   * felt reads as several separate decisions rather than one flush. Same idea
+   * and the same order of magnitude as SHOWDOWN_REVEAL_STAGGER_MS, and small
+   * enough that a full ring's stagger still finishes inside DISCARD_SETTLE_MS.
+   */
+  DISCARD_STAGGER_MS: 90,
+  /**
    * ── RUN IT TWICE reveal timeline (PokerBros parity, 2026-08-26) ──
    *
    * A run-it-twice hand settles synchronously on the server, but the CLIENT

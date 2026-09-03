@@ -54,12 +54,31 @@ describe('both decision points consult it', () => {
   });
 
   it('the BUY-IN is capped to a share of the roll, and a zero cap skips the seat', () => {
+    /* 2026-08-31: the sizing moved OUT of the seeding loop into
+       `computeHorseBuyIn`, because a horse answering a seat call
+       (claimOfferedSeats) must bring the same amount, and two copies of this
+       arithmetic is the bug src/lib/cashBuyIn.ts exists to end. The gate is
+       pinned where it now lives; the companion test below is STRICTER than the
+       old anchor, because it also requires every caller to go through it. */
     const sizing = SRC.slice(
-      SRC.indexOf('const raw = table.big_blind * buyInBBFor'),
-      SRC.indexOf('const success = await this.seatHorse')
+      SRC.indexOf('private computeHorseBuyIn('),
+      SRC.indexOf('private async seatHorse(')
     );
     expect(sizing).toContain('bankrollBuyIn(');
-    expect(sizing).toMatch(/if \(capped <= 0\) continue;/);
+    /* Same widening as the gate pin: `capped <= 0` gained a
+       `seat_refused_share_below_min` counter, so the refusal is now a block.
+       The skip is what matters and is still required. */
+    /* A zero cap still skips the seat. Inside the helper that is a `return 0`;
+       the callers are required to honour it by the next test. */
+    expect(sizing).toMatch(/if \(capped <= 0\) \{[^{}]*return 0;\s*\}/);
+  });
+
+  it('every caller sizes through the one helper and honours a zero cap', () => {
+    const calls = SRC.match(/this\.computeHorseBuyIn\(/g) ?? [];
+    expect(calls.length, 'seeding and the seat-call claim must both use it').toBe(2);
+    expect(SRC).toMatch(
+      /const buyIn = this\.computeHorseBuyIn\([^;]*\);\s*if \(buyIn <= 0\) continue;/
+    );
   });
 
   it('the bankroll gate sits alongside the stake band, not instead of it', () => {

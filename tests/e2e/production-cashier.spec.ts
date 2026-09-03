@@ -28,13 +28,39 @@ test.describe('Production Cashier Certification', () => {
       page.getByRole('heading', { name: 'Every Chip. Accounted For.', exact: true })
     ).toBeVisible();
 
-    const tablist = page.getByRole('tablist', { name: 'Cashier actions' });
+    const tablist = page.getByRole('tablist', { name: 'Cashier Actions' });
     await expect(tablist).toBeVisible();
     const tabs = tablist.getByRole('tab');
     await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
     if ((await tabs.count()) > 1) {
       await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'false');
     }
+
+    const reconciliation = page.locator('[data-cashier-recovery="true"]');
+    await expect(reconciliation).toBeVisible();
+    await expect(
+      reconciliation.getByRole('heading', { name: 'Reconciliation Console', exact: true })
+    ).toBeVisible();
+    await expect(reconciliation.getByText('Online', { exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
+    // WAIT FOR HYDRATION, DO NOT ASSERT AGAINST IT.
+    //
+    // The button is disabled while `loading || isHydrating || !clubUuid`, so
+    // this assertion is really "the console finished loading". Every other
+    // wait in this spec is given 30-60s because it is talking to real
+    // production; this one inherited Playwright's 5s default, and 5s is not a
+    // hydration budget - it is a race against a live network.
+    //
+    // It lost that race at 02:05, 02:18 and 03:03 UTC and won it at 14:48,
+    // with no code change in between. That pattern is not a product bug, it is
+    // a cold overnight path being slower than a warm afternoon one, and a spec
+    // that reports it as a failure teaches everyone to ignore the cashier
+    // canary. The assertion is unchanged - the console must end up usable -
+    // only the patience is.
+    await expect(reconciliation.getByRole('button', { name: 'Reconcile Now' })).toBeEnabled({
+      timeout: 30_000,
+    });
 
     await expect(page.locator('text=Something went wrong')).toHaveCount(0);
     const cashierCritical = consoleErrors.filter(

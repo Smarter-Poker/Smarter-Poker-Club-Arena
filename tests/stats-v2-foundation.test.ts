@@ -7,6 +7,10 @@ const MIGRATION = readFileSync(
   resolve(ROOT, 'supabase/migrations/20260831235995_stats_v2_foundation.sql'),
   'utf8'
 );
+const BOUNDED_MIGRATION = readFileSync(
+  resolve(ROOT, 'supabase/migrations/20260831235998_stats_v2_reads_bounded_rollup.sql'),
+  'utf8'
+);
 const PAGE = readFileSync(resolve(ROOT, 'src/pages/PlayerStatsPage.tsx'), 'utf8');
 const ROUTER = readFileSync(resolve(ROOT, 'server/src/router.ts'), 'utf8');
 const PUBLIC_PROFILE = readFileSync(resolve(ROOT, 'src/pages/PublicProfilePage.tsx'), 'utf8');
@@ -16,6 +20,16 @@ const ADVANCED_SUMMARY = readFileSync(
   'utf8'
 );
 const PRODUCTION_SPEC = readFileSync(resolve(ROOT, 'tests/e2e/stats-deep.spec.ts'), 'utf8');
+const PROFILE = readFileSync(resolve(ROOT, 'src/pages/ProfilePage.tsx'), 'utf8');
+const NEMESIS = readFileSync(resolve(ROOT, 'src/components/stats/NemesisPanel.tsx'), 'utf8');
+
+function sqlFunctionBody(sql: string, signature: string): string {
+  const start = sql.indexOf(`CREATE OR REPLACE FUNCTION public.${signature}`);
+  expect(start, `${signature} definition`).toBeGreaterThanOrEqual(0);
+  const end = sql.indexOf('$function$;', start);
+  expect(end, `${signature} terminator`).toBeGreaterThan(start);
+  return sql.slice(start, end + '$function$;'.length);
+}
 
 describe('Stats contract v2 security boundary', () => {
   it('makes the browser use only owner-asserting versioned RPCs', () => {
@@ -24,11 +38,11 @@ describe('Stats contract v2 security boundary', () => {
     expect(PAGE).not.toContain("rpc('ca_player_stats_full'");
     expect(PAGE).not.toContain("rpc('ca_player_hands'");
 
-    expect(MIGRATION).toMatch(
-      /FUNCTION public\.ca_player_stats_overview_v2[\s\S]*?PERFORM public\.ca_assert_self\(p_user\)/
+    expect(sqlFunctionBody(MIGRATION, 'ca_player_stats_overview_v2')).toContain(
+      'PERFORM public.ca_assert_self(p_user)'
     );
-    expect(MIGRATION).toMatch(
-      /FUNCTION public\.ca_player_hands_v2[\s\S]*?PERFORM public\.ca_assert_self\(p_user\)/
+    expect(sqlFunctionBody(MIGRATION, 'ca_player_hands_v2')).toContain(
+      'PERFORM public.ca_assert_self(p_user)'
     );
   });
 
@@ -67,6 +81,14 @@ describe('Stats contract v2 security boundary', () => {
   it('contains no retained fake Stats dashboard stub', () => {
     expect(existsSync(resolve(ROOT, 'src/components/stats/PlayerStatsDashboard.tsx'))).toBe(false);
     expect(existsSync(resolve(ROOT, 'src/components/stats/PlayerStatsDashboard.css'))).toBe(false);
+    expect(PROFILE).toContain("rpc('ca_player_stats_overview_v2'");
+    expect(PROFILE).toContain('statsAvailable ?');
+    expect(PROFILE).toContain('Stats Snapshot Unavailable');
+  });
+
+  it('routes rival actions to profiles while cross-player Stats remains private', () => {
+    expect(NEMESIS).toContain('navigate(`/profile/${id}`)');
+    expect(NEMESIS).not.toContain('navigate(`/stats/${id}`)');
   });
 
   it('certifies the expensive production rollup without a parallel cold-start stampede', () => {
@@ -90,11 +112,18 @@ describe('Stats truth and reproducibility boundary', () => {
     expect(MIGRATION).toContain("'cash_money_exact', false");
     expect(MIGRATION).toContain("'historical_club_breakdown_available', false");
     expect(PAGE).toContain('Cash Result And BB/100 Use Reconstructed Hand Actions');
+    expect(BOUNDED_MIGRATION).toContain("'advanced_facts_source', 'ca_hand_player_stat'");
+    expect(BOUNDED_MIGRATION).toContain("'live_tail_included', false");
+    expect(BOUNDED_MIGRATION).toContain("'rollup_covered_through', to_jsonb(v_rollup_ceil)");
+    expect(PAGE).toContain('Newer Hands Appear After The Next Stats Rollup');
   });
 
   it('never substitutes legacy player_stats rows under a scoped range label', () => {
     expect(PAGE).not.toContain('loadLegacyStats');
     expect(PAGE).not.toContain('legacy_fallback');
+    expect(PAGE).toContain('loadedRangeKeyRef.current === rangeKey');
+    expect(PAGE).toContain('onClick={() => changeRange(r.key)}');
+    expect(PAGE).toContain('.call(StatsFactsService, windowDays)');
   });
 });
 

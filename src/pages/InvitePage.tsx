@@ -355,7 +355,7 @@ export default function InvitePage() {
               <br />
               Did Not Work
             </h2>
-            <p>{error || 'That invitation link is invalid or has expired.'}</p>
+            <p>{error || 'That Invitation Link Is Invalid Or Has Expired.'}</p>
             <button
               className="invite-btn invite-btn--primary"
               onClick={() => navigate('/clubs-list')}
@@ -418,8 +418,8 @@ export default function InvitePage() {
           </p>
           <p className="invite-sub">
             {pendingApproval
-              ? 'Your request is with the club owner.'
-              : 'Join to play at this club’s tables, tournaments and promotions.'}
+              ? 'Your Request Is With The Club Owner.'
+              : 'Join To Play At This Club’s Tables, Tournaments And Promotions.'}
           </p>
 
           {pendingApproval ? (

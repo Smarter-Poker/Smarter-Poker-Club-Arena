@@ -1,10 +1,5 @@
 const fs = require('fs');
-let code = fs.readFileSync('src/pages/InvitePage.tsx', 'utf8');
-
-// Fix 1: Add alreadyMember to canvas useEffect
-code = code.replace(
-  /}, \[club\?\.id, club\?\.slug, refCode, user\?\.id\]\);/g,
-  "}, [club?.id, club?.slug, refCode, user?.id, alreadyMember]);"
-);
-
-fs.writeFileSync('src/pages/InvitePage.tsx', code);
+const content = fs.readFileSync('tests/approvedHamburgerGearGuard.law.test.ts', 'utf8');
+const maskCommentsDef = "\n/** Strip block and line comments so a prose mention of gear cannot fail us. */\nconst maskComments = (css: string) => css.replace(/\\/\\*[\\s\\S]*?\\*\\//g, '').replace(/^\\s*\\/\\/.*$/gm, '');\n";
+const newContent = content.replace("const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');", "const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');\n" + maskCommentsDef);
+fs.writeFileSync('tests/approvedHamburgerGearGuard.law.test.ts', newContent);

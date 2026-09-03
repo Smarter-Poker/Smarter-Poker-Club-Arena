@@ -35,6 +35,8 @@ import { retryFetch } from '../utils/retryFetch';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import { reportError } from '../utils/errorReporter';
 import { fetchAllRows } from '../utils/fetchAllRows';
+import { gameManagementService } from '../services/GameManagementService';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -311,7 +313,7 @@ class CardErrorBoundary extends Component<
         <div className={styles.cardErrorFallback}>
           <span style={{ fontSize: '1.5rem' }}>⚠</span>
           <span style={{ fontSize: '0.8rem' }}>
-            Failed To Load {this.props.label || 'component'}
+            Failed To Load {this.props.label || 'Component'}
           </span>
           <button onClick={() => this.setState({ hasError: false })}>Retry</button>
         </div>
@@ -569,6 +571,8 @@ export default function ClubDetailPage() {
           setPendingMembers(
             (data || []).map((m: any) => ({
               userId: m.user_id,
+              /* fn_list_pending_members resolves the arena name server-side
+                 now, so display_name here is already the alias. */
               username: m.display_name || m.username || 'Unknown',
               role: m.role || 'member',
               joinedAt: m.created_at,
@@ -702,7 +706,7 @@ export default function ClubDetailPage() {
       masterBus.subscribeDebounced('CLUB_SETTINGS_UPDATED', handler, 300),
       masterBus.subscribeDebounced('AGENT_UPDATED', handler, 500),
       masterBus.subscribeDebounced('TABLE_CREATED', handler, 300),
-      masterBus.subscribeDebounced('TABLE_DELETED', handler, 300),
+      masterBus.subscribeDebounced('TABLE_CLOSED', handler, 300),
     ];
     return () => {
       isMounted = false;
@@ -815,7 +819,7 @@ export default function ClubDetailPage() {
         if (mUserIds.length > 0) {
           const { data: mProfiles } = await supabase
             .from('profiles')
-            .select('id, username, display_name')
+            .select(`id, ${PLAYER_NAME_COLUMNS}`)
             .in('id', mUserIds);
           if (mProfiles) {
             for (const p of mProfiles) memberProfileMap[p.id] = p;
@@ -823,10 +827,7 @@ export default function ClubDetailPage() {
         }
         const mappedMembersResult: ClubMember[] = memberData.map((m: any) => ({
           id: m.user_id,
-          username:
-            memberProfileMap[m.user_id]?.display_name ||
-            memberProfileMap[m.user_id]?.username ||
-            'Unknown',
+          username: playerDisplayName(memberProfileMap[m.user_id]),
           role: m.role || 'member',
           chipBalance: m.chip_balance || 0,
           status: m.status || 'active',
@@ -1264,16 +1265,16 @@ export default function ClubDetailPage() {
           </span>
           <span style={{ color: '#6a7a8a', fontSize: '0.7rem' }}>
             {activeTab === 'overview'
-              ? 'Activity feed, stats & quick actions'
+              ? 'Activity Feed, Stats & Quick Actions'
               : activeTab === 'tables'
-                ? 'Create, configure & monitor tables'
+                ? 'Create, Configure & Monitor Tables'
                 : activeTab === 'members'
-                  ? 'View, manage & search members'
+                  ? 'View, Manage & Search Members'
                   : activeTab === 'agents'
-                    ? 'Agent tree, commissions & transfers'
+                    ? 'Agent Tree, Commissions & Transfers'
                     : activeTab === 'operations'
-                      ? 'Announcements, reports & audits'
-                      : 'Club configuration & danger zone'}
+                      ? 'Announcements, Reports & Audits'
+                      : 'Club Configuration & Danger Zone'}
           </span>
         </div>
       </div>
@@ -1329,8 +1330,8 @@ export default function ClubDetailPage() {
                 <li>
                   Rake: {club.settings.defaultRakePercent}% (Capped At {club.settings.rakeCap} BB)
                 </li>
-                <li>Straddle: {club.settings.allowStraddle ? 'Allowed' : 'Not allowed'}</li>
-                <li>Run It Twice: {club.settings.allowRunItTwice ? 'Allowed' : 'Not allowed'}</li>
+                <li>Straddle: {club.settings.allowStraddle ? 'Allowed' : 'Not Allowed'}</li>
+                <li>Run It Twice: {club.settings.allowRunItTwice ? 'Allowed' : 'Not Allowed'}</li>
               </ul>
             </div>
 
@@ -1479,7 +1480,7 @@ export default function ClubDetailPage() {
                               });
                             }}
                             disabled={deletingTableId === table.id}
-                            title="Delete table"
+                            title="Close Table"
                           >
                             {deletingTableId === table.id ? '...' : '✕'}
                           </button>
@@ -1647,7 +1648,7 @@ export default function ClubDetailPage() {
                               onClick={() =>
                                 setShowMemberMenu(showMemberMenu === member.id ? null : member.id)
                               }
-                              aria-label={`Actions for ${member.username}`}
+                              aria-label={`Actions For ${member.username}`}
                               disabled={memberActionLoading === member.id}
                             >
                               {memberActionLoading === member.id ? '◷' : '⋮'}
@@ -1657,7 +1658,7 @@ export default function ClubDetailPage() {
                                 {member.role !== 'admin' && member.role !== 'owner' && (
                                   <button
                                     onClick={() => handleMemberAction(member.id, 'promote')}
-                                    aria-label="Promote member to admin"
+                                    aria-label="Promote Member To Admin"
                                   >
                                     {' '}
                                     Promote
@@ -1666,7 +1667,7 @@ export default function ClubDetailPage() {
                                 {member.role === 'admin' && (
                                   <button
                                     onClick={() => handleMemberAction(member.id, 'demote')}
-                                    aria-label="Demote admin to member"
+                                    aria-label="Demote Admin To Member"
                                   >
                                     {' '}
                                     Demote
@@ -1675,7 +1676,7 @@ export default function ClubDetailPage() {
                                 {member.status === 'active' && member.role !== 'owner' && (
                                   <button
                                     onClick={() => handleMemberAction(member.id, 'suspend')}
-                                    aria-label="Suspend member"
+                                    aria-label="Suspend Member"
                                   >
                                     Suspend
                                   </button>
@@ -1683,7 +1684,7 @@ export default function ClubDetailPage() {
                                 {member.role !== 'owner' && (
                                   <button
                                     onClick={() => handleMemberAction(member.id, 'remove')}
-                                    aria-label="Remove member from club"
+                                    aria-label="Remove Member From Club"
                                   >
                                     Remove
                                   </button>
@@ -1925,7 +1926,7 @@ export default function ClubDetailPage() {
           <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div className={styles.modalHeader}>
               <h3>Agent Management</h3>
-              <button onClick={() => setShowAgentManager(false)} aria-label="Close agent manager">
+              <button onClick={() => setShowAgentManager(false)} aria-label="Close Agent Manager">
                 ×
               </button>
             </div>
@@ -1946,82 +1947,28 @@ export default function ClubDetailPage() {
         </div>
       )}
 
-      {/* Confirm Modal for Table Deletion */}
+      {/* Confirm Modal for Table Closure */}
       <ConfirmModal
         isOpen={deleteTableConfirm.show}
-        title="Delete Table"
-        message={`Delete table "${deleteTableConfirm.tableName || ''}"? This cannot be undone.`}
+        title="Close Table"
+        message={`Close table "${deleteTableConfirm.tableName || ''}"? It can only close after every player has left.`}
         variant="danger"
-        confirmText="Delete"
+        confirmText="Close Table"
         onConfirm={async () => {
           if (deleteTableConfirm.tableId) {
             const id = deleteTableConfirm.tableId;
             setDeleteTableConfirm({ show: false, tableId: null, tableName: null });
             setDeletingTableId(id);
             try {
-              // Phase 13: Optimistic delete — instantly remove from UI, then confirm with server
-              const deletedTable = tables.find((t) => t.id === id);
-              await masterBus.executeOptimistic(
-                'TABLE_UPDATED',
-                { tableId: id, status: 'deleted' },
-                async () => {
-                  setTables((prev) => prev.filter((t) => t.id !== id));
-                  // SECURITY: Scope deletion to current club to prevent cross-club table deletion
-                  // FIX: Resolve clubId to UUID — tables store UUID club_id, not integer
-                  const resolvedClubId = clubId ? await resolveClubUUID(clubId) : '';
-                  const { error } = await supabase
-                    .from('tables')
-                    /* PHANTOM COLUMN FIX 2026-08-27: `tables` has no
-                       `is_active` column, so every delete 400'd, threw, and
-                       rolled the row back into the list — a club owner could
-                       not delete a table from this screen at all. status +
-                       is_deleted IS the soft delete. */
-                    .update({
-                      status: 'deleted',
-                      is_deleted: true,
-                      updated_at: new Date().toISOString(),
-                    })
-                    .eq('id', id)
-                    .eq('club_id', resolvedClubId);
-                  if (error) throw error;
-                },
-                // Rollback payload: restore the table on failure
-                deletedTable ? { tableId: id, status: deletedTable.status || 'active' } : undefined
-              );
-              masterBus.emit('TABLE_DELETED', { tableId: id, clubId: clubId || undefined });
-              // #5: Optimistic table count decrement
+              await gameManagementService.close('table', id);
+              setTables((prev) => prev.filter((table) => table.id !== id));
               setClub((prev) =>
                 prev ? { ...prev, tableCount: Math.max(0, prev.tableCount - 1) } : null
               );
-              toast.success('Table deleted');
+              toast.success('Table Closed');
             } catch (err) {
-              // Rollback: re-add the table to the list
-              reportError(err, 'ClubDetailPage.Failed_to_delete_table');
-              toast.error('Failed to delete table');
-              // Force reload to restore accurate state
-              if (clubId) {
-                const resolvedId = await resolveClubUUID(clubId);
-                const { data } = await supabase
-                  .from('tables')
-                  .select(
-                    'id, name, game_variant, stakes, current_players, max_players, status, created_at'
-                  )
-                  .eq('club_id', resolvedId)
-                  .eq('is_deleted', false)
-                  .order('created_at', { ascending: false });
-                if (data)
-                  setTables(
-                    data.map((t: any) => ({
-                      id: t.id,
-                      name: formatGameTitle(t.name) || 'Table',
-                      gameVariant: t.game_variant || 'NLH',
-                      stakes: t.stakes || '1/2',
-                      currentPlayers: t.current_players || 0,
-                      maxPlayers: t.max_players || 6,
-                      status: t.status || 'waiting',
-                    }))
-                  );
-              }
+              reportError(err, 'ClubDetailPage.Failed_to_close_table');
+              toast.error(err instanceof Error ? err.message : 'Failed To Close Table');
             } finally {
               setDeletingTableId(null);
             }

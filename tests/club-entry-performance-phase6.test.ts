@@ -37,19 +37,27 @@ describe('Phase 6 Club Entry visual and performance contracts', () => {
     }
   });
 
-  it('uses responsive WebP identity art within committed byte ceilings', () => {
+  it('keeps the approved global Smarter.Poker identity raster lossless and unobstructed', () => {
     const header = read('src/components/navigation/GlobalHeader.tsx');
-    expect(header).toContain('srcSet=');
-    const small = resolve(root, 'public/images/club-arena/vault-iris-emblem-v1-320.webp');
-    const large = resolve(root, 'public/images/club-arena/vault-iris-emblem-v1-640.webp');
-    expect(existsSync(small)).toBe(true);
-    expect(existsSync(large)).toBe(true);
-    expect(statSync(small).size).toBeLessThanOrEqual(32 * 1024);
-    expect(statSync(large).size).toBeLessThanOrEqual(96 * 1024);
+    expect(header).toContain('global-header-desktop.png');
+    expect(header).not.toContain('srcSet=');
+    expect(header).not.toContain('vault-iris-emblem-v1');
+    const approved = resolve(root, 'public/images/global-header/global-header-desktop.png');
+    expect(existsSync(approved)).toBe(true);
+    expect(statSync(approved).size).toBeLessThanOrEqual(400 * 1024);
+    expect(read('scripts/optimize-dist-media.mjs')).toContain(
+      "{ prefix: 'images/global-header/', maxDim: 0 }"
+    );
   });
 
   it('keeps production chunk budgets executable in the release gate', () => {
     expect(read('package.json')).toContain('check:club-entry-budgets');
     expect(read('scripts/check-club-entry-budgets.mjs')).toContain('gzipSync');
+  });
+
+  it('keeps the lobby route lazy instead of charging every deep link for it', () => {
+    const optimizer = read('scripts/optimize-dist-media.mjs');
+    expect(optimizer).not.toContain('injectLobbyPreload');
+    expect(optimizer).not.toContain('modulepreloads ${chunk}');
   });
 });

@@ -42,7 +42,7 @@ beforeEach(() => {
   builder.gt.mockReset();
 });
 
-describe('DealRateVerifier — when it must stay quiet', () => {
+describe('DealRateVerifier - when it must stay quiet', () => {
   it('a database it cannot reach is NOT evidence of silence', async () => {
     const v = new DealRateVerifier(() => tables(40));
     answers({ count: 0, error: { message: 'fetch failed' } });
@@ -70,8 +70,11 @@ describe('DealRateVerifier — when it must stay quiet', () => {
     answers({ count: 0, error: null });
     for (let i = 0; i < 10; i++) await v.check();
     expect(v.snapshot().dbConfirmedDead).toBe(false);
-    // It never even asked: two tables between hands is not evidence.
-    expect(from).not.toHaveBeenCalled();
+    // It never judged the DEAL RATE: two tables between hands is not evidence.
+    // `.in('table_id', ...)` is unique to that query — the floor check added on
+    // 2026-08-30 asks a different, unfiltered question (has the platform dealt
+    // ANYTHING), so "did it ask at all" is no longer the right assertion.
+    expect(builder.in).not.toHaveBeenCalled();
   });
 
   it('stands down entirely when no table should be dealing', async () => {
@@ -79,7 +82,8 @@ describe('DealRateVerifier — when it must stay quiet', () => {
     answers({ count: 0, error: null });
     await v.check();
     expect(v.snapshot().silentChecks).toBe(0);
-    expect(from).not.toHaveBeenCalled();
+    // Again: no DEAL-RATE query. See the note above on the floor check.
+    expect(builder.in).not.toHaveBeenCalled();
   });
 
   it('one hand anywhere clears the alarm', async () => {
@@ -102,7 +106,7 @@ describe('DealRateVerifier — when it must stay quiet', () => {
   });
 });
 
-describe('DealRateVerifier — when it must speak', () => {
+describe('DealRateVerifier - when it must speak', () => {
   it('declares dead once the database confirms sustained silence', async () => {
     const v = new DealRateVerifier(() => tables(40));
     answers({ count: 0, error: null });

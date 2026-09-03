@@ -9,7 +9,11 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { CreditService, type CreditInvoice } from '../../services/CreditService';
+import {
+  CreditService,
+  OWED_INVOICE_STATUSES,
+  type CreditInvoice,
+} from '../../services/CreditService';
 import { useToast } from '../common/Toast';
 import { masterBus } from '../../core/MasterBus';
 import { reportError } from '../../utils/errorReporter';
@@ -25,7 +29,14 @@ const STATUS_COLORS: Record<string, string> = {
   overdue: '#e53e3e',
   disputed: '#e53e3e',
   paid: '#38a169',
+  // Cancelled, not owed. Grey so it reads as settled history rather than as an
+  // unknown state, which is what the fallback colour said about 224 of them.
+  void: '#718096',
 };
+
+// Which statuses still owe money is defined once, in CreditService, because
+// this panel and CreditService.checkSuspension disagreeing about it is how a
+// cancelled invoice ends up suspending an agent.
 
 function fmt(n: number): string {
   return Math.round(n).toLocaleString();
@@ -126,7 +137,10 @@ export default function AgentInvoicesPanel({ agentId }: Props) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {invoices.map((inv) => {
             const color = STATUS_COLORS[inv.status] || '#a0aec0';
-            const canPay = inv.amountRemaining > 0;
+            // A number alone was not enough. Ask the STATUS as well, so a
+            // cancelled or settled invoice can never offer a button the server
+            // is going to refuse.
+            const canPay = OWED_INVOICE_STATUSES.has(inv.status) && inv.amountRemaining > 0;
             return (
               <div
                 key={inv.id}
@@ -180,7 +194,7 @@ export default function AgentInvoicesPanel({ agentId }: Props) {
                       minWidth: '84px',
                     }}
                   >
-                    {payingId === inv.id ? 'Paying...' : 'Pay now'}
+                    {payingId === inv.id ? 'Paying...' : 'Pay Now'}
                   </button>
                 )}
               </div>

@@ -47,7 +47,7 @@ describe('the club-home cache cannot serve a pre-fix member count', () => {
   it('still takes the live count from the SECURITY DEFINER RPC, not the table', () => {
     // The cache bump is only worth anything if the value that replaces the
     // stale one is itself correct.
-    expect(SRC).toMatch(/rpc\('fn_get_club_member_count'/);
+    expect(SRC).toMatch(/rpc\('fn_get_club_realtime_member_count'/);
     expect(SRC).not.toMatch(
       /from\('club_members'\)[\s\S]{0,200}?count: 'exact'[\s\S]{0,200}?eq\('club_id'/
     );

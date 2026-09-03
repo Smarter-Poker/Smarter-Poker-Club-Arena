@@ -101,9 +101,10 @@ describe('round 8: the start path cannot cancel a tournament off a failed read',
     expect(gate).toContain('Could not load the player list. Please try again.');
   });
 
-  it('the auto-cancel branch still exists below the guard (the guard did not eat it)', () => {
+  it('a short field waits without cancelling registered players', () => {
     expect(start).toContain('players.length < 3');
-    expect(start).toContain('await this.cancelTournament(');
+    expect(start).not.toContain('await this.cancelTournament(');
+    expect(start).toContain('Tournament Needs At Least 3 Players To Start');
   });
 });
 
@@ -115,13 +116,24 @@ describe('round 8: money-action gates fail closed on a failed read', () => {
     expect(addOn).toContain('Could not verify your add-on status. Please try again.');
   });
 
-  it('re-entry active-entry and eliminated checks both refuse when they cannot read', () => {
-    const reentry = sliceMethod(SRC, 'async processReentry(');
-    expect(reentry).toContain('error: activeCheckErr');
-    expect(reentry).toContain('reentry_active_check_read_failed');
-    expect(reentry).toContain('error: elimCheckErr');
-    expect(reentry).toContain('reentry_eliminated_check_read_failed');
-    expect(reentry).toContain('Could not verify your entries. Please try again.');
+  it('there is no second re-entry path to gate', () => {
+    /* REPLACED 2026-09-02 with the change it pins, per CLAUDE.md 5.8. This
+       asserted that `processReentry`'s read failures fail closed — which they
+       did, and it did not matter, because the method had ZERO production
+       callers and could not have worked if it had any: its eligibility check
+       ordered `tournament_players` by `created_at`, a column that table does
+       not have (its timestamps are `registered_at` and `eliminated_at`).
+       Every call would have returned 42703 and stopped at "Could not verify
+       your entries."
+
+       Re-entry flows through `processRebuy` (`p_rebuy_type: 'reentry'`), which
+       is what 314 re-entry tournaments have actually used. A test asserting
+       the shape of a dead duplicate money path is worse than no test: it
+       reads as coverage of re-entry, so the next auditor skips the path that
+       is really taking players' money. The method is deleted; this pins that
+       it stays deleted. */
+    expect(SRC).not.toContain('async processReentry(');
+    expect(SRC, 'the live re-entry path must remain').toContain('p_rebuy_type:');
   });
 
   it('canRebuy answers a failed stack read with a retry, not "Player not found"', () => {
@@ -186,11 +198,13 @@ describe('round 8: silent under-reports and confident zeros now leave a trace', 
     expect(sliceMethod(SRC, 'async checkTableMerge(')).toContain('merge_check_read_failed');
   });
 
-  it('the SNG autostart nudge and the cancel roster read report their failures', () => {
+  it('the SNG autostart nudge reports a failed freshness read', () => {
     expect(sliceMethod(SRC, 'async registerPlayer(')).toContain(
       'SNG_autostart_freshness_read_failed'
     );
-    expect(sliceMethod(SRC, 'async cancelTournament(')).toContain('cancel_roster_read_failed');
+    expect(sliceMethod(SRC, 'async cancelTournament(')).toContain(
+      "gameManagementService.close('tournament', tournamentId)"
+    );
   });
 
   it('the waitlist position display reports a failed read behind its null', () => {

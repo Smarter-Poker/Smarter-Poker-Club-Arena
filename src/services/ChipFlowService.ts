@@ -204,70 +204,32 @@ export const ChipFlowService = {
     );
   },
 
-  /**
-   * Club Owner → Agent
-   * Club owner funds an agent's PLAYER wallet for distribution to their players.
-   */
-  async clubToAgent(
-    clubOwnerId: string,
-    agentUserId: string,
-    clubId: string,
-    amount: number,
-    agentName: string,
-    clubName: string
-  ): Promise<ChipTransferResult> {
-    return this.transfer(
-      clubOwnerId,
-      agentUserId,
-      amount,
-      'transfer',
-      `${clubName} → Agent ${agentName}: player funding allocation`,
-      clubId
-    );
-  },
-
-  /**
-   * Agent → Player
-   * Agent funds a player under them from their own PLAYER wallet.
-   */
-  async agentToPlayer(
-    agentUserId: string,
-    playerId: string,
-    amount: number,
-    agentName: string,
-    playerName: string,
-    clubName: string
-  ): Promise<ChipTransferResult> {
-    return this.transfer(
-      agentUserId,
-      playerId,
-      amount,
-      'transfer',
-      `Agent ${agentName} → ${playerName}: player funding (${clubName})`,
-      agentUserId
-    );
-  },
-
-  /**
-   * Club Owner → Player (direct)
-   * Club owners can send chips directly to any player, bypassing agents.
-   */
-  async clubToPlayer(
-    clubOwnerId: string,
-    playerId: string,
-    amount: number,
-    playerName: string,
-    clubName: string
-  ): Promise<ChipTransferResult> {
-    return this.transfer(
-      clubOwnerId,
-      playerId,
-      amount,
-      'transfer',
-      `${clubName} Owner → ${playerName}: direct player funding`,
-      clubOwnerId
-    );
-  },
+  // ───────────────────────────────────────────────────────────────────────────
+  // THE CLUB HIERARCHY MOVES — REMOVED (phase 3 of 7, 2026-08-31)
+  // ───────────────────────────────────────────────────────────────────────────
+  //
+  // clubToAgent, agentToPlayer and clubToPlayer are deleted. All three were
+  // peer-to-peer moves between two users' PLAYER wallets, and every one of them
+  // debited the wrong account for the transfer it was named after:
+  //
+  //   - clubToAgent moved the OWNER'S PERSONAL wallet, never clubs.chip_treasury;
+  //   - agentToPlayer moved the agent's own PLAYER wallet, never
+  //     agents.agent_wallet_balance - its own doc comment said "from their own
+  //     PLAYER wallet", which was accurate and was the bug;
+  //   - none carried an idempotency key, asked whether the recipient was in the
+  //     caller's downline, or wrote a chip_transactions ledger row.
+  //
+  // Dan, 2026-08-25: "Any chips sent or claimed back transact from the Agent
+  // Wallet." 2026-08-31: "CHIPS MUST FLOW FROM THE MAIN BANK TO THE AGENT
+  // WALLET TO SEND OUT TO AGENTS AND PLAYERS."
+  //
+  // Their only caller was ChipTransferModal, which now makes the same two calls
+  // every other cashier surface makes: fn_club_bank_send for the four bank
+  // roles, fn_agent_wallet_send for the three agent roles. Both enforce their
+  // own authorization, take a uuid op_id, and write one ledger row.
+  //
+  // `transfer` below is NOT one of these and stays: it is a genuine
+  // player-to-player wallet move, and AgentService still uses it.
 
   // ─────────────────────────────────────────────────────────────────────────────
   // MINTING (System → Union Owner) — REMOVED

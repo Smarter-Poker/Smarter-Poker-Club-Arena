@@ -27,6 +27,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
 import { formatDateShort as formatDate } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
+import { formatPopupText } from '../utils/popupStyle';
 
 interface FinancialSummary {
   period: string;
@@ -236,12 +237,20 @@ export default function ClubFinancialsPage() {
           .eq('transaction_type', 'rakeback')
           .gte('created_at', startDate.toISOString())
           .limit(5000),
-        supabase
-          .from('commission_history')
-          .select('net_commission, created_at')
-          .eq('club_id', resolvedId)
-          .gte('created_at', startDate.toISOString())
-          .limit(5000),
+        // PHASE 7: off commission_history, which held zero rows for the whole
+        // life of this page, onto the agent_commissions ledger the engine writes
+        // as hands settle. "Agent Commissions" here was 0 for every club and
+        // every period while SHARK CLUB alone had accrued 399,609.57.
+        //
+        // Through an RPC rather than a select, because RLS on agent_commissions
+        // gives a caller their OWN rows - a club owner reading it directly would
+        // see only what they had personally earned, which is a smaller lie in
+        // place of a bigger one. The function checks the caller is staff of this
+        // club and returns the aggregate.
+        supabase.rpc('fn_club_commission_accrued', {
+          p_club_id: resolvedId,
+          p_since: startDate.toISOString(),
+        }),
         supabase
           .from('settlement_invoices')
           .select('net_amount, created_at')
@@ -269,10 +278,13 @@ export default function ClubFinancialsPage() {
         (sum: number, r: any) => sum + (Number(r.amount) || 0),
         0
       );
-      const agentCommissions = ((commissionRes as any)?.data || []).reduce(
-        (sum: number, r: any) => sum + (Number(r.net_commission) || 0),
-        0
-      );
+      // The RPC answers one number. An error binds rather than being discarded:
+      // a denied read and a club that has accrued nothing are not the same
+      // thing, and this figure is subtracted from the club's net revenue.
+      if ((commissionRes as any)?.error) {
+        reportError((commissionRes as any).error, 'ClubFinancialsPage.commission_accrued');
+      }
+      const agentCommissions = Number((commissionRes as any)?.data ?? 0) || 0;
       const unionFees = ((unionFeeRes as any)?.data || []).reduce(
         (sum: number, r: any) => sum + (Number(r.net_amount) || 0),
         0
@@ -337,7 +349,7 @@ export default function ClubFinancialsPage() {
           id: r.id,
           type: 'rake' as const,
           amount: r.rake_amount || 0,
-          description: `${(r.rake_amount || 0).toLocaleString()} chips raked from a ${(r.pot_size || 0).toLocaleString()} pot`,
+          description: `${(r.rake_amount || 0).toLocaleString()} Chips Raked From A ${(r.pot_size || 0).toLocaleString()} Pot`,
           created_at: r.created_at,
         }));
         setTransactions(mappedTx);
@@ -578,7 +590,7 @@ export default function ClubFinancialsPage() {
               >
                 <span className="tx-icon">{getTypeIcon(tx.type)}</span>
                 <div className="tx-info">
-                  <span className="tx-desc">{tx.description}</span>
+                  <span className="tx-desc">{formatPopupText(tx.description)}</span>
                   <span className="tx-date">{formatDate(tx.created_at)}</span>
                 </div>
                 <span className={`tx-amount ${tx.amount >= 0 ? 'positive' : 'negative'}`}>

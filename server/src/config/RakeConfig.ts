@@ -103,12 +103,64 @@ export const RAKE_SCHEDULE: RakeScheduleEntry[] = [
   { sb: 1, bb: 2, rakePercent: 10, rakeCap: 5, bbjFeeBB: 0.25 },
   { sb: 2, bb: 4, rakePercent: 10, rakeCap: 7.5, bbjFeeBB: 0.12 },
   { sb: 2, bb: 5, rakePercent: 10, rakeCap: 7.5, bbjFeeBB: 0.12 },
-  { sb: 5, bb: 5, rakePercent: 10, rakeCap: 7.5, bbjFeeBB: 0.12 },
+  // A 5/5 row sat here until 2026-09-01 (sb 5, bb 5). Nothing could ever
+  // match it: fn_tables_creation_guard refuses a cash table whose big blind
+  // does not exceed its small blind, so no 5/5 table has ever existed and no
+  // hand was ever priced by it. It also sorted out of order, between 2/5 and
+  // 3/6, which is the tell that it was a typo placed by big blind. Dan ruled
+  // it a typo; deleted, not legalised. Do not re-add it - if a 5-small-blind
+  // stake is wanted, 5/10 already exists and 2.5/5 would fit the ladder.
+  // Removed from the DB mirror by
+  // supabase/migrations/20260901050000_the_rake_row_no_table_can_match.sql.
   { sb: 3, bb: 6, rakePercent: 10, rakeCap: 8, bbjFeeBB: 0.12 },
   { sb: 4, bb: 8, rakePercent: 10, rakeCap: 10, bbjFeeBB: 0.12 },
   { sb: 5, bb: 10, rakePercent: 10, rakeCap: 12.5, bbjFeeBB: 0.06 },
   { sb: 10, bb: 20, rakePercent: 10, rakeCap: 15, bbjFeeBB: 0.06 },
   { sb: 10, bb: 25, rakePercent: 10, rakeCap: 15, bbjFeeBB: 0.06 },
+  // ── ADDED 2026-08-31 (Dan, binding) ──────────────────────────────────────
+  // Dan: "WE HAVE A SCALE THAT WE USE FOR THE CASH GAME FOR RAKE AND BBJ, USE
+  // THE SAME PERCENTAGES WE USE FOR THE OTHER GAMES, IF YOU DON'T HAVE A RAKE
+  // OR BBJ SCHEDULE FOR A SPECIFIC GAME."
+  //
+  // Six of the twelve blind presets the create-table form offers had no row
+  // here, so findScheduleMatch returned null and the price fell through to
+  // getTierForBB - a tier whose cap is an ABSOLUTE DOLLAR AMOUNT applied
+  // regardless of stake. At the bottom of the ladder that is not a small
+  // discrepancy, it is an order of magnitude:
+  //
+  //     0.01/0.02   $3 flat  =  150 BB
+  //     0.02/0.05   $3 flat  =   60 BB
+  //     0.05/0.10   $3 flat  =   30 BB   <- THE DEFAULT PRESET
+  //     0.10/0.25   $3 flat  =   12 BB
+  //
+  // against a published ladder whose most generous row (0.1/0.2) is 15 BB and
+  // whose typical row is 1-6 BB. The DB creation guard had declined to police
+  // this in as many words: "NOT enforced here and left for Dan: the official
+  // stakes schedule."
+  //
+  // HOW THESE NUMBERS WERE DERIVED - no rate is invented:
+  //   rakePercent  10 at every stake, as every existing row already is.
+  //   rakeCap      the same BB proportion the schedule's own cheapest
+  //                published row charges (0.1/0.2 at $3 = 15 BB), so the
+  //                three sub-0.2 stakes are 15 BB in dollars. 0.10/0.25 sits
+  //                inside the schedule's existing flat-$3 band (0.2, 0.4 and
+  //                0.5 are all $3) and takes $3. The two nosebleed rows take
+  //                the Nosebleeds tier's own $20, which is what they are
+  //                charged today - adding the row changes no price, it just
+  //                makes the price published rather than inherited.
+  //   bbjFeeBB     the tier's fee for that stake, unchanged: Nano/Micro 0.6,
+  //                Nosebleeds 0.03.
+  //
+  // LIVE EFFECT, measured against production before committing: of 972 cash
+  // tables, exactly TWO sit on a stake whose price moves - the two at
+  // 0.05/0.10, whose cap falls $3 -> $1.50. Both are closed. Every other live
+  // stake was already on the schedule and is untouched. No player pays more.
+  { sb: 0.01, bb: 0.02, rakePercent: 10, rakeCap: 0.3, bbjFeeBB: 0.6 },
+  { sb: 0.02, bb: 0.05, rakePercent: 10, rakeCap: 0.75, bbjFeeBB: 0.6 },
+  { sb: 0.05, bb: 0.1, rakePercent: 10, rakeCap: 1.5, bbjFeeBB: 0.6 },
+  { sb: 0.1, bb: 0.25, rakePercent: 10, rakeCap: 3, bbjFeeBB: 0.6 },
+  { sb: 25, bb: 50, rakePercent: 10, rakeCap: 20, bbjFeeBB: 0.03 },
+  { sb: 50, bb: 100, rakePercent: 10, rakeCap: 20, bbjFeeBB: 0.03 },
 ];
 
 // FIX 166: Bible V8 §7.19 / §2.9 — Player-count-based rake caps.
@@ -227,7 +279,7 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   nlh: {
     label: 'NLH / FLH',
     minLosingHand: 'AAAJJ',
-    description: 'Full House (Aces full of Jacks) or better must LOSE to Quads or Straight Flush',
+    description: 'Full House (Aces Full Of Jacks) Or Better Must LOSE To Quads Or Straight Flush',
     rules: [
       'AAAJJ+ must lose to Quads or Straight Flush',
       'Player holding Full House must have at least one Ace in their hole cards (dealt cards)',
@@ -240,7 +292,7 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   flh: {
     label: 'NLH / FLH',
     minLosingHand: 'AAAJJ',
-    description: 'Full House (Aces full of Jacks) or better must LOSE to Quads or Straight Flush',
+    description: 'Full House (Aces Full Of Jacks) Or Better Must LOSE To Quads Or Straight Flush',
     rules: [
       'AAAJJ+ must lose to Quads or Straight Flush',
       'Player holding Full House must have at least one Ace in their hole cards (dealt cards)',
@@ -252,7 +304,7 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   plo4: {
     label: 'PLO4 / FLO4',
     minLosingHand: 'KKKK2',
-    description: 'Four of a Kind (Kings) or better must LOSE',
+    description: 'Four Of A Kind (Kings) Or Better Must LOSE',
     rules: [
       'Must use exactly 2 cards from hand',
       'Both players must use two cards from their hole cards',
@@ -263,7 +315,7 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   plo: {
     label: 'PLO4 / FLO4',
     minLosingHand: 'KKKK2',
-    description: 'Four of a Kind (Kings) or better must LOSE',
+    description: 'Four Of A Kind (Kings) Or Better Must LOSE',
     rules: [
       'Must use exactly 2 cards from hand',
       'Both players must use two cards from their hole cards',
@@ -272,9 +324,9 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
     minRankValue: 'KKKK',
   },
   plo8: {
-    label: 'PLO8 (Hi-Lo 8 or Better)',
+    label: 'PLO8 (Hi-Lo 8 Or Better)',
     minLosingHand: 'KKKK2',
-    description: 'Four of a Kind (Kings) or better must LOSE — evaluated on HIGH hand only',
+    description: 'Four Of A Kind (Kings) Or Better Must LOSE - Evaluated On HIGH Hand Only',
     rules: [
       'Must use exactly 2 cards from hand',
       'Both players must use two cards from their hole cards',
@@ -288,9 +340,9 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   // differs, and the betting has nothing to do with which hand qualifies for
   // the jackpot. Same entry, exactly as `flh` aliases `nlh` above.
   flo8: {
-    label: 'FLO8 (Hi-Lo 8 or Better)',
+    label: 'FLO8 (Hi-Lo 8 Or Better)',
     minLosingHand: 'KKKK2',
-    description: 'Four of a Kind (Kings) or better must LOSE — evaluated on HIGH hand only',
+    description: 'Four Of A Kind (Kings) Or Better Must LOSE - Evaluated On HIGH Hand Only',
     rules: [
       'Must use exactly 2 cards from hand',
       'Both players must use two cards from their hole cards',
@@ -303,7 +355,7 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   plo5: {
     label: 'PLO5 / FLO5',
     minLosingHand: '87654',
-    description: 'Straight Flush (8-high) or better must LOSE',
+    description: 'Straight Flush (8-High) Or Better Must LOSE',
     rules: [
       'Must use exactly 2 cards from hand',
       'Both players must use two cards from their hole cards',
@@ -314,21 +366,21 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   plo6: {
     label: 'PLO6',
     minLosingHand: null,
-    description: 'BBJ not available for PLO6',
+    description: 'BBJ Not Available For PLO6',
     rules: [],
     eligible: false,
   },
   short_deck: {
     label: 'Short Deck',
     minLosingHand: null,
-    description: 'BBJ not available for Short Deck',
+    description: 'BBJ Not Available For Short Deck',
     rules: [],
     eligible: false,
   },
   pineapple: {
     label: 'Pineapple',
     minLosingHand: 'KKKK2',
-    description: 'Four of a Kind (Kings) or better must LOSE',
+    description: 'Four Of A Kind (Kings) Or Better Must LOSE',
     rules: [
       'Must use exactly 2 cards from hand',
       'Both players must use two cards from their hole cards',
@@ -414,6 +466,36 @@ export const MAX_RAKE_PERCENT = 10;
 /** …nor set a cap above 10 big blinds. Matches the create-table slider. */
 export const MAX_RAKE_CAP_BB = 10;
 
+/**
+ * THE MOST GENEROUS SHARE OF A BIG BLIND ANY PUBLISHED ROW TAKES.
+ *
+ * Derived from RAKE_SCHEDULE rather than written down, so it cannot drift from
+ * the ladder it describes. Today that is the 0.1/0.2 row: a $3 cap on a $0.20
+ * big blind, 15 BB.
+ *
+ * Dan, 2026-08-31: "IF YOU DON'T HAVE A RAKE OR BBJ SCHEDULE FOR A SPECIFIC
+ * GAME, USE THE SAME PERCENTAGES WE USE FOR THE OTHER GAMES." A stake with no
+ * row falls through to a stakes TIER, and a tier's cap is an absolute dollar
+ * amount - which is a sane number at the stake the tier was written for and an
+ * absurd one two rungs below it ($3 on a $0.02 big blind is 150 BB). Holding
+ * the fallback to this proportion is what makes an unscheduled stake priced
+ * "the same as the other games" instead of priced by accident.
+ *
+ * This binds ONLY the fallback. A stake with its own published row is charged
+ * that row, and MAX_RAKE_CAP_BB continues to bind operator OVERRIDES - a
+ * separate ceiling for a separate thing.
+ */
+export const UNSCHEDULED_CAP_BB = RAKE_SCHEDULE.reduce(
+  (worst, row) => (row.bb > 0 ? Math.max(worst, row.rakeCap / row.bb) : worst),
+  0
+);
+
+/** The cap for a stake with no published row: the tier's, held to the ladder. */
+export function unscheduledCapFor(bigBlind: number, tierCap: number): number {
+  if (!(bigBlind > 0)) return tierCap;
+  return Math.min(tierCap, Math.round(bigBlind * UNSCHEDULED_CAP_BB * 100) / 100);
+}
+
 /** true only for a real, in-range number; -1 / null / NaN / '' all mean inherit. */
 function isRakeSet(v: number | null | undefined): v is number {
   if (v === null || v === undefined) return false;
@@ -459,7 +541,9 @@ export function getFullRakeConfig(
   const bbjEligible = qualifying.eligible !== false;
 
   const schedulePercent = scheduleMatch ? scheduleMatch.rakePercent : tier.rakePercent;
-  const scheduleCap = scheduleMatch ? scheduleMatch.rakeCap : tier.rakeCap;
+  const scheduleCap = scheduleMatch
+    ? scheduleMatch.rakeCap
+    : unscheduledCapFor(bigBlind, tier.rakeCap);
   const bbjFeeBB = scheduleMatch ? scheduleMatch.bbjFeeBB : tier.bbjFeeBB;
 
   const overridePercent = isRakeSet(override?.rakePercent)
@@ -906,7 +990,7 @@ export function detectBBJNearMiss(
     return {
       ...base,
       reason: 'winner_not_quads',
-      message: `So close! ${best.handName} lost — but the jackpot needs the winning hand to be Quads or better.`,
+      message: `So close! ${best.handName} lost - but the jackpot needs the winning hand to be Quads or better.`,
     };
   }
 
@@ -929,7 +1013,7 @@ export function detectBBJNearMiss(
       return {
         ...base,
         reason: 'both_cards_must_play',
-        message: `So close! ${best.handName} lost to Quads — but the jackpot needs BOTH hole cards to play.`,
+        message: `So close! ${best.handName} lost to Quads - but the jackpot needs BOTH hole cards to play.`,
       };
     }
   }

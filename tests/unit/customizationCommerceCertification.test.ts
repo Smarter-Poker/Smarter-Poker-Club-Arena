@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import {
+  callServiceRpc,
+  type CustomizationCertificationEnvironment,
+} from '../e2e/support/temporaryCustomizationAccount';
 
 const root = resolve(import.meta.dirname, '../..');
 
@@ -9,7 +14,18 @@ function source(path: string) {
   return readFileSync(resolve(root, path), 'utf8');
 }
 
+const environment: CustomizationCertificationEnvironment = {
+  supabaseUrl: 'https://certification.invalid',
+  serviceRoleKey: 'service-role-test-key',
+  publishableKey: 'publishable-test-key',
+};
+
 describe('customization commerce certification', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
   it('guards overlapping permanent entitlements before charging diamonds', () => {
     const migration = source(
       'supabase/migrations/20260830203000_entitlement_aware_customization_purchases.sql'
@@ -31,9 +47,13 @@ describe('customization commerce certification', () => {
     expect(helper).toContain("const ACCOUNT_PREFIX = 'ca-customization-cert-'");
     expect(helper).toContain("email.endsWith('@example.invalid')");
     expect(helper).toContain("key.startsWith('sb_secret_')");
-    expect(helper).toContain('body: JSON.stringify({ should_soft_delete: false })');
-    expect(helper).not.toContain('?should_soft_delete=false');
+    expect(helper).toContain("'cleanup_reserved_certification_account'");
+    expect(helper).toContain('p_user_id: account.id');
+    expect(helper).not.toContain('/auth/v1/admin/users/${encodeURIComponent(account.id)}');
     expect(helper).toContain('reserved fixture still exists after hard delete');
+    expect(helper).toContain('withCleanupRetries');
+    expect(helper).toContain('PGRST00[0123]');
+    expect(helper).toContain('CLEANUP_RETRY_DELAYS_MS');
   });
 
   it('certifies all live SKUs, double-buy serialization, realtime delivery and RLS', () => {
@@ -56,5 +76,41 @@ describe('customization commerce certification', () => {
       'SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}'
     );
     expect(workflow).toContain('tests/e2e/production-customization-commerce.spec.ts');
+  });
+
+  it('retries a POST only when PGRST002 proves the RPC was never dispatched', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ code: 'PGRST002', message: 'schema cache is reconnecting' }),
+          { status: 503 }
+        )
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = callServiceRpc<{ success: boolean }>(environment, 'safe_probe', {
+      reference: 'one-logical-operation',
+    });
+    await vi.advanceTimersByTimeAsync(500);
+
+    await expect(result).resolves.toEqual({ success: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry an ambiguous POST gateway failure that could double-write', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ message: 'gateway unavailable' }), { status: 503 })
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(callServiceRpc(environment, 'unsafe_probe', { amount: 1 })).rejects.toThrow(
+      'failed (503)'
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

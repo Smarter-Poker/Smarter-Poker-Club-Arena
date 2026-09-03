@@ -40,7 +40,7 @@ const potLimit = {
 describe('ALL IN shows the amount it actually bets', () => {
   it('shows the stack, not the pot cap, in pot-limit', () => {
     render(<ActionPanel {...potLimit} onAction={vi.fn()} />);
-    const btn = screen.getByLabelText('All in');
+    const btn = screen.getByLabelText('All In');
     expect(btn.textContent).toContain('300');
     expect(btn.textContent).not.toContain('47');
   });
@@ -48,7 +48,7 @@ describe('ALL IN shows the amount it actually bets', () => {
   it('sends exactly what it showed', () => {
     const onAction = vi.fn();
     render(<ActionPanel {...potLimit} onAction={onAction} />);
-    fireEvent.click(screen.getByLabelText('All in'));
+    fireEvent.click(screen.getByLabelText('All In'));
     expect(onAction).toHaveBeenCalledWith('allin', 300);
   });
 
@@ -63,7 +63,7 @@ describe('ALL IN shows the amount it actually bets', () => {
         onAction={onAction}
       />
     );
-    const btn = screen.getByLabelText('All in');
+    const btn = screen.getByLabelText('All In');
     expect(btn.textContent).toContain('300');
     fireEvent.click(btn);
     expect(onAction).toHaveBeenCalledWith('allin', 300);
@@ -72,7 +72,7 @@ describe('ALL IN shows the amount it actually bets', () => {
   it('falls back to maxRaise when allInTo is not supplied', () => {
     const { allInTo: _drop, ...noAllInTo } = potLimit;
     render(<ActionPanel {...noAllInTo} onAction={vi.fn()} />);
-    expect(screen.getByLabelText('All in').textContent).toContain('47');
+    expect(screen.getByLabelText('All In').textContent).toContain('47');
   });
 });
 
@@ -88,13 +88,13 @@ describe('the bet-sizing panel does not offer a shove hero cannot make', () => {
         onAction={vi.fn()}
       />
     );
-    fireEvent.click(screen.getByLabelText('Open raise panel'));
-    expect(screen.getByRole('button', { name: /Bet all in/i })).toBeDisabled();
+    fireEvent.click(screen.getByLabelText('Open Raise Panel'));
+    expect(screen.getByRole('button', { name: /Bet All In/i })).toBeDisabled();
   });
 
   it('labels the shove with the real all-in amount', () => {
     render(<ActionPanel {...potLimit} canRaise onAction={vi.fn()} />);
-    fireEvent.click(screen.getByLabelText('Open raise panel'));
-    expect(screen.getByRole('button', { name: /Bet all in for 300/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Open Raise Panel'));
+    expect(screen.getByRole('button', { name: /Bet All In For 300/i })).toBeInTheDocument();
   });
 });

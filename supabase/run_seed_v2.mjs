@@ -292,14 +292,22 @@ async function main() {
         { id: 'dd000000-0000-0000-0000-000000000005', user_id: U(14), feature: 'hand_replayer', usage_count: 30, daily_usage: 2, last_used_at: ago(4 * H) },
     ]);
 
-    // --- COMMISSION RECORDS ---
-    console.log('\n♠ Commission Records');
-    await up('commission_records', [
-        { id: 'b9000000-0000-0000-0000-000000000001', agent_id: 'd0000000-0000-0000-0000-000000000001', player_id: U(6), player_name: 'SuitedAce', table_name: 'JAQK Low', rake_amount: 250, commission_rate: 0.12, amount: 30, created_at: ago(1 * D) },
-        { id: 'b9000000-0000-0000-0000-000000000002', agent_id: 'd0000000-0000-0000-0000-000000000001', player_id: U(7), player_name: 'StackAttack', table_name: 'JAQK Mid', rake_amount: 580, commission_rate: 0.12, amount: 70, created_at: ago(1 * D) },
-        { id: 'b9000000-0000-0000-0000-000000000003', agent_id: 'd0000000-0000-0000-0000-000000000001', player_id: U(9), player_name: 'Aggro_ETH', table_name: 'JAQK High', rake_amount: 1200, commission_rate: 0.12, amount: 144, created_at: ago(1 * D) },
-        { id: 'b9000000-0000-0000-0000-000000000004', agent_id: 'd0000000-0000-0000-0000-000000000002', player_id: U(13), player_name: '3BetMason', table_name: 'JAQK Mid', rake_amount: 420, commission_rate: 0.10, amount: 42, created_at: ago(2 * D) },
-        { id: 'b9000000-0000-0000-0000-000000000005', agent_id: 'd0000000-0000-0000-0000-000000000003', player_id: U(14), player_name: 'PLOQueen', table_name: 'PLO Action', rake_amount: 380, commission_rate: 0.08, amount: 30, created_at: ago(1 * D) },
+    // --- AGENT COMMISSIONS ---
+    //
+    // These rows used to be written to `commission_records`, a table phase 7
+    // dropped on 2026-09-01 after it had held zero rows for its entire life
+    // while the app read it. The ledger every commission surface reads is
+    // `agent_commissions`, keyed by (club_id, user_id) rather than agents.id,
+    // with `settled_at` NULL meaning the agent has not claimed it yet. Seeding
+    // the dropped table left a freshly seeded dev database with an agent
+    // dashboard showing nothing.
+    console.log('\n♠ Agent Commissions');
+    await up('agent_commissions', [
+        { id: 'b9000000-0000-0000-0000-000000000001', club_id: CLUB, user_id: U(3), amount: 30, commission_rate: 0.12, source_type: 'rake_settlement', notes: 'SuitedAce at JAQK Low', settled_at: null, created_at: ago(1 * D) },
+        { id: 'b9000000-0000-0000-0000-000000000002', club_id: CLUB, user_id: U(3), amount: 70, commission_rate: 0.12, source_type: 'rake_settlement', notes: 'StackAttack at JAQK Mid', settled_at: null, created_at: ago(1 * D) },
+        { id: 'b9000000-0000-0000-0000-000000000003', club_id: CLUB, user_id: U(3), amount: 144, commission_rate: 0.12, source_type: 'rake_settlement', notes: 'Aggro_ETH at JAQK High', settled_at: null, created_at: ago(1 * D) },
+        { id: 'b9000000-0000-0000-0000-000000000004', club_id: CLUB, user_id: U(4), amount: 42, commission_rate: 0.10, source_type: 'rake_settlement', notes: '3BetMason at JAQK Mid', settled_at: null, created_at: ago(2 * D) },
+        { id: 'b9000000-0000-0000-0000-000000000005', club_id: CLUB, user_id: U(5), amount: 30, commission_rate: 0.08, source_type: 'rake_settlement', notes: 'PLOQueen at PLO Action', settled_at: null, created_at: ago(1 * D) },
     ]);
 
     console.log('\n' + '═'.repeat(60));

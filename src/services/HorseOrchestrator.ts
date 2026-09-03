@@ -26,11 +26,10 @@
 
 import { supabase } from '../lib/supabase';
 import { HydraService } from './HydraService';
-import { tournamentService } from './TournamentService';
-import { QUERY_LIMITS } from '../lib/constants';
 import { masterBus } from '../core/MasterBus';
-import { resolveClubUUID } from '../utils/clubIdResolver';
-import { buyInFor } from '../utils/buyIn';
+import { buyInFor, rakeRateFor } from '../utils/buyIn';
+import { clampSeatsForVariant } from '../config/tableSeating';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 
 /**
  * Derive the two buy-in columns from ONE whole-dollar total.
@@ -46,8 +45,21 @@ import { buyInFor } from '../utils/buyIn';
  * generates the same games server-side. Spins are exempt and stay rake-free —
  * their edge lives in the multiplier distribution (src/config/spinSpec.ts).
  */
-function buyInColumns(buyIn: number): { buy_in_amount: number; buy_in_fee: number } {
-  const { prize, fee } = buyInFor(buyIn);
+/**
+ * 2026-08-31 audit: this took the DEFAULT rate and never asked rakeRateFor.
+ * The rule is keyed on SEATS, not on the word "SNG" — a two-handed game is a
+ * duel whatever its label says — and buyIn.ts's own header names "the client
+ * horse orchestrator" among the six writers that were supposed to have been
+ * routed through the helper. It was not. Harmless today, because every
+ * SNG_CONFIGS shape here is 6- or 9-max and 10% is the right answer for
+ * those, but the guard was missing: add one 2-max config and this quietly
+ * overcharges.
+ */
+function buyInColumns(
+  buyIn: number,
+  subject: Parameters<typeof rakeRateFor>[0]
+): { buy_in_amount: number; buy_in_fee: number } {
+  const { prize, fee } = buyInFor(buyIn, rakeRateFor(subject));
   return { buy_in_amount: prize, buy_in_fee: fee };
 }
 
@@ -96,7 +108,7 @@ interface TableConfig {
 
 const MIDWAY_UNION = {
   name: 'Midway Union',
-  description: 'The premier poker union - all stakes, all games, all action.',
+  description: 'The Premier Poker Union - All Stakes, All Games, All Action.',
   ownerId: '47965354-0e56-43ef-931c-ddaab82af765', // Dan's user ID
   isPublic: true,
   settings: {
@@ -1229,9 +1241,6 @@ class HorseOrchestrator {
     // Ensure the Midway Union exists and both clubs are attached
     await this.ensureUnionSetup();
 
-    // Ensure horses are members of BOTH clubs
-    await this.ensureHorsesInBothClubs();
-
     let tablesCreated = 0;
     let horsesSeated = 0;
 
@@ -1253,9 +1262,22 @@ class HorseOrchestrator {
             big_blind: config.bigBlind,
             min_buy_in: config.bigBlind * 40,
             max_buy_in: config.bigBlind * 200,
-            max_players: config.maxPlayers,
+            // SEAT LAW, enforced at the INSERT and not only in the config
+            // above, the same place HorseFleetManager enforces it and for the
+            // same reason: a future config edit must not be able to put an
+            // illegal table in the database. Seven configs in this file are
+            // over the law today (plo4 and plo8 at 9 seats, cap 8), so
+            // without this the creation guard added on 2026-08-31 refuses
+            // them and they are silently skipped.
+            max_players: clampSeatsForVariant(config.gameVariant || 'nlh', config.maxPlayers),
             current_players: 0,
-            status: 'active',
+            // 'waiting', NOT 'active' (2026-08-31 audit). The engine finds
+            // cash tables through cash_tables_needing_engine, whose WHERE is
+            // status IN ('waiting', 'running'). 'active' is a legal value no
+            // engine query has ever matched, so a table created here sat in
+            // the lobby, accepted seats and never dealt a hand. Every working
+            // writer uses 'waiting'; the engine flips it to 'running'.
+            status: 'waiting',
             settings: {
               straddle_enabled: true,
               straddle_type: 'utg',
@@ -1451,7 +1473,14 @@ class HorseOrchestrator {
           name: config.name,
           game_type: dbGameType,
           variant: config.type === 'mtt' ? 'freezeout' : config.type, // freezeout/bounty/progressive_bounty/mystery_bounty
-          ...buyInColumns(config.buyIn),
+          // Written explicitly rather than left to the column default, so the
+          // row states its format instead of inheriting one.
+          tournament_type: 'MTT',
+          ...buyInColumns(config.buyIn, {
+            tournamentType: 'MTT',
+            variant: config.type,
+            maxPlayers: config.maxPlayers,
+          }),
           guaranteed_prize: config.guarantee || 0,
           starting_chips: config.startingStack,
           max_players: config.maxPlayers,
@@ -1489,13 +1518,27 @@ class HorseOrchestrator {
         }
       }
 
-      // Update tournament player count and prize pool (based on actual registrations)
+      /**
+       * THE REALISED POOL IS NOT A GUARANTEE (2026-08-31 audit).
+       *
+       * This wrote `Math.max(config.guarantee, registered * buyIn)` into
+       * `guaranteed_prize` after registration — turning however much happened
+       * to be collected into a HOUSE PROMISE. That column is not a display
+       * total: `trg_tournaments_guarantee_affordable` reads it to decide
+       * whether the funding bank can cover the event, and
+       * `fn_apply_prize_guarantee` reads it to top a short pool UP to it. So
+       * a well-attended tournament silently raised its own guarantee to the
+       * amount already in the pool, and a later shortfall would be topped up
+       * to a number nobody promised.
+       *
+       * The guarantee is what the config says and nothing else. The realised
+       * pool is derived from entries wherever it is displayed.
+       */
       const prizePool = Math.max(config.guarantee || 0, registered * config.buyIn);
       await supabase
         .from('tournaments')
         .update({
           current_players: registered,
-          guaranteed_prize: prizePool,
           status: 'REGISTERING',
         })
         .eq('id', tournament.id);
@@ -1559,8 +1602,18 @@ class HorseOrchestrator {
           club_id: this.getNextClubId(),
           name: config.name,
           game_type: dbGameType,
-          variant: 'SNG',
-          ...buyInColumns(config.buyIn),
+          // Lower case: every reader compares lower case (variant === 'satellite',
+          // t.variant = 'spin'), and TournamentRecurringService writes 'sng'.
+          variant: 'sng',
+          // 2026-08-31: never written, so every SNG this path created landed on
+          // the column default 'MTT' (20260308_tournament_schema_sync.sql). A
+          // 6-max Sit & Go typed as a multi-table tournament reads wrong to
+          // every consumer that switches on tournament_type.
+          tournament_type: 'SNG',
+          ...buyInColumns(config.buyIn, {
+            tournamentType: 'SNG',
+            maxPlayers: config.maxPlayers,
+          }),
           guaranteed_prize: null,
           starting_chips: config.startingStack,
           max_players: config.maxPlayers,
@@ -1597,18 +1650,20 @@ class HorseOrchestrator {
         }
       }
 
-      const prizePool = registered * config.buyIn;
+      // An SNG has no guarantee at all — it inserts `guaranteed_prize: null`
+      // — so writing the realised pool here was strictly worse than the MTT
+      // case above: it INVENTED a house promise where the config had made
+      // none. See the note in launch() for what that column actually drives.
       await supabase
         .from('tournaments')
         .update({
           current_players: registered,
-          guaranteed_prize: prizePool,
           status: 'REGISTERING', // DealerPage discovers REGISTERING tournaments and starts them via TournamentEngine
         })
         .eq('id', sng.id);
 
       console.debug(
-        `[Orchestrator] SNG "${config.name}" created: ${sng.id} with ${registered} horses`
+        `[Orchestrator] SNG "${config.name}" created: ${sng.id} with ${registered} horses, pool ${registered * config.buyIn}`
       );
       return { tournamentId: sng.id, registered };
     } catch (err: any) {
@@ -1949,132 +2004,6 @@ class HorseOrchestrator {
       const error = `activateAllHorses error: ${err.message}`;
       this.logError(error);
       return { activated: 0, errors: [error] };
-    }
-  }
-
-  /**
-   * Ensure ALL 100 horses are members of BOTH Shark Club AND Club JAQK.
-   * This enables cross-club union settlement testing — each horse plays in
-   * both clubs and their stats/ledgers are tracked independently per club.
-   */
-  private async ensureHorsesInBothClubs(): Promise<void> {
-    try {
-      // Get all horse profile IDs
-      const { data: horses, error: horsesError } = await supabase
-        .from('profiles')
-        .select('id, username')
-        .eq('is_horse', true)
-        .limit(QUERY_LIMITS.LIST);
-
-      if (horsesError || !horses?.length) {
-        this.logError(`Failed to fetch horses: ${horsesError?.message || 'No horses found'}`);
-        return;
-      }
-
-      console.debug(`[Orchestrator] Ensuring ${horses.length} horses are members of both clubs...`);
-
-      const clubIds = [this.sharkClubId, this.jaqkClubId];
-      let membershipsCreated = 0;
-
-      for (const clubId of clubIds) {
-        // Get existing members for this club
-        const { data: existing, error: existingErr } = await supabase
-          .from('club_members')
-          .select('user_id')
-          .eq('club_id', await resolveClubUUID(clubId));
-
-        /* A FAILED READ IS NOT AN EMPTY CLUB (2026-08-29). Only `data` was
-           destructured, so a failure produced an EMPTY `existingIds` set --
-           i.e. "no horse is in this club" -- and the batch insert below then
-           tried to add every horse in the fleet again. */
-        if (existingErr) {
-          console.error(`[Orchestrator] club_members read failed for ${clubId}:`, existingErr);
-          continue;
-        }
-
-        const existingIds = new Set((existing || []).map((m: any) => m.user_id));
-
-        // Find horses not yet in this club
-        const missing = horses.filter((h) => !existingIds.has(h.id));
-
-        if (missing.length === 0) {
-          console.debug(`[Orchestrator] All horses already in club ${clubId}`);
-          continue;
-        }
-
-        // Batch insert missing memberships
-        const rows = missing.map((h) => ({
-          club_id: clubId,
-          user_id: h.id,
-          role: 'player',
-          status: 'active',
-        }));
-
-        // Insert in batches of 50 to avoid payload limits
-        for (let i = 0; i < rows.length; i += 50) {
-          const batch = rows.slice(i, i + 50);
-          const { error: insertError } = await supabase
-            .from('club_members')
-            .upsert(batch, { onConflict: 'club_id,user_id', ignoreDuplicates: true });
-
-          if (insertError) {
-            // If upsert fails (e.g. no unique constraint), try individual inserts
-            for (const row of batch) {
-              const { error: singleError } = await supabase.from('club_members').insert(row);
-              if (!singleError) membershipsCreated++;
-              // Ignore duplicate key errors silently
-            }
-          } else {
-            membershipsCreated += batch.length;
-          }
-        }
-
-        console.debug(`[Orchestrator] Added ${missing.length} horses to club ${clubId}`);
-      }
-
-      /* Update member counts on both clubs.
-       *
-       * THIS WRITES A SHARED COLUMN, SO IT MUST NOT WRITE A PRIVATE VIEW.
-       * It used a direct `club_members` count, which is RLS-filtered: it returns
-       * how many rows THE VISITING USER may enumerate, not how many members the
-       * club has. This module is imported by UnionDetailPage, a browser page, so
-       * it runs with whatever visibility that visitor happens to have.
-       *
-       * The blast radius is why this matters more than a display bug. It is the
-       * ONLY client-side writer of clubs.member_count, there is NO trigger on
-       * club_members maintaining that column, and the value it writes then feeds:
-       *   - ClubsService.getLiveMemberCount (source B),
-       *   - ClubHomePage's fallback when the live count is unavailable,
-       *   - and the union total, via trg_union_totals_follow_club_counts.
-       * So one visit by a non-member would have overwritten the shared number for
-       * everyone and cascaded it upward. The counts were correct only because the
-       * last person to trigger this could see every row.
-       *
-       * fn_get_club_member_count is SECURITY DEFINER with a pinned search_path,
-       * so what gets stored is the club's number regardless of who triggered it.
-       */
-      for (const clubId of clubIds) {
-        // NOTE: No FK between club_members and profiles — count all members directly.
-        // Horse filtering requires a separate profiles query (future enhancement).
-        const resolvedForCount = await resolveClubUUID(clubId);
-        const { data: trueCount, error: countErr } = await supabase.rpc(
-          'fn_get_club_member_count',
-          { p_club_id: resolvedForCount }
-        );
-
-        // Only write a number we actually got. A dropped request must leave the
-        // stored count alone rather than zeroing a shared column.
-        const next = trueCount == null ? null : Number(trueCount);
-        if (!countErr && next != null && Number.isFinite(next)) {
-          await supabase.from('clubs').update({ member_count: next }).eq('id', clubId);
-        }
-      }
-
-      console.debug(
-        `[Orchestrator] Cross-club membership complete: ${membershipsCreated} new memberships created`
-      );
-    } catch (err: any) {
-      this.logError(`ensureHorsesInBothClubs error: ${err.message}`);
     }
   }
 
@@ -2429,7 +2358,7 @@ class HorseOrchestrator {
       // Load available player profiles
       const { data: availableHorses } = await supabase
         .from('profiles')
-        .select('id, display_name, avatar_url:arena_avatar_url')
+        .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
         .eq('is_horse', true)
         .eq('horse_status', 'available')
         .limit(staleHorses.length);
@@ -2467,7 +2396,7 @@ class HorseOrchestrator {
           masterBus.emit('HORSE_SEATED', {
             tableId: stale.table_id,
             horseId: fresh.id,
-            horseName: fresh.display_name || 'Horse',
+            horseName: playerDisplayName(fresh),
           });
         } catch (err) {
           console.error('[HorseOrchestrator] Error:', err);
@@ -2490,54 +2419,12 @@ class HorseOrchestrator {
     this.errors.push(`${new Date().toISOString()} - ${msg}`);
   }
 
-  /**
-   * Enhancement #10: Track horse fleet performance.
-   * Queries total wins/losses for horse accounts and logs periodic stats.
-   * Emits data via console for admin observability.
-   */
-  private async trackHorsePerformance(): Promise<void> {
-    try {
-      // Count total active horse seats
-      const { count: seatedCount } = await supabase
-        .from('table_seats')
-        .select('id', { count: 'exact', head: true })
-        .not('horse_id', 'is', null)
-        .eq('status', 'active')
-        .is('left_at', null);
-
-      // Count horse wins in recent hands (last 100 hands across all tables)
-      const { data: recentHands } = await supabase
-        .from('hand_results')
-        .select('winner_id, pot_size')
-        .order('created_at', { ascending: false })
-        .limit(100);
-
-      if (recentHands && recentHands.length > 0) {
-        // Look up which winners are horses
-        const winnerIds = [...new Set(recentHands.map((h) => h.winner_id).filter(Boolean))];
-        const { data: horseProfiles } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('is_horse', true)
-          .in('id', winnerIds);
-
-        const horseIdSet = new Set((horseProfiles || []).map((p) => p.id));
-        const horseWins = recentHands.filter((h) => horseIdSet.has(h.winner_id));
-        const totalPotWon = horseWins.reduce((acc, h) => acc + (h.pot_size || 0), 0);
-        const winRate =
-          recentHands.length > 0 ? Math.round((horseWins.length / recentHands.length) * 100) : 0;
-
-        console.debug(
-          `[Orchestrator] Horse Fleet: ${seatedCount || 0} seated, ` +
-            `${horseWins.length}/${recentHands.length} recent wins (${winRate}%), ` +
-            `$${totalPotWon.toLocaleString()} total pots won`
-        );
-      }
-    } catch (err: any) {
-      // Non-critical; silently fail
-      console.debug(`[Orchestrator] Performance tracking skipped: ${err.message}`);
-    }
-  }
+  /* AUDIT 2026-09-01 - DEAD METHOD REMOVED. `trackHorsePerformance()` had no
+     caller anywhere in src/ or server/src/, and its only effect was a
+     console.debug. It also read `hand_results`, a table that does not exist in
+     production, so `recentHands` was always null and the win-rate block inside
+     it could never run. Nothing observable is lost. Horse fleet telemetry, if
+     wanted, reads hand_history (winners jsonb) and needs a caller. */
 }
 
 // Singleton

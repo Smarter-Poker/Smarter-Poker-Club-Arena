@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase';
 import { retryFetch } from '../utils/retryFetch';
 import { masterBus } from '../core/MasterBus';
 import { ClubsService } from '../services/ClubsService';
+import { MembershipService } from '../services/MembershipService';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import SpinActivationPanel from '../components/club/SpinActivationPanel';
@@ -21,7 +22,37 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useIsMounted } from '../hooks/useIsMounted';
 import '../components/common/ButtonSpinner.css';
 import './ClubSettingsPage.css';
+
+/**
+ * The handover picker shows each candidate's current role so the owner is not
+ * choosing from a list of bare names. Title Cased at the source, like every
+ * other label the estate renders.
+ */
+/** The membership states transfer_club_ownership accepts as a recipient. */
+const HANDOVER_ELIGIBLE_STATUSES = new Set(['active', 'approved']);
+
+function roleLabelForHandover(role: string): string {
+  switch (role) {
+    case 'owner':
+      return 'Owner';
+    case 'co_owner':
+      return 'Co Owner';
+    case 'admin':
+      return 'Admin';
+    case 'manager':
+      return 'Manager';
+    case 'super_agent':
+      return 'Super Agent';
+    case 'agent':
+      return 'Agent';
+    case 'sub_agent':
+      return 'Sub Agent';
+    default:
+      return 'Player';
+  }
+}
 import { reportError } from '../utils/errorReporter';
+import { SHARK_CLUB_ID } from '../lib/constants';
 import {
   MAX_RAKE_CAP_BB,
   MAX_RAKE_PERCENT,
@@ -44,10 +75,16 @@ import {
 } from '../utils/clubSettingsRules';
 
 const DESCRIPTION_MAX = 500;
+const TAGLINE_MAX = 72;
+/* Dan 2026-09-01: the club's custom / day's message, printed at the top of the
+   lobby rail. Same 240-character cap `fn_set_club_lobby_message` enforces. */
+const LOBBY_MESSAGE_MAX = 240;
 
 interface ClubSettings {
   name: string;
   description: string;
+  tagline: string;
+  lobby_message: string;
   is_public: boolean;
   requires_approval: boolean;
   default_rake_percent: number;
@@ -72,6 +109,8 @@ export default function ClubSettingsPage() {
   const [settings, setSettings] = useState<ClubSettings>({
     name: '',
     description: '',
+    tagline: '',
+    lobby_message: '',
     is_public: true,
     requires_approval: false,
     default_rake_percent: RAKE_INHERIT,
@@ -122,6 +161,8 @@ export default function ClubSettingsPage() {
     const orig = originalSettings.current;
     if (settings.name !== orig.name) changes.push('Name');
     if (settings.description !== orig.description) changes.push('Description');
+    if (settings.tagline !== orig.tagline) changes.push('Tag Line');
+    if (settings.lobby_message !== orig.lobby_message) changes.push('Club Message');
     if (settings.is_public !== orig.is_public) changes.push('Public');
     if (settings.requires_approval !== orig.requires_approval) changes.push('Approval');
     if (settings.default_rake_percent !== orig.default_rake_percent) changes.push('Rake %');
@@ -150,7 +191,12 @@ export default function ClubSettingsPage() {
   // name validation at all — a blank name saved happily, leaving a nameless
   // club whose delete confirmation was armed by an empty box.
   const nameError = validateClubName(settings.name, sanitizeInput(settings.name));
-  const formError = nameError || buyinError;
+  const taglineError =
+    /all fish of all shapes and sizes are welcome/i.test(settings.tagline) &&
+    clubNumericId !== SHARK_CLUB_ID
+      ? 'That Tag Line Belongs To Shark Club'
+      : '';
+  const formError = nameError || taglineError || buyinError;
 
   // The loaders below run from timers, realtime callbacks and bus events. They
   // close over whatever `hasUnsavedChanges` was when the effect was created, so
@@ -166,6 +212,29 @@ export default function ClubSettingsPage() {
   const [serverChanged, setServerChanged] = useState(false);
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // HANDING THE CLUB OVER
+  // ───────────────────────────────────────────────────────────────────────────
+  // transfer_club_ownership has always permitted the owner to do this - it
+  // checks `v_actor <> v_old` and refuses anybody else - but the only screen
+  // that called it was AdminDashboardPage, which a club owner cannot open. So
+  // the one person the rule was written for had to ask a platform admin to do
+  // it for them. This is that screen.
+  //
+  // The RPC does the rest: it refuses a recipient who is not an active member,
+  // demotes the outgoing owner to admin, writes both role_changes rows and the
+  // audit row, and tells both people. Nothing here re-implements any of that.
+  const [showHandoverModal, setShowHandoverModal] = useState(false);
+  const [handoverCandidates, setHandoverCandidates] = useState<
+    { userId: string; displayName: string; role: string }[]
+  >([]);
+  const [handoverLoading, setHandoverLoading] = useState(false);
+  const [handoverTarget, setHandoverTarget] = useState('');
+  const [handoverConfirm, setHandoverConfirm] = useState('');
+  const [isHandingOver, setIsHandingOver] = useState(false);
+  const [handoverError, setHandoverError] = useState<string | null>(null);
+  const handoverTriggerRef = useRef<HTMLButtonElement | null>(null);
   // What a delete would actually destroy. tables and club_wallets are both
   // ON DELETE CASCADE from clubs, so the modal must show real numbers and
   // refuse while anything is live.
@@ -218,6 +287,8 @@ export default function ClubSettingsPage() {
   // React Router reuses the component when only the clubId param changes.
   useEffect(() => {
     setSaving(false);
+    setClubNumericId(null);
+    setClubCode(null);
     setIsOwner(false);
     setUserRole('player');
     setShowDeleteModal(false);
@@ -309,7 +380,7 @@ export default function ClubSettingsPage() {
       // Leaving the origin is already covered by the beforeunload handler.
       if (dest.origin !== window.location.origin) return;
       if (dest.pathname === window.location.pathname) return; // same page
-      if (!window.confirm('You have unsaved settings changes. Leave this page and discard them?')) {
+      if (!window.confirm('You Have Unsaved Settings Changes. Leave This Page And Discard Them?')) {
         e.preventDefault();
         e.stopPropagation();
       }
@@ -350,6 +421,105 @@ export default function ClubSettingsPage() {
    * on `showDeleteModal` means the cleanup runs when the modal actually closes,
    * which is the only time returning focus is correct.
    */
+  /**
+   * Who may receive the club. The RPC's own rule is "an active member of this
+   * club", so this asks for exactly that set and nothing cleverer - a list on
+   * screen that disagrees with the write behind it is how somebody ends up
+   * picking a name and being told no.
+   */
+  const loadHandoverCandidates = async () => {
+    if (!clubId) return;
+    setHandoverLoading(true);
+    setHandoverError(null);
+    try {
+      const members = await MembershipService.getClubMembers(clubId);
+      const eligible = members
+        .filter((m) => m.userId !== user?.id)
+        // The server's rule is status IN ('active','approved'). MemberStatus does
+        // not list 'approved', but club_members does hold it, so narrowing to the
+        // TS union here would hide real members from a list whose whole job is to
+        // agree with the write behind it. Compared as strings, deliberately.
+        .filter((m) => HANDOVER_ELIGIBLE_STATUSES.has(m.status as string))
+        .map((m) => ({
+          userId: m.userId,
+          displayName: m.displayName || 'Unnamed Member',
+          role: m.role as string,
+        }))
+        .sort((a, b) => a.displayName.localeCompare(b.displayName));
+      if (!isMountedRef.current) return;
+      setHandoverCandidates(eligible);
+    } catch (e) {
+      reportError(e, 'ClubSettingsPage.loadHandoverCandidates');
+      if (isMountedRef.current) setHandoverError('Could Not Load The Member List. Try Again.');
+    } finally {
+      if (isMountedRef.current) setHandoverLoading(false);
+    }
+  };
+
+  /**
+   * The write. Everything that makes this safe lives in the RPC, so the only
+   * job here is to not swallow its reason: it refuses a non-member, a recipient
+   * who already owns the club, and any caller who is not the current owner, and
+   * each of those refusals is a sentence worth showing.
+   */
+  const handOverClub = async () => {
+    if (!clubId || !handoverTarget || isHandingOver) return;
+    setIsHandingOver(true);
+    setHandoverError(null);
+    try {
+      const uuid = await resolveClubUUID(clubId);
+      const { error } = await supabase.rpc('transfer_club_ownership', {
+        p_club_id: uuid,
+        p_new_owner_id: handoverTarget,
+      });
+      if (error) throw error;
+
+      const recipient =
+        handoverCandidates.find((c) => c.userId === handoverTarget)?.displayName ?? 'The New Owner';
+      toast.success(`${savedClubName} Now Belongs To ${recipient}. You Are An Admin Of It.`);
+      masterBus.emit('CLUB_UPDATED', { clubId: uuid });
+      masterBus.emit('MEMBER_ROLE_CHANGED', {
+        clubId: uuid,
+        userId: handoverTarget,
+        newRole: 'owner',
+        previousRole: 'admin',
+      });
+
+      // Every permission on this page just changed hands. Reloading is the
+      // honest response: staying put would leave owner-only controls on screen
+      // for somebody who is now an admin, and every one of them would fail.
+      setShowHandoverModal(false);
+      navigate(`/clubs/${clubId}`, { replace: true });
+    } catch (e) {
+      reportError(e, 'ClubSettingsPage.handOverClub');
+      if (isMountedRef.current) {
+        setHandoverError(
+          e instanceof Error && e.message
+            ? e.message
+            : 'The Handover Was Refused. Nothing Was Changed.'
+        );
+      }
+    } finally {
+      if (isMountedRef.current) setIsHandingOver(false);
+    }
+  };
+
+  // Escape closes the handover dialog, and focus goes back to the control that
+  // opened it - the same contract the delete dialog got on 2026-08-25.
+  const isHandingOverRef = useRef(isHandingOver);
+  isHandingOverRef.current = isHandingOver;
+  useEffect(() => {
+    if (!showHandoverModal) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isHandingOverRef.current) setShowHandoverModal(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      handoverTriggerRef.current?.focus();
+    };
+  }, [showHandoverModal]);
+
   const isDeletingRef = useRef(isDeleting);
   isDeletingRef.current = isDeleting;
   useEffect(() => {
@@ -522,7 +692,7 @@ export default function ClubSettingsPage() {
           supabase
             .from('clubs')
             .select(
-              'id, owner_id, club_id, logo_url, name, description, is_public, requires_approval, default_rake_percent, rake_cap, bbj_rake_enabled, spins_enabled, spins_preseed_amount, spins_wallet_funding, union_id'
+              'id, owner_id, club_id, logo_url, name, description, tagline, lobby_message, is_public, requires_approval, default_rake_percent, rake_cap, bbj_rake_enabled, spins_enabled, spins_preseed_amount, spins_wallet_funding, union_id'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -543,6 +713,8 @@ export default function ClubSettingsPage() {
         const fromServer: ClubSettings = {
           name: data.name || '',
           description: data.description || '',
+          tagline: data.tagline || '',
+          lobby_message: data.lobby_message || '',
           is_public: data.is_public ?? true,
           requires_approval: data.requires_approval ?? false,
           default_rake_percent: data.default_rake_percent ?? RAKE_INHERIT,
@@ -559,6 +731,7 @@ export default function ClubSettingsPage() {
         // and every one of them used to call setSettings() unconditionally.
         // The page even renders an "N unsaved changes" banner while doing it.
         setClubCode(typeof data.club_id === 'number' ? data.club_id : null);
+        setClubNumericId(typeof data.club_id === 'number' ? data.club_id : null);
         setCurrentLogoUrl(data.logo_url || null);
         const wouldDiscardEdits = !opts?.force && hasUnsavedChangesRef.current;
         if (wouldDiscardEdits) {
@@ -639,6 +812,11 @@ export default function ClubSettingsPage() {
       ...settings,
       name: sanitizeInput(settings.name),
       description: sanitizeInput(settings.description),
+      tagline: sanitizeInput(settings.tagline).slice(0, TAGLINE_MAX),
+      lobby_message: sanitizeInput(settings.lobby_message)
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, LOBBY_MESSAGE_MAX),
     };
     setSaving(true);
     try {
@@ -685,6 +863,16 @@ export default function ClubSettingsPage() {
               ...(newLogoUrl ? { logo_url: newLogoUrl } : {}),
               name: toSave.name,
               description: toSave.description,
+              tagline: toSave.tagline || null,
+              /* The lobby's own inline editor writes this through
+                 fn_set_club_lobby_message, which is what lets a co-owner or an
+                 admin set it too. Here the owner is already updating the row
+                 directly under RLS, so the column rides along with the rest of
+                 Basic Information - and carries its own timestamp, exactly as
+                 the RPC does, so "how fresh is the day's message" cannot depend
+                 on which surface wrote it. */
+              lobby_message: toSave.lobby_message || null,
+              lobby_message_updated_at: toSave.lobby_message ? new Date().toISOString() : null,
               is_public: toSave.is_public,
               requires_approval: toSave.requires_approval,
               default_rake_percent: toSave.default_rake_percent,
@@ -1195,6 +1383,45 @@ export default function ClubSettingsPage() {
             </small>
           </div>
           <div className="form-group">
+            <label htmlFor="club-tagline">Club Tag Line</label>
+            <input
+              id="club-tagline"
+              type="text"
+              value={settings.tagline}
+              onChange={(e) => updateSetting('tagline', e.target.value)}
+              disabled={!isOwner}
+              maxLength={TAGLINE_MAX}
+              aria-invalid={Boolean(taglineError)}
+              aria-describedby="club-tagline-hint"
+            />
+            <small id="club-tagline-hint" className="form-hint">
+              {taglineError ||
+                `${settings.tagline.length}/${TAGLINE_MAX} · Write An Original Line For This Club`}
+            </small>
+          </div>
+          {/* Dan 2026-09-01: "that should be the 'custom clickable message' for
+              the club owners to put the days message, or something custom".
+              The lobby rail shows this above the club card and opens it in
+              full when tapped; club staff can also write it from there. This
+              is the same field, where an owner already manages the club. */}
+          <div className="form-group">
+            <label htmlFor="club-lobby-message">Club Message</label>
+            <textarea
+              id="club-lobby-message"
+              value={settings.lobby_message}
+              onChange={(e) => updateSetting('lobby_message', e.target.value)}
+              rows={2}
+              disabled={!isOwner}
+              maxLength={LOBBY_MESSAGE_MAX}
+              placeholder="Tonight At 8, Double Rakeback On Every Nine Handed Table"
+              aria-describedby="club-lobby-message-hint"
+            />
+            <small id="club-lobby-message-hint" className="form-hint">
+              {settings.lobby_message.length}/{LOBBY_MESSAGE_MAX} &middot; Shown At The Top Of The
+              Club Lobby. Leave It Empty To Fall Back To The Tag Line
+            </small>
+          </div>
+          <div className="form-group">
             <label htmlFor="club-description">Description</label>
             <textarea
               id="club-description"
@@ -1228,7 +1455,7 @@ export default function ClubSettingsPage() {
                   className="btn btn-secondary"
                   style={{ padding: '4px 12px', fontSize: '0.75rem' }}
                   onClick={copyClubCode}
-                  aria-label="Copy club code"
+                  aria-label="Copy Club Code"
                 >
                   Copy
                 </button>
@@ -1244,7 +1471,7 @@ export default function ClubSettingsPage() {
               {pendingLogo?.preview || currentLogoUrl ? (
                 <img
                   src={pendingLogo?.preview || currentLogoUrl || undefined}
-                  alt="Club logo"
+                  alt="Club Logo"
                   style={{
                     width: 56,
                     height: 56,
@@ -1398,7 +1625,7 @@ export default function ClubSettingsPage() {
               <input
                 id="club-rake-percent"
                 type="number"
-                placeholder="Use house schedule"
+                placeholder="Use House Schedule"
                 /* DECIMALS HAVE TO BE TYPEABLE (Dan 2026-08-25).
                  This clamped on every keystroke against a CONTROLLED value, so
                  typing "0.5" went "0" -> 0, then "0." -> parseFloat -> 0 -> the
@@ -1429,8 +1656,8 @@ export default function ClubSettingsPage() {
               <small className="form-hint">
                 Leave Blank To Use The House Schedule (10%). A Club Can Take Less, Never More.{' '}
                 {settings.default_rake_percent < 0
-                  ? 'Currently: house schedule.'
-                  : `Currently: ${settings.default_rake_percent}% (house caps still apply).`}
+                  ? 'Currently: House Schedule.'
+                  : `Currently: ${settings.default_rake_percent}% (House Caps Still Apply).`}
               </small>
             </div>
             <div className="form-group">
@@ -1438,7 +1665,7 @@ export default function ClubSettingsPage() {
               <input
                 id="club-rake-cap"
                 type="number"
-                placeholder="Use house schedule"
+                placeholder="Use House Schedule"
                 /* Same shape as the rake field above: raw while typing, clamp on
                  blur, so "1.5" cannot be read as 15. */
                 value={rakeCapText}
@@ -1463,7 +1690,7 @@ export default function ClubSettingsPage() {
               <small className="form-hint">
                 Most That Can Be Raked From One Pot, In Big Blinds. Blank Uses The House Cap For
                 Each Stake ($3-$20 Depending On Blinds).{' '}
-                {settings.rake_cap < 0 ? 'Currently: house cap.' : capPreview}
+                {settings.rake_cap < 0 ? 'Currently: House Cap.' : capPreview}
               </small>
             </div>
             {/* 2026-08-18: the "Time Bank (seconds)" field was removed. It
@@ -1523,6 +1750,35 @@ export default function ClubSettingsPage() {
           </section>
         )}
 
+        {/* Ownership - Owner Only */}
+        {isOwner && (
+          <section className="settings-section handover-section">
+            <h3>Ownership</h3>
+            <div className="danger-item">
+              <div className="danger-info">
+                <span className="danger-label">Hand Over This Club</span>
+                <span className="danger-desc">
+                  Another Active Member Becomes The Owner And You Become An Admin. Only You Can Do
+                  This, And Only The New Owner Can Undo It.
+                </span>
+              </div>
+              <button
+                ref={handoverTriggerRef}
+                className="btn btn-secondary"
+                onClick={() => {
+                  setHandoverTarget('');
+                  setHandoverConfirm('');
+                  setHandoverError(null);
+                  setShowHandoverModal(true);
+                  void loadHandoverCandidates();
+                }}
+              >
+                Hand Over Club
+              </button>
+            </div>
+          </section>
+        )}
+
         {/* Danger Zone - Owner Only */}
         {isOwner && (
           <section className="settings-section danger-zone">
@@ -1557,7 +1813,7 @@ export default function ClubSettingsPage() {
                while the tooltip stayed empty, because there ARE changes - so
                the owner got no explanation at all. The unsaved bar already
                does it in this order. */
-            title={formError || (hasUnsavedChanges ? undefined : 'No changes to save')}
+            title={formError || (hasUnsavedChanges ? undefined : 'No Changes To Save')}
           >
             {saving ? (
               <>
@@ -1569,6 +1825,116 @@ export default function ClubSettingsPage() {
           </button>
         )}
       </div>
+
+      {/* Handover Confirmation Modal */}
+      {showHandoverModal && (
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={() => !isHandingOver && setShowHandoverModal(false)}
+        >
+          <div
+            className="modal-content handover-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="handover-club-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="handover-club-title">Hand Over {savedClubName}</h3>
+            <p>
+              The Member You Choose Becomes The Owner Of <strong>{savedClubName}</strong> And Holds
+              Every Permission In It. You Become An <strong>Admin</strong>. Only The New Owner Can
+              Hand It Back.
+            </p>
+
+            {handoverLoading && <p className="delete-impact">Loading Members...</p>}
+
+            {!handoverLoading && handoverCandidates.length === 0 && (
+              <p className="delete-impact">
+                This Club Has No Other Active Members, So There Is Nobody To Hand It To.
+              </p>
+            )}
+
+            {!handoverLoading && handoverCandidates.length > 0 && (
+              <>
+                <label className="handover-label" htmlFor="handover-target">
+                  New Owner
+                </label>
+                <select
+                  id="handover-target"
+                  className="handover-select"
+                  value={handoverTarget}
+                  onChange={(e) => setHandoverTarget(e.target.value)}
+                  disabled={isHandingOver}
+                >
+                  <option value="">Choose A Member...</option>
+                  {handoverCandidates.map((c) => (
+                    <option key={c.userId} value={c.userId}>
+                      {c.displayName} ({roleLabelForHandover(c.role)})
+                    </option>
+                  ))}
+                </select>
+
+                {/* Typing the name is the same guard the delete dialog uses. A
+                    handover is not destructive, but it is the one action on
+                    this page the owner cannot reverse alone. */}
+                <label className="handover-label" htmlFor="handover-confirm">
+                  Type <strong>{savedClubName}</strong> To Confirm
+                </label>
+                <input
+                  id="handover-confirm"
+                  className="handover-input"
+                  type="text"
+                  value={handoverConfirm}
+                  onChange={(e) => setHandoverConfirm(e.target.value)}
+                  disabled={isHandingOver}
+                  autoComplete="off"
+                />
+              </>
+            )}
+
+            {handoverError && (
+              <p className="handover-error" role="alert">
+                {handoverError}
+              </p>
+            )}
+
+            <div className="modal-actions">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setShowHandoverModal(false)}
+                disabled={isHandingOver}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={handOverClub}
+                disabled={
+                  isHandingOver ||
+                  !handoverTarget ||
+                  handoverConfirm.trim() !== savedClubName.trim()
+                }
+                title={
+                  !handoverTarget
+                    ? 'Choose A Member First'
+                    : handoverConfirm.trim() !== savedClubName.trim()
+                      ? 'Type The Club Name To Confirm'
+                      : undefined
+                }
+              >
+                {isHandingOver ? (
+                  <>
+                    <span className="btn-spinner" /> Handing Over...
+                  </>
+                ) : (
+                  'Hand Over Club'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       {/* Dialog semantics (Dan 2026-08-25). The overlay was an interactive div
@@ -1600,8 +1966,8 @@ export default function ClubSettingsPage() {
                 <li>
                   Every Table In This Club
                   {deleteImpact.runningTables > 0
-                    ? `, including ${deleteImpact.runningTables} currently running`
-                    : ' (none are running)'}
+                    ? `, Including ${deleteImpact.runningTables} Currently Running`
+                    : ' (None Are Running)'}
                 </li>
                 <li>Club Wallets Holding {deleteImpact.walletChips.toLocaleString()} Chips</li>
               </ul>

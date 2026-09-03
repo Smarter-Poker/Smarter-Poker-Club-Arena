@@ -3,18 +3,22 @@
   inset: 0;
   z-index: 9999;
   display: grid;
-  place-items: center;
-  padding: 20px;
+  place-items: stretch;
+  padding: 0;
+  overflow: hidden;
+  overscroll-behavior: contain;
   background: rgba(0, 2, 5, 0.92);
   backdrop-filter: blur(14px) saturate(0.8);
   animation: locatorFade 180ms ease-out;
 }
 .modalContainer {
-  width: min(760px, 100%);
-  max-height: min(860px, 92vh);
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  max-height: none;
   overflow: hidden;
-  border: 1px solid rgba(177, 202, 218, 0.5);
-  border-radius: 6px;
+  border: 0;
+  border-radius: 0;
   background: #05080c;
   box-shadow:
     0 30px 90px #000,
@@ -24,10 +28,28 @@
 }
 .modalContent {
   position: relative;
-  max-height: min(860px, 92vh);
-  overflow-y: auto;
-  padding: 0 34px 28px;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
   scrollbar-color: #1b3b4d #05080c;
+}
+.scrollBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0 clamp(32px, 6vw, 96px) 28px;
+}
+.pageFooter {
+  flex: 0 0 auto;
+  padding: 12px clamp(32px, 6vw, 96px) max(12px, env(safe-area-inset-bottom));
+  border-top: 1px solid rgba(174, 200, 217, 0.22);
+  background: linear-gradient(180deg, rgba(5, 8, 12, 0.97), #020406);
+  box-shadow: 0 -14px 28px rgba(0, 0, 0, 0.32);
 }
 .modalContent::before {
   content: '';
@@ -83,6 +105,12 @@
   border-radius: 3px;
   background: #050b10;
   color: #8799a4;
+}
+.privacyPanel p {
+  margin: 0;
+  color: #8799a4;
+  font-size: 10px;
+  line-height: 1.55;
 }
 .privacyPanel label {
   display: flex;
@@ -269,9 +297,15 @@
   transform: translateY(-50%);
   color: #42bfff;
 }
+
 .suggestSpinner {
-  display: inline-block;
-  animation: locatorSpin 1s linear infinite;
+  display: block;
+  width: 0.95rem;
+  height: 0.95rem;
+  border: 2px solid rgb(255 255 255 / 28%);
+  border-top-color: var(--club-entry-cyan, #45c8ff);
+  border-radius: 50%;
+  animation: locatorSpin 0.8s linear infinite;
 }
 .sortControls {
   display: flex;
@@ -425,12 +459,225 @@
   color: #697c88;
   font-size: 10px;
 }
+.accountAccess {
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(95, 196, 241, 0.16);
+}
+.accountAccessToggle {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(70, 166, 211, 0.34);
+  border-radius: 2px;
+  background: #07131a;
+  color: #72c7ef;
+  cursor: pointer;
+  font: 600 9px/1 var(--font-mono, monospace);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.accountGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 7px;
+}
+.accountCard {
+  padding: 10px;
+  border: 1px solid rgba(171, 137, 72, 0.32);
+  border-radius: 2px;
+  background: linear-gradient(135deg, rgba(151, 111, 34, 0.08), transparent), #070a0d;
+}
+.accountCard header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 9px;
+}
+.accountCard header strong {
+  color: #e6d5ad;
+  font-size: 11px;
+}
+.accountCard header span {
+  color: #987f55;
+  font: 600 7px/1.2 var(--font-mono, monospace);
+  text-align: right;
+  text-transform: uppercase;
+}
+.accountCard dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0;
+}
+.accountCard dl div {
+  min-width: 0;
+}
+.accountCard dt {
+  color: #697984;
+  font: 600 7px/1 var(--font-mono, monospace);
+  text-transform: uppercase;
+}
+.accountCard dd {
+  overflow: hidden;
+  margin: 4px 0 0;
+  color: #d9e5eb;
+  font: 600 10px/1 var(--font-mono, monospace);
+  text-overflow: ellipsis;
+}
+/* --- Club and union affiliations --- */
+.affiliations {
+  display: grid;
+  gap: 8px;
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(139, 170, 188, 0.13);
+}
+.affiliationGroup {
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  align-items: start;
+  gap: 8px;
+}
+.affiliationLabel {
+  padding-top: 4px;
+  color: #5c6d78;
+  font: 600 8px/1 var(--font-mono, monospace);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+.affiliationList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.affiliationChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px;
+  border: 1px solid #24343d;
+  border-radius: 999px;
+  background: #070d12;
+  color: #b3c5cf;
+  font: 500 10px/1.2 var(--font-sans, sans-serif);
+  text-align: left;
+}
+button.affiliationChip {
+  cursor: pointer;
+}
+.affiliationName {
+  overflow: hidden;
+  max-width: 22ch;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.affiliationAction {
+  color: #5f7684;
+  font: 600 8px/1 var(--font-mono, monospace);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+/* Membership state is carried by colour AND by the action word, never colour alone. */
+.affiliationChip[data-action='member'] {
+  border-color: #1f6b4a;
+  background: #061410;
+}
+.affiliationChip[data-action='member'] .affiliationAction {
+  color: #58c795;
+}
+.affiliationChip[data-action='pending'] {
+  border-color: #6d5620;
+  background: #120e05;
+}
+.affiliationChip[data-action='pending'] .affiliationAction {
+  color: #d3aa54;
+}
+.affiliationChip[data-action='join'],
+.affiliationChip[data-action='request_join'] {
+  border-color: #1c6a94;
+  background: #05131b;
+}
+.affiliationChip[data-action='join'] .affiliationAction,
+.affiliationChip[data-action='request_join'] .affiliationAction {
+  color: #6cc9f5;
+}
+.affiliationChip[data-action='union'] {
+  border-color: #4a3a6d;
+  background: #0b0812;
+}
+.affiliationChip[data-action='union'] .affiliationAction {
+  color: #a08ed2;
+}
+.affiliationChip[data-action='unavailable'] {
+  border-color: #3d2529;
+  color: #7c6165;
+}
+button.affiliationChip:active {
+  border-color: #2fa4dc;
+}
+button.affiliationChip:focus-visible {
+  outline: 2px solid #55c8ff;
+  outline-offset: 2px;
+}
+.affiliationHidden {
+  margin: 0;
+  color: #5c6d78;
+  font: 500 9px/1.3 var(--font-mono, monospace);
+}
+
 .tablesList {
   display: grid;
   gap: 6px;
   margin-top: 12px;
   padding-top: 11px;
   border-top: 1px solid rgba(139, 170, 188, 0.13);
+}
+.tablesHeading {
+  color: #5faed5;
+  font: 600 8px/1 var(--font-mono, monospace);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+.tableKind {
+  color: #6f8794;
+  font: 700 8px/1 var(--font-mono, monospace);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+.tableKind[data-kind='tournament'] {
+  color: #d9ae5c;
+}
+.tableKind[data-kind='cash'] {
+  color: #5ec392;
+}
+/* A locked game still shows what it is and how to get in — it is never hidden. */
+.tableCard[data-locked] {
+  border-style: dashed;
+  border-color: rgba(119, 153, 173, 0.34);
+  background: #06090d;
+}
+.tableGateNote {
+  max-width: 52ch;
+  color: #93a7b3;
+  font: 500 9px/1.45 var(--font-sans, sans-serif);
+  white-space: normal;
+}
+.watchButton[data-action='join'],
+.watchButton[data-action='request_join'] {
+  color: #f0c169;
+}
+.watchButton[data-action='pending'] {
+  color: #9d8a5f;
+}
+.watchButton[data-action='observers_restricted'],
+.watchButton[data-action='unavailable'] {
+  color: #7d8a92;
 }
 .tableCard {
   width: 100%;
@@ -490,24 +737,36 @@
   opacity: 0.5;
   cursor: wait;
 }
+/*
+ * The locator has no corner X and an inert backdrop, so this is the only pointer
+ * route out. It is deliberately quiet - borderless, low-contrast, small - but it
+ * still spans the footer, clears the 44px touch target, and lifts to readable
+ * contrast on press and keyboard focus, so anyone who goes looking for it finds it.
+ * No :hover rule: Club Arena forbids hover styling outright.
+ */
 .closeButton {
   width: 100%;
   min-height: 44px;
-  border: 1px solid rgba(139, 169, 187, 0.24);
+  border: 0;
   border-radius: 3px;
-  background: #090e13;
-  color: #81939f;
+  background: transparent;
+  color: #4a5862;
   cursor: pointer;
   font:
-    600 11px/1 'Rajdhani',
+    600 10px/1 'Rajdhani',
     sans-serif;
-  letter-spacing: 0.13em;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
+  transition: color 160ms ease;
+}
+.closeButton:active {
+  color: #b6c8d3;
 }
 .searchButton:focus-visible,
 .sortBtn:focus-visible,
 .privacyButton:focus-visible,
 .playerHeader:focus-visible,
+.accountAccessToggle:focus-visible,
 .loadMoreButton:focus-visible,
 .tableCard:focus-visible,
 .closeButton:focus-visible {
@@ -538,10 +797,13 @@
 }
 @media (max-width: 620px) {
   .overlay {
-    padding: 10px;
+    padding: 0;
   }
-  .modalContent {
+  .scrollBody {
     padding: 0 18px 20px;
+  }
+  .pageFooter {
+    padding-inline: 18px;
   }
   .machineHeader {
     min-height: 128px;
@@ -579,6 +841,28 @@
   }
   .resultsArea {
     max-height: 43vh;
+  }
+  .accountGrid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-height: 560px) {
+  .overlay {
+    padding: 0;
+  }
+  .modalContainer,
+  .modalContent {
+    height: 100dvh;
+    max-height: none;
+  }
+  .machineHeader {
+    min-height: 118px;
+    margin-bottom: 14px;
+    padding-top: 14px;
+    padding-bottom: 14px;
+  }
+  .resultsArea {
+    max-height: none;
   }
 }
 @media (prefers-reduced-motion: reduce) {

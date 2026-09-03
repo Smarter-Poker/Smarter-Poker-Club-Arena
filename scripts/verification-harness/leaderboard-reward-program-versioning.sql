@@ -22,6 +22,20 @@ DECLARE
   v_monthly_next date;
   v_rejected boolean;
 BEGIN
+  IF public.fn_leaderboard_prizes_are_valid('[{"rank":1,"amount":null}]'::jsonb)
+     OR public.fn_leaderboard_prizes_are_valid('[{"rank":null,"amount":1}]'::jsonb)
+     OR public.fn_leaderboard_prizes_are_valid('[{"rank":1,"amount":1,"memo":"x"}]'::jsonb) THEN
+    RAISE EXCEPTION 'FAIL: hostile prize JSON passed validation';
+  END IF;
+  IF has_table_privilege('authenticated', 'public.club_leaderboard_settings', 'INSERT')
+     OR has_table_privilege('authenticated', 'public.club_leaderboard_settings', 'UPDATE')
+     OR has_table_privilege('authenticated', 'public.club_leaderboard_settings', 'DELETE')
+     OR has_table_privilege('authenticated', 'public.leaderboard_reward_program_versions', 'INSERT')
+     OR has_table_privilege('authenticated', 'public.leaderboard_reward_program_versions', 'UPDATE')
+     OR has_table_privilege('authenticated', 'public.leaderboard_reward_program_versions', 'DELETE') THEN
+    RAISE EXCEPTION 'FAIL: browser role retained a direct leaderboard settings write grant';
+  END IF;
+
   SELECT club.id, union_row.id, union_row.owner_id
     INTO v_club_id, v_union_id, v_owner_id
     FROM public.clubs club
@@ -66,6 +80,20 @@ BEGIN
      OR (SELECT count(*) FROM public.leaderboard_reward_program_versions
           WHERE club_id = v_club_id AND operation_id = v_operation_id) <> 1 THEN
     RAISE EXCEPTION 'FAIL: publication retry was not idempotent';
+  END IF;
+
+  v_rejected := false;
+  BEGIN
+    PERFORM public.fn_save_leaderboard_reward_setup(
+      v_club_id, true, 'roi',
+      '[{"rank":1,"amount":99}]'::jsonb,
+      '[{"rank":1,"amount":299}]'::jsonb,
+      'custom', v_expected, v_operation_id
+    );
+  EXCEPTION WHEN invalid_parameter_value THEN v_rejected := true;
+  END;
+  IF NOT v_rejected THEN
+    RAISE EXCEPTION 'FAIL: one publication retry key accepted a different intent';
   END IF;
 
   v_current_plan := public.fn_get_leaderboard_reward_plan(v_club_id, 'weekly', v_weekly_start);
@@ -132,8 +160,63 @@ BEGIN
   END;
   IF NOT v_rejected THEN RAISE EXCEPTION 'FAIL: unauthorized publication was accepted'; END IF;
 
-  RAISE NOTICE 'PASS: version, exact retry, canonical boundary, immutability and authority contracts';
+  RAISE NOTICE 'PASS: validation, grants, version, exact retry, canonical boundary, immutability and union authority contracts';
 END;
 $probe$;
+
+DO $standalone$
+DECLARE
+  v_club_id uuid;
+  v_owner_id uuid;
+  v_expected integer;
+  v_saved jsonb;
+BEGIN
+  SELECT club.id, club.owner_id
+    INTO v_club_id, v_owner_id
+    FROM public.clubs club
+   WHERE COALESCE(club.is_union, false) = false
+     AND club.union_id IS NULL
+     AND club.owner_id IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM public.union_clubs membership WHERE membership.club_id = club.id
+     )
+  ORDER BY club.created_at
+  LIMIT 1;
+  IF v_club_id IS NULL THEN
+    -- Production may legitimately contain only union-affiliated clubs. Create
+    -- the missing shape inside this transaction instead of skipping coverage;
+    -- the file's final ROLLBACK removes the club and every trigger side effect.
+    SELECT club.owner_id INTO v_owner_id
+      FROM public.clubs club
+     WHERE club.owner_id IS NOT NULL
+     ORDER BY club.created_at
+     LIMIT 1;
+    IF v_owner_id IS NULL THEN RAISE EXCEPTION 'FAIL: no owner for temporary fixture'; END IF;
+    PERFORM set_config('request.jwt.claim.sub', v_owner_id::text, true);
+    PERFORM set_config('request.jwt.claim.role', 'authenticated', true);
+    INSERT INTO public.clubs (id, name, owner_id, club_id, is_union, union_id, promo_balance)
+    SELECT gen_random_uuid(), 'Phase 2 Standalone Probe ' || gen_random_uuid()::text,
+           v_owner_id, COALESCE(max(club.club_id), 10000) + 1, false, NULL, 0
+      FROM public.clubs club
+    RETURNING id INTO v_club_id;
+  END IF;
+  SELECT COALESCE(max(program.version), 0) INTO v_expected
+    FROM public.leaderboard_reward_program_versions program
+   WHERE program.club_id = v_club_id;
+  PERFORM set_config('request.jwt.claim.sub', v_owner_id::text, true);
+  PERFORM set_config('request.jwt.claim.role', 'authenticated', true);
+
+  v_saved := public.fn_save_leaderboard_reward_setup(
+    v_club_id, false, 'profit', '[]'::jsonb, '[]'::jsonb,
+    'balanced', v_expected, gen_random_uuid()
+  );
+  IF v_saved ->> 'funding_owner_type' <> 'club'
+     OR v_saved ->> 'funding_source' <> 'club_promo_balance'
+     OR (v_saved ->> 'program_version')::integer <> v_expected + 1 THEN
+    RAISE EXCEPTION 'FAIL: standalone club funding authority contract';
+  END IF;
+  RAISE NOTICE 'PASS: standalone club promo-wallet authority contract';
+END;
+$standalone$;
 
 ROLLBACK;

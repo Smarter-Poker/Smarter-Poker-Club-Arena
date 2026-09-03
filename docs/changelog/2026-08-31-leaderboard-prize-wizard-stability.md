@@ -17,6 +17,11 @@ links now snapshot their authorized setup before opening the dialog. A real
 sign-out remains protected by the route guard and every publication attempt is
 still re-authorized by the server.
 
+The wizard is also rendered into the document-level modal layer. This keeps it
+outside the leaderboard page's stacking context, so the persistent Club Arena
+bottom navigation can never sit above the wizard footer or receive a Continue
+click intended for the setup flow.
+
 Publishing behavior is unchanged: the server still derives the funding owner,
 program versions still activate at the next canonical period, and opening or
 advancing the wizard never moves chips.

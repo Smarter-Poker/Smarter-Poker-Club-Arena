@@ -57,7 +57,7 @@ describe('bet size buckets mirror fn_aggregate_gto_v31_next exactly', () => {
 });
 
 describe('expandHandClass', () => {
-  it('pairs are 6, suited 4, offsuit 12 — the combinatorics of a range', () => {
+  it('pairs are 6, suited 4, offsuit 12 - the combinatorics of a range', () => {
     expect(expandHandClass('AA').length).toBe(6);
     expect(expandHandClass('AKs').length).toBe(4);
     expect(expandHandClass('AKo').length).toBe(12);
@@ -93,7 +93,7 @@ function loadV30() {
   setGtoPostflop([{ ...V30_CELL, texture_class: tex! } as never]);
 }
 
-describe('solverBettingRange — the range is what BET, not what was dealt', () => {
+describe('solverBettingRange - the range is what BET, not what was dealt', () => {
   it('holds only the combos with mass in the observed bucket', () => {
     loadV30();
     const r = solverBettingRange({
@@ -259,7 +259,7 @@ describe('equityVsWeightedRange', () => {
   });
 });
 
-describe('gtoFacingDefense — the line itself', () => {
+describe('gtoFacingDefense - the line itself', () => {
   it('a bluff-catcher facing a range it beats often enough CALLS', () => {
     loadV30();
     // The 54s bluffs make AA a call vs the polarised big bet.
@@ -301,7 +301,7 @@ describe('gtoFacingDefense — the line itself', () => {
     if (d) expect(d.action).toBe('fold');
   });
 
-  it('a monster PASSES rather than flatting — aggression stays owned elsewhere', () => {
+  it('a monster PASSES rather than flatting - aggression stays owned elsewhere', () => {
     loadV30();
     const d = gtoFacingDefense({
       street: 'turn',
@@ -321,7 +321,7 @@ describe('gtoFacingDefense — the line itself', () => {
     }
   });
 
-  it('no store, no opinion — never a synthetic fold', () => {
+  it('no store, no opinion - never a synthetic fold', () => {
     const d = gtoFacingDefense({
       street: 'turn',
       family: 'cash',

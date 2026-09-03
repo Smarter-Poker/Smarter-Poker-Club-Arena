@@ -78,12 +78,24 @@ describe('RakeConfig — exact tier caps', () => {
     [1, 2, 5],
     [2, 4, 7.5],
     [2, 5, 7.5],
-    [5, 5, 7.5],
     [3, 6, 8],
     [4, 8, 10],
     [5, 10, 12.5],
     [10, 20, 15],
     [10, 25, 15],
+    // Added 2026-08-31 on Dan's ruling: every stake the create-table form
+    // offers gets a published row, so no offered stake is priced by the tier
+    // fallback. Caps follow the ladder's own most generous proportion
+    // (15 BB, the 0.1/0.2 row); 0.10/0.25 sits in the existing flat-$3 band;
+    // the two nosebleed rows take the $20 they are already charged, so
+    // publishing them moves no price. See
+    // tests/unit/theFormOffersStakesTheScheduleCanPrice.test.ts.
+    [0.01, 0.02, 0.3],
+    [0.02, 0.05, 0.75],
+    [0.05, 0.1, 1.5],
+    [0.1, 0.25, 3],
+    [25, 50, 20],
+    [50, 100, 20],
   ];
 
   it.each(EXPECTED)('%s/%s caps at $%s', (sb, bb, cap) => {

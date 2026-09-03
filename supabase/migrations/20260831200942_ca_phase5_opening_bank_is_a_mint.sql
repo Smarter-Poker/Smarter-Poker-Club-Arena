@@ -1,0 +1,3 @@
+-- ca_phase5_opening_bank_is_a_mint (prod 20260831200942). Canonical body lives in prod schema_migrations -
+-- replace this marker byte-exact via scripts/dev/export-applied-migrations.sh.
+-- Phase 5: New Club Opening Bank (#2311) declares mint vs issuance_reserve - caught as suspense by the regression watchdog 20 minutes after shipping.

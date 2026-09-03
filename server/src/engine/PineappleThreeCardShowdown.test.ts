@@ -60,11 +60,18 @@ function mkConfig(over: Partial<HandConfig> = {}): HandConfig {
   } as HandConfig;
 }
 
-/** A fresh pineapple hand, dealt, before any street. */
+/** A fresh pineapple hand, dealt, before any street.
+ *
+ * 2026-08-31: dealNextStreet is the all-in per-street runout path and now
+ * refuses a hand where betting is still live (the stale-runout guard that
+ * closed the rake-law alarm's no_flop_no_drop findings). These tests drive
+ * the path directly, so put the hand in the state the path actually runs in:
+ * everyone all-in. */
 function dealt() {
   const hc = new HandController(mkConfig(), mkPlayers(3), 1);
   hc.start();
   const st = () => (hc as unknown as { state: any }).state;
+  for (const p of st().players) p.is_all_in = true;
   return { hc, st };
 }
 
@@ -120,6 +127,7 @@ describe('pineapple: nobody reaches showdown holding three cards', () => {
     const hc = new HandController(mkConfig({ gameVariant: 'nlh' }), mkPlayers(3), 1);
     hc.start();
     const st = () => (hc as unknown as { state: any }).state;
+    for (const p of st().players) p.is_all_in = true; // runout guard: see dealt()
     hc.dealNextStreet();
     expect(holdings(st)).toEqual([2, 2, 2]);
   });

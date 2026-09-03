@@ -39,7 +39,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
       {isExpanded && (
         <div className="image-viewer-overlay" onClick={() => setIsExpanded(false)}>
           <img loading="lazy" decoding="async" src={src} alt={alt} className="image-viewer-full" />
-          <button className="image-viewer-close" aria-label="Close image viewer">
+          <button className="image-viewer-close" aria-label="Close Image Viewer">
             ×
           </button>
         </div>

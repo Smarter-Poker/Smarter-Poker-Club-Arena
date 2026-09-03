@@ -84,7 +84,7 @@ describe('preflop decline is street-only; flop decline is final', () => {
     expect(reoffer[0].boardLength).toBe(3);
   });
 
-  it('a preflop ACCEPT locks coverage — no flop re-offer', () => {
+  it('a preflop ACCEPT locks coverage - no flop re-offer', () => {
     const e = mkEngine();
     offer(e, []);
     expect(e.accept('t1', LEADER)).toBe(true);

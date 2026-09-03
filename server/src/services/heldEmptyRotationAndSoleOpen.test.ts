@@ -1,33 +1,38 @@
 /**
- * Two starvation bugs shipped 2026-08-30, both pinned here so they cannot
- * come back:
+ * Two starvation bugs shipped 2026-08-30, both still pinned here.
  *
- * 1. cashTableHeldEmpty folded the 2h bucket into the weak `h*31+c` hash, so
- *    `h % 100` advanced by roughly +1 per bucket instead of re-rolling. A
- *    table that entered the <15 held-empty band stayed held for ~15
- *    consecutive buckets (~30 hours) — the short_deck room went dark for a
- *    day. The fix is the same mix32 avalanche seatFirstHeldEmpty already
- *    uses; these tests prove consecutive buckets are decorrelated.
+ * 1. THE BUCKET WALK. The cash-table roll folded its time bucket into the weak
+ *    `h*31+c` hash, so `h % 100` advanced by roughly +1 per bucket instead of
+ *    re-rolling: a table that entered the band stayed in it for ~15
+ *    consecutive buckets, and the short_deck room went dark for a day. The fix
+ *    is the mix32 avalanche, and the pins below prove consecutive buckets are
+ *    still decorrelated.
  *
- * 2. pickFreeHorses read an unordered LIMITed page of profiles, which
- *    Postgres serves as the SAME physical rows all day. Once that page was
- *    busy, candidates filtered to zero while two-thirds of the fleet idled
- *    beyond the page and seat-first fills starved (SNG board dead from
- *    17:31 UTC). The selection logic is now pure and fed the WHOLE fleet;
- *    these tests prove busy horses are excluded and selection can reach
- *    every horse in the fleet.
+ *    2026-09-02: the roll those pins guard is no longer "is this table held
+ *    EMPTY" - Dan replaced the 15% held-empty rule with a 75/25 full/sporadic
+ *    character (see HorseOccupancy.test.ts). The hash trap is identical and so
+ *    is the cost of falling into it, so the pins moved to `cashTableFill`
+ *    rather than being deleted with the rule.
  *
- * Plus the new law: a variant must never go fully dark — the only open table
- * for its variant config is never held empty.
+ * 2. pickFreeHorses read an unordered LIMITed page of profiles, which Postgres
+ *    serves as the SAME physical rows all day. Once that page was busy,
+ *    candidates filtered to zero while two-thirds of the fleet idled beyond the
+ *    page and seat-first fills starved. The selection logic is now pure and fed
+ *    the WHOLE fleet; these tests prove busy horses are excluded and selection
+ *    can reach every horse.
+ *
+ * The "a variant must never go fully dark" pins are GONE with the rule they
+ * protected: they existed because a held-empty roll on a variant's only table
+ * switched that variant off entirely. Nothing is held empty any more - the
+ * sparse quarter's floor is one seat - so there is no darkness to except.
  */
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
-  cashTableHeldEmpty,
+  cashTableFill,
   occupancyTargetFor,
-  setSoleOpenCashTables,
-  EMPTY_BUCKET_MS,
-  CASH_EMPTY_FRACTION,
+  FILL_BUCKET_MS,
+  CASH_FULL_FRACTION,
   gameLaneFor,
   isActiveNow,
 } from './HorseBehavior.js';
@@ -36,19 +41,18 @@ import { selectHorseCandidates } from './TournamentRecurringService.js';
 const T0 = 1_700_000_000_000;
 const tables = Array.from({ length: 400 }, (_, i) => `tbl-${i}-${i * 7919}`);
 
-afterEach(() => setSoleOpenCashTables([]));
-
-describe('held-empty rotation is a re-roll, not a walk', () => {
-  it('no table stays held for a starvation-length run of consecutive buckets', () => {
-    // With an independent 15% roll per bucket, a run of 8 has probability
-    // ~2.6e-7 per start; across 400 tables x 48 buckets that is ~0.005
-    // expected runs. The old walking hash produced runs of ~15 (30 hours) by
-    // construction. Deterministic inputs, so this is a pin, not a dice roll.
+describe('the table character re-rolls each bucket, it does not walk', () => {
+  it('no table stays sparse for a starvation-length run of consecutive buckets', () => {
+    /* With an independent 25% roll per bucket, a run of 12 has probability
+       ~6e-8 per start; across 400 tables x 48 buckets that is ~0.001 expected
+       runs. The old walking hash produced runs of ~15 by construction, which
+       is what took a variant's room dark for thirty hours. Deterministic
+       inputs, so this is a pin, not a dice roll. */
     let worstRun = 0;
     for (const id of tables) {
       let run = 0;
       for (let b = 0; b < 48; b++) {
-        if (cashTableHeldEmpty(id, T0 + b * EMPTY_BUCKET_MS)) {
+        if (cashTableFill(id, T0 + b * FILL_BUCKET_MS) === 'sporadic') {
           run++;
           worstRun = Math.max(worstRun, run);
         } else {
@@ -56,61 +60,46 @@ describe('held-empty rotation is a re-roll, not a walk', () => {
         }
       }
     }
-    expect(worstRun).toBeLessThan(8);
+    expect(worstRun).toBeLessThan(12);
   });
 
   it('consecutive buckets are not correlated: transition rates match independence', () => {
-    // Under independence, P(held in bucket b+1 | held in bucket b) is just
-    // the base rate (~15%). Under the old +1-walk it was near 100% until the
-    // band was exhausted. Allow generous sampling slack either side.
-    let heldNow = 0;
-    let heldBoth = 0;
+    /* Under independence, P(sparse at b+1 | sparse at b) is just the base rate
+       (~25%). Under the old +1-walk it was near 100% until the band was
+       exhausted. Generous sampling slack either side. */
+    let sparseNow = 0;
+    let sparseBoth = 0;
     for (const id of tables) {
       for (let b = 0; b < 40; b++) {
-        if (!cashTableHeldEmpty(id, T0 + b * EMPTY_BUCKET_MS)) continue;
-        heldNow++;
-        if (cashTableHeldEmpty(id, T0 + (b + 1) * EMPTY_BUCKET_MS)) heldBoth++;
+        if (cashTableFill(id, T0 + b * FILL_BUCKET_MS) !== 'sporadic') continue;
+        sparseNow++;
+        if (cashTableFill(id, T0 + (b + 1) * FILL_BUCKET_MS) === 'sporadic') sparseBoth++;
       }
     }
-    expect(heldNow).toBeGreaterThan(100); // the hold itself still happens
-    const conditional = heldBoth / heldNow;
-    expect(conditional).toBeGreaterThan(0.05);
-    expect(conditional).toBeLessThan(0.3);
+    expect(sparseNow).toBeGreaterThan(100); // the sparse quarter still happens
+    const conditional = sparseBoth / sparseNow;
+    expect(conditional).toBeGreaterThan(0.12);
+    expect(conditional).toBeLessThan(0.4);
   });
 
-  it('every bucket holds roughly the requested fraction of the floor', () => {
+  it('every bucket splits the floor roughly 75/25', () => {
     for (let b = 0; b < 12; b++) {
-      const now = T0 + b * EMPTY_BUCKET_MS;
-      const frac = tables.filter((id) => cashTableHeldEmpty(id, now)).length / tables.length;
-      expect(frac, `bucket ${b}`).toBeGreaterThan(0.07);
-      expect(frac, `bucket ${b}`).toBeLessThan(CASH_EMPTY_FRACTION + 0.1);
+      const now = T0 + b * FILL_BUCKET_MS;
+      const full = tables.filter((id) => cashTableFill(id, now) === 'full').length / tables.length;
+      expect(full, `bucket ${b}`).toBeGreaterThan(CASH_FULL_FRACTION - 0.09);
+      expect(full, `bucket ${b}`).toBeLessThan(CASH_FULL_FRACTION + 0.09);
     }
   });
-});
 
-describe('a variant must never go fully dark (Dan, 2026-08-30)', () => {
-  it('the only open table for its variant config is never held empty', () => {
-    // Find a table the hash WOULD hold, mark it sole-open, and the hold must
-    // yield. Checked across many buckets: sole-open beats every roll.
-    const held = tables.find((id) => cashTableHeldEmpty(id, T0))!;
-    expect(held).toBeTruthy();
-    setSoleOpenCashTables([held]);
-    for (let b = 0; b < 24; b++) {
-      expect(cashTableHeldEmpty(held, T0 + b * EMPTY_BUCKET_MS)).toBe(false);
+  it('and no bucket leaves a single table with nobody at it', () => {
+    /* The rule this replaced put 15% of the floor at ZERO seats. Dan's floor
+       is ONE, on every table, in every bucket. */
+    for (let b = 0; b < 12; b++) {
+      const now = T0 + b * FILL_BUCKET_MS;
+      for (const id of tables) {
+        expect(occupancyTargetFor(id, 6, false, now).seatTarget).toBeGreaterThanOrEqual(1);
+      }
     }
-    const { seatTarget, vibe } = occupancyTargetFor(held, 6, false, T0);
-    expect(vibe).not.toBe('empty');
-    expect(seatTarget).toBeGreaterThanOrEqual(2);
-  });
-
-  it('the registry replaces, not accumulates, and clearing restores the hold', () => {
-    const held = tables.find((id) => cashTableHeldEmpty(id, T0))!;
-    setSoleOpenCashTables([held]);
-    expect(cashTableHeldEmpty(held, T0)).toBe(false);
-    setSoleOpenCashTables(['some-other-table']);
-    expect(cashTableHeldEmpty(held, T0)).toBe(true);
-    setSoleOpenCashTables([]);
-    expect(cashTableHeldEmpty(held, T0)).toBe(true);
   });
 });
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceCssRule } from './helpers/sourceWindow';
 
 const root = resolve(__dirname, '..');
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
@@ -12,10 +13,15 @@ const findPlayer = read('src/components/modals/FindPlayerModal.tsx');
 const joinClub = read('src/components/modals/JoinClubModal.tsx');
 const joinService = read('src/services/ClubJoinService.ts');
 const header = read('src/components/navigation/GlobalHeader.tsx');
+const homeCss = read('src/pages/HomePage.module.css');
+const createCss = read('src/components/modals/CreateClubModal.module.css');
+const findCss = read('src/components/modals/FindPlayerModal.module.css');
+const joinCss = read('src/components/modals/JoinClubModal.module.css');
+const emptyStateCss = read('src/components/common/EmptyState.module.css');
 
 describe('Club Arena primary actions', () => {
   it('uses the approved action artwork with semantic controls', () => {
-    expect(actionBar).toContain('aria-label="Club Arena actions"');
+    expect(actionBar).toContain('aria-label="Club Arena Actions"');
     expect(actionBar).toContain('aria-label="Create A Club"');
     expect(actionBar).toContain('aria-label="Find A Player"');
     expect(actionBar).toContain('aria-label="Join A Club"');
@@ -32,6 +38,11 @@ describe('Club Arena primary actions', () => {
     expect(home).toContain('setShowCreateClubModal(true)');
     expect(home).toContain('setShowFindPlayerModal(true)');
     expect(home).toContain('setShowJoinModal(true)');
+  });
+
+  it('scales the complete approved artwork without cropping its frame or corners', () => {
+    expect(sliceCssRule(homeCss, '.actionBarArtwork')).toMatch(/object-fit:\s*contain/);
+    expect(sliceCssRule(homeCss, '.actionBarWrapper')).not.toMatch(/overflow:\s*hidden/);
   });
 });
 
@@ -61,13 +72,36 @@ describe('Club entry dialogs', () => {
     expect(joinClub).toContain('ClubJoinService.parseInput');
     expect(joinClub).toContain('ClubJoinService.join');
   });
+
+  it.each([
+    ['Create Club', createClub, createCss],
+    ['Find Player', findPlayer, findCss],
+    ['Join Club', joinClub, joinCss],
+  ])(
+    '%s is a full page with an independently scrolling body and locked footer',
+    (_name, source, css) => {
+      expect(source).toContain('className={styles.scrollBody}');
+      expect(source).toContain('className={styles.pageFooter}');
+      expect(css).toMatch(/height:\s*100dvh/);
+      expect(sliceCssRule(css, '.scrollBody')).toMatch(/overflow-y:\s*auto/);
+      expect(sliceCssRule(css, '.pageFooter')).toMatch(/flex:\s*0 0 auto/);
+      expect(sliceCssRule(css, '.pageFooter')).toMatch(/safe-area-inset-bottom/);
+    }
+  );
+
+  it('keeps shared empty and permission panels inside a short landscape viewport', () => {
+    expect(emptyStateCss).toMatch(/@media \(max-height:\s*560px\)/);
+    expect(emptyStateCss).toMatch(/max-height:\s*calc\(100dvh - 96px\)/);
+    expect(emptyStateCss).toMatch(/overflow-y:\s*auto/);
+  });
 });
 
-describe('Club Arena identity', () => {
-  it('uses the replaceable live Club Arena brand and generated emblem', () => {
-    expect(header).toContain('Club Arena by Smarter.Poker');
-    expect(header).toContain('vault-iris-emblem-v1-320.webp');
-    expect(header).toContain('className={styles.brandName}>Club Arena');
+describe('global Smarter.Poker identity', () => {
+  it('never covers the approved global wordmark with a Club Arena plate', () => {
+    expect(header).toContain('Smarter.Poker Global Header');
+    expect(header).not.toContain('Club Arena by Smarter.Poker');
+    expect(header).not.toContain('vault-iris-emblem-v1-320.webp');
+    expect(header).not.toContain('className={styles.brandName}>Club Arena');
     expect(existsSync(resolve(root, 'public/images/club-arena/vault-iris-emblem-v1.png'))).toBe(
       true
     );

@@ -253,6 +253,7 @@ export default function GlobalHeader() {
         className={styles.header}
         style={headerStyle}
         data-artwork="approved-global-header"
+        aria-label="Smarter.Poker Global Header"
       >
         {/* Desktop and landscape use the supplied artwork itself. This is a
             lossless crop: no redrawing, substitutions, filters, or resampling
@@ -281,7 +282,7 @@ export default function GlobalHeader() {
             <button
               onClick={handleBackClick}
               className={`${styles.artButton} ${styles.backBtn}`}
-              aria-label="Go back"
+              aria-label="Go Back"
               title="Back"
             >
               <img src={`${APPROVED_HEADER_ASSET}back.png`} alt="Back" />
@@ -289,7 +290,7 @@ export default function GlobalHeader() {
             <button
               onClick={handleHubClick}
               className={`${styles.artButton} ${styles.hubBtn}`}
-              aria-label="Go to the Hub"
+              aria-label="Go To The Hub"
               title="Hub"
             >
               <img src={`${APPROVED_HEADER_ASSET}hub.png`} alt="Hub" />
@@ -315,16 +316,6 @@ export default function GlobalHeader() {
                   }}
                 />
               </span>
-              {/* The complete header raster supplies the frame's base pixels.
-                  Re-layer the exact approved crop above the live avatar, with
-                  its stock blue person masked out in CSS, so the user's image
-                  can never paint over the chrome rim. */}
-              <img
-                src={`${APPROVED_HEADER_ASSET}profile.png`}
-                alt=""
-                className={styles.profileFrameOverlay}
-                aria-hidden="true"
-              />
             </button>
 
             <button
@@ -358,7 +349,7 @@ export default function GlobalHeader() {
               {unreadMessages > 0 && (
                 <span
                   className={`${styles.badge} ${styles.messageBadge}`}
-                  aria-label={`${unreadMessages} unread messages`}
+                  aria-label={`${unreadMessages} Unread Messages`}
                   aria-live="polite"
                 >
                   {unreadMessages > 99 ? '99+' : unreadMessages}
@@ -380,33 +371,13 @@ export default function GlobalHeader() {
               {notificationCount > 0 && (
                 <span
                   className={`${styles.badge} ${styles.notificationBadge}`}
-                  aria-label={`${notificationCount} unread notifications`}
+                  aria-label={`${notificationCount} Unread Notifications`}
                   aria-live="polite"
                 >
                   {notificationCount > 99 ? '99+' : notificationCount}
                 </span>
               )}
             </Link>
-          </div>
-
-          {/* The old Smarter.Poker wordmark is baked into the approved header
-              raster. This live brand plate masks that center panel and makes
-              the Club Arena identity replaceable, responsive and accessible. */}
-          <div className={styles.headerCenter} aria-label="Club Arena by Smarter.Poker">
-            <img
-              src={`${BASE}images/club-arena/vault-iris-emblem-v1-320.webp`}
-              srcSet={`${BASE}images/club-arena/vault-iris-emblem-v1-320.webp 320w, ${BASE}images/club-arena/vault-iris-emblem-v1-640.webp 640w`}
-              sizes="64px"
-              alt=""
-              width={320}
-              height={296}
-              className={styles.brandArtwork}
-              aria-hidden="true"
-            />
-            <span className={styles.brandType}>
-              <span className={styles.brandName}>Club Arena</span>
-              <span className={styles.brandByline}>Smarter.Poker</span>
-            </span>
           </div>
         </div>
       </header>

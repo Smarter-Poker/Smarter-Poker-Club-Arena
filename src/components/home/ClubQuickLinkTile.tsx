@@ -258,8 +258,8 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
         aria-keyshortcuts={hasSwitch ? 'ArrowDown Shift+F10' : undefined}
         aria-label={
           clubName
-            ? `${tile.alt} for ${clubName} (press ${tile.shortcutKey}${hasSwitch ? ', hold to choose a wallet' : ''})`
-            : `${tile.alt} (press ${tile.shortcutKey})`
+            ? `${tile.alt} For ${clubName} (Press ${tile.shortcutKey}${hasSwitch ? ', Hold To Choose A Wallet' : ''})`
+            : `${tile.alt} (Press ${tile.shortcutKey})`
         }
         title={clubName ? `${tile.alt} - ${clubName}` : tile.alt}
       >

@@ -88,9 +88,20 @@ vi.mock('../../src/hooks/useTableStudioCollections', () => ({
 }));
 
 vi.mock('../../src/components/table/TableStudioGameplayPreview', () => ({
-  default: ({ selection }: { selection: { button_id: string; cards_id: string } }) => (
+  default: ({
+    selection,
+  }: {
+    selection: {
+      table_id: string;
+      background_id: string;
+      button_id: string;
+      cards_id: string;
+    };
+  }) => (
     <div
       data-testid="gameplay-preview"
+      data-table-theme={selection.table_id}
+      data-background-theme={selection.background_id}
       data-button-theme={selection.button_id}
       data-card-back={selection.cards_id}
     />
@@ -355,7 +366,7 @@ describe('ThemeSettingsModal hardening', () => {
     );
     fireEvent.click(screen.getByRole('tab', { name: 'Cards' }));
 
-    expect(screen.getByRole('button', { name: 'Premium Gold, checking ownership' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Premium Gold, Checking Ownership' })).toBeDisabled();
     expect(screen.getByText('Checking Your Purchases And Rewards')).toBeVisible();
 
     await act(async () => {
@@ -369,7 +380,7 @@ describe('ThemeSettingsModal hardening', () => {
   it('keeps premium card backs unavailable when ownership cannot be verified', async () => {
     mocks.purchaseResult = Promise.resolve({
       data: [],
-      error: { message: 'ownership query failed' },
+      error: { code: '42501', message: 'ownership query failed' },
     });
     renderStudio();
 
@@ -380,14 +391,14 @@ describe('ThemeSettingsModal hardening', () => {
 
     expect(await screen.findByText('Purchases Could Not Be Verified')).toBeVisible();
     expect(
-      screen.getByRole('button', { name: 'Premium Gold, ownership unavailable' })
+      screen.getByRole('button', { name: 'Premium Gold, Ownership Unavailable' })
     ).toBeDisabled();
   });
 
   it('shows a retryable catalog failure instead of leaving paid prices silently unavailable', async () => {
     mocks.pricingResult = Promise.resolve({
       data: [],
-      error: { message: 'pricing query failed' },
+      error: { code: '42501', message: 'pricing query failed' },
     });
     renderStudio();
 
@@ -430,7 +441,7 @@ describe('ThemeSettingsModal hardening', () => {
 
     const locked = screen
       .getAllByRole('button')
-      .find((button) => button.getAttribute('aria-label')?.includes('purchase or VIP required'));
+      .find((button) => button.getAttribute('aria-label')?.includes('Purchase Or VIP Required'));
     expect(locked).toBeDefined();
     fireEvent.click(locked!);
 
@@ -452,7 +463,7 @@ describe('ThemeSettingsModal hardening', () => {
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
     fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Neon City, purchase or VIP required' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Neon City, Purchase Or VIP Required' }));
     fireEvent.click(await screen.findByRole('button', { name: /Buy For 350/ }));
 
     await waitFor(() =>
@@ -477,7 +488,7 @@ describe('ThemeSettingsModal hardening', () => {
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
     fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Neon City, purchase or VIP required' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Neon City, Purchase Or VIP Required' }));
 
     const addDiamonds = await screen.findByRole('button', { name: 'Add 250 Diamonds' });
     expect(addDiamonds).toBeEnabled();
@@ -531,7 +542,7 @@ describe('ThemeSettingsModal hardening', () => {
     expect(readTableStudioCheckoutIntent('user-1')).not.toBeNull();
   });
 
-  it('keeps the pending design available after a canceled Stripe checkout', async () => {
+  it('keeps the Pending design available after a canceled Stripe checkout', async () => {
     rememberTableStudioCheckoutIntent({
       userId: 'user-1',
       tab: 'table',
@@ -558,7 +569,7 @@ describe('ThemeSettingsModal hardening', () => {
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
     fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Neon City, purchase or VIP required' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Neon City, Purchase Or VIP Required' }));
     fireEvent.click(await screen.findByRole('button', { name: /Buy For 350/ }));
 
     expect(await screen.findByRole('dialog', { name: 'Diamond Store' })).toBeVisible();
@@ -572,7 +583,7 @@ describe('ThemeSettingsModal hardening', () => {
     );
     fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
     expect(
-      screen.getByRole('button', { name: 'Neon City, purchase or VIP required' })
+      screen.getByRole('button', { name: 'Neon City, Purchase Or VIP Required' })
     ).toBeEnabled();
 
     act(() => {
@@ -582,6 +593,90 @@ describe('ThemeSettingsModal hardening', () => {
     });
 
     expect(await screen.findByRole('button', { name: 'Neon City' })).toBeEnabled();
+  });
+
+  it('repairs a missed entitlement in the authoritative snapshot after realtime activity', async () => {
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+    expect(
+      screen.getByRole('button', { name: 'Neon Ice, Purchase Or VIP Required' })
+    ).toBeEnabled();
+
+    // Simulate a burst where Postgres Changes delivers one component row but
+    // the composite theme row itself is dropped. The event is only the wakeup;
+    // the subsequent server snapshot is the durable ownership truth.
+    mocks.unlockResult = Promise.resolve({
+      data: [
+        { category: 'table_id', asset_id: 'neon_city' },
+        { category: 'theme_id', asset_id: 'neon-blue' },
+      ],
+      error: null,
+    });
+    act(() => {
+      mocks.entitlementInsert?.({
+        new: { user_id: 'user-1', category: 'table_id', asset_id: 'neon_city' },
+      });
+    });
+
+    expect(
+      await screen.findByRole('button', { name: 'Neon Ice' }, { timeout: 2_000 })
+    ).toBeEnabled();
+    expect(screen.getByText('Table Art Live')).toBeVisible();
+  });
+
+  it('repairs ownership when a sleeping tab missed the entire realtime burst', async () => {
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+    expect(
+      screen.getByRole('button', { name: 'Neon Ice, Purchase Or VIP Required' })
+    ).toBeEnabled();
+
+    mocks.unlockResult = Promise.resolve({
+      data: [{ category: 'theme_id', asset_id: 'neon-blue' }],
+      error: null,
+    });
+
+    expect(
+      await screen.findByRole('button', { name: 'Neon Ice' }, { timeout: 3_000 })
+    ).toBeEnabled();
+    expect(screen.getByText('Table Art Live')).toBeVisible();
+  });
+
+  it('never re-locks verified designs while a background reconciliation is in flight', async () => {
+    mocks.unlockResult = Promise.resolve({
+      data: [{ category: 'theme_id', asset_id: 'neon-blue' }],
+      error: null,
+    });
+    renderStudio();
+    expect(await screen.findByRole('button', { name: 'Neon Ice' })).toBeEnabled();
+
+    const refresh = deferred<{ data: unknown[]; error: unknown }>();
+    mocks.unlockResult = refresh.promise;
+    act(() => {
+      mocks.entitlementInsert?.({
+        new: { user_id: 'user-1', category: 'table_id', asset_id: 'neon_city' },
+      });
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+
+    expect(screen.getByRole('button', { name: 'Neon Ice' })).toBeEnabled();
+    expect(screen.getByText('Table Art Live')).toBeVisible();
+    await act(async () => {
+      refresh.resolve({
+        data: [
+          { category: 'theme_id', asset_id: 'neon-blue' },
+          { category: 'table_id', asset_id: 'neon_city' },
+        ],
+        error: null,
+      });
+      await refresh.promise;
+    });
   });
 
   it('reconciles ownership after subscription before declaring Table Art live', async () => {
@@ -595,7 +690,7 @@ describe('ThemeSettingsModal hardening', () => {
     expect(screen.queryByText('Table Art Live')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
     expect(
-      screen.getByRole('button', { name: 'Neon City, purchase or VIP required' })
+      screen.getByRole('button', { name: 'Neon City, Purchase Or VIP Required' })
     ).toBeEnabled();
 
     mocks.unlockResult = Promise.resolve({
@@ -608,6 +703,40 @@ describe('ThemeSettingsModal hardening', () => {
     expect(await screen.findByText('Table Art Live')).toBeVisible();
   });
 
+  it('clears ownership loading when a slow snapshot succeeds during a newer refresh', async () => {
+    mocks.autoEntitlementSubscribe = false;
+    renderStudio();
+    const studio = await screen.findByRole('dialog', { name: 'Make The Table Yours' });
+    const grid = studio.querySelector('.theme-modal__grid');
+    expect(grid).not.toBeNull();
+    await waitFor(() => expect(grid).toHaveAttribute('aria-busy', 'false'));
+
+    const firstRefresh = deferred<{ data: unknown[]; error: null }>();
+    mocks.unlockResult = firstRefresh.promise;
+    act(() => mocks.entitlementStatus?.('SUBSCRIBED'));
+    await waitFor(() => expect(grid).toHaveAttribute('aria-busy', 'true'));
+
+    // Keep the next periodic reconciliation pending. The first valid snapshot
+    // is no longer the newest request when it returns, but it still proves the
+    // same user's monotonic ownership ledger is readable and must clear busy.
+    const newerRefresh = deferred<{ data: unknown[]; error: null }>();
+    await act(async () => {
+      mocks.unlockResult = newerRefresh.promise;
+      await new Promise((resolve) => setTimeout(resolve, 2_100));
+    });
+    await act(async () => {
+      firstRefresh.resolve({ data: [], error: null });
+      await firstRefresh.promise;
+    });
+
+    await waitFor(() => expect(grid).toHaveAttribute('aria-busy', 'false'));
+
+    await act(async () => {
+      newerRefresh.resolve({ data: [], error: null });
+      await newerRefresh.promise;
+    });
+  });
+
   it('does not claim a completed purchase was applied when the appearance save fails', async () => {
     mocks.applyAppearance.mockResolvedValue({ ok: false, error: new Error('save failed') });
     renderStudio();
@@ -615,7 +744,7 @@ describe('ThemeSettingsModal hardening', () => {
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
     fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Neon City, purchase or VIP required' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Neon City, Purchase Or VIP Required' }));
     fireEvent.click(await screen.findByRole('button', { name: /Buy For 350/ }));
 
     await waitFor(() => expect(mocks.toast.success).toHaveBeenCalledWith('Neon City Purchased'));
@@ -689,6 +818,132 @@ describe('ThemeSettingsModal hardening', () => {
     expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
       'data-button-theme',
       'blue-crystal'
+    );
+  });
+
+  it('repairs an open studio when the appearance realtime event was entirely missed', async () => {
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+    expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+      'data-table-theme',
+      'classic_green'
+    );
+
+    mocks.themeResult = Promise.resolve({
+      data: [
+        {
+          ...savedTheme,
+          theme_id: 'ocean-suite',
+          table_id: 'ocean_blue',
+          background_id: 'royal_indigo',
+          button_id: 'classic-white',
+          cards_id: 'classic_blue',
+          updated_at: '2026-08-31T13:30:00.000Z',
+        },
+      ],
+      error: null,
+    });
+
+    await waitFor(
+      () =>
+        expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+          'data-table-theme',
+          'ocean_blue'
+        ),
+      { timeout: 3_500 }
+    );
+    expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+      'data-background-theme',
+      'royal_indigo'
+    );
+    expect(screen.getByText('Table Art Live')).toBeVisible();
+  });
+
+  it('keeps the authoritative repair active for an open studio on a hidden second device', async () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    try {
+      renderStudio();
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+      );
+      expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+        'data-table-theme',
+        'classic_green'
+      );
+
+      // Model a Postgres Changes frame that the backgrounded device never
+      // received. The durable snapshot must still repair its open preview.
+      mocks.themeResult = Promise.resolve({
+        data: [
+          {
+            ...savedTheme,
+            theme_id: 'ocean-suite',
+            table_id: 'ocean_blue',
+            background_id: 'royal_indigo',
+            button_id: 'classic-white',
+            cards_id: 'classic_blue',
+            updated_at: '2026-08-31T13:30:00.000Z',
+          },
+        ],
+        error: null,
+      });
+
+      await waitFor(
+        () =>
+          expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+            'data-table-theme',
+            'ocean_blue'
+          ),
+        { timeout: 3_500 }
+      );
+      expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+        'data-background-theme',
+        'royal_indigo'
+      );
+    } finally {
+      visibility.mockRestore();
+    }
+  });
+
+  it('does not let an in-flight appearance snapshot roll back a newer realtime change', async () => {
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+
+    const staleRefresh = deferred<{ data: unknown[]; error: null }>();
+    mocks.themeResult = staleRefresh.promise;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 2_100));
+    });
+
+    act(() => {
+      masterBus.emit('UI_THEME_CHANGED', {
+        key: 'ALL',
+        value: {
+          theme_id: 'ocean-suite',
+          table_id: 'ocean_blue',
+          background_id: 'royal_indigo',
+          cards_id: 'classic_blue',
+        },
+        userId: 'user-1',
+        updatedAt: '2026-08-31T13:31:00.000Z',
+      });
+    });
+    expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+      'data-table-theme',
+      'ocean_blue'
+    );
+
+    await act(async () => {
+      staleRefresh.resolve({ data: [savedTheme], error: null });
+      await staleRefresh.promise;
+    });
+    expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+      'data-table-theme',
+      'ocean_blue'
     );
   });
 });

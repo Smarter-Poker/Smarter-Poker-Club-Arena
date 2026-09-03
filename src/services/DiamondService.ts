@@ -201,7 +201,7 @@ export const DiamondService = {
               amount: pkg.priceUSD * 100, // Stripe uses cents
               currency: 'usd',
               diamonds: totalDiamonds,
-              description: `${pkg.name} (${pkg.diamonds}+${pkg.bonusDiamonds} bonus)`,
+              description: `${pkg.name} (${pkg.diamonds}+${pkg.bonusDiamonds} Bonus)`,
             },
           }
         );

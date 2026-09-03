@@ -17,6 +17,20 @@ export interface HandHistoryAction {
   playerId: string;
   action: 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'allin' | 'discard';
   amount?: number;
+  /**
+   * PHASE 4 COMPLETION 2026-09-01 — the card this player threw, as a canonical
+   * code, and only ever present on the VIEWER'S OWN discard.
+   *
+   * Crazy Pineapple's one extra decision was the one thing this panel could
+   * not tell you: it printed "discard" and stopped. Phase 4 fixed that on the
+   * standalone replay only, which is not the surface anybody uses mid-session.
+   *
+   * The privacy is enforced in Postgres, not here: `hand_discards` is read
+   * through `hand_discards_read_own`, so the adapter can only ever fill this
+   * for the viewer. Undefined on every opponent's discard, on every hand
+   * played before 2026-09-01, and on every non-discard action.
+   */
+  discardedCard?: string;
 }
 
 export interface HandHistoryStreet {
@@ -410,6 +424,8 @@ function HandEntry({
                     {a.amount != null && (
                       <span className="hh-entry__action-amount">{formatAmount(a.amount)}</span>
                     )}
+                    {/* Only ever yours - see HandHistoryAction.discardedCard. */}
+                    {a.discardedCard && <CardChip code={a.discardedCard} />}
                   </div>
                 ))}
               </div>
@@ -551,7 +567,7 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
           div, so "tap anywhere else to close" — the gesture every other sheet
           in Club Arena answers — did nothing at all here. */}
       <div className="hh-backdrop" onClick={onClose} aria-hidden="true" />
-      <div className="hh-panel" role="dialog" aria-label="Hand history">
+      <div className="hh-panel" role="dialog" aria-label="Hand History">
         {/* Bottom-sheet grab handle. CSS shows it only where the panel IS a
             bottom sheet (<=640px); on the desktop drawer it stays hidden. */}
         <div className="hh-panel__grab" aria-hidden="true">
@@ -561,7 +577,7 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
         <div className="hh-panel__header">
           <h3 className="hh-panel__title">Hand History</h3>
           <div className="hh-panel__header-actions">
-            <button className="hh-panel__export" onClick={exportAll} title="Export all hands">
+            <button className="hh-panel__export" onClick={exportAll} title="Export All Hands">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                 <path
                   d="M8 2v8M4 7l4 4 4-4M2 12h12"

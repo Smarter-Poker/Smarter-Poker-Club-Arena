@@ -26,6 +26,7 @@ import { reportError } from '../../utils/errorReporter';
 import './StatsExport.css';
 import { clubGamesOrFilter } from '../../utils/unionScope';
 import { fetchAllRows } from '../../utils/fetchAllRows';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 
 interface StatsExportProps {
   clubId?: string;
@@ -114,10 +115,10 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
     if (ids.length > 0) {
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, username, display_name')
+        .select(`id, ${PLAYER_NAME_COLUMNS}`)
         .in('id', ids);
       (profiles || []).forEach((p: any) => {
-        nameMap[p.id] = p.display_name || p.username || p.id.slice(0, 8);
+        nameMap[p.id] = playerDisplayName(p);
       });
     }
 

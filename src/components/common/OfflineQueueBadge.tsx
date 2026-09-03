@@ -70,7 +70,7 @@ export default function OfflineQueueBadge() {
       }}
     >
       <span style={{ fontSize: '1rem' }}>{!isOnline ? '--' : '...'}</span>
-      {!isOnline ? 'Offline' : `${queueSize} pending`}
+      {!isOnline ? 'Offline' : `${queueSize} Pending`}
       {queueSize > 0 && (
         <span
           style={{

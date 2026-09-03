@@ -197,7 +197,7 @@ export default function SearchPage() {
               id: club.id,
               type: 'club' as const,
               name: club.name,
-              subtitle: `${club.member_count || 0} members`,
+              subtitle: `${club.member_count || 0} Members`,
               avatar: club.avatar_url,
             }));
           })()
@@ -242,7 +242,7 @@ export default function SearchPage() {
               id: table.id,
               type: 'table' as const,
               name: table.name,
-              subtitle: `${table.stakes} · ${table.current_players}/${table.max_players} seated`,
+              subtitle: `${table.stakes} · ${table.current_players}/${table.max_players} Seated`,
             }));
           })()
         );
@@ -266,7 +266,7 @@ export default function SearchPage() {
               subtitle: `${tournament.status} · ${formatBuyInShort(
                 tournament.buy_in_amount || 0,
                 tournament.buy_in_fee
-              )} buy-in · ${tournament.current_players || 0}/${tournament.max_players || '∞'}`,
+              )} Buy-In · ${tournament.current_players || 0}/${tournament.max_players || '∞'}`,
             }));
           })()
         );
@@ -384,10 +384,10 @@ export default function SearchPage() {
       <CommunitySurfaceHeader
         eyebrow="Community / Discovery"
         title="Find Your Next Game"
-        description="Scan live players, clubs, open tables, and active tournaments from one precise community index."
+        description="Scan Live Players, Clubs, Open Tables, And Active Tournaments From One Precise Community Index."
         metrics={[
-          { label: 'Live indexes', value: 4, tone: 'live' },
-          { label: 'Current scope', value: category === 'all' ? 'Network' : category },
+          { label: 'Live Indexes', value: 4, tone: 'live' },
+          { label: 'Current Scope', value: category === 'all' ? 'Network' : category },
           { label: 'Results', value: loading ? 'Scanning' : results.length },
         ]}
       />
@@ -417,7 +417,7 @@ export default function SearchPage() {
               id="community-search"
               type="search"
               autoComplete="off"
-              placeholder="Player, club, table, or tournament"
+              placeholder="Player, Club, Table, Or Tournament"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               autoFocus
@@ -433,7 +433,7 @@ export default function SearchPage() {
           </div>
         </form>
 
-        <div className="search-category-rail" role="tablist" aria-label="Search categories">
+        <div className="search-category-rail" role="tablist" aria-label="Search Categories">
           {CATEGORIES.map((item) => (
             <button
               key={item.id}
@@ -473,7 +473,7 @@ export default function SearchPage() {
           )}
 
           {loading ? (
-            <div className="search-skeletons" role="status" aria-label="Scanning community index">
+            <div className="search-skeletons" role="status" aria-label="Scanning Community Index">
               {Array.from({ length: 4 }).map((_, index) => (
                 <div className="search-skeleton" key={index}>
                   <span />
@@ -519,15 +519,15 @@ export default function SearchPage() {
               <h3>No Matches For “{query}”</h3>
               <p>
                 {category === 'all'
-                  ? 'Check the spelling or try a broader term.'
-                  : 'Switch to All or try a broader term.'}
+                  ? 'Check The Spelling Or Try A Broader Term.'
+                  : 'Switch To All Or Try A Broader Term.'}
               </p>
             </div>
           ) : (
             <div className="search-results" aria-live="polite">
               <div className="search-results-heading">
                 <span>{results.length} Matches</span>
-                <span>{category === 'all' ? 'Across the network' : `Filtered to ${category}`}</span>
+                <span>{category === 'all' ? 'Across The Network' : `Filtered To ${category}`}</span>
               </div>
               {results.map((result) => (
                 <article className="search-result" key={`${result.type}-${result.id}`}>
@@ -547,7 +547,7 @@ export default function SearchPage() {
                     <span className="search-result-copy">
                       <strong>{result.name}</strong>
                       <span>
-                        {result.subtitle || (result.id === user?.id ? 'Your profile' : result.type)}
+                        {result.subtitle || (result.id === user?.id ? 'Your Profile' : result.type)}
                       </span>
                     </span>
                     <span className="search-result-type">{result.type}</span>

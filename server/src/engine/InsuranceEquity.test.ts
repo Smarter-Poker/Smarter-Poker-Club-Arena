@@ -11,7 +11,7 @@ import type { Card, CardRank, CardSuit } from '../types.js';
 const S = { h: 'hearts', d: 'diamonds', c: 'clubs', s: 'spades' } as const;
 const c = (rank: CardRank, suit: keyof typeof S): Card => ({ rank, suit: S[suit] as CardSuit });
 
-describe('insuranceEquity — completed board (0 cards to come)', () => {
+describe('insuranceEquity - completed board (0 cards to come)', () => {
   it('leader with quad aces = 100%', () => {
     const hero = [c('A', 'h'), c('A', 'd')];
     const opp = [c('K', 'd'), c('K', 's')];
@@ -38,7 +38,7 @@ describe('insuranceEquity — completed board (0 cards to come)', () => {
   });
 });
 
-describe('insuranceEquity — one card to come (exact enumeration)', () => {
+describe('insuranceEquity - one card to come (exact enumeration)', () => {
   it('top set vs flush draw: leader equity = 37/44 ≈ 84.1%', () => {
     // Hero trip aces; opp K-high club flush draw. 44 unknown cards, 1 to come.
     // 9 clubs remain, but Ac gives hero quads (win) and 9c pairs the board so
@@ -58,7 +58,7 @@ describe('insuranceEquity — one card to come (exact enumeration)', () => {
 // POKERBROS PARITY 2026-08-26 — leaderOuts: the specific next-street cards
 // the popup shows the leader ("these beat you").
 // ═══════════════════════════════════════════════════════════════════════════
-describe('leaderOuts — the cards that put the leader behind on the next street', () => {
+describe('leaderOuts - the cards that put the leader behind on the next street', () => {
   it('top set vs flush draw on the turn: exactly the 7 live clubs', () => {
     // 9 clubs remain, but Ac makes hero quads and 9c pairs the board into
     // aces-full — both WIN for the leader and must not be listed as outs.

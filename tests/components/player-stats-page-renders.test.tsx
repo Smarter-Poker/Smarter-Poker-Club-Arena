@@ -188,8 +188,31 @@ beforeEach(() => {
   localStorage.clear();
   clearStatsRangeMemo();
   routeUserId = undefined;
-  rpcMock.mockClear();
+  rpcMock.mockReset();
+  rpcMock.mockImplementation(async (fn: string) => {
+    if (fn === 'ca_player_stats_overview_v2') return { data: rpcPayload, error: null };
+    return { data: null, error: null };
+  });
   rpcPayload = {
+    contract_version: 2,
+    generated_at: '2026-08-31T12:00:00.000Z',
+    scope: { target_user_id: 'user-1', club_id: null, range_days: null, visibility: 'owner' },
+    quality: {
+      cash_money_source: 'reconstructed_actions',
+      cash_money_exact: false,
+      advanced_facts_source: 'ca_hand_player_stat',
+      historical_club_breakdown_available: false,
+      live_tail_included: false,
+    },
+    coverage: {
+      analysis_hand_cap: 750,
+      analysis_hands_capped: false,
+      lifetime_index_complete: true,
+      first_hand_at: null,
+      last_hand_at: null,
+      rollup_covered_through: '2026-08-31T11:59:00.000Z',
+      rollup_updated_at: '2026-08-31T12:00:00.000Z',
+    },
     user_id: 'user-1',
     overall: EMPTY_OVERALL,
     lifetime: { hands: 0, first_hand_at: null, last_hand_at: null, indexed_complete: true },
@@ -294,6 +317,28 @@ describe('PlayerStatsPage mounts', () => {
 
     expect(screen.getByRole('button', { name: 'Open Deep Analysis' })).toBeInTheDocument();
   });
+
+  it('never relabels a prior payload when a new range fails', async () => {
+    rpcPayload = {
+      ...rpcPayload,
+      overall: { ...EMPTY_OVERALL, total_hands: 20000, cash_hands: 18000 },
+    };
+    render(<PlayerStatsPage />);
+    expect(await screen.findByText('20,000')).toBeInTheDocument();
+
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_player_stats_overview_v2') {
+        return { data: null, error: { code: '57014', message: 'timed out' } };
+      }
+      return { data: null, error: null };
+    });
+    fireEvent.click(screen.getByRole('button', { name: '7 Days' }));
+
+    expect(
+      await screen.findByText("Couldn't Load Your Stats", undefined, { timeout: 6_000 })
+    ).toBeInTheDocument();
+    expect(screen.queryByText('20,000')).not.toBeInTheDocument();
+  }, 8_000);
 
   it('completes a dossier shortcut by selecting, focusing, and revealing its destination', async () => {
     rpcPayload = {

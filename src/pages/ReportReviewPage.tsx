@@ -206,9 +206,9 @@ export default function ReportReviewPage() {
       <ClubIntegrityHeader
         clubId={clubId}
         active="reports"
-        eyebrow="Case intake / conduct signals"
+        eyebrow="Case Intake / Conduct Signals"
         title="Player Report Review"
-        description="Triage player conduct signals, inspect the evidence, and record a moderation decision without leaving the live club workflow."
+        description="Triage Player Conduct Signals, Inspect The Evidence, And Record A Moderation Decision Without Leaving The Live Club Workflow."
         metrics={[
           { label: 'In View', value: reports.length },
           { label: 'Pending', value: pendingCount, tone: pendingCount ? 'active' : 'neutral' },
@@ -222,7 +222,7 @@ export default function ReportReviewPage() {
             <p className="case-kicker">Moderation Queue</p>
             <h2>Conduct Reports</h2>
           </div>
-          <div className="filter-tabs" role="tablist" aria-label="Filter reports by status">
+          <div className="filter-tabs" role="tablist" aria-label="Filter Reports By Status">
             {REPORT_FILTERS.map((item) => (
               <button
                 key={item}
@@ -259,7 +259,7 @@ export default function ReportReviewPage() {
             <div className="report-state">
               <span className="state-signal" aria-hidden="true" />
               <strong>Queue Clear</strong>
-              <p>No {filter === 'pending' ? 'pending ' : ''}reports Match This View.</p>
+              <p>No {filter === 'pending' ? 'Pending ' : ''}reports Match This View.</p>
             </div>
           ) : (
             <div className="reports-list">
@@ -278,11 +278,11 @@ export default function ReportReviewPage() {
                   <span className="report-players">
                     <span>
                       <strong>Filed By</strong>
-                      {report.reporter_username || 'Unknown player'}
+                      {report.reporter_username || 'Unknown Player'}
                     </span>
                     <span>
                       <strong>Against</strong>
-                      {report.reported_username || 'Unknown player'}
+                      {report.reported_username || 'Unknown Player'}
                     </span>
                   </span>
                   <span className="report-date">
@@ -318,7 +318,7 @@ export default function ReportReviewPage() {
                 ref={closeButtonRef}
                 type="button"
                 onClick={() => setSelectedReport(null)}
-                aria-label="Close report details"
+                aria-label="Close Report Details"
               >
                 Close
               </button>
@@ -327,11 +327,11 @@ export default function ReportReviewPage() {
               <dl className="case-details">
                 <div>
                   <dt>Reported Player</dt>
-                  <dd>{selectedReport.reported_username || 'Unknown player'}</dd>
+                  <dd>{selectedReport.reported_username || 'Unknown Player'}</dd>
                 </div>
                 <div>
                   <dt>Reported By</dt>
-                  <dd>{selectedReport.reporter_username || 'Unknown player'}</dd>
+                  <dd>{selectedReport.reporter_username || 'Unknown Player'}</dd>
                 </div>
                 <div>
                   <dt>Reason</dt>
@@ -339,7 +339,7 @@ export default function ReportReviewPage() {
                 </div>
                 <div className="full-detail">
                   <dt>Description</dt>
-                  <dd>{selectedReport.details || 'No additional details supplied.'}</dd>
+                  <dd>{selectedReport.details || 'No Additional Details Supplied.'}</dd>
                 </div>
               </dl>
               {selectedReport.status === 'pending' && (
@@ -350,7 +350,7 @@ export default function ReportReviewPage() {
                       id="report-admin-notes"
                       value={adminNotes}
                       onChange={(event) => setAdminNotes(event.target.value)}
-                      placeholder="Record the evidence and decision rationale"
+                      placeholder="Record The Evidence And Decision Rationale"
                       rows={4}
                     />
                   </div>

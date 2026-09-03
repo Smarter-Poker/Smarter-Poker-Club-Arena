@@ -17,6 +17,11 @@ import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
 import { resolveClubUUIDStrict } from '../utils/clubIdResolver';
 import { useAuthUser } from '../hooks/useAuthUser';
+import {
+  readClubWorkspaceCache,
+  removeClubWorkspaceCache,
+  writeClubWorkspaceCache,
+} from '../lib/clubWorkspaceCache';
 
 export type ClubWorkspaceStatus = 'idle' | 'loading' | 'ready' | 'denied' | 'error';
 
@@ -57,6 +62,36 @@ const EMPTY_WORKSPACE: ClubWorkspaceValue = {
 
 const ClubWorkspaceContext = createContext<ClubWorkspaceValue>(EMPTY_WORKSPACE);
 
+// A PostgREST request can remain pending when a pooled connection or the
+// browser's fetch stack wedges. retryFetch can retry rejected requests, but it
+// cannot retry a promise that never settles. Bound each authorization read so
+// a club route reaches either its real member surface or its recoverable error
+// state instead of showing PageSkeleton forever.
+const CLUB_WORKSPACE_READ_TIMEOUT_MS = 10_000;
+
+async function withClubWorkspaceReadTimeout<T>(
+  read: (signal: AbortSignal) => PromiseLike<T>,
+  label: string
+): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CLUB_WORKSPACE_READ_TIMEOUT_MS);
+
+  try {
+    return await read(controller.signal);
+  } catch (readError) {
+    if (controller.signal.aborted) {
+      const timeoutError = new Error(
+        `${label} timed out after ${CLUB_WORKSPACE_READ_TIMEOUT_MS}ms.`
+      );
+      timeoutError.name = 'TimeoutError';
+      throw timeoutError;
+    }
+    throw readError;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function getRouteClubId(pathname: string, search: string): string | null {
   const match = pathname.match(/^\/clubs\/([^/]+)/);
   const raw = match?.[1] || new URLSearchParams(search).get('club');
@@ -94,6 +129,7 @@ export function ClubWorkspaceProvider({ children }: { children: ReactNode }) {
     typeof navigator !== 'undefined' ? !navigator.onLine : false
   );
   const [revision, setRevision] = useState(0);
+  const [usingCachedAccess, setUsingCachedAccess] = useState(false);
 
   const reload = useCallback(() => setRevision((value) => value + 1), []);
 
@@ -120,12 +156,13 @@ export function ClubWorkspaceProvider({ children }: { children: ReactNode }) {
       setMembershipStatus(null);
       setIsPlatformStaff(false);
       setError(null);
+      setUsingCachedAccess(false);
       setStatus(nextStatus);
       setLoadedRouteClubId(routeClubId);
       setLoadedUserId(user?.id || null);
     };
 
-    const load = async () => {
+    const load = async (allowCacheFallback = true) => {
       if (!routeClubId) {
         if (!cancelled) clear('idle');
         return;
@@ -138,11 +175,18 @@ export function ClubWorkspaceProvider({ children }: { children: ReactNode }) {
       setStatus('loading');
       setError(null);
       try {
-        const resolvedId = await resolveClubUUIDStrict(routeClubId);
         // This provider is mounted in the global shell. Keep the retry helper
         // out of the first-load bundle and fetch it only for contextual club
         // routes that actually need authorization reads.
         const { retryFetch } = await import('../utils/retryFetch');
+        const resolvedId = await retryFetch(
+          () =>
+            withClubWorkspaceReadTimeout(
+              (signal) => resolveClubUUIDStrict(routeClubId, signal),
+              'Club identity lookup'
+            ),
+          { maxRetries: 3, baseDelayMs: 500 }
+        );
         // These are authorization reads, but a transient PostgREST/network
         // failure is not an authorization verdict. Retry the existing
         // idempotent reads before the guard renders its recoverable fault
@@ -150,15 +194,29 @@ export function ClubWorkspaceProvider({ children }: { children: ReactNode }) {
         // from a member whose access is still valid.
         const [membershipResult, profileResult] = await Promise.all([
           retryFetch(() =>
-            supabase
-              .from('club_members')
-              .select('role,status')
-              .eq('club_id', resolvedId)
-              .eq('user_id', user.id)
-              .maybeSingle()
+            withClubWorkspaceReadTimeout(
+              (signal) =>
+                supabase
+                  .from('club_members')
+                  .select('role,status')
+                  .eq('club_id', resolvedId)
+                  .eq('user_id', user.id)
+                  .abortSignal(signal)
+                  .maybeSingle(),
+              'Club membership lookup'
+            )
           ),
           retryFetch(() =>
-            supabase.from('profiles').select('role').eq('id', user.id).maybeSingle()
+            withClubWorkspaceReadTimeout(
+              (signal) =>
+                supabase
+                  .from('profiles')
+                  .select('role')
+                  .eq('id', user.id)
+                  .abortSignal(signal)
+                  .maybeSingle(),
+              'Platform role lookup'
+            )
           ),
         ]);
         if (cancelled) return;
@@ -178,17 +236,49 @@ export function ClubWorkspaceProvider({ children }: { children: ReactNode }) {
           !profileResult.error &&
             (profileResult.data?.role === 'admin' || profileResult.data?.role === 'super_admin')
         );
-        setLastSyncedAt(Date.now());
+        const verifiedAt = Date.now();
+        setLastSyncedAt(verifiedAt);
+        setUsingCachedAccess(false);
         setStatus(isActive ? 'ready' : 'denied');
         setLoadedRouteClubId(routeClubId);
         setLoadedUserId(user.id);
+        if (isActive) {
+          writeClubWorkspaceCache({
+            userId: user.id,
+            routeClubId,
+            clubUUID: resolvedId,
+            clubRole: membershipResult.data?.role || null,
+            membershipStatus: nextMembershipStatus!,
+            isPlatformStaff:
+              !profileResult.error &&
+              (profileResult.data?.role === 'admin' || profileResult.data?.role === 'super_admin'),
+            verifiedAt,
+          });
+        } else {
+          removeClubWorkspaceCache(user.id, routeClubId);
+        }
       } catch (loadError) {
         reportError(loadError, 'ClubWorkspace.Load_failed', { routeClubId });
         if (!cancelled) {
+          const cached = allowCacheFallback ? readClubWorkspaceCache(user.id, routeClubId) : null;
+          if (cached) {
+            setClubUUID(cached.clubUUID);
+            setClubRole(cached.clubRole);
+            setMembershipStatus(cached.membershipStatus);
+            setIsPlatformStaff(cached.isPlatformStaff);
+            setLastSyncedAt(cached.verifiedAt);
+            setUsingCachedAccess(true);
+            setError(null);
+            setStatus('ready');
+            setLoadedRouteClubId(routeClubId);
+            setLoadedUserId(user.id);
+            return;
+          }
           setClubUUID(null);
           setClubRole(null);
           setMembershipStatus(null);
           setIsPlatformStaff(false);
+          setUsingCachedAccess(false);
           setError('Club access could not be verified. Your membership has not been changed.');
           setStatus('error');
           setLoadedRouteClubId(routeClubId);
@@ -198,13 +288,22 @@ export function ClubWorkspaceProvider({ children }: { children: ReactNode }) {
     };
 
     void load();
-    const refresh = () => void load();
+    // A role/membership event may represent a revocation, so it must never be
+    // hidden by the last verified cache. Manual retry and cold navigation may
+    // use the short-lived fallback because protected RPCs still fail closed.
+    const refresh = () => void load(false);
     const unsubClub = masterBus.subscribeDebounced('CLUB_UPDATED', refresh, 300);
     const unsubRole = masterBus.subscribeDebounced('MEMBER_ROLE_CHANGED', refresh, 150);
+    const unsubManagement = masterBus.subscribeDebounced(
+      'GAME_MANAGEMENT_ACCESS_CHANGED',
+      refresh,
+      100
+    );
     return () => {
       cancelled = true;
       unsubClub();
       unsubRole();
+      unsubManagement();
     };
   }, [isHydrating, revision, routeClubId, user?.id]);
 
@@ -224,7 +323,8 @@ export function ClubWorkspaceProvider({ children }: { children: ReactNode }) {
       ? getClubNavigationCapabilities(effectiveClubRole, effectivePlatformStaff)
       : CLOSED_CAPABILITIES;
   const isMember = effectiveStatus === 'ready';
-  const isStale = isOffline || (!!lastSyncedAt && Date.now() - lastSyncedAt > 5 * 60_000);
+  const isStale =
+    isOffline || usingCachedAccess || (!!lastSyncedAt && Date.now() - lastSyncedAt > 5 * 60_000);
 
   const value = useMemo<ClubWorkspaceValue>(
     () => ({

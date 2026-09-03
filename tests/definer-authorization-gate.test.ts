@@ -22,8 +22,11 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { pathToFileURL } from 'url';
 
-type Verdict = (sql: string, allowlist?: Set<string>) => string[];
+type Verdict = (sql: string, allowlist?: Set<string>, grantSql?: string) => string[];
 let unauthorisedWriters: Verdict;
+let anonReadableDefiners: Verdict;
+let unrevokedClones: Verdict;
+let clonedFunctions: (sql: string) => string[];
 
 beforeAll(async () => {
   // Computed specifier: the checker is a plain ESM script with no type
@@ -35,6 +38,9 @@ beforeAll(async () => {
   ).href;
   const mod = await import(/* @vite-ignore */ href);
   unauthorisedWriters = mod.unauthorisedWriters;
+  anonReadableDefiners = mod.anonReadableDefiners;
+  unrevokedClones = mod.unrevokedClones;
+  clonedFunctions = mod.clonedFunctions;
 });
 
 /** The shape that shipped nineteen times: no GRANT written at all, which
@@ -161,6 +167,133 @@ describe('the allowlist stays small and reasoned', () => {
   });
 });
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  RULE 2: READ-ONLY IS NOT THE SAME AS HARMLESS (2026-08-31)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * The writer rule above only ever looks at functions that WRITE. In one
+ * afternoon THREE new SECURITY DEFINER functions arrived anon-executable and it
+ * cleared every one of them, because none wrote a row:
+ *
+ *   fn_tournament_metrics    operator dashboard numbers
+ *   fn_truly_unused_indexes  table names, index names, sizes, scan counts
+ *   fn_nit_evictions         who was evicted from which table, and when
+ *
+ * The middle one returns the schema's table and index names to a caller with no
+ * account, and index names on this project encode their columns. That is a
+ * partial column map, free, to anybody who asks.
+ *
+ * These feed the checker the exact shapes — including the revoke trap, which is
+ * MORE dangerous for this rule than for the writer one, because `anon` inherits
+ * whatever PUBLIC holds: `REVOKE ... FROM anon` alone changes nothing at all.
+ */
+describe('a new definer that answers a caller with no account', () => {
+  const fn = (name: string, extra = '', body = 'SELECT 1;', ret = 'TABLE(x int)') =>
+    `CREATE OR REPLACE FUNCTION public.${name}(p int) RETURNS ${ret}\n` +
+    `LANGUAGE sql SECURITY DEFINER AS $$ ${body} $$;\n${extra}`;
+
+  it('fails when the migration writes no GRANT at all — the shape all three shipped as', () => {
+    expect(anonReadableDefiners(fn('fn_truly_unused_indexes'))).toEqual([
+      'fn_truly_unused_indexes',
+    ]);
+  });
+
+  it('fails a revoke from anon alone, because anon inherits PUBLIC', () => {
+    const sql = fn('fn_leaky', 'REVOKE ALL ON FUNCTION public.fn_leaky(int) FROM anon;');
+    expect(anonReadableDefiners(sql)).toEqual(['fn_leaky']);
+  });
+
+  it('passes once PUBLIC, anon and authenticated are all named', () => {
+    const sql = fn(
+      'fn_closed',
+      'REVOKE ALL ON FUNCTION public.fn_closed(int) FROM PUBLIC, anon, authenticated;\n' +
+        'GRANT EXECUTE ON FUNCTION public.fn_closed(int) TO service_role;'
+    );
+    expect(anonReadableDefiners(sql)).toEqual([]);
+  });
+
+  it('passes a read kept for logged-in players: this rule guards the pre-login roles only', () => {
+    const sql = fn(
+      'fn_player_read',
+      'REVOKE ALL ON FUNCTION public.fn_player_read(int) FROM PUBLIC, anon;\n' +
+        'GRANT EXECUTE ON FUNCTION public.fn_player_read(int) TO authenticated;'
+    );
+    expect(anonReadableDefiners(sql)).toEqual([]);
+  });
+
+  it('passes a function that asks who is calling', () => {
+    expect(anonReadableDefiners(fn('fn_asks', '', 'SELECT auth.uid();'))).toEqual([]);
+  });
+
+  it('passes a trigger function, which cannot be reached as an RPC', () => {
+    expect(anonReadableDefiners(fn('fn_trg', '', 'BEGIN RETURN NEW; END;', 'trigger'))).toEqual([]);
+  });
+
+  it('passes deliberate public surface once somebody writes down why', () => {
+    const sql = fn('fn_global_leaderboard_period');
+    expect(anonReadableDefiners(sql)).toEqual(['fn_global_leaderboard_period']);
+    expect(anonReadableDefiners(sql, new Set(['fn_global_leaderboard_period']))).toEqual([]);
+  });
+
+  it('does not fire on a migration that only revokes — the fix must not fail its own gate', () => {
+    const sql =
+      'REVOKE ALL ON FUNCTION public.fn_truly_unused_indexes(integer) FROM PUBLIC, anon, authenticated;';
+    expect(anonReadableDefiners(sql)).toEqual([]);
+  });
+
+  /**
+   * A branch's migrations are APPLIED AS A UNIT, so a REVOKE in a sibling
+   * migration really does close the function. Reading one file in isolation
+   * reported a hole that would never exist — and the first thing it reported
+   * that way was fn_definer_exposure_audit, the security audit itself, whose
+   * REVOKE lives in the very next migration of the same branch.
+   */
+  it('sees a REVOKE that lands in a sibling migration of the same branch', () => {
+    const declaring = fn('fn_audit_thing');
+    const sibling =
+      'REVOKE ALL ON FUNCTION public.fn_audit_thing(int) FROM PUBLIC, anon, authenticated;\n' +
+      'GRANT EXECUTE ON FUNCTION public.fn_audit_thing(int) TO service_role;';
+
+    // On its own the declaring file looks wide open, and honestly so.
+    expect(anonReadableDefiners(declaring)).toEqual(['fn_audit_thing']);
+    // Read against the whole branch, it is closed.
+    expect(anonReadableDefiners(declaring, new Set(), `${declaring}\n${sibling}`)).toEqual([]);
+  });
+
+  it('applies the same branch-wide reading to the writer rule', () => {
+    // A function whose body merely NAMES the write verbs - which is what the
+    // exposure audit's own detection regex does - still reads as a writer, on
+    // purpose: EXECUTE 'insert into ...' is a real write and must not become a
+    // blind spot. The branch's REVOKE is what clears it.
+    const declaring = fn(
+      'fn_names_the_verbs',
+      '',
+      "SELECT 1 WHERE 'x' ~ '(insert into|update |delete from)';"
+    );
+    expect(unauthorisedWriters(declaring)).toEqual(['fn_names_the_verbs']);
+
+    const sibling =
+      'REVOKE ALL ON FUNCTION public.fn_names_the_verbs(int) FROM PUBLIC, anon, authenticated;';
+    expect(unauthorisedWriters(declaring, new Set(), `${declaring}\n${sibling}`)).toEqual([]);
+  });
+
+  it('starts with an empty anonPublicSurface, so the first entry costs a decision', () => {
+    const allow = JSON.parse(
+      readFileSync(
+        resolve(__dirname, '..', 'scripts/ci/definer-authorization.allowlist.json'),
+        'utf8'
+      )
+    );
+    // Not "must stay empty" — it must stay REASONED. Every entry needs a
+    // paragraph saying what an unauthenticated caller may learn from it.
+    for (const [name, why] of Object.entries(allow.anonPublicSurface ?? {})) {
+      expect(typeof why, name).toBe('string');
+      expect((why as string).length, name).toBeGreaterThan(120);
+    }
+  });
+});
+
 describe('the gate is actually wired to something', () => {
   it('runs in CI as a blocking step', () => {
     const ci = readFileSync(resolve(__dirname, '..', '.github/workflows/ci.yml'), 'utf8');
@@ -171,5 +304,124 @@ describe('the gate is actually wired to something', () => {
   it('runs on pre-push, because branch protection is unavailable on a private repo', () => {
     const hook = readFileSync(resolve(__dirname, '..', '.husky/pre-push'), 'utf8');
     expect(hook).toContain('check-definer-authorization.mjs');
+  });
+});
+
+/**
+ * ---------------------------------------------------------------------------
+ *  A CLONE IS A DECLARATION (2026-09-01)
+ * ---------------------------------------------------------------------------
+ *
+ * 20260901090000_club_card_human_realtime_stats.sql duplicated three functions
+ * under new names by rewriting pg_get_functiondef output and EXECUTEing it.
+ * Two of the three were revoked from PUBLIC, anon and authenticated in that
+ * same file; the third was not, and CREATE FUNCTION grants EXECUTE to PUBLIC.
+ *
+ * fn_seat_club_for_user_membership_unchecked therefore went live SECURITY
+ * DEFINER, owned by postgres, answering a caller with no account: give it a
+ * user id and a table id and it returns which club that player is seated under
+ * and which clubs they are a member of. The gate cleared the migration,
+ * because a clone is not spelled CREATE FUNCTION and there was nothing to
+ * judge. The daily live audit found it hours later.
+ *
+ * These cases are fed the REAL migration, so they fail if the reading of a
+ * clone is ever weakened back to "only what CREATE FUNCTION declares".
+ */
+describe('a function cloned into a new name is judged like a new function', () => {
+  const SHIPPED = resolve(
+    __dirname,
+    '..',
+    'supabase/migrations/20260901090000_club_card_human_realtime_stats.sql'
+  );
+
+  it('tells the clone target from the function being copied', () => {
+    // The source half of the regexp_replace is a REGULAR EXPRESSION, so its dot
+    // and paren are escaped; what actually separates source from target is that
+    // the source is the argument to pg_get_functiondef.
+    const clones = clonedFunctions(readFileSync(SHIPPED, 'utf8')).sort();
+    expect(clones).toEqual([
+      'fn_create_club_atomic_membership_impl',
+      'fn_join_club_membership_impl',
+      'fn_seat_club_for_user_membership_unchecked',
+    ]);
+  });
+
+  it('names the one clone that migration left open, and only that one', () => {
+    expect(unrevokedClones(readFileSync(SHIPPED, 'utf8'))).toEqual([
+      'fn_seat_club_for_user_membership_unchecked',
+    ]);
+  });
+
+  it('clears it once the revoke it was missing is present', () => {
+    const sql = readFileSync(SHIPPED, 'utf8');
+    const withRevoke =
+      sql +
+      '\nREVOKE ALL ON FUNCTION public.fn_seat_club_for_user_membership_unchecked' +
+      '(uuid, uuid, uuid) FROM PUBLIC, anon, authenticated;';
+    expect(unrevokedClones(sql, new Set(), withRevoke)).toEqual([]);
+  });
+
+  it('is not satisfied by revoking authenticated while PUBLIC still holds it', () => {
+    const sql = readFileSync(SHIPPED, 'utf8');
+    const halfFixed =
+      sql +
+      '\nREVOKE ALL ON FUNCTION public.fn_seat_club_for_user_membership_unchecked' +
+      '(uuid, uuid, uuid) FROM authenticated;';
+    expect(unrevokedClones(sql, new Set(), halfFixed)).toEqual([
+      'fn_seat_club_for_user_membership_unchecked',
+    ]);
+  });
+
+  it('has no auth.uid() exemption, because the body is not in the file', () => {
+    // The two rules above clear a function whose body consults the request.
+    // A clone's body lives in the database, so there is nothing to read and
+    // nothing to earn: the grants have to be stated.
+    const sql = `
+DO $clone$
+DECLARE v_def text;
+BEGIN
+  SELECT pg_get_functiondef('public.fn_original(uuid)'::regprocedure) INTO v_def;
+  v_def := regexp_replace(v_def, 'FUNCTION public\\.fn_original\\(',
+    'FUNCTION public.fn_copy(', 1, 1);
+  EXECUTE v_def;   -- auth.uid() appears here and means nothing
+END;
+$clone$;
+`;
+    expect(unrevokedClones(sql)).toEqual(['fn_copy']);
+  });
+
+  it('accepts a written decision instead, like the other two rules', () => {
+    const sql = readFileSync(SHIPPED, 'utf8');
+    expect(unrevokedClones(sql, new Set(['fn_seat_club_for_user_membership_unchecked']))).toEqual(
+      []
+    );
+  });
+});
+
+describe('a grant statement cannot be read across a semicolon', () => {
+  /**
+   * Found while writing the clone rule. The gap between GRANT/REVOKE and
+   * `ON FUNCTION` was `[\s\S]*?`, so the word "grant" anywhere at all -- here
+   * inside a RAISE EXCEPTION message, which is how the real migration ends --
+   * reached forward to the next `ON FUNCTION` in the file and stamped its own
+   * verb on somebody else's statement.
+   *
+   * In that direction it read as stricter than the truth. Reversed, a stray
+   * "revoke" ahead of a real GRANT clears a function that is wide open, which
+   * is the exact failure this file exists to prevent.
+   */
+  it('does not let a stray verb in a string relabel the next statement', () => {
+    const sql = `
+CREATE OR REPLACE FUNCTION public.fn_reader(p_id uuid)
+RETURNS uuid LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO 'public'
+AS $function$
+BEGIN
+  RAISE EXCEPTION 'this club still has a duplicate owner-wallet grant';
+END;
+$function$;
+REVOKE ALL ON FUNCTION public.fn_reader(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_reader(uuid) TO service_role;
+`;
+    expect(anonReadableDefiners(sql)).toEqual([]);
   });
 });

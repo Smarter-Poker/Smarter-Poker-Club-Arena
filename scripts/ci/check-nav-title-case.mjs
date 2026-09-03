@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  check-nav-title-case — the half of the Title Case rule nothing was enforcing
+ *  check-nav-title-case — focused navigation registry defense
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Dan 2026-08-21: "First letter of every word is capitalized, that's a hard rule
@@ -9,19 +9,12 @@
  * Dan 2026-08-30: "THE FIRST LETTER OF EVERY WORD INSIDE THE HAMBURGER MENU MUST
  * BE CAPITALIZED. AS WELL AS EVERY CLICKABLE PAGE AND SUBPAGE."
  *
- * WHY A SECOND GATE, AND NOT A WIDENING OF check-title-case.mjs
+ * WHY KEEP A SECOND GATE AFTER WIDENING check-title-case.mjs
  *
- * That gate says, in its own header, exactly what it does not cover:
- *
- *   "WHAT IT DOES NOT TOUCH
- *      - anything inside {} - those are expressions, and their values are cased
- *        at their source (or by formatPopupText for toasts)"
- *
- * That is a correct decision - a parser cannot tell a CSS value from prose - and
- * it makes a PROMISE: expression values are cased AT THEIR SOURCE. Nothing
- * enforced the promise. Every navigation surface in Club Arena renders its copy
- * from a config registry through an expression (`{item.label}`), so all of it
- * fell in the gap between the two halves of the rule:
+ * The general gate now parses static JSX, accessibility attributes, conditional
+ * expressions, templates and known copy-bearing registry properties. This
+ * focused gate remains as defense in depth for every canonical navigation
+ * registry and produces navigation-specific failure messages:
  *
  *   ArenaSectionRail, ClubOperationsRail, QuickActionsBar,
  *   ClubBottomNav, HamburgerMenu - five surfaces, one blind spot.
@@ -47,9 +40,8 @@
  * SCOPE IS DELIBERATELY NARROW. Only the files in REGISTRIES below, and only
  * those three keys. These are navigation registries whose every string is
  * forward-facing menu copy by construction, which is what makes casing them
- * unambiguous - the exact property the sibling gate could not get from arbitrary
- * expressions. Do not widen this to "all string literals"; that is the mistake
- * check-title-case.mjs correctly refused to make.
+ * unambiguous. Do not widen this to all string literals; routes, identifiers,
+ * protocol values and CSS tokens are not player-facing prose.
  *
  * Run:  node scripts/ci/check-nav-title-case.mjs [--fix]
  */
@@ -76,6 +68,56 @@ const REGISTRIES = [
   'src/config/clubIntegrityNavigation.ts',
   'src/components/navigation/QuickActionsBar.tsx',
   'src/components/club/ClubBottomNav.tsx',
+
+  /*
+   * EVERY PAGE, NOT ONLY THE MENU (2026-08-31).
+   *
+   * Dan: "make sure the first letter of every word on every single page and
+   * sub page is capitalized."
+   *
+   * check-title-case reads JSX TEXT only, and its header says expression
+   * values "are cased at their source". Until now the only source anything
+   * checked was the six files above, so `{item.label}` anywhere else in the
+   * app was covered by a promise nothing kept. Measured: 241
+   * label/description/eyebrow literals outside the six sat in sentence case
+   * and reached players - the command palette, the report-a-player reasons,
+   * the achievement, VIP and stats copy, the password-strength checklist.
+   *
+   * The header below warns against widening this to "all string literals",
+   * and that warning is right: an arbitrary `label:` may be an analytics key
+   * or an enum value, not copy. So the test it already applies is applied per
+   * file instead of assumed - every file added here contains offending
+   * literals AND renders them itself through an expression, which is the same
+   * "forward-facing copy by construction" property that makes the six above
+   * safe to case.
+   *
+   * Ten more files hold offending literals but do NOT render them in-file -
+   * RakeConfig, AchievementService, VIPService, PayoutEngine, club.types and
+   * others. Their consumers have to be read one at a time before their copy
+   * can be cased safely, and that is deliberately not done blind here.
+   */
+  'src/components/admin/AdminCommandPalette.tsx',
+  'src/components/gamification/FinancialAchievementBadge.tsx',
+  'src/components/moderation/ReportPlayerModal.tsx',
+  'src/components/navigation/HamburgerMenu.tsx',
+  'src/components/security/PasswordStrength.tsx',
+  'src/components/social/FriendChallengeModal.tsx',
+  'src/components/stats/AdvancedStatsSummary.tsx',
+  'src/components/stats/TrophyRoom.tsx',
+  'src/components/table/RealTimeResultPanel.tsx',
+  'src/components/vip/RewardsMarketplace.tsx',
+  'src/components/vip/VIPBenefitsGrid.tsx',
+  'src/components/wallet/DepositWithdrawModal.tsx',
+  'src/pages/AchievementsPage.tsx',
+  'src/pages/FinancialAdminHub.tsx',
+  'src/pages/LeaderboardPage.tsx',
+  'src/pages/PlayerStatsPage.tsx',
+  'src/pages/SearchPage.tsx',
+  'src/pages/VIPPage.tsx',
+  'src/pages/club/ClubDashboard.tsx',
+  'src/pages/club/ClubDataPage.tsx',
+  'src/pages/tournament/TournamentLobbyPage.tsx',
+  'src/pages/workspaces/ArenaWorkspacePages.tsx',
 ];
 
 const KEYS = new Set(['label', 'description', 'eyebrow']);
@@ -193,9 +235,8 @@ if (offenders.length > 0) {
   console.error(
     '\ncheck-nav-title-case FAILED: navigation copy is not Title Cased at its source.\n'
   );
-  console.error('These strings are rendered through an expression ({item.label}), which');
-  console.error('check-title-case.mjs deliberately does not inspect - it assumes they are');
-  console.error('cased at their source. This gate is that assumption.');
+  console.error('These strings are rendered through navigation registries. This focused');
+  console.error('gate keeps their source contract explicit in addition to the general gate.');
   console.error('Run: node scripts/ci/check-nav-title-case.mjs --fix\n');
   offenders.slice(0, 60).forEach((o) => console.error('  ' + o));
   if (offenders.length > 60) console.error(`  ... and ${offenders.length - 60} more`);

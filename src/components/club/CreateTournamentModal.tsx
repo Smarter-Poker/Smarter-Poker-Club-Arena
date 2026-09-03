@@ -2,9 +2,18 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   tournamentService,
   BLIND_STRUCTURES,
+  SPIN_BLIND_STRUCTURE,
   PAYOUT_STRUCTURES,
   SPIN_MULTIPLIERS,
 } from '../../services/TournamentService';
+import {
+  SPIN_TIERS,
+  SPIN_SEATS,
+  expectedMultiplier,
+  impliedHouseEdge,
+} from '../../config/spinSpec';
+import { maxSeatsTheDeckAllows } from '../../config/tableSeating';
+import { capPaidPlaces, fieldCapFor, minPlayersFor } from '../../lib/tournamentFieldRules';
 import styles from './CreateTournamentModal.module.css';
 import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
@@ -18,9 +27,8 @@ import WeeklyScheduleEditor, {
   type WeeklyScheduleValue,
 } from '../tournament/WeeklyScheduleEditor';
 import { BlindStructureBuilder } from '../tournament/BlindStructureBuilder';
-import PayoutStructureEditor from '../tournament/PayoutStructureEditor';
 import type { BlindLevel } from '../../config/blindStructures';
-import type { PayoutEntry, PayoutTemplate } from '../../services/PayoutEngine';
+import payoutEngine from '../../services/PayoutEngine';
 import { canRunAsSpin, type TournamentGameVariant } from '../../config/tournamentVariants';
 
 interface Props {
@@ -55,6 +63,22 @@ interface Props {
  * see the header of tournamentFromTableConfig for why the old exclusion was
  * wrong about this engine.
  */
+/**
+ * The field cap an MTT-shaped format starts at.
+ *
+ * Not "unlimited": `fn_create_tournament` refuses `maxPlayers <= 0`, and
+ * registration is refused once `current_players >= max_players`, so a zero cap
+ * is a locked door rather than an open one. Live MTT caps in production run
+ * 30-500; 500 is the top of that range and the operator can lower it.
+ */
+// MTT fields have no operator-set cap. The database still requires a positive
+// safety ceiling, so creation uses a deliberately unreachable technical guard
+// while registration and payouts continue to follow the actual field.
+const DEFAULT_MTT_FIELD = '1000000';
+
+type MttEntryRules = 'freezeout' | 'rebuy' | 'reentry';
+type MttPrizeStyle = 'regular' | 'bounty' | 'progressive_bounty' | 'mystery_bounty';
+
 const VARIANT_OPTIONS: { value: TournamentGameVariant; label: string }[] = [
   { value: 'NLH', label: "No-Limit Hold'em" },
   { value: 'PLO4', label: 'Pot-Limit Omaha (4-Card)' },
@@ -101,6 +125,7 @@ export default function CreateTournamentModal({
   // ── Core Config ──
   const [name, setName] = useState('');
   const [format, setFormat] = useState<TournamentFormat>(initialFormat || 'mtt_freezeout');
+  const [mttEntryRules, setMttEntryRules] = useState<MttEntryRules>('freezeout');
   const [gameVariant, setGameVariant] = useState<TournamentGameVariant>('NLH');
   /* Spins sell four games; every other format sells all eight. See
      VARIANT_OPTIONS above for why this is a filter and not a second list. */
@@ -117,14 +142,18 @@ export default function CreateTournamentModal({
   const [buyIn, setBuyIn] = useState('10');
   const [startingChips, setStartingChips] = useState('1500');
   const [maxPlayers, setMaxPlayers] = useState('50');
+  /* THE TWO NUMBERS THE DATABASE REFUSES ON live in src/lib/tournamentFieldRules
+     so they can be tested without rendering this form. See that file's header:
+     `maxPlayers: 0` ("unlimited") made every MTT-shaped format uncreatable, and
+     the sng6 preset paired with "Heads Up (2)" paid two places into a two-seat
+     field, which the RPC refuses as `more_paid_places_than_players`. */
+  const fieldCap = fieldCapFor(maxPlayers);
   const [blindSpeed, setBlindSpeed] = useState<'turbo' | 'regular' | 'deepStack' | 'custom'>(
     'turbo'
   );
   /* Only read when blindSpeed === 'custom'. Seeded from the Regular preset by
      the builder itself, so it is never empty when it is used. */
   const [customBlinds, setCustomBlinds] = useState<BlindLevel[]>([]);
-  const [customPayoutsOn, setCustomPayoutsOn] = useState(false);
-  const [customPayouts, setCustomPayouts] = useState<PayoutEntry[]>([]);
   const [guaranteedPrize, setGuaranteedPrize] = useState('0');
 
   // ── Satellite target (the tournament winners earn a seat into) ──
@@ -142,6 +171,41 @@ export default function CreateTournamentModal({
   const [startTimeMode, setStartTimeMode] = useState<'now' | 'scheduled' | 'schedule_only'>('now');
   const [scheduledDate, setScheduledDate] = useState('');
   const [scheduledTime, setScheduledTime] = useState('');
+  const scheduledDateOptions = useMemo(
+    () =>
+      Array.from({ length: 366 }, (_, offset) => {
+        const date = new Date();
+        date.setHours(12, 0, 0, 0);
+        date.setDate(date.getDate() + offset);
+        const value = date.toISOString().slice(0, 10);
+        return {
+          value,
+          label: date.toLocaleDateString(undefined, {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          }),
+        };
+      }),
+    []
+  );
+  const scheduledTimeOptions = useMemo(
+    () =>
+      Array.from({ length: 96 }, (_, index) => {
+        const hour = Math.floor(index / 4);
+        const minute = (index % 4) * 15;
+        const value = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+        return {
+          value,
+          label: new Date(2000, 0, 1, hour, minute).toLocaleTimeString(undefined, {
+            hour: 'numeric',
+            minute: '2-digit',
+          }),
+        };
+      }),
+    []
+  );
 
   // ── Late Registration (level-based, per tournament) ──
   // Late reg and rebuy/re-entry ALWAYS share the same cutoff level
@@ -149,8 +213,8 @@ export default function CreateTournamentModal({
 
   // ── Rebuy / Re-Entry / Add-On ──
   // Note: isRebuy/isReentry are managed via format selection, but kept for backward compat
-  const isRebuy = format === 'mtt_rebuy';
-  const isReentry = format === 'mtt_reentry';
+  const isRebuy = mttEntryRules === 'rebuy';
+  const isReentry = mttEntryRules === 'reentry';
   const [rebuyCost, setRebuyCost] = useState('');
   /** Flips synchronously, so a second submit cannot slip past an await. */
   const submittingRef = useRef(false);
@@ -168,7 +232,6 @@ export default function CreateTournamentModal({
   const [addOnAvailable, setAddOnAvailable] = useState(isRebuy || isReentry);
   const [addOnCost, setAddOnCost] = useState('');
   const [addOnChips, setAddOnChips] = useState('');
-  const [addOnLevels, setAddOnLevels] = useState('1');
 
   // ── Bounty Config ──
   const [bountyAmount, setBountyAmount] = useState('5');
@@ -201,7 +264,9 @@ export default function CreateTournamentModal({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [shortDescription, setShortDescription] = useState('');
   const [isVipOnly, setIsVipOnly] = useState(false);
-  const [banChat, setBanChat] = useState(false);
+  // MTT chat is closed by default. An owner can review the locked rule in
+  // Advanced Options, but cannot accidentally publish an event with chat on.
+  const [banChat] = useState(true);
   const [allInOrFold, setAllInOrFold] = useState(false);
   const [labelAsNew, setLabelAsNew] = useState(false);
   const [hideClubName, setHideClubName] = useState(false);
@@ -212,7 +277,6 @@ export default function CreateTournamentModal({
   const [synchronizedBreaks, setSynchronizedBreaks] = useState(true);
   const [actionTimeSeconds, setActionTimeSeconds] = useState('15');
   const [tableSize, setTableSize] = useState('9');
-  const [addonBreakMinutes, setAddonBreakMinutes] = useState('1');
   const [earlyBirdEnabled, setEarlyBirdEnabled] = useState(false);
   const [earlyBirdChips, setEarlyBirdChips] = useState('0');
   const [bubbleProtection, setBubbleProtection] = useState(false);
@@ -224,6 +288,8 @@ export default function CreateTournamentModal({
   // ── Weekly recurring schedule (tournament_schedules) ──
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [schedule, setSchedule] = useState<WeeklyScheduleValue>({ ...DEFAULT_WEEKLY_SCHEDULE });
+  const [scheduleCadence, setScheduleCadence] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
+  const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState(new Date().getUTCDate());
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -249,11 +315,16 @@ export default function CreateTournamentModal({
     () =>
       rakeRateFor({
         variant: format,
-        // Only an SNG or a Spin has a fixed field size; an MTT sends 0, which
-        // rakeRateFor reads as "unknown seats" and prices at the default rate.
-        maxPlayers: format === 'sng' || format === 'spin' ? parseInt(maxPlayers) || 0 : 0,
+        /* EVERY format has a real field size now, so every format is priced on
+           it. The old comment said "an MTT sends 0, which rakeRateFor reads as
+           unknown seats" — that 0 was the same 0 the database refuses, so no
+           MTT priced this way was ever created. rakeRateFor's law is keyed on
+           SEATS ("a two-handed game is a duel whatever its label says"), and
+           `fn_create_tournament` is being brought onto the same rule in this
+           change; passing the cap is what makes the quote match the charge. */
+        maxPlayers: fieldCap,
       }),
-    [format, maxPlayers]
+    [format, fieldCap]
   );
   const split = useMemo(
     () => splitBuyIn(Number(buyIn) || 0, quotedRakeRate),
@@ -261,7 +332,9 @@ export default function CreateTournamentModal({
   );
 
   // ── Auto-select payout structure ──
-  // SNG/Spin: based on max players. MTT/Bounty/PKO/Mystery: default MTT structure (no max player cap)
+  // MTT-shaped events advertise the standard top 15% of their capacity here.
+  // The engine recalculates the same 15% against the FINAL field after entry
+  // closes, so this preview can never become a fixed ten-place payout table.
   const payoutStructure = useMemo(() => {
     if (format === 'spin') return [{ place: 1, percentage: 100 }];
     const mp = parseInt(maxPlayers) || 0;
@@ -269,23 +342,28 @@ export default function CreateTournamentModal({
       if (mp <= 6) return PAYOUT_STRUCTURES.sng6;
       return PAYOUT_STRUCTURES.sng9;
     }
-    // MTT / Bounty / PKO / Mystery / Satellite / XMTT — no max player limit, use standard MTT payouts
-    return PAYOUT_STRUCTURES.mtt50;
+    return payoutEngine.generatePayouts('top15', Math.max(2, mp));
   }, [maxPlayers, format]);
 
   /* What actually gets sent. A custom ladder or a custom payout table is only
      consulted when its own control is on, so turning the control off restores
      the preset rather than leaving a half-edited structure behind. */
-  const effectiveBlinds = useMemo(
-    () => (blindSpeed === 'custom' ? customBlinds : BLIND_STRUCTURES[blindSpeed]),
-    [blindSpeed, customBlinds]
-  );
+  const effectiveBlinds = useMemo(() => {
+    if (blindSpeed === 'custom') return customBlinds;
+    /* A SPIN GETS THE SPIN LADDER (2026-08-31). This read `BLIND_STRUCTURES[
+       blindSpeed]` for every format, and `blindSpeed` defaults to 'turbo' and
+       is never touched when the format becomes a Spin — so a Spin created here
+       ran the thirty-level MTT turbo ramp instead of `SPIN_BLIND_STRUCTURE`.
+       A Spin & Go is a hyper-turbo by definition; on the MTT ramp its three
+       players sat deep for levels the format is not built to reach.
+       `tournamentFromTableConfig` has always picked the spin ladder for spins;
+       this screen was the one that did not. */
+    if (format === 'spin') return SPIN_BLIND_STRUCTURE;
+    return BLIND_STRUCTURES[blindSpeed];
+  }, [blindSpeed, customBlinds, format]);
   const effectivePayouts = useMemo(
-    () =>
-      customPayoutsOn
-        ? customPayouts.map((pp) => ({ place: pp.place, percentage: pp.percentage }))
-        : payoutStructure,
-    [customPayoutsOn, customPayouts, payoutStructure]
+    () => capPaidPlaces(payoutStructure, fieldCap),
+    [payoutStructure, fieldCap]
   );
 
   /* TournamentService rejects a payout table that does not total 100%, and a
@@ -303,18 +381,11 @@ export default function CreateTournamentModal({
 
   /* The payout editor prices places against a pool that does not exist yet.
      For an SNG or a Spin the field size is exact - the game starts when the
-     last seat sells - so the amounts are real. An MTT has no cap, so the
-     projection is stated at an assumed field rather than implied as fact. */
-  const projectedField = isSngOrSpin ? parseInt(maxPlayers) || 0 : 50;
-  const projectedPrizePool = split.prize * projectedField;
-
-  /* Open the editor on the SAME shape the preset would have used. Without
-     this it opened on Top 15%, which for a 6 max sit-and-go silently turned
-     65/35 into winner-take-all the instant the box was ticked. */
-  const payoutSeedTemplate: PayoutTemplate =
-    format === 'sng' ? (projectedField <= 6 ? 'sng6' : 'sng9') : 'top15';
+     last seat sells - so the amounts are real. An MTT states its projection at
+     its own CAP rather than at a hard-coded 50: the cap is what registration
+     actually stops at, and it is a number the operator chose. It is still a
+     ceiling, not a promise, which is why the helper text below says so. */
   const isSatellite = format === 'satellite';
-  const isXmtt = format === 'xmtt';
 
   // Load candidate target tournaments (upcoming, non-satellite in this club) once
   // the satellite format is chosen, so the organiser can pick what seats feed into.
@@ -342,11 +413,23 @@ export default function CreateTournamentModal({
     };
   }, [isSatellite, clubId]);
 
-  // ── Auto-set defaults when format changes ──
+  /**
+   * ── Auto-set defaults when format changes ──
+   *
+   * MULTI-DAY IS RESET FOR EVERY FORMAT, NOT JUST TWO OF THEM (2026-08-31).
+   * The checkbox only renders for the three `mtt_*` formats, so a value set on
+   * a freezeout and then carried into Bounty or Satellite was invisible AND
+   * fatal: `trg_tournaments_refuse_unbuilt_multi_day` RAISEs 0A000 on insert,
+   * so the operator got an unexplained failure with no control on screen to
+   * undo it. Resetting before the switch means the flag can only ever be true
+   * on a format that shows it.
+   */
   const handleFormatChange = (f: TournamentFormat) => {
     setFormat(f);
+    setIsMultiDay(false);
     switch (f) {
       case 'sng':
+        setMttEntryRules('freezeout');
         setMaxPlayers('6');
         setLateRegLevels('0');
         setStartTimeMode('now');
@@ -354,6 +437,7 @@ export default function CreateTournamentModal({
         setAddOnAvailable(false);
         break;
       case 'spin':
+        setMttEntryRules('freezeout');
         setMaxPlayers('3');
         setLateRegLevels('0');
         setStartTimeMode('now');
@@ -366,36 +450,96 @@ export default function CreateTournamentModal({
            stale value. */
         setGameVariant((v) => (canRunAsSpin(v) ? v : 'NLH'));
         break;
+      /* THERE IS NO SUCH THING AS AN UNLIMITED FIELD HERE (2026-08-31).
+         Every one of these branches used to set '0' with the comment
+         "0 = unlimited", and `fn_create_tournament` opens with
+
+           v_max_players := COALESCE((p_config->>'maxPlayers')::int, 0);
+           IF v_max_players <= 0 THEN RETURN 'max_players_must_be_positive';
+
+         so EVERY MTT, bounty, satellite and XMTT this modal offered was
+         refused by the database before a row was written. Registration is
+         also refused once current_players >= max_players, so 0 would lock
+         everyone out even if the insert succeeded. `tournamentFromTableConfig`
+         has said exactly this in a comment since 2026-08-19 and clamps to
+         `Math.max(2, ...)`; this screen never got the same fix.
+
+         DEFAULT_MTT_FIELD is a real cap the operator can change, sized against
+         what production actually runs (live MTT caps range 30-500). */
       case 'mtt_rebuy':
+        setMttEntryRules('rebuy');
+        setMaxPlayers(DEFAULT_MTT_FIELD);
+        setLateRegLevels('8');
+        setAddOnAvailable(true);
+        break;
       case 'mtt_reentry':
-        setMaxPlayers('0');
+        setMttEntryRules('reentry');
+        setMaxPlayers(DEFAULT_MTT_FIELD);
         setLateRegLevels('8');
         setAddOnAvailable(true);
         break;
       case 'bounty':
       case 'progressive_bounty':
       case 'mystery_bounty':
-        setMaxPlayers('0'); // Unlimited
+        setMaxPlayers(DEFAULT_MTT_FIELD);
         setLateRegLevels('10');
         setAddOnAvailable(false);
         break;
       case 'satellite':
-        setMaxPlayers('0'); // Unlimited
+        setMttEntryRules('freezeout');
+        setMaxPlayers(DEFAULT_MTT_FIELD);
         setLateRegLevels('8');
         setAddOnAvailable(false);
         break;
       case 'xmtt':
-        setMaxPlayers('0'); // Unlimited (union-level)
+        setMaxPlayers(DEFAULT_MTT_FIELD);
         setLateRegLevels('8');
         setAddOnAvailable(false);
-        setIsMultiDay(true); // XMTTs are typically multi-day
+        /* `setIsMultiDay(true)` lived here — "XMTTs are typically multi-day".
+           Multi-day is NOT BUILT (no day end, no Day 2 resume, no flight
+           merge) and the database refuses the flag outright, so this line
+           made the XMTT format uncreatable. The reset above covers it. */
         break;
       case 'mtt_freezeout':
       default:
-        setMaxPlayers('0'); // Unlimited
+        setMttEntryRules('freezeout');
+        setMaxPlayers(DEFAULT_MTT_FIELD);
         setLateRegLevels('8');
         setAddOnAvailable(false);
     }
+  };
+
+  const mttPrizeStyle: MttPrizeStyle =
+    format === 'bounty' || format === 'progressive_bounty' || format === 'mystery_bounty'
+      ? format
+      : 'regular';
+
+  const applyMttEntryRules = (rules: MttEntryRules) => {
+    setMttEntryRules(rules);
+    setLateRegLevels('8');
+    setMaxPlayers(DEFAULT_MTT_FIELD);
+    setAddOnAvailable(rules !== 'freezeout');
+    if (mttPrizeStyle === 'regular') {
+      setFormat(
+        rules === 'rebuy' ? 'mtt_rebuy' : rules === 'reentry' ? 'mtt_reentry' : 'mtt_freezeout'
+      );
+    }
+  };
+
+  const applyMttPrizeStyle = (style: MttPrizeStyle) => {
+    if (style === 'regular') {
+      setFormat(
+        mttEntryRules === 'rebuy'
+          ? 'mtt_rebuy'
+          : mttEntryRules === 'reentry'
+            ? 'mtt_reentry'
+            : 'mtt_freezeout'
+      );
+      return;
+    }
+    setFormat(style);
+    setMaxPlayers(DEFAULT_MTT_FIELD);
+    setLateRegLevels('8');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -562,8 +706,16 @@ export default function CreateTournamentModal({
         buyIn: parsedBuyIn,
         rake: parsedRake,
         startingStack: parseInt(startingChips),
-        maxPlayers: isSngOrSpin ? parseInt(maxPlayers) : 0, // 0 = unlimited for MTT/Bounty/PKO/Mystery/Satellite
-        minPlayers: 3,
+        /* A REAL CAP FOR EVERY FORMAT. See handleFormatChange: the database
+           refuses a non-positive field, so "0 = unlimited" created nothing. */
+        maxPlayers: fieldCap,
+        /* MIN FOLLOWS THE FORMAT, and was hardcoded 3 for all of them.
+           An SNG starts only when it is FULL (GameServer: `isSngOrSpin ?
+           maxReached : ...`), so a 9-max SNG stored with min 3 advertises a
+           threshold that means nothing — and the RPC only masked it for the
+           2-max case, where it clamps min down to max. An MTT keeps a real
+           minimum, never above the cap. */
+        minPlayers: minPlayersFor(isSngOrSpin, fieldCap),
         blindStructure: effectiveBlinds,
         payoutStructure: effectivePayouts,
         lateRegistrationLevels: parseInt(lateRegLevels) || 0,
@@ -578,7 +730,10 @@ export default function CreateTournamentModal({
         addOnAvailable,
         addOnChips: addOnAvailable ? parseInt(addOnChips) || parseInt(startingChips) : undefined,
         addOnCost: addOnAvailable ? Math.round(Number(addOnCost)) || parsedBuyIn : undefined,
-        addOnLevels: addOnAvailable ? parseInt(addOnLevels) || 1 : undefined,
+        // Exactly one 60-second add-on period begins when rebuys close.
+        // `addonBreakMinutes` carries the duration; addonLevels remains one
+        // only for compatibility with older database rows.
+        addOnLevels: addOnAvailable ? 1 : undefined,
         guaranteedPrize: Math.max(0, Math.round(Number(guaranteedPrize)) || 0),
         satelliteTarget:
           isSatellite && satelliteTargetId
@@ -632,8 +787,20 @@ export default function CreateTournamentModal({
         authorizedToRegister,
         synchronizedBreaks,
         actionTimeSeconds: clampInt(actionTimeSeconds, 5, 60, 15),
-        tableSize: clampInt(tableSize, 2, 10, 9),
-        addonBreakMinutes: addOnAvailable ? clampInt(addonBreakMinutes, 1, 10, 1) : undefined,
+        /* CLAMPED BY THE DECK, not only by the slider's 2-10 (2026-08-31).
+           PLO5 deals five cards a seat and PLO6 six, so a ten-handed table
+           wants 50 or 60 hole cards plus a board out of one 52-card deck and
+           `PokerEngine.deal()` THROWS rather than dealing short — the
+           tournament starts and then sits there. `tournamentFromTableConfig`
+           has applied `maxSeatsTheDeckAllows` since 2026-08-24; this screen
+           did not, so the same 10-seat PLO5 was creatable from one form and
+           refused by the other. Also never above the field itself. */
+        tableSize: Math.min(
+          clampInt(tableSize, 2, 10, 9),
+          maxSeatsTheDeckAllows(gameVariant.toLowerCase()),
+          fieldCap
+        ),
+        addonBreakMinutes: addOnAvailable ? 1 : undefined,
         earlyBirdEnabled,
         earlyBirdChips: earlyBirdEnabled
           ? Math.max(0, Math.round(Number(earlyBirdChips) || 0))
@@ -672,6 +839,8 @@ export default function CreateTournamentModal({
         const resolvedClubId = await resolveClubUUID(clubId);
         const rpcConfig = tournamentService.buildRpcConfig(tournamentConfig);
         delete rpcConfig.startTime;
+        rpcConfig.recurrenceCadence = scheduleCadence;
+        if (scheduleCadence === 'monthly') rpcConfig.recurrenceDayOfMonth = scheduleDayOfMonth;
         await tournamentScheduleService.upsert({
           clubId: resolvedClubId,
           unionId: unionId || null,
@@ -785,8 +954,9 @@ export default function CreateTournamentModal({
     // Whole numbers only — no decimal buy-ins on any tournament or SNG.
     if (!isWholeBuyIn(buyIn)) return false;
     if (isNaN(parseInt(startingChips)) || parseInt(startingChips) <= 0) return false;
-    // Max players only required for SNG and Spin (they need a fixed table size)
-    if (isSngOrSpin && parseInt(maxPlayers) < 2) return false;
+    /* EVERY format needs a real field now, not only SNG and Spin: the database
+       refuses a non-positive cap, so "unlimited" was uncreatable. */
+    if (!Number.isFinite(parseInt(maxPlayers)) || parseInt(maxPlayers) < 2) return false;
     // Scheduled tournament must have date+time
     if (startTimeMode === 'scheduled' && (!scheduledDate || !scheduledTime)) return false;
     // Late reg levels must be valid if set
@@ -821,7 +991,7 @@ export default function CreateTournamentModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit}>
+        <form className={styles.form} onSubmit={handleSubmit}>
           <div className={styles.formGroup}>
             <label>
               Tournament Name <span style={{ color: '#ef4444' }}>*</span>
@@ -831,42 +1001,56 @@ export default function CreateTournamentModal({
               value={name}
               maxLength={44}
               onChange={(e) => setName(e.target.value.slice(0, 44))}
-              placeholder="E.g. Saturday Night Turbo"
+              placeholder="E.G. Saturday Night Turbo"
               required
               style={!name.trim() ? { borderColor: '#ef4444' } : undefined}
             />
           </div>
 
-          {/* Format Selection */}
-          <div className={styles.formGroup}>
-            <label>
-              Format <span style={{ color: '#ef4444' }}>*</span>
-            </label>
-            <select
-              className={styles.select}
-              value={format}
-              onChange={(e) => handleFormatChange(e.target.value as TournamentFormat)}
-            >
-              <optgroup label="Multi-Table Tournaments">
-                <option value="mtt_freezeout">MTT (Freezeout)</option>
-                <option value="mtt_rebuy">MTT (Rebuy)</option>
-                <option value="mtt_reentry">MTT (Re-Entry)</option>
-              </optgroup>
-              <optgroup label="Heads Up">
+          {/* Entry rules and prize style are independent tournament axes. */}
+          {format === 'sng' || format === 'spin' || format === 'satellite' ? (
+            <div className={styles.formGroup}>
+              <label>Tournament Category</label>
+              <select
+                className={styles.select}
+                value={format}
+                onChange={(e) => handleFormatChange(e.target.value as TournamentFormat)}
+              >
                 <option value="sng">Heads Up</option>
                 <option value="spin">Spin & Go</option>
-              </optgroup>
-              <optgroup label="Bounty Tournaments">
-                <option value="bounty">Bounty (KO)</option>
-                <option value="progressive_bounty">Progressive KO (PKO)</option>
-                <option value="mystery_bounty">Mystery Bounty</option>
-              </optgroup>
-              <optgroup label="Special Tournaments">
                 <option value="satellite">Satellite</option>
-                {unionId && <option value="xmtt">Union MTT (XMTT)</option>}
-              </optgroup>
-            </select>
-          </div>
+                <option value="mtt_freezeout">Multi-Table Tournament</option>
+              </select>
+            </div>
+          ) : (
+            <div className={styles.formatAxes}>
+              <div className={styles.formGroup}>
+                <label>Entry Rules</label>
+                <select
+                  className={styles.select}
+                  value={mttEntryRules}
+                  onChange={(e) => applyMttEntryRules(e.target.value as MttEntryRules)}
+                >
+                  <option value="freezeout">Freezeout</option>
+                  <option value="rebuy">Rebuy (Same Seat)</option>
+                  <option value="reentry">Re-Entry (New Seat)</option>
+                </select>
+              </div>
+              <div className={styles.formGroup}>
+                <label>Prize Style</label>
+                <select
+                  className={styles.select}
+                  value={mttPrizeStyle}
+                  onChange={(e) => applyMttPrizeStyle(e.target.value as MttPrizeStyle)}
+                >
+                  <option value="regular">Regular Tournament</option>
+                  <option value="bounty">Knockout Bounty</option>
+                  <option value="progressive_bounty">Progressive Knockout (PKO)</option>
+                  <option value="mystery_bounty">Mystery Bounty</option>
+                </select>
+              </div>
+            </div>
+          )}
 
           {/* Game Variant Selection */}
           <div className={styles.formGroup}>
@@ -887,7 +1071,8 @@ export default function CreateTournamentModal({
           </div>
 
           <div className={styles.row}>
-            {/* Max Players — ONLY for SNG and Spin (they need a fixed table size to start) */}
+            {/* Fixed-seat formats expose their exact seat count. MTT fields do
+                not have an operator-set maximum. */}
             {format === 'spin' && (
               <div className={styles.col}>
                 <div className={styles.formGroup}>
@@ -906,17 +1091,28 @@ export default function CreateTournamentModal({
             {format === 'spin' && (
               <div className={styles.col}>
                 <div className={styles.formGroup}>
-                  <label>Spin Type</label>
-                  <select
-                    className={styles.select}
-                    value={spinType}
-                    onChange={(e) => setSpinType(e.target.value as 'standard' | 'hyper')}
-                  >
-                    <option value="standard">Standard (EV: 2.24X)</option>
-                    <option value="hyper">Hyper (EV: 2.33X)</option>
-                  </select>
+                  {/*
+                    THIS WAS A CHOICE BETWEEN TWO IDENTICAL THINGS, PRICED WRONG
+                    (removed 2026-09-02).
+
+                    `SPIN_MULTIPLIERS.standard` and `.hyper` are the SAME array
+                    (TournamentService), nothing persists the selection, and
+                    there is no `spin_config` column for it to land in - so the
+                    control changed nothing an operator could observe. It also
+                    advertised two different expected values, 2.24X and 2.33X,
+                    for one distribution whose real expectation is
+                    seats x (1 - rake_rate) = 2.7638. 2.24 is verbatim the
+                    retired table that spinSpec was written to kill, so the
+                    screen told an operator the house edge was 25.3% when it is
+                    8%.
+
+                    Replaced with the one true number, COMPUTED from the live
+                    tier table rather than typed, so it cannot drift again the
+                    next time a tier changes.
+                  */}
+                  <label>Spin Payout Table</label>
                   <span className={styles.helperText}>
-                    Hyper Spins Have Higher Variance Multipliers
+                    {`One Table, ${SPIN_TIERS.length} Multipliers. Expected Return ${expectedMultiplier().toFixed(2)}X Per Buy In Across ${SPIN_SEATS} Seats, A House Edge Of ${(impliedHouseEdge() * 100).toFixed(1)}%.`}
                   </span>
                 </div>
               </div>
@@ -940,6 +1136,11 @@ export default function CreateTournamentModal({
                 </div>
               </div>
             )}
+            {/* THE MTT FAMILY HAD NO FIELD CONTROL AT ALL (2026-08-31), and
+                sent 0 for "unlimited" — which the database refuses outright, so
+                every MTT, bounty, satellite and XMTT built here failed before a
+                row was written. There is no unlimited field: registration stops
+                at the cap, so the cap has to be a number the operator chooses. */}
             <div className={styles.col}>
               <div className={styles.formGroup}>
                 <label>
@@ -1024,8 +1225,8 @@ export default function CreateTournamentModal({
                 />
                 <span className={styles.helperText}>
                   {split.total > 0
-                    ? `${money(split.total)} entry = ${money(split.prize)} to the prize pool + ${money(split.fee)} fee`
-                    : 'Taken out of the buy-in, not added on top'}
+                    ? `${money(split.total)} Entry = ${money(split.prize)} To The Prize Pool + ${money(split.fee)} Fee`
+                    : 'Taken Out Of The Buy-In, Not Added On Top'}
                 </span>
               </div>
             </div>
@@ -1082,8 +1283,8 @@ export default function CreateTournamentModal({
                   </select>
                   <span className={styles.helperText}>
                     {satelliteTargets.length === 0
-                      ? 'No upcoming tournaments to feed into - create one first.'
-                      : 'Winners earn a seat into this tournament.'}
+                      ? 'No Upcoming Tournaments To Feed Into - Create One First.'
+                      : 'Winners Earn A Seat Into This Tournament.'}
                   </span>
                 </div>
               </div>
@@ -1127,20 +1328,34 @@ export default function CreateTournamentModal({
                 {startTimeMode === 'scheduled' && (
                   <>
                     <div className={styles.col}>
-                      <input
-                        type="date"
-                        className={styles.input}
+                      <select
+                        className={`${styles.select} ${styles.calendarSelect}`}
                         value={scheduledDate}
                         onChange={(e) => setScheduledDate(e.target.value)}
-                      />
+                        aria-label="Tournament Start Date"
+                      >
+                        <option value="">Select Date</option>
+                        {scheduledDateOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div className={styles.col}>
-                      <input
-                        type="time"
-                        className={styles.input}
+                      <select
+                        className={styles.select}
                         value={scheduledTime}
                         onChange={(e) => setScheduledTime(e.target.value)}
-                      />
+                        aria-label="Tournament Start Time"
+                      >
+                        <option value="">Select Time</option>
+                        {scheduledTimeOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </>
                 )}
@@ -1171,8 +1386,8 @@ export default function CreateTournamentModal({
                     </select>
                     <span className={styles.helperText}>
                       {parseInt(lateRegLevels) > 0
-                        ? `Late reg, rebuys, and re-entries close after Level ${lateRegLevels}`
-                        : 'No late registration - registration closes when tournament starts'}
+                        ? `Late Reg, Rebuys, And Re-Entries Close After Level ${lateRegLevels}`
+                        : 'No Late Registration - Registration Closes When Tournament Starts'}
                     </span>
                   </div>
                 </div>
@@ -1197,8 +1412,8 @@ export default function CreateTournamentModal({
                   <div className={styles.formGroup}>
                     <label>
                       {format === 'mystery_bounty'
-                        ? 'Base Bounty (chips)'
-                        : 'Bounty Per KO (chips)'}{' '}
+                        ? 'Base Bounty (Chips)'
+                        : 'Bounty Per KO (Chips)'}{' '}
                       <span style={{ color: '#ef4444' }}>*</span>
                     </label>
                     <input
@@ -1400,10 +1615,10 @@ export default function CreateTournamentModal({
               {!bountyValid && (
                 <p style={{ color: '#ef4444', fontSize: '0.75rem', marginTop: 6 }}>
                   {!isWholeBuyIn(bountyAmount)
-                    ? 'Bounty amount is required and must be a whole number greater than 0'
+                    ? 'Bounty Amount Is Required And Must Be A Whole Number Greater Than 0'
                     : bountySplit && bountySplit.prize < 0
-                      ? `Bounty ${money(bountySplit.bounty)} + ${money(bountySplit.rake)} rake exceeds the ${money(bountySplit.buyIn)} buy-in - nothing left for the prize pool`
-                      : 'Mystery max multiplier must be greater than min multiplier'}
+                      ? `Bounty ${money(bountySplit.bounty)} + ${money(bountySplit.rake)} Rake Exceeds The ${money(bountySplit.buyIn)} Buy-In - Nothing Left For The Prize Pool`
+                      : 'Mystery Max Multiplier Must Be Greater Than Min Multiplier'}
                 </p>
               )}
             </div>
@@ -1502,10 +1717,10 @@ export default function CreateTournamentModal({
                   </div>
                   <span className={styles.helperText} style={{ display: 'block', marginTop: 4 }}>
                     {isRebuy && isReentry
-                      ? `Rebuy (same seat) and Re-Entry (new seat) both close after Level ${lateRegLevels || 0}`
+                      ? `Rebuy (Same Seat) And Re-Entry (New Seat) Both Close After Level ${lateRegLevels || 0}`
                       : isRebuy
-                        ? `Rebuy period closes after Level ${lateRegLevels || 0} (same as late registration)`
-                        : `Re-Entry period closes after Level ${lateRegLevels || 0} (same as late registration)`}
+                        ? `Rebuy Period Closes After Level ${lateRegLevels || 0} (Same As Late Registration)`
+                        : `Re-Entry Period Closes After Level ${lateRegLevels || 0} (Same As Late Registration)`}
                   </span>
                 </>
               )}
@@ -1543,21 +1758,11 @@ export default function CreateTournamentModal({
                   </div>
                   <div className={styles.col}>
                     <div className={styles.formGroup}>
-                      <label>Add-On Levels</label>
-                      <select
-                        className={styles.select}
-                        value={addOnLevels}
-                        onChange={(e) => setAddOnLevels(e.target.value)}
-                      >
-                        {[1, 2, 3].map((n) => (
-                          <option key={n} value={String(n)}>
-                            {n} Level{n > 1 ? 's' : ''} After Rebuy Period
-                          </option>
-                        ))}
-                      </select>
+                      <label>Add-On Period</label>
+                      <div className={styles.readOnlyRule}>1 Minute After Rebuy Period</div>
                       <span className={styles.helperText}>
-                        Add-On Opens At Level {parseInt(lateRegLevels) || 0} Through Level{' '}
-                        {(parseInt(lateRegLevels) || 0) + (parseInt(addOnLevels) || 1)}
+                        Play Pauses For 60 Seconds. The Full Add-On Cost Goes To The Prize Pool With
+                        No Rake.
                       </span>
                     </div>
                   </div>
@@ -1701,8 +1906,7 @@ export default function CreateTournamentModal({
                   {(
                     [
                       ['VIP Only', isVipOnly, setIsVipOnly],
-                      ['Ban Chat', banChat, setBanChat],
-                      ['All-in Or Fold', allInOrFold, setAllInOrFold],
+                      ['All-In Or Fold', allInOrFold, setAllInOrFold],
                       ['Label As NEW', labelAsNew, setLabelAsNew],
                       ['Hide Club Name', hideClubName, setHideClubName],
                       ['Featured (Pinned)', isFeatured, setIsFeatured],
@@ -1728,6 +1932,11 @@ export default function CreateTournamentModal({
                       </div>
                     </div>
                   ))}
+                </div>
+
+                <div className={styles.lockedRule}>
+                  <strong>Chat: Off</strong>
+                  <span>Chat Is Always Disabled In Multi-Table Tournaments.</span>
                 </div>
 
                 <div className={styles.row}>
@@ -1763,23 +1972,6 @@ export default function CreateTournamentModal({
                       <span className={styles.helperText}>2 To 10 Seats Per Table</span>
                     </div>
                   </div>
-                  {addOnAvailable && (
-                    <div className={styles.col}>
-                      <div className={styles.formGroup}>
-                        <label>Add-On Break (Minutes)</label>
-                        <input
-                          type="number"
-                          className={styles.input}
-                          value={addonBreakMinutes}
-                          onChange={(e) => setAddonBreakMinutes(digitsOnly(e.target.value))}
-                          min={1}
-                          max={10}
-                          step={1}
-                          inputMode="numeric"
-                        />
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 <div className={styles.row}>
@@ -1859,7 +2051,7 @@ export default function CreateTournamentModal({
             )}
           </div>
 
-          {/* ── Weekly Recurring Schedule ── */}
+          {/* ── Recurring Schedule ── */}
           {!isSngOrSpin && (
             <div className={styles.sectionDivider}>
               <div className={styles.formGroup}>
@@ -1874,72 +2066,62 @@ export default function CreateTournamentModal({
                     }}
                     className={styles.checkbox}
                   />
-                  Tournament Schedule (Recurring)
+                  Recurring Tournament
                 </label>
                 <span className={styles.helperText}>
-                  Repeats This Tournament Weekly. Spawned Instances Use Exactly This Configuration.
+                  Repeat This Tournament Daily, Weekly, Or Monthly With The Same Configuration.
                 </span>
               </div>
-              {scheduleEnabled && <WeeklyScheduleEditor value={schedule} onChange={setSchedule} />}
+              {scheduleEnabled && (
+                <>
+                  <div className={styles.choiceGrid}>
+                    {(['daily', 'weekly', 'monthly'] as const).map((cadence) => (
+                      <button
+                        key={cadence}
+                        type="button"
+                        className={scheduleCadence === cadence ? styles.selected : ''}
+                        onClick={() => {
+                          setScheduleCadence(cadence);
+                          if (cadence !== 'weekly')
+                            setSchedule((current) => ({
+                              ...current,
+                              daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+                            }));
+                        }}
+                      >
+                        {cadence === 'daily'
+                          ? 'Daily'
+                          : cadence === 'weekly'
+                            ? 'Weekly'
+                            : 'Monthly'}
+                      </button>
+                    ))}
+                  </div>
+                  {scheduleCadence === 'monthly' && (
+                    <label className={styles.formGroup}>
+                      Day Of Month
+                      <input
+                        type="number"
+                        min={1}
+                        max={31}
+                        value={scheduleDayOfMonth}
+                        onChange={(event) =>
+                          setScheduleDayOfMonth(
+                            Math.min(31, Math.max(1, Number(event.target.value) || 1))
+                          )
+                        }
+                      />
+                    </label>
+                  )}
+                  <WeeklyScheduleEditor
+                    value={schedule}
+                    onChange={setSchedule}
+                    hideDays={scheduleCadence !== 'weekly'}
+                  />
+                </>
+              )}
             </div>
           )}
-
-          {/* ── Payout Info ──
-              Spin prizes are drawn from the wheel, not from a places table -
-              the structure is always 100% to first - so the editor is not
-              offered there. Everywhere else the preset stays the default and
-              the editor is opt-in. */}
-          <div className={styles.payoutPreview}>
-            <span className={styles.sectionLabel}>
-              Payout Structure ({effectivePayouts.length} Places Paid)
-            </span>
-            {format !== 'spin' && (
-              <label className={styles.toggleLabel}>
-                <input
-                  type="checkbox"
-                  className={styles.checkbox}
-                  checked={customPayoutsOn}
-                  onChange={(e) => {
-                    setCustomPayoutsOn(e.target.checked);
-                    if (!e.target.checked) setCustomPayouts([]);
-                  }}
-                />
-                Customize Payouts
-              </label>
-            )}
-
-            {customPayoutsOn && format !== 'spin' ? (
-              <>
-                <span className={styles.helperText}>
-                  {isSngOrSpin
-                    ? `Amounts Shown For A Full ${projectedField.toLocaleString()} Seat Field.`
-                    : `Amounts Are A Projection At ${projectedField.toLocaleString()} Entries. The Real Prize Pool Depends On The Final Field.`}
-                </span>
-                <PayoutStructureEditor
-                  key={payoutSeedTemplate}
-                  playerCount={projectedField}
-                  prizePool={projectedPrizePool}
-                  initialTemplate={payoutSeedTemplate}
-                  onChange={setCustomPayouts}
-                />
-              </>
-            ) : (
-              <div className={styles.payoutList}>
-                {effectivePayouts.map((p, i) => (
-                  <span key={i} className={styles.payoutItem}>
-                    {p.place}
-                    {p.place === 1
-                      ? 'st'
-                      : p.place === 2
-                        ? 'nd'
-                        : p.place === 3
-                          ? 'rd'
-                          : 'th'}: {p.percentage}%
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
 
           {/* ── Validation Summary ── */}
           {!canSubmit && !isSubmitting && (

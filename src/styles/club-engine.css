@@ -145,7 +145,7 @@
 
   /* Runtime chrome dimensions. This is the entry stylesheet imported by
      main.tsx, so shared layout components resolve these values in production. */
-  --bottom-nav-height: clamp(44px, 13.72vw, 263px);
+  --bottom-nav-height: clamp(44px, 13.72vw, 132px);
   --bottom-nav-clearance: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
   --bottom-nav-stack-base: var(--bottom-nav-clearance);
 

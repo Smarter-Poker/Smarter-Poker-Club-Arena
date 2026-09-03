@@ -114,8 +114,26 @@ describe('the start lane runs at one second', () => {
 });
 
 describe('the wheel is never truncated by the engine being late', () => {
-  it('re-anchors unless the WHOLE sequence still fits before the deal', () => {
-    expect(BASE_CODE).toContain('if (this.spinHoldUntil - now < spinRevealToDealMs()) {');
+  it('re-anchors exactly when a beat would be skipped, and not before', () => {
+    /* CORRECTED 2026-08-31 (audit part 2). This asserted
+         'if (this.spinHoldUntil - now < spinRevealToDealMs()) {'
+       which was equivalent to "the reveal instant has passed" only while the
+       hold was stamped from spinRevealAt. When the double-counted lead-in was
+       removed the same morning, the hold became `anchor + toDeal` and that
+       comparison collapsed to `anchor < now` - true for EVERY spin, so the
+       anchor was discarded every time and the overrun was reported ~1,500
+       times a day. Every line this file looked for was still there.
+       The question is now asked directly, in terms of the reveal instant the
+       client actually keys on, and the arithmetic is executed rather than
+       read in spinRevealWindow.test.ts. */
+    expect(BASE_CODE).toContain(
+      'const wouldSkipABeat = spinRevealWouldSkipABeat({ now, revealAt: this.spinRevealAt });'
+    );
+    expect(BASE_CODE).toContain('if (wouldSkipABeat) {');
+    expect(
+      BASE_CODE,
+      'the threshold must not be expressed in terms of the hold - that is how it drifted'
+    ).not.toContain('if (this.spinHoldUntil - now < spinRevealToDealMs()) {');
   });
 
   it('the old three-second threshold is gone', () => {
@@ -125,7 +143,7 @@ describe('the wheel is never truncated by the engine being late', () => {
   });
 
   it('re-anchoring gives back a FULL sequence, measured from now', () => {
-    const block = blockAfter(BASE_CODE, 'if (this.spinHoldUntil - now < spinRevealToDealMs())');
+    const block = blockAfter(BASE_CODE, 'if (wouldSkipABeat)');
     expect(block).toContain('this.spinRevealAt = now;');
     expect(block).toContain('this.spinHoldUntil = now + spinRevealToDealMs();');
   });
@@ -149,7 +167,13 @@ describe('the anchor still does the job it was written for', () => {
     /* The re-anchor must be an exception, not the rule: when the engine is
        quick the wheel is still measured from the third payment, which is what
        makes "1 second later" true rather than "1 second after we got round
-       to it". The stamp is untouched. */
+       to it". The stamp is untouched.
+
+       THIS TEST PASSED THROUGHOUT THE WINDOW IN WHICH THE RULE WAS BROKEN,
+       because both lines it names were still present and correct - what had
+       moved was the threshold that decides whether they matter. That is why
+       spinRevealWindow.test.ts exists beside it and executes the decision on
+       real numbers; this pair only proves the stamp was not deleted. */
     expect(BASE_CODE).toContain('protected stampSpinRevealAnchor(');
     expect(BASE_CODE).toContain('this.spinRevealAt = anchor + SPIN_REVEAL.LEAD_IN_MS;');
   });
@@ -176,5 +200,43 @@ describe('the anchor still does the job it was written for', () => {
     const block = blockAfter(BASE_CODE, 'if (this.spinRevealAt <= 0)');
     expect(block).toContain('this.spinHoldUntil = now + spinRevealToDealMs();');
     expect(block).toContain('this.spinRevealAt = now;');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  THE PATH BETWEEN THE THIRD PAYMENT AND THE WHEEL IS ONE READ SHORTER
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// `tournaments.spin_reveal_lag_ms` (2026-08-31) finally measures that path:
+// p50 4.2s, and 93% of spins past Dan's one-second rule. Five sequential
+// round trips sit inside it, and two of them were the SAME query — a head
+// count of tournament_players, then the paid-entry roster of the same rows,
+// back to back. A Spin holds three players, so the rows are the count.
+describe('the spin start does not read its own roster twice', () => {
+  it('reads the roster once, for a spin with a buy-in', () => {
+    expect(BASE_CODE).toContain('const spinPaidGateWillRun =');
+    expect(BASE_CODE).toContain('spinRoster = roster ?? [];');
+    expect(BASE_CODE).toContain('regCount = spinRoster.length;');
+  });
+
+  it('and the paid gate consumes that roster instead of re-reading it', () => {
+    expect(BASE_CODE).toContain('const regs = spinRoster ?? [];');
+  });
+
+  it('an MTT still uses the head count, not 390 rows', () => {
+    /* The trade only pays when the rows are needed anyway AND there are
+       three of them. Reading a full MTT field to learn its size would be
+       the same mistake made backwards. */
+    expect(BASE_CODE).toContain("select('*', { count: 'exact', head: true })");
+  });
+
+  it("the hoisted read keeps the gate's failure policy", () => {
+    /* THE GATE MUST NOT DISABLE ITSELF ON A FAILED READ (2026-08-28). An
+       unreadable roster must stand the start down, not fall through to a
+       gate that then verifies zero payments and passes. Moving the read
+       earlier must not weaken that, so the stand-down moved with it. */
+    const block = blockAfter(BASE_CODE, 'if (rosterErr)');
+    expect(block).toContain('Tournament.spin_paid_roster_unreadable');
+    expect(block).toContain('this.running = false;');
   });
 });

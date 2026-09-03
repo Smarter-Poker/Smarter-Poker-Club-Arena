@@ -9,7 +9,7 @@ test.describe('Club Management', () => {
   test('should show create club page', async ({ page }) => {
     await page.goto('clubs/create');
     await page.waitForLoadState('domcontentloaded');
-    const createClubDialog = page.getByRole('dialog', { name: 'Create Club' });
+    const createClubDialog = page.getByRole('dialog', { name: 'Create A Club' });
     await expect
       .poll(async () => page.url().includes('/auth') || (await createClubDialog.isVisible()), {
         timeout: 15000,

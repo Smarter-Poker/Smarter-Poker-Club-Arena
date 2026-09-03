@@ -33,10 +33,14 @@ describe('HorseDailyAudit.runDailyAudit', () => {
     expect(args.p_day).toBe(expected);
   });
 
-  it('a failed RPC reports and does not throw', async () => {
+  it('a failed RPC reports, does not throw, and says it FAILED', async () => {
+    // 2026-09-02: this used to assert `undefined`. Swallowing the failure
+    // silently is what let the caller record the day as audited when it was
+    // not - see NightlyJobRetryAfterFailure.test.ts. The contract is now a
+    // boolean, and only `true` may close the day.
     rpcMock.mockResolvedValue({ data: null, error: { message: 'boom' } });
     const { runDailyAudit } = await import('./HorseDailyAudit.js');
-    await expect(runDailyAudit('2026-08-25')).resolves.toBeUndefined();
+    await expect(runDailyAudit('2026-08-25')).resolves.toBe(false);
   });
 
   it('accepts an explicit day', async () => {

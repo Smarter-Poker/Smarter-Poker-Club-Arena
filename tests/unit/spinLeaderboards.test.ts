@@ -69,6 +69,18 @@ const MIGRATION = readFileSync(
 );
 const READ_ONLY = MIGRATION;
 
+/** The CURRENT definition. `20260830064500` made the function read-only;
+ *  this one fixed what it was reading. See "ONE ROW PER SPIN" below. */
+const WINNER_PER_SPIN = readFileSync(
+  join(
+    root,
+    'supabase',
+    'migrations',
+    '20260831192950_biggest_hits_is_one_row_per_spin_and_it_is_the_winner.sql'
+  ),
+  'utf8'
+);
+
 /** The page with every comment removed, so a pin can never be satisfied by
  *  prose ABOUT the code instead of the code (handoff trap #6 - a grep for a
  *  deleted string once returned 1 because it matched my own explanation). */
@@ -124,9 +136,61 @@ describe('a leaderboard writes nothing', () => {
   });
 });
 
+describe('ONE ROW PER SPIN, AND IT IS THE WINNER (2026-08-31 audit)', () => {
+  /* `biggest_hits` was built from the `spins` CTE, which is one row per PAID
+     SEAT rather than one row per spin. A Spin at 10x and above pays more than
+     first place — 0.80/0.20 at 10x, 0.80/0.12/0.08 at 25x and up — so ONE
+     100x contributed three rows, and the tie-break was `ended_at`, identical
+     for all three. The live board read:
+
+         24.00   2.00 buy-in  100x   <- second place, top of "Biggest Hits"
+         160.00  2.00 buy-in  100x   <- the actual winner, below it
+         16.00   2.00 buy-in  100x   <- third place
+         ... 400.00 at 50x further down again
+
+     Ten rows, four tournaments, headlined by a second-place payout. It also
+     buried real wins: a 1,000.00 on a 50-chip 25x was off the board entirely
+     because three 100x games had eaten six slots with their 16s and 24s. */
+
+  const sql = WINNER_PER_SPIN.replace(/--.*$/gm, '');
+
+  it('takes one seat per tournament', () => {
+    expect(sql).toMatch(/distinct on \(s\.tournament_id\)/i);
+  });
+
+  it('and it is the largest payout, which is first place', () => {
+    expect(sql).toMatch(/order by s\.tournament_id, s\.prize desc/i);
+  });
+
+  it('orders the board by prize within a multiplier, so a bigger win is never under a smaller one', () => {
+    expect(sql).toMatch(/order by w\.multiplier desc, w\.prize desc/i);
+    expect(sql).toMatch(/order by b\.multiplier desc, b\.prize desc/i);
+  });
+
+  it('keeps the response shape the client already reads', () => {
+    for (const key of ['biggest_hits', 'most_spins', 'best_net']) {
+      expect(sql).toContain(key);
+    }
+    // No tournament_id leaks into the payload: it is a join key, not a field.
+    expect(sql).toMatch(/select w\.username, w\.multiplier, w\.buy_in, w\.prize, w\.ended_at/i);
+  });
+
+  it('proves it at apply time rather than trusting the shape', () => {
+    // The migration counts its own rows against DISTINCT games and raises.
+    expect(sql).toMatch(/still lists the same spin more than once/);
+  });
+
+  it('leaves most_spins and best_net counting seats, which is what they mean', () => {
+    /* Those two group BY USERNAME and a seat is exactly the unit they want —
+       one entry per spin played. Only `biggest_hits` was asking a
+       per-tournament question of a per-seat table. */
+    expect(sql).toMatch(/group by s\.username/i);
+  });
+});
+
 describe('HORSES ARE PLAYERS - they rank alongside humans', () => {
   it('the migration carries no is_horse exclusion anywhere', () => {
-    for (const sql of [MIGRATION, READ_ONLY]) {
+    for (const sql of [MIGRATION, READ_ONLY, WINNER_PER_SPIN]) {
       expect(sql.replace(/--.*$/gm, '')).not.toMatch(/is_horse/i);
     }
   });

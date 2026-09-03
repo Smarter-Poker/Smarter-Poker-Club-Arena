@@ -20,6 +20,7 @@
  * - playChips()             Chip clink (bet/call)
  * - playRaise()             Triple chip cascade
  * - playFold()              Card swoosh to muck
+ * - playDiscard()           ONE card swept to the muck (Crazy Pineapple)
  * - playAllIn()             Dramatic bass thud + chip push
  * - playWin()               Major arpeggio celebration
  * - playBigWin()            Extended celebration + shimmer
@@ -173,6 +174,7 @@ export type SoundPriority =
   | 'bet'
   | 'call'
   | 'check'
+  | 'discard'
   | 'fold'
   | 'shuffle'
   | 'deal'
@@ -205,6 +207,14 @@ const SOUND_PRIORITY_RANK: Record<SoundPriority, number> = {
   bet: 60,
   call: 50,
   check: 40,
+  /* CRAZY PINEAPPLE PHASE 3 2026-08-31: the discard is its own decision and
+     owes its own cue (CLAUDE.md 10.6). It sits ABOVE fold deliberately: the
+     cue it replaced was playFold(), and a discard round resolves several
+     seats inside the same 50ms priority window as the flop that follows it
+     (deal 20 / community_card 15), so anything at or below fold's 30 would
+     have been the next playPotCollect - a cue that is wired, called, and
+     never heard. Below call (50) because a discard is not a wager. */
+  discard: 45,
   fold: 30,
   shuffle: 25,
   deal: 20,
@@ -1034,6 +1044,46 @@ class SoundService {
 
     // The second card, a beat behind the first.
     this.createNoiseBurst(t + 0.06, 0.12, 0.045, 1600);
+
+    haptic.light();
+  }
+
+  /**
+   * Discard - ONE card swept away, then landing on the muck.
+   *
+   * CRAZY PINEAPPLE PHASE 3 2026-08-31. Until today the discard played
+   * `playFold()`: the wrong action's cue, and a two-card brush for a
+   * one-card decision. A player who threw a card heard the sound the table
+   * makes when a hand DIES, in the one variant where throwing a card is how
+   * you stay in - which is exactly the confusion Dan reported as "auto folded
+   * my hand, even though it didn't".
+   *
+   * Built out of the same air the deal is built from (`createSweptNoiseBurst`,
+   * Dan 2026-08-23: a moving formant is heard as an object going past, a
+   * fixed filter is heard as a texture sitting still), so a card leaving the
+   * hand and a card arriving in it are audibly the same object. Three things
+   * separate it from the fold:
+   *
+   *   - ONE brush, not two. The fold sends the whole hand; this sends a card.
+   *   - It sweeps from higher and lands SHORTER (0.19s vs 0.26s) - a flick
+   *     across the felt rather than a hand sliding away.
+   *   - It ends on a soft felt tap, because the card stops. The fold has no
+   *     tap: those cards are gone.
+   *
+   * Peak gain 0.10, just under the fold's 0.11 - this fires on every seat in
+   * a round where every seat acts at once, so it has to sit under the action
+   * rather than over it.
+   */
+  playDiscard() {
+    if (!this.shouldPlay('discard', 'action') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+
+    // The card through the air: bandpass sliding down = moving away from you.
+    this.createSweptNoiseBurst(t, 0.19, 0.1, 3000, 520, 0.85);
+
+    // The card arriving on the felt. Heavily lowpassed and quiet - this is
+    // the stop at the end of the flick, not a second card.
+    this.createNoiseBurst(t + 0.14, 0.055, 0.05, 900);
 
     haptic.light();
   }

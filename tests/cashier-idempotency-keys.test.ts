@@ -133,15 +133,18 @@ describe('one op id per target, held across a failure', () => {
     // A changed amount or selection is a NEW intent and must not replay the old
     // one. Retained across a failure, cleared on a change: both, or neither
     // protection works.
-    expect(PAGE).toMatch(
-      /useEffect\(\(\) => \{\s*submissionIdRef\.current = null;\s*opIdsRef\.current = new Map\(\);\s*\},\s*\[amount, selected, clubUuid\]\)/
+    expect(PAGE).toContain('const recoveryScope = transferRecoveryScopeRef.current');
+    expect(PAGE).toContain(
+      'clearCashierTransferRecovery(recoveryScope.userId, recoveryScope.clubId)'
     );
+    expect(PAGE).toMatch(/setTransferRecovery\(null\);\s*\}, \[amount, selected\]\);/);
   });
 
   it('is retained across a failure, which is what makes a retry safe', () => {
-    expect(RUN_TRANSFERS).toMatch(
-      /if \(ok === targets\.length\) \{\s*submissionIdRef\.current = null;\s*opIdsRef\.current = new Map\(\);/
-    );
+    expect(RUN_TRANSFERS).toContain('if (ok === targets.length) {');
+    expect(RUN_TRANSFERS).toContain('clearCashierTransferRecovery(user.id, clubUuid)');
+    expect(RUN_TRANSFERS).toContain('writeCashierTransferRecovery(recovery)');
+    expect(RUN_TRANSFERS).toContain('opIds: Object.fromEntries(opIdsRef.current)');
   });
 
   it('the ticket path keeps its own composed key, because it is a different RPC', () => {

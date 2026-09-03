@@ -45,8 +45,7 @@ export class TableErrorBoundary extends Component<Props, State> {
         });
       });
     } catch (err) {
-
-      console.error("[TableErrorBoundary] Error:", err);
+      console.error('[TableErrorBoundary] Error:', err);
       // Fail silently — crash reporting is best-effort
     }
   }

@@ -43,7 +43,7 @@ describe('leaderboard phase two operational hardening', () => {
   });
 
   it('uses strict primary reads so transport failures do not masquerade as empty boards', () => {
-    expect(service.match(/strict: boolean = false/g)?.length).toBe(3);
+    expect(service.match(/strict: boolean = false/g)?.length).toBe(4);
     expect(service.match(/if \(strict\) throw/g)?.length).toBeGreaterThanOrEqual(6);
     expect(page).toContain('Rankings Could Not Be Loaded.');
     expect(page).toContain('Tournament Stats Could Not Be Loaded.');
@@ -85,8 +85,10 @@ describe('leaderboard phase two operational hardening', () => {
       page.indexOf("// Load user's clubs on mount or when user auth changes"),
       page.indexOf('// Keep activeTabRef in sync')
     );
-    expect(authRefresh).not.toContain('setEditingSettings(null)');
-    expect(authRefresh).not.toContain('setShowSettings(false)');
+    expect(authRefresh).toContain('user === null');
+    expect(authRefresh).toContain('previousUserId !== user.id');
+    expect(authRefresh).toContain('setEditingSettings(null)');
+    expect(authRefresh).toContain('setShowSettings(false)');
 
     const setupDeepLink = page.slice(
       page.indexOf("if (params.get('setup') !== 'prizes'"),
@@ -94,5 +96,15 @@ describe('leaderboard phase two operational hardening', () => {
     );
     expect(setupDeepLink).toContain('setEditingSettings(settings)');
     expect(setupDeepLink).toContain('setShowSettings(true)');
+    expect(setupDeepLink).toContain("params.delete('setup')");
+    expect(setupDeepLink).toContain('navigate({ search: params.toString() }, { replace: true })');
+  });
+
+  it('snapshots every visible settings entry point and exposes retryable setup reads', () => {
+    expect(page.match(/setEditingSettings\(settings\);/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(page).toContain('Prize Setup Could Not Be Loaded.');
+    expect(page).toContain('Retry Prize Setup');
+    expect(service).toContain('async getManageableRewardContexts(strict: boolean = false)');
+    expect(service).toContain('if (strict) throw err;');
   });
 });

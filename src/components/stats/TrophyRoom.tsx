@@ -159,7 +159,7 @@ function buildMilestones(o: OverallLike, t: TournLike | null): Milestone[] {
   out.push({
     id: 'in_the_black',
     name: 'In The Black',
-    description: 'Finish ahead across all your cash play.',
+    description: 'Finish Ahead Across All Your Cash Play.',
     rarity: 'rare',
     progress: o.total_profit > 0 ? 1 : 0,
     unlocked: o.total_profit > 0,
@@ -173,7 +173,7 @@ function buildMilestones(o: OverallLike, t: TournLike | null): Milestone[] {
   out.push({
     id: 'crusher',
     name: 'Crusher',
-    description: 'Hold a positive win rate over 5,000 or more cash hands.',
+    description: 'Hold A Positive Win Rate Over 5,000 Or More Cash Hands.',
     rarity: 'legendary',
     progress: crusherQualified ? (o.bb_per_100 > 0 ? 1 : 0) : clamp01(o.cash_hands / 5000),
     unlocked: crusherQualified && o.bb_per_100 > 0,
@@ -188,7 +188,7 @@ function buildMilestones(o: OverallLike, t: TournLike | null): Milestone[] {
   out.push({
     id: 'disciplined',
     name: 'Disciplined',
-    description: 'Hold VPIP inside the 18-28% range over 1,000 or more hands.',
+    description: 'Hold VPIP Inside The 18-28% Range Over 1,000 Or More Hands.',
     rarity: 'epic',
     progress: disciplineQualified ? (inBand ? 1 : 0) : clamp01(o.total_hands / 1000),
     unlocked: disciplineQualified && inBand,
@@ -201,7 +201,7 @@ function buildMilestones(o: OverallLike, t: TournLike | null): Milestone[] {
   out.push({
     id: 'aggressor',
     name: 'Aggressor',
-    description: 'Hold an aggression factor of 2.0 or better over 1,000 hands.',
+    description: 'Hold An Aggression Factor Of 2.0 Or Better Over 1,000 Hands.',
     rarity: 'epic',
     progress: aggroQualified ? clamp01(o.aggression_factor / 2) : clamp01(o.total_hands / 1000),
     unlocked: aggroQualified && o.aggression_factor >= 2,
@@ -307,8 +307,8 @@ export default function TrophyRoom({ overall, tournaments }: Props) {
               <span className="trophy-style-label is-forming">Style Forming</span>
               <p className="trophy-style-note">
                 {overall.total_hands < STYLE_MIN_HANDS
-                  ? `${(STYLE_MIN_HANDS - overall.total_hands).toLocaleString()} more hands and there will be enough to read your style honestly. Guessing from ${overall.total_hands.toLocaleString()} would mostly be describing variance.`
-                  : 'Your numbers do not yet sit clearly in one style. That is common, and not a bad thing.'}
+                  ? `${(STYLE_MIN_HANDS - overall.total_hands).toLocaleString()} More Hands And There Will Be Enough To Read Your Style Honestly. Guessing From ${overall.total_hands.toLocaleString()} Would Mostly Be Describing Variance.`
+                  : 'Your Numbers Do Not Yet Sit Clearly In One Style. That Is Common, And Not A Bad Thing.'}
               </p>
             </div>
           </div>

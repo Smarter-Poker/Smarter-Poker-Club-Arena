@@ -70,11 +70,10 @@ export interface OpponentStats {
   bigBetSD: number;
   /** ... where the shown hand was two pair or better (value, not air) */
   bigBetSDStrong: number;
-  // ── V23 RIVER READS (2026-08-28) — MEMORY-ONLY, deliberately unpersisted.
-  // The most profitable read in the game: does this player fold rivers?
-  // Accumulates fast at fleet volume and decays in relevance, so it starts
-  // fresh each process life; persistence can follow once the league proves
-  // the read pays (toDb/fromDb in HorseMindPersistence simply omit these).
+  // ── V23 RIVER READS (2026-08-28). The most profitable read in the game:
+  // does this player fold rivers? Memory-only until V34 (2026-09-02), when
+  // it was found that every deploy forgot the answer for exactly the players
+  // the read is for; persisted now, GREATEST-merged like every counter.
   /** times they faced a river bet or raise */
   riverBetOpps: number;
   /** ... and folded to it */
@@ -207,6 +206,8 @@ export interface HorseMindSandbox {
   plans: Map<string, boolean>;
   /** V23: raise-response plans — see noteRaisePlan. Sandboxed like plans. */
   raisePlans: Map<string, RaiseResponsePlan>;
+  /** V39: next-street outlooks — see noteOutlook. Sandboxed like plans. */
+  outlooks: Map<string, { good: Set<string>; scare: Set<string> }>;
 }
 
 /** V23: what hero decided AT BET TIME it would do about a raise. */
@@ -507,6 +508,7 @@ export class HorseMind {
     this.handFlags.clear();
     this.plans.clear();
     this.raisePlans.clear();
+    this.outlooks.clear();
     this.dirty.clear();
     this.pairs.clear();
     this.dirtyPairs.clear();
@@ -553,10 +555,11 @@ export class HorseMind {
       if (this.stats.size >= MAX_TRACKED_PLAYERS && !existing) continue;
       const num = (v: unknown): number => (typeof v === 'number' && isFinite(v) && v >= 0 ? v : 0);
       // V28 AUDIT FIX: the import REPLACED the whole object, and the fields
-      // that are deliberately unpersisted (riverBet*, checks, the recency
+      // that were unpersisted at the time (riverBet*, checks, the recency
       // window) came in as 0 — any live sample accumulated before the hydrate
-      // was destroyed. Unpersisted fields now keep the larger of live and
-      // incoming, so a hydrate can only add information.
+      // was destroyed. Those fields keep the larger of live and incoming, so
+      // a hydrate can only add information (V34 persists them, and a
+      // snapshot older than that migration still reads them as 0).
       const keep = (live: number | undefined, incoming: number): number =>
         Math.max(existing ? (live ?? 0) : 0, incoming);
       this.stats.set(r.user_id, {
@@ -708,6 +711,7 @@ export class HorseMind {
       dirtyPairs: new Set(),
       plans: new Map(),
       raisePlans: new Map(),
+      outlooks: new Map(),
     };
   }
 
@@ -726,6 +730,7 @@ export class HorseMind {
       dirtyPairs: this.dirtyPairs,
       plans: this.plans,
       raisePlans: this.raisePlans,
+      outlooks: this.outlooks,
     };
     this.stats = sandbox.stats;
     this.seenActions = sandbox.seenActions;
@@ -735,6 +740,7 @@ export class HorseMind {
     this.dirtyPairs = sandbox.dirtyPairs;
     this.plans = sandbox.plans;
     this.raisePlans = sandbox.raisePlans;
+    this.outlooks = sandbox.outlooks;
     this.sandboxDepth = 1;
     try {
       return fn();
@@ -747,6 +753,7 @@ export class HorseMind {
       this.dirtyPairs = live.dirtyPairs;
       this.plans = live.plans;
       this.raisePlans = live.raisePlans;
+      this.outlooks = live.outlooks;
       this.sandboxDepth = 0;
     }
   }
@@ -775,6 +782,14 @@ export class HorseMind {
 
     let raisesBefore = 0;
     let line: 'none' | 'limp' | 'call' | 'open' | 'threebet' | 'fourbet' | 'check' = 'none';
+    // V36 (2026-09-02): a BOMB POT has no preflop street. Every hand at the
+    // table is a random deal, which is the right BASE — but the postflop
+    // narrowing below still applies, and it never did: `line` stayed 'none'
+    // and the function returned null, so a player who bet the flop, barrelled
+    // the turn and bombed the river of a bomb pot was still sampled from all
+    // 1,326 combos. sawPreflop tells the two cases apart.
+    let sawPreflop = false;
+    let actedPostflop = false;
     // V5 (2026-07-24): dynamic hand reading — postflop actions keep narrowing
     // the band. V7: the narrowing is BET-SIZE AWARE via an exact pot replay —
     // a pot-sized turn barrel narrows far more than a min-bet. Per-street the
@@ -791,6 +806,7 @@ export class HorseMind {
         a.action === 'raise' ||
         (a.action === 'all_in' && a.isFullRaise === true);
       const anyChips = isAggr || a.action === 'call' || a.action === 'all_in';
+      if (a.stage === 'preflop') sawPreflop = true;
       if (a.stage !== curStreet) {
         curStreet = a.stage;
         streetBets = new Map();
@@ -803,6 +819,7 @@ export class HorseMind {
       if (a.stage !== 'preflop') {
         if (a.userId === userId) {
           if (a.action === 'fold') return null;
+          actedPostflop = true;
           // V28 AUDIT FIX: this used to add on ANY action, including CALL —
           // and readOut.checked below counts "acted with no aggression
           // weight" as a checked street. A player who CALLED two barrels —
@@ -875,38 +892,45 @@ export class HorseMind {
     }
     void bigBlind;
 
-    if (line === 'none') return null;
+    // V36: no preflop street (a bomb pot) and this player has acted postflop
+    // — a random starting hand, narrowed by what they did with it.
+    const anteOnly = !sawPreflop && actedPostflop;
+    if (line === 'none' && !anteOnly) return null;
 
     let lo: number;
     let hi: number;
-    switch (line) {
-      case 'limp':
-        lo = 0.15;
-        hi = 0.72; // speculative + traps; excludes pure junk & most premiums
-        break;
-      case 'call':
-        lo = 0.3;
-        hi = 0.86; // calling a raise: playables, minus junk, minus most 4-bet hands
-        break;
-      case 'open':
-        lo = 0.4;
-        hi = 1.0;
-        break;
-      case 'threebet':
-        lo = 0.62;
-        hi = 1.0;
-        break;
-      case 'fourbet':
-        // V28: the 4-bet/5-bet tier — premiums plus the occasional bluff.
-        lo = 0.86;
-        hi = 1.0;
-        break;
-      case 'check':
-      default:
-        lo = 0.0;
-        hi = 0.8; // BB free check: capped range
-        break;
-    }
+    if (line === 'none') {
+      lo = 0;
+      hi = 1;
+    } else
+      switch (line) {
+        case 'limp':
+          lo = 0.15;
+          hi = 0.72; // speculative + traps; excludes pure junk & most premiums
+          break;
+        case 'call':
+          lo = 0.3;
+          hi = 0.86; // calling a raise: playables, minus junk, minus most 4-bet hands
+          break;
+        case 'open':
+          lo = 0.4;
+          hi = 1.0;
+          break;
+        case 'threebet':
+          lo = 0.62;
+          hi = 1.0;
+          break;
+        case 'fourbet':
+          // V28: the 4-bet/5-bet tier — premiums plus the occasional bluff.
+          lo = 0.86;
+          hi = 1.0;
+          break;
+        case 'check':
+        default:
+          lo = 0.0;
+          hi = 0.8; // BB free check: capped range
+          break;
+      }
 
     // Adjust by observed tendencies (confidence-weighted).
     const s = this.stats.get(userId);
@@ -1095,6 +1119,45 @@ export class HorseMind {
   static getPlan(handKey: string | null, userId: string): boolean | undefined {
     if (!handKey) return undefined;
     return this.plans.get(`${handKey}|${userId}`);
+  }
+
+  /**
+   * ═══ V39 STREET OUTLOOK (2026-09-03) ═══ what the bet was thinking about
+   * the next card: the cards that improve hero, the cards that scare hero.
+   * Written beside the barrel plan when a bluff / semi-bluff fires; read on
+   * the next street against the card that actually arrived. Same bounded
+   * map discipline as every plan here.
+   */
+  private static outlooks = new Map<string, { good: Set<string>; scare: Set<string> }>();
+
+  static noteOutlook(
+    handKey: string | null,
+    userId: string,
+    street: string,
+    good: string[],
+    scare: string[]
+  ): void {
+    if (!handKey) return;
+    if (this.outlooks.size > this.MAX_PLANS) evictOldest(this.outlooks, this.MAX_PLANS);
+    this.outlooks.set(`${handKey}|${userId}|${street}`, {
+      good: new Set(good),
+      scare: new Set(scare),
+    });
+  }
+
+  /** How the bet on `street` had classified `cardKey` before it came. */
+  static outlookOf(
+    handKey: string | null,
+    userId: string,
+    street: string,
+    cardKey: string
+  ): 'good' | 'scare' | 'blank' | undefined {
+    if (!handKey) return undefined;
+    const o = this.outlooks.get(`${handKey}|${userId}|${street}`);
+    if (!o) return undefined;
+    if (o.good.has(cardKey)) return 'good';
+    if (o.scare.has(cardKey)) return 'scare';
+    return 'blank';
   }
 
   /**

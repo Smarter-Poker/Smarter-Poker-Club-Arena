@@ -27,6 +27,7 @@ import { ThemeSettingsModal } from '../table/ThemeSettingsModal';
 import { getClubLevel, ClubLevelInfo } from '../../utils/clubLevels';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
+import { fetchGameCreationAccess } from '../../services/GameAccessService';
 import { soundService } from '../../services/SoundService';
 import { isSoundAllowed } from '../../utils/soundGate';
 import { isVibrationPreferred, setVibrationAllowed } from '../../utils/vibrationGate';
@@ -46,6 +47,7 @@ import {
   tableStudioCheckoutResult,
 } from '../../lib/tableStudioCheckoutResume';
 import { formatPopupText } from '../../utils/popupStyle';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 import styles from './HamburgerMenu.module.css';
 
 /* Dan 2026-08-30: "THE FIRST LETTER OF EVERY WORD INSIDE THE HAMBURGER MENU
@@ -164,6 +166,8 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const [attentionCount, setAttentionCount] = useState(0);
   const [rewardContexts, setRewardContexts] = useState<LeaderboardRewardContext[]>([]);
   const [rewardContextClubId, setRewardContextClubId] = useState<string>('');
+  const [canManageGames, setCanManageGames] = useState(false);
+  const [gameAccessRevision, setGameAccessRevision] = useState(0);
 
   // Stripe returns to the route where the player opened Table Studio. The
   // command drawer is mounted globally even while closed, so it is the one
@@ -206,6 +210,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     clubId,
     clubRole,
     isPlatformStaff: effectivePlatformStaff,
+    canManageGames,
   });
   const allNavigationItems = useMemo(
     () => navigationGroups.flatMap((group) => group.items),
@@ -251,6 +256,26 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       ? current === '/'
       : current === target || current.startsWith(`${target}/`);
   };
+
+  useEffect(() => {
+    if (!isOpen || !workspace.clubUUID) {
+      setCanManageGames(false);
+      return;
+    }
+    let cancelled = false;
+    void fetchGameCreationAccess(workspace.clubUUID).then((access) => {
+      if (!cancelled) setCanManageGames(access.allowed && !access.unionId);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [gameAccessRevision, isOpen, workspace.clubUUID]);
+
+  useMasterBusSubscription('GAME_MANAGEMENT_ACCESS_CHANGED', (payload) => {
+    if (!payload.clubId || payload.clubId === workspace.clubUUID) {
+      setGameAccessRevision((value) => value + 1);
+    }
+  });
 
   useEffect(() => {
     if (!isOpen || !clubId) {
@@ -319,7 +344,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       return;
     }
     let cancelled = false;
-    void LeaderboardService.getManageableRewardContexts()
+    void LeaderboardService.getManageableRewardContexts(true)
       .then((contexts) => {
         if (cancelled) return;
         setRewardContexts(contexts);
@@ -443,7 +468,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       supabase
         .from('profiles')
         .select(
-          'avatar_url:arena_avatar_url, username, display_name, sounds_enabled, vibrations_enabled, is_vip, tier, role'
+          `avatar_url:arena_avatar_url, ${PLAYER_NAME_COLUMNS}, sounds_enabled, vibrations_enabled, is_vip, tier, role`
         )
         .eq('id', user.id)
         .maybeSingle()
@@ -457,17 +482,17 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           }
           if (data) {
             // Avatar is consumed from useHeaderDataStore — no need to set locally
-            const prefUseRealName = localStorage.getItem(STORAGE_KEYS.USE_REAL_NAME) === 'true';
-            setUserName(
-              prefUseRealName
-                ? data.display_name || data.username || 'Player'
-                : data.username || data.display_name || 'Player'
-            );
+            /* Dan 2026-09-02: "THE CLUB ARENA SHOULD ALWAYS 100% OF THE TIME
+               USE THE POKER ALIAS AND NOT THE REAL NAME." The header is an
+               arena surface, so it no longer consults USE_REAL_NAME - that
+               preference now governs social/World Hub display only, and the
+               toggle below says so. */
+            setUserName(playerDisplayName(data));
             // First-paint identity cache (2026-08-28 flash sweep): what the
             // database just said is what the header and hero seat should wear
             // on the NEXT cold open, before any round trip.
             persistIdentity(user.id, {
-              displayName: data.display_name || data.username || null,
+              displayName: playerDisplayName(data),
               avatarUrl: data.avatar_url || null,
             });
             /* ── `profiles.sounds_enabled` / `vibrations_enabled` ARE NO LONGER
@@ -715,16 +740,15 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     if (user?.id) {
       supabase
         .from('profiles')
-        .select('username, display_name')
+        .select(PLAYER_NAME_COLUMNS)
         .eq('id', user.id)
         .maybeSingle()
         .then(({ data }) => {
           if (data) {
-            setUserName(
-              newValue
-                ? data.display_name || data.username || 'Player'
-                : data.username || data.display_name || 'Player'
-            );
+            /* The preference changed, but the arena name did not depend on it
+               and still does not. Re-read so the header reflects any other
+               edit, and resolve it the one way. */
+            setUserName(playerDisplayName(data));
           }
         });
     }
@@ -872,7 +896,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
         <div style={dividerStyle} />
 
-        <section className={styles.contextDeck} aria-label="Current arena context">
+        <section className={styles.contextDeck} aria-label="Current Arena Context">
           <div className={styles.contextStatus}>
             <span
               className={`${styles.statusLamp} ${workspace.isOffline ? styles.statusLampOffline : ''}`}
@@ -916,9 +940,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder="Search Destinations Or The Arena"
-              aria-label="Search destinations or the arena"
+              aria-label="Search Destinations Or The Arena"
             />
-            <button type="submit" aria-label="Search all players and clubs">
+            <button type="submit" aria-label="Search All Players And Clubs">
               Search
             </button>
           </form>
@@ -994,14 +1018,14 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           </>
         )}
 
-        <div className={styles.quickActions} aria-label="Context actions">
-          {clubId && workspace.isClubStaff ? (
+        <div className={styles.quickActions} aria-label="Context Actions">
+          {clubId && canManageGames ? (
             <button
               type="button"
               className={styles.quickAction}
-              onClick={() => handleNavigate(`/clubs/${clubId}/create-table`)}
+              onClick={() => handleNavigate(`/clubs/${clubId}/table-management`)}
             >
-              Create Table
+              Table Management
             </button>
           ) : (
             <button
@@ -1041,7 +1065,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
         </div>
 
         {(pinnedItems.length > 0 || recentItems.length > 0) && !searchQuery && (
-          <section className={styles.memoryRail} aria-label="Pinned and recent destinations">
+          <section className={styles.memoryRail} aria-label="Pinned And Recent Destinations">
             {pinnedItems.length > 0 && (
               <div>
                 <h2 className={styles.sectionHeader}>Pinned</h2>
@@ -1208,11 +1232,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
           {/* Use Real Name Toggle */}
           <div className={styles.settingRow}>
-            <span className={styles.settingLabel}>Use Real Name (Vs Alias)</span>
+            <span className={styles.settingLabel}>Show Real Name On Social</span>
             <button
               type="button"
               onClick={handleUseRealNameToggle}
-              aria-label="Use real name instead of poker alias"
+              aria-label="Show Real Name On Social Surfaces"
               aria-checked={useRealName}
               role="switch"
               className={styles.toggleButton}
@@ -1276,12 +1300,12 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             {
               label: 'App Settings',
               path: '/settings',
-              description: 'Audio, gameplay, privacy, and account',
+              description: 'Audio, Gameplay, Privacy, And Account',
             },
             {
               label: 'Notifications',
               path: '/notifications',
-              description: 'Alerts and notification preferences',
+              description: 'Alerts And Notification Preferences',
             },
           ].map((item) => {
             const active = isActivePath(item.path);
@@ -1306,7 +1330,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
         <div className={styles.divider} />
 
-        <section className={styles.navGroup} aria-label="Support and legal">
+        <section className={styles.navGroup} aria-label="Support And Legal">
           <h2 className={styles.sectionHeader}>Support & Legal</h2>
           {CLUB_ARENA_SUPPORT_NAV.map((item) => {
             const active = isActivePath(item.path);

@@ -162,31 +162,87 @@ describe('CommissionService', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // EXECUTE PAYOUT — BUS EMISSION
   // ─────────────────────────────────────────────────────────────────────────
+  // CLAIMING COMMISSION - WHAT REPLACED executePayout
+  // ─────────────────────────────────────────────────────────────────────────
+  //
+  // executePayout called execute_commission_payout, which credited a wallet,
+  // debited nothing and never marked the commission settled - so the same row
+  // could be paid forever. Both the RPC and the method are gone (migration
+  // 20260902000001). These pins cover the loop that replaced them.
 
-  describe('executePayout', () => {
-    it('should emit COMMISSION_PAID bus event on successful payout', async () => {
-      mockRpc.mockResolvedValueOnce({ error: null }); // execute_commission_payout
-      // sweep #3: execute_commission_payout operates on agent_commissions, which
-      // is keyed by user_id and stores the figure in `amount` — NOT the legacy
-      // commission_payouts shape (agent_id / net_payout) this mock used to use.
-      mockMaybeSingle.mockResolvedValueOnce({
-        data: { user_id: 'agent-1', amount: 5000 },
-      }); // fetch payout record
+  describe('claimCommission', () => {
+    it('claims in batches until the server says there is no more', async () => {
+      mockRpc
+        .mockResolvedValueOnce({ data: { success: true, amount: 100, more: true }, error: null })
+        .mockResolvedValueOnce({ data: { success: true, amount: 40, more: false }, error: null });
 
-      await CommissionService.executePayout('payout-123');
+      const result = await CommissionService.claimCommission('club-1');
+
+      expect(result.claimed).toBe(140);
+      expect(result.batches).toBe(2);
+      expect(result.stoppedEarly).toBe(false);
+      expect(mockRpc).toHaveBeenCalledWith('fn_agent_claim_commission', expect.any(Object));
+    });
+
+    it('sends a DIFFERENT op_id per batch, or the second call would replay the first', async () => {
+      mockRpc
+        .mockResolvedValueOnce({ data: { success: true, amount: 10, more: true }, error: null })
+        .mockResolvedValueOnce({ data: { success: true, amount: 10, more: false }, error: null });
+
+      await CommissionService.claimCommission('club-1');
+
+      const first = mockRpc.mock.calls[0][1] as { p_op_id: string };
+      const second = mockRpc.mock.calls[1][1] as { p_op_id: string };
+      expect(first.p_op_id).toBeTruthy();
+      expect(second.p_op_id).toBeTruthy();
+      expect(first.p_op_id).not.toBe(second.p_op_id);
+    });
+
+    it('emits COMMISSION_PAID once, for the whole claim', async () => {
+      mockRpc.mockResolvedValueOnce({
+        data: { success: true, amount: 5000, more: false },
+        error: null,
+      });
+
+      await CommissionService.claimCommission('club-1');
 
       expect(mockBusEmit).toHaveBeenCalledWith('COMMISSION_PAID', {
-        agentId: 'agent-1',
+        agentId: 'self',
         amount: 5000,
       });
     });
 
-    it('should throw on RPC failure', async () => {
-      mockRpc.mockResolvedValueOnce({ error: { message: 'payout already executed' } });
+    it('throws the server refusal when the FIRST batch is refused', async () => {
+      mockRpc.mockResolvedValueOnce({
+        data: { success: false, error: 'The Club Bank Holds 1.00 Chips And Owes You 803.49.' },
+        error: null,
+      });
 
-      await expect(CommissionService.executePayout('payout-123')).rejects.toBeDefined();
+      await expect(CommissionService.claimCommission('club-1')).rejects.toThrow(
+        /The Club Bank Holds/
+      );
+      expect(mockBusEmit).not.toHaveBeenCalledWith('COMMISSION_PAID', expect.anything());
+    });
+
+    it('keeps what it already claimed when a LATER batch is refused', async () => {
+      // Money that moved, moved. Throwing here would tell the agent nothing was
+      // paid while their balance says otherwise.
+      mockRpc
+        .mockResolvedValueOnce({ data: { success: true, amount: 700, more: true }, error: null })
+        .mockResolvedValueOnce({ data: { success: false, error: 'Bank Short' }, error: null });
+
+      const result = await CommissionService.claimCommission('club-1');
+
+      expect(result.claimed).toBe(700);
+      expect(result.stoppedEarly).toBe(true);
+      expect(result.reason).toMatch(/Bank Short/);
+    });
+
+    it('throws when the RPC itself fails', async () => {
+      mockRpc.mockResolvedValueOnce({ data: null, error: { message: 'network' } });
+
+      await expect(CommissionService.claimCommission('club-1')).rejects.toBeDefined();
     });
   });
 
@@ -195,13 +251,61 @@ describe('CommissionService', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('approvePayout', () => {
-    it('should update status to approved with metadata', async () => {
-      mockMaybeSingle.mockResolvedValueOnce({ error: null });
+    /**
+     * The title of this test used to say "should update status to approved with
+     * metadata". It has not done that since the payout tables went: the method
+     * is a retired no-op that logs and returns false, and the assertion only
+     * ever checked that it did not throw - which a no-op cannot. A test name
+     * describing behaviour the code does not have is a promise nobody is
+     * keeping, in the same family as the columns and tables phase 7 removed.
+     */
+    it('is retired: returns false, touches nothing, approves nobody', async () => {
+      mockRpc.mockClear();
+      mockUpsert.mockClear();
 
-      // approvePayout updates status — verify it doesn't throw
-      await expect(
-        CommissionService.approvePayout('payout-1', 'admin-user')
-      ).resolves.not.toThrow();
+      await expect(CommissionService.approvePayout('payout-1', 'admin-user')).resolves.toBe(false);
+
+      expect(mockRpc).not.toHaveBeenCalled();
+      expect(mockUpsert).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // WHAT A DOWNLINE IS OWED
+  // ─────────────────────────────────────────────────────────────────────────
+  //
+  // The Sub-Agents tab printed agents.pending_commission until phase 7 - a
+  // column nothing wrote. It cannot select from agent_commissions instead: RLS
+  // gives an agent their OWN rows and nobody else's, which is why this goes
+  // through a definer function scoped to the caller's own downline.
+
+  describe('downlineCommission', () => {
+    it('asks the scoped RPC and maps what it answers', async () => {
+      mockRpc.mockResolvedValueOnce({
+        data: [
+          { agent_id: 'a1', user_id: 'u1', club_id: 'c1', unclaimed: '120.50' },
+          { agent_id: 'a2', user_id: 'u2', club_id: 'c1', unclaimed: 0 },
+        ],
+        error: null,
+      });
+
+      const rows = await CommissionService.downlineCommission();
+
+      expect(mockRpc).toHaveBeenCalledWith('fn_agent_downline_commission', {
+        p_club_id: null,
+      });
+      expect(rows).toEqual([
+        { agentId: 'a1', userId: 'u1', unclaimed: 120.5 },
+        { agentId: 'a2', userId: 'u2', unclaimed: 0 },
+      ]);
+    });
+
+    it('throws rather than reporting zero when the read fails', async () => {
+      // A denied or failed read is not a downline that is owed nothing. The
+      // dashboard binds this error; it must not arrive as an empty list.
+      mockRpc.mockResolvedValueOnce({ data: null, error: { message: 'denied' } });
+
+      await expect(CommissionService.downlineCommission()).rejects.toBeDefined();
     });
   });
 });

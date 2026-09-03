@@ -16,7 +16,7 @@ to server-authoritative RPCs.
 - Input includes `name`, visibility/approval defaults, and `logoPreview`.
 - Service owns the four-club limit, club row, logo upload, owner membership,
   cleanup, and `CLUB_JOINED` event.
-- AI generation delegates to `LogoGeneratorService.generateClubLogo`.
+- Club identity offers ten curated placeholder crests or a protected custom upload.
 
 ## Find Player
 

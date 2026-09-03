@@ -16,6 +16,7 @@ import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { fetchGameCreationAccess } from './GameAccessService';
+import { gameCreationDeniedMessage } from '../lib/gameCreationAccess';
 import { parseBlindStructure, parsePayoutStructure } from '../utils/parseBlindStructure';
 /* The canonical level-length reader. It is the ONLY one that gets the
    three-spelling precedence right - see getCurrentLevelState. Pure, no React,
@@ -25,6 +26,7 @@ import type { Tournament, TournamentPlayer } from '../types/database.types';
 import type { TournamentGameVariant } from '../config/tournamentVariants';
 import { reportError } from '../utils/errorReporter';
 import { computePlacePrize } from '../lib/payoutMath';
+import { gameManagementService } from './GameManagementService';
 
 // AUDIT M19: fn_unregister_from_tournament returns a `reason` for ordinary
 // refusals rather than raising, so a player is told why - "you are already
@@ -395,7 +397,7 @@ class TournamentService {
     const { data: clubTournaments, error } = await supabase
       .from('tournaments')
       .select(
-        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats'
+        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats'
       )
       .eq('club_id', resolvedId)
       // Lobby fix 2026-08-15: this query had NO status filter, so every
@@ -522,7 +524,7 @@ class TournamentService {
           const { data: xmttData, error: xmttErr } = await supabase
             .from('tournaments')
             .select(
-              'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats'
+              'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, addon_period_started_at, addon_period_ends_at, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at, current_level, level_started_at, short_description, is_vip_only, ban_chat, all_in_or_fold, label_as_new, hide_club_name, action_time_seconds, table_size, accelerated_mtt, addon_break_minutes, big_blind_ante, authorized_to_register, early_bird_enabled, early_bird_chips, bubble_protection, final_table_deal_enabled, restart_every_minutes, synchronized_breaks, on_break, break_started_at, break_ends_at, max_rebuys, max_reentries, is_pinned, satellite_seats'
             )
             .eq('union_id', unionClub.union_id)
             // 2026-08-19: dropped `.eq('is_xmtt', true)`. Under the union
@@ -684,20 +686,12 @@ class TournamentService {
    * Create a new tournament
    */
   async createTournament(clubId: string, config: TournamentConfig): Promise<Tournament> {
-    // Union governance (2026-08-19): clubs inside a union cannot create
-    // union-visible tournaments — those are created at the union level.
-    // A union club's own staff MAY still create a PRIVATE club tournament
-    // (is_private = true, visible only inside the club, never in the union
-    // lobby). Union owners/admins keep building union-visible games. The
-    // fn_create_tournament RPC + trg_tournaments_union_ownership trigger
-    // enforce the same rule server-side.
-    if (!config.isXmtt && !config.isPrivate) {
-      const resolvedClubId = await resolveClubUUID(clubId);
-      const access = await fetchGameCreationAccess(resolvedClubId);
-      if (!access.allowed && access.reason === 'union_only') {
-        config.isPrivate = true;
-      }
-    }
+    // Union governance: member-club staff lose every tournament-creation path,
+    // including private tournaments. Union owners/admins remain authorized by
+    // fn_game_creation_access and create against a selected host club.
+    const resolvedClubId = await resolveClubUUID(clubId);
+    const access = await fetchGameCreationAccess(resolvedClubId);
+    if (!access.allowed) throw new Error(gameCreationDeniedMessage(access));
 
     // XMTT validation: require unionId and verify the union has crossClubTournaments enabled
     if (config.isXmtt) {
@@ -907,6 +901,28 @@ class TournamentService {
         '0A000': 'Could not create the tournament. That option is not available yet.',
         '42501': 'You do not have permission to create games for this club.',
       };
+      /**
+       * 55000 IS THE GUARANTEE REFUSAL, AND ITS MESSAGE IS ALREADY WRITTEN
+       * FOR THE OWNER (2026-08-31 audit).
+       *
+       * trg_tournaments_guarantee_affordable raises, verbatim: "Club X cannot
+       * guarantee N chips: <bank> holds A, floor B, already promised C on live
+       * events — short by D. Add chips to the bank to cover the guarantee."
+       * That sentence names the shortfall and the remedy.
+       *
+       * It was not in this map, so it fell to the default — "Please try again"
+       * — which describes a transient blip. The condition is neither
+       * transient nor mysterious: the owner is short by a stated number of
+       * chips and nothing they retry will change that. The migration that
+       * added the trigger even records the assumption this broke: "The UI
+       * already shows the raise verbatim as a toast."
+       *
+       * Passed through as written. The Toast layer applies the house style
+       * (Title Case, no em dashes) at render, so the raise text needs no
+       * massaging here.
+       */
+      const raised = String((rpcError as { message?: string }).message ?? '').trim();
+      if (code === '55000' && raised) throw new Error(raised);
       throw new Error(friendly[code] ?? 'Could not create the tournament. Please try again.');
     }
     const result = rpcResult as {
@@ -1136,101 +1152,16 @@ class TournamentService {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Cancel a tournament and refund ALL registered players' buy-ins.
-   * Tournaments are ONLY cancelled when fewer than 3 players have joined.
-   * This is the sole cancellation condition — tournaments never cancel for other reasons.
+   * Compatibility entry point for an operator cancelling an empty tournament.
+   * The database refuses this command after the first registration. Recovery
+   * refunds remain service-role-only and are not exposed to the browser.
    */
   async cancelTournament(
     tournamentId: string,
-    reason: string = 'Insufficient players (minimum 3 required)'
+    _reason: string = 'Cancelled By Operator'
   ): Promise<{ refunded: number; playersRefunded: number }> {
-    const tournament = await this.getTournament(tournamentId);
-    if (!tournament) throw new Error('Tournament not found');
-
-    if (tournament.status !== 'ANNOUNCED' && tournament.status !== 'REGISTERING') {
-      throw new Error('Can only cancel tournaments that have not started yet');
-    }
-
-    // Verify cancellation reason: only cancel if < 3 players
-    if ((tournament.current_players || 0) >= 3) {
-      throw new Error('Cannot cancel - tournament has 3 or more players registered');
-    }
-
-    // RAKE-AUDIT 2026-07-24: fetch the players BEFORE the atomic cancel — the
-    // RPC deletes tournament_players rows, so the old post-RPC query always
-    // returned empty and no BALANCE_UPDATED events ever fired for refunds.
-    const { data: players, error: playersErr } = await supabase
-      .from('tournament_players')
-      .select('user_id')
-      .eq('tournament_id', tournamentId);
-    // ROUND 8 (2026-08-29): reported, not thrown - the cancel itself refunds
-    // through the atomic RPC regardless. A failed read here only meant the
-    // BALANCE_UPDATED nudges never fired, so refunded players saw stale
-    // balances until their next reload, with nothing recorded anywhere.
-    if (playersErr) {
-      reportError(playersErr, 'TournamentService.cancel_roster_read_failed', { tournamentId });
-    }
-
-    // Execute atomic cancellation and refund (prevents partial refunds on server crash)
-    // RAKE-AUDIT 2026-07-24: the RPC now refunds ONLY real (non-horse) players
-    // and reverses the collected entry fees in the rake ledger.
-    const { data: cancelResult, error: cancelError } = await retryAsync(
-      () =>
-        supabase.rpc('atomic_cancel_tournament', {
-          p_tournament_id: tournamentId,
-          p_admin_id: '00000000-0000-0000-0000-000000000000', // System action
-        }),
-      3
-    );
-
-    if (cancelError) {
-      reportError(cancelError, 'TournamentService.CRITICAL');
-      throw new Error(`Failed to cancel tournament: ${cancelError.message}`);
-    }
-
-    // Process result
-    const refunded = cancelResult?.total_refunded || 0;
-    const playersRefunded = cancelResult?.refunded_count || 0;
-
-    if (players && players.length > 0) {
-      players.forEach((p) => {
-        masterBus.emit('BALANCE_UPDATED', {
-          source: 'tournament_cancel_refund',
-          userId: p.user_id,
-        });
-      });
-    }
-    // Same defect shape as D7: an unchecked `.update()`. If this one is denied
-    // the refunds have already happened but the row still reads REGISTERING, so
-    // the lobby keeps advertising a tournament nobody is in. Surfaced rather
-    // than thrown - the refund is the part that moved money and it succeeded.
-    const { error: cancelStatusError } = await supabase
-      .from('tournaments')
-      .update({
-        status: 'CANCELLED',
-        ended_at: new Date().toISOString(),
-        prize_pool: 0,
-      })
-      .eq('id', tournamentId);
-    if (cancelStatusError) {
-      reportError(cancelStatusError, 'TournamentService.cancelTournament_status_update', {
-        tournamentId,
-      });
-    }
-
-    console.debug(
-      `[TournamentService] Cancelled tournament ${tournament.name}: refunded ${playersRefunded} players, ${refunded} chips`
-    );
-
-    // Emit completion event (cancelled = complete from a lifecycle perspective)
-    masterBus.emit('TOURNAMENT_CANCELLED', {
-      tournamentId,
-      clubId: tournament.club_id,
-      reason,
-    });
-    masterBus.emit('TOURNAMENT_COMPLETE', { tournamentId, clubId: tournament.club_id });
-
-    return { refunded: refunded, playersRefunded };
+    await gameManagementService.close('tournament', tournamentId);
+    return { refunded: 0, playersRefunded: 0 };
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1279,17 +1210,11 @@ class TournamentService {
     }
     if (!players || players.length === 0) throw new Error('No players registered');
 
-    // Auto-cancel if fewer than 3 players — minimum for a valid tournament
+    // A short field waits for the server's sanctioned top-up/start path. The
+    // browser never destroys a registered tournament to satisfy a start click.
     if (players.length < 3) {
-      console.debug(
-        `[TournamentService] Auto-cancelling tournament ${tournament.name}: only ${players.length} players (minimum 3 required)`
-      );
-      await this.cancelTournament(
-        tournamentId,
-        `Only ${players.length} player(s) registered - minimum 3 required`
-      );
       throw new Error(
-        `Tournament cancelled: only ${players.length} player(s) registered (minimum 3 required)`
+        `Tournament Needs At Least 3 Players To Start. ${players.length} Currently Registered.`
       );
     }
 
@@ -2069,22 +1994,12 @@ class TournamentService {
 
     if (!tournament.add_on_available) return { allowed: false, reason: 'Add-ons not available' };
 
-    // Add-on period is level-based: opens when rebuy/late reg period ends,
-    // stays open for addon_levels levels (default 1)
-    const levelState = this.getCurrentLevelState(tournament);
-    const rebuyLevelCap = tournament.late_reg_levels ?? tournament.rebuy_levels ?? 8;
-    const addonLevelWindow = tournament.addon_levels ?? 1;
-
-    if (levelState.levelIndex < rebuyLevelCap) {
-      return {
-        allowed: false,
-        reason: 'Rebuy/re-entry period still active - add-on opens after it ends',
-      };
+    const startsAt = Date.parse(String((tournament as any).addon_period_started_at || ''));
+    const endsAt = Date.parse(String((tournament as any).addon_period_ends_at || ''));
+    if (!Number.isFinite(startsAt) || !Number.isFinite(endsAt) || Date.now() < startsAt) {
+      return { allowed: false, reason: 'Add-On Period Has Not Begun' };
     }
-
-    if (levelState.levelIndex >= rebuyLevelCap + addonLevelWindow) {
-      return { allowed: false, reason: 'Add-on period has ended' };
-    }
+    if (Date.now() >= endsAt) return { allowed: false, reason: 'Add-On Period Has Ended' };
 
     return { allowed: true };
   }
@@ -2184,133 +2099,23 @@ class TournamentService {
     return { success: true, newStack: data?.new_stack };
   }
 
-  /**
-   * Process a re-entry for an eliminated player
-   * Re-entry creates a NEW tournament_players entry (old one stays as eliminated)
-   * Only allowed if tournament.is_reentry is true and within late registration period
-   */
-  async processReentry(
-    tournamentId: string,
-    userId: string,
-    /** Per-prompt idempotency token. See `processRebuy`. */
-    clientToken?: string
-  ): Promise<{ success: boolean; newEntryId?: string }> {
-    const tournament = await this.getTournament(tournamentId);
-    if (!tournament) throw new Error('Tournament not found');
+  /* ── `processReentry` DELETED 2026-09-02 — a broken duplicate money path ──
+     It had ZERO production callers. Re-entry flows through `processRebuy`,
+     which sets `p_rebuy_type: 'reentry'` when a tournament is reentry-only,
+     and that is the path 314 re-entry tournaments have actually been using.
 
-    // Check if re-entry is enabled
-    if (!tournament.is_reentry) {
-      throw new Error('Re-entry not available for this tournament');
-    }
+     It could not have worked if anything had called it. Its eligibility check
+     ordered `tournament_players` by `created_at`, a column that table does not
+     have — its timestamps are `registered_at` and `eliminated_at` (verified
+     against production). PostgREST answers 42703, the error was bound and
+     surfaced, and every call would have ended at "Could not verify your
+     entries. Please try again." 100% of the time.
 
-    // Check if currently within late registration period
-    const levelState = this.getCurrentLevelState(tournament);
-    const lateRegLevelCap = tournament.late_reg_levels ?? tournament.rebuy_levels ?? 8;
-    if (levelState.levelIndex >= lateRegLevelCap) {
-      throw new Error('Re-entry period has ended');
-    }
-
-    // Verify player does NOT already have an active entry
-    const { data: activeEntry, error: activeCheckErr } = await supabase
-      .from('tournament_players')
-      .select('id')
-      .eq('tournament_id', tournamentId)
-      .eq('user_id', userId)
-      .in('status', ['registered', 'playing']);
-
-    // ROUND 8 (2026-08-29): same shape as the add-on gate - a failed read
-    // waved a re-entry (a money action) past the active-entry check.
-    if (activeCheckErr) {
-      reportError(activeCheckErr, 'TournamentService.reentry_active_check_read_failed', {
-        tournamentId,
-      });
-      throw new Error('Could not verify your entries. Please try again.');
-    }
-    if (activeEntry && activeEntry.length > 0) {
-      throw new Error('You already have an active entry in this tournament');
-    }
-
-    // Verify player was previously eliminated
-    const { data: eliminatedEntry, error: elimCheckErr } = await supabase
-      .from('tournament_players')
-      .select('id')
-      .eq('tournament_id', tournamentId)
-      .eq('user_id', userId)
-      .eq('status', 'eliminated')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    // ROUND 8 (2026-08-29): a failed read used to fall into 'You have not
-    // been eliminated in this tournament' - flatly untrue for a player whose
-    // bust screen is the thing offering the re-entry button.
-    if (elimCheckErr) {
-      reportError(elimCheckErr, 'TournamentService.reentry_eliminated_check_read_failed', {
-        tournamentId,
-      });
-      throw new Error('Could not verify your entries. Please try again.');
-    }
-    if (!eliminatedEntry) {
-      throw new Error('You have not been eliminated in this tournament');
-    }
-
-    // Check wallet balance for buy-in
-    const reentryChips = tournament.starting_chips;
-    // Whole chips only (Dan 2026-08-20) - no decimal re-entry prices.
-    const reentryCost = Math.max(0, Math.round(Number(tournament.buy_in_amount || 0)));
-    // RAKE-AUDIT 2026-07-24: 10% house fee on re-entries (previously fee-free —
-    // a re-entry is a full fresh buy-in and must carry the same fee as entry #1)
-    // A re-entry is a full fresh buy-in and carries the same fee as entry #1 -
-    // and since 2026-08-21, on the same terms: cut OUT of the advertised price.
-    const reentryTotalCost = reentryCost;
-
-    // 2026-08-27: the frozen-pool pre-check that lived here is GONE. It read
-    // public.wallets - frozen since 2026-08-21, nothing maintains it - so a
-    // player with plenty of live chips could be refused before the atomic RPC
-    // (the real authority, which checks the LIVE pool and produces its own
-    // insufficient-funds error) ever ran. A "better error message" computed
-    // from a dead table was a false refusal gate on a money action.
-    // Process re-entry via ATOMIC RPC (same as rebuy/addon, type='reentry')
-    const { data, error } = await supabase.rpc('process_tournament_rebuy', {
-      p_tournament_id: tournamentId,
-      p_user_id: userId, // Round 19: prod sig uses p_user_id not p_player_id
-      p_rebuy_type: 'reentry',
-      p_cost: reentryTotalCost,
-      p_chips: reentryChips,
-      p_current_level: levelState.levelIndex,
-      /** Per-prompt idempotency token — see processRebuy. */
-      p_client_token: clientToken ?? null,
-    });
-
-    if (error) {
-      reportError(error, 'TournamentService.Reentry_RPC_failed_No_chips_were_deducte');
-      throw error;
-    }
-
-    // 2026-08-20: the fee is booked by process_tournament_rebuy inside the
-    // same transaction as the chip deduction. This used to ALSO insert a
-    // rake_records row and increment total_rake here, so every fee was
-    // counted twice in union rake revenue and in rakeback.
-
-    // Emit AFTER confirmed success
-    masterBus.emit('BALANCE_UPDATED', { source: 'tournament_reentry', userId });
-
-    // Recalculate prize pool: re-entry cost goes to pool
-    await this.recalculatePrizePool(tournamentId);
-
-    // Broadcast re-entry event
-    try {
-      const { realtimeChannelService } = await import('./RealtimeChannelService');
-      await realtimeChannelService.broadcastTournamentEvent(tournamentId, {
-        type: 'player_registered',
-        payload: { type: 'reentry', userId, chips: reentryChips },
-      });
-    } catch (e: unknown) {
-      reportError(e, 'TournamentService.Failed_to_broadcast_reentry_event');
-    }
-
-    return { success: true, newEntryId: data?.new_entry_id };
-  }
+     So: a second implementation of a money path, wrong in a way that made it
+     unusable, with a unit test asserting its shape as though it worked. The
+     test went with it. Deleted rather than repaired, because repairing it
+     would restore a duplicate of a working path — and two ways to take a
+     player's re-entry fee is how a player pays twice. */
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Prize Pool Recalculation

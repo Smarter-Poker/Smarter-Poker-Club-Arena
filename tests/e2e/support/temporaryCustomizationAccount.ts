@@ -24,6 +24,34 @@ export type StorefrontSku = {
 
 type JsonObject = Record<string, unknown>;
 
+const CLEANUP_RETRY_DELAYS_MS = [250, 750, 1_500] as const;
+const SERVICE_REQUEST_MAX_ATTEMPTS = 5;
+const SERVICE_REQUEST_BASE_DELAY_MS = 500;
+const STALE_FIXTURE_MINIMUM_AGE_MS = 5 * 60_000;
+const STALE_FIXTURE_CLEANUP_LIMIT = 100;
+
+function isTransientCleanupError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return (
+    /\((?:429|502|503|504)\)/.test(message) ||
+    /PGRST00[0123]|schema cache|retrying|network|fetch|timeout/i.test(message)
+  );
+}
+
+async function withCleanupRetries<T>(operation: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= CLEANUP_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!isTransientCleanupError(error) || attempt === CLEANUP_RETRY_DELAYS_MS.length)
+        throw error;
+      await new Promise((resolve) => setTimeout(resolve, CLEANUP_RETRY_DELAYS_MS[attempt]));
+    }
+  }
+  throw lastError;
+}
 function serverHeaders(key: string, extra: Record<string, string> = {}): Record<string, string> {
   return {
     apikey: key,
@@ -55,25 +83,76 @@ export function requireCustomizationCertificationEnvironment(): CustomizationCer
 async function serviceRequest<T>(
   environment: CustomizationCertificationEnvironment,
   path: string,
-  init: RequestInit = {}
+  init: RequestInit = {},
+  retrySafe = false
 ): Promise<T> {
-  const response = await fetch(`${environment.supabaseUrl}${path}`, {
-    ...init,
-    headers: serverHeaders(environment.serviceRoleKey, {
-      Accept: 'application/json',
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...((init.headers as Record<string, string> | undefined) || {}),
-    }),
-  });
-  const text = await response.text();
-  const body = text ? (JSON.parse(text) as T) : (undefined as T);
-  if (!response.ok) {
-    throw new Error(
-      `Supabase service request ${init.method || 'GET'} ${path} failed ` +
-        `(${response.status}): ${text.slice(0, 400)}`
-    );
+  const method = (init.method || 'GET').toUpperCase();
+  const methodIsIdempotent =
+    retrySafe || ['GET', 'HEAD', 'PUT', 'PATCH', 'DELETE'].includes(method);
+
+  for (let attempt = 0; attempt < SERVICE_REQUEST_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch(`${environment.supabaseUrl}${path}`, {
+        ...init,
+        headers: serverHeaders(environment.serviceRoleKey, {
+          Accept: 'application/json',
+          ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+          ...((init.headers as Record<string, string> | undefined) || {}),
+        }),
+      });
+      const responseText = await response.text();
+      let body = undefined as T;
+      if (responseText) {
+        try {
+          body = JSON.parse(responseText) as T;
+        } catch {
+          if (response.ok) {
+            throw new Error(
+              `Supabase service request ${method} ${path} returned invalid JSON: ` +
+                responseText.slice(0, 400)
+            );
+          }
+        }
+      }
+      if (response.ok) return body;
+
+      const schemaCacheUnavailable =
+        (body as JsonObject | undefined)?.code === 'PGRST002' ||
+        responseText.includes('"code":"PGRST002"');
+      const retryableStatus =
+        response.status === 429 ||
+        response.status === 502 ||
+        response.status === 503 ||
+        response.status === 504;
+      // PGRST002 means PostgREST could not resolve the request against its
+      // schema cache, so it never invoked even a POST RPC. Other ambiguous
+      // transport failures are retried only for idempotent methods; this test
+      // harness must never double-credit or double-create a fixture account.
+      const safeToRetry = schemaCacheUnavailable || (methodIsIdempotent && retryableStatus);
+      if (safeToRetry && attempt + 1 < SERVICE_REQUEST_MAX_ATTEMPTS) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, SERVICE_REQUEST_BASE_DELAY_MS * 2 ** attempt)
+        );
+        continue;
+      }
+
+      throw new Error(
+        `Supabase service request ${method} ${path} failed ` +
+          `(${response.status}): ${responseText.slice(0, 400)}`
+      );
+    } catch (error) {
+      const mayRetryTransport =
+        methodIsIdempotent &&
+        attempt + 1 < SERVICE_REQUEST_MAX_ATTEMPTS &&
+        !String((error as Error)?.message || error).startsWith('Supabase service request');
+      if (!mayRetryTransport) throw error;
+      await new Promise((resolve) =>
+        setTimeout(resolve, SERVICE_REQUEST_BASE_DELAY_MS * 2 ** attempt)
+      );
+    }
   }
-  return body;
+
+  throw new Error(`Supabase service request ${method} ${path} exhausted its retry window.`);
 }
 
 export async function readServiceRows<T>(
@@ -84,15 +163,21 @@ export async function readServiceRows<T>(
   return serviceRequest<T[]>(environment, `/rest/v1/${table}?${query.toString()}`);
 }
 
-export async function callServiceRpc<T extends JsonObject>(
+export async function callServiceRpc<T>(
   environment: CustomizationCertificationEnvironment,
   rpc: string,
-  body: JsonObject
+  body: JsonObject,
+  retrySafe = false
 ): Promise<T> {
-  return serviceRequest<T>(environment, `/rest/v1/rpc/${rpc}`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
+  return serviceRequest<T>(
+    environment,
+    `/rest/v1/rpc/${rpc}`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    },
+    retrySafe
+  );
 }
 
 export async function listTableStudioStorefrontSkus(
@@ -138,6 +223,10 @@ async function normalizeTemporaryProfile(
       is_vip: false,
       vip_tier: null,
       vip_expires_at: null,
+      // Keep commerce/mission certification focused on the target surface.
+      // This is a real free library asset and satisfies the same durable gate
+      // that the public Avatar Gallery writes during first-run onboarding.
+      arena_avatar_url: '/avatars/table/free_samurai@2x.webp',
     }),
   });
 
@@ -145,11 +234,12 @@ async function normalizeTemporaryProfile(
     diamonds: number;
     diamond_balance: number;
     is_vip: boolean;
+    arena_avatar_url: string | null;
   }>(
     environment,
     'profiles',
     new URLSearchParams({
-      select: 'diamonds,diamond_balance,is_vip',
+      select: 'diamonds,diamond_balance,is_vip,arena_avatar_url',
       id: `eq.${userId}`,
     })
   );
@@ -157,7 +247,8 @@ async function normalizeTemporaryProfile(
     rows.length !== 1 ||
     Number(rows[0].diamonds) !== 0 ||
     Number(rows[0].diamond_balance) !== 0 ||
-    rows[0].is_vip !== false
+    rows[0].is_vip !== false ||
+    rows[0].arena_avatar_url !== '/avatars/table/free_samurai@2x.webp'
   ) {
     throw new Error(`Temporary customization account ${userId} was not normalized.`);
   }
@@ -228,46 +319,114 @@ export async function createTemporaryCustomizationAccount(
     return { id: userId, email, password, client };
   } catch (error) {
     if (userId) {
-      await cleanupTemporaryCustomizationAccount(environment, {
-        id: userId,
-        email,
-        password,
-        client: createClient(environment.supabaseUrl, environment.publishableKey),
-      }).catch(() => undefined);
+      try {
+        await cleanupTemporaryCustomizationAccount(environment, {
+          id: userId,
+          email,
+          password,
+          client: createClient(environment.supabaseUrl, environment.publishableKey),
+        });
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          `Temporary account setup failed and cleanup was incomplete for ${userId}.`
+        );
+      }
     }
     throw error;
   }
 }
 
-async function deleteRows(
+async function assertRowsRemoved(
   environment: CustomizationCertificationEnvironment,
   table: string,
-  column: 'user_id' | 'id',
+  column: 'user_id' | 'recipient_user_id' | 'from_user_id' | 'to_user_id' | 'actor_id',
   userId: string
 ): Promise<void> {
-  const query = new URLSearchParams({ [column]: `eq.${userId}` });
-  await serviceRequest<void>(environment, `/rest/v1/${table}?${query.toString()}`, {
-    method: 'DELETE',
-    headers: { Prefer: 'return=minimal' },
-  });
+  const rows = await readServiceRows<{ id?: string }>(
+    environment,
+    table,
+    new URLSearchParams({ select: column, [column]: `eq.${userId}`, limit: '1' })
+  );
+  if (rows.length > 0) {
+    throw new Error(`${table}.${column}: reserved fixture residue remains after cleanup`);
+  }
 }
 
 async function authUserExists(
   environment: CustomizationCertificationEnvironment,
   userId: string
 ): Promise<boolean> {
-  const response = await fetch(
-    `${environment.supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(userId)}`,
-    { headers: serverHeaders(environment.serviceRoleKey) }
+  return withCleanupRetries(async () => {
+    const response = await fetch(
+      `${environment.supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(userId)}`,
+      { headers: serverHeaders(environment.serviceRoleKey) }
+    );
+    if (response.status === 404) return false;
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(
+        `Supabase Auth verification failed (${response.status}): ${text.slice(0, 400)}`
+      );
+    }
+    return true;
+  });
+}
+
+function isReservedCertificationEmail(email: string): boolean {
+  return email.startsWith(ACCOUNT_PREFIX) && email.endsWith('@example.invalid');
+}
+
+/**
+ * Recover fixtures whose runner was cancelled before its `finally` block.
+ * The age floor protects a concurrent certification, the local marker check
+ * protects real accounts, and the database RPC repeats that marker check while
+ * holding the Auth row lock before deleting anything.
+ */
+export async function cleanupStaleTemporaryCustomizationAccounts(
+  environment: CustomizationCertificationEnvironment,
+  minimumAgeMs = STALE_FIXTURE_MINIMUM_AGE_MS
+): Promise<number> {
+  // Never permit a caller to turn this recovery sweep into current-run cleanup.
+  const safeMinimumAgeMs = Math.max(minimumAgeMs, 60_000);
+  const cutoff = new Date(Date.now() - safeMinimumAgeMs).toISOString();
+  const candidates = await readServiceRows<{ id: string; email: string; created_at: string }>(
+    environment,
+    'profiles',
+    new URLSearchParams({
+      select: 'id,email,created_at',
+      email: `like.${ACCOUNT_PREFIX}*@example.invalid`,
+      created_at: `lte.${cutoff}`,
+      order: 'created_at.asc',
+      limit: String(STALE_FIXTURE_CLEANUP_LIMIT + 1),
+    })
   );
-  if (response.status === 404) return false;
-  if (!response.ok) {
-    const text = await response.text();
+  if (candidates.length > STALE_FIXTURE_CLEANUP_LIMIT) {
     throw new Error(
-      `Supabase Auth verification failed (${response.status}): ${text.slice(0, 400)}`
+      `Refusing to clean more than ${STALE_FIXTURE_CLEANUP_LIMIT} stale certification accounts in one run.`
     );
   }
-  return true;
+  for (const candidate of candidates) {
+    if (
+      !candidate.id ||
+      !isReservedCertificationEmail(candidate.email || '') ||
+      Date.parse(candidate.created_at) > Date.parse(cutoff)
+    ) {
+      throw new Error(
+        `Refusing invalid stale certification candidate ${candidate.id || 'unknown'}.`
+      );
+    }
+    await callServiceRpc<JsonObject>(
+      environment,
+      'cleanup_reserved_certification_account',
+      { p_user_id: candidate.id },
+      true
+    );
+    if (await authUserExists(environment, candidate.id)) {
+      throw new Error(`Stale certification account ${candidate.id} still exists after cleanup.`);
+    }
+  }
+  return candidates.length;
 }
 
 /**
@@ -275,17 +434,35 @@ async function authUserExists(
  * The prefix check is deliberately local and server-backed: a typo can never
  * turn this helper into a general account deletion primitive.
  */
-export async function cleanupTemporaryCustomizationAccount(
+async function cleanupTemporaryCustomizationAccountOnce(
   environment: CustomizationCertificationEnvironment,
   account: TemporaryCustomizationAccount
 ): Promise<void> {
-  if (!account.email.startsWith(ACCOUNT_PREFIX) || !account.email.endsWith('@example.invalid')) {
+  if (!isReservedCertificationEmail(account.email)) {
     throw new Error(`Refusing to clean non-certification account ${account.email}.`);
   }
 
   await account.client.auth.signOut().catch(() => undefined);
   const failures: string[] = [];
   const userTables = [
+    // Daily Missions certification state. Child/outbox rows are removed before
+    // their parent notification or account rows so cleanup remains explicit
+    // even if a production FK temporarily loses ON DELETE CASCADE.
+    'daily_mission_operations',
+    'daily_challenge_progress_events',
+    'daily_challenge_event_outbox',
+    'daily_challenge_milestone_claims',
+    'daily_challenge_claim_batches',
+    'user_daily_challenges',
+    'challenge_streak_state',
+    'user_notification_preferences',
+    'notifications',
+    // Deleting mission state intentionally bumps the dashboard revision. This
+    // row therefore belongs after every trigger-producing mission table.
+    'daily_challenge_dashboard_revisions',
+    'wallet_credit_idempotency',
+    'wallet_transactions',
+    'wallets',
     'customization_operations',
     'user_theme_settings',
     'user_table_studio_preferences',
@@ -297,52 +474,29 @@ export async function cleanupTemporaryCustomizationAccount(
     'signup_errors',
   ];
 
-  for (const table of userTables) {
-    await deleteRows(environment, table, 'user_id', account.id).catch((error) => {
-      failures.push(`${table}: ${(error as Error).message}`);
-    });
-  }
+  const relatedTables = [
+    { table: 'push_outbox', column: 'recipient_user_id' as const },
+    { table: 'chip_transactions', column: 'from_user_id' as const },
+    { table: 'chip_transactions', column: 'to_user_id' as const },
+    { table: 'audit_trail', column: 'actor_id' as const },
+  ];
 
-  let firstAuthDeleteError: Error | null = null;
-  await serviceRequest<void>(
+  await callServiceRpc<JsonObject>(
     environment,
-    `/auth/v1/admin/users/${encodeURIComponent(account.id)}`,
+    'cleanup_reserved_certification_account',
     {
-      method: 'DELETE',
-      // GoTrue reads should_soft_delete from the JSON body. A query-string
-      // value receives 2xx but does not guarantee the requested hard delete.
-      body: JSON.stringify({ should_soft_delete: false }),
-    }
-  ).catch((error) => {
-    firstAuthDeleteError = error as Error;
-  });
+      p_user_id: account.id,
+    },
+    true
+  ).catch((error) => failures.push(`reserved identity: ${(error as Error).message}`));
 
-  // The normal auth delete cascades these rows. The explicit cleanup also
-  // handles an interrupted historical trigger without touching any other id.
-  for (const table of ['profiles', 'users']) {
-    await deleteRows(environment, table, 'id', account.id).catch((error) => {
-      failures.push(`${table}: ${(error as Error).message}`);
+  for (const { table, column } of [
+    ...relatedTables,
+    ...userTables.map((table) => ({ table, column: 'user_id' as const })),
+  ]) {
+    await assertRowsRemoved(environment, table, column, account.id).catch((error) => {
+      failures.push((error as Error).message);
     });
-  }
-
-  // A historical trigger/FK can make Auth deletion fail until public rows are
-  // gone. A malformed/ignored request can also answer 2xx without removing the
-  // identity, so verify server state and retry exactly this reserved fixture.
-  let userStillExists = true;
-  try {
-    userStillExists = await authUserExists(environment, account.id);
-  } catch (error) {
-    failures.push(`auth.users verification: ${(error as Error).message}`);
-  }
-  if (firstAuthDeleteError || userStillExists) {
-    await serviceRequest<void>(
-      environment,
-      `/auth/v1/admin/users/${encodeURIComponent(account.id)}`,
-      {
-        method: 'DELETE',
-        body: JSON.stringify({ should_soft_delete: false }),
-      }
-    ).catch((error) => failures.push(`auth.users: ${(error as Error).message}`));
   }
 
   try {
@@ -356,6 +510,13 @@ export async function cleanupTemporaryCustomizationAccount(
   if (failures.length) {
     throw new Error(`Temporary customization cleanup was incomplete: ${failures.join(' | ')}`);
   }
+}
+
+export async function cleanupTemporaryCustomizationAccount(
+  environment: CustomizationCertificationEnvironment,
+  account: TemporaryCustomizationAccount
+): Promise<void> {
+  return withCleanupRetries(() => cleanupTemporaryCustomizationAccountOnce(environment, account));
 }
 
 export function expectedUnlockForFeature(feature: string): string | null {

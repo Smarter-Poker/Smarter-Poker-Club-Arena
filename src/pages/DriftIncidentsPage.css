@@ -1,0 +1,827 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+   DRIFT INCIDENTS PAGE - Styles
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.drift-incidents-page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px 16px;
+  width: 100%;
+  box-sizing: border-box;
+  /* clip, not hidden - see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. */
+  overflow-x: hidden;
+  overflow-x: clip;
+  padding-bottom: max(70px, env(safe-area-inset-bottom));
+  min-height: 100vh;
+  min-height: 100dvh;
+  color: #e0e0e0;
+}
+
+/* ── Header ── */
+.di-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.di-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.di-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.di-syncing {
+  font-size: 0.7rem;
+  color: #10b981;
+  animation: animationsPulse 1.5s infinite;
+}
+
+.di-refresh-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #a0a0a0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1.1rem;
+  transition: all 0.2s;
+}
+
+.di-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Stat Cards ── */
+.di-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.di-stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+}
+
+.di-stat-card.alert {
+  border-color: rgba(239, 68, 68, 0.25);
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.12);
+}
+
+.di-stat-label {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.di-stat-value {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #10b981;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.di-stat-card.alert .di-stat-value {
+  color: #ef4444;
+}
+
+/* ── Filter Tabs ── */
+.di-filter-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.di-filter-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.di-filter-tab {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: #a0a0a0;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+  touch-action: manipulation;
+}
+
+.di-filter-tab.status-open.active {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+.di-filter-tab.status-acknowledged.active {
+  background: rgba(234, 179, 8, 0.12);
+  color: #eab308;
+  border-color: rgba(234, 179, 8, 0.25);
+}
+
+.di-filter-tab.status-reconciling.active {
+  background: rgba(99, 102, 241, 0.12);
+  color: #818cf8;
+  border-color: rgba(99, 102, 241, 0.25);
+}
+
+.di-filter-tab.status-resolved.active {
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+  border-color: rgba(34, 197, 94, 0.25);
+}
+
+/* ── Incident Cards ── */
+.di-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.di-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 16px;
+  transition: all 0.2s;
+}
+
+.di-card.severity-critical {
+  border-left: 3px solid #ef4444;
+}
+
+.di-card.severity-warning {
+  border-left: 3px solid #eab308;
+}
+
+.di-card.severity-info {
+  border-left: 3px solid #818cf8;
+}
+
+.di-card.past-target {
+  box-shadow: 0 0 18px rgba(239, 68, 68, 0.12);
+}
+
+.di-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0 0 10px 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+
+.di-card-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.di-card-head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.di-expand-caret {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 0.85rem;
+}
+
+.di-severity-badge {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.di-severity-badge.critical {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.di-severity-badge.warning {
+  background: rgba(234, 179, 8, 0.15);
+  color: #eab308;
+}
+
+.di-severity-badge.info {
+  background: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
+}
+
+.di-class-badge {
+  font-size: 0.78rem;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.06);
+  color: #d0d0d0;
+}
+
+.di-status-badge {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.di-status-badge.open {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
+.di-status-badge.acknowledged {
+  background: rgba(234, 179, 8, 0.12);
+  color: #eab308;
+}
+
+.di-status-badge.reconciling {
+  background: rgba(99, 102, 241, 0.12);
+  color: #818cf8;
+}
+
+.di-status-badge.resolved {
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+}
+
+.di-occurrences {
+  font-size: 0.72rem;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.di-deadline {
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: #10b981;
+  white-space: nowrap;
+}
+
+.di-deadline.past {
+  color: #ef4444;
+  animation: animationsPulse 1.5s infinite;
+}
+
+.di-deadline.resolved {
+  color: #22c55e;
+}
+
+/* ── Amounts ── */
+.di-amounts {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.di-amount-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.di-amount-label {
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.di-amount-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #d0d0d0;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.di-amount-block.discrepancy .di-amount-value {
+  color: #ef4444;
+}
+
+.di-ledger-chip {
+  font-size: 0.72rem;
+  padding: 3px 10px;
+  border-radius: 10px;
+  font-weight: 600;
+  margin-left: auto;
+}
+
+.di-ledger-chip.balanced {
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+}
+
+.di-ledger-chip.imbalanced {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
+/* ── Context line ── */
+.di-context-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  margin-bottom: 10px;
+}
+
+.di-org {
+  color: #818cf8;
+  font-weight: 600;
+}
+
+.di-org.union {
+  color: #14b8a6;
+}
+
+.di-source {
+  color: #888;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.di-layer {
+  color: #888;
+}
+
+.di-detected {
+  color: #666;
+  margin-left: auto;
+}
+
+/* ── Expanded Detail ── */
+.di-detail {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 12px;
+  margin-bottom: 12px;
+}
+
+.di-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.di-chip {
+  font-size: 0.72rem;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  color: #a0a0a0;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.di-meta-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.di-meta-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 0.82rem;
+}
+
+.di-meta-label {
+  flex-shrink: 0;
+  width: 120px;
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.di-meta-value {
+  color: #d0d0d0;
+  line-height: 1.4;
+}
+
+.di-meta-value.mono {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.di-meta-value.escalation {
+  color: #f59e0b;
+  font-weight: 700;
+}
+
+.di-repair-badge {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.di-repair-badge.pending {
+  background: rgba(255, 255, 255, 0.06);
+  color: #a0a0a0;
+}
+
+.di-repair-badge.running {
+  background: rgba(99, 102, 241, 0.12);
+  color: #818cf8;
+}
+
+.di-repair-badge.repaired {
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+}
+
+.di-repair-badge.manual_needed {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
+.di-repair-badge.not_applicable {
+  background: rgba(255, 255, 255, 0.04);
+  color: #666;
+}
+
+/* ── Timeline ── */
+.di-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.di-timeline-title {
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.di-event {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 0.76rem;
+}
+
+.di-event-glyph {
+  width: 14px;
+  text-align: center;
+  color: #818cf8;
+  flex-shrink: 0;
+}
+
+.di-event.kind-escalated .di-event-glyph {
+  color: #ef4444;
+}
+
+.di-event.kind-resolved .di-event-glyph {
+  color: #22c55e;
+}
+
+.di-event.kind-repair_action .di-event-glyph {
+  color: #14b8a6;
+}
+
+.di-event-kind {
+  font-weight: 600;
+  color: #d0d0d0;
+}
+
+.di-event-time {
+  color: #666;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.di-event-actor {
+  color: #818cf8;
+}
+
+.di-event-detail {
+  color: #a0a0a0;
+  flex-basis: 100%;
+  padding-left: 22px;
+  line-height: 1.4;
+}
+
+.di-metadata summary {
+  font-size: 0.8rem;
+  color: #888;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.di-metadata pre {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 10px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  color: #a0a0a0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 6px 0 0 0;
+  max-height: 200px;
+}
+
+/* ── Actions ── */
+.di-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.di-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  transition: all 0.2s;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #a0a0a0;
+}
+
+.di-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.di-btn-ack {
+  border-color: rgba(234, 179, 8, 0.3);
+  background: rgba(234, 179, 8, 0.1);
+  color: #eab308;
+}
+
+.di-btn-reconcile {
+  border-color: rgba(99, 102, 241, 0.3);
+  background: rgba(99, 102, 241, 0.1);
+  color: #818cf8;
+}
+
+.di-btn-resolve {
+  border-color: rgba(34, 197, 94, 0.3);
+  background: rgba(34, 197, 94, 0.1);
+  color: #22c55e;
+}
+
+.di-btn-reopen {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+/* ── Empty & Loading States ── */
+.di-loading-state,
+.di-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: #666;
+}
+
+.di-empty-icon {
+  font-size: 2rem;
+  margin-bottom: 12px;
+  opacity: 0.4;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE - Mobile (375px first)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+  .drift-incidents-page {
+    padding: 16px 12px;
+  }
+
+  .di-header h2 {
+    font-size: 1.2rem;
+  }
+
+  .di-refresh-btn {
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+  }
+
+  .di-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .di-stat-value {
+    font-size: 1.15rem;
+  }
+
+  .di-filter-tab {
+    min-height: 44px;
+  }
+
+  .di-card {
+    padding: 12px;
+  }
+
+  .di-amounts {
+    gap: 12px;
+  }
+
+  .di-meta-label {
+    width: 100px;
+  }
+
+  .di-btn {
+    min-height: 44px;
+    touch-action: manipulation;
+    flex: 1;
+  }
+}
+
+/* ── Notification deep link: flash the card the push was about ── */
+@keyframes di-deep-link-flash {
+  0% {
+    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.9);
+  }
+  100% {
+    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0);
+  }
+}
+.di-card.deep-linked {
+  animation: di-deep-link-flash 1.2s ease-out 3;
+}
+
+/* ── Burn-In Gate Panel (zero-drift phase 5) ─────────────────────────────── */
+.dgp-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0 4px;
+}
+.dgp-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+}
+.dgp-card {
+  background: rgba(20, 20, 24, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dgp-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9aa0ac;
+}
+.dgp-gate-pill {
+  align-self: flex-start;
+  padding: 3px 14px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 15px;
+}
+.dgp-gate-pill.pass {
+  background: rgba(46, 204, 113, 0.15);
+  color: #2ecc71;
+  border: 1px solid rgba(46, 204, 113, 0.5);
+}
+.dgp-gate-pill.stale {
+  background: rgba(148, 163, 184, 0.18);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+}
+
+.dgp-gate-pill.fail {
+  background: rgba(231, 76, 60, 0.12);
+  color: #ff6b5e;
+  border: 1px solid rgba(231, 76, 60, 0.5);
+}
+.dgp-gate-meta {
+  font-size: 11px;
+  color: #778;
+}
+.dgp-gate-failing {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #ffb3ab;
+}
+.dgp-spark-zero {
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-dasharray: 3 3;
+  stroke-width: 1;
+}
+.dgp-spark-line {
+  stroke-width: 1.6;
+}
+.dgp-spark-line.flat {
+  stroke: #2ecc71;
+}
+.dgp-spark-line.off {
+  stroke: #f5a623;
+}
+.dgp-spark-empty,
+.dgp-spark-caption {
+  font-size: 11px;
+  color: #778;
+}
+.dgp-asof-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.dgp-asof-controls select,
+.dgp-asof-controls input {
+  background: #101014;
+  color: #dde;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.dgp-asof-controls input[type='text'] {
+  min-width: 260px;
+}
+.dgp-asof-controls button {
+  background: rgba(88, 101, 242, 0.2);
+  color: #aab4ff;
+  border: 1px solid rgba(88, 101, 242, 0.5);
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.dgp-asof-controls button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.dgp-asof-result {
+  margin: 6px 0 0;
+  max-height: 220px;
+  overflow: auto;
+  background: #0b0b0e;
+  border-radius: 6px;
+  padding: 10px;
+  font-size: 11px;
+  color: #cde;
+}

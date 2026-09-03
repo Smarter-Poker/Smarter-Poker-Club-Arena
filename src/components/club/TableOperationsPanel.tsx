@@ -21,6 +21,7 @@ import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { sizedStorageUrl } from '../../utils/avatarGenerator';
 import { reportError } from '../../utils/errorReporter';
 import { useToast } from '../common/Toast';
+import { playerDisplayName } from '../../utils/playerDisplayName';
 
 interface TableInfo {
   id: string;
@@ -486,13 +487,18 @@ export default function TableOperationsPanel({ clubId }: Props) {
   // ─── Actions ───────────────────────────────────────────────────────────────
   const handlePauseResume = async (tableId: string, currentStatus: string) => {
     setActionLoading(tableId);
-    if (currentStatus === 'paused') {
-      await tableService.resumeTable(tableId);
-    } else {
-      await tableService.pauseTable(tableId);
+    try {
+      const succeeded =
+        currentStatus === 'paused'
+          ? await tableService.resumeTable(tableId)
+          : await tableService.pauseTable(tableId);
+      if (!succeeded) {
+        toast.error(`Could Not ${currentStatus === 'paused' ? 'Resume' : 'Pause'} The Table`);
+      }
+      await loadTables();
+    } finally {
+      setActionLoading(null);
     }
-    await loadTables();
-    setActionLoading(null);
   };
 
   const handleKickPlayer = async () => {
@@ -525,7 +531,7 @@ export default function TableOperationsPanel({ clubId }: Props) {
     setActionLoading(confirmAction.tableId);
     try {
       await tableService.closeTable(confirmAction.tableId);
-      toast.success('Table closed and all seated players refunded');
+      toast.success('Table Closed');
       await loadTables();
     } catch (err) {
       reportError(err, 'TableOperationsPanel.Failed_to_close_table');
@@ -667,7 +673,7 @@ export default function TableOperationsPanel({ clubId }: Props) {
                 ) : (
                   players.map((player, pIdx) => {
                     const profile = player.profiles;
-                    const name = profile?.display_name || profile?.username || 'Unknown';
+                    const name = playerDisplayName(profile);
                     const playerVisible = visiblePlayers[expandedTable]?.[pIdx];
 
                     return (
@@ -752,8 +758,8 @@ export default function TableOperationsPanel({ clubId }: Props) {
               <>
                 <div style={styles.confirmTitle}>Close Table</div>
                 <div style={styles.confirmText}>
-                  This Will Close The Table And All Seated Players Will Be Cashed Out. This Action
-                  Cannot Be Undone.
+                  This Will Close The Table. It Can Only Close After Every Player Has Left; Active
+                  Players Will Never Be Removed Or Cashed Out By This Action.
                 </div>
                 <div style={styles.confirmActions}>
                   <button style={styles.cancelBtn} onClick={() => setConfirmAction(null)}>

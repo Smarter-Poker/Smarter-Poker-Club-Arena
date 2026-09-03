@@ -36,6 +36,19 @@ let timer: NodeJS.Timeout | null = null;
 let bootTimer: NodeJS.Timeout | null = null;
 let running = false;
 let lastAuditedDay = '';
+/*
+ * ── 2026-09-02: the memo that ate the retry ──
+ * `lastAuditedDay` used to be set on the stand-down path too, which made it a
+ * memo of "we looked at this day", not "this day is audited". A run that threw
+ * therefore burned the whole window: the next tick saw the day memoised and
+ * returned before it could reach claimNightlyJob, so the 30-minute
+ * stale-claim takeover added on 2026-08-30 - built for exactly this - could
+ * never engage. Measured: daily_audit claimed 2026-09-01 at 06:03 UTC, the RPC
+ * hit a statement timeout, and the row did not exist until an agent generated
+ * it 28 hours later. The stand-down gets its own memo now, and it only
+ * suppresses the LOG LINE; it never suppresses the retry.
+ */
+let lastStandDownDay = '';
 
 const yesterdayUTC = (): string => new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
 
@@ -77,8 +90,8 @@ async function alreadyRan(day: string): Promise<boolean> {
   }
 }
 
-export async function runDailyAudit(day?: string): Promise<void> {
-  if (running) return;
+export async function runDailyAudit(day?: string): Promise<boolean> {
+  if (running) return false;
   running = true;
   const target = day ?? yesterdayUTC();
   console.log(`[HorseDailyAudit] audit for ${target} starting`);
@@ -87,8 +100,10 @@ export async function runDailyAudit(day?: string): Promise<void> {
     if (error) throw new Error(error.message);
     const findings = (data as { findings?: number } | null)?.findings ?? '?';
     console.log(`[HorseDailyAudit] audit for ${target} complete: ${findings} finding(s)`);
+    return true;
   } catch (err) {
     reportError(err, 'HorseDailyAudit.run');
+    return false;
   } finally {
     running = false;
   }
@@ -112,12 +127,23 @@ async function maybeRun(): Promise<void> {
     return;
   }
   if (!(await claimNightlyJob('daily_audit', target))) {
-    lastAuditedDay = target;
-    console.log(`[HorseDailyAudit] ${target} claimed by another instance - standing down`);
+    // Say it once, then keep ticking. The claim holder may still die, and
+    // claimNightlyJob is the only thing allowed to decide whether this
+    // instance may take the day over.
+    if (lastStandDownDay !== target) {
+      lastStandDownDay = target;
+      console.log(`[HorseDailyAudit] ${target} claimed by another instance - standing down`);
+    }
     return;
   }
-  lastAuditedDay = target;
-  await runDailyAudit(target);
+  if (await runDailyAudit(target)) {
+    lastAuditedDay = target;
+    return;
+  }
+  console.warn(
+    `[HorseDailyAudit] ${target} FAILED and the day stays OPEN - a later tick inside the ` +
+      `window will re-ask claimNightlyJob, which takes a stale claim with no rows over`
+  );
 }
 
 export function startHorseDailyAudit(): void {

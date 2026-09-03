@@ -72,7 +72,7 @@ describe('global hand number allocation', () => {
     expect(seen.size).toBe(25);
   });
 
-  it('ascends — a later hand always outranks an earlier one', async () => {
+  it('ascends - a later hand always outranks an earlier one', async () => {
     let n = 1000000;
     // Cast the whole implementation, not its return value: supabase.rpc is
     // typed to return a PostgrestFilterBuilder (thenable, but not a Promise),

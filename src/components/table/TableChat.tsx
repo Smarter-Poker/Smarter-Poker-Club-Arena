@@ -168,7 +168,7 @@ function MessageRow({ message, isOwnMessage, isNew = false }: MessageRowProps) {
               loading="lazy"
               decoding="async"
               src={message.playerAvatar}
-              alt="Player avatar"
+              alt="Player Avatar"
               onError={(e) => {
                 (e.target as HTMLImageElement).src = generateDefaultAvatar();
               }}
@@ -450,8 +450,8 @@ export function TableChat({
       <button
         className="chat-collapsed chat-collapsed--muted"
         onClick={onToggleCollapse}
-        title="Chat is muted"
-        aria-label="Chat is muted"
+        title="Chat Is Muted"
+        aria-label="Chat Is Muted"
       >
         <span className="chat-collapsed__icon" style={{ opacity: 0.4 }}>
           <ChatBubbleIcon />
@@ -467,8 +467,8 @@ export function TableChat({
         onClick={onToggleCollapse}
         aria-label={
           unreadCount > 0
-            ? `Open table chat, ${unreadCount.toLocaleString()} unread`
-            : 'Open table chat'
+            ? `Open Table Chat, ${unreadCount.toLocaleString()} Unread`
+            : 'Open Table Chat'
         }
       >
         <span className="chat-collapsed__icon">
@@ -511,7 +511,7 @@ export function TableChat({
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label="Table chat"
+        aria-label="Table Chat"
         style={sheetStyle}
       >
         {/* Grab handle — the affordance that says "this drags". */}
@@ -546,8 +546,8 @@ export function TableChat({
           <button
             className="table-chat__close"
             onClick={handleClose}
-            title="Close chat"
-            aria-label="Close chat"
+            title="Close Chat"
+            aria-label="Close Chat"
           >
             &#10005;
           </button>
@@ -577,8 +577,8 @@ export function TableChat({
             <button
               className="table-chat__scroll-fab"
               onClick={scrollToBottom}
-              title="Jump to latest"
-              aria-label="Jump to latest message"
+              title="Jump To Latest"
+              aria-label="Jump To Latest Message"
             >
               &#8595;
             </button>
@@ -608,7 +608,7 @@ export function TableChat({
             className="table-chat__send"
             onClick={handleSend}
             disabled={!inputValue.trim() || isDisabled}
-            aria-label="Send message"
+            aria-label="Send Message"
             title="Send"
           >
             &#10148;

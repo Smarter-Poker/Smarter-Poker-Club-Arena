@@ -14,6 +14,7 @@
  */
 
 import { supabase, atomicCashout } from './supabase.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
 
@@ -63,6 +64,9 @@ export class HorseLifecycleManager {
     // freeze event. (This module's own comment at the double-refund fix
     // records the same hazard.)
     this.intervalHandle = setInterval(() => {
+      // THE FREEZE (Dan 2026-09-01): the lifecycle pass stands horses up and
+      // reaps seats. Nothing it does cannot wait out the break.
+      if (isMaintenanceFrozen()) return;
       if (this.cycleRunning) return;
       this.cycleRunning = true;
       void Promise.resolve(this.performMaintenanceCycle()).finally(() => {
@@ -202,7 +206,7 @@ export class HorseLifecycleManager {
       // is harmless and self-correcting — but say so rather than treating a
       // partial read as "nothing is stuck".
       if (!stuckPage.complete) {
-        console.warn('[HorseLifecycle] stuck-horse sweep read incompletely — retrying next pass');
+        console.warn('[HorseLifecycle] stuck-horse sweep read incompletely - retrying next pass');
         return;
       }
       const stuckHorses = stuckPage.rows;
@@ -413,7 +417,7 @@ export class HorseLifecycleManager {
       await this.persistLifecycleLog('system', 'stale_sng_observed', {
         count: staleSNGs.length,
         sngIds: staleSNGs.slice(0, 20).map((s: { id: string }) => s.id),
-        note: 'left REGISTERING for the fill-and-start path — never cancelled',
+        note: 'left REGISTERING for the fill-and-start path - never cancelled',
       });
       console.log(
         `[Lifecycle] ${staleSNGs.length} slow-filling SNG(s) left open for the fill-and-start path (never cancelled)`
@@ -462,7 +466,7 @@ export class HorseLifecycleManager {
       // reap a seat it never saw (safe), but it also cannot be trusted to have
       // finished — and it runs every 4 hours, so skipping one pass is free.
       if (!stalePage.complete) {
-        console.warn('[HorseLifecycle] stale-seat sweep read incompletely — retrying next pass');
+        console.warn('[HorseLifecycle] stale-seat sweep read incompletely - retrying next pass');
         return;
       }
       const staleSeats = stalePage.rows;
@@ -558,5 +562,4 @@ export class HorseLifecycleManager {
    * `tourney:{id}:prize:{user}:{place}`. If a horse-specific prize path is
    * ever genuinely needed, start from those.
    */
-
 }

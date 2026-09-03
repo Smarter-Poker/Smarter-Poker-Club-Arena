@@ -1198,8 +1198,12 @@ REVOKE ALL ON FUNCTION public.ca_repair_hand_player_stat_money(integer) FROM PUB
 -- the 7-day horse retention are already gone from hand_history and cost
 -- nothing to skip; the remaining ~380k hands take about three hours at this
 -- cadence, at roughly half duty cycle.
-SELECT cron.schedule('ca-stats-money-repair', '*/3 * * * *',
-  $$SELECT public.ca_repair_hand_player_stat_money(12000)$$);
+-- Throttled after apply (measured live: with the repair at half duty the
+-- engine's hand_history insert mean rose from 58 ms to 267 ms from IO
+-- contention; the trigger itself is 2-5 ms warm). 4,000 hands every 5
+-- minutes is about a fifth of the box, and it finishes in a night.
+SELECT cron.schedule('ca-stats-money-repair', '*/5 * * * *',
+  $$SELECT public.ca_repair_hand_player_stat_money(4000)$$);
 
 -- ────────────────────────────────────────────────────────────────────────────
 -- 8. REALTIME: the page can hear its own hands finish in another tab

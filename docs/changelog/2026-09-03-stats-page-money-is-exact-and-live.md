@@ -47,7 +47,8 @@ applied to production 19:27 UTC and recorded in `schema_migrations`):
 6. `ca_roll_hand_stats_forward` prunes by who has rows in the window (its
    `RETURNING user_id` prune keyed on rows it inserted, which is now nobody).
 7. `ca_repair_hand_player_stat_money` recomputes existing rows in bounded
-   batches; pg_cron `ca-stats-money-repair` every 3 minutes, self-unschedules
+   batches; pg_cron `ca-stats-money-repair` every 5 minutes (4,000 hands, throttled
+   after the hand-write mean rose under the first cadence), self-unschedules
    when done. Hands already past the 7-day horse retention are skipped.
 8. `ca_hand_player_idx` joins the realtime publication with an owner-only
    SELECT policy so the page can hear its own hands from any tab.
@@ -111,5 +112,7 @@ the measured-source notice wording.
   `StatsExportButton` are exported and rendered nowhere; PlayerStyleRadar's
   axes are fabricated. Left untouched here (deleting them touches an
   identity-vault test and the barrel); they should go.
-- The hand write's `pg_stat_statements` mean was 57.6 ms before the trigger;
-  re-measure after an hour.
+- The hand write's `pg_stat_statements` mean was 57.6 ms before apply and
+  267 ms in the first ten minutes after, while the repair ran at half duty.
+  The trigger measures 2-5 ms warm per hand; the rest is repair IO. Throttled
+  to a fifth duty; re-measure once `ca_hand_player_stat_repair_state.done`.

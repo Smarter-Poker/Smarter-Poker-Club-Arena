@@ -95,6 +95,20 @@ describe('EngineSocketMux', () => {
     expect(f2.readyState).toBe(0);
   });
 
+  it('isSubscribed is true while a facade is live and false once closed', () => {
+    // The lobby warm-up (services/tableWarmup) asks this before acquiring a
+    // placeholder so it never supersedes a table a player is already at.
+    expect(engineSocketMux.isSubscribed(T1)).toBe(false);
+    const f1 = engineSocketMux.acquire('https://e', T1, 'jwt');
+    expect(engineSocketMux.isSubscribed(T1)).toBe(true); // CONNECTING counts
+    lastSocket()._open();
+    engineSocketMux.acquire('https://e', T1, 'jwt'); // supersede - still owned
+    expect(engineSocketMux.isSubscribed(T1)).toBe(true);
+    f1.close();
+    // The superseded facade was already closed; the live one still owns it.
+    expect(engineSocketMux.isSubscribed(T2)).toBe(false);
+  });
+
   it('routes frames by tableId and fans PING out to every facade', () => {
     const seen: Record<string, string[]> = { [T1]: [], [T2]: [] };
     const f1 = engineSocketMux.acquire('https://e', T1, 'jwt');

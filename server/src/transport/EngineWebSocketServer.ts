@@ -866,7 +866,27 @@ export class EngineWebSocketServer {
     }
     conn.subs.set(tableId, 'pending');
     try {
-      const viewerAccess = await this.authorizeViewer(tableId, conn.userId);
+      /* THE FOUR GATES RUN TOGETHER HERE TOO (2026-09-03). The 2026-09-02
+         change above made the single-table upgrade path ask its four gates at
+         once - and left THIS path, the one every browser actually uses (the
+         mux is default-ON, so a table join is a SUBSCRIBE frame on the shared
+         /ws/multi socket, never an upgrade), awaiting them one after another:
+         viewer access (two round trips of its own), blacklist, restrict
+         observers, IP rule. Measured from Dan's browser against production
+         on 2026-09-03: SUBSCRIBE sent at table mount, SUBSCRIBED 1.2-3 s
+         later, so "Connecting To The Table" (1.2 s grace) appeared on EVERY
+         table opened from the lobby. Same rule as the upgrade path: none of
+         the four depends on another's answer, so they are asked at once and
+         judged in the original order with the same outcome for every
+         combination. Only ensureTable, which can START an engine, waits for
+         the verdicts. A failed CHECK on the blacklist / observer / IP gates
+         never refuses, exactly as the sequential code's try/catch did. */
+      const [viewerAccess, banned, observerRestricted, ipConflict] = await Promise.all([
+        this.authorizeViewer(tableId, conn.userId),
+        this.isBannedFromTable(tableId, conn.userId).catch(() => false),
+        this.isRestrictedObserver(tableId, conn.userId).catch(() => false),
+        this.isIpConflict(tableId, conn.userId, conn.clientIp).catch(() => false),
+      ]);
       if (!viewerAccess.allowed) {
         conn.subs.delete(tableId);
         this.sendMuxError(
@@ -897,41 +917,33 @@ export class EngineWebSocketServer {
         this.sendMuxError(conn, tableId, 'TABLE_NOT_FOUND', 'Table not found in engine');
         return;
       }
-      try {
-        if (await this.isBannedFromTable(tableId, conn.userId)) {
-          conn.subs.delete(tableId);
-          this.sendMuxError(conn, tableId, 'BANNED', 'Not permitted at this table');
-          return;
-        }
-        /* The multi-table client never touches the upgrade gate above, so the
-           same rule has to exist here or one surface enforces it and the other
-           does not. */
-        if (await this.isRestrictedObserver(tableId, conn.userId)) {
-          conn.subs.delete(tableId);
-          this.sendMuxError(
-            conn,
-            tableId,
-            'OBSERVERS_RESTRICTED',
-            'This Table Is Open To Seated Players Only'
-          );
-          return;
-        }
-      } catch {
-        /* same rule as the single-table path: a failed CHECK never refuses */
+      if (banned) {
+        conn.subs.delete(tableId);
+        this.sendMuxError(conn, tableId, 'BANNED', 'Not permitted at this table');
+        return;
       }
-      try {
-        if (await this.isIpConflict(tableId, conn.userId, conn.clientIp)) {
-          conn.subs.delete(tableId);
-          this.sendMuxError(
-            conn,
-            tableId,
-            'IP_RESTRICTED',
-            'Another account is already connected from this address'
-          );
-          return;
-        }
-      } catch {
-        /* failed check never refuses */
+      /* The multi-table client never touches the upgrade gate above, so the
+         same rule has to exist here or one surface enforces it and the other
+         does not. */
+      if (observerRestricted) {
+        conn.subs.delete(tableId);
+        this.sendMuxError(
+          conn,
+          tableId,
+          'OBSERVERS_RESTRICTED',
+          'This Table Is Open To Seated Players Only'
+        );
+        return;
+      }
+      if (ipConflict) {
+        conn.subs.delete(tableId);
+        this.sendMuxError(
+          conn,
+          tableId,
+          'IP_RESTRICTED',
+          'Another account is already connected from this address'
+        );
+        return;
       }
       // The socket may have closed while the async gates ran.
       if (!this.connections.has(conn.ws) || conn.subs.get(tableId) !== 'pending') return;

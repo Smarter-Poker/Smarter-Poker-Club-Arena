@@ -14,6 +14,7 @@
  * platform behavior, not new inference.
  */
 
+import { FREE_BUY_HELPER, FREE_BUY_LABEL } from '../../utils/freeBuy';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import { isInLateRegistration, STARTING_SOON_WINDOW_MINUTES } from '../../utils/tournamentFilters';
 import { stakesLabel as stakesLabelFor } from '../../lib/bettingStructure';
@@ -747,7 +748,10 @@ export function tournamentMedallions(t: LobbyTournamentRow): RuleMedallion[] {
   const isMystery = t.is_mystery_bounty === true || type === 'mystery';
   const isBounty = t.is_bounty === true || Number(t.bounty_amount) > 0 || type === 'ko';
 
-  if (type === 'freeroll') rules.push({ key: 'freeroll', label: 'FREEROLL', tip: 'Free entry' });
+  /* FREEROLLS ARE FREE BUY (Dan 2026-09-02): the medallion names the deal a
+     freeroll always carries - free to enter, 1-chip rebuys and add-ons. */
+  if (type === 'freeroll')
+    rules.push({ key: 'freeroll', label: FREE_BUY_LABEL, tip: FREE_BUY_HELPER });
   /* One medallion for the bounty family, most specific first: a PKO is a
      bounty event and a mystery bounty is a bounty event, so pushing all three
      would say the same thing three times on one card. */
@@ -1017,7 +1021,7 @@ export function tournamentEntry(t: LobbyTournamentRow, kind: 'mtt' | 'spin' | 's
      * different prices for the same seat. A whole total still prints whole,
      * because that is what it is.
      */
-    buyInLabel: total <= 0 ? 'FREE' : formatChipTotal(total),
+    buyInLabel: total <= 0 ? FREE_BUY_LABEL : formatChipTotal(total),
     buyInValue: total,
     guaranteeLabel:
       (Number(t.guaranteed_prize) || 0) > 0

@@ -35,7 +35,7 @@
 import { supabase } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
-import { buyInFor, rakeRateFor, wholeChips } from '../config/buyIn.js';
+import { buyInFor, freeBuyColumns, rakeRateFor, wholeChips } from '../config/buyIn.js';
 import { TournamentRecurringService, MTT_PUBLISH_LEAD_MS } from './TournamentRecurringService.js';
 import { buildLadder, type GeneratedBlindLevel } from '../tournament/blindLadder.js';
 import { SPIN_SEATS, SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
@@ -1159,12 +1159,22 @@ export class ScheduledTournamentService {
         : null,
       rebuy_levels: isRebuy ? clampInt(cfg.rebuyLevels, 1, 100, 6) : null,
       add_on_available: addOn,
-      addon_cost: addOn ? wholeChips(cfg.addOnCost) || split.total : null,
+      /**
+       * BOTH SPELLINGS (2026-09-02). tournament_schedules.config rows written
+       * by the DSS freeroll schedules spell these `addonCost` / `addonChips` /
+       * `addonLevels`, while this reader only knew `addOnCost` / `addOnChips`
+       * / `addOnLevels`. The price and chips therefore fell through to the
+       * defaults on every spawn: a $1 add-on became `split.total`, which on a
+       * freeroll is 0 - 58 events gave the add-on away free - and 10,000
+       * add-on chips became the 5,000 starting stack. Read both keys; the
+       * camel-cased one wins when both are present.
+       */
+      addon_cost: addOn ? wholeChips(cfg.addOnCost ?? cfg.addonCost) || split.total : null,
       addon_chips: addOn
-        ? clampInt(cfg.addOnChips, 1, 100_000_000, 0) ||
+        ? clampInt(cfg.addOnChips ?? cfg.addonChips, 1, 100_000_000, 0) ||
           clampInt(cfg.startingStack, 1, 100_000_000, 10000)
         : null,
-      addon_levels: addOn ? clampInt(cfg.addOnLevels, 1, 100, 1) : null,
+      addon_levels: addOn ? clampInt(cfg.addOnLevels ?? cfg.addonLevels, 1, 100, 1) : null,
       satellite_target_id: satelliteTargetId,
       satellite_seats: satelliteSeats,
       // ── Parity columns (2026-08-22), clamped like fn_create_tournament ──
@@ -1220,6 +1230,22 @@ export class ScheduledTournamentService {
         ? Math.max(0, Math.round(maxReentriesRaw))
         : null,
       is_pinned: asBool(cfg.isFeatured),
+      // FREEROLLS ARE FREE BUY (Dan 2026-09-02): 0 to enter, rebuys and
+      // add-ons on at 1 chip each, whatever the schedule config says. Spread
+      // LAST so it wins over every rebuy/add-on key above. Empty for any paid
+      // event, any Spin and any SNG. The zz_freerolls_are_free_buy trigger is
+      // the backstop; this is the mechanism.
+      ...freeBuyColumns({
+        buyIn: buyInAmount + buyInFee,
+        tournamentType: isSng ? 'SNG' : isSpin ? 'SPIN' : 'MTT',
+        variant: type,
+        startingStack: clampInt(cfg.startingStack, 1, 100_000_000, 10000),
+        rebuyChips: clampInt(cfg.rebuyChips, 1, 100_000_000, 0),
+        addOnChips: clampInt(cfg.addOnChips ?? cfg.addonChips, 1, 100_000_000, 0),
+        rebuyLevels: clampInt(cfg.rebuyLevels, 1, 100, 0),
+        addOnLevels: clampInt(cfg.addOnLevels ?? cfg.addonLevels, 1, 100, 0),
+        maxRebuys: Number.isFinite(maxRebuysRaw) ? Math.round(maxRebuysRaw) : null,
+      }),
     };
 
     if (isSpin) {

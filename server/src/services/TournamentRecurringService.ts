@@ -18,7 +18,13 @@ import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
 import nodeCrypto from 'node:crypto';
-import { DEFAULT_RAKE_RATE, buyInFor, rakeRateFor, wholeChips } from '../config/buyIn.js';
+import {
+  DEFAULT_RAKE_RATE,
+  buyInFor,
+  freeBuyColumns,
+  rakeRateFor,
+  wholeChips,
+} from '../config/buyIn.js';
 import { gameLaneFor, horseHash, isActiveNow } from './HorseBehavior.js';
 import { bankrollPolicyFor, canEnterTournament } from './HorseBankroll.js';
 import { bankrollEvent } from './HorseBankrollTelemetry.js';
@@ -2685,6 +2691,16 @@ export class TournamentRecurringService {
             addon_cost: (config as { addOn?: boolean }).addOn ? split.total : null,
             addon_chips: (config as { addOn?: boolean }).addOn ? config.startingStack : null,
             addon_levels: (config as { addOn?: boolean }).addOn ? 1 : null,
+            // FREEROLLS ARE FREE BUY (Dan 2026-09-02): 0 to enter, rebuys and
+            // add-ons on at 1 chip each. Spread LAST so it wins over the
+            // template's opt-in keys above. Empty for any paid event.
+            ...freeBuyColumns({
+              buyIn: split.total,
+              tournamentType: 'MTT',
+              variant: config.type === 'mtt' ? 'freezeout' : config.type,
+              startingStack: config.startingStack,
+              maxRebuys: (config as { rebuy?: boolean }).rebuy ? 2 : null,
+            }),
           })
           .select()
           .maybeSingle(); // FIX 168
@@ -2918,6 +2934,16 @@ export class TournamentRecurringService {
             addon_cost: (config as { addOn?: boolean }).addOn ? split.total : null,
             addon_chips: (config as { addOn?: boolean }).addOn ? config.startingStack : null,
             addon_levels: (config as { addOn?: boolean }).addOn ? 1 : null,
+            // FREEROLLS ARE FREE BUY (Dan 2026-09-02): 0 to enter, rebuys and
+            // add-ons on at 1 chip each. Spread LAST so it wins over the
+            // template's opt-in keys above. Empty for any paid event.
+            ...freeBuyColumns({
+              buyIn: split.total,
+              tournamentType: 'MTT',
+              variant: config.type === 'mtt' ? 'freezeout' : config.type,
+              startingStack: config.startingStack,
+              maxRebuys: (config as { rebuy?: boolean }).rebuy ? 2 : null,
+            }),
           })
           .select()
           .maybeSingle(); // FIX 168

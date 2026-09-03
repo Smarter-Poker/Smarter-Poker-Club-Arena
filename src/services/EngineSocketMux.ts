@@ -221,6 +221,19 @@ class EngineSocketMuxImpl {
     this.ensureSocket();
   }
 
+  /**
+   * Does a facade already exist for this table on the shared socket? The table
+   * warm-up (services/tableWarmup.ts) asks before acquiring a placeholder, so a
+   * table a player is already seated at in the multi-table view is never
+   * superseded by a lobby warm-up. A facade in ANY non-closed state counts:
+   * CONNECTING (0) is a warm-up or a real client mid-subscribe, OPEN (1) is a
+   * live table; either one owns the table and must not be displaced.
+   */
+  isSubscribed(tableId: string): boolean {
+    const f = this.facades.get(tableId);
+    return !!f && f.readyState !== 3 /* CLOSED */;
+  }
+
   /** Force-close and detach the physical socket; surviving facades fail and
    *  their clients reconnect (which re-acquires a fresh socket). */
   private teardownPhysical(code: number, reason: string): void {

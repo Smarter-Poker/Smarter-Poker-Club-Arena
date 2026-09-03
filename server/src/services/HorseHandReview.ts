@@ -127,6 +127,67 @@ function riverAggressiveActions(row: {
 }
 
 /**
+ * The stack-off bar for the PLO discipline detectors below: a hundred big
+ * blinds is a full buy-in at every cash table the fleet plays, so this counts
+ * hands where the horse put its WHOLE stack in, not merely a big pot.
+ */
+const PLO_STACKOFF_BB = 100;
+
+/**
+ * Hand categories as `scoreOmahaHiPartial` numbers them (HorseEval): 1 high
+ * card, 2 one pair, 3 two pair, 4 trips, 5 straight, 6 flush, 7 full house,
+ * 8 quads. Named here because a bare `=== 4` in a detector is unreadable and
+ * the ladder is offset from the usual one.
+ */
+const CAT_ONE_PAIR = 2;
+const CAT_TRIPS = 4;
+
+/**
+ * What the FINAL board makes available to somebody else. Omaha plays exactly
+ * two hole cards and three board cards, which is what each test below counts:
+ *
+ *  - fullHouseLive: the board is paired, so any opponent holding the case card
+ *    or a pocket pair to another board rank has a boat. (Hero holding trips
+ *    THROUGH a paired board is inside this set by construction - which is the
+ *    point: trips is the losing end of that board, not the winning one.)
+ *  - flushLive: three or more of one suit on the board, so two suited hole
+ *    cards complete it.
+ *  - straightLive: some five-rank window holds three or more distinct board
+ *    ranks, so two hole cards fill it. Same window test `omahaNutStatus` uses
+ *    to decide whether hero's own straight is the nut one.
+ *
+ * This is deliberately a read of the BOARD alone. It asks "was a better hand
+ * available here", never "did the opponent have it" - a detector that needed
+ * the villain's cards could not run on the hands where they never showed.
+ */
+export function omahaBoardThreats(board: Card[]): {
+  fullHouseLive: boolean;
+  flushLive: boolean;
+  straightLive: boolean;
+} {
+  const rankCount = new Map<number, number>();
+  const suitCount = new Map<string, number>();
+  for (const c of board) {
+    const r = RANK_VALUES[c.rank];
+    rankCount.set(r, (rankCount.get(r) ?? 0) + 1);
+    suitCount.set(c.suit, (suitCount.get(c.suit) ?? 0) + 1);
+  }
+  const fullHouseLive = [...rankCount.values()].some((n) => n >= 2);
+  const flushLive = [...suitCount.values()].some((n) => n >= 3);
+
+  let straightLive = false;
+  for (let top = 14; top >= 5 && !straightLive; top--) {
+    let onBoard = 0;
+    for (let k = 0; k < 5; k++) {
+      const r = top - k === 1 ? 14 : top - k; // wheel: the 5-high straight uses the ace
+      if (rankCount.has(r)) onBoard++;
+    }
+    if (onBoard >= 3) straightLive = true;
+  }
+  return { fullHouseLive, flushLive, straightLive };
+}
+
+/**
  * Leak detectors. Each looks at ONE flagged (usually losing) hand and answers
  * "is this one of the known bad shapes?". Tags are counted per horse per day
  * in horse_review_rollup, so a horse that keeps producing the same tag is
@@ -372,6 +433,53 @@ export function detectLeaks(row: {
             tags.push('top_pair_weak_kicker_stackoff');
           }
         }
+      }
+    } catch {
+      /* detector is best-effort */
+    }
+  }
+
+  // ═══ V38 PLO STACKOFF DISCIPLINE (Dan 2026-09-03) ═══════════════════════
+  //
+  // Dan flagged hand #5428599 (PLO6 1/2, Midway Union): the horse held
+  // A-A-J-9-8-4, opened 2.5x, called a pot 3-bet, called a pot-sized flop bet,
+  // then bet the paired turn and called off 86% of a 169 stack into a
+  // check-raise all-in from the preflop 3-bettor. It had trip nines. The
+  // villain had sixes full. Stated accurately: the horse held roughly ten
+  // outs to nines-full, so it was a THIN LOSING CALL and not a drawing-dead
+  // one - and the larger error was the 2.5x open that built the pot, which is
+  // the sizing fix in HorsePreflop.
+  //
+  // This is the second instance of a shape the 2026-09-02 audit panel had
+  // already proposed off hand 103011 - PLO6, turn stackoff, trips into
+  // aggression - and NEITHER hand carried a leak tag, because the Omaha nut
+  // block above knows flushes, straights and boats and nothing on the trips
+  // or one-pair rungs. These tags COUNT the pattern so the self-tuner, the
+  // nightly audit and the horses console can see it repeat. NO STRATEGY DIAL
+  // MOVES HERE: a stackoff threshold or a calling range is strategy and needs
+  // scenario tests plus a league matchup with significance, per the standing
+  // rule. A detector is a measurement.
+  if (
+    vi.isOmaha &&
+    row.wentToShowdown &&
+    row.holeCards &&
+    row.board &&
+    row.board.length >= 5 &&
+    investedBB >= PLO_STACKOFF_BB
+  ) {
+    try {
+      const st = omahaNutStatus(row.holeCards, row.board);
+      if (st.category === CAT_TRIPS) {
+        const threats = omahaBoardThreats(row.board);
+        if (threats.fullHouseLive || threats.flushLive || threats.straightLive) {
+          tags.push('plo_naked_trips_stackoff');
+        }
+      } else if (st.category <= CAT_ONE_PAIR) {
+        // At most one pair with a full stack in. By the river every redraw has
+        // resolved, so a hand that still shows one pair is one that had no
+        // wrap, no flush and no nut redraw arrive - the second shape the audit
+        // panel proposed (plo_toppair_no_redraw_stackoff).
+        tags.push('plo_toppair_no_redraw_stackoff');
       }
     } catch {
       /* detector is best-effort */

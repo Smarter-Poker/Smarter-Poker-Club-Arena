@@ -24,6 +24,7 @@ import {
   getClubArenaNavigation,
   CLUB_ARENA_SUPPORT_NAV,
 } from '../../src/config/clubArenaNavigation';
+import { sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const TICKER = read('src/components/tournament/TournamentStartingTicker.tsx');
@@ -117,5 +118,40 @@ describe('4. Table Studio takes control from the command drawer', () => {
   };`);
     expect(MENU).toContain('onClick={handleOpenTableStudio}');
     expect(MENU).not.toContain('onClick={() => setShowThemeSettings(true)}');
+  });
+});
+
+describe('5. A union operator has a Table Management door', () => {
+  /*
+    Dan 2026-09-02: "THIS TABLE MANAGEMENT FUNCTIONALITY NEEDS TO LIVE INSIDE
+    THE UNION OWNER(S) ACCOUNTS AND ADMINS. NOT JUST STAND ALONE CLUBS."
+
+    A member club's games are run from the union console, so canManageGames goes
+    false the moment fetchGameCreationAccess returns a unionId. That correctly
+    hid the CLUB entry and then offered nothing in its place. Owners could still
+    reach the board through the union page; union_admins are redirected off that
+    page entirely, so for an admin the feature was unreachable from anywhere in
+    their account even though both the route and fn_list_managed_games admit
+    them.
+  */
+  it('offers the union board when the club is operated from a union', () => {
+    expect(MENU).toContain('/unions/${unionManageId}/table-management');
+  });
+
+  it('offers it only to an operator, using the same test the board applies', () => {
+    // isUnionAdmin is owner OR union_admins - the predicate fn_is_union_operator
+    // mirrors server-side. Anything weaker would offer a door the page refuses.
+    expect(MENU).toContain('unionService.isUnionAdmin');
+    // Bounded by the block that decides it, never by a byte count: the union
+    // door and the operator check must live in the SAME block, or one could be
+    // moved away from the other and this would still pass.
+    const gate = sliceEnclosingBlock(MENU, 'setUnionManageId(operator');
+    expect(gate).toContain('await unionService.isUnionAdmin(');
+    expect(gate).toMatch(/setUnionManageId\(operator \? access\.unionId : null\)/);
+  });
+
+  it('clears the union door when there is no club context', () => {
+    // Otherwise the entry would survive into a signed-out or clubless menu.
+    expect(MENU).toMatch(/setCanManageGames\(false\);\s*\n\s*setUnionManageId\(null\);/);
   });
 });

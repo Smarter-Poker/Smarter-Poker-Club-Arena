@@ -1,0 +1,246 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+ *  CLUB ENTRY MESSAGE — the full-screen greeting (Dan, 2026-09-03)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Dan asked for padding around all edges, top and bottom included. `.modal-
+ * fullscreen` already insets by 20px, and on a desktop that is the whole job.
+ * On a phone it is not: 20px of margin still leaves the panel underneath the
+ * notch and behind the home indicator, so the eyebrow is clipped at the top
+ * and the "Do Not Show Me This Message Again" button sits under the gesture
+ * bar, where the OS eats the tap. The safe-area insets below are the
+ * difference between padding that looks right in a simulator and padding that
+ * works in a hand.
+ */
+
+.club-entry-message-modal.modal-fullscreen {
+  /* Widen the inset the shared modal provides, and add whatever the device
+     reserves on top of it. max() rather than + so a desktop, where every inset
+     is 0, still gets a real margin. */
+  width: calc(100vw - max(40px, env(safe-area-inset-left) + env(safe-area-inset-right) + 32px));
+  height: calc(100dvh - max(40px, env(safe-area-inset-top) + env(safe-area-inset-bottom) + 32px));
+  max-width: 720px;
+  display: flex;
+  overflow: hidden;
+}
+
+.club-entry-message {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 24px;
+  /* The inner breathing room, distinct from the panel's margin. Extra on top
+     so the copy never runs under the close control. */
+  padding: 56px 28px 28px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* ── The X ────────────────────────────────────────────────────────────────── */
+
+.club-entry-message__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 44px is the smallest target a thumb hits reliably. A greeting nobody can
+     dismiss on the first try is worse than no greeting. */
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.35);
+  color: #e8eef2;
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+/* No pointer-over states anywhere. Club Arena is touch-first and a law test
+   enforces it: on a phone that state latches after the tap and the control
+   looks stuck. Active and focus-visible carry the feedback instead, and both
+   are real on a touchscreen. */
+.club-entry-message__close:active {
+  transform: scale(0.94);
+}
+
+.club-entry-message__close:focus-visible {
+  outline: 2px solid #c8a65a;
+  outline-offset: 2px;
+}
+
+/* ── The message ──────────────────────────────────────────────────────────── */
+
+.club-entry-message__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  /* The message is the reason the screen was taken. Centre it rather than
+     leaving it stranded at the top of a tall empty panel. */
+  justify-content: center;
+  min-height: 0;
+  text-align: center;
+}
+
+.club-entry-message__eyebrow {
+  color: #8da3af;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.club-entry-message__club {
+  margin: 0;
+  color: #c8a65a;
+  font-size: clamp(20px, 5vw, 28px);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.club-entry-message__copy {
+  margin: 8px 0 0;
+  color: #eef3f6;
+  font-size: clamp(16px, 4.2vw, 21px);
+  line-height: 1.5;
+  /* 240 characters is the server cap. Long words in a narrow phone panel still
+     need somewhere to break or they push the panel sideways. */
+  overflow-wrap: anywhere;
+}
+
+/* ── Staff editor ─────────────────────────────────────────────────────────── */
+
+.club-entry-message__editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+
+.club-entry-message__editor label {
+  color: #8da3af;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.club-entry-message__editor textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  color: #eef3f6;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.club-entry-message__editor textarea:focus-visible {
+  outline: 2px solid #c8a65a;
+  outline-offset: 1px;
+}
+
+.club-entry-message__editor-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #8da3af;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.club-entry-message__editor-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ── Footer controls ──────────────────────────────────────────────────────── */
+
+.club-entry-message__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  /* Never lets the last control sit under a home indicator. */
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.club-entry-message__btn {
+  padding: 11px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #e8eef2;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.club-entry-message__btn:focus-visible {
+  outline: 2px solid #c8a65a;
+  outline-offset: 2px;
+}
+
+.club-entry-message__btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.club-entry-message__btn--primary {
+  border-color: #c8a65a;
+  background: #c8a65a;
+  color: #14181b;
+}
+
+/* The permanent choice reads quieter than the ways back into the club. It is
+   the least reversible control here and should not be the loudest. */
+.club-entry-message__btn--quiet {
+  border-color: transparent;
+  background: transparent;
+  color: #8da3af;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 480px) {
+  .club-entry-message {
+    padding: 52px 18px 18px;
+    gap: 18px;
+  }
+
+  .club-entry-message__foot {
+    flex-direction: column;
+  }
+
+  .club-entry-message__btn {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .club-entry-message__close {
+    transition: none;
+  }
+
+  .club-entry-message__close:active {
+    transform: none;
+  }
+}

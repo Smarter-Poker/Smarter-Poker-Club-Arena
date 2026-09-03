@@ -23,6 +23,8 @@ import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  getGameCalls: [] as string[],
+  getGameResult: undefined as any,
   listCalls: 0,
   listResolvers: [] as Array<(value: unknown) => void>,
   busHandlers: [] as Array<() => void>,
@@ -30,6 +32,22 @@ const mocks = vi.hoisted(() => ({
 }));
 
 const page = () => ({ total: 1, live: 1, scheduled: 0 });
+
+/**
+ * Fire the LIVE game-refresh handlers, meaning the newest pair.
+ *
+ * The real hook holds one subscription per call site and swaps the handler
+ * through a ref, so there is exactly one live handler each. This mock cannot
+ * do that, and records a fresh identity every render - including copies from
+ * the very first render, before scopeId had resolved. Firing those replays the
+ * page's own "I do not know the scope yet, reload everything" branch and makes
+ * a targeted refresh look like a full one. The two most recent are the two
+ * that are actually subscribed.
+ */
+const fireGameRefresh = (payload?: unknown) => {
+  const live = mocks.busHandlers.slice(-2);
+  live.forEach((fire) => fire(payload));
+};
 
 vi.mock('../../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({ user: { id: 'operator-1' } }),
@@ -39,8 +57,16 @@ vi.mock('../../src/hooks/useMasterBusSubscription', () => ({
   useMasterBusSubscription: () => {},
   // No debounce here on purpose: this test is about the page's own coalescing,
   // not about the shared hook's timer.
-  useMasterBusSubscriptions: (_events: string[], handler: () => void) => {
-    if (!mocks.busHandlers.includes(handler)) mocks.busHandlers.push(handler);
+  /*
+     Registers by EVENT TYPE, deliberately.
+     This used to collect every handler regardless of what it subscribed to, so
+     "fire the game-refresh handlers" also fired the access-changed handler -
+     which reloads the board unconditionally. A test that cannot tell a
+     targeted refresh from a full reload cannot pin either one.
+  */
+  useMasterBusSubscriptions: (events: string[], handler: (payload?: unknown) => void) => {
+    if (!events.includes('TABLE_UPDATED')) return;
+    mocks.busHandlers.push(handler);
   },
 }));
 
@@ -90,6 +116,21 @@ vi.mock('../../src/services/GameManagementService', () => ({
     list: () => {
       mocks.listCalls += 1;
       return new Promise((resolve) => mocks.listResolvers.push(resolve));
+    },
+    getGame: async (_scope: string, _scopeId: string, _kind: string, gameId: string) => {
+      mocks.getGameCalls.push(gameId);
+      return mocks.getGameResult === undefined
+        ? {
+            id: gameId,
+            kind: 'table',
+            name: 'Friday Deep Stack',
+            status: 'running',
+            club_id: 'club-uuid-1',
+            players: 9,
+            max_players: 9,
+            bucket: 0,
+          }
+        : mocks.getGameResult;
     },
     getContracts: async () => [],
     getCommandReceipts: async () => [],
@@ -171,12 +212,128 @@ const settleFirstList = async () => {
   });
 };
 
+/**
+ * A management event names the game it is about. Reading the whole board back
+ * to apply it costs 21 ms and a hundred rows on the wire; reading that one row
+ * costs 2 ms and one row. These pin the fast path AND, more importantly, the
+ * three cases where splicing would be a lie and the board must reload instead.
+ */
+describe('a changed game is read back, not the whole board', () => {
+  beforeEach(() => {
+    mocks.listCalls = 0;
+    mocks.listResolvers.length = 0;
+    mocks.busHandlers.length = 0;
+    mocks.resync.current = null;
+    mocks.getGameCalls = [];
+    mocks.getGameResult = undefined;
+  });
+
+  const settle = async () => {
+    const resolve = mocks.listResolvers.shift();
+    expect(resolve).toBeTruthy();
+    await act(async () => {
+      resolve!({
+        items: [
+          {
+            id: 'table-1',
+            kind: 'table',
+            name: 'Friday Deep Stack',
+            status: 'running',
+            club_id: 'club-uuid-1',
+            players: 6,
+            max_players: 9,
+            bucket: 0,
+          },
+        ],
+        counts: { total: 1, live: 1, scheduled: 0, closed: 0 },
+        nextCursor: null,
+      });
+    });
+  };
+
+  it('reads back only the game the event named', async () => {
+    renderBoard();
+    await waitFor(() => expect(mocks.listCalls).toBe(1));
+    await settle();
+    await screen.findByText('Friday Deep Stack');
+
+    await act(async () => {
+      fireGameRefresh({ tableId: 'table-1' });
+    });
+
+    // Only the named game is ever read. (Asserted as a set: this file's mock
+    // bus re-registers an inline handler per render, so the decider can fire
+    // more than once here in a way the real hook's handlerRef does not.)
+    await waitFor(() => expect(mocks.getGameCalls.length).toBeGreaterThan(0));
+    expect(new Set(mocks.getGameCalls)).toEqual(new Set(['table-1']));
+    // The whole point: no second board read.
+    expect(mocks.listCalls, 'a named game must not reload the board').toBe(1);
+  });
+
+  it('reloads the board when the changed game is not on it', async () => {
+    renderBoard();
+    await waitFor(() => expect(mocks.listCalls).toBe(1));
+    await settle();
+    await screen.findByText('Friday Deep Stack');
+
+    await act(async () => {
+      fireGameRefresh({ tableId: 'a-table-we-have-never-seen' });
+    });
+
+    // A game we do not hold may be new, or on another page. Splicing it in
+    // would put it in the wrong order and leave the counters wrong.
+    await waitFor(() => expect(mocks.listCalls).toBe(2));
+    expect(mocks.getGameCalls).toEqual([]);
+  });
+
+  it('reloads the board when the game changed bucket', async () => {
+    renderBoard();
+    await waitFor(() => expect(mocks.listCalls).toBe(1));
+    await settle();
+    await screen.findByText('Friday Deep Stack');
+
+    // The table closed: bucket 0 to bucket 2. It leaves the Live tab and both
+    // of those counters move, so a splice would show a stale board.
+    mocks.getGameResult = {
+      id: 'table-1',
+      kind: 'table',
+      name: 'Friday Deep Stack',
+      status: 'closed',
+      club_id: 'club-uuid-1',
+      players: 0,
+      max_players: 9,
+      bucket: 2,
+    };
+    await act(async () => {
+      fireGameRefresh({ tableId: 'table-1' });
+    });
+
+    await waitFor(() => expect(mocks.listCalls).toBe(2));
+  });
+
+  it('reloads the board when the game is gone from this scope', async () => {
+    renderBoard();
+    await waitFor(() => expect(mocks.listCalls).toBe(1));
+    await settle();
+    await screen.findByText('Friday Deep Stack');
+
+    mocks.getGameResult = null;
+    await act(async () => {
+      fireGameRefresh({ tableId: 'table-1' });
+    });
+
+    await waitFor(() => expect(mocks.listCalls).toBe(2));
+  });
+});
+
 describe('Table Management under its own refresh storm', () => {
   beforeEach(() => {
     mocks.listCalls = 0;
     mocks.listResolvers.length = 0;
     mocks.busHandlers.length = 0;
     mocks.resync.current = null;
+    mocks.getGameCalls = [];
+    mocks.getGameResult = undefined;
   });
 
   it('coalesces refreshes that arrive while a load is still running', async () => {
@@ -186,7 +343,7 @@ describe('Table Management under its own refresh storm', () => {
     // The feed this page listens to ran at ~5.5 events a second. Every one of
     // these used to start its own load.
     await act(async () => {
-      for (let i = 0; i < 12; i += 1) mocks.busHandlers.forEach((fire) => fire());
+      for (let i = 0; i < 12; i += 1) fireGameRefresh({ tableId: 'table-1' });
       mocks.resync.current?.();
     });
 
@@ -205,7 +362,7 @@ describe('Table Management under its own refresh storm', () => {
     renderBoard();
     await waitFor(() => expect(mocks.listCalls).toBe(1));
     await act(async () => {
-      for (let i = 0; i < 12; i += 1) mocks.busHandlers.forEach((fire) => fire());
+      for (let i = 0; i < 12; i += 1) fireGameRefresh({ tableId: 'table-1' });
     });
 
     await settleFirstList();
@@ -223,7 +380,7 @@ describe('Table Management under its own refresh storm', () => {
     await screen.findByText('Friday Deep Stack');
 
     await act(async () => {
-      mocks.busHandlers.forEach((fire) => fire());
+      fireGameRefresh({ tableId: 'table-1' });
       mocks.resync.current?.();
     });
 

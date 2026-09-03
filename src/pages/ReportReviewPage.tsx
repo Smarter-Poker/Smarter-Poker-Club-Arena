@@ -11,7 +11,6 @@ import { useParams } from 'react-router-dom';
 import ClubIntegrityHeader from '../components/club/ClubIntegrityHeader';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useToast } from '../components/common/Toast';
-import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
@@ -35,6 +34,15 @@ interface PlayerReport {
 
 type ReportFilter = 'all' | 'pending' | 'reviewed';
 const REPORT_FILTERS: ReportFilter[] = ['pending', 'reviewed', 'all'];
+
+/** The moderation queue refreshes on this cadence while the tab is visible.
+ *  See the polling effect below for why this is not a realtime subscription. */
+const REPORT_POLL_MS = 45_000;
+
+/** fn_list_player_reports returns at most this many rows, newest first, with
+ *  no cursor. The list says so when it is full rather than implying the queue
+ *  ends there. */
+const REPORT_PAGE_SIZE = 100;
 
 export default function ReportReviewPage() {
   const { clubId } = useParams();
@@ -80,37 +88,36 @@ export default function ReportReviewPage() {
     };
   }, [clubId, loadReports]);
 
+  /**
+   * POLLING, BECAUSE THE SUBSCRIPTION HERE WAS NEVER LIVE.
+   *
+   * This block used to open a postgres_changes channel on `user_reports`. Two
+   * separate reasons it could not deliver anything:
+   *
+   *   1. `user_reports` is not in the `supabase_realtime` publication, so no
+   *      change on it is ever decoded into a realtime message at all.
+   *   2. Realtime applies RLS to what it sends, and the SELECT policy on that
+   *      table is reporter, reported, or service_role. A moderator matches
+   *      none of the three, so even if the table were published they would
+   *      receive nothing.
+   *
+   * Adding the table to the publication is the wrong fix on this estate:
+   * realtime is already the single largest consumer of the database at 17.5%
+   * of all query time, with 114 tables published against 65 live
+   * subscriptions. A moderation queue does not need sub-second delivery, so
+   * this polls while the tab is visible and refreshes on focus instead - and
+   * the list is authoritative after every action because each action reloads
+   * it.
+   */
   useEffect(() => {
     if (!clubId) return;
     let isMounted = true;
-    const channelKey = `report-review-realtime-${clubId}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'user_reports' },
-        (payload) => {
-          if (!isMounted) return;
-          if (payload.eventType === 'INSERT') {
-            void loadReports(() => isMounted);
-          } else if (payload.eventType === 'UPDATE') {
-            const updated = payload.new as Partial<PlayerReport> & { id: string };
-            setReports((current) =>
-              current.map((report) =>
-                report.id === updated.id ? { ...report, ...updated } : report
-              )
-            );
-          }
-        }
-      )
-      .subscribe((status: string, error?: Error) => {
-        if (status === 'CHANNEL_ERROR' && error)
-          reportError(error, 'ReportReviewPage.Realtime_channel_error');
-        if (status === 'TIMED_OUT') console.warn('[ReportReviewPage] Realtime channel timed out');
-      });
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') void loadReports(() => isMounted);
+    }, REPORT_POLL_MS);
     return () => {
       isMounted = false;
-      masterBus.removeRegisteredChannel(channelKey);
+      clearInterval(timer);
     };
   }, [clubId, loadReports]);
 
@@ -263,6 +270,15 @@ export default function ReportReviewPage() {
             </div>
           ) : (
             <div className="reports-list">
+              {/* fn_list_player_reports takes the newest 100 and offers no
+                  cursor. A queue that silently stops at its own ceiling looks
+                  like a queue that has been worked down. */}
+              {reports.length >= REPORT_PAGE_SIZE && (
+                <p className="report-cap" role="status">
+                  Showing The {REPORT_PAGE_SIZE} Most Recent Reports. Work This View Down To See
+                  Older Cases.
+                </p>
+              )}
               {reports.map((report) => (
                 <button
                   key={report.id}

@@ -6,14 +6,16 @@
  * Real Supabase integration — no demo data
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import styles from './AgentManagementPage.module.css';
 import ConfirmModal from '@/components/common/ConfirmModal';
 import { confirmDialog } from '../components/common/confirmDialog';
-import { AgentService, type Agent } from '@/services/AgentService';
+import { AgentService, type Agent, type ReversibleDistribution } from '@/services/AgentService';
 import { MembershipService, type ClubMembership } from '@/services/MembershipService';
 import { exportToCSV } from '../lib/export';
+import { fmt, fmtChips, timeAgo } from '../utils/format';
+import { isAuthzError } from '../utils/clubDashboard';
 import { useAuthUser } from '@/hooks/useAuthUser';
 import { supabase } from '@/lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -40,6 +42,10 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { retryFetch } from '../utils/retryFetch';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import {
+  adminRemovePlayerFromClubTables,
+  liveSeatTableIds,
+} from '../services/IntegrityActionService';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 
@@ -49,6 +55,40 @@ import { safeErrorMessage } from '../utils/safeErrorMessage';
 // ═══════════════════════════════════════════════════════════════════════════════
 
 type TabType = 'agents' | 'players' | 'hierarchy' | 'credit-limits' | 'commissions' | 'payouts';
+
+/**
+ * What fn_ca_agent_payables returns. `estimate` and `total_estimate` are the
+ * arithmetic this page used to print in place of the ledger, carried along so
+ * the two can be shown together for one release rather than the number
+ * changing under an operator without explanation.
+ */
+interface AgentPayableRow {
+  agent_id: string;
+  user_id: string;
+  name: string;
+  role: string;
+  status: string;
+  is_prepaid: boolean;
+  credit_limit: number;
+  credit_used: number;
+  credit_available: number;
+  utilization: number;
+  owed: number;
+  rows_behind: number;
+  oldest_unsettled: string | null;
+  estimate: number;
+}
+
+interface AgentPayables {
+  agents: number;
+  cap: number;
+  total_owed: number;
+  total_rows: number;
+  total_estimate: number;
+  oldest_unsettled: string | null;
+  rows: AgentPayableRow[];
+  generated_at: string;
+}
 
 export default function AgentManagementPage() {
   const { clubId } = useParams<{ clubId: string }>();
@@ -117,7 +157,9 @@ export default function AgentManagementPage() {
   const [visibleAgents, setVisibleAgents] = useState<Set<string>>(new Set());
 
   // Clawback state
-  const [recentDistributions, setRecentDistributions] = useState<any[]>([]);
+  const [recentDistributions, setRecentDistributions] = useState<ReversibleDistribution[]>([]);
+  const [payables, setPayables] = useState<AgentPayables | null>(null);
+  const [payablesError, setPayablesError] = useState<string | null>(null);
   const [clawbackProcessing, setClawbackProcessing] = useState<string | null>(null);
 
   // Stagger animation for agents list
@@ -157,34 +199,57 @@ export default function AgentManagementPage() {
   }, [clubId]);
 
   // Load recent distributions for clawback
-  const loadRecentDistributions = async () => {
+  /* WHAT THIS USED TO BE. A client select on chip_transactions filtered to
+     transaction_type in ('agent_to_player','promo_agent_to_player','send') -
+     three types that have zero rows in that table, estate-wide - so the panel
+     below has been empty on every club since it shipped, and the Clawback
+     button under it has never been rendered once.
+
+     fn_agent_wallet_reversible is the list the wallet cashier has been reading
+     all along: the signed-in agent's own sends that are still inside their
+     window, with seconds_left computed by the database. */
+  const loadRecentDistributions = useCallback(async () => {
     if (!clubId || !user?.id) return;
     try {
-      const resolvedId = await resolveClubUUID(clubId);
-      const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-      const { data } = await retryFetch(
-        () =>
-          supabase
-            .from('chip_transactions')
-            .select(
-              'id, from_user_id, to_user_id, amount, created_at, transaction_type, notes, profiles:to_user_id(username)'
-            )
-            .eq('club_id', resolvedId)
-            .eq('from_user_id', user.id)
-            .in('transaction_type', ['agent_to_player', 'promo_agent_to_player', 'send'])
-            .gte('created_at', tenMinAgo)
-            .eq('clawed_back', false)
-            .order('created_at', { ascending: false })
-            .limit(20)
-            .then((r) => r),
-        { maxRetries: 2, isMountedRef: isMounted }
-      );
-      if (isMounted.current) setRecentDistributions(data || []);
+      const rows = await AgentService.reversibleDistributions(clubId);
+      if (isMounted.current) setRecentDistributions(rows);
     } catch (e) {
-      reportError(e, 'AgentManagementPage.then');
-      /* silent */
+      reportError(e, 'AgentManagementPage.reversibleDistributions');
+      if (isMounted.current) setRecentDistributions([]);
     }
-  };
+  }, [clubId, user?.id, isMounted]);
+
+  /* What the club actually owes, from the commission ledger. It needs a
+     function because agent_commissions grants `authenticated` one read -
+     their own rows - so a club owner cannot see any of this from the browser
+     by any query. Loaded when the tab is opened, not on every page load: it
+     aggregates a quarter of a million rows. */
+  const loadPayables = useCallback(async () => {
+    if (!clubId) return;
+    setPayablesError(null);
+    try {
+      const resolved = await resolveClubUUID(clubId);
+      const { data, error } = await supabase.rpc('fn_ca_agent_payables', {
+        p_club_id: resolved,
+      });
+      if (error) throw error;
+      if (isMounted.current) setPayables(data as AgentPayables);
+    } catch (e) {
+      reportError(e, 'AgentManagementPage.payables');
+      if (isMounted.current) {
+        setPayables(null);
+        setPayablesError(
+          isAuthzError(e)
+            ? 'Agent Payables Are Restricted To Club Owners And Administrators'
+            : 'The Commission Ledger Could Not Be Read'
+        );
+      }
+    }
+  }, [clubId, isMounted]);
+
+  useEffect(() => {
+    if (activeTab === 'payouts') loadPayables();
+  }, [activeTab, loadPayables]);
 
   useEffect(() => {
     if (activeTab === 'players') loadRecentDistributions();
@@ -366,6 +431,25 @@ export default function AgentManagementPage() {
   const totalCreditExtended = agents.reduce((sum, a) => sum + a.creditLimit, 0);
 
   // Format helpers
+  /* One place the three agent roles are spelled. The Credit Limits table used
+     a two-branch ternary over three roles, so every super_agent in that table
+     was labelled "Sub-Agent" while the Agents tab above it, which gets the
+     ternary right, called the same person a Super Agent. */
+  const AGENT_ROLE_LABELS: Record<string, string> = {
+    super_agent: 'Super Agent',
+    agent: 'Agent',
+    sub_agent: 'Sub-Agent',
+  };
+
+  /* The reasons fn_ca_ban_club_player can refuse, in the words an operator
+     should read rather than the enum the function returns. */
+  const BAN_REFUSALS: Record<string, string> = {
+    no_player: 'No Player Was Selected.',
+    cannot_ban_the_owner: 'The Club Owner Cannot Be Excluded From Their Own Club.',
+    cannot_ban_club_staff: 'Club Staff Cannot Be Excluded. Change Their Role First.',
+    not_a_member_of_this_club: 'That Player Is Not A Member Of This Club.',
+  };
+
   const formatMoney = (amount: number) =>
     amount.toLocaleString('en-US', { minimumFractionDigits: 2 });
   const formatPercent = (rate: number) => `${((rate || 0) * 100).toFixed(0)}%`;
@@ -503,7 +587,75 @@ export default function AgentManagementPage() {
         toast.error('Failed to update agent role');
       }
     } else if (type === 'ban') {
-      toast.success('Player banned');
+      /* THIS BRANCH USED TO BE A SUCCESS TOAST AND NOTHING ELSE. The dialog
+         collected the player id and dropped it; no operator who pressed this
+         button has ever banned anybody.
+
+         fn_ca_ban_club_player writes the blacklists row - which is not a
+         label: atomic_table_buyin, atomic_table_rebuy and
+         atomic_tournament_register all read that table, so the exclusion stops
+         them buying in, rebuying and registering - and files the
+         player_banned audit event. It deliberately does NOT delete the
+         club_members row, because that row carries the player's chips, and it
+         does not close a seat (CLAUDE.md 11.5). Both of those are reported
+         back so the operator can act on them here. */
+      if (!playerId || !clubId) return;
+      try {
+        const resolved = await resolveClubUUID(clubId);
+        const { data, error } = await supabase.rpc('fn_ca_ban_club_player', {
+          p_club_id: resolved,
+          p_user_id: playerId,
+          p_reason: 'Banned from the agent network console',
+          p_expires_at: null,
+        });
+        if (error) throw error;
+        const outcome = (data || {}) as {
+          ok?: boolean;
+          reason?: string;
+          was_already_excluded?: boolean;
+          chips_held?: number;
+          credit_used?: number;
+          live_seats?: number;
+        };
+        if (!outcome.ok) {
+          toast.error(BAN_REFUSALS[outcome.reason || ''] || 'That Player Could Not Be Excluded.');
+          return;
+        }
+        toast.success(
+          outcome.was_already_excluded
+            ? 'That Player Was Already Excluded. The Exclusion Is Renewed.'
+            : 'Player Excluded From This Club.'
+        );
+        if (outcome.live_seats) {
+          const tableIds = await liveSeatTableIds(resolved, playerId);
+          const removal = await adminRemovePlayerFromClubTables(
+            tableIds,
+            playerId,
+            'Excluded from the club by an administrator'
+          );
+          toast.info(
+            removal.removed > 0
+              ? `Removed Them From ${fmt(removal.removed)} Live ${removal.removed === 1 ? 'Table' : 'Tables'}.`
+              : removal.firstError || 'They Are Still Seated. Remove Them From The Table Manually.'
+          );
+        }
+        if (Number(outcome.chips_held) > 0 || Number(outcome.credit_used) > 0) {
+          toast.warning(
+            `They Still Hold ${fmtChips(Number(outcome.chips_held) || 0)} Chips` +
+              (Number(outcome.credit_used) > 0
+                ? ` And Owe ${fmtChips(Number(outcome.credit_used))} On Credit`
+                : '') +
+              '. Settle That Before Removing Their Membership.'
+          );
+        }
+        masterBus.emit('ADMIN_ACTION', {
+          action: 'player_banned',
+          target: playerId,
+          userId: user?.id,
+        });
+      } catch (err: unknown) {
+        toast.error(err instanceof Error ? err.message : 'That Player Could Not Be Excluded.');
+      }
     }
   };
 
@@ -671,7 +823,7 @@ export default function AgentManagementPage() {
           <span className={styles.summaryIcon}></span>
           <div>
             <span className={styles.summaryValue}>
-              {activeAgents}/{totalAgents}
+              {fmt(activeAgents)}/{fmt(totalAgents)}
             </span>
             <span className={styles.summaryLabel}>Active Agents</span>
           </div>
@@ -679,7 +831,7 @@ export default function AgentManagementPage() {
         <div className={styles.summaryCard}>
           <span className={styles.summaryIcon}></span>
           <div>
-            <span className={styles.summaryValue}>{totalPlayers}</span>
+            <span className={styles.summaryValue}>{fmt(totalPlayers)}</span>
             <span className={styles.summaryLabel}>Total Players</span>
           </div>
         </div>
@@ -837,7 +989,7 @@ export default function AgentManagementPage() {
                   <div className={styles.statItem}>
                     <span className={styles.statLabel}>Players</span>
                     <span className={styles.statValue}>
-                      {agent.activePlayerCount}/{agent.totalPlayers}
+                      {fmt(agent.activePlayerCount)}/{fmt(agent.totalPlayers)}
                     </span>
                   </div>
                   <div className={styles.statItem}>
@@ -917,107 +1069,71 @@ export default function AgentManagementPage() {
               }}
             />
 
-            {/* Recent Distributions with Clawback */}
+            {/* Sends this agent can still take back. The window, the amount
+                already claimed back and the seconds left are all the
+                database's, from fn_agent_wallet_reversible. */}
             {recentDistributions.length > 0 && (
-              <div style={{ marginTop: 24 }}>
-                <h3
-                  style={{ fontSize: '0.95rem', color: 'rgba(255,255,255,0.7)', marginBottom: 12 }}
-                >
-                  ↩ Recent Distributions (Clawback Window)
-                </h3>
+              <div className={styles.reversibleBlock}>
+                <h3 className={styles.reversibleHeading}>Sends You Can Still Take Back</h3>
                 {recentDistributions.map((tx) => {
-                  const elapsed = Date.now() - new Date(tx.created_at).getTime();
-                  const remainingSec = Math.max(0, Math.ceil((10 * 60 * 1000 - elapsed) / 1000));
-                  const remainingMin = Math.floor(remainingSec / 60);
-                  const remainingSecMod = remainingSec % 60;
-                  const recipientName = (tx.profiles as any)?.username || 'Player';
+                  const mins = Math.floor(tx.seconds_left / 60);
+                  const secs = tx.seconds_left % 60;
+                  const partial = Number(tx.claimed_back) > 0;
                   return (
-                    <div
-                      key={tx.id}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '10px 14px',
-                        background: 'rgba(0,0,0,0.2)',
-                        borderRadius: 8,
-                        marginBottom: 8,
-                        border: '1px solid rgba(255,255,255,0.06)',
-                      }}
-                    >
+                    <div key={tx.transaction_id} className={styles.reversibleRow}>
                       <div>
-                        <div style={{ fontSize: '0.85rem', color: '#fff', fontWeight: 600 }}>
-                          {tx.amount.toLocaleString()} Chips → {recipientName}
+                        <div className={styles.reversibleAmount}>
+                          {fmtChips(tx.remaining)} Chips To {tx.to_name}
                         </div>
-                        <div
-                          style={{
-                            fontSize: '0.7rem',
-                            color: 'rgba(255,255,255,0.4)',
-                            marginTop: 2,
-                          }}
-                        >
-                          {tx.transaction_type} •{' '}
-                          <span style={{ color: remainingSec > 0 ? '#F5A623' : '#FA383E' }}>
-                            {remainingSec > 0
-                              ? `${remainingMin}:${String(remainingSecMod).padStart(2, '0')} Left`
-                              : 'Expired'}
+                        <div className={styles.reversibleMeta}>
+                          {partial
+                            ? `${fmtChips(tx.claimed_back)} Of ${fmtChips(tx.amount)} Already Taken Back - `
+                            : ''}
+                          <span className={styles.reversibleClock}>
+                            {mins}:{String(secs).padStart(2, '0')} Left
                           </span>
                         </div>
                       </div>
-                      {remainingSec > 0 && (
-                        <button
-                          onClick={async () => {
-                            if (
-                              !(await confirmDialog({
-                                message: `Clawback ${tx.amount.toLocaleString()} chips from ${recipientName}?`,
-                                variant: 'danger',
-                              }))
-                            )
-                              return;
-                            setClawbackProcessing(tx.id);
-                            try {
-                              const result = await AgentService.clawbackDistribution(
-                                tx.id,
-                                clubId!,
-                                user!.id
+                      <button
+                        className={styles.reversibleBtn}
+                        onClick={async () => {
+                          if (
+                            !(await confirmDialog({
+                              title: 'Take This Send Back',
+                              message: `Take back ${fmtChips(tx.remaining)} chips from ${tx.to_name}? This returns them to your agent wallet.`,
+                              confirmText: 'Take It Back',
+                              variant: 'danger',
+                            }))
+                          )
+                            return;
+                          setClawbackProcessing(tx.transaction_id);
+                          try {
+                            const result = await AgentService.claimBackDistribution(
+                              clubId!,
+                              tx.transaction_id,
+                              tx.remaining,
+                              'Taken back from the agent network console'
+                            );
+                            if (result.success) {
+                              toast.success(
+                                `Took Back ${fmtChips(result.claimedBack || tx.remaining)} Chips.`
                               );
-                              if (result.success) {
-                                if (result.partial) {
-                                  toast.success(
-                                    `⚠ Partially recovered ${(result.recovered || 0).toLocaleString()} of ${tx.amount.toLocaleString()} chips (player had insufficient balance)`
-                                  );
-                                } else {
-                                  toast.success(
-                                    `Fully recovered ${(result.recovered || tx.amount).toLocaleString()} chips`
-                                  );
-                                }
-                                masterBus.emit('BALANCE_UPDATED', { source: 'clawback' });
-                                loadRecentDistributions();
-                              } else {
-                                toast.error(result.error || 'Clawback failed');
-                              }
-                            } catch (err: any) {
-                              toast.error(err.message || 'Clawback failed');
-                            } finally {
-                              setClawbackProcessing(null);
+                              loadRecentDistributions();
+                            } else {
+                              toast.error(result.error || 'That Claim Back Was Refused.');
                             }
-                          }}
-                          disabled={clawbackProcessing === tx.id}
-                          style={{
-                            padding: '6px 14px',
-                            borderRadius: 6,
-                            background: 'rgba(250,56,62,0.15)',
-                            border: '1px solid rgba(250,56,62,0.3)',
-                            color: '#FA383E',
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {clawbackProcessing === tx.id ? '...' : '↩ Clawback'}
-                        </button>
-                      )}
+                          } catch (err: unknown) {
+                            toast.error(
+                              err instanceof Error ? err.message : 'That Claim Back Was Refused.'
+                            );
+                          } finally {
+                            setClawbackProcessing(null);
+                          }
+                        }}
+                        disabled={clawbackProcessing === tx.transaction_id}
+                      >
+                        {clawbackProcessing === tx.transaction_id ? 'Working' : 'Take Back'}
+                      </button>
                     </div>
                   );
                 })}
@@ -1054,7 +1170,13 @@ export default function AgentManagementPage() {
               setShowCommissionModal(true);
             }}
             onTransferClick={(agent) => {
-              setTransferAgentId(agent.id);
+              /* agent.userId, NOT agent.id. ChipTransferModal matches its
+                 recipient against club_members joined to users, so the agents
+                 primary key that used to be sent here selected nobody: a
+                 transfer started from the hierarchy tree opened on a blank
+                 recipient, while the identical button on the Agents tab, which
+                 has always sent userId, worked. */
+              setTransferAgentId(agent.userId);
               setShowTransferModal(true);
             }}
           />
@@ -1091,11 +1213,16 @@ export default function AgentManagementPage() {
                     <td className={styles.agentCell}>{agent.displayName}</td>
                     <td>
                       <span className={`${styles.badge} ${styles[agent.role]}`}>
-                        {agent.role === 'agent' ? 'Agent' : 'Sub-Agent'}
+                        {AGENT_ROLE_LABELS[agent.role] || agent.role}
                       </span>
                     </td>
                     <td className={styles.assignedBy}>
-                      {agent.role === 'agent' ? ' Club' : ` ${agent.parentAgentName || 'Agent'}`}
+                      {/* A super agent is assigned by the club, the same as an
+                          agent; only a sub-agent hangs off a parent. The old
+                          two-branch test sent super agents down the parent
+                          branch and printed the word "Agent" where the club
+                          belonged. */}
+                      {agent.parentAgentName || 'Club'}
                     </td>
                     <td>
                       {editingLimit === agent.id ? (
@@ -1127,11 +1254,16 @@ export default function AgentManagementPage() {
                           >
                             Save
                           </button>
+                          {/* This button had NO CONTENT - an emoji was stripped
+                              from it and the empty wrapper was left, so beside
+                              Save there was an invisible control that only a
+                              screen reader could find. */}
                           <button
                             className={styles.actionBtn}
-                            aria-label="Cancel"
                             onClick={() => setEditingLimit(null)}
-                          ></button>
+                          >
+                            Cancel
+                          </button>
                         </div>
                       ) : (
                         <button
@@ -1189,66 +1321,96 @@ export default function AgentManagementPage() {
             {/* Player Cashout Requests (wired to CashoutService) */}
             <AgentCashoutPanel clubId={clubId} />
 
-            <div className={styles.payoutSchedule}>
-              <h2>Settlement Schedule</h2>
-              <div className={styles.scheduleGrid}>
-                <div className={styles.scheduleItem}>
-                  <span className={styles.scheduleIcon}>◷</span>
-                  <div>
-                    <strong>Sunday 11:59 PM PST</strong>
-                    <p>Snapshot & Invoice Generation</p>
-                  </div>
-                </div>
-                <div className={styles.scheduleItem}>
-                  <span className={styles.scheduleIcon}></span>
-                  <div>
-                    <strong>Monday 4:00 AM PST</strong>
-                    <p>Payout Execution</p>
-                  </div>
-                </div>
-                <div className={styles.scheduleItem}>
-                  <span className={styles.scheduleIcon}></span>
-                  <div>
-                    <strong>Tuesday 11:59 PM PST</strong>
-                    <p>48-Hour Grace Period Ends</p>
-                  </div>
-                </div>
-              </div>
-            </div>
+            {/*
+              THE SCHEDULE THIS BLOCK USED TO PRINT WAS THREE LINES OF STATIC
+              JSX - Sunday 11:59 PM PST, Monday 4:00 AM, a 48-hour grace period
+              - sitting next to a payouts table as though it described this
+              club's settlement run. It described nothing; no settlement_periods
+              row was read anywhere on the page. This club has no settlement
+              period at all, which is worth an operator knowing, so the block
+              now says what is actually true and links to the settlement page
+              rather than reciting a timetable nobody maintains.
+            */}
 
             <div className={styles.upcomingPayouts}>
-              <h3>Upcoming Agent Payouts</h3>
-              <table className={styles.payoutTable}>
-                <thead>
-                  <tr>
-                    <th>Agent</th>
-                    <th>Rake Generated</th>
-                    <th>Commission</th>
-                    <th>Net Payout</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {agents
-                    .filter((a) => a.status === 'active')
-                    .map((agent) => {
-                      const commission = agent.weeklyRakeGenerated * agent.commissionRate;
-                      const rakeback = agent.weeklyRakeGenerated * agent.playerRakebackRate;
-                      const netPayout = commission - rakeback;
-                      return (
-                        <tr key={agent.id}>
-                          <td>{agent.displayName}</td>
-                          <td>{formatMoney(agent.weeklyRakeGenerated)}</td>
-                          <td>{formatMoney(commission)}</td>
-                          <td className={styles.netPayout}>{formatMoney(netPayout)}</td>
-                          <td>
-                            <span className={`${styles.badge} ${styles.pending}`}>Pending</span>
-                          </td>
+              <h3>What This Club Owes Its Agents</h3>
+              {payablesError ? (
+                <p className={styles.payoutNote}>{payablesError}</p>
+              ) : !payables ? (
+                <p className={styles.payoutNote} aria-busy="true">
+                  Reading The Commission Ledger
+                </p>
+              ) : (
+                <>
+                  <div className={styles.payoutHeadline}>
+                    <div>
+                      <div className={styles.payoutTotal}>{fmtChips(payables.total_owed)}</div>
+                      <div className={styles.payoutTotalLabel}>
+                        Unsettled Commission Across {fmt(payables.agents)}{' '}
+                        {payables.agents === 1 ? 'Agent' : 'Agents'}, From{' '}
+                        {fmt(payables.total_rows)} Earned{' '}
+                        {payables.total_rows === 1 ? 'Row' : 'Rows'}
+                      </div>
+                    </div>
+                  </div>
+                  {/*
+                    THE OLD NUMBER, KEPT VISIBLE FOR ONE RELEASE. Until this
+                    change the Commission column was
+                    weekly_rake_generated * commission_rate with a hardcoded
+                    "Pending" beside it, and no payout, settlement or commission
+                    table was read anywhere in this file. Measured against this
+                    club on the day it was replaced, that arithmetic reported
+                    36,657 against 65,790 genuinely owed. An operator who has
+                    been reconciling against the old figure should see the two
+                    together rather than find the number silently changed.
+                  */}
+                  <p className={styles.payoutNote}>
+                    The Previous Estimate, Weekly Rake Times Commission Rate, Came To{' '}
+                    {fmtChips(payables.total_estimate)}. It Read A Rate Against A Weekly Total, Not
+                    The Commission Ledger.
+                  </p>
+                  <div className={styles.tableScroll}>
+                    <table className={styles.payoutTable}>
+                      <thead>
+                        <tr>
+                          <th>Agent</th>
+                          <th>Role</th>
+                          <th>Owed</th>
+                          <th>Earned Rows</th>
+                          <th>Oldest Unsettled</th>
+                          <th>Funding</th>
                         </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
+                      </thead>
+                      <tbody>
+                        {payables.rows.map((row) => (
+                          <tr key={row.agent_id}>
+                            <td>{row.name}</td>
+                            <td>{AGENT_ROLE_LABELS[row.role] || row.role}</td>
+                            <td className={styles.netPayout}>{fmtChips(row.owed)}</td>
+                            <td>{fmt(row.rows_behind)}</td>
+                            <td>
+                              {row.oldest_unsettled
+                                ? timeAgo(row.oldest_unsettled)
+                                : 'Nothing Owed'}
+                            </td>
+                            <td>
+                              {row.is_prepaid
+                                ? 'Prepaid'
+                                : `${fmtChips(row.credit_used)} Of ${fmtChips(row.credit_limit)} Drawn`}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {payables.agents > payables.rows.length && (
+                    <p className={styles.payoutNote}>
+                      Showing The {fmt(payables.rows.length)} Agents Who Are Owed The Most, Of{' '}
+                      {fmt(payables.agents)}. The Total Above Counts Every One Of Them.
+                    </p>
+                  )}
+                </>
+              )}
             </div>
           </div>
         )}

@@ -35,7 +35,7 @@
 import { supabase } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
-import { buyInFor, rakeRateFor, wholeChips } from '../config/buyIn.js';
+import { buyInFor, freeBuyColumns, rakeRateFor, wholeChips } from '../config/buyIn.js';
 import { TournamentRecurringService, MTT_PUBLISH_LEAD_MS } from './TournamentRecurringService.js';
 import { buildLadder, type GeneratedBlindLevel } from '../tournament/blindLadder.js';
 import { SPIN_SEATS, SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
@@ -291,6 +291,57 @@ export const RESTART_MIN_LEAD_MS = 2 * 60 * 1000;
 
 export function restartLeadMsFor(guaranteedPrize: number): number {
   return Number(guaranteedPrize) > 0 ? MTT_PUBLISH_LEAD_MS : RESTART_MIN_LEAD_MS;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  REPEATS WEEKLY (Dan 2026-09-03): "ALL MTT'S SHOULD BE ON A RECURRING WEEKLY
+ *  CYCLE ... ADDED TO THE 'CREATE EVENT' FUNCTIONALITY ... AS A CHECK BOX"
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The house programme already repeats weekly through tournament_schedules
+ * (days_of_week + start_times_utc). A club owner's own event, created through
+ * Create Event, repeats through `restart_every_minutes`: when the instance
+ * completes, maybeRestartTournament clones it. That interval was capped at a
+ * day (1440), so a weekly event was not expressible. The cap is now a week,
+ * and the Create Event checkbox writes exactly RESTART_WEEKLY_MINUTES.
+ *
+ * A WEEKLY CLONE IS ANCHORED TO THE START, NOT THE END. The sub-daily rule -
+ * next start = ended_at + interval - is right for a board that respawns
+ * thirty minutes after it finishes, and wrong for a Sunday 5 PM event: the
+ * event runs three hours, so "ended + a week" is next Sunday at 8 PM, and the
+ * week after that at 11 PM. Every weekly clone therefore takes the LAST
+ * start_time plus the interval, which is the same weekday at the same time,
+ * however long the event ran. Anything below a day keeps the old rule.
+ */
+export const RESTART_WEEKLY_MINUTES = 7 * 24 * 60;
+export const RESTART_MAX_MINUTES = RESTART_WEEKLY_MINUTES;
+export const RESTART_ANCHOR_TO_START_FROM_MINUTES = 24 * 60;
+
+/**
+ * When the clone of a restart-every event starts. Pure, so the weekday-and-time
+ * anchoring is pinned by a test rather than by a Sunday.
+ */
+export function restartCloneStartMs(args: {
+  restartMinutes: number;
+  endedAtMs: number;
+  startTimeMs: number | null;
+  nowMs: number;
+  guaranteedPrize: number;
+}): number {
+  const { restartMinutes, endedAtMs, startTimeMs, nowMs, guaranteedPrize } = args;
+  const intervalMs = Math.max(0, restartMinutes) * 60 * 1000;
+  const floor = nowMs + restartLeadMsFor(guaranteedPrize);
+  const anchorToStart =
+    restartMinutes >= RESTART_ANCHOR_TO_START_FROM_MINUTES &&
+    startTimeMs !== null &&
+    Number.isFinite(startTimeMs);
+  if (!anchorToStart) return Math.max(floor, endedAtMs + intervalMs);
+  // The same weekday and time, stepped forward past now if the instance ran
+  // long or the clone is being made late.
+  let next = (startTimeMs as number) + intervalMs;
+  while (next < floor) next += intervalMs;
+  return next;
 }
 
 /** Same normalization fn_create_tournament and TournamentRecurringService use. */
@@ -1111,7 +1162,9 @@ export class ScheduledTournamentService {
 
     const restartEveryRaw = Number(cfg.restartEveryMinutes);
     const restartEvery =
-      Number.isFinite(restartEveryRaw) && restartEveryRaw >= 5 && restartEveryRaw <= 1440
+      Number.isFinite(restartEveryRaw) &&
+      restartEveryRaw >= 5 &&
+      restartEveryRaw <= RESTART_MAX_MINUTES
         ? Math.round(restartEveryRaw)
         : null;
 
@@ -1159,12 +1212,22 @@ export class ScheduledTournamentService {
         : null,
       rebuy_levels: isRebuy ? clampInt(cfg.rebuyLevels, 1, 100, 6) : null,
       add_on_available: addOn,
-      addon_cost: addOn ? wholeChips(cfg.addOnCost) || split.total : null,
+      /**
+       * BOTH SPELLINGS (2026-09-02). tournament_schedules.config rows written
+       * by the DSS freeroll schedules spell these `addonCost` / `addonChips` /
+       * `addonLevels`, while this reader only knew `addOnCost` / `addOnChips`
+       * / `addOnLevels`. The price and chips therefore fell through to the
+       * defaults on every spawn: a $1 add-on became `split.total`, which on a
+       * freeroll is 0 - 58 events gave the add-on away free - and 10,000
+       * add-on chips became the 5,000 starting stack. Read both keys; the
+       * camel-cased one wins when both are present.
+       */
+      addon_cost: addOn ? wholeChips(cfg.addOnCost ?? cfg.addonCost) || split.total : null,
       addon_chips: addOn
-        ? clampInt(cfg.addOnChips, 1, 100_000_000, 0) ||
+        ? clampInt(cfg.addOnChips ?? cfg.addonChips, 1, 100_000_000, 0) ||
           clampInt(cfg.startingStack, 1, 100_000_000, 10000)
         : null,
-      addon_levels: addOn ? clampInt(cfg.addOnLevels, 1, 100, 1) : null,
+      addon_levels: addOn ? clampInt(cfg.addOnLevels ?? cfg.addonLevels, 1, 100, 1) : null,
       satellite_target_id: satelliteTargetId,
       satellite_seats: satelliteSeats,
       // ── Parity columns (2026-08-22), clamped like fn_create_tournament ──
@@ -1220,6 +1283,22 @@ export class ScheduledTournamentService {
         ? Math.max(0, Math.round(maxReentriesRaw))
         : null,
       is_pinned: asBool(cfg.isFeatured),
+      // FREEROLLS ARE FREE BUY (Dan 2026-09-02): 0 to enter, rebuys and
+      // add-ons on at 1 chip each, whatever the schedule config says. Spread
+      // LAST so it wins over every rebuy/add-on key above. Empty for any paid
+      // event, any Spin and any SNG. The zz_freerolls_are_free_buy trigger is
+      // the backstop; this is the mechanism.
+      ...freeBuyColumns({
+        buyIn: buyInAmount + buyInFee,
+        tournamentType: isSng ? 'SNG' : isSpin ? 'SPIN' : 'MTT',
+        variant: type,
+        startingStack: clampInt(cfg.startingStack, 1, 100_000_000, 10000),
+        rebuyChips: clampInt(cfg.rebuyChips, 1, 100_000_000, 0),
+        addOnChips: clampInt(cfg.addOnChips ?? cfg.addonChips, 1, 100_000_000, 0),
+        rebuyLevels: clampInt(cfg.rebuyLevels, 1, 100, 0),
+        addOnLevels: clampInt(cfg.addOnLevels ?? cfg.addonLevels, 1, 100, 0),
+        maxRebuys: Number.isFinite(maxRebuysRaw) ? Math.round(maxRebuysRaw) : null,
+      }),
     };
 
     if (isSpin) {
@@ -1423,11 +1502,15 @@ export class ScheduledTournamentService {
      * event gets. A clone with NO guarantee keeps the two-minute floor: it
      * cannot overlay, and a fast restart is what keeps the board alive.
      */
+    const oldStartMs = old.start_time ? Date.parse(String(old.start_time)) : NaN;
     const startTime = new Date(
-      Math.max(
-        Date.now() + restartLeadMsFor(Number(old.guaranteed_prize) || 0),
-        endedAt.getTime() + restartMinutes * 60 * 1000
-      )
+      restartCloneStartMs({
+        restartMinutes,
+        endedAtMs: endedAt.getTime(),
+        startTimeMs: Number.isFinite(oldStartMs) ? oldStartMs : null,
+        nowMs: Date.now(),
+        guaranteedPrize: Number(old.guaranteed_prize) || 0,
+      })
     );
 
     const row: Record<string, unknown> = {

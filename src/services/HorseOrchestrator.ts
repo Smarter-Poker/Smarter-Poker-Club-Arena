@@ -28,6 +28,7 @@ import { supabase } from '../lib/supabase';
 import { HydraService } from './HydraService';
 import { masterBus } from '../core/MasterBus';
 import { buyInFor, rakeRateFor } from '../utils/buyIn';
+import { freeBuyColumns } from '../utils/freeBuy';
 import { clampSeatsForVariant } from '../config/tableSeating';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 
@@ -1491,6 +1492,14 @@ class HorseOrchestrator {
           start_time: startTime.toISOString(),
           late_reg_levels: 8,
           late_reg_mins: 8,
+          // FREEROLLS ARE FREE BUY (Dan 2026-09-02): the four FREEROLL configs
+          // above enter at 0 with rebuys and add-ons on at 1 chip each. Spread
+          // LAST so it wins; empty for every paid event.
+          ...freeBuyColumns({
+            buyIn: config.buyIn,
+            type: config.type,
+            startingStack: config.startingStack,
+          }),
         })
         .select()
         .maybeSingle();

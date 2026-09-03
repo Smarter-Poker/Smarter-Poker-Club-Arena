@@ -16,9 +16,17 @@
 import { supabase } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { fetchAllRows } from './supabase/pagination.js';
+import { IN_LIST_CHUNK, selectInChunks } from './supabase/chunkedIn.js';
 import { reportError } from './errorReporter.js';
 import nodeCrypto from 'node:crypto';
-import { DEFAULT_RAKE_RATE, buyInFor, rakeRateFor, wholeChips } from '../config/buyIn.js';
+import {
+  BUY_IN_LADDER,
+  DEFAULT_RAKE_RATE,
+  buyInFor,
+  freeBuyColumns,
+  rakeRateFor,
+  wholeChips,
+} from '../config/buyIn.js';
 import { gameLaneFor, horseHash, isActiveNow } from './HorseBehavior.js';
 import { bankrollPolicyFor, canEnterTournament } from './HorseBankroll.js';
 import { bankrollEvent } from './HorseBankrollTelemetry.js';
@@ -755,9 +763,17 @@ const OPEN_TABLE_WAIT_MS = 10 * 60 * 1000;
  * Ten minutes was chosen when nothing filled the seat properly; now that the
  * top-up genuinely seats horses, a shorter window keeps the board moving
  * without ever taking the seat out from under someone who is mid buy-in.
+ *
+ * Dan 2026-09-03, restating the rule with a new ceiling: "YOU ARE SUPPOSED TO
+ * WAIT 60-150 SECONDS TO ALLOW A HUMAN TO PLAY, BEFORE A 3RD HORSE CAN JOIN
+ * AND PLAY." The floor stays at a minute; the ceiling comes down from three
+ * minutes to two and a half. The window is the START TIME of the game, and
+ * GameServer's past-start top-up is what seats the last horse once it has
+ * passed - so the third horse joins between 60 and 150 seconds after the
+ * board opened, never sooner, and the seat is a human's until then.
  */
-const SEAT_FIRST_HUMAN_WINDOW_MIN_MS = 60 * 1000;
-const SEAT_FIRST_HUMAN_WINDOW_MAX_MS = 180 * 1000;
+export const SEAT_FIRST_HUMAN_WINDOW_MIN_MS = 60 * 1000;
+export const SEAT_FIRST_HUMAN_WINDOW_MAX_MS = 150 * 1000;
 
 function seatFirstHumanWindowMs(): number {
   const span = SEAT_FIRST_HUMAN_WINDOW_MAX_MS - SEAT_FIRST_HUMAN_WINDOW_MIN_MS;
@@ -952,6 +968,61 @@ export function isJoinableTableRow(row: TournamentTableJoinability | null | unde
 
 export function isSeatFirstFormat(variant: string, maxPlayers: number): boolean {
   return String(variant).toLowerCase() === 'spin' || maxPlayers <= 2;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A CLUB BOARD FILLS FROM ITS OWN MEMBERS, OR IT NEVER FILLS AT ALL
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan, 2026-09-01 (the Deep Stack Society directive): heads-up / SNG boards
+ * must open for activated CLUB owners, not just the house board.
+ * Dan, 2026-09-02: DSS horses "PLAY OPENLY INSIDE THE DEEP STACK SOCIETY ONLY."
+ * Dan, 2026-09-02 and 2026-09-03: those boards sit at 1/2 seated forever.
+ *
+ * All three are the same story. checkAndLaunchSNGs was taught to open boards
+ * for activated club owners, and topUpWithHorses was never taught to fill
+ * them: it refused every top-up outside the house board. So the platform
+ * opened boards it had forbidden itself to fill. Measured on production
+ * 2026-09-03 08:2x UTC:
+ *
+ *   Midway Union (the house board)   62 heads-up RUNNING, 60 spins RUNNING
+ *   Deep Stack Society                6 heads-up REGISTERING, ZERO EVER RUNNING
+ *
+ * Every DSS board took a real buy-in from the first player to sit and then
+ * held it forever: 32 stuck since 09-01 18:42, another 32 created 09-02
+ * 22:26-22:51 and stuck the same way, both batches cancelled and refunded by
+ * hand. The engine also retried each one every twelve seconds, which is where
+ * 24,490 calls of fn_sync_seat_first_player_count in 76 minutes came from -
+ * 2,292 seconds of database time spent on boards that could not move.
+ *
+ * The gate's own comment already stated the right rule: "a user-owned club
+ * fills its tournaments with users who joined that club through Join A Club."
+ * The CODE said "the house board only", which is stricter than the rule it
+ * documents and is what contradicted the 09-01 directive.
+ *
+ * The rule is now enforced where it belongs - in the POOL, not in a gate.
+ * pickFreeHorses already narrows every candidate to
+ * clubMemberIdsForTournament(): a standalone club draws on its own members and
+ * nothing else, a union event on every club in that union. DSS boards fill
+ * from DSS horses, exactly as Dan asked, and no house horse can wander into a
+ * user club's game.
+ *
+ * 2026-09-03, later the same day: the "still house-only" MTT half of this
+ * gate is gone too. The pool it was said to protect (registerHorses) has been
+ * club-scoped since 09-01, so the refusal protected nothing and emptied every
+ * scheduled Deep Stack Society event. topUpWithHorses no longer consults this
+ * predicate for any format. It remains exported as the house-board test, with
+ * its pins, for a caller that genuinely needs "is this the house".
+ */
+export function automatedRegistrationIsPermitted(
+  clubId: string | null | undefined,
+  houseClubId: string | null | undefined
+): boolean {
+  const club = String(clubId ?? '');
+  const house = String(houseClubId ?? '');
+  if (!club || !house) return false;
+  return club === house;
 }
 
 /**
@@ -1308,6 +1379,68 @@ export function seatFirstFillOrder(
  * enough that a player notices a stuck game roughly when the watchdog does,
  * and long enough that a slow start is never treated as a failure.
  */
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  ONE CANDIDATE PER SEAT IS A BET THAT NOBODY ELSE IS PICKING
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * seatFirstFillOrder takes `want` candidates for `want` seats, so the seat-first
+ * fill used to ask pickFreeHorses for EXACTLY the shortfall. That only works if
+ * every candidate can be seated, and one of them routinely cannot: the busy set
+ * is read before the claim and never atomically with it (pickFreeHorses says so
+ * itself), while topUpPartialSeatFirst, the recurring pass and the scheduler all
+ * run the same five-second tick. Two callers pick the same horse; the first claim
+ * takes it to four games and fn_enforce_booking_game_cap refuses the second with
+ * 23514. With one candidate for one seat, that lost race IS an empty seat.
+ *
+ * Measured on production 2026-09-03, one hour of engine log:
+ *
+ *     1,000 horses      413 already at four games   (unpickable)
+ *                       247 at three                (one claim from refused)
+ *       247 boards logged "seat-first fill added nobody"
+ *        89 of 98 refusals were FOUR TABLE LIMIT
+ *
+ * and every one of those lines read `0 own registrant(s) + 1 free horse(s) -
+ * shortfall 1`. One candidate, refused, seat left empty - on a board Dan opened
+ * to get horses PLAYING. Two thirds of the fleet is at or near the cap, so the
+ * race is not rare; it is the normal case.
+ *
+ * So ask for more than the seats need and let the refusals be absorbed.
+ * registerHorses in this same file already sizes its fetch as `count +
+ * busy.size` and calls that the convention this file settled on - the seat-first
+ * path had drifted from it. Slack costs nothing: an unused candidate is an
+ * unclaimed id, pickFreeHorses still applies the club scope and the cash-room
+ * reserve before it slices, and the fill loop stops the moment the seats are
+ * full (a spin must never seat a fourth).
+ */
+export const SEAT_FIRST_CANDIDATES_PER_SEAT = 3;
+export const SEAT_FIRST_CANDIDATE_FLOOR = 3;
+
+export function seatFirstCandidateCount(shortfall: number): number {
+  const seats = Math.max(0, Math.floor(Number(shortfall) || 0));
+  if (seats === 0) return 0;
+  return Math.max(SEAT_FIRST_CANDIDATE_FLOOR, seats * SEAT_FIRST_CANDIDATES_PER_SEAT);
+}
+
+/**
+ * A four-table refusal is an ANSWER, not a fault.
+ *
+ * HorseFleetManager.seatHorse learned this on 2026-08-31 after 57 error reports
+ * in a ten-minute window; the seat-first fill never did, and reported 89 of them
+ * in an hour - which is how the three genuine refusals sitting beside them
+ * (opening_seat_rpc_failed, seat_first_repair_failed) go unread. The cap is a
+ * rule working exactly as written: this horse is busy, take the next one.
+ */
+export function isExpectedSeatRefusal(message: string | null | undefined): boolean {
+  const msg = String(message ?? '');
+  return (
+    msg.includes('FOUR TABLE LIMIT') ||
+    msg.includes('TABLE_CAP_REACHED') ||
+    msg.includes('Player already seated') ||
+    msg.includes('duplicate key')
+  );
+}
+
 export const SEAT_FIRST_START_STALL_MS = 3 * 60 * 1000;
 
 /**
@@ -1641,6 +1774,162 @@ const SPIN_BOARD_BUYINS = [1, 2, 3, 5, 10, 20, 50, 100];
  * by its config NAME, so a rename opens 32 new boards and leaves 32 orphans
  * sitting in REGISTERING forever.
  */
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  SATELLITE HEADS-UP (Dan 2026-09-03): "ADD 'SATELLITE SIT N GO'S' TO THE
+ *  HEADS UP AREA, WHERE PLAYERS CAN WIN A TICKET INTO BIGGER BUY IN MTT'S."
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * A satellite heads-up is a two-seat game on the ordinary heads-up board whose
+ * winner does not take chips: they take a SEAT in a bigger scheduled event.
+ * Everything below it is machinery that already exists and is reused, not
+ * copied:
+ *
+ *   - it is SEAT-FIRST like every heads-up (isSeatFirstFormat: two seats), so
+ *     it opens with one horse, holds the second seat for a human for the
+ *     60-150 second window, and the past-start top-up seats the second horse
+ *     if nobody comes;
+ *   - it carries tournament_type 'SATELLITE' (variant stays 'sng' so every
+ *     seat-first reader still recognises a two-seat SNG) with
+ *     satellite_target_id and satellite_seats = 1, so TournamentManager's
+ *     finish path (isSatelliteFinish -> processSatelliteAwards) registers the winner into
+ *     the target through the same money-correct path the scheduled satellite
+ *     MTTs use, and pays whatever the pool holds beyond the seat to the
+ *     runner-up as cash (satelliteAwardPlan);
+ *   - the lobby classifies a two-seat game as heads-up whatever its variant
+ *     (classifyTournament: a cap of 2 is an 'sng'), and lobbyEntries puts the
+ *     SATELLITE badge on anything whose name says so. So it appears in the
+ *     Heads Up tab with no client change.
+ *
+ * WHAT IS A TARGET. Any scheduled MTT in the owner's own scope (the union for
+ * the house board, the club for a standalone club) that is open for
+ * registration, starts at least SATELLITE_HU_TARGET_LEAD_MS from now and no
+ * more than SATELLITE_HU_TARGET_HORIZON_MS away, and costs at least
+ * SATELLITE_HU_MIN_TICKET to enter. "Bigger buy-in" is that floor: nobody
+ * needs a satellite into a 5-chip turbo. The board keeps one satellite per
+ * target for the SATELLITE_HU_TARGETS_PER_OWNER dearest targets, so the
+ * biggest events of the week always have a feeder running.
+ *
+ * WHAT IT COSTS. Two entries must fund one seat with no overlay, and buy-ins
+ * snap to BUY_IN_LADDER, so the price is the smallest ladder step whose two
+ * prize shares (after the heads-up rake) cover the ticket. The remainder is
+ * real money the runner-up gets back, which is the honest shape of a two-man
+ * satellite on a ladder that has no exact halves.
+ */
+export const SATELLITE_HU_MIN_TICKET = 20;
+export const SATELLITE_HU_TARGETS_PER_OWNER = 3;
+export const SATELLITE_HU_TARGET_LEAD_MS = 30 * 60 * 1000;
+export const SATELLITE_HU_TARGET_HORIZON_MS = 7 * 24 * 60 * 60 * 1000;
+export const SATELLITE_HU_NAME_SUFFIX = 'Satellite Heads-Up';
+
+export function satelliteHeadsUpName(targetName: string): string {
+  return `${String(targetName).trim()} ${SATELLITE_HU_NAME_SUFFIX}`;
+}
+
+/**
+ * The smallest BUY_IN_LADDER step whose two prize shares, after the heads-up
+ * rake, cover one ticket into the target. 0 when no step on the ladder can
+ * (a ticket dearer than twice the top rung), which means "no satellite".
+ */
+export function satelliteHeadsUpBuyIn(ticketCost: number): number {
+  const ticket = Number(ticketCost);
+  if (!Number.isFinite(ticket) || ticket <= 0) return 0;
+  const rate = rakeRateFor({ tournamentType: 'SNG', maxPlayers: HEADS_UP_SEATS });
+  for (const step of BUY_IN_LADDER) {
+    const { prize } = buyInFor(step, rate);
+    if (prize * HEADS_UP_SEATS >= ticket) return step;
+  }
+  return 0;
+}
+
+export interface SatelliteTargetRow {
+  id: string;
+  name: string;
+  start_time: string | null;
+  buy_in_amount: number | null;
+  buy_in_fee: number | null;
+  variant: string | null;
+  max_players: number | null;
+  game_type?: string | null;
+}
+
+/**
+ * Which open events deserve a feeder right now. Pure, so the choice is pinned
+ * by a test rather than by a database: dearest first, one per name (a weekly
+ * event and next week's copy are one target), inside the lead/horizon window,
+ * at or above the ticket floor, never a seat-first game and never a satellite
+ * feeding a satellite.
+ */
+export function pickSatelliteTargets(
+  rows: SatelliteTargetRow[],
+  nowMs: number,
+  limit: number = SATELLITE_HU_TARGETS_PER_OWNER
+): SatelliteTargetRow[] {
+  const seen = new Set<string>();
+  const out: SatelliteTargetRow[] = [];
+  const eligible = rows
+    .filter((r) => {
+      const v = String(r.variant ?? '').toLowerCase();
+      if (v === 'spin' || v === 'sng' || v === 'satellite') return false;
+      const seats = Number(r.max_players);
+      if (Number.isFinite(seats) && seats > 0 && seats <= 2) return false;
+      const start = r.start_time ? Date.parse(r.start_time) : NaN;
+      if (!Number.isFinite(start)) return false;
+      const until = start - nowMs;
+      if (until < SATELLITE_HU_TARGET_LEAD_MS || until > SATELLITE_HU_TARGET_HORIZON_MS)
+        return false;
+      const ticket = Number(r.buy_in_amount || 0) + Number(r.buy_in_fee || 0);
+      return ticket >= SATELLITE_HU_MIN_TICKET && satelliteHeadsUpBuyIn(ticket) > 0;
+    })
+    .sort((a, b) => {
+      const ta = Number(a.buy_in_amount || 0) + Number(a.buy_in_fee || 0);
+      const tb = Number(b.buy_in_amount || 0) + Number(b.buy_in_fee || 0);
+      if (tb !== ta) return tb - ta;
+      return String(a.start_time).localeCompare(String(b.start_time));
+    });
+  for (const r of eligible) {
+    const key = String(r.name).trim().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(r);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+interface SatelliteHeadsUpConfig extends Omit<SNGConfig, 'type'> {
+  type: 'satellite';
+  targetId: string;
+  targetName: string;
+  ticketCost: number;
+}
+
+function satelliteHeadsUpConfigFor(target: SatelliteTargetRow): SatelliteHeadsUpConfig | null {
+  const ticket = Number(target.buy_in_amount || 0) + Number(target.buy_in_fee || 0);
+  const buyIn = satelliteHeadsUpBuyIn(ticket);
+  if (buyIn <= 0) return null;
+  const targetVariant = String(target.game_type ?? target.variant ?? '').toLowerCase();
+  const gameVariant = (HEADS_UP_GAME_TYPES as readonly string[]).includes(targetVariant)
+    ? targetVariant
+    : 'nlh';
+  return {
+    name: satelliteHeadsUpName(target.name),
+    type: 'satellite',
+    gameVariant,
+    buyIn,
+    rake: 0,
+    startingStack: HEADS_UP_STACKS.turbo,
+    maxPlayers: HEADS_UP_SEATS,
+    minPlayers: HEADS_UP_SEATS,
+    horsesToRegister: HEADS_UP_SEATS - 1,
+    blindStructure: BLIND_STRUCTURES.HEADS_UP_3MIN,
+    payoutStructure: HEADS_UP_PAYOUTS,
+    targetId: target.id,
+    targetName: target.name,
+    ticketCost: ticket,
+  };
+}
+
 const SPIN_BOARD_SPEEDS: SpinSpeed[] = ['turbo', 'deep'];
 
 export const SPIN_CONFIGS: SpinConfig[] = SPIN_BOARD_SPEEDS.flatMap((speed) =>
@@ -1806,6 +2095,43 @@ const BOARD_REFILL_INTERVAL_MS = 30 * 1000;
  * in the pass, so the ceiling holds no matter how many owners exist.
  */
 const BURST = 12;
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE BUDGET IS SHARED, SO IT IS SPLIT - NOT SPENT FIRST-COME (2026-09-03)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * One BURST for the whole pass was the right ceiling and the wrong queue. The
+ * house board went first, and the house board is never full: fifty spin
+ * price points that each churn every few minutes, on a tick that runs longer
+ * than its own 30-second interval, means the house is thirty to forty games
+ * short every time it is asked. It took all twelve, `budget.left` hit zero,
+ * and the owner loop `break`-ed before Deep Stack Society was ever offered a
+ * game.
+ *
+ * Measured 2026-09-03 17:02 UTC, straight from the engine log:
+ *
+ *     Opened 12 spin(s) for house fade0000; 38 still to fill
+ *     Opened  3 sng(s)  for club 2a1132b9; 29 still to fill
+ *
+ * and no "Opened N spin(s) for club 2a1132b9" line anywhere. The club's spin
+ * board had been empty since 11:32 - not because anything failed, but because
+ * the house always had thirty-eight reasons to spend the budget first. Dan
+ * read the symptom as "DSS spins stopped", and that is exactly what it was.
+ *
+ * So the pass hands each owner a SHARE before anyone spends: BURST divided by
+ * the number of boards being served, floored at two so a share is always a
+ * game and its overflow. Unspent shares are not redistributed - the tick is
+ * already long, and an owner whose board is full leaving its share unspent is
+ * the tick finishing sooner. The house is one owner among the others here:
+ * with one activated club it opens six games a tick instead of twelve, which
+ * is still more than the six a minute its board actually turns over.
+ */
+export const BOARD_BUDGET_FLOOR = 2;
+export function boardBudgetShares(ownerCount: number, burst: number = BURST): number {
+  const owners = Math.max(1, Math.floor(Number(ownerCount) || 0));
+  return Math.max(BOARD_BUDGET_FLOOR, Math.floor(burst / owners));
+}
 
 /**
  * Whose board is being filled. A Spin is visible to players ENTIRELY through
@@ -2150,29 +2476,31 @@ export class TournamentRecurringService {
       if (isMaintenanceFrozen()) return;
       await this.repairSeatFirstGames();
 
-      const budget = { left: BURST };
+      /* Dan 2026-09-01 (Deep Stack Society directive): heads-up and SNG
+       * boards for activated club owners, exactly the way the Spin pass
+       * does it -- the house board and one owner board per activated
+       * owner. activatedSpinOwners() is the platform's one "this owner has
+       * switched club games on and funded them" signal; a standalone club
+       * like Deep Stack (11192) activates via fn_spin_activate and gets its
+       * own SNG/heads-up board on the same tick, same repair pass.
+       *
+       * Every board gets its own share of BURST up front (see
+       * boardBudgetShares): the house used to go first on a single shared
+       * budget and, being perpetually short, spent all of it every tick.
+       *
+       * maxStake clamps the buy-ins an owner's board offers, mirroring
+       * the Spin rule: never list a price point the owner did not sign
+       * up for. */
+      const owners = await this.activatedSpinOwners();
+      const share = boardBudgetShares(owners.length + 1);
       await this.ensureBoardOpen(
         'sng',
         SNG_CONFIGS,
         (c, o) => this.createSNG(c as any, o),
         this.houseOwner,
-        budget
+        { left: share }
       );
-
-      /* Dan 2026-09-01 (Deep Stack Society directive): heads-up and SNG
-       * boards for activated club owners, exactly the way the Spin pass
-       * already does it -- the house board first so it is never starved,
-       * then one owner board per activated owner. activatedSpinOwners()
-       * is the platform's one "this owner has switched club games on and
-       * funded them" signal; a standalone club like Deep Stack (11192)
-       * activates via fn_spin_activate and gets its own SNG/heads-up
-       * board on the same tick, same budget, same repair pass.
-       *
-       * maxStake clamps the buy-ins an owner's board offers, mirroring
-       * the Spin rule: never list a price point the owner did not sign
-       * up for. */
-      for (const owner of await this.activatedSpinOwners()) {
-        if (budget.left <= 0) break;
+      for (const owner of owners) {
         const affordable = SNG_CONFIGS.filter((c) => c.buyIn <= owner.maxStake);
         if (affordable.length === 0) continue;
         await this.ensureBoardOpen(
@@ -2180,10 +2508,154 @@ export class TournamentRecurringService {
           affordable,
           (c, o) => this.createSNG(c as any, o),
           owner,
-          budget
+          { left: share }
         );
       }
+
+      /* Satellite heads-ups ride the same tick as the heads-up board they
+         sit on. A handful per owner at most (one per dear target), so the
+         share is capped well under a board share: this is a feeder, not a
+         ladder. */
+      const satelliteShare = Math.min(share, SATELLITE_HU_TARGETS_PER_OWNER);
+      await this.ensureSatelliteHeadsUps(this.houseOwner, satelliteShare);
+      for (const owner of owners) {
+        await this.ensureSatelliteHeadsUps(owner, satelliteShare);
+      }
     });
+  }
+
+  /**
+   * One satellite heads-up per dear target in this owner's scope. See the
+   * SATELLITE HEADS-UP block above SPIN_BOARD_SPEEDS for the rule; this is the
+   * read and the board call.
+   */
+  private async ensureSatelliteHeadsUps(owner: BoardOwner, budgetLeft: number): Promise<void> {
+    if (budgetLeft <= 0) return;
+    try {
+      let q = supabase
+        .from('tournaments')
+        .select('id, name, start_time, buy_in_amount, buy_in_fee, variant, max_players, game_type')
+        .eq('status', 'REGISTERING')
+        .gt('start_time', new Date(Date.now() + SATELLITE_HU_TARGET_LEAD_MS).toISOString())
+        .lt('start_time', new Date(Date.now() + SATELLITE_HU_TARGET_HORIZON_MS).toISOString())
+        .gte('buy_in_amount', 1)
+        .order('buy_in_amount', { ascending: false })
+        .limit(200);
+      q = owner.unionId
+        ? q.eq('union_id', owner.unionId)
+        : q.eq('club_id', owner.clubId).is('union_id', null);
+      const { data, error } = await q;
+      if (error) {
+        // Fail closed, as the boards do: no targets read means no feeders
+        // opened this tick, never a feeder into a game that may not exist.
+        reportError(
+          new Error(`[TournamentRecurring] satellite target read failed: ${error.message}`),
+          'TournamentRecurring.satellite_target_read_failed'
+        );
+        return;
+      }
+      const targets = pickSatelliteTargets((data ?? []) as SatelliteTargetRow[], Date.now());
+      const configs = targets
+        .map(satelliteHeadsUpConfigFor)
+        .filter((c): c is SatelliteHeadsUpConfig => c !== null)
+        .filter((c) => c.buyIn <= owner.maxStake);
+      if (configs.length === 0) return;
+      // The 'sng' board: a satellite heads-up IS a heads-up (variant 'sng'),
+      // matched to its own config names, so the board read is the same one.
+      await this.ensureBoardOpen(
+        'sng',
+        configs,
+        (c, o) => this.createSatelliteHeadsUp(c, o),
+        owner,
+        { left: budgetLeft }
+      );
+    } catch (err: any) {
+      reportError(
+        new Error(`[TournamentRecurring] satellite heads-up board error: ${err?.message}`),
+        'TournamentRecurring.satellite_board_error'
+      );
+    }
+  }
+
+  /**
+   * A satellite heads-up is created exactly as a heads-up SNG is, with three
+   * differences on the row: tournament_type 'SATELLITE' (so the finish awards
+   * a seat, never cash), the target it feeds, and the one seat it guarantees.
+   */
+  private async createSatelliteHeadsUp(
+    config: SatelliteHeadsUpConfig,
+    owner: BoardOwner = this.houseOwner
+  ): Promise<{ tournamentId: string | null; registered: number }> {
+    try {
+      const startTime = new Date(Date.now() + seatFirstHumanWindowMs());
+      const dbGameType = dbGameTypeFor(config.gameVariant, 'createSatelliteHeadsUp');
+
+      const { data: sat, error } = await supabase
+        .from('tournaments')
+        .insert({
+          club_id: owner.clubId,
+          union_id: owner.unionId,
+          name: config.name,
+          game_type: dbGameType,
+          /* variant 'sng' + tournament_type 'SATELLITE', deliberately. Every
+             seat-first reader (GameServer's fast start, fn_take_seat_and_buy_in,
+             the stuck-finish sweep, the table sizing in TournamentManager) knows
+             a heads-up as `variant === 'sng' && max_players <= 2`, and the
+             finish path knows a satellite as `variant === 'satellite' ||
+             tournament_type === 'SATELLITE'` (TournamentManagerEliminations,
+             fn_tournament_payout_reconcile). This row satisfies both without
+             teaching either side a new spelling. */
+          variant: 'sng',
+          tournament_type: 'SATELLITE',
+          ...buyInColumns(
+            config.buyIn,
+            rakeRateFor({ tournamentType: 'SNG', maxPlayers: config.maxPlayers })
+          ),
+          guaranteed_prize: 0,
+          starting_chips: config.startingStack,
+          max_players: config.maxPlayers,
+          min_players: config.minPlayers,
+          table_size: config.maxPlayers,
+          current_players: 0,
+          status: 'REGISTERING',
+          blind_structure: config.blindStructure,
+          payout_structure: config.payoutStructure,
+          start_time: startTime.toISOString(),
+          late_reg_levels: 0,
+          late_reg_mins: 0,
+          satellite_target_id: config.targetId,
+          satellite_seats: 1,
+          short_description: `Win A Seat In ${config.targetName}. 1 Seat Guaranteed.`,
+        })
+        .select()
+        .maybeSingle();
+
+      if (error || !sat) {
+        reportError(
+          new Error(
+            `[TournamentRecurring] satellite heads-up creation failed: ${error?.message || JSON.stringify(error) || 'Unknown error'}`
+          ),
+          'TournamentRecurring.satellite_creation_failed'
+        );
+        return { tournamentId: null, registered: 0 };
+      }
+
+      const hu = (config.blindStructure?.[0] as { smallBlind: number; bigBlind: number }) ?? {
+        smallBlind: 10,
+        bigBlind: 20,
+      };
+      await this.createOpenSeatTable(sat, config.maxPlayers, dbGameType, hu);
+      console.log(
+        `[TournamentRecurring] satellite heads-up "${config.name}" opened for ${owner.kind} ${owner.clubId.slice(0, 8)}: ${config.buyIn} chips a seat, ticket ${config.ticketCost}`
+      );
+      return { tournamentId: sat.id, registered: 0 };
+    } catch (err: any) {
+      reportError(
+        new Error(`[TournamentRecurring] createSatelliteHeadsUp error: ${err.message}`),
+        'TournamentRecurring.createSatelliteHeadsUp_error'
+      );
+      return { tournamentId: null, registered: 0 };
+    }
   }
 
   /**
@@ -2296,21 +2768,23 @@ export class TournamentRecurringService {
       // covered" below, so skipping this would leave the board wedged.
       await this.repairSeatFirstGames();
 
-      // ONE budget for the whole pass. See BURST.
-      const budget = { left: BURST };
+      // ONE ceiling for the whole pass (BURST), split into a share per board
+      // before anyone spends. The house board used to go first on a single
+      // shared budget "so it is never starved by owner boards" - and being
+      // thirty-odd games short every tick, it starved every owner board
+      // instead. See boardBudgetShares for the measurement.
+      const owners = await this.activatedSpinOwners();
+      const share = boardBudgetShares(owners.length + 1);
 
-      // The house board first: it serves every player who is not in a club
-      // that has activated Spins, so it must never be starved by owner boards.
       await this.ensureBoardOpen(
         'spin',
         SPIN_CONFIGS,
         (c, o) => this.createSpin(c as any, o),
         this.houseOwner,
-        budget
+        { left: share }
       );
 
-      for (const owner of await this.activatedSpinOwners()) {
-        if (budget.left <= 0) break;
+      for (const owner of owners) {
         // Only the price points this owner's seed can actually cover. The
         // required seed is two top-tier jackpots at their largest stake, so
         // offering a bigger buy-in than they seeded for would advertise a
@@ -2322,7 +2796,7 @@ export class TournamentRecurringService {
           affordable,
           (c, o) => this.createSpin(c as any, o),
           owner,
-          budget
+          { left: share }
         );
       }
     });
@@ -2470,10 +2944,11 @@ export class TournamentRecurringService {
       /* Cap the per-tick burst. A cold start has every config missing, and
          creating them all in one tick means one insert plus one
          horse-registration batch each against the same connection - enough to
-         stall the engine loop that also has live hands to deal. The budget is
-         shared across every owner in this pass (see BURST), so the ceiling
-         holds however many owners have activated. Boards fill over a few
-         ticks instead. */
+         stall the engine loop that also has live hands to deal. The budget
+         handed in is this board's SHARE of BURST for the pass (see
+         boardBudgetShares), so the ceiling holds however many owners have
+         activated and no board can spend another board's share. Boards fill
+         over a few ticks instead. */
       let launched = 0;
       for (const config of missing.slice(0, budget.left)) {
         const result = await create(config, owner);
@@ -2685,6 +3160,16 @@ export class TournamentRecurringService {
             addon_cost: (config as { addOn?: boolean }).addOn ? split.total : null,
             addon_chips: (config as { addOn?: boolean }).addOn ? config.startingStack : null,
             addon_levels: (config as { addOn?: boolean }).addOn ? 1 : null,
+            // FREEROLLS ARE FREE BUY (Dan 2026-09-02): 0 to enter, rebuys and
+            // add-ons on at 1 chip each. Spread LAST so it wins over the
+            // template's opt-in keys above. Empty for any paid event.
+            ...freeBuyColumns({
+              buyIn: split.total,
+              tournamentType: 'MTT',
+              variant: config.type === 'mtt' ? 'freezeout' : config.type,
+              startingStack: config.startingStack,
+              maxRebuys: (config as { rebuy?: boolean }).rebuy ? 2 : null,
+            }),
           })
           .select()
           .maybeSingle(); // FIX 168
@@ -2918,6 +3403,16 @@ export class TournamentRecurringService {
             addon_cost: (config as { addOn?: boolean }).addOn ? split.total : null,
             addon_chips: (config as { addOn?: boolean }).addOn ? config.startingStack : null,
             addon_levels: (config as { addOn?: boolean }).addOn ? 1 : null,
+            // FREEROLLS ARE FREE BUY (Dan 2026-09-02): 0 to enter, rebuys and
+            // add-ons on at 1 chip each. Spread LAST so it wins over the
+            // template's opt-in keys above. Empty for any paid event.
+            ...freeBuyColumns({
+              buyIn: split.total,
+              tournamentType: 'MTT',
+              variant: config.type === 'mtt' ? 'freezeout' : config.type,
+              startingStack: config.startingStack,
+              maxRebuys: (config as { rebuy?: boolean }).rebuy ? 2 : null,
+            }),
           })
           .select()
           .maybeSingle(); // FIX 168
@@ -3325,12 +3820,37 @@ export class TournamentRecurringService {
       if (tErr || !cashTables || cashTables.length === 0) return 0;
 
       const ids = cashTables.map((t) => (t as { id: string }).id);
-      const { count: seated, error: sErr } = await supabase
-        .from('table_seats')
-        .select('user_id', { count: 'exact', head: true })
-        .is('left_at', null)
-        .in('table_id', ids);
-      if (sErr || typeof seated !== 'number') return 0;
+      /* CHUNKED, AND A FAILED READ IS REPORTED (2026-09-03). `ids` is up to
+         2,000 live cash tables by the limit above, and the floor measured
+         1,131 the day this was written - one `.in()` that long is past the
+         ~675-id ceiling PostgREST accepts in a URL, so this answered HTTP 400
+         and returned 0. Zero here means "reserve nobody for the cash room",
+         which lets tournaments claim every free horse: exactly the drain the
+         surrounding comments blame for emptying the cash floor on 2026-08-31.
+         It still fails OPEN by design, but it no longer fails SILENTLY. */
+      let seated = 0;
+      let sErr: { message: string } | null = null;
+      for (let i = 0; i < ids.length; i += IN_LIST_CHUNK) {
+        const { count: c, error: e } = await supabase
+          .from('table_seats')
+          .select('user_id', { count: 'exact', head: true })
+          .is('left_at', null)
+          .in('table_id', ids.slice(i, i + IN_LIST_CHUNK));
+        if (e || typeof c !== 'number') {
+          sErr = e ?? { message: 'no count returned' };
+          break;
+        }
+        seated += c;
+      }
+      if (sErr) {
+        reportError(
+          new Error(
+            `[TournamentRecurring] cash-floor reserve could not count seats across ${ids.length} table(s): ${sErr.message} - reserving nobody this pass`
+          ),
+          'TournamentRecurring.cash_floor_reserve_read_failed'
+        );
+        return 0;
+      }
 
       const wanted = ids.length * CASH_FLOOR_PER_TABLE;
       return Math.max(0, wanted - seated);
@@ -4132,17 +4652,31 @@ export class TournamentRecurringService {
         Number((tRow as { max_players?: number } | null)?.max_players ?? 0)
       );
 
-      // Membership is explicit. Automated liquidity is permitted on the
-      // platform house board only; a user-owned club fills its tournaments
-      // with users who joined that club through Join A Club.
-      if (String((tRow as { club_id?: string | null }).club_id ?? '') !== this.houseOwner.clubId) {
-        if (seatFirst) {
-          await supabase.rpc('fn_sync_seat_first_player_count', {
-            p_tournament_id: tournamentId,
-          });
-        }
-        return 0;
-      }
+      /* MEMBERSHIP IS EXPLICIT, AND IT IS ENFORCED IN THE POOL - FOR EVERY FORMAT.
+         See automatedRegistrationIsPermitted above for the measurement and the
+         history. A SEAT-FIRST board fills wherever it was opened, because every
+         candidate is drawn from clubMemberIdsForTournament() - the host club's
+         own members for a standalone club, the whole union for a union event.
+
+         THE MTT HALF OF THAT GATE IS GONE (Dan 2026-09-03, "CREATE A MTT
+         TOURNEY SCHEDULE THAT MIRRORS THE MIDWAY UNION"). Until today this
+         function still refused every non-house top-up that was NOT seat-first,
+         on the written belief that registerHorses drew from an un-scoped pool
+         and would put house horses on a user club's entry list. That belief
+         was stale when it was written down: registerHorses has narrowed its
+         pool through clubMemberIdsForTournament() since 2026-09-01, the same
+         gate the seat-first path relies on, so a standalone club's MTT can only
+         ever be filled by that club's own members. What the refusal actually
+         did was leave every scheduled Deep Stack Society event empty. Measured
+         2026-09-03: 59 of its MTTs on the board averaging 0.3 entrants, the
+         twelve spawned that day at zero, while the pre-start ramp asked this
+         function for a field every 45 seconds and was told no.
+
+         So the ramp, the overlay guard and the past-start top-up now fill a
+         club's MTT from the club's own members, exactly as they fill the house
+         board from the union's. automatedRegistrationIsPermitted stays
+         exported for the house-only callers that still want it; nothing in
+         the top-up path consults it any more. */
 
       /**
        * MEASURE THE SHORTFALL IN THE UNIT THE START GATE READS.
@@ -4282,12 +4816,18 @@ export class TournamentRecurringService {
          * one group the old code could never pick.
          */
         const own = await this.unseatedRegistrantHorses(tournamentId, primaryTableId);
-        const poolWanted = Math.max(0, shortfall - own.length);
+        // MORE CANDIDATES THAN SEATS. See seatFirstCandidateCount for the hour
+        // of production log that says why one-per-seat leaves boards short.
+        const wantCandidates = seatFirstCandidateCount(shortfall);
+        const poolWanted = Math.max(0, wantCandidates - own.length);
         const pool =
           poolWanted > 0 ? await this.pickFreeHorses(poolWanted, false, tournamentId) : [];
-        const candidates = seatFirstFillOrder(shortfall, own, pool);
+        const candidates = seatFirstFillOrder(wantCandidates, own, pool);
 
         for (const horse of candidates) {
+          // The slack above is there to absorb REFUSALS, not to seat extras: a
+          // 3-handed spin takes three. Stop as soon as the seats are covered.
+          if (added >= shortfall) break;
           // THE FREEZE IS TOTAL (Dan 2026-09-03). continue, not break - see the
           // opening-seat loop above and the one-refusal pin in
           // seatFirstFillOrder.test.ts.
@@ -4305,13 +4845,21 @@ export class TournamentRecurringService {
           // trigger does not return {ok:false}, it RAISES, so the one signal
           // that would have named this deadlock arrived in `error` and was
           // thrown away for a day and a half.
+          //
+          // 2026-09-03: and do not report the ORDINARY refusal as a fault. The
+          // four-table cap firing means the horse is busy - the rule working,
+          // not the fill failing - and at 89 reports an hour it was burying the
+          // refusals that do need reading. isExpectedSeatRefusal names them;
+          // everything else is still reported, unchanged.
           if (seatRpcErr) {
-            reportError(
-              new Error(
-                `[TournamentRecurring] seat-first fill refused for ${tournamentId.slice(0, 8)}: ${seatRpcErr.message}`
-              ),
-              'TournamentRecurring.seat_first_seat_rpc_failed'
-            );
+            if (!isExpectedSeatRefusal(seatRpcErr.message)) {
+              reportError(
+                new Error(
+                  `[TournamentRecurring] seat-first fill refused for ${tournamentId.slice(0, 8)}: ${seatRpcErr.message}`
+                ),
+                'TournamentRecurring.seat_first_seat_rpc_failed'
+              );
+            }
             continue;
           }
           if ((res as { ok?: boolean } | null)?.ok === true) added++;

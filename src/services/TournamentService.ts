@@ -14,6 +14,7 @@ import { SPIN_TIERS, SPIN_FREQ_DENOMINATOR } from '../config/spinSpec';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
+import { freeBuyConfig, isFreeBuyEvent } from '../utils/freeBuy';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { fetchGameCreationAccess } from './GameAccessService';
 import { gameCreationDeniedMessage } from '../lib/gameCreationAccess';
@@ -134,6 +135,17 @@ export interface SpinMultiplier {
 }
 
 /**
+ * Repeats Weekly (Dan 2026-09-03): "ALL MTT'S SHOULD BE ON A RECURRING WEEKLY
+ * CYCLE ... ADDED TO THE 'CREATE EVENT' FUNCTIONALITY ... AS A CHECK BOX."
+ * The checkbox writes restartEveryMinutes = one week; the server clones the
+ * event on completion, anchored to the same weekday and time. The interval
+ * cap moves from a day to a week here, in fn_create_tournament_governed_legacy
+ * (migration 20260903172703) and in ScheduledTournamentService together.
+ */
+export const RESTART_WEEKLY_MINUTES = 7 * 24 * 60;
+export const RESTART_MAX_MINUTES = RESTART_WEEKLY_MINUTES;
+
+/**
  * fn_create_tournament returns a machine-readable reason; turn it into
  * something a club owner can act on. Anything unmapped falls back to a generic
  * message rather than leaking the raw code.
@@ -156,7 +168,8 @@ const TOURNAMENT_CREATE_ERRORS: Record<string, string> = {
     'The bounty plus the 10% fee is more than the buy-in, so there would be nothing left for the prize pool.',
   // Parity keys (2026-08-22)
   early_bird_chips_must_not_be_negative: 'Early bird chips cannot be negative.',
-  restart_every_minutes_out_of_range: 'Restart interval must be between 5 and 1440 minutes.',
+  restart_every_minutes_out_of_range:
+    'Restart interval must be between 5 minutes and one week (10080 minutes).',
   total_days_out_of_range: 'A multi-day tournament runs 2 to 7 days.',
   mystery_range_requires_mystery_bounty:
     'Mystery bounty multipliers only apply to mystery bounty tournaments.',
@@ -625,6 +638,25 @@ class TournamentService {
       addOnCost: config.addOnCost || 0,
       addOnChips: config.addOnChips || 0,
       addOnLevels: config.addOnLevels || 1,
+      /**
+       * FREEROLLS ARE FREE BUY (Dan 2026-09-02): 0 to enter, rebuys and
+       * add-ons on at 1 chip each. Every creation surface funnels through this
+       * builder - the create form, the table-config page and the schedule
+       * editors - so the rule is applied here, LAST, where it wins over
+       * whatever the form held. Empty for a paid event, a Spin or an SNG.
+       * fn_create_tournament writes these keys through verbatim; the
+       * zz_freerolls_are_free_buy trigger is the backstop, not the mechanism.
+       */
+      ...freeBuyConfig({
+        buyIn: config.buyIn,
+        type: config.type,
+        startingStack: config.startingStack,
+        rebuyChips: config.rebuyChips,
+        addOnChips: config.addOnChips,
+        rebuyLevels: config.rebuyLevels,
+        addOnLevels: config.addOnLevels,
+        maxRebuys: config.maxRebuys,
+      }),
       bountyAmount: config.bountyConfig?.baseBounty || 0,
       spinType: config.type === 'spin' ? config.spinType || 'standard' : null,
       satelliteTargetId: config.satelliteTarget?.tournamentId || null,
@@ -661,11 +693,19 @@ class TournamentService {
       p.finalTableDealEnabled = config.finalTableDealEnabled;
     }
     if (config.restartEveryMinutes !== undefined && config.restartEveryMinutes !== null) {
-      p.restartEveryMinutes = clampInt(config.restartEveryMinutes, 5, 1440);
+      p.restartEveryMinutes = clampInt(config.restartEveryMinutes, 5, RESTART_MAX_MINUTES);
     }
     if (config.synchronizedBreaks !== undefined) p.synchronizedBreaks = config.synchronizedBreaks;
-    if (config.maxRebuys !== undefined) p.maxRebuys = config.maxRebuys;
-    if (config.maxReentries !== undefined) p.maxReentries = config.maxReentries;
+    // A freeroll never sends a 0 cap: process_tournament_rebuy reads a NOT
+    // NULL max_rebuys of 0 as "Rebuy limit reached (0 of 0)", which would deny
+    // the 1-chip rebuys the Free Buy rule just switched on.
+    const freeBuy = isFreeBuyEvent({ buyIn: config.buyIn, type: config.type });
+    if (config.maxRebuys !== undefined && !(freeBuy && !(config.maxRebuys > 0))) {
+      p.maxRebuys = config.maxRebuys;
+    }
+    if (config.maxReentries !== undefined && !(freeBuy && !(config.maxReentries > 0))) {
+      p.maxReentries = config.maxReentries;
+    }
     if (config.isMultiDay !== undefined) p.isMultiDay = config.isMultiDay;
     if (config.isMultiDay && config.totalDays !== undefined) p.totalDays = config.totalDays;
     if (config.type === 'mystery_bounty') {
@@ -807,7 +847,7 @@ class TournamentService {
     if (
       config.restartEveryMinutes !== undefined &&
       config.restartEveryMinutes !== null &&
-      (config.restartEveryMinutes < 5 || config.restartEveryMinutes > 1440)
+      (config.restartEveryMinutes < 5 || config.restartEveryMinutes > RESTART_MAX_MINUTES)
     ) {
       throw new Error(TOURNAMENT_CREATE_ERRORS.restart_every_minutes_out_of_range);
     }

@@ -178,19 +178,19 @@ describe('Arena game-card creation', () => {
         mobileAsset: /nlh\/spade-nlh-premium-v1\/chassis\.png$/,
       },
       plo: {
-        id: 'shark-plo-v2',
-        version: 2,
-        mobileAsset: /plo\/shell-mobile-v4-reference-clean\.png$/,
+        id: 'shark-plo-four-bay-v1',
+        version: 1,
+        mobileAsset: /plo\/shark-four-bay-v1\/chassis\.png$/,
       },
       spins: {
-        id: 'shark-spins-v2',
-        version: 2,
-        mobileAsset: /spins\/shell-mobile-v4-reference-clean\.png$/,
+        id: 'shark-spins-premium-v1',
+        version: 1,
+        mobileAsset: /spins\/shark-spins-premium-v1\/chassis\.png$/,
       },
       'heads-up': {
-        id: 'shark-headsup-v2',
-        version: 2,
-        mobileAsset: /heads-up\/shell-mobile-v4-reference-clean\.png$/,
+        id: 'shark-headsup-premium-v1',
+        version: 1,
+        mobileAsset: /heads-up\/shark-headsup-premium-v1\/chassis\.png$/,
       },
     } as const;
 

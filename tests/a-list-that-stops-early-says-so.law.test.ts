@@ -1,0 +1,119 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+/**
+ * A LIST THAT STOPS EARLY SAYS SO (binding)
+ *
+ * All three rake breakdowns took p_limit, defaulted it to 50, and returned a
+ * bare array. A union with fifty-one clubs showed fifty and said nothing, so
+ * the fifty-first was indistinguishable from a club that produced no rake at
+ * all. Same for an agent's fifty-first player. Silence is the bug: an operator
+ * cannot audit a list that will not admit it is incomplete.
+ *
+ * THE PART THAT IS EASY TO GET WRONG is not the paging, it is the DENOMINATOR.
+ * ca_rake_snapshot computed breakdown_total by summing the array it was handed.
+ * That was correct while the array was the whole list. Paginate the same code
+ * and the denominator silently becomes the PAGE - so every share on screen
+ * would be a percentage of the first fifty rows, and every one of them would
+ * CHANGE as the operator pressed Load More. The helpers therefore return
+ * total_direct, summed with a window over the full set, and the snapshot reads
+ * that rather than summing what it received.
+ *
+ * Window functions run BEFORE OFFSET and LIMIT, which is the whole reason the
+ * count and the full-set sum can come back attached to the page for free.
+ *
+ * Verified numerically when written: three pages of ten over a thirty-three
+ * row list returned thirty rows with thirty distinct identities - no overlap,
+ * no duplicate - and breakdown_total was 83,909.72 on every page and on the
+ * unpaged read.
+ */
+
+const MIGRATIONS = resolve(__dirname, '../supabase/migrations');
+const HELPERS = ['fn_ca_rake_by_agent', 'fn_ca_rake_by_club', 'fn_ca_rake_by_downline'];
+
+function latestDefining(fnName: string): string {
+  const files = readdirSync(MIGRATIONS)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+  let found = '';
+  for (const f of files) {
+    const sql = readFileSync(resolve(MIGRATIONS, f), 'utf8');
+    if (sql.includes(`FUNCTION public.${fnName}(`)) found = sql;
+  }
+  return found;
+}
+
+/**
+ * JUST THAT FUNCTION, not the file it lives in.
+ *
+ * The first version of this returned the whole migration, and these files hold
+ * three functions each - so gutting the window sum in ONE of them still matched
+ * the other two and the law passed a mutation that would have shipped a
+ * page-sized denominator. A law that reads the file instead of the function is
+ * only testing that SOMETHING in the file is correct.
+ */
+function body(fnName: string): string {
+  const sql = latestDefining(fnName);
+  const start = sql.indexOf(`FUNCTION public.${fnName}(`);
+  if (start < 0) return '';
+  const end = sql.indexOf('$function$;', start);
+  return sql
+    .slice(start, end < 0 ? undefined : end)
+    .split('\n')
+    .filter((l) => !l.trimStart().startsWith('--'))
+    .join('\n');
+}
+
+describe('a list that stops early says so', () => {
+  it.each(HELPERS)('%s takes an offset', (fn) => {
+    expect(latestDefining(fn), `${fn} has no migration`).not.toBe('');
+    expect(body(fn)).toMatch(/p_offset/);
+  });
+
+  it.each(HELPERS)('%s reports how many rows exist behind the page', (fn) => {
+    const sql = body(fn);
+    expect(sql, 'a page with no count cannot admit it is a page').toMatch(/count\(\*\) OVER \(\)/);
+    expect(sql).toMatch(/'total'/);
+  });
+
+  it.each(HELPERS)('%s sums the WHOLE set, not the page', (fn) => {
+    // SUM(...) OVER () with no PARTITION spans every row the CTE produced,
+    // and window functions are evaluated before OFFSET/LIMIT trim it.
+    const sql = body(fn);
+    expect(sql).toMatch(/SUM\([a-z_.]+\) OVER \(\)/);
+    expect(sql).toMatch(/total_direct/);
+  });
+
+  it('the snapshot reads total_direct instead of summing what it was handed', () => {
+    const sql = body('ca_rake_snapshot');
+    expect(
+      sql,
+      'summing the page makes every share a percentage of the first page and move as you page'
+    ).toMatch(/'breakdown_total'\s*,\s*\(v_pack->>'total_direct'\)/);
+    expect(sql).toMatch(/'breakdown_count'/);
+  });
+
+  it('the snapshot passes the offset down rather than always reading page one', () => {
+    expect(body('ca_rake_snapshot')).toMatch(/p_limit\s*,\s*v_off/);
+  });
+
+  it('the old un-paged arities are dropped, so no call is ambiguous', () => {
+    // Adding p_offset with a DEFAULT creates a SECOND definition rather than
+    // replacing the first, and a call with the old argument count then matches
+    // both. Postgres resolves that by erroring - on the page.
+    const all = readdirSync(MIGRATIONS)
+      .filter((f) => f.endsWith('.sql'))
+      .map((f) => readFileSync(resolve(MIGRATIONS, f), 'utf8'))
+      .join('\n');
+    expect(all).toMatch(
+      /DROP FUNCTION IF EXISTS public\.fn_ca_rake_by_agent\(uuid, date, date, integer\)/
+    );
+    expect(all).toMatch(
+      /DROP FUNCTION IF EXISTS public\.fn_ca_rake_by_club\(uuid\[\], date, date, integer\)/
+    );
+    expect(all).toMatch(
+      /DROP FUNCTION IF EXISTS public\.ca_rake_snapshot\(text,uuid,uuid,date,date,uuid,integer\)/
+    );
+  });
+});

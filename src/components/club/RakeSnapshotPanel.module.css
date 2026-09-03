@@ -1,0 +1,824 @@
+/*
+ * RAKE SNAPSHOT — #smarterCasinoRealism
+ * A machined instrument strip. Brushed panel, hairline seams, one energy
+ * accent, tabular figures. Nothing here is decorative that is not also a seam,
+ * an edge, or a reading.
+ */
+
+.panel {
+  --energy: #279cff;
+  --energy-soft: #7fc8ff;
+  --gold: #d3a449;
+  --positive: #45d696;
+  --negative: #ff6875;
+  position: relative;
+  margin-top: 1rem;
+  padding: 0.95rem 1rem 0.85rem;
+  overflow: hidden;
+  color: #e6edf4;
+  background:
+    linear-gradient(180deg, rgba(24, 40, 56, 0.5), transparent 38%),
+    linear-gradient(180deg, #0b1118, #070b10);
+  border: 1px solid rgba(174, 189, 203, 0.27);
+  border-radius: 4px;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.045),
+    inset 0 -1px rgba(0, 0, 0, 0.9),
+    0 12px 30px rgba(0, 0, 0, 0.35);
+  clip-path: polygon(
+    0 0,
+    calc(100% - 10px) 0,
+    100% 10px,
+    100% 100%,
+    10px 100%,
+    0 calc(100% - 10px)
+  );
+}
+
+.panel::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, var(--energy), rgba(39, 156, 255, 0.12) 36%, transparent 74%);
+  box-shadow: 0 0 12px rgba(39, 156, 255, 0.28);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------------------------------------------------------------- head --- */
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-bottom: 0.7rem;
+  border-bottom: 1px solid rgba(174, 189, 203, 0.14);
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #788895;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.light {
+  width: 6px;
+  height: 6px;
+  background: var(--energy);
+  border: 1px solid #d7efff;
+  border-radius: 1px;
+  box-shadow: 0 0 9px rgba(39, 156, 255, 0.75);
+}
+
+.identity h2 {
+  margin: 0.28rem 0 0;
+  color: #f2f7fc;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 1.28rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.subject {
+  margin: 0.15rem 0 0;
+  color: #8795a3;
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
+}
+
+.headActions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.scopes {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: #04070a;
+  border: 1px solid rgba(174, 189, 203, 0.18);
+  border-radius: 3px;
+}
+
+.scope,
+.period,
+.exportBtn {
+  min-height: 40px;
+  padding: 0 0.85rem;
+  color: #72818e;
+  background: #0b1117;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 1px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.73rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    color 150ms ease,
+    background 150ms ease;
+}
+
+/* NO HOVER EFFECTS (Dan 2026-08-29, binding). :active fires on touch, which is
+   where the majority of these chips are pressed. */
+.scope:active,
+.period:active {
+  color: #cfe3f4;
+  background: #101922;
+}
+
+.scope.active,
+.period.active {
+  color: #e7f4fe;
+  background: #101b24;
+  border-bottom-color: var(--energy);
+  box-shadow: inset 0 -5px 12px rgba(39, 156, 255, 0.08);
+}
+
+.scope:focus-visible,
+.period:focus-visible,
+.exportBtn:focus-visible {
+  outline: 2px solid var(--energy);
+  outline-offset: -2px;
+}
+
+.exportBtn {
+  border: 1px solid rgba(174, 189, 203, 0.22);
+  color: var(--energy-soft);
+  background: #0c131a;
+}
+
+.exportBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* -------------------------------------------------------------- period --- */
+
+.periodRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+.periods {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 2px;
+  padding: 3px;
+  background: #04070a;
+  border: 1px solid rgba(174, 189, 203, 0.18);
+  border-radius: 3px;
+}
+
+.periods .period {
+  flex: 1 1 0;
+  padding: 0 0.5rem;
+}
+
+.rangeChip,
+.customRange {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 46px;
+  padding: 0.4rem 0.75rem;
+  color: #d9e2e9;
+  background: #05090d;
+  border: 1px solid rgba(174, 189, 203, 0.18);
+  border-radius: 2px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.customRange input {
+  min-height: 34px;
+  padding: 0.2rem 0.4rem;
+  color: #dce6ee;
+  background: #0b1117;
+  border: 1px solid rgba(174, 189, 203, 0.22);
+  border-radius: 2px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color-scheme: dark;
+}
+
+.rangeDivider {
+  color: #4e5d69;
+}
+
+.rangeTz {
+  padding-left: 0.4rem;
+  border-left: 1px solid rgba(174, 189, 203, 0.18);
+  color: #5ea9e2;
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.error {
+  margin: 0.7rem 0 0;
+  padding: 0.55rem 0.7rem;
+  color: #ffd2d6;
+  background: rgba(255, 104, 117, 0.08);
+  border-left: 2px solid var(--negative);
+  border-radius: 2px;
+  font-size: 0.76rem;
+}
+
+/* --------------------------------------------------------------- tiles --- */
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2px;
+  margin: 0.8rem 0 0;
+  padding: 2px;
+  background: rgba(174, 189, 203, 0.12);
+  border-radius: 3px;
+}
+
+.tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  min-height: 96px;
+  padding: 0.7rem 0.75rem;
+  background: linear-gradient(180deg, #0e1620, #090e14);
+}
+
+.tile.headline {
+  background: linear-gradient(180deg, #12202c, #0a1017);
+}
+
+.tile.headline::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: linear-gradient(180deg, var(--energy), rgba(39, 156, 255, 0.1));
+}
+
+.tile dt {
+  color: #78889a;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.tile dd {
+  margin: 0;
+}
+
+.value {
+  color: #f1f7fc;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.32rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+.headline .value {
+  color: #ffffff;
+  font-size: 1.62rem;
+  text-shadow: 0 0 22px rgba(39, 156, 255, 0.28);
+}
+
+.pos {
+  color: var(--positive);
+}
+
+.neg {
+  color: var(--negative);
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: auto !important;
+  color: #6f7e8c;
+  font-size: 0.65rem;
+  letter-spacing: 0.02em;
+}
+
+.split {
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.delta {
+  padding: 0.1rem 0.32rem;
+  border-radius: 2px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.up {
+  color: var(--positive);
+  background: rgba(69, 214, 150, 0.1);
+}
+
+.down {
+  color: var(--negative);
+  background: rgba(255, 104, 117, 0.1);
+}
+
+.flat {
+  color: #7a8896;
+  background: rgba(174, 189, 203, 0.08);
+}
+
+/* --------------------------------------------------------------- trend --- */
+
+.trend {
+  margin: 0.75rem 0 0;
+  padding: 0.65rem 0.75rem 0.5rem;
+  background: #05090d;
+  border: 1px solid rgba(174, 189, 203, 0.14);
+  border-radius: 3px;
+}
+
+.trend figcaption {
+  color: #78889a;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 74px;
+  margin-top: 0.5rem;
+}
+
+.bar {
+  flex: 1 1 0;
+  min-width: 2px;
+  background: linear-gradient(180deg, var(--energy-soft), rgba(39, 156, 255, 0.22));
+  border-radius: 1px 1px 0 0;
+  transition: filter 150ms ease;
+}
+
+.bar:active {
+  filter: brightness(1.4);
+}
+
+.trendAxis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(174, 189, 203, 0.1);
+  color: #66737f;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ----------------------------------------------------------- breakdown --- */
+
+.breakdown {
+  margin-top: 0.75rem;
+}
+
+.breakdown h3 {
+  margin: 0 0 0.45rem;
+  color: #78889a;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.breakdown ul {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 268px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  background: rgba(174, 189, 203, 0.1);
+  border-radius: 2px;
+}
+
+/* THE COLUMN COUNT BELONGS TO THE LIST, NOT TO .breakdown li.
+   Three lists share this element and they render four cells, six cells and
+   five. Three unconditional grid-template-columns rules had accumulated here,
+   one per phase, each overriding the last - so whichever shipped most recently
+   governed all three, and the club list had been laid into the agent list's
+   grid ever since the agent breakdown was added. Empty trailing columns
+   squeeze the real ones and nothing errors, which is why it survived. */
+.breakdown li {
+  display: grid;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 42px;
+  padding: 0.3rem 0.7rem;
+  background: #0a1016;
+}
+
+.rowName {
+  overflow: hidden;
+  color: #dbe5ee;
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowName em {
+  margin-left: 0.4rem;
+  color: #5f6d79;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.62rem;
+  font-style: normal;
+}
+
+.rowBar {
+  display: block;
+  height: 5px;
+  overflow: hidden;
+  background: rgba(174, 189, 203, 0.1);
+  border-radius: 1px;
+}
+
+.rowBar > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--energy), var(--energy-soft));
+}
+
+.rowFee,
+.rowShare {
+  color: #eef4fa;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.rowShare {
+  color: #6f7e8c;
+  font-size: 0.68rem;
+}
+
+.foot {
+  margin: 0.6rem 0 0;
+  color: #5f6d79;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* -------------------------------------------------------------- narrow --- */
+
+@media (max-width: 860px) {
+  .tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .periods {
+    flex-wrap: wrap;
+  }
+
+  .periods .period {
+    flex: 1 1 30%;
+  }
+
+  .rangeChip,
+  .customRange {
+    flex: 1 1 100%;
+  }
+
+  .listClub li {
+    grid-template-columns: minmax(0, 1fr) 92px 52px;
+  }
+
+  .rowBar {
+    display: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .headActions {
+    flex: 1 1 100%;
+    justify-content: space-between;
+  }
+
+  .headline .value {
+    font-size: 1.4rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scope,
+  .period,
+  .bar {
+    transition: none;
+  }
+}
+
+/* ------------------------------------------------ breakdown, extended --- */
+
+/* Four columns became six once agent and downline rows arrived: name, count,
+   bar, direct figure, network figure. The club list keeps the original four. */
+/* Union scope: name, bar, fee, share. */
+.listClub li {
+  grid-template-columns: minmax(0, 1.4fr) minmax(70px, 1fr) 100px 58px;
+}
+
+/* Downline: name, count, bar, rake, their own downline. */
+.listDownline li {
+  grid-template-columns: minmax(0, 1.3fr) 108px minmax(60px, 0.8fr) 100px 92px;
+}
+
+.legend {
+  display: grid;
+  grid-template-columns: 1fr 96px 88px 96px;
+  gap: 0.6rem;
+  padding: 0 0.7rem 0.3rem;
+  color: #66737f;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.legend > span:first-child {
+  grid-column: 2;
+  text-align: right;
+}
+
+.legend > span:last-child {
+  text-align: right;
+}
+
+.rowCount {
+  overflow: hidden;
+  color: #6f7e8c;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.64rem;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowNetwork {
+  color: #9fb3c4;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Players with no agent. Real rake, no owner - present but not competing for
+   attention with the agents who are being ranked. */
+.rowMuted {
+  background: #080d12;
+}
+
+.rowMuted .rowName,
+.rowMuted .rowFee {
+  color: #8492a0;
+}
+
+.drill {
+  padding: 0;
+  color: #7fc8ff;
+  background: none;
+  border: 0;
+  border-bottom: 1px dotted rgba(127, 200, 255, 0.45);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* NO HOVER EFFECTS (Dan 2026-08-29, binding). The dotted underline is the
+   affordance, present at rest, so a phone can see the row opens without
+   needing a state it can never enter. */
+.drill:active {
+  color: #cfe8ff;
+  border-bottom-color: #cfe8ff;
+}
+
+.drill:focus-visible {
+  outline: 2px solid var(--energy);
+  outline-offset: 2px;
+}
+
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  margin-bottom: 0.45rem;
+}
+
+.crumbs button {
+  min-height: 30px;
+  padding: 0 0.5rem;
+  color: #7fc8ff;
+  background: #0b1117;
+  border: 1px solid rgba(174, 189, 203, 0.18);
+  border-radius: 2px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.crumbs button:disabled {
+  color: #e7f4fe;
+  background: #101b24;
+  border-color: rgba(117, 190, 255, 0.4);
+  cursor: default;
+}
+
+.crumbs button:not(:disabled):active {
+  background: #101922;
+}
+
+.crumbs button:focus-visible {
+  outline: 2px solid var(--energy);
+  outline-offset: -2px;
+}
+
+.rowNote,
+.notice {
+  margin: 0.5rem 0 0;
+  color: #6f7e8c;
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+/* Not an error. A boundary the operator has to know about to read the table
+   correctly, which is a different thing and must not look like a failure. */
+.notice {
+  padding: 0.5rem 0.65rem;
+  color: #d8c79a;
+  background: rgba(211, 164, 73, 0.07);
+  border-left: 2px solid var(--gold);
+  border-radius: 2px;
+}
+
+@media (max-width: 860px) {
+  .listDownline li {
+    grid-template-columns: minmax(0, 1fr) 92px 84px;
+  }
+
+  .legend,
+  .rowCount {
+    display: none;
+  }
+
+  .rowNetwork {
+    font-size: 0.66rem;
+  }
+}
+
+/* ---------------------------------------------------------------- pager --- */
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  background: #05090d;
+  border: 1px solid rgba(174, 189, 203, 0.14);
+  border-radius: 2px;
+}
+
+.pagerCount {
+  color: #78889a;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+}
+
+.pagerBtn {
+  min-height: 38px;
+  padding: 0 0.9rem;
+  color: var(--energy-soft);
+  background: #0c131a;
+  border: 1px solid rgba(174, 189, 203, 0.22);
+  border-radius: 2px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* NO HOVER EFFECTS (Dan 2026-08-29, binding): :active fires on touch, which is
+   where this is pressed. */
+.pagerBtn:active {
+  color: #e7f4fe;
+  background: #101b24;
+}
+
+.pagerBtn:focus-visible {
+  outline: 2px solid var(--energy);
+  outline-offset: -2px;
+}
+
+.pagerBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+@media (max-width: 520px) {
+  .pager {
+    justify-content: center;
+  }
+
+  .pagerBtn {
+    flex: 1 1 100%;
+  }
+}
+
+/* ----------------------------------------------------------------- cost --- */
+
+/* The agent rows gained a sixth column. The club list keeps its four, so this
+   override sits after the shared rule and applies only where a Cost column
+   actually exists. */
+/* Agents: name, players, bar, direct, network, cost. */
+.listAgent li {
+  grid-template-columns: minmax(0, 1.2fr) 96px minmax(50px, 0.7fr) 96px 88px 96px;
+}
+
+/* Money the club owes, not money it took. Gold rather than the energy blue the
+   rake columns use, so an operator scanning the table is never one glance away
+   from reading a cost as a takings. */
+.rowCost {
+  color: var(--gold);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+@media (max-width: 860px) {
+  .listAgent li {
+    grid-template-columns: minmax(0, 1fr) 88px 88px;
+  }
+
+  /* Direct rake and cost survive the narrow layout; network is the one that
+     can be inferred from the rows beneath it. */
+  .rowNetwork {
+    display: none;
+  }
+}

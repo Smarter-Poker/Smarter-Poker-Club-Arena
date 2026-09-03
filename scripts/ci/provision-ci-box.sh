@@ -276,7 +276,13 @@ PW_CACHE="${PW_CACHE:-/home/ci/.cache/ms-playwright}"
 install -d -o ci -g ci "$PW_CACHE"
 missing=$(
   find "$PW_CACHE" -type f \( -name chrome -o -name headless_shell -o -name MiniBrowser \) 2>/dev/null |
-  while read -r bin; do ldd "$bin" 2>/dev/null | grep -F "not found" | sed "s|^|$(basename "$(dirname "$bin")")/$(basename "$bin"): |"; done
+  while read -r bin; do
+    # `grep` exits 1 when NOTHING is missing - the healthy case - and under
+    # `set -o pipefail` inside this `set -e` substitution that used to abort
+    # the provisioner on a box whose browsers were fine (estate-ci-3,
+    # 2026-09-03, second run). A miss is data here, not a failure.
+    { ldd "$bin" 2>/dev/null | grep -F "not found" || true; } | sed "s|^|$(basename "$(dirname "$bin")")/$(basename "$bin"): |"
+  done
 )
 bins=$(find "$PW_CACHE" -type f \( -name chrome -o -name headless_shell -o -name MiniBrowser \) 2>/dev/null | wc -l)
 if [ -z "$missing" ] && [ "$bins" -gt 0 ]; then

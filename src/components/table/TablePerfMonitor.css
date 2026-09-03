@@ -1,0 +1,56 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+ *  TablePerfMonitor.css
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.perf-monitor {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 9999;
+  padding: 8px 12px;
+  background: rgba(13, 17, 23, 0.92);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  font-family: 'SF Mono', 'Menlo', monospace;
+  min-width: 110px;
+  animation: pmFadeIn 0.2s ease;
+}
+@keyframes pmFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.pm-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 1px 0;
+}
+.pm-label {
+  font-size: 0.55rem;
+  font-weight: 600;
+  color: #6e7681;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.pm-value {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #e4e6eb;
+  font-variant-numeric: tabular-nums;
+}
+.pm-close {
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  background: none;
+  border: none;
+  color: #484f58;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0;
+}

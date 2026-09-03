@@ -1,0 +1,385 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  TOURNAMENT ADD-ON MODAL — 60-Second Add-On Window
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Displays to all tournament players when the add-on period starts
+ * (60 seconds after re-entry period ends).
+ * Shows add-on cost, chips received, wallet balance, and countdown timer.
+ */
+
+import { useState, useEffect, useRef } from 'react';
+import { haptic, soundService } from '../../services/SoundService';
+
+import { safeErrorMessage } from '../../utils/safeErrorMessage';
+// Whole-number tournament money (Dan 2026-08-20).
+import { money } from '../../utils/buyIn';
+
+interface AddOnModalProps {
+  isVisible: boolean;
+  /** Base add-on cost — the part that feeds the prize pool. */
+  addOnCost: number;
+  /**
+   * House fee charged ON TOP of addOnCost (10% by default). The modal used to
+   * be unaware of it and quoted the base only, while processAddOn debits
+   * base + fee.
+   */
+  addOnFee?: number;
+  addOnChips: number;
+  walletBalance: number;
+  timeRemaining: number; // seconds
+  /**
+   * Resolve TRUE when the chips were actually added, FALSE when the purchase
+   * was refused. Before 2026-08-20 this was `Promise<void>` and the parent
+   * swallowed its own errors, so the modal announced "Add-On Accepted — +N
+   * chips added" on every failed add-on. Required boolean, not `boolean | void`,
+   * so reverting the parent to a void handler fails the build.
+   */
+  onAccept: () => Promise<boolean>;
+  onDecline: () => void;
+}
+
+export default function AddOnModal({
+  isVisible,
+  addOnCost,
+  addOnFee = 0,
+  addOnChips,
+  walletBalance,
+  timeRemaining: initialTime,
+  onAccept,
+  onDecline,
+}: AddOnModalProps) {
+  const [countdown, setCountdown] = useState(initialTime);
+  const [processing, setProcessing] = useState(false);
+  const [decided, setDecided] = useState(false);
+  const [result, setResult] = useState<'accepted' | 'declined' | 'insufficient' | 'failed' | null>(
+    null
+  );
+  const [failureMessage, setFailureMessage] = useState<string | null>(null);
+  const processingRef = useRef(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const onDeclineRef = useRef(onDecline);
+  onDeclineRef.current = onDecline;
+  const decidedRef = useRef(false);
+
+  // Whole chips (Dan 2026-08-20) - no decimal add-on prices.
+  const totalCost = Math.round(addOnCost) + Math.round(addOnFee);
+  // Gate on the TOTAL, and never on a zero price. `addOnCost` is fed from a
+  // realtime broadcast that defaults it to 0 when the field is missing; a 0
+  // price made canAfford unconditionally true and let players buy at a price
+  // the modal never actually showed them.
+  const priceKnown = totalCost > 0;
+  const canAfford = priceKnown && walletBalance >= totalCost;
+
+  useEffect(() => {
+    if (!isVisible) {
+      setDecided(false);
+      decidedRef.current = false;
+      setResult(null);
+      setFailureMessage(null);
+      processingRef.current = false;
+      setProcessing(false);
+      return;
+    }
+
+    decidedRef.current = false;
+    setCountdown(initialTime);
+    timerRef.current = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          // Time expired — auto-decline
+          if (timerRef.current) clearInterval(timerRef.current);
+          if (!decidedRef.current) {
+            decidedRef.current = true;
+            setDecided(true);
+            setResult('declined');
+            onDeclineRef.current();
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isVisible, initialTime]);
+
+  const handleAccept = async () => {
+    // The confirm sound used to fire BEFORE this guard, so a locked-out or
+    // double tap still played "purchase confirmed" at the player.
+    if (processingRef.current || processing || decided || !canAfford) return;
+    processingRef.current = true;
+    soundService.playBuyInConfirm();
+    haptic.medium();
+    setProcessing(true);
+    try {
+      const ok = await onAccept();
+      if (timerRef.current) clearInterval(timerRef.current);
+      setDecided(true);
+      setResult(ok ? 'accepted' : 'failed');
+      if (!ok) {
+        setFailureMessage('The add-on was not completed. Your wallet was not charged.');
+      }
+    } catch (err: any) {
+      if (timerRef.current) clearInterval(timerRef.current);
+      setDecided(true);
+      if (err?.message?.includes('Insufficient')) {
+        setResult('insufficient');
+      } else {
+        setResult('failed');
+        setFailureMessage(
+          safeErrorMessage(err, 'The add-on was not completed. Your wallet was not charged.')
+        );
+      }
+    } finally {
+      processingRef.current = false;
+      setProcessing(false);
+    }
+  };
+
+  const handleDecline = () => {
+    if (processingRef.current || processing || decided) return;
+    haptic.light();
+    setDecided(true);
+    setResult('declined');
+    if (timerRef.current) clearInterval(timerRef.current);
+    onDecline();
+  };
+
+  if (!isVisible) return null;
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(0,0,0,0.7)',
+        backdropFilter: 'blur(4px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 9999,
+        padding: 16,
+      }}
+    >
+      <div
+        style={{
+          background: 'linear-gradient(145deg, #1a1a2e 0%, #16213e 100%)',
+          border: '1px solid rgba(63,185,80,0.3)',
+          borderRadius: 16,
+          padding: 24,
+          width: '100%',
+          maxWidth: 360,
+          textAlign: 'center',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+        }}
+      >
+        {/* Header */}
+        <div style={{ fontSize: 18, fontWeight: 700, color: '#3fb950', marginBottom: 4 }}>
+          Add-On Available
+        </div>
+        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 16 }}>
+          Re-Entry Period Has Ended
+        </div>
+
+        {/* Countdown */}
+        <div
+          style={{
+            background: countdown <= 10 ? 'rgba(239,68,68,0.15)' : 'rgba(63,185,80,0.1)',
+            borderRadius: 12,
+            padding: '12px 0',
+            marginBottom: 16,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 32,
+              fontWeight: 800,
+              color: countdown <= 10 ? '#ef4444' : '#3fb950',
+            }}
+          >
+            {countdown}s
+          </div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>Time Remaining</div>
+        </div>
+
+        {/* Add-On Details */}
+        {!decided ? (
+          <>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                padding: '8px 16px',
+                marginBottom: 4,
+              }}
+            >
+              <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Add-On Cost</span>
+              <span style={{ color: '#fff', fontWeight: 600, fontSize: 14 }}>
+                {money(addOnCost)} Chips
+              </span>
+            </div>
+            {addOnFee > 0 && (
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  padding: '8px 16px',
+                  marginBottom: 4,
+                }}
+              >
+                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>House Fee</span>
+                <span style={{ color: '#fff', fontWeight: 600, fontSize: 14 }}>
+                  {money(addOnFee)} Chips
+                </span>
+              </div>
+            )}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                padding: '8px 16px',
+                marginBottom: 4,
+                borderTop: '1px solid rgba(255,255,255,0.1)',
+                paddingTop: 12,
+              }}
+            >
+              <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Total Charged</span>
+              <span style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>
+                {money(totalCost)} Chips
+              </span>
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                padding: '8px 16px',
+                marginBottom: 4,
+              }}
+            >
+              <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Chips Received</span>
+              <span style={{ color: '#3fb950', fontWeight: 600, fontSize: 14 }}>
+                +{addOnChips.toLocaleString()} Chips
+              </span>
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                padding: '8px 16px',
+                marginBottom: 16,
+                borderTop: '1px solid rgba(255,255,255,0.1)',
+                paddingTop: 12,
+              }}
+            >
+              <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Your Balance</span>
+              <span
+                style={{ color: canAfford ? '#fbbf24' : '#ef4444', fontWeight: 600, fontSize: 14 }}
+              >
+                {walletBalance.toLocaleString()} Chips
+              </span>
+            </div>
+
+            {!priceKnown && (
+              <div style={{ color: '#ef4444', fontSize: 12, marginBottom: 12 }}>
+                Add-On Price Unavailable - Cannot Purchase Right Now
+              </div>
+            )}
+            {priceKnown && !canAfford && (
+              <div style={{ color: '#ef4444', fontSize: 12, marginBottom: 12 }}>
+                Insufficient Balance - You Need {totalCost.toLocaleString()} Chips
+              </div>
+            )}
+
+            {/* Buttons */}
+            <div style={{ display: 'flex', gap: 12 }}>
+              <button
+                type="button"
+                onClick={handleDecline}
+                style={{
+                  flex: 1,
+                  padding: '12px 0',
+                  borderRadius: 10,
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  background: 'transparent',
+                  color: '#fff',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  minHeight: 48,
+                }}
+              >
+                Decline
+              </button>
+              <button
+                type="button"
+                onClick={handleAccept}
+                disabled={!canAfford || processing}
+                style={{
+                  flex: 1,
+                  padding: '12px 0',
+                  borderRadius: 10,
+                  border: 'none',
+                  background: canAfford
+                    ? 'linear-gradient(135deg, #3fb950 0%, #2ea043 100%)'
+                    : '#374151',
+                  color: '#fff',
+                  fontSize: 14,
+                  fontWeight: 700,
+                  cursor: canAfford ? 'pointer' : 'not-allowed',
+                  opacity: processing ? 0.6 : 1,
+                  minHeight: 48,
+                }}
+              >
+                {processing
+                  ? 'Processing...'
+                  : priceKnown
+                    ? `Accept For ${totalCost.toLocaleString()}`
+                    : 'Accept Add-On'}
+              </button>
+            </div>
+          </>
+        ) : (
+          /* Result display */
+          <div style={{ padding: '16px 0' }}>
+            {result === 'accepted' && (
+              <div style={{ color: '#3fb950', fontSize: 16, fontWeight: 600 }}>
+                Add-On Accepted - +{addOnChips.toLocaleString()} Chips Added
+              </div>
+            )}
+            {result === 'declined' && (
+              <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 16, fontWeight: 600 }}>
+                Add-On Declined
+              </div>
+            )}
+            {result === 'insufficient' && (
+              <div style={{ color: '#ef4444', fontSize: 16, fontWeight: 600 }}>
+                Insufficient Balance - Add-On Denied
+              </div>
+            )}
+            {result === 'failed' && (
+              <div style={{ color: '#ef4444', fontSize: 15, fontWeight: 600 }} role="alert">
+                Add-On Failed
+                <div
+                  style={{
+                    color: 'rgba(255,255,255,0.65)',
+                    fontSize: 12,
+                    fontWeight: 500,
+                    marginTop: 6,
+                  }}
+                >
+                  {failureMessage}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

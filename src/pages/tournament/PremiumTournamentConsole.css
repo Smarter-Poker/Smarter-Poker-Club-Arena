@@ -1,0 +1,1069 @@
+/*
+ * SHARK CLUB PREMIUM TOURNAMENT CONSOLE
+ *
+ * This is the final skin over the existing seven-tab tournament contract. It
+ * deliberately changes no tournament arithmetic, actions or data ownership.
+ * The shell, rail, content well and footer are one connected machine at every
+ * width; individual tabs keep their own vertical scroller.
+ */
+
+.tournament-details {
+  --pt-black: #020407;
+  --pt-deep: #070b10;
+  --pt-surface: #0d141c;
+  --pt-raised: #151e28;
+  --pt-steel: #aeb9c5;
+  --pt-steel-dark: #46515c;
+  --pt-blue: #168bff;
+  --pt-cyan: #65d9ff;
+  --pt-green: #32d27a;
+  --pt-red: #ef3d4f;
+  position: relative;
+  isolation: isolate;
+  padding: 9px;
+  color: #eef3f8;
+  font-family: 'Rajdhani', 'Roboto Condensed', var(--font-sans, system-ui, sans-serif);
+  background:
+    radial-gradient(circle at 50% -20%, rgba(22, 139, 255, 0.2), transparent 36%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 4px), #020407;
+  border: 1px solid #707b86;
+  border-radius: 4px;
+  box-shadow:
+    inset 0 0 0 2px #111820,
+    inset 0 0 0 4px #020407,
+    inset 0 0 0 5px rgba(135, 151, 166, 0.45),
+    0 16px 42px rgba(0, 0, 0, 0.72);
+}
+
+.tournament-details::before,
+.tournament-details::after {
+  content: '';
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.tournament-details::before {
+  inset: 3px;
+  border: 1px solid rgba(214, 224, 233, 0.38);
+  clip-path: polygon(
+    0 14px,
+    14px 0,
+    calc(100% - 14px) 0,
+    100% 14px,
+    100% calc(100% - 14px),
+    calc(100% - 14px) 100%,
+    14px 100%,
+    0 calc(100% - 14px)
+  );
+  box-shadow: inset 0 0 14px rgba(22, 139, 255, 0.18);
+}
+
+.tournament-details::after {
+  left: 35%;
+  right: 35%;
+  top: 4px;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    #a5e7ff 22%,
+    #168bff 50%,
+    #a5e7ff 78%,
+    transparent
+  );
+  box-shadow: 0 0 10px #168bff;
+}
+
+.tournament-details .details-header {
+  position: relative;
+  min-height: 54px;
+  padding: 10px 18px 9px;
+  justify-content: center;
+  background:
+    linear-gradient(180deg, rgba(36, 45, 54, 0.98), rgba(4, 7, 10, 0.98) 62%, #111820), #080c11;
+  border: 1px solid #53606d;
+  border-bottom-color: #151d25;
+  clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%, 0 10px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -3px 0 #020406,
+    0 0 16px rgba(22, 139, 255, 0.13);
+}
+
+.tournament-details .details-header::before {
+  content: 'TOURNAMENT LOBBY';
+  position: absolute;
+  top: 8px;
+  left: 18px;
+  color: var(--pt-cyan);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.24em;
+}
+
+.tournament-details .details-header h1 {
+  margin: 10px 0 0;
+  color: transparent;
+  font-size: clamp(20px, 2.8vw, 30px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  background: linear-gradient(180deg, #ffffff 0%, #c4ccd4 44%, #68727c 53%, #e5ebf0 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  filter: drop-shadow(0 2px 1px #000);
+}
+
+.tournament-details .details-tabs {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 3px;
+  padding: 8px 9px;
+  overflow: visible;
+  background: linear-gradient(180deg, #151d25, #030609 26%, #080d12 78%, #171f27), #05080b;
+  border: 1px solid #4d5a66;
+  border-top-color: #a7b0b8;
+  border-bottom-color: #77838e;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 #000,
+    0 4px 10px rgba(0, 0, 0, 0.55);
+}
+
+.tournament-details .details-tabs .tab {
+  position: relative;
+  flex: 1 1 110px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 6px;
+  border: 1px solid #46525e;
+  border-radius: 2px;
+  color: #aeb8c2;
+  font:
+    800 11px/1 'Rajdhani',
+    'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.115em;
+  text-transform: uppercase;
+  background:
+    linear-gradient(135deg, transparent 8px, #1a232c 8px) top left,
+    linear-gradient(45deg, transparent 8px, #070b10 8px) bottom left;
+  background-size: 100% 52%;
+  background-repeat: no-repeat;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.17),
+    inset 0 -2px 3px #000,
+    0 2px 4px rgba(0, 0, 0, 0.75);
+}
+
+.tournament-details .details-tabs .tab::after {
+  content: '';
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  bottom: 2px;
+  height: 1px;
+  background: rgba(101, 217, 255, 0.15);
+}
+
+.tournament-details .details-tabs .tab.active {
+  color: #f7fbff;
+  border-color: #74dfff;
+  background:
+    linear-gradient(135deg, transparent 8px, #147ee8 8px) top left,
+    linear-gradient(45deg, transparent 8px, #063260 8px) bottom left;
+  background-size: 100% 52%;
+  background-repeat: no-repeat;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.52),
+    inset 0 -3px 5px #031528,
+    0 0 11px rgba(22, 139, 255, 0.62);
+  text-shadow:
+    0 1px 1px #000,
+    0 0 8px #168bff;
+}
+
+.tournament-details .details-tabs .tab:focus-visible {
+  outline: 2px solid #d4f5ff;
+  outline-offset: 1px;
+}
+
+.tournament-details .details-title {
+  position: relative;
+  margin: 0;
+  padding: 12px 18px 10px;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(22, 139, 255, 0.08),
+      transparent 18%,
+      transparent 82%,
+      rgba(22, 139, 255, 0.08)
+    ),
+    linear-gradient(180deg, #101821, #070b10);
+  border-inline: 1px solid #45515d;
+  border-bottom: 1px solid #1f78b8;
+  box-shadow: inset 0 -1px 0 rgba(101, 217, 255, 0.14);
+}
+
+.tournament-details .tournament-title {
+  gap: 12px;
+}
+
+.tournament-details .tournament-title h2 {
+  color: transparent;
+  font-size: clamp(17px, 2.2vw, 24px);
+  font-weight: 800;
+  letter-spacing: 0.012em;
+  background: linear-gradient(180deg, #fff, #c2cbd4 55%, #77818b);
+  background-clip: text;
+  -webkit-background-clip: text;
+  filter: drop-shadow(0 2px 1px #000);
+}
+
+.tournament-details .tournament-id {
+  color: #778694;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tournament-details .qr-btn {
+  min-width: 38px;
+  min-height: 38px;
+  padding: 0;
+  border: 1px solid #60707f;
+  border-radius: 2px;
+  color: var(--pt-cyan);
+  background: linear-gradient(180deg, #1b2631, #080d12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 0 9px rgba(22, 139, 255, 0.2);
+}
+
+.tournament-details .tournament-desc {
+  margin-top: 4px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.tournament-details .tournament-desc p {
+  font-family: 'Rajdhani', 'Roboto Condensed', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.tournament-details .tournament-buyin {
+  color: #b7c2cd;
+}
+
+.tournament-details .tournament-blurb {
+  margin-top: 0 !important;
+  color: #758493 !important;
+  text-transform: none !important;
+}
+
+.tournament-details .details-content {
+  position: relative;
+  /* Dan 2026-08-30: "EACH PAGE NEEDS TO BE SCROLLABLE UP AND DOWN. YOU
+     CURRENTLY CAN'T." The one-scroller contract lives on the base
+     `.details-content` (TournamentDetails.css) — but this compound selector
+     outranks it, so any property a future skin adds here can silently cost
+     the scrollbar, and there is no pin on load order. The scroll contract is
+     therefore restated AT THE WINNING SPECIFICITY: this box scrolls, its
+     children do not clip it. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 10px 12px;
+  background:
+    radial-gradient(circle at 50% 0, rgba(22, 139, 255, 0.075), transparent 34%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.009) 0 1px, transparent 1px 4px), #05090d;
+  border-inline: 1px solid #46525d;
+}
+
+.tournament-details .details-content::before,
+.tournament-details .details-content::after {
+  content: '';
+  position: absolute;
+  z-index: 3;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    #168bff 18%,
+    #071d35 50%,
+    #168bff 82%,
+    transparent
+  );
+  box-shadow: 0 0 8px rgba(22, 139, 255, 0.55);
+}
+
+.tournament-details .details-content::before {
+  left: 2px;
+}
+.tournament-details .details-content::after {
+  right: 2px;
+}
+
+.tournament-details .details-content > * {
+  padding-right: 5px;
+  scrollbar-color: #168bff #060a0e;
+}
+
+.tournament-details .details-content > *::-webkit-scrollbar {
+  width: 8px;
+}
+.tournament-details .details-content > *::-webkit-scrollbar-track {
+  background: #05080c;
+  border-left: 1px solid #202a33;
+}
+.tournament-details .details-content > *::-webkit-scrollbar-thumb {
+  border: 2px solid #05080c;
+  border-radius: 0;
+  background: linear-gradient(180deg, #65d9ff, #168bff 48%, #063a72);
+}
+
+/* Shared tab vocabulary: engraved plates instead of independent SaaS cards. */
+.tournament-details .tl-panel,
+.tournament-details .tl-stat,
+.tournament-details .tl-row {
+  border-radius: 3px;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.tournament-details .tl-panel {
+  border: 1px solid #566471;
+  background:
+    repeating-linear-gradient(92deg, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 4px),
+    linear-gradient(165deg, #17212b, #080d12 52%, #111922);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 0 0 2px #05080b,
+    inset 0 -2px 0 #000,
+    0 7px 16px rgba(0, 0, 0, 0.56);
+}
+
+.tournament-details .tl-panel::before {
+  height: 2px;
+  border-radius: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 4%,
+    #65727e 20%,
+    #d8e0e7 50%,
+    #65727e 80%,
+    transparent 96%
+  );
+  opacity: 0.65;
+}
+
+.tournament-details .tl-section-title,
+.tournament-details .tl-section-head h3,
+.tournament-details .dov-band__title {
+  color: var(--pt-cyan);
+  font-family: 'Rajdhani', 'Roboto Condensed', sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-shadow: 0 0 10px rgba(22, 139, 255, 0.48);
+}
+
+.tournament-details .tl-stat {
+  min-height: 66px;
+  border: 1px solid #455462;
+  background: linear-gradient(180deg, #1a2632, #080d13 72%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 0 0 2px #070a0e,
+    0 4px 10px rgba(0, 0, 0, 0.5);
+}
+
+.tournament-details .tl-stat__label {
+  color: #8796a5;
+  font-size: 9px;
+  letter-spacing: 0.15em;
+}
+
+.tournament-details .tl-stat__value,
+.tournament-details .tl-num,
+.tournament-details .tl-clock {
+  color: transparent;
+  font-family: 'Rajdhani', 'Roboto Condensed', sans-serif;
+  background: linear-gradient(180deg, #fff, #c6ced6 58%, #76808a);
+  background-clip: text;
+  -webkit-background-clip: text;
+  filter: drop-shadow(0 2px 1px #000);
+}
+
+.tournament-details .tl-stat__value--accent,
+.tournament-details .tl-num--accent {
+  color: var(--pt-cyan);
+  background: none;
+  filter: drop-shadow(0 0 7px rgba(22, 139, 255, 0.7));
+}
+
+.tournament-details .tl-stat__value--good {
+  color: var(--pt-green);
+  background: none;
+}
+.tournament-details .tl-stat__value--warn {
+  color: #ff727f;
+  background: none;
+}
+
+.tournament-details .tl-row {
+  border: 1px solid #394754;
+  background: linear-gradient(180deg, #17222e, #080d13);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 0 0 2px #05080c,
+    0 3px 8px rgba(0, 0, 0, 0.46);
+}
+
+.tournament-details .tl-row--hero {
+  border-color: #3b9eff;
+  background: linear-gradient(180deg, #1859a1, #071b35 72%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 0 0 2px #061325,
+    0 0 13px rgba(22, 139, 255, 0.45);
+}
+
+.tournament-details .tl-badge {
+  border-radius: 2px;
+  border-color: #4d5d6d;
+  background: linear-gradient(180deg, #1a2632, #070b10);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.13);
+}
+
+.tournament-details .tl-badge--action {
+  border-color: #168bff;
+  color: #dff6ff;
+  background: linear-gradient(180deg, #147fe8, #063b74);
+}
+
+.tournament-details .tl-badge--good {
+  border-color: #32d27a;
+  color: #bdfbd7;
+  background: linear-gradient(180deg, #14763e, #07311b);
+}
+
+.tournament-details .tl-meter {
+  border-radius: 1px;
+  background: #020406;
+  border: 1px solid #1f2b35;
+}
+
+.tournament-details .tl-meter__fill {
+  border-radius: 0;
+  background: linear-gradient(90deg, #0756a2, #168bff 55%, #7de6ff);
+  box-shadow: 0 0 8px rgba(22, 139, 255, 0.7);
+}
+
+.tournament-details .tl-empty {
+  min-height: 132px;
+  border: 1px dashed #40515f;
+  background: radial-gradient(circle, rgba(22, 139, 255, 0.07), transparent 65%);
+}
+
+.tournament-details .dov,
+.tournament-details .blinds-tab,
+.tournament-details .rk,
+.tournament-details .et-panel,
+.tournament-details .un-panel,
+.tournament-details .tt-panel,
+.tournament-details .rw {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.tournament-details .dov-hero {
+  border-color: #4b6f8d;
+  background:
+    radial-gradient(circle at 20% 45%, rgba(22, 139, 255, 0.16), transparent 30%),
+    linear-gradient(165deg, #17232e, #05090d 62%);
+}
+
+.tournament-details .dov-hero__time {
+  font-size: clamp(34px, 6vw, 64px);
+}
+
+.tournament-details .blinds-tab__card--current,
+.tournament-details .rk-hero,
+.tournament-details .rw-pool {
+  border-color: #168bff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 0 0 2px #05090d,
+    0 0 16px rgba(22, 139, 255, 0.28);
+}
+
+.tournament-details .details-footer {
+  position: relative;
+  z-index: 5;
+  gap: 8px;
+  padding: 9px 12px calc(9px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(180deg, #18212a, #030507 62%, #111820);
+  border: 1px solid #687682;
+  border-top-color: #b5c0c9;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    inset 0 0 0 2px #05080b,
+    0 -5px 14px rgba(0, 0, 0, 0.62);
+}
+
+.tournament-details .details-footer button,
+.tournament-details .details-footer .btn-enter-table,
+.tournament-details .details-footer .tournament-status-badge {
+  min-height: 48px;
+  padding: 12px 16px;
+  border-radius: 2px;
+  font-family: 'Rajdhani', 'Roboto Condensed', sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  clip-path: polygon(
+    8px 0,
+    calc(100% - 8px) 0,
+    100% 8px,
+    100% calc(100% - 8px),
+    calc(100% - 8px) 100%,
+    8px 100%,
+    0 calc(100% - 8px),
+    0 8px
+  );
+}
+
+.tournament-details .details-footer .btn-share,
+.tournament-details .details-footer .btn-watch {
+  color: #e9eef3;
+  border: 1px solid #7d8994;
+  background: linear-gradient(180deg, #2a3540, #080c10 62%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    inset 0 -3px 4px #000;
+}
+
+.tournament-details .details-footer .btn-register,
+.tournament-details .details-footer .btn-enter-table {
+  border: 1px solid #8ee6ff;
+  background: linear-gradient(180deg, #2ea5ff, #0c70d8 48%, #063b78);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.48),
+    inset 0 -3px 5px #031a33,
+    0 0 13px rgba(22, 139, 255, 0.56);
+}
+
+.tournament-details .details-footer .btn-unregister {
+  border: 1px solid #ff9da6;
+  background: linear-gradient(180deg, #ff5361, #d91f31 52%, #790d18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    inset 0 -3px 5px #41070d,
+    0 0 12px rgba(239, 61, 79, 0.45);
+}
+
+.tournament-details .details-footer .tournament-status-badge.running {
+  color: #bff8d6;
+  border-color: #32d27a;
+  background: linear-gradient(180deg, #1b7945, #082d1b);
+}
+
+@media (max-width: 720px) {
+  .tournament-details {
+    padding: 5px;
+    border-radius: 0;
+  }
+
+  .tournament-details .details-header {
+    min-height: 46px;
+    padding-inline: 12px;
+  }
+
+  .tournament-details .details-header::before {
+    left: 12px;
+    font-size: 7px;
+  }
+
+  .tournament-details .details-tabs {
+    gap: 4px;
+    padding: 7px;
+  }
+
+  .tournament-details .details-tabs .tab {
+    flex-basis: 23%;
+    min-height: 42px;
+    font-size: 10px;
+  }
+
+  .tournament-details .details-title {
+    padding: 9px 11px 8px;
+  }
+
+  .tournament-details .tournament-title h2 {
+    font-size: 16px;
+  }
+
+  .tournament-details .tournament-desc {
+    display: block;
+  }
+
+  .tournament-details .tournament-blurb {
+    display: none;
+  }
+
+  .tournament-details .details-content {
+    padding: 7px 8px;
+  }
+
+  .tournament-details .details-footer {
+    flex-direction: row;
+    gap: 6px;
+    padding: 7px 8px calc(7px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .tournament-details .details-footer button,
+  .tournament-details .details-footer .btn-enter-table,
+  .tournament-details .details-footer .tournament-status-badge {
+    min-width: 0;
+    min-height: 46px;
+    padding: 10px 8px;
+    font-size: 12px;
+  }
+
+  .tournament-details .details-footer .btn-watch {
+    flex: 1 1 34%;
+  }
+}
+
+@media (max-width: 420px) {
+  .tournament-details .details-tabs .tab {
+    flex-basis: 24%;
+    padding-inline: 3px;
+    letter-spacing: 0.07em;
+  }
+
+  .tournament-details .tournament-id {
+    display: none;
+  }
+
+  .tournament-details .dov-hero__time {
+    font-size: 34px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tournament-details *,
+  .tournament-details *::before,
+  .tournament-details *::after {
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ========================================================================
+   APPROVED ASSET-BACKED MACHINE
+
+   The first premium pass painted another set of CSS boxes. That was the
+   visual mismatch: Club Arena's approved lobby is manufactured artwork, not
+   a collection of gradients. This final layer makes the real chassis and
+   empty hardware shells the source of every major edge and clickable bay.
+   Live DOM remains above the art for accessibility, data and actions.
+   ======================================================================== */
+
+.tournament-details {
+  position: relative;
+  width: min(100%, 1086px);
+  margin-inline: auto;
+  padding: clamp(22px, 3vw, 36px) clamp(34px, 6.3vw, 68px) clamp(38px, 5.4vw, 62px);
+  overflow: hidden;
+  color: #eef3f7;
+  font-family: 'Roboto Condensed', 'Rajdhani', var(--font-sans, system-ui, sans-serif);
+  background: #000 url('/hub/club-arena/assets/club-buttons/lobby/lobby-command-chassis-v2.png')
+    center / 100% 100% no-repeat;
+  border: 0;
+  border-radius: 0;
+  box-shadow: 0 18px 50px rgb(0 0 0 / 82%);
+}
+
+/* Mask the chassis' fixed inner divider locations; the outer rails and club
+   chip remain visible while each responsive live band supplies its own exact
+   hardware frame. */
+.tournament-details::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  inset: clamp(34px, 4vw, 48px) clamp(48px, 7vw, 76px) clamp(52px, 6vw, 70px);
+  display: block;
+  pointer-events: none;
+  border: 0;
+  clip-path: none;
+  background:
+    repeating-linear-gradient(90deg, rgb(255 255 255 / 1%) 0 1px, transparent 1px 4px), #020507;
+  box-shadow: inset 0 0 44px #000;
+}
+
+.tournament-details::after {
+  display: none;
+}
+
+.tournament-details > * {
+  position: relative;
+  z-index: 2;
+}
+
+.tournament-details .details-header,
+.tournament-details .details-title,
+.tournament-details .details-tabs,
+.tournament-details .details-content,
+.tournament-details .details-footer {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.tournament-details .details-header {
+  min-height: 76px;
+  padding: 18px clamp(38px, 7vw, 70px) 13px;
+  justify-content: center;
+  background: url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center top / 100% 114%
+    no-repeat;
+  clip-path: none;
+}
+
+.tournament-details .details-header::before {
+  top: 17px;
+  left: clamp(42px, 8vw, 78px);
+  color: #65d9ff;
+  font:
+    800 8px/1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.24em;
+  text-shadow: 0 0 8px rgb(22 139 255 / 56%);
+}
+
+.tournament-details .details-header h1 {
+  margin-top: 12px;
+  color: #f2f4f6;
+  font:
+    800 clamp(21px, 3vw, 30px) / 1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.045em;
+  background: none;
+  filter: none;
+  text-shadow:
+    0 2px 0 #000,
+    0 4px 8px #000;
+}
+
+.tournament-details .details-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 12px clamp(34px, 6.2vw, 62px);
+  overflow: visible;
+  background: url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center top / 100% 114%
+    no-repeat;
+}
+
+.tournament-details .details-tabs .tab {
+  position: relative;
+  flex: 1 1 110px;
+  min-width: 0;
+  min-height: 42px;
+  padding: 9px 7px;
+  border: 0;
+  border-radius: 0;
+  color: #aeb8c2;
+  font:
+    800 11px/1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center top / 100% 114%
+    no-repeat;
+  box-shadow: none;
+  clip-path: none;
+  text-shadow: 0 2px 2px #000;
+}
+
+.tournament-details .details-tabs .tab::after {
+  content: '';
+  position: absolute;
+  inset: 17% 7%;
+  left: 7%;
+  right: 7%;
+  bottom: 17%;
+  height: auto;
+  pointer-events: none;
+  background: transparent;
+  box-shadow: inset 0 0 10px rgb(0 0 0 / 72%);
+}
+
+.tournament-details .details-tabs .tab.active {
+  color: #fff;
+  background:
+    linear-gradient(180deg, rgb(28 139 240 / 28%), rgb(3 38 78 / 40%)),
+    url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center top / 100% 114% no-repeat;
+  filter: drop-shadow(0 0 7px #168bff);
+  box-shadow: inset 0 0 13px rgb(43 165 255 / 34%);
+  text-shadow:
+    0 2px 2px #000,
+    0 0 8px #168bff;
+}
+
+.tournament-details .details-title {
+  min-height: 76px;
+  margin: -1px 0 0;
+  padding: 17px clamp(42px, 7.4vw, 76px) 15px;
+  overflow: hidden;
+  background: url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center top / 100% 128%
+    no-repeat;
+}
+
+.tournament-details .tournament-title h2 {
+  color: #f2f4f6;
+  font:
+    800 clamp(17px, 2.4vw, 24px) / 1.02 'Roboto Condensed',
+    sans-serif;
+  background: none;
+  filter: none;
+  text-shadow:
+    0 2px 0 #000,
+    0 4px 7px #000;
+}
+
+.tournament-details .qr-btn {
+  min-width: 44px;
+  min-height: 42px;
+  border: 0;
+  border-radius: 0;
+  color: #65d9ff;
+  background: url('/hub/club-arena/assets/club-buttons/club-utility-shell.webp') center / 100% 100%
+    no-repeat;
+  box-shadow: none;
+}
+
+.tournament-details .details-content {
+  min-height: 0;
+  margin: -1px 0 0;
+  padding: clamp(34px, 5vw, 54px) clamp(32px, 5.2vw, 56px);
+  background:
+    url('/hub/club-arena/assets/club-buttons/club-utility-shell.webp') center top / 100% 112%
+      no-repeat,
+    #020507;
+}
+
+.tournament-details .details-content::before,
+.tournament-details .details-content::after {
+  display: none;
+}
+
+.tournament-details .details-content > * {
+  padding: 1px 7px 1px 1px;
+}
+
+.tournament-details .tl-panel,
+.tournament-details .tl-stat,
+.tournament-details .tl-row {
+  border-radius: 0;
+  background-color: #03070a;
+  background-image: linear-gradient(180deg, rgb(25 37 48 / 90%), rgb(2 7 11 / 96%));
+  box-shadow:
+    inset 0 0 0 2px #020406,
+    inset 0 1px 0 rgb(255 255 255 / 15%),
+    0 5px 11px rgb(0 0 0 / 52%);
+  clip-path: polygon(
+    7px 0,
+    calc(100% - 7px) 0,
+    100% 7px,
+    100% calc(100% - 7px),
+    calc(100% - 7px) 100%,
+    7px 100%,
+    0 calc(100% - 7px),
+    0 7px
+  );
+}
+
+.tournament-details .details-footer {
+  position: relative;
+  z-index: 4;
+  gap: clamp(58px, 10vw, 108px);
+  margin: -1px 0 0;
+  padding: 14px clamp(28px, 5vw, 52px) calc(15px + env(safe-area-inset-bottom, 0px));
+  background: transparent;
+}
+
+.tournament-details .details-footer:has(> :nth-child(3)) {
+  gap: 5px;
+}
+
+.tournament-details .details-footer button,
+.tournament-details .details-footer .btn-enter-table,
+.tournament-details .details-footer .tournament-status-badge {
+  min-width: 0;
+  min-height: 56px;
+  padding: 12px clamp(20px, 4vw, 42px);
+  border: 0;
+  border-radius: 0;
+  color: #eef3f7;
+  font:
+    800 14px/1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.11em;
+  background: url('/hub/club-arena/assets/club-buttons/action-primary-shell.webp') center / 100%
+    100% no-repeat;
+  box-shadow: none;
+  clip-path: none;
+  text-shadow:
+    0 2px 0 #000,
+    0 4px 6px #000;
+}
+
+.tournament-details .details-footer .btn-share,
+.tournament-details .details-footer .btn-watch {
+  color: #eef3f7;
+  border: 0;
+  background: url('/hub/club-arena/assets/club-buttons/action-primary-shell.webp') center / 100%
+    100% no-repeat;
+  box-shadow: none;
+}
+
+.tournament-details .details-footer .btn-register,
+.tournament-details .details-footer .btn-enter-table {
+  border: 0;
+  background:
+    linear-gradient(180deg, rgb(32 145 244 / 22%), rgb(1 45 94 / 30%)),
+    url('/hub/club-arena/assets/club-buttons/action-primary-shell.webp') center / 100% 100%
+      no-repeat;
+  filter: drop-shadow(0 0 7px rgb(22 139 255 / 70%));
+  box-shadow: none;
+}
+
+.tournament-details .details-footer .btn-unregister {
+  border: 0;
+  background:
+    linear-gradient(180deg, rgb(242 57 69 / 30%), rgb(95 3 13 / 42%)),
+    url('/hub/club-arena/assets/club-buttons/action-primary-shell.webp') center / 100% 100%
+      no-repeat;
+  filter: drop-shadow(0 0 7px rgb(239 61 79 / 52%));
+  box-shadow: none;
+}
+
+.tournament-details .details-footer .tournament-status-badge.running {
+  border: 0;
+  color: #bdfbd6;
+  background:
+    linear-gradient(180deg, rgb(50 210 122 / 25%), rgb(3 67 31 / 42%)),
+    url('/hub/club-arena/assets/club-buttons/action-primary-shell.webp') center / 100% 100%
+      no-repeat;
+}
+
+@media (max-width: 720px) {
+  .tournament-details {
+    width: 100%;
+    padding: max(8px, env(safe-area-inset-top, 0px)) 0 0;
+    background-size: 100% 100%;
+    box-shadow: none;
+  }
+
+  .tournament-details::before {
+    inset: 3.2% 5.5% 4.4%;
+  }
+
+  .tournament-details .details-header {
+    min-height: 68px;
+    padding: 15px 9% 10px;
+  }
+
+  .tournament-details .details-header::before {
+    top: 15px;
+    left: 10%;
+  }
+
+  .tournament-details .details-tabs {
+    gap: 1px;
+    padding: 10px 7.2%;
+  }
+
+  .tournament-details .details-tabs .tab {
+    flex-basis: 24%;
+    min-height: 44px;
+    padding-inline: 4px;
+    font-size: 10px;
+  }
+
+  .tournament-details .details-title {
+    min-height: 72px;
+    padding: 14px 9%;
+  }
+
+  .tournament-details .tournament-title h2 {
+    display: -webkit-box;
+    overflow: hidden;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .tournament-details .details-content {
+    padding: 30px 7.2%;
+  }
+
+  .tournament-details .details-footer {
+    flex-direction: row;
+    gap: clamp(45px, 11vw, 70px);
+    padding: 10px 6.5% calc(13px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .tournament-details .details-footer:has(> :nth-child(3)) {
+    gap: 3px;
+  }
+
+  .tournament-details .details-footer button,
+  .tournament-details .details-footer .btn-enter-table,
+  .tournament-details .details-footer .tournament-status-badge {
+    min-height: 50px;
+    padding: 9px 8px;
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 420px) {
+  .tournament-details .details-tabs {
+    padding-inline: 6%;
+  }
+
+  .tournament-details .details-tabs .tab {
+    font-size: 9px;
+    letter-spacing: 0.055em;
+  }
+
+  .tournament-details .details-title {
+    padding-inline: 8%;
+  }
+
+  .tournament-details .details-content {
+    padding: 26px 6%;
+  }
+
+  .tournament-details .details-footer {
+    gap: 42px;
+    padding-inline: 5.5%;
+  }
+}

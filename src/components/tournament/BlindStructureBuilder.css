@@ -1,0 +1,237 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  BLIND STRUCTURE BUILDER — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.blind-structure-builder {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: rgba(15, 15, 25, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+/* ── Preset Buttons ── */
+.bsb-presets {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.bsb-preset-btn {
+  padding: 8px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.bsb-preset-btn.active {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.5);
+  color: #60a5fa;
+}
+
+/* ── Stats Bar ── */
+.bsb-stats {
+  display: flex;
+  gap: 24px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.bsb-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.bsb-stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #f0f0f5;
+}
+
+.bsb-stat-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ── Break Settings ── */
+.bsb-break-settings {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 13px;
+}
+
+.bsb-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.bsb-switch input {
+  accent-color: #3b82f6;
+  width: 16px;
+  height: 16px;
+}
+
+.bsb-break-select {
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 13px;
+}
+
+/* ── Table ── */
+.bsb-table-wrapper {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.bsb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.bsb-table thead th {
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.bsb-table tbody tr {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  transition: background 0.15s;
+}
+
+.bsb-row td {
+  padding: 8px 12px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.bsb-break-row {
+  background: rgba(234, 179, 8, 0.06) !important;
+}
+
+.bsb-break-row td {
+  color: #eab308;
+}
+
+.bsb-break-label {
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+/* ── Inputs ── */
+.bsb-input {
+  width: 64px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 13px;
+  text-align: right;
+  transition: border-color 0.2s;
+}
+
+.bsb-input:focus {
+  outline: none;
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.bsb-unit {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+/* ── Action Buttons ── */
+.bsb-action-group {
+  display: flex;
+  gap: 4px;
+}
+
+.bsb-btn-move,
+.bsb-btn-break,
+.bsb-btn-remove {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.bsb-btn-move:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* ── Add Level Button ── */
+.bsb-add-level {
+  padding: 10px 20px;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px dashed rgba(59, 130, 246, 0.3);
+  border-radius: 8px;
+  color: #60a5fa;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+/* ── Column Widths ── */
+.bsb-col-level {
+  width: 40px;
+  text-align: center;
+}
+.bsb-col-sb {
+  width: 80px;
+}
+.bsb-col-bb {
+  width: 80px;
+}
+.bsb-col-ante {
+  width: 80px;
+}
+.bsb-col-duration {
+  width: 100px;
+}
+.bsb-col-actions {
+  width: 140px;
+}

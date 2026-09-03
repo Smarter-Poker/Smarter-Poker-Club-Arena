@@ -1,0 +1,221 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+ *  ARENA LEDGER — Admin Audit-Log Stream Styles
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.arena-ledger {
+  background: #242526;
+  border-radius: 12px;
+  border: 1px solid #3e4042;
+  overflow: hidden;
+  font-family:
+    'Inter',
+    -apple-system,
+    sans-serif;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.arena-ledger__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid #3e4042;
+}
+
+.arena-ledger__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #e4e6eb;
+}
+
+.arena-ledger__title-icon {
+  font-size: 16px;
+}
+
+.arena-ledger__live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  animation: ledgerPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes ledgerPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.arena-ledger__controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.arena-ledger__toggle,
+.arena-ledger__refresh {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid #3e4042;
+  background: #18191a;
+  color: #b0b3b8;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.arena-ledger__toggle--active {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.4);
+  color: #22c55e;
+}
+
+/* ── Filters ─────────────────────────────────────────────────────────────── */
+.arena-ledger__filters {
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #3e404230;
+}
+
+.arena-ledger__search {
+  flex: 1;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid #3e4042;
+  background: #18191a;
+  color: #e4e6eb;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.arena-ledger__search:focus {
+  border-color: rgba(99, 102, 241, 0.6);
+}
+
+.arena-ledger__search::placeholder {
+  color: #b0b3b8;
+}
+
+.arena-ledger__filter-select {
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid #3e4042;
+  background: #18191a;
+  color: #e4e6eb;
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+}
+
+/* ── List ─────────────────────────────────────────────────────────────────── */
+.arena-ledger__list {
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.arena-ledger__list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.arena-ledger__list::-webkit-scrollbar-thumb {
+  background: #3e4042;
+  border-radius: 2px;
+}
+
+.arena-ledger__loading,
+.arena-ledger__empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: #b0b3b8;
+  font-size: 13px;
+}
+
+/* ── Entry ─────────────────────────────────────────────────────────────────── */
+.arena-ledger__entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #3e404015;
+  transition: background 0.12s;
+}
+
+.arena-ledger__entry-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.arena-ledger__entry-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.arena-ledger__entry-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.arena-ledger__entry-label {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.arena-ledger__entry-time {
+  font-size: 10px;
+  color: #b0b3b8;
+  flex-shrink: 0;
+}
+
+.arena-ledger__entry-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11px;
+  color: #b0b3b8;
+}
+
+.arena-ledger__entry-user {
+  font-weight: 600;
+  color: #e4e6eb;
+}
+
+.arena-ledger__entry-content {
+  color: #b0b3b8;
+}
+
+.arena-ledger__entry-meta {
+  color: #757575;
+  font-size: 10px;
+}
+
+/* ── Footer ───────────────────────────────────────────────────────────────── */
+.arena-ledger__footer {
+  padding: 8px 16px;
+  border-top: 1px solid #3e4042;
+  font-size: 10px;
+  color: #757575;
+  text-align: center;
+}
+
+.arena-ledger__footer-live {
+  color: #22c55e;
+}

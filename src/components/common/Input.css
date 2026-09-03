@@ -1,0 +1,429 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * 📝 INPUT — CSS Styles
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * WRAPPER & LABEL
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.input-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.input-full {
+  width: 100%;
+}
+
+.input-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.input-message {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.input-message-error {
+  color: #ef4444;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * INPUT CONTAINER
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.input-container {
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.input-focused {
+  border-color: #4169e1 !important;
+  box-shadow:
+    0 0 0 3px rgba(65, 105, 225, 0.2),
+    0 0 12px rgba(65, 105, 225, 0.1);
+}
+
+.input-error {
+  border-color: #ef4444 !important;
+}
+
+.input-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * SIZES
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.input-small {
+  height: 32px;
+  padding: 0 10px;
+  font-size: 0.8rem;
+}
+
+.input-medium {
+  height: 40px;
+  padding: 0 12px;
+  font-size: 0.9rem;
+}
+
+.input-large {
+  height: 48px;
+  padding: 0 16px;
+  font-size: 1rem;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * INPUT FIELD
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.input-field {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.95);
+  outline: none;
+  font-size: inherit;
+}
+
+.input-field::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.input-field:disabled {
+  cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * ICONS
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.input-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 1rem;
+}
+
+.input-icon-left {
+  margin-right: 8px;
+}
+
+.input-icon-right {
+  margin-left: 8px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * TEXTAREA
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.textarea-field {
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 0.9rem;
+  font-family: inherit;
+  resize: vertical;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.textarea-field:focus {
+  border-color: #4169e1;
+  box-shadow: 0 0 0 3px rgba(65, 105, 225, 0.2);
+}
+
+.textarea-field::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * SELECT
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.select-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.2s ease;
+}
+
+.select-field {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  padding: 0 32px 0 12px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.95);
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  font-size: inherit;
+}
+
+.select-field option {
+  background: #1a1a2e;
+  color: white;
+}
+
+.select-arrow {
+  position: absolute;
+  right: 12px;
+  font-size: 0.6rem;
+  color: rgba(255, 255, 255, 0.5);
+  pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * CHECKBOX
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.checkbox-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.checkbox-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.checkbox-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.checkbox-box {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.checkbox-input:checked + .checkbox-box {
+  background: #4169e1;
+  border-color: #4169e1;
+}
+
+.checkbox-input:focus + .checkbox-box {
+  box-shadow: 0 0 0 3px rgba(65, 105, 225, 0.3);
+}
+
+.checkbox-check {
+  color: white;
+  font-size: 0.7rem;
+  font-weight: bold;
+}
+
+.checkbox-label {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * TOGGLE
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.toggle-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.toggle-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.toggle-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-track {
+  position: relative;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+  transition: all 0.2s ease;
+}
+
+.toggle-small .toggle-track {
+  width: 36px;
+  height: 20px;
+}
+
+.toggle-medium .toggle-track {
+  width: 44px;
+  height: 24px;
+}
+
+.toggle-large .toggle-track {
+  width: 52px;
+  height: 28px;
+}
+
+.toggle-on {
+  background: #4169e1;
+  box-shadow: 0 0 12px rgba(65, 105, 225, 0.3);
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.toggle-small .toggle-thumb {
+  width: 16px;
+  height: 16px;
+}
+
+.toggle-medium .toggle-thumb {
+  width: 20px;
+  height: 20px;
+}
+
+.toggle-large .toggle-thumb {
+  width: 24px;
+  height: 24px;
+}
+
+.toggle-on .toggle-thumb {
+  transform: translateX(100%);
+}
+
+.toggle-input:focus + .toggle-track {
+  box-shadow: 0 0 0 3px rgba(65, 105, 225, 0.3);
+}
+
+.toggle-label {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * CHIP INPUT (Poker)
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.chip-input-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chip-input-container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chip-input-btn {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  font-size: 1.25rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.chip-input-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.chip-input-field {
+  flex: 1;
+  height: 40px;
+  padding: 0 12px;
+  text-align: center;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #ffd700;
+  font-size: 1.1rem;
+  font-weight: 600;
+  outline: none;
+}
+
+.chip-input-field:focus {
+  border-color: #4169e1;
+}
+
+/* Hide number arrows */
+.chip-input-field::-webkit-inner-spin-button,
+.chip-input-field::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.chip-input-field {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.chip-input-presets {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chip-preset-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.chip-preset-btn.active {
+  background: #4169e1;
+  color: white;
+}
+
+.chip-preset-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}

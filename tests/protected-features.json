@@ -1,0 +1,193 @@
+{
+  "$comment": [
+    "PROTECTED FEATURE REGISTRY \u2014 LAYER 3 of the anti-regression system.",
+    "",
+    "WHY: on 2026-08-21 production silently lost the 49-item dynamic throwables",
+    "because a build from a stale checkout replaced a current one. The first fix",
+    "was a hand-written test for that one feature. That does not scale: the next",
+    "feature to be silently erased would be the one nobody wrote a test for.",
+    "",
+    "This file is the scaling mechanism. Every entry is a feature that EXISTS and",
+    "must keep existing. Two generic guards consume it:",
+    "",
+    "  tests/protectedFeatures.test.ts        (Club Arena) validates `source`",
+    "  scripts/ci/check-ca-protected-features.mjs (World Hub) validates",
+    "                                          `bundleMarkers` in the DEPLOYED",
+    "                                          bundle",
+    "",
+    "ADDING PROTECTION FOR A NEW FEATURE IS ONE ENTRY HERE. No new test file.",
+    "",
+    "FIELD MEANINGS",
+    "  files          paths that must exist (deletion = regression)",
+    "  contains       { file: [strings] } every string must appear in that file",
+    "  absent         { file: [strings] } none of these may appear (retired code",
+    "                 coming back is the signature of an old tree overwriting a",
+    "                 new one)",
+    "  minCount       { file: { pattern, min } } occurrences must not fall below",
+    "                 min \u2014 a RATCHET that catches silent partial deletion",
+    "  bundleMarkers  strings that must survive minification into the deployed",
+    "                 CSS/JS. Use load-bearing selectors, data-attributes and",
+    "                 custom properties; never a comment or a class that a",
+    "                 minifier may rename.",
+    "",
+    "RULES",
+    "  - Deliberately removing a feature means deleting its entry IN THE SAME",
+    "    COMMIT, with the reason in the commit message. That makes removal a",
+    "    visible, reviewable act instead of a silent disappearance.",
+    "  - Never weaken an entry to make CI green. Fix the code.",
+    "  - Ratchets go UP. Raise minCount when a feature grows; lowering one is a",
+    "    deliberate, explained act."
+  ],
+  "features": [
+    {
+      "id": "throwables",
+      "title": "49-item dynamic throwables (3D renders, per-item FX + procedural SFX)",
+      "owner": "table",
+      "since": "2026-08-20",
+      "files": [
+        "src/services/ThrowableService.ts",
+        "src/services/ThrowableSoundService.ts",
+        "src/components/table/ThrowAnimation.tsx",
+        "src/components/table/ThrowAnimation.css",
+        "src/components/table/ThrowableSignatures.css",
+        "src/components/table/ThrowableImage.tsx",
+        "src/components/table/ThrowableSelector.tsx",
+        "src/services/ThrowableCutout.ts"
+      ],
+      "contains": {
+        "src/components/table/ThrowAnimation.tsx": [
+          "ThrowableSignatures.css",
+          "throwableSoundService.playLaunch",
+          "throwableSoundService.playImpact",
+          "data-throwable"
+        ],
+        "src/services/ThrowableService.ts": ["/storage/v1/render/image/public/"],
+        "src/components/table/ThrowableImage.tsx": ["getThrowableCutout", "throwable-img--cut"],
+        "src/services/ThrowableCutout.ts": ["knockOutBackground", "crossOrigin"]
+      },
+      "absent": {
+        "src/components/table/ThrowAnimation.tsx": ["THROWABLE_ICONS"],
+        "src/components/table/ThrowableSelector.tsx": ["THROWABLE_ICONS"]
+      },
+      "minCount": {
+        "src/services/ThrowableService.ts": {
+          "pattern": "T\\(\\s*'[a-z0-9_]+'",
+          "min": 48
+        },
+        "src/components/table/ThrowableSignatures.css": {
+          "pattern": "data-throwable='[a-z0-9_]+'",
+          "min": 150
+        },
+        "src/services/ThrowableSoundService.ts": {
+          "pattern": "^\\s{4}\\w+: \\(\\) =>",
+          "min": 48
+        }
+      },
+      "bundleMarkers": [
+        "data-throwable",
+        "throw-animation__fxi",
+        "--impact-dur",
+        "throwable-img--cut"
+      ]
+    },
+    {
+      "id": "table-sounds",
+      "title": "Procedural table sound engine (deal, chips, all-in, win, bomb pot, BBJ)",
+      "owner": "table",
+      "since": "2026-04",
+      "files": ["src/services/SoundService.ts"],
+      "contains": {
+        "src/services/SoundService.ts": [
+          "playDeal",
+          "playAllIn",
+          "playBadBeatJackpot",
+          "playBombPot",
+          "playTimeBankActivated"
+        ]
+      },
+      "minCount": {
+        "src/services/SoundService.ts": {
+          "pattern": "^\\s{2}play[A-Z]\\w*\\(",
+          "min": 50
+        }
+      },
+      "bundleMarkers": []
+    },
+    {
+      "id": "bomb-pot",
+      "title": "Bomb pot (double board, countdown pill, hot-reloadable settings)",
+      "owner": "table",
+      "since": "2026-07",
+      "files": [
+        "src/components/table/BombPotOverlay.tsx",
+        "src/components/table/BombPotOverlay.css"
+      ],
+      "contains": {
+        "src/components/table/BombPotOverlay.tsx": ["BombPot"]
+      },
+      "bundleMarkers": []
+    },
+    {
+      "id": "bad-beat-jackpot",
+      "title": "Bad Beat Jackpot celebration + qualifying-hands rundown",
+      "owner": "table",
+      "since": "2026-06",
+      "files": [
+        "src/components/table/BadBeatJackpot.tsx",
+        "src/components/table/BBJCelebration.tsx"
+      ],
+      "contains": {
+        "src/components/table/BadBeatJackpot.tsx": ["toLocaleString"]
+      },
+      "absent": {
+        "src/components/table/BadBeatJackpot.tsx": ["padStart(9"]
+      },
+      "bundleMarkers": []
+    },
+    {
+      "id": "popup-house-rules",
+      "title": "Popup style law: Title Case, no em dashes, deduped (Dan 2026-08-20, binding)",
+      "owner": "platform",
+      "since": "2026-08-20",
+      "files": ["src/utils/popupStyle.ts"],
+      "contains": {
+        "src/utils/popupStyle.ts": ["export"]
+      },
+      "bundleMarkers": []
+    },
+    {
+      "id": "throwable-cutout",
+      "title": "True alpha cutout for throwable renders (any background colour)",
+      "owner": "table",
+      "since": "2026-08-21",
+      "files": ["src/services/ThrowableCutout.ts", "tests/throwableCutout.test.ts"],
+      "contains": {
+        "src/services/ThrowableCutout.ts": [
+          "knockOutBackground",
+          "getThrowableCutout",
+          "sampleBackground"
+        ],
+        "src/components/table/ThrowAnimation.css": [".throwable-img--cut"]
+      },
+      "bundleMarkers": ["throwable-img--cut"]
+    },
+    {
+      "id": "throwable-voice",
+      "title": "Spoken taunts + impact captions for throwables",
+      "owner": "table",
+      "since": "2026-08-21",
+      "files": ["src/services/ThrowableVoice.ts"],
+      "contains": {
+        "src/services/ThrowableVoice.ts": ["VOICE_LINES", "speechSynthesis", "speakFor"],
+        "src/components/table/ThrowAnimation.tsx": ["throwableVoice.speakFor", "IMPACT_CAPTION"]
+      },
+      "minCount": {
+        "src/services/ThrowableVoice.ts": {
+          "pattern": "^  \\w+: \\{ text:",
+          "min": 15
+        }
+      },
+      "bundleMarkers": ["throw-animation__caption"]
+    }
+  ]
+}

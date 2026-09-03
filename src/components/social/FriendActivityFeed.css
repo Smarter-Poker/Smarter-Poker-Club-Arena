@@ -1,0 +1,253 @@
+.friend-activity-feed {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #293740;
+  border-radius: 3px;
+  background: #060a0e;
+}
+
+.activity-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border-bottom: 1px solid #24313a;
+}
+
+.activity-header span {
+  display: block;
+  margin-bottom: 5px;
+  color: #5daeff;
+  font:
+    700 0.61rem/1 Inter,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.activity-header h3 {
+  margin: 0;
+  color: #e8f2f8;
+  font:
+    700 1.08rem/1 Rajdhani,
+    Inter,
+    sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.activity-header > strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #65dfa5;
+  font:
+    700 0.62rem/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.activity-header > strong i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 9px currentColor;
+}
+
+.activity-list {
+  display: grid;
+  padding: 4px 12px 12px;
+}
+
+.activity-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 12px 4px;
+  border-bottom: 1px solid #1d282f;
+}
+
+.activity-item:last-child {
+  border-bottom: 0;
+}
+
+.activity-avatar {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #465b68;
+  border-radius: 50%;
+  color: #d0eaff;
+  background: radial-gradient(circle at 35% 25%, #2c4353, #091016 70%);
+  font:
+    700 0.86rem/1 Rajdhani,
+    Inter,
+    sans-serif;
+  text-decoration: none;
+}
+
+.activity-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.activity-avatar i {
+  position: absolute;
+  right: -3px;
+  bottom: -2px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #3d5361;
+  border-radius: 50%;
+  color: #72c3ff;
+  background: #0a1218;
+  font-size: 0.58rem;
+  font-style: normal;
+}
+
+.activity-content {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.activity-content p {
+  margin: 0;
+  color: #9cacb6;
+  font:
+    500 0.79rem/1.4 Inter,
+    sans-serif;
+}
+
+.activity-content a,
+.activity-content strong {
+  color: #dceaf2;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.activity-content strong {
+  color: #69bbf6;
+}
+
+.activity-content time {
+  color: #647782;
+  font:
+    600 0.64rem/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.activity-skeleton-list {
+  display: grid;
+  gap: 1px;
+  padding: 8px 12px 12px;
+}
+
+.activity-skeleton {
+  min-height: 66px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 4px;
+  border-bottom: 1px solid #1d282f;
+}
+
+.activity-skeleton > span {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #111920;
+}
+
+.activity-skeleton div {
+  flex: 1;
+  display: grid;
+  gap: 7px;
+}
+
+.activity-skeleton i {
+  display: block;
+  width: min(300px, 58%);
+  height: 9px;
+  border-radius: 2px;
+  background: #111920;
+}
+
+.activity-skeleton i + i {
+  width: 54px;
+  height: 7px;
+}
+
+.activity-state {
+  min-height: 145px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  padding: 24px;
+  color: #788b96;
+  text-align: center;
+}
+
+.activity-state > span {
+  color: #52768d;
+  font-size: 1.6rem;
+}
+
+.activity-state p {
+  max-width: 430px;
+  margin: 8px 0 0;
+  font:
+    500 0.78rem/1.5 Inter,
+    sans-serif;
+}
+
+.activity-state button {
+  min-height: 42px;
+  margin-top: 13px;
+  padding: 0 14px;
+  border: 1px solid #815037;
+  border-radius: 3px;
+  color: #ffc190;
+  background: #130d09;
+  font:
+    700 0.66rem/1 Inter,
+    sans-serif;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.activity-state.is-error {
+  color: #d49a72;
+}
+
+.friend-activity-feed a:focus-visible,
+.friend-activity-feed button:focus-visible {
+  outline: 2px solid #7bc7ff;
+  outline-offset: 2px;
+}
+
+@media (max-width: 440px) {
+  .activity-header {
+    padding: 14px 12px;
+  }
+
+  .activity-list {
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+}

@@ -1,0 +1,1161 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  MULTI-TABLE PAGE — Layout & Swipe Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PAGE CONTAINER
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.multi-table-page {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  /* #000 (2026-08-30). This is the shell BEHIND the felt and the strip either
+     side of the table on a wide screen - a page ground, not a raised surface -
+     and #0a0c12 is a visibly different black from the body, the action bar and
+     the route shell now that those are all true black. Dan: "THE WHOLE
+     BACKGROUND SHOULD BE SOLID BLACK AND ALL THE SAME COLOR." The three
+     full-bleed states below (loading, loading-overlay, crashed) take the same
+     value for the same reason: each one fills the screen on its own. */
+  background: #000;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.multi-table-page--empty {
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 1rem;
+}
+
+.multi-table-page--empty button {
+  padding: 12px 28px;
+  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+  border: none;
+  border-radius: 12px;
+  color: #ffffff;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SWIPE CONTAINER — Horizontal scroll snap
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.multi-table-page__container {
+  flex: 1;
+  /* Dan 2026-08-20 ("I can't scroll down to see all the games"): flex items
+     default to min-height:auto, so the in-tab LOBBY's 3900px of content blew
+     this container up to content height — the slot and lobby tab inherited
+     that height, clientHeight equalled scrollHeight, and overflow-y:auto had
+     nothing to scroll while .multi-table-page's overflow:hidden clipped the
+     rest. min-height:0 pins the container to the viewport so the lobby tab
+     becomes the real scroll surface. Measured live with a headless probe:
+     lobbyTab ch=3893 sh=3893 scrollAfter=0 before; constrained after. */
+  min-height: 0;
+  display: flex;
+  /* NOTE: will-change:transform removed — it creates a containing block
+     for position:fixed descendants, breaking TablePage layout. §FIX-214
+     The inline transform style on the element is sufficient for GPU acceleration. */
+  /* No transition by default — only during programmatic switches */
+}
+
+.multi-table-page__container--transitioning {
+  transition: transform 300ms var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+/* Dan 2026-08-15 — LOBBY TAB.
+   The in-table "+" adds a lobby tab beside the running games. Table slots are
+   fixed-height, non-scrolling surfaces, but the lobby is a tall scrolling
+   page, so it needs its own scroll container or it gets clipped to the slot.
+   `contain: layout paint` keeps the lobby's layout from thrashing the sibling
+   tables that are still mounted and dealing behind it. */
+.multi-table-page__lobby-tab {
+  position: relative; /* anchors the tournament back-pill in any container */
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Dan 2026-08-25 ("the footer doesn't stay on the footer, it moves around"),
+     iOS Safari. `-webkit-overflow-scrolling: touch` has been a no-op for
+     momentum since iOS 13 — momentum is the default — but it is NOT a no-op
+     for the children: it promotes the scroller to its own UIScrollView layer,
+     and position:sticky / position:fixed descendants inside one repaint only
+     at scroll END. Finger down, the bar freezes wherever it was and rides up
+     the page; finger up, it snaps back to the bottom. That is exactly the
+     symptom, and it is the one line in this rule that is Safari-specific.
+     Removed, not replaced. */
+  overscroll-behavior: contain;
+  contain: layout paint;
+}
+
+/* Dan 2026-08-20 ("bottom row quick links should always be on the footer"):
+   ClubBottomNav is position:fixed, but inside this tab `contain: layout paint`
+   above makes THIS ELEMENT its containing block, and the swipe track picks up a
+   transform mid-gesture on top of that — the probe measured it parked at
+   y=3870, three screens below the fold. Sticky against this scroll container
+   pins it to the visible bottom at every scroll position instead. The
+   CSS-module class name is hashed, so match on the stable local-name substring.
+
+   Dan 2026-08-25: this rule was CORRECT and INERT. Sticky resolves against the
+   nearest SCROLLPORT, and `.club-home`'s `overflow-x: hidden` was quietly
+   computing `overflow-y` to `auto` (CSS Overflow 3), making .club-home itself
+   that scrollport — a box of height:auto that never scrolls, so the offset was
+   never applied and the bar fell back to its static flow position mid-page.
+   Fixed at the source: .club-home now uses `overflow-x: clip`, which the spec
+   exempts from that promotion. Do not put `hidden` back there.
+
+   Portaling this bar to document.body is NOT the alternative: every lobby tab
+   stays mounted behind the active table tab, so a body-level fixed bar would
+   float over a live table. `contain: paint` clipping it to this tab is what
+   stops that, and sticky is what survives the clipping. */
+.multi-table-page__lobby-tab nav[class*='bottomNav'] {
+  position: sticky;
+  bottom: 0;
+}
+
+/* The embedded lobby is smaller than the viewport (tab bar above it); forcing
+   100vh of minimum content just adds dead scroll. Fill the tab instead. */
+.multi-table-page__lobby-tab .club-home {
+  min-height: 100%;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TABLE SLOT — Each table takes full viewport width
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.multi-table-page__table-slot {
+  flex: 0 0 100%;
+  width: 100vw;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Slightly dim inactive tables for visual clarity */
+.multi-table-page__table-slot:not(.multi-table-page__table-slot--active) {
+  pointer-events: none;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   LOADING STATE
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.multi-table-page__loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
+  /* One black with the shell above (2026-08-30). */
+  background: #000;
+}
+
+.multi-table-page__spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: multiTableSpin 0.8s linear infinite;
+}
+
+@keyframes multiTableSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   RESPONSIVE
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  /* Tab bar height is handled by the component itself */
+  .multi-table-page__tab-bar-wrapper {
+    padding: 0;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TAB BAR WRAPPER — Flex container for tab bar and tile toggle
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.multi-table-page__tab-bar-wrapper {
+  display: flex;
+  /* Reserve the right-edge band the fixed 4-square button occupies (40px +
+     6px inset + breathing room), so the tab strip and the profit chip can
+     never slide underneath it. */
+  padding-right: 50px;
+  /* Dan 2026-08-28: "the profit tracker and the 4 screen box need to be
+     lowered down so the 4 screen box is touching the top of where the table
+     meets." `center` floated both chips in the middle of the bar's full
+     height (safe-area inset included), leaving a gap between them and the
+     felt below. `flex-end` seats them on the wrapper's bottom edge — the
+     exact line where the table starts. The tab strip itself is unaffected:
+     it sizes to its own content and carries its own safe-area padding. */
+  align-items: flex-end;
+  gap: 0;
+  padding: 0;
+  /* Dan 2026-08-28: the strip either side of the P&L chip / tile toggle
+     showed this wrapper's own rgba(0,0,0,0.75) while the tab strip painted
+     its darker gradient over the rest — "a slightly different black". One
+     ground, same gradient as .table-tab-bar, so the whole bar reads as one
+     surface. */
+  /* Dan 2026-08-30 closed the same complaint for good: "THE WHOLE BACKGROUND
+     SHOULD BE SOLID BLACK AND ALL THE SAME COLOR. (INCLUDING THE ACTION TAB
+     AREA.)" One opaque black - no gradient, no alpha, no blur, no inset sheen
+     - which is the exact ground .table-tab-bar now paints, so the strip and
+     the wrapper either side of it are the SAME colour rather than two blacks
+     that happen to agree at one blend. */
+  background: #000;
+  border-bottom: 1px solid #000;
+  z-index: 350;
+  /* ON /table/*, START BELOW THE TICKER (Dan 2026-08-30).
+     The ticker is fixed to the top of the felt on this route, so this wrapper
+     is in normal flow under nothing and the ticker would draw straight through
+     it. `--mtt-ticker-h` is published by TournamentStartingTicker and is
+     ABSENT while no ticker is up, so the 0px fallback is what applies almost
+     always and the bar does not move on a quiet schedule. The pinned modifier
+     below overrides this with a `top` instead: it is fixed, not in flow. */
+  margin-top: var(--mtt-ticker-h, 0px);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   THE PINNED BAR — off /table/*, the strip outlives the container
+   Dan 2026-08-28 round 3: "YOUR ACTION BAR STAYS AT THE TOP 100% OF THE TIME."
+
+   On /table/* the wrapper above is in normal flow, directly over the felt.
+   Everywhere else MultiTablePage is display:none, so the strip is hoisted out
+   of it and fixed to the top of the viewport over whatever page the player
+   navigated to — the cashier, the marketplace, their stats. Same component,
+   same gradient, same tap targets; only the positioning differs, which is why
+   this is a modifier rather than a second bar to keep in sync.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.multi-table-page__tab-bar-wrapper--pinned {
+  position: fixed;
+  /* GlobalHeader publishes its responsive rendered height before this pinned
+     state is enabled. The global header therefore owns viewport y=0 and this
+     action strip begins at the header's exact bottom edge. */
+  /* 2026-08-30: and the TICKER owns the band immediately under the header, so
+     this strip begins after it. Dan: "THE TICKER MUST ALWAYS BE AT THE VERY
+     TOP OF THE PAGE, DIRECTLY UNDER THE GLOBAL HEADER, THE 'ACTION TAB' SHOULD
+     NEVER BE ABOVE IT." `--mtt-ticker-h` is absent unless a ticker is actually
+     on screen, so this reduces to the header height on a quiet schedule. */
+  top: calc(var(--ca-global-header-height, 0px) + var(--mtt-ticker-h, 0px));
+  left: 0;
+  right: 0;
+  /* The flow margin belongs to the in-flow copy of this wrapper only; here the
+     offset is the `top` above, and a margin would double it. */
+  margin-top: 0;
+  /* Above the app's own headers and bottom nav, below the table's modals and
+     the urgent dock (400/401) — a countdown the player is about to lose money
+     to must never be covered by a navigation control. */
+  z-index: 380;
+  /* The global header already owns the notch inset. Reapplying it here would
+     create a second safe-area band between the two bars. */
+  padding-top: 0;
+  /* AND THE SAME GOES FOR THE STRIP INSIDE THIS WRAPPER (2026-08-30 audit).
+     Zeroing the wrapper's padding was only half the job: `.table-tab-bar` pays
+     its OWN `calc(6px + env(safe-area-inset-top))`, and this wrapper is fixed
+     at `var(--ca-global-header-height)` - a height GlobalHeader measures AFTER
+     paying that inset itself (GlobalHeader.module.css pads by it;
+     GlobalHeader.tsx publishes getBoundingClientRect().height). So on a
+     notched iPhone the bar sat ~47px below where it belonged, in the lobby,
+     with a dead black band above it. One declaration fixes it because the bar
+     now reads its inset from a property instead of env() directly, and this is
+     scoped to the pinned wrapper: the in-flow bar on /table/* still pays the
+     notch when nothing above it has. */
+  --sp-tabbar-inset: 0px;
+}
+
+/**
+ * Publish the strip height for AppLayout's in-flow clearance slot.
+ *
+ * Padding the body pushed the GlobalHeader down and made the action bar the
+ * first surface on the screen. The body now carries state and the one shared
+ * 48px measurement only. AppLayout spends that height directly AFTER the
+ * GlobalHeader, so every following announcement, rail, and page clears the
+ * fixed strip while the global header remains at viewport y=0.
+ */
+body[data-ca-pinned-bar='1'] {
+  /* The ticker's height rides in the same clearance: the strip is fixed below
+     the header and this pinned bar is fixed below the strip, so page content
+     has to clear BOTH or the first rows of the lobby end up under them.
+     `--mtt-ticker-h` is absent with no ticker on screen, so this stays exactly
+     48px on a quiet schedule. */
+  --ca-pinned-bar-offset: calc(48px + var(--mtt-ticker-h, 0px));
+}
+
+/* Full-screen surfaces that already position themselves from the viewport
+   must not be pushed twice — they are fixed, so the body padding does not
+   move them, but their own `top: 0` would slide under the bar. */
+body[data-ca-pinned-bar='1'] .modal-overlay,
+body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
+  top: calc(var(--ca-global-header-height, 0px) + var(--ca-pinned-bar-offset, 48px));
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TILE VIEW GRID
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.multi-table-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 2px;
+  background: #000;
+  overflow: hidden;
+}
+
+.multi-table-grid__cell {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  transform: scale(1);
+  transition: box-shadow 0.2s ease;
+  /* Variant A (Dan 2026-08-30): column layout so the action band RESERVES
+     space below the felt instead of overlaying the hero's cards. */
+  display: flex;
+  flex-direction: column;
+}
+
+/* The table's own flex row. When the band is up this shrinks and the scaled
+   TablePage re-fits into it, so nothing ever covers the hero seat. */
+.multi-table-grid__stage {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.multi-table-grid__cell--active {
+  box-shadow: inset 0 0 0 2px #3b82f6;
+}
+
+/* Scale down content in tile view */
+.multi-table-grid__cell .table-page {
+  transform: scale(0.5);
+  transform-origin: top left;
+  width: 200%;
+  height: 200%;
+  pointer-events: none;
+}
+
+/* Loading state in tile view */
+.multi-table-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  /* One black with the shell above (2026-08-30). */
+  background: #000;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.875rem;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TILE TOGGLE BUTTON
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Dan 2026-08-30: the 4-square button is FIXED on the right edge - the mirror
+   of the hamburger trigger on the left - and the same 40px square that
+   .table-menu__trigger paints (TableMenu.css), wearing the brushed-metal
+   four-screen artwork. Vertically it sits in the tab-bar band, below the
+   action ticker when one is up (--mtt-ticker-h, 0px otherwise). With fewer
+   than 2 tables it stays put but is inert and dimmed - the position is a
+   fixture, the function needs a second table. */
+.tile-toggle-btn {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + var(--mtt-ticker-h, 0px) + 5px);
+  right: 6px;
+  z-index: 210;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.tile-toggle-btn--inert {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.tile-toggle-btn__img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   MY-TURN GLOW (Initiative 11)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* Pulsing glow border on tile-view cell when it's user's turn */
+.multi-table-grid__cell[style*='box-shadow: 0 0 20px'] {
+  animation: myTurnPulse 1.5s infinite;
+}
+
+@keyframes myTurnPulse {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 0 0 2px #00d4ff,
+      0 0 20px rgba(0, 212, 255, 0.3);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 2px #00d4ff,
+      0 0 35px rgba(0, 212, 255, 0.5);
+  }
+}
+
+/* Smooth crossfade transition */
+.multi-table-page__container--transitioning {
+  transition: transform 300ms var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+/* DELETED 2026-08-31 — the tile-view "table name overlay".
+   `data-table-name` was never set on the cell by any code in this repo, so
+   `attr(data-table-name)` always resolved to the EMPTY STRING. That does not
+   suppress the pseudo-element: content:"" still generates a box, and this one
+   carried padding, a 60%-black background, a radius and a blur — a small dark
+   smudge pinned to the cell's bottom-left, showing a name it could never hold.
+
+   Harmless while the cell's bottom-left was felt. NOT harmless now: the cell is
+   a flex column and its bottom-left is the action band, so this painted over
+   the FOLD BUTTON's corner. Measured on a 300x400 tile before removal — the
+   ::after box (top 385.6, bottom 400, left 16) against Fold (top 365, bottom
+   400, left 16): overlapping.
+
+   Removed rather than repositioned: a rule that can only render an empty smudge
+   has no correct position. The tab bar already names every table. */
+
+/* ═══════════════════ Supplemental mobile touch targets ═══════════════════ */
+
+@media (max-width: 480px) {
+  .multi-table-page--empty button {
+    min-height: 44px;
+  }
+
+  .tile-toggle-btn {
+    /* The 40px square matches the hamburger; touch-action stays for taps.
+       (It is fixed-positioned now, so it no longer eats tab-strip budget.) */
+    touch-action: manipulation;
+  }
+
+  /* The strip is the thing that must survive a narrow screen, so give it every
+     pixel the two chips beside it do not claim. Without an explicit min-width:0
+     a flex item refuses to shrink past its content, and the overflow lands on
+     the tab strip's own scroller — which is the "Lobby tab is cut off" symptom
+     Dan reported. */
+  .multi-table-page__tab-bar-wrapper > .table-tab-bar {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /* The strip's four-pill budget (see the arithmetic in TableTabBar.css) is
+     computed from a fixed 52px for this chip, so the chip has to actually hold
+     to it. A six-figure swing ellipsises rather than pushing a table off the
+     screen — the exact figure is one tap away in the breakdown this opens. */
+  .multi-table-page__pnl-chip {
+    /* border-box is the global reset (src/styles/club-engine.css), so 52px is
+       the whole chip, border and padding included. */
+    max-width: 52px;
+    padding: 4px 6px;
+    font-size: 0.62rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .table-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* 2026-08-23 mobile pass — tap targets only, layout untouched */
+  .multi-table-page__take-seat-btn,
+  .multi-table-page__quickjoin-row,
+  .multi-table-page__quickjoin-lobby,
+  .multi-table-page__lobby-back,
+  .multi-table-grid__action {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  /* raise presets sit 60px above the strip edge; 40px keeps them tappable
+     without colliding with the fold/call strip below them */
+  .multi-table-grid__raise {
+    min-height: 40px;
+    touch-action: manipulation;
+  }
+}
+
+/* ── In-tab tournament drill-down (Dan 2026-08-19) ──────────────────────── */
+/* ─────────────────────────────────────────────────────────────────────────────
+   TAKE SEAT BAR (Dan 2026-08-20)
+   ─────────────────────────────────────────────────────────────────────────────
+   Shown at the top of the in-tab lobby whenever a live table tab exists. The
+   global LiveTablesBar dock does not cover this case — dockStateFor returns
+   'none' while the table container is VISIBLE, and the in-tab lobby is the
+   visible container — so a player who opened the lobby from the in-table "+"
+   had no way back to their seat but to find the right tab, possibly with a
+   fold-out clock running.
+
+   Sticky, not fixed: .multi-table-page__lobby-tab is the scroll container, and
+   `position: fixed` inside the transformed swipe track resolves against the
+   track rather than the viewport — the same trap already documented above for
+   ClubBottomNav, which measured at y=3870 before it was made sticky.
+   ───────────────────────────────────────────────────────────────────────────── */
+.multi-table-page__take-seat {
+  position: sticky;
+  top: 0;
+  z-index: 70; /* above the back-pill (60) so it is never overlapped */
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: linear-gradient(180deg, rgba(14, 20, 28, 0.97) 0%, rgba(10, 14, 20, 0.97) 100%);
+  border-bottom: 1px solid rgba(0, 212, 255, 0.28);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.multi-table-page__take-seat-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.multi-table-page__take-seat-label {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #4ade80;
+}
+
+.multi-table-page__take-seat-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #dfe6ef;
+  /* Table names run long ("Union Late Night Turbo (NLH)") and must not wrap
+     this bar onto a second line — it is pinned above the lobby and every extra
+     row is a row of games the player cannot see. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.multi-table-page__take-seat-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(16, 185, 129, 0.4);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.multi-table-page__take-seat-btn:active {
+  transform: translateY(0);
+}
+
+.multi-table-page__take-seat-btn:focus-visible {
+  outline: 2px solid rgba(16, 185, 129, 0.9);
+  outline-offset: 2px;
+}
+
+.multi-table-page__take-seat-clock {
+  padding: 1px 7px;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.32);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.72rem;
+}
+
+/* It is the player's turn somewhere: a fold-out clock is running, so this
+   stops being a convenience and becomes the most important thing on screen. */
+.multi-table-page__take-seat--urgent {
+  border-bottom-color: rgba(239, 68, 68, 0.55);
+  animation: mtpTakeSeatUrgent 1.4s ease-in-out infinite;
+}
+
+.multi-table-page__take-seat--urgent .multi-table-page__take-seat-label {
+  color: #fca5a5;
+}
+
+.multi-table-page__take-seat--urgent .multi-table-page__take-seat-btn {
+  background: linear-gradient(135deg, #ef4444, #b91c1c);
+  box-shadow: 0 2px 10px rgba(239, 68, 68, 0.5);
+}
+
+@keyframes mtpTakeSeatUrgent {
+  0%,
+  100% {
+    background: linear-gradient(180deg, rgba(40, 14, 18, 0.97) 0%, rgba(24, 10, 14, 0.97) 100%);
+  }
+  50% {
+    background: linear-gradient(180deg, rgba(66, 18, 24, 0.97) 0%, rgba(40, 12, 18, 0.97) 100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .multi-table-page__take-seat--urgent {
+    animation: none;
+    background: linear-gradient(180deg, rgba(60, 16, 22, 0.97) 0%, rgba(36, 12, 16, 0.97) 100%);
+  }
+}
+
+/* The tournament drill-in renders the take-seat bar in normal flow AND an
+   absolutely-positioned back-pill at top:10px. Push the pill clear of the bar
+   so the two do not stack on the same pixels. */
+.multi-table-page__lobby-tab--tournament .multi-table-page__lobby-back {
+  top: 62px;
+}
+
+/* Floating "back to lobby" pill shown while a lobby tab renders
+   TournamentDetails in place. Matches the tab bar's dark glass + cyan accent. */
+.multi-table-page__lobby-back {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 60;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 212, 255, 0.35);
+  background: rgba(10, 10, 15, 0.85);
+  color: rgba(0, 212, 255, 0.9);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ROADMAP BATCH 3 — quick-join sheet (anchored under the tab bar)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.multi-table-page__quickjoin-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 390;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.multi-table-page__quickjoin {
+  position: fixed;
+  z-index: 391;
+  top: calc(56px + env(safe-area-inset-top, 0));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(340px, calc(100vw - 24px));
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(16, 19, 28, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: quickJoinIn 0.16s ease-out;
+}
+
+@keyframes quickJoinIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.multi-table-page__quickjoin-title {
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.multi-table-page__quickjoin-empty {
+  padding: 14px 6px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.85rem;
+}
+
+.multi-table-page__quickjoin-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+  cursor: pointer;
+  text-align: left;
+}
+
+.multi-table-page__quickjoin-name {
+  flex: 1;
+  min-width: 0;
+  /* Dan 2026-08-23: now holds the table name AND the ranking badge. flex, so
+     the badge keeps its full width and the NAME is what truncates — a badge
+     reading "Favou..." would be worse than a shortened table name. */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+  font-weight: 700;
+  /* Holds the name and its reason tag on one line. The name still ellipsises;
+     the tag never shrinks, because a truncated "Favourite" is worse than a
+     truncated table name. */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* WHY this row is where it is. Dan 2026-08-23 asked for Quick Join to lead with
+   favourites and similar games; a list that is silently ranked just reads as a
+   list in a random order, so each row says what earned it its place. */
+.multi-table-page__quickjoin-tag {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.5625rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #9fb4cc;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* A favourite is the one tier the player chose themselves, so it is the one
+   that earns colour. Everything else stays neutral - if every tag is
+   highlighted, none of them is. */
+.multi-table-page__quickjoin-tag--fav {
+  color: #ffd76a;
+  background: rgba(255, 199, 60, 0.14);
+  border-color: rgba(255, 199, 60, 0.4);
+}
+
+/* Why this row is where it is: "Favourite", "Similar Game", "Same Game". */
+.multi-table-page__quickjoin-tag {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+/* A favourite is the strongest signal on the sheet, so it is the only badge
+   that gets colour. Gold rather than the blue CTA next to it: two blues on one
+   row would read as two buttons. */
+.multi-table-page__quickjoin-tag--fav {
+  background: rgba(240, 185, 11, 0.16);
+  border-color: rgba(240, 185, 11, 0.4);
+  color: #f0b90b;
+}
+
+/* Why this row is where it is: "Favourite", "Similar Game", "Same Game". */
+.multi-table-page__quickjoin-tag {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+/* A favourite is the strongest signal on the sheet, so it is the only badge
+   that gets colour. Gold rather than the blue CTA next to it: two blues on one
+   row would read as two buttons. */
+.multi-table-page__quickjoin-tag--fav {
+  background: rgba(240, 185, 11, 0.16);
+  border-color: rgba(240, 185, 11, 0.4);
+  color: #f0b90b;
+}
+
+.multi-table-page__quickjoin-meta {
+  display: flex;
+  gap: 8px;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.55);
+  flex-shrink: 0;
+}
+
+.multi-table-page__quickjoin-cta {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.multi-table-page__quickjoin-lobby {
+  margin-top: 2px;
+  width: 100%;
+  padding: 9px;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .multi-table-page__quickjoin {
+    animation: none;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ROADMAP BATCH 4 — playable tile view action strip
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Variant A (Dan 2026-08-30): the band is an IN-FLOW reserved strip at the
+   bottom of the cell — never an overlay, so the felt (and the hero's cards at
+   their normal size) is never covered by action chrome. */
+.multi-table-grid__band {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px 8px;
+  background: #101319;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  /* `position: relative` so the z-index below is REAL. It was declared on a
+     static box on 2026-08-30, where z-index does not apply at all — the band
+     looked protected and was not. Relative keeps it fully in flow (it still
+     RESERVES its height, which is the whole point of Variant A); it only gives
+     the paint order teeth, so nothing absolutely positioned inside a tile can
+     land on the action keys the way the dead ::after smudge did. */
+  position: relative;
+  z-index: 20;
+}
+
+.multi-table-grid__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.multi-table-grid__action {
+  flex: 1;
+  padding: 10px 8px;
+  border: none;
+  border-radius: 9px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.multi-table-grid__action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.multi-table-grid__action--fold {
+  background: linear-gradient(180deg, #b91c1c 0%, #991b1b 100%);
+}
+
+.multi-table-grid__action--call,
+.multi-table-grid__action--check {
+  background: linear-gradient(180deg, #16a34a 0%, #15803d 100%);
+}
+
+.multi-table-grid__action-clock {
+  flex-shrink: 0;
+  min-width: 34px;
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #facc15;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ROADMAP BATCH 5 — aggregated session chip + popover
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.multi-table-page__pnl-chip {
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.72rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.multi-table-page__pnl-chip--up {
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.4);
+}
+
+.multi-table-page__pnl-chip--down {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+.multi-table-page__session-agg {
+  position: fixed;
+  z-index: 391;
+  top: calc(56px + env(safe-area-inset-top, 0));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(360px, calc(100vw - 24px));
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(16, 19, 28, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.multi-table-page__session-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 6px;
+  border-radius: 8px;
+}
+
+.multi-table-page__session-row--total {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  margin-top: 2px;
+  font-weight: 800;
+}
+
+.multi-table-page__session-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.multi-table-page__session-hands {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.multi-table-page__session-net {
+  flex-shrink: 0;
+  min-width: 64px;
+  text-align: right;
+  font-size: 0.82rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.multi-table-page__session-net--up {
+  color: #4ade80;
+}
+
+.multi-table-page__session-net--down {
+  color: #f87171;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TILE RAISE PRESETS (Dan 2026-08-21)
+   Second row under the fold/call strip so a 2x2 tile is genuinely playable.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.multi-table-grid__raises {
+  display: flex;
+  gap: 6px;
+}
+
+/* Variant A raise slider row — same functionality as the full panel's sizing
+   step, compact enough for a 2x2 tile. */
+.multi-table-grid__slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.multi-table-grid__slider {
+  flex: 1;
+  min-width: 0;
+  accent-color: #f59e0b;
+  touch-action: none;
+}
+
+.multi-table-grid__slider-amount {
+  flex-shrink: 0;
+  min-width: 44px;
+  text-align: right;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #facc15;
+  font-variant-numeric: tabular-nums;
+}
+
+.multi-table-grid__raise--confirm {
+  flex: 0 0 auto;
+  background: linear-gradient(180deg, #b45309 0%, #92400e 100%);
+  border-color: rgba(251, 191, 36, 0.5);
+}
+
+.multi-table-grid__raise--open {
+  border-color: rgba(251, 191, 36, 0.7);
+  background: rgba(146, 64, 14, 0.35);
+}
+
+.multi-table-grid__raise {
+  flex: 1;
+  padding: 7px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(10, 12, 18, 0.9);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.multi-table-grid__raise:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.multi-table-grid__raise--allin {
+  background: linear-gradient(180deg, #b45309 0%, #92400e 100%);
+  border-color: rgba(251, 191, 36, 0.5);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   CRASHED TABLE CARD (audit 2026-08-25)
+
+   Rendered by the per-slot TableErrorBoundary. Before this pass a render throw
+   in ONE TablePage unmounted all four, because the only boundary above them was
+   the single one in PersistentTableLayer wrapping the whole container. This is
+   what the failed slot shows instead, while the tables beside it keep dealing.
+
+   Deliberately calm: the player's instinct on seeing a crash at a poker table
+   is that their chips are gone, and they are not — the seat lives in
+   table_seats on the server and nothing here can vacate it.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.multi-table-page__crashed {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  /* One black with the shell above (2026-08-30). */
+  background: #000;
+  color: #e4e6eb;
+}
+
+.multi-table-page__crashed-title {
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.multi-table-page__crashed-body {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: rgba(228, 230, 235, 0.72);
+  max-width: 30ch;
+}
+
+.multi-table-page__crashed-name {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(228, 230, 235, 0.45);
+}
+
+.multi-table-page__crashed-btn {
+  margin-top: 4px;
+  padding: 10px 22px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+}

@@ -1,0 +1,63 @@
+.vip-progress-ring {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vip-progress-ring svg {
+  transform: rotate(-90deg);
+}
+
+.ring-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.1);
+}
+
+.ring-progress {
+  fill: none;
+  stroke: url(#vipGradient);
+  stroke-linecap: round;
+  transition: stroke-dashoffset var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.5s;
+  stroke: #ffd700;
+  filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.4));
+}
+
+.ring-content {
+  position: absolute;
+  text-align: center;
+}
+
+.progress-percent {
+  display: block;
+  font-size: 2rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.tier-name {
+  display: block;
+  color: #ffd700;
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.next-tier-badge {
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.6);
+  padding: 4px 12px;
+  border-radius: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.75rem;
+  /* E2E 2026-08-23: nowrap made the pill wider than the ring and it poked
+       past the viewport's left edge on /profile. Cap it to the ring and wrap. */
+  max-width: 100%;
+  box-sizing: border-box;
+  white-space: normal;
+  text-align: center;
+}

@@ -1,0 +1,39 @@
+-- Repo copy of migration tournament_rebuy_needs_no_seat, applied to
+-- production 2026-08-30 ~21:35 UTC via the Supabase MCP.
+--
+-- A TOURNAMENT REBUY NEEDS NO SEAT (Dan, 2026-08-30, verbatim):
+-- "REBUYS IN A TOURNAMENT SHOULD NOT PAUSE THE ACTION, IT SHOUD TRIGGER THE
+--  REBUY OFFER, THEN SIT THE PLAYER REBUYING AT ANY TABLE THAT NEEDS TO BE
+--  BALANCED, OR AT ANY SEAT THAT IS OPEN OR WHERE A PLAYER IS NEEDED FIRST,
+--  IF THEY TRULY SHOULD BE IN THE SAME TABLE, SAME SEAT, ITS ALLOWED."
+--
+-- Changes to process_tournament_rebuy:
+--   - Only an ADD-ON demands a live seat now; a 'rebuy' (and 'reentry')
+--     without a seat lands the chips on the tournament_players row, restores
+--     status='playing', clears elimination stamps, and ensureLateRegSeated
+--     seats the player at the table that most needs one within a 5s cycle.
+--   - Guard: a rebuy cannot resurrect a settled result (an eliminated row
+--     with prize > 0 refuses).
+--   - Return payload gains 'seated' so callers can tell the two shapes apart.
+--
+-- Companion engine changes (same PR): eliminatePlayer CAS gains
+-- .lte('chips', 0) so a landed rebuy outranks a stale bust snapshot;
+-- the bust sweep gives every busted player a 30s rebuy decision window
+-- (horses answer instantly through tryTournamentRebuys); tournament tables
+-- no longer pause the felt on a bust (the cash 5s pause is untouched).
+--
+-- The incident this closes: rebuy debit 21:13:57.405, elimination
+-- 21:13:57.911, seat vacated 21:13:59.162 — player charged 200, granted
+-- 30,000 chips, and removed from the event half a second later. The player
+-- row was restored by migration restore_rebuy_eliminated_player_kingfish.
+--
+-- Full executed SQL lives in the applied migration of the same name; the
+-- clauses the guard test pins:
+--
+--   -- Only an ADD-ON demands a live seat (a mid-play purchase by definition).
+--   IF p_rebuy_type = 'addon' THEN ... 'No live seat for this %' ...
+--   IF v_p.status = 'eliminated' AND COALESCE(v_p.prize, 0) > 0 THEN
+--     RAISE EXCEPTION 'Finishing place already paid - a rebuy cannot resurrect a settled result';
+--
+-- Redefines: FUNCTION public.process_tournament_rebuy (pre-existing object;
+-- the live definition is authoritative and was applied via MCP).

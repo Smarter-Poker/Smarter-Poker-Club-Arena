@@ -1,0 +1,417 @@
+/* =================================================================================
+ *  TableReactions.css -- Premium Floating Reaction Animations
+ * =================================================================================
+ *
+ *  PokerBros-level reaction system with:
+ *  - Spring-physics picker entrance with staggered items
+ *  - Multi-phase float-up with sinusoidal drift
+ *  - Scale pulse on send
+ *  - Glow trail during float
+ *  - Responsive touch targets
+ *  - Full reduced-motion support
+ */
+
+/* =================================================================================
+   CUSTOM PROPERTIES
+   ================================================================================= */
+
+:root {
+  --tr-ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --tr-ease-overshoot: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --tr-ease-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --tr-float-duration: 2.4s;
+  --tr-picker-bg: rgba(16, 18, 27, 0.96);
+  --tr-picker-border: rgba(255, 255, 255, 0.12);
+  --tr-picker-glow: rgba(212, 168, 75, 0.08);
+}
+
+/* =================================================================================
+   PICKER OVERLAY
+   ================================================================================= */
+
+.tr-picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 120px;
+  animation: trOverlayIn 0.2s var(--tr-ease-smooth);
+}
+
+@keyframes trOverlayIn {
+  from {
+    background: rgba(0, 0, 0, 0);
+  }
+  to {
+    background: rgba(0, 0, 0, 0.15);
+  }
+}
+
+/* =================================================================================
+   PICKER BAR
+   ================================================================================= */
+
+.tr-picker {
+  display: flex;
+  gap: 2px;
+  padding: 10px 14px;
+  background: var(--tr-picker-bg);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid var(--tr-picker-border);
+  border-radius: 24px;
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.55),
+    0 4px 12px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 60px var(--tr-picker-glow);
+  animation: trPickerIn 0.35s var(--tr-ease-spring);
+  transform-origin: bottom center;
+}
+
+@keyframes trPickerIn {
+  0% {
+    opacity: 0;
+    transform: translateY(20px) scale(0.75);
+    filter: blur(4px);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-4px) scale(1.03);
+    filter: blur(0);
+  }
+  70% {
+    transform: translateY(1px) scale(0.99);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* =================================================================================
+   PICKER BUTTONS -- Staggered entrance
+   ================================================================================= */
+
+.tr-picker__btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 14px;
+  cursor: pointer;
+  transition:
+    background 0.2s var(--tr-ease-smooth),
+    transform 0.2s var(--tr-ease-spring);
+  animation: trBtnStagger 0.3s var(--tr-ease-overshoot) backwards;
+  position: relative;
+}
+
+/* Stagger each button */
+.tr-picker__btn:nth-child(1) {
+  animation-delay: 0.04s;
+}
+.tr-picker__btn:nth-child(2) {
+  animation-delay: 0.08s;
+}
+.tr-picker__btn:nth-child(3) {
+  animation-delay: 0.12s;
+}
+.tr-picker__btn:nth-child(4) {
+  animation-delay: 0.16s;
+}
+.tr-picker__btn:nth-child(5) {
+  animation-delay: 0.2s;
+}
+.tr-picker__btn:nth-child(6) {
+  animation-delay: 0.24s;
+}
+
+@keyframes trBtnStagger {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.6);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.tr-picker__btn:active {
+  transform: scale(0.85);
+  background: rgba(255, 215, 0, 0.15);
+}
+
+/* Glow ring on hover */
+.tr-picker__btn::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 16px;
+  border: 2px solid transparent;
+  transition: border-color 0.2s;
+  pointer-events: none;
+}
+
+.tr-picker__emoji {
+  font-size: 1.75rem;
+  line-height: 1;
+  transition: transform 0.15s var(--tr-ease-spring);
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.tr-picker__label {
+  font-size: 0.55rem;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: color 0.2s;
+}
+
+/* =================================================================================
+   FLOATING CONTAINER
+   ================================================================================= */
+
+.tr-floating-container {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 100;
+}
+
+/* =================================================================================
+   FLOAT-UP ANIMATION -- Multi-phase with sinusoidal drift
+   ================================================================================= */
+
+.tr-float {
+  position: absolute;
+  left: calc(15% + var(--seat-index, 0) * 10%);
+  bottom: 40%;
+  will-change: transform, opacity;
+  animation:
+    trFloatRise var(--tr-float-duration) var(--tr-ease-smooth) forwards,
+    trFloatDrift var(--tr-float-duration) ease-in-out forwards;
+}
+
+/* Vertical rise with scale pulse */
+@keyframes trFloatRise {
+  0% {
+    opacity: 0;
+    transform: scale(0.2) translateY(0);
+  }
+  8% {
+    opacity: 1;
+    transform: scale(1.5) translateY(-10px);
+  }
+  18% {
+    transform: scale(0.9) translateY(-30px);
+  }
+  30% {
+    transform: scale(1.1) translateY(-55px);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1) translateY(-100px);
+  }
+  75% {
+    opacity: 0.7;
+    transform: scale(0.9) translateY(-145px);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.6) translateY(-180px);
+  }
+}
+
+/* Horizontal sinusoidal drift */
+@keyframes trFloatDrift {
+  0% {
+    margin-left: 0;
+  }
+  20% {
+    margin-left: 8px;
+  }
+  40% {
+    margin-left: -5px;
+  }
+  60% {
+    margin-left: 10px;
+  }
+  80% {
+    margin-left: -3px;
+  }
+  100% {
+    margin-left: 6px;
+  }
+}
+
+.tr-float__emoji {
+  font-size: 2.2rem;
+  display: block;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4)) drop-shadow(0 0 12px rgba(255, 255, 255, 0.08));
+  animation: trEmojiPulse 0.6s var(--tr-ease-spring);
+}
+
+@keyframes trEmojiPulse {
+  0% {
+    transform: rotate(-15deg);
+  }
+  25% {
+    transform: rotate(10deg) scale(1.15);
+  }
+  50% {
+    transform: rotate(-5deg) scale(0.95);
+  }
+  75% {
+    transform: rotate(3deg);
+  }
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+}
+
+/* Glow trail beneath floating emoji */
+.tr-float::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 30px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 215, 0, 0.15) 0%,
+    rgba(255, 215, 0, 0.05) 40%,
+    transparent 100%
+  );
+  border-radius: 50%;
+  filter: blur(4px);
+  animation: trTrailFade var(--tr-float-duration) ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes trTrailFade {
+  0% {
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 0.4;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* =================================================================================
+   RESPONSIVE
+   ================================================================================= */
+
+@media (max-width: 640px) {
+  .tr-picker {
+    padding: 8px 10px;
+    gap: 1px;
+    border-radius: 20px;
+  }
+
+  .tr-picker__btn {
+    padding: 8px;
+  }
+
+  .tr-picker__emoji {
+    font-size: 1.5rem;
+  }
+
+  .tr-float__emoji {
+    font-size: 1.8rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .tr-picker-overlay {
+    padding-bottom: 90px;
+  }
+
+  .tr-picker {
+    padding: 8px 8px;
+    gap: 0;
+  }
+
+  .tr-picker__btn {
+    padding: 8px 10px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .tr-picker__emoji {
+    font-size: 1.4rem;
+  }
+
+  .tr-picker__label {
+    font-size: 0.5rem;
+  }
+
+  .tr-float__emoji {
+    font-size: 1.6rem;
+  }
+}
+
+/* =================================================================================
+   REDUCED MOTION
+   ================================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .tr-picker,
+  .tr-picker__btn,
+  .tr-float,
+  .tr-float__emoji,
+  .tr-float::after,
+  .tr-picker-overlay {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .tr-picker {
+    opacity: 1;
+    transform: none;
+  }
+
+  .tr-picker__btn {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* Still show the float briefly, just without motion */
+  .tr-float {
+    bottom: 50%;
+    opacity: 1;
+    animation: trReducedFade 1.5s ease-out forwards !important;
+  }
+
+  @keyframes trReducedFade {
+    0% {
+      opacity: 0;
+    }
+    20% {
+      opacity: 1;
+    }
+    80% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+}

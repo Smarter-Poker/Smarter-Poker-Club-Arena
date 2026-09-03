@@ -1,0 +1,81 @@
+/* BBJ "Qualifying Hands" tab — one block per game family. */
+
+.bbj-qh {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bbj-qh__intro {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.bbj-qh__block {
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.bbj-qh__block.is-current {
+  border-color: rgba(213, 218, 226, 0.35);
+  background: rgba(213, 218, 226, 0.07);
+}
+
+.bbj-qh__block.is-ineligible {
+  opacity: 0.62;
+}
+
+.bbj-qh__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.bbj-qh__games {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #fff;
+}
+
+.bbj-qh__here {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(213, 218, 226, 0.18);
+  color: #d5dae2;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+.bbj-qh__label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.bbj-qh__cards {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.bbj-qh__note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.bbj-qh__note--off {
+  color: rgba(255, 255, 255, 0.45);
+  font-style: italic;
+}

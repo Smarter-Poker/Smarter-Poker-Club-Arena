@@ -1,0 +1,244 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "outputDirectory": "dist",
+  "framework": null,
+  "git": {
+    "deploymentEnabled": false
+  },
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "club.smarter.poker"
+        }
+      ],
+      "destination": "https://smarter.poker/hub/club-arena/:path*",
+      "permanent": false
+    },
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "club-engine.vercel.app"
+        }
+      ],
+      "destination": "https://smarter.poker/hub/club-arena/:path*",
+      "permanent": false
+    },
+    {
+      "source": "/",
+      "destination": "/hub/club-arena/",
+      "permanent": false
+    },
+    {
+      "source": "/hub/club-arena/lobby",
+      "destination": "/hub/club-arena/",
+      "permanent": true
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/hub/club-arena/assets/:path*",
+      "destination": "/assets/:path*"
+    },
+    {
+      "source": "/hub/club-arena/images/:path*",
+      "destination": "/images/:path*"
+    },
+    {
+      "source": "/hub/club-arena/fonts/:path*",
+      "destination": "/fonts/:path*"
+    },
+    {
+      "source": "/hub/club-arena/videos/:path*",
+      "destination": "/videos/:path*"
+    },
+    {
+      "source": "/hub/club-arena/cards/:path*",
+      "destination": "/cards/:path*"
+    },
+    {
+      "source": "/hub/club-arena/sounds/:path*",
+      "destination": "/sounds/:path*"
+    },
+    {
+      "source": "/club-stats-panel.svg",
+      "destination": "/club-stats-panel.svg"
+    },
+    {
+      "source": "/hub/club-arena/sw-bus.js",
+      "destination": "/sw-bus.js"
+    },
+    {
+      "source": "/hub/club-arena/manifest.json",
+      "destination": "/manifest.json"
+    },
+    {
+      "source": "/hub/club-arena/offline.html",
+      "destination": "/offline.html"
+    },
+    {
+      "source": "/hub/club-arena/club-logos/:path*",
+      "destination": "/club-logos/:path*"
+    },
+    {
+      "source": "/hub/club-arena/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/hub/club-arena",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/((?!assets/|images/|videos/|.*\\.svg$).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "SAMEORIGIN"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=()"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        }
+      ]
+    },
+    {
+      "source": "/index.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "key": "Pragma",
+          "value": "no-cache"
+        }
+      ]
+    },
+    {
+      "source": "/hub/club-arena/((?!assets/|cards/|sounds/|images/|videos/|club-logos/).*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/hub/club-arena/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/images/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, stale-while-revalidate=3600"
+        }
+      ]
+    },
+    {
+      "source": "/videos/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, stale-while-revalidate=3600"
+        }
+      ]
+    },
+    {
+      "source": "/cards/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, stale-while-revalidate=3600"
+        }
+      ]
+    },
+    {
+      "source": "/sounds/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, stale-while-revalidate=3600"
+        }
+      ]
+    },
+    {
+      "source": "/club-logos/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600, stale-while-revalidate=600"
+        }
+      ]
+    },
+    {
+      "source": "/sw-bus.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, must-revalidate"
+        },
+        {
+          "key": "Service-Worker-Allowed",
+          "value": "/"
+        }
+      ]
+    },
+    {
+      "source": "/manifest.json",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, must-revalidate"
+        }
+      ]
+    }
+  ],
+  "experimentalServices": {
+    "frontend": {
+      "routePrefix": "/",
+      "framework": "vite"
+    },
+    "sentry-autofix": {
+      "entrypoint": "services/sentry-autofix",
+      "routePrefix": "/_/sentry-autofix"
+    }
+  }
+}

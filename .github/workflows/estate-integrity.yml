@@ -1,0 +1,65 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ESTATE INTEGRITY — who watches the guards.
+#
+# Every protection this estate has can be reverted, edited, or drift out of
+# sync in one repo, and until now nothing would have said so. A ruleset is a
+# few API calls from having no required checks. A guard script is one merge
+# from being a different file in five repos and the original in two.
+#
+# That is exactly how every loss here happened: a protection that existed
+# somewhere and was not in force where it mattered. Untracked hooks guarding
+# one machine. An Autopilot rolled to seven repos that queued nothing in six.
+# A required check that could not be required because the gate behind it was
+# red for an unrelated reason.
+#
+# This runs in Club Arena because it is the canonical repo, and it checks all
+# seven — including this one.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Estate Integrity
+
+on:
+  schedule:
+    # 2026-09-01 (cost audit): hourly -> every 4 hours. Ruleset drift and
+    # guard drift are measured in days, not minutes; six checks a day still
+    # bounds any drift to a working half-day while cutting 18 runs a day.
+    - cron: '17 */4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: estate-integrity
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: All seven repos still agree
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # Owner-scoped, not repo-scoped: this has to read six OTHER repositories'
+      # rulesets and workflow runs. Reading a ruleset needs Administration:Read,
+      # which the App has and a repo-scoped GITHUB_TOKEN never will.
+      - name: Mint a GitHub App token for the whole account
+        id: app-token
+        if: vars.AUTOPILOT_APP_ID != ''
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.AUTOPILOT_APP_ID }}
+          private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
+          owner: Smarter-Poker
+
+      - name: Compare every repo against what it is supposed to be
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GH_PAT }}
+          # The alarm writes with GITHUB_TOKEN, whose issues: write is declared
+          # above and therefore guaranteed. An App's installation scopes can be
+          # narrowed without anyone here noticing, and a watchdog that cannot
+          # raise its alarm is not a watchdog.
+          GH_TOKEN_ISSUES: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: bash .github/scripts/estate-integrity.sh

@@ -1,0 +1,20 @@
+-- 20260829c_rake_attributions_drop_legacy_hands_fk.sql
+-- APPLIED TO PRODUCTION 2026-08-29 ~14:50 UTC via Supabase MCP.
+--
+-- rake_attributions.hand_id carried a legacy FK to the dead `hands` table
+-- (live hands are written to hand_history, which is itself purged at 7 days,
+-- which is why rake_records.hand_id is deliberately FK-free). The FK rejected
+-- every hand id the engine passed, so the moment the weighted-rake engine
+-- deployed (2026-08-29 ~14:41 UTC) every atomic_distribute_rake call aborted
+-- on the rake_attributions insert and cash rake stopped banking.
+--
+-- THE SAFETY NET HELD: every failed hand's full re-drive payload (rake, bbj,
+-- contributions, returned_uncalled, rake_method) landed in
+-- pending_fee_distributions, and the FeeReconciler re-drives them after this
+-- constraint is gone — idempotently, at 100 per cycle. No chips lost, no
+-- attribution guessed.
+--
+-- Lesson recorded for the next agent: a table that has sat empty for months
+-- can still carry constraints pointed at dead tables. Check pg_constraint on
+-- any resurrected table BEFORE routing a money path through it.
+ALTER TABLE public.rake_attributions DROP CONSTRAINT IF EXISTS rake_attributions_hand_id_fkey;

@@ -1,0 +1,244 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  TABLE PROFILE — Club Arena surface, built on the table's own tokens
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Rewritten 2026-08-27 with the component beside it. The previous sheet was
+ * traced off a competitor screenshot and carried three things that put it
+ * outside the Club Arena:
+ *
+ *   z-index: 10000       jumped the entire --z-* scale in design-tokens.css,
+ *                        so it painted over toasts and confetti that are
+ *                        deliberately ranked above modals;
+ *   background: #ffa800  a hard-coded orange close button, in an app whose
+ *                        design guidelines name Facebook blue and forbid the
+ *                        reference image's gold and amber;
+ *   font-family: sans-serif
+ *                        opted out of the app font on one sheet only.
+ *
+ * Everything below reads from design-tokens.css, so this sheet follows the
+ * table theme the player chose instead of pinning its own colours.
+ */
+
+@import '../../styles/design-tokens.css';
+
+.cpm-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-overlay, rgba(0, 0, 0, 0.6));
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: var(--z-modal, 500);
+  padding: var(--space-lg, 16px);
+}
+
+.cpm-modal {
+  width: min(380px, 100%);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary, #111827);
+  border: 1px solid var(--border-default, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius-xl, 16px);
+  box-shadow: var(--shadow-xl, 0 16px 40px rgba(0, 0, 0, 0.6));
+  color: var(--text-primary, #f3f4f6);
+  overflow: hidden;
+}
+
+/* ── Header ── */
+.cpm-header {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: var(--space-lg, 16px);
+  position: relative;
+  background: var(--bg-surface, #1a2234);
+  border-bottom: 1px solid var(--border-default, rgba(255, 255, 255, 0.08));
+  flex: 0 0 auto;
+}
+
+.cpm-title {
+  margin: 0;
+  font-size: var(--font-lg, 1rem);
+  font-weight: var(--weight-bold, 700);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.cpm-close {
+  position: absolute;
+  right: var(--space-md, 12px);
+  top: 50%;
+  transform: translateY(-50%);
+  /* 44px of touch target around a 24px glyph: the table is a phone surface
+     first, and this sheet opens mid-hand. */
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-secondary, #9ca3af);
+  font-size: var(--font-lg, 1rem);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cpm-close:focus-visible {
+  color: var(--text-primary, #f3f4f6);
+}
+
+/* ── Body ── */
+.cpm-body {
+  padding: var(--space-lg, 16px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg, 16px);
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+
+.cpm-user-section {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md, 12px);
+}
+
+.cpm-avatar-container {
+  flex: 0 0 auto;
+}
+
+.cpm-avatar,
+.cpm-avatar-placeholder {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-circle, 50%);
+  border: 1px solid var(--border-active, rgba(255, 255, 255, 0.15));
+  object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cpm-avatar-placeholder {
+  background: var(--bg-elevated, #1f2937);
+  color: var(--text-secondary, #9ca3af);
+  font-size: var(--font-xl, 1.25rem);
+  font-weight: var(--weight-bold, 700);
+}
+
+.cpm-user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cpm-username {
+  font-size: var(--font-lg, 1rem);
+  font-weight: var(--weight-bold, 700);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cpm-user-id,
+.cpm-user-club {
+  font-size: var(--font-sm, 0.75rem);
+  color: var(--text-secondary, #9ca3af);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Stat sections ── */
+.cpm-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm, 8px);
+}
+
+.cpm-section-title {
+  font-size: var(--font-xs, 0.6875rem);
+  font-weight: var(--weight-bold, 700);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted, #6b7280);
+}
+
+.cpm-stat-grid {
+  display: grid;
+  /* Two up at 375px, three when there is room. No media query needed. */
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: var(--space-sm, 8px);
+}
+
+.cpm-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-sm, 8px) var(--space-md, 12px);
+  background: var(--bg-surface, #1a2234);
+  border: 1px solid var(--border-default, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius-md, 8px);
+  min-width: 0;
+}
+
+.cpm-stat-label {
+  font-size: var(--font-2xs, 0.625rem);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted, #6b7280);
+}
+
+.cpm-stat-value {
+  font-size: var(--font-md, 0.875rem);
+  font-weight: var(--weight-bold, 700);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Winning and losing use the status tokens, not a fresh pair of greens.
+   The FALLBACK has to be the house green too. --color-success is #3fb950 now,
+   so a fallback of #22c55e is the old scheme lying in wait for the day the
+   token fails to resolve - which is exactly how the three competing greens
+   this phase merged got started. */
+.cpm-stat-value.cpm-up {
+  color: var(--color-success, #3fb950);
+}
+
+.cpm-stat-value.cpm-down {
+  color: var(--color-danger, #ef4444);
+}
+
+.cpm-note {
+  font-size: var(--font-sm, 0.75rem);
+  color: var(--text-secondary, #9ca3af);
+  text-align: center;
+}
+
+/* ── Footer ── */
+.cpm-footer {
+  padding: var(--space-md, 12px) var(--space-lg, 16px) var(--space-lg, 16px);
+  flex: 0 0 auto;
+}
+
+.cpm-confirm-btn {
+  width: 100%;
+  min-height: 44px;
+  background: var(--color-info, #3b82f6);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md, 8px);
+  font-size: var(--font-md, 0.875rem);
+  font-weight: var(--weight-bold, 700);
+  cursor: pointer;
+}
+
+.cpm-confirm-btn:focus-visible {
+  filter: brightness(1.1);
+}

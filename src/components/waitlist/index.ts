@@ -1,0 +1,1 @@
+export { WaitlistManager } from './WaitlistManager';

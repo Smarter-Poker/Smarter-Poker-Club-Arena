@@ -1,0 +1,350 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   THE CARD ONLY SHRINKS. IT NEVER REARRANGES. (Dan, 2026-09-01, binding)
+
+   Dan, verbatim: "WHEN YOU SWITCH TO MOBILE VIEW, IT GETS DISTORTED, COPY ICON
+   MOVES OUT OF ITS FRAME, CLUB AND PROFILE ICON SHIFT... (IT CAN'T DISTORT,
+   ONLY SHRINK)".
+
+   Measured on the real card before this pass (Playwright, file-level harness,
+   positions as a percentage of the card box):
+
+     viewport 1024  card 314x131   club ID line centre 52.42%   share 78.1-85.6% x
+     viewport  375  card 173x 72   club ID line centre 57.14%   share 71.8-97.2% x
+
+   Same card, same artwork, two different layouts. The cause was a stack of
+   breakpoint overrides that mixed PIXELS and per-breakpoint percentages into a
+   box whose artwork scales purely with width: `@media (max-width: 900px)` moved
+   the details bay, `@media (max-width: 360px)` re-picked font sizes, and
+   `@media (pointer: coarse)` gave the share button a fixed 44x44px body - 61%
+   of the card's height at 375px - which is exactly why the copy icon walked out
+   of its painted frame.
+
+   THE RULE THIS FILE NOW FOLLOWS:
+
+   1. Every position is a PERCENTAGE OF THE CARD BOX, taken from the artwork
+      itself (see ARTWORK ANCHORS below). Percentages are ratio-independent, so
+      a lobby card stretched to 2.4/1 and a native 1650/953 card place the same
+      element over the same painted pixel.
+   2. Every size is `cqw`. No `clamp()` with a rem or px bound - a bound that
+      stops scaling IS a rearrangement, it just waits for a narrow enough card.
+   3. NO breakpoint overrides in this file, and none for these classes anywhere
+      else. If the card is narrower, every part of it is smaller by the same
+      factor and nothing else changes.
+   4. A touch target that must be 44px is an invisible `::after` band. The band
+      is the only thing allowed to carry a pixel size, because it paints
+      nothing and therefore cannot move anything.
+
+   ARTWORK ANCHORS - measured from club-identity-template-no-level-v3.png
+   (1653x951), as a percentage of the card box. The shell fills the box, so
+   these map 1:1 onto element percentages:
+
+     club icon      y 48.69-56.16  (centre 52.42)   x 43.68-47.61
+     profile icon   y 59.63-66.67  (centre 63.15)   x 44.10-47.19
+     copy frame     y 65.19-81.07  (centre 73.13)   x 75.92-85.60
+     logo frame     y 21.45-62.57                   x 16.39-38.54
+
+   The two icons were moved DOWN 32px in v3 of the artwork so they sit level
+   with the ID lines they label - Dan, verbatim: "INSIDE THE CLUB CARD, THE CLUB
+   ICON AND THE PROFILE ICON NEED TO SHIFT DOWN TO BE EVEN WITH THE 'ID' NEXT TO
+   IT." The ID lines did not move; the icons came to them. If you ever change
+   where the ID lines sit, move the icons in the artwork in the SAME commit and
+   update the anchors above, or the labels stop pointing at anything.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.club-identity {
+  position: relative;
+  container-type: inline-size;
+  width: 100%;
+  max-width: 900px;
+  aspect-ratio: 1650 / 953;
+  min-width: 0;
+  overflow: hidden;
+  color: #eef3f8;
+  background: #000;
+  isolation: isolate;
+}
+
+.club-identity__shell {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  user-select: none;
+}
+
+.club-identity__shell img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.club-identity__logo {
+  position: absolute;
+  z-index: 1;
+  left: 17.05%;
+  top: 52%;
+  width: 21.7%;
+  aspect-ratio: 1 / 1;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #050608;
+  color: #69bfff;
+  font-size: 10cqw;
+  transform: translateY(-50%);
+}
+
+.club-identity__logo img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  object-position: center;
+}
+
+/* Club name and alias. Two rows, sized so their centres land where they landed
+   before this pass on the desktop card: 27.26% and 41.00%. The alias used to
+   reach its place with `translateY(1.1cqw)`, which is a WIDTH-derived nudge
+   applied to a VERTICAL position - it moved the alias by a different amount on
+   the 2.4/1 lobby card than on the native card. The offset is in the row
+   heights now, so it is the same everywhere. */
+.club-identity__details {
+  position: absolute;
+  z-index: 1;
+  left: 43.6%;
+  right: 11.5%;
+  top: 21.2%;
+  height: 27.48%;
+  display: grid;
+  grid-template-rows: 12.12fr 15.36fr;
+  align-items: center;
+  min-width: 0;
+}
+
+/* The two copy-an-id buttons, pinned to the artwork icons that label them.
+   Top 47.06% + two 10.73% rows puts the lines' centres on 52.42% and 63.15%,
+   which are the icon centres listed in ARTWORK ANCHORS. 10.73% is the icons'
+   own spacing, so both lines are level with a single uniform artwork offset. */
+.club-identity__ids {
+  position: absolute;
+  z-index: 1;
+  left: 43.6%;
+  right: 11.5%;
+  top: 47.06%;
+  height: 21.46%;
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  align-items: center;
+  min-width: 0;
+}
+
+.club-identity__details h2,
+.club-identity__alias,
+.club-identity__line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.club-identity__details h2 {
+  margin: 0;
+  color: #f5f6f8;
+  font-family: Inter, Arial, sans-serif;
+  font-size: 6.1cqw;
+  font-weight: 850;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  text-transform: uppercase;
+  text-shadow: 0 2px 2px #000;
+}
+
+.club-identity__alias {
+  margin: 0;
+  color: #e7e9ed;
+  font-size: 3.65cqw;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.18;
+  text-shadow: 0 2px 2px #000;
+}
+
+.club-identity__line {
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
+  padding: 0 0 0 7.2cqw;
+  border: 0;
+  background: transparent;
+  color: #e5e8ec;
+  font: inherit;
+  font-size: 3.25cqw;
+  font-weight: 650;
+  line-height: 1;
+  text-align: left;
+  text-shadow: 0 2px 2px #000;
+}
+
+button.club-identity__line {
+  /* ── IT HAS TO WIN ITS OWN BOX (2026-08-30) ───────────────────────────────
+     Found by the post-deploy sweep, measured live at 375px: a tap on the
+     centre of this button was answered by `P.club-identity__alias` — the
+     SIBLING above it — and by the details grid itself. The boxes touched and
+     the later painter took the hit test, so a player tapping a copy button
+     was tapping a paragraph.
+
+     `position: relative` plus a z-index puts each line on top of its own box.
+     It does NOT make the control a 44px target — see the note in
+     tests/e2e/mobile-tap-targets.spec.ts: two 11px controls 14px apart cannot
+     both carry a 44px band centred on themselves. This is the honest half:
+     the button is reliably tappable ON ITSELF. */
+  position: relative;
+  z-index: 1;
+  cursor: copy;
+}
+
+.club-identity__line span {
+  margin-right: 0.28em;
+  color: #dfe3e8;
+}
+
+.club-identity__line strong {
+  color: #f2f4f6;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.club-identity__level {
+  /* Dan 2026-09-01, binding: the level sits BELOW the logo inside a blue
+     box, never overlapping the logo. Every new club renders Level 1 here on
+     day one. */
+  position: absolute;
+  z-index: 2;
+  left: 17.05%;
+  top: 72.8%;
+  width: 21.7%;
+  height: 9%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: linear-gradient(180deg, #1c4fd8 0%, #0f2f8c 100%);
+  border: 1px solid #4a7dff;
+  border-radius: 0.8cqw;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 2px 6px rgba(0, 10, 40, 0.5);
+  color: #f1f5fa;
+  font-size: 3.1cqw;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  line-height: 1;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-shadow: 0 2px 2px #001129;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.club-identity__level > span {
+  display: block;
+}
+
+/* The footer is a coordinate space, not a row. Both of its children are pinned
+   to the artwork, so it covers the card and lets taps through everywhere except
+   on the share button itself. */
+.club-identity__footer {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Dan, 2026-09-01: "PLAYING NOW NEEDS TO BE MOVED DOWN MORE." Its bottom edge
+   was at 80.88% of the card; it is at 85% now. The right edge stops at the
+   copy frame's left edge (75.92%) so a six-figure count is clipped rather than
+   run under the button. */
+.club-identity__playing {
+  position: absolute;
+  left: 44%;
+  right: 24.08%;
+  bottom: 15%;
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 0.42em;
+  overflow: hidden;
+  color: #e5e8ec;
+  font-size: 3.15cqw;
+  font-weight: 650;
+  line-height: 1;
+  text-shadow: 0 2px 2px #000;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.club-identity__playing strong {
+  color: #0a86ff;
+  font-size: 1.45em;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Pinned to the copy frame painted in the artwork, in percentages, so the icon
+   sits inside its frame at every card size instead of walking out of it. */
+.club-identity__share {
+  position: absolute;
+  z-index: 2;
+  left: 75.92%;
+  top: 65.19%;
+  width: 9.68%;
+  height: 15.88%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #1ea7ff;
+  filter: drop-shadow(0 0 3px rgba(0, 136, 255, 0.72));
+  cursor: pointer;
+  line-height: 0;
+  pointer-events: auto;
+}
+
+.club-identity__share svg {
+  width: 3.75cqw;
+  height: 3.75cqw;
+}
+
+/* The painted icon is deliberately small inside the artwork; its touch target
+   cannot be. This band is invisible, paints nothing, and is centred on the
+   button, so it buys a full 44px thumb target without moving one pixel of the
+   card. It replaces the old `@media (pointer: coarse)` rule that resized the
+   BUTTON to 44x44px — on a 72px-tall card that was 61% of the card's height,
+   and it is what pushed the copy icon out of its frame. */
+.club-identity__share::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
+}
+
+.club-identity__share:active {
+  transform: translateY(1px);
+}
+
+.club-identity__share:focus-visible,
+button.club-identity__line:focus-visible {
+  outline: 2px solid #64c6ff;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .club-identity__share:active {
+    transform: none;
+  }
+}

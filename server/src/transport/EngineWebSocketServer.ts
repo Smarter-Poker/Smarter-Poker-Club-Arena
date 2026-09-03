@@ -1,0 +1,1157 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * EngineWebSocketServer — native WebSocket transport for authoritative state
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Attaches a ws.WebSocketServer to the existing node http.Server. Handles
+ * upgrade requests on `/ws/table/:tableId` only, authenticates the connecting
+ * client via the `bearer` subprotocol (Supabase JWT), and wires the socket
+ * into the TableStateHub for state delivery.
+ *
+ * Client protocol (binding — see Phase 1.1 spec §4)
+ * -------------------------------------------------
+ * URL:     wss://engine.smarter.poker/ws/table/:tableId
+ * Auth:    Sec-WebSocket-Protocol: bearer, <jwt>
+ * S→C:     SNAPSHOT { type, tableId, seq, state }
+ * S→C:     DELTA    { type, tableId, seq, prev, patch }  (RFC-6902 JSON Patch)
+ * S→C:     PING     { type, ts }
+ * S→C:     ERROR    { type, code, message }
+ * C→S:     RESYNC   { type }
+ * C→S:     PONG     { type, ts }
+ *
+ * Close codes (custom)
+ *   4400 bad request (malformed upgrade)
+ *   4401 auth failed
+ *   4404 table not found in engine
+ *   4429 rate-limited
+ *   4500 internal server error
+ *
+ * Heartbeat: server pings every 25s; closes after 60s without a pong.
+ */
+
+import { WebSocketServer, WebSocket, type RawData } from 'ws';
+import type { IncomingMessage } from 'http';
+import type { Server as HttpServer } from 'http';
+import { randomUUID } from 'crypto';
+import { supabase } from '../services/supabase.js';
+import { authorizeTableViewer, type TableViewerAccess } from '../services/TableViewerAccess.js';
+import type { TableStateHub, HubSubscriber } from './TableStateHub.js';
+// Round 70: blacklist gate + Round 67/190: connection audit log both use
+// the supabase client imported above. No additional import needed.
+import { parseTableIdFromPath, extractBearerToken } from './wsHelpers.js';
+
+// Re-export helpers so existing imports keep working. Tests pull them from
+// wsHelpers.js directly to avoid the Supabase-at-import-time side effect.
+export { parseTableIdFromPath, extractBearerToken };
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const HEARTBEAT_INTERVAL_MS = 25_000;
+const HEARTBEAT_TIMEOUT_MS = 60_000;
+/**
+ * How long a closing socket is given to flush its close frame before the fd is
+ * reclaimed. Without it the frame is written and discarded in the same tick and
+ * the peer only ever sees 1006, so the reason never reaches a single client.
+ */
+const TERMINATE_GRACE_MS = 250;
+const INBOUND_RATE_LIMIT = 30; // messages per second per connection
+const INBOUND_RATE_WINDOW_MS = 1_000;
+const MAX_INBOUND_MESSAGE_BYTES = 4 * 1024;
+
+// Close codes (must be in the 4000–4999 application-defined range per RFC 6455)
+export const CLOSE_AUTH_FAILED = 4401;
+export const CLOSE_BANNED = 4403; // Round 70: banned by club / union blacklist
+
+/**
+ * B11: how long a blacklist verdict may be reused. Short on purpose — a ban is
+ * an urgent moderation action and must not sit behind a long cache.
+ */
+const BAN_CACHE_TTL_MS = 30_000;
+const BAN_CACHE_MAX = 10_000;
+export const CLOSE_TABLE_NOT_FOUND = 4404;
+export const CLOSE_RATE_LIMITED = 4429;
+export const CLOSE_SERVER_ERROR = 4500;
+export const CLOSE_BAD_REQUEST = 4400;
+
+// Round 70 + 67/190: extract real client IP from x-forwarded-for chain.
+// Caddy sits in front of the engine, so socket.remoteAddress is always
+// 127.0.0.1. The forwarded header carries the real chain.
+function extractClientIp(req: IncomingMessage): string | null {
+  const fwd = req.headers['x-forwarded-for'];
+  if (typeof fwd === 'string' && fwd.length > 0) {
+    return fwd.split(',')[0]?.trim() ?? null;
+  }
+  if (Array.isArray(fwd) && fwd.length > 0) {
+    return String(fwd[0]).split(',')[0]?.trim() ?? null;
+  }
+  const sockAddr = (req.socket as unknown as { remoteAddress?: string }).remoteAddress;
+  return sockAddr ?? null;
+}
+
+/**
+ * Loopback and the 'unknown' placeholder are what we see when the proxy did not
+ * forward a real client address. Two players must never be treated as sharing a
+ * connection just because we failed to learn either of their addresses.
+ */
+const UNUSABLE_IPS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1', 'unknown', '']);
+
+export function isUsableClientIp(ip: string | null | undefined): ip is string {
+  return typeof ip === 'string' && !UNUSABLE_IPS.has(ip.trim().toLowerCase());
+}
+
+/** How long a table's ip_restriction flag is trusted before re-reading it. */
+const IP_RESTRICTION_TTL_MS = 60_000;
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+/**
+ * Callback the WS server uses to check a table exists before accepting the
+ * upgrade. Kept as a dependency so the transport layer stays decoupled from
+ * ServerTableEngine / GameServer classes.
+ */
+export type TableExistsCheck = (tableId: string) => boolean;
+export type EnsureTableCheck = (tableId: string) => Promise<boolean>;
+
+export interface EngineWebSocketServerOptions {
+  hub: TableStateHub;
+  tableExists: TableExistsCheck;
+  /**
+   * Starts a valid cash-table engine on demand when the table exists in the
+   * database but has not reached the occupied-table discovery feed yet.
+   * Optional for isolated transport tests; production always wires it.
+   */
+  ensureTable?: EnsureTableCheck;
+  /** Optional override for auth, used by tests to inject fake tokens. */
+  verifyToken?: (token: string) => Promise<{ userId: string } | null>;
+  /** Optional override for the authoritative club-membership gate in tests. */
+  authorizeViewer?: (tableId: string, userId: string) => Promise<TableViewerAccess>;
+  /**
+   * FIX 2 (2026-07-24): invoked on (re)connect and on RESYNC so the engine can
+   * re-deliver the requesting player's hole cards for the current hand. Public
+   * state is re-sent by the hub, but hole cards ride a separate transport.
+   */
+  onResync?: (tableId: string, userId: string) => void;
+  /**
+   * CONNECTIVITY UPGRADE (2026-08-22): transport-level presence wiring.
+   * Before this, the engine's DisconnectEngine learned about a dropped player
+   * ONLY from the HTTP heartbeat going stale (30s of dead air) even though the
+   * transport knew within milliseconds. onDisconnect fires when a player's
+   * LAST live socket for a table goes away; onConnect fires the moment a
+   * socket for that table is established, so a reconnect cancels the
+   * disconnect countdown instantly instead of waiting for the next HTTP
+   * heartbeat.
+   */
+  onConnect?: (tableId: string, userId: string) => void;
+  onDisconnect?: (tableId: string, userId: string) => void;
+}
+
+interface ConnectionState {
+  id: string;
+  userId: string;
+  /** Single-table path: the table from the upgrade URL. Mux path: ''. */
+  tableId: string;
+  ws: WebSocket;
+  lastPongAt: number;
+  inboundCount: number;
+  inboundWindowStart: number;
+  /** Client address from the x-forwarded-for chain; null when unknown. */
+  clientIp: string | null;
+  /**
+   * Roadmap batch 6 (2026-08-21) — multiplexed connection (/ws/multi).
+   * One socket carries up to MUX_MAX_TABLES table subscriptions; every
+   * per-table gate (exists / blacklist / ip-restriction / audit) runs at
+   * SUBSCRIBE time instead of upgrade time. 'pending' marks an in-flight
+   * async subscribe so a repeated SUBSCRIBE cannot double-register.
+   */
+  isMux?: boolean;
+  subs?: Map<string, HubSubscriber | 'pending'>;
+}
+
+/** Mux cap — matches the client's 4-table device cap. */
+const MUX_MAX_TABLES = 4;
+
+// ─── Default JWT verification (Supabase) ──────────────────────────────────────
+
+/**
+ * B11 FIX (2026-08-20): cache successful token verifications briefly.
+ *
+ * Every (re)connect called supabase.auth.getUser over the network. A reconnect
+ * storm — which is exactly what follows an engine restart or a client-side
+ * network blip, i.e. the moment the platform is already under load — turned
+ * into one auth round trip per socket per attempt.
+ *
+ * Only SUCCESSES are cached, and only for 30 seconds. Caching a failure would
+ * lock a user out for the TTL after a transient auth outage, and a long TTL
+ * would keep a revoked session alive; 30s bounds that to less than the time it
+ * takes an admin to notice they revoked something, while collapsing a burst of
+ * reconnects to a single call. The JWT's own expiry still applies underneath.
+ */
+const TOKEN_CACHE_TTL_MS = 30_000;
+const TOKEN_CACHE_MAX = 5_000;
+const tokenCache = new Map<string, { userId: string; verifiedAt: number }>();
+
+function cacheToken(token: string, userId: string): void {
+  // Bounded: drop the oldest insertion when full. Map preserves insertion order,
+  // so the first key is the coldest. Without this a long-lived process with
+  // rotating tokens grows this map without limit.
+  if (tokenCache.size >= TOKEN_CACHE_MAX) {
+    const oldest = tokenCache.keys().next().value;
+    if (oldest !== undefined) tokenCache.delete(oldest);
+  }
+  tokenCache.set(token, { userId, verifiedAt: Date.now() });
+}
+
+async function defaultVerifyToken(token: string): Promise<{ userId: string } | null> {
+  if (!token) return null;
+  const hit = tokenCache.get(token);
+  if (hit && Date.now() - hit.verifiedAt < TOKEN_CACHE_TTL_MS) {
+    return { userId: hit.userId };
+  }
+  if (hit) tokenCache.delete(token);
+  try {
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data?.user) return null;
+    cacheToken(token, data.user.id);
+    return { userId: data.user.id };
+  } catch {
+    return null;
+  }
+}
+
+// ─── EngineWebSocketServer ────────────────────────────────────────────────────
+
+export class EngineWebSocketServer {
+  private wss: WebSocketServer;
+  private connections: Map<WebSocket, ConnectionState> = new Map();
+  private heartbeatTimer: NodeJS.Timeout | null = null;
+  private readonly hub: TableStateHub;
+  private readonly tableExists: TableExistsCheck;
+  private readonly ensureTable?: EnsureTableCheck;
+  private readonly verifyToken: (token: string) => Promise<{ userId: string } | null>;
+  private readonly authorizeViewer: (tableId: string, userId: string) => Promise<TableViewerAccess>;
+  private readonly onResync?: (tableId: string, userId: string) => void;
+  private readonly onConnect?: (tableId: string, userId: string) => void;
+  private readonly onDisconnect?: (tableId: string, userId: string) => void;
+  /** tableId -> { restricted, readAt } — see IP_RESTRICTION_TTL_MS. */
+  private ipRestrictionCache: Map<string, { restricted: boolean; readAt: number }> = new Map();
+  /**
+   * B11: tableId -> its club and that club's union. A table's club membership
+   * does not change for the life of the table, so this needs no TTL.
+   */
+  private tableScopeCache: Map<string, { clubId: string; unionId: string | null }> = new Map();
+  /** B11: `${userId}|${clubId}|${unionId}` -> ban verdict, see BAN_CACHE_TTL_MS. */
+  private banCache: Map<string, { banned: boolean; readAt: number }> = new Map();
+
+  constructor(opts: EngineWebSocketServerOptions) {
+    this.hub = opts.hub;
+    this.tableExists = opts.tableExists;
+    this.ensureTable = opts.ensureTable;
+    this.verifyToken = opts.verifyToken ?? defaultVerifyToken;
+    this.authorizeViewer = opts.authorizeViewer ?? authorizeTableViewer;
+    this.onResync = opts.onResync;
+    this.onConnect = opts.onConnect;
+    this.onDisconnect = opts.onDisconnect;
+    this.wss = new WebSocketServer({ noServer: true });
+  }
+
+  /**
+   * Attach to a node http.Server. Routes upgrade requests whose path begins
+   * with `/ws/table/` to this WS server, leaves all other paths untouched so
+   * the http request handler handles them normally.
+   */
+  attach(httpServer: HttpServer): void {
+    httpServer.on('upgrade', (req, socket, head) => {
+      // Parse URL relative to a dummy host — `req.url` is path+query only.
+      const url = new URL(req.url || '/', 'http://localhost');
+
+      // ── Roadmap batch 6: multiplexed path ────────────────────────────
+      // Auth-only at upgrade; every table-scoped gate runs per SUBSCRIBE.
+      // Additive and OFF by default client-side (ca_ws_mux flag), so this
+      // path carries zero traffic until a client opts in.
+      if (url.pathname === '/ws/multi') {
+        const muxToken = extractBearerToken(req.headers['sec-websocket-protocol']);
+        if (!muxToken) {
+          socket.write(
+            'HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+          );
+          socket.destroy();
+          return;
+        }
+        const muxClientIp = extractClientIp(req);
+        this.verifyToken(muxToken)
+          .then((auth) => {
+            if (!auth) {
+              socket.write(
+                'HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+              );
+              socket.destroy();
+              return;
+            }
+            this.wss.handleUpgrade(req, socket, head, (ws) => {
+              this.onUpgradedMux(ws, auth.userId, muxClientIp);
+            });
+          })
+          .catch(() => {
+            socket.write(
+              'HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+            );
+            socket.destroy();
+          });
+        return;
+      }
+
+      if (!url.pathname.startsWith('/ws/table/')) return; // not ours
+
+      const tableId = parseTableIdFromPath(url.pathname);
+      if (!tableId) {
+        // Always write a proper HTTP status before destroying so the client
+        // sees 400 instead of Caddy's 502 upstream-down response.
+        socket.write('HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+
+      const token = extractBearerToken(req.headers['sec-websocket-protocol']);
+      if (!token) {
+        socket.write('HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+
+      // Round 67/190: capture client IP from x-forwarded-for chain (Caddy
+      // proxies upstream so socket.remoteAddress is always 127.0.0.1).
+      const clientIp = extractClientIp(req);
+
+      // Finish the handshake asynchronously after auth + table check pass.
+      this.verifyToken(token)
+        .then(async (auth) => {
+          if (!auth) {
+            // Pre-handshake failure — cannot use WS close codes yet.
+            // Return 401 by writing a short HTTP/1.1 response. Browsers
+            // surface this as a handshake error; client wrapper retries
+            // after refreshing the token.
+            socket.write(
+              'HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+            );
+            socket.destroy();
+            return;
+          }
+          const viewerAccess = await this.authorizeViewer(tableId, auth.userId);
+          if (!viewerAccess.allowed) {
+            const status =
+              viewerAccess.reason === 'table_not_found'
+                ? '404 Not Found'
+                : viewerAccess.reason === 'check_failed'
+                  ? '503 Service Unavailable'
+                  : '403 Forbidden';
+            socket.write(`HTTP/1.1 ${status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`);
+            socket.destroy();
+            return;
+          }
+
+          /*
+           * A brand-new empty table is deliberately absent from the normal
+           * occupied-table discovery RPC. Before this gate, Create And Start
+           * navigated to the felt immediately, this synchronous check returned
+           * false, and the client received an endless 404/reconnect cycle until
+           * a seat somehow existed on a table nobody could open. An authorized
+           * viewer now wakes that one table on demand. The GameServer method
+           * validates cash/status/deletion state and takes the same single-owner
+           * lease as background discovery before it installs the engine.
+           */
+          if (
+            !this.tableExists(tableId) &&
+            !(this.ensureTable && (await this.ensureTable(tableId)))
+          ) {
+            socket.write(
+              'HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+            );
+            socket.destroy();
+            return;
+          }
+
+          // Round 70: blacklist enforcement at WS upgrade. Banned users can't
+          // even open a connection to the table, so they can't see other
+          // players' actions / chat / etc. Belt-and-suspenders relative to
+          // the buyin gate at /api/club-arena/buyin.
+          try {
+            const banned = await this.isBannedFromTable(tableId, auth.userId);
+            if (banned) {
+              socket.write(
+                'HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+              );
+              socket.destroy();
+              return;
+            }
+          } catch {
+            // Belt-and-suspenders: never reject legit connections on a
+            // blacklist-check error. Log and proceed.
+          }
+
+          // Restrict Observers: a table may be seats-only (Dan 2026-08-25).
+          if (await this.isRestrictedObserver(tableId, auth.userId)) {
+            socket.write(
+              'HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+            );
+            socket.destroy();
+            return;
+          }
+
+          // 2026-08-19: IP Restriction, made real. The switch existed on the
+          // create-table page since day one and enforced nothing. It means
+          // what it means in a live room: two DIFFERENT accounts may not be at
+          // the same table from the same internet connection.
+          //
+          // Deliberately narrow:
+          //   • the same player reconnecting is always fine — only a different
+          //     userId counts as a conflict;
+          //   • an address we could not learn (loopback, 'unknown') never
+          //     counts, or a proxy misconfiguration would lock out the room;
+          //   • whoever is already connected keeps their seat. This refuses
+          //     the arriving connection, it never drops a seated player.
+          try {
+            if (await this.isIpConflict(tableId, auth.userId, clientIp)) {
+              socket.write(
+                'HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+              );
+              socket.destroy();
+              return;
+            }
+          } catch {
+            // Same rule as the blacklist gate: a failure to CHECK must never
+            // become a refusal.
+          }
+
+          // Round 67/190: log connection IP to action_audit_logs so the
+          // multi-account detector has data on real player traffic. Bots
+          // generate no audit log entries; this gap meant the detector was
+          // blind. Fire-and-forget — never blocks the upgrade.
+          this.logConnectionAudit(auth.userId, tableId, clientIp);
+
+          this.wss.handleUpgrade(req, socket, head, (ws) => {
+            this.onUpgraded(ws, req, auth.userId, tableId, clientIp);
+          });
+        })
+        .catch(() => {
+          socket.write(
+            'HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+          );
+          socket.destroy();
+        });
+    });
+
+    if (!this.heartbeatTimer) {
+      this.heartbeatTimer = setInterval(() => this.heartbeatSweep(), HEARTBEAT_INTERVAL_MS);
+    }
+  }
+
+  /**
+   * Call on server shutdown. Closes every connection cleanly and stops the
+   * heartbeat interval.
+   */
+  async close(): Promise<void> {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    for (const [ws] of this.connections) {
+      try {
+        ws.close(1001, 'server shutting down');
+      } catch {
+        /* ignore */
+      }
+    }
+    await new Promise<void>((resolve) => this.wss.close(() => resolve()));
+  }
+
+  // Metrics
+  connectionCount(): number {
+    return this.connections.size;
+  }
+
+  /**
+   * Who is actually on the multiplexed socket, and how much is it carrying?
+   *
+   * The `ca_ws_mux` beta has been "off, pending a soak" for two sessions, and
+   * the reason it never got soaked is that nothing could tell you whether it
+   * was on. /ws-metrics reported two numbers, neither of which distinguishes a
+   * client holding four per-table sockets from one holding a single mux socket
+   * with four subscriptions — the exact difference the beta exists to make.
+   *
+   * Everything here is already tracked per connection; this only counts it.
+   * Counts only, no payloads and no user ids: /ws-metrics is unauthenticated.
+   */
+  muxStats(): {
+    muxSockets: number;
+    singleSockets: number;
+    muxSubscriptions: number;
+    maxSubsOnOneSocket: number;
+  } {
+    let muxSockets = 0;
+    let singleSockets = 0;
+    let muxSubscriptions = 0;
+    let maxSubsOnOneSocket = 0;
+    for (const conn of this.connections.values()) {
+      if (!conn.isMux) {
+        singleSockets++;
+        continue;
+      }
+      muxSockets++;
+      const n = conn.subs?.size ?? 0;
+      muxSubscriptions += n;
+      if (n > maxSubsOnOneSocket) maxSubsOnOneSocket = n;
+    }
+    return { muxSockets, singleSockets, muxSubscriptions, maxSubsOnOneSocket };
+  }
+
+  // ─── Round 70: blacklist gate ───────────────────────────────────────────
+  /**
+   * Check if `userId` is banned from `tableId`'s club (or its union).
+   *
+   * B11 FIX (2026-08-20): this doc comment used to say "Cached briefly so
+   * repeated reconnects from the same banned user don't hammer the DB" and
+   * there was no cache of any kind. Three SEQUENTIAL queries ran on every
+   * single connect — tables, then clubs, then blacklists — so a reconnect
+   * storm multiplied by three against a database already absorbing the storm.
+   *
+   * Now both halves are cached, with different lifetimes because they have
+   * genuinely different volatility:
+   *   - a table's club and that club's union do not change for the life of the
+   *     table, so they are cached until the process restarts
+   *   - a ban CAN be added at any moment, so the verdict is cached for 30s:
+   *     long enough to collapse a burst, short enough that an owner banning
+   *     someone sees it take effect while they are still looking at the screen
+   *
+   * Only the two lookup queries are avoided on a hit; nothing about the ban
+   * decision itself is weakened.
+   */
+  /** Per-table `restrict_observers`, cached like the IP rule. Never the seat. */
+  private observerRestrictionCache = new Map<string, { restricted: boolean; readAt: number }>();
+
+  private async isBannedFromTable(tableId: string, userId: string): Promise<boolean> {
+    let scope = this.tableScopeCache.get(tableId);
+    if (!scope) {
+      const { data: tableRow } = await supabase
+        .from('tables')
+        .select('club_id')
+        .eq('id', tableId)
+        .maybeSingle();
+      if (!tableRow?.club_id) return false;
+
+      const { data: clubRow } = await supabase
+        .from('clubs')
+        .select('union_id')
+        .eq('id', tableRow.club_id)
+        .maybeSingle();
+
+      scope = {
+        clubId: tableRow.club_id as string,
+        unionId: (clubRow?.union_id as string) ?? null,
+      };
+      this.tableScopeCache.set(tableId, scope);
+    }
+
+    const banKey = `${userId}|${scope.clubId}|${scope.unionId ?? '-'}`;
+    const cachedBan = this.banCache.get(banKey);
+    if (cachedBan && Date.now() - cachedBan.readAt < BAN_CACHE_TTL_MS) {
+      return cachedBan.banned;
+    }
+
+    const tableRow = { club_id: scope.clubId };
+    const clubRow = { union_id: scope.unionId };
+    const nowIso = new Date().toISOString();
+    let q = supabase
+      .from('blacklists')
+      .select('id')
+      .eq('user_id', userId)
+      .or('expires_at.is.null,expires_at.gt.' + nowIso);
+
+    const orParts = [`club_id.eq.${tableRow.club_id}`];
+    if (clubRow?.union_id) orParts.push(`union_id.eq.${clubRow.union_id}`);
+    q = q.or(orParts.join(','));
+
+    const { data: bans } = await q.limit(1);
+    const banned = !!(bans && bans.length > 0);
+    if (this.banCache.size >= BAN_CACHE_MAX) {
+      const oldest = this.banCache.keys().next().value;
+      if (oldest !== undefined) this.banCache.delete(oldest);
+    }
+    this.banCache.set(banKey, { banned, readAt: Date.now() });
+    return banned;
+  }
+
+  // ─── Restrict Observers (2026-08-25) ────────────────────────────────────
+  /**
+   * Is `userId` allowed to watch `tableId` without holding a seat?
+   *
+   * Dan 2026-08-25, table-creation parity. `restrict_observers` has been a
+   * toggle since February with ZERO references anywhere in the codebase: a
+   * non-seated user connected on exactly the same path as a seated one and
+   * there was no seated check in the transport at all.
+   *
+   * TWO READS, CACHED DIFFERENTLY ON PURPOSE:
+   *
+   *   the table's SETTING is cached like the IP rule below — it changes when a
+   *   host edits the table, which is rare;
+   *
+   *   the player's SEAT is NOT cached, ever. A player who has just bought in
+   *   connects within the same second, and a thirty-second stale "not seated"
+   *   would lock them out of the seat they just paid for. This is the one
+   *   check on this path where a cache is worse than a query.
+   *
+   * Fails OPEN on error, like every other gate in this file: a database blip
+   * must never refuse a legitimate connection.
+   */
+  private async isRestrictedObserver(tableId: string, userId: string): Promise<boolean> {
+    try {
+      const cached = this.observerRestrictionCache.get(tableId);
+      let restricted: boolean;
+      if (cached && Date.now() - cached.readAt < IP_RESTRICTION_TTL_MS) {
+        restricted = cached.restricted;
+      } else {
+        const { data } = await supabase
+          .from('tables')
+          .select('restrict_observers')
+          .eq('id', tableId)
+          .maybeSingle();
+        restricted = data?.restrict_observers === true;
+        this.observerRestrictionCache.set(tableId, { restricted, readAt: Date.now() });
+      }
+      if (!restricted) return false;
+
+      const { data: seat } = await supabase
+        .from('table_seats')
+        .select('seat_number')
+        .eq('table_id', tableId)
+        .eq('user_id', userId)
+        .is('left_at', null)
+        .maybeSingle();
+      return !seat;
+    } catch {
+      return false;
+    }
+  }
+
+  // ─── IP Restriction (2026-08-19) ────────────────────────────────────────
+  /**
+   * Is `tableId` configured to allow only one account per internet connection?
+   *
+   * Cached for IP_RESTRICTION_TTL_MS so a burst of reconnects does not hammer
+   * the table row, and so an owner flipping the switch takes effect within a
+   * minute rather than needing a table restart.
+   *
+   * A read failure returns FALSE — the gate stays open. Refusing players
+   * because the database hiccuped is a worse outcome than briefly not
+   * enforcing a collusion control.
+   */
+  private async isIpRestricted(tableId: string): Promise<boolean> {
+    const hit = this.ipRestrictionCache.get(tableId);
+    if (hit && Date.now() - hit.readAt < IP_RESTRICTION_TTL_MS) return hit.restricted;
+
+    const { data, error } = await supabase
+      .from('tables')
+      .select('ip_restriction')
+      .eq('id', tableId)
+      .maybeSingle();
+
+    if (error) return false;
+    const restricted = data?.ip_restriction === true;
+    this.ipRestrictionCache.set(tableId, { restricted, readAt: Date.now() });
+    return restricted;
+  }
+
+  /**
+   * True when this arriving connection would put a SECOND account at
+   * `tableId` from `ip`.
+   */
+  private async isIpConflict(tableId: string, userId: string, ip: string | null): Promise<boolean> {
+    if (!isUsableClientIp(ip)) return false;
+    if (!(await this.isIpRestricted(tableId))) return false;
+
+    const needle = ip.trim().toLowerCase();
+    for (const conn of this.connections.values()) {
+      if (conn.tableId !== tableId) continue;
+      if (conn.userId === userId) continue; // the same player reconnecting
+      if (!isUsableClientIp(conn.clientIp)) continue;
+      if (conn.clientIp.trim().toLowerCase() === needle) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Drop a table's cached ip_restriction flag.
+   *
+   * Called from onClose once the last connection to a table goes away, so the
+   * cache cannot grow without bound over the lifetime of a long-running engine
+   * process — an entry is only ever held for a table someone is connected to.
+   */
+  private forgetTableIfEmpty(tableId: string): void {
+    for (const conn of this.connections.values()) {
+      if (conn.tableId === tableId) return; // someone is still here
+      if (conn.isMux && conn.subs?.has(tableId)) return; // mux viewer still here
+    }
+    this.ipRestrictionCache.delete(tableId);
+  }
+
+  // ─── Round 67/190: per-connection audit log ─────────────────────────────
+  /**
+   * Fire-and-forget: write a row to action_audit_logs so the multi-account
+   * IP detector has a data source for real engine traffic (the engine path
+   * that bypasses /api/club-arena/* routes which is where auditLogger.js
+   * normally fires).
+   */
+  private logConnectionAudit(userId: string, tableId: string, ip: string | null): void {
+    void Promise.resolve(
+      supabase.from('action_audit_logs').insert({
+        action_type: 'engine_ws_connect',
+        user_id: userId,
+        ip_address: ip ?? 'unknown',
+        details: { table_id: tableId },
+      })
+    )
+      .then(({ error }) => {
+        if (error && error.code !== '23505' /* dup */) {
+          console.warn('[EngineWS] audit log failed:', error.message);
+        }
+      })
+      .catch((err: unknown) => {
+        console.warn('[EngineWS] audit log threw:', (err as Error)?.message ?? err);
+      });
+  }
+
+  // ─── Upgrade aftermath ─────────────────────────────────────────────────────
+
+  private onUpgraded(
+    ws: WebSocket,
+    _req: IncomingMessage,
+    userId: string,
+    tableId: string,
+    clientIp: string | null = null
+  ): void {
+    const conn: ConnectionState = {
+      id: randomUUID(),
+      userId,
+      tableId,
+      ws,
+      lastPongAt: Date.now(),
+      inboundCount: 0,
+      inboundWindowStart: Date.now(),
+      clientIp,
+    };
+    this.connections.set(ws, conn);
+
+    // HubSubscriber adapter: ws already matches the shape almost exactly,
+    // but we need a stable .id field and a numeric readyState.
+    const subscriber: HubSubscriber = {
+      id: conn.id,
+      get readyState() {
+        return ws.readyState;
+      },
+      // FIX 2026-08-22: without this the hub's backpressure logic read
+      // `sub.bufferedAmount ?? 0` as 0 forever on every single-table socket,
+      // so the soft-drop / hard-evict thresholds never fired for the
+      // connections that carry all current traffic (only the mux path
+      // exposed it).
+      get bufferedAmount() {
+        return ws.bufferedAmount;
+      },
+      send(data: string) {
+        ws.send(data);
+      },
+      // 2026-08-24: hub hard-drop → close the socket so the client's
+      // onclose fires NOW and it reconnects on the slow ladder (4429),
+      // instead of holding an open socket that will never speak again.
+      evict() {
+        try {
+          ws.close(CLOSE_RATE_LIMITED, 'backpressure evict - reconnect');
+        } catch {
+          /* ignore */
+        }
+      },
+    };
+    (ws as unknown as { __sub: HubSubscriber }).__sub = subscriber;
+    this.hub.subscribe(tableId, subscriber);
+    // FIX 2 (2026-07-24): a fresh (re)connect gets the public SNAPSHOT above;
+    // ask the engine to also re-deliver this player's hole cards for the
+    // current hand so a reconnecting player isn't left blind.
+    // 2026-08-22 review: these callbacks reach into engine code and MUST NOT
+    // be able to abort the wiring below — a throw here used to leave the
+    // socket in this.connections and subscribed to the hub with NO close
+    // handler: a permanent leak the sweeps could never collect.
+    try {
+      this.onResync?.(tableId, userId);
+      // Presence: tell the engine this player has a live transport again.
+      this.onConnect?.(tableId, userId);
+    } catch {
+      /* engine wiring must never take down the transport */
+    }
+
+    ws.on('message', (raw) => this.onMessage(conn, raw));
+    ws.on('close', () => this.onClose(ws));
+    ws.on('error', () => this.onClose(ws));
+  }
+
+  // ─── Roadmap batch 6: mux connection lifecycle ──────────────────────────
+
+  private onUpgradedMux(ws: WebSocket, userId: string, clientIp: string | null): void {
+    const conn: ConnectionState = {
+      id: randomUUID(),
+      userId,
+      tableId: '',
+      ws,
+      lastPongAt: Date.now(),
+      inboundCount: 0,
+      inboundWindowStart: Date.now(),
+      clientIp,
+      isMux: true,
+      subs: new Map(),
+    };
+    this.connections.set(ws, conn);
+    ws.on('message', (raw) => this.onMessage(conn, raw));
+    ws.on('close', () => this.onClose(ws));
+    ws.on('error', () => this.onClose(ws));
+  }
+
+  private sendMuxError(
+    conn: ConnectionState,
+    tableId: string,
+    code: string,
+    message: string
+  ): void {
+    try {
+      conn.ws.send(JSON.stringify({ type: 'ERROR', tableId, code, message }));
+    } catch {
+      /* next close/sweep collects the socket */
+    }
+  }
+
+  private async handleMuxSubscribe(conn: ConnectionState, tableId: string): Promise<void> {
+    if (!conn.subs) return;
+    const existing = conn.subs.get(tableId);
+    if (existing === 'pending') return; // in flight - first one wins
+    if (existing) {
+      // Idempotent: already subscribed. Re-ack + resync so a client retry
+      // converges instead of erroring.
+      try {
+        conn.ws.send(JSON.stringify({ type: 'SUBSCRIBED', tableId }));
+      } catch {
+        /* ignore */
+      }
+      this.hub.resync(tableId, existing);
+      this.onResync?.(tableId, conn.userId);
+      return;
+    }
+    // Audit round 4: counting only SETTLED subscriptions let a client that
+    // fired 5+ SUBSCRIBEs in one burst sail past the cap while they were all
+    // still 'pending'. In-flight counts against the limit.
+    if (conn.subs.size >= MUX_MAX_TABLES) {
+      this.sendMuxError(
+        conn,
+        tableId,
+        'SUB_LIMIT',
+        `At most ${MUX_MAX_TABLES} tables per connection`
+      );
+      return;
+    }
+    conn.subs.set(tableId, 'pending');
+    try {
+      const viewerAccess = await this.authorizeViewer(tableId, conn.userId);
+      if (!viewerAccess.allowed) {
+        conn.subs.delete(tableId);
+        this.sendMuxError(
+          conn,
+          tableId,
+          viewerAccess.reason === 'table_not_found'
+            ? 'TABLE_NOT_FOUND'
+            : viewerAccess.reason === 'check_failed'
+              ? 'ACCESS_CHECK_FAILED'
+              : viewerAccess.reason === 'observers_restricted'
+                ? 'OBSERVERS_RESTRICTED'
+                : 'CLUB_MEMBERSHIP_REQUIRED',
+          viewerAccess.reason === 'table_not_found'
+            ? 'Table not found'
+            : viewerAccess.reason === 'check_failed'
+              ? 'Unable to verify table access'
+              : viewerAccess.reason === 'observers_restricted'
+                ? 'This Table Is Open To Seated Players Only'
+                : 'Join this club before watching its live games'
+        );
+        return;
+      }
+      // The multiplexed path must wake new empty tables exactly like the
+      // single-table WebSocket path, or multi-table users still get the old
+      // permanent TABLE_NOT_FOUND loop.
+      if (!this.tableExists(tableId) && !(this.ensureTable && (await this.ensureTable(tableId)))) {
+        conn.subs.delete(tableId);
+        this.sendMuxError(conn, tableId, 'TABLE_NOT_FOUND', 'Table not found in engine');
+        return;
+      }
+      try {
+        if (await this.isBannedFromTable(tableId, conn.userId)) {
+          conn.subs.delete(tableId);
+          this.sendMuxError(conn, tableId, 'BANNED', 'Not permitted at this table');
+          return;
+        }
+        /* The multi-table client never touches the upgrade gate above, so the
+           same rule has to exist here or one surface enforces it and the other
+           does not. */
+        if (await this.isRestrictedObserver(tableId, conn.userId)) {
+          conn.subs.delete(tableId);
+          this.sendMuxError(
+            conn,
+            tableId,
+            'OBSERVERS_RESTRICTED',
+            'This Table Is Open To Seated Players Only'
+          );
+          return;
+        }
+      } catch {
+        /* same rule as the single-table path: a failed CHECK never refuses */
+      }
+      try {
+        if (await this.isIpConflict(tableId, conn.userId, conn.clientIp)) {
+          conn.subs.delete(tableId);
+          this.sendMuxError(
+            conn,
+            tableId,
+            'IP_RESTRICTED',
+            'Another account is already connected from this address'
+          );
+          return;
+        }
+      } catch {
+        /* failed check never refuses */
+      }
+      // The socket may have closed while the async gates ran.
+      if (!this.connections.has(conn.ws) || conn.subs.get(tableId) !== 'pending') return;
+      this.logConnectionAudit(conn.userId, tableId, conn.clientIp);
+      const ws = conn.ws;
+      // eslint-disable-next-line @typescript-eslint/no-this-alias
+      const self = this;
+      const subscriber: HubSubscriber = {
+        id: `${conn.id}:${tableId}`,
+        get readyState() {
+          return ws.readyState;
+        },
+        get bufferedAmount() {
+          return ws.bufferedAmount;
+        },
+        send(data: string) {
+          ws.send(data);
+        },
+        // 2026-08-24: on a mux socket, closing the whole connection would
+        // punish the user's OTHER tables for one table's backpressure.
+        // Drop just this table's subscription and say so; the client's
+        // per-table facade sees the close and reconnects that table alone.
+        evict() {
+          conn.subs?.delete(tableId);
+          self.sendMuxError(conn, tableId, 'EVICTED', 'backpressure evict - resubscribe');
+        },
+      };
+      conn.subs.set(tableId, subscriber);
+      try {
+        conn.ws.send(JSON.stringify({ type: 'SUBSCRIBED', tableId }));
+      } catch {
+        /* ignore */
+      }
+      this.hub.subscribe(tableId, subscriber);
+      // 2026-08-22 review: guarded separately — after hub.subscribe() has
+      // succeeded, a throw from these engine callbacks must not fall into the
+      // outer catch, which would delete the sub entry and orphan the hub
+      // subscriber (unreachable by onClose).
+      try {
+        this.onResync?.(tableId, conn.userId);
+        // Presence: mux SUBSCRIBE established a live transport for this table.
+        this.onConnect?.(tableId, conn.userId);
+      } catch {
+        /* engine wiring must never take down the transport */
+      }
+    } catch (err) {
+      conn.subs.delete(tableId);
+      this.sendMuxError(conn, tableId, 'SUB_FAILED', 'Subscribe failed');
+    }
+  }
+
+  private handleMuxMessage(conn: ConnectionState, msg: { type?: string; tableId?: unknown }): void {
+    const tableId = typeof msg.tableId === 'string' ? msg.tableId : '';
+    switch (msg.type) {
+      case 'PONG':
+        conn.lastPongAt = Date.now();
+        return;
+      case 'SUBSCRIBE':
+        if (!tableId) return;
+        void this.handleMuxSubscribe(conn, tableId);
+        return;
+      case 'UNSUBSCRIBE': {
+        if (!tableId || !conn.subs) return;
+        const sub = conn.subs.get(tableId);
+        conn.subs.delete(tableId);
+        if (sub && sub !== 'pending') this.hub.unsubscribe(tableId, sub);
+        this.forgetTableIfEmpty(tableId);
+        return;
+      }
+      case 'RESYNC': {
+        if (!tableId || !conn.subs) return;
+        const sub = conn.subs.get(tableId);
+        if (sub && sub !== 'pending') {
+          this.hub.resync(tableId, sub);
+          this.onResync?.(tableId, conn.userId);
+        }
+        return;
+      }
+      default:
+        return; // action ingress stays REST-only, same as the single path
+    }
+  }
+
+  private onMessage(conn: ConnectionState, raw: RawData): void {
+    // Rate limit by sliding-window count.
+    const now = Date.now();
+    if (now - conn.inboundWindowStart >= INBOUND_RATE_WINDOW_MS) {
+      conn.inboundWindowStart = now;
+      conn.inboundCount = 0;
+    }
+    conn.inboundCount++;
+    if (conn.inboundCount > INBOUND_RATE_LIMIT) {
+      try {
+        conn.ws.close(CLOSE_RATE_LIMITED, 'rate-limited');
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+
+    // Payload size guard. RawData is Buffer | ArrayBuffer | Buffer[] from ws.
+    const size = Array.isArray(raw)
+      ? raw.reduce((n, b) => n + b.length, 0)
+      : raw instanceof ArrayBuffer
+        ? raw.byteLength
+        : (raw as Buffer).length;
+    if (size > MAX_INBOUND_MESSAGE_BYTES) {
+      try {
+        conn.ws.close(CLOSE_BAD_REQUEST, 'payload too large');
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+
+    let msg: { type?: string; ts?: number } | null = null;
+    try {
+      msg = JSON.parse(raw.toString());
+    } catch {
+      return; // ignore malformed
+    }
+    if (!msg || typeof msg.type !== 'string') return;
+
+    if (conn.isMux) {
+      this.handleMuxMessage(conn, msg as { type?: string; tableId?: unknown });
+      return;
+    }
+
+    switch (msg.type) {
+      case 'PONG':
+        conn.lastPongAt = Date.now();
+        return;
+      case 'RESYNC': {
+        const sub = (conn.ws as unknown as { __sub: HubSubscriber }).__sub;
+        this.hub.resync(conn.tableId, sub);
+        // FIX 2 (2026-07-24): re-deliver hole cards alongside the public
+        // snapshot — the RESYNC snapshot only carries scrubbed public state.
+        this.onResync?.(conn.tableId, conn.userId);
+        return;
+      }
+      default:
+        // Client→server messages other than PONG / RESYNC are ignored. We
+        // deliberately do NOT accept action submissions over WS — the REST
+        // POST /action endpoint is the only action ingress.
+        return;
+    }
+  }
+
+  private onClose(ws: WebSocket): void {
+    const conn = this.connections.get(ws);
+    if (!conn) return;
+    if (conn.isMux) {
+      this.connections.delete(ws);
+      if (conn.subs) {
+        for (const [tableId, sub] of conn.subs) {
+          if (sub !== 'pending') this.hub.unsubscribe(tableId, sub);
+        }
+        const tableIds = [...conn.subs.keys()];
+        conn.subs.clear();
+        for (const tableId of tableIds) {
+          this.forgetTableIfEmpty(tableId);
+          this.notifyDisconnectIfLast(tableId, conn.userId);
+        }
+      }
+      return;
+    }
+    const sub = (ws as unknown as { __sub?: HubSubscriber }).__sub;
+    if (sub) this.hub.unsubscribe(conn.tableId, sub);
+    this.connections.delete(ws);
+    // Delete AFTER removing this connection, so "is anyone left" is accurate.
+    this.forgetTableIfEmpty(conn.tableId);
+    this.notifyDisconnectIfLast(conn.tableId, conn.userId);
+  }
+
+  /**
+   * CONNECTIVITY UPGRADE (2026-08-22): fire onDisconnect only when the player
+   * has NO other live socket carrying this table. During a reconnect the new
+   * socket opens before the old one closes; without this check the old
+   * socket's close would mark a freshly reconnected player as disconnected.
+   */
+  private notifyDisconnectIfLast(tableId: string, userId: string): void {
+    if (!this.onDisconnect || !tableId) return;
+    for (const [otherWs, other] of this.connections) {
+      if (other.userId !== userId) continue;
+      if (otherWs.readyState !== WebSocket.OPEN) continue;
+      if (other.tableId === tableId) return; // still connected on another socket
+      if (other.isMux && other.subs?.has(tableId)) return;
+    }
+    try {
+      this.onDisconnect(tableId, userId);
+    } catch {
+      /* presence wiring must never take down the transport */
+    }
+  }
+
+  private heartbeatSweep(): void {
+    const now = Date.now();
+    for (const [ws, conn] of this.connections) {
+      if (now - conn.lastPongAt > HEARTBEAT_TIMEOUT_MS) {
+        try {
+          ws.close(1001, 'heartbeat timeout');
+        } catch {
+          /* ignore */
+        }
+        // FIX 2026-08-22: close() starts a graceful handshake a half-open
+        // socket can never finish, so the fd lingered until the OS TCP
+        // timeout. A peer that missed 60s of pongs is gone — terminate.
+        //
+        // ...but terminating in the SAME TICK discarded the close frame we had
+        // just written, so every client saw 1006 "abnormal" and none ever
+        // learned it was a heartbeat timeout. A socket that is merely slow
+        // rather than half-open can still receive that frame if given a moment,
+        // and a truly half-open one loses nothing by waiting: it is already off
+        // the connection map above, so the sweep will not see it again.
+        const doomed = ws;
+        const reaper = setTimeout(() => {
+          try {
+            doomed.terminate();
+          } catch {
+            /* ignore */
+          }
+        }, TERMINATE_GRACE_MS);
+        (reaper as { unref?: () => void }).unref?.();
+        this.onClose(ws);
+        continue;
+      }
+      try {
+        ws.send(JSON.stringify({ type: 'PING', ts: now }));
+      } catch {
+        /* next sweep will collect */
+      }
+    }
+  }
+}

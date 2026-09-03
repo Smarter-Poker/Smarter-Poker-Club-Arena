@@ -1,0 +1,234 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  CHAT BUBBLE — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * The bubble is positioned against `.seat-wrapper` (TablePage.css line 1235:
+ * `position: absolute; transform: translate(-50%, -50%)`), which is the seat's
+ * own box. Mounting the bubble as a sibling of <SeatSlot> inside that wrapper
+ * means the bubble follows the seat for every table size and every layout
+ * without a single hard-coded coordinate.
+ */
+
+.chat-bubble {
+  position: absolute;
+  left: 50%;
+  /* translateX only: the wrapper already carries a translate(-50%, -50%), and
+     nesting a second transform here would compound it. Vertical placement is
+     done with top/bottom below so the two never fight. */
+  transform: translateX(-50%);
+  z-index: 22;
+
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+
+  /* A poker seat plate is roughly 110px wide. The bubble is allowed to be
+     wider than the seat because a 200-character message inside 110px would be
+     a twelve-line tower, but capped so two adjacent seats cannot overlap. */
+  min-width: 72px;
+  max-width: 168px;
+  padding: 5px 9px 6px;
+  box-sizing: border-box;
+
+  background: linear-gradient(180deg, rgba(244, 246, 250, 0.98) 0%, rgba(226, 231, 240, 0.98) 100%);
+  color: #10151f;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 12px;
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+
+  pointer-events: none; /* Never intercept a tap meant for the seat underneath. */
+  animation: chatBubblePop 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Above the seat is the default: it is where a speech bubble belongs and where
+   Dan asked for it ("ABOVE THE AVATAR"). */
+.chat-bubble--above {
+  bottom: calc(100% + 10px);
+}
+
+/* Top-arc seats have the BBJ banner above them (see .seat-wrapper--top in
+   SeatSlot.css), so their bubble drops below the plate instead of colliding. */
+.chat-bubble--below {
+  top: calc(100% + 10px);
+}
+
+.chat-bubble__name {
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: rgba(16, 21, 31, 0.55);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-bubble__text {
+  font-size: 0.75rem;
+  line-height: 1.25;
+  font-weight: 600;
+  text-align: left;
+  /* A 200-character message must wrap, and a 200-character single WORD (a URL,
+     a keyboard mash) must break rather than blow the max-width out. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  /* Four lines then ellipsis: beyond that it stops being a glance and starts
+     covering the neighbouring seat. The full text is still in the chat panel. */
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* The little pointer at the bottom, aimed at the avatar. */
+.chat-bubble__tail {
+  position: absolute;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  background: rgba(226, 231, 240, 0.98);
+  border-right: 1px solid rgba(255, 255, 255, 0.55);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.55);
+}
+
+.chat-bubble--above .chat-bubble__tail {
+  bottom: -6px;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.chat-bubble--below .chat-bubble__tail {
+  top: -6px;
+  background: rgba(244, 246, 250, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-right: none;
+  border-bottom: none;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+/* The hero's own line, tinted with the platform blue so a player can tell
+   at a glance which bubble is theirs. */
+.chat-bubble--own {
+  background: linear-gradient(180deg, rgba(66, 143, 245, 0.97) 0%, rgba(24, 119, 242, 0.97) 100%);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.chat-bubble--own .chat-bubble__name {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.chat-bubble--own .chat-bubble__tail {
+  background: rgba(24, 119, 242, 0.97);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SPEAKING (Dan 2026-08-27: "the player who has messaged OR TALKED")
+   ═══════════════════════════════════════════════════════════════════════════
+   A live microphone, not a message. Green rather than the chat white/blue so
+   the two are never confused at a glance, narrower because it carries three
+   dots instead of words, and it does NOT expire on a timer — the voice layer
+   takes it away by dropping the player out of `speakingPlayerIds`. */
+
+.chat-bubble--speaking {
+  min-width: 0;
+  background: linear-gradient(180deg, rgba(77, 198, 96, 0.96) 0%, rgba(46, 160, 67, 0.96) 100%);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.4);
+  align-items: center;
+}
+
+.chat-bubble--speaking .chat-bubble__name {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.chat-bubble--speaking .chat-bubble__tail {
+  background: rgba(46, 160, 67, 0.96);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.chat-bubble--speaking.chat-bubble--below .chat-bubble__tail {
+  background: rgba(77, 198, 96, 0.96);
+}
+
+.chat-bubble__voice {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 12px;
+}
+
+.chat-bubble__voice i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  animation: chatVoicePulse 1s ease-in-out infinite;
+}
+
+.chat-bubble__voice i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.chat-bubble__voice i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes chatVoicePulse {
+  0%,
+  100% {
+    transform: scale(0.7);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 1;
+  }
+}
+
+@keyframes chatBubblePop {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px) scale(0.88);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+/* Mobile-first rule 7: at 375px the table is scaled down and the seats sit
+   closer together, so the bubble narrows to keep two neighbours apart. */
+@media (max-width: 480px) {
+  .chat-bubble {
+    max-width: 132px;
+    padding: 4px 7px 5px;
+  }
+
+  .chat-bubble__text {
+    font-size: 0.6875rem;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-bubble {
+    animation: none;
+  }
+
+  /* The dots stop moving but must stay VISIBLE — they are the only thing in a
+     speaking bubble, so `animation: none` on a keyframe that starts at 0.55
+     opacity is the right outcome only if the resting state is legible. */
+  .chat-bubble__voice i {
+    animation: none;
+    opacity: 1;
+    transform: scale(1);
+  }
+}

@@ -1,0 +1,287 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 👥 FRIENDS LIST — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.friends-panel {
+  width: 320px;
+  height: 600px;
+  background: #161b22;
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  bottom: 80px;
+  /* Above nav bar if any */
+  right: 20px;
+  z-index: 900;
+  animation: friendsListSlideIn 0.2s ease;
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+}
+
+@keyframes friendsListSlideIn {
+  from {
+    transform: translateX(20px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Header */
+.friends-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: #0d1117;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px 12px 0 0;
+}
+
+.friends-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #e4e6eb;
+  margin: 0;
+}
+
+.friends-close {
+  background: transparent;
+  border: none;
+  font-size: 1.5rem;
+  color: #8b949e;
+  cursor: pointer;
+  line-height: 1;
+}
+
+/* Toolbar */
+.friends-toolbar {
+  padding: 12px 16px;
+  background: #161b22;
+}
+
+.add-friend-form {
+  display: flex;
+  gap: 8px;
+}
+
+.add-input {
+  flex: 1;
+  padding: 8px 12px;
+  background: #0d1117;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: #e4e6eb;
+  font-size: 0.875rem;
+  outline: none;
+}
+
+.add-input:focus {
+  border-color: #1877f2;
+}
+
+.add-btn {
+  width: 34px;
+  background: #1877f2;
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.add-btn:disabled {
+  background: #21262d;
+  color: #6e7681;
+}
+
+/* Tabs */
+.friends-tabs {
+  display: flex;
+  padding: 0 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.friends-tab {
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  color: #8b949e;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.friends-tab.active {
+  color: #e4e6eb;
+  border-bottom-color: #1877f2;
+}
+
+/* Content */
+.friends-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 0;
+}
+
+.friends-section {
+  margin-bottom: 16px;
+}
+
+.section-label {
+  padding: 0 16px 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #6e7681;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+/* Row Item */
+.friend-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background 0.1s;
+  position: relative;
+}
+
+.friend-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.friend-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #21262d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: #8b949e;
+  position: relative;
+}
+
+.friend-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.status-badge {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #161b22;
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+}
+
+.status-badge.online {
+  background: #3fb950;
+}
+
+.status-badge.in-game {
+  background: #a371f7;
+}
+
+.status-badge.offline {
+  background: #6e7681;
+}
+
+.friend-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.friend-name {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #e4e6eb;
+}
+
+.friend-status-text {
+  font-size: 0.75rem;
+  color: #8b949e;
+}
+
+/* Actions */
+.friend-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.action-icon-btn {
+  background: transparent;
+  border: none;
+  font-size: 1rem;
+  padding: 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #8b949e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* Dropdown */
+.friend-dropdown {
+  position: absolute;
+  top: 40px;
+  right: 16px;
+  background: #1c2128;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  overflow: hidden;
+}
+
+.friend-dropdown button {
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  color: #e4e6eb;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.friend-dropdown button.danger {
+  color: #f85149;
+}
+
+.friends-empty {
+  padding: 30px;
+  text-align: center;
+  color: #6e7681;
+  font-style: italic;
+}

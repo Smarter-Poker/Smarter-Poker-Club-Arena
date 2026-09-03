@@ -1,0 +1,128 @@
+/**
+ * SETTLEMENT TIMELINE — CSS
+ */
+
+.settlement-timeline {
+  padding: 0;
+}
+
+.st-heading {
+  margin: 0 0 16px 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.st-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.st-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  cursor: pointer;
+  padding: 8px 12px 8px 0;
+  border-radius: 10px;
+  transition: background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.st-item:active {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* ── Node Column ── */
+.st-node-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  width: 36px;
+}
+
+.st-node {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.st-node-icon {
+  font-size: 14px;
+}
+
+.st-line {
+  width: 2px;
+  flex: 1;
+  min-height: 24px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 4px 0;
+}
+
+/* ── Content ── */
+.st-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0 16px;
+}
+
+.st-content-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.st-amount {
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.st-status {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.st-date {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.st-period {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.25);
+  font-style: italic;
+}
+
+.st-chevron {
+  font-size: 20px;
+  color: rgba(255, 255, 255, 0.15);
+  align-self: center;
+  flex-shrink: 0;
+}
+
+/* ── Empty ── */
+.st-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px;
+}
+
+.st-empty-icon {
+  font-size: 32px;
+  opacity: 0.5;
+}
+.st-empty-text {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.3);
+}

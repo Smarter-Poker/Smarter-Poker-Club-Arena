@@ -1,0 +1,207 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   REAL TIME RESULT (Dan 2026-08-20, from a reference screenshot)
+
+   A ledger, not a dashboard. Alternating dark rows, label left, value right,
+   values right-aligned so the eye runs down a single column. Section bands
+   break it into Table / Profile Data / Observers.
+
+   Slides in from the right as a side sheet on desktop and fills the width on
+   a phone, because the reference is a tall narrow column and that is exactly
+   the shape a mid-session stats read wants: it does not cover the felt.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.rtr {
+  position: fixed;
+  inset: 0;
+  z-index: 9300;
+  display: flex;
+  justify-content: flex-end;
+}
+.rtr__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 7, 14, 0.6);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: rtrFade 0.18s ease both;
+}
+
+.rtr__panel {
+  position: relative;
+  /* Dan 2026-08-22 mobile audit item 4: opens like a hamburger drawer over
+     3/4 of the RIGHT side of the page — never the full width. */
+  width: min(75vw, 400px);
+  height: 100%;
+  overflow-y: auto;
+  background: linear-gradient(180deg, #121727 0%, #0d1120 100%);
+  border-left: 1px solid rgba(120, 160, 235, 0.22);
+  box-shadow: -18px 0 50px rgba(0, 0, 0, 0.55);
+  animation: rtrSlide 0.26s cubic-bezier(0.17, 0.84, 0.44, 1.03) both;
+  padding-bottom: 24px;
+  /* Clear a notch / home indicator rather than tucking rows under them. */
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* ── Header ── */
+.rtr__head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 44px 14px 14px;
+  background: linear-gradient(180deg, #141a2c 0%, #10152447 100%), #10152a;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+.rtr__clock {
+  font-size: 0.9rem;
+  font-weight: 700;
+  /* Phase 3 (2026-08-22): last yellow in the panel chrome — the anti-yellow
+     pass (#243 slider, Phase 2 audit) reaches the clock too. */
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+}
+.rtr__title {
+  margin-left: auto;
+  font-size: 0.92rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #ffffff;
+}
+.rtr__close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd3e1;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+.rtr__close:focus-visible {
+  outline: 2px solid #00d4ff;
+  outline-offset: 2px;
+}
+
+/* ── Ledger rows ── */
+.rtr__rows {
+  display: flex;
+  flex-direction: column;
+}
+.rtr__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+/* Zebra striping is what makes a dense ledger readable at a glance. */
+.rtr__row:nth-child(odd) {
+  background: rgba(255, 255, 255, 0.022);
+}
+.rtr__label {
+  font-size: 0.84rem;
+  color: #97a6c0;
+  flex: 0 0 auto;
+}
+.rtr__value {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #eaf1ff;
+  text-align: right;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.rtr__value--up {
+  color: #3fb950;
+}
+.rtr__value--down {
+  color: #ef4444;
+}
+.rtr__rows--wide .rtr__label {
+  color: #c3cfe4;
+}
+
+/* ── Section band ── */
+.rtr__section {
+  padding: 9px 14px;
+  background: #222a44;
+  color: #dce6f7;
+  font-size: 0.84rem;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+/* ── Observers ── */
+.rtr__observers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px;
+  min-height: 64px;
+}
+.rtr__empty {
+  font-size: 0.78rem;
+  color: #6f7f99;
+}
+.rtr__observer {
+  font-size: 0.76rem;
+  color: #dbe6f7;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.rtr__detailed {
+  display: block;
+  width: calc(100% - 28px);
+  margin: 16px 14px 0;
+  padding: 11px 12px;
+  border: none;
+  border-radius: 9px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(180deg, #2f8bf7 0%, #1163cc 100%);
+  cursor: pointer;
+}
+.rtr__detailed:focus-visible {
+  outline: 2px solid #00d4ff;
+  outline-offset: 2px;
+}
+
+@keyframes rtrFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes rtrSlide {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rtr__backdrop,
+  .rtr__panel {
+    animation: none;
+  }
+}

@@ -1,0 +1,190 @@
+/* Crazy Pineapple discard picker. Sits above the felt but below toasts.
+ *
+ * ── IT USED TO BLACK OUT THE TABLE (Dan 2026-08-31) ─────────────────────────
+ * Verbatim: "THE DISCARD POP UP SHOULDN'T TAKE OVER THE ENTIRE SCREEN, IT
+ * SHOULD BE A SIMPLE DISCARD POP UP WHERE YOU SELECT WHICH CARD YOU WANT TO
+ * DISCARD, IT CURRENTLY BLOCKS THE [W]HOLE FLOP SO YOU CAN'T SEE WHAT YOU
+ * CONNECTED WITH OR NOT".
+ *
+ * He is describing the decision itself. Crazy Pineapple's discard is made WITH
+ * THE FLOP VISIBLE - that is the entire variant - and this shipped as
+ * `inset: 0` with a 72% black scrim and a blur, centred over the board. The
+ * one piece of information the choice depends on was the one thing covered up.
+ *
+ * So: no scrim, no blur, no full-viewport box. A compact panel docked to the
+ * bottom of the screen, under the board and over the hero's own three cards -
+ * which is the only safe thing left to cover, because the picker is showing
+ * those same three cards at a larger size. The wrapper is pointer-events:none
+ * so the felt underneath stays live; only the panel takes input. */
+
+.pineapple-discard {
+  position: fixed;
+  left: 50%;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 9000;
+  width: min(340px, calc(100vw - 20px));
+  pointer-events: none;
+}
+
+.pineapple-discard__panel {
+  pointer-events: auto;
+  background: linear-gradient(160deg, rgba(26, 26, 46, 0.97) 0%, rgba(22, 33, 62, 0.97) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  padding: 12px 14px 14px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.6);
+}
+
+/* Landscape phones have no vertical room to give away: shrink the picker
+   rather than let it climb back over the board. */
+@media (max-height: 480px) {
+  .pineapple-discard {
+    width: min(300px, calc(100vw - 16px));
+    bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .pineapple-discard__panel {
+    padding: 8px 10px 10px;
+  }
+
+  .pineapple-discard__hint {
+    display: none;
+  }
+}
+
+.pineapple-discard__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pineapple-discard__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.02em;
+}
+
+.pineapple-discard__timer {
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  font-weight: 700;
+  color: #9aa4bf;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.pineapple-discard__timer--urgent {
+  color: #fff;
+  background: #e74c3c;
+}
+
+.pineapple-discard__hint {
+  margin: 6px 0 10px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #9aa4bf;
+}
+
+.pineapple-discard__cards {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.pineapple-discard__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease;
+}
+
+.pineapple-discard__card:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.pineapple-discard__card--selected {
+  border-color: #e74c3c;
+  background: rgba(231, 76, 60, 0.14);
+}
+
+.pineapple-discard__card-tag {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  color: #6b7392;
+}
+
+.pineapple-discard__card--selected .pineapple-discard__card-tag {
+  color: #e74c3c;
+}
+
+.pineapple-discard__error {
+  margin-top: 14px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: rgba(231, 76, 60, 0.14);
+  border: 1px solid rgba(231, 76, 60, 0.45);
+  color: #ffb4ab;
+  font-size: 13px;
+}
+
+.pineapple-discard__confirm {
+  margin-top: 12px;
+  width: 100%;
+  padding: 11px;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+  cursor: pointer;
+}
+
+.pineapple-discard__confirm:disabled {
+  background: rgba(255, 255, 255, 0.09);
+  color: #6b7392;
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pineapple-discard__card {
+    transition: none;
+  }
+}
+
+/* Time bank, for a round that folds you when the clock runs out (2026-08-31).
+   Below the cards and above Discard, so the destructive button stays the one
+   under the thumb and the extra-time button cannot be hit by accident. */
+.pineapple-discard__timebank {
+  margin-top: 12px;
+  width: 100%;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #cfd6ea;
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+}
+
+.pineapple-discard__timebank:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

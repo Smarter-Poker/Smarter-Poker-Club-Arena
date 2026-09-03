@@ -1,0 +1,686 @@
+/**
+ * ♠ CLUB ARENA — Hand Replayer Styles
+ * PokerBros-inspired dark theme with gold accents
+ */
+
+.hand-replayer {
+  min-height: 100vh;
+  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
+  background: #0a0e1a;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  /* 2026-08-23: was `overflow: hidden` — the page body may clip sideways
+     overflow only; vertical scroll must stay available on phones */
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
+  padding: var(--space-4);
+}
+
+.hand-replayer.loading,
+.hand-replayer.error {
+  gap: var(--space-4);
+  color: var(--text-primary);
+}
+
+/* Background pattern */
+.replayer-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 20px,
+      rgba(255, 255, 255, 0.01) 20px,
+      rgba(255, 255, 255, 0.01) 40px
+    ),
+    linear-gradient(180deg, #0a0e1a 0%, #141828 50%, #0a0e1a 100%);
+  opacity: 0.5;
+}
+
+/* Sound toggle */
+.sound-toggle {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  width: 44px;
+  height: 44px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  font-size: 1.25rem;
+  cursor: pointer;
+  z-index: 10;
+}
+
+/* Table */
+.replay-table {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  aspect-ratio: 3 / 4;
+  margin: var(--space-4) 0;
+}
+
+.table-felt {
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  top: 20%;
+  bottom: 25%;
+  background: linear-gradient(180deg, #1a3a2a 0%, #0f2518 50%, #1a3a2a 100%);
+  border-radius: 50%;
+  border: 4px solid;
+  border-image: linear-gradient(180deg, #d4a017, #8b6914, #d4a017) 1;
+  box-shadow:
+    0 0 40px rgba(212, 160, 23, 0.3),
+    inset 0 0 60px rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.table-center {
+  text-align: center;
+  z-index: 5;
+}
+
+.game-info {
+  margin-bottom: var(--space-2);
+}
+
+.game-type {
+  display: block;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+}
+
+.stakes {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.pot-display {
+  background: rgba(0, 0, 0, 0.4);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-full);
+  margin: var(--space-2) 0;
+}
+
+.pot-label {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  display: block;
+}
+
+.pot-amount {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+  color: var(--accent-gold);
+}
+
+/* Community cards */
+.community-cards {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  margin-top: var(--space-3);
+}
+
+.community-cards .card {
+  width: 36px;
+  height: 50px;
+  background: white;
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.card.red {
+  color: #e74c3c;
+}
+
+.card.black {
+  color: #2c3e50;
+}
+
+.card-rank {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+}
+
+.card-suit {
+  font-size: var(--fs-xs);
+}
+
+/* Player seats - positioned around the oval */
+.player-seat {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translate(-50%, -50%);
+}
+
+.seat-1 {
+  top: 85%;
+  left: 50%;
+}
+
+.seat-2 {
+  top: 65%;
+  left: 15%;
+}
+
+.seat-3 {
+  top: 35%;
+  left: 10%;
+}
+
+.seat-4 {
+  top: 15%;
+  left: 30%;
+}
+
+.seat-5 {
+  top: 15%;
+  left: 70%;
+}
+
+.seat-6 {
+  top: 35%;
+  left: 90%;
+}
+
+.player-avatar {
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(135deg, #3a4a6b 0%, #1e2a4a 100%);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  color: white;
+}
+
+.player-seat.winner .player-avatar {
+  border-color: var(--accent-gold);
+  box-shadow: 0 0 16px rgba(255, 215, 0, 0.5);
+}
+
+.player-info-pod {
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-md);
+  margin-top: 4px;
+  text-align: center;
+  min-width: 70px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+.player-name {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80px;
+}
+
+.player-stack {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  color: var(--accent-gold);
+}
+
+.player-cards {
+  display: flex;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.hole-card {
+  width: 28px;
+  height: 38px;
+  background: white;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.hole-card.red {
+  color: #e74c3c;
+}
+
+.hole-card.black {
+  color: #2c3e50;
+}
+
+/* Action bubble */
+.action-bubble {
+  position: absolute;
+  top: -40px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--fb-blue);
+  color: white;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  white-space: nowrap;
+  animation: bubblePop 0.3s ease;
+}
+
+@keyframes bubblePop {
+  0% {
+    transform: translateX(-50%) scale(0);
+  }
+
+  50% {
+    transform: translateX(-50%) scale(1.2);
+  }
+
+  100% {
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+/* Playback controls */
+.playback-controls {
+  display: flex;
+  gap: var(--space-3);
+  background: rgba(0, 0, 0, 0.6);
+  padding: var(--space-3) var(--space-6);
+  border-radius: var(--radius-full);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  z-index: 10;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 20px rgba(0, 0, 0, 0.3);
+}
+
+.ctrl-btn {
+  width: 48px;
+  height: 48px;
+  background: transparent;
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-full);
+  color: white;
+  font-size: 1.25rem;
+  cursor: pointer;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.ctrl-btn.play {
+  background: var(--fb-blue);
+  border-color: var(--fb-blue);
+}
+
+/* Action timeline */
+.action-timeline {
+  display: flex;
+  gap: 4px;
+  margin-top: var(--space-4);
+}
+
+.timeline-step {
+  width: 8px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-full);
+  transition: background var(--transition-base);
+}
+
+.timeline-step.active {
+  background: var(--fb-blue);
+}
+
+/* Share button */
+.share-btn {
+  position: absolute;
+  bottom: var(--space-4);
+  left: var(--space-4);
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--border-subtle);
+  color: white;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-full);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  z-index: 10;
+}
+
+/* Branding */
+.replayer-branding {
+  position: absolute;
+  bottom: var(--space-4);
+  right: var(--space-4);
+  color: rgba(255, 255, 255, 0.4);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+}
+/* ─── MOBILE RESPONSIVE ─── */
+@media (max-width: 480px) {
+  .replayer-page {
+    padding: 0.75rem;
+  }
+  .replayer-header {
+    padding: 0.75rem;
+    gap: 0.75rem;
+  }
+  .replayer-header h1 {
+    font-size: 1rem;
+  }
+  .replayer-container {
+    padding: 0.75rem;
+    border-radius: 12px;
+  }
+  .replayer-controls {
+    padding: 0.75rem;
+    gap: 0.5rem;
+  }
+  .replayer-controls button {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+  }
+  .action-log {
+    max-height: 200px;
+    padding: 0.75rem;
+    font-size: 0.8rem;
+  }
+  .hand-info {
+    padding: 0.75rem;
+  }
+}
+@media (max-width: 380px) {
+  .replayer-controls {
+    flex-wrap: wrap;
+  }
+  .replayer-controls button {
+    flex: 1;
+    min-width: calc(50% - 0.25rem);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ANIMATIONS
+   ═══════════════════════════════════════════════════════════════ */
+
+@keyframes handReplayerPageFadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TAB NAVIGATION
+   ═══════════════════════════════════════════════════════════════ */
+
+.replayer-tabs {
+  display: flex;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: var(--space-2);
+  border-radius: var(--radius-full);
+  margin-bottom: var(--space-4);
+  z-index: 10;
+  position: relative;
+}
+
+.tab-btn {
+  padding: var(--space-2) var(--space-4);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.6);
+  border-radius: var(--radius-full);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  cursor: pointer;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+.tab-btn.active {
+  background: var(--fb-blue);
+  border-color: var(--fb-blue);
+  color: white;
+  box-shadow: 0 0 16px rgba(6, 182, 212, 0.4);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ANALYSIS CONTAINER
+   ═══════════════════════════════════════════════════════════════ */
+
+.analysis-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 900px;
+  margin: var(--space-4) 0;
+  animation: handReplayerPageFadeInUp 0.6s ease-out;
+}
+
+.analysis-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  width: 100%;
+}
+
+.analysis-panel {
+  animation: slideInLeft 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.analysis-panel:nth-child(2) {
+  animation: slideInRight 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.analysis-highlight {
+  width: 100%;
+  animation: handReplayerPageSlideUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes handReplayerPageSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Responsive grid */
+@media (max-width: 768px) {
+  .analysis-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .analysis-panel:nth-child(2) {
+    animation: slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  }
+}
+
+@media (max-width: 640px) {
+  .replayer-tabs {
+    width: 100%;
+  }
+
+  .tab-btn {
+    flex: 1;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--fs-xs);
+  }
+}
+
+.replayer-header-controls {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  display: flex;
+  gap: var(--space-3);
+  z-index: 10;
+}
+
+.view-toggle {
+  display: flex;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: var(--radius-full);
+  padding: 2px;
+}
+
+.view-btn {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.view-btn.active {
+  background: var(--fb-blue);
+  color: white;
+}
+
+/* Interactive Scrubber */
+.action-timeline-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  width: 100%;
+  margin-top: var(--space-4);
+  padding: 0 var(--space-4);
+}
+
+.timeline-scrubber {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-full);
+  outline: none;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  cursor: pointer;
+}
+
+.timeline-scrubber::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--fb-blue);
+  border-radius: 50%;
+  cursor: grab;
+  box-shadow: 0 0 10px rgba(6, 182, 212, 0.6);
+  transition: transform 0.1s;
+}
+
+.timeline-scrubber::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.2);
+}
+
+.action-timeline-ticks {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.timeline-step {
+  width: 8px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-full);
+  transition:
+    background var(--transition-base),
+    transform 0.2s;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.timeline-step.active {
+  background: var(--fb-blue);
+}
+
+/* ─── 2026-08-23 mobile-optimization pass ─── */
+@media (max-width: 768px) {
+  .hand-replayer {
+    /* clear the fixed app bottom nav + notch */
+    padding-bottom: max(70px, env(safe-area-inset-bottom));
+    /* the absolute sound/view controls sit top-right; keep the tab row clear */
+    padding-top: 64px;
+  }
+
+  .tab-btn,
+  .view-btn,
+  .share-btn {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .sound-toggle,
+  .ctrl-btn,
+  .timeline-step {
+    touch-action: manipulation;
+  }
+
+  /* wide analysis panels must never force the page sideways */
+  .analysis-container {
+    max-width: 100%;
+  }
+}

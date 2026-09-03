@@ -1,0 +1,479 @@
+/**
+ * ♠ CLUB ARENA — Pre-Action Bar Styles
+ * PokerBros-style pill toggles with checkmark indicators
+ */
+
+.pre-action-bar {
+  /* FLUSH TO THE BOTTOM (Dan 2026-08-25, item 5): "the action bar on the bottom
+     needs to truly be attached to the bottom. We have too much wasted space at
+     the bottom."
+
+     THIS is the row in his screenshot — CHECK/FOLD, CHECK, CALL ANY sitting in
+     a black band with a large empty gap beneath it. The gap was never this
+     bar's: it was in flow inside `.action-panel-wrapper`, which is fixed at
+     bottom 0 but pads `8px + safe-area` below its content, so an in-flow child
+     physically could not reach the screen edge. Pinned here exactly the way
+     ActionPanel is pinned, on the same z-layer, so whichever of the two rows is
+     up sits on precisely the same line and neither ever floats.
+
+     env() alone under the pills — the home-indicator strip is not wasted space,
+     everything above it was. Restated in every breakpoint below, because a
+     shorthand `padding` in a media query puts the old gap straight back. */
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: var(--z-action-panel, 100);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  /* --sp-action-pad-top, not a literal 8px (2026-08-28). This row and the
+     action row share one wrapper and one reserve; see the note on
+     `.pre-action-btn` below for what the literals were costing. */
+  padding: var(--sp-action-pad-top, 8px) 16px;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: linear-gradient(180deg, rgba(20, 24, 32, 0.92) 0%, rgba(14, 17, 24, 0.96) 100%);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  /* X6.2e: cross-fade entrance matching ActionPanel 300ms transition per spec §5.4 */
+  animation: preActionCrossFade 0.3s ease-out both;
+  gap: 6px;
+}
+
+/* Dan 2026-04-17 (BUG 024) — ARMED-STATE HEADER STRIP ══════════════════════
+   A tight pill above the toggle row that appears the instant a pre-action
+   is queued. Makes the "I've armed an action" state unmissable on mobile.
+   Color matches the active button (red / green / amber) via [data-armed]. */
+.pre-action-bar__armed-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 5px 10px;
+  margin: 0 auto;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.82);
+  animation: preActionArmedPulse 1.6s ease-in-out infinite;
+  max-width: fit-content;
+}
+
+.pre-action-bar__armed-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.pre-action-bar__armed-label {
+  white-space: nowrap;
+}
+
+.pre-action-bar__armed-clear {
+  appearance: none;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: rgba(255, 255, 255, 0.75);
+  font: inherit;
+  font-size: 0.625rem;
+  letter-spacing: 0.4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  margin-left: 4px;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+.pre-action-bar__armed-clear:active {
+  transform: scale(0.96);
+}
+
+.pre-action-bar[data-armed='fold'] .pre-action-bar__armed-strip {
+  color: #fca5a5;
+  background: linear-gradient(180deg, rgba(239, 68, 68, 0.18), rgba(185, 28, 28, 0.14));
+  border-color: rgba(239, 68, 68, 0.55);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.22);
+}
+.pre-action-bar[data-armed='check'] .pre-action-bar__armed-strip {
+  color: #4dc660;
+  background: linear-gradient(180deg, rgba(63, 185, 80, 0.18), rgba(63, 185, 80, 0.14));
+  border-color: rgba(63, 185, 80, 0.55);
+  box-shadow: 0 0 12px rgba(63, 185, 80, 0.22);
+}
+.pre-action-bar[data-armed='call'] .pre-action-bar__armed-strip,
+.pre-action-bar[data-armed='callAny'] .pre-action-bar__armed-strip {
+  color: #fcd34d;
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.18), rgba(217, 119, 6, 0.14));
+  border-color: rgba(245, 158, 11, 0.55);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.22);
+}
+
+@keyframes preActionArmedPulse {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    filter: brightness(1);
+  }
+  50% {
+    transform: translateY(0) scale(1.02);
+    filter: brightness(1.18);
+  }
+}
+
+/* Dan 2026-04-17 — when armed, the whole bar also gets a subtle top border
+   glow in the accent color so the strip doesn't feel like a floating island. */
+.pre-action-bar--armed[data-armed='fold'] {
+  border-top-color: rgba(239, 68, 68, 0.45);
+  box-shadow: 0 -1px 10px rgba(239, 68, 68, 0.18);
+}
+.pre-action-bar--armed[data-armed='check'] {
+  border-top-color: rgba(63, 185, 80, 0.45);
+  box-shadow: 0 -1px 10px rgba(63, 185, 80, 0.18);
+}
+.pre-action-bar--armed[data-armed='call'],
+.pre-action-bar--armed[data-armed='callAny'] {
+  border-top-color: rgba(245, 158, 11, 0.45);
+  box-shadow: 0 -1px 10px rgba(245, 158, 11, 0.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pre-action-bar__armed-strip {
+    animation: none;
+  }
+}
+
+@keyframes preActionCrossFade {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Dan 2026-08-15 — DEAD-CENTER RULE.
+   The bottom action controls must sit dead center of the table at ALL times,
+   never off to the left or right, whether or not the action is on the hero.
+   Previously .pre-action-bar used align-items:stretch, and a stretched flex
+   item capped by max-width falls back to flex-start — so this row hugged the
+   LEFT edge whenever it was not the hero's turn, while ActionPanel's
+   .action-row (which has margin:0 auto) stayed centered. The panel therefore
+   appeared to jump left/right as the turn passed around the table.
+   Fix: center this row, and match ActionPanel's 500px cap so the two states
+   occupy an identical footprint — the buttons no longer shift horizontally
+   at all when the turn arrives. Keep this max-width in sync with
+   ActionPanel.css .action-row. */
+.pre-action-buttons {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  max-width: 500px;
+  margin: 0 auto;
+  align-self: center;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PILL BUTTONS — PokerBros-style rounded toggles
+   ═══════════════════════════════════════════════════════════════ */
+
+.pre-action-btn {
+  flex: 1;
+  display: flex;
+  /* Phase 2 T1-08: spec §5.3 — toggle dot ABOVE the label.
+     Was row+gap; now column with the dot rendered first. */
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  /* ── 2026-08-28: THE TWO BOTTOM ROWS AGREE BY CONSTRUCTION NOW ───────────
+     This was `min-height: 52px`, with rungs of 44px at <=768 and 46px at
+     640/480/380 below.
+
+     ActionPanel.css has claimed since it was written that "the height is named
+     ONCE and the three consumers read it", listing `.pre-action-bar` as the
+     second. IT NEVER DID: this file contained no reference to
+     --sp-bottom-row-h at all, only literals that happened to agree on a phone.
+
+     They stopped agreeing on 2026-08-28, when the action button became
+     `clamp(46px … 72px)` and this stayed a literal. Measured against the
+     wrapper floor the felt reserves:
+
+       1440px   floor 1 + 12 + 72 = 85px   this row 1 + 8 + 52 = 61px   24px dead
+        768px   floor 1 + 8.1 + 56 = 65px  this row 1 + 8 + 44 = 53px   12px dead
+        375px   floor 1 + 5 + 46 = 52px    this row 1 + 5 + 46 = 52px   exact
+
+     Only the phone — the one case the comment does the arithmetic for — was
+     right. Everywhere else the player got a strip of dead black under the
+     pre-action pills, which is the exact defect Dan reported about the action
+     bar on 2026-08-25 ("too much wasted space at the bottom"), surviving in the
+     row nobody re-measured.
+
+     Reading the token makes the claim true instead of aspirational, and the
+     four rungs below are deleted because the token already interpolates through
+     every one of their values. */
+  min-height: var(--sp-action-btn-h, 52px);
+  padding: 6px 14px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  /* Allow pointer events to reach the parent .pre-action-bar swipe handler
+     while still letting clicks fire on the button itself. pan-y blocks
+     vertical scroll-jacking on mobile while leaving horizontal pan free. */
+  touch-action: pan-y;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Phase 2 T1-08: circular dot ABOVE label per spec §5.3.
+   Off = empty hollow circle; On = filled with the per-action accent color
+   (drives off the parent .active class via the per-action overrides below). */
+.pre-action-btn__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  background: transparent;
+  flex-shrink: 0;
+  transition: all 0.18s ease;
+}
+
+.pre-action-btn__dot--on {
+  background: #fff;
+  border-color: #fff;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
+}
+
+.pre-action-btn__label {
+  display: block;
+  line-height: 1;
+}
+
+/* Glass overlay */
+.pre-action-btn::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, transparent 100%);
+  pointer-events: none;
+  border-radius: 22px 22px 0 0;
+}
+
+.pre-action-btn:active {
+  transform: scale(0.96);
+}
+
+/* Phase 2 T1-08: legacy .pre-action-btn__check removed — the dot lives on
+   .pre-action-btn__dot above.
+
+   2026-08-28: THE SIX "BACKWARD-COMPAT" RULES ARE DELETED. This note used to
+   end "kept for backward-compat in case downstream styling references them,
+   but are no-ops since the markup no longer produces this element" — which
+   states plainly that they do nothing, and keeps them anyway.
+
+   Nothing can reference them: `pre-action-btn__check` appears in zero .tsx and
+   .ts files in the repo, so no component can emit the element and CSS cannot
+   be "referenced downstream" by anything but more CSS. What the rules actually
+   did was cost the next reader the time to work that out, twice — once for the
+   four `.active` colour rules and once for the two that set a 16px/14px SIZE
+   inside media queries, which read as live responsive geometry.
+
+   Backward-compat for a class no component can emit is not a safety net; it is
+   a trap for the next person who greps. */
+
+/* ═══════════════════════════════════════════════════════════════
+   FOLD — Red tint
+   ═══════════════════════════════════════════════════════════════ */
+
+.pre-action-btn.fold {
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.pre-action-btn.fold.active {
+  background: linear-gradient(180deg, rgba(239, 68, 68, 0.3) 0%, rgba(185, 28, 28, 0.3) 100%);
+  border-color: #ef4444;
+  color: #fca5a5;
+  box-shadow:
+    0 0 16px rgba(239, 68, 68, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.pre-action-btn.fold.active .pre-action-btn__dot--on {
+  background: #ef4444;
+  border-color: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.55);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CHECK — Green tint
+   ═══════════════════════════════════════════════════════════════ */
+
+.pre-action-btn.check {
+  border-color: rgba(63, 185, 80, 0.2);
+}
+
+.pre-action-btn.check.active {
+  background: linear-gradient(180deg, rgba(63, 185, 80, 0.3) 0%, rgba(63, 185, 80, 0.3) 100%);
+  border-color: #3fb950;
+  color: #4dc660;
+  box-shadow:
+    0 0 16px rgba(63, 185, 80, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.pre-action-btn.check.active .pre-action-btn__dot--on {
+  background: #3fb950;
+  border-color: #3fb950;
+  box-shadow: 0 0 8px rgba(63, 185, 80, 0.55);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CALL — Amber tint
+   ═══════════════════════════════════════════════════════════════ */
+
+.pre-action-btn.call {
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.pre-action-btn.call.active {
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.3) 0%, rgba(217, 119, 6, 0.3) 100%);
+  border-color: #f59e0b;
+  color: #fcd34d;
+  box-shadow:
+    0 0 16px rgba(245, 158, 11, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.pre-action-btn.call.active .pre-action-btn__dot--on {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.55);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CALL ANY — Same amber but slightly different shade (FIX 185)
+   ═══════════════════════════════════════════════════════════════ */
+
+.pre-action-btn.call-any {
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.pre-action-btn.call-any.active {
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.3) 0%, rgba(217, 119, 6, 0.3) 100%);
+  border-color: #f59e0b;
+  color: #fcd34d;
+  box-shadow:
+    0 0 16px rgba(245, 158, 11, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.pre-action-btn.call-any.active .pre-action-btn__dot--on {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.55);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+  .pre-action-bar {
+    padding: 8px 12px;
+    /* Flush — see the base rule. */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .pre-action-buttons {
+    gap: 8px;
+  }
+
+  .pre-action-btn {
+    /* `min-height: 44px` DELETED 2026-08-28. It was the worst of the four
+       rungs: below the token AND below the 46px this file calls its minimum in
+       three other places, so the 641-768px band drew the shortest row on the
+       platform while the reserve above it was the tallest. */
+    padding: 8px 12px;
+    font-size: 0.75rem;
+    border-radius: 20px;
+  }
+}
+
+/* ═══ THE PHONE ROW IS EXACTLY --sp-bottom-row-h TALL ═══
+   Dan 2026-08-25 round 2, item 5. This bar and `.action-panel` swap places as
+   the action passes round the table, and BOTH are `position: fixed`, so the
+   space reserved for them under the felt comes from a min-height floor on
+   `.action-panel-wrapper` rather than from either row's own height. One floor,
+   two rows: if they are not the same height, the floor is wrong for whichever
+   one is currently up, and the felt either overlaps the buttons or leaves a
+   band of dead black above them. Dan has now reported both.
+
+   So this breakpoint is built to the same arithmetic as `.action-panel` at
+   <=640px, and to the same total:
+     1px  border-top + 5px padding-top + 46px button = 52px = --sp-bottom-row-h.
+   The token, the sum and the reason all live at the top of ActionPanel.css.
+   Change one of the three numbers and you must change it in both files. */
+@media (max-width: 640px) {
+  .pre-action-bar {
+    padding: 5px 12px;
+    /* Flush — see the base rule. */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* `.pre-action-btn { min-height: 46px }` DELETED 2026-08-28 — the token's
+     clamp floor IS 46px and it reaches that floor at 373px, so this rung and
+     the two below it restated a value the base rule already produces. */
+}
+
+@media (max-width: 480px) {
+  .pre-action-bar {
+    padding: 5px 10px;
+    /* Flush — see the base rule. */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .pre-action-buttons {
+    gap: 6px;
+  }
+
+  .pre-action-btn {
+    /* `min-height: 46px` DELETED 2026-08-28 — see the 640px block. The token
+       already floors at 46px here. Only the padding and type tighten. */
+    padding: 6px 10px;
+    font-size: 0.6875rem;
+    border-radius: 18px;
+    gap: 4px;
+  }
+}
+
+@media (max-width: 380px) {
+  .pre-action-btn {
+    /* `min-height: 46px` DELETED 2026-08-28 — see the 640px block. Only the
+       side padding and the type tighten at 375px. */
+    padding: 6px 8px;
+    font-size: 0.625rem;
+    border-radius: 16px;
+  }
+}

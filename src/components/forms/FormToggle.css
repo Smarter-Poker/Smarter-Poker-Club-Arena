@@ -1,0 +1,76 @@
+.form-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  margin-bottom: 12px;
+}
+
+.form-toggle.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.toggle-label {
+  color: #fff;
+  font-size: 0.95rem;
+}
+
+.form-toggle input {
+  display: none;
+}
+
+.toggle-track {
+  position: relative;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+.size-small .toggle-track {
+  width: 36px;
+  height: 20px;
+}
+
+.size-medium .toggle-track {
+  width: 48px;
+  height: 26px;
+}
+
+.size-large .toggle-track {
+  width: 60px;
+  height: 32px;
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  background: #fff;
+  border-radius: 50%;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+.size-small .toggle-thumb {
+  width: 16px;
+  height: 16px;
+}
+
+.size-medium .toggle-thumb {
+  width: 22px;
+  height: 22px;
+}
+
+.size-large .toggle-thumb {
+  width: 28px;
+  height: 28px;
+}
+
+.form-toggle input:checked + .toggle-track {
+  background: linear-gradient(90deg, #ffd700, #ff8c00);
+}
+
+.form-toggle input:checked + .toggle-track .toggle-thumb {
+  left: calc(100% - 2px);
+  transform: translateX(-100%);
+}

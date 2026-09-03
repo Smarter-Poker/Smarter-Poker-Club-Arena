@@ -1,0 +1,124 @@
+.action-error-toast-container {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1000;
+  pointer-events: none; /* Let clicks pass through except for the specific buttons inside */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+
+.action-error-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(10, 10, 15, 0.85); /* Dark vault glass */
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 60, 60, 0.4); /* Subtle red accent */
+  border-radius: 8px;
+  padding: 12px 16px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    inset 0 1px 1px rgba(255, 255, 255, 0.05);
+  animation: slide-up-fade 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  max-width: 320px;
+}
+
+/* Metal frame styling for consistency */
+.action-error-toast.glass-metal-frame {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.8),
+    inset 1px 0 0 rgba(255, 255, 255, 0.05),
+    inset -1px 0 0 rgba(255, 255, 255, 0.05),
+    0 4px 20px rgba(0, 0, 0, 0.6);
+}
+
+.toast-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toast-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.toast-message {
+  font-family: 'Inter', sans-serif;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.toast-hint-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 4px 8px;
+  color: var(--color-interactive-text, #4dabf7);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: fit-content;
+}
+
+.toast-hint-btn:active {
+  transform: scale(0.97);
+}
+
+.toast-close {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  align-self: flex-start;
+  margin-top: -4px;
+  margin-right: -8px;
+  /* The painted box is 24px. This toast lands over the middle of the felt
+     while the player is on a shot clock, and dismissing it is the only way to
+     see the board again, so the TOUCH target must not be 24px. Grown to 44px
+     with a transparent pseudo-element rather than by resizing the button:
+     padding or width would push the message text and change the toast's
+     silhouette, and this changes nothing anyone can see. */
+  position: relative;
+}
+
+.toast-close::after {
+  content: '';
+  position: absolute;
+  /* (44 - 24) / 2 = 10px of invisible margin on every side. */
+  inset: -10px;
+}
+
+@keyframes slide-up-fade {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

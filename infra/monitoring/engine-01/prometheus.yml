@@ -1,0 +1,51 @@
+# Prometheus scrape config — engine-01 co-located (Phase 5.1.3a, 2026-04-20)
+#
+# Co-located on engine-01; fronted at https://engine.smarter.poker/prometheus
+# via Caddy. Monitor.smarter.poker DNS does not route to engine-01 yet.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: smarter-poker-prod
+    environment: production
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+rule_files:
+  - /etc/prometheus/alert-rules.yml
+  # 2026-08-15 — engine freeze detection. Every rule here is verified against
+  # metrics the engine actually emits (see the file header).
+  - /etc/prometheus/engine-freeze-rules.yml
+  - /etc/prometheus/slo-rules.yml
+  - /etc/prometheus/slo-alerts.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: [localhost:9090]
+
+  # engine-01 host system metrics (node_exporter runs on host via network_mode: host)
+  - job_name: node_engine01
+    static_configs:
+      - targets: [host.docker.internal:9100]
+        labels:
+          host: engine-01
+          role: engine
+
+  # Club Arena game server (Docker container bound :8080 on host)
+  # Scrapes /metrics emitted by CA/src/engine/metrics.js
+  - job_name: engine_game_server
+    metrics_path: /metrics
+    static_configs:
+      - targets: [host.docker.internal:8080]
+        labels:
+          host: engine-01
+          role: engine
+          app: club-arena-engine
+    scrape_interval: 15s
+    scrape_timeout: 10s

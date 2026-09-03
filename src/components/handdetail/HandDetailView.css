@@ -1,0 +1,499 @@
+/* Shared hand detail — the rundown grammar used by both the jackpot popup and
+   the table's Previous Hand. 375px-first: six columns that stay legible on the
+   narrowest phone, with the card strip allowed to collapse before anything
+   else does. */
+
+.hdv {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #fff;
+}
+
+.hdv__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+  font-variant-numeric: tabular-nums;
+}
+
+.hdv__meta-when {
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+}
+
+.hdv__meta-stakes {
+  color: #d5dae2;
+  font-weight: 700;
+}
+
+.hdv__meta-badge {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(213, 218, 226, 0.16);
+  color: #d5dae2;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+}
+
+.hdv__meta-sn {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* Six tracks, matching .hdv__row exactly. It was `1fr auto auto` over a
+   six-track row, so the words "Player / Action / Stack" sat above whatever
+   happened to be under them at that width, which was never the columns they
+   name. The header now inherits the row grid, so they cannot drift again. */
+.hdv__colkey {
+  display: grid;
+  grid-template-columns: var(--hdv-row-cols);
+  gap: 6px;
+  padding: 0 8px 2px;
+  font-size: 9px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.32);
+}
+
+.hdv__colkey > span:nth-child(5),
+.hdv__colkey > span:nth-child(6) {
+  text-align: right;
+}
+
+.hdv__street {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.hdv__street-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.hdv__street-name {
+  flex-shrink: 0;
+}
+
+.hdv__street-board {
+  display: flex;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.hdv__street-pot {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: #d5dae2;
+  font-variant-numeric: tabular-nums;
+}
+
+/* position | name | action | cards | amount | stack
+   Declared once as a custom property so .hdv__colkey cannot drift out of step
+   with it. `min-content` on the cards track lets the strip shrink instead of
+   painting over the columns to its right. */
+.hdv {
+  --hdv-row-cols: 32px minmax(40px, 1fr) auto minmax(0, min-content) 50px 52px;
+}
+
+/* No stack column on a hand whose rebuild does not reconcile - roughly 0.8% of
+   live hands. The 52px track used to be reserved unconditionally, so a sixth
+   of the width was dead space on exactly the hands with least room to spare. */
+.hdv.is-nostack {
+  --hdv-row-cols: 32px minmax(40px, 1fr) auto minmax(0, min-content) 50px 0;
+}
+
+.hdv__row {
+  display: grid;
+  grid-template-columns: var(--hdv-row-cols);
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  font-size: 11.5px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.hdv__row + .hdv__row {
+  border-top: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+.hdv__pos {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(240, 185, 11, 0.16);
+  color: #f0b90b;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+.hdv__pos:empty {
+  background: transparent;
+}
+
+.hdv__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.hdv__name.is-you {
+  color: #34c759;
+  font-weight: 700;
+}
+
+.hdv__act {
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  /* NO text-transform. Dan's house rule is the first letter of every word, and
+     a CSS lowercase here silently overrides every label the model sets. This
+     has been removed from the BBJ stylesheet twice already; if it comes back a
+     third time the chip labels stop obeying the rule again. */
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.65);
+  white-space: nowrap;
+}
+
+.hdv__act--fold {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.38);
+}
+
+/* `muck` and `discard` are both in ReplayVerb and neither had a rule, so a
+   Muck chip - and every pineapple Discard chip - rendered in the neutral
+   default while the fold beside it was greyed. Both are "this player gave up
+   cards", so both take the fold treatment; discard keeps a faint tint because
+   a pineapple discard is a mandatory move, not a surrender. */
+.hdv__act--muck {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.hdv__act--discard {
+  background: rgba(190, 150, 255, 0.13);
+  color: rgba(206, 178, 255, 0.9);
+}
+
+.hdv__act--check {
+  background: rgba(120, 160, 255, 0.14);
+  color: #86a9ff;
+}
+
+.hdv__act--call {
+  background: rgba(52, 199, 89, 0.14);
+  color: #34c759;
+}
+
+.hdv__act--bet,
+.hdv__act--raise {
+  background: rgba(255, 149, 0, 0.16);
+  color: #ff9500;
+}
+
+.hdv__act--all_in {
+  background: rgba(255, 59, 48, 0.18);
+  color: #ff453a;
+}
+
+.hdv__act--sb,
+.hdv__act--bb,
+.hdv__act--ante,
+.hdv__act--straddle {
+  background: rgba(213, 218, 226, 0.14);
+  color: #d5dae2;
+}
+
+.hdv__act--return {
+  background: rgba(134, 169, 255, 0.14);
+  color: #86a9ff;
+}
+
+.hdv__act--show {
+  background: rgba(240, 185, 11, 0.16);
+  color: #f0b90b;
+}
+
+.hdv__cards {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.hdv__amt,
+.hdv__stack {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hdv__amt {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* A returned uncalled bet reads as money coming back, not as a bet. */
+.hdv__amt.is-return {
+  color: #86a9ff;
+}
+
+.hdv__stack {
+  color: rgba(213, 218, 226, 0.75);
+  font-size: 10.5px;
+}
+
+.hdv__potline {
+  display: flex;
+  justify-content: space-between;
+  padding: 7px 10px;
+  background: rgba(213, 218, 226, 0.07);
+  border-top: 1px solid rgba(213, 218, 226, 0.16);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #d5dae2;
+  font-variant-numeric: tabular-nums;
+}
+.hdv__drop {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 6px 10px;
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.5);
+  font-variant-numeric: tabular-nums;
+}
+
+.hdv__drop strong {
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 700;
+}
+
+.hdv__drop-note {
+  margin-left: auto;
+  opacity: 0.65;
+}
+
+.hdv__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.hdv__showdown {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+/* Showdown row: who | what they made | what it paid
+   At 375px the old `minmax(96px, 1fr)` left ~106px for a position badge plus
+   up to six hole cards (154px in PLO6), and `.hdv__cards { overflow: hidden }`
+   silently cut the last cards off every Omaha hand. The who-column now stacks
+   its cards under the name and is allowed the room they need. */
+.hdv__sd {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.2fr) auto;
+  align-items: start;
+  gap: 8px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.hdv__sd + .hdv__sd {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.hdv__sd.is-winner {
+  background: rgba(240, 185, 11, 0.05);
+}
+
+.hdv__sd-who {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 11.5px;
+}
+
+.hdv__sd-holerow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hdv__sd-made {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hdv__sd-handname {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.8);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hdv__sd-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.hdv__sd-net {
+  font-weight: 800;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hdv__sd-net.is-up {
+  color: #34c759;
+}
+
+.hdv__sd-net.is-down {
+  color: #ff6b6b;
+}
+
+.hdv__sd-pot {
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, 0.4);
+  white-space: nowrap;
+}
+
+/* Cards that do not play recede. Opacity only, so nothing depends on hue. */
+.hdv__cards .hdv-idle {
+  opacity: 0.38;
+  filter: grayscale(0.5);
+}
+
+.hdv__cards .hdv-plays {
+  opacity: 1;
+}
+
+@media (max-width: 380px) {
+  .hdv {
+    --hdv-row-cols: 28px minmax(32px, 1fr) auto minmax(0, min-content) 46px 46px;
+  }
+
+  .hdv.is-nostack {
+    --hdv-row-cols: 28px minmax(32px, 1fr) auto minmax(0, min-content) 46px 0;
+  }
+
+  .hdv__row {
+    font-size: 11px;
+  }
+
+  /* The made-hand column drops under the who-column rather than squeezing the
+     hole cards out of existence. Previously this made the who-column NARROWER,
+     which is the opposite of what 375px needs. */
+  .hdv__sd {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .hdv__sd-made {
+    grid-column: 1 / -1;
+  }
+}
+
+/* A showdown row on run 2+ carries no net, because the engine records one
+   winners[] entry for the hand rather than one per run. The empty span still
+   needs to hold its line so the rows below do not jump. */
+.hdv__sd-net.is-blank {
+  color: transparent;
+}
+
+.hdv__sd-net.is-blank::after {
+  /* A HYPHEN, NOT AN EM DASH (Dan: em bars are banned).
+     This declaration used to carry an em dash written as a CSS unicode escape,
+     and it rendered on every run-2+ showdown row in production. It survived
+     because check-ui-text advertises that it reads CSS `content:` values and
+     only ever looked for the character itself and for the JavaScript escape
+     form - never for the CSS escape form, which is the one CSS actually uses.
+     The gate reads both now. */
+  content: '-';
+  color: rgba(255, 255, 255, 0.25);
+}
+
+/* THE BAD BEAT. The hand the jackpot was paid for is the story of the rundown,
+   and it was drawn identically to every other row. */
+.hdv__sd.is-badbeat {
+  background: rgba(240, 185, 11, 0.07);
+  box-shadow: inset 3px 0 0 #f0b90b;
+}
+
+.hdv__sd-tag {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(240, 185, 11, 0.2);
+  color: #f0b90b;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+/* Run-it-twice / double board: the same street on every extra board. */
+.hdv__street-run {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.hdv__street-run-label {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* An unrecognised verb keeps the engine's own word and a neutral chip, so it
+   reads as "something happened that we do not have a name for" rather than
+   impersonating an action we do know. */
+.hdv__act--unknown {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.55);
+  font-style: italic;
+}

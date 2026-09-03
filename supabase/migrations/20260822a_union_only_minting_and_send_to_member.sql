@@ -1,0 +1,34 @@
+-- Applied to prod 2026-08-22. See the full text in the Supabase migration
+-- history (20260822a_union_only_minting_and_send_to_member); this mirror keeps
+-- the repo's migration ledger complete.
+--
+-- UNION MONEY MODEL, part 1 (Dan, 2026-08-22):
+--   "CHIPS ARE MINTED IN THE UNION ONLY AND SENT TO THE CLUBS ...
+--    ONCE A CLUB JOINS A UNION, THEY CAN NO LONGER MINT THERE OWN CHIPS ...
+--    WHEN OWNER, CO OWNER OR ADMIN CLICKS ON ANY OF THE WALLETS ... THEY BE
+--    ABLE TO SEND CHIPS, DIAMONDS OR PROMO FUNDS TO ANY MEMBER OF THE UNION."
+--
+-- 1. fn_union_can_manage_wallets(union, user): owner / co-owner / admin
+--    predicate (fn_is_union_overseer + co_owner on the mirror club and
+--    union_admins.role).
+-- 2. fn_mint_club_chips: previously SECURITY DEFINER + granted to
+--    `authenticated` with NO authorization check at all — any signed-in user
+--    could mint any club's treasury. Now requires club owner/co-owner/admin
+--    (service role exempt) and REFUSES clubs that are in a union.
+-- 3. mint_club_chips: refuses union clubs even for privileged callers — chips
+--    are minted in the union and SENT to clubs, never minted in a club.
+--    (fn_mint_chips_from_diamonds already enforced this; these two were the
+--    paths around it.)
+-- 4. fn_union_send_to_member(union, user, kind, amount, source, note):
+--    kind chips  -> debits the chosen union wallet (chips|rake|promo) and
+--                   credits the player's wallet via atomic_credit_wallet_and_log,
+--                   refunding the debit if the credit fails;
+--    kind promo  -> debits promo_wallet, credits via add_to_promo_wallet;
+--    kind diamonds -> whole-number grant to profiles.diamonds with a
+--                   diamond_transactions ledger row (unions hold no diamond
+--                   stock; the grant is ledgered per-recipient).
+--    Target must be an active member of a union club (or the union mirror).
+--    Every path writes a chip_transactions / diamond_transactions row.
+--
+-- Verified after apply: mint into a union club refused on both paths with 0
+-- ledger rows written; send by a non-manager refused.

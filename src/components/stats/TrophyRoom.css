@@ -1,0 +1,239 @@
+/**
+ * TrophyRoom — style badge, next-up progress, and the trophy grid.
+ * Mobile-first: one trophy column at 375px, two from 480px, three from 720px.
+ */
+
+.trophy-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.trophy-card {
+  margin: 0 0.75rem;
+  padding: 1rem;
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(0, 212, 255, 0.05) 0%, rgba(139, 92, 246, 0.035) 100%);
+  border: 1px solid rgba(0, 212, 255, 0.14);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  box-shadow:
+    0 0 30px rgba(0, 212, 255, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.trophy-head-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.trophy-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #e8f4ff;
+}
+
+.trophy-count {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #00d4ff;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Playstyle ─────────────────────────────────────────────────────────── */
+
+.trophy-style {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+  margin-top: 0.75rem;
+}
+
+.trophy-style-badge {
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  border: 2px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.trophy-style-badge.is-forming {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: rgba(200, 224, 245, 0.4);
+}
+
+.trophy-style-body {
+  min-width: 0;
+}
+
+.trophy-style-label {
+  display: block;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.trophy-style-label.is-forming {
+  color: rgba(200, 224, 245, 0.55);
+}
+
+.trophy-style-note {
+  margin: 0.25rem 0 0;
+  font-size: 0.73rem;
+  line-height: 1.5;
+  color: rgba(200, 224, 245, 0.62);
+}
+
+/* ── Next up ───────────────────────────────────────────────────────────── */
+
+.trophy-next {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.trophy-next-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.trophy-next-name {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.trophy-next-detail {
+  font-size: 0.68rem;
+  color: rgba(200, 224, 245, 0.55);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Progress bars ─────────────────────────────────────────────────────── */
+
+.trophy-progress {
+  margin-top: 0.3rem;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.trophy-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ── Grid ──────────────────────────────────────────────────────────────── */
+
+.trophy-grid {
+  list-style: none;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.6rem;
+}
+
+.trophy-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.7rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.trophy-item.is-unlocked .trophy-name {
+  color: #e8f4ff;
+}
+
+.trophy-rarity {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.trophy-name {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: rgba(232, 244, 255, 0.72);
+}
+
+.trophy-desc {
+  font-size: 0.69rem;
+  line-height: 1.45;
+  color: rgba(200, 224, 245, 0.55);
+}
+
+.trophy-detail {
+  margin-top: 0.15rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: rgba(0, 212, 255, 0.85);
+  font-variant-numeric: tabular-nums;
+}
+
+.trophy-note {
+  margin: 0.85rem 0 0;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.66rem;
+  line-height: 1.5;
+  color: rgba(200, 224, 245, 0.45);
+}
+
+.trophy-empty-text {
+  margin: 0.6rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: rgba(200, 224, 245, 0.6);
+}
+
+@media (min-width: 480px) {
+  .trophy-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (min-width: 720px) {
+  .trophy-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trophy-progress-fill {
+    transition: none;
+  }
+}
+
+/* --- orphan-modifier rules (added 2026-08-21 audit) --- */
+/* These were applied in TSX with no rule defined anywhere, so the empty
+   states rendered inconsistently - only .pos-radar-empty was centred. */
+
+.trophy-empty {
+  text-align: center;
+}
+.trophy-next-item {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}

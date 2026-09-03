@@ -1,0 +1,3334 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * CLUB HOME PAGE — PokerBros-Style CSS
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   BASE LAYOUT
+═══════════════════════════════════════════════════════════════════════════════ */
+.club-home {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: #000000;
+  position: relative;
+  /* CLIP, NOT HIDDEN — this line is load-bearing for the footer.
+     Dan 2026-08-25: "on safari on player accounts, the footer doesn't stay on
+     the footer, it moves around."
+
+     CSS Overflow 3: when one axis is a non-visible value and the other is
+     `visible`, the `visible` one COMPUTES TO `auto`. So `overflow-x: hidden`
+     silently made .club-home a scroll container on BOTH axes. Inside the
+     multi-table lobby tab that made .club-home — not the tab — the nearest
+     scrollport for ClubBottomNav's `position: sticky; bottom: 0`. .club-home
+     is height:auto and never scrolls, so the sticky offset was never applied
+     and the bar rendered at its STATIC flow position part-way down ~3,900px
+     of lobby content: floating over the game cards, exactly as reported.
+
+     `clip` is the one non-visible value the spec exempts from that rule
+     (`visible` stays `visible` when its partner is `clip`), so the horizontal
+     clipping this was always for is kept while .club-home stops being a
+     scrollport. The `hidden` line stays first as the fallback for anything
+     older than Safari 16 / Chrome 90. */
+  overflow-x: hidden;
+  overflow-x: clip;
+  width: 100%;
+  max-width: 100vw;
+  /* Reserve the exact responsive artwork height, safe area, and a little
+     breathing room so the final game row never sits under the global footer. */
+  padding-bottom: calc(var(--bottom-nav-clearance, 86px) + 12px);
+}
+
+.club-home.error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 1rem;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   HEADER - Modified Smarter.Poker (No Search)
+═══════════════════════════════════════════════════════════════════════════════ */
+/* THE PAGE'S OWN HEADER, USER CHIP, DIAMOND COUNTER, BBJ BANNER AND WALLET
+   ROWS USED TO BE DECLARED HERE - about 250 lines of .club-home__header /
+   __user* / __diamonds / __vip-badge / __bbj / .bbj-* / __wallet / .wallet-*
+   / .gold-icon / .diamond-amount. Every one of them was dead: this page's
+   only <header> is .lobby-top, and the jackpot and the balances have been
+   DynamicWallet's (dw__*) since 2026-08-20. Deleted 2026-08-25 rather than
+   left to be maintained. Two of them were also GLOBAL rules leaking onto
+   other pages - see the note on .diamond-icon further down. */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   LOBBY HEADER — rebuilt 2026-08-20 (Dan)
+   ─────────────────────────────────────────────────────────────────────────────
+   One header block: quick actions, jackpot, club identity + wallet, notice.
+   Previously these were four independent rows each carrying their own
+   `padding: 0.75rem 1rem`, so the top of the lobby spent roughly 40px of a
+   375px screen on gaps alone before a single game was visible.
+
+   Every icon that lived in this file as a CSS `content:` emoji (trophy,
+   bar-chart, two-people, chain-link) is gone. They render from the platform
+   font rather than from this stylesheet, so the header was
+   a different picture and a different size on every device — and bare emoji in
+   source have failed the SWC compiler here before.
+═══════════════════════════════════════════════════════════════════════════════ */
+.lobby-top {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* Dan 2026-08-24: "THE TOP OF WHERE THE CLUB AND BBJ START NEEDS TO BE
+     RAISED UP, SO IT'S 1 PIXEL UNDER WHERE THE TICKER RUNS THROUGH UNDER THE
+     GLOBAL HEADER." The phone got this on 2026-08-24 as a 768px override;
+     desktop kept the original 8px, so the same page had two different answers
+     to the same question and the wide layout — where the gap is most visible,
+     because the ticker spans the full width above it — was the one still
+     showing it. One rule at the base now, no breakpoint override, so the club
+     card and the wallet start directly under the ticker at every width. */
+  padding: 1px 1rem 10px;
+  /* 2026-08-30, Dan: "THE WHOLE BACKGROUND SHOULD BE SOLID BLACK AND ALL THE
+     SAME COLOR." This strip carries the club card and the wallet and sits
+     immediately under the ticker, so it is the first thing the eye compares
+     against everything around it - and it was doing two things wrong at once:
+     #02060b is a different black from `.club-home` (#000) directly beneath it,
+     and the white 6% bottom border drew a visible seam across the page between
+     the two. Both go. The border stays DECLARED, in black, because that 1px is
+     part of this rule's height and the "1 pixel under the ticker" geometry
+     above was measured with it in place. */
+  border-bottom: 1px solid #000;
+  background: #000;
+}
+
+/* The legacy full-width ticker is gone. The compact Bad Beat Jackpot tile now
+   sits beside the club identity and opens the existing jackpot detail modal;
+   DynamicWallet suppresses its own duplicate jackpot figure on this surface. */
+
+/* ── Club identity + wallet, side by side ──────────────────────────────────
+   The wallet column is capped rather than fixed at 220px: at 375px a rigid
+   220px column left the club card 115px, which truncated the club name to a
+   couple of characters. Below 420px the two stack instead. */
+.lobby-top__main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.731fr) minmax(0, 2.857fr);
+  align-items: stretch;
+  gap: 10px;
+}
+
+.lobby-top__wallet {
+  grid-column: 2;
+  min-width: 0;
+  align-self: start;
+}
+
+/* THE CLUB MESSAGE STRIP (Dan 2026-09-01).
+   Moved out of the wallet stack to the first row of `.lobby-top`, and promoted
+   from a <p> to a <button> - so the margin now sits BELOW it (it leads the
+   rail rather than trailing the wallets) and the rule carries the button reset
+   a bare element did not need. Everything else about how it draws is
+   unchanged, deliberately: Dan asked for it to move and to become clickable,
+   not to look like something else. */
+.lobby-top__house-welcome {
+  display: block;
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  overflow: hidden;
+  cursor: pointer;
+  text-align: center;
+  border: 1px solid rgb(74 145 202 / 32%);
+  background: linear-gradient(180deg, rgb(10 24 36 / 92%), rgb(2 7 11 / 98%));
+  color: #36aaff;
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: clamp(7px, 1.25vw, 10px);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-shadow: 0 0 7px rgb(32 157 255 / 35%);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.lobby-top__house-welcome:focus-visible {
+  outline: 2px solid #65c4ff;
+  outline-offset: 2px;
+}
+
+.lobby-top__identity {
+  width: 100%;
+  justify-self: stretch;
+  align-self: start;
+}
+
+.lobby-club {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 7px;
+  background: #07111f;
+  border: 1px solid #17375f;
+  box-shadow:
+    0 3px 0 #010307,
+    inset 0 1px 0 rgba(157, 210, 255, 0.22),
+    inset 3px 0 0 #149cff;
+}
+
+.lobby-club__avatar {
+  width: 76px;
+  height: 76px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #000;
+  border: 2px solid #218bff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lobby-club__avatar img {
+  /* Dan 2026-08-20: "Shark club image needs to be as large as that space it's
+     inside of." It already filled the box, but the box was 52px and the border
+     +radius ate into the art. Bigger box (below), and the image is inset by
+     nothing: cover fills edge to edge, and the emblem is square so cover and
+     contain agree - no cropping either way. */
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.lobby-club__avatar-fallback {
+  color: #3b82f6;
+  font-size: 4.5rem;
+  line-height: 1;
+}
+
+.lobby-club__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.lobby-club__name {
+  margin: 0 0 4px;
+  color: #f4f8ff;
+  font-size: 1.05rem;
+  font-weight: 850;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+  /* A long club name must ellipsis, not wrap: wrapping pushed the meta row
+     down and made the card taller than the wallet beside it. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lobby-club__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  color: #8892a4;
+  font-size: 0.72rem;
+}
+
+.lobby-club__id {
+  font-variant-numeric: tabular-nums;
+}
+
+.lobby-club__members {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lobby-club__share {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #111d2d;
+  border: 1px solid #35567d;
+  border-bottom-color: #050a12;
+  color: #8fc7ff;
+  box-shadow:
+    0 3px 0 #02050a,
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+.lobby-club__share:active {
+  transform: translateY(2px);
+  box-shadow:
+    0 1px 0 #02050a,
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.lobby-bbj {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 10px 12px;
+  border: 1px solid #2266ab;
+  border-bottom-color: #061223;
+  border-radius: 7px;
+  background: #08172a;
+  color: #fff;
+  cursor: pointer;
+  box-shadow:
+    0 4px 0 #01050a,
+    inset 0 1px 0 rgba(162, 219, 255, 0.3),
+    inset 0 -2px 0 #04101e;
+  transition:
+    transform 0.12s ease,
+    border-color 0.15s ease;
+}
+.lobby-bbj:active {
+  transform: translateY(3px);
+  box-shadow:
+    0 1px 0 #01050a,
+    inset 0 2px 0 #020810;
+}
+
+.lobby-bbj:focus-visible {
+  outline: 2px solid #63c7ff;
+  outline-offset: 2px;
+}
+
+.lobby-bbj__label {
+  color: #41b7ff;
+  font-size: 0.63rem;
+  font-weight: 850;
+  letter-spacing: 0.11em;
+  line-height: 1.2;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.lobby-bbj__amount {
+  color: #f8fbff;
+  font-size: 1.18rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.035em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.lobby-club__share:focus-visible {
+  outline: 2px solid rgba(0, 200, 255, 0.6);
+  outline-offset: 2px;
+}
+
+/* ── Club notice ─────────────────────────────────────────────────────────── */
+.lobby-top__notice p {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 0 8px 8px 0;
+  border-left: 3px solid rgba(0, 212, 255, 0.5);
+  background: rgba(0, 0, 0, 0.35);
+  color: #a0a8b4;
+  font-size: 0.78rem;
+  font-style: italic;
+  line-height: 1.45;
+  /* Clamp: a club may write up to 5,000 characters and it must not push the
+     game grid off the screen. Full text lives on the club detail page. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@media (max-width: 480px) {
+  .lobby-top {
+    padding-inline: 8px;
+  }
+
+  .lobby-top__main {
+    grid-template-columns: minmax(0, 1fr) minmax(118px, 35%);
+    gap: 7px;
+  }
+
+  .lobby-top__wallet {
+    width: 100%;
+  }
+
+  .lobby-club {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .lobby-bbj {
+    padding-inline: 7px;
+  }
+
+  .lobby-bbj__label {
+    font-size: 0.56rem;
+  }
+
+  .lobby-bbj__amount {
+    font-size: clamp(0.9rem, 4.4vw, 1.08rem);
+  }
+}
+
+.club-home__bbj {
+  margin-left: auto;
+  text-align: right;
+}
+
+.bbj-label {
+  color: var(--text-secondary, #c8ccd4);
+  font-size: 0.65rem;
+  font-weight: bold;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.bbj-amount {
+  background: #000;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 0.3rem 0.65rem;
+  color: #ffffff;
+  font-weight: bold;
+  font-size: 1rem;
+  font-family:
+    'Inter',
+    -apple-system,
+    sans-serif;
+  letter-spacing: 0.5px;
+  position: relative;
+  overflow: hidden;
+  box-shadow:
+    0 0 12px rgba(255, 255, 255, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: all 0.3s ease;
+}
+
+.bbj-amount::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.12), transparent);
+  animation: bbjAmountShimmer 4s ease-in-out infinite;
+}
+
+@keyframes bbjAmountShimmer {
+  0%,
+  60% {
+    left: -100%;
+  }
+  100% {
+    left: 200%;
+  }
+}
+
+/* The .club-home__club-section / .club-card__* / .icon-link block that used to
+   live here was REMOVED on 2026-08-20 with the header rebuild — its markup no
+   longer exists (see .lobby-top above) and three of its rules were emoji
+   `content:` declarations. Leaving dead selectors behind is how a stylesheet
+   grows a second, contradictory copy of a component. */
+
+/* Wallet Display */
+.club-home__wallet {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.wallet-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #000;
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: all 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+.wallet-row.gold {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.wallet-row.diamond {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.gold-icon::before {
+  content: '●';
+  color: #ffb800;
+  font-size: 1rem;
+}
+
+.diamond-icon::before {
+  content: '◆';
+  color: #3b82f6;
+  font-size: 1rem;
+}
+
+.wallet-amount {
+  color: white;
+  font-weight: 600;
+  font-size: 0.9rem;
+  min-width: 80px;
+  text-align: right;
+}
+
+.wallet-add-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #10b981;
+  border: none;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+} /* The .club-home__intro block moved into the header as .lobby-top__notice
+   (line-clamped), and the three-row .club-home__filters / .filter-tab stack was
+   replaced by the single .game-bar below. Both sets of markup are gone. */
+
+/* ── RULES THAT WERE NEVER THIS PAGE'S, DELETED 2026-08-25 ──────────────────
+   This stylesheet is imported as a GLOBAL sheet, so everything in it applies
+   app-wide once the lobby has been visited once. It still carried the card
+   grid this page replaced with LobbyTable in the V2 rebuild - .table-card*,
+   .tournament-card*, .new-badge, .status-dot, .filter-tab - and none of those
+   class names appear in ClubHomePage.tsx any more. They DO appear elsewhere:
+   .table-card in TournamentDetails, .tournament-card in TournamentPage,
+   .new-badge in PromoCard, .status-dot in InviteToTable and StatusBadge,
+   .filter-tab on three admin pages. So these were not merely dead - they were
+   repainting other people's components from a stylesheet named for this one,
+   including a `.new-badge` that rotated the promo badge -15deg and a
+   `.filter-tab.active::after` that drew a blue underline on three admin
+   filter bars. Those components own their own styling. */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   GAME ACTION BAR — every game type in one flat, scrollable row
+   ─────────────────────────────────────────────────────────────────────────────
+   Replaces the ALL / CASH GAMES / TOURNAMENTS tabs plus the variant row that
+   used to appear beneath them. The old .filter-tab.active also applied
+   `transform: scale(1.05)` inside a horizontally scrolling flex row, so the
+   selected chip overlapped its neighbours and could be clipped at the scroll
+   edge. The active state is a fill and a glow now, with no size change.
+═══════════════════════════════════════════════════════════════════════════════ */
+.game-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 1rem 8px;
+}
+
+.lobby-controls {
+  display: block;
+  margin: 10px 1rem 8px;
+  border: 1px solid rgba(91, 131, 232, 0.18);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(19, 24, 36, 0.78), rgba(8, 10, 16, 0.92));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.lobby-controls .game-bar {
+  padding: 10px;
+}
+
+.game-bar__types {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  align-items: center;
+  /* ROW-GAP IS A TAP TARGET, NOT DECORATION (2026-08-25).
+     These chips are 32px tall and carry the shared 44px invisible ::after hit
+     area from club-engine.css, so each one reaches 6px past its own box top
+     and bottom. At 375px the seven chips wrap onto three rows, and with the
+     3px row-gap this used to have, every chip on an upper row had its lower
+     half covered by the ::after of the chip directly beneath it — which comes
+     later in the document and therefore wins the hit test. Measured on
+     production: 24px of reach on all six upper-row chips against the 40px the
+     audit requires, and, in plain terms, a thumb aimed just under NLH
+     selecting LIMIT instead.
+     12px is the smallest row-gap that separates the two bands (the overhangs
+     are 6px each). Re-measured after the change: all seven chips at 40px.
+     Column gap stays at 3px — the chips are wide and were never at risk
+     sideways, and widening them there WOULD steal the neighbour's taps. */
+  gap: 12px 3px;
+  overflow: visible;
+  padding-block: 6px;
+}
+
+.game-bar__type {
+  flex: 1 1 auto;
+  min-width: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 2px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
+  color: #9aa5b6;
+  font-size: 0.65rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+.game-bar__type.is-active {
+  background: linear-gradient(135deg, #0088ff, #0055ff);
+  border-color: rgba(0, 136, 255, 0.75);
+  color: #ffffff;
+  font-weight: 800;
+  box-shadow: 0 0 14px rgba(0, 136, 255, 0.35);
+}
+
+.game-bar__type:focus-visible {
+  outline: 2px solid rgba(0, 136, 255, 0.75);
+  outline-offset: 2px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   QUICK PREFERENCES — the two shortcut rows under the game action bar
+   ───────────────────────────────────────────────────────────────────────────
+   Dan 2026-08-21, from the reference: a stakes-tier row with a filter icon on
+   the right, and a seat-status row beneath it. Both scroll horizontally rather
+   than wrapping - a wrapped chip row changes HEIGHT as you switch game type,
+   and the game grid below it visibly jumps every time.
+═══════════════════════════════════════════════════════════════════════════ */
+.quickprefs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 10px 10px;
+}
+
+.quickprefs__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  /* Same clip as .friends-tabs: a horizontal scroll row crops the vertical
+     touch area its chips rely on. See club-engine.css. */
+  padding-block: 6px;
+}
+
+.quickprefs__row--status {
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.quickprefs__row--status .quickprefs__chip {
+  flex: 1 1 auto;
+  border: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0;
+  background: transparent;
+}
+
+.quickprefs__row--status .quickprefs__chip:last-child {
+  border-right: 0;
+}
+
+.quickprefs__row--status .quickprefs__chip.is-on {
+  background: linear-gradient(180deg, rgba(34, 92, 220, 0.9), rgba(24, 65, 160, 0.9));
+  box-shadow: inset 0 -2px 0 #4da3ff;
+}
+
+.quickprefs__row::-webkit-scrollbar {
+  display: none;
+}
+
+.quickprefs__label {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #7f8ba0;
+  white-space: nowrap;
+  padding-right: 2px;
+}
+
+.quickprefs__chip {
+  flex-shrink: 0;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
+  color: #9aa5b6;
+  transition: all 0.2s ease;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.quickprefs__chip.is-on {
+  background: linear-gradient(135deg, #0088ff, #0055ff);
+  border-color: rgba(0, 136, 255, 0.75);
+  color: #ffffff;
+  font-weight: 800;
+  box-shadow: 0 0 14px rgba(0, 136, 255, 0.35);
+}
+
+.quickprefs__chip:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.3);
+  outline-offset: 2px;
+}
+
+/* The icon that opens the full sheet. Fixed width and flex-shrink:0 so it is
+   always reachable no matter how many tier chips the active spec declares. */
+.quickprefs__more {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+  color: #3b82f6;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+.quickprefs__more:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.3);
+  outline-offset: 2px;
+}
+
+/* ── Advanced Filters button ─────────────────────────────────────────────── */
+.game-bar__filter-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.06);
+  color: #9aa5b6;
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease;
+}
+/* Saved filters are invisible narrowing - a player who set "Bomb Pot only"
+   last week and comes back to a short list must be able to see WHY. Gold
+   fill plus a dot, matching how the sort control signals a non-default. */
+.game-bar__filter-btn.is-set {
+  color: #ffffff;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border-color: #3b82f6;
+  font-weight: 800;
+}
+
+.game-bar__filter-btn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.3);
+  outline-offset: 2px;
+}
+
+/* ── Sort control ────────────────────────────────────────────────────────── */
+/* A non-default sort is a filter-like state the player can forget they set.
+   Colour it so an unexpected ordering is explained by the control itself. */
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SUB-FILTERS (Cash: Live/Empty/Full | Tournament: Running/Registering/etc.)
+═══════════════════════════════════════════════════════════════════════════════ */
+/* AUDIT 2026-08-21: .club-home__sub-filters and .sub-filter-tab were removed.
+   Their markup went when the standalone status row folded into the quick
+   preference block, so ~40 lines of CSS were styling elements that no longer
+   render. Dead selectors are how a stylesheet grows a second, contradictory
+   copy of a component. */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   GAMES GRID
+═══════════════════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   RESULT COUNT — sits between the ad strip and the grid
+   ─────────────────────────────────────────────────────────────────────────
+   Matches the grid's 1rem side padding so the number lines up with the left
+   edge of the first card rather than floating in its own margin.
+═══════════════════════════════════════════════════════════════════════════ */
+.lobby-count {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  color: #8b94a6;
+}
+
+.lobby-resultsbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 1rem 0;
+}
+
+.lobby-count__text strong {
+  color: #e6ebf2;
+  font-weight: 700;
+}
+
+.club-home__games {
+  display: grid;
+  /* 300px floor, was 150px. NeonCard spends 26px padding x2 (52px) plus a
+     fixed `flex: 0 0 100px` emblem = 152px BEFORE a single character of text,
+     and .ngc-info carries `min-width: 0`, so at a 150px track the info column
+     collapsed to roughly nothing: "BLINDS" rendered as "BLI", "1/2" as "1/",
+     and the BBJ/max corner pills sat on top of the content. The card was
+     designed for a wide tile and the grid was handing it a narrow one.
+     300px leaves ~148px of real text column. NeonCard.css additionally makes
+     the emblem and padding fluid so a squeeze can never truncate again. */
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+  padding: 1rem;
+  position: relative;
+  z-index: 1;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LOBBY V2 — the games area is a single dense table now, not a card grid.
+   The --v2 modifier overrides the legacy grid so the old rules (still used
+   by ClubLobby's grid) stay untouched.
+═══════════════════════════════════════════════════════════════════════════ */
+.club-home__games--v2 {
+  display: block;
+}
+.lobby-actionsrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.lobby-createbtn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(65, 105, 225, 0.45);
+  background: rgba(65, 105, 225, 0.1);
+  color: var(--club-blue-light, #5b83e8);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-decoration: none;
+  cursor: pointer;
+}
+.club-home__games {
+  animation: gamesGridFade 0.5s ease-out;
+}
+
+@keyframes gamesGridFade {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TABLE CARD
+═══════════════════════════════════════════════════════════════════════════════ */
+/* (`.status-dot.running,` was stranded here when the table-card and
+   tournament-card blocks were deleted: the dangling comma joined it to the
+   NEXT rule's selector list, so .empty-tables' centred grey padding was being
+   applied to the status dot on every page that renders one. Deleted 2026-08-25
+   in the pass that found it.) */
+.table-card {
+  display: flex;
+  flex-direction: column;
+  background: #000;
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 0.75rem;
+  text-decoration: none;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.table-card__header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.table-card__variant {
+  background: #1877f2;
+  color: white;
+  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+}
+
+.table-card__seats {
+  color: #888;
+  font-size: 0.75rem;
+}
+
+.table-card__body {
+  flex: 1;
+}
+
+.table-card__name {
+  color: white;
+  font-size: 0.9rem;
+  margin: 0 0 0.25rem;
+}
+
+.table-card__stakes {
+  color: #3b82f6;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.table-card__players {
+  color: #888;
+  font-size: 0.75rem;
+}
+
+.table-card__status {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: #888;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #888;
+}
+
+.status-dot.running,
+.status-dot.active {
+  background: #10b981;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.6);
+}
+
+.status-dot.waiting {
+  background: #f59e0b;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.6);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TOURNAMENT CARD
+═══════════════════════════════════════════════════════════════════════════════ */
+.tournament-card {
+  display: flex;
+  flex-direction: column;
+  background: #000;
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 8px;
+  padding: 0.75rem;
+  text-decoration: none;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.tournament-card.live {
+  border-color: rgba(239, 68, 68, 0.4);
+  box-shadow:
+    0 0 20px rgba(239, 68, 68, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.tournament-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.tournament-card__type {
+  background: #7c3aed;
+  color: white;
+  font-size: 0.65rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.tournament-card__status {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.tournament-card__status.running {
+  color: #ef4444;
+}
+
+.tournament-card__status.announced {
+  color: #3b82f6;
+}
+
+.tournament-card__status.registering {
+  color: #ffffff;
+}
+
+.tournament-card__body {
+  flex: 1;
+}
+
+.tournament-card__name {
+  color: white;
+  font-size: 0.85rem;
+  margin: 0 0 0.35rem;
+  line-height: 1.2;
+}
+
+.tournament-card__buyin {
+  color: #fbbf24;
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.tournament-card__fee {
+  color: #888;
+  font-size: 0.7rem;
+  margin-left: 0.25rem;
+}
+
+.tournament-card__gtd {
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.75rem;
+  margin-top: 0.15rem;
+}
+
+.tournament-card__players {
+  color: #888;
+  font-size: 0.7rem;
+  margin-top: 0.15rem;
+}
+
+.tournament-card__footer {
+  margin-top: 0.5rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.tournament-card__time {
+  color: #888;
+  font-size: 0.7rem;
+}
+/* ═══════════════════════════════════════════════════════════════════════════════
+   EMPTY STATE
+═══════════════════════════════════════════════════════════════════════════════ */
+.empty-tables {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 2rem;
+  color: #888;
+}
+
+.empty-tables p:first-child {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #dfe6ef;
+  margin: 0 0 6px;
+}
+
+.empty-tables .empty-hint {
+  font-size: 0.85rem;
+  color: #8892a4;
+  max-width: 34ch;
+  margin: 0 auto;
+  line-height: 1.5;
+}
+
+/* The way OUT of an empty result. Only rendered when the player's own search
+   or filters caused it - there is no action to offer when the club genuinely
+   has no games. */
+.empty-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.empty-action {
+  min-height: 40px;
+  padding: 0 18px;
+  border-radius: 20px;
+  border: none;
+  background: linear-gradient(135deg, #1877f2, #0a5dc2);
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    filter 0.16s ease,
+    transform 0.16s ease;
+}
+.empty-action:focus-visible {
+  outline: 2px solid rgba(24, 119, 242, 0.85);
+  outline-offset: 2px;
+}
+
+/* Secondary: same size and shape, no fill. "Show All Games" is the recommended
+   escape; editing the filters is for someone who knows what they set. */
+.empty-action--ghost {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ffce5c;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* This block covered ONE hover transform. The animations a
+     motion-sensitive player actually meets on this page were all declared
+     after it and untouched: the games grid fades and slides on every filter
+     change, and the spin-join overlay fades in behind a spinner that rotates
+     forever. */
+  .club-home__games,
+  .spin-join-overlay,
+  .spin-join-spinner {
+    animation: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   BACKGROUND (Premium Bar Scene)
+═══════════════════════════════════════════════════════════════════════════════ */
+
+/* Table Card Wrapper — contains Link + Delete button */
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE
+═══════════════════════════════════════════════════════════════════════════════ */
+/* One column at phone widths.
+   This used to force `repeat(2, 1fr)` at <=480px — i.e. ~228px tracks — while
+   the rule above deliberately sets a 300px floor because NeonCard spends ~152px
+   on padding and emblem before any text. The override put the card back into
+   exactly the squeeze the 300px minmax exists to prevent: "BLINDS" rendering as
+   "BLI" and the corner pills overlapping the content, on the phone-first
+   viewport this app is designed for. Mobile gets one full-width card. */
+@media (max-width: 480px) {
+  .club-home__games {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CLUB LEVEL BADGE & PROGRESS
+   (.club-card__level / .club-card__online were the old, never-rendered hooks;
+   the live container is .lobby-club__level in the rebuilt header.)
+═══════════════════════════════════════════════════════════════════════════════ */
+.lobby-club__level {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  min-width: 0;
+}
+
+.club-level-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: 1px solid #5abaff;
+  border-bottom-color: #0a2d58;
+  border-radius: 6px;
+  background: #2b77d5 !important;
+  box-shadow:
+    0 2px 0 #041329,
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  flex-shrink: 0;
+}
+
+.club-level-badge__number {
+  font-weight: 800;
+  font-size: 0.75rem;
+  color: #fff;
+  text-shadow: 0 1px 0 #06172b;
+}
+
+.club-level-badge__tier {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #dceeff;
+  white-space: nowrap;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PHASE 4 — VISUAL IMPROVEMENTS (Depth, Atmosphere, Motion)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* P4-1: Ambient Background Particles */
+/* P4-2: Level Bar Sparkle at Fill Tip */
+/* P4-3: Game Card Scanner Sweep on Hover */
+/* (Two `.nav-item.active` selectors were stranded here the same way, and
+   their trailing comma made the parser read `@keyframes liveCardGlow` as part
+   of the SELECTOR LIST - so the at-rule stopped existing and an invalid
+   qualified rule shipped in its place. Both selectors are gone with the rule
+   they belonged to, and liveCardGlow / cardScanSweep went with them: nothing
+   has referenced either since the card grid was replaced.) */
+
+/* P4-6: Club Header Section Depth */
+/* P4-7: Filter Tab Slide Underline */
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ANIMATIONS (extracted from inline <style>)
+═══════════════════════════════════════════════════════════════════════════════ */
+/* BBJ lobby ticker spacing (2026-08-18) */
+/* ═══════════════════════════════════════════════════════════════════════════
+   SPIN QUICK-JOIN OVERLAY (Dan 2026-08-20: no lobby for a spin — tap the
+   tile, land on the table). Shown from tap until the seat exists.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.spin-join-overlay {
+  position: fixed;
+  inset: 0;
+  /* ABOVE THE BOTTOM NAV (z-index: 1000). At 900 the nav painted on top of a
+     blocking overlay and stayed tappable, so a player could navigate to the
+     Cashier in the middle of a spin buy-in and leave the pending seat
+     orphaned. Neither element has an ancestor stacking context, so these two
+     values are compared directly. */
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 8, 14, 0.82);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: spinJoinFadeIn 0.25s ease-out;
+}
+
+.spin-join-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 34px;
+  border-radius: 18px;
+  background: #000;
+  border: 1px solid rgba(80, 220, 130, 0.25);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+}
+
+.spin-join-spinner {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 3px solid rgba(80, 220, 130, 0.2);
+  border-top-color: #3ddc84;
+  animation: spinJoinRotate 0.8s linear infinite;
+}
+
+.spin-join-title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: 0.02em;
+}
+
+.spin-join-sub {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.spin-join-cancel {
+  margin-top: 8px;
+  padding: 8px 22px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+@keyframes spinJoinRotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes spinJoinFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.lobby-top__notice--editable {
+  cursor: pointer;
+  transition: background 0.2s;
+}
+/* It is role="button" with tabIndex={0} for staff, so it needs to show focus. */
+.lobby-top__notice--editable:focus-visible {
+  outline: 2px solid rgba(0, 200, 255, 0.6);
+  outline-offset: 2px;
+}
+.lobby-top__notice-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lobby-top__notice-editor input {
+  width: 100%;
+  min-height: 40px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: #fff;
+  padding: 8px;
+  font-family: inherit;
+}
+.lobby-top__notice-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.lobby-top__notice-actions button {
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  cursor: pointer;
+}
+.lobby-top__notice-actions button:last-child {
+  background: #0088ff;
+}
+
+/* Two `!important`s used to sit here, zeroing a horizontal padding on
+   .club-home that this stylesheet never sets. The only other global rule for
+   that class is components/club/ClubHome.css, whose component is exported from
+   a barrel that nothing imports - so the sheet never loads and the overrides
+   were winning a fight that had already ended. */
+
+/* E2E 2026-08-23: the level badge row overflowed the club card at <=480px
+   (badge measured right:407 in a 390px viewport). Let the row wrap and the
+   badge shrink instead of clipping. */
+@media (max-width: 480px) {
+  .lobby-club__level {
+    flex-wrap: wrap;
+  }
+  .club-level-badge {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+  .club-level-badge__tier {
+    white-space: normal;
+  }
+}
+
+/* ── Dan 2026-08-24 (iPhone screenshots): the 192px club art left the info
+   column ~150px on a phone — the name truncated to two letters, the level
+   chip clipped off the right edge, and the whole card read as smushed.
+   Smaller art on small screens; the info column gets the width back. Plus a
+   litte top air: the card sat flush against the header. ─────────────────── */
+@media (max-width: 768px) {
+  /* The 1px top is on the base .lobby-top rule now — it is the same at
+     every width, so this breakpoint no longer restates it. */
+
+  .lobby-club__avatar {
+    width: 64px;
+    height: 64px;
+  }
+
+  .lobby-club__avatar-fallback {
+    font-size: 2.6rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .lobby-club__avatar {
+    width: 56px;
+    height: 56px;
+  }
+
+  .lobby-club__name {
+    font-size: 0.86rem;
+  }
+}
+
+/* ── QUICK-PREF CHIPS FIT THE PHONE (Dan 2026-08-24) ────────────────────────
+   "FAVORITES AND THE UP/DOWN ARROW ARE CUT OFF AND YOU NEED TO SLIDE TO SEE
+   THEM." The row is a horizontal scroller, which is the right structure — but
+   a scroller that always overflows is just a hidden control. Six 32px chips
+   at 14px of side padding plus a label and the sheet button measured past
+   390px; at these sizes the same set lands inside it, and the scroller stays
+   as the safety net for a club that declares more tiers than usual. */
+@media (max-width: 768px) {
+  .lobby-controls {
+    margin: 6px 8px;
+  }
+
+  .lobby-controls .game-bar {
+    align-items: flex-start;
+    padding: 8px;
+  }
+
+  .lobby-controls .game-bar__types {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-block: 6px;
+    scrollbar-width: none;
+  }
+
+  .lobby-controls .game-bar__types::-webkit-scrollbar {
+    display: none;
+  }
+
+  .lobby-controls .game-bar__type {
+    flex: 0 0 auto;
+    min-width: 68px;
+  }
+
+  .quickprefs {
+    padding: 0 8px 8px;
+  }
+
+  .quickprefs__row {
+    gap: 4px;
+  }
+
+  .quickprefs__row--status {
+    padding: 0;
+  }
+
+  .quickprefs__row--status .quickprefs__chip {
+    min-width: 76px;
+    height: 36px;
+    border-radius: 0;
+  }
+
+  .lobby-resultsbar {
+    padding: 8px 8px 0;
+  }
+
+  .lobby-resultsbar .lobby-createbtn {
+    min-height: 40px;
+    padding-inline: 12px;
+    white-space: nowrap;
+  }
+
+  .quickprefs__label {
+    font-size: 0.6rem;
+    padding-right: 0;
+  }
+
+  .quickprefs__chip {
+    height: 27px;
+    padding: 0 8px;
+    border-radius: 14px;
+    font-size: 0.64rem;
+  }
+
+  /* 27px CHIPS, 44px TARGETS. These are the stakes and status filters - the
+     controls a player touches most on this page - and 27px is well under the
+     44px minimum on every phone. The pill keeps its compact look and the
+     target is extended by a transparent overlay, the same pattern
+     .lobby-ads__dot and .dw__plus already use. Padding on the scrolling row
+     cannot do this: it does not enlarge a child's hit box. */
+  .quickprefs__chip,
+  .quickprefs__more {
+    position: relative;
+  }
+
+  .quickprefs__chip::after,
+  .quickprefs__more::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 44px;
+    transform: translateY(-50%);
+  }
+
+  .quickprefs__more {
+    width: 27px;
+    height: 27px;
+    border-radius: 14px;
+  }
+}
+
+@media (max-width: 380px) {
+  .quickprefs__chip {
+    padding: 0 6px;
+    font-size: 0.61rem;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIVE GAME BOARD — visual-only hierarchy pass
+═══════════════════════════════════════════════════════════════════════════ */
+.lobby-controls {
+  position: relative;
+  overflow: hidden;
+  margin-top: 14px;
+  border-color: rgba(77, 163, 255, 0.34);
+  border-radius: 16px;
+  background: #111a2a;
+  box-shadow:
+    0 14px 32px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.lobby-controls::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: #3f8cff;
+}
+
+.lobby-controls__heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 14px 10px 17px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.lobby-controls__heading > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lobby-controls__eyebrow {
+  color: #67baff;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.lobby-controls__title {
+  color: #f6f9ff;
+  font-size: 1.08rem;
+  font-weight: 850;
+  letter-spacing: -0.025em;
+}
+
+.lobby-controls__total {
+  color: #7f8ca5;
+  font-size: 0.67rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.lobby-controls__total strong {
+  color: #eaf3ff;
+  font-size: 0.86rem;
+}
+
+.lobby-controls__operator-actions {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px !important;
+}
+
+.lobby-controls .game-bar {
+  gap: 10px;
+  padding: 12px 12px 10px 16px;
+}
+
+.lobby-controls .game-bar__types {
+  gap: 6px;
+  padding-block: 0;
+}
+
+.lobby-controls .game-bar__type {
+  height: 40px;
+  border-color: #304966;
+  border-bottom-color: #05090f;
+  border-radius: 6px;
+  background: #171e2b;
+  color: #aeb9cb;
+  font-size: 0.68rem;
+  letter-spacing: 0.035em;
+  box-shadow:
+    0 3px 0 #03060b,
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -2px 0 #0a0f17;
+}
+
+.lobby-controls .game-bar__type.is-active {
+  border-color: #5ab6ff;
+  background: #2866dc;
+  box-shadow:
+    0 3px 0 #061b42,
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    inset 0 -2px 0 rgba(0, 30, 100, 0.42);
+}
+
+.lobby-controls .game-bar__type:active,
+.lobby-controls .game-bar__type.is-active:active {
+  transform: translateY(2px);
+  box-shadow:
+    0 1px 0 #03060b,
+    inset 0 2px 0 #0a1f46;
+}
+
+.lobby-controls .game-bar__filter-btn {
+  height: 40px;
+  padding-inline: 14px;
+  border-color: #356eaa;
+  border-bottom-color: #06101c;
+  border-radius: 6px;
+  background: #142b4d;
+  color: #bcdcff;
+  font-weight: 800;
+  box-shadow:
+    0 3px 0 #03060b,
+    inset 0 1px 0 rgba(161, 214, 255, 0.22),
+    inset 0 -2px 0 #09182c;
+}
+
+.lobby-controls .game-bar__filter-btn.is-set {
+  border-color: #61bdff;
+  background: #2866dc;
+  color: #fff;
+}
+
+.lobby-controls .game-bar__filter-btn:active {
+  transform: translateY(2px);
+  box-shadow:
+    0 1px 0 #03060b,
+    inset 0 2px 0 #07152a;
+}
+
+.lobby-controls .quickprefs {
+  padding: 0 12px 12px 16px;
+}
+
+.lobby-controls .quickprefs__row--status {
+  padding: 4px;
+  gap: 4px;
+  border-color: rgba(104, 152, 230, 0.16);
+  border-radius: 11px;
+  background: rgba(0, 0, 0, 0.34);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.65);
+}
+
+.lobby-controls .quickprefs__row--status .quickprefs__chip {
+  height: 34px;
+  border: 0;
+  border-radius: 8px;
+  border: 1px solid #273b55;
+  border-bottom-color: #03060a;
+  background: #111a27;
+  color: #8995aa;
+  box-shadow:
+    0 3px 0 #020408,
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.lobby-controls .quickprefs__row--status .quickprefs__chip.is-on {
+  background: #2459bd;
+  color: #fff;
+  border-color: #58b1ff;
+  box-shadow:
+    0 3px 0 #071b41,
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.lobby-controls .quickprefs__row--status .quickprefs__chip:active {
+  transform: translateY(2px);
+  box-shadow:
+    0 1px 0 #020408,
+    inset 0 2px 0 #071327;
+}
+
+.lobby-resultsbar {
+  margin: 10px 1rem 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(103, 137, 196, 0.13);
+  border-radius: 11px;
+  background: #101621;
+}
+
+.lobby-count__text {
+  color: #8996aa;
+  font-weight: 650;
+}
+
+.lobby-count__text strong {
+  color: #70bdff;
+  font-size: 0.96rem;
+}
+
+.lobby-resultsbar .lobby-createbtn {
+  min-height: 38px;
+  border-color: rgba(71, 142, 255, 0.65);
+  border-radius: 9px;
+  background: #14254a;
+  color: #93c8ff;
+  border-bottom-color: #050b16;
+  box-shadow:
+    0 3px 0 #02050a,
+    inset 0 1px 0 rgba(163, 215, 255, 0.22);
+}
+
+.lobby-resultsbar--create-only {
+  justify-content: stretch;
+  margin-top: 12px;
+  padding: 7px;
+  overflow: visible;
+  border: 1px solid rgb(77 151 204 / 44%);
+  border-radius: 12px;
+  background: #0b1b27;
+  box-shadow:
+    inset 0 1px 0 rgb(198 231 255 / 12%),
+    0 8px 24px rgb(0 0 0 / 30%);
+}
+
+.lobby-resultsbar--create-only .lobby-createbtn {
+  width: 100%;
+  min-height: 50px;
+  justify-content: center;
+  gap: 8px;
+  overflow: visible;
+  border: 1px solid #438cb9;
+  border-bottom-color: #153b55;
+  border-radius: 8px;
+  background: #123f5b;
+  color: #effaff;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-shadow: 0 1px 2px #000;
+  text-transform: uppercase;
+  box-shadow:
+    inset 0 1px 0 rgb(221 244 255 / 30%),
+    inset 0 -8px 18px rgb(0 0 0 / 18%),
+    0 3px 0 #02080c;
+}
+
+.lobby-resultsbar--create-only .lobby-createbtn span {
+  color: #f3d67c;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.lobby-resultsbar--create-only .lobby-createbtn:focus-visible {
+  outline: 2px solid #8edbff;
+  outline-offset: 3px;
+}
+
+.lobby-resultsbar .lobby-createbtn:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #02050a;
+}
+
+@media (max-width: 768px) {
+  .lobby-controls {
+    margin: 10px 8px 8px;
+    border-radius: 14px;
+  }
+
+  .lobby-controls__heading {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 12px 11px 9px 14px;
+  }
+
+  .lobby-controls__operator-actions {
+    align-items: stretch;
+    flex-direction: column !important;
+  }
+
+  .lobby-controls__title {
+    font-size: 0.98rem;
+  }
+
+  .lobby-controls .game-bar {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px 5px;
+    padding: 9px 8px 10px 12px;
+  }
+
+  /* The tablist contributes its seven controls to the five-column board, and
+     the Filters button becomes item eight. That yields 5 + 3 with every
+     control visible and no swipe-to-reveal row. */
+  .lobby-controls .game-bar__types {
+    display: contents;
+    overflow: visible;
+  }
+
+  .lobby-controls .game-bar__type {
+    min-width: 0;
+    width: auto;
+    height: 40px;
+    padding-inline: 2px;
+  }
+
+  .lobby-controls .game-bar__filter-btn {
+    min-width: 0;
+    height: 40px;
+    justify-content: center;
+    padding-inline: 3px;
+  }
+
+  .lobby-controls .quickprefs {
+    padding: 0 8px 9px 12px;
+  }
+
+  .lobby-controls .quickprefs__row--status {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    overflow: visible;
+  }
+
+  .lobby-controls .quickprefs__row--status .quickprefs__chip {
+    min-width: 0;
+    height: 38px;
+    padding-inline: 4px;
+  }
+
+  .lobby-resultsbar {
+    margin: 8px 8px 0;
+    padding: 8px 9px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE LOBBY FINAL CONTRACT
+   Kept at the end of the stylesheet so legacy documented rules cannot
+   re-introduce the cramped header or five-column control collision.
+═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  .lobby-top {
+    gap: 6px;
+    padding: 1px 7px 8px;
+  }
+
+  .lobby-top__main {
+    grid-template-columns: minmax(0, 1fr) 112px;
+    gap: 6px;
+  }
+
+  .lobby-club {
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr);
+    align-items: center;
+    gap: 7px;
+    min-height: 116px;
+    padding: 7px 8px;
+    border-radius: 8px;
+  }
+
+  .lobby-club__avatar {
+    width: 46px;
+    height: 46px;
+    align-self: center;
+  }
+
+  .lobby-club__info {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .lobby-club__name {
+    margin: 0;
+    font-size: 0.78rem;
+    letter-spacing: 0.015em;
+    line-height: 1.18;
+  }
+
+  .lobby-club__union {
+    margin-top: 2px;
+    overflow: hidden;
+    color: #8fa0b6;
+    font-size: 0.58rem;
+    font-weight: 700;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .lobby-club__meta {
+    gap: 2px 6px;
+    margin-top: 4px;
+    font-size: 0.56rem;
+    line-height: 1.2;
+  }
+
+  .lobby-club__members svg {
+    width: 11px;
+    height: 11px;
+  }
+
+  .lobby-club__player {
+    flex-basis: 100%;
+  }
+
+  .lobby-club__status {
+    min-width: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 5px;
+    margin-top: 6px;
+  }
+
+  .lobby-club__level {
+    min-width: 0;
+    margin: 0;
+  }
+
+  .club-level-badge {
+    max-width: 100%;
+    gap: 3px;
+    padding: 2px 5px;
+    border-radius: 5px;
+    background: #2b77d5 !important;
+  }
+
+  .club-level-badge__number {
+    font-size: 0.58rem;
+    white-space: nowrap;
+  }
+
+  .club-level-badge__tier {
+    max-width: 54px;
+    overflow: hidden;
+    font-size: 0.52rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .lobby-club__activity {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+  }
+
+  .lobby-club__playing {
+    max-width: 58px;
+    color: #8998ac;
+    font-size: 0.52rem;
+    line-height: 1.15;
+    text-align: right;
+  }
+
+  .lobby-club__playing strong {
+    color: #d9e6f5;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .lobby-club__share {
+    width: 27px;
+    height: 27px;
+    border-radius: 5px;
+  }
+
+  .lobby-club__share svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  .lobby-bbj {
+    min-height: 116px;
+    gap: 6px;
+    padding: 8px 5px;
+    border-radius: 8px;
+  }
+
+  .lobby-bbj__label {
+    max-width: 84px;
+    font-size: 0.52rem;
+    letter-spacing: 0.08em;
+    line-height: 1.25;
+  }
+
+  .lobby-bbj__amount {
+    font-size: 0.91rem;
+    letter-spacing: 0.018em;
+  }
+
+  .lobby-top__notice p {
+    padding: 6px 9px;
+    border-left-width: 2px;
+    border-radius: 0 6px 6px 0;
+    color: #aab4c1;
+    font-size: 0.64rem;
+    line-height: 1.3;
+    -webkit-line-clamp: 2;
+  }
+
+  .lobby-controls {
+    margin: 8px 7px 7px;
+    border-radius: 10px;
+    background: #0e1928;
+    box-shadow:
+      0 5px 0 #010307,
+      0 12px 24px rgba(0, 0, 0, 0.42),
+      inset 0 1px 0 rgba(180, 220, 255, 0.1);
+  }
+
+  .lobby-controls__heading {
+    align-items: center;
+    padding: 10px 10px 8px 13px;
+  }
+
+  .lobby-controls__eyebrow {
+    font-size: 0.55rem;
+    letter-spacing: 0.13em;
+  }
+
+  .lobby-controls__title {
+    font-size: 0.91rem;
+  }
+
+  .lobby-controls__total {
+    font-size: 0.55rem;
+    letter-spacing: 0.055em;
+    white-space: nowrap;
+  }
+
+  .lobby-controls__total strong {
+    font-size: 0.74rem;
+  }
+
+  .lobby-controls .game-bar {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 7px 6px;
+    padding: 9px 8px 10px 11px;
+  }
+
+  .lobby-controls .game-bar__types {
+    display: contents;
+    overflow: visible;
+  }
+
+  .lobby-controls .game-bar__type,
+  .lobby-controls .game-bar__filter-btn {
+    width: 100%;
+    min-width: 0;
+    height: 38px;
+    padding: 3px;
+    border-radius: 6px;
+    font-size: 0.59rem;
+    line-height: 1.05;
+    white-space: normal;
+  }
+
+  .lobby-controls .game-bar__filter-btn {
+    gap: 3px;
+    justify-content: center;
+  }
+
+  .lobby-controls .game-bar__filter-btn svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .lobby-controls .quickprefs {
+    padding: 0 8px 10px 11px;
+  }
+
+  .lobby-controls .quickprefs__row--status {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    padding: 6px;
+    overflow: visible;
+    border-radius: 8px;
+  }
+
+  .lobby-controls .quickprefs__row--status .quickprefs__chip {
+    width: 100%;
+    min-width: 0;
+    height: 36px;
+    padding: 3px 4px;
+    border-radius: 6px;
+    font-size: 0.56rem;
+    line-height: 1.05;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 360px) {
+  .lobby-top__main {
+    grid-template-columns: minmax(0, 1fr) 104px;
+  }
+
+  .lobby-club {
+    grid-template-columns: 42px minmax(0, 1fr);
+    padding-inline: 6px;
+  }
+
+  .lobby-club__avatar {
+    width: 42px;
+    height: 42px;
+  }
+
+  .lobby-bbj__amount {
+    font-size: 0.82rem;
+  }
+}
+
+/* APPROVED CLUB ARENA COMPOSITION — premium mobile frame and chassis lock.
+   Keep this marker ahead of the decorative frame rules so the solid-color
+   live-board guard does not classify approved chrome as lobby-row styling. */
+/* Cascade lock: these rules intentionally close the legacy mobile-frame era. */
+@media (max-width: 900px) {
+  .club-home--unified-mobile .club-mobile-welcome,
+  .agc-mobile-page .club-mobile-welcome {
+    width: calc(100% - 8px);
+    min-height: 58px;
+    aspect-ratio: auto;
+    margin: 4px 4px 0;
+    padding: 13px 34px 7px;
+    overflow: visible;
+    border: 2px solid #7d8992;
+    border-bottom: 1px solid #25313a;
+    border-radius: 11px 11px 0 0;
+    background: radial-gradient(ellipse at 50% 0%, rgb(55 74 88 / 20%), transparent 58%), #020507;
+    box-shadow:
+      inset 2px 0 #111820,
+      inset -2px 0 #111820,
+      inset 0 0 18px #000;
+  }
+
+  .club-home--unified-mobile .club-mobile-welcome span,
+  .agc-mobile-page .club-mobile-welcome span {
+    position: absolute;
+    top: -6px;
+    left: 50%;
+    padding: 0 9px;
+    background: #04070a;
+    font-size: clamp(7px, 1.8vw, 9px);
+    line-height: 11px;
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
+
+  .club-home--unified-mobile .club-mobile-owner-message,
+  .agc-mobile-page .club-mobile-owner-message {
+    width: calc(100% - 8px);
+    min-height: 26px;
+    aspect-ratio: auto;
+    margin: 0 4px;
+    padding: 0 18px;
+    border: 0;
+    border-right: 2px solid #7d8992;
+    border-bottom: 1px solid #4e5961;
+    border-left: 2px solid #7d8992;
+    border-radius: 0;
+    background: #020507;
+    box-shadow:
+      inset 2px 0 #111820,
+      inset -2px 0 #111820;
+  }
+
+  .club-home--unified-mobile .club-mobile-owner-message__copy,
+  .agc-mobile-page .club-mobile-owner-message__copy {
+    min-height: 24px;
+    font-size: clamp(7px, 1.95vw, 9px);
+  }
+
+  .club-home--unified-mobile .lobby-top,
+  .agc-mobile-page .lobby-top {
+    width: calc(100% - 8px);
+    margin: 0 4px;
+    padding: 7px 8px 5px;
+    border-right: 2px solid #7d8992;
+    border-left: 2px solid #7d8992;
+    background: #020507;
+    box-shadow:
+      inset 2px 0 #111820,
+      inset -2px 0 #111820;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger,
+  .agc-mobile-page .lobby-wallets-trigger {
+    min-height: 48px;
+    aspect-ratio: auto;
+    grid-template-columns: 48px minmax(0, 1fr) 36px;
+    padding: 5px 8px;
+    overflow: visible;
+    border: 1px solid #48545d;
+    border-radius: 2px;
+    background: linear-gradient(180deg, #0a1015, #020507);
+    box-shadow:
+      inset 0 0 0 1px #090d10,
+      inset 0 0 16px #000;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__icon,
+  .agc-mobile-page .lobby-wallets-trigger__icon {
+    position: relative;
+    width: 28px;
+    height: 19px;
+    justify-self: center;
+    border: 1px solid #929ca3;
+    border-radius: 2px;
+    background: linear-gradient(180deg, #111820, #05080a);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__icon {
+    visibility: hidden;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__copy,
+  .agc-mobile-page .lobby-wallets-trigger__copy {
+    position: static;
+    min-width: 0;
+    place-content: center;
+    gap: 2px;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__copy strong,
+  .agc-mobile-page .lobby-wallets-trigger__copy strong {
+    font-size: clamp(17px, 4.8vw, 24px);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__copy small,
+  .agc-mobile-page .lobby-wallets-trigger__copy small {
+    font-size: clamp(8px, 2.15vw, 11px);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__chevron,
+  .agc-mobile-page .lobby-wallets-trigger__chevron {
+    width: 12px;
+    height: 12px;
+    justify-self: center;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg) translate(-2px, -2px);
+  }
+}
+
+/* Mobile lobby chassis — one outer frame, multiple organized content bays.
+   The frame is intentionally CSS-owned so no internal row is stretched to fit
+   decorative raster geometry. Game cards begin after this chassis and retain
+   their own approved presentation. */
+@media (max-width: 900px) {
+  .club-home--unified-mobile {
+    --mobile-chassis-edge: #7d8992;
+    --mobile-chassis-line: #25313a;
+    --mobile-chassis-blue: #159cff;
+    --mobile-chassis-bg: #020507;
+  }
+
+  .club-home--unified-mobile .club-mobile-welcome,
+  .club-home--unified-mobile .club-mobile-owner-message,
+  .club-home--unified-mobile .lobby-top,
+  .club-home--unified-mobile .club-lobby-command-top {
+    border-right: 2px solid var(--mobile-chassis-edge);
+    border-left: 2px solid var(--mobile-chassis-edge);
+    border-radius: 0;
+    background:
+      linear-gradient(
+        90deg,
+        rgb(21 156 255 / 13%),
+        transparent 13px,
+        transparent calc(100% - 13px),
+        rgb(21 156 255 / 13%)
+      ),
+      radial-gradient(ellipse at 50% 0%, rgb(55 74 88 / 20%), transparent 58%),
+      var(--mobile-chassis-bg);
+    box-shadow:
+      inset 2px 0 #111820,
+      inset -2px 0 #111820,
+      inset 0 0 18px #000;
+  }
+
+  .club-home--unified-mobile .club-mobile-welcome {
+    width: calc(100% - 8px);
+    min-height: 58px;
+    aspect-ratio: auto;
+    margin: 4px 4px 0;
+    padding: 13px 34px 7px;
+    overflow: visible;
+    border-top: 2px solid var(--mobile-chassis-edge);
+    border-bottom: 1px solid var(--mobile-chassis-line);
+    border-radius: 11px 11px 0 0;
+  }
+
+  .club-home--unified-mobile .club-mobile-welcome::before {
+    content: '';
+    position: absolute;
+    z-index: 1;
+    top: 4px;
+    right: 16px;
+    bottom: auto;
+    left: 16px;
+    width: auto;
+    height: 2px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      #303b44 18%,
+      #169cff 50%,
+      #303b44 82%,
+      transparent
+    );
+    box-shadow: 0 0 6px rgb(21 156 255 / 45%);
+  }
+
+  .club-home--unified-mobile .club-mobile-welcome span {
+    position: absolute;
+    z-index: 3;
+    top: -5px;
+    left: 50%;
+    padding: 0 9px;
+    background: #04070a;
+    color: #dce2e6;
+    font-size: clamp(7px, 1.8vw, 9px);
+    letter-spacing: 0.34em;
+    line-height: 11px;
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
+
+  .club-home--unified-mobile .club-mobile-welcome h1 {
+    font-size: clamp(22px, 6.4vw, 31px);
+    line-height: 1;
+  }
+
+  .club-home--unified-mobile .club-mobile-owner-message {
+    width: calc(100% - 8px);
+    min-height: 26px;
+    aspect-ratio: auto;
+    margin: 0 4px;
+    padding: 0 18px;
+    border-top: 1px solid #4e5961;
+    border-bottom: 1px solid #4e5961;
+  }
+
+  .club-home--unified-mobile .club-mobile-owner-message::before {
+    display: none;
+  }
+
+  .club-home--unified-mobile .club-mobile-owner-message__copy {
+    min-height: 24px;
+    padding: 0 3px;
+    color: #20b8ff;
+    font-size: clamp(7px, 1.95vw, 9px);
+    letter-spacing: 0.025em;
+  }
+
+  .club-home--unified-mobile .lobby-top {
+    width: calc(100% - 8px);
+    margin: 0 4px;
+    padding: 7px 8px 5px;
+  }
+
+  .club-home--unified-mobile .lobby-top__main {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .club-home--unified-mobile .lobby-top .club-identity.lobby-top__identity,
+  .club-home--unified-mobile .lobby-bbj {
+    aspect-ratio: 2.4 / 1;
+  }
+
+  .club-home--unified-mobile .lobby-top__wallet {
+    margin-top: 0;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger {
+    width: 100%;
+    min-height: 48px;
+    aspect-ratio: auto;
+    grid-template-columns: 48px minmax(0, 1fr) 36px;
+    padding: 5px 8px;
+    overflow: visible;
+    border: 1px solid #48545d;
+    border-radius: 2px;
+    background: linear-gradient(180deg, #0a1015, #020507);
+    box-shadow:
+      inset 0 0 0 1px #090d10,
+      inset 0 0 16px #000,
+      0 0 5px rgb(21 156 255 / 10%);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__icon {
+    position: relative;
+    width: 28px;
+    height: 19px;
+    justify-self: center;
+    border: 1px solid #929ca3;
+    border-radius: 2px;
+    background: linear-gradient(180deg, #111820, #05080a);
+    filter: drop-shadow(0 0 3px rgb(21 156 255 / 35%));
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__icon::before {
+    content: '';
+    position: absolute;
+    top: -5px;
+    left: 4px;
+    width: 18px;
+    height: 7px;
+    border: 1px solid #7d878f;
+    border-bottom: 0;
+    border-radius: 2px 2px 0 0;
+    transform: skewX(-14deg);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__icon::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    right: -2px;
+    width: 8px;
+    height: 6px;
+    border: 1px solid #58baff;
+    border-radius: 1px;
+    background: #07111a;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__copy {
+    position: static;
+    min-width: 0;
+    place-content: center;
+    gap: 2px;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__copy strong {
+    font-size: clamp(17px, 4.8vw, 24px);
+    letter-spacing: 0.055em;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__copy small {
+    font-size: clamp(8px, 2.15vw, 11px);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__chevron {
+    width: 12px;
+    height: 12px;
+    justify-self: center;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg) translate(-2px, -2px);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__chevron.is-expanded {
+    transform: rotate(225deg) translate(-2px, -2px);
+  }
+
+  .club-home--unified-mobile .club-lobby-machine {
+    width: calc(100% - 8px);
+    margin-top: 0;
+    margin-left: 4px;
+  }
+
+  .club-home--unified-mobile .club-lobby-command-top {
+    border-bottom: 2px solid var(--mobile-chassis-edge);
+    border-radius: 0 0 11px 11px;
+  }
+}
+
+/* Approved Club Arena BBJ plaque. The amount remains dynamic text in the
+   plaque's blank right-hand bay; the title and frame come from the asset. */
+.lobby-bbj {
+  position: relative;
+  container-type: inline-size;
+  width: 100%;
+  max-width: 100%;
+  align-self: center;
+  min-height: 0;
+  aspect-ratio: 1600 / 560;
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.lobby-bbj:active {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.lobby-bbj:active {
+  transform: scale(0.99);
+}
+
+.lobby-bbj__shell {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+.lobby-bbj__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.lobby-bbj__amount {
+  position: absolute;
+  z-index: 1;
+  left: 42%;
+  right: 5%;
+  top: 29%;
+  bottom: 17%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #eef2f7;
+  font-size: clamp(0.72rem, 8cqw, 1.55rem);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  text-shadow:
+    0 2px 2px #000,
+    0 0 8px rgba(82, 167, 255, 0.2);
+}
+
+@media (max-width: 480px) {
+  .lobby-top__main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lobby-top__wallet {
+    grid-column: 1;
+  }
+
+  .lobby-bbj {
+    width: 100%;
+    min-height: 0;
+  }
+}
+
+@media (min-width: 481px) and (max-width: 640px) {
+  .lobby-top__main {
+    grid-template-columns: minmax(0, 1.731fr) minmax(0, 2.857fr);
+  }
+
+  .lobby-top__wallet {
+    grid-column: 2;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CLUB ARENA COMPOSITION — desktop command column + mobile stack
+   ---------------------------------------------------------------------------
+   This is layout only. Identity, jackpot, wallets, filters, campaign and game
+   results remain the production components and continue to own their data and
+   actions. The two breakpoints deliberately share one DOM/data tree.
+═══════════════════════════════════════════════════════════════════════════ */
+.club-mobile-welcome,
+.club-mobile-owner-message,
+.lobby-wallets-trigger {
+  display: none;
+}
+
+.lobby-wallets-content,
+.lobby-wallets-content__inner {
+  min-width: 0;
+}
+
+@media (min-width: 901px) {
+  .club-home {
+    min-height: 0;
+    display: grid;
+    grid-template-columns: clamp(320px, 26vw, 434px) minmax(0, 1fr);
+    grid-template-rows: minmax(
+      0,
+      calc(
+        100dvh - var(--ca-global-header-height, 0px) - var(--mtt-ticker-h, 0px) -
+          var(--bottom-nav-clearance, 86px) - 20px
+      )
+    );
+    align-items: stretch;
+    gap: clamp(12px, 1.15vw, 20px);
+    padding: 10px 16px calc(var(--bottom-nav-clearance, 86px) + 8px);
+    background: #000;
+  }
+
+  .lobby-top {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+    height: 100%;
+    /* A flex column since 2026-09-01: the club message strip is a sibling ABOVE
+       `.lobby-top__main`, and `.lobby-top__main` claims `height: 100%`. As a
+       plain block that made the rail overflow by exactly the strip's height on
+       every desktop viewport. As a column the strip takes its own row and the
+       wallet stack takes the rest. */
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    border: 1px solid rgb(119 145 166 / 24%);
+    background: #020507;
+    box-shadow:
+      inset 0 0 0 2px #020305,
+      inset 0 0 24px #000,
+      0 8px 24px rgb(0 0 0 / 70%);
+    scrollbar-color: rgb(62 126 174 / 66%) #020507;
+    scrollbar-width: thin;
+  }
+
+  .lobby-top__main {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 7px;
+    padding: 2px;
+  }
+
+  .lobby-top .club-identity.lobby-top__identity,
+  .lobby-bbj {
+    flex: 0 0 auto;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 2.4 / 1;
+  }
+
+  .lobby-top__identity .club-identity__shell img,
+  .lobby-bbj__shell {
+    object-fit: fill;
+  }
+
+  .lobby-top__wallet {
+    grid-column: auto;
+    flex: 0 0 auto;
+    align-self: stretch;
+    width: 100%;
+    max-width: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
+  }
+
+  .lobby-wallets-content,
+  .lobby-wallets-content__inner,
+  .lobby-top__wallet .dw__rows {
+    height: auto;
+  }
+
+  .lobby-wallets-content__inner {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .lobby-top__wallet .dw {
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 100%;
+    min-height: 0;
+  }
+
+  /* The strip left the wallet column on 2026-09-01; it is the rail's first
+     row now, so the desktop spacing is stated against `.lobby-top` itself.
+     Left as a scoped rule rather than deleted outright because this block is
+     the desktop rail's own sizing pass and the margin belongs with it. */
+  .lobby-top > .lobby-top__house-welcome {
+    flex: 0 0 auto;
+    margin: 3px 3px 7px;
+  }
+
+  .lobby-top__wallet .dw__rows {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 5px;
+  }
+
+  /* DynamicWallet already emits exactly the rows authorized for this role.
+     Desktop must not hide any of them: the command rail scrolls, so Club Bank,
+     Promo, Agent, Player, Rake, BBJ backup, and Spins remain visible and open
+     whenever that viewer's role is entitled to the account. */
+  .lobby-top__wallet .dw--lobby-board .dw__row {
+    display: block;
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 100%;
+    aspect-ratio: 1800 / 334;
+  }
+
+  .lobby-top__wallet .dw--lobby-board .dw__row--wallet-art .dw__row-shell {
+    object-fit: fill;
+  }
+
+  .club-lobby-machine {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
+@media (max-width: 900px) {
+  .club-home {
+    display: flex;
+    flex-direction: column;
+    width: 100vw;
+    max-width: 100vw;
+    margin-left: calc(50% - 50vw);
+    overflow-x: clip;
+    /* Use the page-clearance contract, not the artwork height. The latter
+       omits the home-indicator inset and left a populated lobby's last image
+       25px beneath the fixed nav in the authenticated production audit. A
+       full coarse-pointer target of breathing room also absorbs late image
+       layout without making the final row unreachable. */
+    padding-bottom: calc(var(--bottom-nav-clearance, 74px) + 44px);
+    background: #000;
+  }
+
+  .club-mobile-welcome {
+    position: relative;
+    isolation: isolate;
+    width: calc(100% - 16px);
+    min-height: clamp(100px, 27vw, 142px);
+    margin: 8px 8px 0;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 3px;
+    padding: 18px 36px;
+    overflow: hidden;
+    background:
+      url('/hub/club-arena/assets/club-buttons/lobby/lobby-header-frame-universal-v4.png') center /
+        100% 100% no-repeat,
+      #020507;
+    text-align: center;
+  }
+
+  .club-mobile-welcome span,
+  .club-mobile-welcome h1 {
+    position: relative;
+    z-index: 1;
+  }
+
+  .club-mobile-welcome span {
+    color: #d9dde1;
+    font-size: clamp(9px, 2.5vw, 13px);
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0.38em;
+    text-transform: uppercase;
+    text-shadow: 0 1px 2px #000;
+  }
+
+  .club-mobile-welcome h1 {
+    max-width: 100%;
+    margin: 0;
+    overflow: hidden;
+    color: #e7eaed;
+    font-family: Cinzel, Georgia, serif;
+    font-size: clamp(31px, 9vw, 47px);
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: 0.035em;
+    text-overflow: ellipsis;
+    text-shadow:
+      0 1px 0 #fff,
+      0 2px 0 #5d646a,
+      0 4px 8px #000;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .club-mobile-owner-message {
+    width: calc(100% - 32px);
+    min-height: 54px;
+    margin: 5px 16px 10px;
+    display: grid;
+    place-items: center;
+    padding: 9px 24px;
+    border: 0;
+    background:
+      url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center / 100% 100% no-repeat,
+      #02070a;
+    box-shadow: inset 0 0 12px #000;
+  }
+
+  .club-mobile-owner-message__copy {
+    width: 100%;
+    min-height: 28px;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    background: transparent;
+    color: #21baff;
+    font-size: clamp(11px, 2.8vw, 15px);
+    font-weight: 650;
+    line-height: 1.22;
+    letter-spacing: 0.035em;
+    text-align: center;
+    text-overflow: ellipsis;
+    text-shadow: 0 0 8px rgb(20 160 255 / 35%);
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .club-mobile-owner-message__copy:disabled {
+    cursor: default;
+    opacity: 1;
+  }
+
+  .club-mobile-owner-message__editor {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .club-mobile-owner-message__editor input {
+    min-width: 0;
+    height: 36px;
+    padding: 0 9px;
+    border: 1px solid #2878b7;
+    border-radius: 2px;
+    background: #02070b;
+    color: #eaf7ff;
+  }
+
+  .club-mobile-owner-message__editor span,
+  .club-mobile-owner-message__editor button {
+    color: #8eb9d5;
+    font-size: 10px;
+  }
+
+  .club-mobile-owner-message__editor button {
+    min-height: 36px;
+    padding: 0 7px;
+    border: 1px solid #285577;
+    background: #07131e;
+  }
+
+  .lobby-top {
+    order: initial;
+    width: 100%;
+    padding: 0 16px 10px;
+    border: 0;
+    background: #000;
+  }
+
+  .lobby-top__main {
+    --lobby-paired-card-ratio: 2.4 / 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  /* The base .club-identity artwork ratio is declared after this page in the
+     runtime cascade. Match its specificity so the paired mobile frames both
+     honor this shared ratio instead of letting the Club card grow taller than
+     the BBJ plaque. */
+  .lobby-top .club-identity.lobby-top__identity,
+  .lobby-bbj {
+    width: 100%;
+    height: auto;
+    aspect-ratio: var(--lobby-paired-card-ratio);
+  }
+
+  .club-identity__shell img,
+  .lobby-bbj__shell {
+    object-fit: fill;
+  }
+
+  .lobby-top__wallet {
+    grid-column: 1 / -1;
+    width: 100%;
+    margin-top: 4px;
+  }
+
+  .lobby-wallets-trigger {
+    position: relative;
+    isolation: isolate;
+    width: 100%;
+    min-height: clamp(88px, 22vw, 104px);
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr) 72px;
+    align-items: center;
+    padding: 10px 4px;
+    overflow: hidden;
+    border: 16px solid transparent;
+    border-image: url('/hub/club-arena/assets/club-buttons/lobby/lobby-header-frame-v3.png') 25 42 /
+      16px stretch;
+    background: #04080b;
+    color: #edf2f6;
+    box-shadow: inset 0 0 18px #000;
+  }
+
+  .lobby-wallets-trigger__icon {
+    width: 50px;
+    height: 42px;
+    justify-self: center;
+    background: url('/hub/club-arena/assets/club-buttons/wallets/square/wallet-player-wallet-square-v1.webp')
+      center / contain no-repeat;
+    filter: drop-shadow(0 2px 4px #000);
+  }
+
+  .lobby-wallets-trigger__copy {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    gap: 5px;
+    text-align: center;
+    pointer-events: none;
+  }
+
+  .lobby-wallets-trigger__copy strong {
+    font-family: Cinzel, Georgia, serif;
+    font-size: clamp(22px, 6vw, 34px);
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-shadow: 0 2px 3px #000;
+  }
+
+  .lobby-wallets-trigger__copy small {
+    color: #1ab7ff;
+    font-size: clamp(12px, 3vw, 17px);
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .lobby-wallets-trigger__chevron {
+    width: 24px;
+    height: 24px;
+    justify-self: center;
+    border-right: 3px solid #dbe4ea;
+    border-bottom: 3px solid #dbe4ea;
+    transform: rotate(45deg) translate(-4px, -4px);
+    transition: transform 180ms ease;
+  }
+
+  .lobby-wallets-trigger__chevron.is-expanded {
+    transform: rotate(225deg) translate(-4px, -4px);
+  }
+
+  .lobby-wallets-content {
+    display: grid;
+    grid-template-rows: 0fr;
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transition:
+      grid-template-rows 220ms ease,
+      opacity 180ms ease;
+  }
+
+  .lobby-wallets-content[data-expanded='true'] {
+    grid-template-rows: 1fr;
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .lobby-wallets-content__inner {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .lobby-wallets-content .dw {
+    padding-top: 7px;
+  }
+
+  .lobby-wallets-content .dw__rows {
+    gap: 5px;
+  }
+
+  .lobby-wallets-content .dw__row--wallet-art,
+  .lobby-wallets-content .dw--lobby-board .dw__row--wallet-art {
+    min-height: 62px;
+  }
+}
+
+@media (max-width: 520px) {
+  .club-mobile-owner-message__editor {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .club-mobile-owner-message__editor span {
+    display: none;
+  }
+}
+
+@media (max-width: 360px) {
+  .lobby-top {
+    margin-inline: 8px;
+    width: calc(100% - 16px);
+    padding-inline: 0;
+  }
+
+  .club-mobile-owner-message {
+    width: calc(100% - 16px);
+    margin-inline: 8px;
+    padding-inline: 22px;
+  }
+
+  .lobby-top__main {
+    gap: 7px;
+  }
+
+  .lobby-top__identity,
+  .lobby-bbj {
+    height: auto;
+  }
+
+  .lobby-wallets-trigger {
+    grid-template-columns: 56px minmax(0, 1fr) 56px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lobby-wallets-content,
+  .lobby-wallets-trigger__chevron {
+    transition: none;
+  }
+}
+
+/* Final mobile top-stack repair. Every rail shares the same four-pixel page
+   gutter and every shell keeps its native frame proportion. */
+@media (max-width: 900px) {
+  .club-mobile-welcome {
+    box-sizing: border-box;
+    width: calc(100% - 8px);
+    min-height: 0;
+    aspect-ratio: 8 / 1;
+    margin: 4px 4px 0;
+    padding: 1.7% 8%;
+    box-shadow:
+      inset 1px 0 #000,
+      inset -1px 0 #000;
+  }
+
+  .club-mobile-welcome::before,
+  .club-mobile-owner-message::before {
+    content: '';
+    position: absolute;
+    z-index: 4;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 1px;
+    background: #000;
+    pointer-events: none;
+  }
+
+  .club-mobile-owner-message {
+    position: relative;
+    box-sizing: border-box;
+    width: calc(100% - 8px);
+    min-height: 0;
+    aspect-ratio: 20 / 1;
+    margin: 2px 4px 6px;
+    padding: 0 7%;
+    box-shadow:
+      inset 1px 0 #000,
+      inset -1px 0 #000;
+  }
+
+  .lobby-top {
+    width: calc(100% - 8px);
+    margin: 0 4px;
+    padding: 0 0 6px;
+  }
+
+  .lobby-top__main {
+    --lobby-paired-card-ratio: 2.4 / 1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .lobby-top .club-identity.lobby-top__identity,
+  .lobby-bbj {
+    min-width: 0;
+    width: 100%;
+    height: auto;
+    aspect-ratio: var(--lobby-paired-card-ratio);
+  }
+
+  .lobby-top__identity .club-identity__shell img,
+  .lobby-bbj__shell {
+    object-fit: fill;
+  }
+
+  .lobby-top__wallet {
+    grid-column: 1 / -1;
+    width: 100%;
+    margin-top: 2px;
+  }
+
+  .lobby-wallets-trigger {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 0;
+    aspect-ratio: 7.2 / 1;
+    grid-template-columns: 58px minmax(0, 1fr) 44px;
+    padding: 0 12px;
+    overflow: hidden;
+    border: 0;
+    background:
+      url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center / 100% 100% no-repeat,
+      #02070a;
+    box-shadow:
+      inset 1px 0 #000,
+      inset -1px 0 #000;
+  }
+
+  .lobby-wallets-trigger__icon {
+    width: 44px;
+    height: 34px;
+    justify-self: start;
+  }
+
+  .lobby-wallets-trigger__copy {
+    position: static;
+    place-content: center;
+    min-width: 0;
+  }
+
+  .lobby-wallets-trigger__copy strong {
+    font-size: clamp(19px, 5.7vw, 31px);
+  }
+
+  .lobby-wallets-trigger__copy small {
+    font-size: clamp(10px, 2.8vw, 15px);
+  }
+
+  .lobby-wallets-trigger__chevron {
+    justify-self: end;
+  }
+
+  .club-mobile-welcome span {
+    font-size: clamp(7px, 1.85vw, 10px);
+  }
+
+  .club-mobile-welcome h1 {
+    font-size: clamp(20px, 6.2vw, 31px);
+  }
+
+  .club-mobile-owner-message__copy {
+    min-height: 0;
+    font-size: clamp(7px, 2.05vw, 11px);
+  }
+}
+
+@media (max-width: 360px) {
+  .lobby-top {
+    width: calc(100% - 8px);
+    margin-inline: 4px;
+  }
+
+  .club-mobile-owner-message {
+    width: calc(100% - 8px);
+    margin-inline: 4px;
+  }
+
+  .lobby-wallets-trigger {
+    grid-template-columns: 48px minmax(0, 1fr) 38px;
+    padding-inline: 9px;
+  }
+}
+
+/* ONE-CHASSIS MOBILE LOCK — must remain the final mobile page rule. */
+@media (max-width: 900px) {
+  /* The global app stage adds its own responsive inline padding. Club Arena
+     already owns the four-pixel mobile gutter, so inheriting both gutters
+     shifts the full-width chassis off-canvas and clips its right frame on
+     phones and tablets. Scope the reset to this direct page only. */
+  #main-content:has(> .club-home--unified-mobile),
+  #main-content:has(> .agc-mobile-page) {
+    padding-inline: 0;
+  }
+
+  .club-home--unified-mobile {
+    margin-left: 0;
+  }
+
+  .club-home--unified-mobile .club-mobile-welcome,
+  .agc-mobile-page .club-mobile-welcome {
+    width: calc(100% - 8px);
+    min-height: 58px;
+    aspect-ratio: auto;
+    margin: 4px 4px 0;
+    padding: 13px 34px 7px;
+    overflow: visible;
+    border: 2px solid #7d8992;
+    border-bottom: 1px solid #25313a;
+    border-radius: 11px 11px 0 0;
+    background: radial-gradient(ellipse at 50% 0%, rgb(55 74 88 / 20%), transparent 58%), #020507;
+    box-shadow:
+      inset 2px 0 #111820,
+      inset -2px 0 #111820,
+      inset 0 0 18px #000;
+  }
+
+  .club-home--unified-mobile .club-mobile-welcome span,
+  .agc-mobile-page .club-mobile-welcome span {
+    position: absolute;
+    top: -5px;
+    left: 50%;
+    padding: 0 9px;
+    background: #04070a;
+    font-size: clamp(7px, 1.8vw, 9px);
+    line-height: 11px;
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
+
+  .club-home--unified-mobile .club-mobile-owner-message,
+  .agc-mobile-page .club-mobile-owner-message {
+    width: calc(100% - 8px);
+    min-height: 26px;
+    aspect-ratio: auto;
+    margin: 0 4px;
+    padding: 0 18px;
+    border: 0;
+    border-right: 2px solid #7d8992;
+    border-bottom: 1px solid #4e5961;
+    border-left: 2px solid #7d8992;
+    border-radius: 0;
+    background: #020507;
+    box-shadow:
+      inset 2px 0 #111820,
+      inset -2px 0 #111820;
+  }
+
+  .club-home--unified-mobile .lobby-top,
+  .agc-mobile-page .lobby-top {
+    width: calc(100% - 8px);
+    margin: 0 4px;
+    padding: 7px 8px 5px;
+    border-right: 2px solid #7d8992;
+    border-left: 2px solid #7d8992;
+    background: #020507;
+    box-shadow:
+      inset 2px 0 #111820,
+      inset -2px 0 #111820;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger,
+  .agc-mobile-page .lobby-wallets-trigger {
+    min-height: 48px;
+    aspect-ratio: auto;
+    grid-template-columns: 48px minmax(0, 1fr) 36px;
+    padding: 5px 8px;
+    overflow: visible;
+    border: 1px solid #48545d;
+    border-radius: 2px;
+    background: linear-gradient(180deg, #0a1015, #020507);
+    box-shadow:
+      inset 0 0 0 1px #090d10,
+      inset 0 0 16px #000;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__icon,
+  .agc-mobile-page .lobby-wallets-trigger__icon {
+    width: 28px;
+    height: 19px;
+    justify-self: center;
+    border: 1px solid #929ca3;
+    border-radius: 2px;
+    background: linear-gradient(180deg, #111820, #05080a);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__copy,
+  .agc-mobile-page .lobby-wallets-trigger__copy {
+    position: static;
+    place-content: center;
+    gap: 2px;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__copy strong,
+  .agc-mobile-page .lobby-wallets-trigger__copy strong {
+    font-size: clamp(17px, 4.8vw, 24px);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__copy small,
+  .agc-mobile-page .lobby-wallets-trigger__copy small {
+    font-size: clamp(8px, 2.15vw, 11px);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__chevron,
+  .agc-mobile-page .lobby-wallets-trigger__chevron {
+    width: 12px;
+    height: 12px;
+    justify-self: center;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg) translate(-2px, -2px);
+  }
+}

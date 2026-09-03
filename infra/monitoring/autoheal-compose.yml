@@ -1,0 +1,25 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# AUTOHEAL — the actor that makes HEALTHCHECK mean something.
+#
+# 2026-08-15. The engine got a Docker HEALTHCHECK bound to its real liveness
+# signal (poker_stalled_tables / discovery staleness). A drill then proved the
+# obvious-in-hindsight gap: **plain Docker never restarts an unhealthy
+# container.** HEALTHCHECK only sets .State.Health.Status; only Swarm/Kubernetes
+# act on it. So the container would have sat there marked "unhealthy" forever
+# with every table frozen — the healthcheck was a status light wired to nothing.
+#
+# autoheal watches for containers labelled autoheal=true whose health goes
+# unhealthy and restarts them. That closes the loop the healthcheck opened.
+# ═══════════════════════════════════════════════════════════════════════════
+services:
+  autoheal:
+    image: willfarrell/autoheal:1.2.0
+    container_name: sp-autoheal
+    restart: always
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+      AUTOHEAL_INTERVAL: 15          # check every 15s
+      AUTOHEAL_START_PERIOD: 120     # ignore health for 2m after a restart
+      AUTOHEAL_DEFAULT_STOP_TIMEOUT: 45  # match the engine drain window
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

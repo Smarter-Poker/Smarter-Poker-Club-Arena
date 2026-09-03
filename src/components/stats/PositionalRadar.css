@@ -1,0 +1,261 @@
+/**
+ * PositionalRadar — matches the stats page's dark glassmorphism treatment
+ * (cyan/purple on near-black, 16px radii, blurred panels).
+ *
+ * Mobile-first: the chart and the table stack in a single column at 375px and
+ * sit side by side only once there is room for both, which is around 640px.
+ */
+
+.pos-radar-card {
+  margin: 0 0.75rem 1rem;
+  padding: 1rem;
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(0, 212, 255, 0.05) 0%, rgba(139, 92, 246, 0.035) 100%);
+  border: 1px solid rgba(0, 212, 255, 0.14);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  box-shadow:
+    0 0 30px rgba(0, 212, 255, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.pos-radar-head {
+  margin-bottom: 0.75rem;
+}
+
+.pos-radar-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #e8f4ff;
+  letter-spacing: 0.01em;
+}
+
+.pos-radar-sub {
+  margin: 0.3rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: rgba(200, 224, 245, 0.6);
+}
+
+.pos-radar-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.pos-radar-chart-wrap {
+  display: flex;
+  justify-content: center;
+}
+
+.pos-radar-svg {
+  width: 100%;
+  max-width: 300px;
+  height: auto;
+  overflow: visible;
+}
+
+.pos-radar-ring {
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 1;
+}
+
+.pos-radar-spoke {
+  stroke: rgba(255, 255, 255, 0.06);
+  stroke-width: 1;
+}
+
+.pos-radar-reference {
+  stroke-width: 1.25;
+  stroke-dasharray: 4 4;
+  opacity: 0.5;
+}
+
+.pos-radar-dot {
+  transition: r 0.15s ease;
+}
+
+.pos-radar-axis-label {
+  font-size: 10px;
+  font-weight: 700;
+  fill: rgba(220, 238, 255, 0.85);
+  cursor: default;
+  text-transform: none;
+}
+
+.pos-radar-axis-label.is-dim {
+  fill: rgba(220, 238, 255, 0.34);
+}
+
+.pos-radar-axis-label.is-focused {
+  fill: #00d4ff;
+}
+
+/* ── Legend / metric toggles ───────────────────────────────────────────── */
+
+.pos-radar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.pos-radar-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(220, 238, 255, 0.55);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
+  /* 32px is below the 44px ideal, but these are secondary controls sitting in
+     a dense panel; the row targets below carry the same information. */
+  min-height: 32px;
+}
+
+.pos-radar-toggle.is-on {
+  background: rgba(0, 212, 255, 0.1);
+  border-color: rgba(0, 212, 255, 0.35);
+  color: #e8f4ff;
+}
+
+.pos-radar-toggle:focus-visible {
+  outline: 2px solid #00d4ff;
+  outline-offset: 2px;
+}
+
+.pos-radar-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.pos-radar-swatch.is-dashed {
+  background: transparent;
+  border: 1px dashed rgba(220, 238, 255, 0.7);
+  border-radius: 2px;
+}
+
+/* ── Numeric table ─────────────────────────────────────────────────────── */
+
+.pos-radar-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.pos-radar-table th,
+.pos-radar-table td {
+  padding: 0.32rem 0.4rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.pos-radar-table thead th {
+  color: rgba(200, 224, 245, 0.5);
+  font-weight: 600;
+  font-size: 0.68rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pos-radar-table tbody th[scope='row'] {
+  text-align: left;
+  color: #e8f4ff;
+  font-weight: 700;
+  text-transform: none;
+}
+
+.pos-radar-table tbody td {
+  color: rgba(220, 238, 255, 0.8);
+}
+
+.pos-radar-table tbody tr {
+  transition: background 0.15s ease;
+}
+
+.pos-radar-table tbody tr.is-focused {
+  background: rgba(0, 212, 255, 0.07);
+}
+
+.pos-radar-table tbody tr.is-dim {
+  opacity: 0.45;
+}
+
+/* ── Readout + notes ───────────────────────────────────────────────────── */
+
+.pos-radar-readout {
+  margin: 0.75rem 0 0;
+  padding: 0.5rem 0.65rem;
+  border-radius: 10px;
+  background: rgba(0, 212, 255, 0.07);
+  border: 1px solid rgba(0, 212, 255, 0.18);
+  font-size: 0.74rem;
+  color: #e8f4ff;
+  font-variant-numeric: tabular-nums;
+}
+
+.pos-radar-readout strong {
+  color: #00d4ff;
+}
+
+.pos-radar-note {
+  margin: 0.55rem 0 0;
+  font-size: 0.68rem;
+  line-height: 1.5;
+  color: rgba(200, 224, 245, 0.48);
+}
+
+/* ── Empty state ───────────────────────────────────────────────────────── */
+
+.pos-radar-empty {
+  text-align: center;
+}
+
+.pos-radar-empty-text {
+  margin: 0.6rem 0 0.2rem;
+  font-size: 0.8rem;
+  color: rgba(200, 224, 245, 0.6);
+  line-height: 1.5;
+}
+
+/* ── Wider viewports: chart and table side by side ─────────────────────── */
+
+@media (min-width: 640px) {
+  .pos-radar-card {
+    padding: 1.25rem;
+  }
+
+  .pos-radar-body {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 1.5rem;
+  }
+
+  .pos-radar-chart-wrap {
+    flex: 0 0 300px;
+  }
+
+  .pos-radar-side {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pos-radar-dot,
+  .pos-radar-toggle,
+  .pos-radar-table tbody tr {
+    transition: none;
+  }
+}

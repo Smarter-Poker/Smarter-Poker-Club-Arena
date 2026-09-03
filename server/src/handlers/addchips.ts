@@ -1,0 +1,73 @@
+/**
+ * `POST /addchips` — player bought chips (top-up stack).
+ *
+ * Extracted Phase U3.3 (2026-04-23). Byte-identical.
+ * Body: `{ tableId, amount }`.
+ */
+
+import type { IncomingMessage, ServerResponse } from 'http';
+import { sendJSON } from '../http/respond.js';
+import { authenticateRequest } from '../http/auth.js';
+import { readBody } from '../http/body.js';
+import { reportError } from '../services/errorReporter.js';
+
+export interface AddchipsDeps {
+  gameServer: {
+    getTableEngine(tableId: string):
+      | {
+          addChips(
+            userId: string,
+            amount: number,
+            opId?: string
+          ):
+            | { success: boolean; [k: string]: unknown }
+            | Promise<{ success: boolean; [k: string]: unknown }>;
+        }
+      | null
+      | undefined;
+  };
+}
+
+export async function handleAddchips(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: AddchipsDeps
+): Promise<void> {
+  try {
+    const auth = await authenticateRequest(req);
+    if (!auth) {
+      return sendJSON(res, 401, { success: false, error: 'Authentication required' });
+    }
+
+    const body = JSON.parse(await readBody(req));
+    const { tableId, amount } = body;
+    const userId = auth.userId;
+    /* Cashier audit 2026-08-27 (P0-1): the client's per-attempt id, held
+       across its retries, so a re-sent request after a lost response lands
+       on the SAME idempotency key instead of a fresh debit. Optional (the
+       horse rotator has no HTTP retry problem) and strictly validated — it
+       becomes part of a DB idempotency key. */
+    const rawOpId = body.opId;
+    const opId =
+      typeof rawOpId === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(rawOpId) ? rawOpId : undefined;
+
+    // 2026-08-27: `!amount || amount <= 0` alone lets a non-numeric string
+    // through - `!"abc"` is false and `"abc" <= 0` is false - so a garbage body
+    // reached the engine with a non-number. showhand.ts already validates this
+    // way; the two chip endpoints did not.
+    if (!tableId || typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+      return sendJSON(res, 400, { success: false, error: 'Missing tableId or invalid amount' });
+    }
+
+    const engine = deps.gameServer.getTableEngine(tableId);
+    if (!engine) {
+      return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
+    }
+
+    const result = await engine.addChips(userId, amount, opId);
+    return sendJSON(res, result.success ? 200 : 400, result);
+  } catch (err: unknown) {
+    reportError(err, 'HTTP.addchips_error');
+    return sendJSON(res, 500, { success: false, error: 'Failed to add chips' });
+  }
+}

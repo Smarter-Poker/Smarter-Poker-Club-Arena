@@ -1,0 +1,22 @@
+-- APPLIED TO PRODUCTION 2026-08-19 via Supabase MCP as
+-- `rake_mirror_gross_and_union_audit_atomic` +
+-- `drop_ambiguous_increment_union_wallet_overload`. Mirror only.
+--
+-- AUDIT PASS 2, DEFECTS #4 + #5:
+--
+-- #4 atomic_distribute_rake credited the club_wallets accounting mirror
+--    v_net := p_rake - v_bbj, assuming p_rake was gross (rake incl. BBJ fee).
+--    It is not: computeRakeAndBBJ returns rake and bbjFee as separate,
+--    ADDITIVE pot deductions. The mirror under-counted every BBJ hand by the
+--    fee. No chips moved wrongly (nothing reads the mirror today); the counter
+--    was wrong. Fixed to credit p_rake; historical under-count backfilled via
+--    chip_balance += lifetime_bbj_contribution.
+--
+-- #5 Tournament completion credited the union wallet and then inserted the
+--    union_wallet_transactions audit row in a SEPARATE client write (with
+--    balance_after wrongly set to chip_balance). increment_union_wallet now
+--    accepts optional p_club_id/p_notes and writes the audit row ATOMICALLY
+--    (correct rake_wallet balance_after); amounts rounded to cents. The
+--    legacy 2-arg overload was DROPPED (defaults made 2-arg calls ambiguous);
+--    2-arg named calls resolve to the 4-arg function identically.
+--    service_role-only grants preserved.

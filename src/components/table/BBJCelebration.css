@@ -1,0 +1,456 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+ *  BBJ CELEBRATION — Bad Beat Jackpot Screen Explosion
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* Full-screen overlay */
+.bbj-celebration-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
+  z-index: 9999;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.7) 0%, rgba(0, 0, 0, 0.9) 100%);
+}
+
+/* Canvas for particles */
+.bbj-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+/* Screen flash on explosion */
+.bbj-screen-flash {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(ellipse at center, #d5dae2 0%, rgba(213, 218, 226, 0) 70%);
+  opacity: 0;
+  z-index: 2;
+  transition: opacity 0.15s ease;
+}
+
+.bbj-flash-active {
+  animation: bbjFlash 1.2s ease-out forwards;
+}
+
+@keyframes bbjFlash {
+  0% {
+    opacity: 0.9;
+  }
+  15% {
+    opacity: 0.6;
+  }
+  30% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.15;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Content layer above particles */
+.bbj-content {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  max-width: 600px;
+  width: 100%;
+}
+
+/* ── Title ── */
+.bbj-title {
+  text-align: center;
+  opacity: 0;
+  transform: scale(0.3);
+  transition: all 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.bbj-title-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.bbj-title-crown {
+  font-size: 48px;
+  margin-bottom: 4px;
+  animation: bbjBounce 1s ease-in-out infinite;
+}
+
+@keyframes bbjBounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.bbj-title-text {
+  font-size: 36px;
+  font-weight: 900;
+  color: #d5dae2;
+  text-shadow:
+    0 0 20px rgba(213, 218, 226, 0.8),
+    0 0 40px rgba(213, 218, 226, 0.4),
+    0 0 80px rgba(213, 218, 226, 0.2),
+    0 2px 4px rgba(0, 0, 0, 0.5);
+  margin: 0;
+  letter-spacing: 3px;
+  animation: bbjGlow 2s ease-in-out infinite;
+}
+
+@keyframes bbjGlow {
+  0%,
+  100% {
+    text-shadow:
+      0 0 20px rgba(213, 218, 226, 0.8),
+      0 0 40px rgba(213, 218, 226, 0.4),
+      0 0 80px rgba(213, 218, 226, 0.2);
+  }
+  50% {
+    text-shadow:
+      0 0 30px rgba(213, 218, 226, 1),
+      0 0 60px rgba(213, 218, 226, 0.6),
+      0 0 120px rgba(213, 218, 226, 0.3);
+  }
+}
+
+.bbj-title-subtitle {
+  font-size: 14px;
+  color: #e0ffff;
+  letter-spacing: 6px;
+  text-transform: uppercase;
+  margin-top: 4px;
+  opacity: 0.8;
+}
+
+/* Per-variant qualifying rule under the title (2026-08-18) */
+.bbj-title-qualifier {
+  font-size: 13px;
+  color: #e2e7ee;
+  letter-spacing: 1px;
+  margin-top: 8px;
+  padding: 4px 14px;
+  border: 1px solid rgba(213, 218, 226, 0.45);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  display: inline-block;
+  max-width: 90vw;
+}
+
+/* ── Amount ── */
+.bbj-amount {
+  text-align: center;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: all 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.bbj-amount-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.bbj-amount-label {
+  display: block;
+  font-size: 12px;
+  color: #add8e6;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.bbj-amount-value {
+  display: block;
+  font-size: 52px;
+  font-weight: 900;
+  color: #ffffff;
+  text-shadow:
+    0 0 20px rgba(255, 255, 255, 0.5),
+    0 0 40px rgba(213, 218, 226, 0.3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Breakdown Cards ── */
+.bbj-breakdown {
+  display: flex;
+  gap: 12px;
+  opacity: 0;
+  transform: translateY(30px);
+  transition: all 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+  width: 100%;
+}
+
+.bbj-breakdown-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.bbj-breakdown-card {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  padding: 14px 10px;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  animation: bbjCardPop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.bbj-breakdown-loser {
+  border-color: rgba(213, 218, 226, 0.4);
+  background: rgba(213, 218, 226, 0.08);
+}
+
+.bbj-breakdown-winner {
+  border-color: rgba(78, 205, 196, 0.4);
+  background: rgba(78, 205, 196, 0.08);
+}
+
+.bbj-breakdown-table {
+  border-color: rgba(63, 185, 80, 0.4);
+  background: rgba(63, 185, 80, 0.08);
+}
+
+@keyframes bbjCardPop {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.bbj-breakdown-loser .bbj-breakdown-card {
+  animation-delay: 0s;
+}
+.bbj-breakdown-winner .bbj-breakdown-card {
+  animation-delay: 0.15s;
+}
+.bbj-breakdown-table .bbj-breakdown-card {
+  animation-delay: 0.3s;
+}
+
+.bbj-breakdown-emoji {
+  font-size: 28px;
+  margin-bottom: 4px;
+}
+
+.bbj-breakdown-label {
+  font-size: 9px;
+  color: #add8e6;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.bbj-breakdown-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bbj-breakdown-hand {
+  font-size: 11px;
+  color: #b0b0b0;
+  margin-bottom: 8px;
+  font-style: italic;
+}
+
+.bbj-breakdown-amount {
+  font-size: 20px;
+  font-weight: 900;
+  color: #4dc660;
+  text-shadow: 0 0 10px rgba(63, 185, 80, 0.3);
+}
+
+.bbj-breakdown-percent {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 2px;
+}
+
+/* ── Chips Added Message ── */
+.bbj-chips-message {
+  font-size: 13px;
+  color: #b0c4de;
+  text-align: center;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: all 0.6s ease;
+  margin-top: 8px;
+}
+
+.bbj-chips-visible {
+  opacity: 0.8;
+  transform: translateY(0);
+}
+
+/* ── Screen Shake ── */
+.bbj-shake {
+  animation: bbjShake 0.5s ease;
+}
+
+@keyframes bbjShake {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  10% {
+    transform: translate(-3px, 2px);
+  }
+  20% {
+    transform: translate(3px, -2px);
+  }
+  30% {
+    transform: translate(-2px, -3px);
+  }
+  40% {
+    transform: translate(2px, 3px);
+  }
+  50% {
+    transform: translate(-1px, 1px);
+  }
+  60% {
+    transform: translate(1px, -1px);
+  }
+  70% {
+    transform: translate(-2px, 2px);
+  }
+  80% {
+    transform: translate(2px, -1px);
+  }
+  90% {
+    transform: translate(-1px, 1px);
+  }
+}
+
+/* ── Mobile Responsive ── */
+@media (max-width: 480px) {
+  .bbj-title-text {
+    font-size: 24px;
+    letter-spacing: 2px;
+  }
+
+  .bbj-title-crown {
+    font-size: 36px;
+  }
+
+  .bbj-amount-value {
+    font-size: 36px;
+  }
+
+  .bbj-breakdown {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .bbj-breakdown-card {
+    padding: 10px 8px;
+  }
+
+  .bbj-breakdown-amount {
+    font-size: 16px;
+  }
+}
+
+/* Personalized winnings line (2026-08-18) */
+.bbj-hero-share {
+  display: inline-block;
+  font-size: 22px;
+  font-weight: 800;
+  color: #d5dae2;
+  text-shadow: 0 0 18px rgba(213, 218, 226, 0.75);
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   DISMISS (audit 2026-08-25)
+
+   `.bbj-celebration-overlay` is `pointer-events: none` so a jackpot at ONE of
+   up to four mounted tables cannot swallow a click meant for another one. That
+   is correct, and it is also why the overlay's own click-to-dismiss handler
+   never fired for a week: the celebration was an unskippable ten-second
+   blackout. This button is the one thing that takes the pointer back.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.bbj-dismiss {
+  pointer-events: auto;
+  margin-top: 4px;
+  padding: 10px 28px;
+  border: 1px solid rgba(213, 218, 226, 0.45);
+  border-radius: 999px;
+  background: rgba(10, 14, 24, 0.72);
+  color: #e4e6eb;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.bbj-dismiss:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(213, 218, 226, 0.6);
+}
+
+/* ── DECORATIVE MARKS ────────────────────────────────────────────────────────
+   These four glyphs used to be emoji in the JSX, then HTML entities in the
+   JSX. Both forms put decoration into the text layer, where CLAUDE.md s.10.5
+   (no emoji in a user-facing string) and check-title-case both have a claim on
+   it - and the entity form failed the second one, because a lone spade is not
+   Title Cased page copy and never could be.
+
+   Decoration belongs in the stylesheet. The elements are aria-hidden in the
+   TSX, so a screen reader is never read a suit symbol where a heading belongs,
+   and the copy checker only ever sees copy. Plain Unicode text symbols, the
+   same family the rest of the table already uses (SeatSlot's suits,
+   TableTabBar's note): star over the title, then spade / queen / club for the
+   bad-beat holder, the hand winner and the table share. */
+.bbj-title-crown::before {
+  content: '\2605';
+}
+
+.bbj-breakdown-loser .bbj-breakdown-emoji::before {
+  content: '\2660';
+}
+
+.bbj-breakdown-winner .bbj-breakdown-emoji::before {
+  content: '\265B';
+}
+
+.bbj-breakdown-table .bbj-breakdown-emoji::before {
+  content: '\2663';
+}

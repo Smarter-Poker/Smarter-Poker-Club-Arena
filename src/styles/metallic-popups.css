@@ -1,0 +1,387 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   CLUB ARENA POPUP CHASSIS
+
+   One solid-color, machined-metal treatment for dialogs, drawers and sheets.
+   This sheet intentionally contains no gradients. Depth comes from stacked
+   borders, inset highlights and cast shadows so every popup feels physical
+   without becoming glossy or visually noisy.
+═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --ca-popup-shell: #111823;
+  --ca-popup-header: #192434;
+  --ca-popup-well: #080d14;
+  --ca-popup-raised: #202c3d;
+  --ca-popup-edge-bright: #8294ad;
+  --ca-popup-edge-mid: #42536b;
+  --ca-popup-edge-dark: #05080d;
+  --ca-popup-rail: #2d72d2;
+  --ca-popup-blue: #58a6ff;
+  --ca-popup-text: #f1f5fb;
+  --ca-popup-muted: #9aa8bb;
+}
+
+/* Backdrops: dark, quiet, and deep enough to separate the active task. */
+:where(
+  .modal-overlay,
+  .base-modal-overlay,
+  .confirm-modal-overlay,
+  .confirm-dialog-overlay,
+  .rating-modal-overlay,
+  .tos-modal-overlay,
+  .action-sheet-overlay,
+  .alert-modal-overlay,
+  .report-modal-overlay,
+  .block-modal-overlay,
+  .theme-modal-overlay,
+  .identity-modal-overlay,
+  .vip-modal-overlay,
+  .diamond-modal-overlay,
+  .buy-in-modal__overlay,
+  .rebuyModalOverlay,
+  .rebuy-modal-overlay,
+  .addon-modal-overlay,
+  .admin-modal-overlay,
+  .delete-modal-overlay,
+  .replay-modal-overlay,
+  .bbj-modal__backdrop,
+  .hdm-overlay,
+  .tbs-overlay,
+  .cmm-overlay,
+  .cbc-overlay,
+  .cashier-overlay,
+  .fold-protect-overlay,
+  .drawer-overlay,
+  .afx-backdrop,
+  .glp-backdrop,
+  [class*='_modalOverlay_'],
+  [class*='_modal-overlay_'],
+  [class*='_overlay_'][role='dialog']
+) {
+  background: rgba(1, 4, 9, 0.82) !important;
+  backdrop-filter: blur(9px) saturate(0.78) !important;
+  -webkit-backdrop-filter: blur(9px) saturate(0.78) !important;
+}
+
+/*
+ * The panel inventory is explicit on purpose. A role=dialog is sometimes placed
+ * on the full-screen overlay in Club Arena, so styling every semantic dialog as
+ * a panel would turn the entire viewport into a card. These are the actual
+ * popup surfaces used across shared, club, table, wallet, social and admin UI.
+ */
+:where(
+  .modal,
+  .base-modal,
+  .confirm-modal,
+  .confirm-dialog,
+  .rating-modal,
+  .tos-modal,
+  .action-sheet,
+  .alert-modal,
+  .report-modal,
+  .block-modal,
+  .leave-confirm-modal,
+  .theme-modal,
+  .identity-modal-content,
+  .vip-modal,
+  .diamond-modal,
+  .cashout-modal,
+  .cashier-modal,
+  .buy-in-modal,
+  .rules-modal,
+  .cpm-modal,
+  .fold-protect-modal,
+  .hdm-panel,
+  .insurance-modal,
+  .share-hand-modal,
+  .sitout-modal,
+  .waitlist-modal,
+  .tbs-modal,
+  .rebuyModalContent,
+  .rebuy-modal,
+  .addon-modal,
+  .signup-modal,
+  .rk-modal,
+  .tas-panel,
+  .cmm-panel,
+  .cbc-panel,
+  .diamond-wallet-modal,
+  .pv-dialog,
+  .reports-modal,
+  .agent-modal,
+  .audit-modal,
+  .jackpot-modal,
+  .faq-modal,
+  .feedback-modal,
+  .fcm-modal,
+  .referral-modal,
+  .profile-modal,
+  .pd-modal,
+  .share-card-modal,
+  .chip-transfer-modal,
+  .terms-modal,
+  .avatar-gallery,
+  .afx-sheet,
+  .glp,
+  .trc2__panel,
+  .rtr__panel,
+  .rit-panel,
+  .pineapple-discard__panel,
+  .post-or-wait,
+  .seat-buyin-confirm__panel,
+  .multi-table-page__quickjoin,
+  .multi-table-page__session-agg,
+  .delete-modal,
+  .replay-modal-content,
+  .bonus-wheel-modal,
+  .unlock-popup,
+  .drawer,
+  .side-panel,
+  .table-chat,
+  .hh-panel,
+  .leaderboard-panel,
+  .settings-panel,
+  .so-panel,
+  .quick-panel,
+  .notification-panel,
+  .friends-panel,
+  .chat-moderation-panel,
+  [class$='-modal'],
+  [class*='-modal '],
+  [class$='Modal'],
+  [class*='Modal '],
+  [class$='-dialog'],
+  [class*='-dialog '],
+  [class$='-popup'],
+  [class*='-popup '],
+  [class*='_modal_']:not([class*='Overlay']):not([class*='overlay']),
+  [class*='_modal-content_'],
+  [class*='_modalContainer_'],
+  [class*='_modalContent_'],
+  [class*='_confirmModal_'],
+  [class*='_bonusWheelModal_'],
+  [class*='_logoGeneratorModalContainer_']
+) {
+  position: relative;
+  isolation: isolate;
+  background: var(--ca-popup-shell) !important;
+  background-image: none !important;
+  border: 1px solid var(--ca-popup-edge-mid) !important;
+  border-top: 2px solid var(--ca-popup-edge-bright) !important;
+  border-bottom-color: var(--ca-popup-edge-dark) !important;
+  border-radius: 16px !important;
+  outline: 1px solid rgba(0, 0, 0, 0.78);
+  box-shadow:
+    inset 0 3px 0 var(--ca-popup-rail),
+    inset 1px 0 0 rgba(255, 255, 255, 0.07),
+    inset -1px 0 0 rgba(0, 0, 0, 0.7),
+    inset 0 -5px 12px rgba(0, 0, 0, 0.28),
+    0 2px 0 #000,
+    0 18px 36px rgba(0, 0, 0, 0.62),
+    0 34px 80px rgba(0, 0, 0, 0.48) !important;
+}
+
+/* Slide-in surfaces keep their geometry but gain the same machined edge. */
+:where(.drawer-right, .glp) {
+  border-radius: 14px 0 0 14px !important;
+  border-left-color: #71839c !important;
+  box-shadow:
+    inset 3px 0 0 var(--ca-popup-rail),
+    inset 4px 0 0 rgba(255, 255, 255, 0.12),
+    -18px 0 44px rgba(0, 0, 0, 0.62) !important;
+}
+
+:where(.drawer-left, .side-panel) {
+  border-radius: 0 14px 14px 0 !important;
+  border-right-color: #71839c !important;
+  box-shadow:
+    inset -3px 0 0 var(--ca-popup-rail),
+    inset -4px 0 0 rgba(255, 255, 255, 0.12),
+    18px 0 44px rgba(0, 0, 0, 0.62) !important;
+}
+
+.afx-sheet {
+  border-radius: 0 !important;
+}
+
+/* Header plates sit slightly proud of the chassis. */
+:where([role='dialog'], [aria-modal='true'], .drawer, .side-panel, .afx-sheet, .glp)
+  > :where(
+    header,
+    .modal-header,
+    .base-modal__header,
+    .afx-head,
+    .glp__head,
+    [class*='modal-header'],
+    [class*='modalHeader'],
+    [class*='__head'],
+    [class*='__header'],
+    [class*='_header_']
+  ) {
+  background: var(--ca-popup-header) !important;
+  background-image: none !important;
+  border-bottom: 1px solid #33445b !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.42),
+    0 5px 12px rgba(0, 0, 0, 0.24) !important;
+}
+
+:where([role='dialog'], [aria-modal='true'], .drawer, .side-panel, .afx-sheet, .glp)
+  :where(h1, h2, h3, [class*='title'], [class*='Title']) {
+  color: var(--ca-popup-text);
+  font-family: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  text-shadow:
+    0 2px 0 #000,
+    0 0 14px rgba(63, 140, 255, 0.18);
+}
+
+:where([role='dialog'], [aria-modal='true'], .drawer, .side-panel, .afx-sheet, .glp)
+  :where(p, label, small, [class*='description'], [class*='hint'], [class*='Hint']) {
+  color: var(--ca-popup-muted);
+}
+
+/* Recessed control wells. */
+:where([role='dialog'], [aria-modal='true'], .drawer, .side-panel, .afx-sheet, .glp)
+  :where(input:not([type='checkbox']):not([type='radio']), select, textarea) {
+  background: var(--ca-popup-well) !important;
+  background-image: none !important;
+  border: 1px solid #35465d !important;
+  border-top-color: #05080d !important;
+  border-bottom-color: #53667f !important;
+  color: var(--ca-popup-text) !important;
+  box-shadow:
+    inset 0 3px 7px rgba(0, 0, 0, 0.62),
+    0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+
+:where([role='dialog'], [aria-modal='true'], .drawer, .side-panel, .afx-sheet, .glp)
+  :where(input, select, textarea):focus-visible {
+  border-color: var(--ca-popup-blue) !important;
+  outline: 2px solid rgba(88, 166, 255, 0.28) !important;
+  outline-offset: 2px;
+  box-shadow:
+    inset 0 3px 7px rgba(0, 0, 0, 0.62),
+    0 0 0 1px rgba(88, 166, 255, 0.34),
+    0 0 16px rgba(45, 114, 210, 0.24) !important;
+}
+
+/* Buttons inherit their semantic color while gaining a tangible metal bevel. */
+:where([role='dialog'], [aria-modal='true'], .drawer, .side-panel, .afx-sheet, .glp) button {
+  border-color: #52647d !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.42),
+    0 4px 8px rgba(0, 0, 0, 0.3) !important;
+}
+
+:where([role='dialog'], [aria-modal='true'], .drawer, .side-panel, .afx-sheet, .glp)
+  button:active:not(:disabled) {
+  box-shadow:
+    inset 0 3px 6px rgba(0, 0, 0, 0.58),
+    0 1px 2px rgba(0, 0, 0, 0.5) !important;
+  transform: translateY(1px);
+}
+
+/* Common primary and destructive actions stay instantly recognizable. */
+:where([role='dialog'], [aria-modal='true'])
+  :is(button, input[type='button'], input[type='submit']):where(
+    [class*='primary'],
+    [class*='Primary'],
+    [class*='--confirm'],
+    [class*='confirmBtn'],
+    [class*='ConfirmBtn'],
+    [class*='confirmButton'],
+    [class*='ConfirmButton'],
+    [class*='createBtn'],
+    [class*='save'],
+    [class*='Save'],
+    [class*='purchase'],
+    [class*='submit'],
+    [class*='Submit']
+  ):not(:disabled) {
+  background: #1f63cf !important;
+  background-image: none !important;
+  border-color: #76afff !important;
+  color: #fff !important;
+}
+
+:where([role='dialog'], [aria-modal='true'])
+  :is(button, input[type='button'], input[type='submit']):where(
+    [class*='danger'],
+    [class*='Danger'],
+    [class*='delete'],
+    [class*='Delete']
+  ):not(:disabled) {
+  background: #8f2631 !important;
+  background-image: none !important;
+  border-color: #e06b75 !important;
+  color: #fff !important;
+}
+
+/* Close controls read like small steel hardware instead of bare glyphs. */
+:where([role='dialog'], [aria-modal='true'], .drawer, .side-panel, .afx-sheet, .glp)
+  :where(
+    .modal-close,
+    [class*='__close'],
+    [class*='-close'],
+    [class*='_close_'],
+    [aria-label*='Close'],
+    [aria-label*='close']
+  ) {
+  background: var(--ca-popup-raised) !important;
+  background-image: none !important;
+  border: 1px solid #60738d !important;
+  color: #d9e2ef !important;
+  min-width: 34px;
+  min-height: 34px;
+  border-radius: 8px !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.5),
+    0 4px 8px rgba(0, 0, 0, 0.36) !important;
+}
+
+@media (max-width: 640px) {
+  :where(
+    .modal,
+    .base-modal,
+    .confirm-modal,
+    .confirm-dialog,
+    .rating-modal,
+    .tos-modal,
+    .alert-modal,
+    .report-modal,
+    .block-modal,
+    .theme-modal,
+    .identity-modal-content,
+    .cashier-modal,
+    .buy-in-modal,
+    .rules-modal,
+    .hdm-panel,
+    .insurance-modal,
+    .waitlist-modal,
+    .tbs-modal,
+    .rebuyModalContent,
+    .signup-modal,
+    .cbc-panel,
+    .pv-dialog,
+    [class*='_modal_']:not([class*='Overlay']):not([class*='overlay']),
+    [class*='_modalContainer_'],
+    [class*='_modalContent_']
+  ) {
+    border-radius: 12px !important;
+    box-shadow:
+      inset 0 3px 0 var(--ca-popup-rail),
+      inset 1px 0 0 rgba(255, 255, 255, 0.07),
+      inset -1px 0 0 rgba(0, 0, 0, 0.7),
+      0 12px 30px rgba(0, 0, 0, 0.68) !important;
+  }
+
+  :where(.action-sheet, .afx-sheet, .drawer-bottom) {
+    border-radius: 14px 14px 0 0 !important;
+    border-top: 2px solid var(--ca-popup-edge-bright) !important;
+  }
+}

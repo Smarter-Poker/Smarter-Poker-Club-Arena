@@ -1,0 +1,404 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SESSION SUMMARY POPUP  (Dan 2026-08-18)
+
+   "make this better looking and more dynamic, it looks very boring and basic"
+
+   The old one was a grey card with six grey boxes in it - identical visual
+   weight whether you booked your best session or your worst. This version is
+   led by the result: a win is green and gold and gets a light sweep across the
+   hero panel, a loss is cooler and quieter. The card lands with a spring, the
+   tiles stagger in behind it, and the P/L counts up (that part is in the TSX).
+
+   Everything animated is transform/opacity so it stays on the compositor, and
+   the whole lot collapses to static under prefers-reduced-motion.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ssh-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(6, 8, 14, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: sshFade 0.22s ease both;
+}
+
+.ssh-card {
+  position: relative;
+  width: min(100%, 420px);
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  padding: 26px 22px 22px;
+  border-radius: 20px;
+  background:
+    radial-gradient(120% 90% at 50% -20%, var(--ssh-glow) 0%, transparent 62%),
+    linear-gradient(180deg, #1b2030 0%, #12151f 100%);
+  border: 1px solid var(--ssh-edge);
+  box-shadow:
+    0 30px 70px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  animation: sshRise 0.42s cubic-bezier(0.17, 0.84, 0.44, 1.03) both;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SMARTER.POKER PALETTE (Dan 2026-08-20: "it must follow the smarter.poker
+   color schema")
+   ───────────────────────────────────────────────────────────────────────────
+   The card was lime-green into yellow — a palette that appears nowhere else in
+   the product. The house colours are the ones the lobby, the nav and the club
+   card already use:
+
+     #1877f2  primary blue      brand, and the CTA everywhere else
+     #00d4ff  cyan              live/active accents, nav highlight
+     #ffb800  gold              money, club identity, jackpot
+     #ef4444  red               loss/danger
+
+   Money still reads instantly - a win is gold, a loss is red - but through the
+   brand's own gold rather than an off-palette green. Blue carries the chrome
+   and the button, which is what makes it look like the same application.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Cash: a win. BRUSHED NICKEL (Dan 2026-08-23) ──────────────────────────
+   "change the yellow in profit to brushed nickel. and change any border or
+   font color that's yellow to brushed nickel."
+
+   Same metal, same recipe as CarouselDots.css, which Dan asked for on the same
+   day: a vertical tone ramp (light top, dark waist, light again at the base —
+   how a curved metal surface catches a room) plus a fine horizontal grain from
+   the brushing. Both are paint, so nothing loads and it stays crisp at any
+   zoom. The old gold was #ffb800 / #ffd76b.
+
+   The tokens below keep their names because everything downstream reads them;
+   only the pigment changed. --ssh-accent stays a flat colour for the places
+   that need one (borders, glows); --ssh-nickel is the full brushed fill for
+   the money line, which is large enough to show a grain. ── */
+.ssh-card--win {
+  --ssh-accent: #c6ccd2;
+  --ssh-accent-2: #eef1f4;
+  --ssh-glow: rgba(198, 204, 210, 0.18);
+  --ssh-edge: rgba(198, 204, 210, 0.34);
+  --ssh-cta: linear-gradient(135deg, #1877f2, #0a5dc2);
+  --ssh-cta-ink: #ffffff;
+  --ssh-nickel:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 0px,
+      rgba(255, 255, 255, 0.1) 1px,
+      rgba(0, 0, 0, 0.05) 1px,
+      rgba(0, 0, 0, 0.05) 2px
+    ),
+    linear-gradient(180deg, #eef1f4 0%, #c6ccd2 42%, #969da4 58%, #d8dde1 100%);
+}
+
+/* ── Cash: a loss. ── */
+.ssh-card--loss {
+  --ssh-accent: #ef4444;
+  --ssh-accent-2: #fb8a8a;
+  --ssh-glow: rgba(239, 68, 68, 0.15);
+  --ssh-edge: rgba(239, 68, 68, 0.26);
+  --ssh-cta: linear-gradient(135deg, #1877f2, #0a5dc2);
+  --ssh-cta-ink: #ffffff;
+}
+
+/* ── Tournament. A DIFFERENT CARD, not a recoloured cash one.
+   Dan asked for "two completely different cards", and the distinction is real:
+   a cash session is measured in money, a tournament in placing. Cyan is the
+   product's "event" accent (the nav highlight, the live rails), so a player
+   can tell which of the two they are looking at before reading a word. ── */
+.ssh-card--tourney {
+  --ssh-accent: #00d4ff;
+  --ssh-accent-2: #4da3ff;
+  --ssh-glow: rgba(0, 212, 255, 0.16);
+  --ssh-edge: rgba(0, 212, 255, 0.32);
+  --ssh-cta: linear-gradient(135deg, #1877f2, #0a5dc2);
+  --ssh-cta-ink: #ffffff;
+}
+
+/* A tournament that CASHED still gets the gold MONEY LINE, so the one number
+   that pays rent is the brand's money colour on both card types.
+
+   Scoped to the money line only, deliberately. Overriding --ssh-accent-2 at
+   card level instead made the hero place value a cyan-to-gold gradient, which
+   reads GREEN through the middle — verified in a headless render, and green is
+   precisely the off-palette colour this whole pass exists to remove. The place
+   is an event stat and stays cyan-to-blue; only the prize is gold. */
+.ssh-card--tourney .ssh-hero__sub--money {
+  /* Nickel here too — "any border or font color that's yellow". */
+  color: #c6ccd2;
+}
+
+/* ── The X Dan asked for ── */
+.ssh-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd3e1;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
+}
+.ssh-close:focus-visible {
+  outline: 2px solid var(--ssh-accent);
+  outline-offset: 2px;
+}
+
+.ssh-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-right: 40px; /* clear the X */
+  margin-bottom: 16px;
+}
+.ssh-eyebrow {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ssh-accent);
+}
+.ssh-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #f2f5fa;
+}
+
+/* ── Hero P/L ── */
+.ssh-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 20px 16px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--ssh-edge);
+}
+.ssh-hero__label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #9aa6bb;
+}
+.ssh-hero__value {
+  font-size: clamp(2.2rem, 12vw, 3rem);
+  font-weight: 900;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+  /* The profit figure is the largest type on the card, which is the one place
+     the brushed GRAIN is actually legible — so the win card paints the full
+     nickel here (ramp + grain) and everything else falls back to the two-stop
+     accent gradient it always used. background-clip: text carries either. */
+  background: var(--ssh-nickel, linear-gradient(135deg, var(--ssh-accent), var(--ssh-accent-2)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+/* ── Tournament hero ──
+   Dan 2026-08-20: a tournament result is a PLACE, not a chip count. The place
+   takes the big type the profit figure gets on a cash session, and the money
+   sits under it as supporting detail. */
+.ssh-hero__sub {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #9aa6bb;
+  letter-spacing: 0.01em;
+}
+.ssh-hero__sub--money {
+  margin-top: 6px;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #e6ecf5;
+}
+/* ── Pending Settlement (Phase 3, 2026-08-22) ──
+   A mid-hand leave defers the cashout, so the big number is an estimate. The
+   annotation stays muted and small: it qualifies the figure, it does not
+   compete with it. No yellow — the anti-yellow pass applies here too. */
+.ssh-hero__sub--pending {
+  margin-top: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #9aa6bb;
+}
+.ssh-hero--tourney .ssh-hero__value {
+  font-size: clamp(2rem, 10vw, 2.7rem);
+}
+
+/* Light sweep — a single pass, not a loop. Celebratory without being a toy. */
+.ssh-hero__sweep {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.14) 45%,
+    transparent 70%
+  );
+  transform: translateX(-120%);
+  animation: sshSweep 1.1s ease-out 0.35s both;
+  pointer-events: none;
+}
+
+/* ── Stat tiles ── */
+.ssh-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 9px;
+  margin: 16px 0 18px;
+}
+@media (max-width: 380px) {
+  .ssh-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.ssh-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 12px 6px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  animation: sshTile 0.4s cubic-bezier(0.17, 0.84, 0.44, 1.03) both;
+}
+.ssh-tile__value {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #f2f5fa;
+  font-variant-numeric: tabular-nums;
+}
+.ssh-tile__label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8892a4;
+  text-align: center;
+}
+
+.ssh-done {
+  width: 100%;
+  padding: 13px;
+  border: none;
+  border-radius: 12px;
+  /* The CTA is brand BLUE on every variant, not the result colour.
+     It used to inherit --ssh-accent, so the primary action changed colour
+     depending on whether you had won — green on a win, red on a loss. A
+     button's colour should say "this is the action", not restate the outcome
+     the hero panel is already shouting. #1877f2 is the same primary the rest
+     of the product uses for its confirm buttons. */
+  background: var(--ssh-cta, linear-gradient(135deg, #1877f2, #0a5dc2));
+  color: var(--ssh-cta-ink, #ffffff);
+  font-size: 0.92rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition:
+    transform 0.16s ease,
+    filter 0.16s ease;
+}
+.ssh-done:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+@keyframes sshFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes sshRise {
+  from {
+    opacity: 0;
+    transform: translateY(26px) scale(0.965);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes sshTile {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes sshSweep {
+  to {
+    transform: translateX(120%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ssh-overlay,
+  .ssh-card,
+  .ssh-tile {
+    animation: none;
+  }
+  .ssh-hero__sweep {
+    display: none;
+  }
+}
+
+/* ── Share + Done (Dan 2026-08-23: "add a share button to this") ───────────
+   Done keeps the full-width weight it had; Share sits beside it as the
+   secondary action, in the same brushed nickel as the rest of the card so it
+   reads as chrome rather than as a second call to action. */
+.ssh-actions {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.ssh-actions .ssh-done {
+  flex: 1 1 auto;
+}
+
+.ssh-share {
+  flex: 0 0 auto;
+  padding: 0 18px;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  color: #e8ecf0;
+  background: linear-gradient(180deg, rgba(216, 221, 226, 0.16) 0%, rgba(138, 145, 152, 0.16) 100%);
+  border: 1px solid rgba(198, 204, 210, 0.42);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  transition:
+    transform 0.12s ease,
+    background 0.2s ease;
+}
+
+.ssh-share:active {
+  transform: scale(0.97);
+}

@@ -1,0 +1,150 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * ♠ ACHIEVEMENT SHARE CARD — Styles (Q3 Wave 2)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+/* ── Overlay ────────────────────────────────────────────────────────────────── */
+.share-card-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 20px;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ── Modal ──────────────────────────────────────────────────────────────────── */
+.share-card-modal {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 20px;
+  max-width: 380px;
+  width: 100%;
+  animation: achievementShareCardSlideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes achievementShareCardSlideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.share-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.share-card-close {
+  background: none;
+  border: none;
+  color: #8a9aaa;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+/* ── Preview Card ───────────────────────────────────────────────────────────── */
+.share-card-preview {
+  background: #0a0a14;
+  border: 2px solid;
+  border-radius: 12px;
+  padding: 24px;
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.share-card-icon {
+  font-size: 3rem;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.share-card-name {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0 0 4px 0;
+}
+
+.share-card-desc {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0 0 8px 0;
+}
+
+.share-card-rarity {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* Rarity glow effects */
+.share-rarity-legendary {
+  box-shadow:
+    0 0 20px rgba(255, 152, 0, 0.2),
+    inset 0 0 20px rgba(255, 152, 0, 0.05);
+}
+
+.share-rarity-epic {
+  box-shadow:
+    0 0 20px rgba(156, 39, 176, 0.2),
+    inset 0 0 20px rgba(156, 39, 176, 0.05);
+}
+
+.share-rarity-rare {
+  box-shadow:
+    0 0 20px rgba(33, 150, 243, 0.2),
+    inset 0 0 20px rgba(33, 150, 243, 0.05);
+}
+
+/* ── Share Button ───────────────────────────────────────────────────────────── */
+.share-card-btn {
+  width: 100%;
+  padding: 12px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+.share-card-btn:active {
+  transform: scale(0.97);
+}
+
+.share-card-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}

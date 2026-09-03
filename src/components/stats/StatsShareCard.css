@@ -1,0 +1,81 @@
+/**
+ * StatsShareCard — canvas preview plus a single share/save action.
+ * The canvas is drawn at 1200x630 and scaled down by CSS, so it stays crisp
+ * on retina and exports at full social-card resolution.
+ */
+
+.sharecard {
+  margin: 0 0.75rem 1rem;
+  padding: 1rem;
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(0, 212, 255, 0.05) 0%, rgba(139, 92, 246, 0.035) 100%);
+  border: 1px solid rgba(0, 212, 255, 0.14);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+}
+
+.sharecard-title {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #e8f4ff;
+}
+
+.sharecard-preview {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  line-height: 0;
+}
+
+.sharecard-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1200 / 630;
+}
+
+.sharecard-btn {
+  width: 100%;
+  margin-top: 0.75rem;
+  padding: 0.7rem;
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 212, 255, 0.35);
+  background: rgba(0, 212, 255, 0.12);
+  color: #e8f4ff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+
+.sharecard-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.sharecard-btn:focus-visible {
+  outline: 2px solid #00d4ff;
+  outline-offset: 2px;
+}
+
+.sharecard-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.7rem;
+  color: rgba(200, 224, 245, 0.55);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sharecard-btn {
+    transition: none;
+  }
+}
+
+/* The share card is a screen affordance; it must never appear in a printed
+   dossier, which has its own layout. */
+@media print {
+  .sharecard {
+    display: none;
+  }
+}

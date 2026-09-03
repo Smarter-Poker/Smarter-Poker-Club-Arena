@@ -1,0 +1,81 @@
+/* ONLINE FRIENDS PILL — CSS */
+.ofp-container {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  background: rgba(8, 20, 40, 0.6);
+  border: 1px solid rgba(0, 212, 255, 0.08);
+  border-radius: 16px;
+  margin-bottom: 0.75rem;
+  overflow-x: auto;
+}
+
+.ofp-label {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.35);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ofp-avatars {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.ofp-avatar-btn {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 212, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  padding: 0;
+  overflow: visible;
+  transition:
+    transform 0.2s,
+    border-color 0.2s;
+  flex-shrink: 0;
+}
+
+.ofp-avatar-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.ofp-avatar-text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 13px;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.ofp-online-dot {
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #10b981;
+  border: 2px solid #0f1923;
+}
+
+.ofp-more {
+  font-size: 0.7rem;
+  color: rgba(0, 212, 255, 0.5);
+  font-weight: 600;
+  white-space: nowrap;
+  margin-left: 4px;
+}

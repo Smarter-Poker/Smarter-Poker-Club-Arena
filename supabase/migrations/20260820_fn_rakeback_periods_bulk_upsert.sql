@@ -1,0 +1,30 @@
+-- APPLIED TO PRODUCTION 2026-08-20 via Supabase MCP as
+-- `fn_rakeback_periods_bulk_upsert`. Mirror only.
+--
+-- Settler step 3 was the last un-batched loop and, once the credit batching
+-- landed, the dominant cost. Measured over 20 minutes of production traffic:
+--
+--   fn_credit_agent_commissions_batch      82   <- batched, cheap
+--   fn_apply_rakeback_player_stats_batch   82   <- batched, cheap
+--   GET  rake_records                   1,094   \
+--   GET  rakeback_periods               1,084    >  ~3,000 round trips, all
+--   POST rakeback_periods                 582    >  from the periods recompute
+--   PATCH rakeback_periods                256   /
+--
+-- Three round trips per (user, club, week) bucket, and the middle one
+-- re-downloaded the club's ENTIRE week of rake_records once per user.
+--
+-- The engine now fetches each (club, week) window ONCE, computes every user's
+-- share from that single dataset, and persists the lot through this function.
+-- The arithmetic stays in TypeScript on purpose: re-deriving the equal-share
+-- split in SQL would move a remainder cent between players (jsonb key order vs
+-- JS insertion order), and rake_generated decides the rakeback tier boundary.
+--
+-- Replicates prior behaviour exactly:
+--   * paid/expired weeks are IMMUTABLE (DO UPDATE gated on status='pending');
+--   * rakeback_periods has a SECOND unique key (user_id, period_start) that
+--     spans ALL clubs, so a player active in two clubs in one week collides —
+--     that is the source of the 409s visible in the edge log. Each item runs in
+--     its own exception block so one collision cannot abort the batch, and
+--     collisions are counted and returned instead of being swallowed.
+--     Whether that constraint should exist at all is a schema decision for Dan.

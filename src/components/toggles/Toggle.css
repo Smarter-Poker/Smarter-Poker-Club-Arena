@@ -1,0 +1,82 @@
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.toggle.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.toggle input {
+  display: none;
+}
+
+.toggle-track {
+  position: relative;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 50px;
+  transition: background 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+.toggle.size-small .toggle-track {
+  width: 36px;
+  height: 20px;
+}
+
+.toggle.size-medium .toggle-track {
+  width: 44px;
+  height: 24px;
+}
+
+.toggle.size-large .toggle-track {
+  width: 52px;
+  height: 28px;
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+.toggle.size-small .toggle-thumb {
+  width: 16px;
+  height: 16px;
+}
+
+.toggle.size-medium .toggle-thumb {
+  width: 20px;
+  height: 20px;
+}
+
+.toggle.size-large .toggle-thumb {
+  width: 24px;
+  height: 24px;
+}
+
+.toggle input:checked + .toggle-track {
+  background: linear-gradient(135deg, #ffd700, #ff8c00);
+}
+
+.toggle.size-small input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(16px);
+}
+
+.toggle.size-medium input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(20px);
+}
+
+.toggle.size-large input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(24px);
+}
+
+.toggle-label {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.9rem;
+}

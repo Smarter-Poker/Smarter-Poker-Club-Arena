@@ -1,0 +1,66 @@
+.rank-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.3);
+  border: 2px solid var(--rank-color);
+  border-radius: 8px;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.rank-badge.size-small {
+  padding: 4px 8px;
+}
+
+.rank-badge.size-medium {
+  padding: 6px 12px;
+}
+
+.rank-badge.size-large {
+  padding: 10px 18px;
+}
+
+.rank-badge.rank-1,
+.rank-badge.rank-2,
+.rank-badge.rank-3 {
+  background: linear-gradient(
+    135deg,
+    var(--rank-color),
+    color-mix(in srgb, var(--rank-color) 60%, black)
+  );
+  border: none;
+}
+
+.rank-icon {
+  display: block;
+}
+
+.size-small .rank-icon {
+  font-size: 1rem;
+}
+
+.size-medium .rank-icon {
+  font-size: 1.3rem;
+}
+
+.size-large .rank-icon {
+  font-size: 1.8rem;
+}
+
+.rank-number {
+  color: var(--rank-color);
+  font-weight: 700;
+}
+
+.size-small .rank-number {
+  font-size: 0.75rem;
+}
+
+.size-medium .rank-number {
+  font-size: 0.9rem;
+}
+
+.size-large .rank-number {
+  font-size: 1.1rem;
+}

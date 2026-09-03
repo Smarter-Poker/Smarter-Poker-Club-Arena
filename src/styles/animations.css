@@ -1,0 +1,684 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * ♠ CLUB ARENA — Global Animations & Transitions
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * Reusable animation utilities for consistent UX across the application
+ */
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   FADE ANIMATIONS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes animationsFadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes fadeInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SCALE ANIMATIONS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@keyframes animationsScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes animationsPopIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+
+  70% {
+    transform: scale(1.05);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes animationsPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes heartbeat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  14% {
+    transform: scale(1.1);
+  }
+
+  28% {
+    transform: scale(1);
+  }
+
+  42% {
+    transform: scale(1.1);
+  }
+
+  56% {
+    transform: scale(1);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SLIDE ANIMATIONS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@keyframes slideInFromBottom {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInFromTop {
+  from {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInFromLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInFromRight {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   GLOW & SHINE ANIMATIONS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@keyframes glow {
+  0%,
+  100% {
+    box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+  }
+
+  50% {
+    box-shadow: 0 0 25px rgba(0, 212, 255, 0.6);
+  }
+}
+
+@keyframes shine {
+  0% {
+    background-position: -200% center;
+  }
+
+  100% {
+    background-position: 200% center;
+  }
+}
+
+@keyframes animationsShimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SKELETON LOADER ANIMATIONS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.05) 0%, rgba(100, 100, 100, 0.02) 100%);
+  border: 1px solid #2a3a4a;
+  border-radius: 8px;
+}
+
+.skeleton::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+  animation: animationsShimmer 1.5s infinite;
+}
+
+.skeleton-text {
+  height: 1rem;
+  margin-bottom: 0.5rem;
+  border-radius: 4px;
+}
+
+.skeleton-text.short {
+  width: 40%;
+}
+
+.skeleton-text.medium {
+  width: 70%;
+}
+
+.skeleton-text.long {
+  width: 100%;
+}
+
+.skeleton-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+}
+
+.skeleton-card {
+  padding: 1rem;
+  min-height: 80px;
+}
+
+.skeleton-button {
+  height: 40px;
+  width: 120px;
+  border-radius: 8px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   BOUNCE & WIGGLE
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@keyframes bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes bounceIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+
+  70% {
+    transform: scale(0.9);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ROTATE & FLIP
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@keyframes animationsSpin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes flipIn {
+  from {
+    opacity: 0;
+    transform: perspective(400px) rotateY(90deg);
+  }
+
+  to {
+    opacity: 1;
+    transform: perspective(400px) rotateY(0deg);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   STAGGER ANIMATION UTILITIES
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.animate-fade-in {
+  animation: fadeIn 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) forwards;
+}
+
+.animate-fade-in-up {
+  animation: animationsFadeInUp 0.4s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275))
+    forwards;
+}
+
+.animate-fade-in-down {
+  animation: fadeInDown 0.4s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) forwards;
+}
+
+.animate-scale-in {
+  animation: animationsScaleIn 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275))
+    forwards;
+}
+
+.animate-pop-in {
+  animation: animationsPopIn 0.4s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275))
+    forwards;
+}
+
+.animate-slide-in-bottom {
+  animation: slideInFromBottom 0.4s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275))
+    forwards;
+}
+
+.animate-slide-in-left {
+  animation: slideInFromLeft 0.4s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275))
+    forwards;
+}
+
+.animate-slide-in-right {
+  animation: slideInFromRight 0.4s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275))
+    forwards;
+}
+
+.animate-bounce-in {
+  animation: bounceIn 0.5s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) forwards;
+}
+
+.animate-flip-in {
+  animation: flipIn 0.5s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) forwards;
+}
+
+/* Stagger delays for lists */
+.stagger-1 {
+  animation-delay: 0.05s;
+}
+
+.stagger-2 {
+  animation-delay: 0.1s;
+}
+
+.stagger-3 {
+  animation-delay: 0.15s;
+}
+
+.stagger-4 {
+  animation-delay: 0.2s;
+}
+
+.stagger-5 {
+  animation-delay: 0.25s;
+}
+
+.stagger-6 {
+  animation-delay: 0.3s;
+}
+
+.stagger-7 {
+  animation-delay: 0.35s;
+}
+
+.stagger-8 {
+  animation-delay: 0.4s;
+}
+
+.stagger-9 {
+  animation-delay: 0.45s;
+}
+
+.stagger-10 {
+  animation-delay: 0.5s;
+}
+
+/* Hover effects */
+.hover-lift {
+  transition: transform 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+.hover-glow {
+  transition: box-shadow 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+.hover-scale {
+  transition: transform 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+/* ─────────────────────────────────────────────────────────────────────────────
+   LOADING STATES
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid rgba(0, 212, 255, 0.2);
+  border-top-color: #00d4ff;
+  border-radius: 50%;
+  animation: animationsSpin 0.8s linear infinite;
+}
+
+.loading-dots::after {
+  content: '';
+  animation: dots 1.5s steps(4, end) infinite;
+}
+
+@keyframes dots {
+  0% {
+    content: '';
+  }
+
+  25% {
+    content: '.';
+  }
+
+  50% {
+    content: '..';
+  }
+
+  75% {
+    content: '...';
+  }
+
+  100% {
+    content: '';
+  }
+}
+
+/* 2026-08-28: six orphaned keyframes (fadeOut, scaleOut, wiggle,
+   animationsShake, goldGlow, skeletonPulse) deleted — zero references
+   repo-wide. Dead keyframes in a GLOBAL namespace are collision bait (see the
+   screenShake incident this file's history records). */
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MOBILE RESPONSIVE ANIMATIONS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* 2026-08-27: the older global reduced-motion block that lived here is GONE.
+   reducedMotion.css (imported last in main.tsx) is the single authority: it
+   uses 1ms (not 0.01ms, which some engines skip without applying the fill),
+   zeroes animation-delay, and honours the data-motion="keep" escape hatch —
+   this block did none of that and would silently win if import order ever
+   changed. */
+
+/* Touch feedback for mobile */
+.touch-feedback {
+  transition:
+    transform 0.1s ease,
+    opacity 0.1s ease;
+}
+
+.touch-feedback:active {
+  transform: scale(0.97);
+  opacity: 0.9;
+}
+/* ═══════════════════════════════════════════════════════════════════════════
+   NAMES THAT INLINE STYLES ASK FOR BY STRING
+   ───────────────────────────────────────────────────────────────────────────
+   Dan, 2026-08-23: "the create new table button doesn't work." It did. The
+   page rendered seven cards at `opacity: 0` waiting on `animation: fadeInUp`,
+   and `fadeInUp` was not reachable on that route.
+
+   ba1af5a8b renamed every keyframe in the codebase to a file-prefixed name —
+   93 .css files and 0 .tsx — and animation names also live as RAW STRINGS in
+   inline style objects, where no CSS tool can see them. An unresolvable
+   animation-name is not an error: the declaration is dropped, the animation
+   never runs, and anything relying on it to clear an `opacity: 0` stays
+   invisible forever. Eleven pages rendered blank with tsc, vitest and the
+   production build all green.
+
+   Vite splits CSS per chunk, so a keyframe defined in another page's
+   stylesheet is not loaded when this one paints, and a .module.css name is
+   hashed at build time and can never match a raw string. THIS file is imported
+   by main.tsx, so what is defined here is reachable from every route — which
+   is what an inline style needs.
+
+   tests/unit/inlineAnimationsResolve.test.ts enforces it: every inline
+   animation name must resolve to a definition here or in the file's own
+   sibling .css, and pairing an unreachable one with `opacity: 0` is a hard
+   failure.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Skeleton rows: the row fades while its blocks sweep. */
+@keyframes animationsShimmerFade {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Pairs with `background-size: 200px 100%` on a three-stop gradient. */
+@keyframes animationsShimmerSlide {
+  0% {
+    background-position: -200px 0;
+  }
+  100% {
+    background-position: 200px 0;
+  }
+}
+
+@keyframes animationsSlideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes animationsSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes animationsSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes animationsSlideInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes animationsSlideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* The auth card's entry, on a springy cubic-bezier. */
+@keyframes animationsSlideUpIn {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes animationsWaitlistSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* The live dot on the waitlist banner. */
+@keyframes animationsWaitlistPulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(1.25);
+  }
+}
+
+/* An empty-state glyph already at opacity 0.3 — breathe, do not flash. */
+@keyframes animationsProfitChartPulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* The settlement payout figure. */
+@keyframes animationsPayoutPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.65;
+  }
+}
+
+@keyframes animationsSuccessIconPulse {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}

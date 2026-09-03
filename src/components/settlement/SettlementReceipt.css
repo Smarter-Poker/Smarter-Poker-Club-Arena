@@ -1,0 +1,230 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  SETTLEMENT RECEIPT — Premium CSS
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.settlement-receipt {
+  position: relative;
+  background: linear-gradient(145deg, #141e2e 0%, #0b1420 100%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 20px;
+  overflow: hidden;
+}
+
+.settlement-receipt.paid {
+  border-color: rgba(0, 200, 83, 0.2);
+}
+
+.settlement-receipt.pending {
+  border-color: rgba(255, 167, 38, 0.2);
+}
+
+/* ── Stamp Watermark ── */
+.sr-stamp {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-20deg);
+  font-size: 48px;
+  font-weight: 900;
+  color: rgba(0, 200, 83, 0.06);
+  letter-spacing: 8px;
+  text-transform: uppercase;
+  pointer-events: none;
+  animation: stampSlam 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+}
+
+@keyframes stampSlam {
+  0% {
+    transform: translate(-50%, -50%) rotate(-20deg) scale(3);
+    opacity: 0;
+  }
+  60% {
+    transform: translate(-50%, -50%) rotate(-20deg) scale(0.9);
+    opacity: 0.08;
+  }
+  100% {
+    transform: translate(-50%, -50%) rotate(-20deg) scale(1);
+    opacity: 1;
+  }
+}
+
+/* ── Header ── */
+.sr-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.sr-logo {
+  font-size: 28px;
+}
+
+.sr-title-block {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sr-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.sr-period {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.sr-status-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+
+/* ── Amount Block ── */
+.sr-amount-block {
+  text-align: center;
+  padding: 16px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.sr-amount-label {
+  display: block;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+
+.sr-amount-value {
+  font-size: 32px;
+  font-weight: 800;
+  color: #00e676;
+  font-variant-numeric: tabular-nums;
+}
+
+.settlement-receipt.pending .sr-amount-value {
+  color: #ffa726;
+}
+
+.sr-amount-unit {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.3);
+  margin-left: 4px;
+}
+
+/* ── Expand Button ── */
+.sr-expand-btn {
+  width: 100%;
+  padding: 10px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s;
+}
+
+.sr-expand-btn:active {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* ── Details ── */
+.sr-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  animation: detailsFade 0.3s ease;
+}
+
+@keyframes detailsFade {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sr-detail-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.sr-detail-row.sr-total {
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-weight: 700;
+  color: #fff;
+}
+
+.sr-fee {
+  color: #ef4444;
+}
+
+/* ── Receipt ID ── */
+.sr-receipt-id {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 10px;
+}
+
+.sr-id-label {
+  display: block;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.3);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 6px;
+}
+
+.sr-id-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sr-id-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  letter-spacing: 2px;
+}
+
+.sr-copy-btn {
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: all 0.2s;
+}
+
+.sr-copy-btn:active {
+  background: rgba(0, 200, 83, 0.15);
+  color: #00e676;
+  transform: scale(0.95);
+}

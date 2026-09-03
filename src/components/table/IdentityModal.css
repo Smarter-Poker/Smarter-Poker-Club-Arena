@@ -1,0 +1,170 @@
+.identity-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+  backdrop-filter: blur(4px);
+}
+.identity-modal-content {
+  background: var(--surface-2, #1f232a);
+  border: 1px solid var(--border-color, #333);
+  border-radius: 12px;
+  width: 300px;
+  max-width: 90vw;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+}
+.identity-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid var(--border-color, #333);
+}
+.identity-modal-header h2 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text-primary, #fff);
+}
+.identity-modal-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary, #aaa);
+  font-size: 24px;
+  cursor: pointer;
+}
+.identity-modal-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.identity-modal-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.identity-modal-row label {
+  color: var(--text-primary, #ccc);
+  font-size: 14px;
+}
+.identity-alias-input {
+  background: var(--surface-1, #121418);
+  border: 1px solid var(--border-color, #333);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  width: 140px;
+}
+/* ── The row that explains the other two (audit 2026-08-25) ────────────────
+   "Alias on, alias empty" is a setting that looks applied and changes nothing,
+   because TablePage's hero-name derivation is `use_alias && table_alias`. This
+   states the name that will actually appear on the felt. */
+.identity-modal-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--surface-1, #121418);
+  border: 1px solid var(--border-color, #333);
+}
+.identity-modal-preview__label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary, #8b949e);
+}
+.identity-modal-preview__value {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary, #fff);
+  /* A 20-char alias in a 300px dialog must never push the box wider. */
+  overflow-wrap: anywhere;
+}
+.identity-modal-preview__hint {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--warning, #f0b429);
+}
+
+.identity-save-btn {
+  margin-top: 8px;
+  background: var(--primary-color, #3fb950);
+  color: #000;
+  border: none;
+  padding: 10px;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+/* ── ALIAS TOGGLE ────────────────────────────────────────────────────────────
+   This modal was built, imported by nobody, and wired up on 2026-08-26 when the
+   hamburger's Alias item was found to be a dead tap. It borrows the `tsp-`
+   toggle markup from TableSettingsPanel, and that stylesheet only loads when
+   the settings panel does - so on the route that actually renders THIS modal
+   the switch had no CSS at all and painted as two bare spans.
+
+   Redeclared here rather than importing TableSettingsPanel.css, because pulling
+   a whole panel's stylesheet in for one control is how a page ends up with
+   rules it cannot account for. The values are copied verbatim from
+   TableSettingsPanel.css lines 118-164; if that switch is restyled, restyle it
+   here in the same commit or the two drift apart. The real answer is one shared
+   Switch component - src/components/ui grew a canonical one this week - and
+   moving both onto it is worth doing, but that is a refactor and this is a
+   repair. */
+.tsp-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.tsp-toggle__track {
+  display: flex;
+  align-items: center;
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  padding: 2px;
+  transition:
+    background-color 0.25s ease,
+    border-color 0.25s ease;
+}
+
+.tsp-toggle--on .tsp-toggle__track {
+  background-color: #3fb950;
+  border: 2px solid #4dc660;
+}
+
+.tsp-toggle--off .tsp-toggle__track {
+  background-color: #374151;
+  border: 2px solid #6b7280;
+}
+
+.tsp-toggle__thumb {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background-color: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  transition: transform 0.25s ease;
+}
+
+.tsp-toggle--on .tsp-toggle__thumb {
+  transform: translateX(20px);
+}
+
+.tsp-toggle--off .tsp-toggle__thumb {
+  transform: translateX(0);
+}

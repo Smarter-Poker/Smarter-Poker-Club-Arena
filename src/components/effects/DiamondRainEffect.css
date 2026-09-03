@@ -1,0 +1,37 @@
+/**
+ * DIAMOND RAIN EFFECT — CSS
+ */
+
+.diamond-rain-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  overflow: hidden;
+}
+
+.diamond-particle {
+  position: absolute;
+  top: -40px;
+  animation: diamondFall linear forwards;
+  will-change: transform;
+  filter: drop-shadow(0 0 6px rgba(168, 85, 247, 0.5));
+}
+
+@keyframes diamondFall {
+  0% {
+    transform: translateY(0) rotate(var(--rotation, 0deg)) scale(0.5);
+    opacity: 1;
+  }
+  20% {
+    transform: translateY(15vh) rotate(calc(var(--rotation, 0deg) + 90deg)) scale(1);
+    opacity: 1;
+  }
+  80% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(110vh) rotate(calc(var(--rotation, 0deg) + 360deg)) scale(0.6);
+    opacity: 0;
+  }
+}

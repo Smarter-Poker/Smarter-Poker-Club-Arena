@@ -1,0 +1,84 @@
+/* ── BRUSHED NICKEL, NOT GOLD (Dan 2026-08-23) ─────────────────────────────
+   "make the dots and pill brushed nickel instead of gold"
+
+   Brushed metal is two things, and a flat grey is neither: a vertical tone ramp
+   (light top, dark waist, light again at the base, which is how a curved metal
+   surface catches a room) and a fine horizontal grain from the brushing. The
+   ramp is one linear-gradient; the grain is a 2px repeating-linear-gradient
+   laid over it. Both are paint, so there is no image to load and it stays crisp
+   at any zoom.
+
+   The gold was #ffd700 flat. */
+
+.carousel-dots {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  /* Unlit nickel: the same metal, in shadow. */
+  background: linear-gradient(180deg, rgba(216, 221, 226, 0.4) 0%, rgba(138, 145, 152, 0.4) 100%);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.dot.active {
+  width: 24px;
+  border-radius: 4px;
+  background:
+    /* the brushed grain */
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.1) 0px,
+      rgba(255, 255, 255, 0.1) 1px,
+      rgba(0, 0, 0, 0.05) 1px,
+      rgba(0, 0, 0, 0.05) 2px
+    ),
+    /* the tone ramp across the pill's height */
+    linear-gradient(180deg, #eef1f4 0%, #c6ccd2 42%, #969da4 58%, #d8dde1 100%);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.28);
+}
+
+.carousel-counter {
+  margin-left: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(206, 212, 218, 0.6);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The dots are real controls, so they need a visible focus ring and a target
+   bigger than 8px. The painted dot stays small; the hit area does not. */
+.dot {
+  position: relative;
+}
+
+.dot::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+
+.dot:focus-visible {
+  outline: 2px solid rgba(206, 213, 219, 0.8);
+  outline-offset: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot {
+    transition: none;
+  }
+}

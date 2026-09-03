@@ -1,0 +1,172 @@
+# Alerts for the engine supervisor itself.
+#
+# The recovery stack now has three layers — Docker restart policy, the
+# sp-autoheal sidecar, and club-arena-supervisor.timer. Each one makes an
+# outage shorter. Each one also makes an outage QUIETER, which is the trap:
+# a crash-loop that is being restarted every 90 seconds looks, from the
+# outside, exactly like a healthy service. These rules exist so that
+# self-healing never becomes self-concealing.
+#
+# Metrics come from server/scripts/engine-supervisor.sh via the node-exporter
+# textfile collector (/var/lib/node-exporter-textfile).
+groups:
+  - name: club-arena-supervisor
+    rules:
+      # ── The watcher is the thing most likely to fail silently ─────────────
+      - alert: EngineSupervisorStale
+        expr: time() - club_arena_supervisor_last_run_timestamp_seconds > 300
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Engine supervisor has not run in over 5 minutes"
+          description: >-
+            club-arena-supervisor.timer fires every 60s. It has not published a
+            heartbeat for {{ $value | humanizeDuration }}. The last-resort
+            recovery path for the poker engine is currently NOT running —
+            `docker stop`, a half-finished deploy, or a removed container would
+            now go unrecovered. Check: systemctl status club-arena-supervisor.timer
+
+      - alert: EngineSupervisorMetricsMissing
+        expr: absent(club_arena_supervisor_last_run_timestamp_seconds)
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Engine supervisor metrics have disappeared entirely"
+          description: >-
+            The supervisor heartbeat series is absent, not merely stale. Either
+            the supervisor was uninstalled, or the node-exporter textfile
+            collector lost its --collector.textfile.directory flag. Either way
+            the supervisor is now unobservable.
+
+      # ── Self-healing must not become self-concealing ──────────────────────
+      - alert: EngineFlappingUnderSupervisor
+        expr: increase(club_arena_supervisor_recoveries_total[30m]) >= 3
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Engine recovered {{ $value }} times in 30 minutes — this is a crash loop"
+          description: >-
+            The supervisor is doing its job, which means players may see nothing
+            wrong. But an engine that needs recovering three times in half an
+            hour has an underlying defect that recovery is only masking. Pull
+            `journalctl -u club-arena-supervisor` and `docker logs
+            club-arena-engine` before the evidence rotates out.
+
+      - alert: EngineRecoveredUnexpectedly
+        expr: increase(club_arena_supervisor_recoveries_total[1h]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Engine required supervisor intervention"
+          description: >-
+            A single recovery is not an emergency, but it is never routine — it
+            means one of Docker's restart policy, the healthcheck, or the deploy
+            left the engine in a state it could not get out of on its own. Worth
+            reading the journal to find out which.
+
+      # ── The engine, seen from the host rather than from the internet ──────
+      # Distinguishes "the engine is down" from "Caddy/DNS/TLS is down", which
+      # the externally-probed alerts cannot tell apart.
+      # ── Crash loops that hide from every other signal ─────────────────────
+      # An engine that restarts faster than the supervisor's 120s boot grace
+      # looked healthy on EVERY sample: /health was never called and the
+      # serving gauge was asserted as 1 without asking. These two counters are
+      # what make that state visible.
+      - alert: EngineBootChurn
+        # >= 3 to match CHURN_THRESHOLD in engine-supervisor.sh, which is the
+        # point at which the supervisor itself escalates. At >= 2 this fired on
+        # two ordinary deploys landing inside three minutes of each other, which
+        # is not a crash loop.
+        expr: club_arena_engine_boot_churn >= 3
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Engine keeps restarting before it finishes booting"
+          description: >-
+            The engine has restarted {{ $value }} times without once clearing
+            its boot-grace window. Players cannot complete a hand. This is the
+            failure mode that used to be completely invisible — every sample
+            looked like a normal startup. Check `docker logs club-arena-engine`
+            and `journalctl -u club-arena-supervisor` for the captured
+            boot-churn log.
+
+      - alert: EngineCrashLooping
+        expr: club_arena_engine_restarting_samples >= 2
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Engine container is stuck in Docker's 'restarting' state"
+          description: >-
+            Docker is backing off and retrying the container. Note that
+            `docker start` is a no-op in this state, so anything that "restarts"
+            it is doing nothing — the supervisor deliberately waits and then
+            recreates from :current rather than looping. Almost always a bad
+            build or a broken .env.
+
+      # serving == 0 only. The supervisor reports -1 (unknown) during boot
+      # grace, so this no longer fires while the engine is legitimately
+      # starting, and boot grace can no longer be mistaken for an all-clear.
+      - alert: EngineNotServingOnHost
+        expr: club_arena_engine_serving == 0
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Engine not answering /health on the host itself"
+          description: >-
+            Checked from inside the box, so this is the engine, not the proxy or
+            DNS. The supervisor restarts after 3 consecutive failures; if this
+            alert persists past ~4 minutes, recovery is failing too.
+
+      - alert: EngineContainerNotRunning
+        expr: club_arena_engine_container_running == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Engine container is not in the running state"
+          description: >-
+            The container exists but is stopped, or is missing entirely. Note
+            that `--restart always` does NOT cover a manual `docker stop` — if
+            this persists, the supervisor's recreate path is also failing.
+
+      # ── The verification itself must not rot ──────────────────────────────
+      # club-arena-verify.timer asserts the whole recovery stack daily. These
+      # two rules are what stop that check from becoming another passive layer
+      # nobody looks at.
+      - alert: RecoveryStackDegraded
+        expr: club_arena_recovery_stack_failures > 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value }} recovery-stack assertion(s) failing"
+          description: >-
+            The daily verification found part of the never-down machinery
+            missing or misconfigured — a dropped autoheal label, a stopped
+            supervisor timer, a missing :previous rollback image, or an engine
+            that cannot report its own build. Nothing is broken YET; the point
+            is that the next real failure would not self-recover. Run
+            /opt/club-arena/server/scripts/verify-recovery-stack.sh for the
+            per-assertion breakdown.
+
+      - alert: RecoveryStackUnverified
+        expr: >-
+          absent(club_arena_recovery_stack_last_verified_timestamp_seconds)
+          or time() - club_arena_recovery_stack_last_verified_timestamp_seconds > 172800
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Recovery stack has not been verified in over 48h"
+          description: >-
+            club-arena-verify.timer runs daily. Either it stopped, or the
+            textfile collector is no longer publishing. The recovery stack may
+            be fine — but it is now unverified, which is how it silently rotted
+            the last time.

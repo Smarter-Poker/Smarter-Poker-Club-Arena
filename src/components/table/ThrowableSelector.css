@@ -1,0 +1,1103 @@
+/**
+ * =================================================================================
+ *  THROWABLE SELECTOR -- Premium Throwable Picker UI
+ * =================================================================================
+ *
+ *  The "storefront" for throwables and reactions. Must feel premium because
+ *  this is where players decide to spend Diamonds. PokerBros-level design:
+ *
+ *  - Dramatic slide-up entrance with spring overshoot
+ *  - Category tabs with active-state morph + gold underline
+ *  - Grid items with 3D tilt on hover, spring press on tap
+ *  - Staggered grid entrance animation per item
+ *  - Icon pulse/glow on hover
+ *  - Premium/VIP tab gets a shimmer border
+ *  - Gold/diamond accent color palette
+ *  - Glassmorphism throughout
+ *  - Full responsive (4-col on mobile, 5-col on desktop)
+ *  - All 44px min touch targets
+ *  - Complete reduced-motion fallback
+ */
+
+/* =================================================================================
+   CUSTOM PROPERTIES
+   ================================================================================= */
+
+:root {
+  /* Dan 2026-08-21: "should be blue instead of yellow with a grey background."
+     The gold-on-navy palette read as a casino promo panel and fought the felt.
+     Blue on neutral grey sits back and lets the 3D items be the colour.
+     The --ts-gold* names are kept as aliases so no rule elsewhere in this
+     798-line file silently loses its colour; they now resolve to the blue. */
+  --ts-bg-primary: rgba(38, 41, 48, 0.98);
+  --ts-bg-secondary: rgba(30, 33, 39, 0.96);
+  --ts-blue: #4c9dff;
+  --ts-blue-light: #8dc2ff;
+  --ts-blue-glow: rgba(76, 157, 255, 0.28);
+  --ts-border-gold: rgba(76, 157, 255, 0.35);
+  --ts-border-subtle: rgba(255, 255, 255, 0.09);
+  --ts-gold: var(--ts-blue);
+  --ts-gold-light: var(--ts-blue-light);
+  --ts-gold-glow: var(--ts-blue-glow);
+  --ts-text-primary: rgba(255, 255, 255, 0.9);
+  --ts-text-secondary: rgba(255, 255, 255, 0.55);
+  --ts-text-muted: rgba(255, 255, 255, 0.35);
+
+  --ts-ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --ts-ease-overshoot: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ts-ease-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ts-ease-snap: cubic-bezier(0.22, 0.68, 0, 1.71);
+
+  --ts-entrance-duration: 0.4s;
+  --ts-item-stagger: 30ms;
+}
+
+/* =================================================================================
+   MAIN PANEL -- The selector card itself
+   ================================================================================= */
+
+.throwable-selector {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  /* 300px clipped the fifth tab. 360 fits five without truncation and still
+     leaves margin at 375px, the narrowest phone this app targets. */
+  width: 360px;
+  max-width: calc(100vw - 24px);
+  background: var(--ts-bg-primary);
+  border: 1.5px solid var(--ts-border-gold);
+  border-radius: 16px;
+  z-index: 1000;
+  overflow: hidden;
+
+  /* Premium glassmorphism */
+  backdrop-filter: blur(24px) saturate(1.5);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+
+  /* Layered shadow: ambient + gold glow + inner highlight */
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.65),
+    0 4px 16px rgba(0, 0, 0, 0.4),
+    0 0 40px var(--ts-gold-glow),
+    0 0 0 1px rgba(255, 255, 255, 0.03),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+
+  /* Entrance animation */
+  animation: tsSlideUp var(--ts-entrance-duration) var(--ts-ease-spring);
+  transform-origin: bottom center;
+}
+
+@keyframes tsSlideUp {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px) scale(0.85);
+    filter: blur(6px);
+  }
+  40% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  65% {
+    transform: translateX(-50%) translateY(-6px) scale(1.02);
+  }
+  80% {
+    transform: translateX(-50%) translateY(2px) scale(0.995);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+/* Top edge gold shimmer */
+.throwable-selector::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--ts-gold-light) 20%,
+    var(--ts-gold) 50%,
+    var(--ts-gold-light) 80%,
+    transparent 100%
+  );
+  opacity: 0.6;
+  z-index: 1;
+}
+
+/* Inner ambient glow at top */
+.throwable-selector::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 60px;
+  background: radial-gradient(ellipse 100% 100%, rgba(212, 168, 75, 0.06) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* =================================================================================
+   LOADING STATE
+   ================================================================================= */
+
+.throwable-selector--loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+  min-height: 180px;
+}
+
+.throwable-selector__spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(212, 168, 75, 0.2);
+  border-top-color: var(--ts-gold);
+  border-radius: 50%;
+  animation: tsSpin 0.75s linear infinite;
+  box-shadow: 0 0 12px var(--ts-gold-glow);
+}
+
+@keyframes tsSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* =================================================================================
+   HEADER -- Title + allowance + close button
+   ================================================================================= */
+
+.throwable-selector__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid rgba(212, 168, 75, 0.15);
+  position: relative;
+  z-index: 1;
+}
+
+/* Subtle gradient behind header */
+.throwable-selector__header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  background: linear-gradient(180deg, rgba(212, 168, 75, 0.04) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.throwable-selector__title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--ts-gold);
+  margin: 0;
+  letter-spacing: 0.02em;
+  text-shadow: 0 0 16px var(--ts-gold-glow);
+}
+
+.throwable-selector__close {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 50%;
+  color: var(--ts-text-secondary);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.2s var(--ts-ease-smooth),
+    color 0.2s ease,
+    transform 0.2s var(--ts-ease-spring),
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.throwable-selector__close:active {
+  transform: scale(0.85) rotate(90deg);
+}
+
+/* =================================================================================
+   ALLOWANCE DISPLAY
+   ================================================================================= */
+
+.throwable-selector__allowance {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.throwable-selector__free {
+  color: var(--ts-gold);
+  text-shadow: 0 0 8px var(--ts-gold-glow);
+}
+
+.throwable-selector__cost {
+  color: #60a5fa;
+  text-shadow: 0 0 8px rgba(96, 165, 250, 0.2);
+}
+
+/* =================================================================================
+   CATEGORY TABS -- Pill tabs with active gold morph
+   ================================================================================= */
+
+.throwable-selector__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 12px 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  position: relative;
+  z-index: 1;
+}
+
+.throwable-selector__tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.throwable-selector__tab {
+  flex-shrink: 0;
+  padding: 7px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--ts-border-subtle);
+  border-radius: 20px;
+  color: var(--ts-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  position: relative;
+  overflow: hidden;
+
+  transition:
+    background 0.25s var(--ts-ease-smooth),
+    border-color 0.25s ease,
+    color 0.2s ease,
+    transform 0.2s var(--ts-ease-spring),
+    box-shadow 0.25s ease;
+}
+
+/* Hover shimmer sweep */
+.throwable-selector__tab::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -120%;
+  width: 80%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+  transition: left 0.5s ease;
+  pointer-events: none;
+}
+
+.throwable-selector__tab:active {
+  transform: scale(0.93);
+}
+
+/* Active tab -- gold gradient fill */
+.throwable-selector__tab--active {
+  background: linear-gradient(160deg, var(--ts-gold-light) 0%, var(--ts-gold) 50%, #b8922a 100%);
+  border-color: var(--ts-gold);
+  color: #0a0a1a;
+  font-weight: 700;
+  box-shadow:
+    0 2px 8px rgba(212, 168, 75, 0.3),
+    0 0 20px rgba(212, 168, 75, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.throwable-selector__tab--active::after {
+  display: none;
+}
+
+/* =================================================================================
+   THROWABLE GRID -- The main item picker
+   ================================================================================= */
+
+.throwable-selector__grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  padding: 12px 12px 16px;
+  max-height: 220px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  position: relative;
+  z-index: 1;
+
+  /* Custom scrollbar */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(212, 168, 75, 0.2) transparent;
+}
+
+.throwable-selector__grid::-webkit-scrollbar {
+  width: 4px;
+}
+
+.throwable-selector__grid::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.throwable-selector__grid::-webkit-scrollbar-thumb {
+  background: rgba(212, 168, 75, 0.25);
+  border-radius: 2px;
+}
+
+/* =================================================================================
+   GRID ITEMS -- Individual throwable buttons
+   ================================================================================= */
+
+.throwable-selector__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--ts-border-subtle);
+  border-radius: 10px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+
+  /* Staggered entrance animation */
+  animation: tsItemEnter 0.35s var(--ts-ease-overshoot) backwards;
+  animation-delay: calc(var(--item-index, 0) * var(--ts-item-stagger));
+
+  transition:
+    background 0.2s var(--ts-ease-smooth),
+    border-color 0.25s ease,
+    transform 0.2s var(--ts-ease-spring),
+    box-shadow 0.25s ease;
+}
+
+/* Stagger first 10 items */
+.throwable-selector__item:nth-child(1) {
+  --item-index: 0;
+}
+.throwable-selector__item:nth-child(2) {
+  --item-index: 1;
+}
+.throwable-selector__item:nth-child(3) {
+  --item-index: 2;
+}
+.throwable-selector__item:nth-child(4) {
+  --item-index: 3;
+}
+.throwable-selector__item:nth-child(5) {
+  --item-index: 4;
+}
+.throwable-selector__item:nth-child(6) {
+  --item-index: 5;
+}
+.throwable-selector__item:nth-child(7) {
+  --item-index: 6;
+}
+.throwable-selector__item:nth-child(8) {
+  --item-index: 7;
+}
+.throwable-selector__item:nth-child(9) {
+  --item-index: 8;
+}
+.throwable-selector__item:nth-child(10) {
+  --item-index: 9;
+}
+
+@keyframes tsItemEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.7);
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Active: press down */
+.throwable-selector__item:active {
+  transform: scale(0.9);
+  box-shadow: none;
+  background: rgba(212, 168, 75, 0.2);
+  border-color: rgba(212, 168, 75, 0.6);
+}
+
+/* Hover gold underline glow */
+.throwable-selector__item::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 20%;
+  right: 20%;
+  height: 2px;
+  background: var(--ts-gold);
+  border-radius: 1px;
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform 0.25s var(--ts-ease-spring);
+  box-shadow: 0 0 8px var(--ts-gold-glow);
+}
+/* Focus ring for keyboard nav */
+.throwable-selector__item:focus-visible {
+  outline: 2px solid rgba(212, 168, 75, 0.6);
+  outline-offset: 2px;
+}
+
+/* Locked items (not yet unlocked) */
+.throwable-selector__item--locked {
+  opacity: 0.45;
+  filter: grayscale(0.4);
+}
+
+.throwable-selector__item--locked::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 12px;
+  height: 12px;
+  /* Lock icon via CSS shape */
+  background:
+    radial-gradient(circle at center, var(--ts-text-muted) 3px, transparent 3px),
+    linear-gradient(var(--ts-text-muted), var(--ts-text-muted));
+  background-size:
+    8px 8px,
+    10px 8px;
+  background-position:
+    center 0,
+    center 4px;
+  background-repeat: no-repeat;
+  border-radius: 2px 2px 1px 1px;
+  opacity: 0.6;
+}
+
+/* =================================================================================
+   ICON & LABELS
+   ================================================================================= */
+
+.throwable-selector__icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  transition:
+    transform 0.2s var(--ts-ease-spring),
+    filter 0.2s ease;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.throwable-selector__name {
+  font-size: 0.5rem;
+  font-weight: 500;
+  color: var(--ts-text-secondary);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  transition: color 0.2s ease;
+}
+
+.throwable-selector__price {
+  font-size: 0.5rem;
+  font-weight: 700;
+  color: #60a5fa;
+  background: rgba(96, 165, 250, 0.1);
+  padding: 2px 5px;
+  border-radius: 6px;
+  border: 1px solid rgba(96, 165, 250, 0.15);
+  letter-spacing: 0.02em;
+}
+
+/* =================================================================================
+   FALLBACK ICON
+   ================================================================================= */
+
+.throwable-selector__fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  color: var(--ts-text-muted);
+  font-size: 1rem;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
+/* =================================================================================
+   OVERLAY MODE -- Full-screen overlay (TablePage integration)
+   ================================================================================= */
+
+.throwable-selector-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 900;
+  animation: tsOverlayIn 0.25s var(--ts-ease-smooth);
+  backdrop-filter: blur(6px) saturate(1.1);
+  -webkit-backdrop-filter: blur(6px) saturate(1.1);
+}
+
+@keyframes tsOverlayIn {
+  from {
+    opacity: 0;
+    background: rgba(0, 0, 0, 0);
+  }
+  to {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.5);
+  }
+}
+
+.throwable-selector-overlay .throwable-selector {
+  position: relative;
+  bottom: auto;
+  left: auto;
+  transform: none;
+  /* Re-apply entrance when in overlay mode */
+  animation: tsOverlayCardIn 0.45s var(--ts-ease-spring);
+}
+
+@keyframes tsOverlayCardIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(30px);
+    filter: blur(8px);
+  }
+  50% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  70% {
+    transform: scale(1.02) translateY(-3px);
+  }
+  85% {
+    transform: scale(0.995) translateY(1px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* =================================================================================
+   CATEGORY ICONS (inline text icons from component)
+   ================================================================================= */
+
+.category-icon {
+  font-style: normal;
+  margin-right: 2px;
+}
+
+.category-icon--premium {
+  color: var(--ts-gold);
+}
+
+/* =================================================================================
+   RESPONSIVE -- Mobile layout adjustments
+   ================================================================================= */
+
+@media (max-width: 640px) {
+  .throwable-selector {
+    width: calc(100vw - 20px);
+    max-width: 340px;
+    border-radius: 14px;
+  }
+
+  .throwable-selector__grid {
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+    max-height: 200px;
+  }
+}
+
+@media (max-width: 480px) {
+  .throwable-selector {
+    width: calc(100vw - 16px);
+    max-width: 320px;
+    border-radius: 12px;
+  }
+
+  .throwable-selector__header {
+    padding: 12px 14px 10px;
+  }
+
+  .throwable-selector__close {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+    font-size: 1.2rem;
+  }
+
+  .throwable-selector__tabs {
+    padding: 8px 10px 6px;
+    gap: 3px;
+  }
+
+  .throwable-selector__tab {
+    min-height: 34px;
+    padding: 7px 12px;
+    font-size: 0.8rem;
+  }
+
+  .throwable-selector__grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    padding: 10px 10px 14px;
+    max-height: 180px;
+  }
+
+  .throwable-selector__item {
+    min-height: 44px;
+    padding: 8px 4px 6px;
+  }
+
+  .throwable-selector__icon {
+    font-size: 1.35rem;
+  }
+
+  .throwable-selector__name {
+    font-size: 0.45rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .throwable-selector {
+    width: calc(100vw - 12px);
+    max-width: 300px;
+  }
+
+  .throwable-selector__grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+    padding: 8px 8px 12px;
+  }
+
+  .throwable-selector__tab {
+    font-size: 0.75rem;
+    padding: 6px 10px;
+  }
+}
+
+/* =================================================================================
+   REDUCED MOTION
+   ================================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .throwable-selector,
+  .throwable-selector-overlay,
+  .throwable-selector-overlay .throwable-selector,
+  .throwable-selector__item,
+  .throwable-selector__spinner {
+    animation: none !important;
+  }
+
+  .throwable-selector {
+    opacity: 1;
+    transform: translateX(-50%);
+  }
+
+  .throwable-selector-overlay .throwable-selector {
+    opacity: 1;
+    transform: none;
+  }
+
+  .throwable-selector__item {
+    opacity: 1;
+    transform: none;
+  }
+
+  .throwable-selector__tab,
+  .throwable-selector__item,
+  .throwable-selector__close,
+  .throwable-selector__icon {
+    transition: none !important;
+  }
+
+  .throwable-selector__tab::after,
+  .throwable-selector__item::before {
+    display: none;
+  }
+
+  .throwable-selector__spinner {
+    /* Static indicator instead of spin */
+    border-top-color: var(--ts-gold);
+    opacity: 0.6;
+  }
+}
+
+/* =================================================================================
+   2026-08-20 -- 49 DYNAMIC 3D THROWABLES (Supabase renders, black bg blended out)
+   Appended patch: the grid tiles now hold <img> renders instead of inline SVGs.
+   ================================================================================= */
+
+/* Dark tile behind each render so mix-blend-mode: screen has a clean floor */
+.throwable-selector__icon--img {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  /* Deliberately DARK, not glass. Both render paths have to look right on
+     this tile and they want opposite things: a real cutout is happy on any
+     ground, but the screen-blend fallback only behaves over something dark —
+     over a light tile its JPEG background washes into a grey square.
+     A dark translucent tile satisfies both.
+     (An earlier version used `:has(.throwable-img:not(.throwable-img--cut))`
+     to switch grounds. That fails OPEN: where `:has()` is unsupported the
+     whole rule is dropped and the fallback lands on glass, which is the bug
+     it was meant to prevent. Not worth the fragility.) */
+  background: rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--ts-border-subtle);
+}
+
+.throwable-selector__icon--img .throwable-img {
+  width: 40px;
+  height: 40px;
+  transition: transform 0.18s var(--ts-ease-spring);
+}
+.throwable-selector__item:active .throwable-selector__icon--img .throwable-img {
+  transform: scale(0.92);
+}
+
+/* Sports tab accent (new category, replaces the retired "expressions" tab) */
+.category-icon--sports {
+  color: #66bb6a;
+}
+
+/* =================================================================================
+   2026-08-20 v5 -- PREMIUM SELECTOR PASS
+   Category-tinted tabs and tiles, staggered tile entrance, VIP shimmer.
+   The tabs and grid carry data-cat, set from the active category in TSX.
+   ================================================================================= */
+
+:root {
+  --tsc-reactions: #ffd93d;
+  --tsc-throws: #ff7043;
+  --tsc-sports: #66bb6a;
+  --tsc-cheers: #4dd0e1;
+  --tsc-premium: #b388ff;
+}
+
+/* Tabs: each category wears its accent when active */
+.throwable-selector__tab[data-cat='reactions'].throwable-selector__tab--active {
+  color: var(--tsc-reactions);
+  box-shadow: inset 0 -2px 0 var(--tsc-reactions);
+}
+.throwable-selector__tab[data-cat='throws'].throwable-selector__tab--active {
+  color: var(--tsc-throws);
+  box-shadow: inset 0 -2px 0 var(--tsc-throws);
+}
+.throwable-selector__tab[data-cat='sports'].throwable-selector__tab--active {
+  color: var(--tsc-sports);
+  box-shadow: inset 0 -2px 0 var(--tsc-sports);
+}
+.throwable-selector__tab[data-cat='cheers'].throwable-selector__tab--active {
+  color: var(--tsc-cheers);
+  box-shadow: inset 0 -2px 0 var(--tsc-cheers);
+}
+.throwable-selector__tab[data-cat='premium'].throwable-selector__tab--active {
+  color: var(--tsc-premium);
+  box-shadow: inset 0 -2px 0 var(--tsc-premium);
+}
+
+/* Tiles: staggered pop-in entrance whenever the category changes */
+@keyframes ts-tile-pop {
+  0% {
+    opacity: 0;
+    scale: 0.6;
+    translate: 0 8px;
+  }
+  70% {
+    opacity: 1;
+    scale: 1.06;
+  }
+  100% {
+    opacity: 1;
+    scale: 1;
+    translate: 0 0;
+  }
+}
+
+.throwable-selector__grid .throwable-selector__item {
+  animation: ts-tile-pop 260ms var(--ts-ease-overshoot) both;
+}
+
+.throwable-selector__grid .throwable-selector__item:nth-child(1) {
+  animation-delay: 0ms;
+}
+.throwable-selector__grid .throwable-selector__item:nth-child(2) {
+  animation-delay: 22ms;
+}
+.throwable-selector__grid .throwable-selector__item:nth-child(3) {
+  animation-delay: 44ms;
+}
+.throwable-selector__grid .throwable-selector__item:nth-child(4) {
+  animation-delay: 66ms;
+}
+.throwable-selector__grid .throwable-selector__item:nth-child(5) {
+  animation-delay: 88ms;
+}
+.throwable-selector__grid .throwable-selector__item:nth-child(6) {
+  animation-delay: 110ms;
+}
+.throwable-selector__grid .throwable-selector__item:nth-child(7) {
+  animation-delay: 132ms;
+}
+.throwable-selector__grid .throwable-selector__item:nth-child(8) {
+  animation-delay: 154ms;
+}
+.throwable-selector__grid .throwable-selector__item:nth-child(9) {
+  animation-delay: 176ms;
+}
+.throwable-selector__grid .throwable-selector__item:nth-child(10) {
+  animation-delay: 198ms;
+}
+.throwable-selector__grid .throwable-selector__item:nth-child(11) {
+  animation-delay: 220ms;
+}
+.throwable-selector__grid .throwable-selector__item:nth-child(12) {
+  animation-delay: 242ms;
+}
+.throwable-selector__grid .throwable-selector__item:nth-child(13) {
+  animation-delay: 264ms;
+}
+.throwable-selector__grid .throwable-selector__item:nth-child(14) {
+  animation-delay: 286ms;
+}
+
+/* Tile rings tinted by the active category */
+.throwable-selector__grid[data-cat='reactions'] .throwable-selector__icon--img {
+  box-shadow: inset 0 0 0 1px rgba(255, 217, 61, 0.22);
+}
+.throwable-selector__grid[data-cat='throws'] .throwable-selector__icon--img {
+  box-shadow: inset 0 0 0 1px rgba(255, 112, 67, 0.25);
+}
+.throwable-selector__grid[data-cat='sports'] .throwable-selector__icon--img {
+  box-shadow: inset 0 0 0 1px rgba(102, 187, 106, 0.25);
+}
+.throwable-selector__grid[data-cat='cheers'] .throwable-selector__icon--img {
+  box-shadow: inset 0 0 0 1px rgba(77, 208, 225, 0.25);
+}
+.throwable-selector__grid[data-cat='premium'] .throwable-selector__icon--img {
+  box-shadow:
+    inset 0 0 0 1px rgba(179, 136, 255, 0.4),
+    0 0 8px rgba(179, 136, 255, 0.18);
+}
+
+/* VIP tiles get a slow shimmer sweep across the glass */
+@keyframes ts-vip-shimmer {
+  0% {
+    transform: translateX(-140%) rotate(18deg);
+  }
+  100% {
+    transform: translateX(240%) rotate(18deg);
+  }
+}
+
+.throwable-selector__grid[data-cat='premium'] .throwable-selector__icon--img {
+  position: relative;
+}
+.throwable-selector__grid[data-cat='premium'] .throwable-selector__icon--img::after {
+  content: '';
+  position: absolute;
+  top: -20%;
+  left: 0;
+  width: 40%;
+  height: 140%;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.16) 50%,
+    transparent 100%
+  );
+  animation: ts-vip-shimmer 2.6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .throwable-selector__grid .throwable-selector__item {
+    animation: none;
+  }
+  .throwable-selector__grid[data-cat='premium'] .throwable-selector__icon--img::after {
+    display: none;
+  }
+}
+
+/* =================================================================================
+   2026-08-21 — Dan's panel pass
+   "too small, doesn't show all the categories at once, VIP should be first,
+    blue instead of yellow with a grey background, and a quick link to buy
+    more throwables with diamonds."
+   ================================================================================= */
+
+/* All five tabs, always, on one row. A flex row let the last tab clip once the
+   labels grew; five equal columns cannot. */
+.throwable-selector__tabs {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 2px;
+}
+
+.throwable-selector__tab {
+  padding: 9px 2px;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Category accents restated in the blue palette. VIP keeps a violet so the
+   paid tier still reads as special next to four blues. */
+.throwable-selector__tab[data-cat='premium'].throwable-selector__tab--active {
+  color: #b79dff;
+  box-shadow: inset 0 -2px 0 #b79dff;
+}
+.throwable-selector__tab[data-cat='reactions'].throwable-selector__tab--active,
+.throwable-selector__tab[data-cat='throws'].throwable-selector__tab--active,
+.throwable-selector__tab[data-cat='sports'].throwable-selector__tab--active,
+.throwable-selector__tab[data-cat='cheers'].throwable-selector__tab--active {
+  color: var(--ts-blue);
+  box-shadow: inset 0 -2px 0 var(--ts-blue);
+}
+
+/* The grid gets more room now that the panel is wider — 5 across still, but
+   the taller max-height means VIP's 14 items need one scroll instead of two. */
+.throwable-selector__grid {
+  max-height: 268px;
+}
+
+/* Tile rings follow the new palette. */
+.throwable-selector__grid[data-cat='premium'] .throwable-selector__icon--img {
+  box-shadow:
+    inset 0 0 0 1px rgba(183, 157, 255, 0.4),
+    0 0 8px rgba(183, 157, 255, 0.18);
+}
+.throwable-selector__grid[data-cat='reactions'] .throwable-selector__icon--img,
+.throwable-selector__grid[data-cat='throws'] .throwable-selector__icon--img,
+.throwable-selector__grid[data-cat='sports'] .throwable-selector__icon--img,
+.throwable-selector__grid[data-cat='cheers'] .throwable-selector__icon--img {
+  box-shadow: inset 0 0 0 1px rgba(76, 157, 255, 0.22);
+}
+
+/* ── Buy more throwables ─────────────────────────────────────────────────── */
+
+.throwable-selector__buy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 14px;
+  border: none;
+  border-top: 1px solid var(--ts-border-subtle);
+  background: rgba(76, 157, 255, 0.1);
+  color: var(--ts-blue-light);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 0.18s var(--ts-ease-smooth),
+    color 0.18s var(--ts-ease-smooth);
+}
+
+.throwable-selector__buy:focus-visible {
+  background: rgba(76, 157, 255, 0.18);
+  color: #ffffff;
+}
+
+.throwable-selector__buy:active {
+  background: rgba(76, 157, 255, 0.26);
+}
+
+.throwable-selector__buy-icon {
+  color: #6fd3ff;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.throwable-selector__buy-label {
+  flex: 1;
+  text-align: left;
+}
+
+.throwable-selector__buy-chevron {
+  opacity: 0.7;
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* =================================================================================
+   2026-08-21 — Dan: "3 emojis across so they appear larger"
+   Five 44px tiles made every item a thumbnail you had to squint at. Three
+   across on a 360px panel gives each tile ~96px, so the 3D renders are
+   actually readable — which is the whole point of having 3D renders.
+   ================================================================================= */
+
+.throwable-selector__grid {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  padding: 14px 14px 18px;
+  /* Taller too: three across means more rows, and VIP holds 14 items. */
+  max-height: 340px;
+}
+
+.throwable-selector__icon--img {
+  width: 92px;
+  height: 92px;
+  border-radius: 14px;
+}
+
+.throwable-selector__icon--img .throwable-img {
+  width: 84px;
+  height: 84px;
+}
+
+.throwable-selector__item {
+  gap: 6px;
+}
+
+/* The name can breathe now that the tile is wide. */
+.throwable-selector__name {
+  font-size: 11px;
+  max-width: 96px;
+}
+
+/* Stagger runs down the rows rather than across five columns. */
+.throwable-selector__grid .throwable-selector__item:nth-child(n + 15) {
+  animation-delay: 300ms;
+}
+
+/* Narrow phones: keep three across but let the tiles shrink with the panel
+   instead of overflowing it. */
+@media (max-width: 400px) {
+  .throwable-selector__icon--img {
+    width: 100%;
+    max-width: 92px;
+    aspect-ratio: 1;
+    height: auto;
+  }
+}

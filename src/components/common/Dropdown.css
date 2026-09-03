@@ -1,0 +1,115 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * 📋 DROPDOWN — CSS Styles
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * DROPDOWN MENU
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.dropdown-menu {
+  position: fixed;
+  z-index: 9998;
+  min-width: 180px;
+  max-width: 320px;
+  padding: 6px 0;
+  background: linear-gradient(180deg, rgba(30, 30, 50, 0.95) 0%, rgba(20, 20, 31, 0.98) 100%);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  box-shadow:
+    0 10px 40px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  animation: dropdownPop 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  transform-origin: top left;
+}
+
+@keyframes dropdownPop {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Position adjustments */
+.dropdown-bottom-right {
+  transform: translateX(-100%);
+}
+
+.dropdown-top-left {
+  transform: translateY(-100%);
+}
+
+.dropdown-top-right {
+  transform: translate(-100%, -100%);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * DROPDOWN ITEM
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.dropdown-item:active:not(.dropdown-item-disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.dropdown-item-icon {
+  font-size: 1rem;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.dropdown-item-label {
+  flex: 1;
+}
+
+.dropdown-item-danger {
+  color: #ef4444;
+}
+
+.dropdown-item-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * DROPDOWN DIVIDER
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.dropdown-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 6px 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * DROPDOWN LABEL
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.dropdown-label {
+  padding: 8px 14px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}

@@ -1,0 +1,298 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * TABLE HUD — 4-Corner Overlay Layout
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* ═══ THE BOTTOM-EDGE LINE, DEFINED ONCE (Dan 2026-08-25 round 2, item 6) ═══
+   Two sides of the screen have to rest on the same horizontal line: the
+   bottom-left HUD stack (`.table-hud__lower`, below) and the chat button
+   (`.chat-collapsed` in TableChat.css). Until today each side carried its own
+   copy of the expression and a note begging the next person to keep them
+   byte-identical. Four copies existed. That is not a rule, it is a wish — so
+   the expression is now a single custom property and both sides read it.
+
+   It is declared on `.table-page` rather than on `.table-hud` because chat is
+   NOT inside the HUD: `<TableChat>` is a sibling further down TablePage's tree
+   (TablePage.tsx ~13658). `.table-page` is the nearest common ancestor, and it
+   is also the element that declares `--sp-action-reserve`, so the input and the
+   derived value live together.
+
+   --sp-action-reserve is how much of the screen the bottom chrome is ENTITLED
+   to, declared statically on `.table-page` (TablePage.css) — not how tall it
+   happens to be this instant. It already contains the wrapper's
+   safe-area-inset-bottom, so do NOT add env() on top of it here; that is what
+   the four old copies did and what made the two icons float a home-indicator's
+   worth too high on a notched phone. The fallback restates the same sum from
+   its parts for a stylesheet-order accident, nothing more.
+
+   IT USED TO BE A LIVE MEASUREMENT (`--sp-action-h`, a ResizeObserver on
+   `.action-panel-wrapper`) AND THAT IS WHY THE HUD USED TO WALK UP AND DOWN THE
+   SCREEN. The wrapper collapses to 1px whenever the hero has no action, so both
+   icons dropped ~90px to the bottom edge between hands and sprang back on the
+   hero's turn. Same root cause as the felt zooming (Dan 2026-08-27) and fixed
+   the same way. Do not point this back at a measurement.
+
+   The 8px is the visual breathing gap between the bottom chrome and the two
+   icons resting on it. */
+.table-page {
+  --sp-hud-line: calc(
+    var(
+        --sp-action-reserve,
+        calc(var(--sp-bottom-row-h, 52px) + env(safe-area-inset-bottom, 0px))
+      ) +
+      8px
+  );
+}
+
+.table-hud {
+  /* ─── HUD TILE LANGUAGE (Dan 2026-08-25 round 2, item 6c) ────────────────
+     "the button just needs to be simple like the attached image ... something
+     similar" — a small, flat, dark rounded square with one monochrome glyph,
+     no colour, no badge, no border.
+
+     The time-bank control and the previous-hand card are the two chips in the
+     bottom-left stack and Dan asked for them to "read as a set", so the three
+     values that make them a set are named here, once, and consumed by
+     TimebankCounter.css and PreviousHandCard.css. Declared on `.table-hud`
+     because those are the only two places they are ever rendered; both consume
+     them through var() fallbacks so neither component breaks if it is ever
+     mounted outside the HUD. */
+  --sp-hud-tile-bg: rgba(10, 12, 18, 0.72);
+  /* Dan 2026-08-28: "previous hand and rabbit hunt buttons need to be
+     increased in size to be the same size as the chat button." The chat
+     button is 44px / radius 12 (TableChat.css) at every breakpoint, so the
+     tile token — which sizes prev-hand, rabbit hunt AND the time-bank tile
+     together by design — moves to match. The 44px touch-target pseudos on
+     those widgets are now simply coincident with the painted tile.
+     --sp-hero-clear budget: 44 + 8 = 52, still under the 68px reserve. */
+  --sp-hud-tile-radius: 12px;
+  --sp-hud-tile-size: 44px;
+  --sp-hud-tile-fg: rgba(255, 255, 255, 0.86);
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  /* The bottom inset is deliberately 0 here (Dan 2026-08-25, item 6). It used
+     to be `env(safe-area-inset-bottom, 8px)` while the reserve below counted
+     the same strip again — so on a notched phone the home-indicator was counted
+     TWICE and the bottom-left stack floated 34px higher than the chat button.
+     The strip is now counted exactly once, inside the --sp-action-reserve that
+     --sp-hud-line is built from (see the top of this file). */
+  padding: env(safe-area-inset-top, 8px) env(safe-area-inset-right, 8px) 0
+    env(safe-area-inset-left, 8px);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE CORNERS DO NOT CATCH TAPS — THEIR CONTENTS DO (fixed 2026-08-26)
+   ═══════════════════════════════════════════════════════════════════════════
+
+   These used to be `pointer-events: auto` on the corner DIVS. That was
+   harmless while the upper-right corner held one 44px icon, and it stopped
+   being harmless the moment the tournament stats bar moved in beside it
+   (Dan 2026-08-25, item 4: "tournaments are still missing the stats bar in
+   the right corner").
+
+   `.hud-ur-column` now holds TournamentHUD — an unbreakable inline-flex row
+   of five segments, roughly 300-340px wide. At <=768px the corner becomes
+   `position: fixed` and shrink-wraps to that width. The VISUAL shrink comes
+   from `transform: scale(0.74)` on the CHILD, so the corner's own layout box
+   is never reduced: on a 375px phone it stayed a ~330px-wide transparent slab
+   sitting at z-index 100 over seats at z-index 10, swallowing every tap aimed
+   at the top-right seats. Invisible, and only on tournament tables, which is
+   the hardest kind of bug to report.
+
+   Mobile-first is a house rule (Dan, working rule 6), so the fix is the one
+   that cannot regress: the corner is transparent to input like the layer it
+   lives in, and only its actual children accept it. A wide empty corner then
+   costs nothing, whatever ends up inside it next. */
+.table-hud__corner,
+.table-hud__center-top {
+  pointer-events: none;
+}
+
+/* Direct children accept input again — but `.hud-ur-column` is itself only a
+   layout wrapper, and it is as WIDE as its widest child (the tournament bar)
+   while its short child (the 44px stats icon) sits at `align-items: flex-end`.
+   So the column carries the same empty slab the corner used to, and it has to
+   be transparent for the same reason. Its two real children take the input. */
+.table-hud__corner > *,
+.table-hud__center-top > * {
+  pointer-events: auto;
+}
+
+.hud-ur-column {
+  pointer-events: none;
+}
+
+.hud-ur-column > * {
+  pointer-events: auto;
+}
+
+/* ── Upper Row ── */
+.table-hud__upper {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 10px 8px;
+  gap: 8px;
+}
+
+.table-hud__center-top {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 0;
+}
+
+/* ── Lower Row ── */
+.table-hud__lower {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  /* Deliberately NOT a `padding` shorthand: the bottom is owned by
+     --sp-hud-line below and a shorthand in this rule (or in the breakpoint
+     further down) silently resets it. */
+  padding-top: 6px;
+  padding-left: 4px;
+  padding-right: 4px;
+  /* Dan 2026-08-22 item 3: the clock + previous-hand card sit LOW — resting
+     just on top of the action panel, where the background meets the black
+     action box.
+     Dan 2026-08-23: it was a flat 112px, and the comment here used to end
+     "clears the collapsed 3-button action bar" - which is the bug stated as a
+     feature. Open the raise slider and the panel is taller than that, so the
+     previous-hand card was covered by it. Reported as the buttons being
+     missing; they were never removed. --sp-action-reserve is the height the bar
+     is entitled to at this breakpoint, declared in TablePage.css — big enough
+     for the open slider, and constant, which the measured height it replaced on
+     2026-08-27 was not.
+
+     ═══ THE BOTTOM-EDGE LINE (Dan 2026-08-25, item 6) ═══
+     "The time bank button needs to be lower, same level as the chat button.
+     The bottoms of both icons should be equal at the bottom."
+
+     --sp-hud-line IS that line. It is defined once at the top of this file and
+     `.chat-collapsed` (TableChat.css) resolves its `bottom` from the same
+     property, so the two bottom edges are the same number by construction
+     rather than by two people agreeing on a pixel. They were not agreeing: chat
+     sat on a hardcoded 112px while this side read the measurement, and the
+     safe-area inset was counted twice on this side (see .table-hud above).
+
+     Because this row is `align-items: flex-end`, the bottom-left corner's
+     bottom edge sits ON this line — whichever widget is last in the stack rests
+     on it. Dan 2026-08-25 round 2: "THE PREVIOUS HAND IS SUPPOSED TO BE ON THE
+     BOTTOM, WITH THE TIME BANK ON TOP", so the previous-hand card is the one on
+     the line and the time-bank tile sits above it. See TimebankCounter.css for
+     why the `order: 1` that inverted them is gone. */
+  padding-bottom: var(--sp-hud-line);
+  gap: 8px;
+}
+
+/* ── Corner containers ── */
+.table-hud__corner {
+  flex-shrink: 0;
+}
+
+.table-hud__corner--ul {
+  z-index: 101;
+}
+
+.table-hud__corner--ur {
+  z-index: 101;
+}
+
+.table-hud__corner--bl {
+  z-index: 99;
+}
+
+.table-hud__corner--br {
+  z-index: 99;
+}
+
+/* ── Upper-right stack (Dan 2026-08-25) ──
+   A tournament table puts TWO things in this corner: the level/blinds/countdown
+   bar and the player's own stats bar. They stack, right-aligned, and the
+   tournament bar is the wider of the two so the column is sized by it. */
+.hud-ur-column {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+/* TournamentHUD is a single unbreakable row of segments; scaling from the
+   top-right keeps it hugging the corner instead of pushing the felt. The
+   origin lives with the transform it belongs to (see the breakpoints below). */
+.hud-ur-column > .tournament-hud-bar {
+  transform-origin: top right;
+}
+
+/* SCALE THE BAR, NOT THE COLUMN (fixed 2026-08-26).
+   These transforms used to sit on `.hud-ur-column`, which also holds the stats
+   icon. `MiniStatsCard.css` pins that icon at 44x44 deliberately, for touch —
+   and a transformed hit area follows the transform, so scale(0.74) quietly made
+   it ~33x33, under the 44px minimum, on the very control Dan asked to be
+   reachable on the table screen. Only the tournament bar needs to shrink. */
+@media (max-width: 900px) {
+  .hud-ur-column > .tournament-hud-bar {
+    transform: scale(0.88);
+  }
+}
+
+@media (max-width: 600px) {
+  .hud-ur-column > .tournament-hud-bar {
+    transform: scale(0.74);
+  }
+
+  .hud-ur-column {
+    gap: 4px;
+  }
+}
+
+/* ── Responsive ── */
+@media (max-width: 480px) {
+  .table-hud__upper {
+    padding: 4px 2px;
+  }
+
+  .table-hud__lower {
+    /* Longhand on purpose. This block used to restate THE BOTTOM-EDGE LINE
+       underneath a `padding` shorthand — a second copy of the expression whose
+       only job was to undo the shorthand that had just erased the first one.
+       Both are gone: the shorthand no longer touches the bottom, so the line is
+       inherited from the base rule and a breakpoint can no longer disagree with
+       it. That disagreement is exactly how the time-bank chip and the chat
+       button drifted apart on phones, which is where it was reported. */
+    padding-top: 4px;
+    padding-left: 2px;
+    padding-right: 2px;
+  }
+}
+
+/* Dan 2026-08-24: "the STATS button is supposed to be ON the table screen,
+   not in the header." On phones the upper-right HUD corner (MiniStatsCard)
+   drops out of the header band onto the felt's upper right, under the tab
+   bar + BBJ strip. Desktop keeps the corner where it was. */
+/* ── THE LEVEL BAR LIVES IN THE UPPER RIGHT, BELOW THE TOP CHROME ─────────────
+   Dan 2026-08-30: "DURING TOURNAMENTS, THE 'LEVEL' SHOULD BE IN THE UPPER
+   RIGHT CORNER OF THE LIVE TABLE PAGE, NOT OVERLAPPING THE ACTION BAR AREA
+   WITH THE + TABLE ADD BUTTON. BUT BELOW IT, LEAVING ENOUGH ROOM FOR THE
+   ACTION TICKER TO DISPLAY WITHOUT CUTTING THIS OFF."
+
+   So the corner is FIXED, at every width, on the right edge, and its top is
+   the sum of everything that may legitimately stand above it:
+     - the safe-area inset,
+     - the action ticker's live height (--mtt-ticker-h, published on <html> by
+       TournamentStartingTicker; 0px when no ticker is up), and
+     - 54px = the 42px tab bar + 12px clearance (the 2026-08-25 derivation).
+   The 2026-08-26 left-edge placement this replaces is superseded by the
+   instruction above. */
+.table-hud__corner--ur {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + var(--mtt-ticker-h, 0px) + 54px);
+  right: 6px;
+  left: auto;
+}

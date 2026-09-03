@@ -1,0 +1,1203 @@
+/**
+ * =================================================================================
+ *  POT DISPLAY -- World-Class Premium Styles
+ * =================================================================================
+ *
+ *  The pot is the emotional heartbeat of every poker hand. Every chip that enters
+ *  it represents a decision, a risk, a story. This CSS makes that tangible.
+ *
+ *  Architecture:
+ *  ---------------------------------------------------------------------------------
+ *  SECTION 1 — Design Tokens (custom properties for physics, timing, color)
+ *  SECTION 2 — Container Layout (absolute positioning, z-index hierarchy)
+ *  SECTIONS 3 and 4 — deleted 2026-08-25 with the chip renderer they styled;
+ *                     the pot's chips are the pile below Section 6
+ *  SECTION 5 — Main Pot Container (glassmorphism, animated border, glass shine sweep)
+ *  SECTION 6 — Pot Amount Text (golden text with animated shimmer on update)
+ *  SECTION 7 — Side Pots (staggered spring entrance, individual glow)
+ *  SECTION 8 — Total Display (emerald accent, subtle pulse)
+ *  SECTION 9 — Increase Indicator (float-up with golden trail)
+ *  SECTION 10 — Runtime Animation Classes (bump, pulse, golden glow, award, collect)
+ *  SECTION 11 — Responsive (768, 640, 480, 380px breakpoints)
+ *  SECTION 12 — Reduced Motion (all animations disabled, instant states)
+ *  ---------------------------------------------------------------------------------
+ *
+ *  Spring Physics Curves:
+ *    --pd-ease-spring: standard overshoot for entrances
+ *    --pd-ease-snap: fast snap with slight rebound
+ *    --pd-ease-bounce: big overshoot for dramatic moments (bump, award)
+ *    --pd-ease-settle: gentle deceleration for float/fade
+ *    --pd-ease-elastic: pronounced wobble for chip impacts
+ *
+ *  Color Palette:
+ *    Gold: #ffd700 (pot amount, border glow, shimmer)
+ *    Royal Blue: #4169e5 (side pots)
+ *    Emerald: #3fb950 (total, increase badge)
+ *    Felt contact: rgba(0,0,0,0.7) (chip landing shadow)
+ */
+
+/* =================================================================================
+   SECTION 1 — DESIGN TOKENS
+   ================================================================================= */
+
+:root {
+  /* Spring physics easing curves */
+  --pd-ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --pd-ease-snap: cubic-bezier(0.25, 1.2, 0.5, 1);
+  --pd-ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --pd-ease-settle: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --pd-ease-elastic: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+
+  /* Timing tokens */
+  --pd-side-pot-stagger: 80ms;
+  --pd-bump-duration: 0.6s;
+  --pd-pulse-duration: 0.5s;
+  --pd-increase-duration: 1.2s;
+  --pd-award-duration: 0.65s;
+  --pd-collect-duration: 0.5s;
+  --pd-glow-period: 2s;
+  --pd-shimmer-period: 3s;
+
+  /* Chip sizing lives with the chips.
+     Dan 2026-08-24: "all chips should be the same size." The pile below reads
+     --cp-chip-size, which the table page derives from the table's own measured
+     width (TableVisualHotfix.css section 4), so a chip in the pot is the same
+     disc as the chip that just swept into it. The --pd-chip-* tokens that used
+     to sit here belonged to a chip renderer this file stopped drawing on
+     2026-08-23; they are deleted with it. */
+
+  /* Gold palette */
+  --pd-gold: #ffd700;
+  --pd-gold-dim: rgba(255, 215, 0, 0.2);
+  --pd-gold-mid: rgba(255, 215, 0, 0.4);
+  --pd-gold-bright: rgba(255, 215, 0, 0.6);
+  --pd-gold-glow: rgba(255, 215, 0, 0.15);
+
+  /* Side pot palette */
+  --pd-blue: #4169e5;
+  --pd-blue-bg: rgba(65, 105, 225, 0.15);
+  --pd-blue-border: rgba(65, 105, 225, 0.35);
+  --pd-blue-glow: rgba(65, 105, 225, 0.12);
+
+  /* Emerald palette */
+  --pd-emerald: #3fb950;
+  --pd-emerald-bg: rgba(63, 185, 80, 0.12);
+  --pd-emerald-border: rgba(63, 185, 80, 0.3);
+}
+
+/* =================================================================================
+   SECTION 2 — CONTAINER LAYOUT
+   ================================================================================= */
+
+.pot-display {
+  position: absolute;
+  top: 38%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  z-index: var(--z-pot, 20);
+  /* Ensure pot doesn't intercept table events outside its visual bounds */
+  pointer-events: none;
+}
+
+/* Re-enable pointer events on interactive children */
+.pot-display__main,
+.pot-display__side-pot,
+.pot-display__total {
+  pointer-events: auto;
+}
+
+/* =================================================================================
+   SECTIONS 3 and 4 — DELETED 2026-08-25
+   =================================================================================
+   `.pot-display__chips`, `__chip-stack`, `__chip`, `__chip-face` and the
+   `pdChipDrop` keyframe that drove them. PotDisplay stopped rendering any of
+   those classes on 2026-08-23, when the pot's three identical teal circles were
+   replaced by a real coloured-up pile - Dan: "THE POT SHOULD SHOW THE AMOUNT OF
+   CHIPS NECESSARY TO EQUAL THE TOTAL CHIPS IN THE POT... ALWAYS COLORING UP TO
+   USE THE FEWEST AMOUNT OF CHIPS." The markup went; 100 lines of CSS for it did
+   not, and four !important overrides of it survived in TableVisualHotfix.css
+   as well, so a person reading either file learned a chip size that nothing on
+   the screen has used for two days.
+
+   The pot's chips are `.pot-display__pile-*` further down. They are sized by
+   --cp-chip-size, the one chip token, which the table page derives from the
+   table's own measured width. Do not add a second chip renderer here.
+   ================================================================================= */
+
+/* =================================================================================
+   SECTION 5 — MAIN POT CONTAINER
+   ================================================================================= */
+
+/*
+ * The pot container is the visual anchor of the table. It uses:
+ *   - 3-stop gradient background with deep purple undertone
+ *   - Glassmorphism (backdrop-filter blur + saturate)
+ *   - 5-layer box-shadow: drop, ambient glow, pixel border, inner top highlight, inner bottom depth
+ *   - Animated glass shine sweep (::before)
+ *   - Gold border that intensifies on interaction
+ */
+
+/* Dan 2026-08-20 (PokerBros-parity redesign): the pot is a THIN PILL — a
+   single horizontal row, "POT" label + amount, dark translucent capsule.
+   The old tall glassmorphism box (column layout, big padding, gold glow
+   wall) read as a billboard parked over the felt. */
+.pot-display__main {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  background: rgba(8, 10, 18, 0.72);
+  backdrop-filter: blur(10px) saturate(1.2);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  border-radius: 999px;
+  padding: 3px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 2px 10px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition:
+    border-color 0.25s ease,
+    box-shadow 0.3s ease,
+    transform 0.25s var(--pd-ease-spring);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Glass shine sweep — animated light passing across the surface */
+.pot-display__main::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.04) 40%,
+    rgba(255, 215, 0, 0.03) 50%,
+    rgba(255, 255, 255, 0.04) 60%,
+    transparent 100%
+  );
+  pointer-events: none;
+  animation: pdGlassSweep 8s ease-in-out infinite;
+  animation-delay: 2s;
+}
+
+@keyframes pdGlassSweep {
+  0%,
+  85%,
+  100% {
+    left: -100%;
+    opacity: 0;
+  }
+  5% {
+    opacity: 1;
+  }
+  40% {
+    opacity: 1;
+  }
+  45% {
+    left: 200%;
+    opacity: 0;
+  }
+}
+
+/* Ambient edge glow — subtle gold ring around pot */
+.pot-display__main::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: radial-gradient(ellipse at 50% 0%, rgba(255, 215, 0, 0.06) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Clickable state (toggle chips/BB) */
+.pot-display__main--clickable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.pot-display__main--clickable:active {
+  transform: scale(0.98);
+  transition-duration: 0.1s;
+}
+
+/* Animating state (pot is actively changing) */
+.pot-display__main--animating {
+  transform: scale(1.05);
+  border-color: var(--pd-gold-bright);
+  box-shadow:
+    0 6px 24px rgba(0, 0, 0, 0.45),
+    0 0 50px rgba(255, 215, 0, 0.3),
+    0 0 80px rgba(255, 215, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+}
+
+/* =================================================================================
+   SECTION 6 — POT AMOUNT TEXT
+   ================================================================================= */
+
+.pot-display__label {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #f5a623; /* PokerBros-style amber POT label */
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.pot-display__amount {
+  font-size: 0.95rem;
+  font-weight: var(--weight-extrabold, 800);
+  color: #ffffff;
+  font-family: 'JetBrains Mono', monospace;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+  transition:
+    transform 0.3s var(--pd-ease-bounce),
+    color 0.2s ease;
+  letter-spacing: -0.02em;
+  position: relative;
+}
+
+/* ── Current-street pill (Dan 2026-08-20) ──
+   Sits below the POT pill while a street is being bet: tiny chip stack icon
+   + the street's accumulating total. Disappears when the chips sweep in. */
+.pot-display__street {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  background: rgba(8, 10, 18, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  padding: 2px 12px;
+  animation: pdTotalFadeIn 0.25s var(--pd-ease-settle) backwards;
+}
+
+.pot-display__street-amount {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #ffffff;
+  font-family: 'JetBrains Mono', monospace;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+/* ── The pot, drawn as real chips (Dan 2026-08-23) ──────────────────────────
+   Replaces the old .pot-display__mini-chip* trio, which drew three identical
+   teal circles whatever the pot held. Dan: "THE POT SHOULD SHOW THE AMOUNT OF
+   CHIPS NECESSARY TO EQUAL THE TOTAL CHIPS IN THE POT... ALWAYS COLORING UP TO
+   USE THE FEWEST AMOUNT OF CHIPS." Colours and counts come from
+   src/lib/chipDenominations.ts via PotChipPile.
+
+   NOTE FOR ANYONE EDITING THIS BLOCK: do not move it into `.pot-display`'s
+   column flow, and do not touch `.pot-display` or `.pot-display__main`.
+   tests/e2e/pot-above-chips.spec.ts asserts the POT pill's box is identical to
+   a checked-in pre-fix stylesheet at four viewport widths, and it only stays
+   that way while this pile is out of flow. */
+
+/* ── ONE TOWER, HIGHEST DENOMINATION ON THE BOTTOM ────────────────────────
+   Dan 2026-08-24: "chips entering the pot should be stacked and slightly
+   offset so you can see them all, (highest denomination on the bottom) but not
+   right next to each other. And all chips should be the same size."
+
+   Was a horizontal row of per-denomination columns, at its own 16px chip size
+   while the seat chips arriving from ChipPhysics were 26px. A bet therefore
+   visibly CHANGED SIZE as it swept into the pot it was joining. Both now read
+   --cp-chip-size from ChipPhysics.css, which is the single source for it.
+
+   column-reverse puts the first DOM child at the bottom, and visualChipStacks
+   returns groups highest-denomination first, so the ladder comes out of DOM
+   order for free. */
+.pot-display__pile {
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+/* Groups butt into each other with the same slice as the chips inside them, so
+   two denominations meet with no seam and the pile reads as one tower. */
+.pot-display__pile-stack + .pot-display__pile-stack {
+  margin-top: 0;
+}
+
+/* The collected pot: floats just below the POT pill, centred on it, and out of
+   flow so the pill itself does not move. */
+.pot-display__pile--pot {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 5px;
+  z-index: 1;
+}
+
+/* The live-bets pill: inline, one pill-height of room, so smaller chips. */
+/* The street tower stands BESIDE the pill rather than inside it. A pill is one
+   line tall and a tower of full-size chips is not, so leaving it in flow would
+   stretch the pill into a box. Out of flow it keeps the pill's shape and still
+   shows the street's chips at the one size every other chip on the felt uses.
+   It rises from the pill's left end, clear of the collected pot's own pile,
+   which is centred ABOVE the POT pill. */
+.pot-display__pile--street {
+  position: absolute;
+  right: calc(100% + 6px);
+  bottom: -1px;
+}
+
+.pot-display__pile-stack {
+  grid-area: 1 / 1;
+  display: grid;
+  place-items: center;
+  animation: pdPileIn 0.3s var(--pd-ease-spring) calc(var(--pile-group, 0) * 45ms) backwards;
+}
+
+@keyframes pdPileIn {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.7);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.pot-display__pile-chip {
+  /* Same token the seat chips use - see ChipPhysics.css. The slice is what
+     stays visible of each disc under the one above it, so the overlap is
+     derived and the two can never drift apart. */
+  width: var(--cp-chip-size, 24px);
+  height: var(--cp-chip-size, 24px);
+  grid-area: 1 / 1;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  /* Same two-tone treatment as the seat chips: the darker rim is what makes a
+     16px disc read as a clay chip rather than a coloured dot. */
+  background:
+    radial-gradient(
+      circle at 50% 50%,
+      var(--pile-chip-color, #f2f3f5) 0%,
+      var(--pile-chip-color, #f2f3f5) 60%,
+      var(--pile-chip-accent, #b3b7c0) 64%,
+      var(--pile-chip-accent, #b3b7c0) 100%
+    ),
+    var(--pile-chip-color, #f2f3f5);
+  box-shadow:
+    0 1.5px 0 rgba(0, 0, 0, 0.45),
+    0 2px 5px rgba(0, 0, 0, 0.5),
+    inset 0 2px 3px rgba(255, 255, 255, 0.28),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.25);
+}
+
+/* .pot-display__pile-chip:first-of-type { margin-top: 0; } */
+
+/* A sub-1 residue that no chip on Dan's ladder can represent (a 0.5 blind).
+   Drawn as a sliver, never as a full white 1 chip — see chipDenominations.ts. */
+.pot-display__pile-chip--partial {
+  /* A sliver of a chip, so it has to stay a fraction OF that chip: 0.375 is the
+     9px this used to hardcode against the 24px disc it was written beside. Now
+     that the disc follows the table (TableVisualHotfix.css section 4), a fixed
+     9px would have been two thirds of a chip on a phone and a third on a
+     desktop - the same value reading as two different things. */
+  height: calc(var(--cp-chip-size, 24px) * 0.375);
+  opacity: 0.75;
+  border-style: dashed;
+}
+
+/* True count for a stack clamped to fit. The pile is clamped; the value is not. */
+.pot-display__pile-multi {
+  position: absolute;
+  bottom: 2px;
+  left: 100%;
+  margin-left: 3px;
+  font-size: 0.55rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--pd-gold, #ffd700);
+  font-family: 'JetBrains Mono', monospace;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  white-space: nowrap;
+}
+
+/* No per-place chip size any more. Dan 2026-08-24: "all chips should be the
+   same size" - the street chips, the collected pot's chips and the chips in
+   front of every seat all read --cp-chip-size. */
+
+.pot-display__pile--street .pot-display__pile-multi {
+  font-size: 0.45rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pot-display__pile-stack {
+    animation: none;
+  }
+}
+
+/*
+ * Gold shimmer sweep on pot amount text.
+ * Uses a wide linear-gradient clipped to the text via background-clip.
+ * The gradient slides across on each pot update via the --updated class.
+ */
+.pot-display--updated .pot-display__amount {
+  animation: pdAmountBump 0.5s var(--pd-ease-snap);
+}
+
+@keyframes pdAmountBump {
+  0% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  15% {
+    transform: scale(1.12);
+    filter: brightness(1.4);
+    color: #fff5cc;
+  }
+  35% {
+    transform: scale(0.96);
+    filter: brightness(1.15);
+  }
+  55% {
+    transform: scale(1.04);
+    filter: brightness(1.05);
+    color: var(--pd-gold);
+  }
+  75% {
+    transform: scale(0.99);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+    color: var(--pd-gold);
+  }
+}
+
+/* Legacy compat class */
+.pot-area--updated .pot-amount {
+  animation: pdAmountBump 0.5s var(--pd-ease-snap);
+}
+
+/* =================================================================================
+   SECTION 7 — SIDE POTS
+   ================================================================================= */
+
+/*
+ * Side pots appear when players go all-in with different stack sizes.
+ * Each side pot slides in from below with a staggered delay using --side-pot-index
+ * set inline on the element (or via animationDelay in the component).
+ *
+ * Visual treatment: blue-tinted glassmorphism to distinguish from main pot's gold.
+ */
+
+.pot-display__side-pots {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.pot-display__side-pot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--pd-blue-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--pd-blue-border);
+  border-radius: 8px;
+  padding: 4px 12px;
+  animation: pdSidePotIn 0.4s var(--pd-ease-spring) backwards;
+  position: relative;
+  overflow: hidden;
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.3),
+    0 0 20px var(--pd-blue-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+/* Stagger each side pot entrance */
+.pot-display__side-pot:nth-child(1) {
+  animation-delay: 0ms;
+}
+.pot-display__side-pot:nth-child(2) {
+  animation-delay: 80ms;
+}
+.pot-display__side-pot:nth-child(3) {
+  animation-delay: 160ms;
+}
+.pot-display__side-pot:nth-child(4) {
+  animation-delay: 240ms;
+}
+.pot-display__side-pot:nth-child(5) {
+  animation-delay: 320ms;
+}
+
+/* Glass top edge on side pots */
+.pot-display__side-pot::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(100, 150, 255, 0.2), transparent);
+  pointer-events: none;
+}
+
+@keyframes pdSidePotIn {
+  0% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.7);
+    filter: blur(3px);
+  }
+  30% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  55% {
+    transform: translateY(-4px) scale(1.05);
+  }
+  72% {
+    transform: translateY(1.5px) scale(0.985);
+  }
+  88% {
+    transform: translateY(-0.5px) scale(1.005);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.pot-display__side-pot-label {
+  font-size: 0.5625rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.pot-display__side-pot-amount {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--ca-primary-light, #5b7fee);
+  font-family: 'JetBrains Mono', monospace;
+  text-shadow: 0 0 8px rgba(91, 127, 238, 0.3);
+}
+
+/* =================================================================================
+   SECTION 8 — TOTAL DISPLAY
+   ================================================================================= */
+
+.pot-display__total {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 4px 10px;
+  background: var(--pd-emerald-bg);
+  border: 1px solid var(--pd-emerald-border);
+  border-radius: 6px;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    0 0 16px rgba(63, 185, 80, 0.06);
+  animation: pdTotalFadeIn 0.35s var(--pd-ease-settle) backwards;
+  animation-delay: 0.2s;
+}
+
+@keyframes pdTotalFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.pot-display__total-label {
+  font-size: 0.5625rem;
+  font-weight: 600;
+  color: rgba(63, 185, 80, 0.8);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.pot-display__total-amount {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--pd-emerald);
+  font-family: 'JetBrains Mono', monospace;
+  text-shadow: 0 0 8px rgba(63, 185, 80, 0.3);
+}
+
+/* =================================================================================
+   SECTION 9 — INCREASE INDICATOR
+   ================================================================================= */
+
+/*
+ * When the pot increases, a green badge floats up from the pot showing "+$XXX".
+ * The animation has 6 phases:
+ *   0%   — Below pot, tiny, blurred (hidden)
+ *   12%  — Pops up with scale overshoot + brightness flash
+ *   30%  — Holds position briefly for readability
+ *   55%  — Begins floating upward, starts fading
+ *   80%  — Nearly gone, drifting up
+ *   100% — Invisible, above pot, blurred out
+ *
+ * A golden glow trail (::after) fades behind it during the float.
+ */
+
+.pot-display__increase {
+  position: absolute;
+  top: -20px;
+  right: -20px;
+  padding: 2px 8px;
+  background: linear-gradient(135deg, rgba(63, 185, 80, 0.95) 0%, rgba(63, 185, 80, 0.85) 100%);
+  color: #ffffff;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  animation: pdIncreaseFloat var(--pd-increase-duration) var(--pd-ease-settle) forwards;
+  box-shadow:
+    0 2px 8px rgba(63, 185, 80, 0.5),
+    0 0 16px rgba(63, 185, 80, 0.2);
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Glow trail behind the floating indicator */
+.pot-display__increase::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 20%;
+  right: 20%;
+  height: 8px;
+  background: radial-gradient(ellipse at center, rgba(63, 185, 80, 0.4) 0%, transparent 80%);
+  border-radius: 50%;
+  animation: pdTrailFade var(--pd-increase-duration) ease forwards;
+  pointer-events: none;
+}
+
+@keyframes pdIncreaseFloat {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.5);
+    filter: blur(3px);
+  }
+  12% {
+    opacity: 1;
+    transform: translateY(0) scale(1.18);
+    filter: blur(0);
+  }
+  22% {
+    transform: translateY(-2px) scale(1.02);
+  }
+  30% {
+    transform: translateY(-4px) scale(1);
+    opacity: 1;
+  }
+  55% {
+    transform: translateY(-18px) scale(0.95);
+    opacity: 0.7;
+  }
+  80% {
+    transform: translateY(-32px) scale(0.85);
+    opacity: 0.3;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-42px) scale(0.7);
+    filter: blur(2px);
+  }
+}
+
+@keyframes pdTrailFade {
+  0%,
+  15% {
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* =================================================================================
+   SECTION 10 — RUNTIME ANIMATION CLASSES
+   ================================================================================= */
+
+/*
+ * These classes are toggled by the React component (or a parent controller) to
+ * trigger specific visual events:
+ *
+ *   .pot-display--bump    — Pot receives a large addition (raise, all-in)
+ *   .pot-display--pulse   — Pot changes by a small amount (blind post, call)
+ *   .pot-display--golden  — Showdown mode — pot glows gold while winner is decided
+ *   .pot-display--award   — Pot is awarded to winner — shrinks + brightness flash
+ *   .pot-display--collect — Pot value slides toward winner position (used with --collect-dx/dy)
+ *
+ * All animations preserve the translate(-50%, -50%) base transform.
+ */
+
+/* ── POT BUMP ──
+ * 7-phase spring with brightness flash + gold border intensification.
+ * This is the "someone just shoved 500BB" moment.
+ */
+.pot-display--bump {
+  animation: pdBump var(--pd-bump-duration) var(--pd-ease-spring);
+}
+
+@keyframes pdBump {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    filter: brightness(1);
+    border-color: var(--pd-gold-dim);
+  }
+  10% {
+    transform: translate(-50%, -50%) scale(1.16);
+    filter: brightness(1.35);
+    border-color: var(--pd-gold-bright);
+  }
+  25% {
+    transform: translate(-50%, -50%) scale(0.93);
+    filter: brightness(1.15);
+  }
+  40% {
+    transform: translate(-50%, -50%) scale(1.07);
+    filter: brightness(1.08);
+    border-color: var(--pd-gold-mid);
+  }
+  58% {
+    transform: translate(-50%, -50%) scale(0.98);
+    filter: brightness(1.02);
+  }
+  76% {
+    transform: translate(-50%, -50%) scale(1.015);
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    filter: brightness(1);
+    border-color: var(--pd-gold-dim);
+  }
+}
+
+/* ── POT PULSE ──
+ * 5-phase for smaller pot changes. Gentler than bump.
+ * Brief brightness spike + slight scale overshoot.
+ */
+.pot-display--pulse {
+  animation: pdPulse var(--pd-pulse-duration) var(--pd-ease-settle);
+}
+
+@keyframes pdPulse {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    filter: brightness(1);
+  }
+  20% {
+    transform: translate(-50%, -50%) scale(1.06);
+    filter: brightness(1.2);
+  }
+  45% {
+    transform: translate(-50%, -50%) scale(0.985);
+    filter: brightness(1.05);
+  }
+  70% {
+    transform: translate(-50%, -50%) scale(1.01);
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    filter: brightness(1);
+  }
+}
+
+/* ── GOLDEN GLOW ──
+ * Showdown/winner-reveal breathing glow.
+ * The pot pulses with golden light while the winning hand is being determined.
+ * Multi-property animation: box-shadow expands/contracts, border intensifies,
+ * and a subtle scale breathe adds life.
+ */
+.pot-display--golden {
+  animation: pdGoldenGlow var(--pd-glow-period) ease-in-out infinite;
+}
+
+@keyframes pdGoldenGlow {
+  0%,
+  100% {
+    box-shadow:
+      0 6px 28px rgba(0, 0, 0, 0.6),
+      0 0 30px rgba(255, 215, 0, 0.1),
+      0 0 0 1px rgba(255, 255, 255, 0.03),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+    border-color: var(--pd-gold-dim);
+    transform: translate(-50%, -50%) scale(1);
+    filter: brightness(1);
+  }
+  50% {
+    box-shadow:
+      0 6px 24px rgba(0, 0, 0, 0.5),
+      0 0 55px rgba(255, 215, 0, 0.3),
+      0 0 90px rgba(255, 215, 0, 0.12),
+      0 0 120px rgba(255, 215, 0, 0.05),
+      inset 0 1px 0 rgba(255, 215, 0, 0.1),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.15);
+    border-color: var(--pd-gold-bright);
+    transform: translate(-50%, -50%) scale(1.015);
+    filter: brightness(1.08);
+  }
+}
+
+/* ── POT AWARD ──
+ * Winner determined — pot "explodes" toward the winning player.
+ * 6-phase: scale up with golden flash, then rapid shrink + brightness blast + fade.
+ * The component removes the pot element after this animation completes.
+ */
+.pot-display--award {
+  animation: pdAward var(--pd-award-duration) cubic-bezier(0.55, 0, 0.3, 1) forwards;
+}
+
+@keyframes pdAward {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+    filter: brightness(1);
+    box-shadow:
+      0 6px 28px rgba(0, 0, 0, 0.6),
+      0 0 40px rgba(255, 215, 0, 0.15);
+  }
+  15% {
+    transform: translate(-50%, -50%) scale(1.18);
+    filter: brightness(1.5);
+    box-shadow:
+      0 6px 24px rgba(0, 0, 0, 0.4),
+      0 0 60px rgba(255, 215, 0, 0.4),
+      0 0 100px rgba(255, 215, 0, 0.15);
+  }
+  35% {
+    transform: translate(-50%, -50%) scale(1.1);
+    opacity: 1;
+    filter: brightness(1.8);
+  }
+  60% {
+    transform: translate(-50%, -50%) scale(0.7);
+    opacity: 0.7;
+    filter: brightness(2);
+    box-shadow: 0 0 80px rgba(255, 215, 0, 0.3);
+  }
+  85% {
+    transform: translate(-50%, -50%) scale(0.4);
+    opacity: 0.2;
+    filter: brightness(2.5);
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(0.2);
+    opacity: 0;
+    filter: brightness(3);
+    box-shadow: none;
+  }
+}
+
+/* ── POT COLLECT ──
+ * Chips sliding from pot position toward the winner's seat.
+ * Uses --collect-dx and --collect-dy custom properties set by JS
+ * to define the direction vector toward the winning player.
+ */
+.pot-display--collect {
+  /* IMPROVEMENT PASS 2026-08-19: honors --animation-speed like the JS timer
+     (700ms * speed) that clears collectTo. */
+  animation: pdCollect calc(var(--pd-collect-duration) * var(--animation-speed, 1))
+    cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes pdCollect {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  30% {
+    transform: translate(-50%, -50%) scale(1.08);
+    opacity: 1;
+    filter: brightness(1.3);
+  }
+  100% {
+    transform: translate(calc(-50% + var(--collect-dx, 0px)), calc(-50% + var(--collect-dy, 0px)))
+      scale(0.5);
+    opacity: 0;
+    filter: brightness(1.8);
+  }
+}
+
+/* =================================================================================
+   SECTION 11 — RESPONSIVE
+   ================================================================================= */
+
+/* ── 768px: Tablet ── */
+@media (max-width: 768px) {
+  .pot-display {
+    transform: translate(-50%, -25%);
+  }
+
+  .pot-display__main {
+    padding: 3px 12px;
+    gap: 7px;
+  }
+
+  .pot-display__label {
+    font-size: 0.65rem;
+  }
+
+  .pot-display__amount {
+    font-size: 0.9rem;
+    font-weight: 800;
+  }
+
+  .pot-display__side-pots {
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  .pot-display__side-pot {
+    padding: 4px 10px;
+  }
+
+  .pot-display__side-pot-label {
+    font-size: 0.6rem;
+  }
+
+  .pot-display__side-pot-amount {
+    font-size: 0.8rem;
+  }
+
+  .pot-display__total {
+    margin-top: 4px;
+    padding: 4px 10px;
+  }
+
+  .pot-display__total-label {
+    font-size: 0.6rem;
+  }
+
+  .pot-display__total-amount {
+    font-size: 0.8rem;
+  }
+}
+
+/* ── 640px: Large phone ── */
+@media (max-width: 640px) {
+  .pot-display {
+    transform: translate(-50%, -28%);
+  }
+
+  .pot-display__main {
+    padding: 3px 11px;
+  }
+
+  .pot-display__amount {
+    font-size: 0.85rem;
+  }
+}
+
+/* ── 480px: Standard phone ── */
+@media (max-width: 480px) {
+  :root {
+    --pd-bump-duration: 0.5s;
+  }
+
+  .pot-display {
+    transform: translate(-50%, -30%);
+    gap: 6px;
+  }
+
+  .pot-display__main {
+    padding: 2px 10px;
+    gap: 6px;
+    border-radius: 999px;
+  }
+
+  .pot-display__label {
+    font-size: 0.6rem;
+  }
+
+  .pot-display__amount {
+    font-size: 0.82rem;
+    font-weight: 800;
+  }
+
+  .pot-display__increase {
+    top: -18px;
+    right: -18px;
+    padding: 2px 6px;
+    font-size: 0.7rem;
+  }
+}
+
+/* ── 380px: Narrow phone (iPhone SE, etc.) ── */
+@media (max-width: 380px) {
+  .pot-display {
+    transform: translate(-50%, -32%);
+    max-width: 90vw;
+  }
+
+  .pot-display__main {
+    padding: 2px 9px;
+    gap: 5px;
+    max-width: 100%;
+  }
+
+  .pot-display__label {
+    font-size: 0.55rem;
+  }
+
+  .pot-display__amount {
+    font-size: 0.78rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .pot-display__side-pots {
+    gap: 4px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .pot-display__side-pot {
+    padding: 3px 8px;
+  }
+
+  .pot-display__side-pot-amount {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+/* =================================================================================
+   SECTION 12 — REDUCED MOTION
+   ================================================================================= */
+
+/*
+ * When prefers-reduced-motion is active:
+ *  - All keyframe animations are disabled
+ *  - All transitions are removed
+ *  - Elements appear in their final state immediately
+ *  - Glass sweep is hidden (continuous motion)
+ *  - Golden glow becomes a static border change
+ */
+
+@media (prefers-reduced-motion: reduce) {
+  .pot-display--bump,
+  .pot-display--pulse,
+  .pot-display--golden,
+  .pot-display--award,
+  .pot-display--collect,
+  .pot-display__side-pot,
+  .pot-display__total,
+  .pot-display__increase,
+  .pot-display--updated .pot-display__amount,
+  .pot-area--updated .pot-amount {
+    animation: none !important;
+  }
+
+  .pot-display__main,
+  .pot-display__main--clickable,
+  .pot-display__amount {
+    transition: none !important;
+  }
+
+  /* Glass sweep disabled */
+  .pot-display__main::before {
+    display: none;
+  }
+
+  /* The pot's pile is handled where it is defined - `.pot-display__pile-stack`
+     already drops its entrance animation under this same query. The rule that
+     used to sit here named `.pot-display__chip`, which nothing has rendered
+     since 2026-08-23. */
+
+  /* Side pots appear immediately */
+  .pot-display__side-pot {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* Golden glow becomes static gold border */
+  .pot-display--golden {
+    border-color: var(--pd-gold-mid);
+    box-shadow:
+      0 6px 28px rgba(0, 0, 0, 0.6),
+      0 0 40px rgba(255, 215, 0, 0.2);
+  }
+
+  /* Award becomes instant fade */
+  .pot-display--award {
+    opacity: 0;
+  }
+
+  /* Increase badge appears then disappears without float */
+  .pot-display__increase {
+    opacity: 0;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FELT CLASSES — Migrated from ChipStack.css (dead component cleanup 2026-08-26).
+   `.chip--partial`, `.pot-label`, and `.pot-value` were the only runtime
+   definitions of these names; they painted on the live felt but lived in a
+   file whose only importer (TablePage.tsx) was a dead-component import kept
+   solely to hold the CSS in the bundle. Now PotDisplay owns them directly.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* A sub-1 residue no chip on Dan's ladder can represent (a 0.5 small blind).
+   Dashed and translucent so it is never read as a white 1 chip, which would
+   claim twice its value. See src/lib/chipDenominations.ts. */
+.chip--partial {
+  opacity: 0.75;
+  border-style: dashed;
+}
+
+.pot-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.pot-value {
+  font-family: 'JetBrains Mono', 'Georgia', serif;
+  font-size: 24px;
+  font-weight: 700;
+  color: #ffd700;
+  text-shadow:
+    0 0 20px rgba(255, 215, 0, 0.6),
+    0 0 40px rgba(255, 215, 0, 0.2),
+    0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+@media (max-width: 480px) {
+  .pot-value {
+    font-size: 18px;
+  }
+}

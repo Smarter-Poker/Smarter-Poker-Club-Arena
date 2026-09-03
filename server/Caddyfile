@@ -1,0 +1,12 @@
+engine.smarter.poker {
+    reverse_proxy localhost:8080
+
+    header {
+        Access-Control-Allow-Origin *
+        Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        Access-Control-Allow-Headers "Content-Type, Authorization"
+    }
+
+    @options method OPTIONS
+    respond @options 204
+}

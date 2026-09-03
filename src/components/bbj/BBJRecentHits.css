@@ -1,0 +1,359 @@
+/* BBJ winners list — one row per jackpot hit, 375px-first. */
+
+.bbj-hits {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bbj-hits__caption {
+  padding: 2px 2px 6px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #aab3c0;
+  letter-spacing: 0.3px;
+}
+
+/* TWO ROWS, not four columns.
+   At 375px the four-column layout left about 4px for the player's name: the
+   avatar (76), the five-card strip (128) and a nowrap timestamp (103) consume
+   the width before the name gets any. The identity and the payout sit on the
+   top line; the hand gets the full width underneath it, which is also where a
+   five-card hand wants to be. */
+.bbj-hits__row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) auto;
+  grid-template-areas:
+    'avatar who right'
+    'avatar hand hand';
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 6px;
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.03);
+  text-align: left;
+}
+
+.bbj-hits__avatar {
+  grid-area: avatar;
+}
+.bbj-hits__who {
+  grid-area: who;
+}
+.bbj-hits__hand {
+  grid-area: hand;
+}
+.bbj-hits__right {
+  grid-area: right;
+}
+
+.bbj-hits__row.is-clickable {
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.bbj-hits__row.is-clickable:focus-visible {
+  background: rgba(213, 218, 226, 0.07);
+  border-color: rgba(213, 218, 226, 0.3);
+  outline: none;
+}
+
+.bbj-hits__row.is-you {
+  border-color: rgba(52, 199, 89, 0.35);
+  background: rgba(52, 199, 89, 0.07);
+}
+
+/* Dan 2026-08-27: "double the size of the current avatar, and remove the circle
+   frame ... avatars should display here like they do on the table with no
+   background". The avatar was 48px, so double is 96 - it was drawn at 60 from
+   2026-08-27 (PR #1469) until this was caught in the phase-6 audit, which is
+   1.25x, not double. No circle frame, no background, no level pill —
+   drawn the way the felt draws it. The library art is a free-standing bust with
+   its own transparency, so any crop or ring here is something we are adding,
+   not something the artwork needs. `object-fit: contain` keeps the bust whole;
+   `cover` on a non-square bust cuts the head off. */
+.bbj-hits__avatar {
+  width: 96px;
+  height: 96px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  object-fit: contain;
+  object-position: center bottom;
+}
+
+.bbj-hits__who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+
+.bbj-hits__name {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bbj-hits__you {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(52, 199, 89, 0.2);
+  color: #34c759;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+.bbj-hits__id {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.38);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Dan 2026-08-27: "the winning hand should be displayed with the first letter
+   of every word capitalized, and centered under the hand". The Title Casing is
+   done in the component (so it also reaches the aria-label); the centring is
+   here, and it centres on the CARD STRIP rather than the column, which is why
+   this is a column flex with align-items:center and not a text-align. */
+.bbj-hits__hand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.bbj-hits__cards {
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.bbj-hits__handname {
+  max-width: 100%;
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+.bbj-hits__right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* Dan 2026-08-27: "above the jackpot should be the game type that it was hit
+   on". It sits directly over the payout figure, in the same column. */
+.bbj-hits__gametype {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(240, 185, 11, 0.14);
+  color: #f0b90b;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.bbj-hits__amt {
+  font-size: 13px;
+  font-weight: 800;
+  color: #aab3c0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bbj-hits__when {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.35);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bbj-hits__hint {
+  margin: 4px 0 0;
+  text-align: center;
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.bbj-hits__empty {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 28px 16px;
+  text-align: center;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.bbj-hits__empty-sub {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.bbj-hits__skeleton {
+  height: 54px;
+  border-radius: 10px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.04) 75%
+  );
+  background-size: 200% 100%;
+  animation: bbj-hits-shimmer 1.3s infinite;
+}
+
+@keyframes bbj-hits-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bbj-hits__skeleton {
+    animation: none;
+  }
+}
+
+/* Very narrow phones: the card strip drops under the name so nothing clips. */
+@media (max-width: 359px) {
+  .bbj-hits__row {
+    grid-template-columns: 72px minmax(0, 1fr) auto;
+  }
+
+  /* Still larger than the 48 this replaced. The old breakpoint shrank it back
+     TO 48, which undid the instruction entirely on the narrowest phones. */
+  .bbj-hits__avatar {
+    width: 72px;
+    height: 72px;
+  }
+
+  .bbj-hits__when {
+    font-size: 8.5px;
+  }
+}
+
+/* Example rows: unmistakably not a real win. Greyed, dashed, tagged, inert. */
+.bbj-hits__row.is-example {
+  opacity: 0.72;
+  border-style: dashed;
+  cursor: default;
+}
+
+.bbj-hits__tag {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+.bbj-hits__examplenote {
+  margin: 0 0 2px;
+  text-align: center;
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+/* THE HAND THAT BEAT IT. A list headed "Bad Beat Jackpot Winners" used to show
+   only the losing hand; the RPC has always returned the winning one. */
+.bbj-hits__beat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  margin-top: 2px;
+  padding-top: 5px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  max-width: 100%;
+}
+
+.bbj-hits__beat-label {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  color: rgba(255, 107, 107, 0.75);
+}
+
+.bbj-hits__beat-name {
+  max-width: 100%;
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, 0.42);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+
+/* The EXAMPLE stamp the doc-comment always claimed these rows carried. */
+.bbj-hits__row.is-example .bbj-hits__tag {
+  background: rgba(255, 149, 0, 0.18);
+  color: #ff9500;
+}
+
+/* A row that behaves as a button needs a focus ring that is actually visible.
+   `outline: none` plus a ~1.1:1 background change is not one. */
+.bbj-hits__row.is-clickable:focus-visible {
+  outline: 2px solid #f0b90b;
+  outline-offset: 2px;
+}
+
+/* SHOW MORE. Full width and 44px tall because this list is read on a 375px
+   phone and a paging control that is hard to hit is a paging control nobody
+   uses. Same yellow as the focus ring, at rest as an outline rather than a
+   fill, so it never competes with a winner row for attention. */
+.bbj-hits__more {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin: 10px 0 2px;
+  padding: 11px 12px;
+  border: 1px solid rgba(240, 185, 11, 0.35);
+  border-radius: 10px;
+  background: rgba(240, 185, 11, 0.08);
+  color: #f0b90b;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.bbj-hits__more:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.bbj-hits__more:focus-visible {
+  outline: 2px solid #f0b90b;
+  outline-offset: 2px;
+}

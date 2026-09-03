@@ -1,0 +1,45 @@
+.scroll-area-wrapper {
+  position: relative;
+}
+
+.scroll-area {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+.scroll-area::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scroll-area::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: background-color var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.2s;
+}
+
+.scroll-fade {
+  position: absolute;
+  left: 0;
+  right: 6px;
+  height: 24px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.scroll-fade.top {
+  top: 0;
+  background: linear-gradient(180deg, rgba(15, 15, 25, 1), transparent);
+}
+
+.scroll-fade.bottom {
+  bottom: 0;
+  background: linear-gradient(0deg, rgba(15, 15, 25, 1), transparent);
+}

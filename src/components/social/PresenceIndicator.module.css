@@ -1,0 +1,76 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 🟢 PRESENCE INDICATOR — Premium Dark Theme Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.container {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+/* Size variants */
+.small .dot {
+  width: 8px;
+  height: 8px;
+}
+
+.medium .dot {
+  width: 10px;
+  height: 10px;
+}
+
+.large .dot {
+  width: 14px;
+  height: 14px;
+}
+
+/* Status dot */
+.dot {
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
+}
+
+.online {
+  background: #10b981;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.8);
+  animation: presenceIndicatorPulse 2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275))
+    infinite;
+}
+
+.away {
+  background: #f59e0b;
+  box-shadow: 0 0 4px rgba(245, 158, 11, 0.4);
+}
+
+.offline {
+  background: #6b7280;
+}
+
+/* Pulse animation for online status */
+@keyframes presenceIndicatorPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+  }
+
+  50% {
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.9);
+  }
+}
+
+/* Label */
+.label {
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+.small .label {
+  font-size: 0.65rem;
+}
+
+.large .label {
+  font-size: 0.875rem;
+}

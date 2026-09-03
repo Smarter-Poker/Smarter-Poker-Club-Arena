@@ -1,0 +1,300 @@
+.cb-showcase {
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: clamp(16px, 3vw, 36px);
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
+  background:
+    radial-gradient(circle at 50% -20%, rgba(22, 143, 255, 0.13), transparent 42%),
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px), #030405;
+  background-size:
+    auto,
+    28px 28px,
+    28px 28px,
+    auto;
+}
+
+.cb-showcase__masthead {
+  display: flex;
+  max-width: 1440px;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 0 auto clamp(26px, 5vw, 58px);
+  padding-bottom: 18px;
+  border-bottom: 1px solid #353b41;
+}
+
+.cb-showcase__masthead p,
+.cb-showcase__section-heading > span {
+  margin: 0 0 7px;
+  color: var(--club-blue-bright);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.cb-showcase__masthead h1 {
+  margin: 0;
+  font-family: var(--club-font-premium);
+  font-size: clamp(1.4rem, 4vw, 2.7rem);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.cb-showcase__masthead > div > span {
+  color: var(--club-text-secondary);
+  font-size: 0.78rem;
+}
+.cb-showcase__mode {
+  display: grid;
+  gap: 5px;
+  min-width: 190px;
+  color: var(--club-text-muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.cb-showcase__mode select {
+  min-height: 46px;
+  padding: 8px 12px;
+  border: 1px solid var(--club-chrome-500);
+  background: #090c10;
+  color: var(--club-text-primary);
+  font: 600 0.82rem var(--club-font-ui);
+}
+.cb-showcase__mode select:focus-visible {
+  outline: 2px solid var(--club-blue-bright);
+  outline-offset: 2px;
+}
+
+.cb-showcase main {
+  display: grid;
+  max-width: 1440px;
+  gap: clamp(34px, 6vw, 72px);
+  margin: auto;
+}
+.cb-showcase__hero,
+.cb-showcase__section,
+.cb-showcase__responsive {
+  display: grid;
+  justify-items: center;
+  gap: 24px;
+}
+.cb-showcase__section-heading {
+  justify-self: stretch;
+  text-align: left;
+}
+.cb-showcase__section-heading h2 {
+  margin: 0;
+  color: var(--club-text-primary);
+  font-family: var(--club-font-premium);
+  font-size: clamp(1.05rem, 2.6vw, 1.6rem);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.cb-showcase__hero-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px;
+}
+.cb-showcase__hero-controls button {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--club-chrome-dark);
+  background: #090c10;
+  color: var(--club-text-secondary);
+  font: 600 0.65rem var(--club-font-ui);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.cb-showcase__hero-controls button[aria-pressed='true'] {
+  border-color: var(--club-blue-core);
+  color: #fff;
+  box-shadow: inset 0 -2px var(--club-blue-core);
+}
+.cb-showcase__hero-controls button:focus-visible {
+  outline: 2px solid var(--club-blue-bright);
+}
+
+.cb-showcase__action-grid {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  align-items: center;
+  gap: 26px;
+}
+.cb-showcase__action-grid > div {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+}
+.cb-showcase__action-grid small,
+.cb-showcase__device small {
+  justify-self: start;
+  color: var(--club-text-muted);
+  font-size: 0.59rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.cb-showcase__wide {
+  grid-column: 1 / -1;
+}
+
+.cb-showcase__wallet-stack {
+  display: grid;
+  width: min(100%, 650px);
+  gap: 4px;
+}
+.cb-showcase__value-grid {
+  display: flex;
+  width: 100%;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+.cb-showcase__utilities {
+  display: flex;
+  width: 100%;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 9px;
+}
+.cb-showcase .cb-tabs {
+  width: min(100%, 760px);
+}
+.cb-showcase__badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px;
+}
+
+.cb-showcase__two-column {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+.cb-showcase__facts {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+.cb-showcase__facts div {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 8px;
+}
+.cb-showcase__facts dt {
+  color: var(--club-text-secondary);
+}
+.cb-showcase__facts dd {
+  margin: 0;
+  font-family: var(--club-font-number);
+  font-variant-numeric: tabular-nums;
+}
+.cb-showcase__form {
+  display: grid;
+  gap: 18px;
+}
+.cb-showcase__form .cb-action {
+  justify-self: center;
+}
+
+.cb-showcase__device-row {
+  display: flex;
+  width: 100%;
+  align-items: start;
+  gap: 18px;
+  overflow-x: auto;
+  padding: 14px 4px 24px;
+}
+.cb-showcase__device {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #242a31;
+  background: rgba(3, 4, 5, 0.84);
+}
+
+.cb-showcase__modal-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(10px);
+}
+.cb-showcase__modal-content {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+}
+.cb-showcase__modal-content p,
+.cb-showcase__modal-content span {
+  margin: 0;
+  color: var(--club-text-secondary);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.cb-showcase__modal-content strong {
+  font: 700 2rem var(--club-font-number);
+}
+.cb-showcase__modal-content b {
+  font: 700 1.15rem var(--club-font-number);
+}
+.cb-showcase__modal-content > div {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.cb-showcase__modal-content .cb-action {
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .cb-showcase {
+    padding: 16px 12px 90px;
+  }
+  .cb-showcase__masthead {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .cb-showcase__two-column {
+    grid-template-columns: 1fr;
+  }
+  .cb-showcase__action-grid {
+    grid-template-columns: 1fr;
+  }
+  .cb-showcase__wide {
+    grid-column: auto;
+  }
+  .cb-showcase__modal-content > div {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cb-showcase__modal-layer {
+    backdrop-filter: none;
+  }
+}

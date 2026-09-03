@@ -1,0 +1,771 @@
+/* =================================================================================
+ *  ChipPhysics.css -- World-Class Chip Stack Animation System
+ * =================================================================================
+ *
+ *  Every chip on the table must feel like a real casino clay chip. This CSS
+ *  handles the complete lifecycle of chip visualization:
+ *
+ *  RENDERING:
+ *  - Top-down circular chip view with 3D depth illusion
+ *  - Multi-layer casino chip face: outer rim, edge notches, inner ring,
+ *    specular highlight, denomination label
+ *  - Stack overlap creates convincing vertical pile effect
+ *  - Color-coded by denomination (red, blue, green, black, gold, purple)
+ *
+ *  ANIMATIONS:
+ *  - cpStackEnter: Spring-bounce stagger per denomination group
+ *  - cpChipLand: Per-chip parabolic drop with felt-impact squash
+ *  - cpSplash: Bet placement explosion scatter + settle
+ *  - cpSlideIn: Rebuy chips sliding from off-screen with overshoot
+ *  - cpCollect: Chips arc toward pot with shrink + brightness flash
+ *  - cpWinExplode: Pot award chips burst outward with golden glow
+ *  - cpGrow: Single chip added to existing stack
+ *  - cpShake: All-in dramatic stack tremble
+ *  - cpCountUp: Amount label counting animation
+ *
+ *  PHYSICS:
+ *  - Spring easing (overshoot + settle) on all motion
+ *  - Gravity-aware vertical drops
+ *  - Stagger delays based on chip index for cascade effect
+ *  - Squash/stretch on impact for felt landing
+ *
+ *  RESPONSIVE: 4 breakpoints (768, 640, 480, 380px)
+ *  ACCESSIBILITY: Full reduced-motion fallback
+ */
+
+/* =================================================================================
+   CUSTOM PROPERTIES
+   ================================================================================= */
+
+:root {
+  /* -- Physics Curves -- */
+  --cp-ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --cp-ease-overshoot: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --cp-ease-gravity: cubic-bezier(0.55, 0, 0.3, 1);
+  --cp-ease-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --cp-ease-elastic: cubic-bezier(0.68, -0.55, 0.27, 1.55);
+
+  /* -- Timing -- */
+  --cp-stack-stagger: 100ms;
+  --cp-chip-stagger: 35ms;
+  --cp-splash-duration: 0.6s;
+  --cp-collect-duration: 0.55s;
+  --cp-slide-duration: 0.5s;
+
+  /* -- Chip Sizing --
+     Dan 2026-08-24: "all chips should be the same size."
+
+     ONE size token, and it is the only one. Before this there were four
+     different chip sizes on the felt at once: this token (16px), a hard 13px
+     for `.cp--compact` further down this file, a `26px !important` for the
+     same compact chips in TableVisualHotfix.css, and a separate 16px for the
+     pot pile in PotDisplay.css. A seat's bet and the pot it was about to join
+     were drawn at different scales, which is exactly what makes chips read as
+     UI decoration rather than as chips.
+
+     --cp-chip-slice is how much of each disc stays visible under the one above
+     it. Dan: "stacked and slightly offset so you can see them all... but not
+     right next to each other." The old --cp-chip-overlap of -4px on a 26px
+     chip left 22px of every chip showing, which is not a stack at all - it is
+     a column of separate circles. The overlap is now DERIVED from the slice so
+     the two can never drift apart again. */
+  --cp-chip-size: 24px;
+  --cp-chip-slice: 6px;
+  --cp-chip-overlap: calc(var(--cp-chip-slice) - var(--cp-chip-size));
+  --cp-inner-ring-size: 13px;
+  --cp-notch-width: 6px;
+}
+
+/* =================================================================================
+   BASE CONTAINER
+   ================================================================================= */
+
+.chip-physics {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.3s var(--cp-ease-smooth);
+  will-change: opacity;
+}
+
+.cp--visible {
+  opacity: 1;
+}
+
+/* =================================================================================
+   STACK CONTAINER -- One per denomination group
+   ================================================================================= */
+
+/* ── ONE TOWER, HIGHEST DENOMINATION ON THE BOTTOM ────────────────────────
+   Dan 2026-08-24: "chips entering the pot should be stacked and slightly
+   offset so you can see them all, (highest denomination on the bottom) but not
+   right next to each other."
+
+   This was a ROW of per-denomination columns stood side by side, so a 21 bet
+   drew a column of four reds NEXT TO a column of one white. "Highest
+   denomination on the bottom" has no meaning in that layout - four separate
+   columns have four separate bottoms - and side by side is precisely "right
+   next to each other".
+
+   column-reverse makes the FIRST DOM child the BOTTOM one, and visualChipStacks
+   returns groups highest-denomination first, so the ladder falls out of the DOM
+   order with nothing to keep in sync. The groups are kept as separate elements
+   rather than flattened into one list of discs because each group still owns
+   its own "xN" badge and its own stagger delay. */
+.cp-stacks {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+}
+
+.cp-stack + .cp-stack {
+  margin-bottom: var(--cp-chip-overlap);
+}
+
+.cp-stack {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  /* Dan 2026-08-23: relative so the "x12" multiplier badge can hang above a
+     clamped stack without joining the column-reverse flow, where the first DOM
+     child renders at the BOTTOM and the badge would sit under the chips. */
+  position: relative;
+  animation: cpStackEnter 0.45s var(--cp-ease-spring)
+    calc(var(--group-idx, 0) * var(--cp-stack-stagger)) both;
+  transform-origin: bottom center;
+}
+
+/* ---- Multiplier badge for a stack too tall to draw chip-for-chip ----
+   Only appears when visualChipStacks reports `truncated`. It exists because
+   Dan's ladder has nothing between 5,000 and 100,000, so a 60,000 bet really
+   is twelve orange chips and a twelve-high tower does not fit in front of a
+   seat. The PILE is clamped; the VALUE never is. */
+/* Hangs to the SIDE of its group, not above it: above is now occupied by the
+   next denomination up the tower. */
+.cp-stack__multi {
+  position: absolute;
+  bottom: 2px;
+  left: 100%;
+  margin-left: 3px;
+  font-size: 0.5rem;
+  font-weight: 800;
+  line-height: 1;
+  color: #ffd700;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.85),
+    0 0 4px rgba(0, 0, 0, 0.5);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+@keyframes cpStackEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scaleX(0.6) scaleY(0.3);
+    filter: blur(2px);
+  }
+  25% {
+    opacity: 0.8;
+    filter: blur(0);
+  }
+  50% {
+    transform: translateY(-4px) scaleX(1.06) scaleY(1.08);
+  }
+  70% {
+    transform: translateY(2px) scaleX(0.97) scaleY(0.96);
+  }
+  85% {
+    transform: translateY(-1px) scaleX(1.01) scaleY(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleX(1) scaleY(1);
+    filter: blur(0);
+  }
+}
+
+/* =================================================================================
+   INDIVIDUAL CHIP -- Multi-layer casino chip rendering
+   ================================================================================= */
+
+.cp-chip {
+  width: var(--cp-chip-size);
+  height: var(--cp-chip-size);
+  position: relative;
+  border-radius: 50%;
+
+  /* Dan 2026-08-23: the rim reads as a DIFFERENT shade of the same colour on a
+     real clay chip, which is most of what makes a 13px disc legible as a chip
+     at all. --chip-accent was already being set by the component and was never
+     used here; it is the denomination's dark edge from chipDenominations.ts. */
+  background:
+    radial-gradient(
+      circle at 50% 50%,
+      var(--chip-color, #e0e0e0) 0%,
+      var(--chip-color, #e0e0e0) 62%,
+      var(--chip-accent, #ababab) 66%,
+      var(--chip-accent, #ababab) 100%
+    ),
+    var(--chip-color, #e0e0e0);
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+
+  /* Multi-layer shadow for 3D depth */
+  box-shadow:
+    /* Bottom edge shadow (3D depth) */
+    0 1.5px 0 rgba(0, 0, 0, 0.4),
+    /* Ambient shadow on felt */ 0 2px 4px rgba(0, 0, 0, 0.45),
+    /* Subtle felt contact */ 0 0.5px 1px rgba(0, 0, 0, 0.3),
+    /* Inner top highlight (overhead light) */ inset 0 2px 3px rgba(255, 255, 255, 0.3),
+    /* Inner bottom shadow (curvature) */ inset 0 -2px 3px rgba(0, 0, 0, 0.25),
+    /* Inner left edge light */ inset 2px 0 2px rgba(255, 255, 255, 0.08),
+    /* Inner right edge shadow */ inset -2px 0 2px rgba(0, 0, 0, 0.08);
+
+  transition: transform 0.15s var(--cp-ease-spring);
+}
+
+.cp-chip + .cp-chip {
+  margin-bottom: var(--cp-chip-overlap);
+}
+
+/* ---- Partial sliver: a sub-1 amount no chip on the ladder can represent ----
+   Stakes here run 0.25/0.5, and Dan's smallest chip is the white 1. Drawing a
+   full white chip for a 0.5 small blind would claim twice its value, and
+   drawing nothing leaves a player with money out looking like they have none.
+   A half-height translucent sliver is neither. See chipDenominations.ts. */
+.cp-chip--partial {
+  height: calc(var(--cp-chip-size) * 0.55);
+  opacity: 0.75;
+  border-style: dashed;
+}
+
+/* ---- Specular Highlight (top-left hot spot from overhead light) ---- */
+.cp-chip::before {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 20%;
+  width: 55%;
+  height: 40%;
+  background: linear-gradient(
+    170deg,
+    rgba(255, 255, 255, 0.4) 0%,
+    rgba(255, 255, 255, 0.15) 40%,
+    rgba(255, 255, 255, 0.05) 65%,
+    transparent 100%
+  );
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ---- Inner Ring (casino chip face pattern) ---- */
+.cp-chip::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: var(--cp-inner-ring-size);
+  height: var(--cp-inner-ring-size);
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  border-radius: 50%;
+  pointer-events: none;
+  /* Subtle radial gradient on ring interior */
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.05) 0%, transparent 70%);
+  z-index: 1;
+}
+
+/* ---- Top Chip Face Label ---- */
+.cp-chip__face {
+  display: none;
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+}
+
+.cp-chip:last-of-type .cp-chip__face {
+  display: flex;
+}
+
+.cp-chip__label {
+  font-size: 0.35rem;
+  font-weight: 800;
+  /* The denomination's own ink colour. A flat white "1K" on the yellow 1,000
+     chip and "1" on the white 1 chip were both unreadable. */
+  color: var(--chip-ink, rgba(255, 255, 255, 0.92));
+  text-shadow:
+    0 0.5px 0 rgba(0, 0, 0, 0.5),
+    0 1px 2px rgba(0, 0, 0, 0.4);
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+
+/* =================================================================================
+   AMOUNT DISPLAY
+   ================================================================================= */
+
+.cp-amount {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #e4e6eb;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.7),
+    0 0 6px rgba(0, 0, 0, 0.3);
+  white-space: nowrap;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  letter-spacing: -0.01em;
+  transition: transform 0.3s var(--cp-ease-spring);
+}
+
+/* Amount bump when value changes */
+.cp-amount--changed {
+  animation: cpAmountBump 0.4s var(--cp-ease-overshoot);
+}
+
+@keyframes cpAmountBump {
+  0% {
+    transform: scale(1);
+    color: #e4e6eb;
+  }
+  20% {
+    transform: scale(1.2);
+    color: #ffd700;
+    filter: brightness(1.3);
+    text-shadow:
+      0 1px 3px rgba(0, 0, 0, 0.7),
+      0 0 8px rgba(255, 215, 0, 0.3);
+  }
+  45% {
+    transform: scale(0.92);
+  }
+  65% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+    color: #e4e6eb;
+    filter: brightness(1);
+  }
+}
+
+/* =================================================================================
+   ANIMATION: SPLASH -- Bet Placement
+   =================================================================================
+   Chips scatter outward from a central point then settle into stack position.
+   Each chip has a unique trajectory based on --chip-idx for organic spread. */
+
+.cp--splash .cp-chip {
+  animation: cpChipSplash var(--cp-splash-duration) var(--cp-ease-spring)
+    calc(var(--chip-idx, 0) * var(--cp-chip-stagger)) both;
+}
+
+@keyframes cpChipSplash {
+  0% {
+    transform: translateY(-35px) translateX(calc((var(--chip-idx, 0) - 2) * 16px)) scale(0.2)
+      rotate(calc(var(--chip-idx, 0) * 60deg));
+    opacity: 0;
+    filter: brightness(1.8);
+    box-shadow:
+      0 2px 8px rgba(0, 0, 0, 0.4),
+      0 0 12px rgba(255, 215, 0, 0.2);
+  }
+  18% {
+    opacity: 1;
+    filter: brightness(1.3);
+  }
+  40% {
+    transform: translateY(6px) translateX(calc((var(--chip-idx, 0) - 2) * 5px)) scale(1.15)
+      rotate(calc(var(--chip-idx, 0) * 20deg));
+    /* Squash on felt impact */
+    border-radius: 48% 48% 52% 52%;
+  }
+  55% {
+    transform: translateY(-3px) translateX(calc((var(--chip-idx, 0) - 2) * 2px)) scale(0.93)
+      rotate(calc(var(--chip-idx, 0) * 8deg));
+    border-radius: 50%;
+  }
+  70% {
+    transform: translateY(1px) translateX(calc((var(--chip-idx, 0) - 2) * 0.5px)) scale(1.04)
+      rotate(calc(var(--chip-idx, 0) * 2deg));
+  }
+  85% {
+    transform: translateY(-0.5px) translateX(0) scale(0.99) rotate(0deg);
+  }
+  100% {
+    transform: translateY(0) translateX(0) scale(1) rotate(0deg);
+    opacity: 1;
+    filter: brightness(1);
+    border-radius: 50%;
+    box-shadow:
+      0 1.5px 0 rgba(0, 0, 0, 0.4),
+      0 2px 4px rgba(0, 0, 0, 0.45),
+      0 0.5px 1px rgba(0, 0, 0, 0.3),
+      inset 0 2px 3px rgba(255, 255, 255, 0.3),
+      inset 0 -2px 3px rgba(0, 0, 0, 0.25);
+  }
+}
+
+/* =================================================================================
+   ANIMATION: SLIDE-IN -- Rebuy / Stack Adjustment
+   =================================================================================
+   Chips slide from the left with motion blur and spring overshoot. */
+
+.cp--slide-in .cp-stacks {
+  animation: cpSlideIn calc(var(--cp-slide-duration) * var(--animation-speed, 1))
+    var(--cp-ease-overshoot);
+}
+
+@keyframes cpSlideIn {
+  0% {
+    transform: translateX(-30px) scale(0.65);
+    opacity: 0;
+    filter: blur(3px) brightness(1.3);
+  }
+  30% {
+    opacity: 1;
+    filter: blur(0) brightness(1.1);
+  }
+  55% {
+    transform: translateX(6px) scale(1.05);
+  }
+  72% {
+    transform: translateX(-2px) scale(0.98);
+  }
+  85% {
+    transform: translateX(1px) scale(1.01);
+  }
+  100% {
+    transform: translateX(0) scale(1);
+    opacity: 1;
+    filter: blur(0) brightness(1);
+  }
+}
+
+/* =================================================================================
+   ANIMATION: COLLECT -- Chips Arc Toward Pot
+   =================================================================================
+   Bible V8 section 1.16: chips fly toward the pot center with a parabolic arc.
+   Parent sets --collect-dx / --collect-dy (px offset to pot center).
+   Falls back to soft upward drift when variables are absent. */
+
+.cp--collect .cp-stacks {
+  /* IMPROVEMENT PASS 2026-08-19: honors --animation-speed like the JS
+     collect window (700ms * speed) that unmounts these chips. */
+  animation: cpCollect calc(var(--cp-collect-duration) * var(--animation-speed, 1))
+    var(--cp-ease-gravity) forwards;
+}
+
+@keyframes cpCollect {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+    filter: brightness(1);
+  }
+  15% {
+    transform: translate(
+        calc(var(--collect-dx, 0px) * 0.15),
+        calc(var(--collect-dy, -30px) * 0.15 - 15px)
+      )
+      scale(0.9);
+    filter: brightness(1.15);
+  }
+  40% {
+    transform: translate(
+        calc(var(--collect-dx, 0px) * 0.5),
+        calc(var(--collect-dy, -30px) * 0.5 - 10px)
+      )
+      scale(0.65);
+    opacity: 0.9;
+  }
+  70% {
+    transform: translate(
+        calc(var(--collect-dx, 0px) * 0.85),
+        calc(var(--collect-dy, -30px) * 0.85 - 4px)
+      )
+      scale(0.35);
+    opacity: 0.6;
+  }
+  100% {
+    transform: translate(var(--collect-dx, 0px), var(--collect-dy, -30px)) scale(0.1);
+    opacity: 0;
+    filter: brightness(1.5);
+  }
+}
+
+/* =================================================================================
+   ANIMATION: WIN -- Pot Award Explosion
+   =================================================================================
+   Chips burst out from center (pot position) toward the winner's seat
+   with golden glow flash and spring settle. */
+
+.cp--win .cp-stacks {
+  animation: cpWinExplode 0.65s var(--cp-ease-overshoot);
+}
+
+@keyframes cpWinExplode {
+  0% {
+    transform: scale(0.1);
+    opacity: 0;
+    filter: brightness(3) drop-shadow(0 0 8px rgba(255, 215, 0, 0.6));
+  }
+  15% {
+    opacity: 1;
+    transform: scale(1.35);
+    filter: brightness(1.8) drop-shadow(0 0 12px rgba(255, 215, 0, 0.4));
+  }
+  35% {
+    transform: scale(0.85);
+    filter: brightness(1.2) drop-shadow(0 0 4px rgba(255, 215, 0, 0.2));
+  }
+  55% {
+    transform: scale(1.1);
+    filter: brightness(1.05);
+  }
+  72% {
+    transform: scale(0.97);
+  }
+  85% {
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+    filter: brightness(1) drop-shadow(none);
+  }
+}
+
+/* =================================================================================
+   ANIMATION: GROW -- Single Chip Added to Stack
+   ================================================================================= */
+
+.cp--grow .cp-chip:last-of-type {
+  animation: cpGrowChip 0.35s var(--cp-ease-spring);
+}
+
+@keyframes cpGrowChip {
+  0% {
+    transform: translateY(-12px) scale(0.3);
+    opacity: 0;
+    filter: brightness(1.5);
+  }
+  35% {
+    opacity: 1;
+  }
+  55% {
+    transform: translateY(2px) scale(1.12);
+    /* Impact squash */
+    border-radius: 48% 48% 52% 52%;
+    filter: brightness(1.1);
+  }
+  72% {
+    transform: translateY(-1px) scale(0.96);
+    border-radius: 50%;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    filter: brightness(1);
+  }
+}
+
+/* =================================================================================
+   ANIMATION: SHAKE -- All-In Dramatic Tremble
+   ================================================================================= */
+
+.cp--shake .cp-stacks {
+  animation: cpAllInShake 0.6s var(--cp-ease-smooth);
+}
+
+@keyframes cpAllInShake {
+  0% {
+    transform: translate(0, 0);
+  }
+  8% {
+    transform: translate(3px, -1px);
+  }
+  16% {
+    transform: translate(-2px, 2px);
+  }
+  24% {
+    transform: translate(2px, -2px);
+  }
+  32% {
+    transform: translate(-3px, 1px);
+  }
+  40% {
+    transform: translate(2px, -1px);
+  }
+  48% {
+    transform: translate(-1px, 2px);
+  }
+  56% {
+    transform: translate(1px, -1px);
+  }
+  64% {
+    transform: translate(-1px, 0.5px);
+  }
+  72% {
+    transform: translate(0.5px, -0.5px);
+  }
+  80% {
+    transform: translate(-0.5px, 0);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+
+/* =================================================================================
+   ANIMATION: STACK COUNT DOWN -- Chips removed from stack
+   ================================================================================= */
+
+.cp--shrink .cp-chip:last-of-type {
+  animation: cpShrinkChip 0.3s var(--cp-ease-gravity) forwards;
+}
+
+@keyframes cpShrinkChip {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  40% {
+    transform: translateY(-6px) scale(1.1);
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateY(-14px) scale(0.4);
+    opacity: 0;
+  }
+}
+
+/* =================================================================================
+   COMPACT MODE -- Smaller chips for tight layouts
+   ================================================================================= */
+
+/* Compact = in front of a seat. It gets a shorter tower (fewer discs, set by
+   the caller's maxTotal) and no denomination text - NOT a smaller chip. Dan
+   2026-08-24: "all chips should be the same size." */
+.cp--compact {
+  gap: 3px;
+}
+
+/* No denomination text on a 13px seat chip. Dan's ladder is a COLOUR system —
+   the player reads red-white-white as "7" the way they do at a live table, and
+   a "100" rendered at 5.6px is illegible smudge, not information. The exact
+   number is already printed beside the stack by .cp-amount. */
+.cp--compact .cp-chip__label {
+  display: none;
+}
+
+.cp--compact .cp-stack__multi {
+  font-size: 0.45rem;
+}
+
+.cp--compact .cp-amount {
+  font-size: 0.6rem;
+}
+
+/* =================================================================================
+   RESPONSIVE -- Scale chips down proportionally
+   ================================================================================= */
+
+@media (max-width: 768px) {
+  :root {
+    --cp-chip-size: 22px;
+    --cp-chip-slice: 6px;
+    --cp-inner-ring-size: 12px;
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    --cp-chip-size: 21px;
+    --cp-chip-slice: 5px;
+    --cp-inner-ring-size: 11px;
+  }
+
+  .cp-amount {
+    font-size: 0.65rem;
+  }
+}
+
+@media (max-width: 480px) {
+  :root {
+    --cp-chip-size: 19px;
+    --cp-chip-slice: 5px;
+    --cp-inner-ring-size: 10px;
+    --cp-notch-width: 4px;
+  }
+
+  .cp-amount {
+    font-size: 0.6rem;
+  }
+
+  .cp--compact .cp-amount {
+    font-size: 0.55rem;
+  }
+}
+
+@media (max-width: 380px) {
+  :root {
+    --cp-chip-size: 17px;
+    --cp-chip-slice: 4px;
+    --cp-inner-ring-size: 9px;
+  }
+
+  .cp-amount {
+    font-size: 0.55rem;
+  }
+
+  .chip-physics {
+    gap: 4px;
+  }
+
+  .cp-stacks {
+    gap: 2px;
+  }
+}
+
+/* =================================================================================
+   REDUCED MOTION -- Full accessibility fallback
+   ================================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .cp-stack,
+  .cp--splash .cp-chip,
+  .cp--slide-in .cp-stacks,
+  .cp--collect .cp-stacks,
+  .cp--win .cp-stacks,
+  .cp--grow .cp-chip:last-of-type,
+  .cp--shake .cp-stacks,
+  .cp--shrink .cp-chip:last-of-type,
+  .cp-amount--changed {
+    animation: none !important;
+  }
+
+  .chip-physics {
+    opacity: 1;
+    transition: none;
+  }
+
+  .cp-stack {
+    opacity: 1;
+    transform: none;
+  }
+
+  .cp--collect .cp-stacks {
+    opacity: 0;
+    transform: translate(var(--collect-dx, 0px), var(--collect-dy, -30px)) scale(0.3);
+  }
+
+  .cp--win .cp-stacks {
+    opacity: 1;
+    transform: none;
+  }
+}

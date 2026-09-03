@@ -1,0 +1,59 @@
+/**
+ * SECURITY BADGE — CSS
+ */
+
+.security-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--sb-bg);
+  border: 1px solid var(--sb-border);
+  border-radius: 20px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sb-sm {
+  padding: 3px 8px;
+  font-size: 11px;
+  gap: 4px;
+}
+.sb-sm .sb-icon {
+  font-size: 12px;
+}
+
+.sb-md {
+  font-size: 12px;
+}
+.sb-md .sb-icon {
+  font-size: 14px;
+}
+
+.sb-lg {
+  padding: 8px 16px;
+  font-size: 14px;
+  gap: 8px;
+}
+.sb-lg .sb-icon {
+  font-size: 18px;
+}
+
+.sb-label {
+  color: var(--sb-color);
+}
+
+/* Pulse animation for active states */
+.sb-pulse {
+  animation: securityBadgeBadgePulse 2s ease-in-out infinite;
+}
+
+@keyframes securityBadgeBadgePulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--sb-border);
+  }
+  50% {
+    box-shadow: 0 0 12px 2px var(--sb-border);
+  }
+}

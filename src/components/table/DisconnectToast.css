@@ -1,0 +1,61 @@
+/*
+ * DisconnectToast — floats at top-center above the table. Mobile-first
+ * (375px width target); scales up by not constraining width on larger
+ * viewports. No tap interactivity — purely informational.
+ */
+
+.disconnect-toast {
+  position: fixed;
+  top: env(safe-area-inset-top, 0px);
+  left: 50%;
+  transform: translate(-50%, 12px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 18px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #fff;
+  z-index: 1000;
+  pointer-events: none;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  animation: disconnect-toast-slide 220ms ease-out;
+}
+
+.disconnect-toast--missing {
+  background: linear-gradient(135deg, #b25a00, #f19b2a);
+  color: #111;
+}
+
+.disconnect-toast--disconnected {
+  background: #c62828;
+  color: #fff;
+}
+
+.disconnect-toast__spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 0, 0, 0.25);
+  border-top-color: #111;
+  animation: disconnect-toast-spin 700ms linear infinite;
+}
+
+@keyframes disconnect-toast-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes disconnect-toast-slide {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 12px);
+  }
+}

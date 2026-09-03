@@ -1,0 +1,218 @@
+/**
+ * AgentCashoutPanel Styles
+ */
+
+.agent-cashout-panel {
+  background: linear-gradient(180deg, #1a1a2e 0%, #12122a 100%);
+  border-radius: 18px;
+  overflow: hidden;
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 8px 32px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border, #2a2a4a);
+}
+
+.panel-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #fff;
+  flex: 1;
+}
+
+.count-badge {
+  background: linear-gradient(135deg, #ffa726, #ff7043);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  padding: 4px 12px;
+  border-radius: 20px;
+  box-shadow: 0 0 12px rgba(255, 167, 38, 0.3);
+}
+
+.refresh-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: var(--surface-elevated, #2a2a4a);
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background 0.2s;
+}
+
+.loading-state,
+.empty-state {
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 3rem;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.empty-state p {
+  color: var(--text-secondary, #8a8a9a);
+  margin: 0;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border, #2a2a4a);
+  border-top-color: var(--primary, #667eea);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.error-banner {
+  background: rgba(239, 83, 80, 0.1);
+  border-bottom: 1px solid #ef5350;
+  color: #ef5350;
+  padding: 12px 20px;
+  font-size: 0.875rem;
+}
+
+.cashout-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.cashout-card {
+  padding: 20px;
+  border-bottom: 1px solid var(--border, #2a2a4a);
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+.cashout-card:last-child {
+  border-bottom: none;
+}
+
+.cashout-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.player-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.player-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--surface-elevated, #2a2a4a);
+  border: 2px solid rgba(255, 167, 38, 0.3);
+  box-shadow: 0 0 8px rgba(255, 167, 38, 0.1);
+}
+
+.player-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.player-name {
+  font-weight: 600;
+  color: #fff;
+}
+
+.request-time {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #8a8a9a);
+}
+
+.cashout-amount {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.amount-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #ffa726;
+  text-shadow: 0 0 8px rgba(255, 167, 38, 0.2);
+}
+
+.amount-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #8a8a9a);
+}
+
+.player-note {
+  background: var(--surface, #1a1a2e);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.875rem;
+  color: var(--text-secondary, #8a8a9a);
+  font-style: italic;
+  margin-bottom: 12px;
+}
+
+.cashout-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.action-btn {
+  flex: 1;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.action-btn.approve {
+  background: linear-gradient(135deg, #00c853 0%, #2e7d32 100%);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(0, 200, 83, 0.25);
+}
+
+.action-btn.reject {
+  background: transparent;
+  border: 1px solid #ef5350;
+  color: #ef5350;
+}
+
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.escrow-notice {
+  margin-top: 12px;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #8a8a9a);
+  text-align: center;
+  padding: 8px 12px;
+  background: rgba(255, 167, 38, 0.05);
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 167, 38, 0.15);
+}

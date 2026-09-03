@@ -1,0 +1,124 @@
+.avatar-customizer {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 16px;
+  padding: 20px;
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.avatar-customizer h3 {
+  color: #fff;
+  margin: 0 0 20px;
+  font-size: 1.1rem;
+  text-align: center;
+}
+
+.avatar-preview-large {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  margin: 0 auto 20px;
+  overflow: hidden;
+  border: 3px solid #ffd700;
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+}
+
+.avatar-preview-large img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* `.preset-avatar-preview`, `.avatar-tabs`, `.custom-upload`, `.upload-btn` and
+   `.upload-hint` lived here until 2026-08-25. They dressed the Preset/Upload
+   tab pair and the file input. Photos were removed platform-wide on
+   2026-08-21 and the guard in AvatarService.isLibraryAvatarUrl refuses them at
+   the write point, so the upload tab could only ever have failed. Deleted with
+   the markup rather than left behind as styles for a control that is gone. */
+
+.option-section {
+  margin-bottom: 16px;
+}
+
+.option-section label {
+  display: block;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.8rem;
+  margin-bottom: 8px;
+}
+
+/* Mobile-first: 6 across at 375px, 8 once there is room. Eight 30px targets on
+   a 375px phone sit under the 44px minimum and were missing more often than
+   they hit. */
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+
+.emoji-btn {
+  width: 100%;
+  aspect-ratio: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  /* The glyphs are white-on-panel; without this they inherit whatever the
+       host modal sets and the suits vanished into the dark background. */
+  color: #fff;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+.emoji-btn.selected {
+  border-color: #ffd700;
+  background: rgba(255, 215, 0, 0.15);
+}
+
+.color-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+
+@media (min-width: 420px) {
+  .emoji-grid,
+  .color-grid {
+    grid-template-columns: repeat(8, 1fr);
+  }
+}
+
+.color-btn {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+.color-btn.selected {
+  border-color: #fff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
+}
+
+.save-avatar-btn {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, #ffd700, #ff8c00);
+  border: none;
+  border-radius: 10px;
+  color: #000;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  margin-top: 16px;
+}
+.save-avatar-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+}

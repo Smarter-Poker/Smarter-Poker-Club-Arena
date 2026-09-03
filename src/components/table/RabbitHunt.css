@@ -1,0 +1,241 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * RABBIT HUNT — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * POKERBROS PARITY 2026-08-26 — rebuilt from a frame-by-frame pass over the
+ * reference recording (RABBIT HUNT.MOV):
+ *   - The reference button is a COMPACT ICON at the bottom-LEFT of the table,
+ *     sitting above the toolbar, not a labelled pill in the middle of the felt.
+ *     It FADES IN (~250ms) once the pot has shipped, waits through the
+ *     inter-hand pause, and vanishes on the tap.
+ *   - The reveal itself no longer lives in this file at all: the cards flip on
+ *     the board. See CommunityCards.css (ccRabbitFlip) for the reveal timing,
+ *     which is where the old cardReveal/`.rabbit-hunt__reveal` block went. That
+ *     block was dead here — the component stopped emitting those classes when
+ *     the cards moved to the CommunityCards board.
+ */
+
+/* Dan 2026-08-26: "THAT ALSO THE EXACT POSITION THAT THE RABBIT HUNT BUTTON
+   SHOULD APPEAR WHEN THE HAND IS OVER" — the position being the bottom-left HUD
+   slot the time bank tile occupies while the hero is on the clock. The two are
+   mutually exclusive by construction (one needs a hand in progress, the other
+   needs no hand), so one slot holds both.
+
+   So this no longer positions itself. It used to be `position: fixed; left:
+   12px; bottom: 22vh` with a 480px override — its own coordinate system, chosen
+   to approximate the bottom-left corner, and drifting from the HUD's real
+   bottom line (`--sp-hud-line`) whenever the action panel changed height. It
+   renders inside the bottom-left HUD corner now (`.hud-ul-column.hud-bl-row`,
+   TablePage.css) and takes its place from that row, the same way the time-bank
+   tile and the previous-hand card do. It is also the same SIZE as them — see
+   the note on `.rabbit-hunt__button` below, which is the half of "the same
+   position" that was missed the first time.
+
+   `pointer-events: auto` stays and is load-bearing: `.table-hud` sets
+   `pointer-events: none` so the felt underneath stays touchable, and every
+   interactive child has to opt back in. */
+.rabbit-hunt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  pointer-events: auto;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   BUTTON — A HUD TILE, THE SAME ONE THE TIME BANK IS
+   ═══════════════════════════════════════════════════════════════════════════════
+
+   Dan: "it should appear in the same position that the time bank icon lives."
+
+   Rendering into the time bank's slot was only half of that, and the half that
+   was already done. This is the other half: SAME POSITION means same box. The
+   button used to be a hardcoded 64px square (54px under 480px) while both of
+   its slot-mates — `.tbc-widget` and `.prev-hand-card` — are
+   `var(--sp-hud-tile-size)` squares. So the corner visibly changed shape when
+   the hand ended: a 64px badge stood where a 36px tile had been, 28px taller
+   than the row it lives in, overhanging the felt's bottom edge that
+   `--sp-hero-clear` (TablePage.css) sizes against the tile.
+
+   Every value below is read from the tile language declared once on
+   `.table-hud` (TableHUD.css: --sp-hud-tile-size / -radius / -bg / -fg). Do NOT
+   put a pixel square back here. If the tiles ever need to be bigger, that
+   number moves in TableHUD.css and all three widgets follow it together, which
+   is the whole reason it is a token. */
+
+.rabbit-hunt__button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--sp-hud-tile-size, 36px);
+  height: var(--sp-hud-tile-size, 36px);
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--sp-hud-tile-radius, 10px);
+  background: var(--sp-hud-tile-bg, rgba(10, 12, 18, 0.72));
+  /* Blur is legibility, not ornament — the same reasoning as TimebankCounter.css:
+     the tile sits over a painted felt whose colour changes per theme. It also
+     means the tile is already drawn on the first frame, before the remote .webp
+     has loaded, instead of a transparent gap where a control should be. */
+  backdrop-filter: blur(8px) saturate(1.1);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+  color: var(--sp-hud-tile-fg, rgba(255, 255, 255, 0.86));
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  /* Dan: "the rabbit hunt button needs to display way faster than it currently
+     does." It fades rather than pops, but 250ms of that fade was spent below
+     full opacity on a button whose whole life can be two seconds. 120ms reads
+     as instant and still is not a pop. `backwards` holds the first frame if
+     paint lags. */
+  animation: rabbitBtnIn 0.12s ease backwards;
+  transition:
+    transform 0.15s ease,
+    background 0.2s ease;
+}
+
+/* ═══ 36px PAINTED, 44px TOUCHED ═══
+   The twin of the rules in TimebankCounter.css and PreviousHandCard.css, with
+   the same asymmetric insets for the same reason, because this button stands in
+   the same slot as the tile those rules were measured for. The button is
+   already `position: relative` above, so the pseudo has its containing block. */
+@media (max-width: 1023px) {
+  .rabbit-hunt__button::after {
+    content: '';
+    position: absolute;
+    inset: -3px -4px;
+  }
+}
+
+@keyframes rabbitBtnIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.rabbit-hunt__button:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.rabbit-hunt__button:disabled {
+  cursor: not-allowed;
+}
+
+.rabbit-hunt__button--loading {
+  animation: rabbitPulse 1s ease-in-out infinite;
+}
+
+@keyframes rabbitPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* The artwork fills the tile, exactly as `.tbc-icon-img` and
+   `.prev-hand-card__icon-img` fill theirs. The drop shadows that used to sit
+   here were the 64px badge's own chrome; neither slot-mate has one, and on a
+   36px tile they read as a smudge rather than a lift. `border-radius: inherit`
+   so the corner is the token's, not a second opinion about it. */
+.rabbit-hunt__icon-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: inherit;
+  display: block;
+  user-select: none;
+}
+
+/* Hunts-left count. Positioned and sized as `.tbc-count-overlay` is on the time
+   bank tile — bottom-right, 8px, tabular — because it is the same number in the
+   same corner of the same tile, and two different treatments in one slot is how
+   the corner stopped reading as a set. The full sentence lives in the button's
+   aria-label, where it does not have to fit in 36px. */
+.rabbit-hunt__remaining {
+  position: absolute;
+  bottom: 1px;
+  right: 2px;
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1;
+  color: #ffffff;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(0, 0, 0, 0.7);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* Corner price pill. The reference has no billing, we do — the price must be
+   on screen before the tap. Scaled to the tile: at the old 22px min-width and
+   0.7rem it was two thirds the width of a 36px tile. */
+.rabbit-hunt__cost {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 14px;
+  padding: 1px 4px;
+  font-size: 0.5rem;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+  color: #ffb800;
+  background: rgba(0, 0, 0, 0.85);
+  border: 1px solid rgba(255, 184, 0, 0.5);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+/* Both of these classes were applied by the component and defined nowhere, so a
+   VIP's "FREE" pill rendered identically to a paid "5" pill and the VIP button
+   was indistinguishable from the standard one. */
+.rabbit-hunt__cost--free {
+  background: rgba(40, 26, 0, 0.85);
+  color: #ffd700;
+  border-color: rgba(255, 215, 0, 0.6);
+  letter-spacing: 0.04em;
+}
+
+/* A hairline around the TILE, not a glow on the artwork: the tile is the shared
+   object now, and a 14px gold bloom around a 36px square swamps it. Outset, not
+   inset — the icon image fills the tile edge to edge, so an inner ring would be
+   painted over by the artwork and a VIP would see nothing. */
+.rabbit-hunt__button--vip {
+  box-shadow: 0 0 0 1px rgba(255, 215, 0, 0.45);
+}
+
+/* The 480px block that used to sit here shrank the button from 64px to 54px.
+   Deleted with the hardcoded square it was compensating for: the tile is one
+   token-sized box at every width, exactly like its two slot-mates, and a
+   breakpoint that re-hardcodes a size is how the parity above gets lost again. */
+
+@media (prefers-reduced-motion: reduce) {
+  .rabbit-hunt__button,
+  .rabbit-hunt__button--loading {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Dan 2026-08-28: strip the dark tile — same 2026-08-26 treatment as every
+   other HUD icon button. The pre-load visibility the tile used to provide is
+   carried by the button's own drop shadow on the artwork instead. */
+.rabbit-hunt__button {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}

@@ -1,0 +1,298 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * TABLE SETTINGS PANEL — Bible V8 §11.1
+ * Shared styles for overlay (table gear icon) and inline (hamburger menu) modes
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.tsp-container {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: var(--off-white, #e4e6eb);
+}
+
+/* ── Overlay mode (table gear icon) ── */
+.tsp-overlay {
+  background: var(--dark-surface, #242526);
+  border-radius: 12px;
+  padding: 0;
+  max-height: 70vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Inline mode (hamburger menu) ── */
+.tsp-inline {
+  background: transparent;
+  padding: 0;
+}
+
+/* ── Header ── */
+.tsp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.tsp-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--off-white, #e4e6eb);
+}
+
+.tsp-close {
+  background: var(--card-surface, #3a3b3c);
+  border: none;
+  color: var(--off-white, #e4e6eb);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+
+/* ── Loading ── */
+.tsp-loading {
+  padding: 24px;
+  text-align: center;
+  color: var(--soft-white, #b0b3b8);
+  font-size: 14px;
+}
+
+/* ── Toggle List ── */
+.tsp-list {
+  padding: 8px 0;
+}
+
+/* ── Individual Setting Item ── */
+.tsp-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  cursor: pointer;
+  border-radius: 8px;
+  margin: 0 8px;
+  transition: background 0.15s ease;
+  gap: 12px;
+}
+
+.tsp-item--active {
+  /* subtle highlight for active items */
+}
+
+.tsp-item__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.tsp-item__label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--off-white, #e4e6eb);
+  line-height: 1.3;
+}
+
+.tsp-item__desc {
+  font-size: 11px;
+  color: var(--soft-white, #b0b3b8);
+  line-height: 1.3;
+}
+
+/* ── Toggle Switch ── */
+.tsp-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.tsp-toggle__track {
+  display: flex;
+  align-items: center;
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  padding: 2px;
+  transition:
+    background-color 0.25s ease,
+    border-color 0.25s ease;
+}
+
+.tsp-toggle--on .tsp-toggle__track {
+  background-color: #3fb950;
+  border: 2px solid #4dc660;
+}
+
+.tsp-toggle--off .tsp-toggle__track {
+  background-color: #374151;
+  border: 2px solid #6b7280;
+}
+
+.tsp-toggle__thumb {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background-color: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  transition: transform 0.25s ease;
+}
+
+.tsp-toggle--on .tsp-toggle__thumb {
+  transform: translateX(20px);
+}
+
+.tsp-toggle--off .tsp-toggle__thumb {
+  transform: translateX(0);
+}
+
+/* ── Theme Settings Link ── */
+.tsp-theme-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  margin: 4px 8px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: background 0.15s ease;
+}
+
+.tsp-theme-link__label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--royal-blue, #1877f2);
+}
+
+.tsp-theme-link__arrow {
+  font-size: 18px;
+  color: var(--soft-white, #b0b3b8);
+}
+
+/* Table Studio companion treatment: in-game controls use the same tactile
+   obsidian/cobalt language as the appearance picker they open. */
+.tsp-container {
+  --tsp-accent: #48bfff;
+  --tsp-line: rgba(148, 178, 205, 0.16);
+  color: #edf7ff;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+}
+
+.tsp-overlay {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.035), transparent 44%), #090f16;
+  border: 1px solid rgba(161, 197, 224, 0.2);
+  border-radius: 4px;
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.62),
+    inset 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.tsp-header {
+  min-height: 64px;
+  padding: 14px 16px;
+  background: linear-gradient(90deg, rgba(25, 40, 55, 0.8), rgba(10, 17, 25, 0.8));
+  border-bottom-color: var(--tsp-line);
+}
+
+.tsp-title {
+  color: #f2f8fc;
+  font-family: 'Rajdhani', 'Arial Narrow', sans-serif;
+  font-size: 19px;
+  letter-spacing: 0.025em;
+}
+
+.tsp-close {
+  color: #9db1c1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--tsp-line);
+}
+.tsp-close:focus-visible {
+  color: #fff;
+  background: rgba(72, 191, 255, 0.12);
+  outline: 2px solid rgba(72, 191, 255, 0.45);
+  outline-offset: 2px;
+}
+
+.tsp-list {
+  padding: 8px;
+}
+.tsp-item {
+  width: 100%;
+  min-height: 56px;
+  margin: 2px 0;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  font: inherit;
+  appearance: none;
+}
+.tsp-item--active {
+  background: rgba(72, 191, 255, 0.035);
+}
+.tsp-item__label {
+  color: #dce9f2;
+  font-size: 13px;
+  font-weight: 650;
+}
+.tsp-item__desc {
+  color: #71889a;
+  font-size: 10px;
+}
+
+.tsp-item:focus-visible {
+  outline: 2px solid var(--tsp-accent);
+  outline-offset: 2px;
+}
+.tsp-toggle__track {
+  width: 46px;
+  height: 26px;
+  border-radius: 999px;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.35);
+}
+.tsp-toggle--on .tsp-toggle__track {
+  background: linear-gradient(180deg, #52c7ff, #198cc5);
+  border-color: rgba(130, 220, 255, 0.75);
+  box-shadow:
+    0 0 15px rgba(42, 170, 230, 0.24),
+    inset 0 1px rgba(255, 255, 255, 0.25);
+}
+.tsp-toggle--off .tsp-toggle__track {
+  background: #17222d;
+  border-color: #34495a;
+}
+.tsp-toggle__thumb {
+  width: 18px;
+  height: 18px;
+  background: linear-gradient(145deg, #fff, #dce7ee);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.tsp-toggle--on .tsp-toggle__thumb {
+  transform: translateX(20px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tsp-item,
+  .tsp-toggle__track,
+  .tsp-toggle__thumb {
+    transition: none !important;
+  }
+}

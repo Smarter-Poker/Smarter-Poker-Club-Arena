@@ -1,0 +1,56 @@
+.pin-input-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.pin-inputs {
+  display: flex;
+  gap: 12px;
+}
+
+.pin-digit {
+  width: 52px;
+  height: 60px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  color: #fff;
+  font-size: 1.5rem;
+  font-weight: 700;
+  text-align: center;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.pin-digit:focus {
+  outline: none;
+  border-color: #ffd700;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.has-error .pin-digit {
+  border-color: #f87171;
+  animation: shake 0.3s;
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  25% {
+    transform: translateX(-4px);
+  }
+
+  75% {
+    transform: translateX(4px);
+  }
+}
+
+.pin-error {
+  color: #f87171;
+  font-size: 0.85rem;
+  margin-top: 12px;
+}

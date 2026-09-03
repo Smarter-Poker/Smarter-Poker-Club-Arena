@@ -1,0 +1,18 @@
+-- APPLIED TO PRODUCTION 2026-08-19 via Supabase MCP as
+-- `batch_credit_rpcs_own_statement_timeout`. Mirror only.
+--
+-- ALTER FUNCTION fn_credit_agent_commissions_batch(jsonb)    SET statement_timeout = '300s';
+-- ALTER FUNCTION fn_apply_rakeback_player_stats_batch(jsonb) SET statement_timeout = '300s';
+--
+-- Found by watching the first batched deploy run. The batch functions inherited
+-- the caller's ~8s statement_timeout, and a 500-item commission batch exceeded
+-- it: five "canceling statement due to statement timeout" entries at
+-- 23:38:05/20/28/36/45 matched five HTTP 500s. A timeout aborts the WHOLE call,
+-- so those items were counted failed and skipped while the cursor advanced past
+-- them. The functions now set their own generous timeout (same pattern
+-- ca_drain_club_rebuild uses) and the client chunk dropped 500 -> 150.
+--
+-- Per-item exception isolation is unchanged: a genuinely bad item still fails
+-- alone. The skipped rows were recovered by rewinding the settler cursor, which
+-- is safe precisely because every underlying write is idempotent — it re-runs
+-- them through the engine's own exact equal-share arithmetic.

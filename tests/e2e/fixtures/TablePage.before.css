@@ -1,0 +1,2340 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  CLUB ARENA — Premium Table Page Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * PokerBros-style table with Facebook color scheme
+ * Reference: docs/UI_DESIGN_REFERENCE.md
+ */
+
+@import '../styles/design-tokens.css';
+
+/* Z-Index Hierarchy */
+:root {
+  --z-table: 1;
+  --z-seats: 10;
+  --z-pot: 20;
+  --z-control-strip: 50;
+  --z-header: 100;
+  --z-action-panel: 100;
+  --z-overlay: 200;
+  --z-side-menu: 300;
+  --z-modal-backdrop: 400;
+  --z-modal: 500;
+  --z-toast: 600;
+  --z-confetti: 700;
+}
+/* Dan 2026-08-19, bug list item 2: "no winner banner at showdown - just ship
+   the pot." The .winner-banner rules, its two keyframes and its responsive
+   overrides that used to sit here are all removed. Do not reintroduce them. */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PAGE LAYOUT
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-page {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  height: 100dvh; /* Use dynamic viewport height for mobile browser chrome */
+  background:
+        /* Subtle radial vignette */
+    radial-gradient(ellipse 120% 100% at 50% 60%, transparent 30%, rgba(0, 0, 0, 0.4) 100%),
+    /* Base gradient using design tokens */
+    linear-gradient(
+        180deg,
+        var(--bg-primary, #0a0e17) 0%,
+        var(--bg-secondary, #111827) 40%,
+        #080d15 100%
+      );
+  overflow: hidden;
+  /* Mobile touch optimizations */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
+  overscroll-behavior: none;
+}
+
+/* Dan 2026-08-18: the blurred-skin .table-backdrop layer is GONE ("remove
+   the weird images around the table"). The page background is a designed,
+   interchangeable image set inline by TablePage (TABLE_BACKGROUNDS). */
+.table-container {
+  position: relative;
+  z-index: 1;
+}
+
+/* ─── Hero Turn Indicator — subtle border glow when it's your turn ─── */
+.table-page--hero-turn {
+  animation: heroTurnPulse 2s ease-in-out infinite;
+}
+
+@keyframes heroTurnPulse {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 0 transparent;
+  }
+  50% {
+    box-shadow: inset 0 0 80px rgba(255, 215, 0, 0.04);
+  }
+}
+
+/* ─── All-In Dramatic Mode — darken non-essential UI ─── */
+.table-page--allin-mode {
+  /* Tension border glow */
+  animation: allInTensionGlow 2s ease-in-out infinite;
+}
+
+@keyframes allInTensionGlow {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 0 transparent;
+  }
+  50% {
+    box-shadow: inset 0 0 60px rgba(139, 92, 246, 0.06);
+  }
+}
+
+.table-page--allin-mode .table-header {
+  opacity: 0.4;
+  transition: opacity 0.8s ease;
+}
+
+/* Dim the action panel during all-in — VISUAL ONLY.
+   2026-08-15 ROOT-CAUSE FIX (Dan: "facing an all-in, it would not let me
+   call — nothing happened when either button was clicked and I timed out").
+   This rule used to carry `pointer-events: none`. `isAllInMode` is set on
+   ANY player's all-in, not just hero's, so an opponent's shove made hero's
+   own Fold/Call/All-In buttons physically unclickable for the rest of the
+   hand. The browser never dispatched the click at all — which is why there
+   was no error toast: no handler ever ran. The JS auto-fold timer is not a
+   DOM path, so it still fired and folded hero. Production hand #1315 shows
+   exactly 30.1s between the river shove and Dan's forced fold.
+   NEVER reintroduce pointer-events on this selector. */
+.table-page--allin-mode .action-panel {
+  opacity: 0.35;
+  transition: opacity 0.5s ease;
+}
+
+/* Hero still has live action -> panel is never dimmed and never inert. */
+.table-page--allin-mode.table-page--hero-turn .action-panel {
+  opacity: 1;
+}
+
+/* Dim seat stack labels */
+.table-page--allin-mode .seat-stack {
+  opacity: 0.5;
+  transition: opacity 0.5s ease;
+}
+
+/* ─── Winner Celebration — golden flash on table ─── */
+.table-page--winner-flash .table-surface {
+  animation: winnerTableFlash calc(1.5s * var(--animation-speed, 1)) ease-out;
+}
+
+@keyframes winnerTableFlash {
+  0% {
+    box-shadow:
+      inset 0 0 120px rgba(255, 215, 0, 0.15),
+      inset 0 4px 12px rgba(255, 255, 255, 0.08),
+      inset 0 -4px 12px rgba(0, 0, 0, 0.4);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 200px rgba(255, 215, 0, 0.08),
+      inset 0 4px 12px rgba(255, 255, 255, 0.08),
+      inset 0 -4px 12px rgba(0, 0, 0, 0.4);
+  }
+  100% {
+    box-shadow:
+      inset 0 4px 12px rgba(255, 255, 255, 0.08),
+      inset 0 -4px 12px rgba(0, 0, 0, 0.4),
+      inset 0 0 80px rgba(0, 0, 0, 0.12);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   HEADER BAR — PokerBros compact style
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* Dan 2026-04-17: top bar was competing with the TableHUD hamburger and
+   BBJ banner, and its centered game-info duplicated the on-felt "NLH 1/2"
+   title. Trimmed down to a transparent thin strip hosting only the quick
+   back + add-chips buttons on the left; center/right text rows hidden. */
+.table-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 4px 8px;
+  padding-top: calc(4px + env(safe-area-inset-top, 0));
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-bottom: none;
+  z-index: 100;
+  min-height: 0;
+}
+
+/* Hide all three slots of the legacy header — hamburger menu (TableHUD
+   upper-left) already hosts Leave Table + Add Chips. */
+.header-left,
+.header-center,
+.header-right {
+  display: none !important;
+}
+
+.header-btn {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  -webkit-tap-highlight-color: transparent;
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* Glass overlay on header buttons */
+.header-btn::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, transparent 100%);
+  pointer-events: none;
+  border-radius: 7px 7px 0 0;
+}
+
+.header-btn:hover,
+.header-btn:active {
+  background: rgba(255, 255, 255, 0.15);
+  color: #e2e8f0;
+  border-color: rgba(255, 255, 255, 0.12);
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.header-btn:active {
+  transform: scale(0.95);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.header-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+}
+
+.header-center__top-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-center__bottom-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.7;
+}
+
+.header-table-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #94a3b8;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.header-game-type {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.header-blinds {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #22c55e;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  text-shadow: 0 0 8px rgba(34, 197, 94, 0.3);
+  padding: 2px 8px;
+  background: rgba(34, 197, 94, 0.08);
+  border-radius: 4px;
+  border: 1px solid rgba(34, 197, 94, 0.15);
+}
+
+.header-brand {
+  font-size: 0.5625rem;
+  font-weight: 700;
+  color: #60a5fa;
+  letter-spacing: 0.05em;
+  text-shadow: 0 0 6px rgba(96, 165, 250, 0.3);
+}
+
+.header-club-name {
+  font-size: 0.5625rem;
+  font-weight: 600;
+  color: #a78bfa;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-hand-number {
+  font-size: 0.5625rem;
+  font-weight: 600;
+  color: #94a3b8;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Jackpot Banner */
+.jackpot-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background: linear-gradient(90deg, #8b0000 0%, #dc143c 50%, #8b0000 100%);
+  border-radius: 20px;
+  box-shadow: 0 0 20px rgba(220, 20, 60, 0.4);
+  animation: jackpotPulse 2s ease-in-out infinite;
+}
+
+@keyframes jackpotPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(220, 20, 60, 0.4);
+  }
+
+  50% {
+    box-shadow: 0 0 30px rgba(220, 20, 60, 0.6);
+  }
+}
+
+.jackpot-label {
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #ffd700;
+}
+
+.jackpot-amount {
+  font-size: 1rem;
+  font-weight: 800;
+  font-family: 'JetBrains Mono', monospace;
+  color: #ffffff;
+}
+
+.jackpot-diamond {
+  font-size: 0.875rem;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Add chips icon is now integrated into the header */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TABLE CONTAINER — Fixed viewport with CSS scaling
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-container {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  /* Dan 2026-04-17 (v3): top was clipping under BBJ row. Drop the table ~24px
+     further from the top edge. Align-start pins the scaler to the top so the
+     padding-top alone controls vertical position — no more centered clip. */
+  padding: 76px 12px calc(124px + env(safe-area-inset-bottom, 0));
+  overflow: visible;
+  max-height: calc(100dvh - 60px);
+}
+
+/* Phase A (Dan 2026-04-17, flipped): PokerBros is a VERTICAL portrait oval —
+   taller than wide. Aspect ratio ~0.65:1 (0.65 wide per 1 tall). On a 375px
+   phone with the padded container ~335px wide, we hold to ~300px wide and
+   let the table fill vertically up to the available dvh minus header, BBJ,
+   hero cards, and action bar. */
+.table-scaler {
+  width: 100%;
+  /* Dan 2026-08-17 (audit): 320px read small once the backdrop stopped
+     faking a giant table. 360px lets the painted rail span nearly the full
+     375px viewport, PokerBros-style. */
+  max-width: min(calc(100% - 8px), 360px);
+  /* Dan 2026-08-17: 605/1000 — the canonical 896x1200 skin composites shown
+     with object-fit: cover crop to x [9.5%, 90.5%] at this aspect, which is
+     the rail plus a small scene margin. The seat ring percentages in
+     TablePage.tsx are derived from THIS box; changing the aspect moves every
+     seat off the painted rail. */
+  aspect-ratio: 605 / 1000;
+  position: relative;
+  transform-origin: center center;
+  max-height: 100%;
+}
+
+/* Table Felt (Vertical Oval) */
+.table-felt {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
+/* Table artwork — the active skin composite (scene + painted table).
+   Dan 2026-08-17: object-fit: cover inside the 605/1000 scaler crops the
+   896x1200 frame to x [9.5%, 90.5%] — the rail plus a thin scene margin.
+   The stadium border-radius + elliptical mask feather the cropped scene
+   into the darkened page backdrop (the same image), so there is no hard
+   rectangle edge, and the rail stays fully opaque (its farthest point is
+   ~87% of the mask ellipse; the fade starts at 88%). */
+.table-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* Dan 2026-08-18 (final): the skin assets are now PRE-CROPPED transparent
+     PNGs — the scene around the table is alpha'd out at build time, on the
+     SAME canvas the scaler always used (605/1000), so the seat ring and
+     felt window percentages are unchanged. No CSS mask and no border-radius
+     are needed: whatever is painted IS the table. */
+  object-fit: fill;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  z-index: 0;
+}
+
+/* The rail is now painted by .table-art. This element survives only as the
+   positioning context for .table-surface. */
+.table-rail {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  background: none;
+  border-radius: 9999px;
+  position: relative;
+}
+
+/* Wood grain + leather stitching removed — the artwork paints both. */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FELT COLOR THEMES — Apply via data-felt-theme attribute on .table-page
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* Classic Green */
+.table-page[data-felt-theme='green'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a7a4a 0%, #0f5132 50%, #0a3d24 100%);
+}
+
+/* Default (Dan 2026-07-28): Commander charcoal — matches the near-black felt
+   in the /commander/table-tablets artwork. Named themes below still apply. */
+.table-page:not([data-felt-theme]) {
+  --felt-gradient: radial-gradient(ellipse at 50% 42%, #151b1f 0%, #0e1316 55%, #090d10 100%);
+  --rail-gradient: linear-gradient(
+    180deg,
+    #5a4232 0%,
+    #4a3728 20%,
+    #3a2a1e 50%,
+    #4a3728 80%,
+    #5a4232 100%
+  );
+}
+
+/* Blue Royale */
+.table-page[data-felt-theme='blue'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a4a7a 0%, #0f3252 50%, #0a243d 100%);
+}
+
+/* Burgundy */
+.table-page[data-felt-theme='burgundy'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #7a1a3a 0%, #52102a 50%, #3d0a20 100%);
+}
+
+/* Midnight Black */
+.table-page[data-felt-theme='black'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #2a2a2e 0%, #1a1a1e 50%, #0e0e12 100%);
+}
+
+/* Tournament Purple */
+.table-page[data-felt-theme='purple'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #4a1a7a 0%, #321052 50%, #240a3d 100%);
+}
+
+/* Gold VIP */
+.table-page[data-felt-theme='gold'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #7a6a1a 0%, #524a0f 50%, #3d380a 100%);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FIX 222: BIBLE V8 §11.2 THEME IDS — Tab 1 (Themes) + Tab 2 (Table Felt)
+   Maps ThemeSettingsModal asset IDs to --felt-gradient CSS custom property
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* Tab 1: Themes (presets) */
+.table-page[data-felt-theme='default-dark'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a1a2e 0%, #16213e 50%, #0e0e18 100%);
+  --bg-gradient: radial-gradient(ellipse at 50% 50%, #1a1a2e 0%, #0e0f1a 100%);
+}
+.table-page[data-felt-theme='classic-brown'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #5d4037 0%, #3e2723 50%, #2c1a14 100%);
+  --bg-gradient: radial-gradient(ellipse at 50% 50%, #3e2723 0%, #1a0f0a 100%);
+}
+.table-page[data-felt-theme='neon-blue'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1565c0 0%, #0d47a1 50%, #062f6e 100%);
+  --bg-gradient: radial-gradient(ellipse at 50% 50%, #0d47a1 0%, #05204f 100%);
+}
+.table-page[data-felt-theme='rustic-wood'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #795548 0%, #4e342e 50%, #321e18 100%);
+  --bg-gradient: radial-gradient(ellipse at 50% 50%, #4e342e 0%, #1a0f0a 100%);
+}
+.table-page[data-felt-theme='casino-green'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #2e7d32 0%, #1b5e20 50%, #0d3a10 100%);
+  --bg-gradient: radial-gradient(ellipse at 50% 50%, #1b5e20 0%, #0a2d0a 100%);
+}
+
+/* Tab 2: Table Felt (specific surface) */
+.table-page[data-felt-theme='dark-felt'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a1a2e 0%, #0f0f1a 50%, #08080f 100%);
+}
+.table-page[data-felt-theme='brown-felt'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #4e342e 0%, #3e2723 50%, #2a1812 100%);
+}
+.table-page[data-felt-theme='neon-blue-felt'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a237e 0%, #0d47a1 50%, #062c70 100%);
+}
+.table-page[data-felt-theme='red-leather'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #c62828 0%, #b71c1c 50%, #7f0000 100%);
+}
+.table-page[data-felt-theme='green-casino'] {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #388e3c 0%, #1b5e20 50%, #0d3a10 100%);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FIX 222: BIBLE V8 §11.2 — Tab 4 (Background Themes)
+   Applied to .table-page via --bg-gradient and background
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-page[data-background-theme='diamond-pattern'] {
+  background:
+    repeating-linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.015) 0px,
+      rgba(255, 255, 255, 0.015) 1px,
+      transparent 1px,
+      transparent 12px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.015) 0px,
+      rgba(255, 255, 255, 0.015) 1px,
+      transparent 1px,
+      transparent 12px
+    ),
+    radial-gradient(ellipse at 50% 50%, #263238 0%, #1a2025 100%);
+}
+.table-page[data-background-theme='stone-concrete'] {
+  background:
+    repeating-conic-gradient(rgba(255, 255, 255, 0.008) 0% 25%, transparent 0% 50%) 0 0 / 3px 3px,
+    radial-gradient(ellipse at 50% 50%, #616161 0%, #424242 50%, #2a2a2a 100%);
+}
+.table-page[data-background-theme='galaxy-nebula'] {
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(63, 81, 181, 0.3) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 80%, rgba(156, 39, 176, 0.2) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, #1a237e 0%, #311b92 50%, #0a0a1a 100%);
+}
+.table-page[data-background-theme='hardwood-floor'] {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.02) 0px,
+      transparent 2px,
+      transparent 40px
+    ),
+    radial-gradient(ellipse at 50% 50%, #795548 0%, #5d4037 50%, #3e2723 100%);
+}
+.table-page[data-background-theme='teal-tile'] {
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.025) 0px,
+      rgba(255, 255, 255, 0.025) 1px,
+      transparent 1px,
+      transparent 50px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.025) 0px,
+      rgba(255, 255, 255, 0.025) 1px,
+      transparent 1px,
+      transparent 50px
+    ),
+    radial-gradient(ellipse at 50% 50%, #00897b 0%, #00695c 50%, #004d40 100%);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FIX 222: BIBLE V8 §11.2 — Tab 3 (Button Themes)
+   Dealer button color tokens — consumed by .dealer-button component
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-page[data-button-theme='classic-white'] {
+  --dealer-btn-bg: linear-gradient(145deg, #ffffff 0%, #e8e8e8 50%, #d0d0d0 100%);
+  --dealer-btn-color: #111;
+}
+.table-page[data-button-theme='red-d-gear'] {
+  --dealer-btn-bg: linear-gradient(135deg, #c62828, #e53935);
+  --dealer-btn-color: #fff;
+}
+.table-page[data-button-theme='gray-d-gear'] {
+  --dealer-btn-bg: linear-gradient(135deg, #616161, #757575);
+  --dealer-btn-color: #fff;
+}
+.table-page[data-button-theme='blue-crystal'] {
+  --dealer-btn-bg: linear-gradient(135deg, #1565c0, #42a5f5);
+  --dealer-btn-color: #fff;
+}
+.table-page[data-button-theme='gold-star'] {
+  --dealer-btn-bg: linear-gradient(135deg, #f57f17, #fbc02d);
+  --dealer-btn-color: #1a1a1e;
+}
+.table-page[data-button-theme='sports-themed'] {
+  --dealer-btn-bg: linear-gradient(135deg, #33691e, #558b2f);
+  --dealer-btn-color: #fff;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FIX 222: BIBLE V8 §11.2 — Tab 5 (Card Themes)
+   Card face color tokens — consumed by card rendering components
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-page[data-cards-theme='standard-red'] {
+  --card-accent: #c62828;
+  --card-back-gradient: linear-gradient(135deg, #c62828, #e53935);
+}
+.table-page[data-cards-theme='standard-blue'] {
+  --card-accent: #1565c0;
+  --card-back-gradient: linear-gradient(135deg, #1565c0, #1976d2);
+}
+.table-page[data-cards-theme='premium-gold'] {
+  --card-accent: #f57f17;
+  --card-back-gradient: linear-gradient(135deg, #f57f17, #ff8f00);
+}
+.table-page[data-cards-theme='premium-black'] {
+  --card-accent: #424242;
+  --card-back-gradient: linear-gradient(135deg, #212121, #424242);
+}
+.table-page[data-cards-theme='premium-platinum'] {
+  --card-accent: #90a4ae;
+  --card-back-gradient: linear-gradient(135deg, #78909c, #90a4ae);
+}
+
+.table-surface {
+  position: absolute;
+  /* Dan 2026-08-17: the felt window of the canonical skin composites after
+     the scaler's cover-crop (source felt x 20.3-79.6% / y 8.9-89.2%, crop
+     x [9.5%, 90.5%]): left (20.3-9.5)/81 = 13.3%, width 73.2%. */
+  left: 13.3%;
+  top: 8.9%;
+  width: 73.2%;
+  height: 80.3%;
+  z-index: 1;
+  /* Premium felt with real fabric texture — theme-aware */
+  background: none;
+  /* Dan 2026-07-28: sized to the artwork's painted felt window (measured by
+     alpha/pixel scan of table-vertical-black-gold.png). 9999px resolves to a
+     true stadium at any size — browsers scale overlapping radii down
+     proportionally, so both axes land on min(w,h)/2. */
+  border-radius: 9999px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  /* NOTE: no `position: relative` here — the rule is absolutely positioned
+     against .table-rail to land on the artwork's felt window. */
+  box-shadow: none;
+  /* The gold rim and bevel come from .table-art (the PNG). No outer glow here:
+     it would bleed over the painted rail. */
+}
+
+/* Hand Number Display — top-center of table felt. Tightened to be legible
+   without stealing focus from the pot. JetBrains Mono keeps the casino-tote
+   feel; slight letter-spacing prevents the hashmark and digits from crowding. */
+/* Dan 2026-08-15: "hand numbers should be in the upper right hand corner."
+   Was top:11%/left:50% — dead centre above the pot, colliding with the new
+   centre brand and with the board on wide hands. */
+.hand-number-display {
+  position: absolute;
+  top: 3.5%;
+  right: 4%;
+  left: auto;
+  transform: none;
+  font-size: 0.68rem;
+  font-weight: 600;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  color: rgba(178, 193, 214, 0.72);
+  letter-spacing: 0.08em;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.7),
+    0 0 6px rgba(0, 0, 0, 0.35);
+  z-index: 2;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TABLE CENTRE BRAND (Dan 2026-08-15)
+   smarter.poker letter logo in the middle of the felt, with the date, game,
+   blinds and club/union underneath. Painted BEHIND the pot and the community
+   cards and fully click-through: it is decoration, never a tap target.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.table-brand {
+  position: absolute;
+  /* Dan 2026-08-17 (audit round 2): at 38% the wordmark + date/club line sat
+     BEHIND the board cards (text peeked between cards). 58% parks the whole
+     masthead in the clear felt below the board, PokerBros-watermark style. */
+  top: 58%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 62%;
+  max-width: 260px;
+  z-index: 1;
+  pointer-events: none;
+  user-select: none;
+}
+
+.table-brand__logo {
+  width: 100%;
+  height: auto;
+  /* Dan's metallic Smarter.Poker lettermark, matted to transparency so the
+     chrome bevels sit on the felt instead of on a black plate. Chrome reads
+     far more subtly than the old blue mark, so it carries more opacity while
+     still staying behind the cards. */
+  opacity: 0.55;
+  filter: drop-shadow(0 2px 7px rgba(0, 0, 0, 0.7));
+}
+
+.table-brand__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  text-align: center;
+}
+
+.table-brand__line {
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(198, 210, 228, 0.42);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
+}
+
+.table-brand__line--club {
+  color: rgba(255, 215, 0, 0.42);
+  letter-spacing: 0.08em;
+}
+
+/* Dan 2026-08-15 — felt masthead, two centered lines.
+   Line 1 (date · club · game) is now a single .table-brand__line; the club
+   name keeps its gold inside that row via this span instead of owning a line
+   of its own. Line 2 is the hand number, moved here from the upper-right
+   corner. .table-brand__meta is already flex-column + align-items:center, so
+   both rows centre under the wordmark with no extra work. */
+.table-brand__club {
+  color: rgba(255, 215, 0, 0.5);
+}
+
+.table-brand__line--hand {
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  letter-spacing: 0.12em;
+  color: rgba(198, 210, 228, 0.34);
+}
+
+@media (max-width: 380px) {
+  .table-brand {
+    width: 56%;
+    gap: 4px;
+  }
+
+  .table-brand__line {
+    font-size: 0.52rem;
+  }
+}
+
+/* Fade the brand out while the drama is on the pot, not the felt. */
+.table-page--allin-mode .table-brand {
+  opacity: 0.35;
+  transition: opacity 0.5s ease;
+}
+
+/* Center spotlight — premium light pooling effect like overhead casino light */
+.table-surface::after {
+  content: none;
+}
+
+/* Center table watermark — club logo at low opacity */
+.table-surface::before {
+  content: none;
+}
+
+/* Pot Area — Clean centered display. Surface-relative; 30% here lands at
+   ~34% of the whole table, sitting above the community cards. */
+.pot-area {
+  position: absolute;
+  top: 30%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 20;
+}
+
+/*
+ * Phase 2 T1-04 — PokerBros hand-strength label at pot center on showdown.
+ * Pops in, holds ~1s, fades out. Per POKERBROS_CLONE_SPEC.md §6 line 548:
+ *   "Hand strength label displayed at pot center temporarily (1 second)"
+ * Total duration 1.4s (150ms in + 850ms hold + 400ms out) so the label is
+ * readable without being in the way of the next hand.
+ */
+.pot-hand-strength {
+  position: absolute;
+  top: -32px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 16px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(20, 20, 24, 0.95), rgba(32, 32, 40, 0.95));
+  border: 1.5px solid rgba(255, 222, 92, 0.5);
+  color: #ffde5c;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  z-index: 25;
+  pointer-events: none;
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.55),
+    0 0 16px rgba(255, 222, 92, 0.25);
+  animation: pot-hand-strength-show 1400ms cubic-bezier(0.2, 0.8, 0.4, 1) forwards;
+}
+
+@keyframes pot-hand-strength-show {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px) scale(0.85);
+  }
+  15% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1.1);
+  }
+  25% {
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+  70% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(-2px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-8px) scale(0.97);
+  }
+}
+
+/* Community Cards Area */
+.community-area {
+  position: absolute;
+  top: 45%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* ── Run it twice / three times (Dan 2026-08-18) ─────────────────────────
+   Extra boards stack directly UNDER the original, and the felt masthead
+   (.table-brand) shifts down one board-height per extra run so the cards
+   never cover the date / club / game / hand line. The stack is anchored
+   from its top so board 1 keeps its usual position. */
+.table-page[data-boards] .community-area {
+  top: 42%;
+  transform: translate(-50%, -42%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.community-area__run {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+}
+.community-area__run-label {
+  font-size: 0.5rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+.table-page[data-boards='2'] .table-brand {
+  top: 72%;
+}
+.table-page[data-boards='3'] .table-brand {
+  top: 84%;
+}
+
+/* ── BOARD SIZING ON THE PORTRAIT TABLE (Dan 2026-07-28) ────────────────────
+   The artwork's painted felt window is only 63.3% of the table's width, so the
+   viewport-breakpoint card sizes in CommunityCards.css (40-64px) overflow onto
+   the rail. Size the board off the FELT instead of the viewport: the row is
+   92% of the felt and every card takes an equal share of it, so five cards fit
+   exactly at any screen size. aspect-ratio keeps the 64x92 card proportion. */
+.table-surface .community-area {
+  /* Dan 2026-08-17 (audit round 2): 92% ran the board edge-to-edge across
+     the felt — the river card sat ON the right rail and under the SB seat.
+     Commercial rooms hold the board to ~60-70% of felt width. */
+  width: 68%;
+}
+
+.table-surface .community-cards,
+.table-surface .community-cards__container {
+  width: 100%;
+}
+
+.table-surface .community-cards__container {
+  justify-content: center;
+}
+
+.table-surface .community-cards__card,
+.table-surface .community-cards__placeholder {
+  width: auto;
+  height: auto;
+  flex: 1 1 0;
+  min-width: 0;
+  aspect-ratio: 64 / 92;
+}
+
+/* The separators are positioned off --cc-card-w, which no longer describes the
+   rendered width once the cards flex. Place them as fractions of the row. */
+.table-surface .community-cards__separator--flop {
+  left: 60%;
+}
+
+.table-surface .community-cards__separator--turn {
+  left: 80%;
+}
+
+/* Game Info Strip — Dan 2026-04-17 v2: PokerBros-style on-felt title. Sits
+   directly UNDER the community cards (flop). Community area is at top:45%
+   with card height ~60px in scaler; so place this at ~54% to sit right
+   beneath the board rather than floating in the felt middle. */
+.table-game-info {
+  position: absolute;
+  top: 54%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  z-index: 10;
+  pointer-events: none;
+}
+.table-game-info__name {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.82);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.9),
+    0 0 8px rgba(0, 0, 0, 0.45);
+}
+.table-game-info__stakes {
+  font-size: 0.68rem;
+  font-weight: 900;
+  color: rgba(255, 222, 92, 0.92);
+  letter-spacing: 0.16em;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.9),
+    0 0 8px rgba(255, 222, 92, 0.18);
+  text-transform: uppercase;
+}
+
+/* Spectator badge — bottom edge of felt */
+.spectator-area {
+  position: absolute;
+  bottom: 8%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SEAT WRAPPER (Positioning)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.seat-wrapper {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+}
+
+/* Dealer Button — Premium 3D puck */
+/* FIX-D4 2026-07-19 (Bible V8 §11.2 Tab 3): consume the per-theme button tokens
+   set by [data-button-theme] so the host's dealer-button selection actually
+   renders. Falls back to the classic white puck when no theme token is set. */
+.dealer-button {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  background: var(--dealer-btn-bg, linear-gradient(145deg, #ffffff 0%, #e8e8e8 50%, #d0d0d0 100%));
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6875rem;
+  font-weight: 900;
+  color: var(--dealer-btn-color, #111);
+  box-shadow:
+    0 3px 8px rgba(0, 0, 0, 0.5),
+    0 1px 2px rgba(0, 0, 0, 0.3),
+    inset 0 2px 3px rgba(255, 255, 255, 0.8),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.15);
+  border: 1.5px solid rgba(0, 0, 0, 0.15);
+  z-index: 15;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+  letter-spacing: -0.02em;
+  transition:
+    transform 0.3s var(--ease-spring),
+    box-shadow 0.3s ease;
+  animation: dealerPuckDrop calc(0.5s * var(--animation-speed, 1)) var(--ease-spring);
+}
+
+@keyframes dealerPuckDrop {
+  0% {
+    opacity: 0;
+    transform: scale(0.3) translateY(-20px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.1) translateY(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ACTION PANEL WRAPPER — Bottom controls area
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.action-panel-wrapper {
+  /* POKERBROS-spec (Dan 2026-04-17 v3): action bar is LOCKED to the
+     absolute bottom of the viewport in a fixed position. ALL action buttons
+     render here and nowhere else. */
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(
+    180deg,
+    rgba(8, 10, 16, 0.85) 0%,
+    rgba(8, 10, 16, 0.99) 40%,
+    rgba(8, 10, 16, 1) 100%
+  );
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+  min-height: calc(96px + env(safe-area-inset-bottom, 0px));
+  justify-content: flex-end;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Spectator footer bar — shown when hero is not seated.
+   Lives at the bottom of the flex column so it's always flush with the
+   viewport bottom. POKERBROS-spec: footer present at all times. */
+.spectator-footer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 64px;
+  padding: 12px 16px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0));
+  background: linear-gradient(180deg, rgba(15, 18, 25, 0.95) 0%, rgba(8, 10, 16, 0.99) 100%);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+}
+
+.spectator-footer-bar__label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+/* Single-button action bar — used for footer-pinned prompts like Show Hand,
+   post-fold offers, etc. Dan rule 2026-04-17: ALL action buttons on footer. */
+.footer-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 72px;
+  padding: 10px 16px;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0));
+  background: linear-gradient(180deg, rgba(15, 18, 25, 0.95) 0%, rgba(8, 10, 16, 0.99) 100%);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+}
+
+.footer-action-bar__btn {
+  flex: 1;
+  max-width: 360px;
+  min-height: 48px;
+  padding: 12px 24px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.06) 100%);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.footer-action-bar__btn:active {
+  transform: scale(0.98);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.1) 100%);
+}
+
+/* ─── SPECTATOR MODE — REMOVED (seats already show "+ SIT") ─── */
+
+/* ─── CONTROL STRIP — Clean icon row above action buttons ─── */
+.control-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: linear-gradient(180deg, rgba(10, 15, 26, 0.88) 0%, rgba(5, 8, 16, 0.92) 100%);
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  position: relative;
+}
+
+/* Transparent variant — no dark bar, just floating buttons */
+.control-strip--transparent {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-top: none;
+  box-shadow: none;
+}
+.control-strip--transparent::before {
+  display: none;
+}
+
+/* Glass shine line across top */
+.control-strip::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 30%,
+    rgba(255, 255, 255, 0.12) 50%,
+    rgba(255, 255, 255, 0.08) 70%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+.control-strip__btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  -webkit-tap-highlight-color: transparent;
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* Glass overlay on buttons */
+.control-strip__btn::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, transparent 100%);
+  pointer-events: none;
+  border-radius: 7px 7px 0 0;
+}
+
+.control-strip__label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.control-strip__btn:active {
+  transform: scale(0.96);
+}
+
+.control-strip__btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.9);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transform: translateY(-1px);
+}
+
+.control-strip__btn--muted {
+  opacity: 0.4;
+}
+
+.control-strip__icon {
+  font-size: 0.8125rem;
+  line-height: 1;
+}
+
+.control-strip__count {
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 0.6875rem;
+  color: #ffd700;
+  font-weight: 700;
+  text-shadow: 0 0 6px rgba(255, 215, 0, 0.3);
+}
+
+.control-strip__timer {
+  padding: 4px 10px;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.12) 0%, rgba(255, 180, 0, 0.08) 100%);
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  border-radius: 8px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Timer shimmer */
+.control-strip__timer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 215, 0, 0.1), transparent);
+  animation: timerShimmer 3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes timerShimmer {
+  0% {
+    left: -100%;
+  }
+  50%,
+  100% {
+    left: 100%;
+  }
+}
+
+.control-strip__timer-val {
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #ffd700;
+  text-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+  position: relative;
+}
+
+.control-strip__spacer {
+  flex: 1;
+}
+
+/* ActionPanel.css handles its own button styling */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SIDE MENU
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.menu-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: var(--z-modal-backdrop);
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.side-menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 280px;
+  background: #161b22;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: var(--z-modal);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  animation: slideIn 0.25s ease;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: #e4e6eb;
+  font-size: 0.9375rem;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.menu-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.menu-item.exit {
+  margin-top: auto;
+}
+
+.menu-item-icon {
+  font-size: 1.25rem;
+  width: 28px;
+  text-align: center;
+  color: #ffb800;
+}
+
+.menu-item-label {
+  flex: 1;
+}
+
+.menu-item-arrow {
+  color: #6e7681;
+  font-size: 1.25rem;
+}
+
+.menu-item-toggle {
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 12px;
+  text-transform: uppercase;
+}
+
+.menu-item-toggle.on {
+  background: #3fb950;
+  color: #0a0a0f;
+}
+
+.menu-item-toggle.off {
+  background: #6e7681;
+  color: #ffffff;
+}
+
+.menu-footer {
+  padding: 20px;
+  font-size: 0.75rem;
+  color: #6e7681;
+  text-align: center;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   OBSERVING INDICATOR
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* .observing-indicator REMOVED — no observer UI displayed */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   HUD Game Info (Center-Top in 4-corner HUD)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.hud-game-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 6px 14px;
+}
+
+.hud-game-info__type {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--off-white, #e4e6eb);
+  letter-spacing: 0.03em;
+}
+
+.hud-game-info__blinds {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--soft-white, #b0b3b8);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+  .table-container {
+    /* Dan 2026-04-17 (v3): lowered table so top doesn't clip BBJ. Extra 24px
+       from the top edge; align-start pins scaler to top padding baseline. */
+    align-items: flex-start;
+    padding: 80px 10px calc(128px + env(safe-area-inset-bottom, 0));
+  }
+
+  .table-scaler {
+    max-width: min(calc(100% - 8px), 360px);
+    /* Dan 2026-08-17: must stay locked to the skin crop's 605/1000 aspect at
+       every breakpoint, or the painted felt window drifts out from under
+       .table-surface and the seat ring leaves the rail. */
+    aspect-ratio: 605 / 1000;
+  }
+
+  .table-rail {
+    /* No padding: .table-surface is positioned in % against this element's
+       padding box, so any padding here shifts the felt off the artwork. */
+    padding: 0;
+  }
+
+  .jackpot-banner {
+    padding: 3px 10px;
+  }
+
+  .jackpot-amount {
+    font-size: 0.75rem;
+  }
+
+  .jackpot-label {
+    font-size: 0.5rem;
+  }
+
+  .side-menu {
+    width: 100%;
+    max-width: 320px;
+  }
+
+  .dealer-button {
+    width: 24px;
+    height: 24px;
+    font-size: 0.625rem;
+  }
+
+  .table-header {
+    padding: 8px 10px;
+  }
+
+  .control-strip {
+    gap: 5px;
+    padding: 5px 10px;
+  }
+
+  .control-strip__btn {
+    padding: 4px 8px;
+    font-size: 0.6875rem;
+    min-height: 36px;
+  }
+}
+
+@media (max-width: 480px) {
+  .header-actions {
+    gap: 4px;
+  }
+
+  .header-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 0.875rem;
+  }
+
+  .control-strip {
+    gap: 4px;
+    padding: 4px 8px;
+  }
+
+  .control-strip__btn {
+    padding: 3px 6px;
+    font-size: 0.625rem;
+    border-radius: 6px;
+  }
+
+  .control-strip__timer-val {
+    font-size: 0.75rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .table-container {
+    /* Phase A (Dan 2026-04-17): narrow-phone landscape racetrack. Tighter side
+       gutters keep the table wide; top/bottom padding still covers chrome. */
+    padding: 48px 6px calc(120px + env(safe-area-inset-bottom, 0));
+  }
+
+  .table-header {
+    padding: 4px 6px;
+  }
+
+  .control-strip {
+    padding: 3px 6px;
+  }
+
+  .control-strip__btn {
+    min-height: 36px;
+    min-width: 36px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SPIN MULTIPLIER BADGE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.spinMultiplierBadge {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  border-radius: 20px;
+  font-weight: 800;
+  font-size: 1.1rem;
+  color: #1a1a2e;
+  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.4);
+  z-index: 50;
+  animation: spinBadgeGlow 2s ease-in-out infinite alternate;
+}
+
+.spinMultiplierIcon {
+  font-size: 1.2rem;
+}
+
+.spinMultiplierValue {
+  font-size: 1.2rem;
+  letter-spacing: 0.05em;
+}
+
+/* Premium spins (100x+) get special styling */
+.spinMultiplierBadge.premium {
+  background: linear-gradient(135deg, #ec4899, #8b5cf6);
+  box-shadow: 0 4px 20px rgba(236, 72, 153, 0.5);
+  animation: premiumSpinGlow 1.5s ease-in-out infinite alternate;
+}
+
+@keyframes spinBadgeGlow {
+  from {
+    box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
+  }
+  to {
+    box-shadow: 0 4px 25px rgba(245, 158, 11, 0.6);
+  }
+}
+
+@keyframes premiumSpinGlow {
+  from {
+    box-shadow: 0 4px 15px rgba(236, 72, 153, 0.4);
+  }
+  to {
+    box-shadow: 0 4px 30px rgba(236, 72, 153, 0.7);
+  }
+}
+
+@media (max-width: 768px) {
+  .spinMultiplierBadge {
+    padding: 5px 12px;
+    font-size: 0.95rem;
+    top: 10px;
+  }
+
+  .spinMultiplierIcon {
+    font-size: 1rem;
+  }
+
+  .spinMultiplierValue {
+    font-size: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .spinMultiplierBadge {
+    padding: 4px 12px;
+    font-size: 0.9rem;
+    top: 8px;
+  }
+
+  .spinMultiplierIcon {
+    font-size: 0.95rem;
+  }
+
+  .spinMultiplierValue {
+    font-size: 0.95rem;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ALL-IN DRAMATIC MODE — Vignette overlay + slow board dealing
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-page--allin-mode {
+  /* Vignette overlay via pseudo-element */
+}
+
+.table-page--allin-mode::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse 80% 80% at center, transparent 40%, rgba(0, 0, 0, 0.35) 100%);
+  pointer-events: none;
+  z-index: 50;
+  animation: vignetteFadeIn 0.5s ease-out;
+}
+
+@keyframes vignetteFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Slow community card dealing in all-in mode — Bible V8 dramatic runout */
+.table-page--allin-mode .community-cards__card {
+  animation-duration: calc(0.8s * var(--animation-speed, 1));
+}
+.table-page--allin-mode .community-cards__card--dealing {
+  animation-duration: calc(1.2s * var(--animation-speed, 1));
+}
+.table-page--allin-mode .community-cards__card--turn {
+  animation-duration: calc(1s * var(--animation-speed, 1)) !important;
+}
+.table-page--allin-mode .community-cards__card--river {
+  animation-duration: calc(1.3s * var(--animation-speed, 1)) !important;
+}
+
+/* Pot display glows during all-in */
+.table-page--allin-mode .pot-display {
+  animation: allInPotGlow calc(1.5s * var(--animation-speed, 1)) ease-in-out infinite;
+}
+
+@keyframes allInPotGlow {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.3) drop-shadow(0 0 8px rgba(139, 92, 246, 0.4));
+  }
+}
+
+/* Brighter center spotlight during all-in */
+.table-page--allin-mode .table-surface::after {
+  background: radial-gradient(ellipse at 50% 50%, rgba(255, 255, 255, 0.08) 0%, transparent 60%);
+  transition: background 0.8s ease;
+}
+
+/* Purple-tinted vignette strengthened */
+.table-page--allin-mode .table-surface {
+  box-shadow:
+    inset 0 4px 12px rgba(255, 255, 255, 0.08),
+    inset 0 -4px 12px rgba(0, 0, 0, 0.4),
+    inset 0 0 120px rgba(139, 92, 246, 0.06),
+    /* Dan 2026-07-28: outer black glow dropped — it bled over the painted rail.
+       The thin purple ring stays; it reads as an accent on the felt edge. */
+    0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SCREEN SHAKE — Triggered on big all-in or massive win
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-page--shake {
+  animation: screenShake calc(0.4s * var(--animation-speed, 1)) ease-out;
+}
+
+@keyframes screenShake {
+  0% {
+    transform: translate(0, 0);
+  }
+  10% {
+    transform: translate(-3px, -2px);
+  }
+  20% {
+    transform: translate(3px, 2px);
+  }
+  30% {
+    transform: translate(-2px, 3px);
+  }
+  40% {
+    transform: translate(2px, -2px);
+  }
+  50% {
+    transform: translate(-1px, 1px);
+  }
+  60% {
+    transform: translate(1px, -1px);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ACCESSIBILITY — Respect reduced motion preference
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  .table-page *,
+  .table-page *::before,
+  .table-page *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   LANDSCAPE MODE — Horizontal layout for phone landscape
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (orientation: landscape) and (max-height: 500px) {
+  .table-page {
+    flex-direction: row;
+  }
+
+  .table-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    padding: 4px 10px;
+    padding-left: calc(10px + env(safe-area-inset-left, 0));
+    padding-right: calc(10px + env(safe-area-inset-right, 0));
+    min-height: 40px;
+  }
+
+  .table-area {
+    flex: 1;
+    padding-top: 40px;
+  }
+
+  .action-panel-wrapper {
+    width: 44%;
+    max-width: 300px;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding-right: env(safe-area-inset-right, 0);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    padding-left: 4px;
+  }
+
+  .table-scaler {
+    max-width: none;
+    max-height: 100%;
+  }
+
+  /* Smaller community cards in landscape */
+  .community-cards__card {
+    width: 48px;
+    height: 70px;
+  }
+
+  /* Compact seat info */
+  .seat__info {
+    padding: 3px 6px;
+  }
+
+  .seat__name {
+    font-size: 0.5625rem;
+  }
+
+  .seat__stack {
+    font-size: 0.5625rem;
+  }
+
+  /* Landscape header buttons */
+  .header-btn {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    min-height: 34px;
+  }
+
+  /* Landscape action buttons — shorter but still tappable */
+  .action-btn {
+    height: 48px;
+    min-height: 44px;
+  }
+
+  /* Landscape pre-action — compact */
+  .pre-action-btn {
+    min-height: 40px;
+    font-size: 0.6875rem;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TABLET LAYOUT — Larger table with more room
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (min-width: 768px) and (orientation: portrait) {
+  .table-scaler {
+    max-width: 600px;
+  }
+
+  .seat__avatar-img,
+  .seat__avatar-fallback {
+    width: 64px;
+    height: 64px;
+  }
+
+  .seat__info {
+    padding: 6px 12px;
+  }
+
+  .seat__name {
+    font-size: 0.8125rem;
+  }
+
+  .seat__stack {
+    font-size: 0.8125rem;
+  }
+
+  .action-btn {
+    height: 56px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .table-scaler {
+    max-width: 720px;
+  }
+
+  .seat__avatar-img,
+  .seat__avatar-fallback {
+    width: 72px;
+    height: 72px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FULLSCREEN MODE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-page--fullscreen {
+  /* Already fixed + inset:0, just ensure no safe areas interfere */
+}
+
+.table-page--fullscreen .table-header {
+  padding-top: 6px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   REDUCED MOTION — Accessibility
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  .table-page *,
+  .table-page *::before,
+  .table-page *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   GPU COMPOSITING HINTS — Promote frequently-animated elements to own layers
+   Only on mobile (avoid unnecessary layer creation on desktop)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) and (pointer: coarse) {
+  .community-cards__card,
+  .pot-display,
+  .pot-display__chip-stack,
+  .dealer-button,
+  .action-panel,
+  .seat__cards--hero .seat__card {
+    will-change: transform;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ENHANCED VIEW — Bible V8 §11.1: enhanced_view toggles richer visual effects
+   Activated via document[data-enhanced-view="1"]
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+[data-enhanced-view='1'] .table-felt {
+  filter: contrast(1.08) saturate(1.15);
+}
+
+[data-enhanced-view='1'] .seat__card--face {
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.4));
+}
+
+[data-enhanced-view='1'] .pot-display__amount {
+  text-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+}
+
+[data-enhanced-view='1'] .seat--active .seat__info-box {
+  box-shadow:
+    0 0 16px 4px rgba(255, 215, 0, 0.25),
+    0 0 4px 1px rgba(255, 215, 0, 0.5);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   BACKGROUND TAB — Freeze animations when tab is hidden (battery savings)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-page--backgrounded *,
+.table-page--backgrounded *::before,
+.table-page--backgrounded *::after {
+  animation-play-state: paused !important;
+  transition: none !important;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PHASE 2: TOP & BOTTOM UI BUTTONS 
+   ══════════════════════════════════════════════════════════════ */
+
+/* Top-Right Diamond Button */
+.diamond-purple-btn {
+  background: linear-gradient(135deg, #7c3aed 0%, #4c1d95 100%) !important;
+  border: 2px solid #fbbf24 !important;
+  color: white;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  z-index: 100;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.diamond-purple-btn:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 6px 16px rgba(124, 58, 237, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.diamond-ico {
+  font-size: 16px;
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.5));
+}
+
+/* spectator-join-bar REMOVED — no observer join bar */
+/* chat-mail-toggle-btn REMOVED — TableChat handles its own collapsed icon */
+
+/* ══════════════════════════════════════════════════════════════
+   PHASE 3: UI REFINEMENTS (Hiding old header, side-chat, floating actions)
+   ══════════════════════════════════════════════════════════════ */
+
+.table-header {
+  display: none !important;
+}
+
+.hud-ul-column {
+  /* Dan 2026-04-17: hamburger + "+" sit side-by-side now, not stacked. */
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
+}
+
+.hud-ul-column--stack {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.add-chips-icon-btn {
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #fff;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition:
+    background 0.2s,
+    transform 0.1s;
+}
+.add-chips-icon-btn:active {
+  transform: scale(0.95);
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.floating-im-back,
+.floating-post-blind {
+  background: linear-gradient(180deg, #10b981 0%, #059669 100%);
+  border: 1px solid #34d399;
+  color: white;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 14px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+.floating-action-br {
+  position: absolute;
+  bottom: 80px;
+  right: 20px;
+  z-index: 100;
+}
+
+.floating-action-bl {
+  position: absolute;
+  bottom: 80px;
+  left: 20px;
+  z-index: 100;
+}
+
+/* chat-mail-toggle-btn duplicate override REMOVED */
+
+/* Slide out chat exactly like the attachment */
+.table-chat {
+  right: 0 !important;
+  left: auto !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  width: 350px !important;
+  height: 100% !important;
+  background: rgba(15, 23, 42, 0.85) !important;
+  backdrop-filter: blur(8px) !important;
+  border-left: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 0 !important;
+  max-height: 100% !important;
+  transform: translateX(100%);
+  animation: slideInChat 0.3s forwards;
+}
+
+@keyframes slideInChat {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   POST-BB-TO-ENTER OVERLAY (Bible V8 §4.2)
+   Walkthrough Step 4 fix 2026-04-29 — small fixed-position pill button
+   shown to the hero only when their userId is in the engine's
+   waitingForBBUserIds list. Tapping it calls POST /post-bb on the engine.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.post-bb-overlay-button {
+  position: fixed;
+  bottom: 96px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 24px;
+  border: 2px solid #ffd54a;
+  border-radius: 24px;
+  background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
+  color: #ffde5c;
+  font-family: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow:
+    0 0 18px rgba(255, 213, 74, 0.45),
+    0 4px 14px rgba(0, 0, 0, 0.5);
+  animation: post-bb-pulse 1.6s ease-in-out infinite alternate;
+}
+.post-bb-overlay-button:hover {
+  background: linear-gradient(180deg, #374151 0%, #1f2937 100%);
+}
+.post-bb-overlay-button__title {
+  font-size: 14px;
+  letter-spacing: 0.04em;
+}
+.post-bb-overlay-button__sub {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.75);
+}
+@keyframes post-bb-pulse {
+  from {
+    box-shadow:
+      0 0 18px rgba(255, 213, 74, 0.45),
+      0 4px 14px rgba(0, 0, 0, 0.5);
+  }
+  to {
+    box-shadow:
+      0 0 28px rgba(255, 213, 74, 0.85),
+      0 4px 14px rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RABBIT HUNT SQUARE — mockup v3: small square button above the Fold button
+   ═══════════════════════════════════════════════════════════════════════════════ */
+.action-secondary-row {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 10px;
+  padding: 0 2px 8px;
+}
+
+.rabbit-hunt-square {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  padding: 0;
+  overflow: hidden;
+  background: #1b2430;
+  border: 1px solid #f2c14e;
+  box-shadow: 0 0 10px rgba(242, 193, 78, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.2s ease;
+}
+
+.rabbit-hunt-square:hover {
+  box-shadow: 0 0 16px rgba(242, 193, 78, 0.7);
+}
+
+.rabbit-hunt-square:active {
+  transform: scale(0.94);
+}
+
+.rabbit-hunt-square img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 11px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TABLE EGG — clip-path defs + gold rim overlay (Dan-approved v10 mockup)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* Egg clip-path + gold-rim SVG styles removed 2026-07-28 — the portrait
+   black-and-gold artwork (.table-art) supplies the rail and rim. */
+
+/* ─── SPOTLIGHT VIGNETTE (Dan 2026-08-15) ────────────────────────────────
+   While a player is acting, every other occupied, un-folded seat dims a
+   touch so the actor's light pool reads as a stage spotlight. The base
+   .seat already transitions opacity/filter (0.3s), so this fades smoothly.
+   Folded seats are excluded — their own 0.4 dim must stay the deepest. */
+.seat-wrapper--dim .seat:not(.seat--empty):not(.seat--folded) {
+  opacity: 0.78;
+  filter: brightness(0.85) saturate(0.9);
+}
+
+/* Dan 2026-08-15: "spotlight on the player's turn isn't working — that
+   functionality must always be ON AT ALL TIMES."
+   Dimming everyone else was the entire previous implementation, so on a table
+   where most seats had folded there was nothing left to dim and the effect
+   vanished exactly when it was needed. The acting seat is now LIT in its own
+   right, which is visible regardless of how many other seats are in the hand
+   and regardless of whether hero is still holding cards.
+   Deliberately NOT a disc behind the avatar: Dan has rejected that twice as
+   "a ring appearing behind players". This lifts and brightens the seat itself
+   plus a wide, soft, edgeless pool that has no perceivable boundary. */
+.seat-wrapper--spot .seat:not(.seat--empty) {
+  filter: brightness(1.18) saturate(1.08);
+  transform: scale(1.04);
+  transition:
+    filter 0.25s ease,
+    transform 0.25s ease;
+}
+
+.seat-wrapper--spot::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 260px;
+  height: 200px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 236, 170, 0.13) 0%,
+    rgba(255, 236, 170, 0.07) 32%,
+    rgba(255, 236, 170, 0.025) 55%,
+    rgba(255, 236, 170, 0) 74%
+  );
+  z-index: -1;
+  pointer-events: none;
+  animation: spotFadeIn 0.3s ease both;
+}
+
+@keyframes spotFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* The spotlight is decoration; never let it grow a hard edge on low-DPI. */
+@media (prefers-reduced-motion: reduce) {
+  .seat-wrapper--spot .seat:not(.seat--empty) {
+    transform: none;
+  }
+
+  .seat-wrapper--spot::before {
+    animation: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RAISE PANEL OPEN (Dan 2026-08-18, screenshot review)
+   The raise panel occupies the bottom half. These fixed overlays used to
+   render straight through it: the previous-hand card + timebank pill sat on
+   top of the slider (hiding the handle) and the chat button covered ALL IN.
+   They are irrelevant while sizing a raise, so they yield to it.
+   ═══════════════════════════════════════════════════════════════════════════ */
+body.ca-raising .table-hud__lower,
+body.ca-raising .tbc-widget,
+body.ca-raising .prev-hand-card-wrapper,
+body.ca-raising .chat-collapsed,
+body.ca-raising .bankroll-widget {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+/* Union name beside the club on the felt masthead (Dan 2026-08-18).
+   Slightly dimmer than the club so the hierarchy reads club-then-union at a
+   glance, and it never wraps the line on a 375px felt. */
+.table-brand__union {
+  opacity: 0.72;
+  font-weight: 500;
+  white-space: nowrap;
+}

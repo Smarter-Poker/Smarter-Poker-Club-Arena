@@ -1,0 +1,37 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- MONEY INTEGRITY 2026-08-27 — APPLIED to production via Supabase MCP before
+-- this file was committed. Three confirmed defects, each verified by reading
+-- the live function body first and proven by a rolled-back probe after.
+--
+-- 1. atomic_table_withdraw credited the DEAD pool. `public.wallets` has been
+--    frozen since 2026-08-21 and nothing reads it, so a partial cash-out from
+--    the table cashier took chips OFF the felt and put them nowhere, while the
+--    UI added them to the displayed balance. No chips were destroyed yet (zero
+--    wallet_transactions rows carried this description) — the next use would
+--    have been the first. It now credits through atomic_credit_wallet_and_log,
+--    the audited path that resolves the seat's club (then the player's home
+--    club) and writes club_members.chip_balance, falling back to the global
+--    wallet only for a player with no club at all.
+--    Probe (rolled back): live pool +2.50, dead pool 0.00, stack -2.50.
+--
+-- 2/3. fn_transfer_chips and distribute_chips cast money to ::integer when
+--    writing club_members.chip_balance — a numeric(_,2) column. A 10.50
+--    transfer passed a `balance >= amount` check made in numeric and then
+--    debited 11, pushing the sender negative, while the ledger row recorded
+--    10.50 for a movement of 11. distribute_chips debited the treasury exactly
+--    and credited the member rounded, minting or destroying up to 0.50 per
+--    distribution, and returned a member_after that disagreed with the row it
+--    had just written. Both latent only because every caller floors upstream.
+--    The sibling transfer_chips_agent_to_player already carries the comment
+--    "no ::integer cast — that truncation lost fractions"; the fix never
+--    reached these two.
+--
+-- The full bodies as applied are in the migration history; this file records
+-- WHY. See scripts/ci/check-migrations-applied.mjs — the objects below all
+-- exist in the live schema.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- CREATE OR REPLACE FUNCTION public.atomic_table_withdraw(...)  -- credit path repointed to the live pool
+-- CREATE OR REPLACE FUNCTION public.fn_transfer_chips(...)      -- three ::integer casts removed
+-- CREATE OR REPLACE FUNCTION public.distribute_chips(...)       -- ::integer removed, member_after from RETURNING
+SELECT 1;

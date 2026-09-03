@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 260"><defs>
+<linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#1e202a"/><stop offset="1" stop-color="#14161e"/>
+</linearGradient>
+<radialGradient id="glow" cx="0.5" cy="0.42" r="0.65">
+<stop offset="0" stop-color="#4599ff" stop-opacity="0.35"/><stop offset="1" stop-color="#4599ff" stop-opacity="0"/>
+</radialGradient>
+</defs>
+<rect width="400" height="260" rx="14" fill="url(#bg)"/>
+<rect width="400" height="260" rx="14" fill="url(#glow)"/>
+<rect x="1" y="1" width="398" height="258" rx="13" fill="none" stroke="#4599ff" stroke-opacity="0.35" stroke-width="2"/><circle cx="188" cy="116" r="52" fill="#f7c52a"/>
+<path d="M168 106 l6 8 10 -14" fill="none" stroke="#18191A" stroke-width="5" stroke-linecap="round"/>
+<path d="M198 106 l6 8 10 -14" fill="none" stroke="#18191A" stroke-width="5" stroke-linecap="round"/>
+<path d="M164 132 q24 22 48 0" fill="none" stroke="#18191A" stroke-width="6" stroke-linecap="round"/>
+<path d="M282 64 l7 16 17 2 -13 12 4 17 -15 -9 -15 9 4 -17 -13 -12 17 -2 z" fill="#4599ff"/>
+<path d="M300 130 l5 11 12 1 -9 9 3 12 -11 -6 -11 6 3 -12 -9 -9 12 -1 z" fill="#FFD700"/><text x="200" y="238" text-anchor="middle" font-family="Inter,-apple-system,sans-serif" font-size="15" font-weight="700" fill="#e4e6eb" opacity="0.85">PREMIUM EMOTES</text></svg>

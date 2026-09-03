@@ -1,0 +1,469 @@
+/* ═══════════════════════════════════════════════════════════════
+   Union Games — CSS Module
+   ═══════════════════════════════════════════════════════════════ */
+
+.page {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px 16px 100px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #e4e6eb;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.title {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+}
+.headerActions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Stats */
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.statCard {
+  background: #242526;
+  border: 1px solid #3a3b3c;
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+}
+.statValue {
+  font-size: 22px;
+  font-weight: 800;
+  color: #e4e6eb;
+}
+.statValueGold {
+  font-size: 22px;
+  font-weight: 800;
+  color: #f7c52a;
+}
+.statValueGreen {
+  font-size: 22px;
+  font-weight: 800;
+  color: #31a24c;
+}
+.statValueBlue {
+  font-size: 22px;
+  font-weight: 800;
+  color: #4599ff;
+}
+.statValuePurple {
+  font-size: 22px;
+  font-weight: 800;
+  color: #a855f7;
+}
+.statLabel {
+  font-size: 12px;
+  color: #b0b3b8;
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Tabs */
+.tabNav {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  overflow-x: auto;
+  border-bottom: 1px solid #3a3b3c;
+}
+.tab {
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #b0b3b8;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s;
+}
+.tabActive {
+  color: #4599ff;
+  border-bottom-color: #4599ff;
+}
+.tabBadge {
+  font-size: 11px;
+  font-weight: 700;
+  background: #3a3b3c;
+  color: #b0b3b8;
+  padding: 2px 6px;
+  border-radius: 10px;
+}
+
+.section {
+  margin-bottom: 24px;
+}
+.subsectionTitle {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0 0 12px;
+}
+
+/* Filter Bar */
+.filterBar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+/* Status Badge */
+.statusBadge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+.xmttBadge {
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(168, 85, 247, 0.15);
+  color: #a855f7;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+}
+
+/* Tournament Cards */
+.cardList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tournCard {
+  background: #242526;
+  padding: 16px;
+  border-radius: 10px;
+  border: 1px solid #3a3b3c;
+  transition: border-color 0.15s;
+}
+.tournHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+.tournName {
+  font-weight: 700;
+  font-size: 15px;
+}
+.tournClub {
+  font-size: 12px;
+  color: #b0b3b8;
+  margin-top: 2px;
+}
+.tournMeta {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: #b0b3b8;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.tournActions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Table Grid */
+.tableGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 10px;
+}
+.tableCard {
+  background: #242526;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid #3a3b3c;
+  text-decoration: none;
+  color: inherit;
+  display: block;
+  transition: border-color 0.15s;
+}
+.tableCardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.tableName {
+  font-weight: 600;
+  font-size: 14px;
+}
+.tableCardMeta {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: #b0b3b8;
+}
+.playerCountActive {
+  font-weight: 700;
+  color: #31a24c;
+  font-size: 14px;
+}
+.playerCountEmpty {
+  font-weight: 600;
+  color: #65676b;
+  font-size: 14px;
+}
+
+/* BBJ */
+.bbjContainer {
+  max-width: 700px;
+  margin: 0 auto;
+}
+.bbjPoolCard {
+  background: linear-gradient(135deg, #1e1f3a 0%, #242526 100%);
+  border: 1px solid #3a3b3c;
+  border-radius: 16px;
+  padding: 40px;
+  text-align: center;
+  margin-bottom: 24px;
+}
+.bbjLabel {
+  font-size: 14px;
+  color: #b0b3b8;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+.bbjAmount {
+  font-size: 42px;
+  font-weight: 800;
+  color: #a855f7;
+  text-shadow: 0 0 20px rgba(168, 85, 247, 0.3);
+}
+.bbjSublabel {
+  font-size: 13px;
+  color: #65676b;
+  margin-top: 4px;
+}
+.bbjInfo {
+  background: #242526;
+  border: 1px solid #3a3b3c;
+  border-radius: 12px;
+  padding: 20px;
+}
+.bbjInfo h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 700;
+}
+.bbjInfo ul {
+  margin: 0;
+  padding-left: 20px;
+}
+.bbjInfo li {
+  font-size: 13px;
+  color: #b0b3b8;
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+/* Buttons */
+.btnPrimary {
+  padding: 8px 16px;
+  background: #4599ff;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.btnGhost {
+  padding: 8px 16px;
+  background: transparent;
+  color: #b0b3b8;
+  border: 1px solid #3a3b3c;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.btnRegister {
+  padding: 8px 16px;
+  background: #31a24c;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* Empty State */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 20px;
+  text-align: center;
+}
+.emptyIcon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+.emptyText {
+  font-size: 14px;
+  color: #b0b3b8;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE — Mobile
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+  .page {
+    padding: 16px 12px 100px;
+  }
+
+  .title {
+    font-size: 18px;
+  }
+
+  .statsGrid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .statCard {
+    padding: 12px;
+  }
+
+  .statValue,
+  .statValueGold,
+  .statValueGreen,
+  .statValueBlue,
+  .statValuePurple {
+    font-size: 18px;
+  }
+
+  .tabNav {
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tab {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .btnPrimary,
+  .btnGhost,
+  .btnRegister {
+    min-height: 44px;
+    touch-action: manipulation;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .bbjPoolCard {
+    padding: 24px 16px;
+  }
+
+  .bbjAmount {
+    font-size: 32px;
+  }
+}
+
+/* Phase 6: align live union games with the black-first network command deck. */
+.page {
+  background:
+    radial-gradient(circle at 82% 5%, rgba(58, 168, 255, 0.08), transparent 28rem),
+    linear-gradient(180deg, #05080c, #020407);
+}
+
+.statCard,
+.tournCard,
+.tableCard,
+.bbjCard,
+.filterBar {
+  border: 1px solid #26333d;
+  border-radius: 4px;
+  background: linear-gradient(112deg, #101820, #080d12 72%, #05080c);
+}
+
+.page button,
+.page a {
+  min-height: 44px;
+  border-radius: 3px;
+}
+
+.statValueGold,
+.statValuePurple {
+  color: #ddf3ff;
+}
+
+@media (max-width: 480px) {
+  .page {
+    padding: 12px 12px 100px;
+  }
+
+  .header h2 {
+    font-size: 1.1rem;
+  }
+
+  .filterGrid {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 6px;
+  }
+
+  .gamesGrid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .modal {
+    width: 96%;
+    max-width: none;
+  }
+
+  .btnPrimary,
+  .btnGhost,
+  .btnRegister {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}

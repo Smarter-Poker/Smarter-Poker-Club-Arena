@@ -1,0 +1,114 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+   MILESTONE TOAST — Premium animated notification 
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.milestone-toast-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.milestone-toast {
+  pointer-events: all;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 320px;
+  max-width: 420px;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, rgba(30, 35, 50, 0.97) 0%, rgba(20, 25, 40, 0.97) 100%);
+  border: 1px solid rgba(255, 215, 0, 0.35);
+  border-radius: 14px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    0 0 12px rgba(255, 215, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  animation: milestoneSlideIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform 0.2s ease,
+    opacity 0.3s ease;
+}
+.milestone-toast__icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+  animation: milestoneIconPop 0.6s ease-out 0.3s both;
+  filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.4));
+}
+
+.milestone-toast__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.milestone-toast__title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #ffd700;
+  margin-bottom: 2px;
+  text-shadow: 0 0 8px rgba(255, 215, 0, 0.3);
+}
+
+.milestone-toast__description {
+  font-size: 0.75rem;
+  color: #c0c8d8;
+  line-height: 1.3;
+}
+
+.milestone-toast__reward {
+  font-size: 0.7rem;
+  color: #22c55e;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+/* Auto-dismiss progress bar */
+.milestone-toast__progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  width: 100%;
+  background: linear-gradient(90deg, #ffd700, #ff8c00);
+  animation: milestoneProgress 5s linear both;
+  border-radius: 0 0 14px 14px;
+}
+
+@keyframes milestoneSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(100%) scale(0.8);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes milestoneIconPop {
+  0% {
+    transform: scale(0);
+  }
+  60% {
+    transform: scale(1.3);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes milestoneProgress {
+  0% {
+    width: 100%;
+  }
+  100% {
+    width: 0%;
+  }
+}

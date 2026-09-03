@@ -1,0 +1,170 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 🤝 REFERRAL MODAL — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.referral-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.referral-modal {
+  width: 90%;
+  max-width: 440px;
+  background: #161b22;
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  animation: popUp 0.3s ease;
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+}
+
+@keyframes popUp {
+  from {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.referral-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  background: #0d1117;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.referral-header h2 {
+  font-size: 1.25rem;
+  color: #e4e6eb;
+  margin: 0;
+  font-weight: 700;
+}
+
+.referral-header button {
+  background: none;
+  border: none;
+  color: #8b949e;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+.referral-body {
+  padding: 30px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.referral-illustration {
+  font-size: 4rem;
+  margin-bottom: 16px;
+}
+
+.referral-text {
+  color: #8b949e;
+  line-height: 1.5;
+  margin-bottom: 24px;
+  font-size: 0.9375rem;
+}
+
+.referral-text strong {
+  color: #ffb800;
+}
+
+.referral-stat-box {
+  background: rgba(255, 255, 255, 0.03);
+  padding: 12px 24px;
+  border-radius: 12px;
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: #6e7681;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.stat-val {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #e4e6eb;
+}
+
+.referral-link-box {
+  width: 100%;
+  margin-bottom: 20px;
+  text-align: left;
+}
+
+.link-label {
+  font-size: 0.75rem;
+  color: #8b949e;
+  margin-bottom: 6px;
+  display: block;
+  font-weight: 600;
+}
+
+.link-input-group {
+  display: flex;
+  gap: 8px;
+}
+
+.link-input-group input {
+  flex: 1;
+  background: #0d1117;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: #e4e6eb;
+  font-size: 16px; /* was 0.875rem; under 16px makes iOS zoom the page on focus */
+}
+
+.link-input-group button {
+  background: #1877f2;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.link-input-group button.copied {
+  background: #3fb950;
+}
+
+.referral-code-box {
+  font-size: 0.875rem;
+  color: #8b949e;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.code-display {
+  font-size: 1.25rem;
+  color: #e4e6eb;
+  letter-spacing: 0.05em;
+}

@@ -1,0 +1,78 @@
+# ═════════════════════════════════════════════════════════════════════════
+# Caddy reverse proxy — monitor.smarter.poker (cron-01)
+# Phase 5.1.3a
+# ═════════════════════════════════════════════════════════════════════════
+#
+# Fronts the Prometheus + Grafana + AlertManager stack at:
+#   https://monitor.smarter.poker/prometheus
+#   https://monitor.smarter.poker/grafana
+#   https://monitor.smarter.poker/alertmanager
+#
+# Auth model:
+#   * Grafana has its own login (GF_SECURITY_ADMIN_PASSWORD from .env).
+#   * Prometheus + AlertManager have no native auth — Caddy basic-auth gates
+#     them. Users with Grafana accounts DON'T need the basic-auth step; they
+#     can read panel data through Grafana's proxied datasource.
+#
+# Deploy:
+#   sudo cp Caddyfile /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+#
+# First-time basic-auth setup:
+#   caddy hash-password --plaintext 'your-chosen-password'
+#   # paste the resulting $2a$14$... hash into the placeholder below
+#
+# TLS certs are fetched automatically by Caddy from Let's Encrypt.
+# ═════════════════════════════════════════════════════════════════════════
+
+monitor.smarter.poker {
+    encode gzip
+
+    # ─── Grafana: sub-path mount ────────────────────────────────────────
+    # Grafana is configured with GF_SERVER_SERVE_FROM_SUB_PATH=true and
+    # GF_SERVER_ROOT_URL=https://monitor.smarter.poker/grafana, so its
+    # own session/cookie paths are already /grafana-scoped.
+    handle_path /grafana/* {
+        reverse_proxy 127.0.0.1:3001
+    }
+    redir /grafana /grafana/ permanent
+
+    # ─── Prometheus: basic-auth gated ───────────────────────────────────
+    handle_path /prometheus/* {
+        basic_auth {
+            # Replace with output of: caddy hash-password
+            monitor $2a$14$REPLACE_WITH_CADDY_HASH_PASSWORD_OUTPUT
+        }
+        reverse_proxy 127.0.0.1:9090
+    }
+    redir /prometheus /prometheus/ permanent
+
+    # ─── AlertManager: basic-auth gated ─────────────────────────────────
+    handle_path /alertmanager/* {
+        basic_auth {
+            monitor $2a$14$REPLACE_WITH_CADDY_HASH_PASSWORD_OUTPUT
+        }
+        reverse_proxy 127.0.0.1:9093
+    }
+    redir /alertmanager /alertmanager/ permanent
+
+    # ─── Runbook links ──────────────────────────────────────────────────
+    # SLO alerts include runbook: https://monitor.smarter.poker/runbooks/...
+    # Serve those straight from the checked-out repo (pulled by deploy.sh).
+    handle_path /runbooks/* {
+        root * /opt/smarter-poker-monitoring-src/Smarter-Poker-World-Hub/docs/runbooks
+        try_files {path} {path}.md =404
+        file_server
+    }
+
+    # ─── Root: simple redirect to Grafana ───────────────────────────────
+    handle / {
+        redir / /grafana/ permanent
+    }
+
+    # ─── Access + error logs ────────────────────────────────────────────
+    log {
+        output file /var/log/caddy/monitor.access.log
+        format console
+    }
+}

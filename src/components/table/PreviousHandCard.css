@@ -1,0 +1,90 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * PREVIOUS HAND CARD — Bottom-Left HUD Widget
+ *
+ * Modified to be a square icon button to match the time bank and chat buttons.
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.prev-hand-card-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.prev-hand-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--sp-hud-tile-size, 36px);
+  height: var(--sp-hud-tile-size, 36px);
+  padding: 0;
+  background: var(--sp-hud-tile-bg, rgba(10, 12, 18, 0.72));
+  border: none;
+  border-radius: var(--sp-hud-tile-radius, 10px);
+  backdrop-filter: blur(8px) saturate(1.1);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+  color: var(--sp-hud-tile-fg, rgba(255, 255, 255, 0.86));
+  cursor: pointer;
+  pointer-events: auto;
+  transition: all 0.15s ease-out;
+}
+
+/* 36px painted, 44px touched — the twin of the rule in TimebankCounter.css,
+   and the same asymmetry for the same reason: 4px sideways (nothing to collide
+   with at the screen edge), 3px vertically so the 8px gap to the time-bank tile
+   above keeps a 2px dead zone between two controls that do different things.
+   The `relative` is on the WRAPPER, not on this element, so the pseudo needs
+   its own containing block here or it would size itself against the wrapper. */
+@media (max-width: 1023px) {
+  .prev-hand-card {
+    position: relative;
+  }
+
+  .prev-hand-card::after {
+    content: '';
+    position: absolute;
+    inset: -3px -4px;
+  }
+}
+
+.prev-hand-card:active {
+  transform: scale(0.96) translateY(0);
+}
+
+.prev-hand-card__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  opacity: 0.9;
+}
+
+/* Custom icon image fills the tile */
+.prev-hand-card__icon-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: inherit;
+  display: block;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * RESPONSIVE (Matches TableHUD/TimebankCounter)
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (min-width: 1024px) {
+  .prev-hand-card {
+    width: var(--sp-hud-tile-size-lg, 44px);
+    height: var(--sp-hud-tile-size-lg, 44px);
+    border-radius: var(--sp-hud-tile-radius-lg, 12px);
+  }
+}
+
+/* Dan 2026-08-26: Strip baked button styles for 3D assets */
+.prev-hand-card {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}

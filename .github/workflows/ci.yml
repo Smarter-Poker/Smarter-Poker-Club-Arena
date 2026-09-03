@@ -1,0 +1,1680 @@
+name: CI — Build & Type Safety
+
+on:
+  pull_request:
+    branches: [main]
+  # NO push TRIGGER. Removed 2026-09-01 (cost audit).
+  #
+  # The ruleset is squash-only with required checks, so the merge commit's
+  # tree is the PR head tree that every gate already passed. The only job the
+  # push event still ran was Post-Deploy Verification, a 2-4 minute CDN poll
+  # per merge - 2,653 push runs in August (~8,000 billed minutes) duplicating
+  # what post-deploy-e2e.yml (workflow_run on the publisher) and
+  # publish-watchdog.yml already verify against production. Post-Deploy
+  # Verification now runs on the schedules below instead. The daily
+  # "is main actually green" schedule remains the whole-branch safety net.
+  schedule:
+    # The production E2E used to run on every push to main. Club Arena merges
+    # about nineteen times an hour, so it installed Playwright browsers and
+    # drove a real browser against smarter.poker nineteen times an hour - to
+    # test a site that only republishes every seven minutes. Twice an hour
+    # tests the same thing.
+    - cron: '17 */2 * * *'
+    # ── IS MAIN ACTUALLY GREEN? (2026-08-31) ──────────────────────────────
+    #
+    # Every job below is gated on `github.event_name == 'pull_request'`, so a
+    # PUSH to main runs nothing and reports SUCCESS. That is defensible on its
+    # own terms - the pull request already tested that tree - but it leaves
+    # main itself unverified in two situations that both happen here daily:
+    #
+    #   1. A squash merge builds a tree that NO pull request ever tested,
+    #      whenever main moved between the PR's last CI run and the merge.
+    #   2. Anything landed by the GitHub API rather than through a PR.
+    #
+    # On 2026-08-31 four tests had been failing on main under a green badge.
+    # They were found only because an unrelated PR happened to touch tests/,
+    # which is the one thing that makes the client suite run. Nothing on main
+    # would ever have reported them.
+    #
+    # Once a day, against main, with no change detection: cheap enough to
+    # ignore next to nineteen merges an hour, and the only thing in this file
+    # that can answer "is the branch we deploy from actually passing".
+    - cron: '35 6 * * *'
+
+# ═══════════════════════════════════════════════════════════════════════════
+# THE GROUP IS KEYED ON THE HEAD SHA, NOT THE BRANCH — changed 2026-08-26.
+#
+# It used to be `ci-${{ github.ref }}` with cancel-in-progress, so a new push
+# cancelled the run for the previous sha. That is the normal, sensible setup
+# and it is also how six pull requests ended up permanently unmergeable:
+# #1073, #1083, #1088, #1103, #1117 and #1130 each had CANCELLED as the newest
+# ci.yml conclusion on their HEAD sha. A required check that reports
+# `cancelled` never reports again on its own. Autopilot cannot merge past it,
+# the branch is not conflicted so nothing flags it as stuck, and the pull
+# request simply sits there looking fine. All six were re-run by hand today;
+# without this change the seventh is only a matter of time.
+#
+# Keying the group on the head sha means a cancel can only ever remove a
+# DUPLICATE run of the very same commit — two events for one sha, which is the
+# only case where cancelling was ever safe. A run for the sha the check is
+# actually evaluated against can no longer be killed by a newer push.
+#
+# The cost is that a superseded sha's run finishes instead of dying early.
+# That is a few runner-minutes. The thing it buys is that no pull request can
+# be stranded by a check that will never speak again, which cost six of them.
+# ═══════════════════════════════════════════════════════════════════════════
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # WHICH CHECKS CAN THIS DIFF ACTUALLY BREAK?
+  #
+  # Added 2026-08-23. Club Arena took about 28 pull-request pushes an hour and
+  # ran all five jobs on every one - 18 billed minutes a push, roughly $100 a
+  # day, which was the entire Actions bill. GitHub bills each job rounded up to
+  # a whole minute, so a job that cannot possibly fail still costs a minute.
+  #
+  # Measured over the last 30 merged pull requests: 78% never touch server/ yet
+  # every one ran the server engine suite, and a third never touch src/ yet
+  # every one built the bundle, ran the unit suite and drove a browser.
+  #
+  # This job answers "what changed" once, from the API, with no checkout, and
+  # the heavy jobs below gate on it. A job skipped by a job-level `if` reports
+  # as SKIPPED, and a ruleset counts a skipped required check as satisfied - so
+  # nothing has to change in branch protection and no pull request can be left
+  # waiting on a check that never runs. That is the whole reason this is a job
+  # rather than a `paths:` filter on the workflow, which WOULD strand them.
+  #
+  # typecheck is deliberately NOT gated: it carries the repo-wide invariants
+  # (phantom columns, rake parity, seat law, dead code, UI copy) and those can
+  # be broken by a file in any directory, including a migration or a doc.
+  # ───────────────────────────────────────────────────────────────────────────
+  changes:
+    name: What changed
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    if: github.event_name == 'pull_request'
+    # The gh call below is a 403 without this. GITHUB_TOKEN defaults to read on
+    # contents only, and there is no top-level permissions block in this file.
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      src: ${{ steps.f.outputs.src }}
+      server: ${{ steps.f.outputs.server }}
+      tests: ${{ steps.f.outputs.tests }}
+    steps:
+      - id: f
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          # V13: retry, and FAIL OPEN. This call fails the entire CI run on a
+          # transient GitHub 500 ("this diff is temporarily unavailable due to
+          # heavy server load"), which happened on PR #436 and blocked a green
+          # branch on an infrastructure hiccup. A path filter is an
+          # OPTIMISATION - when it cannot tell what changed, the safe answer is
+          # to run everything, never to fail the build.
+          # PAGINATION (Dan 2026-08-31). This asked for per_page=300, and the
+          # GitHub REST API caps per_page at 100 - silently. It does not error,
+          # it returns the first 100 filenames. A pull request touching more
+          # than 100 files would therefore be classified on a truncated list,
+          # and a change to server/** sitting at position 101 would report
+          # server=false. The Server Engine job would then be SKIPPED, and a
+          # ruleset counts a skipped required check as SATISFIED - the exact
+          # silent-green failure the fail-open logic above exists to prevent,
+          # arriving through the door next to it.
+          #
+          # No pull request in this repo has come close to 100 files yet (the
+          # largest of the last 60 is 19), so this is a latent hole rather than
+          # a live one. --paginate walks every page, so it is closed whether or
+          # not that day arrives.
+          FILES=""
+          for attempt in 1 2 3; do
+            if FILES=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename'); then
+              break
+            fi
+            echo "::warning::could not list changed files (attempt $attempt) - retrying"
+            FILES=""
+            sleep $((attempt * 5))
+          done
+          if [ -z "$FILES" ]; then
+            echo "::notice::changed-file list unavailable - running everything"
+            echo "src=true"    >> "$GITHUB_OUTPUT"
+            echo "server=true" >> "$GITHUB_OUTPUT"
+            echo "tests=true"  >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "$FILES" | sed 's/^/  /'
+          has() { echo "$FILES" | grep -qE "$1" && echo true || echo false; }
+          # A change to the workflow, the lockfile or the build config can break
+          # anything, so treat those as touching everything.
+          # .npmrc and .nvmrc are in this list because they change how
+          # dependencies INSTALL and which runtime runs them, so they can break
+          # anything - added 2026-08-23 when the pull request REMOVING an .npmrc
+          # setting skipped the build job that was supposed to prove it safe.
+          WIDE=$(has '^(package(-lock)?\.json|vite\.config|vitest\.config|tsconfig|\.npmrc|\.nvmrc|\.node-version|\.github/workflows/ci\.yml)')
+          if [ "$WIDE" = "true" ]; then
+            echo "src=true"    >> "$GITHUB_OUTPUT"
+            echo "server=true" >> "$GITHUB_OUTPUT"
+            echo "tests=true"  >> "$GITHUB_OUTPUT"
+            echo "::notice::build/config change - running everything"
+            exit 0
+          fi
+          # supabase/migrations/ counts as touching server AND tests: law
+          # tests in both suites read the migration FILES (the GTO batch-floor
+          # guard, migration-version uniqueness). On 2026-09-02 a migrations-only
+          # backfill PR (#2580) merged with the server suite skipped, turned the
+          # clobber-era floor into the newest clamp declaration, and every
+          # hourly deploy after it was refused by its own test gate.
+          echo "src=$(has '^src/')"       >> "$GITHUB_OUTPUT"
+          echo "server=$(has '^(server/|supabase/migrations/)')" >> "$GITHUB_OUTPUT"
+          echo "tests=$(has '^(tests/|supabase/migrations/)')"   >> "$GITHUB_OUTPUT"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # STEP 1: TypeScript compilation check (fast — ~40s)
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  # UNGATED ON PURPOSE, like typecheck and stub_gate above.
+  #
+  # noFixedSizeSourceWindows guards every source pin in the repo against being
+  # bounded by a magic number, because a window that can drift off the code it
+  # watches can also drift off it while staying GREEN. It earned that status on
+  # 2026-09-01: four byte-bounded windows landed on main inside two hours, and
+  # main's own CI never saw any of them, because the unit job is gated behind
+  # the changed files and a docs-only commit goes green in twelve seconds
+  # without running the suite. Main showed an unbroken wall of ticks while
+  # carrying a red test that failed on every branch touching src/ or tests/.
+  #
+  # It reads source and asserts on text. It needs no database, no build and no
+  # network, and it finishes in well under a second, so there is no reason for
+  # it to be behind a gate that can hide it.
+  source_windows:
+    name: Source Windows Are Structural
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci --prefer-offline --no-audit --no-fund
+
+      - name: Every source pin is bounded by a structure
+        run: npx vitest run tests/unit/noFixedSizeSourceWindows.test.ts
+
+  stub_gate:
+    if: github.event_name == 'pull_request'
+    name: Stub Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: No bare stubs — TODO and FIXME must have issue references
+        run: |
+          # Finds TODO or FIXME that do NOT have a (#1234) issue reference.
+          found=$(grep -rn --include="*.ts" --include="*.tsx" \
+            -E '\b(TODO|FIXME)\b' \
+            src/ server/src/ 2>/dev/null | grep -v -E '\b(TODO|FIXME)\(#[0-9]+\)' || true)
+
+          if [ -n "$found" ]; then
+            echo "::error::Bare stub markers found! Use TODO(#1234) with an issue reference, or resolve the stub."
+            echo "$found"
+            exit 1
+          fi
+          echo "No bare TODO or FIXME markers found."
+
+  typecheck:
+    # COST 2026-08-23: this already ran, and passed, on the pull request -
+    # the ruleset will not merge without it. Re-running it on the merge
+    # commit tests an identical tree. 34 of every 100 CI runs were that
+    # duplicate, and CI is six jobs, each billed as a whole minute even
+    # when it takes twenty seconds.
+    if: github.event_name == 'pull_request'
+    name: TypeScript Check
+    # 2026-09-01 (cost audit): vars.CI_RUNNER routes to a self-hosted runner
+    # when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # The new-migration gate diffs this branch against its base, so it
+          # needs more than the single commit a default checkout brings.
+          fetch-depth: 0
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a
+      # hit. `nm-lite` is deliberately a DIFFERENT key from the full-install
+      # jobs: this install runs --ignore-scripts, and a scripts-less tree must
+      # never be restored into a job that relies on postinstall artifacts.
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-lite-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+
+      - name: Record Start Time
+        id: timer
+        run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
+
+      - name: TypeScript Check
+        run: npx tsc --noEmit
+
+      # BLOCKING (2026-08-15 incident): the server ships as ESM, so a CommonJS
+      # require() in server/src throws ReferenceError at runtime and tsc cannot
+      # catch it (@types/node declares require). Four such lines took down
+      # add-chips/withdraw and silently aborted every cash hand's settlement
+      # pipeline for ~4 hours. Zero false positives: comments and strings are
+      # stripped before matching, and tests/sim are excluded.
+      - name: ESM Invariant — no CommonJS require() in server runtime code
+        run: node scripts/ci/check-esm-require.mjs
+
+      # Data invariant. CLAUDE.md section 5 rule 1 has banned .single() since
+      # this repo had rules, and the World Hub enforces it in CHECK 1 of its
+      # build-safety-gate. Club Arena enforced it nowhere, so on 2026-08-26 a
+      # sweep found three live violations sitting on main — two reading
+      # profiles.player_number, and one in ServerTableEngineDealing that
+      # decided whether a busted player gets the five second rebuy pause.
+      #
+      # None of them crashed. PostgREST answers zero rows with PGRST116 and
+      # supabase-js resolves { data: null, error } rather than throwing, so a
+      # call site reading only `data` degrades in silence: the settings page
+      # never showed a player number, the invite link pasted a raw uuid, and a
+      # player in a rebuy tournament lost their window to buy back in while the
+      # engine's own try/catch sat there never firing. A rule that only lives
+      # in a document gets re-broken; this one now fails the build.
+      - name: Data Invariant — .maybeSingle() never .single()
+        run: node scripts/ci/check-maybe-single.mjs
+
+      # The same mechanism, one step worse: a read whose error is discarded and
+      # whose RESULT decides whether to insert. "The read failed" becomes "the
+      # row is not there" and the branch writes. That is how
+      # training_user_achievements reached 33,353 rows for 44 real pairs, at
+      # one new row per page load, with the worst single pair at 13,047.
+      # check-maybe-single cannot see this: the call sites are already using
+      # .maybeSingle() correctly. It is the destructuring that is wrong.
+      - name: Data Invariant — no discarded read error gating a write
+        run: node scripts/ci/check-discarded-read-then-write.mjs
+
+      # Copy invariant. Dan 2026-08-20: "forbid the use of em bars anywhere."
+      # "em bars" means EM DASHES, the punctuation mark. A COPY rule about the
+      # characters in text -- NOT about artwork or icons, and it does not ban
+      # the hamburger menu. Misread that way twice: #2321 and #2429.
+      # A style rule that lives only in someone's head gets re-broken by the
+      # next person who writes a label — 444 of them had accumulated by the
+      # time it was first run. Comments are exempt (they never reach a player);
+      # JSX text, UI string literals and CSS content: values are not.
+      # Autofix locally with: node scripts/ci/check-ui-text.mjs --fix
+      - name: UI copy — no em dashes in player-facing text
+        run: node scripts/ci/check-ui-text.mjs
+
+      # Copy invariant. Dan 2026-08-21: the first letter of every word is
+      # capitalized on every forward-facing page. Until 2026-08-22 this ran
+      # only in the local pre-push hook, so any agent shipping through the
+      # API landed violations straight onto main — it went red THREE times
+      # that day (#280, #279, #284), and each time the red was discovered by
+      # whichever agent next tried to push, not by the agent who caused it.
+      # Autofix locally with: node scripts/ci/check-title-case.mjs --fix
+      - name: UI copy — page copy is Title Cased
+        run: node scripts/ci/check-title-case.mjs
+
+      # The THIRD surface of the same rule (Dan 2026-08-31). check-title-case
+      # reads JsxText and check-nav-title-case reads the nav registry; neither
+      # can see text a browser paints from a string ATTRIBUTE or from a string
+      # literal inside a JSX EXPRESSION.
+      # Autofix locally with: node scripts/ci/check-painted-text-case.mjs --fix
+      - name: UI copy — painted attributes and expressions are Title Cased
+        run: node scripts/ci/check-painted-text-case.mjs
+
+      # Focused defense in depth for the same rule (Dan 2026-08-30: "AS WELL AS
+      # EVERY CLICKABLE PAGE AND SUBPAGE"). The general gate now covers static
+      # JSX, accessible names, conditional/template copy and known copy fields;
+      # this gate keeps every canonical navigation registry explicit.
+      # Autofix: node scripts/ci/check-nav-title-case.mjs --fix
+      - name: UI copy — navigation labels are Title Cased at source
+        run: node scripts/ci/check-nav-title-case.mjs
+
+      # design-guidelines.md rule 1: "NO EMOJIS - EVER". The third copy rule,
+      # and until 2026-08-27 the only one nothing enforced. Added after the
+      # audit found emoji rendering in gameplay.
+      - name: UI copy — no emoji in player-facing code
+        run: node scripts/ci/check-no-emoji.mjs
+
+      # Dan 2026-08-27 (binding, World Hub CLAUDE.md 10.5): horses are players.
+      # Every place the horse flag changes behaviour must be justified in the
+      # register inside this script. Added after the law's own first fix was
+      # found inert - see .agent/audits/2026-08-27-horses-are-players-sweep.md.
+      - name: Horses are players — every exclusion is registered
+        run: node scripts/ci/check-horses-are-players.mjs
+
+      # Dan 2026-08-29 (binding): the BBJ drop is COLLECTED on every flop with
+      # 3+ players dealt in, whatever the pot size; the 10BB minimum decides
+      # whether a bad beat is PAID OUT. The fee carried the payout's pot gate
+      # for months and 49% of raked hands fed the jackpot nothing — it
+      # survived because the pricing was hand-copied into three settlement
+      # paths (one of which had also lost its pot-overage clamp). This gate
+      # holds the single pricer and refuses a pot-size condition on any fee
+      # path. See server/src/engine/RakeBBJCollection.law.test.ts.
+      - name: Rake + BBJ collection law — one pricer, no pot gate on the fee
+        run: node scripts/ci/check-rake-bbj-collection-law.mjs
+
+      # A CSS module key with no matching class resolves to undefined, React
+      # drops className={undefined} without a word, and the element ships with
+      # no styling at all. Build green, tests green, page visibly broken. It
+      # happened on 2026-08-21: a stylesheet was replaced wholesale to swap a
+      # font and left 21 live classes undefined, including the page root.
+      - name: CSS modules — every styles.* key has a class
+        run: node scripts/ci/check-css-modules.mjs
+
+      # Money invariant. The rake schedule is declared twice — the engine copy
+      # decides what is actually taken from the pot, the client copy decides
+      # what the Game Rules modal tells the player. They cannot import each
+      # other (separate builds). On 2026-08-15 the modal was found stating
+      # "Rake 5% (Cap $3)" at every stake against a real 10% and caps up to
+      # $15, because the props feeding it were never assigned. Now that the
+      # modal reads the client schedule, the two copies drifting would silently
+      # recreate that misstatement. Fail the build instead.
+      - name: Rake Invariant — client and server rake schedules must match
+        run: node scripts/ci/check-rake-schedule-parity.mjs
+
+      # BLOCKING (2026-08-19 incident): the cash seat law (plo6 6, plo5 7,
+      # plo4 8, plo8 8) was enforced only in src/services/TableService.ts, which
+      # guards the club's Create Table modal. HorseFleetManager — the engine's
+      # own cash-table seeder — carried its own numbers, said PLO5 8-max and
+      # PLO6 7-max, and had been creating illegal tables on every boot. Six were
+      # live when it was found. PokerEngine.deal() throws rather than dealing
+      # short, so an over-seated PLO table fails mid-hand rather than degrading.
+      - name: Seat Law Invariant — client, server and the fleet configs must agree
+        run: node scripts/ci/check-seat-law-parity.mjs
+
+      # BLOCKING. On 2026-08-15 five of seven files in infra/monitoring/ had
+      # drifted from the running stack — the repo still held the versions where
+      # 27 alert rules referenced non-existent metrics and Alertmanager routed
+      # everything to null-receiver. Rebuilding the host from the repo would
+      # have silently restored decorative monitoring. This guards the wiring
+      # (loaded / mounted / routed somewhere real), not rule contents.
+      - name: Monitoring Invariant — every alert rule is loaded, mounted, and routed
+        run: node scripts/ci/check-monitoring-drift.mjs
+
+      # Dan 2026-08-31. A test that reads source as TEXT and matches a regex
+      # cannot tell that the line is reached or that the objects arriving there
+      # satisfy it. The stale-seat prune sat broken for days under exactly such
+      # a pin, which matched the predicate and passed while it did nothing.
+      #
+      # RATCHET, not a cliff: five files already pin a src/utils module by text
+      # and this fails only when a SIXTH appears. Those five are somebody
+      # else's work to migrate; blocking the repo on them would be the cure
+      # being worse. The inventory line prints on every run so the number stays
+      # visible.
+      - name: Test Quality — no NEW text-only pin on a pure src/utils module
+        run: node scripts/ci/report-source-grep-tests.mjs --ratchet
+
+      - name: Report Typecheck Time
+        if: always()
+        run: |
+          END=$(date +%s)
+          ELAPSED=$(( END - ${{ steps.timer.outputs.start }} ))
+          echo "## ⏱️ Typecheck Duration: ${ELAPSED}s" >> $GITHUB_STEP_SUMMARY
+
+      # ── Commit Message Lint ──────────────────────────────────────────────
+
+      - name: Commit Message Lint
+        if: github.event_name == 'push'
+        continue-on-error: true
+        run: |
+          echo "## 📝 Commit Message Lint" >> $GITHUB_STEP_SUMMARY
+          MSG=$(git log -1 --pretty=%s)
+          # Check for conventional commit format: type: message or type(scope): message
+          if echo "$MSG" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9_-]+\))?(!)?:'; then
+            echo "✅ Commit follows conventional format: \`$MSG\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Commit does NOT follow conventional format" >> $GITHUB_STEP_SUMMARY
+            echo "::warning::Commit message should follow: type(scope): description" 
+            echo "  Got: \`$MSG\`" >> $GITHUB_STEP_SUMMARY
+            echo "  Expected: feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      # ── Dependency Audit ──────────────────────────────────────────────────
+      - name: Dependency Audit
+        continue-on-error: true
+        run: |
+          echo "## 🔒 Dependency Audit" >> $GITHUB_STEP_SUMMARY
+          CRITICAL=$(npm audit --audit-level=critical 2>&1 | grep -c "critical" || echo 0)
+          HIGH=$(npm audit --audit-level=high 2>&1 | grep -c "high" || echo 0)
+          if [ "$CRITICAL" -gt 0 ]; then
+            echo "::warning::Found $CRITICAL critical vulnerability(ies)"
+            echo "⚠️ **$CRITICAL critical** vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+          elif [ "$HIGH" -gt 0 ]; then
+            echo "::warning::Found $HIGH high vulnerability(ies)"
+            echo "⚠️ **$HIGH high** vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No high/critical vulnerabilities" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      # ── Dead Code Detection ─────────────────────────────────────────────
+      - name: Dead Code Detection
+        continue-on-error: true
+        run: |
+          echo "## 🧹 Dead Code Check" >> $GITHUB_STEP_SUMMARY
+          DEAD_FILES=0
+          for f in $(find src -name '*.ts' -o -name '*.tsx' | grep -v 'node_modules\|\.d\.ts\|index\.ts\|vite-env\|main\.tsx\|App\.tsx'); do
+            BASENAME=$(basename "$f" | sed 's/\.\(ts\|tsx\)$//')
+            REFS=$(grep -rl "$BASENAME" src/ --include='*.ts' --include='*.tsx' 2>/dev/null | grep -v "$f" | wc -l | tr -d ' ')
+            if [ "$REFS" -eq 0 ]; then
+              echo "::warning file=$f::File appears unused (not imported anywhere)"
+              DEAD_FILES=$((DEAD_FILES + 1))
+            fi
+          done
+          if [ "$DEAD_FILES" -gt 0 ]; then
+            echo "⚠️ **$DEAD_FILES potentially unused file(s)** found" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No dead code detected" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      # ── Supabase Invariants (Phase U4 — BLOCKING) ──
+      # Catches the silent-failure class of bugs from the 2026-04-15 audit:
+      #   1. phantom tables: `.from('<name>')` where <name> isn't in migrations
+      #   2. stranded writers: UI reads a table that no server path writes
+      # Cross-orb tables (defined in sibling repos) are in the ALLOWLIST of each
+      # script. Remove an ALLOWLIST entry once CI mounts that orb's migrations.
+      # See docs/U4-INVARIANT-FINDINGS.md for triage history.
+      # BLOCKING (Phase U4 end-state): now checks .from() tables AND .rpc()
+      # functions against a live-schema snapshot (scripts/ci/supabase-schema-manifest.json),
+      # not the stale migrations. Intentional exceptions live in
+      # scripts/ci/supabase-invariants.allowlist.json. Regenerate the manifest with
+      # scripts/ci/gen-schema-manifest.mjs when the schema changes.
+      # Non-blocking: the runner may not have imagemagick/pngquant, and a
+      # missing tool must not fail an unrelated commit. It reports loudly when
+      # somebody adds an asset far bigger than the box it renders in — the
+      # arena's first paint was 6.21 MB of images before this existed.
+      - name: Image Budget — critical-path assets fit their render box
+        continue-on-error: true
+        run: |
+          if ! command -v magick >/dev/null || ! command -v pngquant >/dev/null; then
+            echo "imagemagick/pngquant unavailable on this runner — skipping image budget."
+            exit 0
+          fi
+          bash scripts/optimize-arena-images.sh --check | tee /tmp/imgbudget.log
+          {
+            echo "## Image Budget"
+            echo ""
+            sed -e 's/^/    /' /tmp/imgbudget.log
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: Supabase Invariants — Phantom References (tables + RPCs)
+        # Credentials let the check ask the LIVE schema before failing, so a
+        # manifest that has simply gone stale (schema is applied straight to
+        # prod via the Supabase MCP; the snapshot refreshes daily) no longer
+        # reds somebody else's unrelated commit. A reference that is missing
+        # from BOTH the snapshot and the live schema still fails the build.
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -o pipefail
+          echo "## Supabase Phantom-Reference Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-phantom-tables.mjs 2>&1 | tee /tmp/phantom.log; then
+            echo "OK — every .from() and .rpc() resolves to a live table/view/function." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Phantom reference(s) detected — see log for file:line. Fix the name, add the" >> $GITHUB_STEP_SUMMARY
+            echo "migration (+ regenerate the manifest), or allowlist it (with a reason) in" >> $GITHUB_STEP_SUMMARY
+            echo "scripts/ci/supabase-invariants.allowlist.json." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      # BLOCKING: an event something LISTENS for that nothing EMITS is a
+      # feature that cannot fire. Sibling to the phantom-reference gate above:
+      # that one catches a query pointing at nothing, this one catches a
+      # subscription hearing nothing. Found 21 on 2026-08-20, every one a
+      # component wired up, styled, shipped and dead. Exceptions (unported
+      # engines, unbuilt producers) go in scripts/ci/bus-wiring.allowlist.json
+      # WITH A REASON.
+      - name: Bus Wiring — Listeners Without Emitters
+        run: |
+          set -o pipefail
+          echo "## Bus Wiring Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-bus-wiring.mjs 2>&1 | tee /tmp/buswiring.log; then
+            echo "OK — every masterBus listener has at least one emitter." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Dead listener(s) detected — see log for file:line. Emit the event, fix the" >> $GITHUB_STEP_SUMMARY
+            echo "name, or allowlist it (with a reason) in scripts/ci/bus-wiring.allowlist.json." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      # BLOCKING: navigate() to a path no <Route> declares renders nothing and
+      # reports nothing — the player lands on a blank screen. Allowlist paths
+      # owned outside this router in scripts/ci/route-targets.allowlist.json.
+      - name: Route Targets — navigate() Without a Route
+        run: |
+          set -o pipefail
+          echo "## Route Target Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-route-targets.mjs 2>&1 | tee /tmp/routes.log; then
+            echo "OK — every navigate() target matches a declared route." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Unrouted navigation target(s) — see log for file:line." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      # BLOCKING: a select() that embeds a related table needs a real FOREIGN KEY.
+      # Without one PostgREST answers 400 PGRST200 and returns NO ROWS — and every
+      # call site here swallows that identically (`if (error) return []`,
+      # `if (!error && data)`, a rejected promise inside Promise.allSettled), so
+      # the feature is simply blank forever and nothing goes red. Seven were live
+      # on 2026-08-22, including the admin seat list, hand replay, transaction
+      # history, friend suggestions and the whole blocked-players feature.
+      # Requires the SERVICE-ROLE key: it bypasses RLS, so the select is actually
+      # parsed. With an anon key every RLS-protected table answers 401 and the
+      # check would report success while validating nothing — it fails loudly
+      # rather than allow that.
+      - name: Supabase Invariants — Embed Relationships
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -o pipefail
+          echo "## Supabase Embed-Relationship Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-embed-relationships.mjs 2>&1 | tee /tmp/embeds.log; then
+            echo "OK — every embedded select resolves against the live schema." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Embedded select(s) that return 400 and no rows — see log for file:line." >> $GITHUB_STEP_SUMMARY
+            echo "Read the consumer before adding a foreign key: if the embedded data is" >> $GITHUB_STEP_SUMMARY
+            echo "never used, delete the embed; if the child outlives the parent, look the" >> $GITHUB_STEP_SUMMARY
+            echo "value up separately instead." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      # BLOCKING: the client's stakes ladder must equal the server's. The
+      # server file is what charges the BBJ fee, caps the rake and decides the
+      # payout percent handed to bbj_atomic_payout_v2; the client file is what
+      # TELLS the player those numbers. On 2026-08-23 they disagreed on four of
+      # six tiers — a 0.2/0.4 game was Nano to the client and Micro to the
+      # server, and Micro's fee was published as 0.25bb while 0.60bb was
+      # charged. A comment cannot hold two files together; this can.
+      - name: Rake Config Parity — client vs server
+        run: |
+          set -o pipefail
+          echo "## Rake Config Parity" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-rakeconfig-parity.mjs 2>&1 | tee /tmp/rakeparity.log; then
+            echo "OK — src/config/RakeConfig.ts matches server/src/config/RakeConfig.ts." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Client and server rake config have diverged — see log. The server" >> $GITHUB_STEP_SUMMARY
+            echo "file is the authority; change the client to match, and update" >> $GITHUB_STEP_SUMMARY
+            echo "bbj_stakes_tiers in the same PR so the published mirror keeps up." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      # BLOCKING: a client-read table with NO writer anywhere (client
+      # .from().insert/update, server/src, or an RPC/migration body) means the UI
+      # reads a table nothing populates -> silent empty/stale values. Detection is
+      # deliberately permissive on the writer side (any mention counts), so it errs
+      # toward missing a stranded table rather than failing CI wrongly. Exceptions
+      # go in the ALLOWLIST in scripts/ci/check-stranded-writers.mjs.
+      - name: Supabase Invariants — Stranded Writers
+        run: |
+          set -o pipefail
+          echo "## Supabase Stranded-Writer Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-stranded-writers.mjs 2>&1 | tee /tmp/stranded.log; then
+            echo "OK — every client-read table has a writer (client, server, or RPC)." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Client-read table(s) with no writer — see log. Implement the writer," >> $GITHUB_STEP_SUMMARY
+            echo "remove the obsolete read, or allowlist it in scripts/ci/check-stranded-writers.mjs." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      # BLOCKING: a .select('col') where <col> is absent from the real table
+      # 42703-errors the WHOLE query (silent empty UI). The backlog documented in
+      # .agent/audits/2026-07-29-phantom-column-findings.md is fully drained, so the
+      # gate is now blocking. New phantom columns fail CI. Fix the column name,
+      # alias the real column (alias:real_col), add the migration + regenerate the
+      # manifest, or (for a view-projected/dynamic name) allowlist it under
+      # "phantomColumns" in scripts/ci/supabase-invariants.allowlist.json.
+      # BLOCKING: reading a table that receives no writes is uniquely dangerous
+      # because it fails SILENTLY — the query succeeds, returns [], and the UI
+      # renders "0" as if it were a real answer. On 2026-08-19 five features
+      # were found doing exactly this (a club owner's financials page had shown
+      # zeros for 3.5 months; every player's profile reported 0 hands). The
+      # codebase already had comments saying those tables were empty; comments
+      # did not stop it happening five times. Writes are still allowed — some
+      # legacy writers retire on their own MIGRATION-LAW schedule.
+      - name: Supabase Invariants — Deprecated Tables
+        run: |
+          set -o pipefail
+          echo "## Deprecated-Table Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-deprecated-tables.mjs 2>&1 | tee /tmp/deprecated.log; then
+            echo "OK — no source file reads a table that receives no writes." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "A deprecated table is being READ — the query returns [] and renders as a" >> $GITHUB_STEP_SUMMARY
+            echo "real zero. Repoint it at the live table named in the log." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      # BLOCKING: a migration this branch adds must already exist in the live
+      # schema. 20260821_club_tournament_stats.sql sat in the repo for a day
+      # having never been applied, while the code that called its function was
+      # reverted by a bad merge — a feature the repo claimed and the database
+      # had never heard of, found by hand a day later. Every other gate here
+      # checks the CODE against the schema; nothing checked the MIGRATIONS.
+      - name: Supabase Invariants — New Migrations Were Applied
+        run: |
+          set -o pipefail
+          echo "## New-Migration Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-migrations-applied.mjs 2>&1 | tee /tmp/migapplied.log; then
+            echo "OK — every object this branch's migrations declare exists in production." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "A migration here was never applied (or the manifest is stale). Apply it via" >> $GITHUB_STEP_SUMMARY
+            echo "the Supabase MCP apply_migration, or regenerate the manifest in this PR." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      # BLOCKING: Supabase identifies migrations by the filename version. A
+      # duplicate version makes two different files compete for one ledger row.
+      - name: Supabase Invariants — New Migration Versions Are Unique
+        run: node scripts/ci/check-new-migration-version-collisions.mjs
+
+      # BLOCKING: a SECURITY DEFINER function that writes, and that a browser
+      # role can execute, must consult auth.uid()/auth.role()/auth.jwt(). On
+      # 2026-08-27 nineteen did not. One of them let an ordinary member rewrite
+      # a club's member_count from 592 to 10591; another pays chips. Eighteen
+      # were revoked, and the nineteenth was WRITTEN THE SAME AFTERNOON by an
+      # author who had no way to know the rule existed. That is what this step
+      # is for.
+      - name: Supabase Invariants — Definer Authorization
+        run: |
+          set -o pipefail
+          echo "## SECURITY DEFINER Authorization Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-definer-authorization.mjs 2>&1 | tee /tmp/definerauth.log; then
+            echo "OK — every DEFINER writer a browser can reach consults the request." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "A SECURITY DEFINER function that writes is callable from a browser and never" >> $GITHUB_STEP_SUMMARY
+            echo "asks who is calling. Revoke it from PUBLIC/anon/authenticated, or derive the" >> $GITHUB_STEP_SUMMARY
+            echo "actor from auth.uid() inside it. See the log for the exact remedy." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: Nothing here may deploy to Vercel
+        run: |
+          # CLAUDE.md 1.3 has said this since March, and until 2026-08-22 two
+          # things in this repo did it anyway: deploy-production.sh at the root
+          # and manual-deploy.yml, the latter dispatched three times on
+          # 2026-08-21 and failing all three, which is why the repository page
+          # carried a red Production badge for a day. A rule in a document
+          # loses to a script with a plausible filename every time.
+          node scripts/ci/check-no-vercel-deploy.mjs
+
+      # BLOCKING: the other half of the phantom-column question. That gate asks
+      # whether a written column EXISTS; this asks whether the columns the table
+      # REQUIRES were supplied. Postgres refuses both statements just as
+      # completely and both errors land in a catch. Four were found by hand on
+      # 2026-08-28, and two of them were phantom-column bugs as well - so
+      # repointing the wrong names, the fix that passes review, would have left
+      # the inserts failing exactly as before.
+      - name: Supabase Invariants — Required Columns
+        run: |
+          set -o pipefail
+          echo "## Required-Column Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-required-columns.mjs 2>&1 | tee /tmp/reqcol.log; then
+            echo "OK — every literal insert supplies the columns its table requires." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "An insert omits a NOT NULL column with no default, so the statement cannot" >> $GITHUB_STEP_SUMMARY
+            echo "land and the control it belongs to does nothing. See the log." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: Supabase Invariants — Phantom Columns
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -o pipefail
+          echo "## Supabase Phantom-Column Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-phantom-columns.mjs 2>&1 | tee /tmp/phantomcol.log; then
+            echo "OK — every resolvable .select() column exists on its table." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Phantom column(s) detected — see log. Correct the name, alias the real" >> $GITHUB_STEP_SUMMARY
+            echo "column, add the migration + regenerate the manifest, or allowlist it." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # STEP 2: Full production build + bundle metrics (depends on typecheck)
+  # ─────────────────────────────────────────────────────────────────────────────
+  # ═══════════════════════════════════════════════════════════════════════════
+  # SERVER ENGINE — added 2026-08-15.
+  #
+  # Until this job existed, `server/` had NO CI coverage of any kind: no tests,
+  # no typecheck, no lint. The root `tsc --noEmit` only covers the client
+  # (root tsconfig include is ["src"]), and the root vitest config only globs
+  # tests/**, so the 45 server test files — including the freeze and watchdog
+  # regressions written after the 2026-08-15 freeze incident — never ran on a
+  # PR or a push. Every one of those bugs could have been silently reintroduced
+  # by a green build.
+  #
+  # This job is deliberately cheap (about 15s of tests) so there is never a
+  # reason to skip it. It MUST stay blocking.
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ===========================================================================
+  # CLIENT UNIT TESTS - added 2026-08-20.
+  #
+  # 2,398 tests across 185 files in tests/** ran in NO CI job. The comment on
+  # the server job below spotted half of this ("the root vitest config only
+  # globs tests/**") and added coverage for server/, but nothing was ever added
+  # for the root suite itself, so `npm test` was purely a local habit.
+  #
+  # Proven live rather than argued: on 2026-08-20 a one-line CSS change broke
+  # tests/components/HeroCardRowGeometry.test.tsx and the full pipeline went
+  # green. Every regression those 2,398 tests were written to prevent could be
+  # reintroduced by a passing build.
+  #
+  # The whole suite runs in 13s, so there is never a reason to skip it. It MUST
+  # stay blocking.
+  # ===========================================================================
+  unit:
+    # COST 2026-08-23: this already ran, and passed, on the pull request -
+    # the ruleset will not merge without it. Re-running it on the merge
+    # commit tests an identical tree. 34 of every 100 CI runs were that
+    # duplicate, and CI is six jobs, each billed as a whole minute even
+    # when it takes twenty seconds.
+    # The unit suite tests src/ from tests/. A pull request touching neither
+    # cannot change its result - and this is the most expensive job here.
+    needs: changes
+    # FAILS CLOSED, and this is the whole point.
+    #
+    # 2026-08-23, caught within the hour: the `changes` job 403'd, its dependants
+    # were skipped by `needs:` as GitHub does by default, every required check
+    # reported SKIPPED - and a ruleset counts a skipped required check as
+    # SATISFIED. For a few minutes this repo would have merged unchecked code and
+    # shown all green doing it. That is precisely the silent failure this estate
+    # exists to prevent, introduced by the change meant to save money.
+    #
+    # `always()` makes the job evaluate even when `changes` did not succeed, and
+    # `needs.changes.result != 'success'` then RUNS it. An undetermined diff is
+    # treated as "could break anything", never as "nothing to do".
+    #
+    # `schedule` runs it unconditionally: that is the daily "is main actually
+    # green" pass, and change detection is meaningless there because there is
+    # no diff to detect - the question is about the whole branch.
+    if: >-
+      always() &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'pull_request' &&
+        (needs.changes.result != 'success' || needs.changes.outputs.src == 'true' || needs.changes.outputs.tests == 'true')))
+    name: Client Unit Tests (vitest)
+    # 2026-09-01 (cost audit): `vars.CI_RUNNER` routes this job to a
+    # self-hosted runner the moment Dan sets the repository variable (e.g. to
+    # `estate-linux`). Unset, it is exactly `ubuntu-latest` as before. A warm
+    # self-hosted runner turns this 12-minute job into ~2 minutes because
+    # node_modules survives between runs.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # 2026-09-01 (cost audit): caches the INSTALLED node_modules tree, not
+      # just the npm tarballs that `cache: npm` above keeps. Measured on this
+      # job: `npm ci` is 1-2 minutes of the 12; on a cache hit it is skipped
+      # entirely. The key includes the lockfile hash, so any dependency change
+      # misses and installs fresh - identical behaviour, minus the wait.
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-full-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Run Test Suite
+        run: npm test
+
+      - name: Report
+        if: always()
+        run: |
+          echo "## Client Unit Tests" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`tests/**\` via vitest. Blocking - see the note above this job" >> $GITHUB_STEP_SUMMARY
+          echo "in ci.yml for why it exists." >> $GITHUB_STEP_SUMMARY
+
+  server:
+    # COST 2026-08-23: this already ran, and passed, on the pull request -
+    # the ruleset will not merge without it. Re-running it on the merge
+    # commit tests an identical tree. 34 of every 100 CI runs were that
+    # duplicate, and CI is six jobs, each billed as a whole minute even
+    # when it takes twenty seconds.
+    # 78% of pull requests never touch server/. This suite is two billed
+    # minutes and cannot be broken by a file outside it.
+    needs: changes
+    # FAILS CLOSED, and this is the whole point.
+    #
+    # 2026-08-23, caught within the hour: the `changes` job 403'd, its dependants
+    # were skipped by `needs:` as GitHub does by default, every required check
+    # reported SKIPPED - and a ruleset counts a skipped required check as
+    # SATISFIED. For a few minutes this repo would have merged unchecked code and
+    # shown all green doing it. That is precisely the silent failure this estate
+    # exists to prevent, introduced by the change meant to save money.
+    #
+    # `always()` makes the job evaluate even when `changes` did not succeed, and
+    # `needs.changes.result != 'success'` then RUNS it. An undetermined diff is
+    # treated as "could break anything", never as "nothing to do".
+    #
+    # `schedule` runs it unconditionally - see the note on the unit job.
+    if: >-
+      always() &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'pull_request' &&
+        (needs.changes.result != 'success' || needs.changes.outputs.server == 'true')))
+    name: Server Engine (typecheck + tests)
+    # 2026-09-01 (cost audit): vars.CI_RUNNER routes to a self-hosted runner
+    # when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: server
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a hit.
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: server/node_modules
+          key: nm-server-${{ runner.os }}-node22-${{ hashFiles('server/package-lock.json') }}
+
+      - name: Install Dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      # server/ is a separate package with its own tsconfig; the root typecheck
+      # job never compiles it, so a type error here used to ship to production.
+      - name: TypeScript Check (server)
+        run: npx tsc --noEmit
+
+      # BLOCKING. Named explicitly so it is obvious in the job log which
+      # regressions are being defended, and so deleting them is a visible diff.
+      - name: Freeze + watchdog regression suite
+        run: npx vitest run src/engine/FreezeRegression.test.ts src/engine/TableWatchdog.test.ts --reporter=verbose
+
+      - name: Full server test suite
+        run: npm test
+
+      # Guards the single highest-impact line of the freeze fix. The all-in
+      # dead-buttons bug (production hand #1315: 30.1s between a river shove
+      # and a forced fold) was CSS, not engine logic — `pointer-events: none`
+      # on the action panel in all-in mode made Call and Fold unclickable while
+      # the timer ran down. No test can catch that, so it is asserted here.
+      - name: All-in action panel must never be pointer-events:none
+        working-directory: .
+        run: node scripts/ci/check-allin-pointer-events.mjs
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  #  WHAT DID THIS RUN ACTUALLY VERIFY?
+  # ═══════════════════════════════════════════════════════════════════════════
+  #
+  # Added 2026-08-31, after four tests were found failing on main under a green
+  # badge for an unknown length of time.
+  #
+  # A skipped job and a passing job are both green in the run list, in the PR
+  # header and in `gh run list`. Everything above is gated - on the event, on
+  # the diff, or on `needs` - so a run can legitimately execute nothing at all
+  # and still report success. That is the correct BEHAVIOUR and a terrible
+  # REPORT, and it is the same failure this repo already named twice: the
+  # Hetzner deploy's "DID NOT DEPLOY - this run shipped nothing" step, and the
+  # cron-health check that exists because nobody was reading job_run_details.
+  #
+  # This job costs a few seconds, blocks nothing, and makes the run say out
+  # loud which suites ran and which did not. A warning is an ANNOTATION, so it
+  # surfaces in the run header without anyone thinking to open the logs.
+  verdict:
+    name: What this run verified
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    if: always()
+    needs: [changes, stub_gate, typecheck, unit, server]
+    steps:
+      - name: Say what ran, and what did not
+        run: |
+          UNIT='${{ needs.unit.result }}'
+          SERVER='${{ needs.server.result }}'
+          TYPECHECK='${{ needs.typecheck.result }}'
+          STUB='${{ needs.stub_gate.result }}'
+          CHANGES='${{ needs.changes.result }}'
+
+          {
+            echo "## What this run verified"
+            echo ""
+            echo "| Suite | Result |"
+            echo "| --- | --- |"
+            echo "| What changed | $CHANGES |"
+            echo "| Stub Gate | $STUB |"
+            echo "| TypeScript + repo invariants | $TYPECHECK |"
+            echo "| Client Unit Tests | $UNIT |"
+            echo "| Server Engine | $SERVER |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          SKIPPED=""
+          [ "$UNIT" = "skipped" ] && SKIPPED="$SKIPPED client-unit"
+          [ "$SERVER" = "skipped" ] && SKIPPED="$SKIPPED server-engine"
+
+          if [ "$UNIT" = "skipped" ] && [ "$SERVER" = "skipped" ]; then
+            echo "::warning title=NO TESTS RAN::This run executed neither test suite. It is green because nothing was checked, not because everything passed. On a push to main that is expected - every job here is gated on pull_request - and it is exactly why the daily scheduled run against main exists."
+            {
+              echo "**No test suite ran in this run.** It is green because nothing"
+              echo "was checked. The daily scheduled run (\\`35 6 * * *\\`) is what"
+              echo "answers whether main is actually passing."
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ -n "$SKIPPED" ]; then
+            echo "::notice title=PARTIAL VERIFICATION::These suites did not run:$SKIPPED. Change detection judged them unaffected by this diff."
+          else
+            echo "Both test suites ran."
+          fi
+
+      # The gate itself must fail closed. A suite that ERRORED (not skipped,
+      # not passed) while some other job's failure is what turned the run red
+      # is easy to lose in a long job list; naming it here is free.
+      - name: Fail if a suite that ran did not pass
+        if: needs.unit.result == 'failure' || needs.server.result == 'failure' || needs.typecheck.result == 'failure' || needs.stub_gate.result == 'failure'
+        run: |
+          echo "::error title=A suite that ran did not pass::unit=${{ needs.unit.result }} server=${{ needs.server.result }} typecheck=${{ needs.typecheck.result }} stub_gate=${{ needs.stub_gate.result }}"
+          exit 1
+
+  build:
+    # COST 2026-08-23: this already ran, and passed, on the pull request -
+    # the ruleset will not merge without it. Re-running it on the merge
+    # commit tests an identical tree. 34 of every 100 CI runs were that
+    # duplicate, and CI is six jobs, each billed as a whole minute even
+    # when it takes twenty seconds.
+    # Nothing outside src/ changes the bundle, its size or its Lighthouse score.
+    needs: changes
+    # FAILS CLOSED, and this is the whole point.
+    #
+    # 2026-08-23, caught within the hour: the `changes` job 403'd, its dependants
+    # were skipped by `needs:` as GitHub does by default, every required check
+    # reported SKIPPED - and a ruleset counts a skipped required check as
+    # SATISFIED. For a few minutes this repo would have merged unchecked code and
+    # shown all green doing it. That is precisely the silent failure this estate
+    # exists to prevent, introduced by the change meant to save money.
+    #
+    # `always()` makes the job evaluate even when `changes` did not succeed, and
+    # `needs.changes.result != 'success'` then RUNS it. An undetermined diff is
+    # treated as "could break anything", never as "nothing to do".
+    if: >-
+      always() && github.event_name == 'pull_request' &&
+      (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
+    name: Production Build
+    # 2026-09-01 (cost audit): vars.CI_RUNNER routes to a self-hosted runner
+    # when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Cache Vite Build
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.vite
+          key: vite-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: vite-${{ runner.os }}-
+
+      # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a
+      # hit. Shares `nm-full` with the unit job - both run a full npm ci.
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-full-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Record Build Start
+        id: build-timer
+        run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
+
+      - name: Build
+        run: npm run build
+        env:
+          NODE_ENV: production
+          # Public browser configuration. The previous PR build omitted these,
+          # so it produced an artifact that threw before React mounted and no
+          # browser performance check could exercise the actual application.
+          VITE_SUPABASE_URL: 'https://kuklfnapbkmacvwxktbh.supabase.co'
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          VITE_ENGINE_URL: 'https://engine.smarter.poker'
+          VITE_APP_ENV: production
+          # Phase U5.1 (task #133): wire Sentry sourcemap upload at build time.
+          # Without these, the sentry-vite-plugin in vite.config.ts skips (the
+          # `!!(NODE_ENV === 'production' && SENTRY_AUTH_TOKEN)` gate is false)
+          # and CA stack traces come back minified from production.
+          # SENTRY_AUTH_TOKEN is a GitHub Actions secret (rotated 2026-04-21 — task #118).
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          # Verified 2026-04-23 via Sentry API: the live org is `smarter-software-inc`
+          # and the CA project is `javascript-react`. `smarter-poker` as an org slug
+          # does not resolve (404), which is why prior uploads were silent no-ops
+          # even though the errorHandler in vite.config.ts warned. (Task #133)
+          SENTRY_ORG: smarter-software-inc
+          SENTRY_PROJECT: javascript-react
+
+      - name: Report Build Time
+        if: always()
+        run: |
+          END=$(date +%s)
+          ELAPSED=$(( END - ${{ steps.build-timer.outputs.start }} ))
+          echo "## ⏱️ Build Duration: ${ELAPSED}s" >> $GITHUB_STEP_SUMMARY
+
+      # ── Build Artifact Inventory ──────────────────────────────────────────
+      - name: Build Artifact Inventory
+        continue-on-error: true
+        run: |
+          echo "## Build Artifact Inventory" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          INDEX_SIZE=$(wc -c < dist/index.html | tr -d ' ')
+          INDEX_KB=$((INDEX_SIZE / 1024))
+          JS_COUNT=$(find dist/assets -name '*.js' 2>/dev/null | wc -l | tr -d ' ')
+          CSS_COUNT=$(find dist/assets -name '*.css' 2>/dev/null | wc -l | tr -d ' ')
+          IMG_COUNT=$(find dist/images -type f 2>/dev/null | wc -l | tr -d ' ')
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| HTML size | ${INDEX_KB}kB |" >> $GITHUB_STEP_SUMMARY
+          echo "| JS bundles | $JS_COUNT |" >> $GITHUB_STEP_SUMMARY
+          echo "| CSS bundles | $CSS_COUNT |" >> $GITHUB_STEP_SUMMARY
+          echo "| Images | $IMG_COUNT |" >> $GITHUB_STEP_SUMMARY
+
+      # ── Bundle Size Tracking ─────────────────────────────────────────────
+      - name: Track Bundle Size
+        id: bundle_size
+        if: success()
+        # Measures INITIAL LOAD (what a user downloads to open the app) and
+        # gates on it, then reports whole-app size against a bloat ceiling.
+        # The previous inline version summed every file in dist/assets and
+        # failed on the total -- charging every push for ~1.6MB gzipped of
+        # lazily-split route chunks that no session ever fetches, which made
+        # correct code-splitting score exactly as badly as shipping the code
+        # eagerly. See the header of the script for the measurements.
+        run: node scripts/ci/bundle-size.mjs
+
+      # ── Who Pays For First Paint ─────────────────────────────────────────
+      - name: Entry Chunk Is A Reviewed List
+        # `always()` rather than `success()` on purpose: the step above gates a
+        # SIZE, this one gates WHO PAYS, and the second answer is most wanted
+        # exactly when the first has just gone red. On 2026-09-01 the size gate
+        # failed on the whole-app ceiling while the real defect - operator-only
+        # code newly landing in the chunk every player downloads before first
+        # paint - sat underneath it, invisible, and passed its own limit at
+        # 309kB against 320kB. It was found by hand, after the fact.
+        #
+        # Runs when the build succeeded, AND specifically when the size gate
+        # above is the thing that went red - which is when "who is paying for
+        # this" is most worth answering. Not always(): if the BUILD failed
+        # there is no dist to measure, and turning one clear failure into two
+        # helps nobody.
+        if: success() || steps.bundle_size.conclusion == 'failure'
+        run: node scripts/ci/entry-chunk-delta.mjs dist
+
+      # Real browser performance and responsive budgets. This replaces the old
+      # file-count step that was labelled Lighthouse but never opened a page.
+      - name: Install Performance Browser
+        if: success()
+        run: npx playwright install --with-deps chromium
+
+      - name: Route Performance Budget
+        if: success()
+        run: npm run test:performance
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # LIVE PRODUCTION E2E (split out of `Production Build` 2026-08-22).
+  #
+  # WHY THIS IS ITS OWN JOB, AND WHY IT ONLY RUNS ON main:
+  # these specs drive https://smarter.poker — the DEPLOYED site. On a pull
+  # request that is not the pull request's code, it is whatever main last
+  # shipped. So as a PR gate it could never validate the change under review;
+  # it only imported production's current health (and Vercel's deploy timing)
+  # into an unrelated PR as a red X. That is why `Production Build` went red on
+  # branches whose own build was fine, and why agents started reaching for
+  # `--admin` to get past it.
+  #
+  # `Production Build` is now purely deterministic (vite build + bundle budget)
+  # and is a REQUIRED check. This job runs after main deploys, as verification,
+  # and files an issue when production actually breaks.
+  #
+  # The PR-time E2E gate is `CSS Beat E2E (multi-table + animations)`, which
+  # serves THIS COMMIT'S OWN BUILD locally — that one is required.
+  # ───────────────────────────────────────────────────────────────────────────
+  live-e2e:
+    # Moved off push:main to the two-hourly schedule above.
+    if: github.event_name == 'schedule'
+    name: Live Production E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Wait for Production Deploy
+        run: |
+          # A blind `sleep 60` tested the site mid-build. Vercel Next.js builds
+          # take 3-5 min (World Hub CLAUDE.md 1.4) and rapid pushes queue, so
+          # E2E routinely navigated into an in-flight deploy and failed with
+          # `page.goto: Test timeout` and transient 413s -- red CI, healthy site.
+          # Poll for readiness instead, and require CONSECUTIVE healthy
+          # responses so we never start testing during a swap.
+          # No trailing slash: that path 308-redirects. -L follows anyway, so a
+          # future redirect change cannot silently make this gate unpassable.
+          URL="https://smarter.poker/hub/club-arena"
+          NEED=3; STREAK=0; CODE=000
+          DEADLINE=$(( $(date +%s) + 600 ))
+          while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+            # curl already prints 000 on connection failure; do NOT `|| echo 000`
+            # as well or the reported code becomes "000000".
+            CODE=$(curl -sL -o /dev/null -w '%{http_code}' --max-time 20 "$URL" 2>/dev/null) || true
+            [ -z "$CODE" ] && CODE=000
+            if [ "$CODE" = "200" ]; then
+              STREAK=$((STREAK + 1))
+              echo "healthy ${STREAK}/${NEED} (HTTP ${CODE})"
+              if [ "$STREAK" -ge "$NEED" ]; then
+                echo "Production is serving cleanly - starting E2E."
+                exit 0
+              fi
+            else
+              [ "$STREAK" -ne 0 ] && echo "streak reset (HTTP ${CODE})"
+              STREAK=0
+            fi
+            sleep 10
+          done
+          echo "::error::Production never returned ${NEED} consecutive 200s in 10 min (last HTTP ${CODE})."
+          exit 1
+
+      - name: Run E2E Tests (Production)
+        run: npx playwright test --project=chromium
+        env:
+          # Point tests at production — set PLAYWRIGHT_BASE_URL in the test config
+          BASE_URL: https://smarter.poker/hub/club-arena
+          CI: true
+          # Optional test account. 47 of the route specs skip themselves the
+          # moment they land on /auth, so a signed-out run has never asserted a
+          # third of the suite. tests/e2e/global-setup.ts logs in when these are
+          # present and writes a storageState; when the secrets do not exist
+          # GitHub substitutes empty strings, global-setup writes an EMPTY state,
+          # and the run is byte-for-byte the signed-out one. That is deliberate:
+          # this step must not go red on a repo that has never set them.
+          SP_EMAIL: ${{ secrets.SP_EMAIL }}
+          SP_PASS: ${{ secrets.SP_PASS }}
+        continue-on-error: false
+
+      # ── MOBILE FIT + AVATAR WATCHDOG (2026-08-24) ─────────────────────────
+      # The August mobile sweep ended with two live guarantees: no Club Arena
+      # page scrolls sideways on a phone, and no avatar renders broken. These
+      # are exactly the regressions a CSS/asset PR can silently reintroduce,
+      # so the scheduled production run re-proves both on every cycle using
+      # the same instrumented harnesses the sweep itself used. A representative
+      # route subset keeps this under ~3 minutes; the full 101-route sweep can
+      # be run locally with no ROUTES env. Signed-out runs still measure — the
+      # harness logs in with the same optional secrets as the E2E step and
+      # falls back to public pages without them.
+      - name: Mobile Fit Audit (no sideways scroll, production)
+        if: always()
+        run: node scripts/e2e-mobile-overflow-audit.mjs
+        env:
+          SP_EMAIL: ${{ secrets.SP_EMAIL }}
+          SP_PASS: ${{ secrets.SP_PASS }}
+          FAIL_ON_FINDINGS: '1'
+          ROUTES: '["/","/auth","/clubs/a0000000-0000-0000-0000-000000000001","/clubs/a0000000-0000-0000-0000-000000000001/members","/clubs/a0000000-0000-0000-0000-000000000001/cashier","/clubs/a0000000-0000-0000-0000-000000000001/tournaments","/clubs/a0000000-0000-0000-0000-000000000001/settings","/clubs/a0000000-0000-0000-0000-000000000001/promotions","/profile","/friends","/cashier","/transactions","/vip","/marketplace","/settlement-dashboard","/analytics","/dev/bus","/leaderboard"]'
+
+      - name: Avatar Audit (no broken avatars, production)
+        if: always()
+        run: node scripts/e2e-avatar-audit.mjs
+        env:
+          SP_EMAIL: ${{ secrets.SP_EMAIL }}
+          SP_PASS: ${{ secrets.SP_PASS }}
+          FAIL_ON_FINDINGS: '1'
+
+      - name: Upload Playwright Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 3 # 2026-09-01 cost audit: reports are read same-day or never
+
+      - name: Report E2E Status
+        if: always()
+        run: |
+          echo "## 🎭 Playwright E2E Tests" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Tests ran against: [smarter.poker/hub/club-arena](https://smarter.poker/hub/club-arena)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -z "${{ secrets.SP_EMAIL }}" ] || [ -z "${{ secrets.SP_PASS }}" ]; then
+            echo "> **Signed out — about half the suite skipped itself.**" >> $GITHUB_STEP_SUMMARY
+            echo "> Most routes redirect to \`/auth\`, where there is nothing to assert." >> $GITHUB_STEP_SUMMARY
+            echo "> Those specs used to pass here by asserting the login page had a" >> $GITHUB_STEP_SUMMARY
+            echo "> \`<body>\`; they now skip and say so. Set the repo secrets" >> $GITHUB_STEP_SUMMARY
+            echo "> \`SP_EMAIL\` and \`SP_PASS\` to a **dedicated test player** and every" >> $GITHUB_STEP_SUMMARY
+            echo "> one of them runs — nothing else needs changing." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Signed in via \`SP_EMAIL\` — the auth-gated route specs ran." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      # ─────────────────────────────────────────────────────────────────────────────
+      # STEP 4: Post-deploy smoke test on smarter.poker
+      # ─────────────────────────────────────────────────────────────────────────────
+
+      - name: Open an issue if production E2E failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE="Live production E2E failed on main ($(echo "$SHA" | cut -c1-8))"
+          EXISTING=$(gh issue list --repo "$REPO" --state open --label live-e2e --limit 1 --json number --jq '.[0].number' || echo "")
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "$REPO" --body "Still failing on \`$SHA\`. Run: $RUN"
+          else
+            gh issue create --repo "$REPO" --title "$TITLE" \
+              --label live-e2e \
+              --body "Production E2E went red after a merge to main.\n\nCommit: \`$SHA\`\nRun: $RUN\n\nThis job tests the DEPLOYED site, so this means smarter.poker itself is degraded — not that a PR is bad." || true
+          fi
+
+  post-deploy-check:
+    # It waits for Vercel and curls smarter.poker. It never used the build it
+    # declared `needs: build` for - that was ordering, and it cost a full Vite
+    # production build on every merge, on top of the one build-for-world-hub.yml
+    # already does to publish.
+    # 2026-09-01: was `push` to main - a CDN poll per merge, ~85 times a day,
+    # third in line behind post-deploy-e2e.yml and publish-watchdog.yml which
+    # both ask production the same question. The schedule keeps the smoke
+    # logic alive at 13 runs a day instead of 85.
+    if: github.event_name == 'schedule'
+    name: Post-Deploy Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Wait for Vercel Deploy + CDN Propagation
+        # Vercel builds + propagates in 60-180s for a WH push of this size.
+        # Poll for up to 3 minutes instead of a fixed sleep so we don't false-fail.
+        run: |
+          for i in $(seq 1 18); do
+            STATUS=$(curl -sI -o /dev/null -w "%{http_code}" https://smarter.poker/hub/club-arena 2>/dev/null || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "CDN ready after ${i}×10s ($((i * 10))s total, HTTP $STATUS)"
+              break
+            fi
+            echo "  poll $i/18: HTTP $STATUS — waiting..."
+            sleep 10
+          done
+
+      - name: Smoke Test — smarter.poker
+        run: |
+          echo "## 🔍 Post-Deploy Smoke Test" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          ERRORS=0
+
+          # Check HTTP status (final confirmation after the poll loop above)
+          STATUS=$(curl -sI -o /dev/null -w "%{http_code}" https://smarter.poker/hub/club-arena)
+          if [ "$STATUS" = "200" ]; then
+            echo "✅ HTTP $STATUS — smarter.poker/hub/club-arena is live" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ HTTP $STATUS — expected 200 after 3min poll" >> $GITHUB_STEP_SUMMARY
+            ERRORS=$((ERRORS + 1))
+          fi
+
+          # Check security headers
+          HEADERS=$(curl -sI https://smarter.poker/hub/club-arena)
+          for HEADER in "x-content-type-options" "x-frame-options" "referrer-policy" "permissions-policy"; do
+            if echo "$HEADERS" | grep -qi "$HEADER"; then
+              echo "✅ $HEADER header present" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "⚠️ $HEADER header MISSING" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+          # Check HTML content marker
+          BODY=$(curl -s https://smarter.poker/hub/club-arena)
+          if echo "$BODY" | grep -q "club-arena"; then
+            echo "✅ HTML contains club-arena content" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ HTML may not contain expected content" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "::error::Post-deploy check failed with $ERRORS error(s)"
+            exit 1
+          fi
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # CSS BEAT E2E (2026-08-21): the multi-table and gameplay-animation beats,
+  # in real Chrome, against THIS COMMIT'S OWN BUILD (served locally under the
+  # production /hub/club-arena prefix). Two silent clobbers happened in one
+  # evening of concurrent agent pushes; this is the net that turns the next
+  # one red before it ships.
+  # ───────────────────────────────────────────────────────────────────────────
+  css-beats-e2e:
+    # COST 2026-08-23: this already ran, and passed, on the pull request -
+    # the ruleset will not merge without it. Re-running it on the merge
+    # commit tests an identical tree. 34 of every 100 CI runs were that
+    # duplicate, and CI is six jobs, each billed as a whole minute even
+    # when it takes twenty seconds.
+    # This one builds the app AGAIN, installs Chromium and serves it - four
+    # billed minutes, and only src/ can change what it measures.
+    needs: changes
+    # FAILS CLOSED, and this is the whole point.
+    #
+    # 2026-08-23, caught within the hour: the `changes` job 403'd, its dependants
+    # were skipped by `needs:` as GitHub does by default, every required check
+    # reported SKIPPED - and a ruleset counts a skipped required check as
+    # SATISFIED. For a few minutes this repo would have merged unchecked code and
+    # shown all green doing it. That is precisely the silent failure this estate
+    # exists to prevent, introduced by the change meant to save money.
+    #
+    # `always()` makes the job evaluate even when `changes` did not succeed, and
+    # `needs.changes.result != 'success'` then RUNS it. An undetermined diff is
+    # treated as "could break anything", never as "nothing to do".
+    if: >-
+      always() && github.event_name == 'pull_request' &&
+      (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
+    name: CSS Beat E2E (multi-table + animations)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install Chromium and WebKit
+        run: npx playwright install chromium webkit --with-deps
+
+      - name: Build this commit
+        env:
+          # The app fails closed before React mounts when these Vite values are
+          # absent. Footer route probes do not call Supabase, so deterministic
+          # non-secret placeholders are the correct isolated CI configuration.
+          VITE_SUPABASE_URL: https://example.supabase.co
+          VITE_SUPABASE_ANON_KEY: footer-probe-ci
+        run: npm run build
+
+      - name: Run the beats against this commit's CSS
+        env:
+          ARENA_BASE_URL: http://127.0.0.1:4173/hub/club-arena
+          BASE_URL: http://127.0.0.1:4173/hub/club-arena/
+        # hero-card-row.spec.ts was written to gate bug list item 11 and then
+        # ran in NO job at all - 40 pure-geometry assertions that nobody ever
+        # executed, which is why PR #178 could sit for 39 commits proposing
+        # changes to a spec whose result could not affect anything. It needs no
+        # server and no login (it renders SeatSlot.css with page.setContent) and
+        # the whole file runs in ~2.5s, so it belongs in the required gate.
+        #
+        # table-proportions.spec.ts added 2026-08-28 with the proportional
+        # sizing it guards. Same reasoning as hero-card-row above, and the same
+        # trap it is a warning about: a spec that is not named here runs in NO
+        # job and cannot fail anything. It needs no server and no login either
+        # (page.setContent against the real stylesheets) and takes about a
+        # second. It is what stops a breakpoint being reintroduced for cards,
+        # avatars or seats — the failure the ladder caused was invisible for as
+        # long as nobody happened to open a tablet.
+        # 2026-08-29: seven more self-contained specs joined, because the no-job
+        # trap fired again at scale. An inventory found SIXTEEN spec files
+        # running in no job; every self-contained one is now named here.
+        #
+        # customization-studios is intentionally not in this fixture list. It
+        # now mounts the real component and a deterministic Supabase browser
+        # mock, so the dedicated step below runs it through its own Vite config.
+        #
+        # diamond-checkout-mobile.spec.ts joined 2026-08-29 too - it landed from
+        # another branch the same day and arrived orphaned, which is the trap
+        # doing its work in real time. It is self-contained (readFileSync +
+        # setContent), so it belongs here. THE RULE, restated because it keeps
+        # being learned: a spec that is not named in a job runs in NO job. Add
+        # yours in the same commit that writes it.
+        #
+        # spin-wheel-on-a-phone.spec.ts (2026-08-31) is named here IN THE SAME
+        # COMMIT that writes it, per the rule restated below. It is
+        # self-contained in this gate's sense - it pulls this commit's own
+        # built stylesheets from the preview server and mounts the wheel's
+        # markup, needing no login and no deployed site. It closes the last
+        # place a Spin could break with nothing red: the wheel is a
+        # full-screen takeover and live-animations only ever measured it at
+        # Desktop Chrome, while the horse fleet that proves the engine has no
+        # browser at all (10.5) and cannot exercise one pixel of it.
+        #
+        # tap-sweep-rules.spec.ts (2026-08-30) tests the POST-DEPLOY sweep's own
+        # judgement, and belongs in this gate rather than beside the sweep it
+        # models: it builds its DOM by hand, needs no login and no live site, and
+        # the thing it guards - "excuse a control under fixed chrome only when
+        # the page can still scroll" - is exactly the kind of rule that rots
+        # into "excuse everything" without a beat that fails when it does. Three were already red - top-rail-seat pinned the
+        # px-ladder avatar #1650 retired, pot-above-chips froze a pot position
+        # two deliberate redesigns old, raise-panel-covers-chat lost the
+        # stylesheet its anchor moved into - and every one had been failing
+        # invisibly. The remaining orphans (mobile-fit-audit, smoke,
+        # tournament-watch, the routes/ suite, showdown-beats,
+        # mobile-chrome-occlusion, mobile-input-zoom, mobile-tap-targets,
+        # club-lobby, tournament-buy-in-dialog) need a login or a deployed URL
+        # and belong to the post-deploy tier, not this gate.
+        #
+        # club-mobile-wallet-reach.spec.ts (2026-08-31) is the deterministic
+        # reproduction of a post-deploy 375px failure: the tiny Share artwork
+        # lacked a thumb target and the collapsed wallet disclosure exposed
+        # fully clipped controls. It renders this commit's real lobby styles,
+        # needs no credentials, and must block the same regression pre-merge.
+        run: |
+          npx vite preview --host 127.0.0.1 --port 4173 > /tmp/arena-preview.log 2>&1 &
+          preview_pid=$!
+          trap 'kill "$preview_pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 20); do
+            curl -sf http://127.0.0.1:4173/hub/club-arena/index.html > /dev/null && break
+            sleep 0.5
+          done
+          npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
+
+      # Unlike the CSS fixtures above, this mounts the production Studio and
+      # drives its real Supabase client through a deterministic browser mock.
+      # Its dedicated route redirects unless the test-harness flag is enabled.
+      - name: Table Studio real-component purchase, sync, and accessibility gate
+        run: npm run test:e2e:customization
+
+      - name: Insurance and Rabbit Hunt 375px decision gate
+        run: npm run test:e2e:financial-decisions
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # STEP 5: AUTO-REVERT — DISABLED (was causing revert loops during migration)
+  # ─────────────────────────────────────────────────────────────────────────────
+  auto-revert:
+    name: Auto-Revert Broken Commit (DISABLED)
+    needs: [typecheck, build]
+    if: false # DISABLED — was auto-reverting valid commits during active migration
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+
+    steps:
+      - name: Checkout (full history for revert)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "CI Auto-Revert Bot"
+          git config user.email "ci-bot@smarter.poker"
+
+      - name: Auto-Revert Breaking Commit
+        id: revert
+        run: |
+          BREAKING_SHA=$(git rev-parse HEAD)
+          BREAKING_MSG=$(git log -1 --pretty=%s)
+          BREAKING_AUTHOR=$(git log -1 --pretty=%an)
+
+          echo "sha=${BREAKING_SHA}" >> $GITHUB_OUTPUT
+          echo "msg=${BREAKING_MSG}" >> $GITHUB_OUTPUT
+          echo "author=${BREAKING_AUTHOR}" >> $GITHUB_OUTPUT
+
+          echo "🔴 Auto-reverting broken commit: ${BREAKING_SHA:0:8}"
+          echo "   Message: ${BREAKING_MSG}"
+          echo "   Author: ${BREAKING_AUTHOR}"
+
+          # Revert the commit
+          git revert --no-edit HEAD
+
+          # Push the revert (bypass branch protection with GITHUB_TOKEN)
+          git push origin main
+
+          echo "✅ Successfully reverted ${BREAKING_SHA:0:8}"
+
+      - name: Create GitHub Issue
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const sha = '${{ steps.revert.outputs.sha }}'.substring(0, 8);
+            const msg = '${{ steps.revert.outputs.msg }}';
+            const author = '${{ steps.revert.outputs.author }}';
+            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            // Check for existing open CI failure issue
+            const issues = await github.rest.issues.listForRepo({
+              owner, repo,
+              labels: 'ci-failure,auto-reverted',
+              state: 'open',
+              per_page: 1
+            });
+
+            const body = [
+              `## 🔴 Auto-Reverted: Broken commit \`${sha}\``,
+              '',
+              `**Commit:** \`${sha}\``,
+              `**Message:** ${msg}`,
+              `**Author:** ${author}`,
+              `**CI Run:** [View details](${runUrl})`,
+              '',
+              `### What happened`,
+              `The CI pipeline detected that this commit broke the build (TypeScript errors or build failure).`,
+              `The commit was **automatically reverted** to keep \`main\` stable.`,
+              '',
+              `### Required action`,
+              `1. Check the CI run for the exact error`,
+              `2. Fix the error locally`,
+              `3. Run \`npx tsc --noEmit\` and confirm it passes`,
+              `4. Push the fixed code`,
+              '',
+              `> This issue was auto-created by the CI auto-revert system.`,
+            ].join('\n');
+
+            if (issues.data.length > 0) {
+              await github.rest.issues.createComment({
+                owner, repo,
+                issue_number: issues.data[0].number,
+                body
+              });
+            } else {
+              await github.rest.issues.create({
+                owner, repo,
+                title: `🔴 Auto-Reverted: ${msg.substring(0, 60)}`,
+                body,
+                labels: ['ci-failure', 'auto-reverted']
+              });
+            }
+
+      - name: Report Revert
+        if: success()
+        run: |
+          echo "## 🔴 AUTO-REVERT EXECUTED" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Reverted commit:** \`${{ steps.revert.outputs.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Message:** ${{ steps.revert.outputs.msg }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Author:** ${{ steps.revert.outputs.author }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The breaking commit has been automatically reverted." >> $GITHUB_STEP_SUMMARY
+          echo "A GitHub issue has been created for tracking." >> $GITHUB_STEP_SUMMARY

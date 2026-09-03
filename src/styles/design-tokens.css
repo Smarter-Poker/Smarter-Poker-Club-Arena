@@ -1,0 +1,375 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  CLUB ARENA — Design Tokens
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Central design token system for consistent spacing, typography, colors,
+ * shadows, animations, and theming across all table components.
+ *
+ * Usage: @import '../styles/design-tokens.css'; in any component CSS
+ * Theme: Apply [data-theme="blue|red|purple|black|gold"] on root element
+ */
+
+:root {
+  /* ─── Spacing Scale ─── */
+  --space-2xs: 2px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --space-3xl: 48px;
+
+  /* ─── Border Radius Scale ─── */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 9999px;
+  --radius-circle: 50%;
+
+  /* ─── Typography Scale (Fluid) ─── */
+  --font-2xs: clamp(0.5625rem, 1vw, 0.625rem);
+  --font-xs: clamp(0.625rem, 1.2vw, 0.6875rem);
+  --font-sm: clamp(0.6875rem, 1.4vw, 0.75rem);
+  --font-md: clamp(0.75rem, 1.6vw, 0.875rem);
+  --font-lg: clamp(0.875rem, 2vw, 1rem);
+  --font-xl: clamp(1rem, 2.5vw, 1.25rem);
+  --font-2xl: clamp(1.25rem, 3vw, 1.5rem);
+  --font-3xl: clamp(1.5rem, 3.5vw, 2rem);
+
+  /* ─── Font Weights ─── */
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --weight-extrabold: 800;
+
+  /* ─── Z-Index Layers ─── */
+  --z-table: 1;
+  --z-seats: 10;
+  --z-pot: 20;
+  --z-chip-animation: 30;
+  --z-control-strip: 50;
+  --z-header: 100;
+  --z-action-panel: 100;
+  --z-overlay: 200;
+  --z-side-menu: 300;
+  --z-modal-backdrop: 400;
+  --z-modal: 500;
+  --z-toast: 600;
+  --z-confetti: 700;
+
+  /* ─── Shadows ─── */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 16px 40px rgba(0, 0, 0, 0.6);
+  --shadow-glow-blue: 0 0 20px rgba(37, 99, 235, 0.4);
+  --shadow-glow-gold: 0 0 20px rgba(255, 215, 0, 0.4);
+  --shadow-glow-red: 0 0 20px rgba(239, 68, 68, 0.4);
+  --shadow-glow-green: 0 0 20px rgba(63, 185, 80, 0.4);
+  --shadow-glow-purple: 0 0 20px rgba(124, 58, 237, 0.4);
+  --shadow-inset: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+
+  /* ─── Animation Timing ─── */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --duration-instant: 50ms;
+  --duration-fast: 150ms;
+  --duration-normal: 300ms;
+  --duration-slow: 500ms;
+  --duration-slower: 800ms;
+
+  /* ─── Animation Speed Multiplier (user-adjustable) ─── */
+  --animation-speed: 1;
+
+  /* ─── Surface Colors — Dark Theme (Default) ─── */
+  --bg-primary: #0a0e17;
+  --bg-secondary: #111827;
+  --bg-surface: #1a2234;
+  --bg-elevated: #1f2937;
+  --bg-overlay: rgba(0, 0, 0, 0.6);
+  --bg-header: rgba(0, 0, 0, 0.75);
+
+  /* ─── Text Colors ─── */
+  --text-primary: #f3f4f6;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --text-inverse: #1e293b;
+
+  /* ─── Border Colors ─── */
+  --border-default: rgba(255, 255, 255, 0.08);
+  --border-active: rgba(255, 255, 255, 0.15);
+  --border-strong: rgba(255, 255, 255, 0.25);
+
+  /* ─── Table Theme Colors — Green (Default) ─── */
+  /* --felt-gradient and --rail-gradient were removed here and in every
+     [data-theme] block on 2026-08-25: 14 declarations in this file, 23 more in
+     TablePage.css, and not one `var()` anywhere read either of them. The felt
+     is an image (resolveSkin) and the rail is part of that image. */
+  --felt-color: #0f5132;
+  --rail-highlight: rgba(255, 255, 255, 0.08);
+  --rail-shadow: rgba(0, 0, 0, 0.5);
+  --table-border: 4px solid #2c1d12;
+
+  /* ─── Action Button Colors ─── */
+  --color-fold: #dc2626;
+  --color-fold-dark: #991b1b;
+  --color-fold-glow: rgba(239, 68, 68, 0.3);
+  --color-check: #3fb950;
+  --color-check-dark: #2ea043;
+  --color-check-glow: rgba(63, 185, 80, 0.3);
+  --color-call: #3fb950;
+  --color-call-dark: #2ea043;
+  --color-call-glow: rgba(63, 185, 80, 0.3);
+  --color-raise: #f59e0b;
+  --color-raise-dark: #d97706;
+  --color-raise-glow: rgba(245, 158, 11, 0.3);
+  --color-allin: #7c3aed;
+  --color-allin-dark: #6d28d9;
+  --color-allin-glow: rgba(124, 58, 237, 0.4);
+
+  /* ─── Status Colors ─── */
+  --color-success: #3fb950;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-info: #3b82f6;
+
+  /* ─── Stack Color Thresholds ─── */
+  --stack-healthy: #f3f4f6; /* ≥100 BB — white */
+  --stack-normal: #3fb950; /* 50-99 BB — house green */
+  --stack-warning: #f59e0b; /* 20-49 BB — amber */
+  --stack-danger: #f97316; /* 10-19 BB — orange */
+  --stack-critical: #ef4444; /* <10 BB — red */
+
+  /* ─── Timer Colors — DEAD, AND DELIBERATELY DEFUSED (2026-08-26) ───
+     Nothing consumes any of these: `var(--timer-…)` appears nowhere in src/.
+     The action arc is driven by `spTimerColorShift` in SeatSlot.css, which is a
+     constant neon blue by Dan's instruction (2026-08-25, item 6): "it should
+     just show the existing frame of the chip box frame, with the neon blue
+     running out, NOT the red behind it."
+
+     They are left in place rather than deleted because other agents ship into
+     this file concurrently and a vanished token is a merge conflict waiting to
+     happen — but the two red ones now RESOLVE TO THE NEON BLUE. A dead token
+     holding #ef4444 next to a rule that says "no red on the timer" is a loaded
+     gun: the next person to reach for a plausible-looking name reintroduces the
+     exact thing that was reported. Reaching for them now is harmless. */
+  --timer-color: #ffd700;
+  --timer-glow: rgba(255, 215, 0, 0.6);
+  --timer-safe: #22c55e;
+  --timer-caution: #eab308;
+  --timer-warning: #f97316;
+  --timer-urgent: #00e5ff;
+  --timer-urgent-glow: rgba(0, 229, 255, 0.6);
+
+  /* ─── Table Layout (from UI Overhaul spec) ─── */
+  --header-height: 44px;
+  --button-height: 56px;
+  --avatar-size-hero: 56px;
+  --card-width: 64px;
+  --card-height: 92px;
+  --seat-name-size: 0.6875rem;
+  --seat-stack-size: 0.6875rem;
+
+  /* ─── Chip Denomination Colors (Standard Casino) ─── */
+  --chip-white: #e5e7eb; /* 1 chip */
+  --chip-red: #ef4444; /* 5 chips */
+  --chip-green: #22c55e; /* 25 chips */
+  --chip-blue: #3b82f6; /* 50 chips */
+  --chip-black: #374151; /* 100 chips */
+  --chip-purple: #8b5cf6; /* 500 chips */
+  --chip-gold: #f59e0b; /* 1,000+ chips */
+
+  /* ─── Position Badge Colors ─── */
+  --badge-dealer: #f59e0b;
+  --badge-sb: #3b82f6;
+  --badge-bb: #ef4444;
+
+  /* ─── Seat Info Box ─── */
+  --seat-bg: rgba(15, 20, 35, 0.92);
+  --seat-border: rgba(255, 255, 255, 0.08);
+  /* Seat plate text is ALWAYS light-on-dark: it must not follow the interface
+     theme's --text-primary (which goes dark in light mode). */
+  --seat-text: #f3f4f6;
+  --seat-active-border: var(--timer-color);
+  --seat-allin-border: var(--color-danger);
+  /* Dan 2026-08-15: all table avatars 50% larger (was 56px).
+     --seat-avatar-base is THE ONE NUMBER. Responsive blocks override only this;
+     the villain slot equals it and the hero slot is derived from it, so the two
+     can never drift apart again (2026-08-20 audit: the three mobile blocks in
+     SeatSlot.css had been hardcoding the slot in px, which silently defeated
+     the hero's 1.33x on every phone).
+
+     NOTE: --seat-avatar-size is deliberately NOT aliased here. A `:root`
+     declaration of `--seat-avatar-size: var(--seat-avatar-base)` substitutes
+     at the point of DECLARATION — it would freeze the :root value of the base
+     (84px) and inherit that constant downward, so a later
+     `--seat-avatar-base: 57px` on `.seat` would change nothing. The alias
+     lives on `.seat` in SeatSlot.css, where base and size resolve on the same
+     element and the responsive overrides actually take. */
+  --seat-avatar-base: 84px;
+  /* "HERO avatar should always be 33% bigger than the villains" — Dan. */
+  --seat-avatar-hero-ratio: 1.3333;
+
+  /* ─── Card Shadows ─── */
+  --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.25);
+  --card-shadow-hover: 0 10px 24px rgba(0, 0, 0, 0.5), 0 2px 5px rgba(0, 0, 0, 0.3);
+  --card-shadow-highlighted: 0 0 0 3px rgba(255, 215, 0, 0.6), 0 0 20px rgba(255, 215, 0, 0.7);
+
+  /* ─── Ambient Glow (theme-aware) ─── */
+  --ambient-glow: rgba(255, 215, 0, 0.04);
+
+  /* ─── Premium Animation Easing ─── */
+  --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ─── Glass Morphism Tokens ─── */
+  --glass-bg: rgba(17, 19, 24, 0.85);
+  --glass-bg-light: rgba(30, 33, 40, 0.75);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+
+  /* ─── Premium Shadows ─── */
+  --shadow-premium: 0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-float: 0 16px 48px rgba(0, 0, 0, 0.5);
+
+  /* ─── Premium Glow Effects ─── */
+  --glow-cyan: 0 0 20px rgba(34, 211, 238, 0.3);
+  --glow-gold: 0 0 20px rgba(255, 215, 0, 0.3);
+  --glow-blue: 0 0 20px rgba(24, 119, 242, 0.3);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   THEME: Blue (Ocean / Deep Sea)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+[data-theme='blue'],
+[data-color-theme='blue'] {
+  --felt-color: #1e3a5f;
+  --rail-highlight: rgba(100, 160, 255, 0.06);
+  --table-border: 4px solid #2d3748;
+  --timer-color: #60a5fa;
+  --timer-glow: rgba(96, 165, 250, 0.6);
+  --seat-bg: rgba(13, 27, 46, 0.93);
+  --seat-border: rgba(96, 165, 250, 0.08);
+  --seat-active-border: #60a5fa;
+  --color-allin: #2563eb;
+  --color-allin-dark: #1d4ed8;
+  --color-allin-glow: rgba(37, 99, 235, 0.4);
+  --ambient-glow: rgba(96, 165, 250, 0.04);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   THEME: Red (ClubGG / Casino Red)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+[data-theme='red'],
+[data-color-theme='red'] {
+  --felt-color: #7f1d1d;
+  --rail-highlight: rgba(255, 120, 80, 0.06);
+  --table-border: 4px solid #451a03;
+  --seat-bg: rgba(59, 15, 15, 0.93);
+  --seat-border: rgba(239, 68, 68, 0.08);
+  --color-fold: #991b1b;
+  --color-fold-dark: #7f1d1d;
+  --color-fold-glow: rgba(153, 27, 27, 0.3);
+  --color-raise: #ef4444;
+  --color-raise-dark: #dc2626;
+  --color-raise-glow: rgba(239, 68, 68, 0.3);
+  --ambient-glow: rgba(239, 68, 68, 0.03);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   THEME: Purple (Twilight / VIP Lounge)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+[data-theme='purple'],
+[data-color-theme='purple'] {
+  --felt-color: #4c1d95;
+  --rail-highlight: rgba(167, 139, 250, 0.06);
+  --table-border: 4px solid #2e1f45;
+  --timer-color: #a78bfa;
+  --timer-glow: rgba(167, 139, 250, 0.6);
+  --seat-bg: rgba(42, 10, 94, 0.93);
+  --seat-border: rgba(139, 92, 246, 0.08);
+  --seat-active-border: #a78bfa;
+  --color-allin: #9333ea;
+  --color-allin-dark: #7e22ce;
+  --color-allin-glow: rgba(147, 51, 234, 0.4);
+  --ambient-glow: rgba(139, 92, 246, 0.04);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   THEME: Black (Stealth / Midnight)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+[data-theme='black'],
+[data-color-theme='black'] {
+  --felt-color: #18181b;
+  --rail-highlight: rgba(255, 255, 255, 0.03);
+  --table-border: 4px solid #27272a;
+  --seat-bg: rgba(10, 10, 14, 0.95);
+  --seat-border: rgba(255, 255, 255, 0.05);
+  --timer-color: #e4e4e7;
+  --timer-glow: rgba(228, 228, 231, 0.5);
+  --color-fold: #a1a1aa;
+  --color-fold-dark: #71717a;
+  --color-fold-glow: rgba(161, 161, 170, 0.2);
+  --ambient-glow: rgba(228, 228, 231, 0.02);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   THEME: Gold (VIP / High Roller)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+[data-theme='gold'],
+[data-color-theme='gold'] {
+  --felt-color: #1c1a0e;
+  --rail-highlight: rgba(255, 215, 0, 0.1);
+  --table-border: 4px solid #7a5c14;
+  --timer-color: #fbbf24;
+  --timer-glow: rgba(251, 191, 36, 0.6);
+  --seat-bg: rgba(20, 18, 10, 0.93);
+  --seat-border: rgba(245, 158, 11, 0.1);
+  --seat-active-border: #fbbf24;
+  --color-raise: #fbbf24;
+  --color-raise-dark: #f59e0b;
+  --color-raise-glow: rgba(251, 191, 36, 0.3);
+  --ambient-glow: rgba(251, 191, 36, 0.04);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   THEME: Light Mode (Day Table)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+[data-theme='light'],
+[data-color-theme='light'] {
+  --bg-primary: #f0f4f0;
+  --bg-secondary: #e8ede8;
+  --bg-surface: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-overlay: rgba(0, 0, 0, 0.25);
+  --bg-header: rgba(255, 255, 255, 0.92);
+  --text-primary: #1a2e1a;
+  --text-secondary: #3d5a3d;
+  --text-muted: #7a9a7a;
+  --text-inverse: #f3f4f6;
+  --border-default: rgba(0, 0, 0, 0.08);
+  --border-active: rgba(0, 0, 0, 0.15);
+  --border-strong: rgba(0, 0, 0, 0.25);
+  /* TABLE TOKENS DO NOT BELONG HERE (Dan 2026-08-30, binding).
+     `data-theme` on <html> is the INTERFACE mode (dark/light chrome for the
+     lobby and menus), but the same attribute namespace also carries the table
+     color themes above. When this block declared the seat-plate, felt and
+     timer tokens it turned every seat plate on a live table WHITE the moment
+     the interface was in light mode, while the image-based felt stayed dark:
+     dark table, white "action boxes" on every player. The game
+     table always keeps its dark plates regardless of interface mode, so the
+     light theme may only restyle chrome tokens. Enforced by
+     tests/seat-plates-stay-dark.law.test.ts — do not re-add table tokens. */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.1);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.15);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.2);
+  --ambient-glow: rgba(34, 197, 94, 0.03);
+}

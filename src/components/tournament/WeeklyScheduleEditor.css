@@ -1,0 +1,122 @@
+/* WEEKLY SCHEDULE EDITOR (2026-08-22) — recurrence controls shared by the
+   create-table MTT tab and the union tournament modal. Mobile-first: sized
+   for 375px, everything wraps. */
+
+.weekly-schedule-editor {
+  padding: 0.5rem 0.5rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  margin: 0.5rem 0;
+}
+
+.wse-days {
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+}
+
+.wse-day-chip {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  border-radius: 50%;
+  max-width: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 700;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.wse-day-chip.active {
+  background: #1877f2;
+  border-color: #1877f2;
+  color: #fff;
+}
+
+.wse-mode-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.wse-mode-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.wse-times {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wse-time-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wse-time-input,
+.wse-interval-input {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+  color: #fff;
+  font-size: 0.85rem;
+}
+
+.wse-interval-input {
+  width: 90px;
+}
+
+.wse-remove-time {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.7);
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.wse-add-time {
+  align-self: flex-start;
+  background: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.35);
+  border-radius: 4px;
+  color: #1877f2;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.wse-interval-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wse-interval-label {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.8rem;
+}
+
+.wse-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.5);
+}

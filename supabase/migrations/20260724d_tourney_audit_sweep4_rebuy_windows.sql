@@ -1,0 +1,18 @@
+-- TOURNEY-AUDIT SWEEP 4 (2026-07-24): server-side rebuy/add-on/re-entry
+-- window enforcement in process_tournament_rebuy.
+-- (Applied to the live PokerIQ-Production database on 2026-07-24 via MCP.
+--  Full function body lives in the applied migration
+--  tourney_audit_sweep4_rebuy_window_enforcement; this file records it for
+--  the repo. See RAKE-BBJ-FULL-AUDIT-2026-07-24.md sweep 4.)
+--
+-- The RPC previously enforced NOTHING beyond wallet balance and registration:
+-- no tournament-status check, no level-window check, no stack-limit check, no
+-- one-add-on limit, no player-status check. All gating lived in the CLIENT,
+-- whose level clock drifts from the server and which can be bypassed by
+-- calling the RPC directly. Now enforced atomically server-side:
+--   * tournament must be RUNNING
+--   * rebuy:   level < cap, player 'playing', chips <= starting_chips
+--   * reentry: level < cap, player 'eliminated'
+--   * addon:   cap <= level < cap + addon_levels, player 'playing', one per player
+--   (cap = COALESCE(late_reg_levels, rebuy_levels, 8); level = server
+--    tournaments.current_level, falling back to the caller-supplied level)

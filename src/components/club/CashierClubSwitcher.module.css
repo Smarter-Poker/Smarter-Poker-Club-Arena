@@ -1,0 +1,186 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CASHIER CLUB SWITCHER — compact club context bar with dropdown (Facebook Dark)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 10px 16px 0;
+}
+
+.label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #8892a4;
+  flex-shrink: 0;
+}
+
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 260px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(111, 220, 255, 0.25);
+  background: rgba(19, 27, 40, 0.6);
+  color: #e8eaf0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.trigger:focus-visible {
+  outline: 2px solid rgba(111, 220, 255, 0.7);
+  outline-offset: 2px;
+}
+
+.triggerStatic {
+  cursor: default;
+}
+
+.name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.chevron {
+  font-size: 10px;
+  color: #8892a4;
+  flex-shrink: 0;
+}
+
+.logo {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.logoFallback {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(111, 220, 255, 0.15);
+  color: #6fdcff;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  background: transparent;
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 16px;
+  z-index: 960;
+  min-width: 220px;
+  max-width: 300px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: linear-gradient(160deg, rgba(26, 36, 54, 0.98) 0%, rgba(13, 17, 32, 0.98) 100%);
+  border: 1px solid rgba(111, 220, 255, 0.25);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.menuTitle {
+  padding: 6px 10px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #8892a4;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  color: #e8eaf0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.item:focus-visible {
+  outline: 2px solid rgba(111, 220, 255, 0.7);
+  outline-offset: -2px;
+}
+
+.itemActive {
+  color: #6fdcff;
+  background: rgba(111, 220, 255, 0.08);
+}
+
+.itemText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.itemName {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.itemBalance {
+  font-size: 10px;
+  font-weight: 600;
+  color: #8892a4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 480px) {
+  .bar {
+    padding: 8px 12px 0;
+  }
+
+  .trigger {
+    max-width: 200px;
+  }
+
+  .menu {
+    left: 12px;
+    right: 12px;
+    max-width: none;
+  }
+}

@@ -1,0 +1,307 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  SESSION HUD — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.session-hud-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-modal, 1000);
+  animation: fadeIn 0.2s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.session-hud {
+  position: relative;
+  width: 280px; /* Wider for modal view */
+  background: rgba(15, 18, 25, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  cursor: default;
+  user-select: none;
+  animation: sessionHudSlideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes sessionHudSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ── Header ── */
+.sh-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.sh-title {
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #fff;
+}
+
+.sh-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.sh-toggle,
+.sh-minimize {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 10px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+/* ── P&L ── */
+.sh-pl-section {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  justify-content: center;
+  padding: 8px 0;
+}
+
+.sh-pl-value {
+  font-size: 28px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.5px;
+}
+
+.sh-pl-bb {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.sh-positive {
+  color: #3fb950;
+  text-shadow: 0 0 12px rgba(63, 185, 80, 0.3);
+}
+.sh-negative {
+  color: #ef4444;
+}
+
+/* ── Sparkline ── */
+.sh-sparkline-wrapper {
+  height: 48px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.sh-sparkline {
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Quick Stats ── */
+/* Dan 2026-08-19: grew from 5 stats to 9 (added $/Hr, VPIP, PFR, Win%,
+   BB/Hr). A single flex row squeezed them into unreadable slivers, so the
+   grid wraps into even columns instead. */
+.sh-quick-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px 6px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  padding: 12px 10px;
+}
+@media (max-width: 420px) {
+  .sh-quick-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.sh-qstat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.sh-qstat-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.sh-qstat-label {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ── Advanced Stats ── */
+.sh-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sh-adv-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sh-adv-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.4);
+  width: 32px;
+}
+
+.sh-adv-bar {
+  flex: 1;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.sh-adv-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.sh-vpip-fill {
+  background: #60a5fa;
+}
+.sh-pfr-fill {
+  background: #f97316;
+}
+
+.sh-adv-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  width: 32px;
+  text-align: right;
+}
+
+/* ── Color-Coded VPIP Tiers ── */
+/* Tight: 0-18% → cool cyan */
+.sh-vpip-fill[data-vpip-tier='tight'] {
+  background: linear-gradient(90deg, #22d3ee, #06b6d4);
+}
+/* Normal: 19-28% → standard blue */
+.sh-vpip-fill[data-vpip-tier='normal'] {
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+}
+/* Loose: 29-40% → warm orange */
+.sh-vpip-fill[data-vpip-tier='loose'] {
+  background: linear-gradient(90deg, #f97316, #fb923c);
+}
+/* Maniac: 41%+ → hot red */
+.sh-vpip-fill[data-vpip-tier='maniac'] {
+  background: linear-gradient(90deg, #ef4444, #f87171);
+}
+
+/* ── PFR Tier Matching ── */
+.sh-pfr-fill[data-pfr-tier='tight'] {
+  background: linear-gradient(90deg, #a78bfa, #8b5cf6);
+}
+.sh-pfr-fill[data-pfr-tier='normal'] {
+  background: linear-gradient(90deg, #f97316, #fb923c);
+}
+.sh-pfr-fill[data-pfr-tier='aggressive'] {
+  background: linear-gradient(90deg, #ef4444, #f87171);
+}
+
+/* ── Hot Streak Flame Icon ── */
+.sh-hot-streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #f59e0b;
+  margin-left: 6px;
+  animation: flamePulse 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes flamePulse {
+  from {
+    opacity: 0.7;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+/* ── Win Rate Badge ── */
+.sh-win-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.sh-win-badge--hot {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.sh-win-badge--cold {
+  background: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+/* ── Reduced Motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .sh-hot-streak {
+    animation: none;
+  }
+}

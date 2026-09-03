@@ -1,0 +1,116 @@
+/* BBJ admin analytics — mobile-first stat grid (2026-08-18) */
+
+.bbj-admin {
+  margin: 4px 0 16px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(213, 218, 226, 0.28);
+  background: rgba(213, 218, 226, 0.05);
+}
+
+.bbj-admin__header {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 12px;
+}
+
+.bbj-admin__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: #d5dae2;
+  letter-spacing: 0.5px;
+}
+
+.bbj-admin__subtitle {
+  font-size: 11px;
+  opacity: 0.65;
+  margin-top: 2px;
+}
+
+/* 2 columns at 375px, 3 from 560px — never a horizontal scroll on mobile */
+.bbj-admin__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (min-width: 560px) {
+  .bbj-admin__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.bbj-admin__stat {
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  min-width: 0;
+}
+
+.bbj-admin__stat-label {
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.bbj-admin__stat-value {
+  font-size: 18px;
+  font-weight: 800;
+  color: #f5f5f5;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.bbj-admin__stat-sub {
+  font-size: 11px;
+  opacity: 0.6;
+  margin-top: 2px;
+}
+
+.bbj-admin__stat.is-positive .bbj-admin__stat-value {
+  color: #4ade80;
+}
+
+.bbj-admin__stat.is-negative .bbj-admin__stat-value {
+  color: #f87171;
+}
+
+.bbj-admin__bar {
+  margin-top: 12px;
+}
+
+.bbj-admin__bar-label {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-bottom: 6px;
+}
+
+.bbj-admin__bar-track {
+  display: flex;
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.bbj-admin__bar-seg {
+  height: 100%;
+}
+
+.bbj-admin__bar-main {
+  background: #d5dae2;
+}
+
+.bbj-admin__bar-backup {
+  background: #6ea8fe;
+}
+
+.bbj-admin__bar-promo {
+  background: #af52de;
+}

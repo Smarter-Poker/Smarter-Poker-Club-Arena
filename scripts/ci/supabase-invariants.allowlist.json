@@ -1,0 +1,20 @@
+{
+  "_comment": "Intentional exceptions for the phantom-ref CI gate (check-phantom-tables.mjs). Every entry is a `.from()` table or `.rpc()` function that does NOT exist in the live Supabase schema but is referenced ON PURPOSE. Keep this list SMALL and REASONED. When a backend is built for one of these, remove its entry (it will then be in the manifest and pass on its own).",
+  "nonPublicTargets": {
+    "_comment": "Real targets that live outside the public schema the manifest snapshots (Postgres catalogs, auth schema, storage buckets). Not phantoms.",
+    "pg_tables": "postgres catalog",
+    "pg_stat_activity": "postgres catalog",
+    "auth.users": "auth schema (not public)",
+    "users": "alias for auth.users after schema switch in some services"
+  },
+  "unbuiltFeatureTables": {
+    "_comment": "EMPTY, and it should stay that way. Every table formerly listed here either exists in production now or had its only caller removed as dead code on 2026-09-01 (GTOQueryService, HorseOrchestrator.trackHorsePerformance, and the unreachable clawback state in AgentAnalyticsDashboard). An entry here is a .from() that silently returns nothing at runtime; the gate exists to stop new ones. This list may only ever SHRINK."
+  },
+  "unbuiltFeatureRpcs": {
+    "_comment": "EMPTY, and it should stay that way. Every RPC formerly listed here either exists in production now or has no caller left in src/ or server/src/. An entry here is a .rpc() call that fails at runtime; the gate exists to stop new ones."
+  },
+  "phantomColumns": {
+    "_comment": "BUILT columns whose columns-manifest entry is pending regeneration (deploy blocked by PAT rotation 2026-07-29). Remove once the manifest is regenerated.",
+    "_comment_write_backlog_2026_08_27": "CLEARED 2026-08-28. The nineteen entries that lived here were writes naming columns that do not exist, so each statement was rejected at runtime and the control it belonged to silently did nothing. All nineteen are fixed: four were already stale (tables.bomb_pot_double_board, hand_history.community_cards2, friend_challenges.winner_id and .resolved_at all exist), the rest were repointed at the real columns, given the real columns, or removed where nothing read them. This list may only ever SHRINK - check-phantom-columns blocks a new one immediately, which is what an empty list is for."
+  }
+}

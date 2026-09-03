@@ -1,0 +1,280 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "type": "row",
+      "title": "Error budget remaining (30d window)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "WH Hub · 99.9%",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 1 },
+      "id": 1,
+      "targets": [{ "expr": "slo:wh_hub:budget_remaining_30d", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 0.2, "color": "yellow" },
+              { "value": 0.5, "color": "green" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "value_and_name",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "CA Hub · 99.9%",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 1 },
+      "id": 2,
+      "targets": [{ "expr": "slo:ca_hub:budget_remaining_30d", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 0.2, "color": "yellow" },
+              { "value": 0.5, "color": "green" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "value_and_name",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Engine · 99.95%",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 1 },
+      "id": 3,
+      "targets": [{ "expr": "slo:engine:budget_remaining_30d", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 0.2, "color": "yellow" },
+              { "value": 0.5, "color": "green" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "value_and_name",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Engine tick · 99% < 50ms",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 1 },
+      "id": 4,
+      "targets": [{ "expr": "slo:engine_tick:budget_remaining_30d", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "noValue": "(awaiting pm2-metrics histogram)",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 0.2, "color": "yellow" },
+              { "value": 0.5, "color": "green" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "value_and_name",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "type": "row",
+      "title": "Burn rate · fast (1h) window",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 },
+      "id": 101,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "WH Hub — 1h error ratio vs burn thresholds",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 10,
+      "targets": [
+        { "expr": "slo:wh_hub:error_ratio_1h", "refId": "A", "legendFormat": "error ratio 1h" },
+        {
+          "expr": "14.4 * (1 - 0.999)",
+          "refId": "B",
+          "legendFormat": "fast-burn threshold (14.4x)"
+        },
+        { "expr": "6 * (1 - 0.999)", "refId": "C", "legendFormat": "medium-burn threshold (6x)" },
+        { "expr": "3 * (1 - 0.999)", "refId": "D", "legendFormat": "slow-burn threshold (3x)" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": { "lineInterpolation": "smooth", "fillOpacity": 15 }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "CA Hub — 1h error ratio vs burn thresholds",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 11,
+      "targets": [
+        { "expr": "slo:ca_hub:error_ratio_1h", "refId": "A", "legendFormat": "error ratio 1h" },
+        {
+          "expr": "14.4 * (1 - 0.999)",
+          "refId": "B",
+          "legendFormat": "fast-burn threshold (14.4x)"
+        },
+        { "expr": "6 * (1 - 0.999)", "refId": "C", "legendFormat": "medium-burn threshold (6x)" },
+        { "expr": "3 * (1 - 0.999)", "refId": "D", "legendFormat": "slow-burn threshold (3x)" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": { "lineInterpolation": "smooth", "fillOpacity": 15 }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Engine — 1h error ratio vs burn thresholds",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 12,
+      "targets": [
+        { "expr": "slo:engine:error_ratio_1h", "refId": "A", "legendFormat": "error ratio 1h" },
+        {
+          "expr": "14.4 * (1 - 0.9995)",
+          "refId": "B",
+          "legendFormat": "fast-burn threshold (14.4x)"
+        },
+        { "expr": "6 * (1 - 0.9995)", "refId": "C", "legendFormat": "medium-burn threshold (6x)" },
+        { "expr": "3 * (1 - 0.9995)", "refId": "D", "legendFormat": "slow-burn threshold (3x)" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": { "lineInterpolation": "smooth", "fillOpacity": 15 }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Engine hand-tick p99 (ms)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 13,
+      "targets": [
+        { "expr": "slo:engine_tick:p99_5m * 1000", "refId": "A", "legendFormat": "p99 tick (ms)" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 40, "color": "yellow" },
+              { "value": 50, "color": "red" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Long-window burn (6h / 24h / 72h)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 },
+      "id": 102,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "WH Hub — 6h / 1d / 3d error ratio",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 25 },
+      "id": 20,
+      "targets": [
+        { "expr": "slo:wh_hub:error_ratio_6h", "refId": "A", "legendFormat": "6h" },
+        { "expr": "slo:wh_hub:error_ratio_1d", "refId": "B", "legendFormat": "1d" },
+        { "expr": "slo:wh_hub:error_ratio_3d", "refId": "C", "legendFormat": "3d" },
+        { "expr": "1 - 0.999", "refId": "D", "legendFormat": "SLO cap (0.1%)" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Engine — 6h / 1d / 3d error ratio",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 25 },
+      "id": 21,
+      "targets": [
+        { "expr": "slo:engine:error_ratio_6h", "refId": "A", "legendFormat": "6h" },
+        { "expr": "slo:engine:error_ratio_1d", "refId": "B", "legendFormat": "1d" },
+        { "expr": "slo:engine:error_ratio_3d", "refId": "C", "legendFormat": "3d" },
+        { "expr": "1 - 0.9995", "refId": "D", "legendFormat": "SLO cap (0.05%)" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit" }
+      }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["slo", "smarter.poker"],
+  "templating": { "list": [] },
+  "time": { "from": "now-24h", "to": "now" },
+  "timezone": "",
+  "title": "Smarter.Poker — SLOs & burn rate",
+  "uid": "sp-slo",
+  "version": 1,
+  "weekStart": ""
+}

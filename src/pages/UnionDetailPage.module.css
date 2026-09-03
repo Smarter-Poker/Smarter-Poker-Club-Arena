@@ -1,0 +1,1040 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  UNION DETAIL PAGE — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.page {
+  min-height: 100vh;
+  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
+  padding: 2rem;
+  width: 100%;
+  max-width: 100vw;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
+  padding-bottom: max(70px, env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, var(--bg-darker) 0%, var(--bg-dark) 100%);
+}
+
+.loading,
+.error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  gap: 1rem;
+  color: var(--text-muted);
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.backLink {
+  display: inline-block;
+  color: var(--text-muted);
+  text-decoration: none;
+  margin-bottom: 1rem;
+  transition: color 0.2s;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 2rem;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%);
+  border-radius: 1.5rem;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  margin-bottom: 2rem;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.unionAvatar {
+  width: 240px;
+  height: 240px;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 6rem;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.unionInfo {
+  flex: 1;
+}
+
+.unionInfo h1 {
+  margin: 0 0 0.5rem;
+  color: #fff;
+  font-size: 1.5rem;
+}
+
+.unionInfo h2 {
+  margin: 0 0 0.5rem;
+  color: #f4f8fb;
+  font:
+    700 1.5rem/1 Rajdhani,
+    Inter,
+    sans-serif;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.unionAvatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.unionInfo p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.headerActions {
+  display: grid;
+  gap: 9px;
+  justify-items: end;
+  flex-shrink: 0;
+}
+
+.managementButton {
+  padding: 10px 16px;
+  border: 1px solid #45b8f4;
+  border-radius: 5px;
+  color: #eefaff;
+  background: linear-gradient(180deg, #155278, #082234);
+  font:
+    800 12px/1 Rajdhani,
+    Inter,
+    sans-serif;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.applyButton {
+  padding: 0.875rem 1.5rem;
+  background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+  border: none;
+  border-radius: 0.75rem;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.applyButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Modal */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  max-width: 400px;
+  width: 90%;
+  padding: 2rem;
+  background: var(--bg-dark);
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modal h2 {
+  margin: 0 0 0.5rem;
+  color: #fff;
+}
+
+.modal p {
+  margin: 0 0 1.5rem;
+  color: var(--text-muted);
+}
+
+.modal .clubList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.clubOption {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.75rem;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.clubOption span {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.cancelButton {
+  width: 100%;
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.5rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+/* Stats Row */
+.statsRow {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.statCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 1.25rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: center;
+}
+
+.statValue {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.statValue.online {
+  color: #10b981;
+}
+
+.statLabel {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+/* Tabs */
+.tabNav {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.tab {
+  flex: 1;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab.active {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+  border-color: #8b5cf6;
+  color: #fff;
+}
+
+.tabContent {
+  min-height: 400px;
+}
+
+/* Overview Grid */
+.overviewGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+}
+
+.card {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 1.5rem;
+}
+
+.card h3 {
+  margin: 0 0 1rem;
+  color: #fff;
+  font-size: 1rem;
+}
+
+.emptyText {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+/* Table List */
+.tableList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tableRow {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 0.5rem;
+  text-decoration: none;
+  color: #fff;
+  transition: background 0.2s;
+}
+
+.tableRow .stakes {
+  color: var(--accent);
+  font-size: 0.875rem;
+}
+
+.tableRow span:first-child {
+  flex: 1;
+}
+
+/* Club List */
+.clubRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+}
+
+.clubAvatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 0.5rem;
+  background: rgba(139, 92, 246, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+}
+
+.clubInfo {
+  display: flex;
+  flex-direction: column;
+}
+
+.clubInfo strong {
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+.clubInfo span {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+/* Financial Quick */
+.financialQuick {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+.financialQuick > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.financialQuick span {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.financialQuick strong {
+  font-size: 1.1rem;
+  color: #fff;
+}
+
+.financialQuick strong.positive {
+  color: #10b981;
+}
+
+.financialQuick strong.negative {
+  color: #ef4444;
+}
+
+/* Clubs Grid */
+.clubsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 1rem;
+}
+
+.clubCard {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.clubCardAvatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(139, 92, 246, 0.1) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+}
+
+.clubCardInfo {
+  flex: 1;
+}
+
+.clubCardInfo h4 {
+  margin: 0 0 0.25rem;
+  color: #fff;
+  font-size: 1rem;
+}
+
+.clubCardInfo p {
+  margin: 0 0 0.25rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.clubCardInfo span {
+  color: var(--accent);
+  font-size: 0.75rem;
+}
+
+/* Tables Grid */
+.tablesGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.tableCard {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.tableCardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tableCardHeader h4 {
+  margin: 0;
+  color: #fff;
+  font-size: 1rem;
+}
+
+.statusDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #6b7280;
+}
+
+.statusDot.running {
+  background: #10b981;
+}
+
+.statusDot.waiting {
+  background: #f59e0b;
+}
+
+.tableCardDetails {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.tableCardDetails .variant {
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.joinButton {
+  padding: 0.5rem;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+  border: none;
+  border-radius: 0.5rem;
+  color: #000;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* Financials */
+.financialsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.financialCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.financialCard {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.financialCard.overdue {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.financialIcon {
+  font-size: 2rem;
+}
+
+.financialValue {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.financialValue.positive {
+  color: #10b981;
+}
+
+.financialValue.negative {
+  color: #ef4444;
+}
+
+.financialLabel {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* Settlement Table */
+.settlementSection {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 1.5rem;
+}
+
+.settlementSection h3 {
+  margin: 0 0 1.5rem;
+  color: #fff;
+}
+
+.settlementTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.settlementTable th,
+.settlementTable td {
+  padding: 1rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.settlementTable th {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+.settlementTable td {
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+.settlementTable .positive {
+  color: #10b981;
+}
+
+.statusBadge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 1rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.statusBadge.paid {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.statusBadge.pending {
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+}
+
+.statusBadge.overdue {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+/* Tournament status badges */
+.REGISTERING {
+  background: rgba(16, 185, 129, 0.2) !important;
+  color: #10b981 !important;
+}
+
+.ANNOUNCED {
+  background: rgba(59, 130, 246, 0.2) !important;
+  color: #3b82f6 !important;
+}
+
+.RUNNING {
+  background: rgba(245, 158, 11, 0.2) !important;
+  color: #f59e0b !important;
+}
+
+.COMPLETED {
+  background: rgba(110, 118, 129, 0.2) !important;
+  color: #6e7681 !important;
+}
+
+.CANCELLED {
+  background: rgba(239, 68, 68, 0.2) !important;
+  color: #ef4444 !important;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .page {
+    padding: 1rem;
+    padding-bottom: max(70px, env(safe-area-inset-bottom));
+  }
+
+  .header {
+    flex-direction: column;
+    text-align: center;
+    padding: 1.25rem;
+    gap: 1rem;
+  }
+
+  .unionAvatar {
+    width: 96px;
+    height: 96px;
+    font-size: 2.5rem;
+  }
+
+  .unionInfo h1 {
+    font-size: 1.2rem;
+  }
+
+  .statsRow {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .tabNav {
+    flex-wrap: wrap;
+  }
+
+  .tab,
+  .applyButton,
+  .joinButton,
+  .removeClubBtn {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .settlementTable {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .settlementTable th,
+  .settlementTable td {
+    padding: 0.5rem;
+    white-space: nowrap;
+  }
+
+  .settingsCard {
+    padding: 1.25rem;
+  }
+}
+
+/* Remove Club Button */
+.removeClubBtn {
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  border-radius: 0.5rem;
+  color: #ef4444;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.removeClubBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Settings Tab */
+.settingsContainer {
+  max-width: 600px;
+}
+
+.settingsCard {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 2rem;
+}
+
+.settingsCard h3 {
+  margin: 0 0 0.5rem;
+  color: #fff;
+  font-size: 1.25rem;
+}
+
+.settingsDesc {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin: 0 0 2rem;
+}
+
+.settingRow {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.settingRow:last-of-type {
+  border-bottom: none;
+}
+
+.settingRow > label {
+  display: block;
+  color: #fff;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.sliderRow {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.slider {
+  flex: 1;
+  -webkit-appearance: none;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.sliderValue {
+  min-width: 50px;
+  text-align: right;
+  color: #8b5cf6;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.toggleLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.toggleLabel input[type='checkbox'] {
+  width: 20px;
+  height: 20px;
+  accent-color: #8b5cf6;
+}
+
+.settingHint {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin: 0.5rem 0 0;
+}
+
+.saveButton {
+  width: 100%;
+  margin-top: 1rem;
+  padding: 1rem;
+  background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+  border: none;
+  border-radius: 0.75rem;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.saveButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* View All Button */
+.viewAllBtn {
+  width: 100%;
+  padding: 0.75rem;
+  background: transparent;
+  border: 1px dashed rgba(139, 92, 246, 0.3);
+  border-radius: 0.5rem;
+  color: #8b5cf6;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+/* ═══════ PREMIUM ANIMATIONS ═══════ */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hidden {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.fadeInUp {
+  animation: fadeInUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* ═══════════════════ Supplemental ≤480px mobile touch targets ═══════════════════ */
+
+@media (max-width: 480px) {
+  .page {
+    padding: 12px;
+  }
+
+  .clubsGrid,
+  .gamesGrid,
+  .settlementsGrid,
+  .eventsGrid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .statsRow {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+  }
+
+  .leaderboardGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .btnPrimary,
+  .btnGhost,
+  .btnDanger {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .tabBtn {
+    min-height: 36px;
+    font-size: 0.78rem;
+  }
+}
+
+/* link out to the weekly square-up board */
+.statementsLink {
+  display: block;
+  width: 100%;
+  margin-bottom: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: rgba(240, 180, 41, 0.12);
+  border: 1px solid rgba(240, 180, 41, 0.45);
+  border-radius: 10px;
+  color: #f0b429;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.statementsLink:focus-visible {
+  outline: 2px solid #f0b429;
+  outline-offset: 2px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UNION TOURNAMENTS TAB
+   ─────────────────────────────────────────────────────────────────────────
+   These three were referenced as `styles.x || styles.fallback`, which looks
+   defensive but silently produced the WRONG layout: the container fell back
+   to .tablesGrid, so a section header and an empty state were laid out as
+   220px grid cells beside each other instead of stacking. Defining them
+   properly lets the JSX drop the fallbacks and the inline flex styles that
+   were compensating.
+═══════════════════════════════════════════════════════════════════════════ */
+.tournamentsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  padding: 1.5rem;
+}
+
+.sectionHeader h3 {
+  margin: 0 0 0.25rem;
+  color: #fff;
+}
+
+.sectionHeader p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 3rem 2rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 1rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.emptyState p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+/* Phase 6: unify the retained union overview with the Union Command system. */
+.page {
+  background:
+    radial-gradient(circle at 82% 5%, rgba(58, 168, 255, 0.08), transparent 28rem),
+    linear-gradient(180deg, #05080c, #020407);
+}
+
+.header,
+.modal,
+.clubOption,
+.statCard,
+.clubCard,
+.tableCard,
+.tournamentCard,
+.settingsCard,
+.section {
+  border-color: #26333d;
+  border-radius: 4px;
+  background: linear-gradient(112deg, #101820, #080d12 72%, #05080c);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.unionAvatar {
+  overflow: hidden;
+  border: 1px solid #b9cad7;
+  border-radius: 4px;
+  background: #080d12;
+}
+
+.applyButton,
+.cancelButton,
+.clubOption,
+.page button {
+  min-height: 44px;
+  border-radius: 3px;
+}

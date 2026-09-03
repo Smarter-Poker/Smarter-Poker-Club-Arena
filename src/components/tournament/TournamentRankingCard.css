@@ -1,0 +1,469 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   TOURNAMENT RANKING CARD (Dan 2026-08-20, from a reference screenshot)
+
+   Deep navy card on a dim backdrop, a lit "arena" banner behind the medal, and
+   a coloured band carrying the place. Everything is drawn — no artwork to ship
+   and nothing to 404 — so an arbitrary finishing place renders at any size.
+
+   Colours are the house palette and NOTHING ELSE: #1877f2 primary blue,
+   #00d4ff cyan for live accents, cool steel for rank.
+
+   Dan 2026-08-23: "CHANGE THIS CARD TO SMARTER.POKER COLOR SCHEMA'S NO BROWNS
+   OR YELLOWS."
+
+   Gone: the gold close button, the gold "Reward" label, the gold brand accent,
+   the amber secondary button, and the gold/bronze medal-and-band ramp. Rank is
+   still legible without them - it now runs down a COOL metal ramp (bright
+   platinum-cyan, silver, steel blue, slate) instead of gold/silver/bronze, so
+   first place still reads as first without borrowing a colour the rest of the
+   product never uses.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.trc2 {
+  position: fixed;
+  inset: 0;
+  z-index: 9600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.trc2__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 7, 14, 0.78);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  animation: trc2Fade 0.2s ease both;
+}
+
+.trc2__card {
+  position: relative;
+  width: min(100%, 420px);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #1b2545 0%, #131b33 100%);
+  border: 2px solid rgba(120, 160, 235, 0.35);
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.66),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  animation: trc2Rise 0.4s cubic-bezier(0.17, 0.84, 0.44, 1.03) both;
+}
+
+/* ── Title bar ── */
+.trc2__titlebar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 16px 12px;
+}
+.trc2__title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #ffffff;
+}
+.trc2__close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #2c3c5c, #1b2740);
+  color: #cfe0ff;
+  box-shadow: inset 0 0 0 1px rgba(120, 160, 235, 0.45);
+  font-size: 19px;
+  line-height: 1;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    filter 0.18s ease;
+}
+.trc2__close:focus-visible {
+  outline: 2px solid #00d4ff;
+  outline-offset: 2px;
+}
+
+/* ── Event banner ── */
+.trc2__banner {
+  position: relative;
+  overflow: hidden;
+  margin: 0 12px;
+  padding: 12px 12px 20px;
+  border-radius: 10px;
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(0, 120, 220, 0.5) 0%, transparent 62%),
+    linear-gradient(180deg, #0d1730 0%, #0a1224 100%);
+  text-align: center;
+}
+/* The row of arena lights across the top of the reference banner. */
+.trc2__brand {
+  position: relative;
+  font-size: 0.95rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  color: #ffffff;
+}
+.trc2__brand-accent {
+  color: #00d4ff;
+}
+.trc2__brand-mark {
+  margin-left: 6px;
+  font-size: 0.75rem;
+  letter-spacing: 0.16em;
+  color: #00d4ff;
+}
+.trc2__event {
+  position: relative;
+  margin-top: 4px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #eaf1ff;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
+}
+.trc2__event-date {
+  color: #9fb6da;
+}
+
+/* ── Medal ── */
+.trc2__medal {
+  position: relative;
+  margin: 16px auto 2px;
+  width: 116px;
+  height: 116px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.trc2__medal-ring {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--trc2-medal-face);
+  border: 5px solid var(--trc2-medal-edge);
+  box-shadow:
+    inset 0 4px 12px rgba(255, 255, 255, 0.45),
+    inset 0 -6px 14px rgba(0, 0, 0, 0.35),
+    0 8px 22px rgba(0, 0, 0, 0.45);
+}
+/* PODIUM TROPHY (Dan 2026-08-23). currentColor is the medal ink, so the cup
+   is platinum / silver / bronze without a second palette to keep in sync. */
+.trc2__trophy {
+  width: 3.1rem;
+  height: 3.1rem;
+  color: var(--trc2-medal-ink);
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.32));
+}
+.trc2__medal-place {
+  font-size: 2.9rem;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--trc2-medal-ink);
+  text-shadow: 0 2px 3px rgba(0, 0, 0, 0.28);
+  font-variant-numeric: tabular-nums;
+}
+/* The starburst behind the medal in the reference. */
+.trc2__medal-glow {
+  position: absolute;
+  inset: -46px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--trc2-medal-glow) 0%, transparent 62%);
+  pointer-events: none;
+}
+
+/* First place: the brightest, coolest metal on the card - platinum lit by the
+   house cyan. It has to out-shine silver without going anywhere near gold. */
+.trc2__medal--gold {
+  --trc2-medal-face: linear-gradient(160deg, #ffffff 0%, #b9e8ff 45%, #4aa8d8 100%);
+  --trc2-medal-edge: #9fe4ff;
+  --trc2-medal-ink: #0b2233;
+  --trc2-medal-glow: rgba(0, 212, 255, 0.45);
+}
+.trc2__medal--silver {
+  --trc2-medal-face: linear-gradient(160deg, #f4f7fb 0%, #c6cfda 45%, #8e9aa9 100%);
+  --trc2-medal-edge: #e3e9f1;
+  --trc2-medal-ink: #2c3542;
+  --trc2-medal-glow: rgba(214, 226, 240, 0.36);
+}
+/* Third place: was bronze, i.e. brown. Now the darkest blue-steel, which still
+   sits a clear step below silver. */
+.trc2__medal--bronze {
+  --trc2-medal-face: linear-gradient(160deg, #cfe0f2 0%, #7d95b4 45%, #4a5f7d 100%);
+  --trc2-medal-edge: #b6cbe4;
+  --trc2-medal-ink: #16202e;
+  --trc2-medal-glow: rgba(150, 180, 220, 0.32);
+}
+.trc2__medal--steel {
+  --trc2-medal-face: linear-gradient(160deg, #9fb2ca 0%, #6d829e 45%, #47576e 100%);
+  --trc2-medal-edge: #a9bcd4;
+  --trc2-medal-ink: #101825;
+  --trc2-medal-glow: rgba(140, 170, 210, 0.3);
+}
+
+/* ── Place band ── */
+.trc2__placeband {
+  margin: 12px 12px 0;
+  padding: 9px 12px;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: 0.02em;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(0, 0, 0, 0.18)),
+    /* The default was #7a3a1f - the brown band Dan photographed on a 4th
+       place. Out-of-the-money now reads as deep house blue. */
+    var(--trc2-band, #233355);
+}
+.trc2__placeband.trc2__medal--gold {
+  --trc2-band: #1877f2;
+}
+.trc2__placeband.trc2__medal--silver {
+  --trc2-band: #5b6878;
+}
+.trc2__placeband.trc2__medal--bronze {
+  --trc2-band: #3c5170;
+}
+.trc2__placeband.trc2__medal--steel {
+  --trc2-band: #33435a;
+}
+
+/* ── Player row ── */
+.trc2__player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 12px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.trc2__avatar {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  flex: 0 0 auto;
+}
+.trc2__identity {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.trc2__username {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #f2f6fc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trc2__playernum {
+  font-size: 0.75rem;
+  color: #8fa2bd;
+  font-variant-numeric: tabular-nums;
+}
+.trc2__reward {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.trc2__reward-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  /* Was #ffb800 - "gold for money" was the last yellow on the card. Cyan is
+     the house accent and already marks live values everywhere else. */
+  color: #00d4ff;
+}
+.trc2__reward-value {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Payout split (Dan section 44) ──
+   Directly under the total, so the two halves of it are read as parts of the
+   number above rather than as two more badges. Only rendered when there IS a
+   bounty half. */
+.trc2__payout-split {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  margin: 6px 12px 0;
+  font-size: 0.72rem;
+  color: #9fb6da;
+}
+.trc2__payout-part strong {
+  color: #eaf1ff;
+  font-variant-numeric: tabular-nums;
+}
+.trc2__payout-plus {
+  color: #00d4ff;
+  font-weight: 800;
+}
+
+.trc2__extras {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin: 10px 12px 0;
+}
+.trc2__extra {
+  font-size: 0.75rem;
+  color: #9fb6da;
+  background: rgba(0, 212, 255, 0.09);
+  border: 1px solid rgba(0, 212, 255, 0.22);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+.trc2__extra strong {
+  color: #eaf1ff;
+}
+
+/* ── Session facts ──
+   Duration and hands, under the extras and above the actions. Two columns,
+   split down the middle so the pair reads as one row rather than two tags —
+   these are facts about the session, not badges like the knockout pills.
+   Mobile-first: at 375px the card is ~330px wide and this must not wrap. */
+.trc2__session {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin: 10px 12px 0;
+  padding: 8px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+.trc2__session-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.trc2__session-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #7f93b3;
+}
+.trc2__session-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #eaf1ff;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Actions ── */
+.trc2__actions {
+  display: flex;
+  gap: 10px;
+  padding: 14px 12px 16px;
+}
+.trc2__btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 12px 10px;
+  border-radius: 10px;
+  border: none;
+  font-size: 0.92rem;
+  font-weight: 800;
+  cursor: pointer;
+  color: #dbe7ff;
+  background: linear-gradient(180deg, #2b3a58 0%, #1d2942 100%);
+  box-shadow: inset 0 0 0 1px rgba(120, 160, 235, 0.4);
+  transition:
+    filter 0.18s ease,
+    transform 0.12s ease;
+}
+.trc2__btn--primary {
+  color: #fff;
+  background: linear-gradient(180deg, #2f8bf7 0%, #1163cc 100%);
+}
+.trc2__btn:active {
+  transform: translateY(1px);
+}
+.trc2__btn:focus-visible {
+  outline: 2px solid #00d4ff;
+  outline-offset: 2px;
+}
+
+@keyframes trc2Fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes trc2Rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .trc2__backdrop,
+  .trc2__card {
+    animation: none;
+  }
+}
+
+/* ── Winning Hand ── */
+.trc2__winning-hand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 12px 0;
+  padding: 12px 10px;
+  background: linear-gradient(180deg, rgba(0, 212, 255, 0.08) 0%, rgba(0, 212, 255, 0.02) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  border: 1px solid rgba(0, 212, 255, 0.15);
+}
+.trc2__winning-hand-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #00d4ff;
+}
+.trc2__winning-cards {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+.trc2__winning-card {
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.4));
+}

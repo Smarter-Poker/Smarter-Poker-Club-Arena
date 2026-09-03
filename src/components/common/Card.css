@@ -1,0 +1,227 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+ *  CARD — CSS Styles
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * BASE CARD
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.card {
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.card-hoverable {
+  cursor: default;
+}
+
+.card-clickable {
+  cursor: pointer;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * PADDING
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.card-padding-none {
+  padding: 0;
+}
+
+.card-padding-small {
+  padding: 12px;
+}
+
+.card-padding-medium {
+  padding: 20px;
+}
+
+.card-padding-large {
+  padding: 28px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * VARIANTS
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.card-default {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.card-elevated {
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow:
+    0 4px 6px rgba(0, 0, 0, 0.2),
+    0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.card-outlined {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.card-glass {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.card-gradient {
+  background: linear-gradient(135deg, rgba(65, 105, 225, 0.1) 0%, rgba(138, 43, 226, 0.1) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * CARD SECTIONS
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  margin-bottom: 16px;
+}
+
+.card-header-icon {
+  font-size: 1.5rem;
+}
+
+.card-header-content {
+  flex: 1;
+}
+
+.card-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.card-subtitle {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.card-header-action {
+  display: flex;
+  align-items: center;
+}
+
+.card-content {
+  flex: 1;
+}
+
+.card-footer {
+  display: flex;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  margin-top: 16px;
+}
+
+.card-footer-left {
+  justify-content: flex-start;
+}
+
+.card-footer-center {
+  justify-content: center;
+}
+
+.card-footer-right {
+  justify-content: flex-end;
+}
+
+.card-footer-space-between {
+  justify-content: space-between;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * STAT CARD
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stat-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stat-title {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat-icon {
+  font-size: 1.25rem;
+  opacity: 0.7;
+}
+
+.stat-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.stat-change {
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.stat-trend-up {
+  color: #22c55e;
+}
+
+.stat-trend-down {
+  color: #ef4444;
+}
+
+.stat-trend-neutral {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * FEATURE CARD
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.feature-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+}
+
+.feature-icon {
+  font-size: 2.5rem;
+  margin-bottom: 8px;
+}
+
+.feature-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.feature-description {
+  margin: 0;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.5;
+}

@@ -1,0 +1,234 @@
+/* BBJ hand detail — street-by-street rundown of a jackpot hand.
+   Built 375px-first: five columns that stay legible on the narrowest phone. */
+
+.bbjhd {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: #fff;
+}
+
+.bbjhd__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bbjhd__back {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.bbjhd__title {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  color: rgba(226, 231, 238, 0.9);
+}
+
+.bbjhd__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+  font-variant-numeric: tabular-nums;
+}
+
+.bbjhd__meta-stakes {
+  color: #d5dae2;
+  font-weight: 700;
+}
+
+.bbjhd__meta-sn {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.bbjhd__empty {
+  padding: 28px 16px;
+  text-align: center;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.bbjhd__skeletons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bbjhd__skeleton {
+  height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.04) 75%
+  );
+  background-size: 200% 100%;
+  animation: bbjhd-shimmer 1.3s infinite;
+}
+
+@keyframes bbjhd-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bbjhd__skeleton {
+    animation: none;
+  }
+}
+
+/* ── The jackpot payout box ───────────────────────────────────────────────
+   Lives here, not in HandDetailView.css, because BBJHandDetail is the only
+   thing that renders it and Vite splits CSS per chunk: a class defined in
+   another component's stylesheet is present only if that component happens
+   to land in the same chunk, which is luck rather than a contract.
+   tests/unit/classNamesResolve.test.ts enforces exactly that, and caught
+   this. */
+/* ── The jackpot payout box, drawn the way the reference frames it ────────── */
+.hdv__bbjp {
+  border-radius: 10px;
+  border: 1px solid rgba(240, 185, 11, 0.55);
+  overflow: hidden;
+}
+
+.hdv__bbjp-head {
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  color: #f0b90b;
+  background: rgba(240, 185, 11, 0.08);
+}
+
+.hdv__bbjp-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.hdv__bbjp-row + .hdv__bbjp-row {
+  border-top: 1px solid rgba(240, 185, 11, 0.12);
+}
+
+.hdv__bbjp-id {
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, 0.38);
+  white-space: nowrap;
+}
+
+.hdv__bbjp-amt {
+  color: #f0b90b;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── The summary card, for a jackpot whose hand was pruned ──────────────────
+   24 of the 29 real jackpots on this platform are in that state. The payout
+   ledger survives in full, so this shows what is real rather than one grey
+   sentence. */
+.bbjhd__summary {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.bbjhd__summary-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 9px 10px;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.bbjhd__summary-row + .bbjhd__summary-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.bbjhd__summary-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #f0b90b;
+  white-space: nowrap;
+}
+
+.bbjhd__summary-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #fff;
+}
+
+.bbjhd__summary-hand {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bbjhd__retention {
+  margin: 0;
+  padding: 4px 10px 2px;
+  text-align: center;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+/* Applied by the meta row since it was written and defined nowhere, so the
+   timestamp silently inherited the parent's colour instead of its own. */
+.bbjhd__meta-when {
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+}
+
+/* The BBJP box lists shares; this is what they are shares OF. `jackpot.total`
+   has been in the payload from the start and nothing rendered it. */
+.hdv__bbjp-total {
+  float: right;
+  color: #f0b90b;
+  font-variant-numeric: tabular-nums;
+}
+
+/* THE ONE ROW A PLAYER LOOKS FOR IN THIS BOX IS THEIR OWN.
+   `hdv__bbjp-name` carried `is-you` from the start and no stylesheet ever
+   defined the pair, so the highlight that BBJHandDetail threads
+   currentUserId/currentUserName all the way down to compute rendered with zero
+   visual difference. Same green as the winners list uses for `is-you`, so the
+   two surfaces agree on what "this is you" looks like. */
+.hdv__bbjp-name.is-you {
+  color: #34c759;
+  font-weight: 800;
+}
+
+.hdv__bbjp-row:has(.hdv__bbjp-name.is-you) {
+  background: rgba(52, 199, 89, 0.08);
+  border-radius: 6px;
+}

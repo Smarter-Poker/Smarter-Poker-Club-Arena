@@ -1,0 +1,651 @@
+/**
+ * ♠ CLUB ARENA — Tournament Details Styles
+ * 
+ * STRICT SMARTER.POKER PALETTE ONLY:
+ * surfaces: #223046 -> #1a2436 -> #131b28 -> #0d1120
+ * accent: #6fdcff / #00b4e6
+ * action: #1877f2 / #0a5dc2
+ * text: #e8eaf0 primary, #8892a4 secondary, #6b7686 hints
+ * refusal: #ef4444 / #ffb4b4
+ * NO BROWN, NO YELLOW, NO GOLD. 3D depth and glassmorphism.
+ */
+
+/* -------------------------------------------------------------------------
+   THE SHELL - a fixed-height flex column that never scrolls.
+
+   [header] [tabs] [title] [content] [footer]
+
+   Only `.details-content` grows, and it carries `min-height: 0` because a
+   flex child's default `min-height: auto` refuses to shrink below its own
+   content: without it the column silently grows past its box and the page
+   scrolls anyway, which is exactly the bug this layout exists to kill.
+
+   WHY THE HEIGHT IS A MEASURED VARIABLE AND NOT `100dvh`
+
+   AppLayout renders GlobalHeader above this route, sometimes a
+   ClubAnnouncementBanner under it, and an offline banner under that; the
+   `main` element then adds its own padding. A `100dvh` shell beneath all of
+   that is taller than the viewport by exactly the amount of chrome above it:
+   the page scrolls and the footer lands below the fold, which is the failure
+   this rewrite exists to end.
+
+   Subtracting a constant is not an option either. `--header-height` is
+   declared THREE times across the token files with TWO different values
+   (44px and 56px), and the real header grows when its content wraps. So the
+   page measures the space it actually has (see `--details-h` in
+   TournamentDetails.tsx) and this is only the fallback for the first paint.
+   The same measurement is what makes the MultiTablePage embed correct, where
+   the container is a tab panel rather than the viewport.
+
+   `padding-bottom: var(--bottom-nav-clearance)` used to sit here and reserved
+   room for a bottom nav this page does not render. That reservation, plus the
+   matching `bottom` offset on the fixed footer, was the dead 74px gap under
+   the Share / Late Register row.
+   ------------------------------------------------------------------------- */
+.tournament-details {
+  height: var(--details-h, 100dvh);
+  max-height: 100dvh;
+  overflow: hidden;
+  background: linear-gradient(180deg, #131b28 0%, #0d1120 50%, #131b28 100%);
+  display: flex;
+  flex-direction: column;
+  color: #e8eaf0;
+}
+
+.tournament-details.loading,
+.tournament-details.error {
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* ── 3D Header ── */
+.details-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  background: linear-gradient(180deg, rgba(34, 48, 70, 0.4) 0%, rgba(26, 36, 54, 0.6) 100%);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border-bottom: 1px solid rgba(111, 220, 255, 0.15);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.details-header .back-btn {
+  color: #6fdcff;
+  font-size: 24px;
+  font-weight: bold;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.details-header h1 {
+  font-size: 18px;
+  font-weight: 600;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+/* ── 3D Tabs ── */
+.details-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  padding: 12px 16px;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  background: rgba(13, 17, 32, 0.6);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+  box-shadow: inset 0 -4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.details-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.details-tabs .tab {
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #8892a4;
+  background: linear-gradient(180deg, #1a2436 0%, #131b28 100%);
+  border: 1px solid #223046;
+  border-radius: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  box-shadow:
+    0 4px 6px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.details-tabs .tab.active {
+  background: linear-gradient(180deg, #00b4e6 0%, #0a5dc2 100%);
+  color: #ffffff;
+  border-color: #6fdcff;
+  box-shadow:
+    0 4px 12px rgba(10, 93, 194, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.2);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Tournament Title & Details ── */
+/* -------------------------------------------------------------------------
+   TITLE STRIP - name, short id, share, price, blurb. Everything else that
+   used to print here (FREEZEOUT / REBUY / ADD-ON, the bounty line, MULTI-DAY,
+   XMTT, SPIN, the parity tag row, EARLY BIRD) is drawn as badges by
+   DetailOverviewTab. Printing both said the same thing twice.
+   ------------------------------------------------------------------------- */
+.details-title {
+  flex: 0 0 auto;
+  padding: 10px 16px 8px;
+}
+
+.tournament-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tournament-title h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #e8eaf0;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.tournament-id {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: #6b7686;
+}
+
+.qr-btn {
+  flex: 0 0 auto;
+  color: #6fdcff;
+  background: linear-gradient(180deg, #223046 0%, #1a2436 100%);
+  border: 1px solid #223046;
+  padding: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow:
+    0 4px 6px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.tournament-desc {
+  margin-top: 6px;
+}
+
+.tournament-desc p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #8892a4;
+}
+
+.tournament-buyin {
+  color: #6fdcff;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+/* The owner's own words. Quieter than the price, and italic so nobody reads
+   a description as a rule of the event. */
+.tournament-blurb {
+  margin-top: 4px !important;
+  font-style: italic;
+  color: #6b7686 !important;
+}
+
+.start-time {
+  display: inline-block;
+  margin-top: 16px;
+  padding: 6px 16px;
+  background: linear-gradient(180deg, #00b4e6 0%, #0a5dc2 100%);
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 20px;
+  border: 1px solid #6fdcff;
+  box-shadow:
+    0 4px 12px rgba(10, 93, 194, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Quick Stats 3D Tiles ── */
+.quick-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  padding: 16px;
+}
+
+.quick-stats .stat {
+  text-align: center;
+  padding: 12px;
+  background: linear-gradient(180deg, #1a2436 0%, #131b28 100%);
+  border-radius: 12px;
+  border: 1px solid #223046;
+  box-shadow:
+    0 4px 8px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.quick-stats .stat-label {
+  display: block;
+  font-size: 11px;
+  color: #6fdcff;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.quick-stats .stat-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: #e8eaf0;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.info-row.half {
+  width: calc(50% - 1px);
+  display: inline-flex;
+  box-sizing: border-box;
+  vertical-align: top;
+}
+
+/* ── TOURNAMENT STATUS BADGES (NO YELLOW/BROWN) ── */
+.tournament-status-badge {
+  flex: 1;
+  padding: 12px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.tournament-status-badge.running {
+  background: linear-gradient(180deg, rgba(111, 220, 255, 0.15) 0%, rgba(0, 180, 230, 0.1) 100%);
+  color: #6fdcff;
+  border: 1px solid #00b4e6;
+  box-shadow:
+    0 0 12px rgba(0, 180, 230, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.tournament-status-badge.completed {
+  background: linear-gradient(180deg, rgba(24, 119, 242, 0.2) 0%, rgba(10, 93, 194, 0.1) 100%);
+  color: #6fdcff;
+  border: 1px solid #1877f2;
+  box-shadow:
+    0 0 12px rgba(24, 119, 242, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.tournament-status-badge.cancelled {
+  background: linear-gradient(180deg, rgba(239, 68, 68, 0.2) 0%, rgba(239, 68, 68, 0.1) 100%);
+  color: #ffb4b4;
+  border: 1px solid #ef4444;
+  box-shadow:
+    0 0 12px rgba(239, 68, 68, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.results-podium {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 24px;
+  align-items: flex-end;
+}
+
+.podium-name {
+  color: #e8eaf0;
+  font-size: 14px;
+  font-weight: 700;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+  text-align: center;
+}
+
+.result-name {
+  color: #e8eaf0;
+  font-size: 14px;
+  flex: 1;
+  font-weight: 500;
+}
+
+.blinds-row.current-level .level-num {
+  color: #6fdcff;
+  font-weight: 700;
+  text-shadow: 0 0 8px rgba(111, 220, 255, 0.5);
+}
+
+.entry-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid #223046;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.entry-info {
+  flex: 1;
+}
+
+.entry-name {
+  font-weight: 600;
+  color: #e8eaf0;
+  font-size: 14px;
+}
+
+.table-card {
+  background: linear-gradient(180deg, #1a2436 0%, #131b28 100%);
+  border-radius: 16px;
+  padding: 16px;
+  border: 1px solid #223046;
+  box-shadow:
+    0 8px 16px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* -------------------------------------------------------------------------
+   THE CONTENT AREA - the only band that grows, and the only one that scrolls.
+
+   `min-height: 0` is load-bearing: a flex child defaults to `min-height:
+   auto`, which refuses to shrink below its content, so without it the column
+   grows past the shell and the whole page scrolls again.
+
+   The tab itself is the scroller (`> *`), not this container, so a tab that
+   wants two independently scrolling regions can still have them.
+   ------------------------------------------------------------------------- */
+/* ── WHY THIS CONTAINER SCROLLS AND THE TABS NO LONGER DO (Dan 2026-08-30) ──
+
+   Dan: "inside the tournament cards when they load, you need to be able to
+   scroll up or down inside all pages."
+
+   This used to be `overflow: hidden` with `.details-content > *` made the
+   scroller, on the theory that "a tab that wants two independently scrolling
+   regions can still have them". The theory cost every tab its scrollbar,
+   because it asks each of eight tab stylesheets to get the same four-property
+   incantation right, and eight of eight got it wrong in three different ways:
+
+     CLIPPED OUTRIGHT - `.dov-info--band` set `overflow: hidden` on the very
+     element carrying `.tl-scroll`, and being imported after it, won. The
+     Detail tab could not scroll by a single pixel.
+
+     NEVER OVERFLOWED - `.dov`, `.blinds-tab` and `.rw` are flex columns whose
+     bands shrink instead of overflowing, so the root was always exactly as
+     tall as its box and `overflow-y: auto` had nothing to scroll. Content past
+     the fold was simply invisible.
+
+     CAPPED AGAINST THE WRONG BOX - `.rk-list` and `.et-scroll` capped
+     themselves at `min(62vh, 620px)` / `min(58vh, 520px)`. Rendered inside
+     TournamentLobbyModal's 75dvh sheet, `vh` is the VIEWPORT, not the sheet,
+     so the cap sat below the content and above the space available at once.
+
+   One scroller, owned here, cannot be got wrong by a tab that forgets. A tab
+   that genuinely wants a second independent scrolling region is still free to
+   declare one on an inner element - it just may not be the only one, and it
+   may not be the tab root. */
+.details-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* Wide content (the blind ladder, the payout table) scrolls inside its own
+     box; the panel itself must never scroll sideways. */
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(111, 220, 255, 0.3) transparent;
+  padding: 0 12px 12px;
+  /* NOT `display: flex`. A flex column shrinks its children to fit rather than
+     overflowing, which is precisely how a container with `overflow-y: auto`
+     ends up with nothing to scroll. Block layout lets the tab be as tall as
+     its content and lets this box scroll it. */
+  display: block;
+}
+
+/* The tab root is CONTENT now, not a viewport. Anything it declared to make
+   itself a scroller inside the old scheme is neutralised here in one place,
+   so no tab has to be edited to stop fighting the panel it lives in. */
+.details-content > * {
+  max-height: none;
+  min-height: 0;
+  overflow: visible;
+}
+
+.details-content::-webkit-scrollbar,
+.details-content > *::-webkit-scrollbar {
+  width: 6px;
+}
+
+.details-content::-webkit-scrollbar-thumb,
+.details-content > *::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: rgba(111, 220, 255, 0.3);
+}
+
+.details-content::-webkit-scrollbar-track,
+.details-content > *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* -------------------------------------------------------------------------
+   FOOTER - Dan 2026-08-25: "the Share and Late Register buttons must be
+   attached to the bottom as a footer, that's locked ... but actually attach
+   it to the bottom, there is a gap below it."
+
+   It was `position: fixed; bottom: var(--bottom-nav-clearance, 74px)`, which
+   reserved room for a bottom nav this page does not render - a dead 74px gap
+   under the buttons, and a matching `padding-bottom` on the shell so content
+   would clear a bar that was not there. As the last flex child of a
+   fixed-height column there is no offset left to be wrong, nothing to keep in
+   sync, and the 480px stacked-button breakpoint needs no special handling.
+
+   The safe-area inset moves here, onto the element that actually touches the
+   bottom of the screen.
+   ------------------------------------------------------------------------- */
+.details-footer {
+  flex: 0 0 auto;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(180deg, rgba(13, 17, 32, 0.8) 0%, rgba(10, 14, 26, 0.95) 100%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-top: 1px solid rgba(111, 220, 255, 0.15);
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.details-footer button,
+.details-footer .btn-enter-table {
+  flex: 1;
+  padding: 14px 20px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.details-footer button:active {
+  transform: translateY(1px);
+}
+
+/* The Entries hover/focus affordance that used to live here moved with the
+   block it styled. EntriesTab renders a watchable row as `.et-row--watch` on
+   `.tl-row--interactive`, and the shared `tl-` layer carries the hover lift
+   and the focus ring for every interactive row in the lobby. */
+
+/* WATCH — Dan 2026-08-25. Sits beside whatever else the running footer says,
+   never instead of it, so a spectator, a player waiting on a seat and a busted
+   player all get the same one-tap route onto the featured table. Cyan house
+   accent rather than the blue action colour: watching is not registering, and
+   the two must not look like the same button. */
+.details-footer .btn-watch {
+  flex: 0 0 auto;
+  min-width: 108px;
+  background: linear-gradient(180deg, #1a2436 0%, #131b28 100%);
+  color: #6fdcff;
+  border: 1px solid #6fdcff;
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.35),
+    0 0 10px rgba(111, 220, 255, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.details-footer .btn-register {
+  background: linear-gradient(180deg, #1877f2 0%, #0a5dc2 100%);
+  color: white;
+  border: 1px solid #6fdcff;
+  box-shadow:
+    0 4px 16px rgba(24, 119, 242, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* These two were `.btn-secondary` and `.btn-danger`, which this footer has
+   never rendered - it emits `btn-share` and `btn-unregister`, so both blocks
+   painted nothing at all and Share fell back to the bare button base. Same
+   paint, selectors that match the markup. */
+.details-footer .btn-share {
+  background: linear-gradient(180deg, #223046 0%, #1a2436 100%);
+  color: #e8eaf0;
+  border: 1px solid #223046;
+}
+
+.details-footer .btn-unregister {
+  background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%);
+  color: white;
+  border: 1px solid #ffb4b4;
+  box-shadow:
+    0 4px 16px rgba(239, 68, 68, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.details-footer button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ENTER TABLE is a router <Link>, so it needs the anchor half of the button
+   shape spelled out. It was painted #10b981 with inline styles - a green that
+   is in no house palette. House action gradient, house accent border. */
+.details-footer .btn-enter-table {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  background: linear-gradient(180deg, #00b4e6 0%, #0a5dc2 100%);
+  color: #ffffff;
+  border: 1px solid #6fdcff;
+  box-shadow:
+    0 4px 16px rgba(0, 180, 230, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Late Registration Button ── */
+.btn.btn-register.late-reg {
+  background: linear-gradient(180deg, #00b4e6 0%, #0a5dc2 100%);
+  animation: tournamentDetailsPulse-glow 2s infinite;
+}
+
+@keyframes tournamentDetailsPulse-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 12px rgba(111, 220, 255, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
+  50% {
+    box-shadow:
+      0 0 24px rgba(111, 220, 255, 0.7),
+      inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  }
+}
+
+/* ═══════ MEDIA QUERIES ═══════ */
+@media (max-width: 768px) {
+  .details-tabs .tab {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+  .qr-btn {
+    min-width: 44px;
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+  .details-footer {
+    padding: 12px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* Stacked footer buttons. As a flex CHILD there is nothing else to adjust
+   here: the fixed version had to keep its `bottom` offset and the shell's
+   `padding-bottom` in step with this breakpoint, and they drifted. */
+@media (max-width: 480px) {
+  .details-footer {
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+  .details-footer button,
+  .details-footer .btn-enter-table {
+    padding: 12px;
+    font-size: 13px;
+  }
+  .details-footer .btn-watch {
+    min-width: 0;
+  }
+  .tournament-title h2 {
+    font-size: 15px;
+  }
+}
+
+@media (max-width: 380px) {
+  .details-tabs {
+    padding: 8px 12px;
+    gap: 6px;
+  }
+  .details-tabs .tab {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+  .details-title {
+    padding: 8px 12px 6px;
+  }
+  .details-content {
+    padding: 0 8px 8px;
+  }
+}

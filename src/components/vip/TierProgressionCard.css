@@ -1,0 +1,461 @@
+/* TierProgressionCard — Premium VIP Tier Visualization */
+
+.tier-progression-card {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.02) 100%);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 215, 0, 0.2);
+  border-radius: 16px;
+  padding: 32px;
+  margin: 24px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  box-shadow: 0 8px 32px rgba(255, 215, 0, 0.1);
+  animation: tierProgressionCardSlideUp 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes tierProgressionCardSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Header Section */
+.progression-header {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid rgba(255, 215, 0, 0.15);
+}
+
+.tier-badge-large {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 24px;
+  background: linear-gradient(135deg, var(--tier-color, #ffd700), rgba(255, 215, 0, 0.05));
+  border: 1px solid var(--tier-color, #ffd700);
+  border-radius: 12px;
+  min-width: 240px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.tier-badge-large::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at top right, var(--tier-color, #ffd700), transparent);
+  opacity: 0.1;
+  pointer-events: none;
+}
+
+.tier-glow {
+  position: absolute;
+  inset: -8px;
+  border-radius: 12px;
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.tier-icon {
+  font-size: 40px;
+  text-shadow: 0 0 12px currentColor;
+  animation: tierProgressionCardPulse 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes tierProgressionCardPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.9;
+  }
+}
+
+.tier-badge-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 1;
+}
+
+.tier-name {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--tier-color, #ffd700);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.tier-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 500;
+}
+
+/* Stats Grid */
+.progression-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  flex: 1;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 215, 0, 0.1);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: #ffd700;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* Progress Section */
+.progression-section {
+  padding: 20px 0;
+}
+
+.progress-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.progress-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.progress-current {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.progress-next {
+  color: #ffd700;
+}
+
+.progress-bar-wrapper {
+  position: relative;
+  height: 36px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 215, 0, 0.2);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.progress-bar {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05));
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  border-radius: 18px;
+  transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.3) inset;
+}
+
+.progress-indicator {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 24px;
+  background: #ffd700;
+  border-radius: 2px;
+  box-shadow: 0 0 12px #ffd700;
+  transition: left 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.progress-text {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.points-remaining {
+  color: #ffd700;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.estimated-time {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  font-style: italic;
+}
+
+/* Tier Roadmap */
+.tier-roadmap {
+  padding: 20px 0;
+  border-top: 1px solid rgba(255, 215, 0, 0.15);
+  border-bottom: 1px solid rgba(255, 215, 0, 0.15);
+}
+
+.roadmap-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.tier-list {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+  max-height: 100px;
+}
+
+.tier-roadmap-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  opacity: 0.6;
+}
+
+.tier-roadmap-item.unlocked {
+  opacity: 0.9;
+  border-color: var(--tier-color);
+  background: linear-gradient(135deg, var(--tier-color), rgba(255, 215, 0, 0.03));
+}
+
+.tier-roadmap-item.current {
+  opacity: 1;
+  border-color: var(--tier-color);
+  background: linear-gradient(135deg, var(--tier-color), rgba(255, 215, 0, 0.05));
+  box-shadow: 0 0 16px var(--tier-color);
+  transform: scale(1.08);
+}
+
+.roadmap-icon {
+  font-size: 24px;
+}
+
+.roadmap-name {
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  text-align: center;
+}
+
+.current-indicator {
+  position: absolute;
+  bottom: -8px;
+  font-size: 12px;
+  color: var(--tier-color);
+  animation: tierProgressionCardBounce 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes tierProgressionCardBounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+.roadmap-arrow {
+  position: absolute;
+  right: -16px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgba(255, 255, 255, 0.2);
+  font-weight: 700;
+  font-size: 14px;
+  opacity: 0;
+}
+
+.roadmap-arrow.active {
+  opacity: 1;
+  color: rgba(255, 215, 0, 0.6);
+}
+
+/* Benefits Summary */
+.benefits-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 0;
+}
+
+.benefits-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.benefits-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.benefit-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 12px;
+  background: rgba(255, 215, 0, 0.05);
+  border: 1px solid rgba(255, 215, 0, 0.2);
+  border-radius: 8px;
+  text-align: center;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.benefit-icon {
+  font-size: 24px;
+}
+
+.benefit-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffd700;
+}
+
+.benefit-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  letter-spacing: 0.3px;
+}
+
+/* Lifetime Stats */
+.lifetime-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.08) 0%, rgba(155, 89, 182, 0.08) 100%);
+  border: 1px solid rgba(255, 215, 0, 0.15);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.stats-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.lifetime-value {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lifetime-value > span:first-child {
+  font-size: 28px;
+  font-weight: 700;
+  background: linear-gradient(90deg, #ffd700, #c0c0c0);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.lifetime-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 0.3px;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .progression-header {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .progression-stats {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .tier-badge-large {
+    min-width: auto;
+    width: 100%;
+  }
+
+  .benefits-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .tier-progression-card {
+    padding: 20px;
+    gap: 20px;
+  }
+
+  .tier-list {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .progression-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .benefits-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

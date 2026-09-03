@@ -1,0 +1,290 @@
+/**
+ * WINNER — the single biggest moment the product has.
+ *
+ * Dan 2026-08-23: "boring, flat and basic." It was: plain white WINNER, flat
+ * gold CHAMPION!, a monospace "Prize: 33" and a default button. Winning a
+ * tournament should feel like the room stops.
+ *
+ * Built from: a warm radial bloom behind the card, a slow conic god-ray sweep,
+ * a glass trophy plate, metallic gold type with a travelling sheen, an
+ * odometer prize with its own pedestal, and rising embers. All CSS — no new
+ * assets, no library, no bundle cost.
+ */
+
+.winnerOverlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.55s ease;
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 42%, rgba(251, 191, 36, 0.2) 0%, transparent 62%),
+    radial-gradient(ellipse at center, rgba(2, 6, 23, 0.9) 0%, rgba(2, 6, 23, 0.985) 72%);
+  backdrop-filter: blur(9px) saturate(120%);
+  -webkit-backdrop-filter: blur(9px) saturate(120%);
+}
+
+.winnerOverlay.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Slow god-rays behind everything. */
+.winnerOverlay::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  width: 165vmax;
+  height: 165vmax;
+  transform: translate(-50%, -50%);
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(251, 191, 36, 0.14) 12deg,
+    transparent 26deg,
+    transparent 90deg,
+    rgba(251, 191, 36, 0.1) 104deg,
+    transparent 118deg,
+    transparent 190deg,
+    rgba(251, 191, 36, 0.13) 205deg,
+    transparent 220deg,
+    transparent 300deg,
+    rgba(251, 191, 36, 0.09) 315deg,
+    transparent 330deg
+  );
+  animation: winnerRays 26s linear infinite;
+  pointer-events: none;
+}
+
+.winnerContent {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  padding: 2.4rem 2rem 2rem;
+  max-width: min(30rem, 92vw);
+  border-radius: 1.5rem;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  background: linear-gradient(180deg, rgba(30, 27, 15, 0.72), rgba(9, 9, 11, 0.86));
+  box-shadow:
+    0 40px 90px -20px rgba(0, 0, 0, 0.85),
+    0 0 70px -22px rgba(251, 191, 36, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.winner-entrance {
+  animation: winnerGrandEntrance 900ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* "WINNER" — the small caps kicker above the headline. */
+.winnerTrophy {
+  display: inline-block;
+  padding: 0.3rem 1.1rem;
+  margin-bottom: 0.9rem;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.42em;
+  text-indent: 0.42em;
+  color: #fde68a;
+  text-transform: uppercase;
+  border-radius: 999px;
+  border: 1px solid rgba(251, 191, 36, 0.42);
+  background: rgba(251, 191, 36, 0.1);
+  box-shadow: 0 0 26px -8px rgba(251, 191, 36, 0.8);
+}
+
+.trophy-bounce {
+  animation: trophyBounce 2000ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* "CHAMPION!" — metallic gold with a sheen that travels across it. */
+.winnerTitle {
+  font-size: clamp(2.4rem, 11vw, 3.9rem);
+  font-weight: 900;
+  line-height: 1.02;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: linear-gradient(
+    100deg,
+    #b45309 0%,
+    #fbbf24 22%,
+    #fffbeb 42%,
+    #fbbf24 58%,
+    #b45309 100%
+  );
+  background-size: 260% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 3px 10px rgba(0, 0, 0, 0.85));
+  animation: winnerSheen 3.6s ease-in-out infinite;
+}
+
+.winnerTournament {
+  margin-top: 0.75rem;
+  font-size: 0.92rem;
+  color: #cbd5e1;
+  letter-spacing: 0.02em;
+}
+
+/* The prize sits on its own pedestal — it is the number people screenshot. */
+.prize-counter {
+  animation: prizeCounterSlideIn 800ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.winnerPrize {
+  margin: 1.35rem auto 0;
+  padding: 0.75rem 1.4rem;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  border-radius: 0.9rem;
+  font-size: clamp(1.5rem, 6.5vw, 2.1rem);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #fef3c7;
+  border: 1px solid rgba(251, 191, 36, 0.34);
+  background: linear-gradient(180deg, rgba(120, 53, 15, 0.42), rgba(0, 0, 0, 0.42));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    0 0 34px -12px rgba(251, 191, 36, 0.85);
+  text-shadow: 0 0 22px rgba(251, 191, 36, 0.55);
+}
+
+.winnerDismissBtn {
+  margin-top: 1.5rem;
+  padding: 0.72rem 2.3rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #1c1917;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  background: linear-gradient(180deg, #fcd34d, #f59e0b);
+  box-shadow:
+    0 10px 26px -10px rgba(245, 158, 11, 0.95),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    filter 0.16s ease;
+}
+
+.winnerDismissBtn:active {
+  transform: translateY(0);
+}
+.winnerDismissBtn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+
+/* Embers drifting up past the card. */
+.sparkleContainer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.sparkle {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fffbeb 0%, #fbbf24 55%, transparent 72%);
+  box-shadow: 0 0 12px 2px rgba(251, 191, 36, 0.75);
+  opacity: 0;
+  animation: sparkleFloat 4000ms ease-in-out infinite;
+}
+
+@keyframes sparkleFloat {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.6);
+  }
+  18% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-120px) scale(1.05);
+  }
+}
+
+@keyframes prizeCounterSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes winnerRays {
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+@keyframes winnerSheen {
+  0% {
+    background-position: 150% 0;
+  }
+  100% {
+    background-position: -70% 0;
+  }
+}
+
+@keyframes winnerGrandEntrance {
+  0% {
+    opacity: 0;
+    transform: translateY(26px) scale(0.93);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes trophyBounce {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px);
+    letter-spacing: 0.8em;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    letter-spacing: 0.42em;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .winnerOverlay::before,
+  .sparkle,
+  .winnerTitle,
+  .winner-entrance,
+  .trophy-bounce {
+    animation: none !important;
+  }
+  /* 2026-08-27: the base .sparkle rule is opacity 0 and relied on its
+     keyframe to become visible — `animation: none` above therefore made the
+     sparkles permanently invisible under Reduce Motion. Show them statically
+     instead: motion removed, decoration kept. */
+  .sparkle {
+    opacity: 0.5;
+  }
+  .winnerTitle {
+    -webkit-text-fill-color: #fbbf24;
+  }
+}

@@ -1,0 +1,354 @@
+.replayer-2d-container {
+  width: 100%;
+  height: 450px;
+  background: radial-gradient(circle at 50% 50%, #1a2235, #0d111a);
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.replayer-table-scale-wrapper {
+  flex: 1;
+  position: relative;
+}
+
+.replayer-table-felt {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 320px;
+  height: 160px;
+  transform: translate(-50%, -50%) scale(1.5);
+  background: #0d5f2f;
+  border-radius: 80px;
+  border: 4px solid #1f2937;
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
+}
+
+.replayer-board {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  gap: 4px;
+}
+
+.replayer-card {
+  width: 20px;
+  height: 28px;
+  background: white;
+  border-radius: 2px;
+  border: 1px solid #ccc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.replayer-card.back {
+  background: repeating-linear-gradient(45deg, #1e3a8a, #1e3a8a 2px, #1e40af 2px, #1e40af 4px);
+}
+
+.replayer-pot {
+  position: absolute;
+  top: 30%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.replayer-pot-pill {
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 8px;
+  display: flex;
+  gap: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.replayer-pot-label {
+  color: #fbbf24;
+}
+
+.replayer-seat {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: opacity 0.3s ease;
+}
+
+.replayer-seat.folded {
+  opacity: 0.5;
+}
+
+.replayer-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #374151;
+  position: relative;
+  border: 2px solid #4b5563;
+}
+
+.replayer-pos-badge {
+  position: absolute;
+  bottom: -4px;
+  right: -8px;
+  background: #3b82f6;
+  color: white;
+  font-size: 6px;
+  padding: 1px 3px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+.replayer-seat-info {
+  background: rgba(0, 0, 0, 0.8);
+  border-radius: 4px;
+  padding: 2px 4px;
+  text-align: center;
+  margin-top: 2px;
+  z-index: 10;
+}
+
+.replayer-seat-name {
+  color: white;
+  font-size: 7px;
+  white-space: nowrap;
+}
+
+.replayer-seat-stack {
+  color: #10b981;
+  font-size: 7px;
+}
+
+.replayer-hole-cards {
+  position: absolute;
+  /* Push hole cards UP above the avatar to not conflict with bottom-mounted percentage/badges */
+  bottom: 35px;
+  right: -25px;
+  display: flex;
+  gap: -8px;
+  transform: scale(0.85);
+  z-index: 5;
+}
+
+.replayer-seat-equity {
+  position: absolute;
+  bottom: -32px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+  font-weight: 800;
+  font-size: 14px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  z-index: 6;
+  white-space: nowrap;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+.replayer-seat-equity.winning {
+  background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+}
+
+.replayer-seat-allin-badge {
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+  color: white;
+  font-size: 7px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  z-index: 7;
+  white-space: nowrap;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.replayer-bet {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  font-size: 7px;
+  padding: 1px 4px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.replayer-bet-chip {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3b82f6;
+  border: 1px dashed white;
+}
+
+.replayer-action-desc {
+  background: #111827;
+  color: #f3f4f6;
+  padding: 8px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 500;
+  border-top: 1px solid #374151;
+}
+
+.replayer-avatar-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.replayer-dealer-btn {
+  position: absolute;
+  top: -4px;
+  right: -8px;
+  width: 14px;
+  height: 14px;
+  background: white;
+  border: 1px solid #333;
+  color: black;
+  border-radius: 50%;
+  font-size: 8px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  z-index: 20;
+}
+
+.replayer-action-bubble {
+  position: absolute;
+  top: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: white;
+  color: black;
+  font-size: 8px;
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 8px;
+  white-space: nowrap;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  z-index: 30;
+  animation: popIn 0.2s ease-out;
+}
+.replayer-action-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 4px 4px 0;
+  border-style: solid;
+  border-color: white transparent transparent transparent;
+}
+
+@keyframes popIn {
+  0% {
+    transform: translate(-50%, 10px) scale(0.5);
+    opacity: 0;
+  }
+  100% {
+    transform: translate(-50%, 0) scale(1);
+    opacity: 1;
+  }
+}
+
+.replayer-table-scale-wrapper {
+  /* Use container queries or just flex to keep it centered */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.replayer-table-felt {
+  /* Improve scaling by using aspect ratio */
+  position: relative;
+  width: 600px;
+  height: 300px;
+  transform: scale(0.6);
+  transform-origin: center center;
+}
+@media (max-width: 500px) {
+  .replayer-table-felt {
+    transform: scale(0.45);
+  }
+}
+@media (max-width: 380px) {
+  .replayer-table-felt {
+    transform: scale(0.35);
+  }
+}
+
+/* Adjust sizes since we doubled the table base dimensions to look crisp */
+.replayer-card {
+  width: 30px;
+  height: 42px;
+  border-radius: 4px;
+}
+.replayer-seat {
+  width: 60px;
+  height: 60px;
+}
+.replayer-avatar {
+  width: 44px;
+  height: 44px;
+  border-width: 3px;
+}
+.replayer-pos-badge {
+  font-size: 9px;
+  padding: 2px 4px;
+  bottom: -6px;
+  right: -12px;
+}
+.replayer-seat-name {
+  font-size: 10px;
+  padding: 1px 4px;
+}
+.replayer-seat-stack {
+  font-size: 11px;
+}
+.replayer-bet {
+  font-size: 10px;
+  padding: 2px 6px;
+}
+.replayer-bet-chip {
+  width: 10px;
+  height: 10px;
+}
+.replayer-dealer-btn {
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+  top: -6px;
+  right: -12px;
+}
+.replayer-action-bubble {
+  font-size: 11px;
+  padding: 4px 8px;
+  top: -30px;
+}
+.replayer-pot-pill {
+  font-size: 11px;
+  padding: 4px 8px;
+}

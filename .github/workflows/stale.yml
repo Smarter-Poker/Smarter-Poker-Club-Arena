@@ -1,0 +1,30 @@
+name: Stale PR Cleanup
+
+on:
+  schedule:
+    - cron: '0 9 * * 1' # Every Monday at 9am UTC
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    name: Close Stale PRs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v9
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          stale-pr-message: |
+            This PR has been inactive for 14 days and will be closed in 7 days unless updated.
+            If this work is still needed, please push new commits or leave a comment.
+          close-pr-message: 'Closing stale PR — reopen when ready to continue.'
+          days-before-stale: 14
+          days-before-close: 7
+          stale-pr-label: 'stale'
+          exempt-pr-labels: 'pinned,do-not-close'
+          # Don't touch issues
+          days-before-issue-stale: -1
+          days-before-issue-close: -1

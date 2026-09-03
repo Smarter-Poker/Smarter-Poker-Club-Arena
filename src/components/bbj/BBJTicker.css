@@ -1,0 +1,113 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   BBJ TICKER — lobby jackpot strip (2026-08-18)
+   Mobile-first: at 375px the pool stacks above the feed and the feed
+   scrolls horizontally by touch rather than animating (no motion tax on
+   the smallest screens, and the user controls the pace).
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.bbj-ticker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: linear-gradient(90deg, rgba(40, 26, 0, 0.92), rgba(18, 14, 4, 0.92));
+  border: 1px solid rgba(213, 218, 226, 0.35);
+  box-shadow: inset 0 0 24px rgba(213, 218, 226, 0.08);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.bbj-ticker--clickable {
+  cursor: pointer;
+}
+
+.bbj-ticker__pool {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  line-height: 1.1;
+}
+
+.bbj-ticker__label {
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: rgba(226, 231, 238, 0.75);
+  font-weight: 700;
+}
+
+.bbj-ticker__amount {
+  font-size: 20px;
+  font-weight: 900;
+  color: #d5dae2;
+  text-shadow: 0 0 12px rgba(213, 218, 226, 0.5);
+  font-variant-numeric: tabular-nums;
+}
+
+.bbj-ticker__feed {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.bbj-ticker__feed::-webkit-scrollbar {
+  display: none;
+}
+
+.bbj-ticker__track {
+  display: flex;
+  gap: 18px;
+  white-space: nowrap;
+}
+
+.bbj-ticker__empty {
+  font-size: 12px;
+  color: rgba(226, 231, 238, 0.6);
+  white-space: nowrap;
+}
+
+.bbj-ticker__hit {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  color: #e2e6ec;
+}
+
+.bbj-ticker__hit-amount {
+  font-weight: 800;
+  color: #d5dae2;
+  font-variant-numeric: tabular-nums;
+}
+
+.bbj-ticker__hit-who {
+  opacity: 0.9;
+}
+
+.bbj-ticker__hit-when {
+  opacity: 0.55;
+  font-size: 11px;
+}
+
+@media (max-width: 480px) {
+  .bbj-ticker {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    padding: 8px 10px;
+  }
+
+  .bbj-ticker__pool {
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+
+  .bbj-ticker__amount {
+    font-size: 18px;
+  }
+}

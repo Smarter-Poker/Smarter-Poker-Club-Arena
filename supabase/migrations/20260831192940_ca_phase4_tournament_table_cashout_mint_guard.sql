@@ -1,0 +1,14 @@
+-- ZERO-DRIFT PHASE 4 - STOP THE TOURNAMENT-TABLE CASHOUT MINT
+-- (prod 2026-08-31 19:33 UTC; canonical body in prod schema_migrations)
+-- Caught by the phase-1 supply monitor, root-caused via the ledger: the
+-- engine calls atomic_table_cashout for HORSE seats on TOURNAMENT-ATTACHED
+-- tables, crediting PLAY-chip stacks to club_members.chip_balance as REAL
+-- chips. Zero matching debits: 46.4M chips created into horse wallets since
+-- 2026-08-24 (2.57M on 08-31 alone; 391 cashouts, 235 accounts, all
+-- is_horse). atomic_table_cashout now closes tournament-table seats WITH NO
+-- WALLET CREDIT (tournament results settle only through the tournament
+-- payout path) and raises a deduped warning incident per blocked attempt so
+-- the engine exit path gets fixed. Verified by rolled-back probe: 220-chip
+-- tournament stack -> credit 0, seat closed, incident raised. The minted
+-- 46.4M sits in house horse wallets, queued for formal chip_retirement at
+-- the Midway epoch-3 reset (doc 05 §3). No table, game, or wallet locked.

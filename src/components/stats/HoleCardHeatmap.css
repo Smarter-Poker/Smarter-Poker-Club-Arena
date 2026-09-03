@@ -1,0 +1,402 @@
+/**
+ * HoleCardHeatmap.
+ *
+ * MOBILE IS THE HARD CASE and drives this whole file. 13 columns at 375px
+ * leaves about 24px per cell once padding is accounted for. Rather than shrink
+ * below legibility, the grid keeps a 22px floor and scrolls horizontally
+ * inside its own container. The page body must never scroll sideways.
+ */
+
+.heatmap-card {
+  margin: 0 0.75rem 1rem;
+  padding: 1rem;
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(0, 212, 255, 0.05) 0%, rgba(139, 92, 246, 0.035) 100%);
+  border: 1px solid rgba(0, 212, 255, 0.14);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  box-shadow:
+    0 0 30px rgba(0, 212, 255, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.heatmap-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #e8f4ff;
+}
+
+.heatmap-sub {
+  margin: 0.3rem 0 0;
+  font-size: 0.74rem;
+  color: rgba(200, 224, 245, 0.6);
+}
+
+/* ── Controls ──────────────────────────────────────────────────────────── */
+
+.heatmap-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin: 0.75rem 0;
+}
+
+.heatmap-modes {
+  display: inline-flex;
+  gap: 0.3rem;
+  padding: 0.2rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.heatmap-mode {
+  padding: 0.35rem 0.7rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(220, 238, 255, 0.55);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 32px;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease;
+}
+
+.heatmap-mode.is-on {
+  background: rgba(0, 212, 255, 0.16);
+  color: #e8f4ff;
+}
+
+.heatmap-mode:focus-visible {
+  outline: 2px solid #00d4ff;
+  outline-offset: 2px;
+}
+
+.heatmap-filters {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.heatmap-select-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.heatmap-select-label {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(200, 224, 245, 0.45);
+}
+
+.heatmap-select {
+  padding: 0.3rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 14, 24, 0.85);
+  color: #e8f4ff;
+  font-size: 0.72rem;
+  min-height: 32px;
+}
+
+.heatmap-select:focus-visible {
+  outline: 2px solid #00d4ff;
+  outline-offset: 1px;
+}
+
+/* ── The grid ──────────────────────────────────────────────────────────── */
+
+.heatmap-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -0.25rem;
+  padding: 0 0.25rem 0.25rem;
+}
+
+.heatmap-grid {
+  display: grid;
+  grid-template-columns: repeat(13, minmax(22px, 1fr));
+  gap: 2px;
+  min-width: 312px; /* 13 * 22px + gaps: the legibility floor */
+}
+
+/* role="grid" needs a row layer for assistive tech, but the visual layout is a
+   single 13-column CSS grid. `display: contents` gives the rows semantic
+   presence while their children remain direct grid items, so the markup is
+   correct and the rendering is unchanged. */
+.heatmap-row {
+  display: contents;
+}
+
+.heatmap-cell {
+  aspect-ratio: 1 / 1;
+  min-width: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  color: rgba(232, 244, 255, 0.9);
+  font-size: 0.5rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  text-transform: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.heatmap-cell.is-pair {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.heatmap-cell.is-thin {
+  color: rgba(232, 244, 255, 0.45);
+}
+
+.heatmap-cell.is-hovered {
+  transform: scale(1.16);
+  border-color: #00d4ff;
+  z-index: 2;
+}
+
+.heatmap-cell:focus-visible {
+  outline: 2px solid #00d4ff;
+  outline-offset: 1px;
+  z-index: 2;
+}
+
+/* ── Readout ───────────────────────────────────────────────────────────── */
+
+.heatmap-readout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: baseline;
+  margin-top: 0.7rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 10px;
+  background: rgba(0, 212, 255, 0.06);
+  border: 1px solid rgba(0, 212, 255, 0.16);
+  font-size: 0.72rem;
+  color: rgba(220, 238, 255, 0.8);
+  font-variant-numeric: tabular-nums;
+  min-height: 2.1rem;
+}
+
+.heatmap-readout strong {
+  color: #00d4ff;
+  font-size: 0.8rem;
+  text-transform: none;
+}
+
+.heatmap-readout .is-up {
+  color: #22c55e;
+}
+
+.heatmap-readout .is-down {
+  color: #ef4444;
+}
+
+.heatmap-readout .is-thin-note,
+.heatmap-readout-hint {
+  color: rgba(200, 224, 245, 0.45);
+  font-style: italic;
+}
+
+.heatmap-note {
+  margin: 0.6rem 0 0;
+  font-size: 0.68rem;
+  line-height: 1.55;
+  color: rgba(200, 224, 245, 0.48);
+}
+
+/* ── Loading / empty ───────────────────────────────────────────────────── */
+
+.heatmap-skeleton {
+  height: 300px;
+  border-radius: 12px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 25%,
+    rgba(255, 255, 255, 0.07) 50%,
+    rgba(255, 255, 255, 0.03) 75%
+  );
+  background-size: 200% 100%;
+  animation: heatmapShimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes heatmapShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.heatmap-empty-text {
+  margin: 0.6rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: rgba(200, 224, 245, 0.6);
+}
+
+@media (min-width: 560px) {
+  .heatmap-cell {
+    font-size: 0.62rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .heatmap-skeleton {
+    animation: none;
+  }
+
+  .heatmap-cell,
+  .heatmap-mode {
+    transition: none;
+  }
+
+  .heatmap-cell.is-hovered {
+    transform: none;
+  }
+}
+
+/* --- orphan-modifier rules (added 2026-08-21 audit) --- */
+/* These were applied in TSX with no rule defined anywhere, so the empty
+   states rendered inconsistently - only .pos-radar-empty was centred. */
+
+.heatmap-empty {
+  text-align: center;
+}
+.heatmap-head {
+  text-align: left;
+}
+
+/* ── Drill-down: the hands behind one cell ─────────────────────────────── */
+
+.heatmap-drill {
+  margin-top: 0.6rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 12px;
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  background: rgba(139, 92, 246, 0.07);
+}
+
+.heatmap-drill-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  font-size: 0.72rem;
+  color: rgba(200, 224, 245, 0.65);
+}
+
+.heatmap-drill-head strong {
+  font-size: 0.85rem;
+  color: #c4b5fd;
+  text-transform: none;
+}
+
+.heatmap-drill-close {
+  margin-left: auto;
+  padding: 0.2rem 0.5rem;
+  min-height: 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: transparent;
+  color: rgba(220, 238, 255, 0.7);
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+
+.heatmap-drill-close:focus-visible {
+  outline: 2px solid #00d4ff;
+  outline-offset: 2px;
+}
+
+.heatmap-drill-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  /* Twenty rows is a lot on a phone; scroll inside the panel rather than
+     pushing the grid off screen. */
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.heatmap-drill-row {
+  display: grid;
+  grid-template-columns: 2.6rem 5rem 1fr auto;
+  gap: 0.4rem;
+  align-items: baseline;
+  padding: 0.3rem 0.35rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  color: rgba(220, 238, 255, 0.75);
+}
+
+.heatmap-drill-pos {
+  font-weight: 700;
+  color: #e8f4ff;
+  text-transform: none;
+}
+
+.heatmap-drill-date {
+  color: rgba(200, 224, 245, 0.5);
+}
+
+.heatmap-drill-tags {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.heatmap-drill-tags em {
+  font-style: normal;
+  font-size: 0.58rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 999px;
+  background: rgba(0, 212, 255, 0.14);
+  color: #7dd3fc;
+  white-space: nowrap;
+}
+
+.heatmap-drill-row .is-up {
+  color: #22c55e;
+  text-align: right;
+}
+
+.heatmap-drill-row .is-down {
+  color: #ef4444;
+  text-align: right;
+}
+
+.heatmap-drill-empty {
+  margin: 0.4rem 0 0;
+  font-size: 0.7rem;
+  color: rgba(200, 224, 245, 0.5);
+}
+
+/* The drill-down is an interactive affordance; a printed dossier shows the
+   grid itself, not whichever cell happened to be open. */
+@media print {
+  .heatmap-drill {
+    display: none !important;
+  }
+}

@@ -1,0 +1,449 @@
+.vip-page {
+  min-height: 100vh;
+  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
+  background: var(--bg-primary);
+  width: 100%;
+  max-width: 100vw;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
+  padding-bottom: max(70px, env(safe-area-inset-bottom));
+}
+
+.vip-page__hero {
+  width: min(100% - 24px, 1120px);
+  margin: 12px auto 0;
+  padding: clamp(18px, 5vw, 34px);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 36%, transparent);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 88% 16%, rgba(255, 215, 92, 0.16), transparent 30%),
+    linear-gradient(145deg, rgba(21, 31, 43, 0.98), rgba(7, 12, 19, 0.98));
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.08),
+    0 16px 40px rgba(0, 0, 0, 0.24);
+}
+
+.vip-page__hero span {
+  color: #f3cb67;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.vip-page__hero h1 {
+  margin: 6px 0 4px;
+  color: var(--text-primary);
+  font-size: clamp(1.55rem, 7vw, 2.7rem);
+  line-height: 1;
+}
+
+.vip-page__hero p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: clamp(0.82rem, 3.2vw, 1rem);
+}
+
+[data-theme='light'] .vip-page__hero {
+  background:
+    radial-gradient(circle at 88% 16%, rgba(164, 108, 0, 0.12), transparent 30%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(232, 238, 244, 0.98));
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.9),
+    0 14px 34px rgba(35, 49, 63, 0.14);
+}
+
+.current-status {
+  margin: 1rem;
+  padding: 1.5rem;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 215, 0, 0.15),
+    rgba(var(--accent-primary-rgb), 0.1)
+  );
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  border-radius: 16px;
+  text-align: center;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 20px rgba(255, 215, 0, 0.15);
+}
+
+.tier-badge {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.tier-icon {
+  font-size: 3rem;
+}
+
+.tier-name {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.vip-info {
+  margin-bottom: 1rem;
+}
+
+.vip-value {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.vip-next {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.progress-bar {
+  height: 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ffd700, #ff9800);
+  border-radius: 4px;
+  transition: width 0.3s;
+}
+
+.vip-section {
+  padding: 1rem;
+}
+
+.vip-section h3 {
+  margin: 0 0 1rem;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.benefits-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.benefit-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.benefit-check {
+  color: var(--accent-success);
+  font-weight: 700;
+}
+
+.benefit-item span:last-child {
+  color: var(--text-primary);
+}
+
+.tiers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tier-card {
+  padding: 1rem;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  border: 2px solid transparent;
+  position: relative;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.tier-card.current {
+  border-color: #ffd700;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.1), var(--bg-secondary));
+}
+
+.tier-card.locked {
+  opacity: 0.5;
+}
+
+.tier-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.tier-header .tier-icon {
+  font-size: 1.5rem;
+}
+
+.tier-info {
+  flex: 1;
+}
+
+.tier-info .tier-name {
+  display: block;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.tier-info .tier-points {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.tier-rakeback {
+  font-weight: 700;
+  color: var(--accent-success);
+}
+
+.current-badge {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  font-size: 0.625rem;
+  background: #ffd700;
+  color: #000;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-weight: 700;
+}
+
+.loading-state {
+  display: flex;
+  justify-content: center;
+  padding: 3rem;
+}
+
+/* VIP Card Section */
+.vip-card-section {
+  margin: 1rem;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.08), rgba(0, 0, 0, 0.3));
+  border: 1px solid rgba(255, 215, 0, 0.2);
+  border-radius: 16px;
+}
+
+.vip-card-active {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.2);
+  border: 2px solid;
+  border-radius: 12px;
+}
+
+.vip-card-badge {
+  width: 60px;
+  height: 45px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.vip-card-icon {
+  font-size: 20px;
+}
+
+.vip-card-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 1px;
+}
+
+.vip-card-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vip-card-tier {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.vip-card-expiry {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.vip-extend-btn {
+  padding: 8px 16px;
+  background: rgba(255, 215, 0, 0.2);
+  border: 1px solid rgba(255, 215, 0, 0.4);
+  border-radius: 6px;
+  color: #ffd700;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+/* Inactive VIP Card */
+.vip-card-inactive {
+  text-align: center;
+  padding: 1rem;
+}
+
+.vip-card-inactive p {
+  color: var(--text-secondary);
+  margin: 0 0 1rem;
+}
+
+.vip-card-features {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.vip-card-features li {
+  background: rgba(255, 215, 0, 0.1);
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.vip-purchase-btn {
+  padding: 12px 32px;
+  background: linear-gradient(135deg, #ffd700, #ff9800);
+  border: none;
+  border-radius: 8px;
+  color: #000;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.vip-purchase-btn {
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+/* Benefits Grid */
+.vip-benefits-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 1rem;
+}
+
+.vip-benefit {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  padding: 12px 8px;
+  text-align: center;
+}
+
+.vip-benefit .benefit-value {
+  display: block;
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffd700;
+}
+
+.vip-benefit .benefit-label {
+  font-size: 10px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+@media (max-width: 480px) {
+  .vip-benefits-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .vip-extend-btn,
+  .vip-purchase-btn,
+  .diamond-buy-btn {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .current-status,
+  .vip-card-section {
+    margin: 0.75rem;
+    padding: 1rem;
+  }
+}
+
+/* ── Buy Diamonds Button ── */
+
+.diamond-buy-btn {
+  margin-left: auto;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.diamond-balance {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  background: rgba(96, 165, 250, 0.08);
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  border-radius: 12px;
+}
+
+.section-desc {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+.purchase-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+@media (max-width: 480px) {
+  .purchase-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* E2E 2026-08-23: icon + count + label + button overflowed a 360px viewport
+   (button measured right:440). Let the row wrap; the button takes a full row. */
+@media (max-width: 480px) {
+  .diamond-balance {
+    flex-wrap: wrap;
+  }
+  .diamond-buy-btn {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+}

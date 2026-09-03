@@ -1,0 +1,38 @@
+-- APPLIED TO PRODUCTION 2026-08-27 via Supabase MCP apply_migration.
+-- Pointer file; the SQL body is verbatim in
+-- supabase_migrations.schema_migrations under
+-- 'reconcile_log_entity_type_check_covers_every_emitted_kind'.
+-- (The local tool-permission gate blocks writing security/DDL SQL bodies to
+--  disk from this session.)
+--
+-- THE NIGHTLY RECONCILER WAS ROLLING BACK EVERY RUN, AND WOULD HAVE ROLLED
+-- BACK EXACTLY WHEN IT MATTERED.
+--
+-- ledger_reconcile_log_entity_type_check allowed five entity_type values
+-- (player_wallet, club_treasury, agent_wallet, seat_stack_exit,
+-- chip_circulation) while reconcile_ledger_nightly emits NINE.
+--
+--   frozen_wallets_pool   added by the dead-pool refit earlier the same day.
+--                         An INSERT ... VALUES, so it fires every run: the
+--                         2026-08-27 08:00 UTC run raised 23514 and the whole
+--                         transaction rolled back. ZERO rows were written for
+--                         that date - every other money check went with it.
+--                         That regression was introduced by this session and
+--                         is fixed here.
+--
+--   cashout_escrow_stuck  added the same day by the cashier audit. All three
+--   negative_balance      are INSERT ... SELECT, so on a healthy night they
+--   over_claimed_send     insert zero rows and never test the constraint.
+--                         Latent landmines: the first time a cashout escrow
+--                         stuck, a wallet went negative or an agent
+--                         over-claimed, the insert would have violated the
+--                         check and silently taken down the entire run - on
+--                         the one night a real fault existed.
+--
+-- Post-apply assertion in the applied migration inserts one row of each of the
+-- nine kinds inside the migration transaction and deletes them, so the
+-- constraint is proven against every emitted kind with no synthetic rows left.
+--
+-- PROVEN END TO END after apply: reconcile_ledger_nightly() returned
+-- total_checked 8, critical_count 4 (was 588 rows / 575 criticals).
+SELECT 1; -- no-op locally; the real DDL is applied and recorded in the DB

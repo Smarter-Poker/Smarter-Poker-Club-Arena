@@ -1,0 +1,29 @@
+{
+  "_comment": "Events something LISTENS for that nothing emits. Each entry is a deliberate, explained gap, not a shrug. Two kinds live here: engines listed in MIGRATION-LAW.md as not yet ported (the listener is the client half, waiting), and features whose UI shipped without their producer. Build the emitter -> delete the entry. Do NOT let this list grow without a matching decision: a new dead listener is a new dead feature.",
+
+  "_unported_engines": "MIGRATION-LAW.md STEP 4-7. The client half is written and waiting for the server engine to be ported.",
+  "ACTION_TIMER_STARTED": "PreciseActionTimer — STEP 4, not ported",
+  "ACTION_TIMER_EXPIRED": "PreciseActionTimer — STEP 4, not ported",
+  "ACTION_REJECTED": "ServerActionValidator — STEP 4, not ported",
+  "STATE_INTEGRITY_VIOLATION": "StateVerifier — STEP 4, not ported",
+  "TIME_BANK_EXTENDED": "TimeBankEngine — STEP 5, not ported",
+  "TIME_BANK_EXTENSION_DENIED": "TimeBankEngine — STEP 5, not ported",
+  "PRE_ACTION_EXECUTED": "PreActionEngine — STEP 5, not ported",
+  "STRADDLE_TOGGLED": "Straddle engine — STEP 6, not ported",
+  "TABLE_BALANCE_EXECUTED": "TableBalancer — STEP 7, not ported",
+
+  "_unbuilt_producers": "UI shipped, producer never written. Each is a real gap worth closing.",
+  "SHOWDOWN_START": "HoleCardReveal + table chat wait for it; no engine event announces showdown yet",
+  "MILESTONE_UNLOCKED": "MilestoneToast is mounted at the app root and has never fired",
+  "ACHIEVEMENT_UNLOCKED": "FriendActivityFeed listens; AchievementTriggerService emits CHALLENGE_PROGRESS_UPDATED instead",
+  "HAND_REPLAY_STEP": "HandReplay3D step-through; the replay drives itself locally today",
+  "HAND_WON": "table chat reaction hook; HAND_COMPLETE carries the winner instead",
+  "RAKEBACK_DISTRIBUTED": "rakeback runs server-side on a schedule and never notifies the table",
+  "BREAK_START": "TournamentClock break banner — the engine sets tournaments.on_break but emits nothing",
+  "BREAK_END": "TournamentClock break banner — see BREAK_START",
+  "TOURNAMENT_BREAK": "duplicate of BREAK_START from an earlier naming; clock listens for both",
+  "TOURNAMENT_BREAK_END": "duplicate of BREAK_END from an earlier naming",
+
+  "_harmless_duplicates": "A second listener for an event covered by another that IS emitted.",
+  "WS_RECONNECTING": "MultiTablePage also listens for WS_DISCONNECTED, which the watchdog does emit, so the reconnecting chip works; this subscription is redundant, not broken"
+}

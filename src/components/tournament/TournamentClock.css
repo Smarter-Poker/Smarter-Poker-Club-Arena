@@ -1,0 +1,319 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  TOURNAMENT CLOCK — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.tournament-clock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  background: linear-gradient(135deg, rgba(10, 10, 20, 0.95), rgba(15, 25, 50, 0.95));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 24px;
+  min-width: 320px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Ambient glow */
+.tournament-clock::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(ellipse at center, rgba(59, 130, 246, 0.06) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+/* ── Fullscreen Mode ── */
+.tc--fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
+  border-radius: 0;
+  z-index: 9999;
+  justify-content: center;
+  padding: 40px;
+  gap: 24px;
+}
+
+.tc--fullscreen .tc-blinds {
+  gap: 32px;
+}
+
+.tc--fullscreen .tc-blind-value {
+  font-size: 72px;
+}
+
+.tc--fullscreen .tc-timer-value {
+  font-size: 96px;
+}
+
+.tc--fullscreen .tc-level-badge {
+  font-size: 20px;
+  padding: 10px 32px;
+}
+
+/* ── Compact Mode ── */
+.tc--compact {
+  padding: 12px 16px;
+  gap: 8px;
+  min-width: unset;
+  border-radius: 10px;
+}
+
+.tc--compact .tc-blind-value {
+  font-size: 20px;
+}
+
+.tc--compact .tc-timer-value {
+  font-size: 28px;
+}
+
+.tc--compact .tc-level-badge {
+  font-size: 10px;
+  padding: 3px 10px;
+}
+
+/* ── Header ── */
+.tc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  z-index: 1;
+}
+
+.tc-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  letter-spacing: 0.5px;
+  margin: 0;
+}
+
+.tc-fullscreen-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+/* ── Level Badge ── */
+.tc-level-badge {
+  display: inline-block;
+  padding: 5px 16px;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 20px;
+  color: #60a5fa;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  z-index: 1;
+}
+
+/* ── Blinds Display ── */
+.tc-blinds {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  z-index: 1;
+}
+
+.tc-blind-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.tc-blind-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.35);
+  letter-spacing: 1px;
+}
+
+.tc-blind-value {
+  font-size: 36px;
+  font-weight: 800;
+  color: #f0f0f5;
+  font-variant-numeric: tabular-nums;
+}
+
+.tc-ante-value {
+  color: #eab308;
+}
+
+.tc-blind-separator {
+  font-size: 28px;
+  color: rgba(255, 255, 255, 0.2);
+  font-weight: 300;
+}
+
+/* ── Countdown Timer ── */
+.tc-timer {
+  z-index: 1;
+}
+
+.tc-timer-value {
+  font-size: 56px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: #22c55e;
+  text-shadow: 0 0 30px rgba(34, 197, 94, 0.3);
+  transition:
+    color 0.3s,
+    text-shadow 0.3s;
+}
+
+.tc-timer--warning .tc-timer-value {
+  color: #eab308;
+  text-shadow: 0 0 30px rgba(234, 179, 8, 0.3);
+}
+
+.tc-timer--danger .tc-timer-value {
+  color: #ef4444;
+  text-shadow: 0 0 30px rgba(239, 68, 68, 0.4);
+  animation: tc-pulse 1s ease-in-out infinite;
+}
+
+@keyframes tc-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* ── Next Level Preview ── */
+.tc-next-level {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  z-index: 1;
+}
+
+.tc-next-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.3);
+  letter-spacing: 1px;
+}
+
+.tc-next-blinds {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* ── Break Overlay ── */
+.tc--break {
+  background: linear-gradient(135deg, rgba(20, 15, 5, 0.95), rgba(30, 25, 10, 0.95));
+  border-color: rgba(234, 179, 8, 0.2);
+}
+
+.tc-break-overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px;
+  z-index: 1;
+}
+
+.tc-break-icon {
+  font-size: 48px;
+  animation: tc-steam 2s ease-in-out infinite;
+}
+
+@keyframes tc-steam {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+.tc-break-text {
+  font-size: 32px;
+  font-weight: 900;
+  letter-spacing: 6px;
+  color: #eab308;
+  text-shadow: 0 0 30px rgba(234, 179, 8, 0.3);
+}
+
+.tc-break-timer {
+  font-size: 48px;
+  font-weight: 900;
+  color: #eab308;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Stats Footer ── */
+.tc-stats {
+  display: flex;
+  gap: 24px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  width: 100%;
+  justify-content: center;
+  z-index: 1;
+}
+
+.tc-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.tc-stat-icon {
+  font-size: 16px;
+}
+
+.tc-stat-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: #f0f0f5;
+}
+
+/* "/ 48" after the remaining count — present but subordinate, so the number
+   that matters (players still in) stays the one the eye lands on. */
+.tc-stat-of {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.tc-stat-label {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}

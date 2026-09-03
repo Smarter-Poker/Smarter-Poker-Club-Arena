@@ -1,0 +1,15 @@
+.page-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.page-info strong {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.page-number {
+  color: rgba(255, 255, 255, 0.4);
+}

@@ -1,0 +1,68 @@
+.floating-button {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: linear-gradient(135deg, #ffd700, #ff8c00);
+  border: none;
+  border-radius: 28px;
+  color: #000;
+  cursor: pointer;
+  box-shadow:
+    0 4px 20px rgba(255, 215, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+}
+.floating-button:active {
+  transform: scale(0.98);
+}
+
+/* Positions */
+.floating-button.position-bottom-right {
+  bottom: 24px;
+  right: 24px;
+}
+
+.floating-button.position-bottom-left {
+  bottom: 24px;
+  left: 24px;
+}
+
+.floating-button.position-bottom-center {
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+/* Sizes */
+.floating-button.size-medium {
+  width: 56px;
+  height: 56px;
+}
+
+.floating-button.size-large {
+  width: 72px;
+  height: 72px;
+}
+
+.floating-button.extended {
+  width: auto;
+  padding: 0 24px;
+  border-radius: 28px;
+}
+
+.fab-icon {
+  font-size: 1.5rem;
+}
+
+.size-large .fab-icon {
+  font-size: 2rem;
+}
+
+.fab-label {
+  font-weight: 600;
+  font-size: 0.95rem;
+}

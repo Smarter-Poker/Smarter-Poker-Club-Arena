@@ -1,0 +1,287 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  REWARDS TAB — depth without gold
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * A prize screen wants to be gold. Every stock design for one is gold, and the
+ * pull is strongest exactly here, on the row that says "1st". The house palette
+ * has no gold, no yellow and no brown in it, so first place is separated from
+ * the field the way the rest of the lobby separates anything: with LIGHT and
+ * DEPTH on the accent ramp. The podium rows sit higher off the page, catch a
+ * brighter bevel, and carry an accent rim that fades out by third place.
+ *
+ * Everything else here is the shared `tl-` vocabulary from
+ * styles/tournament-lobby-3d.css. This file only adds the grid shapes the
+ * shared rows cannot know about, and the podium treatment above.
+ *
+ * Mobile-first: laid out for 375px, widened at 420px and 640px.
+ */
+
+.rw {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   HEADLINE
+   ───────────────────────────────────────────────────────────────────────── */
+
+.rw-pool__value {
+  font-size: 26px;
+  letter-spacing: -0.5px;
+}
+
+.rw-sub--good {
+  color: var(--tl-good);
+  font-weight: 700;
+}
+.rw-sub--warn {
+  color: var(--tl-danger-soft);
+  font-weight: 700;
+}
+
+/* Guarantee progress, sunk into the panel so the bar reads as a channel cut
+   into the surface rather than a strip laid on top of it. */
+.rw-gtd {
+  margin-top: 12px;
+  padding: 10px 12px 12px;
+  border-radius: var(--tl-radius-sm);
+  background: linear-gradient(180deg, rgba(13, 17, 32, 0.9) 0%, rgba(10, 14, 26, 0.96) 100%);
+  box-shadow:
+    inset 0 2px 8px rgba(0, 0, 0, 0.6),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.rw-gtd__row,
+.rw-drain__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+
+.rw-gtd__label,
+.rw-drain__label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--tl-text-hint);
+}
+
+.rw-gtd__figure,
+.rw-drain__figure {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--tl-text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rw-gtd__note {
+  margin: 8px 0 0;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--tl-text-dim);
+}
+
+/* Not an aside. If the numbers can still move, that has to survive a glance. */
+.rw-provisional {
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--tl-radius-sm);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: #cfe9ff;
+  background: linear-gradient(180deg, rgba(24, 119, 242, 0.18) 0%, rgba(13, 17, 32, 0.85) 100%);
+  border: 1px solid rgba(24, 119, 242, 0.42);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 3px 10px rgba(0, 0, 0, 0.35);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PAYOUT ROWS
+   ───────────────────────────────────────────────────────────────────────── */
+
+.rw-list {
+  gap: 6px;
+}
+
+.rw-row {
+  position: relative;
+  grid-template-columns: 54px 1fr auto;
+  min-height: 50px;
+  overflow: hidden;
+}
+
+.rw-rank {
+  min-width: 0;
+  text-align: left;
+  font-size: 14px;
+  letter-spacing: 0.3px;
+}
+
+.rw-row__mid {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.rw-pct {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--tl-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.rw-tag {
+  flex: 0 0 auto;
+}
+
+.rw-prize {
+  font-size: 16px;
+  letter-spacing: -0.2px;
+}
+
+/* ── THE PODIUM ───────────────────────────────────────────────────────────
+   Three steps of the same accent, each one sitting slightly lower and lit
+   slightly less than the one above it. No metal, no yellow: the hierarchy is
+   carried by elevation and rim light, which is what the rest of the lobby
+   already uses to say "this one matters more". */
+.rw-row--podium {
+  border-color: rgba(111, 220, 255, 0.28);
+}
+
+.rw-row--podium::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, var(--tl-accent) 0%, var(--tl-accent-strong) 100%);
+  pointer-events: none;
+}
+
+.rw-row--p1 {
+  min-height: 62px;
+  background: linear-gradient(180deg, rgba(0, 180, 230, 0.26) 0%, rgba(13, 22, 38, 0.95) 100%);
+  border-color: rgba(111, 220, 255, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.62),
+    0 10px 26px rgba(0, 0, 0, 0.52),
+    0 0 22px rgba(111, 220, 255, 0.26);
+}
+.rw-row--p1 .rw-rank {
+  font-size: 17px;
+}
+.rw-row--p1 .rw-prize {
+  font-size: 19px;
+}
+
+.rw-row--p2 {
+  min-height: 56px;
+  background: linear-gradient(180deg, rgba(0, 180, 230, 0.16) 0%, rgba(15, 22, 36, 0.93) 100%);
+  border-color: rgba(111, 220, 255, 0.4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.58),
+    0 7px 18px rgba(0, 0, 0, 0.46),
+    0 0 14px rgba(111, 220, 255, 0.16);
+}
+.rw-row--p2 .rw-prize {
+  font-size: 17px;
+}
+
+.rw-row--p3 {
+  background: linear-gradient(180deg, rgba(0, 180, 230, 0.1) 0%, rgba(17, 24, 38, 0.92) 100%);
+  border-color: rgba(111, 220, 255, 0.28);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.54),
+    0 5px 14px rgba(0, 0, 0, 0.4);
+}
+
+/* The last paid place. A dashed underline reads as an edge you can fall off. */
+.rw-row--bubble {
+  border-bottom: 1px dashed rgba(111, 220, 255, 0.45);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   BOUNTY
+   ───────────────────────────────────────────────────────────────────────── */
+
+.rw-bounty__stats {
+  margin-bottom: 12px;
+}
+
+.rw-drain {
+  padding: 10px 12px 12px;
+  border-radius: var(--tl-radius-sm);
+  background: linear-gradient(180deg, rgba(13, 17, 32, 0.9) 0%, rgba(10, 14, 26, 0.96) 100%);
+  box-shadow:
+    inset 0 2px 8px rgba(0, 0, 0, 0.6),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.rw-rule {
+  margin: 12px 0 0;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--tl-text-dim);
+}
+
+/* The `.rw-top*` ladder rules that sat here are gone (2026-08-26 audit). They
+   styled the "top rungs" list this tab built by grouping `current_bounty`, and
+   that list was removed when the chest inventory shipped - `MysteryBountyPanel`
+   renders the real ladder now. Nothing in the tab has carried these class names
+   since, so they were 50 lines of stylesheet shipped to every player for markup
+   that no longer exists. */
+
+/* ─────────────────────────────────────────────────────────────────────────
+   RESPONSIVE — 375px is the design target, wider screens get more air
+   ───────────────────────────────────────────────────────────────────────── */
+
+@media (max-width: 359px) {
+  .rw-row {
+    grid-template-columns: 46px 1fr auto;
+  }
+  .rw-pool__value {
+    font-size: 22px;
+  }
+  .rw-prize {
+    font-size: 15px;
+  }
+  .rw-row--p1 .rw-prize {
+    font-size: 17px;
+  }
+}
+
+@media (min-width: 640px) {
+  .rw {
+    gap: 14px;
+  }
+  .rw-row {
+    grid-template-columns: 72px 1fr auto;
+    min-height: 54px;
+  }
+  .rw-pool__value {
+    font-size: 30px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rw-row {
+    transition: none;
+  }
+}

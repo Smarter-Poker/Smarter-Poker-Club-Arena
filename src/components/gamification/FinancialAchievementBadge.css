@@ -1,0 +1,158 @@
+/**
+ * FINANCIAL ACHIEVEMENT BADGE — CSS
+ */
+
+.fab-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: linear-gradient(145deg, #141e2e 0%, #0b1420 100%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.fab-sm {
+  padding: 10px 12px;
+  gap: 8px;
+}
+.fab-lg {
+  padding: 18px 20px;
+  gap: 16px;
+}
+
+/* Locked state */
+.fab-locked {
+  border-style: dashed;
+  filter: grayscale(0.8);
+  opacity: 0.6;
+}
+
+.fab-locked .fab-icon {
+  filter: grayscale(1);
+}
+
+/* Unlocked state */
+.fab-unlocked {
+  border-color: var(--fab-color, rgba(255, 255, 255, 0.1));
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--fab-color) 15%, transparent);
+}
+
+/* Just unlocked pop */
+.fab-just-unlocked {
+  animation: badgeUnlockPop 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes badgeUnlockPop {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* ── Icon ── */
+.fab-icon-wrap {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.fab-sm .fab-icon-wrap {
+  width: 32px;
+  height: 32px;
+}
+.fab-lg .fab-icon-wrap {
+  width: 56px;
+  height: 56px;
+}
+
+.fab-icon {
+  font-size: 28px;
+  position: relative;
+  z-index: 1;
+}
+
+.fab-sm .fab-icon {
+  font-size: 20px;
+}
+.fab-lg .fab-icon {
+  font-size: 36px;
+}
+
+/* Shimmer overlay on unlocked */
+.fab-shimmer {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: linear-gradient(
+    110deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.2) 45%,
+    transparent 55%
+  );
+  background-size: 250% 100%;
+  animation: badgeShimmer 3s ease-in-out infinite;
+}
+
+@keyframes badgeShimmer {
+  0%,
+  100% {
+    background-position: 250% 0;
+  }
+  50% {
+    background-position: -100% 0;
+  }
+}
+
+/* ── Content ── */
+.fab-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fab-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.fab-sm .fab-title {
+  font-size: 12px;
+}
+.fab-lg .fab-title {
+  font-size: 16px;
+}
+
+.fab-desc {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  line-height: 1.3;
+}
+
+.fab-sm .fab-desc {
+  font-size: 10px;
+}
+
+/* ── Lock indicator ── */
+.fab-lock {
+  font-size: 16px;
+  flex-shrink: 0;
+  opacity: 0.5;
+}

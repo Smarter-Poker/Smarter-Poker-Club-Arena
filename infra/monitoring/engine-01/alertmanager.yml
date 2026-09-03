@@ -1,0 +1,101 @@
+# AlertManager — engine-01 co-located
+#
+# 2026-08-15: this file previously routed EVERY alert to a `null-receiver`.
+# Combined with 27 alert rules referencing metrics that do not exist in this
+# Prometheus, the stack could not have notified anyone of anything — which is
+# why ten tables frozen for 18 minutes were reported by a player, not an alert.
+#
+# Delivery is email via Resend SMTP. Slack was the obvious choice and was
+# attempted first, but SLACK_ALERT_URL in the monitoring .env is truncated
+# (44 chars) and invalid — Slack answers posts to it with its documentation
+# homepage. Resend is already this platform's transactional email provider.
+# Both secrets are mounted as files; neither appears in this YAML.
+#
+# Routing:
+#   critical → email immediately, repeat hourly until resolved ("players
+#              cannot play" conditions)
+#   warning  → email grouped, repeat every 12h so infra noise (CPU, memory)
+#              can never bury a critical
+#   info     → suppressed; visible in the AlertManager UI for triage
+
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: 'smtp.resend.com:587'
+  smtp_from: 'alerts@smarter.poker'
+  smtp_auth_username: 'resend'
+  smtp_auth_password_file: /etc/alertmanager/resend_key
+  smtp_require_tls: true
+
+route:
+  receiver: email-critical
+  group_by: [alertname, component]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 1h
+  routes:
+    - matchers:
+        - severity="critical"
+      receiver: email-critical
+      group_wait: 10s
+      repeat_interval: 1h
+
+    - matchers:
+        - severity="warning"
+      receiver: email-warning
+      group_wait: 2m
+      group_interval: 30m
+      repeat_interval: 12h
+
+    - matchers:
+        - severity="info"
+      receiver: null-receiver
+
+receivers:
+  - name: null-receiver
+
+  - name: email-critical
+    email_configs:
+      - to: 'admin@smarter.poker'
+        send_resolved: true
+        headers:
+          Subject: '{{ if eq .Status "firing" }}[CRITICAL]{{ else }}[RESOLVED]{{ end }} {{ .CommonLabels.alertname }} — smarter.poker engine'
+        html: |
+          <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:640px">
+            <h2 style="color:#c0392b;margin-bottom:4px">{{ .CommonLabels.alertname }}</h2>
+            {{ range .Alerts }}
+              <p><strong>{{ .Annotations.summary }}</strong></p>
+              <p style="color:#555;white-space:pre-wrap">{{ .Annotations.description }}</p>
+              {{ if .Annotations.runbook }}<p><a href="{{ .Annotations.runbook }}">Runbook</a></p>{{ end }}
+            {{ end }}
+            <p style="color:#888;font-size:12px;margin-top:16px">
+              Engine health: <a href="https://engine.smarter.poker/health">engine.smarter.poker/health</a><br>
+              Check <code>stalledTables</code> for the affected table ids.
+            </p>
+          </div>
+
+  - name: email-warning
+    email_configs:
+      - to: 'admin@smarter.poker'
+        send_resolved: true
+        headers:
+          Subject: '[warning] {{ .CommonLabels.alertname }} — smarter.poker'
+        html: |
+          <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif">
+            {{ range .Alerts }}<p>{{ .Annotations.summary }}</p>{{ end }}
+          </div>
+
+inhibit_rules:
+  # If the engine is unreachable entirely, do not also spam per-table freeze
+  # alerts — they are all downstream of the same cause.
+  - source_matchers:
+      - alertname="EngineScrapeDown"
+    target_matchers:
+      - component="engine"
+    equal: [instance]
+
+  # A stalled discovery loop implies frozen tables; lead with the platform alert.
+  - source_matchers:
+      - alertname="EngineDiscoveryStalled"
+    target_matchers:
+      - alertname="PokerTablesFrozen"
+    equal: [cluster]

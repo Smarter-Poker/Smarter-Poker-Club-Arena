@@ -1,0 +1,335 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  CARD IMAGE — Styles for Custom Card Deck
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.card-image {
+  position: relative;
+  display: inline-block;
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  transition:
+    transform 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)),
+    box-shadow 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+.card-image__img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+
+  /* Dan 2026-08-21: "the cards ... are no longer crisp and clean, they seem
+     distorted with edges cut off."
+
+     Two things arrived together in 833a34d ("eliminate card blurriness") and
+     each caused one half of that:
+
+     1. object-fit: COVER crops whatever does not fit. The card art is
+        750x1050 (exactly 5:7 = 0.7143) and the boxes are 64x90 (0.7111),
+        56x78 (0.7179), 50x70 ... - close, but never exact, and cover shaves
+        the difference off the EDGES of every card. contain can never crop:
+        a hair of letterboxing is invisible, a sliced corner index is not.
+     2. image-rendering: crisp-edges asks the browser NOT to smooth. That is
+        right for upscaled pixel art and wrong for a 1050px-tall photo scaled
+        down to 70px, where it turns every curve and pip into stair-steps -
+        which reads exactly as "distorted". auto (smooth downscaling) is what
+        makes a small card look clean.
+
+     translateZ(0)/backface-visibility went with them: they force the image
+     onto its own compositor layer, which on fractional positions resamples
+     and softens the very edges this was meant to sharpen. */
+  image-rendering: auto;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SIZES
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.card-image--xs {
+  width: 25px;
+  height: 35px;
+  border-radius: 2px;
+}
+
+.card-image--sm {
+  width: 35px;
+  height: 49px;
+  border-radius: 3px;
+}
+
+.card-image--md {
+  width: 50px;
+  height: 70px;
+  border-radius: 4px;
+}
+
+.card-image--lg {
+  width: 65px;
+  height: 91px;
+  border-radius: 5px;
+}
+
+.card-image--xl {
+  width: 80px;
+  height: 112px;
+  border-radius: 6px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   STATES
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* POKERBROS PARITY 2026-08-26: the reference never lifts or scales a winning
+   card, and the gold border + amber halo live on the OUTER wrappers
+   (.community-cards__card--highlighted / .seat__card--winner) so they wrap
+   the card edge exactly. The old translateY(-4px) scale(1.05) + own glow
+   here double-styled every winning card and moved it off its slot. The
+   class is kept as a structural marker only. */
+.card-image--highlighted {
+  z-index: 10;
+}
+
+.card-image--folded {
+  opacity: 0.5;
+  filter: grayscale(0.5);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CARD BACK
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Dan 2026-08-18: card back designs, take two ─────────────────────────────
+ *
+ * The previous structure could not work, and the earlier "the id has no CSS
+ * class so it renders blank" diagnosis was wrong. Every id painted the SAME
+ * navy back, because of specificity:
+ *
+ *     .card-image--back .card-back   -> 0-2-0, sets background + border
+ *     .card-back--classic_red        -> 0-1-0, sets background + border
+ *
+ * Both match the same element, the base rule is more specific, so the base
+ * rule always won and the design classes were decoration. TableVisualHotfix
+ * then made it absolute with
+ *     .table-page .seat .card-image--back .card-back { ... !important }
+ * (0-4-0 + !important) whose own comment claims "Defined styles (classic_red,
+ * etc.) are more specific and still win" - they are not, and they did not.
+ *
+ * Rather than escalate the specificity war, the base rule now READS two custom
+ * properties and each design class SETS them. Custom properties are set on the
+ * same element, so there is no competition to lose: whichever design class is
+ * present supplies the paint, the base rule supplies layout and the fallback.
+ * Adding a ninth design is now one rule of two lines, and it cannot be
+ * silently overridden by an ancestor-scoped rule again.
+ */
+/* 2026-08-25: `--cb-gradient` was SET twelve times below and READ nowhere. This
+   rule painted `var(--cb-image, none)` alone, so a card back whose .webp 404s
+   or has not downloaded yet drew NOTHING but the 2px border - an empty outline
+   on dark felt, which is the exact symptom the 2026-08-23 note above was
+   written to have fixed. The comment at the end of that note ("The gradient and
+   border stay here as the fallback for a missing file") described a fallback
+   that did not exist, and the note in TableVisualHotfix.css line 348 asserts
+   this rule "paints two layers, `var(--cb-image), gradient`" - it did not.
+
+   It does now. `background-image` takes a LAYER LIST, first layer on top:
+   the artwork covers the gradient when it loads, and when it 404s or is still
+   in flight the browser paints nothing for that layer and the gradient below
+   shows through. That is the whole mechanism - no JS error handler, no
+   onerror, no class toggle, and nothing to keep in sync.
+
+   `background-size: cover` with a single value applies to BOTH layers, which
+   is what a gradient wants anyway. The literal in the var() fallback is
+   classic_blue, matching --cb-border's own default on the next line, so an
+   element that somehow carries neither a design class nor an inline image is
+   still a solid navy card rather than a hole. */
+.card-image--back .card-back {
+  width: 100%;
+  height: 100%;
+  background-image:
+    var(--cb-image, none), var(--cb-gradient, linear-gradient(135deg, #1e3a5f 0%, #0d2137 100%));
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
+  border: 2px solid var(--cb-border, #3a6ea5);
+  border-radius: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 2026-08-23: the twelve design classes used to each carry
+   `--cb-image: url('/cards/backs/table/<id>.webp')`. That URL is ROOT-relative,
+   and Club Arena is served from /hub/club-arena/ — so every one of them
+   resolved to https://smarter.poker/cards/backs/table/<id>.webp, which is a
+   404 (verified in production; the Hub root really does have a /cards/ folder,
+   holding entirely different files, so nothing 404-logged loudly either).
+
+   Every seat therefore drew the FALLBACK GRADIENT with no art on it: a dark
+   navy box with a thin blue border, which on dark felt reads as an empty
+   outline. Dan, 2026-08-23: "if a player has cards, and is active in the
+   hand... their card backs should be visible until they fold. they must be
+   visible and not hidden or dimmed at all." They were not dimmed. The picture
+   was missing.
+
+   CSS cannot see MEDIA_BASE — that is a build-time env var read in TS, and the
+   whole point of it (Phase U5.3) is that media can move to an R2 bucket on a
+   different origin. So `--cb-image` is now set from CardBack/CardImage in JS,
+   through the same mediaUrl() every card FACE already used. The gradient and
+   border stay here as the fallback for a missing file. */
+.card-back--classic_red {
+  --cb-gradient: linear-gradient(135deg, #8b0000 0%, #4a0000 100%);
+  --cb-border: #b22222;
+}
+
+.card-back--classic_blue {
+  --cb-gradient: linear-gradient(135deg, #1e3a5f 0%, #0d2137 100%);
+  --cb-border: #3a6ea5;
+}
+
+.card-back--diamond {
+  --cb-gradient: linear-gradient(135deg, #5e17eb 0%, #2a0a66 100%);
+  --cb-border: #9b4dca;
+}
+
+.card-back--gold {
+  --cb-gradient: linear-gradient(135deg, #ffd700 0%, #b8860b 100%);
+  --cb-border: #daa520;
+}
+
+.card-back--dragon {
+  --cb-gradient: linear-gradient(135deg, #2d1b69 0%, #0f0a26 100%);
+  --cb-border: #7c3aed;
+}
+
+.card-back--neon {
+  --cb-gradient: linear-gradient(135deg, #00ff9f 0%, #00b8ff 50%, #ff00ff 100%);
+  --cb-border: #00ffff;
+}
+
+.card-back--galaxy {
+  --cb-gradient: linear-gradient(135deg, #0c0c1e 0%, #1a1a3e 50%, #2d1b69 100%);
+  --cb-border: #5b21b6;
+}
+
+.card-back--royal {
+  --cb-gradient: linear-gradient(135deg, #4a0080 0%, #1a0030 100%);
+  --cb-border: #9333ea;
+}
+
+.card-back--holographic {
+  --cb-gradient: linear-gradient(135deg, #d3d3d3 0%, #a9a9a9 100%);
+  --cb-border: #808080;
+}
+
+.card-back--carbon {
+  --cb-gradient: linear-gradient(135deg, #434343 0%, #000000 100%);
+  --cb-border: #333333;
+}
+
+.card-back--club-branded {
+  --cb-gradient: linear-gradient(135deg, #8b0000 0%, #4a0000 100%);
+  --cb-border: #b22222;
+}
+
+.card-back--diamond-foil {
+  --cb-gradient: linear-gradient(135deg, #e0e0e0 0%, #ffffff 100%);
+  --cb-border: #cccccc;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ANIMATIONS
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* AUDIT 2026-08-20 (global keyframe collision): `card-deal` is also defined in
+   styles/club-engine.css with a DIFFERENT transform (translateY(-100px)
+   rotateY(180deg) vs this one's -20px/90deg). @keyframes is global, so the
+   last stylesheet loaded won for BOTH — one of the two card deals was always
+   animating with the wrong keyframe. Renamed so each owns its own. */
+@keyframes cardImageDeal {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.8) rotateY(90deg);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotateY(0);
+  }
+}
+
+.card-image--dealing {
+  animation: cardImageDeal 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) forwards;
+}
+
+@keyframes card-flip {
+  0% {
+    transform: rotateY(0);
+  }
+
+  50% {
+    transform: rotateY(90deg);
+  }
+
+  100% {
+    transform: rotateY(0);
+  }
+}
+
+.card-image--flipping {
+  animation: card-flip 0.4s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UNREADABLE CARD (2026-08-26)
+   ═══════════════════════════════════════════════════════════════════════════
+   getCardImagePath used to substitute the ACE OF SPADES for any card it could
+   not parse, so a corrupt card rendered as a real, plausible, playable one and
+   the player bet behind it. It returns null now, and this is what null looks
+   like.
+
+   Designed to be impossible to mistake for a card: no white face, no rank, no
+   suit pip, a dashed amber border and a single question mark. If a player ever
+   sees this they should know the slot is untrustworthy without being told. */
+.card-image--unreadable {
+  background: transparent;
+  box-shadow: none;
+}
+
+.card-image__unreadable {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+  /* Amber, not red: red on a poker felt reads as the hearts/diamonds colour. */
+  border: 2px dashed #f59e0b;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(245, 158, 11, 0.12) 0 6px,
+    rgba(15, 23, 42, 0.55) 6px 12px
+  );
+  color: #f59e0b;
+  font-weight: 800;
+  font-size: 1.1em;
+  line-height: 1;
+  user-select: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .card-image__unreadable {
+    animation: cardUnreadablePulse 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes cardUnreadablePulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.62;
+  }
+}

@@ -1,0 +1,6 @@
+# SLO recording rules — DISABLED in engine-01 co-located deploy.
+# Original rules in infra/monitoring/slo-rules.yml depend on
+# probe_success{job="vercel_health"} emitted by blackbox-exporter which
+# is not deployed in this stack. Re-enable after adding blackbox-exporter
+# to docker-compose.yml.
+groups: []

@@ -1,0 +1,331 @@
+.studio-game-preview {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  isolation: isolate;
+  color: #f5f8fb;
+  background: #030609;
+}
+.studio-game-preview::before {
+  content: '';
+  position: absolute;
+  z-index: 4;
+  inset: 2.5%;
+  border: 1px solid rgba(174, 185, 195, 0.16);
+  pointer-events: none;
+}
+.studio-game-preview__background-ambient,
+.studio-game-preview__background,
+.studio-game-preview__scrim,
+.studio-game-preview__table {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.studio-game-preview__background-ambient {
+  z-index: 0;
+  inset: -7%;
+  width: 114%;
+  height: 114%;
+  object-fit: cover;
+  filter: blur(16px) brightness(0.5) saturate(1.18);
+  transform: scale(1.06);
+}
+.studio-game-preview__background {
+  z-index: 1;
+  object-fit: contain;
+}
+.studio-game-preview__scrim {
+  z-index: 2;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(1, 4, 7, 0.28),
+      transparent 18%,
+      transparent 76%,
+      rgba(1, 4, 7, 0.72)
+    ),
+    radial-gradient(ellipse at 50% 47%, transparent 23%, rgba(2, 6, 10, 0.38) 77%);
+}
+.studio-game-preview__table {
+  z-index: 3;
+  inset: 6% 14% 8%;
+  width: 72%;
+  height: 86%;
+  object-fit: contain;
+  filter: drop-shadow(0 18px 24px rgba(0, 0, 0, 0.82));
+}
+.studio-game-preview--final .studio-game-preview__table {
+  inset: 5% 12% 7%;
+  width: 76%;
+  height: 88%;
+}
+.studio-game-preview__seat {
+  position: absolute;
+  z-index: 6;
+  width: 48px;
+  text-align: center;
+}
+.studio-game-preview__seat > img,
+.studio-game-preview__avatar-loading {
+  display: block;
+  width: 43px;
+  height: 43px;
+  margin: auto;
+  object-fit: contain;
+  border-radius: 42% 42% 32% 32%;
+  filter: drop-shadow(0 5px 6px rgba(0, 0, 0, 0.9));
+}
+.studio-game-preview__avatar-loading {
+  border: 1px solid rgba(174, 185, 195, 0.2);
+  background: linear-gradient(135deg, #2b3946, #10171e);
+}
+.studio-game-preview__plate {
+  display: block;
+  position: relative;
+  margin-top: -5px;
+  padding: 3px 4px;
+  overflow: hidden;
+  border: 1px solid rgba(174, 185, 195, 0.35);
+  border-left: 2px solid #36b9ff;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(4, 8, 12, 0.96), rgba(17, 24, 32, 0.94));
+  box-shadow: 0 5px 9px rgba(0, 0, 0, 0.62);
+}
+.studio-game-preview--final .studio-game-preview__plate {
+  border-left-color: #d7ad58;
+}
+.studio-game-preview__plate strong,
+.studio-game-preview__plate b {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.studio-game-preview__plate strong {
+  color: #f6f8f9;
+  font:
+    700 7px/1.05 'Rajdhani',
+    system-ui,
+    sans-serif;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+.studio-game-preview__plate b {
+  margin-top: 2px;
+  color: #3fb950;
+  font:
+    800 6px/1 'JetBrains Mono',
+    monospace;
+}
+.studio-game-preview--final .studio-game-preview__plate b {
+  color: #efc772;
+}
+.studio-game-preview__seat--1 {
+  left: 13%;
+  top: 21%;
+}
+.studio-game-preview__seat--2 {
+  left: 13%;
+  top: 58%;
+}
+.studio-game-preview__seat--3 {
+  left: calc(50% - 24px);
+  top: 5%;
+}
+.studio-game-preview__seat--4 {
+  right: 13%;
+  top: 21%;
+}
+.studio-game-preview__seat--5 {
+  right: 13%;
+  top: 58%;
+}
+.studio-game-preview__seat--6 {
+  left: calc(50% - 24px);
+  bottom: 7%;
+}
+.studio-game-preview__pot,
+.studio-game-preview__board,
+.studio-game-preview__dealer,
+.studio-game-preview__broadcast {
+  position: absolute;
+  z-index: 7;
+}
+.studio-game-preview__pot {
+  left: 50%;
+  top: 35%;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  border: 1px solid rgba(215, 173, 88, 0.34);
+  border-radius: 2px;
+  color: #efbd5d;
+  background: rgba(3, 6, 10, 0.88);
+  font:
+    800 6px/1 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.08em;
+}
+.studio-game-preview__board {
+  left: 50%;
+  top: 46%;
+  display: flex;
+  gap: 2px;
+  transform: translateX(-50%);
+}
+.studio-game-preview__board span {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 25px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 2px;
+  color: #101318;
+  background: linear-gradient(#fff, #e8edf0);
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.55);
+  font:
+    800 7px/1 Georgia,
+    serif;
+}
+.studio-game-preview__board .red {
+  color: #c51f2b;
+}
+.studio-game-preview__hole-cards {
+  position: absolute;
+  z-index: 8;
+  left: calc(50% + 29px);
+  bottom: 8%;
+  display: flex;
+}
+.studio-game-preview__hole-cards > * {
+  transform: scale(0.62) rotate(-5deg);
+  margin: -8px;
+  filter: drop-shadow(0 4px 4px rgba(0, 0, 0, 0.7));
+}
+.studio-game-preview__hole-cards > :last-child {
+  transform: scale(0.62) rotate(6deg);
+}
+.studio-game-preview__dealer {
+  right: 25%;
+  top: 36%;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 50%;
+  color: var(--dealer-btn-color, #111);
+  background: var(--dealer-btn-bg, #fff);
+  font:
+    900 7px/1 Inter,
+    system-ui,
+    sans-serif;
+  box-shadow:
+    0 3px 6px #000,
+    inset 0 1px rgba(255, 255, 255, 0.6);
+}
+.studio-game-preview__actions {
+  position: absolute;
+  z-index: 9;
+  left: 12px;
+  right: 12px;
+  bottom: 4px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+.studio-game-preview__actions span {
+  position: relative;
+  overflow: hidden;
+  padding: 6px 4px;
+  border: var(--action-control-border, 1px solid rgba(255, 255, 255, 0.18));
+  border-radius: var(--action-control-radius, 3px);
+  text-align: center;
+  font:
+    800 7px/1 'Rajdhani',
+    system-ui,
+    sans-serif;
+  letter-spacing: var(--action-control-letter-spacing, 0.08em);
+  box-shadow:
+    var(--action-control-inset, inset 0 1px rgba(255, 255, 255, 0.18)),
+    0 4px 8px rgba(0, 0, 0, 0.48);
+}
+.studio-game-preview__actions span:nth-child(1) {
+  background: linear-gradient(#f05257, #8f1118);
+}
+.studio-game-preview__actions span:nth-child(2) {
+  background: linear-gradient(#289cfb, #0751ab);
+}
+.studio-game-preview__actions span:nth-child(3) {
+  background: linear-gradient(#4dc660, #2ea043);
+}
+.studio-game-preview__actions span::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--action-control-overlay, transparent);
+  pointer-events: none;
+}
+.studio-game-preview__broadcast {
+  left: 50%;
+  top: 5px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  padding: 4px 8px;
+  border: 1px solid rgba(215, 173, 88, 0.58);
+  border-left: 3px solid #d7ad58;
+  border-radius: 2px;
+  color: #d7ad58;
+  background: rgba(4, 8, 15, 0.91);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.48);
+  font:
+    700 6px/1 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.1em;
+}
+.studio-game-preview__broadcast strong {
+  color: #fff;
+  font-size: 8px;
+}
+@media (min-width: 768px) {
+  .studio-game-preview__seat {
+    transform: scale(1.06);
+  }
+}
+@media (max-width: 767px) {
+  .studio-game-preview__seat {
+    transform: scale(0.78);
+  }
+  .studio-game-preview__seat--1,
+  .studio-game-preview__seat--2 {
+    transform-origin: left center;
+  }
+  .studio-game-preview__seat--4,
+  .studio-game-preview__seat--5 {
+    transform-origin: right center;
+  }
+  .studio-game-preview__seat--3 {
+    transform-origin: top center;
+  }
+  .studio-game-preview__seat--6 {
+    transform-origin: bottom center;
+  }
+  .studio-game-preview__board,
+  .studio-game-preview__pot,
+  .studio-game-preview__dealer {
+    transform: translateX(-50%) scale(0.84);
+  }
+  .studio-game-preview__dealer {
+    transform: scale(0.84);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .studio-game-preview * {
+    animation: none !important;
+  }
+}

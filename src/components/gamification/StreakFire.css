@@ -1,0 +1,278 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * ♠ STREAK FIRE — Styles (Phase 4: Engagement Engine)
+ * 5-tier animated fire with progressive intensity
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+/* ── Container ──────────────────────────────────────────────────────────────── */
+.streak-fire {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  user-select: none;
+}
+
+.fire-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Size variants ──────────────────────────────────────────────────────────── */
+.streak-fire-sm .fire-container {
+  width: 18px;
+  height: 24px;
+}
+.streak-fire-md .fire-container {
+  width: 24px;
+  height: 32px;
+}
+.streak-fire-lg .fire-container {
+  width: 36px;
+  height: 48px;
+}
+
+.fire-svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Fire colors per tier ───────────────────────────────────────────────────── */
+
+/* Ember (1-3 days) */
+.streak-ember .fire-glow {
+  fill: rgba(255, 140, 0, 0.15);
+}
+.streak-ember .fire-main {
+  fill: #e65100;
+  animation: flicker 1.5s ease-in-out infinite;
+}
+.streak-ember .fire-inner {
+  fill: #ff8f00;
+  animation: flicker 1.2s ease-in-out infinite 0.1s;
+}
+.streak-ember .fire-core {
+  fill: #ffca28;
+}
+
+/* Flame (4-7 days) */
+.streak-flame .fire-glow {
+  fill: rgba(255, 87, 34, 0.2);
+}
+.streak-flame .fire-main {
+  fill: #d84315;
+  animation: flicker 1.2s ease-in-out infinite;
+}
+.streak-flame .fire-inner {
+  fill: #ff6d00;
+  animation: flicker 1s ease-in-out infinite 0.15s;
+}
+.streak-flame .fire-core {
+  fill: #ffd54f;
+}
+
+/* Blaze (8-14 days) */
+.streak-blaze .fire-glow {
+  fill: rgba(244, 67, 54, 0.25);
+  filter: blur(2px);
+}
+.streak-blaze .fire-main {
+  fill: #c62828;
+  animation: blaze 0.8s ease-in-out infinite;
+}
+.streak-blaze .fire-inner {
+  fill: #ff5722;
+  animation: blaze 0.7s ease-in-out infinite 0.1s;
+}
+.streak-blaze .fire-core {
+  fill: #ffe082;
+  animation: coreGlow 1s ease-in-out infinite;
+}
+
+/* Inferno (15-29 days) */
+.streak-inferno .fire-glow {
+  fill: rgba(63, 81, 181, 0.2);
+  filter: blur(3px);
+}
+.streak-inferno .fire-main {
+  fill: #283593;
+  animation: blaze 0.6s ease-in-out infinite;
+}
+.streak-inferno .fire-inner {
+  fill: #5c6bc0;
+  animation: blaze 0.5s ease-in-out infinite 0.1s;
+}
+.streak-inferno .fire-core {
+  fill: #e0e0e0;
+  animation: coreGlow 0.8s ease-in-out infinite;
+}
+
+/* Supernova (30+ days) */
+.streak-supernova .fire-glow {
+  fill: rgba(233, 30, 99, 0.3);
+  filter: blur(4px);
+}
+.streak-supernova .fire-main {
+  fill: #ad1457;
+  animation: superFlicker 0.5s ease-in-out infinite;
+}
+.streak-supernova .fire-inner {
+  fill: #e91e63;
+  animation: superFlicker 0.4s ease-in-out infinite 0.1s;
+}
+.streak-supernova .fire-core {
+  fill: #fff;
+  animation: coreGlow 0.6s ease-in-out infinite;
+}
+.streak-supernova .fire-container {
+  filter: drop-shadow(0 0 8px rgba(233, 30, 99, 0.6));
+}
+
+/* ── Keyframes ──────────────────────────────────────────────────────────────── */
+@keyframes flicker {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scaleY(0.96);
+  }
+}
+
+@keyframes blaze {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scaleY(1) scaleX(1);
+  }
+  25% {
+    transform: scaleY(1.04) scaleX(0.97);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scaleY(0.95) scaleX(1.03);
+  }
+  75% {
+    transform: scaleY(1.02) scaleX(0.98);
+  }
+}
+
+@keyframes superFlicker {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scaleY(1) scaleX(1);
+    filter: hue-rotate(0deg);
+  }
+  33% {
+    opacity: 0.95;
+    transform: scaleY(1.05) scaleX(0.96);
+    filter: hue-rotate(20deg);
+  }
+  66% {
+    opacity: 0.9;
+    transform: scaleY(0.94) scaleX(1.04);
+    filter: hue-rotate(-20deg);
+  }
+}
+
+@keyframes coreGlow {
+  0%,
+  100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ── Particle Sparks ────────────────────────────────────────────────────────── */
+.spark-container {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.spark {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #ffca28;
+  opacity: 0;
+}
+
+.spark-1 {
+  top: 10%;
+  left: 30%;
+  animation: sparkFly 2s ease-out infinite;
+}
+.spark-2 {
+  top: 15%;
+  right: 25%;
+  animation: sparkFly 2.3s ease-out infinite 0.5s;
+}
+.spark-3 {
+  top: 5%;
+  left: 50%;
+  animation: sparkFly 1.8s ease-out infinite 1s;
+}
+
+.streak-inferno .spark,
+.streak-supernova .spark {
+  background: #fff;
+  width: 4px;
+  height: 4px;
+}
+
+@keyframes sparkFly {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(1);
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--spark-dx, 8px), -20px) scale(0.3);
+  }
+}
+
+/* ── Streak Count Label ─────────────────────────────────────────────────────── */
+.streak-count {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.streak-fire-sm .streak-count {
+  font-size: 0.75rem;
+}
+.streak-fire-md .streak-count {
+  font-size: 0.9rem;
+}
+.streak-fire-lg .streak-count {
+  font-size: 1.2rem;
+}
+
+.streak-ember .streak-count {
+  color: #e65100;
+}
+.streak-flame .streak-count {
+  color: #ff6d00;
+}
+.streak-blaze .streak-count {
+  color: #ff5722;
+}
+.streak-inferno .streak-count {
+  color: #7986cb;
+}
+.streak-supernova .streak-count {
+  color: #f48fb1;
+  text-shadow: 0 0 8px rgba(233, 30, 99, 0.5);
+}

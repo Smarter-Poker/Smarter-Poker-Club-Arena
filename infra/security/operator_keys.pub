@@ -1,0 +1,20 @@
+# Operator SSH public keys for the engine host.
+#
+# Managed from the repo deliberately. On 2026-08-16 the host's authorized_keys
+# was rewritten three times in one day by different automation, twice locking the
+# operator out mid-incident while CI kept working — so nobody noticed until
+# someone tried to inspect the box. Host access being reproducible from source is
+# worth more than the convenience of editing it by hand.
+#
+# These are PUBLIC keys. Nothing secret lives here; the private halves never
+# leave the operator's machine, and a public key is useless without one.
+#
+# install-engine-supervisor.sh ensures any key listed here is present, on every
+# deploy. It is APPEND-ONLY and never removes a line it did not add, so adding a
+# key here cannot lock out CI or anyone else.
+#
+# To REVOKE: delete the key here AND remove it from the host by hand. This file
+# is deliberately not authoritative for removal — a revocation you can forget to
+# apply is worse than one you have to do twice.
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICbfpGx8YV1Al3VIAY8uIr7aIDX2kfG3R587U9UVip/s smarter.poker@deploy
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGu1vmEh6E2DOfyDI8TJ38HhMcKEx577CvwFD+xytFb5 smarter.poker@Mac

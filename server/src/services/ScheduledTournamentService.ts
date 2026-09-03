@@ -293,6 +293,57 @@ export function restartLeadMsFor(guaranteedPrize: number): number {
   return Number(guaranteedPrize) > 0 ? MTT_PUBLISH_LEAD_MS : RESTART_MIN_LEAD_MS;
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  REPEATS WEEKLY (Dan 2026-09-03): "ALL MTT'S SHOULD BE ON A RECURRING WEEKLY
+ *  CYCLE ... ADDED TO THE 'CREATE EVENT' FUNCTIONALITY ... AS A CHECK BOX"
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The house programme already repeats weekly through tournament_schedules
+ * (days_of_week + start_times_utc). A club owner's own event, created through
+ * Create Event, repeats through `restart_every_minutes`: when the instance
+ * completes, maybeRestartTournament clones it. That interval was capped at a
+ * day (1440), so a weekly event was not expressible. The cap is now a week,
+ * and the Create Event checkbox writes exactly RESTART_WEEKLY_MINUTES.
+ *
+ * A WEEKLY CLONE IS ANCHORED TO THE START, NOT THE END. The sub-daily rule -
+ * next start = ended_at + interval - is right for a board that respawns
+ * thirty minutes after it finishes, and wrong for a Sunday 5 PM event: the
+ * event runs three hours, so "ended + a week" is next Sunday at 8 PM, and the
+ * week after that at 11 PM. Every weekly clone therefore takes the LAST
+ * start_time plus the interval, which is the same weekday at the same time,
+ * however long the event ran. Anything below a day keeps the old rule.
+ */
+export const RESTART_WEEKLY_MINUTES = 7 * 24 * 60;
+export const RESTART_MAX_MINUTES = RESTART_WEEKLY_MINUTES;
+export const RESTART_ANCHOR_TO_START_FROM_MINUTES = 24 * 60;
+
+/**
+ * When the clone of a restart-every event starts. Pure, so the weekday-and-time
+ * anchoring is pinned by a test rather than by a Sunday.
+ */
+export function restartCloneStartMs(args: {
+  restartMinutes: number;
+  endedAtMs: number;
+  startTimeMs: number | null;
+  nowMs: number;
+  guaranteedPrize: number;
+}): number {
+  const { restartMinutes, endedAtMs, startTimeMs, nowMs, guaranteedPrize } = args;
+  const intervalMs = Math.max(0, restartMinutes) * 60 * 1000;
+  const floor = nowMs + restartLeadMsFor(guaranteedPrize);
+  const anchorToStart =
+    restartMinutes >= RESTART_ANCHOR_TO_START_FROM_MINUTES &&
+    startTimeMs !== null &&
+    Number.isFinite(startTimeMs);
+  if (!anchorToStart) return Math.max(floor, endedAtMs + intervalMs);
+  // The same weekday and time, stepped forward past now if the instance ran
+  // long or the clone is being made late.
+  let next = (startTimeMs as number) + intervalMs;
+  while (next < floor) next += intervalMs;
+  return next;
+}
+
 /** Same normalization fn_create_tournament and TournamentRecurringService use. */
 const GAME_TYPE_MAP: Record<string, string> = {
   nlh: 'NLH',
@@ -1111,7 +1162,9 @@ export class ScheduledTournamentService {
 
     const restartEveryRaw = Number(cfg.restartEveryMinutes);
     const restartEvery =
-      Number.isFinite(restartEveryRaw) && restartEveryRaw >= 5 && restartEveryRaw <= 1440
+      Number.isFinite(restartEveryRaw) &&
+      restartEveryRaw >= 5 &&
+      restartEveryRaw <= RESTART_MAX_MINUTES
         ? Math.round(restartEveryRaw)
         : null;
 
@@ -1449,11 +1502,15 @@ export class ScheduledTournamentService {
      * event gets. A clone with NO guarantee keeps the two-minute floor: it
      * cannot overlay, and a fast restart is what keeps the board alive.
      */
+    const oldStartMs = old.start_time ? Date.parse(String(old.start_time)) : NaN;
     const startTime = new Date(
-      Math.max(
-        Date.now() + restartLeadMsFor(Number(old.guaranteed_prize) || 0),
-        endedAt.getTime() + restartMinutes * 60 * 1000
-      )
+      restartCloneStartMs({
+        restartMinutes,
+        endedAtMs: endedAt.getTime(),
+        startTimeMs: Number.isFinite(oldStartMs) ? oldStartMs : null,
+        nowMs: Date.now(),
+        guaranteedPrize: Number(old.guaranteed_prize) || 0,
+      })
     );
 
     const row: Record<string, unknown> = {

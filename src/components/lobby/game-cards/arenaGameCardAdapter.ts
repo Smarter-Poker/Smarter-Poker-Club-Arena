@@ -1,4 +1,5 @@
 import {
+  cashTitleLines,
   levelSpeedLabel,
   spinPayoutLabel,
   spinPrizeLabel,
@@ -25,6 +26,65 @@ export function compactCashBuyInLabel(label: string): string {
     const value = Number(token.replace(/,/g, ''));
     return Number.isFinite(value) ? compactChipAmount(value) : token;
   });
+}
+
+/* "Pineapple 1", "Short Deck #2": the lobby's auto-numbering suffix. Dan
+   2026-09-03: "PINEAPPLE 1 SHOULD JUST BE CALLED PINEAPPLE." Only a short
+   standalone index after a space, dash or hash is stripped - "NLH 25/50" ends
+   in a stake, not an index, and is left alone. */
+const TRAILING_INDEX = /(?:\s+|\s*[-–—#]\s*)#?\d{1,2}\s*$/;
+
+function stripTableIndex(name: string): string {
+  const stripped = name.replace(TRAILING_INDEX, '').trim();
+  return /[A-Za-z]/.test(stripped) ? stripped : name.trim();
+}
+
+function normalizedWords(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9+ ]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/**
+ * Whether the variant name would only repeat the title. "Short Deck" under
+ * "Short Deck", "Crazy Pineapple" under "Pineapple": the second line says
+ * nothing the first did not (Dan 2026-09-03, "remove the duplicate"). "No
+ * Limit Hold'em" under "NLH Straddle" is kept - the title never spells it out.
+ */
+function repeatsTitle(title: string, variantLabel: string): boolean {
+  const titleWords = normalizedWords(title);
+  const variantWords = normalizedWords(variantLabel);
+  if (!titleWords.length || !variantWords.length) return false;
+  const titleSet = new Set(titleWords);
+  const variantSet = new Set(variantWords);
+  return (
+    variantWords.every((word) => titleSet.has(word)) ||
+    titleWords.every((word) => variantSet.has(word))
+  );
+}
+
+export function cashCardTitle(entry: LobbyEntry): { title: string; subtitle?: string } {
+  const family = familyOf(entry);
+  const tableName = stripTableIndex(entry.name || '');
+
+  if (family === 'plo') {
+    /* Dan 2026-09-03: "Make sure the Variant Name is first, Like PLO5 25/50
+       and then the table name under it." */
+    const title = [entry.gameLabel, entry.stakesLabel].filter(Boolean).join(' ').trim();
+    const residual = stripTableIndex(cashTitleLines(entry).subtitle || '');
+    const subtitle =
+      residual ||
+      entry.clubLabel ||
+      (repeatsTitle(title, entry.variantLabel) ? undefined : entry.variantLabel);
+    return { title: title || tableName, subtitle: subtitle || undefined };
+  }
+
+  const title = tableName || entry.gameLabel;
+  const subtitle =
+    entry.clubLabel || (repeatsTitle(title, entry.variantLabel) ? undefined : entry.variantLabel);
+  return { title, subtitle: subtitle || undefined };
 }
 
 function familyOf(entry: LobbyEntry): ArenaGameFamily {
@@ -68,11 +128,16 @@ export function arenaGameCardDataFromEntry(entry: LobbyEntry): ArenaGameCardData
   const level = tournament ? tournamentLevel(tournament) : null;
   const startingStack = tournament ? Number(tournament.starting_chips) || 0 : 0;
 
+  const heading =
+    entry.kind === 'cash'
+      ? cashCardTitle(entry)
+      : { title: entry.name, subtitle: entry.clubLabel || entry.variantLabel };
+
   return {
     id: entry.id,
     family,
-    title: entry.name,
-    subtitle: entry.clubLabel || entry.variantLabel,
+    title: heading.title,
+    subtitle: heading.subtitle,
     gameType: entry.gameLabel,
     stakes: entry.stakesLabel || undefined,
     players: entry.capacity > 0 ? `${entry.players}/${entry.capacity}` : String(entry.players),

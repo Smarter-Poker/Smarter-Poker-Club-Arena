@@ -46,6 +46,13 @@ const RANKS = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
 /** Below this many hands, a per-cell profit number is noise, not a signal. */
 const MIN_CONFIDENT_HANDS = 30;
 
+/** RPC numerics can be null; a null reaching .toFixed took the panel down. */
+const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+const shortDate = (iso: string): string => {
+  const d = new Date(iso);
+  return Number.isFinite(d.getTime()) ? d.toLocaleDateString() : '-';
+};
+
 type ViewMode = 'frequency' | 'profit' | 'luck';
 
 const POSITIONS = ['BTN', 'CO', 'HJ', 'LJ', 'MP', 'UTG+1', 'UTG', 'SB', 'BB'];
@@ -84,6 +91,9 @@ function signedColor(value: number, scale: number, confidence: number): string {
 export default function HoleCardHeatmap({ userId, days = null }: Props) {
   const [cells, setCells] = useState<HandGridCell[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [drillError, setDrillError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [mode, setMode] = useState<ViewMode>('frequency');
   const [position, setPosition] = useState<string | null>(null);
   const [variant, setVariant] = useState<string | null>(null);
@@ -103,7 +113,10 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
     setSelected(null);
     StatsFactsService.getHandGrid(userId, { position, variant, days })
       .then((payload) => {
-        if (!cancelled) setCells(payload.cells ?? []);
+        if (cancelled) return;
+        // Cells with no hands are noise for "classes seen" and for the scale.
+        setCells((payload.cells ?? []).filter((c) => c && c.hands > 0));
+        setReadError(payload.error ?? null);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -111,7 +124,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [userId, position, variant, days]);
+  }, [userId, position, variant, days, attempt]);
 
   useEffect(() => {
     if (!userId || !selected) {
@@ -124,9 +137,12 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
     }
     let cancelled = false;
     setHandsLoading(true);
+    setDrillError(null);
     StatsFactsService.getClassHands(userId, selected, { position, variant, days })
       .then((p) => {
-        if (!cancelled) setClassHands(p.hands ?? []);
+        if (cancelled) return;
+        setClassHands(p.hands ?? []);
+        setDrillError(p.error ?? null);
       })
       .finally(() => {
         if (!cancelled) setHandsLoading(false);
@@ -163,6 +179,20 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
     return (
       <div className="heatmap-card">
         <div className="heatmap-skeleton" />
+      </div>
+    );
+  }
+
+  if (readError) {
+    return (
+      <div className="heatmap-card heatmap-empty" role="alert">
+        <h3 className="heatmap-title">Starting Hands</h3>
+        <p className="heatmap-empty-text">
+          The Starting Hand Grid Could Not Be Loaded Right Now.{' '}
+          <button type="button" className="hand-retry" onClick={() => setAttempt((n) => n + 1)}>
+            Try Again
+          </button>
+        </p>
       </div>
     );
   }
@@ -305,7 +335,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
                       !cell
                         ? `${key}, Never Dealt`
                         : confident
-                          ? `${key}, ${hands} Hands, ${cell.bb100.toFixed(0)} Big Blinds Per 100`
+                          ? `${key}, ${hands} Hands, ${n(cell.bb100).toFixed(0)} Big Blinds Per 100`
                           : // Deliberately does NOT state bb/100 below the
                             // confidence threshold. The whole design refuses to
                             // show that number for a thin cell; announcing it to
@@ -328,15 +358,15 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
           <>
             <strong>{hoveredCell.hand_class}</strong>
             <span>{hoveredCell.hands.toLocaleString()} Dealt</span>
-            <span>Played {(hoveredCell.vpip_pct * 100).toFixed(0)}%</span>
+            <span>Played {(n(hoveredCell.vpip_pct) * 100).toFixed(0)}%</span>
             <span className={hoveredCell.net_bb >= 0 ? 'is-up' : 'is-down'}>
               {hoveredCell.net_bb >= 0 ? '+' : ''}
-              {hoveredCell.net_bb.toFixed(1)} BB
+              {n(hoveredCell.net_bb).toFixed(1)} BB
             </span>
             {hoveredCell.hands >= MIN_CONFIDENT_HANDS ? (
               <span className={hoveredCell.bb100 >= 0 ? 'is-up' : 'is-down'}>
                 {hoveredCell.bb100 >= 0 ? '+' : ''}
-                {hoveredCell.bb100.toFixed(0)} BB/100
+                {n(hoveredCell.bb100).toFixed(0)} BB/100
               </span>
             ) : (
               <span className="is-thin-note">Too Few Hands To Rate</span>
@@ -360,7 +390,12 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
               Close
             </button>
           </div>
-          {!handsLoading && (classHands ?? []).length === 0 && (
+          {!handsLoading && drillError && (
+            <p className="heatmap-drill-empty" role="alert">
+              The Hands For {selected} Could Not Be Loaded Right Now.
+            </p>
+          )}
+          {!handsLoading && !drillError && (classHands ?? []).length === 0 && (
             <p className="heatmap-drill-empty">
               No Individual Hands Stored For {selected} Yet Under This Filter.
             </p>
@@ -370,16 +405,14 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
               {(classHands ?? []).map((h) => (
                 <li key={h.hand_id} className="heatmap-drill-row">
                   <span className="heatmap-drill-pos">{h.position}</span>
-                  <span className="heatmap-drill-date">
-                    {new Date(h.played_at).toLocaleDateString()}
-                  </span>
+                  <span className="heatmap-drill-date">{shortDate(h.played_at)}</span>
                   <span className="heatmap-drill-tags">
                     {h.was_all_in && <em>All In</em>}
                     {h.showdown && <em>Showdown</em>}
                   </span>
                   <span className={h.net_bb >= 0 ? 'is-up' : 'is-down'}>
                     {h.net_bb >= 0 ? '+' : ''}
-                    {h.net_bb.toFixed(1)} BB
+                    {n(h.net_bb).toFixed(1)} BB
                   </span>
                 </li>
               ))}

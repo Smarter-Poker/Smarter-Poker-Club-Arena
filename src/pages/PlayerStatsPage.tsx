@@ -575,7 +575,15 @@ function useCountUpNumber(target: number, duration: number = 400) {
       }
     };
     rafId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(rafId);
+    // requestAnimationFrame does not fire in a hidden tab, so a page opened in
+    // the background read "0%" beside a correctly drawn arc until the next
+    // frame. The value is the value, whatever the frame rate: settle it on a
+    // timer as well (seen live 2026-09-03).
+    const settle = window.setTimeout(() => setDisplay(target), duration + 50);
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.clearTimeout(settle);
+    };
   }, [target, duration]);
   return display;
 }
@@ -723,10 +731,6 @@ export default function PlayerStatsPage() {
       document.removeEventListener('visibilitychange', release);
     };
   }, [printing]);
-
-  // Style label for the share card. Shared with TrophyRoom so the two can
-  // never disagree about what style a player is - see playerStyleFromStats.
-  const shareStyle = useMemo(() => playerStyleFromStats(full?.overall), [full?.overall]);
 
   const printTimerRef = useRef<number | null>(null);
 
@@ -1309,13 +1313,105 @@ export default function PlayerStatsPage() {
     };
 
     const unsubs = REFRESH_EVENTS.map((e) => masterBus.subscribe(e as never, schedule));
+
+    /**
+     * LIVE FROM ANY TAB (2026-09-03). masterBus only carries events for the
+     * tables THIS tab is watching, so a player grinding in one tab with Stats
+     * open in another never saw a refresh. The hand_history trigger now writes
+     * one ca_hand_player_idx row per seat the moment a hand is recorded, and
+     * that table is in the realtime publication with an owner-only policy - so
+     * this subscription fires for exactly the hands this player was dealt
+     * into, wherever they were played, and nothing else. It feeds the SAME
+     * debouncer as the bus, so a hand that arrives by both routes still costs
+     * one refetch.
+     */
+    const channelKey = targetUserId && isOwnProfile ? `stats-live-${targetUserId}` : null;
+    if (channelKey) {
+      masterBus
+        .getOrCreateChannel(channelKey)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'ca_hand_player_idx',
+            filter: `user_id=eq.${targetUserId}`,
+          },
+          schedule
+        )
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR' && err) {
+            reportError(err, 'PlayerStatsPage.realtime_channel_error');
+          }
+        });
+    }
+
     return () => {
       if (timer) clearTimeout(timer);
       unsubs.forEach((u) => u());
+      if (channelKey) masterBus.removeRegisteredChannel(channelKey);
     };
-    // No dependencies on purpose: loadRef is a ref wrapper, and re-subscribing
-    // on every range change would drop a pending debounce window on the floor.
-  }, []);
+    // loadRef is a ref wrapper; the only real dependency is whose hands to
+    // listen for. Re-subscribing on a range change would drop a pending
+    // debounce window on the floor, so rangeKey is deliberately not here.
+  }, [targetUserId, isOwnProfile]);
+
+  /**
+   * ALL-TIME PAYLOAD FOR LIFETIME READOUTS (2026-09-03).
+   *
+   * TrophyRoom used to be fed the range-windowed `overall`, so every milestone
+   * ("Play 10,000 hands", "Log 50 hours") was re-judged against 7/30/90 days
+   * and switching the range un-earned trophies. When the page range is "All"
+   * the current payload IS the all-time one; otherwise the all-time payload is
+   * fetched once, lazily, only while the Trophies tab is open, through the same
+   * per-range memo the range buttons use - so returning to "All" costs nothing.
+   */
+  const [allTimeFetched, setAllTimeFetched] = useState<FullStats | null>(null);
+  const [allTimeError, setAllTimeError] = useState(false);
+  const [allTimeReload, setAllTimeReload] = useState(0);
+  // The share card's style badge is a lifetime reading too (Overview tab).
+  const wantsAllTime = category === 'trophies' || category === 'overview' || printing;
+  useEffect(() => {
+    if (!targetUserId || !isOwnProfile || !wantsAllTime || rangeKey === 'all') return;
+    const memo = readStatsRangeMemo(targetUserId, 'all') as FullStats | null;
+    if (memo) {
+      setAllTimeFetched(memo);
+      setAllTimeError(false);
+      return;
+    }
+    let cancelled = false;
+    setAllTimeError(false);
+    supabase.rpc('ca_player_stats_overview_v2', { p_user: targetUserId, p_days: null }).then(
+      ({ data, error }: any) => {
+        if (cancelled || !isMounted.current) return;
+        const contract = normalizeStatsContractMetadata(data);
+        if (error || !data?.overall || !contract.valid) {
+          if (error) reportError(error, 'PlayerStatsPage.rpc_all_time_for_trophies');
+          setAllTimeError(true);
+          return;
+        }
+        const resolved = normalizeFull(data);
+        writeStatsRangeMemo(targetUserId, 'all', resolved);
+        setAllTimeFetched(resolved);
+      },
+      (err: unknown) => {
+        if (cancelled || !isMounted.current) return;
+        reportError(err, 'PlayerStatsPage.rpc_all_time_for_trophies');
+        setAllTimeError(true);
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [targetUserId, isOwnProfile, wantsAllTime, rangeKey, allTimeReload, isMounted]);
+  const allTimeStats: FullStats | null = rangeKey === 'all' ? full : allTimeFetched;
+
+  // Style label for the share card. Shared with TrophyRoom so the two can
+  // never disagree about what style a player is - see playerStyleFromStats.
+  const shareStyle = useMemo(
+    () => playerStyleFromStats(allTimeStats?.overall ?? full?.overall),
+    [allTimeStats?.overall, full?.overall]
+  );
 
   const overall = full?.overall ?? EMPTY_OVERALL;
   const lifetime = full?.lifetime ?? EMPTY_LIFETIME;
@@ -1396,8 +1492,9 @@ export default function PlayerStatsPage() {
         positions: full?.positions,
         variants: full?.variants,
         daily: full?.daily,
+        windowDays,
       }),
-    [overall, full?.positions, full?.variants, full?.daily]
+    [overall, full?.positions, full?.variants, full?.daily, windowDays]
   );
 
   // AdvancedStatsSummary expects a player_stats-like object (fractions)
@@ -1424,6 +1521,9 @@ export default function PlayerStatsPage() {
   // and BankrollTracker, whose effects key on prop identity. A fresh [] every
   // render made both children re-run their effects on every tab click.
   const sessionRows = useMemo(() => full?.sessions ?? [], [full]);
+  const rangeLabel = RANGES.find((r) => r.key === rangeKey)?.label ?? 'All';
+  // A panel that threw on one range's payload gets another go on the next.
+  const panelResetKey = `${targetUserId ?? ''}:${rangeKey}:${lastUpdatedAt ?? 0}`;
 
   const exportSessionsCSV = () => {
     try {
@@ -1738,12 +1838,28 @@ export default function PlayerStatsPage() {
             Meaningful.
           </div>
         )}
-        {hasData && !statsContract.quality.cash_money_exact && (
-          <div className="stats-notice stats-notice-warn">
-            Cash Result And BB/100 Use Reconstructed Hand Actions For This Coverage. Exact
-            Settlement Coverage Is Not Yet Complete.
-          </div>
-        )}
+        {/* The money source is measured per payload now (see the v2 RPC): the
+            engine's own settlement row is used wherever one exists, and the
+            action reconstruction only for the hands that predate it. Say which,
+            with the count, rather than a blanket warning on every load. */}
+        {hasData &&
+          overall.cash_hands > 0 &&
+          !statsContract.quality.cash_money_exact &&
+          statsContract.quality.cash_money_source === 'mixed' && (
+            <div className="stats-notice">
+              {statsContract.quality.exact_cash_hands.toLocaleString()} Of{' '}
+              {overall.cash_hands.toLocaleString()} Cash Hands Use The Engine's Exact Settlement.
+              The Rest Are Reconstructed From Recorded Actions.
+            </div>
+          )}
+        {hasData &&
+          overall.cash_hands > 0 &&
+          statsContract.quality.cash_money_source === 'reconstructed_actions' && (
+            <div className="stats-notice stats-notice-warn">
+              Cash Result And BB/100 Are Reconstructed From Recorded Actions For This Window. No
+              Exact Settlement Rows Exist For These Hands Yet.
+            </div>
+          )}
         {hasData && !statsContract.quality.historical_club_breakdown_available && (
           <div className="stats-notice">
             This Readout Is An Owner-Only All-Clubs Total. Club-Level Breakdown Is Not Available In
@@ -1915,7 +2031,7 @@ export default function PlayerStatsPage() {
 
             {/* ── RAKE TAB — live downline earnings, agents only ── */}
             {showTab('rake') && isOwnProfile && rakeStats && rakeStats.hands > 0 && (
-              <PanelBoundary name="Your Rake">
+              <PanelBoundary name="Your Rake" resetKey={panelResetKey}>
                 <div className="stats-grid">
                   <StatRow
                     label="Rake Paid"
@@ -1959,7 +2075,7 @@ export default function PlayerStatsPage() {
             )}
 
             {showTab('rake') && agentRoles && agentRoles.length > 0 && (
-              <PanelBoundary name="Downline Rake">
+              <PanelBoundary name="Downline Rake" resetKey={panelResetKey}>
                 <DownlineRakePanel roles={agentRoles} />
               </PanelBoundary>
             )}
@@ -2093,7 +2209,7 @@ export default function PlayerStatsPage() {
                 where a player looks first. Owner only — head-to-head chip flow
                 is private, and ca_player_nemesis refuses a cross-user read. */}
                 {isOwnProfile && (
-                  <PanelBoundary name="Rivals">
+                  <PanelBoundary name="Rivals" resetKey={panelResetKey}>
                     <NemesisPanel userId={targetUserId} days={windowDays} />
                   </PanelBoundary>
                 )}
@@ -2101,7 +2217,7 @@ export default function PlayerStatsPage() {
                 {/* Where the player stands against the field. Rates arrive from the
                 RPC as FRACTIONS and the distribution is stored in PERCENT, so
                 they are converted exactly once, here, at the boundary. */}
-                <PanelBoundary name="Benchmarks">
+                <PanelBoundary name="Benchmarks" resetKey={panelResetKey}>
                   <BenchmarkPanel
                     // The metric being benchmarked hardest here is bb/100, which the
                     // RPC computes over CASH hands only. Passing total_hands let a
@@ -2124,7 +2240,7 @@ export default function PlayerStatsPage() {
                 {/* The export people actually use: a card for the club chat after
                 a good session, built on canvas so it costs no bundle weight. */}
                 {isOwnProfile && (
-                  <PanelBoundary name="Share Card">
+                  <PanelBoundary name="Share Card" resetKey={panelResetKey}>
                     <StatsShareCard
                       displayName={playerDisplayName(user)}
                       styleLabel={shareStyle?.label ?? null}
@@ -2137,6 +2253,7 @@ export default function PlayerStatsPage() {
                         pfr: overall.pfr * 100,
                         hoursPlayed: overall.hours_played,
                       }}
+                      rangeLabel={rangeLabel === 'All' ? 'All Time' : `Last ${rangeLabel}`}
                     />
                   </PanelBoundary>
                 )}
@@ -2160,8 +2277,10 @@ export default function PlayerStatsPage() {
                 staring at were earned or dealt. Owner only: it is derived from
                 their own per-hand records. */}
                 {isOwnProfile && (
-                  <PanelBoundary name="EV And Luck">
-                    <Suspense fallback={<div className="hand-empty">Loading Chart...</div>}>
+                  <PanelBoundary name="EV And Luck" resetKey={panelResetKey}>
+                    <Suspense
+                      fallback={<div className="hand-empty hand-loading">Loading Chart...</div>}
+                    >
                       <EVLuckChart userId={targetUserId} days={windowDays} still={printing} />
                     </Suspense>
                   </PanelBoundary>
@@ -2285,11 +2404,15 @@ export default function PlayerStatsPage() {
                 before they read any individual number, and a web that pinches
                 at the button is a leak no table of rates makes obvious. Pure
                 presentation over full.positions, which is already loaded. */}
-                <PanelBoundary name="Positional Shape">
+                <PanelBoundary name="Positional Shape" resetKey={panelResetKey}>
                   <PositionalRadar positions={full?.positions} />
                 </PanelBoundary>
-                <PanelBoundary name="Position Win Rates">
-                  <PositionWinRates userId={targetUserId} initialPositions={full?.positions} />
+                <PanelBoundary name="Position Win Rates" resetKey={panelResetKey}>
+                  <PositionWinRates
+                    userId={targetUserId}
+                    initialPositions={full?.positions}
+                    days={windowDays}
+                  />
                 </PanelBoundary>
               </div>
             )}
@@ -2297,7 +2420,7 @@ export default function PlayerStatsPage() {
             {/* ── HANDS TAB — owner only, see the PRIVACY note on BASE_TABS ── */}
             {showTab('hands') && isOwnProfile && hasData && (
               <div>
-                <PanelBoundary name="Starting Hands">
+                <PanelBoundary name="Starting Hands" resetKey={panelResetKey}>
                   <HoleCardHeatmap userId={targetUserId} days={windowDays} />
                 </PanelBoundary>
               </div>
@@ -2306,8 +2429,26 @@ export default function PlayerStatsPage() {
             {/* ── TROPHIES TAB — owner only ── */}
             {showTab('trophies') && isOwnProfile && hasData && (
               <div>
-                <PanelBoundary name="Trophy Room">
-                  <TrophyRoom overall={full?.overall} tournaments={full?.tournaments} />
+                <PanelBoundary name="Trophy Room" resetKey={panelResetKey}>
+                  {/* Trophies are LIFETIME achievements. They read the all-time
+                      payload, never the range-windowed one, so switching to
+                      "7 Days" cannot un-earn a 10,000-hand milestone. */}
+                  {allTimeStats ? (
+                    <TrophyRoom
+                      overall={allTimeStats.overall}
+                      tournaments={allTimeStats.tournaments}
+                      lifetimeHands={allTimeStats.lifetime.hands}
+                    />
+                  ) : allTimeError ? (
+                    <div className="hand-empty" role="alert">
+                      Your All-Time Stats Could Not Be Loaded For The Trophy Room.{' '}
+                      <button className="hand-retry" onClick={() => setAllTimeReload((n) => n + 1)}>
+                        Try Again
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="hand-empty hand-loading">Loading Your All-Time Record...</div>
+                  )}
                 </PanelBoundary>
               </div>
             )}
@@ -2448,16 +2589,19 @@ export default function PlayerStatsPage() {
                   <div className="stats-section-header">
                     <h3 style={{ color: '#f59e0b' }}>Advanced Stats</h3>
                   </div>
-                  <PanelBoundary name="Advanced Stats">
-                    <AdvancedStatsSummary initialData={advancedInitialData} />
+                  <PanelBoundary name="Advanced Stats" resetKey={panelResetKey}>
+                    <AdvancedStatsSummary
+                      initialData={advancedInitialData}
+                      rangeLabel={rangeLabel}
+                    />
                   </PanelBoundary>
                 </div>
 
                 {/* Charts */}
-                <PanelBoundary name="Charts">
+                <PanelBoundary name="Charts" resetKey={panelResetKey}>
                   <Suspense
                     fallback={
-                      <div className="charts-section">
+                      <div className="charts-section hand-loading">
                         <div className="stats-section-header">
                           <h3 style={{ color: '#00d4ff' }}>Charts</h3>
                         </div>
@@ -2486,7 +2630,7 @@ export default function PlayerStatsPage() {
                 </PanelBoundary>
 
                 {/* Notable hands — every stat above used to be a dead end. */}
-                <PanelBoundary name="Notable Hands">
+                <PanelBoundary name="Notable Hands" resetKey={panelResetKey}>
                   <div>
                     <div className="stats-section-header">
                       <h3 style={{ color: '#f59e0b' }}>Notable Hands</h3>
@@ -2494,8 +2638,8 @@ export default function PlayerStatsPage() {
                     <div className="hand-mode-row">
                       {(
                         [
-                          ['biggest_won', 'Biggest Wins'],
-                          ['biggest_lost', 'Worst Losses'],
+                          ['biggest_won', 'Biggest Cash Wins'],
+                          ['biggest_lost', 'Worst Cash Losses'],
                           ['recent', 'Most Recent'],
                         ] as [HandMode, string][]
                       ).map(([mode, label]) => (
@@ -2509,7 +2653,9 @@ export default function PlayerStatsPage() {
                         </button>
                       ))}
                     </div>
-                    {handsLoading && <div className="hand-empty">Loading Hands...</div>}
+                    {handsLoading && (
+                      <div className="hand-empty hand-loading">Loading Hands...</div>
+                    )}
                     {!handsLoading && handsError && (
                       <div className="hand-empty" role="alert">
                         Could Not Load Notable Hands.{' '}
@@ -2522,7 +2668,11 @@ export default function PlayerStatsPage() {
                     all-time: ca_player_hands takes no window argument, so saying
                     "in this range" claimed a filter that does not exist. */}
                     {!handsLoading && !handsError && hands && hands.length === 0 && (
-                      <div className="hand-empty">No Hands Recorded Yet.</div>
+                      <div className="hand-empty">
+                        {handMode === 'recent'
+                          ? 'No Hands Recorded Yet.'
+                          : 'No Cash Hands Recorded Yet. Tournament Chips Are Not Ranked Here.'}
+                      </div>
                     )}
                     {!handsLoading && hands && hands.length > 0 && (
                       <div className="hand-list">
@@ -2569,8 +2719,12 @@ export default function PlayerStatsPage() {
                   <div className="stats-section-header">
                     <h3 style={{ color: '#3b82f6' }}>Cash Sessions</h3>
                   </div>
-                  <PanelBoundary name="Session History">
-                    <SessionHistory userId={targetUserId} initialSessions={sessionRows} />
+                  <PanelBoundary name="Session History" resetKey={panelResetKey}>
+                    <SessionHistory
+                      userId={targetUserId}
+                      initialSessions={sessionRows}
+                      rangeLabel={rangeLabel}
+                    />
                   </PanelBoundary>
                   {overall.tourney_hands > 0 && (
                     <div className="stats-notice">
@@ -2585,9 +2739,16 @@ export default function PlayerStatsPage() {
                   <div className="stats-section-header">
                     <h3 style={{ color: '#10b981' }}>Cash Bankroll</h3>
                   </div>
-                  <PanelBoundary name="Bankroll">
-                    <Suspense fallback={<div className="hand-empty">Loading Chart...</div>}>
-                      <BankrollTracker userId={targetUserId} initialSessions={sessionRows} />
+                  <PanelBoundary name="Bankroll" resetKey={panelResetKey}>
+                    <Suspense
+                      fallback={<div className="hand-empty hand-loading">Loading Chart...</div>}
+                    >
+                      <BankrollTracker
+                        userId={targetUserId}
+                        initialSessions={sessionRows}
+                        rangeLabel={rangeLabel}
+                        still={printing}
+                      />
                     </Suspense>
                   </PanelBoundary>
                 </div>

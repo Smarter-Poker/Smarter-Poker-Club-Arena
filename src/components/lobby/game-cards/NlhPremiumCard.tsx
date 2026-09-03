@@ -6,12 +6,19 @@ import type { ArenaGameCardActions, ArenaGameCardData } from './arenaGameCardTyp
 import { zoneText } from './arenaGameCardTypes';
 import { ArenaPremiumTitle, ArenaPremiumValueText } from './ArenaPremiumText';
 import { NLH_PREMIUM_ASSETS, NLH_PREMIUM_ZONES, premiumZoneStyle } from './nlhPremiumTemplate';
+import { premiumStatusBadge } from './premiumStatus';
+import { useFitText } from './useFitText';
 import './NlhPremiumCard.css';
 
 interface NlhPremiumCardProps {
   data: ArenaGameCardData;
   actions: ArenaGameCardActions;
 }
+
+/* The title's stylesheet stretch (scaleX) - useFitText must account for it
+   because transforms are invisible to scrollWidth. Keep in step with
+   `.arena-premium-text--title` in NlhPremiumCard.css. */
+const TITLE_SCALE_X = 1.04;
 
 function ArtLayer({
   src,
@@ -34,8 +41,44 @@ function ArtLayer({
   );
 }
 
+/**
+ * The status pill. RUNNING keeps its approved bitmap (glow and lettering are
+ * part of the artwork). Every other state - Empty, Full, Waitlist N, Paused -
+ * is live DOM text in the same pill, lit in its own colour, because the pill
+ * used to sit dark and blank for anything that was not running (Dan
+ * 2026-09-03, screenshots 2 and 7).
+ */
+function StatusBadge({ data }: { data: ArenaGameCardData }) {
+  if (data.status === 'running') {
+    return (
+      <>
+        <ArtLayer src={NLH_PREMIUM_ASSETS.liveDot} zone="liveDot" />
+        <ArtLayer src={NLH_PREMIUM_ASSETS.statusRunning} zone="status" />
+      </>
+    );
+  }
+  const badge = premiumStatusBadge(data);
+  return (
+    <div
+      className={`agc-nlh-premium__zone agc-nlh-premium__status agc-nlh-premium__status--${badge.tone}`}
+      data-zone="status"
+      data-status={data.status}
+      style={premiumZoneStyle(NLH_PREMIUM_ZONES.statusText)}
+    >
+      <span className="agc-nlh-premium__status-glow" aria-hidden="true" />
+      <span className="agc-nlh-premium__status-text">{badge.label}</span>
+    </div>
+  );
+}
+
 export function NlhPremiumCard({ data, actions }: NlhPremiumCardProps) {
-  const isRunning = data.status === 'running';
+  const titleRef = useFitText<HTMLElement>(data.title, TITLE_SCALE_X);
+  const titleZone =
+    data.status === 'running'
+      ? NLH_PREMIUM_ZONES.title
+      : data.subtitle
+        ? NLH_PREMIUM_ZONES.titleNoDot
+        : NLH_PREMIUM_ZONES.titleAlone;
 
   return (
     <div className="agc-nlh-premium">
@@ -47,30 +90,29 @@ export function NlhPremiumCard({ data, actions }: NlhPremiumCardProps) {
         draggable={false}
       />
 
-      {isRunning && (
-        <>
-          <ArtLayer src={NLH_PREMIUM_ASSETS.liveDot} zone="liveDot" />
-          <ArtLayer src={NLH_PREMIUM_ASSETS.statusRunning} zone="status" />
-        </>
-      )}
+      <StatusBadge data={data} />
 
       <div
         className="agc-nlh-premium__zone agc-nlh-premium__title"
         data-zone="title"
-        style={premiumZoneStyle(NLH_PREMIUM_ZONES.title)}
+        style={premiumZoneStyle(titleZone)}
       >
-        <ArenaPremiumTitle title={data.title}>{data.title}</ArenaPremiumTitle>
+        <ArenaPremiumTitle ref={titleRef} title={data.title}>
+          {data.title}
+        </ArenaPremiumTitle>
       </div>
 
-      <div
-        className="agc-nlh-premium__zone agc-nlh-premium__subtitle"
-        data-zone="subtitle"
-        style={premiumZoneStyle(NLH_PREMIUM_ZONES.subtitle)}
-      >
-        <ArenaPremiumValueText as="span" title={data.subtitle}>
-          {data.subtitle || ''}
-        </ArenaPremiumValueText>
-      </div>
+      {data.subtitle && (
+        <div
+          className="agc-nlh-premium__zone agc-nlh-premium__subtitle"
+          data-zone="subtitle"
+          style={premiumZoneStyle(NLH_PREMIUM_ZONES.subtitle)}
+        >
+          <ArenaPremiumValueText as="span" title={data.subtitle}>
+            {data.subtitle}
+          </ArenaPremiumValueText>
+        </div>
+      )}
 
       <ArtLayer src={NLH_PREMIUM_ASSETS.gameTypeNlh} zone="gameType" />
 

@@ -322,6 +322,24 @@ export class HorseSessionRotator {
     for (const [tableId, tableSeats] of byTable) {
       const t = (tableSeats[0] as any)?.tables;
       if (!isRetiringTable(t)) continue;
+      /* A PERSON OUTRANKS THE CLOSURE (2026-09-03).
+         Every other departure rule in this file protects a human's game -
+         never thin it below five, halve the leave pressure, hold the floor -
+         and the first draft of this loop had none of them: it took the first
+         horse it found, once a cycle, human or not. On a nine-handed table
+         that empties the person's game in twelve minutes and then strands
+         them, because retireSurplusTables refuses to close an occupied table
+         and the fleet refuses to re-seat a retiring one. Worse, every horse
+         that cashes out calls notifyWaitlistSeatOpen, so the drain would
+         offer the freed seats to MORE people.
+
+         A retiring table with a person at it simply stops draining. The
+         fleet still seats nobody new there, so it empties as its horses
+         leave for their own reasons, and it closes when the last player
+         stands up. A table nobody is playing closes in minutes; a table
+         somebody IS playing closes when they are done, which is the same
+         courtesy a real room extends. */
+      if (tableSeats.some((x) => !horseIds.has(x.user_id))) continue;
       const engine = this.getEngine(tableId);
       if (!engine) continue;
       const horseSeat = tableSeats.find((x) => horseIds.has(x.user_id));

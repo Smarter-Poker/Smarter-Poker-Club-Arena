@@ -787,6 +787,32 @@ export function satelliteRead(
   const seats = t.satelliteSeats ?? t.spotsPaid ?? 0;
   const left = t.playersLeft ?? 0;
   if (seats <= 0 || left <= seats) return NO_SATELLITE;
+  /* ═══════════════════════════════════════════════════════════════════════
+     A DUEL HAS NOBODY TO OUTLAST (2026-09-03)
+     ═══════════════════════════════════════════════════════════════════════
+     Every read below is bubble arithmetic: how many busts are still needed,
+     how many blinds the stack can pay while they happen, and therefore
+     whether a seat can be reached by SURVIVING rather than by winning. That
+     is the whole idea of satellite play, and it is meaningless two-handed.
+
+     With `left = 2` and `seats = 1` the arithmetic goes wrong in a way that
+     inverts strategy rather than merely blunting it. `bustsNeeded` is 1, so
+     `near` is true; `rank` counts stacks STRICTLY greater, so at equal stacks
+     BOTH players compute `rank = 1`; `rank <= seats` and a 15bb stack clears
+     the blind runway, so BOTH are `locked`; and `coversAll` cannot be true at
+     equal stacks. HorsePreflop then folds anything costing 12% of the stack
+     and refuses to open. The leader folds aces to a jam, and a human who
+     simply jams every hand takes the ticket.
+
+     The only route to a seat heads-up is to win the duel, which is ordinary
+     tournament play. The satellite layer switches off, and the ICM premium
+     carries the spot as it does in any other heads-up.
+
+     `left <= 2` rather than `=== 2`: a one-player read is not a bubble either.
+     The seats-first shape this protects is the satellite heads-up added
+     2026-09-03 (2 seats, 1 ticket), but the rule is about the count, not the
+     format - a 6-max satellite down to its last two hands is the same spot. */
+  if (left <= 2) return NO_SATELLITE;
   const bb = gs.bigBlind > 0 ? gs.bigBlind : 1;
   const heroChips = stackBB * bb;
   const stacks = Array.isArray(t.stacks) ? t.stacks : [];

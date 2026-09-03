@@ -1475,7 +1475,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // when the stored column is unreadable. See payoutStructure.ts.
         // bubble_protection + buy_in_amount (2026-08-22 parity): the stone
         // bubble's buy-in refund needs both.
-        'payout_structure, prize_pool, is_bounty, is_pko, is_mystery_bounty, bounty_amount, mystery_bounty_min, mystery_bounty_max, variant, tournament_type, spin_multiplier, bubble_protection, buy_in_amount'
+        'payout_structure, prize_pool, is_bounty, is_pko, is_mystery_bounty, bounty_amount, mystery_bounty_min, mystery_bounty_max, variant, tournament_type, satellite_target_id, spin_multiplier, bubble_protection, buy_in_amount'
       )
       .eq('id', this.tournamentId)
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
@@ -1511,7 +1511,27 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // TOURNEY-AUDIT 2026-07-24 (sweep 6): SATELLITES pay SEATS, not cash — the
     // award happens once at finishTournament (top finishers are registered
     // into the target tournament). Per-elimination cash would double-dip.
-    const isSatellite = (tournament as any)?.variant === 'satellite';
+    /* EVERY SPELLING OF A SATELLITE, NOT JUST THE VARIANT (2026-09-03).
+       This read `variant === 'satellite'` alone while the finish path 1,860
+       lines below reads `variant === 'satellite' || tournament_type ===
+       'SATELLITE'`. The two halves of the same rule disagreed, and the whole
+       point of the flag is that they must not: place 2..N is priced as CASH
+       here, and processSatelliteAwards pays the remainder there. A row the
+       first half misses and the second half catches is paid twice.
+
+       Nothing had been paid twice yet, and only by luck of a constant: the
+       satellite heads-up added today carries HEADS_UP_PAYOUTS, which is 100%
+       to place 1, so place 2 priced to exactly 0. A two-place structure on
+       any satellite would have turned that into live money.
+
+       satellite_target_id is the column that actually means "this pays a
+       seat" - it is what fn_award_satellite_seat, fn_satellite_conservation_audit
+       and fn_tournament_conservation_delta all key on - so it is included
+       here as the third and most durable spelling. */
+    const isSatellite =
+      (tournament as any)?.variant === 'satellite' ||
+      String((tournament as any)?.tournament_type ?? '').toUpperCase() === 'SATELLITE' ||
+      !!(tournament as any)?.satellite_target_id;
     if (!isSatellite && tournament) {
       // resolvePayoutStructure parses the stored column and, for a Spin whose
       // column is missing or malformed, rebuilds it from the canonical spec.

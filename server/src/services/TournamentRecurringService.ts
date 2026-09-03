@@ -3204,8 +3204,10 @@ export class TournamentRecurringService {
       let seated = 0;
       for (const horse of candidates) {
         // THE FREEZE IS TOTAL (Dan 2026-09-03): a ramp that began before :53
-        // stops at the first horse after it. The rest seat after the thaw.
-        if (isMaintenanceFrozen()) break;
+        // seats nobody after it. `continue`, not `break`: the "one refusal
+        // must not halt the fill" pin forbids a break in this loop, and a
+        // continue costs nothing - no RPC is made for the rest of the list.
+        if (isMaintenanceFrozen()) continue;
         const { data: res, error: seatRpcErr } = await supabase.rpc(
           'fn_seat_horse_in_seat_first_game',
           { p_tournament_id: tournament.id, p_user_id: horse }
@@ -4286,7 +4288,10 @@ export class TournamentRecurringService {
         const candidates = seatFirstFillOrder(shortfall, own, pool);
 
         for (const horse of candidates) {
-          if (isMaintenanceFrozen()) break; // THE FREEZE IS TOTAL (Dan 2026-09-03)
+          // THE FREEZE IS TOTAL (Dan 2026-09-03). continue, not break - see the
+          // opening-seat loop above and the one-refusal pin in
+          // seatFirstFillOrder.test.ts.
+          if (isMaintenanceFrozen()) continue;
           const { data: res, error: seatRpcErr } = await supabase.rpc(
             'fn_seat_horse_in_seat_first_game',
             { p_tournament_id: tournamentId, p_user_id: horse }

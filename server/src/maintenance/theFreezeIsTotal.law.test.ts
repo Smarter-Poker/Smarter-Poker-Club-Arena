@@ -9,17 +9,18 @@
  * Every pin below is a path that seated or registered a player during a
  * break on 2026-09-02, or the ordering bug that let it. Source-law pins,
  * because these are call sites in 4,000-line files that no unit test drives
- * end to end; each one reads the file and asserts the gate is where the
- * write is.
+ * end to end; each one slices the STRUCTURE the rule is about (a method body,
+ * a loop body) via the shared sourceWindow helpers, never a byte count.
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceMethod, sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 
 const SRC = resolve(__dirname, '..');
 const read = (rel: string) => readFileSync(resolve(SRC, rel), 'utf8');
 
-/** Index of `needle` in `hay`, or throws with a readable message. */
+/** Index of `needle` in `hay`, or a readable failure. */
 function at(hay: string, needle: string, label: string): number {
   const i = hay.indexOf(needle);
   expect(i, `${label}: expected to find ${JSON.stringify(needle)}`).toBeGreaterThan(-1);
@@ -37,18 +38,25 @@ function all(hay: string, needle: string): number[] {
   return out;
 }
 
-/** The gate must appear in the `window` characters before `index`. */
-function gatedBefore(hay: string, index: number, window: number, label: string) {
-  const before = hay.slice(Math.max(0, index - window), index);
-  expect(
-    before,
-    `${label} is not gated on isMaintenanceFrozen() within ${window} chars before it`
-  ).toMatch(/isMaintenanceFrozen\(\)/);
-}
+/** The body of the `for (...) {` loop whose header starts at `index`. */
+const loopBodyAt = (src: string, index: number, header: string): string =>
+  sliceMethod(src.slice(index), header);
+
+const GATE_RETURN = /isMaintenanceFrozen\(\)\)\s*return;/;
+
+/**
+ * Offset of the first I/O in a method body: the first `await` that is not the
+ * `withBoardTick` wrapper the launchers use to serialise themselves (the gate
+ * lives inside that wrapper, on purpose - the tick must still be recorded).
+ */
+const firstIo = (body: string): number => {
+  const m = /await (?!this\.withBoardTick\()/.exec(body);
+  return m ? m.index : Number.MAX_SAFE_INTEGER;
+};
 
 describe('the break is adopted before anything that can seat a player (GameServer boot order)', () => {
   const gs = read('GameServer.ts');
-  const startBody = gs.slice(at(gs, 'async start(): Promise<void> {', 'GameServer.start'));
+  const startBody = sliceMethod(gs, 'async start(): Promise<void> {');
 
   it('maintenanceBreak.start() is awaited before cash-table discovery begins', () => {
     const brk = at(startBody, 'await this.maintenanceBreak.start();', 'break adoption');
@@ -77,30 +85,43 @@ describe('every tournament start and top-up decision is gated on the freeze (Gam
   const gs = read('GameServer.ts');
 
   it('the registering-tournament discovery loop checks the freeze at its top', () => {
-    const i = at(gs, 'for (const tournament of registering || []) {', 'discovery loop');
-    const body = gs.slice(i, i + 700);
-    expect(body).toMatch(/isMaintenanceFrozen\(\)\)\s*break;/);
+    const header = 'for (const tournament of registering || []) {';
+    const body = loopBodyAt(gs, at(gs, header, 'discovery loop'), header);
+    // The gate is the first statement after the already-running skip.
+    const gate = at(body, 'if (isMaintenanceFrozen()) break;', 'freeze gate');
+    const firstWrite = at(body, 'topUpWithHorses(', 'top-up');
+    expect(gate).toBeLessThan(firstWrite);
   });
 
   it('both seat-first start loops check the freeze at their top', () => {
-    const loops = all(gs, 'for (const t of seatFirstRows) {');
+    const header = 'for (const t of seatFirstRows) {';
+    const loops = all(gs, header);
     expect(loops.length, 'the discovery pass and the fast lane').toBe(2);
     for (const i of loops) {
-      expect(gs.slice(i, i + 400)).toMatch(/isMaintenanceFrozen\(\)\)\s*break;/);
+      const body = loopBodyAt(gs, i, header);
+      const gate = at(body, 'if (isMaintenanceFrozen()) break;', `freeze gate in loop at ${i}`);
+      const start = at(body, 'new TournamentManager(', `start in loop at ${i}`);
+      expect(gate).toBeLessThan(start);
     }
   });
 });
 
 describe('every horse buy-in RPC call is gated on the freeze', () => {
-  it('TournamentRecurringService: each seat / register RPC has a gate right before it', () => {
+  it('TournamentRecurringService: each seat / register RPC sits in a loop body that checks the freeze first', () => {
     const src = read('services/TournamentRecurringService.ts');
-    for (const rpc of [
-      "'fn_seat_horse_in_seat_first_game'",
-      "'fn_register_horse_for_tournament'",
-    ]) {
-      const sites = all(src, `rpc(\n          ${rpc}`).concat(all(src, `rpc(\n            ${rpc}`));
+    for (const rpc of ['fn_seat_horse_in_seat_first_game', 'fn_register_horse_for_tournament']) {
+      const sites = all(src, `'${rpc}'`).filter((i) => /rpc\(\s*$/.test(src.slice(i - 40, i)));
       expect(sites.length, `${rpc} call sites`).toBeGreaterThan(0);
-      for (const i of sites) gatedBefore(src, i, 450, `${rpc} at ${i}`);
+      sites.forEach((i, k) => {
+        // The innermost block open at the string literal is the loop body:
+        // the rpc(...) argument object opens AFTER the literal.
+        const block = sliceEnclosingBlock(src, `'${rpc}'`, k, 1);
+        const gate = block.search(/isMaintenanceFrozen\(\)\)\s*(continue|break);/);
+        expect(gate, `${rpc} at ${i}: the loop body has no freeze check`).toBeGreaterThan(-1);
+        expect(gate, `${rpc} at ${i}: the freeze check comes after the RPC`).toBeLessThan(
+          block.indexOf(rpc)
+        );
+      });
     }
   });
 
@@ -112,34 +133,43 @@ describe('every horse buy-in RPC call is gated on the freeze', () => {
       'private async checkAndLaunchSpins(): Promise<void> {',
       'private async checkAndLaunchXMTTs(): Promise<void> {',
     ]) {
-      const i = at(src, m, m);
-      expect(src.slice(i, i + 700), `${m} does not gate itself`).toMatch(
-        /isMaintenanceFrozen\(\)\)\s*return;/
-      );
+      const body = sliceMethod(src, m);
+      const gate = body.search(GATE_RETURN);
+      expect(gate, `${m} does not gate itself`).toBeGreaterThan(-1);
+      expect(gate, `${m}: the gate comes after the first I/O`).toBeLessThan(firstIo(body));
     }
-    const t = at(src, 'async topUpWithHorses(', 'topUpWithHorses');
-    expect(src.slice(t, t + 500)).toMatch(/isMaintenanceFrozen\(\)\)\s*return 0;/);
+    const top = sliceMethod(src, 'async topUpWithHorses(');
+    const gate = top.search(/isMaintenanceFrozen\(\)\)\s*return 0;/);
+    expect(gate, 'topUpWithHorses does not gate itself').toBeGreaterThan(-1);
+    expect(gate).toBeLessThan(firstIo(top));
   });
 
   it('HorseFleetManager: the seeding cycle and the seat itself are gated', () => {
     const src = read('services/HorseFleetManager.ts');
-    const seed = at(src, 'private async seedAllTables(): Promise<void> {', 'seedAllTables');
-    expect(src.slice(seed, seed + 400)).toMatch(/isMaintenanceFrozen\(\)\)\s*return;/);
-    const buy = at(src, "rpc('atomic_table_buyin'", 'atomic_table_buyin');
-    gatedBefore(src, buy, 1800, 'atomic_table_buyin');
+    const seed = sliceMethod(src, 'private async seedAllTables(): Promise<void> {');
+    const seedGate = seed.search(GATE_RETURN);
+    expect(seedGate, 'seedAllTables does not gate itself').toBeGreaterThan(-1);
+    expect(seedGate).toBeLessThan(firstIo(seed));
+
+    const seat = sliceMethod(src, 'private async seatHorse(');
+    const seatGate = seat.search(/isMaintenanceFrozen\(\)\)\s*return false;/);
+    expect(seatGate, 'seatHorse does not gate itself').toBeGreaterThan(-1);
+    expect(seatGate).toBeLessThan(at(seat, "rpc('atomic_table_buyin'", 'atomic_table_buyin'));
   });
 
   it('ScheduledTournamentService: the poll gates itself', () => {
     const src = read('services/ScheduledTournamentService.ts');
-    const p = at(src, 'private async poll(): Promise<void> {', 'poll');
-    expect(src.slice(p, p + 400)).toMatch(/isMaintenanceFrozen\(\)\)\s*return;/);
+    const poll = sliceMethod(src, 'private async poll(): Promise<void> {');
+    const gate = poll.search(GATE_RETURN);
+    expect(gate, 'poll does not gate itself').toBeGreaterThan(-1);
+    expect(gate).toBeLessThan(poll.indexOf('this.polling = true;'));
   });
 });
 
 describe('the break is idle before the first table is woken (MaintenanceBreak.end)', () => {
   it("phase = 'idle' precedes resumeEveryEngine() inside end()", () => {
     const src = read('maintenance/MaintenanceBreak.ts');
-    const end = src.slice(at(src, 'async end(): Promise<void> {', 'end()'));
+    const end = sliceMethod(src, 'async end(): Promise<void> {');
     const idle = at(end, "this.phase = 'idle';", 'phase idle');
     const resume = at(end, 'this.resumeEveryEngine()', 'resume');
     expect(
@@ -159,10 +189,17 @@ describe('the database backstop exists and exempts no role', () => {
 
   it('guards all three doors and never mentions service_role inside the guard', () => {
     const sql = readFileSync(resolve(dir, file!), 'utf8');
-    const fn = sql.slice(
-      at(sql, 'CREATE OR REPLACE FUNCTION public.fn_refuse_new_entries_while_frozen()', 'guard fn'),
-      at(sql, 'COMMENT ON FUNCTION public.fn_refuse_new_entries_while_frozen()', 'guard comment')
+    const fnStart = at(
+      sql,
+      'CREATE OR REPLACE FUNCTION public.fn_refuse_new_entries_while_frozen()',
+      'guard fn'
     );
+    const fnEnd = at(
+      sql,
+      'COMMENT ON FUNCTION public.fn_refuse_new_entries_while_frozen()',
+      'guard comment'
+    );
+    const fn = sql.slice(fnStart, fnEnd);
     expect(fn).not.toMatch(/service_role/);
     expect(fn).toMatch(/fn_freeze_bypass_active\(\)/);
     expect(fn).toMatch(/fn_platform_frozen\(\)/);
@@ -178,6 +215,5 @@ describe('the database backstop exists and exempts no role', () => {
     const orig = readdirSync(dir).find((f) => f.includes('the_platform_freezes_at_the_tables'));
     expect(orig).toBeTruthy();
     expect(readFileSync(resolve(dir, orig!), 'utf8')).toMatch(/'service_role'/);
-    expect(existsSync(resolve(dir, orig!))).toBe(true);
   });
 });

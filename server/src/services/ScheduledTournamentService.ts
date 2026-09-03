@@ -36,7 +36,7 @@ import { supabase } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
 import { buyInFor, rakeRateFor, wholeChips } from '../config/buyIn.js';
-import { TournamentRecurringService } from './TournamentRecurringService.js';
+import { TournamentRecurringService, MTT_PUBLISH_LEAD_MS } from './TournamentRecurringService.js';
 import { buildLadder, type GeneratedBlindLevel } from '../tournament/blindLadder.js';
 import { SPIN_SEATS, SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
 import {
@@ -278,6 +278,21 @@ export function intervalSpawnKey(scheduleId: string, now: Date): string {
 // CONFIG → tournaments ROW MAPPING
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * The minimum lead a RESTARTED clone is published with, in ms.
+ *
+ * A clone with no guarantee keeps the historic two-minute floor - it cannot
+ * overlay, and a quick restart is what keeps the board from going quiet. A
+ * clone that inherited a guarantee gets the full MTT_PUBLISH_LEAD_MS, because
+ * that is the window HorseOverlayGuard (2-minute poll) and MttPrestartRamp
+ * (45-second tick) need in order to fill it before the gun.
+ */
+export const RESTART_MIN_LEAD_MS = 2 * 60 * 1000;
+
+export function restartLeadMsFor(guaranteedPrize: number): number {
+  return Number(guaranteedPrize) > 0 ? MTT_PUBLISH_LEAD_MS : RESTART_MIN_LEAD_MS;
+}
+
 /** Same normalization fn_create_tournament and TournamentRecurringService use. */
 const GAME_TYPE_MAP: Record<string, string> = {
   nlh: 'NLH',
@@ -464,6 +479,9 @@ export class ScheduledTournamentService {
   // ─────────────────────────────────────────────────────────────────────────
 
   private async poll(): Promise<void> {
+    // THE FREEZE IS TOTAL (Dan 2026-09-03): start() polls once immediately; gate
+    // the poll itself, not only the interval that schedules it.
+    if (isMaintenanceFrozen()) return;
     if (this.polling) return;
     this.polling = true;
     try {
@@ -1384,8 +1402,32 @@ export class ScheduledTournamentService {
     if (cloneErr || cloneCount === null || cloneCount === undefined || cloneCount > 0) return;
 
     const restartMinutes = Number(old.restart_every_minutes) || 0;
+
+    /**
+     * A GUARANTEED CLONE MUST OUTLIVE ONE OVERLAY-GUARD CYCLE (2026-09-02).
+     *
+     * `guaranteed_prize` is in RESTART_COPY_COLUMNS, so a restarted clone
+     * inherits the guarantee - and this line used to publish it two minutes
+     * before the gun. HorseOverlayGuard polls `fn_overlay_at_risk` every two
+     * minutes and MttPrestartRamp ticks every 45 seconds, so a two-minute-old
+     * event gets AT MOST one attempt and usually none. Both guards were
+     * working; they were being handed an event that no longer existed in the
+     * future by the time they looked.
+     *
+     * Measured over 2026-08-31..2026-09-02: 553 of 554 guaranteed events ran
+     * an overlay, ~22,300 chips a day. 165 of ~195 (85%) had been published
+     * between 0.8 and 5.0 minutes before start; the four published at the
+     * intended MTT_PUBLISH_LEAD_MS are not in the bleed.
+     *
+     * So a clone that carries a guarantee gets the same lead a scheduled
+     * event gets. A clone with NO guarantee keeps the two-minute floor: it
+     * cannot overlay, and a fast restart is what keeps the board alive.
+     */
     const startTime = new Date(
-      Math.max(Date.now() + 2 * 60 * 1000, endedAt.getTime() + restartMinutes * 60 * 1000)
+      Math.max(
+        Date.now() + restartLeadMsFor(Number(old.guaranteed_prize) || 0),
+        endedAt.getTime() + restartMinutes * 60 * 1000
+      )
     );
 
     const row: Record<string, unknown> = {

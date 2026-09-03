@@ -56,7 +56,11 @@ export default function GameCreationActions({
 
   return (
     <div
-      className={`${styles.actions} ${compact ? styles.compact : ''} ${desktopOnly ? styles.desktopOnly : ''}`}
+      /* Joined rather than interpolated: two false ternaries left a trailing
+         double space in the class attribute on every non-compact render. */
+      className={[styles.actions, compact && styles.compact, desktopOnly && styles.desktopOnly]
+        .filter(Boolean)
+        .join(' ')}
       aria-label="Create Games"
     >
       {shown.map((action) => (

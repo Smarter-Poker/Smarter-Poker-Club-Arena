@@ -18,6 +18,11 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { uuid } from '../utils/uuid';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
+import {
+  playerDisplayName,
+  PLAYER_NAME_COLUMNS,
+  type NameableProfile,
+} from '../utils/playerDisplayName';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -138,11 +143,11 @@ class AgentServiceClass {
     }
 
     // Fetch all profiles in one query
-    const profileMap: Record<string, { display_name?: string; avatar_url?: string }> = {};
+    const profileMap: Record<string, NameableProfile & { avatar_url?: string }> = {};
     if (allUserIds.size > 0) {
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, display_name, avatar_url:arena_avatar_url')
+        .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
         .in('id', [...allUserIds]);
       if (profiles) {
         for (const p of profiles) profileMap[p.id] = p;
@@ -158,7 +163,7 @@ class AgentServiceClass {
       status: a.status as AgentStatus,
       parentAgentId: a.parent_agent_id,
       parentAgentName: a.parent_agent_id
-        ? profileMap[parentMap[a.parent_agent_id]]?.display_name
+        ? playerDisplayName(profileMap[parentMap[a.parent_agent_id]])
         : undefined,
       commissionRate: Number(a.commission_rate),
       playerRakebackRate: Number(a.player_rakeback_rate),
@@ -173,7 +178,7 @@ class AgentServiceClass {
       subAgentCount: a.sub_agent_count,
       weeklyRakeGenerated: Number(a.weekly_rake_generated),
       lifetimeEarnings: Number(a.lifetime_earnings),
-      displayName: profileMap[a.user_id]?.display_name,
+      displayName: playerDisplayName(profileMap[a.user_id]),
       avatarUrl: profileMap[a.user_id]?.avatar_url,
       joinedAt: a.joined_at,
       lastActiveAt: a.last_active_at,
@@ -200,10 +205,10 @@ class AgentServiceClass {
       if (data.user_id) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('display_name, avatar_url:arena_avatar_url')
+          .select(`${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
           .eq('id', data.user_id)
           .maybeSingle();
-        displayName = profile?.display_name;
+        displayName = playerDisplayName(profile);
         avatarUrl = profile?.avatar_url;
       }
       if (data.parent_agent_id) {
@@ -215,10 +220,10 @@ class AgentServiceClass {
         if (parent?.user_id) {
           const { data: parentProfile } = await supabase
             .from('profiles')
-            .select('display_name')
+            .select(PLAYER_NAME_COLUMNS)
             .eq('id', parent.user_id)
             .maybeSingle();
-          parentAgentName = parentProfile?.display_name;
+          parentAgentName = playerDisplayName(parentProfile);
         }
       }
     } catch (e) {
@@ -822,12 +827,12 @@ class AgentServiceClass {
     const userIds = data.map((m) => m.user_id);
     const profileMap: Record<
       string,
-      { display_name?: string; avatar_url?: string; is_online?: boolean }
+      NameableProfile & { avatar_url?: string; is_online?: boolean }
     > = {};
     try {
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, display_name, avatar_url:arena_avatar_url, is_online')
+        .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, is_online`)
         .in('id', userIds);
       if (profiles) {
         for (const p of profiles) profileMap[p.id] = p;
@@ -840,7 +845,7 @@ class AgentServiceClass {
     return data.map((m) => ({
       id: `${m.club_id}:${m.user_id}`,
       userId: m.user_id,
-      displayName: profileMap[m.user_id]?.display_name || 'Unknown',
+      displayName: playerDisplayName(profileMap[m.user_id]),
       avatarUrl: profileMap[m.user_id]?.avatar_url,
       chipBalance: m.chip_balance || 0,
       rakebackPercent: 0, // rakeback_percent column does not exist yet
@@ -1199,10 +1204,10 @@ class AgentServiceClass {
     const toUserIds = [...new Set(data.map((t) => t.to_user_id))];
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, display_name')
+      .select(`id, ${PLAYER_NAME_COLUMNS}`)
       .in('id', toUserIds);
 
-    const nameMap = new Map(profiles?.map((p) => [p.id, p.display_name || 'Unknown']) || []);
+    const nameMap = new Map(profiles?.map((p) => [p.id, playerDisplayName(p)]) || []);
 
     return data.map((t) => {
       const elapsed = Date.now() - new Date(t.created_at).getTime();

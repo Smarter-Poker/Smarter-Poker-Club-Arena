@@ -102,6 +102,7 @@ import MaintenanceBreakBanner from '../components/common/MaintenanceBreakBanner'
 import HouseAdCard from '../components/ads/HouseAdCard';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
+import { playerDisplayName } from '../utils/playerDisplayName';
 import ClubOwnerMessage from '../components/club/ClubOwnerMessage';
 import AdvancedFilters, {
   loadFilters,
@@ -4352,7 +4353,21 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                   : null
             }
             logoFallback={<span>&#9824;</span>}
-            pokerAlias={currentUser?.display_name || currentUser?.username || 'Player'}
+            /* THE CARD SHOWS THE POKER ALIAS, NEVER THE REAL NAME (Dan
+               2026-09-02): "THE REAL NAME SHOULD NEVER BE DISPLAYED, IT SHOULD
+               ALWAYS BE USING THE POKER ALIAS - KingFish instead of the real
+               name here."
+
+               This read `display_name || username`, and `display_name` holds
+               the legal name on 264 of 1,308 production rows - Dan's own among
+               them, which is why his card said "Dan Bekavac" while the alias
+               "KingFish" sat unread one column away.
+
+               `playerDisplayName(_, 'arena')` is the house resolver, and it
+               already encodes this same instruction from 2026-08-23: "IM DAN
+               BEKAVAC ON SOCIAL AND KINGFISH IN THE CLUB ARENA." The prop is
+               called pokerAlias; it now actually carries one. */
+            pokerAlias={playerDisplayName(currentUser, 'arena')}
             clubId={club.club_id}
             playerId={currentUser?.player_number}
             level={clubLevel?.level}
@@ -4403,7 +4418,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 reportError(err, 'ClubHomePage.share_ref_lookup_failed');
               }
               const shareUrl = `${window.location.origin}/hub/club-arena/invite/${club.id}${refQuery}`;
-              const inviterName = currentUser?.display_name || currentUser?.username || 'A player';
+              /* The same leak as the card, and further out: this string is
+                 handed to the OS share sheet, so `display_name` was carrying a
+                 player's legal name into WhatsApp, SMS and anywhere else the
+                 invite was forwarded. An invite to a poker club is signed with
+                 the handle. */
+              const inviterName = playerDisplayName(currentUser, 'arena');
               const playerNumText = profRefNum ? `\nYour Referral Number: ${profRefNum}` : '';
               const shareText = `${inviterName} invited you to join ${club.name}!\n\nClub ID: ${club.club_id}${playerNumText}`;
 

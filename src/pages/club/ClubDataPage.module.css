@@ -390,7 +390,10 @@
 
 .presets {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* Was repeat(3, 1fr) for 1/7/14. The 30 and 90 day windows made a fourth and
+     fifth column, and a fixed three-column grid wrapped them into a second row
+     that overflowed the control deck on narrow screens. */
+  grid-template-columns: repeat(auto-fit, minmax(52px, 1fr));
   gap: 2px;
   padding: 3px;
   border: 1px solid rgba(174, 189, 203, 0.18);
@@ -400,6 +403,7 @@
 
 .preset {
   min-height: 44px;
+  padding: 0 0.3rem;
   border: 0;
   border-bottom: 1px solid transparent;
   border-radius: 1px;
@@ -1470,4 +1474,32 @@
     animation: none;
     transform: none;
   }
+}
+
+/* A house player, marked. Small, lower-contrast than the name it follows, and
+   never coloured like a warning - a horse is ordinary, it just is not a
+   person, and an owner needs to see which is which at a glance. */
+.horseTag {
+  margin-left: 0.45rem;
+  padding: 0.08rem 0.34rem;
+  color: #b9a06a;
+  background: rgba(211, 164, 73, 0.12);
+  border: 1px solid rgba(211, 164, 73, 0.28);
+  border-radius: 2px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* Says the totals beside it describe the rows on screen rather than the
+   window, which stops being true the moment a filter is on. */
+.playerTotalsScope {
+  color: #6f7e8c;
+  font-size: 0.62rem;
+  font-style: italic;
+  letter-spacing: 0.02em;
 }

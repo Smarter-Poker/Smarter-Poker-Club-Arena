@@ -306,6 +306,13 @@ BEGIN
 END;
 $function$;
 
+-- Internal writers: the trigger chain and operators call these, browsers do
+-- not. recompute_club_levels (the button) keeps its own owner/admin guard.
+REVOKE ALL ON FUNCTION public.recompute_club_levels_silent(uuid, boolean) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.recompute_union_levels(uuid, boolean) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.recompute_club_levels_silent(uuid, boolean) TO service_role;
+GRANT EXECUTE ON FUNCTION public.recompute_union_levels(uuid, boolean) TO service_role;
+
 -- Two of the three club_members level writers were the retired ladder. Their
 -- trigger functions become no-ops (retiring them without a table lock); the
 -- one writer that remains is trg_sync_club_member_count.

@@ -51,6 +51,7 @@ import styles from './ClubDashboard.module.css';
 import { reportError } from '../../utils/errorReporter';
 import { clubGamesOrFilter } from '../../utils/unionScope';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
+import { playerDisplayName } from '../../utils/playerDisplayName';
 
 interface ClubInfo {
   id: string;
@@ -1829,11 +1830,7 @@ export default function ClubDashboard() {
 
       {clubId && user?.id && (
         <div style={{ padding: '0 16px 80px', maxWidth: '100%' }}>
-          <ClubChat
-            clubId={clubId}
-            userId={user.id}
-            userName={user.display_name || user.username || 'Player'}
-          />
+          <ClubChat clubId={clubId} userId={user.id} userName={playerDisplayName(user)} />
         </div>
       )}
     </div>

@@ -16,6 +16,11 @@ import { showDiamondTopUp } from '../common/DiamondTopUpToast';
 import { useToast } from '../common/Toast';
 import styles from './PlayerNotesPanel.module.css';
 import { reportError } from '../../utils/errorReporter';
+import {
+  playerDisplayName,
+  PLAYER_NAME_COLUMNS,
+  type NameableProfile,
+} from '../../utils/playerDisplayName';
 
 interface PlayerNote {
   id: string;
@@ -112,12 +117,12 @@ export default function PlayerNotesPanel({
     if (!error && data) {
       // Batch-fetch target profiles separately (safe, no FK hint)
       const tIds = [...new Set(data.map((n: any) => n.target_user_id).filter(Boolean))];
-      const pMap: Record<string, { display_name?: string; avatar_url?: string }> = {};
+      const pMap: Record<string, NameableProfile & { avatar_url?: string }> = {};
       if (tIds.length > 0) {
         try {
           const { data: profs } = await supabase
             .from('profiles')
-            .select('id, display_name, avatar_url:arena_avatar_url')
+            .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
             .in('id', tIds);
           if (profs) for (const p of profs) pMap[p.id] = p;
         } catch (e) {
@@ -128,7 +133,7 @@ export default function PlayerNotesPanel({
       const mapped: PlayerNote[] = data.map((n: any) => ({
         id: n.id,
         targetUserId: n.target_user_id,
-        targetName: pMap[n.target_user_id]?.display_name || 'Unknown',
+        targetName: playerDisplayName(pMap[n.target_user_id]),
         targetAvatar: pMap[n.target_user_id]?.avatar_url,
         note: n.notes,
         tags: n.tags || [],

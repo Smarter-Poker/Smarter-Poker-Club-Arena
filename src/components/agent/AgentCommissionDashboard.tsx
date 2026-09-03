@@ -15,6 +15,11 @@ import { useToast } from '../common/Toast';
 import './AgentCommissionDashboard.css';
 import { reportError } from '../../utils/errorReporter';
 import { CommissionService } from '../../services/CommissionService';
+import {
+  playerDisplayName,
+  PLAYER_NAME_COLUMNS,
+  type NameableProfile,
+} from '../../utils/playerDisplayName';
 
 interface CommissionSummary {
   totalEarned: number;
@@ -271,7 +276,7 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
           try {
             const { data: profiles } = await supabase
               .from('profiles')
-              .select('id, display_name, avatar_url:arena_avatar_url')
+              .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
               .in('id', subAgentUserIds);
             if (profiles) {
               for (const p of profiles) subProfileMap[p.id] = p;
@@ -285,8 +290,7 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
         setSubAgents(
           subAgentsData.map((a: any) => ({
             id: a.id,
-            username:
-              subProfileMap[a.user_id]?.display_name || a.user_id?.substring(0, 8) || 'Unknown',
+            username: playerDisplayName(subProfileMap[a.user_id]),
             avatarUrl: subProfileMap[a.user_id]?.avatar_url || '',
             totalPlayers: a.total_players || 0,
             totalCommission: downlineFailed ? null : (downlineOwed[a.id] ?? 0),

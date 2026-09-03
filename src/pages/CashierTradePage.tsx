@@ -80,6 +80,7 @@ import { DEFAULT_CASHIER_WALLET, secondsLeftFromServer } from '../components/wal
 import { canSeeClubBank, canHoldAgentWallet } from '../components/wallet/walletRows';
 import { describeChipTransaction, walletRoute } from '../components/wallet/describeChipTransaction';
 import styles from './CashierTradePage.module.css';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -990,14 +991,14 @@ export default function CashierTradePage() {
       const { data: profs, error: profilesError } = ids.size
         ? await supabase
             .from('profiles')
-            .select('id, display_name, username')
+            .select(`id, ${PLAYER_NAME_COLUMNS}`)
             .in('id', Array.from(ids))
         : { data: [], error: null };
       // The ledger itself is authoritative. A profile outage must not hide
       // the money rows, but reconciliation must report the degraded name
       // surface rather than announcing complete success.
       if (profilesError) reportError(profilesError, 'CashierTradePage.recordProfiles');
-      const nameOf = new Map((profs || []).map((p) => [p.id, p.display_name || p.username]));
+      const nameOf = new Map((profs || []).map((p) => [p.id, playerDisplayName(p)]));
       if (!isMounted.current || seq !== recordSeqRef.current) return false;
       setRecordsHasMore((data || []).length > recordsLimit);
       setRecords(
@@ -1067,17 +1068,13 @@ export default function CashierTradePage() {
       if (ids.length > 0) {
         const { data: profs, error: profilesError } = await supabase
           .from('profiles')
-          .select('id, display_name, username')
+          .select(`id, ${PLAYER_NAME_COLUMNS}`)
           .in('id', ids);
         if (profilesError) {
           complete = false;
           reportError(profilesError, 'CashierTradePage.requestProfiles');
         }
-        for (const pr of profs || [])
-          names.set(
-            pr.id as string,
-            (pr.display_name as string) || (pr.username as string) || 'Player'
-          );
+        for (const pr of profs || []) names.set(pr.id as string, playerDisplayName(pr as any));
       }
       if (!isMounted.current || seq !== reqSeqRef.current) return false;
       setPendingCount(visible.length);
@@ -1137,17 +1134,13 @@ export default function CashierTradePage() {
       if (ids.size > 0) {
         const { data: profs, error: profilesError } = await supabase
           .from('profiles')
-          .select('id, display_name, username')
+          .select(`id, ${PLAYER_NAME_COLUMNS}`)
           .in('id', Array.from(ids));
         if (profilesError) {
           complete = false;
           reportError(profilesError, 'CashierTradePage.ticketProfiles');
         }
-        for (const pr of profs || [])
-          names.set(
-            pr.id as string,
-            (pr.display_name as string) || (pr.username as string) || 'Member'
-          );
+        for (const pr of profs || []) names.set(pr.id as string, playerDisplayName(pr as any));
       }
       if (!isMounted.current || seq !== ticketSeqRef.current) return false;
       setTickets(

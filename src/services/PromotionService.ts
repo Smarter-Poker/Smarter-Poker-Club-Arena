@@ -9,6 +9,11 @@ import { supabase } from '../lib/supabase';
 import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
+import {
+  playerDisplayName,
+  PLAYER_NAME_COLUMNS,
+  type NameableProfile,
+} from '../utils/playerDisplayName';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 
@@ -324,7 +329,7 @@ class PromotionServiceClass {
                 rank,
                 score,
                 prize,
-                profiles(id, username, display_name, avatar_url:arena_avatar_url)
+                profiles(id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url)
             `
       )
       .eq('promotion_id', promotionId)
@@ -334,17 +339,17 @@ class PromotionServiceClass {
     if (error || !data) return [];
 
     return data.map((entry: any) => {
-      const profile = entry.profiles as {
-        id: string;
-        username: string;
-        display_name: string;
-        avatar_url?: string;
-      } | null;
+      const profile = entry.profiles as
+        | (NameableProfile & {
+            id: string;
+            avatar_url?: string;
+          })
+        | null;
       return {
         rank: entry.rank,
         userId: profile?.id || '',
-        username: profile?.username || '',
-        displayName: profile?.display_name || '',
+        username: playerDisplayName(profile),
+        displayName: playerDisplayName(profile),
         avatarUrl: profile?.avatar_url,
         score: entry.score,
         prize: entry.prize,

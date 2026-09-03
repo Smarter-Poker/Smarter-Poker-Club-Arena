@@ -12,6 +12,7 @@ import { persist } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
 import { clearCachedIdentity } from '../lib/cachedIdentity';
+import { PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -32,6 +33,30 @@ export interface UserProfile {
   id: string;
   username: string;
   display_name: string | null;
+  /**
+   * THE COLUMNS `playerDisplayName` NEEDS (Dan 2026-09-02).
+   *
+   * "THE REAL NAME SHOULD NEVER BE DISPLAYED, IT SHOULD ALWAYS BE USING THE
+   * POKER ALIAS."
+   *
+   * The store carried `username` and `display_name` and nothing else, so every
+   * screen reading from it could only choose between a login handle and a
+   * column that holds the LEGAL NAME on 264 of 1,308 production rows. The club
+   * card chose `display_name` and greeted Dan as "Dan Bekavac" rather than
+   * "KingFish" - not because the card picked wrongly, but because the alias it
+   * should have shown was never loaded.
+   *
+   * These are the fields `NameableProfile` resolves over. All eight are granted
+   * to `authenticated`, verified against the live schema before being added -
+   * see the note on the select in loadProfile: ONE ungranted column 403s the
+   * whole statement, and the store then silently never populates.
+   */
+  alias?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  full_name?: string | null;
+  display_name_preference?: string | null;
+  use_real_name?: boolean | null;
   avatar_url: string | null;
   vip_level: 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond';
   player_number?: number;
@@ -124,20 +149,68 @@ export const useUserStore = create<UserState>()(
       },
 
       setUser: (userData: Partial<UserProfile> & { id: string }) => {
+        /* ── A PARTIAL WRITE MAY NOT ERASE WHAT A FULL ONE ESTABLISHED ───────
+           Dan 2026-09-03: "IT SHOULD SAY THE POKER ALIAS (KingFish) NOT DAN
+           BEKAVAC."
+
+           This built the object from `userData` alone, so every call REPLACED
+           the stored user. Five call sites pass a partial - two in IdentityDNA,
+           two in AuthGuard, one in useAuthUser - and each carries only
+           `id, username, display_name, avatar_url` off the JWT. So the sequence
+           that actually runs on a cold load was:
+
+             loadProfile()           -> alias 'KingFish' lands in the store
+             IdentityDNA background  -> setUser(partial) wipes it back to null
+
+           and `playerDisplayName(user, 'arena')`, finding no alias, fell
+           through to `display_name` - which on this account holds the LEGAL
+           NAME (profiles.username 'kingfish', alias 'KingFish', display_name
+           and full_name both 'Dan Bekavac'). The club card said "Dan Bekavac".
+           Adding the alias to loadProfile's select on 2026-09-02 could not fix
+           that by itself, because the erasing write lands afterwards.
+
+           Merging over the previous row for the SAME id makes the order stop
+           mattering: whichever call knows the alias, the store keeps it. A
+           different id is an account switch and still replaces outright -
+           never carry one person's name into another's session. */
+        const previous = get().user;
+        const base: Partial<UserProfile> = previous && previous.id === userData.id ? previous : {};
+        const pick = <K extends keyof UserProfile>(key: K): UserProfile[K] =>
+          userData[key] !== undefined
+            ? (userData[key] as UserProfile[K])
+            : (base[key] as UserProfile[K]);
+
+        const username = pick('username') || 'Player';
         const user: UserProfile = {
           id: userData.id,
-          username: userData.username || 'Player',
-          display_name: userData.display_name || userData.username || 'Player',
-          avatar_url: userData.avatar_url || null,
-          vip_level: userData.vip_level || 'bronze',
-          player_number: userData.player_number,
-          stats: userData.stats || DEFAULT_STATS,
-          created_at: userData.created_at || new Date().toISOString(),
+          username,
+          display_name: pick('display_name') || username,
+          /* The same name fields as loadProfile. setUser is the path used by
+             the auth listener and the identity cache, so a user who arrives
+             through it rather than through loadProfile must not end up with a
+             store that cannot resolve their alias. */
+          alias: pick('alias') ?? null,
+          first_name: pick('first_name') ?? null,
+          last_name: pick('last_name') ?? null,
+          full_name: pick('full_name') ?? null,
+          display_name_preference: pick('display_name_preference') ?? null,
+          use_real_name: pick('use_real_name') ?? null,
+          avatar_url: pick('avatar_url') || null,
+          vip_level: pick('vip_level') || 'bronze',
+          player_number: pick('player_number'),
+          stats: pick('stats') || DEFAULT_STATS,
+          created_at: pick('created_at') || new Date().toISOString(),
         };
+        /* Same hazard, same rule: `chip_balance` is absent from every partial
+           hydration, and `|| 0` turned that absence into a balance of zero.
+           A player watched their chip total blink to 0 whenever the auth
+           listener re-fired. Only a write that actually carries a balance may
+           change one. */
+        const incomingChips = (userData as unknown as { chip_balance?: number }).chip_balance;
         set({
           user,
           isAuthenticated: true,
-          totalChips: (userData as any).chip_balance || 0,
+          ...(incomingChips === undefined ? {} : { totalChips: incomingChips || 0 }),
         });
       },
 
@@ -159,7 +232,15 @@ export const useUserStore = create<UserState>()(
           const { data, error } = await supabase
             .from('profiles')
             .select(
-              'id, username, display_name, avatar_url:arena_avatar_url, tier, created_at, player_number'
+              /* PLAYER_NAME_COLUMNS rather than a hand-written list: it is the
+                 one place that says which columns `playerDisplayName` needs,
+                 and a screen that resolves a name from a store missing one of
+                 them silently falls through to the wrong answer - which is how
+                 the club card came to print a real name. Every column in it is
+                 granted to `authenticated` (checked against the live schema);
+                 if that ever stops being true this select 403s WHOLE, per the
+                 note above, so add to that constant with the same care. */
+              `id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, tier, created_at, player_number`
             )
             .eq('id', userId)
             .maybeSingle();
@@ -182,6 +263,15 @@ export const useUserStore = create<UserState>()(
             id: data.id,
             username: data.username || 'Player',
             display_name: data.display_name,
+            /* Carried through so `playerDisplayName` can do its job from the
+               store alone. Without these the resolver silently degrades to
+               username-or-display_name, which is the bug, not the fix. */
+            alias: data.alias ?? null,
+            first_name: data.first_name ?? null,
+            last_name: data.last_name ?? null,
+            full_name: data.full_name ?? null,
+            display_name_preference: data.display_name_preference ?? null,
+            use_real_name: data.use_real_name ?? null,
             avatar_url: data.avatar_url,
             vip_level: data.tier || 'bronze', // DB uses `tier`, not `vip_level`
             player_number: data.player_number,

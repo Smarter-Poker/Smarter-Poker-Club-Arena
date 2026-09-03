@@ -118,6 +118,26 @@ club or union action calls.
 - `total_supply` difference for the same window: 1,242.92 against 200,000.00 of
   ledgered issuance.
 
+### Correction, 22:08 UTC (migration 20260903220846)
+
+The rebaseline in 20260903215830 reconstructed the club promo float at the
+21:05 snapshot by unwinding `chip_ledger` rows labelled `clubs.promo_balance`.
+There are none: `fn_sweep_bbj_promo` declares its counterparty and autoskips the
+clubs trigger, so the sweep is journalled by the bbj_pools trigger as
+`bbj_pool -> promo_wallet` with `from_label` `bbj_pools.promo_balance` and
+`to_label` NULL. Only the pre-1.3 undeclared rows ever carried the label the
+reconstruction looked for.
+
+The baseline was therefore stamped with the balance as at migration time,
+6,183.05, onto a snapshot taken 53 minutes earlier when the float was 5,955.77 -
+227.28 too high - and the 22:05 interval computed against it reported +344.72 as
++117.44. `20260903220846_the_promo_meters_baseline_is_the_balance_not_a_label_search.sql`
+corrects both rows from the sweep transactions (which carry `balance_after`),
+cross-checking the first sweep after the baseline against the reconstruction and
+refusing to guess if they disagree by more than a cent. Baseline 21:05 club promo
+now 5,955.77; the 22:05 interval now reads 344.72. Both snapshots from 22:05 on
+measure the live balance at both endpoints, so no further baselines are involved.
+
 ## Still Dan's decisions
 
 - 7a: does the promo float owe players anything, and if so under what policy

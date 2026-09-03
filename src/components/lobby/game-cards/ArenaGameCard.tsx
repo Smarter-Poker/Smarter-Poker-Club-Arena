@@ -8,9 +8,26 @@ import type {
 import { zoneText } from './arenaGameCardTypes';
 import { ArenaGameRuleBadge } from './ArenaGameRuleIcon';
 import { NlhPremiumCard } from './NlhPremiumCard';
+import { PloFourBayCard } from './PloFourBayCard';
+import { SpinsPremiumCard } from './SpinsPremiumCard';
+import { HeadsUpPremiumCard } from './HeadsUpPremiumCard';
 import './ArenaGameCard.css';
 
 const CASH_CARD_TITLE_LIMIT = 30;
+
+type LayeredRenderer = (props: {
+  data: ArenaGameCardData;
+  actions: ArenaGameCardActions;
+}) => ReactNode;
+
+/** Skin id -> layered mobile renderer. Keyed by skin, not family, so a
+    family can keep an older CSS skin registered and selectable. */
+const LAYERED_RENDERERS: Record<string, LayeredRenderer> = {
+  'spade-nlh-premium-v1': NlhPremiumCard,
+  'shark-plo-four-bay-v1': PloFourBayCard,
+  'shark-spins-premium-v1': SpinsPremiumCard,
+  'shark-headsup-premium-v1': HeadsUpPremiumCard,
+};
 const TOURNAMENT_CARD_TITLE_LIMIT = 44;
 
 function constrainedTitle(value: string, limit: number): string {
@@ -458,10 +475,13 @@ export const ArenaGameCard = memo(function ArenaGameCard({
   });
   const template = resolved.skin;
   const Renderer = familyRenderers[data.family];
-  const usesLayeredNlh =
-    data.family === 'nlh' &&
-    resolved.skinId === 'spade-nlh-premium-v1' &&
-    resolved.presentation === 'mobile';
+  /* THE LAYERED (BITMAP-CHASSIS) CARDS. Each of these skins is an approved
+     master photographed into a chassis plus a pixel coordinate map; the
+     renderer prints live text into those coordinates and lays transparent
+     semantic buttons over the painted ones. The CSS "machines" above stay as
+     the desktop renderers and as every family's fallback. */
+  const Layered =
+    resolved.presentation === 'mobile' ? LAYERED_RENDERERS[resolved.skinId] : undefined;
   const dataState = data.dataState || 'loaded';
   const notice = stateLabel(dataState);
   const style = {
@@ -483,7 +503,7 @@ export const ArenaGameCard = memo(function ArenaGameCard({
 
   return (
     <article
-      className={`arena-game-card arena-game-card--${data.family} arena-game-card--skin-${resolved.skinId} arena-game-card--layout-${resolved.template.layout}${selected ? ' is-selected' : ''}${className ? ` ${className}` : ''}`}
+      className={`arena-game-card arena-game-card--${data.family} arena-game-card--skin-${resolved.skinId} arena-game-card--layout-${resolved.template.layout}${Layered ? ' arena-game-card--layered' : ''}${selected ? ' is-selected' : ''}${className ? ` ${className}` : ''}`}
       data-presentation={presentation}
       data-template-presentation={resolved.presentation}
       data-skin={resolved.skinId}
@@ -494,8 +514,8 @@ export const ArenaGameCard = memo(function ArenaGameCard({
     >
       <span className="arena-game-card__art" aria-hidden="true" />
       <div className="arena-game-card__glass">
-        {usesLayeredNlh ? (
-          <NlhPremiumCard data={data} actions={actions} />
+        {Layered ? (
+          <Layered data={data} actions={actions} />
         ) : (
           <Renderer data={data} actions={actions} presentation={presentation} />
         )}

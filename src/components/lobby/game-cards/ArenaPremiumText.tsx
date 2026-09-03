@@ -1,4 +1,4 @@
-import type { CSSProperties, ElementType, ReactNode } from 'react';
+import type { CSSProperties, ElementType, ReactNode, Ref } from 'react';
 
 type PremiumTextTone = 'silver' | 'blue' | 'green' | 'gold';
 
@@ -9,6 +9,8 @@ interface ArenaPremiumTextProps {
   tone?: PremiumTextTone;
   style?: CSSProperties;
   title?: string;
+  /** React 19: a plain prop. Used by useFitText to measure the rendered run. */
+  ref?: Ref<HTMLElement>;
 }
 
 export function ArenaPremiumValueText({
@@ -18,9 +20,11 @@ export function ArenaPremiumValueText({
   tone = 'silver',
   style,
   title,
+  ref,
 }: ArenaPremiumTextProps) {
   return (
     <Component
+      ref={ref}
       className={`arena-premium-text arena-premium-text--value arena-premium-text--${tone}${className ? ` ${className}` : ''}`}
       style={style}
       title={title}
@@ -36,9 +40,11 @@ export function ArenaPremiumTitle({
   className,
   style,
   title,
+  ref,
 }: Omit<ArenaPremiumTextProps, 'tone'>) {
   return (
     <Component
+      ref={ref}
       className={`arena-premium-text arena-premium-text--title${className ? ` ${className}` : ''}`}
       style={style}
       title={title}

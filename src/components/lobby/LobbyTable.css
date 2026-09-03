@@ -1931,16 +1931,15 @@ abbr.lt-variant[title] {
     gap: 8px;
     width: 100%;
     padding: 8px 6px 6px;
-    border-bottom: 1px solid rgb(65 105 225 / 22%);
-    /* A FLAT ground, where the desktop `thead th` uses a vertical ramp. This
-       sheet is under two solid-colour pins from the live-board redesign -
-       lobbyTournamentBoardDesign and metallicPopupSystem each scan from their
-       own anchor to the END of the file and forbid any ramp past it - and
-       this bar is appended below both. #0d1725 is a ground those pins already
-       name, so the bar reads as part of the board rather than an exception to
-       it. (Both pins match on the CSS function name, so it must not appear in
-       prose here either; that is why this note describes the shape in words.) */
-    background: #0d1725;
+    border-bottom: 0;
+    /* A FLAT ground. This sheet is under two solid-colour pins from the
+       live-board redesign - lobbyTournamentBoardDesign and metallicPopupSystem
+       each scan from their own anchor to the END of the file and forbid any
+       ramp past it - so only the STRUCTURE of the bar lives here. Its chrome
+       (Dan 2026-09-03: "THE BACKGROUND SHOULD BE BLACK, AND IT SHOULD HAVE THE
+       SAME PREMIUM BUTTON LOOK AND FEEL AS THE GAME CARDS") is in
+       LobbySortBar.css, beside the game-card skins it is matched to. */
+    background: #000;
   }
 
   .lobby-sortbar__eyebrow {

@@ -216,13 +216,23 @@ describe('neither reaper treats a deliberately paused table as a zombie', () => 
     expect(10 * 60 * 1000).toBeGreaterThan(5 * 60 * 1000 + 2 * 60 * 1000);
   });
 
-  it('isPausedByDesign covers both a break pause and hand-for-hand', () => {
+  it('isPausedByDesign covers a break pause, a MAINTENANCE break and hand-for-hand', () => {
+    // #2695 (2026-09-02): `pauseForMaintenance` sets `maintenancePaused`, not
+    // `handForHandPaused`, so this predicate answered false all the way through
+    // a break and 1204 hands were dealt inside one. The fix added the third
+    // term. This pin used to demand the two-term form and went red the moment
+    // the engine was made correct - and it merged red, because a server/-only
+    // pull request skipped the client suite this file lives in (ci.yml
+    // `changes`, fixed in the same commit as this text). Pin all three terms
+    // so the bug cannot come back and the pin cannot fight the fix.
     const ENGINE = readFileSync(
       resolve(__dirname, '../../server/src/engine/ServerTableEngineBase.ts'),
       'utf8'
     );
-    const fn = ENGINE.slice(ENGINE.indexOf('isPausedByDesign(): boolean'));
-    expect(fn).toMatch(/handForHandPaused \|\| this\.tableFSM\.state === 'paused'/);
+    const fn = sliceMethod(ENGINE, 'isPausedByDesign(): boolean');
+    expect(fn).toMatch(
+      /return this\.handForHandPaused \|\| this\.maintenancePaused \|\| this\.tableFSM\.state === 'paused';/
+    );
   });
 });
 

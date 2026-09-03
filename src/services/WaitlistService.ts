@@ -39,6 +39,7 @@
 import { supabase } from '../lib/supabase';
 import { readLocalSession } from '../lib/authUtils';
 import { reportError, reportWarning } from '../utils/errorReporter';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 
 // DB constraint: 'waiting'|'notified'|'seated'|'left'|'cleared'|'expired'. 'cancelled' is NOT valid.
 export type WaitlistStatus = 'waiting' | 'notified' | 'seated' | 'left' | 'cleared' | 'expired';
@@ -418,13 +419,13 @@ export const WaitlistService = {
     if (ids.length > 0) {
       const { data: profiles, error: profErr } = await supabase
         .from('profiles')
-        .select('id, display_name, username')
+        .select(`id, ${PLAYER_NAME_COLUMNS}`)
         .in('id', ids);
       if (profErr) {
         reportWarning(profErr.message, 'WaitlistService.getTableWaitlist.profiles', { tableId });
       }
       for (const p of (profiles ?? []) as any[]) {
-        names.set(p.id, p.display_name || p.username || '');
+        names.set(p.id, playerDisplayName(p));
       }
     }
     let rank = 0;

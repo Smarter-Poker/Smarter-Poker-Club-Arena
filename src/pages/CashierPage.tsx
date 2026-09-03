@@ -181,6 +181,7 @@ const CATEGORY_ICONS: Record<string, string> = {
 import { useRealtimeFinancials } from '../hooks/useRealtimeFinancials';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 export default function CashierPage() {
   useRealtimeFinancials();
   useEffect(() => {
@@ -787,7 +788,7 @@ export default function CashierPage() {
             () =>
               supabase
                 .from('profiles')
-                .select('id, display_name, username')
+                .select(`id, ${PLAYER_NAME_COLUMNS}`)
                 .in('id', chunk)
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: isMounted }
@@ -833,7 +834,7 @@ export default function CashierPage() {
       for (const { data: profiles } of nameResults) {
         if (profiles) {
           for (const p of profiles) {
-            profileMap[p.id] = p.display_name || p.username || 'Player';
+            profileMap[p.id] = playerDisplayName(p);
           }
         }
       }

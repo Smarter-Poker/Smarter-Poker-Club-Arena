@@ -50,7 +50,18 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_club_cashier_members_page_v3(uuid,integer,uuid,integer)',
-      'hash', '952e98a237f975ca9bac24251efe6d54'
+      -- Re-pinned 2026-09-03. The body changed for a REASON, not by drift:
+      -- 20260903035252 wrapped the flag as
+      --   (public.fn_can_see_horse_flag(p_club_id) AND COALESCE(m.is_horse,false))
+      -- because v2 masked the horse flag and this paged v3, written after it,
+      -- did not - so the same data leaked through the newer door to anyone
+      -- ca_can_view_club_finances admits, SUPER_AGENT included.
+      -- The migration was applied to production but never committed, so this
+      -- pin was left naming a body that no longer existed and Post-Deploy E2E
+      -- failed on it every run. The migration is committed alongside this.
+      -- Every OTHER hash in this file was re-checked against production at the
+      -- same time and all five still match.
+      'hash', '69233cd46670fbc2989173f6ba9f4328'
     ),
     jsonb_build_object(
       'signature', 'public.fn_issue_tournament_ticket(uuid,uuid,numeric,text,text)',

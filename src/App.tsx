@@ -85,6 +85,7 @@ const SettingsPage = lazyWithRetry(() => import('./pages/SettingsPage'));
 const UnionsPage = lazyWithRetry(() => import('./pages/UnionsPage'));
 const UnionDetailPage = lazyWithRetry(() => import('./pages/UnionDetailPage'));
 const UnionStatementsPage = lazyWithRetry(() => import('./pages/UnionStatementsPage'));
+const UnionDataPage = lazyWithRetry(() => import('./pages/UnionDataPage'));
 const CreateUnionPage = lazyWithRetry(() => import('./pages/CreateUnionPage'));
 const SettlementPage = lazyWithRetry(() => import('./pages/SettlementPage'));
 
@@ -945,6 +946,27 @@ function FullApp() {
                     <AuthGuard>
                       <PageErrorBoundary pageName="Union Table Management">
                         <GameManagementPage scope="union" />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                {/*
+                  What the union PRODUCED, as against what it billed. The rake
+                  snapshot could always answer the union question, but only
+                  from inside a member club - so a union lead who owns no club
+                  had no door to it, and one who owns two had to pick a club
+                  and hope the figure above it was the union's.
+
+                  No ClubMemberGuard here, deliberately: the whole point is a
+                  union lead who is not a member of any club in it. The RPC is
+                  gated on ca_can_oversee_union and raises on its own.
+                */}
+                <Route
+                  path="unions/:unionId/data"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Union Data">
+                        <UnionDataPage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

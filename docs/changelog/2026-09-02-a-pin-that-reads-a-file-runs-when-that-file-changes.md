@@ -82,3 +82,13 @@ does not.
 The watchdog's alarm job ("Production is serving main") stays on GitHub's
 pool on purpose: if the box dies it must be able to say so. The heavy sweep
 and the dispatcher move to the box.
+
+## Follow-up, same night: `isBusy` had the same blindness (2026-09-03 01:49)
+
+The first watchdog run after the listener was repaired saw
+`agent-autopilot.yml` as overdue - correctly, for the first time - and then
+declined to dispatch it: "already has a run in flight". The run in flight was
+a `pull_request` run, which never sweeps. With twenty pull-request events an
+hour there is always one, so the sweep would still never have been
+dispatched. `isBusy` now ignores per-item events too; its concurrency group
+is per pull request, so a dispatch cannot collide with them.

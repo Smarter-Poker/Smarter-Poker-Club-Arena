@@ -205,6 +205,7 @@ import { useTableAnimations } from '../hooks/useTableAnimations';
 import { useTableSound } from '../hooks/useTableSound';
 import { useTableSession } from '../hooks/useTableSession';
 import { tableService } from '../services/TableService';
+import { peekWarmSeats, warmSeatsPromise, type WarmSeat } from '../services/tableWarmup';
 import { WalletService } from '../services/WalletService';
 import ActionPanel from '../components/table/ActionPanel';
 import { potSizedRaiseTo } from '../components/table/ActionPanel';
@@ -1188,6 +1189,56 @@ const BOOT_EXPLANATIONS: Record<string, string> = {
     'This Table Has A Minimum VPIP And You Were Below It, So You Were Cashed Out. Your Chips Are Back In Your Wallet.',
 };
 
+/**
+ * A warmed seat row (services/tableWarmup) -> a felt player. The felt mounts
+ * with these already in place so a table opened from the lobby paints its
+ * players and avatars on the FIRST frame instead of after the socket connects.
+ * Identical shape to the prefetch's applySeats below - the seed and the
+ * in-page prefetch agree by construction.
+ */
+function warmSeatToPlayer(seat: WarmSeat, heroUserId: string): SeatPlayer {
+  const profiles = (seat as { profiles?: unknown }).profiles as
+    | { username?: string; display_name?: string; avatar_url?: string }
+    | undefined;
+  return {
+    id: seat.user_id,
+    name: playerDisplayName(profiles),
+    stack: seat.stack || 0,
+    avatar: profiles?.avatar_url || undefined,
+    isHero: seat.user_id === heroUserId,
+    status: 'active',
+    holeCards: [],
+    showCards: false,
+    // is_horse is not client-readable; horse_id off the seat is the flag, and
+    // the engine snapshot is the authority that follows.
+    isHorse: !!(seat as { horse_id?: string | null }).horse_id,
+  } as SeatPlayer;
+}
+
+/**
+ * Build the felt's players array from warmed rows, sized to the widest seat
+ * they occupy (never to a guessed default - the seat-drop bug this file fixes
+ * in four other places). Returns null when nothing was warmed.
+ */
+function warmSeatsToPlayers(
+  seats: WarmSeat[] | null,
+  heroUserId: string,
+  fallbackWidth: number
+): (SeatPlayer | null)[] | null {
+  if (!seats || seats.length === 0) return null;
+  let width = fallbackWidth;
+  for (const s of seats) {
+    const n = Number(s.seat_number);
+    if (Number.isInteger(n) && n > width && n <= MAX_SUPPORTED_SEATS) width = n;
+  }
+  const players: (SeatPlayer | null)[] = Array(width).fill(null);
+  for (const s of seats) {
+    const idx = Number(s.seat_number) - 1;
+    if (idx >= 0 && idx < players.length) players[idx] = warmSeatToPlayer(s, heroUserId);
+  }
+  return players;
+}
+
 export default function TablePage({
   embeddedTableId,
   onTableInfoUpdate,
@@ -1914,6 +1965,13 @@ export default function TablePage({
     if (init?.buyInAmount) {
       b = `${init.buyInAmount}/${init.buyInFee || 0}`;
     }
+    /* SEED FROM THE WARM-UP (Dan 2026-09-03). If this table was warmed from
+       the lobby (services/tableWarmup, started the moment the game card was
+       opened), its roster is already in memory and the felt's FIRST paint has
+       every player and avatar on it - no empty ring, no "Player" monograms,
+       no waiting for the socket. Nothing fresh -> the empty ring exactly as
+       before; the prefetch and the engine snapshot still follow either way. */
+    const warmed = warmSeatsToPlayers(peekWarmSeats(tableId), cachedAuthUserId() ?? '', maxP);
     return {
       tableId: tableId || '',
       tableName: init?.tableName || 'Loading...',
@@ -1921,7 +1979,7 @@ export default function TablePage({
       blinds: b,
       minBuyIn: init?.minBuyIn || 0,
       maxBuyIn: init?.maxBuyIn || 0,
-      maxPlayers: maxP,
+      maxPlayers: warmed ? Math.max(maxP, warmed.length) : maxP,
       pot: 0,
       sidePots: [],
       communityCards: [],
@@ -1936,7 +1994,7 @@ export default function TablePage({
       dealerSeat: 0,
       currentPlayerSeat: 0,
       heroSeat: 0,
-      players: createEmptySeats(maxP),
+      players: warmed ?? createEmptySeats(maxP),
       jackpotAmount: 0,
       isHandInProgress: false,
       positions: Array(maxP).fill(null),
@@ -2035,8 +2093,13 @@ export default function TablePage({
 
     const PREFETCH_ATTEMPTS = 3;
     const attempt = (n: number) => {
-      tableService
-        .getSeatedPlayers(tableId)
+      /* Prefer the read the lobby warm-up already started (services/
+         tableWarmup) so a Join tapped mid-read rides the same request instead
+         of firing a second one. Absent or stale -> a fresh read, exactly as
+         before. Only the FIRST attempt can inherit it; a retry is by
+         definition after a failure, so it always reads anew. */
+      const warm = n === 1 ? warmSeatsPromise(tableId) : null;
+      (warm ?? tableService.getSeatedPlayers(tableId))
         .then((seats) => {
           if (!active || engineSnapshot) return;
           applySeats(seats);
@@ -11596,11 +11659,14 @@ export default function TablePage({
         if (existingSeats && existingSeats.length > 0) {
           // Fetch display names for seated players
           const userIds = existingSeats.map((s) => s.user_id).filter(Boolean);
+          /* No is_horse / horse_profile: `authenticated` cannot read either
+             (platform lockdown + horse-name law), so naming them made the
+             WHOLE read 403 and every restored seat degraded to "Player" with
+             no avatar. horse_id off the seat rows carries the flag; the engine
+             snapshot carries the resolved name. */
           const { data: profiles, error: seatProfilesErr } = await supabase
             .from('profiles')
-            .select(
-              `id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, is_horse, horse_profile`
-            )
+            .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
             .in('id', userIds);
 
           // ROUND 9 (2026-08-29): every seat degrading to 'Player' with no
@@ -11710,7 +11776,7 @@ export default function TablePage({
                     : ('active' as const),
                 isHero,
                 showCards: isHero,
-                isHorse: profile?.is_horse || !!seat.horse_id,
+                isHorse: !!seat.horse_id,
                 horseProfile: undefined,
               } as any;
 
@@ -16725,7 +16791,8 @@ export default function TablePage({
       if (userIds.length > 0) {
         const { data: profiles, error: profErr } = await supabase
           .from('profiles')
-          .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, is_horse`)
+          // is_horse omitted - not client-readable; seat.horse_id is the flag.
+          .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
           .in('id', userIds);
         if (profErr) {
           reportError(profErr, 'TablePage.seat_first_roster_profiles', { tableId });
@@ -16789,7 +16856,7 @@ export default function TablePage({
             status: 'active' as const,
             isHero,
             showCards: isHero,
-            isHorse: Boolean(profile?.is_horse) || !!seat.horse_id,
+            isHorse: !!seat.horse_id,
             horseProfile: undefined,
           } as unknown as (typeof prev.players)[number];
         }
@@ -18525,7 +18592,8 @@ export default function TablePage({
       if (ids.length > 0) {
         const { data: profiles, error: wlProfilesErr } = await supabase
           .from('profiles')
-          .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, is_horse`)
+          // is_horse omitted - not client-readable (403s the whole read).
+          .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
           .in('id', ids);
         // ROUND 9 (2026-08-29): the 2026-08-20 fix promised names would
         // resolve like the felt's; a resolved error quietly regressed the

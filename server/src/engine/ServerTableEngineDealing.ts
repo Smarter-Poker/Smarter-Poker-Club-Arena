@@ -193,18 +193,29 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // carries its own budget, so a slow database produces a NAMED, retried
         // step instead of an anonymous kill and a fleet-wide rebuild storm.
         const previousSeatedIds = new Set(this.seatedPlayers.map((p) => p.user_id));
-        this.seatedPlayers = await this.withStepBudget(
+        /* THE THREE PRE-DEAL READS RUN TOGETHER (2026-09-03).
+           They were awaited one after another, so every hand paid three
+           sequential Supabase latencies before a single card could be dealt -
+           and this sits on the critical path between the end-of-hand hold and
+           the deal, which is exactly the window players see as dead felt.
+           Measured across 38,721 hands in 90 minutes, excluding the maintenance
+           window: a fold-win gap runs 6.65s against a 5.00s animation budget,
+           and a showdown 10.35s against 8.40s. That 1.7-2.0s of excess is this,
+           plus the hand-number allocation further down.
+           None of the three depends on another: refreshBlinds reads the table's
+           blind/ante row and refreshRakeConfig its rake settings (self-throttled
+           to once a minute), and neither looks at seatedPlayers. Only
+           restoreSitOutsFromSeats does, so it still runs after the seats land.
+           Each keeps its own named phase and its own budget, so a slow database
+           still produces a named, retried step rather than an anonymous
+           watchdog kill - which is the whole point of the 2026-08-22 budgeting
+           that this preserves. */
+        const seatsPromise = this.withStepBudget(
           'load_seats',
           ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
           loadSeatedPlayers(this.tableId)
         );
-        // Restart fidelity: apply persisted is_sitting_out to seats the engine
-        // has not seen yet. The start-up loop calls this too, but it breaks the
-        // moment enough players are seated and never runs again — so a player
-        // who was mid-buy-in at boot, or who joined during the wait, would be
-        // dealt in despite the database saying they are sitting out.
-        this.restoreSitOutsFromSeats();
-        await this.withStepBudget(
+        const blindsPromise = this.withStepBudget(
           'refresh_blinds',
           ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
           this.refreshBlinds()
@@ -213,11 +224,19 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // to once a minute inside the method). tableInfo is otherwise loaded
         // once per engine lifetime, so before this an owner changing the rake
         // saw nothing until the table restarted.
-        await this.withStepBudget(
+        const rakePromise = this.withStepBudget(
           'refresh_rake',
           ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
           this.refreshRakeConfig()
         );
+        const [loadedSeats] = await Promise.all([seatsPromise, blindsPromise, rakePromise]);
+        this.seatedPlayers = loadedSeats;
+        // Restart fidelity: apply persisted is_sitting_out to seats the engine
+        // has not seen yet. The start-up loop calls this too, but it breaks the
+        // moment enough players are seated and never runs again — so a player
+        // who was mid-buy-in at boot, or who joined during the wait, would be
+        // dealt in despite the database saying they are sitting out.
+        this.restoreSitOutsFromSeats();
 
         // Phase X5 (2026-04-29) — Bible V8 §1.16 seat_taken event for any
         // player who appeared in seatedPlayers since the previous hand.

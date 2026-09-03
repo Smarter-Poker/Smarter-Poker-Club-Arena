@@ -1509,7 +1509,12 @@ jobs:
       always() && github.event_name == 'pull_request' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: CSS Beat E2E (multi-table + animations)
-    runs-on: ubuntu-latest
+    # ROUTED 2026-09-03. The last hosted job in this file - held back on
+    # 2026-09-02 as a required check until the box had proven Playwright: it
+    # has since run Live Production E2E here and World Hub's Chromium+WebKit
+    # suites on estate-ci-3. The install step below already skips --with-deps
+    # on a self-hosted runner.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 20
 
     steps:

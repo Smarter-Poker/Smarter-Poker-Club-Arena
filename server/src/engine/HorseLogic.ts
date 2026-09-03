@@ -615,9 +615,11 @@ export interface HorseGameStateV2 extends HorseGameState {
   dealerSeat?: number;
   lastRaise?: number;
   actionHistory?: ActionRecord[];
-  /** V7 ICM: explicit tournament context. When absent, tournaments are
-   *  self-detected from the big blind (the cash fleet caps at 2.00/5.00, so
-   *  bb >= 10 only occurs in tournament play). */
+  /** V7 ICM: explicit tournament context. When absent AND no gameMode is
+   *  passed, tournaments are self-detected from the big blind (bb >= 10). The
+   *  cash fleet has run 5/10, 10/20 and 25/50 since 2026-09-03, so that
+   *  heuristic is a legacy fallback only - ServerTableEngine always passes
+   *  gameMode, and isTournamentMode() trusts it first. */
   tournament?: {
     nearBubble?: boolean;
     inMoney?: boolean;

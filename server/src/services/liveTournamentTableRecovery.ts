@@ -147,10 +147,16 @@ export function planTableReopens(
 }
 
 /**
- * A fresh 60-180 second human window, randomised per game so a repaired board
+ * A fresh 60-150 second human window, randomised per game so a repaired board
  * does not tick over in lockstep with every other repaired board. Identical to
- * the window fn_repair_seat_first_games hands back.
+ * the window fn_repair_seat_first_games hands back and to
+ * seatFirstHumanWindowMs in TournamentRecurringService: Dan 2026-09-03, "WAIT
+ * 60-150 SECONDS TO ALLOW A HUMAN TO PLAY, BEFORE A 3RD HORSE CAN JOIN". The
+ * ceiling was 180 here and 90 in the SQL; all three now agree.
  */
+export const FRESH_HUMAN_WINDOW_MIN_S = 60;
+export const FRESH_HUMAN_WINDOW_MAX_S = 150;
 export function freshHumanWindowMs(): number {
-  return (60 + Math.floor(Math.random() * 121)) * 1000;
+  const span = FRESH_HUMAN_WINDOW_MAX_S - FRESH_HUMAN_WINDOW_MIN_S;
+  return (FRESH_HUMAN_WINDOW_MIN_S + Math.floor(Math.random() * (span + 1))) * 1000;
 }

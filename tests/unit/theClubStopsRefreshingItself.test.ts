@@ -29,6 +29,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { mergeById, rowsAreEqual } from '../../src/utils/mergeById';
 import { useCoalescedRefresh } from '../../src/hooks/useCoalescedRefresh';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+import { sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 describe('mergeById keeps the identity of every row it did not change', () => {
   const key = (r: { id: string }) => r.id;
@@ -152,5 +155,62 @@ describe('useCoalescedRefresh re-reads on a floor, not on an event', () => {
     unmount();
     act(() => void vi.advanceTimersByTime(60_000));
     expect(refresh).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  BOTH SURFACES USE THE SHARED MECHANISM, NOT A LOCAL COPY OF IT
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * #2728 introduced useCoalescedRefresh, wired ClubHomePage to it - and then
+ * hand-rolled the same rate limit, the same visibility gate and the same
+ * pending flag inside GameManagementPage. The behaviour existed twice, only
+ * the hook's copy was tested, and the copy silently lacked refreshNow(), so
+ * the two callers that must not wait (an access change, and a realtime resync
+ * saying "I may have missed something") called load() directly and left the
+ * coalescer's timer armed behind them - a redundant reload up to 20 seconds
+ * later, having just been superseded.
+ *
+ * The rule is the point of the hook existing: a surface that needs coalesced
+ * refreshing uses the hook. Pinned as source assertions because a second
+ * private timer is invisible in a diff and behaves almost right.
+ */
+describe('every coalesced surface uses the shared hook', () => {
+  const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
+
+  for (const page of ['src/pages/ClubHomePage.tsx', 'src/pages/GameManagementPage.tsx']) {
+    it(`${page} coalesces through useCoalescedRefresh`, () => {
+      expect(read(page)).toContain('useCoalescedRefresh');
+    });
+
+    it(`${page} keeps no private refresh timer of its own`, () => {
+      const src = read(page);
+      // The exact shape of the copy that was deleted from GameManagementPage.
+      expect(src).not.toMatch(/refreshTimerRef/);
+      expect(src).not.toMatch(/refreshPendingRef/);
+      expect(src).not.toMatch(/lastRefreshAtRef/);
+    });
+  }
+
+  it('src/pages/GameManagementPage.tsx registers no visibilitychange listener of its own', () => {
+    // The hand-rolled copy that used to live here paired its timer with its own
+    // visibilitychange listener; useCoalescedRefresh owns that gate now.
+    // ClubHomePage is deliberately exempt: its listener belongs to the
+    // visibility-gated 90-second lobby fallback (PERF 2026-08-24), which is a
+    // separate mechanism from the coalescer and is documented at its call site.
+    expect(read('src/pages/GameManagementPage.tsx')).not.toMatch(
+      /addEventListener\(\s*'visibilitychange'/
+    );
+  });
+
+  it('the board refreshes immediately for the two callers that must not wait', () => {
+    const src = read('src/pages/GameManagementPage.tsx');
+    // An access change, and the realtime channel resubscribing.
+    expect(src).toContain("['GAME_MANAGEMENT_ACCESS_CHANGED']");
+    expect(src).toMatch(/onResync: \(\) => refreshBoardNow\(\)/);
+    // refreshNow, not load() - which would leave the pending timer armed.
+    const accessGate = sliceEnclosingBlock(src, "['GAME_MANAGEMENT_ACCESS_CHANGED']");
+    expect(accessGate).toContain('refreshBoardNow()');
   });
 });

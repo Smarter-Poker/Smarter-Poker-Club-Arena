@@ -130,7 +130,7 @@ Tier 1 or 2 needs nothing but a merged branch in this repo.
 │
 ├─ Is the change about the player-facing UI (lobby, table view, chat UI,
 │  card animations, sound, mobile layout)?
-│      → THIS repo, src/, then `vercel --prod`
+│      → THIS repo, src/, then push the branch. Nothing else - see Tier 2.
 │
 └─ Is the change about club admin / agent / cashier / BBJ / tournament-
    admin / anti-cheat / settlement / marketplace / unions?

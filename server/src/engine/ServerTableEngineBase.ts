@@ -846,6 +846,11 @@ export abstract class ServerTableEngineBase {
   // ended_at (was missing — every completed hand_history row had null
   // ended_at, breaking replay timestamps and audit reconciliation).
   protected currentHandStartedAt: number = 0;
+  // chip-std Lane F (2026-09-02): what every dealt player held when the cards
+  // went out, keyed by user id. On a tournament table the settled stacks of
+  // exactly these players must sum to exactly this - see
+  // tournamentChipConservation.ts and the persist gate in postHandTasks.
+  protected currentHandDealtStacks: Map<string, number> = new Map();
   // Bible V8 §2.5: Action Record requires seat, userId, action, amount, timestamp, stage
   protected currentHandActions: {
     seat: number;

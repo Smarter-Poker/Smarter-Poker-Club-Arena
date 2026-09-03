@@ -40,6 +40,7 @@ const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
 const MANAGER = strip(read('server/src/tournament/TournamentManagerBase.ts'));
+const SEAT_CREDIT = strip(read('server/src/tournament/seatStackCredit.ts'));
 const DEALING = strip(read('server/src/engine/ServerTableEngineDealing.ts'));
 const ENGINE = strip(read('server/src/engine/ServerTableEngineBase.ts'));
 
@@ -141,11 +142,21 @@ describe('the stacks wait for the wheel', () => {
     // lowers one, because an early-bird seat (starting chips + bonus) sits
     // ABOVE the plain starting stack and flattening it would destroy the
     // bonus. Idempotence is unchanged: a healthy seat still writes nothing.
+    //
+    // 2026-09-02 (chip-std, tournament chips are conserved): the "which seats"
+    // decision moved out of the manager into the pure selectSeatsToFund in
+    // server/src/tournament/seatStackCredit.ts, so the credit can also refuse
+    // when raising seats would mint chips. The `< target` rule lives there
+    // now; the manager must hand the decision to it and write only what it
+    // returns.
     const fn = sliceMethod(MANAGER, 'protected async creditSeatStacks');
     const body = fn;
-    expect(body).toMatch(/Number\(r\.stack\) < target/);
+    expect(body).toMatch(/selectSeatsToFund\(\{/);
+    expect(body).toMatch(/const stale = decision\.fund;/);
     expect(body).toMatch(/if \(stale\.length === 0\) return 0;/);
     expect(body).toMatch(/\.update\(\{ stack: target \}\)/);
+    const rule = sliceMethod(SEAT_CREDIT, 'export function selectSeatsToFund(');
+    expect(rule).toMatch(/num\(s\.stack\) < target/);
   });
 
   it('a failed credit is reported, never thrown into the start path', () => {

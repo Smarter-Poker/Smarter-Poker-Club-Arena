@@ -31,6 +31,11 @@ import { reportError } from '../services/errorReporter.js';
 
 /** Only the members this handler uses; the router passes the real engine. */
 interface FaultEngine {
+  /** True when no hand is in flight. The drill waits for this, so it never
+   *  voids the hand in front of a player - horses included (CLAUDE.md 10.5).
+   *  Optional so an engine that predates it degrades to the old behaviour
+   *  rather than failing the request outright. */
+  isBetweenHands?: () => boolean;
   /** Marks the engine dead so GameServer reaps and rebuilds it — the exact
    *  path that calls hub.dropTable() while players are still connected. */
   killForRestartPublic(reason: string): void;
@@ -98,6 +103,28 @@ export async function handleInjectFault(
     }
     if (roster.length < 2) {
       return sendJSON(res, 409, { error: 'Refusing: table is not actively dealing' });
+    }
+
+    // Gate 4: NEVER VOID A HAND IN FLIGHT - a horse's hand included.
+    //
+    // Gate 3 above refuses to disturb a human, and then kill_engine happily
+    // tore down a table full of horses mid-hand. CLAUDE.md 10.5 settled that
+    // exact shape once already, in the deploy drain gate: "PROTECT THE HAND,
+    // NOT THE PLAYER". A horse pays the same buy-in out of the same club
+    // wallet; a voided hand costs it the same chips it would cost anybody.
+    //
+    // isBetweenHands() is the same boundary the maintenance break waits for,
+    // so this drill now takes the table at the moment every other restart path
+    // takes it, rather than whenever the request happens to arrive.
+    // (Every player at the table is owed the hand in front of them, horses
+    // included - CLAUDE.md 10.5. That reasoning stays here in the comment
+    // rather than in the response body: the title-case guard treats a `hint`
+    // field as forward-facing copy, and an API error is not the place for an
+    // essay anyway.)
+    if (typeof engine.isBetweenHands === 'function' && !engine.isBetweenHands()) {
+      return sendJSON(res, 409, {
+        error: 'Refusing: a hand is in flight. Retry between hands.',
+      });
     }
 
     const fault = body?.fault || 'turn_stall';

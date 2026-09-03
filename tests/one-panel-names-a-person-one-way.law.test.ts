@@ -94,7 +94,6 @@ describe('one panel names a person one way', () => {
     expect(sql).toMatch(/fn_arena_name\([\s\S]*?\),\s*pr\.username,\s*'Agent'\)/);
   });
 
-
   it('the name the panel searches and sorts is the name it shows', () => {
     // Search filters and sort orders on this same column, so resolving the
     // name anywhere later than here would make the club list searchable by a

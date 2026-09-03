@@ -2088,6 +2088,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.currentHandVariant = config.gameVariant;
 
     this.handController = new HandController(config, hcPlayers, dealerSeat);
+    // chip-std Lane F (2026-09-02): the stacks this hand was dealt from. The
+    // tournament persist gate in postHandTasks holds the settled stacks of
+    // these exact players to this exact total.
+    this.currentHandDealtStacks = new Map(
+      hcPlayers.map((p) => [p.user_id, Number(p.stack) || 0] as [string, number])
+    );
 
     // ── ADDITIVE observability (#5): hands-dealt counter (always) + hand span (flag-gated) ──
     try {

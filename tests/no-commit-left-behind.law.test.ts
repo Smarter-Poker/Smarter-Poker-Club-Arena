@@ -65,15 +65,17 @@ describe('No commit left behind: the publisher converges on main', () => {
 
   it('every Club Arena checkout builds the publish target, not the trigger commit', () => {
     const yml = repo(PUBLISHER);
-    // Each CA checkout must name the target ref. The World Hub checkout is
-    // exempt: it is a different repository and correctly takes its own main.
+    // Each CA checkout must name the target ref. Since 2026-09-03 there are
+    // two (client-tests, build-and-store): publish-needed has none and the
+    // origin publish works on the downloaded artifact, so it has none either.
+    // The World Hub checkout is gone with the World Hub sync.
     const checkouts = [...yml.matchAll(/uses: actions\/checkout@v4\n((?:\s{8,}.*\n)*)/g)].map(
       (m) => m[1]
     );
-    expect(checkouts.length).toBeGreaterThanOrEqual(4);
+    expect(checkouts.length).toBeGreaterThanOrEqual(2);
 
     const clubArenaCheckouts = checkouts.filter((c) => !c.includes('Smarter-Poker-World-Hub'));
-    expect(clubArenaCheckouts.length).toBeGreaterThanOrEqual(3);
+    expect(clubArenaCheckouts.length).toBe(checkouts.length);
     for (const block of clubArenaCheckouts) {
       expect(block).toContain(`ref: ${TARGET}`);
     }
@@ -87,7 +89,11 @@ describe('No commit left behind: the publisher converges on main', () => {
     expect(yml).toContain(`"ca_sha": "${TARGET}"`);
     expect(yml).toContain(`name: club-arena-dist-${TARGET}`);
     expect(yml).toContain(`VITE_APP_VERSION: ${TARGET}`);
-    expect(yml).toContain(`sync build ${TARGET} [skip actions]`);
+    // The release directory on the origin is named for the same sha the
+    // bundle was stamped with (2026-09-03): the publish step reads ca_sha
+    // back OUT of dist/build-info.json and rsyncs to releases/<that sha>/.
+    expect(yml).toMatch(/OURS_SHA=\$\(sed -n .*ca_sha.* dist\/build-info\.json\)/);
+    expect(yml).toContain('releases/$SHA/');
   });
 
   it('the sync job can see the target, and the gate still holds', () => {
@@ -134,7 +140,7 @@ describe('No commit left behind: the publisher converges on main', () => {
     const publishers = workflows.filter((f) => {
       if (!/\.ya?ml$/.test(f)) return false;
       const y = readFileSync(resolve(__dirname, '../.github/workflows', f), 'utf8');
-      return /sync-to-world-hub:/.test(y) && /jobs:/.test(y);
+      return /publish-to-origin:/.test(y) && /jobs:/.test(y);
     });
     expect(publishers, `expected exactly one publisher, found: ${publishers.join(', ')}`).toEqual([
       'publish-club-arena.yml',
@@ -163,14 +169,17 @@ describe('No commit left behind: the publish closes its own loop', () => {
     // sync job and watching the law stay green. A grant is a line of YAML,
     // never a sentence about one.
     const yml = repo(PUBLISHER);
-    const sync = yml.slice(yml.indexOf('  sync-to-world-hub:'));
+    const sync = yml.slice(yml.indexOf('  publish-to-origin:'));
     const perms = sync
       .slice(sync.indexOf('permissions:'), sync.indexOf('steps:'))
       .split('\n')
       .filter((line) => !/^\s*#/.test(line));
     expect(perms.some((line) => /^\s+actions: write\s*$/.test(line))).toBe(true);
-    // and the grant it already had must survive
-    expect(perms.some((line) => /^\s+contents: write\s*$/.test(line))).toBe(true);
+    // contents: READ since 2026-09-03. The publish no longer commits anywhere;
+    // it rsyncs to the origin. A job that cannot write contents cannot
+    // quietly grow a second sync path.
+    expect(perms.some((line) => /^\s+contents: read\s*$/.test(line))).toBe(true);
+    expect(perms.some((line) => /^\s+contents: write\s*$/.test(line))).toBe(false);
   });
 
   it('a failed chain never fails a publish that already succeeded', () => {

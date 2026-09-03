@@ -10,6 +10,12 @@ export interface StatsScopeContract {
 export interface StatsQualityContract {
   cash_money_source: 'exact_settlement' | 'reconstructed_actions' | 'mixed';
   cash_money_exact: boolean;
+  /**
+   * How many of the cash hands in this payload carry the engine's own
+   * settlement row (ca_hand_facts). The rest use the action reconstruction.
+   * Absent on payloads from before 2026-09-03; reported as 0 then.
+   */
+  exact_cash_hands: number;
   advanced_facts_source: 'ca_hand_facts' | 'ca_hand_player_stat';
   historical_club_breakdown_available: boolean;
   live_tail_included: boolean;
@@ -154,6 +160,7 @@ export function normalizeStatsContractMetadata(data: unknown): StatsContractMeta
           ? quality.cash_money_source
           : 'reconstructed_actions',
       cash_money_exact: quality.cash_money_exact === true,
+      exact_cash_hands: Math.max(0, Math.floor(finite(quality.exact_cash_hands, 0))),
       advanced_facts_source:
         quality.advanced_facts_source === 'ca_hand_player_stat'
           ? 'ca_hand_player_stat'

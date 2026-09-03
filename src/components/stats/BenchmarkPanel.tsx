@@ -75,14 +75,19 @@ function Bar({ result }: { result: BenchmarkResult }) {
 export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }: Props) {
   const [rows, setRows] = useState<DistributionRow[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     // `cancelled` already covers unmount as well as dep change, so the extra
     // mounted-ref this used to carry could not change any outcome.
     let cancelled = false;
+    setLoading(true);
     StatsFactsService.getDistribution('field')
       .then((d) => {
-        if (!cancelled) setRows(d);
+        if (cancelled) return;
+        setRows(d.rows);
+        setReadError(d.error ?? null);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -90,7 +95,7 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [attempt]);
 
   // Depend on the individual numbers, not the object: the parent passes a fresh
   // literal on every render, so keying the memo on `values` never hit.
@@ -122,6 +127,24 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
     );
   }
 
+  // A failed read used to make the whole panel vanish, indistinguishable
+  // from "nothing to compare". Say so, and offer the retry.
+  if (readError) {
+    return (
+      <div className="bench-panel">
+        <div className="bench-head">
+          <h3 className="bench-title">How You Compare</h3>
+          <p className="bench-sub" role="alert">
+            The Field Distribution Could Not Be Loaded.{' '}
+            <button type="button" className="hand-retry" onClick={() => setAttempt((n) => n + 1)}>
+              Try Again
+            </button>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (results.length === 0) {
     return null;
   }
@@ -129,7 +152,9 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
   // Largest cohort across the rendered metrics. Quoting the first metric's
   // sample as if it covered all of them was a small lie that would grow the
   // moment two metrics had genuinely different coverage.
-  const sample = results.reduce((m, r) => Math.max(m, r.sampleSize), 0);
+  const sample = results
+    .filter((r) => r.barPosition !== null)
+    .reduce((m, r) => Math.max(m, r.sampleSize), 0);
   const thinHero = handsPlayed > 0 && handsPlayed < MIN_HERO_HANDS;
 
   return (
@@ -137,7 +162,9 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
       <div className="bench-head">
         <h3 className="bench-title">How You Compare</h3>
         <p className="bench-sub">
-          Measured Against {sample.toLocaleString()} Players In This Club With 1,000 Or More Hands.
+          {sample > 0
+            ? `Measured Against ${sample.toLocaleString()} Players In The Field With 1,000 Or More Hands.`
+            : 'Measured Against The Range Winning Players Hold.'}
         </p>
       </div>
 

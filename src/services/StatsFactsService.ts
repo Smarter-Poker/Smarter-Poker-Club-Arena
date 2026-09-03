@@ -192,25 +192,40 @@ const EMPTY_EV: EVCurvePayload = {
   generated_at: '',
 };
 
-async function callRpc<T>(fn: string, args: Record<string, unknown>, fallback: T): Promise<T> {
+/**
+ * Every payload carries `error` when the read FAILED, so a panel can tell
+ * "the database said nothing is there" from "the database could not be
+ * asked". Before 2026-09-03 both came back as the same empty fallback, and
+ * every consumer printed a reassuring "not gathered yet" on a network fault.
+ */
+export type WithReadStatus<T> = T & { error?: string };
+
+async function callRpc<T>(
+  fn: string,
+  args: Record<string, unknown>,
+  fallback: T
+): Promise<WithReadStatus<T>> {
   try {
     const { data, error } = await supabase.rpc(fn, args);
     if (error) {
       // 42501 is the identity gate refusing a cross-user read. That is the
       // system working, not a fault, so it is not reported as an error.
       if (error.code !== '42501') reportError(error, `StatsFactsService.${fn}`, args);
-      return fallback;
+      return { ...fallback, error: error.message || error.code || 'read_failed' };
     }
-    return (data as T) ?? fallback;
+    return ((data as T) ?? fallback) as WithReadStatus<T>;
   } catch (err) {
     reportError(err, `StatsFactsService.${fn}.threw`, args);
-    return fallback;
+    return { ...fallback, error: err instanceof Error ? err.message : 'read_threw' };
   }
 }
 
 export const StatsFactsService = {
   /** Cumulative actual vs all-in-adjusted EV. Cash hands only. */
-  async getEVCurve(userId: string, days: number | null = null): Promise<EVCurvePayload> {
+  async getEVCurve(
+    userId: string,
+    days: number | null = null
+  ): Promise<WithReadStatus<EVCurvePayload>> {
     return callRpc<EVCurvePayload>(
       'ca_player_ev_curve',
       { p_user: userId, p_days: days, p_limit: 5000 },
@@ -222,7 +237,7 @@ export const StatsFactsService = {
   async getHandGrid(
     userId: string,
     opts: { position?: string | null; variant?: string | null; days?: number | null } = {}
-  ): Promise<HandGridPayload> {
+  ): Promise<WithReadStatus<HandGridPayload>> {
     return callRpc<HandGridPayload>(
       'ca_player_hand_grid',
       {
@@ -250,7 +265,7 @@ export const StatsFactsService = {
     userId: string,
     handClass: string,
     opts: { position?: string | null; variant?: string | null; days?: number | null } = {}
-  ): Promise<ClassHandsPayload> {
+  ): Promise<WithReadStatus<ClassHandsPayload>> {
     return callRpc<ClassHandsPayload>(
       'ca_player_class_hands',
       {
@@ -269,7 +284,7 @@ export const StatsFactsService = {
   async getNemesis(
     userId: string,
     opts: { days?: number | null; minHands?: number } = {}
-  ): Promise<NemesisPayload> {
+  ): Promise<WithReadStatus<NemesisPayload>> {
     return callRpc<NemesisPayload>(
       'ca_player_nemesis',
       {
@@ -298,7 +313,7 @@ export const StatsFactsService = {
    * real — but it is not a human population, and every surface that renders
    * these must say "the field", never "players like you".
    */
-  async getDistribution(cohort = 'field'): Promise<DistributionRow[]> {
+  async getDistribution(cohort = 'field'): Promise<{ rows: DistributionRow[]; error?: string }> {
     try {
       const { data, error } = await supabase
         .from('ca_stat_distribution')
@@ -306,12 +321,12 @@ export const StatsFactsService = {
         .eq('cohort', cohort);
       if (error) {
         reportError(error, 'StatsFactsService.getDistribution', { cohort });
-        return [];
+        return { rows: [], error: error.message || 'read_failed' };
       }
-      return (data as DistributionRow[]) ?? [];
+      return { rows: (data as DistributionRow[]) ?? [] };
     } catch (err) {
       reportError(err, 'StatsFactsService.getDistribution.threw', { cohort });
-      return [];
+      return { rows: [], error: err instanceof Error ? err.message : 'read_threw' };
     }
   },
 
@@ -320,7 +335,7 @@ export const StatsFactsService = {
    * from auth.uid() — the p_user argument is honoured for the engine only.
    * `days: null` means lifetime.
    */
-  async getRakeStats(days: number | null = null): Promise<PlayerRakeStats> {
+  async getRakeStats(days: number | null = null): Promise<WithReadStatus<PlayerRakeStats>> {
     return callRpc<PlayerRakeStats>(
       'ca_player_rake_stats',
       { p_user: null, p_days: days },
@@ -334,7 +349,7 @@ export const StatsFactsService = {
    * fallback for hands that predate it. Never exposes another player's
    * contribution.
    */
-  async getHandRakeShare(handId: string): Promise<HandRakeShare> {
+  async getHandRakeShare(handId: string): Promise<WithReadStatus<HandRakeShare>> {
     if (!handId) return { found: false };
     return callRpc<HandRakeShare>(
       'ca_player_hand_rake_share',

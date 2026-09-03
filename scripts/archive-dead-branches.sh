@@ -105,11 +105,32 @@ while read -r branch; do
   fi
 
   if [[ $APPLY -eq 1 ]]; then
-    git push "$REMOTE" "$REMOTE/$branch:refs/archive/$branch" --force --quiet
+    # DATED, AND NEVER FORCED (2026-09-03).
+    #
+    # This wrote `refs/archive/<name>` with `--force`, and that is a way to
+    # destroy work in the one tool whose whole promise is that it does not.
+    # Branch names get REUSED here - `fix/table-freeze-and-dead-actions` is
+    # already sitting in refs/archive from August. Archive that name a second
+    # time and the force silently overwrote the first archive, so the August
+    # commits became unreachable with no message and no trace.
+    #
+    # The date suffix makes each archive its own ref, so a reused name adds a
+    # second entry instead of replacing the first. It is also the convention
+    # .github/scripts/archive-stale-branches.sh uses, so the estate has ONE
+    # shape - `refs/archive/<name>@<YYYY-MM-DD>` - rather than two tools
+    # disagreeing about where things went.
+    #
+    # Restoring either is the same command:
+    #   git push origin refs/archive/<name>@<date>:refs/heads/<name>
+    ARCHIVE_REF="refs/archive/${branch}@$(date -u +%Y-%m-%d)"
+    if ! git push "$REMOTE" "$REMOTE/$branch:$ARCHIVE_REF" --quiet; then
+      say "           ARCHIVE FAILED for $branch - NOT deleting it."
+      continue
+    fi
     archived=$((archived+1))
     git push "$REMOTE" --delete "$branch" --quiet
     deleted=$((deleted+1))
-    say "           archived -> refs/archive/$branch, then deleted"
+    say "           archived -> $ARCHIVE_REF, then deleted"
   fi
 done < <(git for-each-ref --format='%(refname:strip=3)' "refs/remotes/$REMOTE/")
 

@@ -34,7 +34,13 @@ name: Post-Deploy E2E (production)
 
 on:
   workflow_run:
-    workflows: ['Build for World Hub Sync']
+    # This is the publisher's `name:`, not its filename. #2676 deleted
+    # build-for-world-hub.yml (name 'Build for World Hub Sync') and repointed
+    # fifteen files by FILENAME - and missed this one, so from 19:17 to 01:30
+    # on 2026-09-02/03 this workflow could only fire from GitHub's throttled
+    # scheduler. tests/workflow-run-names-a-live-workflow.law.test.ts now
+    # refuses any workflow_run listener whose name no workflow carries.
+    workflows: ['Publish Club Arena']
     types: [completed]
   workflow_dispatch:
 

@@ -144,7 +144,14 @@ describe('club message management', () => {
     expect(messagePanel).toContain('Club Description');
     expect(messagePanel).toContain('Announcement Banners');
     expect(messageService).toContain('tagline: 72');
-    expect(messageService).toContain('lobbyMessage: 72');
+    /* 72 until 2026-09-03, when it turned out four rules governed this one
+       column and disagreed: the CHECK allowed 72, fn_set_club_lobby_message
+       truncated to 240, this panel refused over 72, and the desktop editor
+       offered a 240-character box. Anything longer than 72 raised a raw
+       constraint violation. The message is a full-screen greeting now, so 240
+       won and everything was brought to it. The tagline above is a one-line
+       identity and deliberately stayed at 72. */
+    expect(messageService).toContain('lobbyMessage: 240');
     expect(messageService).toContain('description: 500');
     expect(messageService).toContain('announcementTitle: 100');
     expect(messageService).toContain('announcementContent: 2000');

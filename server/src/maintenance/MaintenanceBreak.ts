@@ -326,19 +326,46 @@ export class MaintenanceBreak {
    * :55, so the tables never got their five minutes and the players were
    * promised one.
    */
+  /**
+   * How many times the boot-time read of the break row is attempted before
+   * the engine gives up and starts unpaused. The common reason this read
+   * fails is the reason it matters most: the engine is booting at ~:55-:58,
+   * inside the break, when the database is at its slowest, and a single
+   * timed-out read used to mean the fleet came back dealing into a break
+   * every screen was still showing. Three tries, a second and a half apart,
+   * cost at most ~3s of a boot that is parked anyway if the row exists.
+   */
+  static readonly RESTORE_ATTEMPTS = 3;
+  static readonly RESTORE_RETRY_MS = 1500;
+
   private async restoreFromStore(): Promise<void> {
     let saved: PersistedMaintenanceBreak | null = null;
-    try {
-      saved = await this.deps.store.load();
-    } catch (err) {
-      // Fail OPEN. A break we cannot read is a break we cannot honour, and
-      // refusing to deal because the database is unhappy would turn a storage
-      // blip into a platform outage. Worst case a restart is briefly visible,
-      // which is exactly where we were before this module existed.
+    let lastErr: unknown = null;
+    let loaded = false;
+    for (let attempt = 1; attempt <= MaintenanceBreak.RESTORE_ATTEMPTS && !loaded; attempt++) {
+      try {
+        saved = await this.deps.store.load();
+        loaded = true;
+      } catch (err) {
+        lastErr = err;
+        if (attempt < MaintenanceBreak.RESTORE_ATTEMPTS) {
+          console.warn(
+            `[MaintenanceBreak] could not read the persisted break (attempt ${attempt}/${
+              MaintenanceBreak.RESTORE_ATTEMPTS
+            }), retrying: ${(err as Error)?.message ?? err}`
+          );
+          await new Promise<void>((r) => this.setTimer(r, MaintenanceBreak.RESTORE_RETRY_MS));
+        }
+      }
+    }
+    if (!loaded) {
+      // Fail OPEN, but only after the retries above. A break we cannot read
+      // is a break we cannot honour, and refusing to deal because the
+      // database is unhappy would turn a storage blip into a platform outage.
       console.warn(
-        `[MaintenanceBreak] could not read the persisted break, starting unpaused: ${
-          (err as Error)?.message ?? err
-        }`
+        `[MaintenanceBreak] could not read the persisted break after ${
+          MaintenanceBreak.RESTORE_ATTEMPTS
+        } attempts, starting unpaused: ${(lastErr as Error)?.message ?? lastErr}`
       );
       return;
     }
@@ -625,10 +652,36 @@ export class MaintenanceBreak {
       tablesResumed: 0,
       thawOk,
     };
+    /**
+     * THE BREAK IS OVER BEFORE THE FIRST TABLE WAKES (review fix, 2026-09-03).
+     *
+     * The staggered batches (phase 3) fire RESUME_STAGGER_MS apart and each
+     * one checks `this.phase === 'idle'` so a batch left over from a break
+     * that has since been superseded cannot wake a table the next break is
+     * holding. That check used to be satisfied only AFTER `recordOutcome`
+     * resolved, and recordOutcome is a database insert made at :00 - the one
+     * instant the database is guaranteed to be at its slowest (statement
+     * timeouts of up to 8s are routine there). An insert slower than 750ms
+     * would have dropped batch 1; one slower than 10s would have dropped all
+     * fourteen batches of a 355-table fleet, and a dropped table cannot
+     * recover: the pause safety timeout wakes it, the loop's own gate sees
+     * `maintenancePaused` still set and parks it again, forever. The 23:55
+     * restart's insert took 170ms, which is why 355 tables came back; that
+     * is luck, not design. So: the break goes idle FIRST, then the tables
+     * are woken. The outcome was captured above, so the record stays honest.
+     */
+    this.phase = 'idle';
+    this.breakStartedAt = 0;
+    this.breakEndsAt = 0;
+    this.announcedAt = 0;
+    this.ending = false;
+    setMaintenanceFrozen(false);
+
     const resumed = this.resumeEveryEngine();
     outcome.tablesResumed = resumed;
     // The break's own scorecard line. Never allowed to delay or fail the
-    // resume: the tables are already running by the time this is awaited.
+    // resume: the first batch is already running and the rest are scheduled
+    // by the time this is awaited, and nothing below gates them.
     if (this.deps.recordOutcome) {
       try {
         await this.deps.recordOutcome(outcome);
@@ -636,12 +689,6 @@ export class MaintenanceBreak {
         console.warn('[MaintenanceBreak] could not record the break outcome', err);
       }
     }
-    this.phase = 'idle';
-    this.breakStartedAt = 0;
-    this.breakEndsAt = 0;
-    this.announcedAt = 0;
-    this.ending = false;
-    setMaintenanceFrozen(false);
 
     console.log(
       `[MaintenanceBreak] BREAK ENDED. Resumed ${resumed} table(s). ` +

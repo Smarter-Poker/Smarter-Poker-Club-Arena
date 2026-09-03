@@ -255,13 +255,25 @@ export function dispatchDecision({
   return { dispatch: true, why: `${file} has not run by any trigger in ${minutesSinceAnyRun === null ? 'ever' : minutesSinceAnyRun + 'm'}, past its ${expectedGapMin}m interval` };
 }
 
-/** When did this workflow last run, by ANY trigger? null = never. */
+/**
+ * Events that never do a scheduled job's work. A `pull_request` run of
+ * agent-autopilot.yml arms auto-merge for ONE pull request; its sweep job is
+ * gated `github.event_name != 'pull_request'` and does not run at all. Counting
+ * those runs as "the workflow ran" kept this dispatcher from ever dispatching
+ * the sweep: measured 2026-09-03, autopilot had run 10 times in the last hour,
+ * every one of them pull_request, and its sweep had run twice in six hours on
+ * a thirty-minute cron. The starved question is "did the SCHEDULED work happen", and a
+ * per-PR run is not evidence of that.
+ */
+export const PER_ITEM_EVENTS = new Set(['pull_request', 'pull_request_target', 'issue_comment', 'issues', 'check_run', 'check_suite']);
+
+/** When did this workflow last run by a trigger that does its scheduled work? null = never. */
 async function lastAnyRun(file) {
-  const res = await api(`/actions/workflows/${encodeURIComponent(file)}/runs?per_page=1`);
+  const res = await api(`/actions/workflows/${encodeURIComponent(file)}/runs?per_page=30`);
   if (!res.ok) return undefined;
   const body = await res.json().catch(() => null);
   if (!body) return undefined;
-  const run = body.workflow_runs?.[0];
+  const run = (body.workflow_runs ?? []).find((r) => !PER_ITEM_EVENTS.has(r.event));
   return run ? Date.parse(run.created_at) : null;
 }
 

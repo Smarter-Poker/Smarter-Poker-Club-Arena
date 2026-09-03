@@ -1375,3 +1375,113 @@
   gap: 1rem;
   padding: 1rem 0;
 }
+
+/* ── Sends still inside their claim-back window ─────────────────────────── */
+/* Phase 3. The block this replaces was inline styles on a panel that could
+   never render, because the query behind it named three transaction types
+   that do not exist in the table. */
+.reversibleBlock {
+  margin-top: 24px;
+}
+
+.reversibleHeading {
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 12px;
+}
+
+.reversibleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.reversibleAmount {
+  font-size: 0.85rem;
+  color: #fff;
+  font-weight: 600;
+}
+
+.reversibleMeta {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 2px;
+}
+
+.reversibleClock {
+  color: #f5a623;
+  font-weight: 600;
+}
+
+.reversibleBtn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  background: rgba(250, 56, 62, 0.15);
+  border: 1px solid rgba(250, 56, 62, 0.3);
+  color: #fa383e;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.reversibleBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.reversibleBtn:focus-visible {
+  outline: 2px solid #fa383e;
+  outline-offset: 2px;
+}
+
+@media (max-width: 480px) {
+  .reversibleRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .reversibleBtn {
+    width: 100%;
+  }
+}
+
+/* ── What the club owes its agents ──────────────────────────────────────── */
+.payoutHeadline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+
+.payoutTotal {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #f5a623;
+}
+
+.payoutTotalLabel {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.55);
+  margin-top: 2px;
+}
+
+.payoutNote {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.45);
+  margin: 8px 0 12px;
+  line-height: 1.5;
+}
+
+/* Wide content scrolls inside its own box; the page never scrolls sideways. */
+.tableScroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}

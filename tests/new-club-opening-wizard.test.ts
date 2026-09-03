@@ -8,7 +8,6 @@ const wizard = read('src/components/club/ClubOpeningWizard.tsx');
 const wizardCss = read('src/components/club/ClubOpeningWizard.css');
 const home = read('src/pages/ClubHomePage.tsx');
 const settings = read('src/pages/ClubSettingsPage.tsx');
-const ownerMessage = read('src/components/club/ClubOwnerMessage.tsx');
 const memberManagement = read('src/pages/MemberManagementPage.tsx');
 const openingSql = read('supabase/migrations/20260901073000_club_opening_setup_wizard.sql');
 const taglineSql = read('supabase/migrations/20260901072500_club_tagline_is_its_own_field.sql');
@@ -47,14 +46,22 @@ describe('new club opening wizard', () => {
   it('keeps a custom tag line separate and never paints the Shark line globally', () => {
     expect(taglineSql).toContain('ADD COLUMN IF NOT EXISTS tagline text');
     expect(home).toContain('Boolean(club.tagline?.trim())');
-    /* The fallback chain moved out of ClubHomePage on 2026-09-01 when Dan
-       made the lobby strip an owner-authored message: it is
-       `lobby_message -> tagline -> "Welcome To <Club>"` and it lives in
-       clubOwnerMessageLine now. The tag line is still the second link, which is
-       what this spec is really protecting - a club that wrote a tag line and no
-       day's message still sees its own line. */
-    expect(ownerMessage).toContain('tagline?.trim() || `Welcome To ${clubName}`');
-    expect(ownerMessage).toContain('message?.trim() ||');
+    /* What this spec protects: a club that wrote a tag line and no day's
+       message still sees its own line.
+       
+       It used to be protected by the SECOND LINK of a fallback chain
+       (`lobby_message -> tagline -> "Welcome To <Club>"`) inside the lobby
+       message strip. On 2026-09-03 that strip was removed from the layout and
+       the day's message became a full-screen greeting on entry, which does NOT
+       fall back to the tag line - a popup that says "Welcome To Club Jaqk"
+       interrupts a player to tell them nothing.
+       
+       So the tag line needed its own home rather than a borrowed one, and it
+       has the welcome block: this is the club's permanent identity, it does not
+       change from one day to the next, and it is the one thing on that block
+       safe to bake in. Pinned at the element now, not at a fallback. */
+    expect(home).toContain('club-lobby-command-top__tagline');
+    expect(home).toContain('{club.tagline?.trim() && (');
     expect(settings).toContain('value={settings.tagline}');
     expect(home.toLowerCase()).not.toContain('all fish of all shapes and sizes are welcome');
     expect(wizard.toLowerCase()).toContain('that tag line belongs to shark club');

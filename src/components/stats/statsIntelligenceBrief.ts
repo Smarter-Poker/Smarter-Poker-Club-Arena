@@ -51,6 +51,13 @@ export function buildStatsIntelligenceBrief(input: {
   daily?: BriefDailyPoint[] | null;
   /** Injectable so calendar-window claims are deterministic in tests. */
   asOf?: Date;
+  /**
+   * The page's analysis window in days (null = all time). The trend item
+   * looks at the most recent 7 days OR the whole window when the window is
+   * shorter than that - it used to be a fixed 7 UTC days regardless, so under
+   * "7 Days" it was a double filter and it never said which.
+   */
+  windowDays?: number | null;
 }): IntelligenceBriefItem[] {
   const { overall } = input;
   const positions = input.positions ?? [];
@@ -73,8 +80,12 @@ export function buildStatsIntelligenceBrief(input: {
 
   const asOf = Number.isFinite(input.asOf?.getTime()) ? new Date(input.asOf as Date) : new Date();
   const end = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), asOf.getUTCDate()));
+  const trendDays =
+    typeof input.windowDays === 'number' && input.windowDays > 0
+      ? Math.min(7, input.windowDays)
+      : 7;
   const start = new Date(end);
-  start.setUTCDate(start.getUTCDate() - 6);
+  start.setUTCDate(start.getUTCDate() - (trendDays - 1));
   const dayKey = (date: Date) => date.toISOString().slice(0, 10);
   const recent = daily.filter((row) => row.date >= dayKey(start) && row.date <= dayKey(end));
   const recentHands = recent.reduce(
@@ -105,7 +116,9 @@ export function buildStatsIntelligenceBrief(input: {
       id: 'sample',
       label: 'Sample Confidence',
       value: sampleValue,
-      detail: `${sampleHands.toLocaleString()} ${overall.cash_hands ? 'cash ' : ''}hands in this read.`,
+      detail: overall.cash_hands
+        ? `${sampleHands.toLocaleString()} cash hands in this read.`
+        : `${sampleHands.toLocaleString()} hands in this read, none of them cash.`,
       tone: 'neutral',
     },
     {
@@ -146,7 +159,7 @@ export function buildStatsIntelligenceBrief(input: {
     },
     {
       id: 'trend',
-      label: 'Recent Result Direction',
+      label: `Last ${trendDays} Day${trendDays === 1 ? '' : 's'} Direction`,
       value: trendValue,
       detail:
         recent.length > 0

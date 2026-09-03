@@ -12,6 +12,7 @@ import { SPIN_TIERS } from '../config/spinSpec';
 // Type-only: erased at compile time, so this module never boots the Supabase
 // client that TournamentService constructs at import.
 import type { TournamentConfig } from '../services/TournamentService';
+import { RESTART_MAX_MINUTES } from '../services/TournamentService';
 import { payoutEngine } from '../services/PayoutEngine';
 import { rakeRateFor, splitBuyIn } from '../utils/buyIn';
 import { freeBuyConfig } from '../utils/freeBuy';
@@ -358,7 +359,7 @@ export function buildTournamentConfig(
     finalTableDealEnabled: isMtt ? (config.finalTableDeal ?? false) : false,
     restartEveryMinutes:
       isMtt && config.restartTournamentEvery
-        ? clampInt(config.restartEveryMinutes ?? 60, 5, 1440)
+        ? clampInt(config.restartEveryMinutes ?? 60, 5, RESTART_MAX_MINUTES)
         : undefined,
     /* MULTI-DAY IS NOT BUILT, SO IT IS NOT SENT (2026-08-26).
        `is_multi_day` and `total_days` are stored, badged in two places, and

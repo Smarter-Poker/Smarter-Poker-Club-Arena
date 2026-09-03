@@ -1,0 +1,283 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   LAYERED CARD — shared chrome for every bitmap-chassis lobby card.
+   Sizes are in cqw against the card itself, so the same rules fit a 320px
+   phone and a 430px one; every position comes from the card's own pixel
+   coordinate map, never from flex/grid guesses.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.agc-layered {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  container-type: inline-size;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.agc-layered__chassis,
+.agc-layered__layer {
+  position: absolute;
+  display: block;
+  max-width: none;
+  pointer-events: none;
+  user-select: none;
+}
+
+.agc-layered__chassis {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.agc-layered__layer {
+  z-index: 2;
+  object-fit: fill;
+}
+
+.agc-layered__zone {
+  position: absolute;
+  z-index: 3;
+  min-width: 0;
+  display: grid;
+  align-items: center;
+  overflow: hidden;
+}
+
+/* ── Text ───────────────────────────────────────────────────────────────── */
+
+.agc-layered__text {
+  display: block;
+  margin: 0;
+  max-width: 100%;
+  font-family: 'Roboto Condensed', 'Arial Narrow', Impact, sans-serif;
+  font-stretch: condensed;
+  white-space: nowrap;
+  line-height: 1;
+  /* `--fit` is written by useFitText; `--size` by the modifier below. */
+  font-size: calc(var(--size, 6cqw) * var(--fit, 1));
+}
+
+/* Brushed silver: one smooth ramp (no mid-glyph band - see NlhPremiumCard.css). */
+.agc-layered__text--silver {
+  color: #ececec;
+  background: linear-gradient(180deg, #fff 0%, #f4f4f4 40%, #d2d2d4 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0.3cqw 0 #050607) drop-shadow(0 0.5cqw 0.75cqw rgb(0 0 0 / 94%));
+}
+
+.agc-layered__text--white {
+  color: #fff;
+  text-shadow:
+    0 0.25cqw 0 #050607,
+    0 0.5cqw 0.9cqw rgb(0 0 0 / 90%);
+}
+
+.agc-layered__text--blue {
+  color: #5bb8ff;
+  text-shadow:
+    0 0 0.8cqw rgb(49 168 255 / 55%),
+    0 0.25cqw 0.5cqw rgb(0 0 0 / 85%);
+}
+
+.agc-layered__text--gold {
+  color: #f2cf6a;
+  background: linear-gradient(180deg, #fff2b8 0%, #f1c64c 45%, #a8781a 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0.25cqw 0 #2a1d05) drop-shadow(0 0 1.2cqw rgb(255 196 64 / 45%));
+}
+
+.agc-layered__text--muted {
+  color: #c5c5c8;
+  text-shadow: 0 0.22cqw 0.35cqw #000;
+}
+
+.agc-layered__text--title {
+  --size: 7.1cqw;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.agc-layered__text--subtitle {
+  --size: 3.2cqw;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+/* Small blue plaque labels (GAME TYPE, STAKES ...) where the chassis has none. */
+.agc-layered__text--label {
+  --size: 2.75cqw;
+  font-family: Inter, 'Roboto Condensed', system-ui, sans-serif;
+  font-stretch: normal;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.agc-layered__text--value {
+  --size: 6.6cqw;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.agc-layered__text--value-sm {
+  --size: 5.2cqw;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.agc-layered__text--wrap {
+  white-space: pre-line;
+  text-align: center;
+  line-height: 1.02;
+}
+
+/* ── Status pill ────────────────────────────────────────────────────────── */
+
+.agc-layered__status {
+  --status-glow: #4fc3ff;
+  --status-ink: #9fe8ff;
+  place-items: center;
+  border-radius: 999px;
+  overflow: visible;
+}
+
+.agc-layered__status-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    ellipse 70% 120% at 50% 50%,
+    color-mix(in srgb, var(--status-glow) 26%, transparent) 0%,
+    color-mix(in srgb, var(--status-glow) 10%, transparent) 55%,
+    transparent 100%
+  );
+  box-shadow:
+    inset 0 0 1.4cqw color-mix(in srgb, var(--status-glow) 45%, transparent),
+    inset 0 -0.35cqw 0.8cqw color-mix(in srgb, var(--status-glow) 30%, transparent);
+  pointer-events: none;
+}
+
+.agc-layered__status-text {
+  --size: 4.6cqw;
+  position: relative;
+  padding: 0 0.6cqw;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--status-ink);
+  text-shadow:
+    0 0 0.6cqw color-mix(in srgb, var(--status-glow) 90%, transparent),
+    0 0 1.6cqw color-mix(in srgb, var(--status-glow) 55%, transparent),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 80%);
+}
+
+.agc-layered__status--green {
+  --status-glow: #35d95a;
+  --status-ink: #b9ffc6;
+}
+
+.agc-layered__status--red {
+  --status-glow: #ff4b52;
+  --status-ink: #ffc2c4;
+}
+
+.agc-layered__status--gold {
+  --status-glow: #f1b83a;
+  --status-ink: #ffe9a8;
+}
+
+.agc-layered__status--neutral {
+  --status-glow: #8a97a8;
+  --status-ink: #dfe6ef;
+}
+
+/* Square (not pill) status wells, e.g. the Spins/Heads-Up "Filling" plaque. */
+.agc-layered__status--plaque {
+  border-radius: 1.6cqw;
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+
+.agc-layered__hitbox {
+  position: absolute;
+  z-index: 4;
+  appearance: none;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
+}
+
+.agc-layered__hitbox:focus-visible {
+  outline: 0.45cqw solid #7dccff;
+  outline-offset: -0.8cqw;
+  filter: drop-shadow(0 0 1.2cqw #168de8);
+}
+
+.agc-layered__hitbox:disabled {
+  cursor: not-allowed;
+}
+
+.agc-layered__action {
+  display: grid;
+  place-items: center;
+  color: #fff;
+}
+
+.agc-layered__action-text {
+  --size: 5.2cqw;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #fff;
+  text-shadow:
+    0 0.25cqw 0 rgb(0 0 0 / 70%),
+    0 0.5cqw 1cqw rgb(0 0 0 / 60%);
+}
+
+.agc-layered__action--silver .agc-layered__action-text {
+  color: #ececec;
+  background: linear-gradient(180deg, #fff 0%, #f4f4f4 40%, #d2d2d4 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: none;
+  filter: drop-shadow(0 0.3cqw 0 #050607) drop-shadow(0 0.5cqw 0.75cqw rgb(0 0 0 / 94%));
+}
+
+.agc-layered__action--green .agc-layered__action-text {
+  color: #c8ffd2;
+  text-shadow:
+    0 0 1cqw rgb(53 217 90 / 80%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.agc-layered__action--red .agc-layered__action-text {
+  color: #ffd0d2;
+  text-shadow:
+    0 0 1cqw rgb(255 75 82 / 80%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.agc-layered__action--gold .agc-layered__action-text {
+  color: #ffeeb3;
+  text-shadow:
+    0 0 1cqw rgb(241 184 58 / 80%),
+    0 0.25cqw 0 rgb(0 0 0 / 70%);
+}
+
+.agc-layered__action:disabled .agc-layered__action-text {
+  opacity: 0.55;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .agc-layered__hitbox:not(:disabled):active {
+    background: rgb(255 255 255 / 3%);
+  }
+}

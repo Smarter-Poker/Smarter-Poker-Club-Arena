@@ -282,11 +282,19 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
                 gap: 10,
               }}
             >
-              <Stat label="Downline Rake" value={money(summary.rake_generated)} accent />
+              <Stat
+                label={debounced ? 'Downline Rake (All Members)' : 'Downline Rake'}
+                value={money(summary.rake_generated)}
+                accent
+              />
               <Stat
                 label="Your Share"
                 value={money(summary.estimated_commission)}
-                sub={`at ${Math.round(Number(summary.commission_rate) * 100)}%`}
+                sub={
+                  Number.isFinite(Number(summary.commission_rate))
+                    ? `at ${Math.round(Number(summary.commission_rate) * 100)}%`
+                    : 'rate unavailable'
+                }
               />
               <Stat
                 label="Members"
@@ -339,6 +347,12 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
           </div>
 
           {/* TABLE */}
+          {rows.length >= 500 && (
+            <p style={{ color: '#f59e0b', fontSize: '0.78rem', margin: '0 0 8px' }}>
+              Showing The First 500 Members. The Totals Above Cover Everyone; Search To Find A
+              Member Not Listed.
+            </p>
+          )}
           {rows.length === 0 ? (
             <p style={{ color: '#8aa' }}>
               {debounced
@@ -413,9 +427,10 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
             </div>
           )}
           <p style={{ color: '#66787f', fontSize: '0.75rem', margin: 0 }}>
-            A Hand's Rake Is Split Evenly Between The Players Dealt Into It - The Same Rule The
-            Weekly Payout Uses, So These Figures Match Your Statement. Tap An Agent To Open Their
-            Downline.
+            A Hand's Rake Is Attributed By Weighted Contribution - Each Player's Share Follows What
+            They Put Into The Pot - The Same Rule The Weekly Payout Uses, So These Figures Match
+            Your Statement. Older Hands Recorded Under The Equal Split Are Reported As They Were
+            Paid. Tap An Agent To Open Their Downline.
           </p>
         </>
       )}

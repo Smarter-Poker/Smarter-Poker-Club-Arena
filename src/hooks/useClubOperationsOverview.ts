@@ -88,8 +88,12 @@ export interface ClubOperationsOverviewState {
   loading: boolean;
   /** Set when the read failed. The caller still renders its tools. */
   error: string | null;
-  /** True when the viewer is not staff for this club, per the database. */
+  /** True when the database refused the reading (42501) while the client
+   *  believes the viewer is staff. Not an error the operator can retry. */
   denied: boolean;
+  /** When the numbers currently on screen were read. Survives a failed
+   *  refresh, so stale figures can be labelled with their real age instead
+   *  of losing their timestamp the moment a poll fails. */
   refreshedAt: number | null;
   refresh: () => void;
 }
@@ -271,13 +275,20 @@ export function useClubOperationsOverview(
   const requestRef = useRef(0);
   const clubRef = useRef<string | null>(null);
 
+  /**
+   * @param silent do not show the loading state (a background refresh).
+   * @param force skip the 15s shared answer. A bus event says something just
+   *   changed, so reusing a cached read would leave the badge stale for up to
+   *   SHARE_MS after the very action that changed it - which is the whole
+   *   point of listening to the bus.
+   */
   const load = useCallback(
-    async (silent = false) => {
+    async ({ silent = false, force = true }: { silent?: boolean; force?: boolean } = {}) => {
       if (!clubUUID) return;
       const requestId = ++requestRef.current;
       if (!silent) setLoading(true);
       try {
-        const next = await readOverview(clubUUID, !silent);
+        const next = await readOverview(clubUUID, force);
         // A later request has already answered. Dropping this one keeps an
         // out-of-order reply from overwriting fresher numbers.
         if (requestId !== requestRef.current) return;
@@ -321,17 +332,21 @@ export function useClubOperationsOverview(
     let disposed = false;
     let coalesce: ReturnType<typeof setTimeout> | null = null;
 
-    void load();
+    // The first read of a mount may reuse a sibling's answer from the last
+    // fifteen seconds; that is what stops the page and the rail asking twice.
+    void load({ force: false });
 
     const poll = setInterval(() => {
-      if (!disposed && document.visibilityState === 'visible') void load(true);
+      if (!disposed && document.visibilityState === 'visible') {
+        void load({ silent: true, force: false });
+      }
     }, POLL_MS);
 
     const nudge = () => {
       if (coalesce) return;
       coalesce = setTimeout(() => {
         coalesce = null;
-        if (!disposed) void load(true);
+        if (!disposed) void load({ silent: true, force: true });
       }, COALESCE_MS);
     };
     const unsubs = BUS_EVENTS.map((event) => masterBus.subscribe(event, nudge));
@@ -345,12 +360,12 @@ export function useClubOperationsOverview(
   }, [clubUUID, load]);
 
   const revalidate = useCallback(() => {
-    void load(true);
+    void load({ silent: true, force: true });
   }, [load]);
   useVisibilityRefresh(revalidate);
 
   const refresh = useCallback(() => {
-    void load();
+    void load({ force: true });
   }, [load]);
 
   return useMemo(

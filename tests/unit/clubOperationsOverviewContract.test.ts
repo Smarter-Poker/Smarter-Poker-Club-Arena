@@ -116,6 +116,24 @@ describe('every key the function returns is read by the client', () => {
   });
 });
 
+describe('every queue a tool badges is a queue the function returns', () => {
+  const declared = new Set(
+    getClubOperationItems('sample-club', getClubNavigationCapabilities(null, true)).flatMap(
+      (item) => item.signals || []
+    )
+  );
+
+  it('declares signals at all, so this suite is not vacuous', () => {
+    expect(declared.size).toBeGreaterThanOrEqual(7);
+  });
+
+  it.each([...declared])('%s is a count the SQL returns', (signal) => {
+    // A registry signal naming a count the function does not return would
+    // badge zero forever, and look exactly like a quiet club.
+    expect(COUNT_KEYS).toContain(signal);
+  });
+});
+
 describe('every alert routes to a tool that exists', () => {
   const registry = getClubOperationItems(
     'sample-club',

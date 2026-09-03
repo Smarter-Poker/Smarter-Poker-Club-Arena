@@ -19,13 +19,13 @@
  *      twenty-one tools are how they do their job; a degraded overview must
  *      never be allowed to hide them.
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClubWorkspaceValue } from '../../src/contexts/ClubWorkspaceContext';
 import type { ClubNavigationAccess } from '../../src/hooks/useClubNavigationAccess';
 import { resetClubOperationsOverviewCache } from '../../src/hooks/useClubOperationsOverview';
-import ClubOperationsPage from '../../src/pages/club/ClubOperationsPage';
+import ClubOperationsPage, { ago, freshnessLabel } from '../../src/pages/club/ClubOperationsPage';
 
 const CLUB_UUID = '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3';
 
@@ -89,8 +89,8 @@ function payload(overrides: Record<string, unknown> = {}) {
       blacklist_active: 0,
       blacklist_expired: 0,
       chip_requests_pending: 4,
-      cashouts_pending: 0,
-      credit_requests_pending: 0,
+      cashouts_pending: 3,
+      credit_requests_pending: 2,
       invoices_open: 0,
       invoices_overdue: 0,
       tickets_outstanding: 0,
@@ -230,10 +230,21 @@ describe('the operations workspace reads the club', () => {
     mount();
     await waitFor(() => expect(screen.getByText('Chip Requests Waiting')).toBeTruthy());
     expect(screen.getByLabelText('3 Waiting')).toBeTruthy();
-    expect(screen.getByLabelText('4 Waiting')).toBeTruthy();
+    // The cashier is one desk for three queues: 4 chip requests, 3 cash outs
+    // and 2 credit requests. A badge of 4 would send an operator to a tile
+    // reading 4 with 9 things behind it.
+    expect(screen.getByLabelText('9 Waiting')).toBeTruthy();
     // Nothing is waiting in Reports, so the tile carries no number.
     const reports = screen.getByText('Reports').closest('a');
     expect(reports?.textContent).not.toMatch(/\d/);
+  });
+
+  it('reserves the reading strip while the first read is in flight', async () => {
+    rpcMock.mockReturnValue(new Promise(() => undefined));
+    mount();
+    await waitFor(() => expect(screen.getByLabelText('Reading The Club')).toBeTruthy());
+    expect(screen.getByText('Reading The Club')).toBeTruthy();
+    expect(screen.getByLabelText('Reading The Club').getAttribute('aria-busy')).toBe('true');
   });
 });
 
@@ -258,6 +269,21 @@ describe('a failed reading never takes the tools away', () => {
     }
   });
 
+  it('keeps the age of the numbers that are still on screen', async () => {
+    rpcMock.mockResolvedValueOnce({ data: payload(), error: null });
+    mount();
+    await waitFor(() => expect(screen.getByText('122,786')).toBeTruthy());
+    // A failed refresh used to drop the timestamp, so an operator was left
+    // reading figures of unknown age with no way to tell.
+    rpcMock.mockResolvedValue({ data: null, error: { code: 'PGRST301', message: 'boom' } });
+    fireEvent.click(screen.getByText('Refresh'));
+    await waitFor(() =>
+      expect(screen.getByText(/Live Readings Unavailable, Last Read/i)).toBeTruthy()
+    );
+    // The last good numbers are still there, and still labelled.
+    expect(screen.getByText('122,786')).toBeTruthy();
+  });
+
   it('renders the tools even when the club refuses the reading outright', async () => {
     rpcMock.mockResolvedValue({
       data: null,
@@ -266,8 +292,9 @@ describe('a failed reading never takes the tools away', () => {
     mount();
     await waitFor(() => expect(screen.getByText('Players')).toBeTruthy());
     // A refusal is not an error the operator can fix by retrying, so the page
-    // does not shout about it; it simply has no badges.
+    // says so plainly and does not offer a failure they might chase.
     expect(screen.queryByText('Live Readings Unavailable')).toBeNull();
+    expect(screen.getByText('Live Readings Restricted For This Role')).toBeTruthy();
   });
 });
 
@@ -293,5 +320,50 @@ describe('the workspace is still permission aware', () => {
     expect(screen.queryByText('Settings')).toBeNull();
     expect(screen.queryByText('Club Data')).toBeNull();
     expect(screen.queryByText('Blacklist')).toBeNull();
+  });
+});
+
+describe('the freshness line', () => {
+  const then = 1_000_000_000_000;
+
+  it('reads as Title Case at every scale', () => {
+    expect(ago(then, then + 3_000)).toBe('Just Now');
+    expect(ago(then, then + 42_000)).toBe('42s Ago');
+    expect(ago(then, then + 5 * 60_000)).toBe('5m Ago');
+    expect(ago(then, then + 3 * 3_600_000)).toBe('3h Ago');
+    expect(ago(then, then + 2 * 86_400_000)).toBe('2d Ago');
+  });
+
+  it('never claims a reading it does not have, and never hides a stale age', () => {
+    expect(freshnessLabel({ error: false, denied: false, loading: true, refreshedAt: null })).toBe(
+      'Reading The Club'
+    );
+    expect(freshnessLabel({ error: false, denied: false, loading: false, refreshedAt: null })).toBe(
+      'Awaiting First Reading'
+    );
+    expect(freshnessLabel({ error: false, denied: true, loading: false, refreshedAt: null })).toBe(
+      'Live Readings Restricted For This Role'
+    );
+    expect(
+      freshnessLabel({
+        error: false,
+        denied: false,
+        loading: false,
+        refreshedAt: then,
+        now: then + 90_000,
+      })
+    ).toBe('Updated 1m Ago');
+    expect(
+      freshnessLabel({
+        error: true,
+        denied: false,
+        loading: false,
+        refreshedAt: then,
+        now: then + 90_000,
+      })
+    ).toBe('Live Readings Unavailable, Last Read 1m Ago');
+    expect(freshnessLabel({ error: true, denied: false, loading: false, refreshedAt: null })).toBe(
+      'Live Readings Unavailable'
+    );
   });
 });

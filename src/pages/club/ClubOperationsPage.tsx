@@ -24,15 +24,44 @@ const FRESHNESS_TICK_MS = 15_000;
  * wrong for a page whose every word is capitalized, so the casing lives here
  * rather than changing a helper five other surfaces read.
  */
-export function freshnessLabel(then: number, now: number = Date.now()): string {
+export function ago(then: number, now: number = Date.now()): string {
   const secs = Math.max(0, Math.floor((now - then) / 1000));
-  if (secs < 10) return 'Updated Just Now';
-  if (secs < 60) return `Updated ${secs}s Ago`;
+  if (secs < 10) return 'Just Now';
+  if (secs < 60) return `${secs}s Ago`;
   const mins = Math.floor(secs / 60);
-  if (mins < 60) return `Updated ${mins}m Ago`;
+  if (mins < 60) return `${mins}m Ago`;
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `Updated ${hours}h Ago`;
-  return `Updated ${Math.floor(hours / 24)}d Ago`;
+  if (hours < 24) return `${hours}h Ago`;
+  return `${Math.floor(hours / 24)}d Ago`;
+}
+
+/**
+ * What the freshness line says. A failed refresh must not take the AGE off
+ * the numbers that are still on screen: an operator reading stale figures has
+ * to be able to see how stale they are, and the first version of this line
+ * dropped the timestamp the moment a poll failed.
+ */
+export function freshnessLabel({
+  error,
+  denied,
+  loading,
+  refreshedAt,
+  now = Date.now(),
+}: {
+  error: boolean;
+  denied: boolean;
+  loading: boolean;
+  refreshedAt: number | null;
+  now?: number;
+}): string {
+  if (error) {
+    return refreshedAt
+      ? `Live Readings Unavailable, Last Read ${ago(refreshedAt, now)}`
+      : 'Live Readings Unavailable';
+  }
+  if (denied) return 'Live Readings Restricted For This Role';
+  if (refreshedAt) return `Updated ${ago(refreshedAt, now)}`;
+  return loading ? 'Reading The Club' : 'Awaiting First Reading';
 }
 
 interface Tile {
@@ -67,6 +96,7 @@ export default function ClubOperationsPage() {
     overview,
     loading: overviewLoading,
     error: overviewError,
+    denied: overviewDenied,
     refreshedAt,
     refresh,
   } = useClubOperationsOverview(
@@ -192,13 +222,13 @@ export default function ClubOperationsPage() {
               {overviewLoading ? 'Reading' : 'Refresh'}
             </button>
             <span className={styles.freshnessNote}>
-              {overviewError
-                ? 'Live Readings Unavailable'
-                : refreshedAt
-                  ? freshnessLabel(refreshedAt, tick)
-                  : overviewLoading
-                    ? 'Reading The Club'
-                    : 'Awaiting First Reading'}
+              {freshnessLabel({
+                error: !!overviewError,
+                denied: overviewDenied,
+                loading: overviewLoading,
+                refreshedAt,
+                now: tick,
+              })}
             </span>
           </div>
         </div>
@@ -207,6 +237,17 @@ export default function ClubOperationsPage() {
           <span className={styles.heroMachineLabel}>Command Deck</span>
         </div>
       </header>
+
+      {tiles.length === 0 && overviewLoading && (
+        <section className={styles.pulse} aria-label="Reading The Club" aria-busy="true">
+          {[0, 1, 2, 3, 4, 5].map((slot) => (
+            <article className={`${styles.pulseTile} ${styles.pulseSkeleton}`} key={slot}>
+              <span className={styles.skeletonLabel} aria-hidden="true" />
+              <span className={styles.skeletonValue} aria-hidden="true" />
+            </article>
+          ))}
+        </section>
+      )}
 
       {tiles.length > 0 && (
         <section className={styles.pulse} aria-label="Live Club Readings">
@@ -221,7 +262,11 @@ export default function ClubOperationsPage() {
       )}
 
       {alerts.length > 0 && (
-        <section className={styles.alerts} aria-label="Work Waiting In This Club">
+        <section
+          className={styles.alerts}
+          aria-label="Work Waiting In This Club"
+          aria-live="polite"
+        >
           <p className={styles.alertsTitle}>Waiting For You</p>
           <ul className={styles.alertList}>
             {alerts.map((alert) => {

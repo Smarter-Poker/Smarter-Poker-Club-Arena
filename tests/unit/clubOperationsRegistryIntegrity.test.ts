@@ -155,11 +155,29 @@ describe('a badge means work waiting, never volume', () => {
     return found;
   };
 
-  it('reads a tool queue from its declared signal', () => {
+  it('reads a tool queue from its declared signals', () => {
     expect(getClubOperationBadge(item('players'), counts, EVERY_ITEM)).toBe(3);
     expect(getClubOperationBadge(item('reports'), counts, EVERY_ITEM)).toBe(2);
     expect(getClubOperationBadge(item('anti-cheat'), counts, EVERY_ITEM)).toBe(7);
     expect(getClubOperationBadge(item('settlement'), counts, EVERY_ITEM)).toBe(5);
+  });
+
+  it('sums every queue that lands on one desk', () => {
+    // The cashier takes chip requests, cash-out requests and credit requests.
+    // A badge that counted the first of the three would send an operator to a
+    // tile reading 4 with 9 things behind it.
+    expect(item('cashier').signals).toEqual([
+      'chip_requests_pending',
+      'cashouts_pending',
+      'credit_requests_pending',
+    ]);
+    expect(
+      getClubOperationBadge(
+        item('cashier'),
+        { chip_requests_pending: 4, cashouts_pending: 3, credit_requests_pending: 2 },
+        EVERY_ITEM
+      )
+    ).toBe(9);
   });
 
   it('stays quiet for a tool with nothing waiting and for a tool with no queue', () => {
@@ -169,7 +187,7 @@ describe('a badge means work waiting, never volume', () => {
   });
 
   it('rolls a group overview up from the tools underneath it', () => {
-    // finance: cashier 4 + settlement 5
+    // finance: cashier 4 + settlement 5 (no cash-outs or credit requests here)
     expect(getClubOperationBadge(item('finance-overview'), counts, EVERY_ITEM)).toBe(9);
     // No tool in Club Control has a queue today, so its rail badge stays
     // quiet rather than inventing a number to display.

@@ -31,7 +31,13 @@ export interface ClubOperationItem {
   group: ClubOperationGroupId | 'overview';
   access: ClubOperationAccess;
   rail?: boolean;
-  signal?: ClubOperationSignal;
+  /**
+   * Every queue this one tool is where the work lands. A list, not a single
+   * key: the cashier is the desk for chip requests, cash-out requests AND
+   * credit requests, and a badge that counted one of the three would send an
+   * operator to a tile reading 3 with 8 things behind it.
+   */
+  signals?: ClubOperationSignal[];
 }
 
 export interface ClubOperationGroup {
@@ -104,7 +110,7 @@ const DEFINITIONS: OperationDefinition[] = [
     group: 'people',
     access: 'staff',
     rail: true,
-    signal: 'members_pending',
+    signals: ['members_pending'],
   },
   {
     id: 'agents',
@@ -122,7 +128,7 @@ const DEFINITIONS: OperationDefinition[] = [
     group: 'people',
     access: 'staff',
     rail: true,
-    signal: 'reports_open',
+    signals: ['reports_open'],
   },
   /**
    * PHASE 7 — two built tools that had no door.
@@ -148,7 +154,7 @@ const DEFINITIONS: OperationDefinition[] = [
     suffix: 'anti-cheat',
     group: 'people',
     access: 'staff',
-    signal: 'anti_cheat_flags_open',
+    signals: ['anti_cheat_flags_open'],
   },
   {
     id: 'disputes',
@@ -157,7 +163,7 @@ const DEFINITIONS: OperationDefinition[] = [
     suffix: 'disputes',
     group: 'people',
     access: 'staff',
-    signal: 'disputes_open',
+    signals: ['disputes_open'],
   },
   {
     id: 'blacklist',
@@ -166,7 +172,7 @@ const DEFINITIONS: OperationDefinition[] = [
     suffix: 'blacklist',
     group: 'people',
     access: 'control',
-    signal: 'blacklist_expired',
+    signals: ['blacklist_expired'],
   },
   {
     id: 'finance-overview',
@@ -201,7 +207,7 @@ const DEFINITIONS: OperationDefinition[] = [
     suffix: 'cashier',
     group: 'finance',
     access: 'finance',
-    signal: 'chip_requests_pending',
+    signals: ['chip_requests_pending', 'cashouts_pending', 'credit_requests_pending'],
   },
   {
     id: 'settlement',
@@ -210,7 +216,7 @@ const DEFINITIONS: OperationDefinition[] = [
     suffix: 'settlement',
     group: 'finance',
     access: 'finance',
-    signal: 'invoices_open',
+    signals: ['invoices_open'],
   },
   {
     id: 'insurance',
@@ -327,12 +333,12 @@ export function getClubOperationBadge(
   items: readonly ClubOperationItem[] = []
 ): number {
   if (!counts) return 0;
-  const own = (entry: ClubOperationItem): number => {
-    if (!entry.signal) return 0;
-    const value = counts[entry.signal];
-    return typeof value === 'number' && value > 0 ? value : 0;
-  };
-  if (item.signal) return own(item);
+  const own = (entry: ClubOperationItem): number =>
+    (entry.signals || []).reduce((total, key) => {
+      const value = counts[key];
+      return total + (typeof value === 'number' && value > 0 ? value : 0);
+    }, 0);
+  if (item.signals?.length) return own(item);
   const sum = (scope: readonly ClubOperationItem[]) =>
     scope.reduce((total, entry) => total + own(entry), 0);
   if (item.id === 'overview') return sum(items);

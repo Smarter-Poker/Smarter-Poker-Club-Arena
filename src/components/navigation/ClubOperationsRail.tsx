@@ -78,7 +78,11 @@ export default function ClubOperationsRail() {
         <ul className={styles.items}>
           {items.map((item) => {
             const isActive = item.path === activePath;
-            const badge = getClubOperationBadge(item, counts, permitted);
+            /* The identity plate IS the Overview link and already carries the
+               workspace total, so the Overview item in the strip would print
+               the same number a second time, six pixels away. */
+            const badge =
+              item.id === 'overview' ? 0 : getClubOperationBadge(item, counts, permitted);
             return (
               <li key={item.id}>
                 <Link

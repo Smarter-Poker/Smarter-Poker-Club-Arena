@@ -1,14 +1,14 @@
 import { useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
+  getClubOperationBadge,
   getClubOperationGroups,
   type ClubOperationGroupId,
-  type ClubOperationItem,
 } from '../../config/clubOperationsNavigation';
 import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
 import {
   useClubOperationsOverview,
-  type ClubOperationsCounts,
+  type ClubOperationsAlert,
 } from '../../hooks/useClubOperationsOverview';
 import { formatChips, formatInt } from '../../utils/clubDashboard';
 import { mediaUrl } from '../../utils/mediaBase';
@@ -26,6 +26,10 @@ interface WorkspaceReading {
   value: string;
 }
 
+interface WorkspaceAlert extends ClubOperationsAlert {
+  path: string | null;
+}
+
 function WorkspacePage({
   eyebrow,
   title,
@@ -33,6 +37,7 @@ function WorkspacePage({
   art,
   links,
   readings,
+  alerts,
   liveLine = 'Live Systems Remain Authoritative',
 }: {
   eyebrow: string;
@@ -41,6 +46,7 @@ function WorkspacePage({
   art: string;
   links: WorkspaceLink[];
   readings?: WorkspaceReading[];
+  alerts?: WorkspaceAlert[];
   liveLine?: string;
 }) {
   /* A <section>, not a <main>. AppLayout already renders <main
@@ -70,6 +76,37 @@ function WorkspacePage({
               <strong>{reading.value}</strong>
             </p>
           ))}
+        </section>
+      )}
+
+      {alerts && alerts.length > 0 && (
+        <section className={styles.alerts} aria-label={`${title} Work Waiting`} aria-live="polite">
+          <p className={styles.alertsTitle}>Waiting For You</p>
+          <ul className={styles.alertList}>
+            {alerts.map((alert) => {
+              const body = (
+                <>
+                  <span
+                    className={`${styles.alertPip} ${styles[alert.severity]}`}
+                    aria-hidden="true"
+                  />
+                  <span className={styles.alertTitle}>{alert.title}</span>
+                  {alert.count > 0 && <span className={styles.alertCount}>{alert.count}</span>}
+                </>
+              );
+              return (
+                <li key={alert.id}>
+                  {alert.path ? (
+                    <Link className={styles.alertRow} to={alert.path}>
+                      {body}
+                    </Link>
+                  ) : (
+                    <span className={styles.alertRow}>{body}</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         </section>
       )}
 
@@ -103,7 +140,12 @@ function useClubWorkspaceGroup(group: ClubOperationGroupId) {
   const { clubId = '' } = useParams();
   const access = useClubWorkspace();
   const { overview } = useClubOperationsOverview(
-    access.routeClubId === clubId || access.clubUUID === clubId ? access.clubUUID : null
+    access.isClubStaff &&
+      !access.loading &&
+      !access.error &&
+      (access.routeClubId === clubId || access.clubUUID === clubId)
+      ? access.clubUUID
+      : null
   );
   const items = useMemo(
     () => getClubOperationGroups(clubId, access).find((entry) => entry.id === group)?.items || [],
@@ -115,26 +157,33 @@ function useClubWorkspaceGroup(group: ClubOperationGroupId) {
     () =>
       items
         .filter((item) => item.id !== `${group}-overview`)
-        .map((item) => ({
-          label: item.label,
-          description: item.description,
-          path: item.path,
-          signal: signalLabel(item, counts),
-        })),
+        .map((item) => {
+          const badge = getClubOperationBadge(item, counts);
+          return {
+            label: item.label,
+            description: item.description,
+            path: item.path,
+            signal: badge > 0 ? `${formatInt(badge)} Waiting` : undefined,
+          };
+        }),
     [counts, group, items]
   );
 
-  return { links, overview };
-}
+  /* Only the alerts this group's own tools own. An operator on /finance is
+     not helped by a membership queue, and sending them to a tool that is not
+     on the page they are looking at is how a link grid earns its reputation. */
+  const alerts = useMemo<WorkspaceAlert[]>(
+    () =>
+      (overview?.alerts || [])
+        .filter((alert) => items.some((item) => item.id === alert.tool))
+        .map((alert) => ({
+          ...alert,
+          path: items.find((item) => item.id === alert.tool)?.path || null,
+        })),
+    [items, overview]
+  );
 
-function signalLabel(
-  item: ClubOperationItem,
-  counts: ClubOperationsCounts | null
-): string | undefined {
-  if (!item.signal || !counts) return undefined;
-  const value = counts[item.signal];
-  if (typeof value !== 'number' || value <= 0) return undefined;
-  return `${formatInt(value)} Waiting`;
+  return { links, alerts, overview };
 }
 
 export function RewardsWorkspacePage() {
@@ -299,8 +348,9 @@ export function LegalWorkspacePage() {
 }
 
 export function ClubFinanceWorkspacePage() {
-  const { links, overview } = useClubWorkspaceGroup('finance');
+  const { links, alerts, overview } = useClubWorkspaceGroup('finance');
   const kpis = overview?.kpis;
+  const counts = overview?.counts;
   const readings: WorkspaceReading[] = [];
   if (kpis) {
     if (typeof kpis.club_bank === 'number') {
@@ -314,6 +364,12 @@ export function ClubFinanceWorkspacePage() {
     }
     readings.push({ label: 'Hands Today', value: formatInt(kpis.hands_today) });
   }
+  if (counts) {
+    readings.push({
+      label: 'Tickets Outstanding',
+      value: formatInt(counts.tickets_outstanding),
+    });
+  }
   return (
     <WorkspacePage
       eyebrow="Ledger Circuit"
@@ -324,13 +380,14 @@ export function ClubFinanceWorkspacePage() {
         readings.length > 0 ? 'Read Live From This Club' : 'Live Systems Remain Authoritative'
       }
       readings={readings}
+      alerts={alerts}
       links={links}
     />
   );
 }
 
 export function ClubControlWorkspacePage() {
-  const { links, overview } = useClubWorkspaceGroup('control');
+  const { links, alerts, overview } = useClubWorkspaceGroup('control');
   const kpis = overview?.kpis;
   const counts = overview?.counts;
   const readings: WorkspaceReading[] = [];
@@ -344,6 +401,7 @@ export function ClubControlWorkspacePage() {
   }
   if (counts) {
     readings.push({ label: 'Membership Requests', value: formatInt(counts.members_pending) });
+    readings.push({ label: 'Excluded Players', value: formatInt(counts.blacklist_active) });
   }
   return (
     <WorkspacePage
@@ -355,6 +413,7 @@ export function ClubControlWorkspacePage() {
         readings.length > 0 ? 'Read Live From This Club' : 'Live Systems Remain Authoritative'
       }
       readings={readings}
+      alerts={alerts}
       links={links}
     />
   );

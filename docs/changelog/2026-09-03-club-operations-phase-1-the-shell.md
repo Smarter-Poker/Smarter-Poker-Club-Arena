@@ -135,3 +135,79 @@ will read zero until Phase 2 backfills the writer. Dispute "Start Review" and
 alert list points at a tool rather than claiming the work is actionable.
 
 Full programme: `docs/club-operations/OPERATIONS-UPGRADE-PLAN.md`.
+
+---
+
+## Verification pass (same day, before phase 2)
+
+Dan asked for a deep verification of everything phase 1 claimed before any of
+phase 2 was started. Writing the tests that were missing found four real
+defects in my own work, which is the point of writing them.
+
+**1. A bus event could not refresh a badge.** The shared read cache serves any
+answer under fifteen seconds old so the page and the rail cost one query
+between them. The bus nudge went through that same cache - so approving a chip
+request, which fires `BALANCE_UPDATED` and coalesces at 2.5s, was answered from
+the cache written moments before, and the badge did not move until the next
+sixty-second poll. `load` now takes `silent` and `force` independently: a bus
+event forces, the poll and the first mount of a second consumer do not.
+
+**2. The two sub-workspaces never received their alerts.** `alerts={alerts}`
+was written into `ClubFinanceWorkspacePage` and `ClubControlWorkspacePage` by a
+patch whose anchor no longer matched after Prettier had reformatted the line
+above it. The patch reported success, TypeScript was happy (the prop is
+optional), and both pages shipped with an alert list that was computed, passed
+nowhere, and rendered never. Found by the first test that mounted them.
+
+**3. The rail printed the workspace total twice.** The identity plate and the
+Overview item are the same destination, six pixels apart, and both carried the
+rollup. The plate keeps it.
+
+**4. A failed refresh dropped the age of the numbers still on screen.** The
+freshness line went from "Updated 3m Ago" to "Live Readings Unavailable",
+leaving an operator reading figures of unknown age. It now says
+"Live Readings Unavailable, Last Read 3m Ago", and a database refusal reads
+"Live Readings Restricted For This Role" rather than being silent.
+
+Two gaps closed at the same time:
+
+- **The cashier badge counted one of its three queues.** Chip requests, cash-out
+  requests and credit requests all land on that desk and all three raise their
+  own alert; the tile read 4 with 9 things behind it. A registry item now
+  declares `signals: [...]`, a list, and a contract test asserts every declared
+  signal is a count the function actually returns - a signal naming a key the
+  RPC does not return would badge zero forever and look exactly like a quiet
+  club.
+- **The reading strip had no resting state.** The page jumped down when the
+  numbers landed. Six skeleton tiles hold the height, marked `aria-busy`.
+
+Also surfaced now that they were being counted for nothing: outstanding
+tickets on Finance, the exclusion ledger on Control.
+
+New tests: `tests/components/club-operations-surfaces.test.tsx` (10 cases - the
+rail's badges, its group-parent current state, its silence for a non-staff
+viewer, and both sub-workspaces mounted for the first time), plus 4 more on the
+operations page (the skeleton, the stale-age line, the restricted line, the
+three-queue cashier badge) and 2 unit cases on the freshness helper. 182 cases
+across the four files, all green.
+
+Re-verified after the fixes: `all-gates.sh` (tsc, fourteen house rules, the
+whole vitest suite, build, bundle) plus `check-migrations-applied`,
+`check-definer-authorization`, `check-phantom-tables`, `check-phantom-columns`,
+`check-route-targets`, `check-painted-text-case`, `check-maybe-single`,
+`check-bus-wiring`, `check-db-copy` (live schema), `check-required-columns`,
+`check-no-orphaned-work`, and `npm run lint`. The live function was re-read
+from production and still carries every count key, the staff gate, no
+`is_horse` filter, no `auth.uid() IS NULL` shortcut, and EXECUTE for exactly
+`authenticated` and `service_role`.
+
+**Deploy route, confirmed against `origin/main` rather than a stale local
+copy:** this branch's `CLAUDE.md`, `AGENT-PLAYBOOK.md` and
+`publish-club-arena.yml` are byte-identical to `origin/main`, so section 1.1 is
+current. The route is push a branch, and stop: `agent-open-pr.yml` opened
+PR #2853, `agent-autopilot.yml` holds squash auto-merge until the required
+checks are green, and `publish-club-arena.yml` publishes on merge. Nothing in
+this work touches Hetzner, rsync, SSH, a deploy hook, Vercel, the World Hub
+repo, or the retired `public/hub/club-arena/` path - the diff is source, tests,
+docs, one migration and one manifest fragment, and `grep` over the whole diff
+for those terms returns nothing.

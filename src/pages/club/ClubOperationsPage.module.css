@@ -757,3 +757,29 @@
     grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
   }
 }
+
+/* The first read takes a moment. Reserving the strip's height stops the whole
+   page jumping down when the numbers land. */
+.pulseSkeleton {
+  display: grid;
+  align-content: center;
+  gap: 10px;
+  min-height: 84px;
+}
+
+.skeletonLabel,
+.skeletonValue {
+  display: block;
+  height: 9px;
+  background: rgba(146, 173, 194, 0.16);
+  border-radius: 2px;
+}
+
+.skeletonLabel {
+  width: 56%;
+}
+
+.skeletonValue {
+  width: 78%;
+  height: 22px;
+}

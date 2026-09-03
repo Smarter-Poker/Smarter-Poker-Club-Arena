@@ -88,7 +88,8 @@ describe('a row says whether it opens', () => {
     // p_club_id is null. Admitting an admin there would admit them to clubs
     // they do not administer, on the strength of one they do.
     const all = allMigrations();
-    const clause = /AND NOT \(p_club_id IS NOT NULL AND public\.fn_is_club_admin_uid\(p_club_id\)\)/;
+    const clause =
+      /AND NOT \(p_club_id IS NOT NULL AND public\.fn_is_club_admin_uid\(p_club_id\)\)/;
     expect(all).toMatch(clause);
   });
 

@@ -23,11 +23,22 @@
  *
  * Source-level because creditSeatStacks is a live-Supabase method: what is
  * being pinned is the SHAPE of the question it asks.
+ *
+ * MOVED PINS (chip-std Lane F, 2026-09-02). The in-play branch this file
+ * pinned (`playUnderWay ? stack <= 0 : stack < target`) was itself the next
+ * mint: a seat at 0 during play is a busted player whose elimination the
+ * restart interrupted, and a lost hand_history row made a running game look
+ * pre-deal (docs/changelog/2026-09-02-chip-std-spin-chips.md). The decision
+ * now lives in `selectSeatsToFund` (seatStackCredit.ts), where the production
+ * games are fixtures, and `TournamentChipsAreConserved.law.test.ts` pins the
+ * stricter rule: once play is under way NOTHING is funded. The pins below
+ * keep this file's original intent against the new mechanism.
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { sliceMethod } from '../testHelpers/sourceWindow.js';
+import { selectSeatsToFund } from './seatStackCredit.js';
 
 const BASE = fs
   .readFileSync(path.join(process.cwd(), 'src/tournament/TournamentManagerBase.ts'), 'utf8')
@@ -40,19 +51,40 @@ describe('creditSeatStacks', () => {
   it('asks whether play has started before deciding what is stale', () => {
     // The whole defect was asking `stack < target` unconditionally.
     expect(fn).toMatch(/from\(\s*'hand_history'\s*\)/);
-    expect(fn).toMatch(/playUnderWay/);
+    expect(fn).toMatch(/handRecorded/);
+    expect(fn).toMatch(/selectSeatsToFund\(/);
   });
 
   it('never tops a seat up to the target once a hand has been dealt', () => {
-    // Post-deal the only fundable seat is one still sitting on zero: a losing
-    // stack is a real stack and must be left alone.
-    expect(fn).toMatch(/playUnderWay\s*\?\s*Number\(r\.stack\)\s*<=\s*0/);
+    // Post-deal NO seat is fundable: a losing stack is a real stack, and a
+    // zero stack is a bust for the elimination sweep to finish.
+    const d = selectSeatsToFund({
+      seats: [
+        { id: 'losing', stack: 120 },
+        { id: 'busted', stack: 0 },
+        { id: 'winning', stack: 780 },
+      ],
+      target: 300,
+      handRecorded: true,
+      chipSupply: null,
+    });
+    expect(d.fund).toEqual([]);
   });
 
   it('still funds anything short of the target before the first hand', () => {
     // The pre-deal behaviour is the one legitimate use and must not change:
     // a reservation seat holds 0 until the wheel has finished asking.
-    expect(fn).toMatch(/:\s*Number\(r\.stack\)\s*<\s*target/);
+    const d = selectSeatsToFund({
+      seats: [
+        { id: 'a', stack: 0 },
+        { id: 'b', stack: 0 },
+        { id: 'c', stack: 0 },
+      ],
+      target: 300,
+      handRecorded: false,
+      chipSupply: 900,
+    });
+    expect(d.fund).toEqual(['a', 'b', 'c']);
   });
 
   it('takes the conservative branch when it cannot tell', () => {

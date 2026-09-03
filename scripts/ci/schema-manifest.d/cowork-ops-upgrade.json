@@ -1,0 +1,4 @@
+{
+  "_owner": "feat/club-operations-full-upgrade",
+  "functions": ["ca_club_operations_overview"]
+}

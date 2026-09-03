@@ -1,10 +1,15 @@
 import { Link, useLocation } from 'react-router-dom';
 import {
   getActiveClubOperationPath,
+  getClubOperationBadge,
   getClubOperationContext,
+  getClubOperationItems,
   getClubOperationRailItems,
 } from '../../config/clubOperationsNavigation';
+import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
 import { useClubNavigationAccess } from '../../hooks/useClubNavigationAccess';
+import { useClubOperationsOverview } from '../../hooks/useClubOperationsOverview';
+import { formatInt } from '../../utils/clubDashboard';
 import styles from './ClubOperationsRail.module.css';
 
 /**
@@ -16,11 +21,28 @@ export default function ClubOperationsRail() {
   const location = useLocation();
   const clubId = getClubOperationContext(location.pathname);
   const access = useClubNavigationAccess(clubId);
+  const workspace = useClubWorkspace();
+  /* The rail follows the operator across every tool, so it is where a queue
+     badge earns the most. It reads through the same shared cache the
+     operations page uses, so mounting both costs one query, not two. */
+  const { overview } = useClubOperationsOverview(
+    clubId &&
+      access.isClubStaff &&
+      !access.loading &&
+      !access.error &&
+      (clubId === workspace.routeClubId || clubId === workspace.clubUUID)
+      ? workspace.clubUUID
+      : null
+  );
 
   if (!clubId || access.loading || access.error || !access.isClubStaff) return null;
 
   const items = getClubOperationRailItems(clubId, access);
+  const permitted = getClubOperationItems(clubId, access);
+  const counts = overview?.counts || null;
   const activePath = getActiveClubOperationPath(location.pathname, items);
+  const overviewItem = permitted.find((item) => item.id === 'overview');
+  const homeBadge = overviewItem ? getClubOperationBadge(overviewItem, counts, permitted) : 0;
   // The Operations Center is where the identity plate goes. It is also the
   // Overview item, so the two must agree on one path rather than hard-coding
   // the suffix in a second place.
@@ -47,10 +69,16 @@ export default function ClubOperationsRail() {
         >
           <span className={styles.statusLight} aria-hidden="true" />
           <span>Club Operations</span>
+          {homeBadge > 0 && (
+            <span className={styles.badge} aria-label={`${homeBadge} Waiting`}>
+              {formatInt(homeBadge)}
+            </span>
+          )}
         </Link>
         <ul className={styles.items}>
           {items.map((item) => {
             const isActive = item.path === activePath;
+            const badge = getClubOperationBadge(item, counts, permitted);
             return (
               <li key={item.id}>
                 <Link
@@ -59,6 +87,11 @@ export default function ClubOperationsRail() {
                   aria-current={isActive ? 'page' : undefined}
                 >
                   {item.label}
+                  {badge > 0 && (
+                    <span className={styles.badge} aria-label={`${badge} Waiting`}>
+                      {formatInt(badge)}
+                    </span>
+                  )}
                 </Link>
               </li>
             );

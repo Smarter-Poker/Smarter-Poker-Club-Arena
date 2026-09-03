@@ -169,6 +169,51 @@
   font-size: 1.45rem;
 }
 
+/* Live readings for the two club sub-workspaces (mobile first). */
+.readings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 14px 0 0;
+}
+
+.reading {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, rgba(16, 25, 33, 0.94), rgba(7, 11, 15, 0.96));
+  border: 1px solid rgba(146, 173, 194, 0.28);
+  border-radius: 2px;
+}
+
+.reading > span {
+  color: #8ba0b1;
+  font-family: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.reading > strong {
+  color: #f1f7fb;
+  font-family: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
+  font-size: clamp(1.3rem, 5vw, 1.7rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+@media (min-width: 760px) {
+  .readings {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 18px;
+  }
+}
+
 @media (max-width: 760px) {
   .page {
     padding: 12px;

@@ -614,6 +614,14 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const [contractVersions, setContractVersions] = useState<ManagedGameContractVersion[]>([]);
   const [contractLoading, setContractLoading] = useState(false);
   const [health, setHealth] = useState<GameManagementHealth | null>(null);
+  /*
+    Health has THREE states, not two, and collapsing them is how the last two
+    bugs here happened. `health === null` means "no answer yet" - which is true
+    while the first read is still in flight AND true when the read failed.
+    Reading null as zero invented an all-clear; reading it as failure raised a
+    false alarm on every page open. This flag is the difference.
+  */
+  const [healthFailed, setHealthFailed] = useState(false);
   const loadEpochRef = useRef(0);
   const loadedRouteRef = useRef('');
   const loadedViewRef = useRef<View>('all');
@@ -706,6 +714,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         });
         setNextCursor(null);
         setHealth(null);
+        setHealthFailed(false);
         setSurfaceDirty(false);
       }
       if (!silent || routeChanged || viewChanged) setLoading(true);
@@ -861,7 +870,13 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         // the scope, and reading null as 0 would blank the header.
         if (page.counts) setCounts(page.counts);
         setNextCursor(page.nextCursor);
+        /*
+          A refused read must not silently replace the numbers already on
+          screen with an alarm, and must not leave stale numbers looking live
+          either. It keeps nothing and says so.
+        */
         setHealth(healthResult);
+        setHealthFailed(healthResult === null);
       } catch (error) {
         if (!isCurrent()) return;
         reportError(error, 'GameManagementPage.load');
@@ -1115,6 +1130,31 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const liveCount = counts.live;
   const scheduledCount = counts.scheduled;
 
+  /*
+    What paging can actually reach.
+
+    `counts.total` summarises the whole scope; the ROWS honour the closed
+    horizon. On Midway Union that was 79,142 against 35,745 - the header
+    promised forty-three thousand games the board would never hand over, and
+    "Load More - 50 Of 79142" counted towards a number no amount of clicking
+    could arrive at. A total nobody can reconcile is worse than no total.
+
+    Live and scheduled are never withheld by age, so only the closed leg is
+    horizon-bound.
+  */
+  const reachableTotal = counts.live + counts.scheduled + counts.closedWithinHorizon;
+  const archivedBeyondHorizon = Math.max(0, counts.closed - counts.closedWithinHorizon);
+  /* The tab decides what "of" means: paging the Closed tab reaches the closed
+     games within the horizon, not the whole board. */
+  const viewTotal =
+    view === 'running'
+      ? counts.live
+      : view === 'scheduled'
+        ? counts.scheduled
+        : view === 'closed'
+          ? counts.closedWithinHorizon
+          : reachableTotal;
+
   const tournamentFormat =
     requestedCreate === 'spin' ? 'spin' : requestedCreate === 'sng' ? 'sng' : 'mtt_freezeout';
   const tournamentModalOpen =
@@ -1250,8 +1290,14 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
             <span>
               <strong>{scheduledCount}</strong> Scheduled
             </span>
-            <span>
-              <strong>{counts.total}</strong> Total
+            <span
+              title={
+                archivedBeyondHorizon
+                  ? `${archivedBeyondHorizon} More Closed Games Are Older Than The ${counts.closedHorizonDays}-Day Board Horizon And Are Not Listed`
+                  : 'Every Game In This Scope Is On The Board'
+              }
+            >
+              <strong>{reachableTotal}</strong> Total
             </span>
           </div>
           <div className={styles.healthRail} aria-label="Management Health">
@@ -1262,8 +1308,11 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
               apart. Health is telemetry, so a failed read still never blocks the
               board; it just says so instead of impersonating an all-clear.
             */}
-            {health === null ? (
+            {healthFailed ? (
               <span className={styles.healthAlert}>Management Health Unavailable</span>
+            ) : health === null ? (
+              /* Still in flight. Not an alarm, and not a row of zeros either. */
+              <span>Reading Management Health</span>
             ) : (
               <>
                 <span>{health.commandsLast24h} Commands / 24h</span>
@@ -1608,7 +1657,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                 onClick={() => void loadMore()}
                 disabled={loadingMore}
               >
-                {loadingMore ? 'Loading More…' : `Load More · ${games.length} Of ${counts.total}`}
+                {loadingMore ? 'Loading More…' : `Load More · ${games.length} Of ${viewTotal}`}
               </button>
             )}
           </section>

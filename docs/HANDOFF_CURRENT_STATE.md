@@ -1,6 +1,6 @@
 # CONTINUATION HANDOFF - Club Arena Engine-Restart & Platform-Hardening Programme
 
-Last updated: 2026-09-02 ~22:25 UTC. Author: the "cowork-maintbreak" agent
+Last updated: 2026-09-03 ~00:15 UTC (addendum, section 0); body 2026-09-02 ~22:25 UTC. Author: the "cowork-maintbreak" agent
 session (session_01Mcyo7VW3Wdw5oC6qzm4C5y). This file REPLACES the prior
 engine-restart handoff (that record is preserved in git history at
 docs/HANDOFF_CURRENT_STATE.md before this commit, and the prior programme is
@@ -9,6 +9,63 @@ summarized in section 6). Read this top to bottom before touching anything.
 Companion document: `docs/ENGINE-RESTART-PROGRAMME.md` (on main) - the 9-phase
 plan with per-phase acceptance criteria. This handoff is the live state; that
 doc is the map.
+
+---
+
+0. ADDENDUM 2026-09-03 00:15 UTC - READ THIS FIRST, IT SUPERSEDES SECTIONS 1,
+   10, 19, 20, 21, 22 WHERE THEY DISAGREE (second cowork session, same file)
+
+---
+
+WHAT CHANGED SINCE 22:25.
+
+- #2715 (Phases 2+3) and #2703 (thaw indexes) were RED on CI, not merging:
+  (a) migration versions 20260902213000 and 20260902194500 collided with other
+  agents' same-minute migrations -> renamed to 20260902213100 and
+  20260902194600, ledger rows updated to match; (b) MaintenanceBreak.test.ts
+  "the real engine treats a maintenance pause as paused" timed out at 10s on
+  the shared runner even with the import hoisted -> beforeAll now pays the
+  first ServerTableEngine construction, 60s per-case budget; (c) this
+  document's 79-char '=' separators matched the pre-push hook's
+  conflict-marker regex, so NO branch carrying it could be pushed from a Mac
+  -> hyphens now. Both PRs MERGED 23:18 UTC.
+- PHASE 4 BUILT, MERGED (#2729, 23:29 UTC) AND BOTH MIGRATIONS APPLIED LIVE:
+  20260902232500 (fn_stamp_sit_out_at honours the thaw's shift under
+  app.freeze_bypass only; probe 00:00:00 -> 00:05:00) and 20260902233000
+  (fn_thaw_platform in checkpointed installments, 4s self-budget per call,
+  tournaments step chunked by pk 40/call; engine loop
+  server/src/maintenance/thawInstallments.ts, 10 tests). Changelog:
+  docs/changelog/2026-09-02-phase4-the-thaw-cannot-time-out.md.
+- THE 23:55 RESTART HAPPENED ON A BUILD WITH PHASES 2, 3, 4 (f2cfd4aa) and is
+  MEASURED - see the status log in docs/ENGINE-RESTART-PROGRAMME.md. Headline:
+  gate opened (ready_for_restart_at 23:55:28, unparked 0/0), 0 hands started
+  inside the break on the new engine (was 955-3110), thaw complete in 1 call
+  / 697ms, 355 tables resumed, full fleet back inside ~60-90s (was 600-1000s),
+  0 kill-rebuilds, 0 horse seat exits. PHASES 2, 3, 4 ACCEPTED.
+- NEW P1 FINDING (goes to Phase 6): horses were SEATED during the freeze by
+  the new engine - 68 cash seats (boot seeding) + 160 tournament seats
+  (late-reg into a running freeroll, eight Spins launched/three completed,
+  a 00:00 MTT seating its 34-horse field at 23:59 for 1,020,000 chips).
+  freeze_conserved=false (+1.28M) for exactly this reason. The engine-side
+  freeze flag does not gate every seating/launch writer. Details and the
+  acceptance pin are in the Phase 6 addendum of ENGINE-RESTART-PROGRAMME.md.
+- Deploy dispatch: GitHub's cron dropped 22:40/45/50 AGAIN; the run was
+  dispatched by hand at 23:41 (run 33696270143). The disarmed DB dispatcher
+  (Decision 1, section 19) is still the fix; it is still Dan's call.
+- Dan rotated GITHUB_TOKEN (2026-09-02 ~23:40). Source it from
+  ~/Documents/club-arena/.env at CALL time; a long-lived background script
+  that sourced it once holds a revoked value. Dan also flagged that CI now
+  runs on the self-hosted Hetzner box (docs/HANDOFF-2026-09-02-push-publish-
+  cost-audit.md): branch -> autopilot opens the PR -> checks on estate-ci-1 ->
+  autopilot merges -> build-for-world-hub publishes. Nothing in this
+  programme's workflow changes; the deploy is still auto-deploy-hetzner.yml.
+- Worktrees: cowork-maintbreak (this programme) and cowork-thawidx (#2703
+  fix, disposable). Both clean. Node modules in cowork-thawidx are symlinks
+  into cowork-maintbreak.
+
+NEXT: Phase 6 (horse continuity + the freeze is total on the engine side),
+then Phase 5. Phase 4 is done; do not reopen it unless a live thaw reports
+complete:false or THAW FAILED.
 
 ---
 

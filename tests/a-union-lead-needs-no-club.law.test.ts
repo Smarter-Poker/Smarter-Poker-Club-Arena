@@ -147,10 +147,9 @@ describe('a union lead needs no club', () => {
     expect(sql, 'the union list cannot say which rows open').toMatch(/AS can_drill/);
     // Not merely "some gate" - the SAME one ca_rake_snapshot's club branch
     // enforces, or the button and the refusal can disagree.
-    expect(
-      sql,
-      'a flag computed from anything but that check can disagree with it'
-    ).toMatch(/public\.ca_can_read_club_production\(a\.club_id\) AS can_drill/);
+    expect(sql, 'a flag computed from anything but that check can disagree with it').toMatch(
+      /public\.ca_can_read_club_production\(a\.club_id\) AS can_drill/
+    );
   });
 
   it('the panel offers a club row only when the server says it opens', () => {

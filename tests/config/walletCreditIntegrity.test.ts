@@ -251,9 +251,22 @@ describe('a restart cashes nobody out', () => {
      The stricter law is now: the boot path calls no cash-out at all. The two
      pins below it (no aggregate key, no seat delete) remain, and are now
      implied twice over. */
+  /* Resolved with the concurrent fix for the same red pin. Both arrived at the
+     same law - the boot path cashes nobody out - and the assertions are the
+     union of the two, because each caught something the other missed:
+
+     - Matching the bare RPC name rather than `rpc('...')` also catches a
+       reintroduction routed through a helper, a constant or an import, which
+       is how this would come back now that the direct call is gone.
+     - credit_player_wallet is the ORIGINAL 2026-08-18 offender - credit the
+       wallet, log nothing. Pinning only the two later names would let the
+       oldest and worst form return silently.
+     - The log line is kept: it is the string that appeared in the 20:55
+       incident, so it fails loudly and recognisably. */
   it('the boot path has no cash-out call at all - horses and humans keep their seats', () => {
-    expect(gs).not.toMatch(/rpc\(\s*'atomic_seat_cashout_locked'/);
-    expect(gs).not.toMatch(/rpc\(\s*'atomic_credit_wallet_and_log'/);
+    expect(gs).not.toMatch(/atomic_seat_cashout_locked/);
+    expect(gs).not.toMatch(/atomic_credit_wallet_and_log/);
+    expect(gs).not.toMatch(/credit_player_wallet/);
     expect(gs).not.toMatch(/Cashed out and vacated/);
   });
 

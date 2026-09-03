@@ -1,6 +1,6 @@
 -- BACKFILLED 2026-09-02 from supabase_migrations.schema_migrations.statements.
 -- Applied to production 20260902211809; the .sql file was never committed at the
--- time (chip-std phase 1.5 mirror, docs/changelog/2026-09-02-chip-std-p1-mirror.md).
+-- time (Table Management: the keyset cursor gained a bucket, see this file).
 -- Content is byte-exact to what ran. Do NOT re-apply; it is already live.
 
 -- A cursor that omits its bucket is still a cursor.

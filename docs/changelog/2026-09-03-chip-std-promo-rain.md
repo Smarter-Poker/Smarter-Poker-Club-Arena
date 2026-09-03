@@ -71,3 +71,29 @@ bucket, and the float down by exactly what the felt went up by.
 No caller changed: the signature and its defaults are identical, so
 `fn_bbj_promo_rain`, `bbj_promo_payout` and the BBJService button all keep
 calling it exactly as they did.
+
+---
+
+# Three detectors were timing out, not watching
+
+Also found in the sweep, by running the repo's own `check-cron-health` gate
+against production:
+
+| job                               | failures     | cause                                       |
+| --------------------------------- | ------------ | ------------------------------------------- |
+| `ca-cash-pot-conservation-hourly` | 8 of 24 runs | statement timeout scanning hand history     |
+| `ca-stats-money-repair`           | 9 of 45 runs | statement timeout in `ca_hand_player_facts` |
+| `rake-law-wide-daily`             | 1 of 1 run   | statement timeout in `fn_rake_law_check`    |
+
+None is a money bug. All three are **detectors**, and a detector that times out
+is not raising a false alarm - it is not looking at all. The cash-pot
+conservation check, the one of the three that watches chips, has been blind for
+a third of the last day.
+
+They were scheduled without a `statement_timeout`, so they inherit the database
+default while the tables they scan keep growing. Each now carries a budget
+suited to its cadence (600s / 240s / 900s) and the advisory-lock wrapper its
+neighbours already use, so a slow run is skipped rather than piled on. Cadences
+are unchanged and the migration asserts that before it commits.
+
+`supabase/migrations/20260903232357_the_conservation_detectors_are_given_time_to_finish_looking.sql`

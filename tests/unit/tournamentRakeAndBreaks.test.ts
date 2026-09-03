@@ -216,23 +216,42 @@ describe('neither reaper treats a deliberately paused table as a zombie', () => 
     expect(10 * 60 * 1000).toBeGreaterThan(5 * 60 * 1000 + 2 * 60 * 1000);
   });
 
-  it('isPausedByDesign covers a break pause, a MAINTENANCE break and hand-for-hand', () => {
-    // #2695 (2026-09-02): `pauseForMaintenance` sets `maintenancePaused`, not
-    // `handForHandPaused`, so this predicate answered false all the way through
-    // a break and 1204 hands were dealt inside one. The fix added the third
-    // term. This pin used to demand the two-term form and went red the moment
-    // the engine was made correct - and it merged red, because a server/-only
-    // pull request skipped the client suite this file lives in (ci.yml
-    // `changes`, fixed in the same commit as this text). Pin all three terms
-    // so the bug cannot come back and the pin cannot fight the fix.
+  /**
+   * Each disjunct is asserted on its own, deliberately.
+   *
+   * This used to be one regex requiring `handForHandPaused` and the FSM check
+   * to sit next to each other. #2695 inserted `maintenancePaused` between them
+   * - the fix for 1204 hands dealt inside a maintenance break - and left this
+   * test red on main, because the predicate had become MORE correct in a shape
+   * the regex forbade. A guard that fails when the thing it guards is improved
+   * teaches people to delete it.
+   *
+   * So: require every term to be present, and say nothing about their order or
+   * their neighbours. Adding a fifth reason a table is paused on purpose should
+   * not have to come back here.
+   */
+  it('isPausedByDesign covers hand-for-hand, a maintenance break, and the FSM', () => {
     const ENGINE = readFileSync(
       resolve(__dirname, '../../server/src/engine/ServerTableEngineBase.ts'),
       'utf8'
     );
-    const fn = sliceMethod(ENGINE, 'isPausedByDesign(): boolean');
-    expect(fn).toMatch(
-      /return this\.handForHandPaused \|\| this\.maintenancePaused \|\| this\.tableFSM\.state === 'paused';/
-    );
+    const fn = ENGINE.slice(ENGINE.indexOf('isPausedByDesign(): boolean'));
+    /* Resolved with #2705, which fixed the same red pin concurrently by
+       re-pinning all three terms as one adjacent sequence. That is the shape
+       that has now broken twice: #2695 inserted `maintenancePaused` between
+       the original two and turned a correct improvement into a red build. A
+       fourth authority would do it again.
+
+       So each term is required on its own, with nothing said about order or
+       neighbours, plus one assertion that they are joined by || and never &&.
+       Checked that this still catches the regressions the pin exists for:
+       deleting `maintenancePaused` (the exact 1204-hands bug) fails it, and
+       flipping the || to && fails it. */
+    const body = fn.slice(0, fn.indexOf('\n  }'));
+    expect(body).toMatch(/this\.handForHandPaused/);
+    expect(body).toMatch(/this\.maintenancePaused/);
+    expect(body).toMatch(/this\.tableFSM\.state === 'paused'/);
+    expect(body).not.toMatch(/&&/);
   });
 });
 

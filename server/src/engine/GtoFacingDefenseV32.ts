@@ -254,9 +254,60 @@ export function equityVsWeightedRange(
 }
 
 export type FacingDefense =
-  | { action: 'fold' | 'call'; equity: number; potOdds: number; source: 'v31' | 'v30' }
-  | { action: 'pass_strong'; equity: number; potOdds: number; source: 'v31' | 'v30' }
+  | {
+      action: 'fold' | 'call';
+      equity: number;
+      potOdds: number;
+      /** The equity the call actually needed, after realization and rake. */
+      required: number;
+      source: 'v31' | 'v30';
+    }
+  | {
+      action: 'pass_strong';
+      equity: number;
+      potOdds: number;
+      required: number;
+      source: 'v31' | 'v30';
+    }
   | null;
+
+/**
+ * ═══ V34 (2026-09-02): RAW EQUITY IS NOT REALIZED EQUITY ═══════════════════
+ *
+ * The first cut compared equity-vs-the-betting-range with pot odds and
+ * nothing else. Measured live over two days: v32_defend_call 13,660 against
+ * v32_defend_fold 2,518 — the layer folded 16% of the hands it judged, when a
+ * solver facing the same bets folds 35-50%. The arithmetic was not wrong,
+ * the premise was: against a third-pot bet the pot lays 4:1 and almost any
+ * two cards hold 20% RAW equity against a range that contains bluffs — but
+ * a seven-high on the flop does not get to REALIZE 20%, because it has to
+ * survive two more streets of betting to reach a showdown. The solver
+ * defends by minimum defence frequency and lets the bottom of its range go;
+ * a raw-equity call criterion keeps all of it.
+ *
+ * So the required equity is potOdds / realization, where realization is the
+ * fraction of raw equity a hand can expect to cash on this street from this
+ * seat. The river realizes everything (a call closes the hand). Earlier
+ * streets realize less, and less again out of position: the values are the
+ * standard ones (OOP flop ~0.75, IP flop ~0.85, turn ~0.85/0.92). Draws get a
+ * little back — their equity arrives on later streets by construction and
+ * carries implied odds — which the caller expresses through the same number.
+ *
+ * With realization 0.75, a third-pot bet on the flop needs 27% instead of
+ * 20%, a two-thirds-pot bet needs 38% instead of 29%, and a pot-sized bet
+ * needs 44% instead of 33%. Those are the fold-out points a solver's
+ * defending range actually has.
+ */
+export function realizationFactor(args: {
+  street: 'flop' | 'turn' | 'river';
+  inPosition: boolean;
+  drawy?: boolean;
+}): number {
+  if (args.street === 'river') return 1;
+  let r = args.street === 'flop' ? (args.inPosition ? 0.85 : 0.75) : args.inPosition ? 0.92 : 0.85;
+  if (args.drawy) r = Math.min(1, r + 0.08);
+  return r;
+}
 
 /**
  * The defence line. `pot` INCLUDES the bet being faced; `toCall` is the
@@ -282,6 +333,16 @@ export function gtoFacingDefense(args: {
    */
   rawBetFraction?: number;
   rand?: () => number;
+  /** V34: equity realization (0..1], see realizationFactor. Default 1. */
+  realization?: number;
+  /** V34: marginal rake on the pot in cash games (0..1). Default 0 — the
+   *  same rakeDrag the heuristic call line already prices. */
+  rakeMarg?: number;
+  /** V34: tournament survival premium to ADD to the required equity (0 in
+   *  cash). The caller scales icmRisk by the share of stack the call puts
+   *  at risk, exactly as the V24 preflop price defence does — a chip-EV
+   *  solver range prices the pot, not the tournament life. */
+  riskPremium?: number;
 }): FacingDefense {
   if (!(args.toCall > 0) || !(args.pot > 0)) return null;
   const potBefore = args.pot - args.toCall;
@@ -293,11 +354,24 @@ export function gtoFacingDefense(args: {
   const range = solverBettingRange({ ...args, betFraction });
   if (!range) return null;
   const equity = equityVsWeightedRange(args.heroCards, args.board, range, args.rand ?? Math.random);
-  const potOdds = args.toCall / (args.pot + args.toCall);
+  const rake = Math.max(0, Math.min(0.5, args.rakeMarg ?? 0));
+  const potOdds = args.toCall / ((args.pot + args.toCall) * (1 - rake));
+  const realization =
+    typeof args.realization === 'number' && args.realization > 0
+      ? Math.min(1, args.realization)
+      : 1;
+  const premium = Math.max(0, Math.min(0.15, args.riskPremium ?? 0));
+  const required = Math.min(0.99, potOdds / realization + premium);
   if (equity >= STRONG_PASS_EQ) {
     // Strong enough that fold-or-call is the wrong question — the aggression
     // layers own this hand. Null-adjacent, but counted distinctly.
-    return { action: 'pass_strong', equity, potOdds, source: range.source };
+    return { action: 'pass_strong', equity, potOdds, required, source: range.source };
   }
-  return { action: equity >= potOdds ? 'call' : 'fold', equity, potOdds, source: range.source };
+  return {
+    action: equity >= required ? 'call' : 'fold',
+    equity,
+    potOdds,
+    required,
+    source: range.source,
+  };
 }

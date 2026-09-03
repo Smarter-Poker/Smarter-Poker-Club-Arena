@@ -40,7 +40,10 @@ describe('round 9: TableService', () => {
     expect(gate).toContain('return { success: false, chipsReturned: 0 }');
     // The cash-path fork must still sit BELOW the guard.
     const guardAt = TABLE_SERVICE.indexOf('leaveTable_table_context_read_failed');
-    const forkAt = TABLE_SERVICE.indexOf("'atomic_table_cashout'");
+    // CHIP STANDARD C1 (2026-09-02): the browser's cash-out RPC is now
+    // atomic_seat_cashout_locked (one cash-out path); the fork position pin
+    // is unchanged.
+    const forkAt = TABLE_SERVICE.indexOf("'atomic_seat_cashout_locked'");
     expect(guardAt).toBeGreaterThan(-1);
     expect(forkAt).toBeGreaterThan(guardAt);
   });

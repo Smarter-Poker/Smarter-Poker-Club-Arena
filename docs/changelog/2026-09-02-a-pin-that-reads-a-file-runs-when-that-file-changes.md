@@ -27,8 +27,9 @@ Nothing ran the pin before merge:
 
 ## What changed
 
-1. The pin now demands all three terms, bounded by `sliceMethod`, so the
-   #2695 bug cannot regress and the pin cannot fight the fix.
+1. The pin itself was repaired concurrently by #2705 (each term asserted on
+   its own, nothing said about order or neighbours). That version is kept;
+   this change ships only the root cause below.
 2. `ci.yml`: `tests=` now fires on `server/` as well. A server-only pull
    request runs the client suite (about two minutes on the box).
 3. `.husky/pre-push`: after `related`, every test under `tests/` that names

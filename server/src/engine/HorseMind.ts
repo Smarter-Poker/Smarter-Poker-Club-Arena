@@ -70,11 +70,10 @@ export interface OpponentStats {
   bigBetSD: number;
   /** ... where the shown hand was two pair or better (value, not air) */
   bigBetSDStrong: number;
-  // ── V23 RIVER READS (2026-08-28) — MEMORY-ONLY, deliberately unpersisted.
-  // The most profitable read in the game: does this player fold rivers?
-  // Accumulates fast at fleet volume and decays in relevance, so it starts
-  // fresh each process life; persistence can follow once the league proves
-  // the read pays (toDb/fromDb in HorseMindPersistence simply omit these).
+  // ── V23 RIVER READS (2026-08-28). The most profitable read in the game:
+  // does this player fold rivers? Memory-only until V34 (2026-09-02), when
+  // it was found that every deploy forgot the answer for exactly the players
+  // the read is for; persisted now, GREATEST-merged like every counter.
   /** times they faced a river bet or raise */
   riverBetOpps: number;
   /** ... and folded to it */
@@ -553,10 +552,11 @@ export class HorseMind {
       if (this.stats.size >= MAX_TRACKED_PLAYERS && !existing) continue;
       const num = (v: unknown): number => (typeof v === 'number' && isFinite(v) && v >= 0 ? v : 0);
       // V28 AUDIT FIX: the import REPLACED the whole object, and the fields
-      // that are deliberately unpersisted (riverBet*, checks, the recency
+      // that were unpersisted at the time (riverBet*, checks, the recency
       // window) came in as 0 — any live sample accumulated before the hydrate
-      // was destroyed. Unpersisted fields now keep the larger of live and
-      // incoming, so a hydrate can only add information.
+      // was destroyed. Those fields keep the larger of live and incoming, so
+      // a hydrate can only add information (V34 persists them, and a
+      // snapshot older than that migration still reads them as 0).
       const keep = (live: number | undefined, incoming: number): number =>
         Math.max(existing ? (live ?? 0) : 0, incoming);
       this.stats.set(r.user_id, {

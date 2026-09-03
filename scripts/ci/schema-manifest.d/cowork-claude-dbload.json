@@ -1,0 +1,6 @@
+{
+  "_owner": "fix/the-engine-stops-hammering-a-saturated-database",
+  "tables": [],
+  "functions": ["fn_club_member_count", "get_club_players_playing"],
+  "columns": {}
+}

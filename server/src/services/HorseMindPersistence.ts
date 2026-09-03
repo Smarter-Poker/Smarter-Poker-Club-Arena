@@ -61,6 +61,12 @@ type DbRow = {
   bigbet_sd_strong?: number;
   post_aggr?: number;
   post_passive?: number;
+  /** V34 (2026-09-02): the V23 river read and the V28 check counters,
+   *  persisted at last — see 20260902233000_horse_mind_persist_postflop_af_and_river_reads. */
+  river_bet_opps?: number;
+  river_bet_folds?: number;
+  checks?: number;
+  r_checks?: number;
   r_hands: number;
   r_folds: number;
   r_faced_aggr: number;
@@ -87,6 +93,10 @@ const toDb = (r: { user_id: string } & OpponentStats): DbRow => ({
   bigbet_sd_strong: r.bigBetSDStrong,
   post_aggr: r.postAggr,
   post_passive: r.postPassive,
+  river_bet_opps: r.riverBetOpps,
+  river_bet_folds: r.riverBetFolds,
+  checks: r.checks,
+  r_checks: r.rChecks,
   r_hands: r.rHands,
   r_folds: r.rFolds,
   r_faced_aggr: r.rFacedAggr,
@@ -112,19 +122,20 @@ const fromDb = (r: DbRow): { user_id: string } & OpponentStats => ({
   bigBetSDStrong: r.bigbet_sd_strong ?? 0,
   postAggr: r.post_aggr ?? 0,
   postPassive: r.post_passive ?? 0,
-  // V23 river reads are memory-only (deliberately unpersisted) - hydrate zero.
-  // importStats keeps the larger of live and incoming for these (V28), so a
-  // hydrate can no longer wipe a live sample.
-  riverBetOpps: 0,
-  riverBetFolds: 0,
+  // V34: the V23 river reads and the V28 check counters are persisted now
+  // (they were memory-only, so every deploy forgot who folds rivers). The
+  // columns are nullable-by-age on a snapshot that predates the migration;
+  // importStats keeps the larger of live and incoming for these, so a
+  // hydrate can only add information.
+  riverBetOpps: r.river_bet_opps ?? 0,
+  riverBetFolds: r.river_bet_folds ?? 0,
   rHands: r.r_hands,
   rFolds: r.r_folds,
   rFacedAggr: r.r_faced_aggr,
   rAggr: r.r_aggr,
   rPassive: r.r_passive,
-  // V28 check counters — memory-only, same contract as the river reads.
-  checks: 0,
-  rChecks: 0,
+  checks: r.checks ?? 0,
+  rChecks: r.r_checks ?? 0,
 });
 
 /** V12.3: the newest flush timestamp seen by the pair hydrate, so the caller
@@ -310,7 +321,7 @@ export async function hydrateHorseMindFromDb(): Promise<string | null> {
     const { data, error } = await supabase
       .from('horse_mind_stats')
       .select(
-        'user_id,hands,vpip,pfr,three_bet,aggr,passive,folds,faced_aggr,cbet_opps,cbet_folds,f3b_opps,f3b_folds,bigbet_sd,bigbet_sd_strong,post_aggr,post_passive,r_hands,r_folds,r_faced_aggr,r_aggr,r_passive,updated_at'
+        'user_id,hands,vpip,pfr,three_bet,aggr,passive,folds,faced_aggr,cbet_opps,cbet_folds,f3b_opps,f3b_folds,bigbet_sd,bigbet_sd_strong,post_aggr,post_passive,river_bet_opps,river_bet_folds,checks,r_checks,r_hands,r_folds,r_faced_aggr,r_aggr,r_passive,updated_at'
       )
       .order('hands', { ascending: false })
       .limit(HYDRATE_LIMIT);

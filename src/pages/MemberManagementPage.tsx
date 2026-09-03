@@ -1225,7 +1225,11 @@ function RoleSection({
             onRoleChanged();
           }}
           onTransferComplete={() => {
-            toast.success(`${targetName} Has Been Funded.`);
+            // No toast here. ChipTransferModal already raises one naming the
+            // amount, the recipient and whether it was drawn on credit; a
+            // second, vaguer toast on top of it is noise, not confirmation.
+            // The emit is the part this screen owes the rest of the app -
+            // the modal raises no bus event of its own.
             masterBus.emit('AGENT_UPDATED', { clubId, agentId: targetUserId });
           }}
         />

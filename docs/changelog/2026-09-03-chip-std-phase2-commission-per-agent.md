@@ -156,3 +156,26 @@ plan; it is not in this change.
 Also unchanged and out of lane: F13 (the fallback agent lookup is still
 unscoped to the booking club) and F6/F7 (two payers for commission and
 rakeback).
+
+## Production after apply (SELECT only, read at 16:41 UTC)
+
+The settler books in batches. `rake_settlement` rows per batch minute, before
+and after the apply at 16:34:22 UTC:
+
+| batch (UTC) | rows  | sources | rows per source | direct rows | amount   |
+| ----------- | ----- | ------- | --------------- | ----------- | -------- |
+| 16:06       | 371   | 209     | 1.78            | 189         | 98.92    |
+| 16:07       | 4,636 | 2,612   | 1.77            | 2,414       | 1,110.54 |
+| 16:38       | 4,424 | 951     | 4.65            | 2,469       | 1,068.29 |
+| 16:39       | 5,509 | 1,195   | 4.61            | 3,072       | 1,380.17 |
+| 16:40       | 3,145 | 676     | 4.65            | 1,758       | 737.84   |
+
+Totals for sources booked after the apply: 2,821 sources, 13,078 rows (7,299
+direct, 5,779 override), 3,186.30 accrued, 2.59 direct agents per source
+(was exactly 1.00), 2,469 of 2,821 sources with more than one direct agent,
+0 sources with a duplicate (agent, source) row, max 12 rows on one hand.
+
+Spot check, live hand `0351663f-297b-48a1-960f-d0f2b3e52c07` (rake 1.35,
+four contributors under four different agents): 8 rows booked, 4 direct
+(0.02, 0.03, 0.15, 0.24) and 4 overrides (0.02, 0.04, 0.23, 0.25), every
+amount equal to the chain-rate model to the cent.

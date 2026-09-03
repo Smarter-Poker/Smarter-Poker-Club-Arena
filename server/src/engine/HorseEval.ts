@@ -376,6 +376,86 @@ export function scoreBestTwoOfThree(hole: Card[], board: Card[], shortDeck: bool
   return best;
 }
 
+/**
+ * ═══ V39 NEXT-STREET OUTLOOK (Dan 2026-09-03) ═══════════════════════════
+ * "AFTER THEY MAKE A PLAY, THEY SHOULD ALREADY BE STARTING TO THINK ABOUT
+ *  WHAT PLAY THEY WILL MAKE IF THEY GET CALLED OR RAISED, OR WHAT ARE 'GOOD
+ *  CARDS' OR 'BAD CARDS' ON THE NEXT STREET."
+ *
+ * Every unseen card, classified for the hand hero holds on the board hero
+ * sees: GOOD when it raises hero's made-hand category (a pair, a set, a
+ * straight, a flush arriving), SCARE when it brings a third card of a suit
+ * hero holds none of, or a fourth to a straight hero does not have, or
+ * pairs the board under hero's flush/straight. Everything else is a blank.
+ * The bet the horse makes now records this; the next street reads the card
+ * that actually came against it (HorseMind street plans).
+ *
+ * Cost: one category evaluation per unseen card (<= 47), only when a bluff
+ * or semi-bluff bet fires — the value hands do not need to know.
+ */
+export interface NextCardOutlook {
+  /** card keys (e.g. "Ah") that improve hero's made hand */
+  good: string[];
+  /** card keys that put a hand hero does not hold on the board */
+  scare: string[];
+  /** hero's made category now */
+  madeNow: number;
+}
+
+export function nextCardOutlook(hole: Card[], board: Card[], vi: VariantInfo): NextCardOutlook {
+  const out: NextCardOutlook = { good: [], scare: [], madeNow: 0 };
+  if (!hole || hole.length < 2 || !board || board.length < 3 || board.length >= 5) return out;
+  const known = new Set<string>();
+  for (const c of hole) known.add(cardKey(c));
+  for (const c of board) known.add(cardKey(c));
+  const base = vi.isShortDeck ? SHORT_DECK_CARDS : FULL_DECK;
+  const cat = (b: Card[]): number => {
+    try {
+      const score = vi.isOmaha
+        ? scoreOmahaHiPartial(hole, b)
+        : hole.length === 3
+          ? scoreBestTwoOfThree(hole, b, vi.isShortDeck)
+          : scoreHoldem(hole.concat(b), hole.length + b.length, vi.isShortDeck);
+      return Math.floor(score / 0x100000);
+    } catch {
+      return 0;
+    }
+  };
+  out.madeNow = cat(board);
+  // suits on board, and which of them hero holds
+  const suitN = new Map<string, number>();
+  for (const c of board) suitN.set(c.suit, (suitN.get(c.suit) || 0) + 1);
+  const heroSuits = new Map<string, number>();
+  for (const c of hole) heroSuits.set(c.suit, (heroSuits.get(c.suit) || 0) + 1);
+  const rankN = new Map<string, number>();
+  for (const c of board) rankN.set(c.rank, (rankN.get(c.rank) || 0) + 1);
+  const CAT_STRAIGHT = 5;
+  const CAT_FLUSH = vi.isShortDeck ? 7 : 6;
+  const next: Card[] = board.slice();
+  for (const c of base) {
+    const k = cardKey(c);
+    if (known.has(k)) continue;
+    next[board.length] = c;
+    const after = cat(next);
+    if (after > out.madeNow) {
+      out.good.push(k);
+      continue;
+    }
+    // a third (or fourth) of a suit hero holds none of, when hero has no flush
+    const suitAfter = (suitN.get(c.suit) || 0) + 1;
+    const holdsSuit = (heroSuits.get(c.suit) || 0) >= (vi.isOmaha ? 2 : 1);
+    if (suitAfter >= 3 && !holdsSuit && out.madeNow < CAT_FLUSH) {
+      out.scare.push(k);
+      continue;
+    }
+    // the board pairs under hero's straight or flush: boats are live
+    if ((rankN.get(c.rank) || 0) >= 1 && out.madeNow >= CAT_STRAIGHT && out.madeNow <= CAT_FLUSH) {
+      out.scare.push(k);
+    }
+  }
+  return out;
+}
+
 export function scoreOmahaHi(hole: Card[], board: Card[]): number {
   const pairs = PAIR_COMBOS[hole.length] || PAIR_COMBOS[4];
   let best = 0;

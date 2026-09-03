@@ -206,6 +206,8 @@ export interface HorseMindSandbox {
   plans: Map<string, boolean>;
   /** V23: raise-response plans — see noteRaisePlan. Sandboxed like plans. */
   raisePlans: Map<string, RaiseResponsePlan>;
+  /** V39: next-street outlooks — see noteOutlook. Sandboxed like plans. */
+  outlooks: Map<string, { good: Set<string>; scare: Set<string> }>;
 }
 
 /** V23: what hero decided AT BET TIME it would do about a raise. */
@@ -506,6 +508,7 @@ export class HorseMind {
     this.handFlags.clear();
     this.plans.clear();
     this.raisePlans.clear();
+    this.outlooks.clear();
     this.dirty.clear();
     this.pairs.clear();
     this.dirtyPairs.clear();
@@ -708,6 +711,7 @@ export class HorseMind {
       dirtyPairs: new Set(),
       plans: new Map(),
       raisePlans: new Map(),
+      outlooks: new Map(),
     };
   }
 
@@ -726,6 +730,7 @@ export class HorseMind {
       dirtyPairs: this.dirtyPairs,
       plans: this.plans,
       raisePlans: this.raisePlans,
+      outlooks: this.outlooks,
     };
     this.stats = sandbox.stats;
     this.seenActions = sandbox.seenActions;
@@ -735,6 +740,7 @@ export class HorseMind {
     this.dirtyPairs = sandbox.dirtyPairs;
     this.plans = sandbox.plans;
     this.raisePlans = sandbox.raisePlans;
+    this.outlooks = sandbox.outlooks;
     this.sandboxDepth = 1;
     try {
       return fn();
@@ -747,6 +753,7 @@ export class HorseMind {
       this.dirtyPairs = live.dirtyPairs;
       this.plans = live.plans;
       this.raisePlans = live.raisePlans;
+      this.outlooks = live.outlooks;
       this.sandboxDepth = 0;
     }
   }
@@ -1112,6 +1119,45 @@ export class HorseMind {
   static getPlan(handKey: string | null, userId: string): boolean | undefined {
     if (!handKey) return undefined;
     return this.plans.get(`${handKey}|${userId}`);
+  }
+
+  /**
+   * ═══ V39 STREET OUTLOOK (2026-09-03) ═══ what the bet was thinking about
+   * the next card: the cards that improve hero, the cards that scare hero.
+   * Written beside the barrel plan when a bluff / semi-bluff fires; read on
+   * the next street against the card that actually arrived. Same bounded
+   * map discipline as every plan here.
+   */
+  private static outlooks = new Map<string, { good: Set<string>; scare: Set<string> }>();
+
+  static noteOutlook(
+    handKey: string | null,
+    userId: string,
+    street: string,
+    good: string[],
+    scare: string[]
+  ): void {
+    if (!handKey) return;
+    if (this.outlooks.size > this.MAX_PLANS) evictOldest(this.outlooks, this.MAX_PLANS);
+    this.outlooks.set(`${handKey}|${userId}|${street}`, {
+      good: new Set(good),
+      scare: new Set(scare),
+    });
+  }
+
+  /** How the bet on `street` had classified `cardKey` before it came. */
+  static outlookOf(
+    handKey: string | null,
+    userId: string,
+    street: string,
+    cardKey: string
+  ): 'good' | 'scare' | 'blank' | undefined {
+    if (!handKey) return undefined;
+    const o = this.outlooks.get(`${handKey}|${userId}|${street}`);
+    if (!o) return undefined;
+    if (o.good.has(cardKey)) return 'good';
+    if (o.scare.has(cardKey)) return 'scare';
+    return 'blank';
   }
 
   /**

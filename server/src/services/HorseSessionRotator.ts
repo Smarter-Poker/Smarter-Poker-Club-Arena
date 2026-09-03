@@ -42,7 +42,18 @@
 import { supabase } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
-import { cashTableFill, isActiveNow, wantsTableChange } from './HorseBehavior.js';
+import { cashTableFill, horseHash, wantsTableChange } from './HorseBehavior.js';
+import {
+  attendanceTarget,
+  bedtimeLeaveProbability,
+  chicagoMinuteOfDay,
+  departuresBudget,
+  isAwake,
+  mayYieldNow,
+  minutesPastBedtime,
+  sleepPriority,
+} from './HorseAttendance.js';
+import { fetchAllRows } from './supabase/pagination.js';
 import {
   bankrollPolicyFor,
   referenceBuyIn,
@@ -53,6 +64,16 @@ import { bankrollEvent } from './HorseBankrollTelemetry.js';
 
 const CYCLE_MS = 90_000; // examine the floor every 90s
 const GLOBAL_DEPARTURES_PER_CYCLE = 4;
+/* ATTENDANCE (Dan 2026-09-03). How often the club rosters are re-read for the
+   curve, and the most horses one club sends to bed in one pass over and above
+   its over-target budget - the organic bedtime quits are probabilistic and
+   this keeps a coincidence from reading as a wave. */
+const ROSTER_TTL_MS = 10 * 60_000;
+const MAX_BEDTIME_EXTRA_PER_CLUB = 4;
+/* A horse that only just sat down does not go to bed. Ten minutes is short
+   enough that the wind-down still moves; it exists so that an arrival and a
+   departure are never the same horse in consecutive cycles. */
+const MIN_MINUTES_BEFORE_BED = 10;
 const MIN_SESSION_MINUTES = 20; // nobody hit-and-runs a 5-minute session
 const MEAN_SESSION_MINUTES = 75;
 // V8: session-behavior knobs
@@ -92,6 +113,14 @@ export class HorseSessionRotator {
    */
   private breaks = new Map<string, { tableId: string; userId: string; sitBackAt: number }>();
 
+  /* ATTENDANCE: club id -> active horse roster size, refreshed every ROSTER_TTL_MS. */
+  private roster: { at: number; byClub: Map<string, number> } | null = null;
+
+  /* YIELDING TO A PERSON (Dan 2026-09-03): per table, when a human was first
+     seen waiting and when a horse last stood up for the queue. Cleared the
+     moment the queue is empty, so a later human starts a fresh clock. */
+  private yieldClock = new Map<string, { since: number; lastYieldAt: number | null }>();
+
   private static breakKey(tableId: string, userId: string): string {
     return `${tableId}:${userId}`;
   }
@@ -117,6 +146,187 @@ export class HorseSessionRotator {
       clearInterval(this.handle);
       this.handle = null;
     }
+  }
+
+  /**
+   * Active horse membership per club, for the attendance curve. Two paged
+   * reads (horse ids, then memberships) every ten minutes; a failed or partial
+   * read keeps the previous answer, and with no previous answer the curve is
+   * simply not applied this cycle - fail open, like the fleet's gates.
+   */
+  private async rosterByClub(): Promise<Map<string, number> | null> {
+    const now = Date.now();
+    if (this.roster && now - this.roster.at < ROSTER_TTL_MS) return this.roster.byClub;
+    try {
+      const idPage = await fetchAllRows<{ id: string }>(
+        (cursor, want) => {
+          let q = supabase
+            .from('profiles')
+            .select('id')
+            .eq('is_horse', true)
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) q = q.gt('id', cursor);
+          return q;
+        },
+        { label: 'SessionRotator.horseIds', maxRows: 50_000 }
+      );
+      if (!idPage.complete) return this.roster?.byClub ?? null;
+      const horse = new Set(idPage.rows.map((r) => r.id));
+      const memPage = await fetchAllRows<{ id: string; user_id: string; club_id: string }>(
+        (cursor, want) => {
+          let q = supabase
+            .from('club_members')
+            .select('id, user_id, club_id')
+            .in('status', ['active', 'approved'])
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) q = q.gt('id', cursor);
+          return q;
+        },
+        { label: 'SessionRotator.rosters', maxRows: 200_000 }
+      );
+      if (!memPage.complete) return this.roster?.byClub ?? null;
+      const byClub = new Map<string, number>();
+      for (const m of memPage.rows) {
+        if (!horse.has(m.user_id)) continue;
+        byClub.set(m.club_id, (byClub.get(m.club_id) ?? 0) + 1);
+      }
+      this.roster = { at: now, byClub };
+      return byClub;
+    } catch (err) {
+      reportError(err, 'HorseSessionRotator.roster');
+      return this.roster?.byClub ?? null;
+    }
+  }
+
+  /**
+   * ═══ GOING HOME FOR THE NIGHT (Dan 2026-09-03) ═══════════════════════════
+   * "HORSES START ORGANICALLY QUITTING AND GOING TO SLEEP FOR THE NIGHT."
+   *
+   * Per club: how many horses are seated against how many the curve wants at
+   * this Chicago minute. Anyone over the target goes home, a budget's worth a
+   * cycle (HorseAttendance.departuresBudget - proportional, so the room walks
+   * down rather than dropping), earliest bedtime first. Independently of the
+   * count, a horse PAST its own bedtime racks up with a probability that
+   * rises the later it gets, whether the room is over target or not - that
+   * is the organic part, and it is why the wind-down is made of individuals
+   * rather than a quota.
+   *
+   * Going home means leaving EVERY seat the horse holds in the club: a
+   * player who logs off does not stay in three of their four games. Each
+   * departure goes through the engine's leaveTable, hand-boundary safe,
+   * exactly as every other departure here does. A horse whose seats cannot
+   * all be released this cycle (a human's game that would go short, a table
+   * with no live engine) is passed over for the next name; it stays up.
+   *
+   * Returns the set of horses sent home so the table loop below leaves their
+   * seats alone.
+   */
+  private sendSleepersHome(
+    seats: Array<{ table_id: string; user_id: string; club_id: string | null; joined_at: string }>,
+    allSeats: Array<{ user_id: string; club_id: string | null }>,
+    horseIds: Set<string>,
+    rosterByClub: Map<string, number> | null,
+    chicagoMinute: number
+  ): Set<string> {
+    const home = new Set<string>();
+    if (!rosterByClub || rosterByClub.size === 0) return home;
+    const now = Date.now();
+
+    const seatsByHorse = new Map<string, typeof seats>();
+    const humansAtTable = new Map<string, number>();
+    const seatsAtTable = new Map<string, number>();
+    for (const s of seats) {
+      seatsAtTable.set(s.table_id, (seatsAtTable.get(s.table_id) ?? 0) + 1);
+      if (!horseIds.has(s.user_id)) {
+        humansAtTable.set(s.table_id, (humansAtTable.get(s.table_id) ?? 0) + 1);
+        continue;
+      }
+      if (!seatsByHorse.has(s.user_id)) seatsByHorse.set(s.user_id, []);
+      seatsByHorse.get(s.user_id)!.push(s);
+    }
+
+    /* The COUNT is every seat the horse holds in the club, tournaments
+       included - that is what "members playing" means and it is the number
+       the fleet manager gates arrivals on. Only CASH seats are candidates to
+       leave; a horse in a tournament finishes it. */
+    const seatedByClub = new Map<string, Set<string>>();
+    for (const s of allSeats) {
+      if (!horseIds.has(s.user_id) || !s.club_id) continue;
+      if (!seatedByClub.has(s.club_id)) seatedByClub.set(s.club_id, new Set());
+      seatedByClub.get(s.club_id)!.add(s.user_id);
+    }
+
+    const summary: string[] = [];
+    for (const [clubId, seatedSet] of seatedByClub) {
+      const roster = rosterByClub.get(clubId);
+      if (!roster) continue;
+      const target = attendanceTarget(clubId, roster);
+      const budget = departuresBudget(seatedSet.size, target);
+      const ranked = [...seatedSet].sort(
+        (a, b) =>
+          sleepPriority(b, chicagoMinute) - sleepPriority(a, chicagoMinute) ||
+          horseHash(a) - horseHash(b)
+      );
+      let overTargetSent = 0;
+      let bedtimeSent = 0;
+      for (const horseId of ranked) {
+        if (overTargetSent >= budget && bedtimeSent >= MAX_BEDTIME_EXTRA_PER_CLUB) break;
+        const mine = (seatsByHorse.get(horseId) ?? []).filter((s) => s.club_id === clubId);
+        if (mine.length === 0) continue;
+        const newest = Math.max(...mine.map((s) => new Date(s.joined_at).getTime() || 0));
+        if ((now - newest) / 60_000 < MIN_MINUTES_BEFORE_BED) continue;
+
+        const past = minutesPastBedtime(horseId, chicagoMinute);
+        const byQuota = overTargetSent < budget;
+        const byBedtime =
+          !byQuota &&
+          past > 0 &&
+          bedtimeSent < MAX_BEDTIME_EXTRA_PER_CLUB &&
+          Math.random() < bedtimeLeaveProbability(past, CYCLE_MS / 60_000);
+        if (!byQuota && !byBedtime) continue;
+
+        // Every seat must be releasable, or the horse stays up this cycle.
+        const engines = mine.map((s) => ({ s, engine: this.getEngine(s.table_id) }));
+        const blocked = engines.some(({ s, engine }) => {
+          if (!engine) return true;
+          const humans = humansAtTable.get(s.table_id) ?? 0;
+          return humans > 0 && (seatsAtTable.get(s.table_id) ?? 0) <= 5;
+        });
+        if (blocked) continue;
+
+        let left = 0;
+        for (const { s, engine } of engines) {
+          try {
+            const r = engine!.leaveTable(horseId);
+            if (r.success) {
+              left++;
+              this.breaks.delete(HorseSessionRotator.breakKey(s.table_id, horseId));
+              seatsAtTable.set(s.table_id, (seatsAtTable.get(s.table_id) ?? 1) - 1);
+            }
+          } catch (err) {
+            reportError(err, 'HorseSessionRotator.sleep');
+          }
+        }
+        if (left === 0) continue;
+        home.add(horseId);
+        if (byQuota) overTargetSent++;
+        else bedtimeSent++;
+        console.log(
+          `[SessionRotator] horse=${horseId.slice(0, 8)} going home (${byQuota ? 'over target' : `${past}m past bedtime`}, ${left} seat(s), club=${clubId.slice(0, 8)})`
+        );
+      }
+      summary.push(
+        `${clubId.slice(0, 8)} ${seatedSet.size}/${target} of ${roster} -${overTargetSent + bedtimeSent}`
+      );
+    }
+    if (summary.length > 0) {
+      const hh = String(Math.floor(chicagoMinute / 60)).padStart(2, '0');
+      const mm = String(chicagoMinute % 60).padStart(2, '0');
+      console.log(`[SessionRotator] Attendance (Chicago ${hh}:${mm}): ${summary.join(' | ')}`);
+    }
+    return home;
   }
 
   private async rotate(): Promise<void> {
@@ -254,7 +464,7 @@ export class HorseSessionRotator {
       .in('id', userIds)
       .eq('is_horse', true);
     const horseIds = new Set((horses || []).map((h) => h.id));
-    const hourUTC = new Date().getUTCHours();
+    const chicagoMinute = chicagoMinuteOfDay();
 
     /* WHO IS WAITING FOR A SEAT (Dan 2026-09-02). The one reason a horse
        stands up off a full table. Counted per table, humans only - horses do
@@ -294,6 +504,18 @@ export class HorseSessionRotator {
       }
     }
 
+    /* ATTENDANCE: who goes home for the night, before the per-table pass, so
+       the pass below does not also pick one of them. Cash seats only - the
+       byTable map already excludes tournament tables. */
+    const cashSeats = [...byTable.values()].flat();
+    const goneHome = this.sendSleepersHome(
+      cashSeats,
+      seats,
+      horseIds,
+      await this.rosterByClub(),
+      chicagoMinute
+    );
+
     let departures = 0;
     let breakTaken = false;
     for (const [tableId, tableSeats] of byTable) {
@@ -323,6 +545,24 @@ export class HorseSessionRotator {
       const fill = cashTableFill(tableId);
       if (releaseWanted === 0 && tableSeats.length < (humanPresent ? 5 : 4)) continue;
 
+      /* NOT RIGHT AWAY (Dan 2026-09-03): "A HORSE SHOULD CASH OUT, TO MAKE A
+         SEAT FOR THE HUMAN (BUT NOT RIGHT AWAY, AFTER A COUPLE HANDS)... A
+         COUPLE HORSES SHOULD BE LEAVING THE TABLE (SLOWLY, WITHIN A COUPLE
+         MINUTES OF EACH OTHER)... IT CAN'T BE OBVIOUS."
+
+         The queue still decides HOW MANY stand up (releaseWanted); this clock
+         decides WHEN. First yield two to four minutes after the person
+         appears, each further yield one and a half to three minutes after
+         the last, jittered per table so no two tables keep the same beat. */
+      let yieldNow = false;
+      if (releaseWanted > 0) {
+        const clock = this.yieldClock.get(tableId) ?? { since: Date.now(), lastYieldAt: null };
+        this.yieldClock.set(tableId, clock);
+        yieldNow = mayYieldNow(tableId, clock, Date.now());
+      } else {
+        this.yieldClock.delete(tableId);
+      }
+
       const engine = this.getEngine(tableId);
       if (!engine) continue; // no live engine — not our business
 
@@ -330,13 +570,18 @@ export class HorseSessionRotator {
       let best: { seat: (typeof tableSeats)[number]; p: number } | null = null;
       for (const seat of tableSeats) {
         if (!horseIds.has(seat.user_id)) continue;
-        // Somebody is waiting: certain departure, one per cycle, no hazard
-        // math. The seat this frees is offered to the head of the queue by
-        // fn_offer_open_seat, exactly as it would be for any other departure.
-        if (releaseWanted > 0) {
+        // Already on the way home this cycle - not a candidate for anything.
+        if (goneHome.has(seat.user_id)) continue;
+        // Somebody is waiting and the clock says now: certain departure, one
+        // per cycle, no hazard math. The seat this frees is offered to the
+        // head of the queue by fn_offer_open_seat, exactly as it would be for
+        // any other departure. While the clock is still running nothing on
+        // this table leaves for any discretionary reason (holdsFull below).
+        if (yieldNow) {
           best = { seat, p: Number.POSITIVE_INFINITY };
           break;
         }
+        if (releaseWanted > 0) continue;
         const t = (seat as any).tables;
         const bb = Number(t?.big_blind) || 2;
         const buyIn = bb * 100;
@@ -480,8 +725,9 @@ export class HorseSessionRotator {
           p *= 2.2; // doubled up — racking up is human
         else if (swing <= 0.35) p *= 1.8; // felted-ish — calling it a night
         if (minutes > 150) p *= 1.6; // long sessions wind down
-        // V8: outside the horse's daily activity window, sessions end sooner.
-        if (!isActiveNow(seat.user_id, hourUTC)) p *= 1.6;
+        // Outside the horse's waking hours (HorseAttendance chronotype),
+        // sessions end sooner. Bedtime proper is sendSleepersHome's job.
+        if (!isAwake(seat.user_id, chicagoMinute)) p *= 1.6;
         // V8: rotation prefers horse-only tables — humans keep a stable game.
         if (humanPresent) p *= 0.5;
 
@@ -500,6 +746,10 @@ export class HorseSessionRotator {
           const result = engine.leaveTable(best.seat.user_id);
           if (result.success) {
             departures++;
+            if (yieldNow) {
+              const clock = this.yieldClock.get(tableId);
+              if (clock) clock.lastYieldAt = Date.now();
+            }
             // Only THIS table's break record — a break at another table is
             // still live and must still sit back in over there.
             this.breaks.delete(HorseSessionRotator.breakKey(tableId, best.seat.user_id));

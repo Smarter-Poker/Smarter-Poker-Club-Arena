@@ -30,11 +30,16 @@ import {
   buyInBBFor,
   gameLaneFor,
   horseHash,
-  isActiveNow,
   occupancyTargetFor,
   stakeBandAllows,
   stakeBandForBigBlind,
 } from './HorseBehavior.js';
+import {
+  arrivalsBudget,
+  attendanceTarget,
+  chicagoMinuteOfDay,
+  isAwake,
+} from './HorseAttendance.js';
 
 /**
  * Everything `resolveSeatClub` needs to answer "which wallet pays for this
@@ -1011,7 +1016,7 @@ export class HorseFleetManager {
         return;
       }
       const horseIdSet = new Set(idPage.rows.map((h) => h.id));
-      const hourUTC = new Date().getUTCHours();
+      const chicagoMinute = chicagoMinuteOfDay();
 
       console.log(
         `[HorseFleet] Seeding cycle: ${tables.length} tables found, ${validHorses.length} total horses.`
@@ -1036,24 +1041,66 @@ export class HorseFleetManager {
 
       let totalSeated = 0;
 
-      // ── FLEET ACTIVITY FLOOR (Dan 2026-08-26: "a minimum of 1 out of 3
-      // horses should be playing") ──────────────────────────────────────────
-      // Measured from live seats, the only truth about where a horse is
-      // (horse_status is never flipped for cash play). Tournament seats are
-      // not in allActiveSeats, so this UNDERCOUNTS "playing" and the floor is
-      // conservative — it can only over-deliver. When the seated fraction
-      // drops under a third, every non-empty table wants one more seat this
-      // cycle, which lifts the floor without thrashing any single game.
-      const seatedHorseCount = new Set(
-        allActiveSeats.filter((s) => horseIdSet.has(s.user_id)).map((s) => s.user_id)
-      ).size;
-      const fleetBoost =
-        validHorses.length > 0 && seatedHorseCount < Math.ceil(validHorses.length / 3);
-      if (fleetBoost) {
-        console.log(
-          `[HorseFleet] Activity floor: ${seatedHorseCount}/${validHorses.length} horses seated (<1/3) - boosting seat targets this cycle`
+      /* ── ATTENDANCE (Dan 2026-09-03, binding) ───────────────────────────
+         "ALL CLUBS ARE RUNNING TOO MANY HORSES AT THE SAME TIME."
+
+         This REPLACES the 2026-08-26 activity floor ("a minimum of 1 out of 3
+         horses should be playing"), which only ever pushed the count UP and
+         had no notion of the hour. The curve in HorseAttendance is now both
+         the floor and the ceiling: per club, per Chicago minute, a share of
+         that club's horse roster is meant to be seated - roughly a fifth in
+         the daytime, half in the evening, under a tenth between three and
+         eight in the morning.
+
+         Counted per SEAT club, because that is the club the member list and
+         the lobby count the horse under. The roster is the club's active
+         horse membership, read from the same membership map the wallet gate
+         uses; when that map did not load this cycle the cap is not applied
+         (fail open, like every other gate in this loop - a cap computed
+         against a roster of zero would empty the room).
+
+         The ledger below is kept live through the loop: a NEW horse (not
+         already seated anywhere in this club) consumes one unit of the
+         club's arrivals budget when it sits, so arrivals trickle; a horse
+         already seated is free to take a second, third or fourth table, so
+         multi-tabling - which is how a modest headcount still fills the
+         tables Dan wants full - costs nothing here. */
+      const seatedByClub = new Map<string, Set<string>>();
+      for (const s of allActiveSeats) {
+        if (!horseIdSet.has(s.user_id) || !s.club_id) continue;
+        if (!seatedByClub.has(s.club_id)) seatedByClub.set(s.club_id, new Set());
+        seatedByClub.get(s.club_id)!.add(s.user_id);
+      }
+      const rosterByClub = new Map<string, number>();
+      if (bankrollsLoaded) {
+        for (const h of validHorses) {
+          const clubs = memberships.get(h.id);
+          if (!clubs) continue;
+          for (const c of clubs) rosterByClub.set(c, (rosterByClub.get(c) ?? 0) + 1);
+        }
+      }
+      /* club -> how many horses not yet seated in that club may sit this cycle.
+         Absent from the map = uncapped (roster unknown). */
+      const arrivalsLeft = new Map<string, number>();
+      const attendanceLines: string[] = [];
+      for (const [clubId, roster] of rosterByClub) {
+        const seated = seatedByClub.get(clubId)?.size ?? 0;
+        const target = attendanceTarget(clubId, roster);
+        arrivalsLeft.set(clubId, arrivalsBudget(seated, target, roster));
+        attendanceLines.push(
+          `${clubId.slice(0, 8)} ${seated}/${target} of ${roster} (+${arrivalsLeft.get(clubId)})`
         );
       }
+      if (attendanceLines.length > 0) {
+        console.log(
+          `[HorseFleet] Attendance (Chicago ${String(Math.floor(chicagoMinute / 60)).padStart(2, '0')}:${String(chicagoMinute % 60).padStart(2, '0')}): ${attendanceLines.join(' | ')}`
+        );
+      } else {
+        console.warn(
+          '[HorseFleet] Attendance: roster unknown this cycle - the curve is not applied.'
+        );
+      }
+      let attendanceHeld = 0;
 
       // V8: tables with a short-handed HUMAN seed first (never leave a human
       // stranded); everything else keeps its natural order.
@@ -1191,12 +1238,7 @@ export class HorseFleetManager {
             humansWaiting
           );
           const { fill } = target;
-          let { seatTarget } = target;
-          // Activity floor (see fleetBoost above). A full table is already at
-          // max and cannot be lifted; this only ever helps a sparse one.
-          if (fleetBoost) {
-            seatTarget = Math.min(table.max_players, seatTarget + 1);
-          }
+          const { seatTarget } = target;
 
           // A full table with a vibe that says "hot" grows a WAITING LIST
           // rather than simply being full - that queue is the thing that makes
@@ -1260,6 +1302,19 @@ export class HorseFleetManager {
             if (seatClub === null) {
               clubDropped++;
               return false;
+            }
+            /* ATTENDANCE (Dan 2026-09-03): a horse not yet playing in this
+               club sits only while the club has arrivals budget left this
+               cycle. One already seated here is free to add a table. A human
+               short-handed at this table outranks the curve, as it outranks
+               everything else in this loop. */
+            if (seatClub && !humanNeedsRescue) {
+              const already = seatedByClub.get(seatClub)?.has(h.id) ?? false;
+              const left = arrivalsLeft.get(seatClub);
+              if (!already && left !== undefined && left <= 0) {
+                attendanceHeld++;
+                return false;
+              }
             }
             /**
              * BANKROLL GATE (Dan 2026-08-31). A stake band says which games a
@@ -1325,7 +1380,7 @@ export class HorseFleetManager {
           // can never summon the 25/50 regular, which is not. A quiet
           // high-stakes table is ordinary; the wrong name in a micro game is
           // the tell Dan is describing.
-          let pool = candidateHorses.filter((h) => isActiveNow(h.id, hourUTC));
+          let pool = candidateHorses.filter((h) => isAwake(h.id, chicagoMinute));
           if (pool.length < emptySeats.length && humanNeedsRescue) pool = candidateHorses;
 
           /* FOUR TABLES IS THE TARGET, NOT THE CEILING (Dan 2026-09-02).
@@ -1433,6 +1488,17 @@ export class HorseFleetManager {
               // Update our in-memory map so we don't assign them to another table if they hit 4
               if (!horseTables.has(horse.id)) horseTables.set(horse.id, new Set());
               horseTables.get(horse.id)!.add(table.id);
+              /* Attendance ledger: a first seat in this club is an ARRIVAL and
+                 spends one unit of the club's budget; further seats are free. */
+              if (seatClub) {
+                if (!seatedByClub.has(seatClub)) seatedByClub.set(seatClub, new Set());
+                const clubSet = seatedByClub.get(seatClub)!;
+                if (!clubSet.has(horse.id)) {
+                  clubSet.add(horse.id);
+                  const left = arrivalsLeft.get(seatClub);
+                  if (left !== undefined) arrivalsLeft.set(seatClub, left - 1);
+                }
+              }
               // The seat we just bought is exposure NOW, not next cycle: without
               // this the aggregate ceiling only ever sees the position the cycle
               // STARTED with, and a single pass could seat a horse at four
@@ -1468,6 +1534,12 @@ export class HorseFleetManager {
         console.log(
           `[HorseFleet] ${clubDropped} horse/table pairs excluded - the horse holds no ` +
             `membership that can pay for that table (a horse plays inside its own club).`
+        );
+      }
+      if (attendanceHeld > 0) {
+        console.log(
+          `[HorseFleet] ${attendanceHeld} horse/table pairs held back by attendance - ` +
+            `the club is at its share of the roster for this hour (Dan 2026-09-03).`
         );
       }
 

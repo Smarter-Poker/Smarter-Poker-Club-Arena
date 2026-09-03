@@ -880,6 +880,11 @@
       "club_id",
       "user_id"
     ],
+    "club_message_dismissals": [
+      "user_id",
+      "club_id",
+      "dismissed_revision"
+    ],
     "club_opening_setup_funding": [
       "club_id",
       "operation_id",

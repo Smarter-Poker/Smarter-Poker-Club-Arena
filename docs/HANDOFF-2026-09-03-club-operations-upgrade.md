@@ -1474,7 +1474,7 @@ git checkout -b feat/club-operations-phase-4 origin/main
       "Take Back", "Set Credit Line", "Send Prepaid Chips" or "Reduce Credit Line" either sees
       the effect or sees an honest refusal. Never a false success.
 - [ ] The payouts tab total equals `SELECT sum(amount) FROM agent_commissions WHERE club_id = $1
-    AND settled_at IS NULL`.
+AND settled_at IS NULL`.
 - [ ] No count, export or payout anywhere in the workspace filters on whether an account is
       house-run.
 - [ ] `git status` clean; nothing unpushed.

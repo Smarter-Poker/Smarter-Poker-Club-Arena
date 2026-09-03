@@ -1379,6 +1379,68 @@ export function seatFirstFillOrder(
  * enough that a player notices a stuck game roughly when the watchdog does,
  * and long enough that a slow start is never treated as a failure.
  */
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  ONE CANDIDATE PER SEAT IS A BET THAT NOBODY ELSE IS PICKING
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * seatFirstFillOrder takes `want` candidates for `want` seats, so the seat-first
+ * fill used to ask pickFreeHorses for EXACTLY the shortfall. That only works if
+ * every candidate can be seated, and one of them routinely cannot: the busy set
+ * is read before the claim and never atomically with it (pickFreeHorses says so
+ * itself), while topUpPartialSeatFirst, the recurring pass and the scheduler all
+ * run the same five-second tick. Two callers pick the same horse; the first claim
+ * takes it to four games and fn_enforce_booking_game_cap refuses the second with
+ * 23514. With one candidate for one seat, that lost race IS an empty seat.
+ *
+ * Measured on production 2026-09-03, one hour of engine log:
+ *
+ *     1,000 horses      413 already at four games   (unpickable)
+ *                       247 at three                (one claim from refused)
+ *       247 boards logged "seat-first fill added nobody"
+ *        89 of 98 refusals were FOUR TABLE LIMIT
+ *
+ * and every one of those lines read `0 own registrant(s) + 1 free horse(s) -
+ * shortfall 1`. One candidate, refused, seat left empty - on a board Dan opened
+ * to get horses PLAYING. Two thirds of the fleet is at or near the cap, so the
+ * race is not rare; it is the normal case.
+ *
+ * So ask for more than the seats need and let the refusals be absorbed.
+ * registerHorses in this same file already sizes its fetch as `count +
+ * busy.size` and calls that the convention this file settled on - the seat-first
+ * path had drifted from it. Slack costs nothing: an unused candidate is an
+ * unclaimed id, pickFreeHorses still applies the club scope and the cash-room
+ * reserve before it slices, and the fill loop stops the moment the seats are
+ * full (a spin must never seat a fourth).
+ */
+export const SEAT_FIRST_CANDIDATES_PER_SEAT = 3;
+export const SEAT_FIRST_CANDIDATE_FLOOR = 3;
+
+export function seatFirstCandidateCount(shortfall: number): number {
+  const seats = Math.max(0, Math.floor(Number(shortfall) || 0));
+  if (seats === 0) return 0;
+  return Math.max(SEAT_FIRST_CANDIDATE_FLOOR, seats * SEAT_FIRST_CANDIDATES_PER_SEAT);
+}
+
+/**
+ * A four-table refusal is an ANSWER, not a fault.
+ *
+ * HorseFleetManager.seatHorse learned this on 2026-08-31 after 57 error reports
+ * in a ten-minute window; the seat-first fill never did, and reported 89 of them
+ * in an hour - which is how the three genuine refusals sitting beside them
+ * (opening_seat_rpc_failed, seat_first_repair_failed) go unread. The cap is a
+ * rule working exactly as written: this horse is busy, take the next one.
+ */
+export function isExpectedSeatRefusal(message: string | null | undefined): boolean {
+  const msg = String(message ?? '');
+  return (
+    msg.includes('FOUR TABLE LIMIT') ||
+    msg.includes('TABLE_CAP_REACHED') ||
+    msg.includes('Player already seated') ||
+    msg.includes('duplicate key')
+  );
+}
+
 export const SEAT_FIRST_START_STALL_MS = 3 * 60 * 1000;
 
 /**
@@ -4754,12 +4816,18 @@ export class TournamentRecurringService {
          * one group the old code could never pick.
          */
         const own = await this.unseatedRegistrantHorses(tournamentId, primaryTableId);
-        const poolWanted = Math.max(0, shortfall - own.length);
+        // MORE CANDIDATES THAN SEATS. See seatFirstCandidateCount for the hour
+        // of production log that says why one-per-seat leaves boards short.
+        const wantCandidates = seatFirstCandidateCount(shortfall);
+        const poolWanted = Math.max(0, wantCandidates - own.length);
         const pool =
           poolWanted > 0 ? await this.pickFreeHorses(poolWanted, false, tournamentId) : [];
-        const candidates = seatFirstFillOrder(shortfall, own, pool);
+        const candidates = seatFirstFillOrder(wantCandidates, own, pool);
 
         for (const horse of candidates) {
+          // The slack above is there to absorb REFUSALS, not to seat extras: a
+          // 3-handed spin takes three. Stop as soon as the seats are covered.
+          if (added >= shortfall) break;
           // THE FREEZE IS TOTAL (Dan 2026-09-03). continue, not break - see the
           // opening-seat loop above and the one-refusal pin in
           // seatFirstFillOrder.test.ts.
@@ -4777,13 +4845,21 @@ export class TournamentRecurringService {
           // trigger does not return {ok:false}, it RAISES, so the one signal
           // that would have named this deadlock arrived in `error` and was
           // thrown away for a day and a half.
+          //
+          // 2026-09-03: and do not report the ORDINARY refusal as a fault. The
+          // four-table cap firing means the horse is busy - the rule working,
+          // not the fill failing - and at 89 reports an hour it was burying the
+          // refusals that do need reading. isExpectedSeatRefusal names them;
+          // everything else is still reported, unchanged.
           if (seatRpcErr) {
-            reportError(
-              new Error(
-                `[TournamentRecurring] seat-first fill refused for ${tournamentId.slice(0, 8)}: ${seatRpcErr.message}`
-              ),
-              'TournamentRecurring.seat_first_seat_rpc_failed'
-            );
+            if (!isExpectedSeatRefusal(seatRpcErr.message)) {
+              reportError(
+                new Error(
+                  `[TournamentRecurring] seat-first fill refused for ${tournamentId.slice(0, 8)}: ${seatRpcErr.message}`
+                ),
+                'TournamentRecurring.seat_first_seat_rpc_failed'
+              );
+            }
             continue;
           }
           if ((res as { ok?: boolean } | null)?.ok === true) added++;

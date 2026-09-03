@@ -1717,6 +1717,7 @@
     "fn_ca_reject_manual_adjustment",
     "fn_ca_repair_write_failure",
     "fn_ca_resolution_needs_a_cause",
+    "fn_ca_retire_certification_club",
     "fn_ca_retry_promo_accruals",
     "fn_ca_return_unawarded_spin_draws",
     "fn_ca_settle_hand_stacks",

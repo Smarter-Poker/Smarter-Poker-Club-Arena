@@ -74,13 +74,18 @@ describe('the house board is not replaced, it is joined', () => {
     expect(code).toMatch(/clubId: MIDWAY_UNION_ID,\s*unionId: MIDWAY_UNION_ID,/);
   });
 
-  it('is filled FIRST, so owner boards cannot starve it', () => {
+  it('is served on its own share, so neither side can starve the other', () => {
+    // Until 2026-09-03 the house was filled FIRST on one shared budget "so
+    // owner boards cannot starve it" - and, being thirty-odd games short
+    // every tick, it spent all twelve and starved every owner board instead.
+    // Deep Stack Society's spin board sat empty from 11:32 that day. Now the
+    // owners are read first, every board gets boardBudgetShares() of BURST,
+    // and the house spends its share like anyone else.
     const spinPass = code.slice(code.indexOf('private async checkAndLaunchSpins'));
-    const house = spinPass.indexOf('this.houseOwner');
-    const owners = spinPass.indexOf('activatedSpinOwners()');
-    expect(house).toBeGreaterThan(-1);
-    expect(owners).toBeGreaterThan(-1);
-    expect(house).toBeLessThan(owners);
+    expect(spinPass).toMatch(/const owners = await this\.activatedSpinOwners\(\);/);
+    expect(spinPass).toMatch(/const share = boardBudgetShares\(owners\.length \+ 1\);/);
+    const houseCall = spinPass.slice(spinPass.indexOf('this.houseOwner'));
+    expect(houseCall.slice(0, houseCall.indexOf(');'))).toMatch(/\{ left: share \}/);
   });
 
   it('is not also listed as an activated owner, which would alternate the board', () => {
@@ -135,13 +140,14 @@ describe('one board cannot be mistaken for another', () => {
 });
 
 describe('the work a single pass can do is bounded', () => {
-  it('shares one budget across every board in the pass', () => {
+  it('splits one BURST into a share per board in the pass', () => {
     expect(code).toMatch(/const BURST = 12;/);
-    expect(code).toMatch(/const budget = \{ left: BURST \}/);
     expect(code).toMatch(/budget: \{ left: number \}/);
+    expect(code).toMatch(/Math\.max\(BOARD_BUDGET_FLOOR, Math\.floor\(burst \/ owners\)\)/);
+    expect(code).not.toMatch(/const budget = \{ left: BURST \}/);
   });
 
-  it('stops the moment the budget is spent, mid-board', () => {
+  it('a board stops the moment its share is spent, mid-board', () => {
     expect(code).toMatch(/if \(budget\.left <= 0\) break;/);
     expect(code).toMatch(/if \(budget\.left <= 0\) return;/);
   });

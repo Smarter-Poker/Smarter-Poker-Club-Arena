@@ -53,12 +53,52 @@ vi.mock('../../src/services/StatsFactsService', () => {
       opponents_qualified: 0,
       generated_at: '',
     }),
-    getDistribution: vi.fn().mockResolvedValue([
-      { cohort: 'field', metric: 'bb100', p10: -52, p25: -30, p50: -15, p75: 0, p90: 15, sample_size: 571 },
-      { cohort: 'field', metric: 'vpip', p10: 27, p25: 32, p50: 38, p75: 44, p90: 50, sample_size: 571 },
-      { cohort: 'field', metric: 'pfr', p10: 6, p25: 9, p50: 12, p75: 16, p90: 21, sample_size: 569 },
-      { cohort: 'field', metric: 'win_rate', p10: 18, p25: 20, p50: 21, p75: 23, p90: 25, sample_size: 571 },
-    ]),
+    // Shape since 2026-09-03: { rows, error? } so a failed read is not an
+    // empty field.
+    getDistribution: vi.fn().mockResolvedValue({
+      rows: [
+        {
+          cohort: 'field',
+          metric: 'bb100',
+          p10: -52,
+          p25: -30,
+          p50: -15,
+          p75: 0,
+          p90: 15,
+          sample_size: 571,
+        },
+        {
+          cohort: 'field',
+          metric: 'vpip',
+          p10: 27,
+          p25: 32,
+          p50: 38,
+          p75: 44,
+          p90: 50,
+          sample_size: 571,
+        },
+        {
+          cohort: 'field',
+          metric: 'pfr',
+          p10: 6,
+          p25: 9,
+          p50: 12,
+          p75: 16,
+          p90: 21,
+          sample_size: 569,
+        },
+        {
+          cohort: 'field',
+          metric: 'win_rate',
+          p10: 18,
+          p25: 20,
+          p50: 21,
+          p75: 23,
+          p90: 25,
+          sample_size: 571,
+        },
+      ],
+    }),
   };
   return { __esModule: true, default: svc, StatsFactsService: svc };
 });
@@ -102,12 +142,66 @@ const OVERALL = {
 };
 
 const POSITIONS = [
-  { position: 'UTG', hands_played: 3000, vpip_count: 1300, pfr_count: 200, three_bet_count: 40, hands_won: 500, total_profit: -900, bb100: -30 },
-  { position: 'MP', hands_played: 3000, vpip_count: 1200, pfr_count: 220, three_bet_count: 40, hands_won: 520, total_profit: -400, bb100: -12 },
-  { position: 'CO', hands_played: 3000, vpip_count: 1100, pfr_count: 260, three_bet_count: 50, hands_won: 560, total_profit: -200, bb100: -6 },
-  { position: 'BTN', hands_played: 3000, vpip_count: 1000, pfr_count: 300, three_bet_count: 60, hands_won: 700, total_profit: 300, bb100: 9 },
-  { position: 'SB', hands_played: 3000, vpip_count: 900, pfr_count: 180, three_bet_count: 30, hands_won: 400, total_profit: -700, bb100: -22 },
-  { position: 'BB', hands_played: 3000, vpip_count: 1500, pfr_count: 150, three_bet_count: 30, hands_won: 520, total_profit: -1100, bb100: -34 },
+  {
+    position: 'UTG',
+    hands_played: 3000,
+    vpip_count: 1300,
+    pfr_count: 200,
+    three_bet_count: 40,
+    hands_won: 500,
+    total_profit: -900,
+    bb100: -30,
+  },
+  {
+    position: 'MP',
+    hands_played: 3000,
+    vpip_count: 1200,
+    pfr_count: 220,
+    three_bet_count: 40,
+    hands_won: 520,
+    total_profit: -400,
+    bb100: -12,
+  },
+  {
+    position: 'CO',
+    hands_played: 3000,
+    vpip_count: 1100,
+    pfr_count: 260,
+    three_bet_count: 50,
+    hands_won: 560,
+    total_profit: -200,
+    bb100: -6,
+  },
+  {
+    position: 'BTN',
+    hands_played: 3000,
+    vpip_count: 1000,
+    pfr_count: 300,
+    three_bet_count: 60,
+    hands_won: 700,
+    total_profit: 300,
+    bb100: 9,
+  },
+  {
+    position: 'SB',
+    hands_played: 3000,
+    vpip_count: 900,
+    pfr_count: 180,
+    three_bet_count: 30,
+    hands_won: 400,
+    total_profit: -700,
+    bb100: -22,
+  },
+  {
+    position: 'BB',
+    hands_played: 3000,
+    vpip_count: 1500,
+    pfr_count: 150,
+    three_bet_count: 30,
+    hands_won: 520,
+    total_profit: -1100,
+    bb100: -34,
+  },
 ];
 
 const TOURNAMENTS = { entries: 40, cashes: 6, wins: 1, best_finish: 1 };

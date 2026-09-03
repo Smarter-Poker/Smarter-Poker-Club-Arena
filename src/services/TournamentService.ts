@@ -135,6 +135,17 @@ export interface SpinMultiplier {
 }
 
 /**
+ * Repeats Weekly (Dan 2026-09-03): "ALL MTT'S SHOULD BE ON A RECURRING WEEKLY
+ * CYCLE ... ADDED TO THE 'CREATE EVENT' FUNCTIONALITY ... AS A CHECK BOX."
+ * The checkbox writes restartEveryMinutes = one week; the server clones the
+ * event on completion, anchored to the same weekday and time. The interval
+ * cap moves from a day to a week here, in fn_create_tournament_governed_legacy
+ * (migration 20260903172703) and in ScheduledTournamentService together.
+ */
+export const RESTART_WEEKLY_MINUTES = 7 * 24 * 60;
+export const RESTART_MAX_MINUTES = RESTART_WEEKLY_MINUTES;
+
+/**
  * fn_create_tournament returns a machine-readable reason; turn it into
  * something a club owner can act on. Anything unmapped falls back to a generic
  * message rather than leaking the raw code.
@@ -157,7 +168,8 @@ const TOURNAMENT_CREATE_ERRORS: Record<string, string> = {
     'The bounty plus the 10% fee is more than the buy-in, so there would be nothing left for the prize pool.',
   // Parity keys (2026-08-22)
   early_bird_chips_must_not_be_negative: 'Early bird chips cannot be negative.',
-  restart_every_minutes_out_of_range: 'Restart interval must be between 5 and 1440 minutes.',
+  restart_every_minutes_out_of_range:
+    'Restart interval must be between 5 minutes and one week (10080 minutes).',
   total_days_out_of_range: 'A multi-day tournament runs 2 to 7 days.',
   mystery_range_requires_mystery_bounty:
     'Mystery bounty multipliers only apply to mystery bounty tournaments.',
@@ -681,7 +693,7 @@ class TournamentService {
       p.finalTableDealEnabled = config.finalTableDealEnabled;
     }
     if (config.restartEveryMinutes !== undefined && config.restartEveryMinutes !== null) {
-      p.restartEveryMinutes = clampInt(config.restartEveryMinutes, 5, 1440);
+      p.restartEveryMinutes = clampInt(config.restartEveryMinutes, 5, RESTART_MAX_MINUTES);
     }
     if (config.synchronizedBreaks !== undefined) p.synchronizedBreaks = config.synchronizedBreaks;
     // A freeroll never sends a 0 cap: process_tournament_rebuy reads a NOT
@@ -835,7 +847,7 @@ class TournamentService {
     if (
       config.restartEveryMinutes !== undefined &&
       config.restartEveryMinutes !== null &&
-      (config.restartEveryMinutes < 5 || config.restartEveryMinutes > 1440)
+      (config.restartEveryMinutes < 5 || config.restartEveryMinutes > RESTART_MAX_MINUTES)
     ) {
       throw new Error(TOURNAMENT_CREATE_ERRORS.restart_every_minutes_out_of_range);
     }

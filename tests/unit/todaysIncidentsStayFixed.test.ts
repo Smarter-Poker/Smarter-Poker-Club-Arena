@@ -110,7 +110,7 @@ describe('44 of 50 Spins and Heads-Ups could never be joined', () => {
   it('repairs table-less seat-first games BEFORE deciding what is missing', () => {
     const spinTick = recurring.indexOf("withBoardTick('spin'");
     const repair = recurring.indexOf('this.repairSeatFirstGames()', spinTick);
-    const budget = recurring.indexOf('const budget = { left: BURST }', spinTick);
+    const budget = recurring.indexOf('const share = boardBudgetShares(', spinTick);
     expect(repair).toBeGreaterThan(spinTick);
     expect(repair).toBeLessThan(budget);
   });

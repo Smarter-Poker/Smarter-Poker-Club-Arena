@@ -48,8 +48,19 @@ interface Row {
   i: number;
   actual: number;
   ev: number;
-  /** Signed gap, drawn as the shaded band. */
+  /** Signed gap: positive is running above expectation. */
   luck: number;
+  /**
+   * The band BETWEEN the two lines, as recharts range areas. `above` spans
+   * [ev, actual] where actual is above EV and collapses to [ev, ev] elsewhere;
+   * `below` is the mirror. Before 2026-09-03 one Area plotted `luck` against
+   * the same axis as the lines, so it filled from y=0 to the gap value - a
+   * shape unrelated to either line - and took a single colour from the FINAL
+   * sign, so a player who ended above EV saw green over every stretch they had
+   * run below it.
+   */
+  above: [number, number];
+  below: [number, number];
 }
 
 /**
@@ -58,6 +69,19 @@ interface Row {
  * permanent caveat rather than a confident headline.
  */
 const MEANINGFUL_ALL_INS = 30;
+
+function toRow(p: EVCurvePayload['points'][number]): Row {
+  const actual = Number.isFinite(p.cum_net_bb) ? p.cum_net_bb : 0;
+  const ev = Number.isFinite(p.cum_ev_net_bb) ? p.cum_ev_net_bb : 0;
+  return {
+    i: p.i,
+    actual,
+    ev,
+    luck: actual - ev,
+    above: actual >= ev ? [ev, actual] : [ev, ev],
+    below: actual < ev ? [actual, ev] : [ev, ev],
+  };
+}
 
 const fmtBB = (n: number): string =>
   `${n >= 0 ? '+' : ''}${n.toLocaleString(undefined, { maximumFractionDigits: 1 })}`;
@@ -73,6 +97,8 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
   const reduceMotion = reduceMotionPref || still;
   const [data, setData] = useState<EVCurvePayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!userId) {
       setLoading(false);
@@ -82,7 +108,9 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
     setLoading(true);
     StatsFactsService.getEVCurve(userId, days)
       .then((payload) => {
-        if (!cancelled) setData(payload);
+        if (cancelled) return;
+        setData(payload);
+        setReadError(payload.error ?? null);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -90,7 +118,7 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
     return () => {
       cancelled = true;
     };
-  }, [userId, days]);
+  }, [userId, days, attempt]);
 
   const rows: Row[] = useMemo(() => {
     if (!data?.points?.length) return [];
@@ -101,21 +129,11 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
     const out: Row[] = [];
     for (let i = 0; i < src.length; i += stride) {
       const p = src[i];
-      out.push({
-        i: p.i,
-        actual: p.cum_net_bb,
-        ev: p.cum_ev_net_bb,
-        luck: p.cum_net_bb - p.cum_ev_net_bb,
-      });
+      out.push(toRow(p));
     }
     const last = src[src.length - 1];
     if (out.length && out[out.length - 1].i !== last.i) {
-      out.push({
-        i: last.i,
-        actual: last.cum_net_bb,
-        ev: last.cum_ev_net_bb,
-        luck: last.cum_net_bb - last.cum_ev_net_bb,
-      });
+      out.push(toRow(last));
     }
     return out;
   }, [data]);
@@ -130,6 +148,21 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
 
   const summary = data?.summary;
   const hasHands = (summary?.hands ?? 0) > 0;
+
+  // A failed read is not an empty history. Say which.
+  if (readError) {
+    return (
+      <div className="evluck-card evluck-empty" role="alert">
+        <h3 className="evluck-title">Luck: Actual Vs Expected</h3>
+        <p className="evluck-empty-text">
+          This Chart Could Not Be Loaded Right Now.{' '}
+          <button type="button" className="hand-retry" onClick={() => setAttempt((n) => n + 1)}>
+            Try Again
+          </button>
+        </p>
+      </div>
+    );
+  }
 
   if (!hasHands) {
     return (
@@ -147,8 +180,7 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
   const allIns = summary?.all_in_hands ?? 0;
   const luck = summary?.luck_bb ?? 0;
   const luckPer100 = summary?.luck_bb_per_100 ?? 0;
-  const runningAbove = luck >= 0;
-  const running = runningAbove ? 'above' : 'below';
+  const running = luck >= 0 ? 'above' : 'below';
 
   return (
     <motion.div
@@ -171,8 +203,8 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
             <strong className={luck >= 0 ? 'is-up' : 'is-down'}>
               {fmtBB(luck)} BB ({fmtBB(luckPer100)} BB/100)
             </strong>{' '}
-            {running} Expectation Across {summary?.hands.toLocaleString()} Cash Hands, Measured Over{' '}
-            {allIns.toLocaleString()} All-In {allIns === 1 ? 'Spot' : 'Spots'}.
+            {running} Expectation Across {(summary?.hands ?? 0).toLocaleString()} Cash Hands,
+            Measured Over {allIns.toLocaleString()} All-In {allIns === 1 ? 'Spot' : 'Spots'}.
           </p>
         )}
       </div>
@@ -214,16 +246,29 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
               formatter={(value, name) => [`${fmtBB(Number(value ?? 0))} bb`, String(name ?? '')]}
             />
             <ReferenceLine y={0} stroke={zeroStroke} />
-            {/* The band is the story: how far actual has drifted from EV.
-                Its colour follows the CURRENT sign of that drift, so it can
-                never reassure a player who is running badly. */}
+            {/* The band is the story: the space BETWEEN actual and expected.
+                Green where actual runs above EV, red where it runs below, per
+                point - so a bad stretch stays red even on a chart that ends
+                well. See the Row docblock. */}
             <Area
               type="monotone"
-              dataKey="luck"
-              name="Luck"
+              dataKey="above"
+              name="Above Expected"
               stroke="none"
-              fill={runningAbove ? 'url(#evluckGoodGrad)' : 'url(#evluckBadGrad)'}
+              fill="url(#evluckGoodGrad)"
               isAnimationActive={!reduceMotion}
+              legendType="none"
+              tooltipType="none"
+            />
+            <Area
+              type="monotone"
+              dataKey="below"
+              name="Below Expected"
+              stroke="none"
+              fill="url(#evluckBadGrad)"
+              isAnimationActive={!reduceMotion}
+              legendType="none"
+              tooltipType="none"
             />
             <Line
               type="monotone"
@@ -256,11 +301,12 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
           <i className="evluck-swatch is-dashed" style={{ borderColor: '#8b5cf6' }} /> Expected
         </span>
         <span className="evluck-key">
-          <i
-            className="evluck-swatch"
-            style={{ background: runningAbove ? 'rgba(34,197,94,0.45)' : 'rgba(239,68,68,0.45)' }}
-          />{' '}
-          Gap ({running} Expected)
+          <i className="evluck-swatch" style={{ background: 'rgba(34,197,94,0.45)' }} /> Above
+          Expected
+        </span>
+        <span className="evluck-key">
+          <i className="evluck-swatch" style={{ background: 'rgba(239,68,68,0.45)' }} /> Below
+          Expected
         </span>
       </div>
 
@@ -273,7 +319,7 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
       )}
       {summary?.capped && (
         <p className="evluck-note">
-          Showing Your Most Recent {summary.hands.toLocaleString()} Cash Hands.
+          Showing Your Most Recent {(summary?.hands ?? 0).toLocaleString()} Cash Hands.
         </p>
       )}
       <p className="evluck-note">

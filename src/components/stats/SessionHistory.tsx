@@ -1,46 +1,24 @@
 /**
- * SessionHistory — Timeline of poker sessions with P/L tracking
- * Wired to real Supabase `player_sessions` table with bus listeners
+ * SessionHistory — Timeline of cash sessions with P/L tracking.
  *
- * Enhancements:
- *  - Optional `initialSessions` prop to skip redundant fetch (dedup from parent)
- *  - localStorage SWR cache for instant render
- *  - Winning/losing streak indicator
- *  - Date range filter (7d / 30d / All)
+ * PURE PRESENTATION (2026-09-03). The page RPC (ca_player_stats_overview_v2)
+ * derives sessions from the SAME range-scoped hand rows every other panel
+ * uses, and the page passes them in. This component used to carry a second
+ * `player_sessions` fetch, a localStorage cache and two bus listeners that
+ * could never run (the parent always supplies an array), plus its own
+ * 7d/30d/All pills layered ON TOP of the page's range - so "7 Days" on the
+ * page and "30 Days" here printed "(Last 30 Days)" over seven days of data.
+ * One range, the page's, and the label says which.
+ *
+ * Amounts are club chips, not dollars - the old "$/Hr" label was wrong.
  */
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { supabase, getAuthUser } from '../../lib/supabase';
-import { masterBus } from '../../core/MasterBus';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import './SessionHistory.css';
-import { reportError } from '../../utils/errorReporter';
-
-// ── SWR cache ──
-const CACHE_KEY = 'sess_hist_v1_';
-const CACHE_TTL = 10 * 60 * 1000;
-
-function getCached(uid: string) {
-  try {
-    const raw = localStorage.getItem(CACHE_KEY + uid);
-    if (!raw) return null;
-    const p = JSON.parse(raw);
-    if (p.ts && Date.now() - p.ts > CACHE_TTL) return null;
-    return p.data;
-  } catch {
-    return null;
-  }
-}
-function setCache(uid: string, data: any) {
-  try {
-    localStorage.setItem(CACHE_KEY + uid, JSON.stringify({ data, ts: Date.now() }));
-  } catch {
-    /* quota */
-  }
-}
 
 interface SessionRecord {
   id: string;
-  date: Date;
+  date: Date | null;
   duration: number; // minutes
   handsPlayed: number;
   buyIn: number;
@@ -49,165 +27,76 @@ interface SessionRecord {
   hourlyRate: number;
 }
 
-type DateRange = '7d' | '30d' | 'all';
+interface SessionRowLike {
+  id?: string | number;
+  date?: string;
+  duration_minutes?: number;
+  hands_played?: number;
+  buy_in?: number;
+  cash_out?: number;
+  profit_loss?: number;
+}
 
 interface SessionHistoryProps {
   userId?: string;
-  initialSessions?: any[]; // Pre-fetched from parent (dedup)
+  /** Range-scoped rows from the page RPC. */
+  initialSessions?: SessionRowLike[] | null;
+  /** The page's analysis window label, e.g. "7 Days" or "All". */
+  rangeLabel?: string;
 }
 
-const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions }) => {
-  const [allSessions, setAllSessions] = useState<SessionRecord[]>([]);
+const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+
+function mapSessions(data: SessionRowLike[]): SessionRecord[] {
+  const mapped = data.map((s, i) => {
+    const d = s?.date ? new Date(s.date) : null;
+    const date = d && Number.isFinite(d.getTime()) ? d : null;
+    const dur = num(s?.duration_minutes);
+    const pl = num(s?.profit_loss);
+    return {
+      id: String(s?.id ?? `session-${i}`),
+      date,
+      duration: dur,
+      handsPlayed: num(s?.hands_played),
+      buyIn: num(s?.buy_in),
+      cashOut: num(s?.cash_out),
+      profitLoss: pl,
+      hourlyRate: dur > 0 ? (pl / dur) * 60 : 0,
+    };
+  });
+  // Newest first. The streak and the timeline both assume descending order;
+  // a row with no usable date sorts to the end rather than poisoning the sort.
+  return mapped.sort((a, b) => (b.date?.getTime() ?? -1) - (a.date?.getTime() ?? -1));
+}
+
+const sign = (n: number) => (n > 0 ? '+' : '');
+const tone = (n: number) => (n > 0 ? '#10b981' : n < 0 ? '#ef4444' : 'rgba(255,255,255,0.7)');
+
+const SessionHistory: React.FC<SessionHistoryProps> = ({ initialSessions, rangeLabel }) => {
+  const sessions = useMemo(
+    () => mapSessions(Array.isArray(initialSessions) ? initialSessions : []),
+    [initialSessions]
+  );
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
   const [visibleSessions, setVisibleSessions] = useState<Set<number>>(new Set());
-  const [loaded, setLoaded] = useState(false);
-  const [dateRange, setDateRange] = useState<DateRange>('all');
-  const mountedRef = useRef(true);
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      staggerTimersRef.current.forEach(clearTimeout);
-      staggerTimersRef.current = [];
-    };
-  }, []);
-
-  const resolveUserId = useCallback(async (): Promise<string | null> => {
-    if (userId) return userId;
-    try {
-      const { data: userResp } = await getAuthUser();
-      return userResp.user?.id || null;
-    } catch (e) {
-      reportError(e, 'SessionHistory.useCallback');
-      return null;
-    }
-  }, [userId]);
-
-  // Map raw session data to SessionRecord
-  const mapSessions = (data: any[]): SessionRecord[] => {
-    // Newest first. The streak and the timeline both assume descending order,
-    // and the parent-supplied array bypasses this component's own .order().
-    const sorted = [...data].sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-    );
-    return sorted.map((s) => {
-      const dur = s.duration_minutes || 0;
-      const pl = s.profit_loss || 0;
-      return {
-        id: s.id,
-        date: new Date(s.date),
-        duration: dur,
-        handsPlayed: s.hands_played || 0,
-        buyIn: s.buy_in || 0,
-        cashOut: s.cash_out || 0,
-        profitLoss: pl,
-        hourlyRate: dur > 0 ? (pl / dur) * 60 : 0,
-      };
-    });
-  };
-
-  // If parent passes initialSessions, use them (dedup)
-  useEffect(() => {
-    if (initialSessions && initialSessions.length > 0) {
-      const mapped = mapSessions(initialSessions);
-      setAllSessions(mapped);
-      setLoaded(true);
-      triggerStagger(mapped.length);
-    } else if (initialSessions && initialSessions.length === 0) {
-      setAllSessions([]);
-      setLoaded(true);
-    }
-  }, [initialSessions]);
-
-  const triggerStagger = (count: number) => {
     staggerTimersRef.current.forEach(clearTimeout);
     staggerTimersRef.current = [];
     setVisibleSessions(new Set());
-    for (let i = 0; i < count; i++) {
+    setExpandedSession(null);
+    for (let i = 0; i < sessions.length; i++) {
       const timer = setTimeout(() => {
-        if (mountedRef.current) {
-          setVisibleSessions((prev) => new Set([...prev, i]));
-        }
+        setVisibleSessions((prev) => new Set([...prev, i]));
       }, i * 60);
       staggerTimersRef.current.push(timer);
     }
-  };
-
-  const loadSessions = useCallback(async () => {
-    if (initialSessions) return; // Parent provided data, skip fetch
-
-    try {
-      const uid = await resolveUserId();
-      if (!uid || !mountedRef.current) return;
-
-      // SWR: show cached instantly
-      const cached = getCached(uid);
-      if (cached && !loaded) {
-        const mapped = mapSessions(cached);
-        setAllSessions(mapped);
-        setLoaded(true);
-        triggerStagger(mapped.length);
-      }
-
-      const { data, error } = await supabase
-        .from('player_sessions')
-        .select('id, date, duration_minutes, hands_played, buy_in, cash_out, profit_loss')
-        .eq('user_id', uid)
-        .order('date', { ascending: false })
-        .limit(50);
-
-      if (!mountedRef.current) return;
-
-      if (error) {
-        reportError(error, 'SessionHistory.Query_error');
-        setLoaded(true);
-        return;
-      }
-
-      if (data && data.length > 0) {
-        setCache(uid, data);
-        const mapped = mapSessions(data);
-        setAllSessions(mapped);
-        triggerStagger(mapped.length);
-      } else {
-        setAllSessions([]);
-      }
-
-      setLoaded(true);
-    } catch (err) {
-      reportError(err, 'SessionHistory.Failed_to_load');
-      if (mountedRef.current) setLoaded(true);
-    }
-  }, [resolveUserId, initialSessions, loaded]);
-
-  useEffect(() => {
-    if (!initialSessions) loadSessions();
-  }, [loadSessions, initialSessions]);
-
-  // Bus listeners
-  useEffect(() => {
-    const unsubHand = masterBus.subscribeDebounced('HAND_COMPLETED', () => loadSessions(), 3000);
-    const unsubCashout = masterBus.subscribeDebounced(
-      'CASHOUT_APPROVED',
-      () => loadSessions(),
-      2000
-    );
     return () => {
-      unsubHand();
-      unsubCashout();
+      staggerTimersRef.current.forEach(clearTimeout);
+      staggerTimersRef.current = [];
     };
-  }, [loadSessions]);
-
-  // Filter by date range
-  const sessions = useMemo(() => {
-    if (dateRange === 'all') return allSessions;
-    const now = new Date();
-    const days = dateRange === '7d' ? 7 : 30;
-    const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-    return allSessions.filter((s) => s.date >= cutoff);
-  }, [allSessions, dateRange]);
+  }, [sessions]);
 
   // ── Streak calculation ──
   const streak = useMemo(() => {
@@ -218,26 +107,20 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
     const isWin = decided[0].profitLoss > 0;
     let count = 0;
     for (const s of decided) {
-      if (s.profitLoss > 0 === isWin) {
-        count++;
-      } else {
-        break;
-      }
+      if (s.profitLoss > 0 === isWin) count++;
+      else break;
     }
     return { count, type: isWin ? ('winning' as const) : ('losing' as const) };
   }, [sessions]);
 
-  const getTotalProfit = () => sessions.reduce((sum, s) => sum + s.profitLoss, 0);
-  const getWinningSessions = () => sessions.filter((s) => s.profitLoss > 0).length;
-  const getWinRate = () =>
-    sessions.length > 0 ? ((getWinningSessions() / sessions.length) * 100).toFixed(1) : '0';
+  const totalProfit = sessions.reduce((sum, s) => sum + s.profitLoss, 0);
+  const winningSessions = sessions.filter((s) => s.profitLoss > 0).length;
+  const winRate =
+    sessions.length > 0 ? ((winningSessions / sessions.length) * 100).toFixed(1) : '0';
   // Time-weighted, not a mean of per-session rates: a 5-minute +50 heater used
   // to count as much as an 8-hour grind and dominated the average.
-  const getAverageHourlyRate = () => {
-    const totalMinutes = sessions.reduce((sum, s) => sum + (s.duration || 0), 0);
-    if (totalMinutes <= 0) return '0';
-    return ((getTotalProfit() / totalMinutes) * 60).toFixed(2);
-  };
+  const totalMinutes = sessions.reduce((sum, s) => sum + s.duration, 0);
+  const avgHourly = totalMinutes > 0 ? (totalProfit / totalMinutes) * 60 : 0;
 
   const formatDuration = (minutes: number): string => {
     if (minutes < 60) return `${minutes}m`;
@@ -246,88 +129,39 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
     return mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
   };
 
-  if (!loaded) {
-    return (
-      <div className="session-history">
-        <div className="session-header">
-          <h3>Session History</h3>
-          <p className="session-subtitle">Loading Sessions...</p>
-        </div>
-      </div>
-    );
-  }
+  const windowText = rangeLabel && rangeLabel !== 'All' ? ` (Last ${rangeLabel})` : '';
 
   return (
     <div className="session-history">
       <div className="session-header">
         <h3>Session History</h3>
         <p className="session-subtitle">
-          {allSessions.length > 0
-            ? `${sessions.length} Sessions${dateRange !== 'all' ? ` (${dateRange === '7d' ? 'Last 7 Days' : 'Last 30 Days'})` : ''}`
-            : 'No Sessions Yet'}
+          {sessions.length > 0
+            ? `${sessions.length.toLocaleString()} Sessions${windowText}`
+            : `No Sessions${windowText}`}
         </p>
       </div>
 
-      {/* Date range filter */}
-      {allSessions.length > 0 && (
-        <div
-          style={{
-            display: 'flex',
-            gap: '6px',
-            marginBottom: '12px',
-          }}
-        >
-          {(['7d', '30d', 'all'] as DateRange[]).map((range) => (
-            <button
-              key={range}
-              onClick={() => setDateRange(range)}
-              style={{
-                padding: '5px 12px',
-                borderRadius: '6px',
-                fontSize: '11px',
-                fontWeight: 600,
-                border: `1px solid ${dateRange === range ? 'rgba(0, 212, 255, 0.4)' : 'rgba(255,255,255,0.08)'}`,
-                background:
-                  dateRange === range ? 'rgba(0, 212, 255, 0.12)' : 'rgba(255,255,255,0.03)',
-                color: dateRange === range ? '#00d4ff' : 'rgba(255,255,255,0.5)',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-              }}
-            >
-              {range === '7d' ? '7 Days' : range === '30d' ? '30 Days' : 'All'}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Summary Stats + Streak */}
       {sessions.length > 0 && (
         <div className="session-summary-stats">
           <div className="summary-stat">
             <span className="stat-label">Total P/L</span>
-            <span
-              className="stat-value"
-              style={{ color: getTotalProfit() >= 0 ? '#10b981' : '#ef4444' }}
-            >
-              {getTotalProfit() > 0 ? '+' : ''}
-              {getTotalProfit().toLocaleString()}
+            <span className="stat-value" style={{ color: tone(totalProfit) }}>
+              {sign(totalProfit)}
+              {totalProfit.toLocaleString()}
             </span>
           </div>
           <div className="summary-stat">
-            <span className="stat-label">Win Rate</span>
-            <span className="stat-value">{getWinRate()}%</span>
+            <span className="stat-label">Winning Sessions</span>
+            <span className="stat-value">{winRate}%</span>
           </div>
           <div className="summary-stat">
-            <span className="stat-label">Avg $/Hr</span>
-            <span
-              className="stat-value"
-              style={{ color: parseFloat(getAverageHourlyRate()) >= 0 ? '#10b981' : '#ef4444' }}
-            >
-              {parseFloat(getAverageHourlyRate()) > 0 ? '+' : ''}
-              {getAverageHourlyRate()}
+            <span className="stat-label">Chips/Hr</span>
+            <span className="stat-value" style={{ color: tone(avgHourly) }}>
+              {sign(avgHourly)}
+              {avgHourly.toFixed(2)}
             </span>
           </div>
-          {/* Streak badge */}
           {streak.count >= 2 && (
             <div className="summary-stat">
               <span className="stat-label">Streak</span>
@@ -347,7 +181,6 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
         </div>
       )}
 
-      {/* Sessions Timeline */}
       <div className="sessions-timeline">
         {sessions.map((session, i) => {
           const isVisible = visibleSessions.has(i);
@@ -362,18 +195,27 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
                 transform: isVisible ? 'translateX(0)' : 'translateX(-16px)',
                 transition: `all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) ${i * 30}ms`,
               }}
+              role="button"
+              tabIndex={0}
+              aria-expanded={isExpanded}
               onClick={() => setExpandedSession(isExpanded ? null : session.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setExpandedSession(isExpanded ? null : session.id);
+                }
+              }}
             >
               <div className="session-main">
-                {/* Date */}
                 <div className="session-date">
-                  <span className="date-day">{session.date.getDate()}</span>
+                  <span className="date-day">{session.date ? session.date.getDate() : '-'}</span>
                   <span className="date-month">
-                    {session.date.toLocaleDateString('en-US', { month: 'short' })}
+                    {session.date
+                      ? session.date.toLocaleDateString('en-US', { month: 'short' })
+                      : ''}
                   </span>
                 </div>
 
-                {/* Core stats */}
                 <div className="session-core">
                   <div className="core-stat">
                     <span className="core-label">Duration</span>
@@ -381,29 +223,24 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
                   </div>
                   <div className="core-stat">
                     <span className="core-label">Hands</span>
-                    <span className="core-value">{session.handsPlayed}</span>
+                    <span className="core-value">{session.handsPlayed.toLocaleString()}</span>
                   </div>
                 </div>
 
-                {/* P/L indicator */}
                 <div className="session-result">
                   <div className="result-pl">
-                    <span className="pl-sign">{session.profitLoss > 0 ? '+' : ''}</span>
+                    <span className="pl-sign">{sign(session.profitLoss)}</span>
                     <span className="pl-value">{session.profitLoss.toLocaleString()}</span>
                   </div>
                   <div className="result-hourly">
-                    <span className="hourly-label">$/Hr</span>
-                    <span
-                      className="hourly-value"
-                      style={{ color: session.hourlyRate >= 0 ? '#10b981' : '#ef4444' }}
-                    >
-                      {session.hourlyRate > 0 ? '+' : ''}
+                    <span className="hourly-label">Chips/Hr</span>
+                    <span className="hourly-value" style={{ color: tone(session.hourlyRate) }}>
+                      {sign(session.hourlyRate)}
                       {session.hourlyRate.toFixed(1)}
                     </span>
                   </div>
                 </div>
 
-                {/* Expand indicator */}
                 <div className="session-expand">
                   <span
                     style={{
@@ -416,7 +253,6 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
                 </div>
               </div>
 
-              {/* Expanded details */}
               {isExpanded && (
                 <div
                   className="session-details"
@@ -453,9 +289,9 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
         <div className="session-empty">
           <span className="empty-icon">--</span>
           <p>
-            {allSessions.length > 0
-              ? 'No Sessions In This Date Range'
-              : 'No Sessions Recorded Yet. Play Some Hands To Start Tracking!'}
+            {rangeLabel && rangeLabel !== 'All'
+              ? `No Cash Sessions In The Last ${rangeLabel}.`
+              : 'No Cash Sessions Recorded Yet. Play Some Hands To Start Tracking.'}
           </p>
         </div>
       )}

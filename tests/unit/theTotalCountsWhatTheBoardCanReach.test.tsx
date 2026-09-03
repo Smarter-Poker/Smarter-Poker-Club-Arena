@@ -249,4 +249,19 @@ describe('the total counts what the board can reach', () => {
     const total = await screen.findByText('Total');
     expect(total.closest('span')?.getAttribute('title')).toBeNull();
   });
+  /**
+   * A counts object with a hole in it must not render "NaN" on an operator
+   * console. The service normalises every field, so production cannot reach
+   * this - but the sum is the only place on the page that adds three counts
+   * together, and three existing fixtures that predate closedWithinHorizon
+   * were rendering exactly that in the test output. A warning nobody reads is
+   * still the code telling you something.
+   */
+  it('treats a missing count as zero rather than rendering NaN', async () => {
+    mocks.counts = { total: 9, live: 5, scheduled: 4 } as any;
+    await renderBoard();
+    // 5 live + 4 scheduled + a missing closed leg = 9 reachable, not NaN.
+    expect(screen.getByText('9')).toBeInTheDocument();
+    expect(screen.queryByText('NaN')).toBeNull();
+  });
 });

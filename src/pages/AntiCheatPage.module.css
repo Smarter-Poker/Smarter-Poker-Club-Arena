@@ -336,6 +336,23 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+/* Neutral small action: clearing a screened pair is not a danger action, and
+   dressing it in red would push an operator toward removing a player instead
+   of dismissing a false positive. */
+.btnSmall {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #d5e3ef;
+  background: rgba(146, 173, 194, 0.12);
+  border: 1px solid rgba(146, 173, 194, 0.28);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.btnSmall:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .actionBtns {
   display: flex;
   gap: 6px;

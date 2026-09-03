@@ -41,8 +41,20 @@ describe('auto extension vetoes retirement, in the query that does the closing',
     // close. This is the statement that closes the table.
     // The window is generous because the reasoning sits between the two, and
     // that comment is the point: it is why the check is HERE and not in JS.
+    expect(fleet).toMatch(/\.update\(\{ status: 'closed' \}\)[\s\S]{0,2400}?auto_extension/);
+  });
+
+  it('...but a RETIRED table closes anyway (Dan 2026-09-03, "close any tables over 2/5")', () => {
+    /* auto_extension is a host saying "do not close my table just because it
+       went quiet". A retirement is the club saying this stake is not offered
+       any anymore, and that outranks it - otherwise the table is drained to
+       empty by the session rotator, refused a re-seat forever because it is in
+       surplusTableIds, and then skipped by this very filter: permanently
+       empty, permanently open, invisible to every sweep.
+
+       Still one expression on the UPDATE, for the same race reason as above. */
     expect(fleet).toMatch(
-      /\.update\(\{ status: 'closed' \}\)[\s\S]{0,1200}?\.not\('auto_extension', 'is', true\)/
+      /\.update\(\{ status: 'closed' \}\)[\s\S]{0,2400}?\.or\(\s*'auto_extension\.is\.null,auto_extension\.eq\.false,settings->>retire_when_empty\.eq\.true'\s*\)/
     );
   });
 });

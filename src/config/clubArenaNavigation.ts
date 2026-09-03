@@ -219,6 +219,13 @@ export function getClubArenaNavigation({
         path: '/agent-dashboard',
         description: 'Downline Players, Commissions, Cashouts, And Credit',
       });
+      /* Dan 2026-09-03: club owners advertise their club or events, paying
+         in diamonds. The page itself fails closed on a non-staff caller. */
+      operationItems.push({
+        label: 'Advertise Your Club',
+        path: clubPath('/advertise'),
+        description: 'Buy A Picture On The Lobby Strip Or Session Summary, Paid In Diamonds',
+      });
       operationItems.push({
         label: 'Operations Center',
         path: clubPath('/operations'),

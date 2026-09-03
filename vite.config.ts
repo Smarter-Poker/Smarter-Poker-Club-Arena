@@ -106,6 +106,19 @@ export default defineConfig({
     headers: {
       'Service-Worker-Allowed': '/hub/club-arena',
     },
+    /* Uploaded ad creatives are stored as same-origin paths
+       (`/ad-creatives/club/<id>/<file>`); in production the World Hub
+       rewrites that prefix to the `ad-creatives` storage bucket. The dev
+       server does the same so a club owner's preview and the live rotator
+       show the same picture locally. */
+    proxy: {
+      '/ad-creatives': {
+        target: 'https://kuklfnapbkmacvwxktbh.supabase.co',
+        changeOrigin: true,
+        rewrite: (path) =>
+          path.replace(/^\/ad-creatives/, '/storage/v1/object/public/ad-creatives'),
+      },
+    },
   },
   define: {
     // Prevent process errors in browser

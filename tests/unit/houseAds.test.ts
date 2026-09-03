@@ -136,6 +136,107 @@ describe('an advert is a picture now (Dan 2026-09-03)', () => {
   });
 });
 
+describe('who is speaking, and who paid (Dan 2026-09-03)', () => {
+  /* "allow others to advertise with us, and ... club owners to start
+     advertising their club or events (using diamonds)." Every rule that
+     touches money lives in the migration; the client only repeats answers. */
+  const PAID_MIGRATION = read(
+    'supabase/migrations/20260903213000_who_is_speaking_and_who_paid.sql'
+  );
+  const CAMPAIGNS = read('src/services/AdCampaignService.ts');
+  const ADVERTISE = read('src/pages/ClubAdvertisePage.tsx');
+  const QUEUE = read('src/components/ads/CampaignQueue.tsx');
+  const APP = read('src/App.tsx');
+  const NAV = read('src/config/clubArenaNavigation.ts');
+
+  it('the diamonds leave in the same transaction the campaign is created in, through the journal', () => {
+    const submit = PAID_MIGRATION.slice(
+      PAID_MIGRATION.indexOf('create or replace function public.fn_club_ad_submit'),
+      PAID_MIGRATION.indexOf('create or replace function public.fn_club_ad_cancel')
+    );
+    expect(submit.indexOf('INSERT INTO public.ad_campaign')).toBeLessThan(
+      submit.indexOf('public.deduct_diamonds(')
+    );
+    expect(submit).toMatch(/'adcamp:' \|\| v_id::text/);
+    // A failed debit undoes the insert: the exception is raised, not swallowed.
+    expect(submit).toMatch(/RAISE EXCEPTION 'AD_DEBIT_FAILED:%'/);
+    // The price is the database's, from the rate card, never a client number.
+    expect(submit).toMatch(/v_cost {2}:= v_rate\.diamonds_per_day \* p_days;/);
+    expect(CAMPAIGNS).not.toMatch(/p_cost|p_diamonds/);
+  });
+
+  it('a rejection and a cancellation both refund under a reference that cannot be replayed', () => {
+    expect(PAID_MIGRATION.match(/'adcamp-refund:' \|\| v_c\.id::text/g)?.length).toBe(2);
+    expect(PAID_MIGRATION).toMatch(/public\.add_diamonds_to_balance\(/);
+  });
+
+  it('only club staff buy, only platform staff review, and the browser cannot write the tables', () => {
+    expect(PAID_MIGRATION).toMatch(/IF NOT public\.fn_club_is_staff\(p_club_id, v_user\) THEN/);
+    expect(PAID_MIGRATION).toMatch(
+      /COALESCE\(auth\.role\(\), ''\) = 'service_role' OR public\.fn_is_platform_admin\(\)/
+    );
+    // No INSERT/UPDATE policy on any of the three tables.
+    expect(PAID_MIGRATION).not.toMatch(
+      /create policy \S+ on public\.ad_(advertiser|campaign|rate_card)\s+for (insert|update|delete|all)/i
+    );
+  });
+
+  it("the creative must be in the club's own folder, same-origin, and the destination a rooted path", () => {
+    expect(PAID_MIGRATION).toMatch(
+      /p_image_url NOT LIKE \('\/ad-creatives\/club\/' \|\| p_club_id::text \|\| '\/%'\)/
+    );
+    expect(PAID_MIGRATION).toMatch(/position\('\\' in p_target_url\) > 0/);
+    // Storage: club staff only, into club/<uuid>/, and public read.
+    expect(PAID_MIGRATION).toMatch(
+      /fn_club_is_staff\(\(\(storage\.foldername\(name\)\)\[2\]\)::uuid, auth\.uid\(\)\)/
+    );
+    expect(CAMPAIGNS).toMatch(/return `\/ad-creatives\/\$\{data\.path\}`;/);
+  });
+
+  it('a paid flight outranks the house; the house rows are untouched', () => {
+    expect(PAID_MIGRATION).toMatch(/ORDER BY r\.priority DESC, random\(\)/);
+    expect(PAID_MIGRATION).toMatch(/priority {6}integer not null default 50/);
+    expect(PAID_MIGRATION).toMatch(/'submitted', p_scope, 75,/);
+  });
+
+  it('the wrong picture size is refused before it is uploaded', () => {
+    const upload = CAMPAIGNS.slice(
+      CAMPAIGNS.indexOf('async uploadCreative'),
+      CAMPAIGNS.indexOf('async submit')
+    );
+    expect(
+      upload.indexOf('width !== rate.creativeWidth || height !== rate.creativeHeight')
+    ).toBeLessThan(upload.indexOf(".from('ad-creatives').upload("));
+    expect(upload.indexOf('file.size > rate.maxBytes')).toBeLessThan(
+      upload.indexOf(".from('ad-creatives').upload(")
+    );
+  });
+
+  it("the buyer sees the surface's true shape, the price before paying, and fails closed on role", () => {
+    expect(ADVERTISE).toMatch(
+      /style=\{\{ aspectRatio: rate \? AD_SURFACE_RATIO\[rate\.slot\] : '6 \/ 1' \}\}/
+    );
+    expect(ADVERTISE).toMatch(/const cost = rate \? rate\.diamondsPerDay \* days : 0;/);
+    expect(ADVERTISE).toMatch(/setIsStaff\(staffRes\.error \? false : Boolean\(staffRes\.data\)\)/);
+    expect(ADVERTISE).toMatch(/confirmText: 'Pay And Submit'/);
+  });
+
+  it('the page has a route and a door, and the house has a queue', () => {
+    expect(APP).toMatch(/path="clubs\/:clubId\/advertise"/);
+    expect(APP).toMatch(/<ClubAdvertisePage \/>/);
+    expect(NAV).toMatch(/path: clubPath\('\/advertise'\)/);
+    expect(ADMIN).toMatch(/<CampaignQueue \/>/);
+    // Rejecting without telling the club why is refused in the UI.
+    expect(QUEUE).toMatch(/if \(decision === 'reject' && note\.length === 0\)/);
+  });
+
+  it('no scheduler moves a flight between states; the dates do', () => {
+    expect(PAID_MIGRATION).toMatch(/WHEN now\(\) < c\.starts_at THEN 'scheduled'/);
+    expect(PAID_MIGRATION).toMatch(/WHEN now\(\) >= c\.ends_at {2}THEN 'finished'/);
+    expect(PAID_MIGRATION).not.toMatch(/cron\.schedule/);
+  });
+});
+
 describe('impressions are counted honestly', () => {
   it('de-duplicates per page load rather than per render', () => {
     /* The strip rotates every 7s and re-renders constantly. Counting renders

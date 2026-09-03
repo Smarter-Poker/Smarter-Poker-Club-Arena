@@ -1,0 +1,11 @@
+{
+  "_owner": "agent/cowork-ads3/feat/club-advertising. Applied to production as migration 20260903213000_who_is_speaking_and_who_paid: advertiser / rate card / campaign tables, club diamond purchase + refund + review functions, resolver honours priority.",
+  "tables": ["ad_advertiser", "ad_rate_card", "ad_campaign"],
+  "functions": [
+    "fn_club_ad_submit",
+    "fn_club_ad_cancel",
+    "fn_ad_campaign_review",
+    "fn_ad_campaign_list"
+  ],
+  "columns": { "ad_catalog": ["advertiser_id", "campaign_id", "priority"] }
+}

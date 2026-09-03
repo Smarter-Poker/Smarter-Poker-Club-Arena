@@ -66,6 +66,8 @@ import {
   auditGuaranteesKept,
 } from './services/FeeReconciler.js';
 import { reportError, initSentry, flushSentry } from './services/errorReporter.js';
+import { startRakeSpecGuard } from './services/rakeSpecGuard.js';
+import { rakeSpecDriftState } from './config/rakeSpec.js';
 import { fetchAllRows } from './services/supabase/pagination.js';
 // Phase 1.1 PR-2: native WebSocket transport for authoritative state
 import { tableStateHub } from './transport/TableStateHub.js';
@@ -636,6 +638,18 @@ export class GameServer {
     // Step 1: Clean up stale data from previous runs.
     // Test mode passes the protected id so cleanup spares it.
     await this.cleanupStaleData(testTableId);
+
+    /**
+     * ONE RAKE SPEC (Chip Accounting Standard R7, 2026-09-02). Before any
+     * table engine boots, compare the database's rake spec checksum with the
+     * one this build was compiled with. A mismatch raises a CRITICAL
+     * `RakeSpec.drift` alert (once per boot, both checksums and both
+     * canonical texts) and is published on /health; dealing CONTINUES on the
+     * compiled-in spec. Dan's risk ruling: nothing high risk for live play
+     * is enforced, so this never holds a table, never throws and never stops
+     * the boot. See services/rakeSpecGuard.ts.
+     */
+    await startRakeSpecGuard();
 
     if (!maintenanceMode && !testTableId) {
       /**
@@ -1262,6 +1276,9 @@ export class GameServer {
        * than a race the workflow observes.
        */
       maintenance: { ...this.maintenanceBreak.snapshot(), dbClockSkewMs: this.lastDbSkewMs },
+      // ONE RAKE SPEC (R7): both checksums and whether they last agreed.
+      // Informational: a drift alerts, it never holds a table.
+      rakeSpec: rakeSpecDriftState(),
       stalledTables: stalledTables.slice(0, 20),
       discoveryStaleMs,
       tableLiveness,

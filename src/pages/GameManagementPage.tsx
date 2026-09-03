@@ -27,6 +27,7 @@ import {
 } from '../services/GameManagementService';
 import { unionService } from '../services/UnionService';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { mergeById } from '../utils/mergeById';
 import { reportError } from '../utils/errorReporter';
 import CreateTablePage from './CreateTablePage';
 import styles from './GameManagementPage.module.css';
@@ -134,6 +135,10 @@ const VIEW_BUCKET: Record<View, number | null> = {
   closed: BUCKET_CLOSED,
 };
 const CREATE_TARGETS = new Set<GameCreationTarget>(['table', 'event', 'spin', 'sng']);
+/** A refresh keeps the identity of every row it did not change. */
+const mergeManagedGames = (current: ManagedGame[], next: ManagedGame[]): ManagedGame[] =>
+  mergeById(current, next, (row) => row.id);
+
 const GAME_REFRESH_EVENTS = [
   'TABLE_CREATED',
   'TABLE_UPDATED',
@@ -621,6 +626,30 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   // spinner it would have got had nothing been in flight. Losing this is how
   // coalescing turns one bug into a quieter one.
   const rerunSilentRef = useRef(true);
+  /* A BACKGROUND REFRESH IS NOT A LIVE VIDEO FEED (Dan 2026-09-02): "CLUBS
+     SHOULD NOT BE RANDOMLY REFRESHING ON THEIR OWN, IT FEELS LIKE A BUG OR
+     GLITCH ... ITS ALSO HAPPENING INSIDE OF THE TABLE MANAGEMENT PAGE."
+
+     The loading flash was fixed above; this is the other half. The event feed
+     this page listens to is not an occasional signal - every running game
+     writes a game_management_events row on each update, measured 2026-09-02 at
+     2,108 rows in ten minutes for ONE club, 3.5 a second. On a 350 ms debounce
+     that is a full five-round-trip reload starting the moment the previous one
+     lands, forever, in every open tab: the board visibly rebuilds itself, and
+     the reads sit near the top of the database's cost table for the whole
+     estate.
+
+     The feed's job is to keep the board honest, not to stream it. Coalesced to
+     one background refresh per REFRESH_MIN_MS, paused while the tab is hidden
+     (a backgrounded console needs nothing), and served immediately on return.
+     An operator's own action still calls load() directly and is never delayed.
+
+     A game whose state matters to the second is watched from the table, not
+     from a management list. */
+  const REFRESH_MIN_MS = 20_000;
+  const lastRefreshAtRef = useRef(0);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshPendingRef = useRef(false);
   const mountedRef = useRef(true);
   const loadRef = useRef<(silent?: boolean) => void>(() => {});
 
@@ -833,7 +862,15 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
               : null,
           })),
         ];
-        setGames(rows);
+        /* MERGE BY ID, NEVER REPLACE. `setGames(rows)` handed React a brand
+           new object for every row on every refresh, so the whole list
+           remounted: rows flashed, an open row menu closed, and the scroll
+           position jumped. A row whose fields are unchanged now keeps its
+           previous identity and its DOM is left alone, which is what makes a
+           background refresh invisible instead of a glitch. */
+        setGames((current) => mergeManagedGames(current, rows));
+        // Null counts mean unchanged, not zero: a paged read does not recount
+        // the scope, and reading null as 0 would blank the header.
         if (page.counts) setCounts(page.counts);
         setNextCursor(page.nextCursor);
         setHealth(healthResult);
@@ -950,6 +987,50 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     return () => document.removeEventListener('click', onClickCapture, true);
   }, [surfaceDirty]);
 
+  /* One coalesced, rate-limited, visibility-gated background refresh, for the
+     traffic that is merely frequent: game events, and the targeted refresh
+     below when it has to give up and read the whole board.
+
+     TWO CALLERS DELIBERATELY DO NOT USE IT, and the comment here used to claim
+     otherwise. GAME_MANAGEMENT_ACCESS_CHANGED is rare and changes what the
+     operator is allowed to see, and onResync fires when the realtime channel
+     has just (re)subscribed and is saying "I may have missed something" -
+     which is precisely the moment a rate limiter must not add a delay. Both
+     still call load(true) directly, on purpose. */
+  const requestBackgroundRefresh = useCallback(() => {
+    if (refreshTimerRef.current) return; // already scheduled
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      refreshPendingRef.current = true;
+      return;
+    }
+    const since = Date.now() - lastRefreshAtRef.current;
+    const wait = since >= REFRESH_MIN_MS ? 0 : REFRESH_MIN_MS - since;
+    refreshTimerRef.current = setTimeout(() => {
+      refreshTimerRef.current = null;
+      refreshPendingRef.current = false;
+      lastRefreshAtRef.current = Date.now();
+      if (mountedRef.current) void loadRef.current(true);
+    }, wait);
+  }, []);
+
+  // A tab that was hidden while events arrived refreshes once on return, which
+  // is both cheaper and more correct than catching up on a queue of them.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (!refreshPendingRef.current) return;
+      refreshPendingRef.current = false;
+      lastRefreshAtRef.current = 0;
+      requestBackgroundRefresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    };
+  }, [requestBackgroundRefresh]);
+
   /**
    * Read back the games that changed, not the whole board.
    *
@@ -960,7 +1041,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
    * against production versus 21 ms for the full page, and one row on the
    * wire instead of a hundred.
    *
-   * It falls back to a full reload whenever a splice would be a lie:
+   * It falls back to requestBackgroundRefresh - which is coalesced, rate
+   * limited and skipped while the tab is hidden - whenever a splice would be a
+   * lie:
    *   - a changed game is not on the board (created, or on another page)
    *   - the row is gone from this scope (null)
    *   - the row changed BUCKET, so it belongs under a different tab now
@@ -976,7 +1059,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     changedRef.current.clear();
     sawUnnamedRef.current = false;
     if (!scopeId || unnamed) {
-      void load(true);
+      requestBackgroundRefresh();
       return;
     }
     // Nothing was named and nothing was unnamed: there is nothing to refresh.
@@ -986,7 +1069,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       .map((id) => gamesRef.current.find((game) => game.id === id))
       .filter((game): game is ManagedGame => Boolean(game));
     if (known.length !== ids.length || known.length > TARGETED_REFRESH_MAX) {
-      void load(true);
+      requestBackgroundRefresh();
       return;
     }
     try {
@@ -997,7 +1080,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       const mapped = fresh.map((row) => (row ? toManagedGame(row, hostNames, scopeName) : null));
       const splicable = mapped.every((row, index) => row && row.bucket === known[index].bucket);
       if (!splicable) {
-        void load(true);
+        requestBackgroundRefresh();
         return;
       }
       const byId = new Map(mapped.map((row) => [row!.id, row as ManagedGame]));
@@ -1005,9 +1088,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     } catch (error) {
       // A targeted read that fails is not a reason to show stale rows.
       reportError(error, 'GameManagementPage.refreshChangedGames');
-      void load(true);
+      requestBackgroundRefresh();
     }
-  }, [hosts, load, scope, scopeId, scopeName]);
+  }, [hosts, requestBackgroundRefresh, scope, scopeId, scopeName]);
 
   // Accumulate every event. The decider below is debounced, and a debounced
   // subscription only ever sees the LAST payload of a burst - which would

@@ -42,6 +42,8 @@
  * fresh TLS handshake. One idle WS per browsing player is far cheaper for the
  * engine than the reconnect storm of per-join handshakes it replaces.
  */
+import { confirmSessionIsLive } from './sessionLiveness';
+
 const LINGER_AFTER_LAST_RELEASE_MS = 60_000;
 /** Physical socket stuck in CONNECTING longer than this is torn down. */
 const HANDSHAKE_TIMEOUT_MS = 15_000;
@@ -341,6 +343,10 @@ class EngineSocketMuxImpl {
       return;
     }
     this.ws = ws;
+    /* Did this socket ever finish its handshake? A socket that closes without
+       having opened was REFUSED, which is a different event from a socket that
+       opened and later dropped, and only the first is worth asking about. */
+    let opened = false;
 
     // 2026-08-22: bound CONNECTING — a wedged handshake fires neither onopen
     // nor onclose, and `readyState <= OPEN` above would trust it forever.
@@ -354,6 +360,7 @@ class EngineSocketMuxImpl {
 
     ws.onopen = () => {
       if (this.ws !== ws) return;
+      opened = true;
       if (this.handshakeTimer) {
         clearTimeout(this.handshakeTimer);
         this.handshakeTimer = null;
@@ -424,6 +431,24 @@ class EngineSocketMuxImpl {
       if (this.ws !== ws) return;
       this.ws = null;
       this.stopWatchdog();
+      /**
+       * A REFUSED HANDSHAKE IS WORTH A QUESTION (2026-09-03).
+       *
+       * The engine authenticates this socket with `supabase.auth.getUser`,
+       * which asks GoTrue and therefore checks auth.sessions. PostgREST does
+       * not - it validates the signature and the expiry and nothing else. So a
+       * session that dies underneath a live tab takes the sockets away while
+       * every read keeps working, and this reconnect loop would spend the
+       * access token's remaining SEVEN DAYS re-offering a token GoTrue has
+       * already disowned. Measured on production on Dan's own tab: the session
+       * absent from auth.sessions, the refresh token gone, REST 200, socket
+       * 1006, forever, with nothing on screen to say so.
+       *
+       * Ask once - the probe throttles itself and acts only on GoTrue saying
+       * the session is GONE, never on a network failure - so the app can send
+       * the player back to sign in instead of pretending to be live.
+       */
+      if (!opened) void confirmSessionIsLive('mux handshake refused');
       this.failAll(e.code, e.reason);
     };
   }

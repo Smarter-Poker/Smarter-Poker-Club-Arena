@@ -103,9 +103,16 @@ describe('a board refills one tick at a time', () => {
   });
 
   it('spends that cap ACROSS every board a pass touches, not per board', () => {
+    // 2026-09-03: the cap is still BURST for the pass, but it is SPLIT into a
+    // share per board before anyone spends (boardBudgetShares) rather than
+    // handed to the house first - the house was never full and starved every
+    // owner board. Each ensureBoardOpen still spends only what it was given.
+    expect(code).toMatch(
+      /export function boardBudgetShares\(ownerCount: number, burst: number = BURST\)/
+    );
+    expect(code).toMatch(/const share = boardBudgetShares\(owners\.length \+ 1\);/);
     // Changed 2026-08-23 with per-owner boards: a per-board cap stops being a
     // cap once one pass can service the house plus every activated owner.
-    expect(code).toMatch(/const budget = \{ left: BURST \}/);
     expect(code).toMatch(/missing\.slice\(0, budget\.left\)/);
     expect(code).toMatch(/budget\.left--/);
   });

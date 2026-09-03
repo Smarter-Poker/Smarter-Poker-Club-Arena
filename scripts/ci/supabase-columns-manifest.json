@@ -1644,6 +1644,13 @@
       "chip_ledger_id",
       "diamond_tx_id"
     ],
+    "ca_money_path_enforcement": [
+      "only_row",
+      "mode",
+      "changed_at",
+      "changed_by",
+      "note"
+    ],
     "ca_money_path_violations": [
       "id",
       "at",
@@ -12277,7 +12284,12 @@
       "union_id",
       "club_id",
       "joined_at",
-      "club_commission_rate"
+      "club_commission_rate",
+      "rate_cash",
+      "rate_mtt",
+      "rate_sng",
+      "rate_spin",
+      "rate_satellite"
     ],
     "union_eco_ledger": [
       "union_id",

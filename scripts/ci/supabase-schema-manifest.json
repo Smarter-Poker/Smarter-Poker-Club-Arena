@@ -134,6 +134,7 @@
     "ca_ledger_write_failures",
     "ca_manual_adjustments",
     "ca_mint_ledger",
+    "ca_money_path_enforcement",
     "ca_money_path_violations",
     "ca_money_rpc_registry",
     "ca_noop_update_stats",

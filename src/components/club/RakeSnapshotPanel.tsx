@@ -184,6 +184,19 @@ export default function RakeSnapshotPanel({
 
   const version = useRef(0);
   const cancelled = useRef(false);
+  /**
+   * How many rows the SERVER has handed over, which is not how many are on
+   * screen. Rows are deduped on append, so paging on rows.length walks the
+   * cursor backwards a little every time a duplicate is dropped: the next page
+   * re-reads rows already shown, dedupe drops those too, and on a busy list the
+   * control stops advancing while still offering Load More.
+   */
+  const cursor = useRef(0);
+  /**
+   * True once the operator has pressed Load More. A background refresh must not
+   * throw away pages they opened - see the guard in load().
+   */
+  const expanded = useRef(false);
   useEffect(() => {
     cancelled.current = false;
     return () => {
@@ -227,13 +240,22 @@ export default function RakeSnapshotPanel({
     [scope, range.start, range.end, focusUserId]
   );
 
+  // A new question is a new list. Anything carried over from the last one -
+  // the cursor, the fact that it was expanded - describes rows that are gone.
+  useEffect(() => {
+    cursor.current = 0;
+    expanded.current = false;
+  }, [cacheKey]);
+
   /** Paint the last verified answer immediately, then read live over it. */
   useEffect(() => {
     if (!userId || !clubId) return;
     const cached = readClubDataCache<RakeSnapshot>(userId, clubId, cacheKey);
     if (!cached) return;
+    const cachedRows = Array.isArray(cached.breakdown) ? cached.breakdown : [];
     setSnapshot(cached);
-    setRows(Array.isArray(cached.breakdown) ? cached.breakdown : []);
+    setRows(cachedRows);
+    cursor.current = cachedRows.length;
     setLoading(false);
   }, [userId, clubId, cacheKey]);
 
@@ -256,9 +278,20 @@ export default function RakeSnapshotPanel({
         });
         if (cancelled.current || mine !== version.current) return;
         setSnapshot(next);
-        // A reload always restarts the list. Appending onto rows from the
-        // PREVIOUS question is how a Union page ends up under a Club heading.
-        setRows(next.breakdown);
+        // THE HEAD ALWAYS REFRESHES. The rows only refresh if the operator has
+        // not opened past page one.
+        //
+        // Phase 3 added paging and realtime in the same change and they fought:
+        // every poll and every bus event re-read page one and replaced the
+        // list, so an operator who had loaded four pages watched them vanish
+        // whenever anyone at the club played a hand - which, with realtime
+        // wired up, is constantly. Refusing to touch an expanded list costs at
+        // most sixty seconds of staleness in rows whose totals above them are
+        // live, and that is the smaller lie by a wide margin.
+        if (!expanded.current) {
+          setRows(next.breakdown);
+          cursor.current = next.breakdown.length;
+        }
         if (userId) writeClubDataCache<RakeSnapshot>(userId, clubId, cacheKey, next);
       } catch (e) {
         if (cancelled.current || mine !== version.current) return;
@@ -291,9 +324,19 @@ export default function RakeSnapshotPanel({
         end: range.end,
         agentUserId: scope === 'agent' ? focusUserId : null,
         limit: PAGE_SIZE,
-        offset: rows.length,
+        offset: cursor.current,
       });
       if (cancelled.current || mine !== version.current) return;
+      // Advance by what the SERVER returned, before any deduping. This is the
+      // whole point of keeping a cursor separate from the row count.
+      cursor.current += next.breakdown.length;
+      expanded.current = true;
+      // Adopt the FRESHER count, floored at what is on screen by the reader
+      // below. Keeping page one's count meant a list that had shrunk under the
+      // operator kept offering Load More against rows that were no longer
+      // there, and the control could never resolve. Only the count is taken -
+      // the rest of the head belongs to the read that fetched it.
+      setSnapshot((cur) => (cur ? { ...cur, breakdown_count: next.breakdown_count } : cur));
       setRows((cur) => {
         // The window moves while an operator reads it, so a row already shown
         // can arrive again in the next page. Appending blind duplicates it and
@@ -308,7 +351,7 @@ export default function RakeSnapshotPanel({
     } finally {
       if (!cancelled.current) setLoadingMore(false);
     }
-  }, [clubId, scope, range.start, range.end, focusUserId, rows.length, loadingMore]);
+  }, [clubId, scope, range.start, range.end, focusUserId, loadingMore]);
 
   useEffect(() => {
     void load();

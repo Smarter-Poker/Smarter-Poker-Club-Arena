@@ -397,3 +397,13 @@ describe('a per-item run is not evidence that the scheduled work happened', () =
     expect(WATCHDOG).not.toMatch(/Build for World Hub Sync'\]/);
   });
 });
+
+describe('a per-item run in flight is not the sweep in flight', () => {
+  it('isBusy only counts in-flight runs that do the scheduled work', () => {
+    const fn = sliceBlockAfter(SCRIPT, 'async function isBusy(workflowIdOrFile)');
+    expect(fn).toMatch(/some\(\(r\) => !PER_ITEM_EVENTS\.has\(r\.event\)\)/);
+    expect(fn).not.toMatch(/total_count/);
+    // still fails closed on an unreadable API
+    expect(fn).toMatch(/if \(!res\.ok\) return true;/);
+  });
+});

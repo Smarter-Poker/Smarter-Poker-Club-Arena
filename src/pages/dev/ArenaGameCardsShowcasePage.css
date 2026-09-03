@@ -242,7 +242,6 @@
     sans-serif;
 }
 
-.agc-mobile-page .club-mobile-owner-message,
 .agc-mobile-page .club-mobile-welcome,
 .agc-mobile-page .lobby-top,
 .agc-mobile-page .club-lobby-machine {
@@ -330,7 +329,6 @@
 
 @media (max-width: 480px) {
   .agc-mobile-page .club-mobile-welcome,
-  .agc-mobile-page .club-mobile-owner-message,
   .agc-mobile-page .lobby-top,
   .agc-mobile-page .club-lobby-machine,
   .agc-mobile-page .agc-mobile-sessionbar {
@@ -339,10 +337,6 @@
   }
 
   .agc-mobile-page .club-mobile-welcome {
-    min-height: 0;
-  }
-
-  .agc-mobile-page .club-mobile-owner-message {
     min-height: 0;
   }
 
@@ -423,7 +417,6 @@
 }
 
 .agc-mobile-page .agc-mobile-unified-shell .club-mobile-welcome,
-.agc-mobile-page .agc-mobile-unified-shell .club-mobile-owner-message,
 .agc-mobile-page .agc-mobile-unified-shell .lobby-top,
 .agc-mobile-page .agc-mobile-unified-shell .club-lobby-machine {
   width: 100%;

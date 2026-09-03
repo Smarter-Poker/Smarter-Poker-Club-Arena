@@ -129,6 +129,21 @@
   white-space: nowrap;
 }
 
+/* The club's permanent identity line, under its name. Distinct from the day's
+   message, which is a full-screen greeting on entry (ClubEntryMessage) and is
+   deliberately not baked into this block. Dan 2026-09-03. */
+.club-lobby-command-top__tagline {
+  margin: 2px 0 0;
+  color: #8da3af;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
 .club-lobby-command-top .lobby-top__notice p {
   display: block;
   max-width: 96%;

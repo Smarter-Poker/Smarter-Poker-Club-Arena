@@ -2127,133 +2127,23 @@ class TournamentService {
     return { success: true, newStack: data?.new_stack };
   }
 
-  /**
-   * Process a re-entry for an eliminated player
-   * Re-entry creates a NEW tournament_players entry (old one stays as eliminated)
-   * Only allowed if tournament.is_reentry is true and within late registration period
-   */
-  async processReentry(
-    tournamentId: string,
-    userId: string,
-    /** Per-prompt idempotency token. See `processRebuy`. */
-    clientToken?: string
-  ): Promise<{ success: boolean; newEntryId?: string }> {
-    const tournament = await this.getTournament(tournamentId);
-    if (!tournament) throw new Error('Tournament not found');
+  /* ── `processReentry` DELETED 2026-09-02 — a broken duplicate money path ──
+     It had ZERO production callers. Re-entry flows through `processRebuy`,
+     which sets `p_rebuy_type: 'reentry'` when a tournament is reentry-only,
+     and that is the path 314 re-entry tournaments have actually been using.
 
-    // Check if re-entry is enabled
-    if (!tournament.is_reentry) {
-      throw new Error('Re-entry not available for this tournament');
-    }
+     It could not have worked if anything had called it. Its eligibility check
+     ordered `tournament_players` by `created_at`, a column that table does not
+     have — its timestamps are `registered_at` and `eliminated_at` (verified
+     against production). PostgREST answers 42703, the error was bound and
+     surfaced, and every call would have ended at "Could not verify your
+     entries. Please try again." 100% of the time.
 
-    // Check if currently within late registration period
-    const levelState = this.getCurrentLevelState(tournament);
-    const lateRegLevelCap = tournament.late_reg_levels ?? tournament.rebuy_levels ?? 8;
-    if (levelState.levelIndex >= lateRegLevelCap) {
-      throw new Error('Re-entry period has ended');
-    }
-
-    // Verify player does NOT already have an active entry
-    const { data: activeEntry, error: activeCheckErr } = await supabase
-      .from('tournament_players')
-      .select('id')
-      .eq('tournament_id', tournamentId)
-      .eq('user_id', userId)
-      .in('status', ['registered', 'playing']);
-
-    // ROUND 8 (2026-08-29): same shape as the add-on gate - a failed read
-    // waved a re-entry (a money action) past the active-entry check.
-    if (activeCheckErr) {
-      reportError(activeCheckErr, 'TournamentService.reentry_active_check_read_failed', {
-        tournamentId,
-      });
-      throw new Error('Could not verify your entries. Please try again.');
-    }
-    if (activeEntry && activeEntry.length > 0) {
-      throw new Error('You already have an active entry in this tournament');
-    }
-
-    // Verify player was previously eliminated
-    const { data: eliminatedEntry, error: elimCheckErr } = await supabase
-      .from('tournament_players')
-      .select('id')
-      .eq('tournament_id', tournamentId)
-      .eq('user_id', userId)
-      .eq('status', 'eliminated')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    // ROUND 8 (2026-08-29): a failed read used to fall into 'You have not
-    // been eliminated in this tournament' - flatly untrue for a player whose
-    // bust screen is the thing offering the re-entry button.
-    if (elimCheckErr) {
-      reportError(elimCheckErr, 'TournamentService.reentry_eliminated_check_read_failed', {
-        tournamentId,
-      });
-      throw new Error('Could not verify your entries. Please try again.');
-    }
-    if (!eliminatedEntry) {
-      throw new Error('You have not been eliminated in this tournament');
-    }
-
-    // Check wallet balance for buy-in
-    const reentryChips = tournament.starting_chips;
-    // Whole chips only (Dan 2026-08-20) - no decimal re-entry prices.
-    const reentryCost = Math.max(0, Math.round(Number(tournament.buy_in_amount || 0)));
-    // RAKE-AUDIT 2026-07-24: 10% house fee on re-entries (previously fee-free —
-    // a re-entry is a full fresh buy-in and must carry the same fee as entry #1)
-    // A re-entry is a full fresh buy-in and carries the same fee as entry #1 -
-    // and since 2026-08-21, on the same terms: cut OUT of the advertised price.
-    const reentryTotalCost = reentryCost;
-
-    // 2026-08-27: the frozen-pool pre-check that lived here is GONE. It read
-    // public.wallets - frozen since 2026-08-21, nothing maintains it - so a
-    // player with plenty of live chips could be refused before the atomic RPC
-    // (the real authority, which checks the LIVE pool and produces its own
-    // insufficient-funds error) ever ran. A "better error message" computed
-    // from a dead table was a false refusal gate on a money action.
-    // Process re-entry via ATOMIC RPC (same as rebuy/addon, type='reentry')
-    const { data, error } = await supabase.rpc('process_tournament_rebuy', {
-      p_tournament_id: tournamentId,
-      p_user_id: userId, // Round 19: prod sig uses p_user_id not p_player_id
-      p_rebuy_type: 'reentry',
-      p_cost: reentryTotalCost,
-      p_chips: reentryChips,
-      p_current_level: levelState.levelIndex,
-      /** Per-prompt idempotency token — see processRebuy. */
-      p_client_token: clientToken ?? null,
-    });
-
-    if (error) {
-      reportError(error, 'TournamentService.Reentry_RPC_failed_No_chips_were_deducte');
-      throw error;
-    }
-
-    // 2026-08-20: the fee is booked by process_tournament_rebuy inside the
-    // same transaction as the chip deduction. This used to ALSO insert a
-    // rake_records row and increment total_rake here, so every fee was
-    // counted twice in union rake revenue and in rakeback.
-
-    // Emit AFTER confirmed success
-    masterBus.emit('BALANCE_UPDATED', { source: 'tournament_reentry', userId });
-
-    // Recalculate prize pool: re-entry cost goes to pool
-    await this.recalculatePrizePool(tournamentId);
-
-    // Broadcast re-entry event
-    try {
-      const { realtimeChannelService } = await import('./RealtimeChannelService');
-      await realtimeChannelService.broadcastTournamentEvent(tournamentId, {
-        type: 'player_registered',
-        payload: { type: 'reentry', userId, chips: reentryChips },
-      });
-    } catch (e: unknown) {
-      reportError(e, 'TournamentService.Failed_to_broadcast_reentry_event');
-    }
-
-    return { success: true, newEntryId: data?.new_entry_id };
-  }
+     So: a second implementation of a money path, wrong in a way that made it
+     unusable, with a unit test asserting its shape as though it worked. The
+     test went with it. Deleted rather than repaired, because repairing it
+     would restore a duplicate of a working path — and two ways to take a
+     player's re-entry fee is how a player pays twice. */
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Prize Pool Recalculation

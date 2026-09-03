@@ -19,8 +19,8 @@ snapshots in Smarter-Poker-Club-Arena:
 ```
 
 The estate's own stated failure mode, in the guard that underwrites every
-other one: *"every failure this estate has had hid behind something that
-reported success."*
+other one: _"every failure this estate has had hid behind something that
+reported success."_
 
 ---
 
@@ -47,7 +47,7 @@ were indistinguishable by design.
 [ -f "$repo/scripts/agent-trees-snapshot.sh" ] || continue
 ```
 
-Commented as *"covered the moment it carries the script"*. It asks the
+Commented as _"covered the moment it carries the script"_. It asks the
 **working tree**, which is precisely the thing that goes stale. The shared
 Club Arena clone sits **160 commits behind `origin/main`**, from before the
 script existed — so the file is not there. Nor is it in any of the other 25
@@ -86,8 +86,8 @@ git rev-parse --git-common-dir            .git             fatal: Unable to read
 That last row is why nothing looked wrong: the existence test the runner used
 passes under launchd. Only the read fails.
 
-**One repo in the list did work** — `mlb-analytics-engine`, whose realpath is
-`/Users/smarter.poker/mlb-analytics-engine`. It is a symlink out of the
+**One repo in the list did work** — a since-retired repo whose realpath was a
+symlink out of the
 protected folder. The folder is the boundary, not the path. That single
 success is also what made the first version of my own verification check pass
 falsely; see §5.
@@ -137,8 +137,8 @@ if grep -q 'captured\|nothing to capture' "$LOG"; then PROBE_OK=1; fi
 ```
 
 and printed **`verified: the agent can read the repos`** — because
-`mlb-analytics-engine`, the one symlinked repo, produced "nothing to capture"
-while the other 25 were blocked. A check that passes when *any* subject
+the one symlinked repo produced "nothing to capture"
+while the other 25 were blocked. A check that passes when _any_ subject
 succeeds is the same false green this entire audit is about, reintroduced by
 the fix for it.
 
@@ -155,7 +155,7 @@ mistake is more instructive than the fix.
    Genuinely human-only — TCC has no programmatic grant. The installer prints
    this verbatim and will keep printing it until it can prove otherwise.
 2. **`AGENT-PLAYBOOK.md` §3 overstates the guarantee.** The sentence
-   *"Runs that snapshot every 10 minutes as a launchd agent"* should say that
+   _"Runs that snapshot every 10 minutes as a launchd agent"_ should say that
    it does so **once Full Disk Access is granted**, and point at
    `bash scripts/install-wip-snapshot-agent.sh --status`, which now reports the
    truth either way. Not edited here on purpose: the playbook is in

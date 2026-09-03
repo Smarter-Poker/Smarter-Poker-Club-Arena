@@ -164,6 +164,34 @@ export async function loadSeatedPlayers(tableId: string) {
 /**
  * Sync player stacks back to database after a hand
  */
+/**
+ * The PostgREST `or=` filter that matches a seat row ONLY when at least one
+ * time-bank column differs from the value we are about to write.
+ *
+ * Exported so the shape can be pinned by a test: the failure mode that costs
+ * something here is a filter that matches NOTHING when a value HAS changed,
+ * which would silently drop a real write.
+ */
+export function timeBankChangedFilter(next: {
+  time_bank_remaining?: number;
+  time_bank_uses_remaining?: number;
+}): string {
+  const clauses: string[] = [];
+  if (next.time_bank_remaining !== undefined) {
+    clauses.push(
+      `time_bank_remaining.neq.${next.time_bank_remaining}`,
+      'time_bank_remaining.is.null'
+    );
+  }
+  if (next.time_bank_uses_remaining !== undefined) {
+    clauses.push(
+      `time_bank_uses_remaining.neq.${next.time_bank_uses_remaining}`,
+      'time_bank_uses_remaining.is.null'
+    );
+  }
+  return clauses.join(',');
+}
+
 export async function syncStacks(
   tableId: string,
   players: {
@@ -216,7 +244,44 @@ export async function syncStacks(
                 .update(payload)
                 .eq('table_id', tableId)
                 .eq('user_id', p.user_id)
-                .is('left_at', null);
+                .is('left_at', null)
+                // WRITE ONLY WHAT CHANGED (2026-09-02, performance).
+                //
+                // This ran for EVERY seated player after EVERY hand, and a
+                // time bank almost never moves - it only changes on the hands
+                // where somebody actually burns it. So the overwhelming
+                // majority of these were an UPDATE that set a column to the
+                // value it already held.
+                //
+                // Postgres does not care much; Realtime does. `table_seats` is
+                // in the `supabase_realtime` publication, so every one of these
+                // no-op writes produced a WAL record that `realtime.apply_rls`
+                // then decoded and RLS-filtered for every subscriber on the
+                // table. Measured 2026-09-02: 408,121 of these calls, 98.7% of
+                // all table_seats writes, on a table that is 36% of everything
+                // Realtime decodes - and `realtime.list_changes` was the single
+                // largest consumer of the whole database at 17.5% of total time
+                // with a 460 ms mean, which is felt at the table as lag.
+                //
+                // The guard is a FILTER, not a diff we track in memory: if
+                // neither column differs from what is stored, zero rows match,
+                // Postgres writes nothing, and no WAL record is produced. There
+                // is no cache to go stale, it is correct across an engine
+                // restart and against any concurrent writer, and a genuine
+                // change still writes exactly as before.
+                //
+                // `is.null` is in the OR deliberately. PostgREST `neq` uses SQL
+                // three-valued logic, so a NULL column would NOT match `neq`
+                // and the row would be filtered out - silently skipping a write
+                // that IS needed. Both columns are NOT NULL with defaults today
+                // (`20260313_time_bank_*`, pinned by RestartFidelity), and this
+                // clause is what keeps the guard correct if that ever changes.
+                .or(
+                  timeBankChangedFilter({
+                    time_bank_remaining: p.time_bank_remaining,
+                    time_bank_uses_remaining: p.time_bank_uses_remaining,
+                  })
+                );
             })
         );
         return;

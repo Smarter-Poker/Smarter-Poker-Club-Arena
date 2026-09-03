@@ -1,0 +1,87 @@
+# Club Arena static origin (2026-09-03).
+#
+# Vercel's World Hub rewrites /hub/club-arena/* to this host. The browser never
+# sees this hostname: the origin the player is on stays smarter.poker, which is
+# what the shared Supabase session (localStorage key smarter-poker-auth) needs.
+#
+# Layout, written by publish-club-arena.yml (rsync + atomic symlink swap):
+#   /srv/club-arena/releases/<ca_sha>/     one directory per published bundle
+#   /srv/club-arena/current -> releases/<ca_sha>   the one being served
+#   /srv/club-arena/pool/{assets,fonts}/    ADDITIVE: every hashed asset ever
+#       published in the last 30 days. A player whose tab still holds an
+#       older index.html asks for older hashed files mid-hand; the World Hub
+#       sync used to keep one previous generation for exactly this reason
+#       (runtimeAssetRetention). Here the pool keeps them all, and the
+#       publisher prunes by age, never by "not in the current bundle".
+# Rollback: point `current` at an older release. Ten are kept.
+ca-static.smarter.poker {
+	encode zstd gzip
+	header X-Robots-Tag "noindex, nofollow"
+	header -Server
+
+	@pooled path /assets/* /fonts/*
+	handle @pooled {
+		root * /srv/club-arena/pool
+		# Hashed output is immutable. fonts.css is the one unhashed file here
+		# (fonts-<hash>.css is the hashed one) and must revalidate.
+		@immutable path /assets/* /fonts/fonts-*.css
+		header @immutable Cache-Control "public, max-age=31536000, immutable"
+		@fontfiles path /fonts/*.woff2 /fonts/*.woff
+		header @fontfiles Cache-Control "public, max-age=2592000, stale-while-revalidate=604800"
+		header /fonts/fonts.css Cache-Control "no-cache, must-revalidate"
+		file_server
+	}
+
+	handle {
+		root * /srv/club-arena/current
+		# Media (cards, images, club-logos, videos, game-card-icons) is part of
+		# every release: the sources live in Club Arena's public/ and the webp
+		# variants are generated at build time, so the release directory is the
+		# single truth for them too. Long cache, revalidated in the background.
+		@media path /cards/* /images/* /club-logos/* /videos/* /game-card-icons/*
+		header @media Cache-Control "public, max-age=2592000, stale-while-revalidate=604800"
+		# Everything else here can change between publishes and must
+		# revalidate, or a player keeps an old shell against a new engine.
+		# THE ORIGIN IS ONE BOX (2026-09-03). While the bundle lived in the
+		# World Hub's public/ tree it was served from Vercel's CDN and could
+		# not go down on its own. Now this machine is in the path of every
+		# Club Arena page load, so the shell is served in a way Vercel's edge
+		# can keep serving WITHOUT us: revalidated every 60s, and served stale
+		# for a day if this origin is unreachable or erroring. A player mid-
+		# session is unaffected by a reboot here; only a publish is delayed,
+		# by at most a minute. Old asset chunks stay fetchable because the
+		# pool is additive, so a stale shell is a working shell.
+		@shell not path /cards/* /images/* /club-logos/* /videos/* /game-card-icons/*
+		header @shell Cache-Control "public, max-age=0, s-maxage=60, stale-while-revalidate=86400, stale-if-error=86400"
+		# build-info.json is the deploy's own proof and both watchdogs read it.
+		# It must never be answered from a cache, or "production is serving X"
+		# becomes "an edge node remembers X".
+		header /build-info.json Cache-Control "no-store, no-cache, must-revalidate"
+		header /sw-bus.js Service-Worker-Allowed "/hub/club-arena"
+		# SPA: a path with no extension is a client route and gets index.html;
+		# a path WITH an extension that does not exist is a real 404 (never
+		# index.html, which the browser would reject as the wrong MIME type).
+		@route not path *.*
+		rewrite @route /index.html
+		file_server
+	}
+
+	# A 404 IS NOT IMMUTABLE.
+	# Caddy applies the Cache-Control above BY PATH, not by status, so a miss
+	# under /assets/* was answered "404, and cache me for a year". A browser
+	# that asks for a chunk in the seconds between the new index.html going
+	# live and that chunk reaching the pool would then cache the miss until
+	# 2027 and render a broken page for that viewer, with no recovery but a
+	# hard reload. The window is small; the blast radius for whoever lands in
+	# it is not.
+	#
+	# This sits at SITE level deliberately. `handle_errors` is not an ordered
+	# HTTP handler and Caddy REFUSES it inside a `handle` block:
+	#   "directive 'handle_errors' is not an ordered HTTP handler, so it
+	#    cannot be used here". Caught by `caddy validate` before this ever
+	#    reached the box.
+	handle_errors {
+		header Cache-Control "no-store"
+		respond "{err.status_code} {err.status_text}" {err.status_code}
+	}
+}

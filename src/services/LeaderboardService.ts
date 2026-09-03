@@ -20,6 +20,11 @@ import { supabase } from '../lib/supabase';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
+import {
+  playerDisplayName,
+  PLAYER_NAME_COLUMNS,
+  type NameableProfile,
+} from '../utils/playerDisplayName';
 import { reportError } from '../utils/errorReporter';
 import { uuid } from '../utils/uuid';
 
@@ -49,7 +54,7 @@ interface PlayerStatsRow {
   baseline_date?: string;
 }
 
-interface ProfileRow {
+interface ProfileRow extends NameableProfile {
   id: string;
   username: string;
   avatar_url?: string;
@@ -294,7 +299,7 @@ async function decorateWithProfiles(
   const userIds = rows.map((s) => s.user_id);
   const { data: profiles } = await supabase
     .from('profiles')
-    .select('id, username, avatar_url:arena_avatar_url, level, tier')
+    .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, level, tier`)
     .in('id', userIds);
 
   const profileMap = new Map((profiles || []).map((p: ProfileRow) => [p.id, p]));
@@ -305,7 +310,7 @@ async function decorateWithProfiles(
       // Rank comes from the RPC so it stays correct on pages after the first.
       rank: row.rank != null ? Number(row.rank) : index + 1,
       userId: row.user_id,
-      username: profile.username || 'Player',
+      username: playerDisplayName(profile),
       avatar: profile.avatar_url,
       value: metricValue(row, metric),
       metric,
@@ -910,7 +915,7 @@ export const LeaderboardService = {
       const userIds = statsArray.map((s) => s.userId);
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, username, avatar_url:arena_avatar_url')
+        .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
         .in('id', userIds);
 
       const profileMap = new Map((profiles || []).map((p: ProfileRow) => [p.id, p]));
@@ -919,7 +924,9 @@ export const LeaderboardService = {
         .map((stats) => ({
           ...stats,
           avatar: profileMap.get(stats.userId)?.avatar_url,
-          username: profileMap.get(stats.userId)?.username || stats.username,
+          username: profileMap.has(stats.userId)
+            ? playerDisplayName(profileMap.get(stats.userId))
+            : stats.username,
         }))
         .sort((a, b) => b.totalPrizes - a.totalPrizes || a.userId.localeCompare(b.userId))
         .slice(offset, offset + limit);

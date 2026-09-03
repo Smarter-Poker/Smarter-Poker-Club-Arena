@@ -115,6 +115,22 @@ records exactly one.
 **Acceptance.** Before/after a real restart, horse seat + stack counts match;
 pins fail on reverted code.
 
+**Added 2026-09-03 from the 23:55 measurement - THE FREEZE IS NOT YET TOTAL
+ON THE ENGINE SIDE.** With every table parked and zero hands dealt, the new
+engine still SEATED horses during the break: 68 cash seats on 38 tables at
+23:55:32-52 (the boot seeding path), and 160 tournament seats between 23:55
+and 23:59 - the "$100 Freeroll" took 48 late-reg horses, eight Spins were
+launched, seated and three COMPLETED inside the freeze (23:57-23:59), and
+"Wednesday PLO Stack" (starts 00:00) seated its 34-horse field at 23:59 for
+1,020,000 chips. That is why `freeze_conserved` was false (+1.28M into the
+felt from club treasuries) on a break that otherwise froze perfectly. The
+`isMaintenanceFrozen()` gate is on the RecurringService tick callbacks and
+the boot seeder is not gated at all; whichever path launched those Spins and
+seated that MTT field is not gated either. Phase 6 must find every seating /
+launch / late-reg writer and gate it on the freeze (a scheduled start that
+falls inside :55-:00 is delayed to :00, exactly as a human's buy-in would be),
+then pin it: `table_seats.joined_at` inside a freeze window = 0 rows.
+
 ## Phase 7 of 9 - Safety nets
 
 **Goal.** Turn silent failures loud and reversible.
@@ -162,3 +178,28 @@ break.
 ## Status log (updated as phases land)
 
 - Programme opened 2026-09-02. Build order above. Phase 1 in progress.
+- 2026-09-02 ~21:45 Phase 1 merged (#2710); migrations applied; scorecard,
+  freeze marks, disarmed dispatcher and deploy-start marker live.
+- 2026-09-02 23:18 Phases 2+3 merged (#2715) after two CI reds that were
+  not about the break (a same-minute migration-version collision, and a
+  10s test budget the shared runner could not meet).
+- 2026-09-02 23:29 Phase 4 merged (#2729). Both migrations applied live.
+- **2026-09-02 23:55 restart - the first on a build with phases 2, 3, 4.**
+  Deploy dispatched by hand at 23:41 (GitHub's cron dropped 22:40/45/50
+  again); escalation fired at 23:55:00 (old engine, 342 "unparked" by its old
+  predicate, 191 min behind); new engine `f2cfd4aa` up 23:55:23, resumed the
+  break, parked everything: `unparked_at_countdown 0, peak 0,
+ready_for_restart_at 23:55:28` (the gate opened - first time ever on a live
+  break). **Hands with a start inside the break on the new engine: 0** (202
+  in the window, all ended before 23:55:30 = the old engine's last seconds;
+  previous breaks 955-3110). Thaw: 1 installment call, 697ms, complete,
+  `sit_out_at 6, level_started_at 151`, frozen 300s. Resume: 355 tables at
+  00:00:07. **Recovery: 294 tables / 774 hands in the 00:01 minute vs a
+  295-310 / 700 pre-break steady state** - full fleet inside ~60-90s (was
+  600-1000s). Kill-rebuilds after :00: 0, with tables genuinely parked.
+  Horse seat exits during the break on the new engine: 0 (#2713 holds).
+  Open: `freeze_conserved` false, +1.28M - horses were SEATED during the
+  break (see Phase 6 addendum). Phases 2, 3, 4: accepted on this evidence,
+  except that Phase 4's sit-out acceptance (a sampled deadline actually
+  moved) is proven by rolled-back probe and by `sit_out_at: 6` under the
+  fixed trigger, not yet by a before/after sample on a live seat.

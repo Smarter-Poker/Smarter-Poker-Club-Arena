@@ -71,11 +71,7 @@ export function readClubDataCache<T>(
  * Swept on write rather than on a timer: writes are the only thing that grows
  * the store, so that is the moment the sweep is worth its pass over the keys.
  */
-export function purgeExpiredClubDataCaches(
-  userId: string,
-  clubId: string,
-  now = Date.now()
-): void {
+export function purgeExpiredClubDataCaches(userId: string, clubId: string, now = Date.now()): void {
   try {
     const prefix = `${CLUB_DATA_CACHE_PREFIX}${userId}:${clubId}:`;
     for (let i = sessionStorage.length - 1; i >= 0; i--) {

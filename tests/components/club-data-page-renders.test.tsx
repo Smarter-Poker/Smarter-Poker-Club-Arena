@@ -375,13 +375,76 @@ describe('ClubDataPage', () => {
     });
   }, 20_000);
 
-  it('keeps internal player automation metadata out of the operator UI', async () => {
+  /**
+   * THIS TEST USED TO ASSERT THE OPPOSITE, and the reason it changed matters.
+   *
+   * It read `queryByText('HORSE')` and required the flag to be absent. That was
+   * written when ca_club_player_breakdown returned is_horse UNMASKED - to
+   * anyone who could read club finances, which includes super agents, a role
+   * the estate's own fn_can_see_horse_flag deliberately excludes. Hiding it in
+   * the UI was the right defensive call while the database was handing it to
+   * the wrong people.
+   *
+   * The database now masks it: staff get the truth, everyone else a uniform
+   * false. So the flag only ARRIVES for an owner, co-owner or admin, and for
+   * them it is the answer to a question they need - which of my top players is
+   * a person. Painting it is now safe in the only case where it is non-false.
+   *
+   * Worth recording: the old assertion did not fail when the badge was added.
+   * It searched for 'HORSE' and the badge renders 'Horse', uppercased in CSS -
+   * so it passed by accident rather than by agreement. An assertion that would
+   * not have noticed the change it existed to prevent is worse than none, so
+   * both directions are now explicit.
+   */
+  it('names a horse for the staff entitled to know', async () => {
     render(<ClubDataPage />);
 
     fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
     await waitFor(() => expect(screen.getByText('Table Regular')).toBeInTheDocument());
     expect(screen.getByRole('list', { name: 'Players' })).toHaveAttribute('tabindex', '0');
-    expect(screen.queryByText('HORSE')).not.toBeInTheDocument();
+
+    // The fixture's player carries is_horse: true, which only reaches a
+    // viewer the database decided may see it.
+    expect(screen.getByText('Horse')).toBeInTheDocument();
+  });
+
+  it('shows nothing at all when the flag was masked before it arrived', async () => {
+    rpcMock.mockImplementation((fn: string) => {
+      if (fn === 'ca_club_data_snapshot') return Promise.resolve({ data: snapshot, error: null });
+      if (fn === 'ca_club_union_invoices') return Promise.resolve({ data: [], error: null });
+      if (fn === 'ca_club_player_breakdown') {
+        return Promise.resolve({
+          data: {
+            ...playerBreakdown,
+            players: playerBreakdown.players.map((p) => ({ ...p, is_horse: false })),
+          },
+          error: null,
+        });
+      }
+      // The tab paints from the PAGE, not the breakdown, so the masked value
+      // has to be here too - overriding only the breakdown left the list empty
+      // and the test failed on the row rather than on the badge.
+      if (fn === 'ca_club_player_page') {
+        return Promise.resolve({
+          data: {
+            ...playerPage,
+            rows: playerPage.rows.map((p) => ({ ...p, is_horse: false })),
+          },
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    render(<ClubDataPage />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
+    await waitFor(() => expect(screen.getByText('Table Regular')).toBeInTheDocument());
+
+    // A masked viewer gets a uniform false, so there is no badge and no
+    // filter - the control would be a switch that does nothing and invites
+    // the question it is not allowed to answer.
+    expect(screen.queryByText('Horse')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Hide Horses|People Only/i })).toBeNull();
   });
 
   it('waits for auth restoration before making protected data calls', async () => {

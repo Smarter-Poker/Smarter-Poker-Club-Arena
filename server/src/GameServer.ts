@@ -80,6 +80,7 @@ import { isMaintenanceFrozen } from './maintenance/freezeState.js';
 import { raiseEngineAlert, resolveEngineAlert } from './services/engineAlerts.js';
 import { MaintenanceBreak } from './maintenance/MaintenanceBreak.js';
 import { createSupabaseMaintenanceBreakStore } from './maintenance/maintenanceBreakStore.js';
+import { runThawInstallments } from './maintenance/thawInstallments.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
 import { isWakeableCashTable } from './services/onDemandTableWake.js';
 // 2026-08-16: single-owner table leases + per-process identity. See
@@ -447,15 +448,53 @@ export class GameServer {
     // duration, so "picks back up exactly as it was" is true of the CLOCKS
     // and not only of the chips. fn_thaw_platform is idempotent per freeze -
     // two engines racing at :00 cannot shift the clocks twice.
+    // PHASE 2 (2026-09-02): the break's own measurements, one row per break,
+    // so ca_break_scorecards can show what the GATE saw (unparked at
+    // countdown, peak, when readyForRestart first opened) and not only what
+    // hand_history reveals from outside. Insert-only; a failure is reported
+    // by MaintenanceBreak and never delays the resume.
+    recordOutcome: async (o) => {
+      const { error } = await supabase.from('engine_maintenance_break_log').insert({
+        break_started_at: new Date(o.breakStartedAtMs).toISOString(),
+        break_ended_at: new Date(o.breakEndedAtMs).toISOString(),
+        unparked_at_countdown: o.unparkedAtCountdown,
+        peak_unparked: o.peakUnparked,
+        ready_for_restart_at:
+          o.readyForRestartAtMs === null ? null : new Date(o.readyForRestartAtMs).toISOString(),
+        tables_resumed: o.tablesResumed,
+        thaw_ok: o.thawOk,
+        engine_version:
+          process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
+      });
+      if (error) throw new Error(error.message);
+    },
+    // PHASE 4 (2026-09-02): the thaw runs in INSTALLMENTS. fn_thaw_platform
+    // checkpoints each completed step in engine_maintenance_thaws.shifted and
+    // returns complete:false when it has used its own ~4s budget, so no single
+    // call can hit PostgREST's 8s cap the way the one-statement thaw did
+    // (19.9s before the #2703 indexes; a timeout still at 20:00 after them).
+    // runThawInstallments calls again until complete, and retries a call that
+    // died - a timed-out call committed nothing, so the retry is exactly
+    // right. Idempotent per freeze and per step on the database side.
     thaw: async (freezeStartedAtMs, frozenSeconds) => {
-      const { data, error } = await supabase.rpc('fn_thaw_platform', {
+      const args = {
         p_freeze_started: new Date(freezeStartedAtMs).toISOString(),
         p_frozen_seconds: frozenSeconds,
         p_thawed_by:
           process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
-      });
-      if (error) throw new Error(error.message);
-      console.log('[MaintenanceBreak] thaw:', JSON.stringify(data));
+      };
+      const summary = await runThawInstallments(
+        async () => {
+          const { data, error } = await supabase.rpc('fn_thaw_platform', args);
+          if (error) throw new Error(error.message);
+          return (data ?? {}) as Record<string, unknown>;
+        },
+        { log: (line) => console.log(line) }
+      );
+      console.log(
+        `[MaintenanceBreak] thaw: complete in ${summary.calls} call(s), ${summary.errors} error(s):`,
+        JSON.stringify(summary.last?.shifted ?? null)
+      );
     },
   });
   /**
@@ -634,6 +673,21 @@ export class GameServer {
        *
        * These are infinite while-loops: fire-and-forget with error handling.
        */
+      /**
+       * Step 0b - THE BREAK IS ADOPTED BEFORE ANYTHING THAT CAN SEAT A PLAYER
+       * (THE FREEZE IS TOTAL (Dan 2026-09-03)). This used to be Step 7b, after discovery,
+       * the horse fleet, the recurring launcher and the scheduler had all
+       * started - and every one of those fires an immediate first pass on
+       * start(). On the 23:55 restart the new engine booted at 23:55:23 and
+       * adopted the break at 23:55:26; in between, and in the seconds after,
+       * those first passes seated 68 horses at cash tables and registered
+       * 160 into tournaments while every screen on the platform said the
+       * break was on. The flag those services check (isMaintenanceFrozen) is
+       * set HERE, by restoreFromStore, so this must run first. Engines
+       * adopted later are parked by maintenanceBreak.adopt().
+       */
+      await this.maintenanceBreak.start();
+
       this.discoverCashTables().catch((err) =>
         reportError(err, 'GameServer.Cash_table_discovery_fatal_err')
       );
@@ -711,7 +765,7 @@ export class GameServer {
       // part is why it is awaited here, ahead of any dealing: this process is
       // usually booting *because* of the restart the break was declared for,
       // and it must not deal a hand into a break players are still watching.
-      await this.maintenanceBreak.start();
+      // (the break is adopted at Step 0b now - see above)
 
       // Step 8 (A5): Start the fee reconciler. Rake and the BBJ contribution are
       // taken out of the pot inside the hand; if the banking RPC fails the chips
@@ -2808,6 +2862,11 @@ export class GameServer {
 
         for (const tournament of registering || []) {
           if (this.tournamentEngines.has(tournament.id)) continue;
+          // THE FREEZE IS TOTAL (Dan 2026-09-03): starting an event pre-seats its
+          // field and topping it up buys horses in. Both are chip movement.
+          // The event starts on the first pass after the thaw, exactly as a
+          // human's buy-in would be accepted then and not before.
+          if (isMaintenanceFrozen()) break;
 
           // Guard: skip tournaments with no start_time set
           if (!tournament.start_time) {
@@ -3038,6 +3097,9 @@ export class GameServer {
           }
 
           for (const t of seatFirstRows) {
+            // THE FREEZE IS TOTAL (Dan 2026-09-03): a seat-first start seats its
+            // players and a partial fill buys horses in.
+            if (isMaintenanceFrozen()) break;
             const id = String(t.id);
             const seats = Number(t.max_players) || 0;
             const paid = paidSeatsByTournament.get(id) ?? 0;
@@ -4236,6 +4298,9 @@ export class GameServer {
           );
           const paidSeats = await this.readSeatFirstPaidSeats(seatFirstRows);
           for (const t of seatFirstRows) {
+            // THE FREEZE IS TOTAL (Dan 2026-09-03): a seat-first start seats its
+            // players and a partial fill buys horses in.
+            if (isMaintenanceFrozen()) break;
             const id = String(t.id);
             const seats = Number(t.max_players) || 0;
             const paid = paidSeats.get(id) ?? 0;

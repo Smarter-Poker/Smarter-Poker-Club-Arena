@@ -21,6 +21,11 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import {
+  playerDisplayName,
+  PLAYER_NAME_COLUMNS,
+  type NameableProfile,
+} from '../utils/playerDisplayName';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 // The seven roles the DATABASE uses. The MemberRole union below is a second,
@@ -118,11 +123,11 @@ export const MembershipService = {
 
     // Batch-fetch profiles separately (no FK hint needed)
     const userIds = data.map((m) => m.user_id);
-    const profileMap: Record<string, { display_name?: string; avatar_url?: string }> = {};
+    const profileMap: Record<string, NameableProfile & { avatar_url?: string }> = {};
     try {
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, display_name, avatar_url:arena_avatar_url')
+        .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
         .in('id', userIds);
       if (profiles) {
         for (const p of profiles) profileMap[p.id] = p;
@@ -142,7 +147,7 @@ export const MembershipService = {
       invitedBy: m.invited_by,
       agentId: m.agent_id,
       notes: m.notes,
-      displayName: profileMap[m.user_id]?.display_name,
+      displayName: playerDisplayName(profileMap[m.user_id]),
       avatarUrl: profileMap[m.user_id]?.avatar_url,
     }));
   },
@@ -337,11 +342,11 @@ export const MembershipService = {
 
     // Batch-fetch profiles separately (no FK hint needed)
     const userIds = data.map((m) => m.user_id);
-    const profileMap: Record<string, { display_name?: string; avatar_url?: string }> = {};
+    const profileMap: Record<string, NameableProfile & { avatar_url?: string }> = {};
     try {
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, display_name, avatar_url:arena_avatar_url')
+        .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
         .in('id', userIds);
       if (profiles) {
         for (const p of profiles) profileMap[p.id] = p;
@@ -358,7 +363,7 @@ export const MembershipService = {
       role: m.role as MemberRole,
       status: m.status as MemberStatus,
       joinedAt: m.joined_at,
-      displayName: profileMap[m.user_id]?.display_name || 'Unknown',
+      displayName: playerDisplayName(profileMap[m.user_id]),
       avatarUrl: profileMap[m.user_id]?.avatar_url,
     }));
   },

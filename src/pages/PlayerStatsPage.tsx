@@ -82,6 +82,7 @@ import {
 } from '../services/statsContract';
 import { buildStatsIntelligenceBrief } from '../components/stats/statsIntelligenceBrief';
 import { capture } from '../lib/analytics';
+import { playerDisplayName } from '../utils/playerDisplayName';
 
 // ── SWR Cache helpers (localStorage for cross-session persistence) ──
 const STATS_CACHE_KEY = STATS_CACHE_PREFIX;
@@ -2125,7 +2126,7 @@ export default function PlayerStatsPage() {
                 {isOwnProfile && (
                   <PanelBoundary name="Share Card">
                     <StatsShareCard
-                      displayName={user?.display_name || user?.username || 'Player'}
+                      displayName={playerDisplayName(user)}
                       styleLabel={shareStyle?.label ?? null}
                       styleColor={shareStyle?.color ?? null}
                       stats={{

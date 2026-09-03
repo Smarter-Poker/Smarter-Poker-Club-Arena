@@ -59,6 +59,44 @@ export function readClubDataCache<T>(
   }
 }
 
+/**
+ * Drop this club's expired entries.
+ *
+ * A read removes an entry it finds stale, so an entry that is never read again
+ * is never removed - it just sits there until the tab closes. That was small
+ * while the key was scope plus period. Once the rake snapshot put the SORT in
+ * its key the space quadrupled, and an operator cycling sorts across periods
+ * can leave dozens of dead snapshots behind, each holding a page of rows.
+ *
+ * Swept on write rather than on a timer: writes are the only thing that grows
+ * the store, so that is the moment the sweep is worth its pass over the keys.
+ */
+export function purgeExpiredClubDataCaches(userId: string, clubId: string, now = Date.now()): void {
+  try {
+    const prefix = `${CLUB_DATA_CACHE_PREFIX}${userId}:${clubId}:`;
+    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+      const key = sessionStorage.key(i);
+      if (!key?.startsWith(prefix)) continue;
+      const raw = sessionStorage.getItem(key);
+      if (!raw) continue;
+      let at: unknown;
+      try {
+        at = (JSON.parse(raw) as Partial<CacheEnvelope<unknown>>).at;
+      } catch {
+        // Unreadable is as dead as expired.
+        sessionStorage.removeItem(key);
+        continue;
+      }
+      if (typeof at !== 'number' || now - at > CLUB_DATA_CACHE_TTL_MS) {
+        sessionStorage.removeItem(key);
+      }
+    }
+  } catch {
+    // Best effort. Every read still validates identity, route, query and age,
+    // so a failed sweep costs space, never correctness.
+  }
+}
+
 export function writeClubDataCache<T>(
   userId: string,
   clubId: string,
@@ -67,6 +105,7 @@ export function writeClubDataCache<T>(
   now = Date.now()
 ): void {
   try {
+    purgeExpiredClubDataCaches(userId, clubId, now);
     const envelope: CacheEnvelope<T> = { userId, clubId, queryKey, at: now, data };
     sessionStorage.setItem(storageKey(userId, clubId, queryKey), JSON.stringify(envelope));
   } catch {

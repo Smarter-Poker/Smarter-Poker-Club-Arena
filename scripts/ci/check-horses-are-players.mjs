@@ -82,6 +82,17 @@ const EXCLUDE = [
  * identification or an equal outcome - and to say so here.
  */
 const REGISTER = {
+  'src/pages/club/ClubDataPage.tsx': {
+    allowed: 1,
+    kind: 'IDENTIFICATION',
+    why: [
+      'An operator-controlled "Hide Horses" chip on the club data page\'s Players tab. Same shape as the leaderboard toggle below, and it passes the same test: it defaults to SHOWING horses (useState(false)), which is what the law requires of anything opt-in.',
+      '',
+      'It changes what an operator is LOOKING AT and nothing about what a horse receives. Nothing downstream reads it - not the rake, not an agent\'s commission, not a settlement. The horse is neither paid less nor seated differently because somebody unticked a box on a reporting page.',
+      '',
+      'And the page refuses to let the filter lie about the total. With the chip on, the summary beside the list is recomputed from the filtered rows and RELABELS itself from "Players" to "People", so a scoped figure can never be read as the club\'s. Leaving the unfiltered total under a filtered list would have been the actual bug here.',
+    ].join('\n'),
+  },
   'src/utils/clubDashboard.ts': {
     allowed: 1,
     kind: 'IDENTIFICATION',

@@ -36,11 +36,17 @@ export function useAuthUser() {
           const email = session.user.email;
           const metadata = session.user.user_metadata;
 
-          // Set basic info immediately
+          /* Set basic info immediately. The JWT's `full_name` is a REAL NAME
+             and is filed as one rather than folded into `display_name`, which
+             is the arena resolver's last resort (Dan 2026-09-03: "IT SHOULD SAY
+             THE POKER ALIAS (KingFish) NOT DAN BEKAVAC"). The loadProfile below
+             fills in the alias, and since setUser merges, this write can no
+             longer be the one that erases it. */
           useUserStore.getState().setUser({
             id: userId,
             username: email?.split('@')[0] || 'Player',
-            display_name: metadata?.display_name || metadata?.full_name || null,
+            display_name: metadata?.display_name || null,
+            full_name: metadata?.full_name || null,
             avatar_url: metadata?.avatar_url || null,
           });
 

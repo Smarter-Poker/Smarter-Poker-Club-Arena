@@ -67,10 +67,16 @@ function hydrateStoreFromSession(session: {
   if (storeUser) return; // Already hydrated — skip
 
   const { id, email, user_metadata } = session.user;
+  /* The JWT's `full_name` is a REAL NAME and is filed as one, not folded into
+     `display_name` (Dan 2026-09-03: "IT SHOULD SAY THE POKER ALIAS (KingFish)
+     NOT DAN BEKAVAC"). `display_name` is the arena resolver's last resort, so a
+     legal name parked there gets printed at the tables. Matching note in
+     IdentityDNA.hydrateUserFromSession. */
   useUserStore.getState().setUser({
     id,
     username: email?.split('@')[0] || 'Player',
-    display_name: user_metadata?.display_name || user_metadata?.full_name || null,
+    display_name: user_metadata?.display_name || null,
+    full_name: user_metadata?.full_name || null,
     avatar_url: user_metadata?.avatar_url || null,
   });
 }

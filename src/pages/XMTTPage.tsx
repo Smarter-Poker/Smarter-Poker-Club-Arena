@@ -26,6 +26,7 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 
 const formatDate = (ts: string | null) => {
   if (!ts) return '';
@@ -156,7 +157,7 @@ export default function XMTTPage() {
           .maybeSingle(),
         supabase
           .from('tournament_players')
-          .select('*, profiles(display_name, username)')
+          .select(`*, profiles(${PLAYER_NAME_COLUMNS})`)
           .eq('tournament_id', tournamentId),
       ]);
       if (mountedRef.current && tourn) {
@@ -164,7 +165,7 @@ export default function XMTTPage() {
           tournament: tourn as Tournament,
           registrations: (regs || []).map((r: any) => ({
             user_id: r.user_id,
-            display_name: r.profiles?.display_name,
+            display_name: playerDisplayName(r.profiles),
             username: r.profiles?.username,
             chips: r.chips,
           })),

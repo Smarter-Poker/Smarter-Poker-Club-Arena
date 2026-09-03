@@ -24,6 +24,7 @@ import { clearSessionCache } from '../hooks/useSessionCache';
 import { useHeaderDataStore } from '../stores/useHeaderDataStore';
 import { reportError } from '../utils/errorReporter';
 import { clearUserCaches } from '../utils/clearUserCaches';
+import { PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -33,6 +34,16 @@ export interface UserProfile {
   id: string;
   username: string;
   display_name: string | null;
+  /* The columns `playerDisplayName` resolves over. Without `alias` on this
+     type, the profile this class loads could not carry the poker alias, and
+     the write it makes into the store erased whatever the store already knew
+     (Dan 2026-09-03). Optional because a row may legitimately have none. */
+  alias?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  full_name?: string | null;
+  display_name_preference?: string | null;
+  use_real_name?: boolean | null;
   avatar_url: string | null;
   vip_level: 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond'; // Maps to DB `tier` column
   tier?: string; // Raw DB tier value (e.g. "Newcomer")
@@ -323,11 +334,21 @@ class IdentityDNACore {
     const email = session.user.email;
     const metadata = session.user.user_metadata;
 
-    // Set basic info from session — instant, no SDK calls
+    /* Set basic info from session — instant, no SDK calls.
+
+       THE JWT'S `full_name` IS A REAL NAME AND BELONGS IN `full_name` (Dan
+       2026-09-03: "IT SHOULD SAY THE POKER ALIAS (KingFish) NOT DAN BEKAVAC").
+       This used to fold it into `display_name`, which is exactly the column the
+       arena resolver falls back to - so the card's first paint printed the
+       player's legal name, and kept printing it on any route where the full
+       profile load never ran. Filed in its own field, `playerDisplayName`
+       recognises it as the real name and refuses it on an arena surface, and
+       the social surface gets a correct one for free. */
     useUserStore.getState().setUser({
       id: userId,
       username: email?.split('@')[0] || 'Player',
-      display_name: metadata?.display_name || metadata?.full_name || null,
+      display_name: metadata?.display_name || null,
+      full_name: metadata?.full_name || null,
       avatar_url: metadata?.avatar_url || null,
     });
   }
@@ -351,6 +372,15 @@ class IdentityDNACore {
             id: profile.id,
             username: profile.username,
             display_name: profile.display_name,
+            /* The name columns travel WITH the profile. Without them this
+               write - the last one to land on a cold load - replaced a store
+               that already knew the alias with one that did not. */
+            alias: profile.alias ?? null,
+            first_name: profile.first_name ?? null,
+            last_name: profile.last_name ?? null,
+            full_name: profile.full_name ?? null,
+            display_name_preference: profile.display_name_preference ?? null,
+            use_real_name: profile.use_real_name ?? null,
             avatar_url: profile.avatar_url,
             vip_level: ((profile as any).tier ||
               profile.vip_level ||
@@ -384,8 +414,14 @@ class IdentityDNACore {
      */
     const { data, error } = await supabase
       .from('profiles')
+      /* PLAYER_NAME_COLUMNS is the list `playerDisplayName` resolves over, and
+         it is imported rather than retyped so this select and the store's can
+         never drift apart again. All eight are granted to `authenticated` -
+         verified against the live schema, and it matters: per the note above,
+         ONE ungranted column 403s the whole statement and the profile then
+         silently never loads. */
       .select(
-        'id, username, display_name, avatar_url:arena_avatar_url, tier, created_at, updated_at, player_number'
+        `id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, tier, created_at, updated_at, player_number`
       )
       .eq('id', userId)
       .maybeSingle();

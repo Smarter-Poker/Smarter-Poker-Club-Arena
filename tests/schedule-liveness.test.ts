@@ -377,3 +377,33 @@ describe('the starved-work dispatcher is wired in and bounded', () => {
     expect(src).toMatch(/last === undefined \? true : await isBusy/);
   });
 });
+
+describe('a per-item run is not evidence that the scheduled work happened', () => {
+  // 2026-09-03: agent-autopilot.yml had run ten times in the last hour, every
+  // one of them `pull_request`, and its sweep - gated `event_name !=
+  // 'pull_request'` - had run twice in six hours on a thirty-minute cron. The
+  // dispatcher counted those per-PR runs as "the workflow ran" and never
+  // dispatched the sweep. The starved question is about the SCHEDULED work.
+  it('lastAnyRun skips pull_request runs when deciding whether a workflow is starved', () => {
+    const fn = sliceBlockAfter(SCRIPT, 'async function lastAnyRun(file)');
+    expect(fn).toMatch(/find\(\(r\) => !PER_ITEM_EVENTS\.has\(r\.event\)\)/);
+    expect(fn).toMatch(/per_page=30/);
+  });
+  it('the per-item events are the ones that never do scheduled work', () => {
+    expect(SCRIPT).toMatch(/PER_ITEM_EVENTS = new Set\(\['pull_request', 'pull_request_target'/);
+  });
+  it('the watchdog that hosts the dispatcher listens to the live publisher', () => {
+    expect(WATCHDOG).toMatch(/workflows: \['Publish Club Arena'\]/);
+    expect(WATCHDOG).not.toMatch(/Build for World Hub Sync'\]/);
+  });
+});
+
+describe('a per-item run in flight is not the sweep in flight', () => {
+  it('isBusy only counts in-flight runs that do the scheduled work', () => {
+    const fn = sliceBlockAfter(SCRIPT, 'async function isBusy(workflowIdOrFile)');
+    expect(fn).toMatch(/some\(\(r\) => !PER_ITEM_EVENTS\.has\(r\.event\)\)/);
+    expect(fn).not.toMatch(/total_count/);
+    // still fails closed on an unreadable API
+    expect(fn).toMatch(/if \(!res\.ok\) return true;/);
+  });
+});

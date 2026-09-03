@@ -69,7 +69,11 @@ function downlineRow(n: number) {
   };
 }
 
-function clubSnapshot(rows: unknown[], count: number, applied: { search?: string | null; sort?: string } = {}) {
+function clubSnapshot(
+  rows: unknown[],
+  count: number,
+  applied: { search?: string | null; sort?: string } = {}
+) {
   return {
     scope: 'club',
     scope_label: 'Deep Stack Society',
@@ -77,7 +81,15 @@ function clubSnapshot(rows: unknown[], count: number, applied: { search?: string
     union_id: null,
     range: { start: '2026-09-01', end: '2026-09-03', days: 3 },
     previous_range: { start: '2026-08-29', end: '2026-08-31', days: 3 },
-    summary: { games: 12, total_winnings: 100, mtt_winnings: 0, cash_fee: 900, mtt_fee: 0, fee: 900, hands: 500 },
+    summary: {
+      games: 12,
+      total_winnings: 100,
+      mtt_winnings: 0,
+      cash_fee: 900,
+      mtt_fee: 0,
+      fee: 900,
+      hands: 500,
+    },
     previous: { fee: 800 },
     delta: { fee_pct: 1, games_pct: null, fee_abs: 1, winnings_abs: 1 },
     series: [],
@@ -112,7 +124,16 @@ function downlineSnapshot(rows: unknown[]) {
 function asked() {
   return rpcMock.mock.calls
     .filter(([fn]) => fn === 'ca_rake_snapshot')
-    .map(([, a]) => a as { p_search?: string | null; p_sort?: string; p_offset?: number; p_scope?: string; p_agent_user_id?: string | null });
+    .map(
+      ([, a]) =>
+        a as {
+          p_search?: string | null;
+          p_sort?: string;
+          p_offset?: number;
+          p_scope?: string;
+          p_agent_user_id?: string | null;
+        }
+    );
 }
 
 beforeEach(() => {
@@ -151,8 +172,11 @@ describe('rake snapshot search and sort', () => {
     rpcMock.mockImplementation((fn: string, a: { p_search?: string | null }) =>
       fn === 'ca_rake_snapshot'
         ? Promise.resolve({
-            data: clubSnapshot(a?.p_search ? [agentRow(2)] : [agentRow(1), agentRow(2), agentRow(3)],
-              a?.p_search ? 1 : 3, { search: a?.p_search ?? null }),
+            data: clubSnapshot(
+              a?.p_search ? [agentRow(2)] : [agentRow(1), agentRow(2), agentRow(3)],
+              a?.p_search ? 1 : 3,
+              { search: a?.p_search ?? null }
+            ),
             error: null,
           })
         : Promise.resolve({ data: null, error: null })
@@ -187,7 +211,9 @@ describe('rake snapshot search and sort', () => {
 
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'cost' } });
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Agent' } });
-    await waitFor(() => expect(asked().some((a) => a.p_search === 'Agent' && a.p_sort === 'cost')).toBe(true));
+    await waitFor(() =>
+      expect(asked().some((a) => a.p_search === 'Agent' && a.p_sort === 'cost')).toBe(true)
+    );
 
     (await screen.findByRole('button', { name: /Load .* More/i })).click();
 
@@ -231,7 +257,10 @@ describe('rake snapshot drill out of the club list', () => {
   it('opens only the rows the server says will open', async () => {
     rpcMock.mockImplementation((fn: string) =>
       fn === 'ca_rake_snapshot'
-        ? Promise.resolve({ data: clubSnapshot([agentRow(1, true), agentRow(2, false)], 2), error: null })
+        ? Promise.resolve({
+            data: clubSnapshot([agentRow(1, true), agentRow(2, false)], 2),
+            error: null,
+          })
         : Promise.resolve({ data: null, error: null })
     );
 
@@ -249,9 +278,10 @@ describe('rake snapshot drill out of the club list', () => {
     rpcMock.mockImplementation((fn: string, a: { p_scope?: string }) => {
       if (fn !== 'ca_rake_snapshot') return Promise.resolve({ data: null, error: null });
       return Promise.resolve({
-        data: a?.p_scope === 'agent'
-          ? downlineSnapshot([downlineRow(1), downlineRow(2)])
-          : clubSnapshot([agentRow(1)], 1),
+        data:
+          a?.p_scope === 'agent'
+            ? downlineSnapshot([downlineRow(1), downlineRow(2)])
+            : clubSnapshot([agentRow(1)], 1),
         error: null,
       });
     });
@@ -276,9 +306,10 @@ describe('rake snapshot drill out of the club list', () => {
     rpcMock.mockImplementation((fn: string, a: { p_scope?: string }) =>
       fn === 'ca_rake_snapshot'
         ? Promise.resolve({
-            data: a?.p_scope === 'agent'
-              ? downlineSnapshot([downlineRow(1)])
-              : clubSnapshot([agentRow(1)], 1),
+            data:
+              a?.p_scope === 'agent'
+                ? downlineSnapshot([downlineRow(1)])
+                : clubSnapshot([agentRow(1)], 1),
             error: null,
           })
         : Promise.resolve({ data: null, error: null })
@@ -310,9 +341,10 @@ describe('rake snapshot drill out of the club list', () => {
     rpcMock.mockImplementation((fn: string, a: { p_scope?: string; p_search?: string | null }) =>
       fn === 'ca_rake_snapshot'
         ? Promise.resolve({
-            data: a?.p_scope === 'agent'
-              ? downlineSnapshot([downlineRow(1)])
-              : clubSnapshot([agentRow(1)], 1, { search: a?.p_search ?? null }),
+            data:
+              a?.p_scope === 'agent'
+                ? downlineSnapshot([downlineRow(1)])
+                : clubSnapshot([agentRow(1)], 1, { search: a?.p_search ?? null }),
             error: null,
           })
         : Promise.resolve({ data: null, error: null })

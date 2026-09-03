@@ -159,6 +159,17 @@ function formatTime(value: string | null): string {
   });
 }
 
+/**
+ * The tooltip on the events-per-hour tile. `lastEventAt` is read from the
+ * health RPC and, until now, was fetched on every load and never shown - so an
+ * operator watching a rate could not tell a genuinely quiet floor from a feed
+ * that stopped an hour ago. Both read zero; only the timestamp separates them.
+ */
+function formatEventClock(lastEventAt: string | null): string {
+  if (!lastEventAt) return 'No Realtime Event Recorded Yet';
+  return `Last Realtime Event ${formatTime(lastEventAt)}`;
+}
+
 function toLocalDateTimeInput(value: Date): string {
   return new Date(value.getTime() - value.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 }
@@ -1244,18 +1255,34 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
             </span>
           </div>
           <div className={styles.healthRail} aria-label="Management Health">
-            <span>{health?.commandsLast24h ?? 0} Commands / 24h</span>
-            <span>{health?.rejectedLast24h ?? 0} Rejected</span>
-            <span className={health?.integrityAlerts ? styles.healthAlert : undefined}>
-              {health?.integrityAlerts ?? 0} Integrity Alerts
-            </span>
-            <span>{health?.scheduledPending ?? 0} Pending Schedules</span>
-            <span className={health?.scheduledRejected24h ? styles.healthAlert : undefined}>
-              {health?.scheduledRejected24h ?? 0} Schedule Rejects
-            </span>
-            <span title={`${health?.retentionDays ?? 30}-Day Realtime Retention`}>
-              {health?.eventRows ?? 0} Realtime Events
-            </span>
+            {/*
+              A health read that FAILED must not render as zeros. `?? 0` used to
+              paint "0 Integrity Alerts" whether the answer was zero or whether
+              nobody could be asked - and the operator has no way to tell those
+              apart. Health is telemetry, so a failed read still never blocks the
+              board; it just says so instead of impersonating an all-clear.
+            */}
+            {health === null ? (
+              <span className={styles.healthAlert}>Management Health Unavailable</span>
+            ) : (
+              <>
+                <span>{health.commandsLast24h} Commands / 24h</span>
+                <span>{health.rejectedLast24h} Rejected</span>
+                <span className={health.integrityAlerts ? styles.healthAlert : undefined}>
+                  {health.integrityAlerts} Integrity Alerts
+                </span>
+                <span>{health.scheduledPending} Pending Schedules</span>
+                <span className={health.scheduledRejected24h ? styles.healthAlert : undefined}>
+                  {health.scheduledRejected24h} Schedule Rejects
+                </span>
+                <span title={formatEventClock(health.lastEventAt)}>
+                  {health.eventsLastHour} Events / Hour
+                </span>
+                <span title={`${health.retentionDays}-Day Realtime Retention`}>
+                  {health.eventRows} Realtime Events
+                </span>
+              </>
+            )}
           </div>
           <GameCreationActions managementPath={managementPath} />
         </div>

@@ -184,13 +184,14 @@ So: a direct push to main is refused, a red check cannot be merged, and
 `ci.yml`'s `if: github.event_name == 'pull_request'` gating is SAFE precisely
 because the ruleset makes the pull-request path the only path.
 
-Two documents disagree with the API and are wrong. Believe the API.
+Two documents used to disagree with the API; both were corrected on
+2026-08-28 / 2026-09-03 and now say the same thing this section says:
 
-- Section 1.1.5 above is titled "prepared, not yet active". It is active.
-- `.husky/pre-push` check 0 says "making the repos private ... silently
-  disabled required status checks and rulesets ... nothing enforces it
-  server-side any more". That was true when it was written and is not true
-  now.
+- Section 1.1.5 is titled "APPLIED - this section is history". It is active.
+- `.husky/pre-push` check 0 was corrected 2026-08-28 and its check 5 comment on
+  2026-09-03; neither claims any more that "nothing enforces it server-side".
+  If you find text anywhere in this repo saying the ruleset is not enforced,
+  that text is the stale one - the API is the authority.
 
 THE SKIPPED-CHECK GAP: CLOSED, and this paragraph is the correction (verified
 against ci.yml and the live API 2026-08-31). `ci.yml` gates `unit`, `server`
@@ -433,7 +434,7 @@ API routes: `Smarter-Poker-World-Hub/pages/api/club-arena/`
 
 Club Arena is a Vite + React SPA inside the smarter.poker Next.js app:
 
-- Production: `smarter.poker/hub/club-arena/*` served from World Hub's `public/` directory
+- Production: `smarter.poker/hub/club-arena/*` is a World Hub REWRITE to `https://ca-static.smarter.poker` (Club Arena's own static origin, see 1.1). Nothing lives in the World Hub `public/` tree - that directory was deleted 2026-09-02 and must not come back.
 - Build: Vite produces `dist/`, which `publish-club-arena.yml` rsyncs to the
   origin. The World Hub carries ONE rewrite, `/hub/club-arena/:path*` ->
   `https://ca-static.smarter.poker/:path*`, so the browser never sees the

@@ -1,0 +1,44 @@
+/* Heads-Up console (shark-headsup-premium-v1). Positions live in
+   HeadsUpPremiumCard.tsx; typography only. Like the Spins master this one is
+   set in a wide sans, not the condensed cash-card face. */
+
+.agc-headsup-premium .agc-layered__text {
+  font-family: Inter, 'Roboto Condensed', system-ui, sans-serif;
+  font-stretch: normal;
+}
+
+.agc-headsup-premium__title {
+  --size: 6.9cqw;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.agc-headsup-premium .agc-layered__text--value {
+  --size: 6.2cqw;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.agc-headsup-premium__game-type {
+  --size: 7.6cqw;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.agc-headsup-premium .agc-layered__status {
+  border-radius: 1.6cqw;
+}
+
+.agc-headsup-premium .agc-layered__status-text {
+  --size: 3.4cqw;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+
+.agc-headsup-premium__action .agc-layered__action-text {
+  --size: 5.8cqw;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}

@@ -1,53 +1,18 @@
 /**
- * AdvancedStatsSummary — Dashboard of advanced poker statistics
- * Wired to real Supabase `player_stats` table with bus listeners
+ * AdvancedStatsSummary — the eight headline rates as tappable cards.
  *
- * Enhancements:
- *  - Optional `initialData` prop to skip redundant fetch (dedup from parent)
- *  - localStorage SWR cache for instant render
- *  - Average player benchmarks for comparison
+ * PURE PRESENTATION (2026-09-03). This component used to carry a standalone
+ * `ca_player_stats_overview_v2` fetch WITHOUT p_days (lifetime numbers under
+ * the page's "7 Days" label), a localStorage cache, two bus listeners, and an
+ * invented benchmark table ("based on typical 1/2 NL Hold'em") that awarded
+ * "Elite" to a Fold-To-3-Bet of 0 - i.e. to no data at all. None of that could
+ * run in production (the page always passes `initialData`) except the badges,
+ * which were fabricated. The page has a real BenchmarkPanel measured against
+ * the field; this one just shows the numbers, for the window they cover.
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { supabase, getAuthUser } from '../../lib/supabase';
-import { masterBus } from '../../core/MasterBus';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import './AdvancedStatsSummary.css';
-import { reportError } from '../../utils/errorReporter';
-
-// ── Average player benchmarks (based on typical 1/2 NL Hold'em) ──
-const BENCHMARKS: Record<string, { avg: number; good: number; label: string }> = {
-  hourly: { avg: 15, good: 25, label: '$' },
-  totalHands: { avg: 5000, good: 20000, label: '' },
-  showdownWin: { avg: 50, good: 55, label: '%' },
-  aggression: { avg: 2.0, good: 3.0, label: '' },
-  threeBet: { avg: 7, good: 10, label: '%' },
-  foldTo3Bet: { avg: 55, good: 45, label: '%' },
-  cbetFreq: { avg: 65, good: 70, label: '%' },
-  bbPer100: { avg: 2, good: 5, label: 'BB' },
-};
-
-// ── SWR cache ──
-const CACHE_KEY = 'adv_stats_v1_';
-const CACHE_TTL = 10 * 60 * 1000;
-
-function getCached(uid: string) {
-  try {
-    const raw = localStorage.getItem(CACHE_KEY + uid);
-    if (!raw) return null;
-    const p = JSON.parse(raw);
-    if (p.ts && Date.now() - p.ts > CACHE_TTL) return null;
-    return p.data;
-  } catch {
-    return null;
-  }
-}
-function setCache(uid: string, data: any) {
-  try {
-    localStorage.setItem(CACHE_KEY + uid, JSON.stringify({ data, ts: Date.now() }));
-  } catch {
-    /* quota */
-  }
-}
 
 interface AdvancedStat {
   id: string;
@@ -56,12 +21,32 @@ interface AdvancedStat {
   format: (val: number) => string;
   unit?: string;
   description: string;
-  benchmark?: { avg: number; good: number; label: string };
+}
+
+export interface AdvancedStatsInput {
+  total_hands?: number;
+  total_profit?: number;
+  hours_played?: number;
+  showdowns_won?: number;
+  showdowns_total?: number;
+  aggression_factor?: number;
+  three_bet_percent?: number; // fraction 0..1
+  fold_to_three_bet?: number; // fraction 0..1
+  cbet_flop?: number; // fraction 0..1
+  vpip?: number;
+  pfr?: number;
+  bb_per_100?: number;
+  total_winnings?: number;
 }
 
 interface AdvancedStatsSummaryProps {
-  initialData?: any; // Pre-fetched player_stats from parent (dedup)
+  /** The page's range-windowed `overall` block (rates as fractions). */
+  initialData?: AdvancedStatsInput | null;
+  /** The page's analysis window label, e.g. "7 Days" or "All". */
+  rangeLabel?: string;
 }
+
+const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
 // Animated number component
 const AnimatedNumber: React.FC<{
@@ -91,196 +76,97 @@ const AnimatedNumber: React.FC<{
   return <>{format(display)}</>;
 };
 
-const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ initialData }) => {
-  const [stats, setStats] = useState<AdvancedStat[]>([]);
+function buildStats(d: AdvancedStatsInput): AdvancedStat[] {
+  const totalHands = n(d.total_hands);
+  const hoursPlayed = n(d.hours_played);
+  const totalProfit = n(d.total_profit);
+  const showdownsWon = n(d.showdowns_won);
+  const showdownsTotal = n(d.showdowns_total);
+  const hourlyRate = hoursPlayed > 0 ? totalProfit / hoursPlayed : 0;
+  const showdownWinPct = showdownsTotal > 0 ? (showdownsWon / showdownsTotal) * 100 : 0;
+
+  return [
+    {
+      id: 'hourly',
+      label: 'Hourly Rate',
+      value: hourlyRate,
+      format: (val) => `${val >= 0 ? '+' : ''}${val.toFixed(2)}`,
+      unit: '/hr',
+      description: 'Cash Profit Per Hour Played In This Window',
+    },
+    {
+      id: 'totalHands',
+      label: 'Hands Analysed',
+      value: totalHands,
+      format: (val) => Math.floor(val).toLocaleString(),
+      description: 'Hands Inside This Analysis Window',
+    },
+    {
+      id: 'showdownWin',
+      label: 'Showdown Win %',
+      value: showdownWinPct,
+      format: (val) => `${val.toFixed(1)}%`,
+      description: `Won ${showdownsWon.toLocaleString()} Of ${showdownsTotal.toLocaleString()} Showdowns`,
+    },
+    {
+      id: 'aggression',
+      label: 'Aggression Factor',
+      value: n(d.aggression_factor),
+      format: (val) => val.toFixed(2),
+      description: 'Bets And Raises Divided By Calls',
+    },
+    {
+      id: 'threeBet',
+      label: '3-Bet %',
+      value: n(d.three_bet_percent) * 100,
+      format: (val) => `${val.toFixed(1)}%`,
+      description: 'How Often You Re-Raise Preflop When You Have The Chance',
+    },
+    {
+      id: 'foldTo3Bet',
+      label: 'Fold To 3-Bet %',
+      value: n(d.fold_to_three_bet) * 100,
+      format: (val) => `${val.toFixed(1)}%`,
+      description: 'How Often You Fold After Being Re-Raised Preflop',
+    },
+    {
+      id: 'cbetFreq',
+      label: 'C-Bet Frequency',
+      value: n(d.cbet_flop) * 100,
+      format: (val) => `${val.toFixed(1)}%`,
+      description: 'How Often You Bet The Flop After Raising Preflop',
+    },
+    {
+      id: 'bbPer100',
+      label: 'BB/100',
+      value: n(d.bb_per_100),
+      format: (val) => `${val >= 0 ? '+' : ''}${val.toFixed(2)}`,
+      description: 'Big Blinds Won Per 100 Cash Hands',
+    },
+  ];
+}
+
+const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ initialData, rangeLabel }) => {
+  const stats = useMemo(() => buildStats(initialData ?? {}), [initialData]);
   const [visibleStats, setVisibleStats] = useState<Set<number>>(new Set());
   const [selectedStat, setSelectedStat] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  const [showBenchmarks, setShowBenchmarks] = useState(false);
-  const mountedRef = useRef(true);
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const resolvedUidRef = useRef<string | null>(null);
 
   useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      staggerTimersRef.current.forEach(clearTimeout);
-      staggerTimersRef.current = [];
-    };
-  }, []);
-
-  const resolveUserId = useCallback(async (): Promise<string | null> => {
-    try {
-      const { data: userResp } = await getAuthUser();
-      return userResp.user?.id || null;
-    } catch (e) {
-      reportError(e, 'AdvancedStatsSummary.useCallback');
-      return null;
-    }
-  }, []);
-
-  // If parent passes initialData, use it directly (dedup)
-  useEffect(() => {
-    if (initialData) {
-      buildStats(initialData);
-    }
-  }, [initialData]);
-
-  const loadStats = useCallback(async () => {
-    // Skip fetch if parent already provided data
-    if (initialData) return;
-
-    try {
-      const uid = await resolveUserId();
-      if (!uid || !mountedRef.current) return;
-      resolvedUidRef.current = uid;
-
-      // SWR: show cached instantly
-      const cached = getCached(uid);
-      if (cached && !loaded) {
-        buildStats(cached);
-      }
-
-      // Read the same RPC the parent uses. The previous query hit player_stats
-      // with .maybeSingle() filtered only by user_id — which ERRORS the moment a
-      // player has rows in more than one club (the original cause of the empty
-      // stats page) — and it selected none of the advanced columns this panel
-      // exists to show, so the standalone render was six zeroed cards.
-      const { data, error } = await supabase.rpc('ca_player_stats_overview_v2', {
-        p_user: uid,
-      });
-
-      if (!mountedRef.current) return;
-
-      const overall = (data as any)?.overall;
-      if (error || !overall) {
-        buildStats(null);
-        return;
-      }
-
-      setCache(uid, overall);
-      buildStats(overall);
-    } catch (err) {
-      reportError(err, 'AdvancedStatsSummary.Failed_to_load');
-      if (mountedRef.current) buildStats(null);
-    }
-  }, [resolveUserId, initialData, loaded]);
-
-  const buildStats = (data: any) => {
-    if (!mountedRef.current) return;
-
-    const d = data || {};
-    const totalHands = d.total_hands || 0;
-    // Advanced analytics below are not tracked by the DB — default to 0 / N/A.
-    const hoursPlayed = d.hours_played || 0;
-    // total_profit is derived from real columns (parent may pass it pre-computed).
-    const totalProfit = d.total_profit ?? (d.total_winnings || 0) - (d.total_losses || 0);
-    const showdownsWon = d.showdowns_won || 0;
-    const showdownsTotal = d.showdowns_total || 0;
-
-    const hourlyRate = hoursPlayed > 0 ? totalProfit / hoursPlayed : 0;
-    const showdownWinPct = showdownsTotal > 0 ? (showdownsWon / showdownsTotal) * 100 : 0;
-
-    const built: AdvancedStat[] = [
-      {
-        id: 'hourly',
-        label: 'Hourly Rate',
-        value: hourlyRate,
-        format: (val) => `${val >= 0 ? '+' : ''}${val.toFixed(2)}`,
-        unit: '/hr',
-        description: 'Profit Per Hour Played',
-        benchmark: BENCHMARKS.hourly,
-      },
-      {
-        id: 'totalHands',
-        label: 'Total Hands',
-        value: totalHands,
-        format: (val) => Math.floor(val).toLocaleString(),
-        description: 'Total Hands Played Across All Sessions',
-        benchmark: BENCHMARKS.totalHands,
-      },
-      {
-        id: 'showdownWin',
-        label: 'Showdown Win %',
-        value: showdownWinPct,
-        format: (val) => `${val.toFixed(1)}%`,
-        description: 'Win Percentage When Reaching Showdown',
-        benchmark: BENCHMARKS.showdownWin,
-      },
-      {
-        id: 'aggression',
-        label: 'Aggression Factor',
-        value: d.aggression_factor || 0,
-        format: (val) => val.toFixed(2),
-        description: 'Ratio Of Aggressive Actions To Passive Actions',
-        benchmark: BENCHMARKS.aggression,
-      },
-      {
-        id: 'threeBet',
-        label: '3-Bet %',
-        value: (d.three_bet_percent || 0) * 100,
-        format: (val) => `${val.toFixed(1)}%`,
-        description: 'Percentage Of Re-Raises Preflop',
-        benchmark: BENCHMARKS.threeBet,
-      },
-      {
-        id: 'foldTo3Bet',
-        label: 'Fold To 3-Bet %',
-        value: (d.fold_to_three_bet || 0) * 100,
-        format: (val) => `${val.toFixed(1)}%`,
-        description: 'How Often You Fold To 3-Bet Raises',
-        benchmark: BENCHMARKS.foldTo3Bet,
-      },
-      {
-        id: 'cbetFreq',
-        label: 'C-Bet Frequency',
-        value: (d.cbet_flop || 0) * 100,
-        format: (val) => `${val.toFixed(1)}%`,
-        description: 'How Often You Continuation Bet On The Flop',
-        benchmark: BENCHMARKS.cbetFreq,
-      },
-      {
-        id: 'bbPer100',
-        label: 'BB/100',
-        value: d.bb_per_100 || 0,
-        format: (val) => `${val >= 0 ? '+' : ''}${val.toFixed(2)}`,
-        description: 'Big Blinds Won Per 100 Hands - Key Profitability Metric',
-        benchmark: BENCHMARKS.bbPer100,
-      },
-    ];
-
-    setStats(built);
-    setLoaded(true);
-
-    // Clear previous stagger timers
     staggerTimersRef.current.forEach(clearTimeout);
     staggerTimersRef.current = [];
-
-    // Stagger animation with cleanup
-    built.forEach((_, i) => {
+    setVisibleStats(new Set());
+    stats.forEach((_, i) => {
       const timer = setTimeout(() => {
-        if (mountedRef.current) {
-          setVisibleStats((prev) => new Set([...prev, i]));
-        }
+        setVisibleStats((prev) => new Set([...prev, i]));
       }, i * 60);
       staggerTimersRef.current.push(timer);
     });
-  };
-
-  useEffect(() => {
-    if (!initialData) loadStats();
-  }, [loadStats, initialData]);
-
-  // Bus listeners: refresh when stats change
-  useEffect(() => {
-    const unsubHand = masterBus.subscribeDebounced('HAND_COMPLETED', () => loadStats(), 2000);
-    const unsubBalance = masterBus.subscribeDebounced('BALANCE_UPDATED', () => loadStats(), 2000);
     return () => {
-      unsubHand();
-      unsubBalance();
+      staggerTimersRef.current.forEach(clearTimeout);
+      staggerTimersRef.current = [];
     };
-  }, [loadStats]);
+  }, [stats]);
 
   const getTrendColor = (val: number) => {
     if (val > 0) return '#10b981';
@@ -288,69 +174,20 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ initialData
     return '#8a9aaa';
   };
 
-  const getBenchmarkBadge = (stat: AdvancedStat): { label: string; color: string } | null => {
-    if (!stat.benchmark || !showBenchmarks) return null;
-    const { avg, good } = stat.benchmark;
-    const val = stat.value;
-
-    // For fold_to_3bet, lower is better
-    if (stat.id === 'foldTo3Bet') {
-      if (val <= good) return { label: 'Elite', color: '#10b981' };
-      if (val <= avg) return { label: 'Above Avg', color: '#22c55e' };
-      return { label: 'Below Avg', color: '#f59e0b' };
-    }
-
-    if (val >= good) return { label: 'Elite', color: '#10b981' };
-    if (val >= avg) return { label: 'Above Avg', color: '#22c55e' };
-    if (val > 0) return { label: 'Below Avg', color: '#f59e0b' };
-    return null;
-  };
-
-  if (!loaded) {
-    return (
-      <div className="advanced-stats-summary">
-        <div className="stats-header">
-          <h3>Advanced Statistics</h3>
-          <p className="stats-subtitle">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="advanced-stats-summary">
       <div className="stats-header">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h3>Advanced Statistics</h3>
-            <p className="stats-subtitle">Detailed Metrics From Your Play History</p>
-          </div>
-          <button
-            className="benchmark-toggle"
-            onClick={() => setShowBenchmarks(!showBenchmarks)}
-            style={{
-              background: showBenchmarks ? 'rgba(0, 212, 255, 0.15)' : 'rgba(255,255,255,0.05)',
-              border: `1px solid ${showBenchmarks ? 'rgba(0, 212, 255, 0.4)' : 'rgba(255,255,255,0.1)'}`,
-              color: showBenchmarks ? '#00d4ff' : 'rgba(255,255,255,0.5)',
-              padding: '6px 12px',
-              borderRadius: '8px',
-              fontSize: '11px',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {showBenchmarks ? 'Hide Avg' : 'Vs Average'}
-          </button>
-        </div>
+        <h3>Advanced Statistics</h3>
+        <p className="stats-subtitle">
+          Detailed Metrics From Your Play
+          {rangeLabel && rangeLabel !== 'All' ? ` Over The Last ${rangeLabel}` : ''}
+        </p>
       </div>
 
-      {/* Stats grid */}
       <div className="advanced-stats-grid">
         {stats.map((stat, i) => {
           const isVisible = visibleStats.has(i);
           const isSelected = selectedStat === stat.id;
-          const badge = getBenchmarkBadge(stat);
 
           return (
             <div
@@ -361,30 +198,21 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ initialData
                 transform: isVisible ? 'translateY(0)' : 'translateY(8px)',
                 transition: `all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) ${i * 40}ms`,
               }}
+              role="button"
+              tabIndex={0}
+              aria-expanded={isSelected}
               onClick={() => setSelectedStat(isSelected ? null : stat.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setSelectedStat(isSelected ? null : stat.id);
+                }
+              }}
             >
-              {/* Card header */}
               <div className="card-top">
                 <span className="stat-title">{stat.label}</span>
-                {badge && (
-                  <span
-                    style={{
-                      fontSize: '9px',
-                      fontWeight: 700,
-                      padding: '2px 6px',
-                      borderRadius: '4px',
-                      background: `${badge.color}20`,
-                      color: badge.color,
-                      letterSpacing: '0.5px',
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    {badge.label}
-                  </span>
-                )}
               </div>
 
-              {/* Main value */}
               <div className="card-value">
                 <span className="value-main" style={{ color: getTrendColor(stat.value) }}>
                   <AnimatedNumber target={stat.value} format={stat.format} />
@@ -392,31 +220,6 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ initialData
                 {stat.unit && <span className="value-unit">{stat.unit}</span>}
               </div>
 
-              {/* Benchmark bar (visible when toggled) */}
-              {showBenchmarks && stat.benchmark && stat.value > 0 && (
-                <div
-                  style={{
-                    marginTop: '6px',
-                    height: '3px',
-                    background: 'rgba(255,255,255,0.06)',
-                    borderRadius: '2px',
-                    position: 'relative',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <div
-                    style={{
-                      height: '100%',
-                      width: `${Math.min(100, (stat.value / (stat.benchmark.good * 1.2)) * 100)}%`,
-                      background: `linear-gradient(90deg, #f59e0b, #10b981)`,
-                      borderRadius: '2px',
-                      transition: 'width 0.6s ease',
-                    }}
-                  />
-                </div>
-              )}
-
-              {/* Description (shown on select) */}
               {isSelected && (
                 <div
                   className="card-description"
@@ -425,15 +228,6 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ initialData
                   }}
                 >
                   <p>{stat.description}</p>
-                  {showBenchmarks && stat.benchmark && (
-                    <p
-                      style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', marginTop: '4px' }}
-                    >
-                      Avg: {stat.benchmark.avg}
-                      {stat.benchmark.label} · Good: {stat.benchmark.good}
-                      {stat.benchmark.label}
-                    </p>
-                  )}
                 </div>
               )}
             </div>
@@ -441,7 +235,6 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ initialData
         })}
       </div>
 
-      {/* Legend */}
       <div className="stats-legend">
         <div className="legend-item">
           <span className="legend-label">BB/100</span>

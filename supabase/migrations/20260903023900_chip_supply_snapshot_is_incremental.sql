@@ -1,0 +1,24 @@
+-- CHIP SUPPLY SNAPSHOT IS INCREMENTAL (2026-09-03)
+-- Applied to production 2026-09-03 02:39 UTC via apply_migration
+-- (supabase_migrations name: chip_supply_snapshot_is_incremental). Committed
+-- here so the repo and the database agree (CLAUDE.md RULE 2). Tier 2.
+--
+-- fn_snapshot_chip_supply summed the entire wallet_transactions ledger
+-- (2.57M rows, 1 GB, +48k rows/day) every hour at :00, alongside every other
+-- hourly job, and hit the 8s service_role statement timeout 18 times in 24h
+-- (Hetzner dispatcher journal: chip-supply-snapshot -> workers 500 57014).
+-- The previous snapshot already carries the running totals; only rows written
+-- since it are new. Probed in a rolled-back transaction first: 0.058s, tx_net
+-- identical to a fresh full scan (-27,093,439.32 both ways), per-category
+-- drift 0.00. Falls back to the full scan when the previous row lacks totals.
+--
+-- Supporting index, built beforehand OUTSIDE a transaction so no write lock
+-- was taken on the ledger (CREATE INDEX CONCURRENTLY cannot run inside one):
+--   CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_wallet_tx_created_at
+--     ON public.wallet_transactions (created_at);   -- 55 MB, valid
+--
+-- Function body: see the applied migration in supabase_migrations
+-- (statements column) - it is the previous definition with the ledger
+-- aggregate replaced by prev-totals + rows WHERE created_at > prev.taken_at,
+-- per-category jsonb merged by key, and an 'incremental' flag in the result.
+SELECT 1; -- recorded; the DDL already ran via apply_migration on 2026-09-03.

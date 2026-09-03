@@ -10,6 +10,7 @@ import { masterBus } from '../core/MasterBus';
 
 import { resolveClubUUID, isUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
+import { PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { reportError } from '../utils/errorReporter';
 import { notifyServerLeave } from './GameServerAPI';
 
@@ -144,6 +145,19 @@ class TableService {
       // Tournament tables are not cash games — they were being listed as
       // joinable ring games in club lobbies.
       .is('tournament_id', null)
+      /* A LIVE GAME MUST NEVER BE TRUNCATED AWAY (2026-09-02).
+         This ordered by created_at alone under a 200-row cap, so the lobby
+         showed the 200 NEWEST tables rather than the 200 most worth seeing.
+         Measured on Deep Stack Society, which carries 1,058 open cash tables:
+         of its 51 RUNNING tables only 10 survived the cut, so 41 games with
+         real players dealing real hands were invisible and every filter tab
+         read "0/x OPEN" down the page. The club was dealing 676 cash hands a
+         quarter-hour at the time.
+         current_players is maintained exactly (verified against table_seats:
+         0 wrong across 1,131 open tables), so occupancy first puts every
+         occupied table above every empty one and the cap can then only ever
+         trim empties. created_at stays as the tiebreak among equals. */
+      .order('current_players', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(QUERY_LIMITS.LIST);
 
@@ -205,6 +219,8 @@ class TableService {
       .eq('is_deleted', false)
       .neq('status', 'closed')
       .is('tournament_id', null)
+      // Occupancy first, same rule and same reason as getClubTables above.
+      .order('current_players', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(QUERY_LIMITS.LIST);
 
@@ -421,32 +437,72 @@ class TableService {
       // (atomic_table_cashout uses table_id directly, doesn't need club_id)
 
       let returnedChips = 0;
+      let engineOwnsCashout = false;
 
       // ATOMIC CASH-OUT: Return chips to Player Wallet (ONLY for cash games) and clear seat
       if (!tableData?.tournament_id) {
-        const { data: rpcAmount, error: cashoutError } = await supabase.rpc(
-          'atomic_table_cashout',
-          {
-            p_user_id: userId,
-            p_table_id: tableId,
-            p_seat_number: seatNo,
+        /* CHIP STANDARD C1 (2026-09-02): ONE cash-out path, and the browser
+           only walks it when the engine has said so.
+
+           This used to call `atomic_table_cashout` unconditionally. Two things
+           were wrong with that. First, EXECUTE on it was revoked from
+           authenticated on 2026-08-26, so every call here has failed with
+           permission denied since - the leave "failed" while the engine had
+           already cashed the seat out, and the player lost their session
+           summary. Second, when the engine acknowledges a between-hands leave
+           it cashes the seat out ITSELF, after awaiting the settlement that
+           persists the final stack; a browser cash-out racing that would credit
+           the PRE-hand stack and stamp left_at, and the settlement write would
+           then be refused whole ("seat missing or left"). So when a live engine
+           acknowledged the leave, the engine owns the money and this returns
+           `deferred` - the session card reconciles against the engine's
+           wallet_transactions row exactly as it does for a mid-hand leave.
+
+           The browser cashes out only when the engine has explicitly handed it
+           the cleanup: no engine is running for the table, or the engine never
+           had this player in its hand roster (a reserved seat). Both come back
+           as `clientCashout: true` (the older engine's no-engine reply carries
+           `note` instead). That path uses atomic_seat_cashout_locked - the
+           function the engine itself uses - keyed per seat occupancy, so a
+           retry, or the engine arriving after all, credits nobody twice. */
+        const engineHandedOverCleanup =
+          serverLeave.clientCashout === true || typeof serverLeave.note === 'string';
+
+        if (!engineHandedOverCleanup) {
+          console.debug(
+            `[TableService] Engine owns the cash-out for user ${userId} at ${tableId} - deferring to settlement`
+          );
+          engineOwnsCashout = true;
+        } else {
+          const { data: cashoutRes, error: cashoutError } = await supabase.rpc(
+            'atomic_seat_cashout_locked',
+            {
+              p_user_id: userId,
+              p_table_id: tableId,
+              p_seat_number: seatNo,
+            }
+          );
+
+          if (cashoutError) {
+            // RPC returned an error (e.g. seat not found) - check explicitly
+            // since supabase.rpc does NOT throw on SQL errors
+            reportError(cashoutError, 'TableService.atomicCashout');
+            return { success: false, chipsReturned: 0 };
           }
-        );
 
-        if (cashoutError) {
-          // RPC returned an error (e.g. seat not found) — check explicitly
-          // since supabase.rpc does NOT throw on SQL errors
-          reportError(cashoutError, 'TableService.atomicCashout');
-          return { success: false, chipsReturned: 0 };
+          const cashout = (cashoutRes ?? null) as {
+            ok?: boolean;
+            stack?: number | string;
+            credited?: boolean;
+            reason?: string;
+          } | null;
+          returnedChips = cashout?.credited ? Number(cashout.stack ?? 0) || 0 : 0;
+          console.debug(
+            `[TableService] Returned ${returnedChips} chips to Player Wallet for user ${userId}` +
+              (cashout?.reason ? ` (${cashout.reason})` : '')
+          );
+          masterBus.emit('BALANCE_UPDATED', { source: 'table_leave_cashout', userId });
         }
-
-        // Error already handled above
-
-        returnedChips = rpcAmount || 0;
-        console.debug(
-          `[TableService] Returned ${returnedChips} chips to Player Wallet for user ${userId}`
-        );
-        masterBus.emit('BALANCE_UPDATED', { source: 'table_leave_cashout', userId });
 
         // FIX 136: Record cashout for 2-hour re-entry restriction
         // Player cannot return to THIS table and buy in for less than their cashout for 2 hours
@@ -533,6 +589,12 @@ class TableService {
 
       // Note: Transaction already logged via WalletService.logTransaction above
 
+      // An engine-owned cash-out is settled by the engine a moment from now;
+      // `deferred` tells the session card to reconcile against the
+      // wallet_transactions row rather than read 0 as "lost the buy-in".
+      if (engineOwnsCashout) {
+        return { success: true, chipsReturned: 0, deferred: true };
+      }
       return { success: true, chipsReturned: chipsToReturn };
     } catch (err: unknown) {
       reportError(err, 'TableService.leaveTable');
@@ -792,8 +854,7 @@ class TableService {
                 stack,
                 joined_at,
                 profiles(
-                    display_name,
-                    username,
+                    ${PLAYER_NAME_COLUMNS},
                     avatar_url:arena_avatar_url,
                     is_horse
                 )

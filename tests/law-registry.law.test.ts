@@ -40,9 +40,29 @@ function lawFilesUnder(dir: string): string[] {
   return out;
 }
 
+/**
+ * THE REGISTRY MUST SEE EVERY LAW, NOT ONLY THE ONES UNDER tests/ (2026-09-02).
+ *
+ * This scanned `tests/` alone, so 26 of the 28 law tests living under
+ * `server/src/` were invisible to it — among them `payoutExactness`,
+ * `EveryEarnerIsPaid`, `aGuaranteeIsAPromise`, `aTournamentPayoutIsARecord`
+ * and `theReconcilerTrustsWhatItCanProve`. Every one of those guards money.
+ *
+ * That is precisely the failure this registry exists to prevent. It was built
+ * after the hamburger revert war so a law could not be silently contradicted
+ * or deleted — and it could not see the laws protecting payouts. A deletion
+ * there would have passed CI without a word.
+ *
+ * Both roots are scanned now, and the ghost check below matches both prefixes
+ * so a retired law under `server/src/` also has to lose its row visibly.
+ */
+const LAW_ROOTS = ['tests', 'server/src'];
+
 describe('the law registry (docs/LAWS.md)', () => {
   const registry = readFileSync(REGISTRY_PATH, 'utf8');
-  const lawFiles = lawFilesUnder(join(ROOT, 'tests')).map((p) => p.replace(/\\/g, '/'));
+  const lawFiles = LAW_ROOTS.flatMap((root) => lawFilesUnder(join(ROOT, root))).map((p) =>
+    p.replace(/\\/g, '/')
+  );
 
   it('exists and has a registry table', () => {
     expect(registry).toContain('## Registry');
@@ -58,9 +78,11 @@ describe('the law registry (docs/LAWS.md)', () => {
 
   it('lists no law file that does not exist (retire laws visibly)', () => {
     // Tolerates Prettier's column padding: any whitespace around the cell.
-    const listed = [...registry.matchAll(/\|\s*(tests\/\S+\.law\.test\.\w+)\s*\|/g)].map(
-      (m) => m[1]
-    );
+    // Both roots, or a retired law under server/src/ could lose its test and
+    // keep its row (or vice versa) without this check ever noticing.
+    const listed = [
+      ...registry.matchAll(/\|\s*((?:tests|server\/src)\/\S+\.law\.test\.\w+)\s*\|/g),
+    ].map((m) => m[1]);
     const ghosts = listed.filter((f) => !lawFiles.includes(f));
     expect(
       ghosts,

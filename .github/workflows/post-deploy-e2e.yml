@@ -34,7 +34,13 @@ name: Post-Deploy E2E (production)
 
 on:
   workflow_run:
-    workflows: ['Build for World Hub Sync']
+    # This is the publisher's `name:`, not its filename. #2676 deleted
+    # build-for-world-hub.yml (name 'Build for World Hub Sync') and repointed
+    # fifteen files by FILENAME - and missed this one, so from 19:17 to 01:30
+    # on 2026-09-02/03 this workflow could only fire from GitHub's throttled
+    # scheduler. tests/workflow-run-names-a-live-workflow.law.test.ts now
+    # refuses any workflow_run listener whose name no workflow carries.
+    workflows: ['Publish Club Arena']
     types: [completed]
   workflow_dispatch:
 
@@ -83,7 +89,22 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
     name: Specs that need a real deployed page
-    runs-on: ubuntu-latest
+    # OFFLOADED 2026-09-02. Measured at ~29 minutes a run and firing on every
+    # publish, this was the single largest remaining GitHub-billed job on the
+    # repo - more than half the residual bill on its own. It tests LIVE
+    # production over the public internet, so where it runs changes nothing
+    # about what it proves. The estate box carries the chromium+webkit system
+    # libraries permanently and caches the browser binaries between runs.
+    #
+    # WHY THIS ONE AND NOT CSS Beat E2E. The first attempt routed both. CSS
+    # Beat E2E is a REQUIRED merge check, and on the 4-core box, under four
+    # concurrent heavy jobs, a browser-flow spec timed out waiting 20s for a
+    # control - the same suite is 3/3 green on hosted runners at ~10.5 minutes.
+    # A cost saving that turns a green merge gate red is not a saving. This job
+    # is not a merge gate, so a load-induced slowdown here costs minutes, never
+    # a merge. CSS Beat E2E follows once the box has the headroom (or a second
+    # box) to run browser flows without contention.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     # Cashier plus six isolated stateful groups and the 138-test responsive
     # sweep take 20-24 minutes when production is under normal publish load.
     # The old 20-minute ceiling cancelled the honesty/report steps just as the
@@ -109,8 +130,15 @@ jobs:
       - name: Install Dependencies
         run: npm ci --ignore-scripts
 
+      # See the note in ci.yml: apt-get on every run is correct for a throwaway
+      # hosted image and pure waste on a box where the libraries are permanent.
       - name: Install Chromium and WebKit
-        run: npx playwright install chromium webkit --with-deps
+        run: |
+          if [ -n "${{ vars.CI_RUNNER }}" ]; then
+            npx playwright install chromium webkit
+          else
+            npx playwright install chromium webkit --with-deps
+          fi
 
       # Production must be reachable and serving a bundle before any of this
       # means anything. This is a readiness check, NOT a sha match: see the
@@ -362,6 +390,7 @@ jobs:
           # A directory cannot go stale when a tenth file is added beside them.
           run_suite sweep.json \
             tests/e2e/smoke.spec.ts \
+            tests/e2e/club-data-deep.spec.ts \
             tests/e2e/mobile-fit-audit.spec.ts \
             tests/e2e/mobile-tap-targets.spec.ts \
             tests/e2e/mobile-input-zoom.spec.ts \

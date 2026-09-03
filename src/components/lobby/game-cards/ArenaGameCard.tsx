@@ -5,6 +5,7 @@ import type {
   ArenaGameCardData,
   ArenaGameDataState,
 } from './arenaGameCardTypes';
+import { zoneText } from './arenaGameCardTypes';
 import { ArenaGameRuleBadge } from './ArenaGameRuleIcon';
 import { NlhPremiumCard } from './NlhPremiumCard';
 import './ArenaGameCard.css';
@@ -183,7 +184,7 @@ function LiveValue({
       {icon && (
         <span className={`agc-value-medallion agc-value-medallion--${icon}`} aria-hidden="true" />
       )}
-      {children || <strong>{value || '-'}</strong>}
+      {children || <strong>{zoneText(zone, value)}</strong>}
     </div>
   );
 }
@@ -224,23 +225,29 @@ function MttMachine({ data, actions }: ArenaGameCardProps) {
           )}
         </div>
       </header>
+      {/* These six bays are hand-rolled rather than LiveValue because the MTT
+          machine paints its own grid areas - but the EMPTY-VALUE decision is
+          not theirs to make. `zoneText` is the one place that answers it, so
+          the tournament board and the cash boards can never disagree about
+          what a bay says while it is waiting. Before this they did: these
+          printed a dash where every LiveValue bay printed 0. */}
       <div className="agc-mtt-value agc-mtt-value--starting-time" data-zone="startingTime">
-        <strong>{data.startTime || '-'}</strong>
+        <strong>{zoneText('startingTime', data.startTime)}</strong>
       </div>
       <div className="agc-mtt-value agc-mtt-value--buy-in" data-zone="buyIn">
-        <strong>{data.buyIn || '-'}</strong>
+        <strong>{zoneText('buyIn', data.buyIn)}</strong>
       </div>
       <div className="agc-mtt-value agc-mtt-value--guarantee" data-zone="guarantee">
-        <strong>{data.guarantee || '-'}</strong>
+        <strong>{zoneText('guarantee', data.guarantee)}</strong>
       </div>
       <div className="agc-mtt-value agc-mtt-value--registered" data-zone="registered">
-        <strong>{data.registered || '-'}</strong>
+        <strong>{zoneText('registered', data.registered)}</strong>
       </div>
       <div className="agc-mtt-value agc-mtt-value--starting-stack" data-zone="startingStack">
-        <strong>{data.startingStack || '-'}</strong>
+        <strong>{zoneText('startingStack', data.startingStack)}</strong>
       </div>
       <div className="agc-mtt-value agc-mtt-value--current-level" data-zone="currentLevel">
-        <strong>{data.currentLevel || '-'}</strong>
+        <strong>{zoneText('currentLevel', data.currentLevel)}</strong>
         {data.currentBlinds && <small>{data.currentBlinds}</small>}
       </div>
       <Actions actions={actions} />
@@ -420,7 +427,14 @@ const familyRenderers: Record<
 function stateLabel(state: ArenaGameDataState) {
   if (state === 'loading') return 'Loading Game';
   if (state === 'updating') return 'Updating';
-  if (state === 'error') return 'Game Unavailable';
+  /* WAS 'Game Unavailable' (Dan 2026-09-02): "THE GAME CARDS SHOULD NEVER SAY
+     UNAVAILABLE." A failed refresh does not make the game unavailable - the
+     card is still showing figures, either the ones it was last given or the
+     ones the lobby cache remembered, so what actually happened is that they
+     stopped being current. That is the same thing 'stale' means, and it is
+     what the card should say rather than telling a player a running table is
+     gone. */
+  if (state === 'error') return 'Last Known Game State';
   if (state === 'offline') return 'Offline';
   if (state === 'stale') return 'Last Known Game State';
   return null;
@@ -456,7 +470,16 @@ export const ArenaGameCard = memo(function ArenaGameCard({
     '--agc-desktop-ratio': template.desktop.aspectRatio,
     '--agc-mobile-ratio': template.mobile.aspectRatio,
   } as CSSProperties;
-  const summary = `${data.title}, ${data.gameType}${data.stakes ? ` ${data.stakes}` : ''}, ${data.players || data.registered || 'player count unavailable'}, ${data.statusLabel}`;
+  /* THE SPOKEN CARD SAYS WHAT THE PRINTED CARD SAYS (Dan 2026-09-02).
+     This read `|| 'player count unavailable'`, so once the bays began printing
+     0 a sighted player saw "0/6" while a screen-reader user heard the one word
+     Dan asked never to appear on a game card - and the two descriptions of the
+     same card disagreed. `zoneText` is the same helper the bay uses, so they
+     cannot drift apart again. */
+  const summary = `${data.title}, ${data.gameType}${data.stakes ? ` ${data.stakes}` : ''}, ${zoneText(
+    'players',
+    data.players || data.registered
+  )}, ${data.statusLabel}`;
 
   return (
     <article

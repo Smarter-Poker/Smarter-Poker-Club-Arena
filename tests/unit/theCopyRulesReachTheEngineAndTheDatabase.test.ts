@@ -156,13 +156,27 @@ describe('the live source still obeys both rules after the widening', () => {
     }
   };
 
+  // TWO MINUTES, NOT FIFTEEN SECONDS.
+  //
+  // This shells out to a checker that walks src AND server/src. Fifteen
+  // seconds is comfortable on an idle machine - it runs in about one - and is
+  // not on a shared runner with three other jobs on it. It timed out twice in
+  // a row on 2026-09-03 and took the PUBLISH pipeline down with it, because
+  // publish-club-arena gates the bundle on this suite: two consecutive
+  // publishes failed and production sat two commits behind main while the
+  // tree was green.
+  //
+  // Nothing was ever wrong with the copy. Both failures read "Test timed out
+  // in 15000ms" with 217 of 218 files passing and no assertion in sight, and
+  // CI's own UI copy step runs the same checker and passes. A timeout tuned to
+  // the fastest machine that ever ran it is a flake with a schedule.
   it('check-title-case passes over src AND server/src', () => {
     expect(run('scripts/ci/check-title-case.mjs')).toBe(0);
-  }, 15_000);
+  }, 120_000);
 
   it('check-ui-text still passes', () => {
     expect(run('scripts/ci/check-ui-text.mjs')).toBe(0);
-  }, 15_000);
+  }, 120_000);
 });
 
 describe('the two gaps in how work reaches production', () => {
@@ -193,11 +207,11 @@ describe('the two gaps in how work reaches production', () => {
   });
 
   it('the deploy window cannot be closed by one dropped cron tick', () => {
-    // GitHub schedules are best-effort, so one tick per window is one dropped
-    // tick away from a lost window. Three ticks per hour, and since Dan moved
-    // the restart to every hour (2026-09-01) a lost window costs an hour
-    // rather than the four-to-six it used to.
-    expect(DEPLOY).toContain("- cron: '40,45,50 * * * *'");
+    // One tick per hour (2026-09-02; it was three). GitHub delivers ~10% of
+    // this repo's scheduled runs, so extra ticks only deepened the throttle.
+    // A dropped tick is now caught by publish-watchdog's schedule-liveness
+    // check, which dispatches the deploy directly off workflow_run.
+    expect(DEPLOY).toContain("- cron: '45 * * * *'");
   });
 
   it('a deploy that shipped nothing is a warning, not a notice', () => {

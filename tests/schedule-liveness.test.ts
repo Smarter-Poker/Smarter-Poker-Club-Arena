@@ -27,7 +27,12 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { maxGapMinutes } from '../.github/scripts/schedule-liveness.mjs';
+import { sliceBlockAfter } from './helpers/sourceWindow';
+import {
+  maxGapMinutes,
+  healDecision,
+  dispatchDecision,
+} from '../.github/scripts/schedule-liveness.mjs';
 
 const ROOT = resolve(__dirname, '..');
 const SCRIPT = readFileSync(resolve(ROOT, '.github/scripts/schedule-liveness.mjs'), 'utf8');
@@ -123,5 +128,282 @@ describe('the wedge heals itself (added 2026-09-01, the day it happened live)', 
 
   it('the heal is loud - an issue, not a step summary nobody reads', () => {
     expect(SCRIPT).toMatch(/api\(`\/issues`, 'POST'/);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A HEAL THAT DID NOT WORK IS NOT A HEAL (2026-09-02)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * MEASURED. The self-healer cycled four workflow registrations at 14:56 and it
+ * did not work. The cooldown then kept it quiet until 20:56, so the estate ran
+ * five and a half hours with no scheduled tick at all - including
+ * build-for-world-hub's every-30-minute publish retry, the safety net that
+ * exists precisely so a failed publish is not left sitting. Twelve workflows
+ * were overdue and the component built to fix that had decided it was not its
+ * turn.
+ *
+ * The cooldown's SHAPE was right: cycling registrations every few minutes is
+ * flapping. The QUESTION was wrong. `selfHeal` is only reached when schedules
+ * are still overdue, so "we healed recently" and "schedules are still dead"
+ * together mean the heal failed - which is an argument for trying again, not
+ * for going quiet.
+ */
+describe('the wedge healer retries a heal that did not take, and gives up out loud', () => {
+  const ISSUE = { number: 2638, created_at: '2026-09-02T14:56:25Z', labels: [] };
+  const NOW = Date.parse('2026-09-02T16:30:00Z'); // 1.6h later, inside the 6h cooldown
+
+  it('heals when there is no prior wedge issue', () => {
+    expect(healDecision({ recentIssue: null, now: NOW }).act).toBe('heal');
+  });
+
+  it('THE BUG: inside the cooldown with schedules still dead, it retries rather than sleeping', () => {
+    // The old code returned here and did nothing for six hours. This is the
+    // exact state of the estate at 16:30 on 2026-09-02.
+    const d = healDecision({ recentIssue: ISSUE, attempts: 1, now: NOW });
+    expect(d.act).toBe('retry');
+    expect(d.attempt).toBe(2);
+  });
+
+  it('counts attempts up rather than repeating attempt one forever', () => {
+    expect(healDecision({ recentIssue: ISSUE, attempts: 2, now: NOW }).attempt).toBe(3);
+  });
+
+  it('stops cycling and escalates once the attempts are spent', () => {
+    const d = healDecision({ recentIssue: ISSUE, attempts: 3, now: NOW });
+    expect(d.act).toBe('escalate');
+    // A fourth identical attempt is not persistence, it is noise.
+    expect(d.why).toMatch(/does not fix this wedge/);
+  });
+
+  it('treats a wedge past the cooldown as a fresh episode, attempts reset', () => {
+    const old = { ...ISSUE, created_at: '2026-09-02T05:00:00Z' }; // 11.5h earlier
+    const d = healDecision({ recentIssue: old, attempts: 3, now: NOW });
+    expect(d.act).toBe('heal');
+    expect(d.attempt).toBe(1);
+  });
+
+  it('respects an explicit cooldown and attempt budget', () => {
+    // A one-attempt budget escalates immediately on the first failed heal.
+    expect(healDecision({ recentIssue: ISSUE, attempts: 1, now: NOW, maxAttempts: 1 }).act).toBe(
+      'escalate'
+    );
+    // A zero-hour cooldown means every run is a fresh episode.
+    expect(healDecision({ recentIssue: ISSUE, attempts: 9, now: NOW, cooldownH: 0 }).act).toBe(
+      'heal'
+    );
+  });
+});
+
+/**
+ * The other half of the same bug: the old heal filed its cooldown marker
+ * unconditionally, so a cycle that cycled NOTHING (a token without
+ * actions:write, say) still bought six hours of silence for work that had not
+ * happened. These pin the source, because the failure is a branch that only
+ * runs when the API refuses.
+ */
+describe('the healer never buys silence for a heal it did not perform', () => {
+  const src = readFileSync(resolve(__dirname, '../.github/scripts/schedule-liveness.mjs'), 'utf8');
+
+  it('returns without filing a cooldown marker when nothing was cycled', () => {
+    expect(src).toMatch(/if \(cycled\.length === 0\)/);
+    // Bounded by the if-block itself, never by a byte count (see
+    // tests/helpers/sourceWindow.ts for why a fixed window cost a publish outage).
+    const block = sliceBlockAfter(src, 'if (cycled.length === 0)');
+    expect(block).toMatch(/not filing a cooldown marker/i);
+    expect(block).toMatch(/return;/);
+  });
+
+  it('cycles every scheduled workflow, not just the ones measured late', () => {
+    // A repo-level wedge is not fixed by cycling a subset: on 2026-09-02 four
+    // were cycled while twelve were dead.
+    expect(src).toMatch(/const all = scheduledWorkflows\(\);/);
+    expect(src).toMatch(/for \(const w of all\)/);
+  });
+
+  it('leaves a deliberately disabled workflow alone', () => {
+    expect(src).toMatch(/deliberately off, leaving it alone/);
+  });
+
+  it('always re-enables even when the enable call failed', () => {
+    expect(src).toMatch(/Enable is the half that must not be left undone/);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE CURE MUST NOT CAUSE THE DISEASE (2026-09-02)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * MEASURED, on myself. Cycling the 15 scheduled workflows by hand at 16:32 to
+ * clear the wedge CANCELLED the in-flight CI run on the pull request that was
+ * fixing a red main - "The operation was canceled" after 40+ passing files.
+ * Disabling a workflow cancels its runs, and `build-for-world-hub.yml` is in
+ * the cycle list, so a heal timed a minute differently would have cancelled a
+ * publish. A heal that exists to protect publishing must not be able to cancel
+ * one.
+ *
+ * A workflow that is mid-run is also, by definition, registered enough to run,
+ * so it is the least urgent thing in the list to cycle. It waits for the next
+ * attempt.
+ */
+describe('the heal never cancels a run to fix a schedule', () => {
+  const src = readFileSync(resolve(__dirname, '../.github/scripts/schedule-liveness.mjs'), 'utf8');
+
+  it('skips any workflow that has a run in flight', () => {
+    expect(src).toMatch(/if \(await isBusy\(wf\.id\)\)/);
+    expect(sliceBlockAfter(src, 'if (await isBusy(wf.id))')).toMatch(/continue;/);
+  });
+
+  it('asks about both in_progress and queued runs', () => {
+    expect(src).toMatch(/\['in_progress', 'queued'\]/);
+  });
+
+  it('fails CLOSED - an unreadable API means busy, never free-to-cycle', () => {
+    const i = src.indexOf('async function isBusy(');
+    const body = src.slice(i, src.indexOf('\n}', i));
+    // Every early exit inside isBusy on an API problem must return true.
+    expect(body).toMatch(/if \(!res\.ok\) return true;/);
+    expect(body).toMatch(/if \(!body\) return true;/);
+    expect(body).not.toMatch(/if \(!res\.ok\) return false;/);
+  });
+
+  it('reports what it deferred, so a skipped cycle is visible not silent', () => {
+    expect(src).toMatch(/deferred\.push\(w\.file\)/);
+    expect(src).toMatch(/Left alone because they had a run in flight/);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  RE-REGISTERING A CRON IS NOT THE SAME AS DOING THE WORK (2026-09-02)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * MEASURED. The automated heal cycled registrations at 14:56 and ticks did not
+ * return. A wider cycle of all 15 by hand at 16:32 did not bring them back
+ * either. Through all of it `push`, `pull_request` and `workflow_dispatch`
+ * fired normally and githubstatus reported Actions operational, so the wedge is
+ * specifically in SCHEDULE delivery and re-registration is a remedy that only
+ * sometimes works on it.
+ *
+ * The estate does not need the cron. It needs the WORK - above all
+ * `build-for-world-hub`'s 30-minute retry, the net that catches a publish that
+ * failed. That afternoon production sat three commits behind main with the net
+ * dead. `workflow_dispatch` still worked the whole time.
+ *
+ * So the check now runs the starved work itself. These pin the guards, because
+ * a dispatcher that loops is worse than a silent cron.
+ */
+describe('a wedged cron does not stop the work from happening', () => {
+  const base = {
+    file: 'build-for-world-hub.yml',
+    declaresDispatch: true,
+    isSelf: false,
+    busy: false,
+    minutesSinceAnyRun: 323,
+    expectedGapMin: 30,
+  };
+
+  it('dispatches a workflow starved past its own interval', () => {
+    // The real 16:29 measurement: 323 minutes against a 30 minute promise.
+    expect(dispatchDecision(base).dispatch).toBe(true);
+  });
+
+  it('dispatches one that has never run at all', () => {
+    expect(dispatchDecision({ ...base, minutesSinceAnyRun: null }).dispatch).toBe(true);
+  });
+
+  it('NEVER dispatches itself - that is the loop', () => {
+    const d = dispatchDecision({ ...base, file: 'publish-watchdog.yml', isSelf: true });
+    expect(d.dispatch).toBe(false);
+    expect(d.why).toMatch(/loop/);
+  });
+
+  it('measures staleness over EVERY trigger, so a rescue is not repeated', () => {
+    // This is what makes the workflow_run loop converge: once dispatched, the
+    // workflow has run recently by SOME trigger and is no longer starved.
+    const d = dispatchDecision({ ...base, minutesSinceAnyRun: 5 });
+    expect(d.dispatch).toBe(false);
+    expect(d.why).toMatch(/not starved/);
+  });
+
+  it('will not dispatch a workflow that is already running', () => {
+    expect(dispatchDecision({ ...base, busy: true }).dispatch).toBe(false);
+  });
+
+  it('will not dispatch one that has no workflow_dispatch trigger', () => {
+    // ci.yml is the real example: no dispatch trigger, and four jobs gated on
+    // github.event_name == 'schedule' that a manual run would skip anyway.
+    const d = dispatchDecision({ ...base, file: 'ci.yml', declaresDispatch: false });
+    expect(d.dispatch).toBe(false);
+    expect(d.why).toMatch(/no workflow_dispatch/);
+  });
+});
+
+describe('the starved-work dispatcher is wired in and bounded', () => {
+  const src = readFileSync(resolve(__dirname, '../.github/scripts/schedule-liveness.mjs'), 'utf8');
+
+  it('runs FIRST, unconditionally - it is the remedy, and cycling is off by default', () => {
+    /**
+     * MEASURED 2026-09-02: GitHub delivers ~10% of this repo's scheduled runs
+     * (65 of ~650 over 48h) and 19% of World Hub's. That is load throttling,
+     * not a registration fault, so disabling and re-enabling workflows fixed
+     * nothing and cancelled in-flight runs while trying. Dispatching the
+     * starved work off workflow_run is the whole remedy now; the cycle is
+     * kept as code behind SCHEDULE_CYCLE_REGISTRATIONS=1 and nothing else.
+     */
+    expect(src).toMatch(/const sent = await dispatchStarved\(late\);/);
+    const disp = src.indexOf('await dispatchStarved(late);');
+    const heal = src.indexOf('await selfHeal(late);');
+    expect(disp).toBeGreaterThan(-1);
+    expect(disp).toBeLessThan(heal);
+    // and the cycle only runs when a human has switched it back on
+    const gate = src.indexOf("process.env.SCHEDULE_CYCLE_REGISTRATIONS === '1'");
+    expect(gate).toBeGreaterThan(-1);
+    expect(gate).toBeLessThan(heal);
+  });
+
+  it('caps how many it starts in one pass', () => {
+    expect(src).toMatch(/MAX_DISPATCH/);
+    expect(src).toMatch(/if \(sent >= MAX_DISPATCH\)/);
+  });
+
+  it('dispatches against the repository default branch, not a guess', () => {
+    expect(src).toMatch(/default_branch/);
+  });
+
+  it('treats an unreadable run history as busy rather than dispatching blind', () => {
+    expect(src).toMatch(/last === undefined \? true : await isBusy/);
+  });
+});
+
+describe('a per-item run is not evidence that the scheduled work happened', () => {
+  // 2026-09-03: agent-autopilot.yml had run ten times in the last hour, every
+  // one of them `pull_request`, and its sweep - gated `event_name !=
+  // 'pull_request'` - had run twice in six hours on a thirty-minute cron. The
+  // dispatcher counted those per-PR runs as "the workflow ran" and never
+  // dispatched the sweep. The starved question is about the SCHEDULED work.
+  it('lastAnyRun skips pull_request runs when deciding whether a workflow is starved', () => {
+    const fn = sliceBlockAfter(SCRIPT, 'async function lastAnyRun(file)');
+    expect(fn).toMatch(/find\(\(r\) => !PER_ITEM_EVENTS\.has\(r\.event\)\)/);
+    expect(fn).toMatch(/per_page=30/);
+  });
+  it('the per-item events are the ones that never do scheduled work', () => {
+    expect(SCRIPT).toMatch(/PER_ITEM_EVENTS = new Set\(\['pull_request', 'pull_request_target'/);
+  });
+  it('the watchdog that hosts the dispatcher listens to the live publisher', () => {
+    expect(WATCHDOG).toMatch(/workflows: \['Publish Club Arena'\]/);
+    expect(WATCHDOG).not.toMatch(/Build for World Hub Sync'\]/);
+  });
+});
+
+describe('a per-item run in flight is not the sweep in flight', () => {
+  it('isBusy only counts in-flight runs that do the scheduled work', () => {
+    const fn = sliceBlockAfter(SCRIPT, 'async function isBusy(workflowIdOrFile)');
+    expect(fn).toMatch(/some\(\(r\) => !PER_ITEM_EVENTS\.has\(r\.event\)\)/);
+    expect(fn).not.toMatch(/total_count/);
+    // still fails closed on an unreadable API
+    expect(fn).toMatch(/if \(!res\.ok\) return true;/);
   });
 });

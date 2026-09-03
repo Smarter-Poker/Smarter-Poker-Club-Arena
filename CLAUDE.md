@@ -1,5 +1,24 @@
 # Club Arena -- Agent Instructions
 
+## ↗ RESUMING THE ENGINE-RESTART PROGRAMME? READ `docs/HANDOFF_CURRENT_STATE.md`
+
+If you are picking up the hourly `:55` maintenance break / platform freeze /
+engine restart work, the current state, every measured baseline, the open
+defects and the exact next actions are in
+[`docs/HANDOFF_CURRENT_STATE.md`](./docs/HANDOFF_CURRENT_STATE.md) - a 9-phase
+programme; phases 1-3 built (phase 1 merged + live, phases 2+3 in PR #2715),
+next is phase 4 (thaw installments). The plan is
+[`docs/ENGINE-RESTART-PROGRAMME.md`](./docs/ENGINE-RESTART-PROGRAMME.md).
+
+Read it before touching `server/src/maintenance/**`,
+`server/src/engine/ServerTableEngineBase.ts`,
+`.github/workflows/auto-deploy-hetzner.yml` or
+`.github/scripts/engine-watchdog.sh`. It records three separate guards that
+read as armed while being unreachable, and one trap where a metric reaching
+zero means the opposite of success.
+
+---
+
 ## ↗ START HERE: `AGENT-PLAYBOOK.md`
 
 **Before this file, before anything: read [`AGENT-PLAYBOOK.md`](./AGENT-PLAYBOOK.md).**
@@ -41,33 +60,73 @@ platform plan wins.
 Club Arena is a Vite + React SPA that lives inside the smarter.poker Next.js app.
 It deploys through the World Hub repo, NOT directly.
 
-### 1.1 The Only Deploy Path (Phase U5.4 — one script, one push)
+### 1.1 How your work reaches production (rewritten 2026-09-03 - the World Hub is no longer in the path)
+
+There is exactly ONE route from a commit to a player, and every step of it is
+automatic. Your job ends at step 2.
+
+1. **Work on a branch in your own worktree.** Any name is fine - `fix/<slug>`
+   is the convention. Never commit on `main`; it is a protected mirror.
+2. **Push the branch** over SSH (`git push origin HEAD:refs/heads/<branch>`).
+   **That is the end of your job.** Do not open the pull request yourself, do
+   not merge, do not watch CI (10.8.3). Report the branch name and stop.
+3. `agent-open-pr.yml` opens the pull request within seconds of the push - on
+   `create` AND on `push`, for any branch name.
+4. `agent-autopilot.yml` enables squash auto-merge. The required checks run on
+   the estate's own Hetzner runners (`vars.CI_RUNNER`), and GitHub merges when
+   they are green. Red checks never merge (5.8).
+5. **`publish-club-arena.yml` publishes - to Club Arena's own origin.** On
+   merge it builds the bundle, runs the four-way sharded test gate, and
+   rsyncs `dist/` to the static origin (Caddy on `estate-ci-1`,
+   `ca-static.smarter.poker`) as `/srv/club-arena/releases/<ca_sha>/`, then
+   swaps the `current` symlink atomically. The World Hub carries ONE rewrite,
+   `/hub/club-arena/*` -> that origin, so the player is still on
+   `smarter.poker` and the shared session (`smarter-poker-auth`) still works.
+   A publish takes seconds. Nothing is committed to the World Hub repo any
+   more, and Vercel does not rebuild the World Hub for a Club Arena merge.
+   Rollback is re-pointing the symlink; ten releases are kept.
+6. **Verify** by reading, never by assuming:
+   `curl -s https://smarter.poker/hub/club-arena/build-info.json` - `ca_sha`
+   must equal the squash commit on `main`. Nothing else counts as deployed.
+
+**Why it used to go through the World Hub, and why it stopped (2026-09-03).**
+`smarter.poker/hub/club-arena` is a path on the World Hub's Vercel deployment,
+and until today the only way a file got there was to commit it into that
+repo's `public/` tree: every Club Arena merge produced a
+`chore(club-arena): sync build` commit in the World Hub and a 4-5 minute
+rebuild of the entire World Hub, twenty times a day. The origin removes both.
+The browser never sees the origin's hostname - Vercel proxies the rewrite -
+so section 7's "everything from smarter.poker" still holds for the player;
+what changed is where Vercel fetches the bytes from.
+
+**The origin keeps old assets.** A player whose tab still holds the previous
+`index.html` asks for the previous hashed chunks mid-hand. `/assets/*` and
+`/fonts/*` are served from an ADDITIVE pool the publisher never `--delete`s,
+pruned by age (30 days) only. Do not "clean up" the pool by removing what is
+not in the current bundle - that is the 404 the old sync's retention logic
+existed to prevent.
+
+**Three nets catch a publish that fails, all automatic:** the `*/30` catch-up
+cron inside the publisher, `publish-watchdog.yml` (re-dispatches up to three
+times, then raises an in-app notification), and the orphan sweep in
+`agent-autopilot.yml`. If production is behind `main` for more than ~25
+minutes, something is genuinely broken - read the watchdog issue it filed.
+
+**There is no second publisher.** `tests/no-commit-left-behind.law.test.ts`
+counts publishers and requires exactly one. Club Arena's own `vercel.json`
+still has `deploymentEnabled: false`; the bundle is served through the World
+Hub's rewrite, never from a Vercel project of its own.
+
+**Local preview:**
 
 ```bash
-cd ~/Documents/Smarter-Poker-World-Hub
-bash scripts/sync-club-arena.sh "feat(ca): <describe what changed>"
+cd ~/Documents/club-arena && npm run dev
 ```
 
-That script builds CA with NODE_ENV=production, copies the new build to the Hub, and stages it for local preview.
-
-**To actually deploy to production:**
-
-1. Commit your changes in the `club-arena` repository.
-2. `git push` to `main` in `club-arena`.
-3. A GitHub Action (`build-for-world-hub.yml`) will automatically build and sync it to the World Hub repository, which triggers the Vercel deploy.
-
-`SENTRY_AUTH_TOKEN/ORG/PROJECT` are read from `~/Documents/club-arena/.env` if
-not already exported. Bulky static dirs (`cards/`, `images/`, `club-logos/`,
-`videos/`) are preserved — they're not in a fresh build.
-
-**Legacy names** still work but just forward to the canonical script:
-
-- `WH scripts/build-club-arena.sh` → `sync-club-arena.sh`
-- `CA scripts/sync-to-world-hub.sh` → `sync-club-arena.sh`
-
-For post-deploy verification that production is serving your commit, follow up
-with `bash scripts/git-safe-push.sh` in the WH repo — but `sync-club-arena.sh`
-already exits non-zero on build/push failure.
+The Vite dev server is the local preview. `sync-club-arena.sh` in the World
+Hub repo (which copied a build into `public/hub/club-arena/` for a local
+Next.js preview) is retired with the sync; the World Hub's dev server proxies
+the rewrite to the live origin instead.
 
 ### 1.1.5 SERVER-SIDE PROTECTION (APPLIED - this section is history)
 
@@ -184,7 +243,11 @@ with main, and a timeout leaves the PR open for you to merge by hand.
 - Never call any deploy hook URL
 - Never add iframe code (`window.parent`, `postMessage`, `ClubArenaEmbed`)
 - Never add `VITE_` prefixed secret keys (use server-side API routes)
-- Never edit `public/hub/club-arena/` in the World Hub directly (always rebuild from source)
+- Never re-create `public/hub/club-arena/` in the World Hub. It was DELETED on
+  2026-09-02 when Club Arena moved to its own origin, and Next.js serves
+  `public/` BEFORE the rewrite, so a file there silently shadows the live
+  bundle. `tests/club-arena-is-a-rewrite.test.mjs` in the World Hub fails CI if
+  it comes back.
 
 ### 1.4 Claiming Success
 
@@ -307,7 +370,7 @@ Do NOT audit 10 items and then ask "what should I fix?" -- fix them as you go.
 ---
 
 8. NEVER PUSH A RED TEST (Dan 2026-08-21, binding). `npx vitest run tests/` in
-   `build-for-world-hub.yml` is what PUBLISHES the bundle. A failing test does
+   `publish-club-arena.yml` is what PUBLISHES the bundle. A failing test does
    not fail a report - it stops the World Hub sync for every agent and every
    deploy, until a human notices. On 2026-08-21 that happened four times in one
    day, and every one was a test pushed alongside the feature it was meant to
@@ -347,7 +410,9 @@ server/src/index.ts      Game engine server (Hetzner)
 ```
 
 Production URL: `https://smarter.poker/hub/club-arena/`
-Built files: `Smarter-Poker-World-Hub/public/hub/club-arena/`
+Built files: published to `https://ca-static.smarter.poker` (`/srv/club-arena`
+on the Hetzner origin: `releases/<ca_sha>/` + an atomically swapped `current`
+symlink + an additive `pool/`). NOT the World Hub repo - that path is gone.
 API routes: `Smarter-Poker-World-Hub/pages/api/club-arena/`
 
 ---
@@ -357,7 +422,10 @@ API routes: `Smarter-Poker-World-Hub/pages/api/club-arena/`
 Club Arena is a Vite + React SPA inside the smarter.poker Next.js app:
 
 - Production: `smarter.poker/hub/club-arena/*` served from World Hub's `public/` directory
-- Build: Vite produces `dist/`, copied to World Hub's `public/hub/club-arena/`
+- Build: Vite produces `dist/`, which `publish-club-arena.yml` rsyncs to the
+  origin. The World Hub carries ONE rewrite, `/hub/club-arena/:path*` ->
+  `https://ca-static.smarter.poker/:path*`, so the browser never sees the
+  origin hostname and the shared `smarter-poker-auth` session is untouched.
 - Routing: SPA fallback rewrites unmatched routes to `index.html`
 - Auth: Same-origin Supabase session via `smarter-poker-auth` localStorage key
 
@@ -624,6 +692,81 @@ be pruned (pushed branches lose nothing — the commits live on origin).
 
 ---
 
+## 10.9 YOU DECIDE THE MONEY (Dan, 2026-09-02, BINDING)
+
+**Dan, verbatim: "YOU HAVE FULL CONTROL TO MAKE ANY AND ALL DECISIONS ON WHAT
+SHOULD BE DONE WITH REAL MONEY AND REAL CHIP SCENARIOS. ALL CLAUDE AGENTS CAN
+CHOOSE THE BEST OPTION THATS RECOMMENDED AND MAKE ALL CHANGES WITHOUT ASKING
+ME, IF THEY HAVE A CLEAR PATH OF CORRECTION AND RECONCILIATION."**
+
+This ends the holding pattern where an agent finds a broken payout, writes a
+careful paragraph explaining it, files it "for Dan", and leaves the money
+frozen. That pattern has a cost and the cost is paid by players: on 2026-09-02
+three tournaments sat frozen at once and the oldest had been unpaid for fifteen
+hours, entirely because the last agent to look at it decided the money was
+somebody else's call. It was not. It is yours.
+
+### What the grant covers
+
+Unpaid prizes, wrong finishing positions, refunds owed, shortfall back-pay,
+stranded stacks, a tournament that cannot end itself, a ledger that does not
+balance because of a platform defect. Find it, decide it, ship it, and say
+plainly what you did. You do not open with a question.
+
+### A path is CLEAR only when all five of these hold
+
+1. **The outcome is READ, not assumed.** You can state what actually happened
+   from rows in this database. "Probably" is not evidence. The invented
+   `is_horse` filter in section 10.5 is what an assumption dressed as a
+   decision looks like, and it cost 39 events their entire rake attribution.
+2. **Nobody is paid twice.** The credit goes through the platform's own
+   idempotent path (`fn_tournament_payout_reconcile`, `fn_credit_and_log`, and
+   the per-user prize keys). Never hand-write a wallet row.
+3. **Nothing is taken back from a player for our mistake.** Overpay that our
+   defect caused is absorbed by the house, reported, and left alone. The
+   reconciler already refuses to claw back; do not out-clever it.
+4. **You proved it in a transaction you rolled back first.** Section 11.5 is
+   not softened by this grant, it is what makes the grant safe. The numbers you
+   commit are the numbers the probe returned, and the migration asserts them so
+   it aborts if the board moved underneath you.
+5. **You can write the paragraph.** One paragraph naming every affected player
+   and why they got what they got. If you cannot write it, you do not
+   understand the case well enough to settle it.
+
+If any of the five fails you do not have a clear path. THEN it goes to Dan, and
+it goes as options with their costs and your recommendation, never as a
+question.
+
+### When the evidence disagrees with itself, prefer the witness that was there
+
+Settling the 12:00 AM freeroll, re-deriving all 215 finishing places from
+`eliminated_at` moved players by up to three places and would have paid 168.51
+in top-ups on a pool that already had 282.06 out the door. The live engine had
+watched each of those players bust and recorded the order as it happened; the
+timestamps had not. The recorded order was kept and ONE player was inserted into
+it. A reconstruction that disagrees with the witness is a reconstruction that is
+wrong.
+
+### The record is part of the fix, not paperwork after it
+
+A settlement is finished when all four exist: the migration (with its reasoning
+in the header, not just its SQL), the changelog under `docs/changelog/`, the
+`financial_alerts` row resolved with a `resolution` note saying what was
+accepted and why, and the engine fix that stops it happening again. A payment
+with no explanation attached is the next agent's mystery.
+
+### Still Dan's, and only Dan's
+
+- **Anything that sets what players are owed in FUTURE events**: prices, rake,
+  guarantees, payout structures, retention policy. Fixing what a past event
+  owes is yours. Deciding what the next one owes is his.
+- **Money leaving the platform**: withdrawals, payment providers, anything a
+  bank sees.
+- **Rewriting or deleting a settled record to make a number look tidy.** Correct
+  it forward, with a row that says what changed. Never edit history quiet.
+
+---
+
 ## 11. AGENT NETWORK + DEPLOY PLAYBOOK
 
 ### 11.0 FIRST: WHICH ENVIRONMENT ARE YOU IN? (added 2026-09-01, binding)
@@ -871,3 +1014,57 @@ is deleted** — the backup branch and the stash are both printed at the end.
 World Hub note: that clone already carries an equivalent hook, but only in
 `.git/hooks/` — untracked, so it dies on any fresh clone. This repo's version is
 committed precisely so it cannot be lost that way.
+
+---
+
+## 13. THE HOURLY MAINTENANCE BREAK AND THE PLATFORM FREEZE (Dan 2026-09-01, BINDING)
+
+**The engine restarts at :55 of EVERY hour, inside an announced five-minute
+break, and the whole platform freezes for it.** If you read anything - in this
+repo, another repo, or a stale worktree - saying the engine restarts at 7am
+and 7pm, or in five Chicago windows, that text is OLD. This section wins.
+(That is exactly how the hamburger revert war ran for two days: a stale copy
+taught the next agent to "fix" the current behaviour back.)
+
+Dan, verbatim: "program the engine restart to be every hour on the :55 ...
+THE ENTIRE PLATFORM NEEDS TO FREEZE FOR THE 5 MINUTES, NO BUY INS, NO CHIP
+MOVEMENTS ... HORSES SHOULD NOT STAND UP OR ROTATE, EVERYTHING JUST FREEZES,
+THEN PICKS BACK UP EXACTLY AS IT WAS."
+
+The timeline: :53 every table is told to finish its hand (`MaintenanceBreak`
+announces, `pauseForMaintenance` parks each engine at the top of its loop).
+:55 every table is parked, the 5:00 countdown starts, `/health` opens
+`maintenance.readyForRestart`, and the deploy workflow - which built the
+image BEFORE the gate, while play continued - cuts over. ~:58 the new engine
+boots, adopts the persisted break row and re-parks its fleet. :00 the thaw
+(`fn_thaw_platform`) gives every in-flight deadline back the frozen minutes,
+then every table resumes together.
+
+Rules that follow from it, all enforced:
+
+1. **The freeze lives in Postgres** (`zz_freeze_guard` BEFORE triggers on the
+   seven money/seat tables + `fn_platform_frozen`), because the engine is
+   dead for ~2 of the 5 minutes and pg_cron does not stop with it. Do not
+   move it into engine memory; that guard is absent exactly when needed.
+2. **Whoever paused a table resumes it.** The maintenance break and
+   hand-for-hand are independent authorities (`maintenancePaused` vs
+   `handForHandPaused`); never let one lift the other's pause.
+3. **Never gate a table on `tables.status = 'paused'`** -
+   `cash_tables_needing_engine` abandons it. The break is the single row in
+   `engine_maintenance_break`.
+4. **Deadlines are thawed, not burned.** If you add a wall-clock deadline a
+   player can lose to (a hold, a window, a prompt), add it to
+   `fn_thaw_platform` in the same PR, or a five-minute break silently eats it.
+5. **Sweeps check `isMaintenanceFrozen()`** before moving money or seats.
+   A new periodic sweep that moves either gets the gate in the same PR.
+6. **Fleet-level alert rules carry the break guard**
+   (`unless max_over_time(poker_maintenance_break_active[6m]) == 1`), or they
+   page hourly about a stop we scheduled.
+7. **The constants are law**: `tests/the-break-clocks-agree.law.test.ts` pins
+   the :55 minute, cron ticks, freeze ceiling and windows across all five
+   surfaces. If you deliberately change one, change them together with the
+   law, in one commit.
+
+Full history and rationale: `docs/changelog/2026-09-01-scheduled-maintenance-break.md`
+and `docs/changelog/2026-09-01-total-platform-freeze.md`. Remaining backlog:
+issue #2563.

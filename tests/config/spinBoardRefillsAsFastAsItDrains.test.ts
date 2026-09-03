@@ -47,21 +47,29 @@ describe('the seat-first boards are refilled faster than they drain', () => {
 
   it('drives the Spin board from that constant, not a literal ten minutes', () => {
     expect(code).toMatch(
-      /this\.spinInterval\s*=\s*setInterval\(\s*\(\)\s*=>\s*this\.checkAndLaunchSpins\(\),\s*BOARD_REFILL_INTERVAL_MS\s*\)/
+      /* RESHAPED 2026-09-01 (freeze phase C): every launcher tick is now
+       wrapped in the maintenance-freeze gate -
+         () => (isMaintenanceFrozen() ? undefined : this.checkAndLaunchX())
+       - because launching a game registers and seats horses, which is chip
+       movement during a break players were told nothing moves in. The pins
+       below now REQUIRE the gate as well as the cadence: dropping either one
+       re-ships a real bug (the ten-minute board drought, or chips moving
+       mid-break). */
+      /this\.spinInterval\s*=\s*setInterval\(\s*\(\)\s*=>\s*\(isMaintenanceFrozen\(\) \? undefined : this\.checkAndLaunchSpins\(\)\),\s*BOARD_REFILL_INTERVAL_MS\s*\)/
     );
     expect(code).not.toMatch(/checkAndLaunchSpins\(\),\s*10\s*\*\s*60\s*\*\s*1000/);
   });
 
   it('drives the SNG board from it too -- heads-up games are just as short', () => {
     expect(code).toMatch(
-      /this\.sngInterval\s*=\s*setInterval\(\s*\(\)\s*=>\s*this\.checkAndLaunchSNGs\(\),\s*BOARD_REFILL_INTERVAL_MS\s*\)/
+      /this\.sngInterval\s*=\s*setInterval\(\s*\(\)\s*=>\s*\(isMaintenanceFrozen\(\) \? undefined : this\.checkAndLaunchSNGs\(\)\),\s*BOARD_REFILL_INTERVAL_MS\s*\)/
     );
     expect(code).not.toMatch(/checkAndLaunchSNGs\(\),\s*15\s*\*\s*60\s*\*\s*1000/);
   });
 
   it('leaves the MTT cadence alone -- an MTT is scheduled, not a board', () => {
-    expect(code).toMatch(/checkAndLaunchTournaments\(\),\s*5\s*\*\s*60\s*\*\s*1000/);
-    expect(code).toMatch(/checkAndLaunchXMTTs\(\),\s*5\s*\*\s*60\s*\*\s*1000/);
+    expect(code).toMatch(/checkAndLaunchTournaments\(\)\),\s*5 \* 60 \* 1000/);
+    expect(code).toMatch(/checkAndLaunchXMTTs\(\)\),\s*5 \* 60 \* 1000/);
   });
 
   it('still caps a cold start, so a faster tick cannot stampede the engine', () => {

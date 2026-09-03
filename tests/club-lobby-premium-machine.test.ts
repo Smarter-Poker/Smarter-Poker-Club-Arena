@@ -154,10 +154,34 @@ describe('responsive premium Club Arena', () => {
   });
 
   it('keeps the populated mobile lobby above fixed navigation and phone safe areas', () => {
+    /*
+     * The CLEARANCE token, not the bar's artwork height: `--bottom-nav-height`
+     * omits the home-indicator inset, which left a populated lobby's last card
+     * 25px under the fixed nav in the authenticated production audit. That is
+     * what this pin has always been about, and it is unchanged.
+     *
+     * The literal moved from 44px to 12px on 2026-09-02, and the pin moved
+     * with it in the same commit rather than being deleted. Dan: "THERE IS TOO
+     * MUCH PADDING AT THE BOTTOM ... MOVE IT SO ITS TRULY AT THE BOTTOM OF THE
+     * PAGE." The bar itself had not moved - it is `position: fixed; bottom: 0`
+     * - but the lobby reserved room for it TWICE and then padded that:
+     * `.club-home` at clearance + 44px, and `.club-lobby-machine` at clearance
+     * + 18px in ClubLobbyCommandTop.css. On a notched phone that is ~210px of
+     * black under the last game card for a 78px bar, which is exactly what a
+     * footer "floating in background" looks like.
+     *
+     * So the assertion is now about the RULE rather than the number: the page
+     * reserves the clearance exactly once, and nothing downstream adds a
+     * second copy of it. A pin on "+ 44px" would have gone red for the fix and
+     * stayed green for the bug.
+     */
     expect(PAGE_CSS).toMatch(
-      /\.club-home\s*\{[^}]*padding-bottom:\s*calc\(var\(--bottom-nav-clearance, 74px\) \+ 44px\)/s
+      /\.club-home\s*\{[^}]*padding-bottom:\s*calc\(var\(--bottom-nav-clearance, 74px\) \+ \d+px\)/s
     );
     expect(PAGE_CSS).not.toContain('padding-bottom: calc(var(--bottom-nav-height, 74px)');
+
+    // The machine keeps a plain visual gap and never re-reserves the bar.
+    expect(TOP_CSS).not.toMatch(/margin[^:]*:[^;]*var\(--bottom-nav-clearance/);
   });
 
   it('shows every role-authorized wallet on both desktop and mobile', () => {

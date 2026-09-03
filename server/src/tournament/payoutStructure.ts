@@ -27,9 +27,14 @@
  * ─── THE FIX ────────────────────────────────────────────────────────────────
  *
  * A Spin does not need a fallback at all. Its structure is a pure function of
- * its multiplier — `spinTier(m).payouts` — so when the stored column is
- * missing or malformed the canonical spec reconstructs it exactly. Nothing is
- * guessed and nothing is over-paid.
+ * its multiplier — `spinTier(m).payouts` — so the canonical spec reconstructs
+ * it exactly. Nothing is guessed and nothing is over-paid.
+ *
+ * 2026-08-31: and the spec does not merely fill a GAP, it OUTRANKS the stored
+ * column on a Spin. See the rule above `resolvePayoutStructure`: a Spin's
+ * stored structure is only ever a copy of the tier, so one that disagrees is
+ * stale rather than chosen, and 62 completed spins were being paid by exactly
+ * such a stale copy.
  *
  * This lives in its own module for the same reason `payoutMath` does: the
  * import graph around the tournament managers is already circular-adjacent
@@ -271,15 +276,80 @@ export function payoutStructureForField(fieldSize: number): PayoutPlace[] {
   return out;
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  ON A SPIN, THE TIER OUTRANKS THE COLUMN (2026-08-31)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * This used to prefer the stored column over the tier for EVERY format, and
+ * fall back to the spec only when the column was missing or corrupt. For an
+ * MTT that is right and stays right: the ladder is the operator's to choose,
+ * and a stored structure is a decision, not a cache.
+ *
+ * A SPIN HAS NO SUCH DECISION TO STORE. Its split is a pure function of the
+ * multiplier — `spinTier(m).payouts` — and nobody, operator included, may
+ * author a different one. So a stored structure on a Spin is only ever a COPY
+ * of the tier, and a copy that disagrees with its source is not a preference
+ * being expressed, it is a stale value. Preferring it is preferring the lie.
+ *
+ * It is not hypothetical. A Spin is created carrying a winner-take-all
+ * PLACEHOLDER, because the tier is drawn at start and writing the true ladder
+ * at creation would leak the multiplier to the lobby. TournamentManagerBase
+ * rewrites the column from the drawn tier at start — and where that write
+ * fails (dea62e98, a374cdd3, 78181713 are the three known), or where an
+ * in-memory copy of the row was taken before it, the placeholder is what the
+ * old rule paid by. Measured live on 2026-08-31: 62 COMPLETED spins at 10x or
+ * above still carry `[{place:1,percentage:100}]`, and every one of them paid
+ * 100% of the pool to first place when the tier owed second (and sometimes
+ * third) a share.
+ *
+ * ─── THE RULE ───────────────────────────────────────────────────────────────
+ *
+ *   1. Spin WITH a multiplier the ladder knows  ->  the tier, always.
+ *   2. Spin whose multiplier is unknown to the ladder (not yet drawn, or a
+ *      retired tier such as the old 500x)       ->  the stored column, which
+ *      is the only thing left to go on.
+ *   3. Anything else                            ->  the stored column, then
+ *      null. Unchanged, and deliberately so: an operator's MTT ladder still
+ *      wins over anything derived.
+ *
+ * Rule 1 is safe in the only direction that matters. For every sub-10x tier
+ * the derived structure and an honest stored one are the SAME value
+ * ([{1,100}]), so nothing moves on ~98.9% of spins; where they differ, the
+ * tier is the one the reserve pool actually settled against.
+ */
 export function resolvePayoutStructure(
   t: PayoutSubject | null | undefined,
   fieldSize?: number | null
 ): PayoutPlace[] | null {
+  if (isSpinTournament(t)) {
+    const tier = spinPayoutStructure(t?.spin_multiplier);
+    if (tier) return trimStructureToField(tier, fieldSize);
+  }
   const stored = parsePayoutStructure(t?.payout_structure);
   if (stored) return trimStructureToField(stored, fieldSize);
-  if (isSpinTournament(t))
-    return trimStructureToField(spinPayoutStructure(t?.spin_multiplier), fieldSize);
   return null;
+}
+
+/**
+ * Does a Spin's stored column disagree with the tier that outranks it?
+ *
+ * Exported for diagnostics rather than used by the resolver: this module
+ * deliberately has no imports beyond `spinSpec`, so it cannot report an error
+ * itself. A caller that has a reporter can ask this and say so out loud —
+ * a disagreement means the start-time rewrite did not land, which is a bug
+ * upstream of the payout even though the payout is now protected from it.
+ */
+export function spinStoredStructureIsStale(t: PayoutSubject | null | undefined): boolean {
+  if (!isSpinTournament(t)) return false;
+  const tier = spinPayoutStructure(t?.spin_multiplier);
+  if (!tier) return false;
+  const stored = parsePayoutStructure(t?.payout_structure);
+  if (!stored) return false;
+  if (stored.length !== tier.length) return true;
+  return tier.some(
+    (p, i) => stored[i]?.place !== p.place || stored[i]?.percentage !== p.percentage
+  );
 }
 
 /**

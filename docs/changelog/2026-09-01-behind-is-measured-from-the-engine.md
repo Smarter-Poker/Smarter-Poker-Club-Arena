@@ -68,11 +68,11 @@ eight hours. The multi-million figures come from `mint_since_prev` being
 attributed one snapshot LATE, so a single real movement books as a large
 positive `unexplained` in one hour and a large negative in the next:
 
-| snapshot | delta_vs_prev | mint_since_prev | unexplained |
-| --- | --- | --- | --- |
-| 12:05 | +4,159,902 | 4,159,644 | +258 |
-| 13:05 | +5,741,903 | 4,159,644 (the 12:05 mint again) | +1,582,259 |
-| 14:05 | -2,407 | 5,741,355 (last hour's delta) | -5,743,763 |
+| snapshot | delta_vs_prev | mint_since_prev                  | unexplained |
+| -------- | ------------- | -------------------------------- | ----------- |
+| 12:05    | +4,159,902    | 4,159,644                        | +258        |
+| 13:05    | +5,741,903    | 4,159,644 (the 12:05 mint again) | +1,582,259  |
+| 14:05    | -2,407        | 5,741,355 (last hour's delta)    | -5,743,763  |
 
 Consecutive spikes of different sizes do not cancel inside a four-hour trailing
 SUM, so the gate read -4.16M. By 18:10 the bad snapshots had aged out of the

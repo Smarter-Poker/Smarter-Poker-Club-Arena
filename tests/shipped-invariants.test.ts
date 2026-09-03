@@ -193,7 +193,7 @@ describe('shipped functionality is still here', () => {
 
   /* GITHUB_TOKEN must never be the credential a merge is made with. A merge it
      produces does not trigger downstream workflows, so the commit lands on main
-     and build-for-world-hub.yml never fires: merged, never published, which
+     and publish-club-arena.yml never fires: merged, never published, which
      reads exactly like a regression. The `||` chain is the thing that keeps it
      last, and 'simplifying' it is a one-character change with no visible
      symptom, so pin the chain itself. */
@@ -219,7 +219,7 @@ describe('shipped functionality is still here', () => {
      three are the ones that answer "did it ship", and each pins a setting whose
      removal is invisible until production has been stale for hours. */
   describe('the publish path cannot be quietly disarmed', () => {
-    const publisher = () => readFileSync(root('.github/workflows/build-for-world-hub.yml'), 'utf8');
+    const publisher = () => readFileSync(root('.github/workflows/publish-club-arena.yml'), 'utf8');
 
     it('the publisher does not cancel a run that is already publishing', () => {
       /* cancel-in-progress: true killed every build before its sync step. With
@@ -231,7 +231,7 @@ describe('shipped functionality is still here', () => {
       const block = sliceYamlBlock(cfg, 'concurrency:');
       expect(
         /cancel-in-progress:\s*false/.test(block),
-        'build-for-world-hub.yml would cancel an in-flight publish again'
+        'publish-club-arena.yml would cancel an in-flight publish again'
       ).toBe(true);
     });
 
@@ -273,9 +273,12 @@ describe('shipped functionality is still here', () => {
          cleanly, with every check green. origin/main is the only honest
          answer to "what is deployed". */
       const wf = publisher();
+      // 2026-09-03: the deployed provenance is the origin's
+      // current/build-info.json, read over ssh BEFORE anything is written -
+      // the same "read the deployed file, not the one you brought" rule.
       expect(
-        wf.includes('git show origin/main:public/hub/club-arena/build-info.json'),
-        'the guard no longer reads the deployed provenance from git'
+        /cat \$ORIGIN_ROOT\/current\/build-info\.json/.test(wf),
+        'the guard no longer reads the deployed provenance from the origin'
       ).toBe(true);
       expect(
         /THEIRS_SHA=\$\(printf '%s' "\$THEIRS_JSON"/.test(wf),

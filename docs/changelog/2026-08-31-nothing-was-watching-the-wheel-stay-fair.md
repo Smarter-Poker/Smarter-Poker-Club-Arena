@@ -121,3 +121,80 @@ the start path, and it is phases 3 and 4.
 
 Full suites green: 3,308 server tests, 10,660 client tests, both typecheckers,
 `check-monitoring-drift`, `check-required-columns`, `check-definer-authorization`.
+
+## Addendum — the scrape job that was never committed
+
+Deploying `spin-rules.yml` to engine-01 surfaced a second, unrelated gap. The
+live `prometheus.yml` on the host carried a `turn_relay` scrape job — voice
+relay monitoring, added directly on the box on 2026-08-28 — that had **never
+been committed**. `deploy.sh` resets the host to the repo, so the next routine
+deploy would have silently deleted it, and the three `turn-relay` alert rules
+in `alert-rules.yml` would have gone on evaluating against no data, which
+reads as healthy.
+
+`check-monitoring-drift.mjs` could not see it: checks 1–5 verify that rule
+files are loaded, resolve, are mounted at matching paths and declare rules.
+None of them look at scrape targets, and a rule file that loads perfectly
+against a target nobody scrapes alerts on nothing.
+
+The job is restored to the repo verbatim, and the drift check gained a sixth
+assertion pinning the scrape-job list. It cannot detect a job added on the
+host and never committed — nothing in the repo can — but it makes **deleting**
+one a deliberate act that shows up in a diff. Verified by renaming the job and
+watching the check exit 1.
+
+## Deployed
+
+`spin-rules.yml` is live on engine-01: Prometheus reports 8 rules across
+`spin-fairness`, `spin-money` and `spin-experience`, `promtool check config`
+passes on all 7 rule files, and `turn_relay` survived the config swap.
+
+## Addendum 2 — the deploy said "coalescing" and meant "wrong time of day"
+
+The engine gauges could not be verified live at ship time, and finding out why
+cost fifteen minutes to a message that was confidently wrong.
+
+A restart-window gate landed on main today: engine deploys run only at 7am and
+7pm America/Chicago, or on a dispatch with `force=true`. The `DID NOT DEPLOY`
+step's reason logic was never taught about it, so a run blocked by the window
+reports:
+
+> coalescing — the engine restarted too recently, or it is already on this
+> commit
+
+The engine had been up for 45 minutes at the time, comfortably past the
+1200-second spacing threshold. The stated reason was simply untrue, and it
+points at a gate that is working correctly, so anyone acting on it investigates
+the wrong thing. A wrong reason costs more than no reason: it is confidently
+wrong, and it is the first line anybody reads.
+
+The reason now names the window gate first, and the step's own condition lists
+it, so the "DID NOT DEPLOY" marker cannot depend on `dedupe` happening to
+short-circuit for it.
+
+**Deployment status of this phase.** The database and monitoring halves are
+live and verified right now: the fairness view, `fn_spin_metrics`, the repair
+fixes, and `spin-rules.yml` loaded into Prometheus on engine-01 (8 rules across
+three groups). The engine half — the `poker_spin_*` gauges themselves — lands
+at the next restart window without further action. Forcing it would restart the
+engine while 105 tables are dealing, which is exactly what the window exists to
+prevent, so it was not forced.
+
+## Addendum 3 — the booking-gap rule got simpler once the gauge got bounded
+
+The first cut alerted on `delta(poker_spin_draw_booking_gaps[1h]) > 0` because
+the gauge counted the whole history, and a rule on that level would have fired
+forever on the eleven closed rows from 2026-08-22.
+
+Bounding `fn_spin_metrics` to fit inside a scrape changed that: the gauge now
+counts only spins that **ended in the last 24 hours**, so those eleven are
+outside it by construction and the rule is a plain `> 0`. That is not just
+tidier — `delta()` over a gauge cannot tell a genuine new gap from the counter
+resetting on an engine restart, so the simpler rule is also the more correct
+one. The same pass corrected two rule descriptions that still named
+`v_spin_unpaid_settlements` as the source after the gauge had moved to
+`fn_spin_unpaid_settlements(24)`; a runbook that names the wrong query is the
+same defect as a deploy that names the wrong gate.
+
+Re-verified on engine-01: `promtool check rules` passes, all 8 rules load
+healthy and evaluate.

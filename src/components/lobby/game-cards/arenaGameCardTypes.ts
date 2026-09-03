@@ -49,6 +49,50 @@ export interface ArenaGameCardData {
   source?: LobbyEntry;
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  WHAT AN EMPTY BAY PRINTS — one answer, for every renderer
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan 2026-09-02: "THE GAME CARDS SHOULD NEVER SAY UNAVAILABLE, THEY SHOULD
+ * HAVE 0'S UNTIL THE CARD LOADS."
+ *
+ * The zones that hold a NUMBER print 0 while they wait. Everything else keeps
+ * the dash, because 0 is only an honest placeholder where a count belongs - a
+ * missing variant, format or start time is not zero of anything, and "0" over
+ * the game type would be a worse lie than the dash it replaced.
+ *
+ * THIS LIVES HERE, IN THE TYPES MODULE, ON PURPOSE. It began as a private
+ * constant inside ArenaGameCard's `LiveValue`, which covers the NLH, PLO, Spin
+ * and Heads-Up machines - and silently missed the other two renderers:
+ *
+ *   MttMachine        six bays hand-rolled as `{data.buyIn || '-'}` instead of
+ *                     going through LiveValue.
+ *   NlhPremiumCard    the layered mobile NLH card - the one in Dan's own
+ *                     screenshot - with three more of the same.
+ *
+ * So the first cut of the fix never reached the two card families a player is
+ * most likely to be looking at on a phone. `ArenaGameCard` imports
+ * NlhPremiumCard, so the shared helper cannot live there without an import
+ * cycle; this module is the leaf all three already depend on, and it is where
+ * the field vocabulary itself is declared.
+ */
+export const NUMERIC_ZONES: ReadonlySet<string> = new Set([
+  'buyIn',
+  'currentLevel',
+  'guarantee',
+  'maxPayout',
+  'players',
+  'registered',
+  'stakes',
+  'startingStack',
+]);
+
+/** The text a bay shows for `zone`, given whatever value it has (or has not). */
+export function zoneText(zone: string, value?: string): string {
+  return value || (NUMERIC_ZONES.has(zone) ? '0' : '-');
+}
+
 export interface ArenaGameCardActions {
   primaryLabel: string;
   secondaryLabel?: string;

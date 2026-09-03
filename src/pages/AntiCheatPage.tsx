@@ -22,6 +22,7 @@ import { exportToCSV } from '../lib/export';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { fmt, fmtChips, timeAgo } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 
 type Severity = 'critical' | 'high' | 'medium' | 'low';
 
@@ -221,11 +222,10 @@ export default function AntiCheatPage() {
             try {
               const { data: profiles } = await supabase
                 .from('profiles')
-                .select('id, display_name')
+                .select(`id, ${PLAYER_NAME_COLUMNS}`)
                 .in('id', playerIds);
               if (profiles) {
-                for (const p of profiles)
-                  playerNames[p.id] = p.display_name || p.id.substring(0, 8);
+                for (const p of profiles) playerNames[p.id] = playerDisplayName(p);
               }
             } catch (e) {
               reportError(e, 'AntiCheatPage.Set');
@@ -281,10 +281,10 @@ export default function AntiCheatPage() {
           try {
             const { data: profiles } = await supabase
               .from('profiles')
-              .select('id, display_name')
+              .select(`id, ${PLAYER_NAME_COLUMNS}`)
               .in('id', playerIds);
             if (profiles) {
-              for (const p of profiles) playerNames[p.id] = p.display_name || p.id.substring(0, 8);
+              for (const p of profiles) playerNames[p.id] = playerDisplayName(p);
             }
           } catch (e) {
             reportError(e, 'AntiCheatPage.Set');

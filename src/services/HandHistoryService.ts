@@ -9,6 +9,7 @@
 import { supabase } from '../lib/supabase';
 import type { Card } from '../types/database.types';
 import { derivePositions } from '../utils/pokerPositions';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { buildReplay } from '../utils/handReplay';
 import { reportError } from '../utils/errorReporter';
 
@@ -87,6 +88,22 @@ export interface HandAction {
   /** Stored as `stage`. `pineapple_discard` is a real street here. */
   street: 'preflop' | 'flop' | 'turn' | 'river' | 'pineapple_discard';
   timestamp: number;
+  /**
+   * PHASE 4 COMPLETION 2026-09-01 — the card thrown on a `discard` action,
+   * and ONLY ever the viewer's own.
+   *
+   * Phase 4 taught the standalone replay which card you threw and stopped
+   * there, so the hand-history panel that slides out AT THE TABLE - the
+   * surface a player actually reviews the last hand on, mid-session - still
+   * printed the word "discard" and nothing else. Same fetch, same RLS, same
+   * map; it simply never reached this list.
+   *
+   * It carries no privacy decision of its own: `fetchOwnDiscards` reads
+   * `hand_discards` through `hand_discards_read_own`, so the map it fills can
+   * only ever hold the caller's rows. Absent on every other player's discard
+   * and on every non-discard action.
+   */
+  discarded_card?: { rank: string; suit: string };
 }
 
 /** One winner of one pot, as stored. */
@@ -515,6 +532,11 @@ class HandHistoryServiceClass {
           action: (a?.action as HandAction['action']) || 'fold',
           amount: typeof a?.amount === 'number' ? a.amount : undefined,
           street: (a?.stage as HandAction['street']) || 'preflop',
+          /* The thrown card, on the viewer's own discard row. `discardedCards`
+             is keyed by user id and holds nothing but this viewer's rows (see
+             fetchOwnDiscards), so the lookup is the whole gate. */
+          discarded_card:
+            a?.action === 'discard' ? discardedCards[String(a?.userId || '')] : undefined,
           timestamp:
             typeof a?.timestamp === 'number' ? a.timestamp : new Date(row.created_at).getTime(),
         })
@@ -579,11 +601,11 @@ class HandHistoryServiceClass {
       const unique = [...new Set(userIds)];
       const { data } = await supabase
         .from('profiles')
-        .select('id, username, avatar_url:arena_avatar_url')
+        .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
         .in('id', unique);
 
       for (const p of data || []) {
-        map.set(p.id, { username: p.username, avatar_url: p.avatar_url });
+        map.set(p.id, { username: playerDisplayName(p), avatar_url: p.avatar_url });
       }
     } catch (err: unknown) {
       reportError(err, 'HandHistoryService.fetchProfileMap');

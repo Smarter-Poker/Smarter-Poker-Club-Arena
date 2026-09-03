@@ -95,9 +95,11 @@ describe('a cross-satellite double win pays the ticket value', () => {
     expect(MANAGER).toMatch(/Satellite seat already held - ticket value paid in cash/);
   });
 
-  it('the cash lands under the stable place key, so a re-drive dedupes', () => {
+  it('the cash lands on the stable place obligation, so a re-drive dedupes', () => {
+    // 2026-09-02: the place key became the obligation (tournament, 'place',
+    // N), UNIQUE in the database. Same property, enforced by constraint.
     const block = sliceEnclosingBlock(MANAGER, 'held_from_this_satellite === false');
-    expect(block).toMatch(/prize:place:\$\{w\.position\}/);
+    expect(block).toMatch(/\{ kind: 'place', place: Number\(w\.position\) \}/);
   });
 
   it('a genuine re-drive of the same satellite still pays nothing extra', () => {

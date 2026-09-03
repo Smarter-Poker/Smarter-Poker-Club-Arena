@@ -9,8 +9,14 @@
 # tree. In all three, main moved, agents reported success, and users kept
 # seeing the previous build for hours.
 #
-# It self-heals once per sha before telling anyone, because the usual causes
-# are transient. See .github/scripts/publish-watchdog.sh.
+# It self-heals before telling anyone, because the usual causes are transient:
+# up to three re-dispatches per sha, and a CANCELLED attempt does not count
+# against that budget (a cancellation means a newer push superseded the run -
+# the publisher working, not a fault). It was one retry, and counted
+# cancellations, until 2026-09-02; that combination is how a healthy repo
+# talked itself out of healing and left main unpublished until a human
+# dispatched by hand. See .github/scripts/publish-watchdog.sh and
+# tests/no-commit-left-behind.law.test.ts.
 # ─────────────────────────────────────────────────────────────────────────────
 name: Publish Watchdog
 
@@ -19,7 +25,13 @@ on:
   # a cancelled or failed run too, which is precisely when production is most
   # likely to be stranded.
   workflow_run:
-    workflows: ['Build for World Hub Sync']
+    # This is the publisher's `name:`, not its filename. #2676 deleted
+    # build-for-world-hub.yml (name 'Build for World Hub Sync') and repointed
+    # fifteen files by FILENAME - and missed this one, so from 19:17 to 01:30
+    # on 2026-09-02/03 this workflow could only fire from GitHub's throttled
+    # scheduler. tests/workflow-run-names-a-live-workflow.law.test.ts now
+    # refuses any workflow_run listener whose name no workflow carries.
+    workflows: ['Publish Club Arena']
     types: [completed]
   schedule:
     # Catches everything workflow_run cannot: a publish that never started, a
@@ -32,7 +44,17 @@ on:
     # 2026-09-01 (cost audit): */30 -> hourly. The workflow_run trigger above
     # fires after every publish attempt, and the publisher itself now carries
     # a */30 catch-up cron - three overlapping nets at */30 was two too many.
-    - cron: '19 * * * *'
+    #
+    # 2026-09-02: the :42 tick exists for the ENGINE watchdog that runs in
+    # this workflow, not for the publisher. On 2026-09-01/02 the deploy
+    # workflow's own :40/:45/:50 crons were dropped by GitHub for HOURS at a
+    # stretch, and the engine watchdog's only sweep at :19 sits 36 minutes
+    # from the :55 break - beyond the deploy's 14-minute break-gate budget,
+    # so its dispatch gate rightly refuses to burn a runner then. A sweep at
+    # :42 is 13 minutes out: when the engine is behind and every cron was
+    # dropped, THIS dispatch is alive and waiting when the break opens. A
+    # dropped cron now costs nothing instead of an hour.
+    - cron: '19,42 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -47,6 +69,11 @@ concurrency:
 jobs:
   watch:
     name: Production is serving main
+    # STAYS ON GITHUB'S POOL, deliberately (2026-09-03). The publisher runs on
+    # the estate's own box. If that box dies, this is the job that has to say
+    # so, and it cannot say so from the box that died. The two jobs below are
+    # heavier and are not the alarm: they run on the box, and a dead box just
+    # queues them.
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
@@ -78,6 +105,12 @@ jobs:
           # alarm is not a watchdog.
           GH_TOKEN_ISSUES: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          # Last-resort escalation once the automatic retries are spent. A
+          # broken bundle must not auto-ship, so the guarantee is that nobody
+          # has to notice on their own. Absent credentials degrade to the
+          # issue alone; they never fail the run.
+          SUPABASE_URL: https://kuklfnapbkmacvwxktbh.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: bash .github/scripts/publish-watchdog.sh
 
   # ───────────────────────────────────────────────────────────────────────────
@@ -99,7 +132,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   engine:
     name: The engine is running main
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 6
     steps:
       - name: Checkout main with full history
@@ -130,6 +163,36 @@ jobs:
           ENGINE_URL: https://engine.smarter.poker
         run: bash .github/scripts/engine-watchdog.sh
 
+      # Dan 2026-09-01: "no work ever gets lost, orphaned or not published."
+      # The watchdogs in this file ask whether MERGED work reached production.
+      # This one asks the question upstream of all of them: does work exist
+      # that never became a merge at all - a branch pushed with no PR, a PR
+      # with a conflict autopilot cannot land, a forgotten draft? Files one
+      # self-updating, self-closing issue naming each piece and its remedy.
+      # if: always() - stranded work must be reported even when the engine
+      # comparison above failed; the failure domains are independent.
+      - name: Find work that nothing will ever publish
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: bash .github/scripts/orphan-work-watchdog.sh
+
+      # The origin's Caddyfile lives in infra/ca-origin/ but NOTHING deploys
+      # it: writing /etc/caddy and reloading Caddy needs root, and there is
+      # deliberately no root key in CI. So the box and the repo can drift the
+      # moment either is edited, and until 2026-09-03 nothing would have
+      # noticed - the 404-cached-for-a-year bug lived there unseen.
+      #
+      # Comparing the file byte-for-byte would need that same root access and
+      # would fail on a comment while passing a config that serves the wrong
+      # thing. This asserts the four things the config EXISTS to produce, from
+      # outside, over the path a player actually takes. Every check is a bug
+      # that was real.
+      - name: The origin still behaves the way its config says
+        if: always()
+        run: bash .github/scripts/origin-contract.sh
+
   # ── Are the schedules themselves firing? ─────────────────────────────────
   #
   # 2026-09-01: auto-deploy-hetzner moved to an hourly cron at 13:00 UTC and
@@ -146,7 +209,7 @@ jobs:
   # eight or more times against the schedule's one.
   schedules:
     name: The schedules are actually firing
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

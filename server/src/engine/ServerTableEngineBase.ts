@@ -193,6 +193,17 @@ export abstract class ServerTableEngineBase {
       } catch {
         /* A failed read must never SHORTEN the pause — fall through and wait. */
       }
+      if (pending.size === 0) return;
+      /* CHIP STANDARD C3 (2026-09-02): a rebuy no longer raises the seat's
+         stack in the RPC - it lands as an unresolved `table_pending_addons`
+         row (kind 'rebuy') that only the engine's sweep delivers, so the stack
+         read above would never see a human's answer. A row for a busted seat
+         IS the answer: the wallet is debited and the chips are owed to this
+         seat. Count it as answered and (inside the helper) request the sweep
+         that puts the chips on the felt before the next deal. An unreadable
+         ledger (null) leaves the pause exactly as long as it was. */
+      const inFlight = await this.usersWithPendingLedgerChips(Array.from(pending));
+      if (inFlight) for (const id of inFlight) pending.delete(id);
     };
 
     try {
@@ -474,6 +485,59 @@ export abstract class ServerTableEngineBase {
    * hand while making it impossible for an open row to be forgotten.
    */
   protected pendingAddOnSweepNeeded = true;
+  /**
+   * CHIP STANDARD C3 (2026-09-02): a sweep request counter beside the flag.
+   *
+   * The flag alone had a losing race once rows could arrive from OUTSIDE the
+   * engine. `atomic_table_rebuy` no longer touches `table_seats.stack`; the
+   * browser's bust rebuy lands as a `table_pending_addons` row (kind 'rebuy')
+   * that only `processPendingAddOns` delivers. Settlement step 8e and the
+   * rebuy pause run concurrently: if 8e read the ledger BEFORE the row
+   * committed and the pause read it after, the pause set the flag true and
+   * 8e's late continuation set it false again - the row was forgotten until
+   * the next engine start, and standUpBustedCashPlayers released the seat
+   * meanwhile (resolve_pending_addon then refunds the wallet, so the player
+   * paid, was stood up, and got a refund instead of a seat).
+   *
+   * A sweep now captures this counter when it starts and clears the flag only
+   * if nobody asked for another sweep while it was running.
+   */
+  protected pendingAddOnSweepGen = 0;
+
+  /** Ask for a ledger sweep before the next deal. Safe from any concurrent path. */
+  protected requestPendingAddOnSweep(): void {
+    this.pendingAddOnSweepNeeded = true;
+    this.pendingAddOnSweepGen++;
+  }
+
+  /**
+   * Which of `userIds` have money in flight on the durable ledger for this
+   * table - an unresolved `table_pending_addons` row of ANY kind (a mid-hand
+   * add-on or a bust rebuy). A hit also requests a sweep so the chips are on
+   * the felt before the next deal. Returns null when the ledger could not be
+   * read, so callers decide their own fail-open direction (the rebuy pause
+   * must not shorten on an unreadable ledger; the stand-up must not release a
+   * seat on one).
+   */
+  protected async usersWithPendingLedgerChips(userIds: string[]): Promise<Set<string> | null> {
+    const ids = userIds.filter(Boolean);
+    if (ids.length === 0) return new Set();
+    try {
+      const { data, error } = await supabase
+        .from('table_pending_addons')
+        .select('user_id')
+        .eq('table_id', this.tableId)
+        .in('user_id', ids)
+        .is('resolved_at', null);
+      if (error) return null;
+      const hit = new Set<string>();
+      for (const row of (data ?? []) as Array<{ user_id: string }>) hit.add(String(row.user_id));
+      if (hit.size > 0) this.requestPendingAddOnSweep();
+      return hit;
+    } catch {
+      return null;
+    }
+  }
   /** C15: minimum gap between persisted hand snapshots, per table. */
   protected static readonly SNAPSHOT_MIN_INTERVAL_MS = 1000;
   protected lastSnapshotAtMs = 0;
@@ -1014,6 +1078,34 @@ export abstract class ServerTableEngineBase {
    * Cleared by resumeDealing along with the rest of the pause state.
    */
   protected holdBeforeNextHand: boolean = false;
+
+  /**
+   * THE MAINTENANCE BREAK IS A SECOND, INDEPENDENT PAUSE AUTHORITY.
+   * (Dan 2026-09-01)
+   *
+   * It cannot share `handForHandPaused`, and the audit that found this is
+   * worth writing down. Hand-for-hand runs a 500ms sync loop
+   * (TournamentManagerBase, "all tables waiting -> resumeDealing -> re-pause
+   * in 500ms"). With a single flag, a bubble tournament at :55 did this:
+   *
+   *   1. the maintenance break parks its tables;
+   *   2. the sync loop sees every table waiting, concludes the hand-for-hand
+   *      round is over, and calls resumeDealing - DEALING A FULL HAND
+   *      INSIDE THE BREAK;
+   *   3. resumeDealing clears pauseMaxWaitMs and holdBeforeNextHand, and the
+   *      500ms re-park is a bare pauseAfterHand() with no budget - so the
+   *      safety timeout falls back to 120s and the table SELF-RESUMES two
+   *      minutes into a five minute break.
+   *
+   * That last step is the exact 2026-08-19 bug PARK_BUDGET_MS was sized to
+   * prevent, reintroduced through a different door.
+   *
+   * So: whoever paused a table is the only one who may resume it.
+   * `resumeDealing` lifts hand-for-hand and leaves this alone;
+   * `resumeFromMaintenance` does the reverse. The gate holds while EITHER
+   * is set.
+   */
+  protected maintenancePaused: boolean = false;
 
   // Bible V8 §1.1.4: Action serialization lock — prevents parallel action processing
   protected actionLock: boolean = false;
@@ -1821,6 +1913,36 @@ export abstract class ServerTableEngineBase {
       // Wait for the host's AutoStart figure (2 unless they raised it)
       this.setLoopPhase('start_wait_for_players');
       while (this.running) {
+        /**
+         * THE QUIET TABLE PARKS TOO (Dan 2026-09-01).
+         *
+         * This loop is where a table below minPlayersToDeal waits, possibly
+         * for hours, and it never reaches the dealing loop — so before this
+         * gate it was the one place on the platform that ignored a pause
+         * entirely. Two things followed from that, both bad:
+         *
+         *   1. `evictExpiredSitOuts` below kept running every five seconds
+         *      THROUGH the maintenance break, standing players up and cashing
+         *      them out during a break they had just been told their seat was
+         *      safe in.
+         *
+         *   2. The table never reached the pause gate, so it never counted as
+         *      parked — and the restart gate, which requires EVERY table to be
+         *      parked, could never open on any fleet with a quiet table on it.
+         *      The deploy would have waited 14 minutes and given up, every
+         *      hour, forever.
+         *
+         * At the top of the iteration on purpose, matching the dealing loop:
+         * every branch below exits with `continue` or `break`, so a gate
+         * placed lower would be unreachable for exactly the tables that need
+         * it most.
+         */
+        if (this.maintenancePaused || (this.handForHandPaused && this.holdBeforeNextHand)) {
+          this.setLoopPhase('parked_for_pause');
+          await this.awaitPauseGate();
+          if (!this.running) break;
+          this.setLoopPhase('start_wait_for_players');
+        }
         try {
           this.seatedPlayers = await loadSeatedPlayers(this.tableId);
         } catch (err) {
@@ -2425,14 +2547,56 @@ export abstract class ServerTableEngineBase {
     if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
   }
 
-  /** Resume dealing (all tables finished their hand-for-hand hand) */
-  resumeDealing(): void {
-    this.handForHandPaused = false;
+  /**
+   * Pause for the scheduled maintenance break (Dan 2026-09-01).
+   *
+   * Separate from pauseAfterHand so that hand-for-hand's resume cannot lift
+   * it — see the `maintenancePaused` field for the incident this prevents.
+   * Same guarantee otherwise: the hand in front of the player finishes, and
+   * the loop parks at the TOP of its next iteration so an idle table stops
+   * too rather than dealing the moment a seat fills mid-break.
+   */
+  pauseForMaintenance(maxWaitMs: number): void {
+    this.maintenancePaused = true;
+    this.holdBeforeNextHand = true;
+    if (maxWaitMs > 0) {
+      // Take the LONGER of the two budgets. A hand-for-hand pause armed a
+      // moment ago must not shorten the break's safety window.
+      this.pauseMaxWaitMs = Math.max(this.pauseMaxWaitMs ?? 0, maxWaitMs);
+    }
+    if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
+  }
+
+  /** Lift the maintenance break. Leaves any hand-for-hand pause in place. */
+  resumeFromMaintenance(): void {
+    this.maintenancePaused = false;
+    if (this.handForHandPaused) return; // hand-for-hand still owns the table
+    this.releasePauseGate();
+  }
+
+  /** True while the scheduled maintenance break is holding this table. */
+  isMaintenancePaused(): boolean {
+    return this.maintenancePaused;
+  }
+
+  /**
+   * Is this table stopped where stopping it is safe — between hands?
+   *
+   * `isWaitingForHandForHand()` is nearly this, and was the first thing the
+   * maintenance break's restart gate used, but it is true only for a table
+   * that reached the gate from the DEALING loop. A table below
+   * minPlayersToDeal sits in the start-up wait loop instead and now parks
+   * there too, so the gate needs a test that accepts both. Without this the
+   * restart gate never opened at all on a fleet with any quiet table on it.
+   */
+  isParkedBetweenHands(): boolean {
+    return this.handForHandResolve !== null || !this.running;
+  }
+
+  /** Shared by both resume paths: wake the loop sitting on the gate. */
+  private releasePauseGate(): void {
     this.pausedSinceMs = 0;
     this.lastPauseAlarmAtMs = 0;
-    // Drop the extended pause budget granted for a break, so the next
-    // hand-for-hand pause gets its own short safety window rather than
-    // inheriting a multi-minute one.
     this.pauseMaxWaitMs = null;
     this.holdBeforeNextHand = false;
     // Bible V8 §3.1: Table FSM — paused → running
@@ -2443,6 +2607,24 @@ export abstract class ServerTableEngineBase {
       this.handForHandResolve();
       this.handForHandResolve = null;
     }
+  }
+
+  /** Resume dealing (all tables finished their hand-for-hand hand) */
+  resumeDealing(): void {
+    this.handForHandPaused = false;
+    // THE MAINTENANCE BREAK OUTRANKS HAND-FOR-HAND HERE. Hand-for-hand's
+    // 500ms sync loop calls this the moment every table is waiting, which
+    // during a break is immediately — and without this line it would deal a
+    // hand inside the break and destroy the break's pause budget on the way
+    // through. See the `maintenancePaused` field.
+    if (this.maintenancePaused) {
+      this.pausedSinceMs = this.pausedSinceMs || Date.now();
+      return;
+    }
+    // Drops the extended pause budget granted for a break, so the next
+    // hand-for-hand pause gets its own short safety window rather than
+    // inheriting a multi-minute one.
+    this.releasePauseGate();
   }
 
   /** Check if engine is currently waiting for hand-for-hand resume */
@@ -2494,7 +2676,8 @@ export abstract class ServerTableEngineBase {
    * instant a hand settles rather than after the showdown display pause.
    */
   protected async awaitPauseGate(): Promise<void> {
-    if (!this.handForHandPaused || !this.running) return;
+    // Either authority holds the gate; see the `maintenancePaused` field.
+    if ((!this.handForHandPaused && !this.maintenancePaused) || !this.running) return;
     // Bible V8 §3.1: Table FSM — running → paused. GUARDED: the FSM has no
     // waiting → paused edge, and this gate is now reachable from the idle
     // branches where the table sits in 'waiting'. An unguarded transition
@@ -2581,7 +2764,31 @@ export abstract class ServerTableEngineBase {
    * final-table bubble.
    */
   isPausedByDesign(): boolean {
-    return this.handForHandPaused || this.tableFSM.state === 'paused';
+    // THE MAINTENANCE BREAK IS A PAUSE BY DESIGN, AND FORGETTING THAT DEALT
+    // 1204 HANDS INSIDE ONE (2026-09-02).
+    //
+    // #2537 split the break out of `pauseAfterHand` into its own authority so
+    // hand-for-hand could not lift it. `pauseAfterHand` sets
+    // `handForHandPaused`, which is what this predicate reads;
+    // `pauseForMaintenance` deliberately does not. So the new authority was
+    // wired into the new gate in the start-up loop and into nothing else, and
+    // this predicate - the one the TURN loop actually consults
+    // (ServerTableEngineTurns) - kept answering false all the way through a
+    // break.
+    //
+    // Measured on the first armed break, 18:55-19:00: 1204 hands dealt,
+    // against 0 in each of the two breaks on the build before it and 1299 in a
+    // normal five minutes. The break had stopped stopping play.
+    //
+    // It also explains the hourly `watchdog_kill_rebuild` wave (#2651):
+    // GameServer's `parkedOnPurpose` is this same predicate, so every table
+    // held by a break looked like a stalled table to the watchdog, which
+    // killed and rebuilt it.
+    //
+    // A table the maintenance break is holding is paused on purpose. That is
+    // the whole meaning of this function, so it belongs here rather than at
+    // each of the four call sites.
+    return this.handForHandPaused || this.maintenancePaused || this.tableFSM.state === 'paused';
   }
 
   /** Ms spent in the current by-design pause; 0 when not paused. */

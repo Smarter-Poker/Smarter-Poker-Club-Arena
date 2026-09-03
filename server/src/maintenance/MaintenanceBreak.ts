@@ -29,7 +29,7 @@
  * ─── THE TIMELINE ──────────────────────────────────────────────────────────
  *
  *   :53   announceLastHand()
- *         Every engine gets pauseAfterHand(..., { beforeNextHand: true }).
+ *         Every engine gets pauseForMaintenance(budget).
  *         The hand in front of a player plays to the end. No new hand starts.
  *         Players see "Last Hand - Maintenance Break In 2:00".
  *
@@ -97,12 +97,27 @@
  * seats are horses.
  */
 
-/** The parking primitive, as this module needs it. */
+import { setMaintenanceFrozen } from './freezeState.js';
+
+/**
+ * The parking primitive, as this module needs it.
+ *
+ * `pauseForMaintenance` / `resumeFromMaintenance` rather than the
+ * hand-for-hand pair, because the two are independent authorities and
+ * hand-for-hand's 500ms sync loop would otherwise resume a table mid-break.
+ * See the `maintenancePaused` field on ServerTableEngineBase.
+ */
 export interface PausableTableEngine {
-  pauseAfterHand(maxWaitMs?: number, opts?: { beforeNextHand?: boolean }): void;
-  resumeDealing(): void;
-  isWaitingForHandForHand(): boolean;
-  isPausedByDesign(): boolean;
+  pauseForMaintenance(maxWaitMs: number): void;
+  resumeFromMaintenance(): void;
+  /** Parked between hands, from EITHER loop - dealing or start-up wait. */
+  isParkedBetweenHands(): boolean;
+  /**
+   * No cards in the air: `handController === null`, which the engine only
+   * sets AFTER the hand-complete listener has settled the pot. This is what
+   * the restart gate asks (PHASE 2, 2026-09-02) - see `unparkedTables`.
+   */
+  isBetweenHands(): boolean;
   isRunning(): boolean;
 }
 
@@ -111,6 +126,13 @@ export type MaintenanceBreakPhase = 'last_hand' | 'counting_down';
 export interface PersistedMaintenanceBreak {
   phase: MaintenanceBreakPhase;
   announcedAt: number;
+  /**
+   * When the countdown actually began. The thaw needs the real instant, not a
+   * derived one: deadlines are shifted by (end - start), and a start
+   * reconstructed as breakEndsAt minus five minutes would misstate the frozen
+   * duration for any break that was adopted mid-way by a fresh engine.
+   */
+  breakStartedAt: number | null;
   breakEndsAt: number | null;
   reason: string;
 }
@@ -120,6 +142,24 @@ export interface MaintenanceBreakStore {
   load(): Promise<PersistedMaintenanceBreak | null>;
   save(state: PersistedMaintenanceBreak): Promise<void>;
   clear(): Promise<void>;
+}
+
+/**
+ * What one break measured about itself, handed out at `end()` so the
+ * scorecard (ca_break_scorecards, phase 1) can show the gate's own numbers
+ * rather than only what hand_history reveals from the outside.
+ */
+export interface MaintenanceBreakOutcome {
+  breakStartedAtMs: number;
+  breakEndedAtMs: number;
+  /** Tables with a hand in flight the instant the countdown began. */
+  unparkedAtCountdown: number;
+  /** Highest unparked count observed at any sample during the countdown. */
+  peakUnparked: number;
+  /** First instant readyForRestart() answered true, or null if it never did. */
+  readyForRestartAtMs: number | null;
+  tablesResumed: number;
+  thawOk: boolean | null;
 }
 
 export interface MaintenanceBreakDeps {
@@ -141,6 +181,23 @@ export interface MaintenanceBreakDeps {
    * Optional, and defaults to "nobody else is holding anything".
    */
   shouldStayPaused?: (tableId: string) => boolean;
+  /**
+   * Receives the break's own measurements at `end()`. Optional; failures
+   * are reported and never delay the resume.
+   */
+  recordOutcome?: (outcome: MaintenanceBreakOutcome) => Promise<void>;
+  /**
+   * THE THAW (Dan 2026-09-01: "picks back up exactly as it was").
+   *
+   * Called once, at the end of the break, BEFORE the first table resumes.
+   * Wired to fn_thaw_platform, which shifts every in-flight absolute deadline
+   * - sit-out clocks, seat holds, add-on windows, Spin level clocks, the
+   * cashier claim-back window - forward by the frozen duration, so no
+   * player-facing clock lost time to a break they could not play through.
+   * Idempotent on the server side (keyed on the freeze start instant), so two
+   * engines racing at :00 cannot shift the clocks twice.
+   */
+  thaw?: (freezeStartedAtMs: number, frozenSeconds: number) => Promise<void>;
   /** Injectable purely so the tests are not real-time. */
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => NodeJS.Timeout;
@@ -180,8 +237,32 @@ export class MaintenanceBreak {
    */
   static readonly MIN_REMAINING_FOR_RESTART_MS = 3 * 60 * 1000;
 
+  /**
+   * PHASE 3 (2026-09-02): the resume is staggered, not a single burst.
+   *
+   * resumeEveryEngine used to wake every table in one synchronous loop, so at
+   * :00 all ~250 dealing loops hit a 2-core database in the same instant -
+   * loading seats, blinds and stacks - which is a large part of the 10-20
+   * minute recovery Dan watched ("100% of the time says reconnecting to the
+   * table"). The first batch resumes immediately (so a small fleet, and every
+   * test fleet, is fully up at once); the rest roll out RESUME_STAGGER_MS
+   * apart. Every table still receives exactly one resumeFromMaintenance; the
+   * only change is that some wake a few seconds later, gentler on the database
+   * than the herd, never harsher.
+   */
+  static readonly RESUME_BATCH_SIZE = 25;
+  static readonly RESUME_STAGGER_MS = 750;
+
   private phase: MaintenanceBreakPhase | 'idle' = 'idle';
   private announcedAt = 0;
+  /** When counting_down began - the instant the thaw measures from. */
+  private breakStartedAt = 0;
+  /** PHASE 2 measurements, reset at beginCountdown, handed out at end(). */
+  private unparkedAtCountdown = 0;
+  private peakUnparked = 0;
+  private readyForRestartAtMs: number | null = null;
+  /** Bumped each break; a scheduled resume batch from a superseded break is dropped. */
+  private resumeToken = 0;
   private breakEndsAt = 0;
   private reason = 'Scheduled Engine Maintenance';
 
@@ -245,19 +326,46 @@ export class MaintenanceBreak {
    * :55, so the tables never got their five minutes and the players were
    * promised one.
    */
+  /**
+   * How many times the boot-time read of the break row is attempted before
+   * the engine gives up and starts unpaused. The common reason this read
+   * fails is the reason it matters most: the engine is booting at ~:55-:58,
+   * inside the break, when the database is at its slowest, and a single
+   * timed-out read used to mean the fleet came back dealing into a break
+   * every screen was still showing. Three tries, a second and a half apart,
+   * cost at most ~3s of a boot that is parked anyway if the row exists.
+   */
+  static readonly RESTORE_ATTEMPTS = 3;
+  static readonly RESTORE_RETRY_MS = 1500;
+
   private async restoreFromStore(): Promise<void> {
     let saved: PersistedMaintenanceBreak | null = null;
-    try {
-      saved = await this.deps.store.load();
-    } catch (err) {
-      // Fail OPEN. A break we cannot read is a break we cannot honour, and
-      // refusing to deal because the database is unhappy would turn a storage
-      // blip into a platform outage. Worst case a restart is briefly visible,
-      // which is exactly where we were before this module existed.
+    let lastErr: unknown = null;
+    let loaded = false;
+    for (let attempt = 1; attempt <= MaintenanceBreak.RESTORE_ATTEMPTS && !loaded; attempt++) {
+      try {
+        saved = await this.deps.store.load();
+        loaded = true;
+      } catch (err) {
+        lastErr = err;
+        if (attempt < MaintenanceBreak.RESTORE_ATTEMPTS) {
+          console.warn(
+            `[MaintenanceBreak] could not read the persisted break (attempt ${attempt}/${
+              MaintenanceBreak.RESTORE_ATTEMPTS
+            }), retrying: ${(err as Error)?.message ?? err}`
+          );
+          await new Promise<void>((r) => this.setTimer(r, MaintenanceBreak.RESTORE_RETRY_MS));
+        }
+      }
+    }
+    if (!loaded) {
+      // Fail OPEN, but only after the retries above. A break we cannot read
+      // is a break we cannot honour, and refusing to deal because the
+      // database is unhappy would turn a storage blip into a platform outage.
       console.warn(
-        `[MaintenanceBreak] could not read the persisted break, starting unpaused: ${
-          (err as Error)?.message ?? err
-        }`
+        `[MaintenanceBreak] could not read the persisted break after ${
+          MaintenanceBreak.RESTORE_ATTEMPTS
+        } attempts, starting unpaused: ${(lastErr as Error)?.message ?? lastErr}`
       );
       return;
     }
@@ -277,7 +385,11 @@ export class MaintenanceBreak {
     this.reason = saved.reason;
     this.announcedAt = saved.announcedAt;
     this.phase = 'counting_down';
+    // The previous engine's start instant, so the thaw measures the WHOLE
+    // freeze, not just the slice this process lived through.
+    this.breakStartedAt = saved.breakStartedAt ?? this.now();
     this.breakEndsAt = this.now() + Math.min(remaining, MaintenanceBreak.BREAK_DURATION_MS);
+    setMaintenanceFrozen(true);
 
     console.log(
       `[MaintenanceBreak] Resumed a break left by the previous engine - ${Math.round(
@@ -301,7 +413,7 @@ export class MaintenanceBreak {
    */
   adopt(tableId: string, engine: PausableTableEngine): void {
     if (!this.isActive()) return;
-    engine.pauseAfterHand(this.remainingParkBudgetMs(), { beforeNextHand: true });
+    engine.pauseForMaintenance(this.remainingParkBudgetMs());
     this.deps.emit(tableId, this.eventPayload(tableId, this.phase as MaintenanceBreakPhase));
   }
 
@@ -394,6 +506,10 @@ export class MaintenanceBreak {
     this.phase = 'last_hand';
     this.announcedAt = this.now();
     this.breakEndsAt = 0;
+    // Freeze the engine's own sweeps from the announcement, not the countdown:
+    // a horse standing up at :54 under a "Last Hand" banner is the same tell
+    // as one standing up at :56, and nothing these sweeps do cannot wait.
+    setMaintenanceFrozen(true);
 
     const tables = this.parkEveryEngine();
     console.log(
@@ -435,6 +551,9 @@ export class MaintenanceBreak {
     this.parkEveryEngine();
 
     const stragglers = this.unparkedTables();
+    this.unparkedAtCountdown = stragglers.length;
+    this.peakUnparked = stragglers.length;
+    this.readyForRestartAtMs = null;
     if (stragglers.length > 0) {
       // Not fatal, and deliberately not blocking. A table wedged mid-hand must
       // not hold the platform's break open past the hour - the tournament
@@ -449,6 +568,7 @@ export class MaintenanceBreak {
     }
 
     this.phase = 'counting_down';
+    this.breakStartedAt = this.now();
     this.breakEndsAt = this.now() + MaintenanceBreak.BREAK_DURATION_MS;
 
     console.log(
@@ -484,15 +604,101 @@ export class MaintenanceBreak {
    * break that ended. fn_maintenance_break_state self-expires for the same
    * reason, as a second line of defence.
    */
-  async end(): Promise<void> {
-    if (this.phase === 'idle') return;
+  /**
+   * Re-entrancy latch for end(). The idle check alone is not enough: the
+   * phase only becomes 'idle' AFTER the awaited thaw completes, so the armed
+   * end-timer and a concurrent caller (a second timer, a manual end) could
+   * both pass the guard during that await and run the whole resume twice.
+   * The unit test caught exactly that - ['thaw','thaw','resume','resume'].
+   * The thaw RPC is idempotent server-side, but relying on the last line of
+   * defence to absorb a bug in the first is how defences get spent.
+   */
+  private ending = false;
 
-    const resumed = this.resumeEveryEngine();
+  async end(): Promise<void> {
+    if (this.phase === 'idle' || this.ending) return;
+    this.ending = true;
+
+    /**
+     * THE THAW COMES FIRST (Dan 2026-09-01: "picks back up exactly as it
+     * was"). Deadlines are shifted while every table is still parked, so no
+     * clock can be judged - a sit-out evicted, a seat hold expired, a Spin
+     * level rolled - in the gap between the first table resuming and the
+     * shift landing. If the thaw itself fails, play still resumes: five
+     * minutes of clock drift is a wrong that heals, a platform that stays
+     * frozen is not.
+     */
+    let thawOk: boolean | null = null;
+    if (this.deps.thaw && this.breakStartedAt > 0) {
+      const frozenSeconds = Math.max(1, Math.round((this.now() - this.breakStartedAt) / 1000));
+      try {
+        await this.deps.thaw(this.breakStartedAt, frozenSeconds);
+        thawOk = true;
+        console.log(`[MaintenanceBreak] Thawed the platform clocks (+${frozenSeconds}s).`);
+      } catch (err) {
+        thawOk = false;
+        console.error(
+          '[MaintenanceBreak] THAW FAILED - resuming anyway; clocks lost the frozen minutes.',
+          err
+        );
+      }
+    }
+    const outcome: MaintenanceBreakOutcome = {
+      breakStartedAtMs: this.breakStartedAt,
+      breakEndedAtMs: this.now(),
+      unparkedAtCountdown: this.unparkedAtCountdown,
+      peakUnparked: this.peakUnparked,
+      readyForRestartAtMs: this.readyForRestartAtMs,
+      tablesResumed: 0,
+      thawOk,
+    };
+    /**
+     * THE BREAK IS OVER BEFORE THE FIRST TABLE WAKES (review fix, 2026-09-03).
+     *
+     * The staggered batches (phase 3) fire RESUME_STAGGER_MS apart and each
+     * one checks `this.phase === 'idle'` so a batch left over from a break
+     * that has since been superseded cannot wake a table the next break is
+     * holding. That check used to be satisfied only AFTER `recordOutcome`
+     * resolved, and recordOutcome is a database insert made at :00 - the one
+     * instant the database is guaranteed to be at its slowest (statement
+     * timeouts of up to 8s are routine there). An insert slower than 750ms
+     * would have dropped batch 1; one slower than 10s would have dropped all
+     * fourteen batches of a 355-table fleet, and a dropped table cannot
+     * recover: the pause safety timeout wakes it, the loop's own gate sees
+     * `maintenancePaused` still set and parks it again, forever. The 23:55
+     * restart's insert took 170ms, which is why 355 tables came back; that
+     * is luck, not design. So: the break goes idle FIRST, then the tables
+     * are woken. The outcome was captured above, so the record stays honest.
+     */
     this.phase = 'idle';
+    this.breakStartedAt = 0;
     this.breakEndsAt = 0;
     this.announcedAt = 0;
+    this.ending = false;
+    setMaintenanceFrozen(false);
 
-    console.log(`[MaintenanceBreak] ═══ BREAK ENDED ═══ Resumed ${resumed} table(s).`);
+    const resumed = this.resumeEveryEngine();
+    outcome.tablesResumed = resumed;
+    // The break's own scorecard line. Never allowed to delay or fail the
+    // resume: the first batch is already running and the rest are scheduled
+    // by the time this is awaited, and nothing below gates them.
+    if (this.deps.recordOutcome) {
+      try {
+        await this.deps.recordOutcome(outcome);
+      } catch (err) {
+        console.warn('[MaintenanceBreak] could not record the break outcome', err);
+      }
+    }
+
+    console.log(
+      `[MaintenanceBreak] BREAK ENDED. Resumed ${resumed} table(s). ` +
+        `Unparked at countdown ${outcome.unparkedAtCountdown}, peak ${outcome.peakUnparked}, ` +
+        `readyForRestart ${
+          outcome.readyForRestartAtMs === null
+            ? 'never'
+            : 'at ' + new Date(outcome.readyForRestartAtMs).toISOString()
+        }.`
+    );
     this.broadcastEnded();
     await this.safeClear();
   }
@@ -506,7 +712,7 @@ export class MaintenanceBreak {
     const budget = this.remainingParkBudgetMs();
     for (const [tableId, engine] of this.deps.engines()) {
       try {
-        engine.pauseAfterHand(budget, { beforeNextHand: true });
+        engine.pauseForMaintenance(budget);
         n++;
       } catch (err) {
         console.warn(`[MaintenanceBreak] could not park table ${tableId}`, err);
@@ -516,46 +722,97 @@ export class MaintenanceBreak {
   }
 
   private resumeEveryEngine(): number {
-    let n = 0;
+    // Collect the tables this break is responsible for resuming, in order.
+    const resumable: Array<[string, PausableTableEngine]> = [];
     for (const [tableId, engine] of this.deps.engines()) {
       try {
-        // Leave a table another authority is still holding. See
-        // MaintenanceBreakDeps.shouldStayPaused - a tournament add-on break
-        // can outlast this one, and resuming it here would deal that event
-        // back into play while its own clock still has it on break.
         if (this.deps.shouldStayPaused?.(tableId)) {
           console.log(
             `[MaintenanceBreak] Leaving ${tableId} paused - its tournament is still on a break of its own.`
           );
           continue;
         }
-        engine.resumeDealing();
-        n++;
+        resumable.push([tableId, engine]);
       } catch (err) {
-        // Keep going. One table that refuses to resume must not strand the
-        // rest of the platform on a break that is over.
-        console.warn(`[MaintenanceBreak] could not resume table ${tableId}`, err);
+        console.warn(`[MaintenanceBreak] could not inspect table ${tableId} for resume`, err);
       }
     }
-    return n;
+
+    const token = ++this.resumeToken;
+    const B = MaintenanceBreak.RESUME_BATCH_SIZE;
+
+    const resumeOne = (tableId: string, engine: PausableTableEngine): void => {
+      try {
+        engine.resumeFromMaintenance();
+      } catch (err) {
+        // One table that refuses to resume must not strand the rest.
+        console.warn(`[MaintenanceBreak] could not resume table ${tableId}`, err);
+      }
+    };
+
+    // Batch 0 resumes NOW, synchronously: a small fleet (and every test fleet)
+    // is fully up before end() returns, and there is no visible stagger below
+    // the batch size.
+    for (const [id, engine] of resumable.slice(0, B)) resumeOne(id, engine);
+
+    // The remaining batches roll out RESUME_STAGGER_MS apart, in the
+    // background. A batch from a superseded break (resumeToken changed) is
+    // dropped rather than waking a table the next break is holding.
+    const rest = resumable.slice(B);
+    for (let i = 0; i < rest.length; i += B) {
+      const batch = rest.slice(i, i + B);
+      const delay = (i / B + 1) * MaintenanceBreak.RESUME_STAGGER_MS;
+      this.setTimer(() => {
+        // Drop a stale batch: a newer break has superseded this rollout
+        // (resumeToken bumped), or a break is once again active and holding
+        // these tables (phase left idle). Waking them now would deal a table
+        // back into a break it is supposed to be paused in.
+        if (this.resumeToken !== token || this.phase !== 'idle') return;
+        for (const [id, engine] of batch) resumeOne(id, engine);
+      }, delay);
+    }
+
+    // Every table in `resumable` receives exactly one resume; the count is
+    // honest at call time even though the later batches wake shortly after.
+    return resumable.length;
   }
 
   /**
-   * Tables that have not reached the pause gate yet.
+   * Tables that must not be restarted right now: running, with a hand in
+   * flight.
    *
-   * `isWaitingForHandForHand()` is the ONLY acceptable test here, and this
-   * originally also accepted `isPausedByDesign()` - which is wrong in the most
-   * dangerous possible direction, and the unit test caught it. `pauseAfterHand`
-   * sets the paused flag the instant it is CALLED, so `isPausedByDesign()` is
-   * true for a table with four players all-in and cards still in the air. The
-   * gate opened at :55 whether or not a single hand had finished, and the
-   * restart went in on top of live play - the exact failure this whole feature
-   * exists to remove.
+   * THIS TEST HAS BEEN WRONG THREE TIMES, and each time in a way the previous
+   * fix's comment could not see. All three are worth keeping.
    *
-   * `isWaitingForHandForHand()` is true only once the deal loop has actually
-   * reached `awaitPauseGate` and registered its resolver, which by
-   * construction happens between hands. It is the same test
-   * TournamentManagerBase.areAllTablesParked uses, for the same reason.
+   * TOO LOOSE (caught by the unit test): it accepted `isPausedByDesign()`,
+   * which goes true the instant the pause is REQUESTED - so it was true for a
+   * table with four players all-in and cards still in the air. The gate opened
+   * at :55 whether or not a single hand had finished.
+   *
+   * TOO TIGHT (caught by an audit before this shipped): the fix used
+   * `isWaitingForHandForHand()`, true only for a table that reached the gate
+   * from the DEALING loop. A quiet table sits in the start-up wait loop and
+   * never gets there, so every quiet table counted as unparked FOREVER.
+   *
+   * STILL TOO TIGHT (PHASE 2, measured 2026-09-02): the second fix used
+   * `isParkedBetweenHands()`, which is true only while a loop is literally
+   * blocked on the pause-gate promise. A table anywhere ELSE in its loop -
+   * the wait loop's 5s sleep, loadSeatedPlayers, the idle broadcast, the
+   * dealing loop between hands but before the gate - read as unparked with no
+   * cards out at all. On the 17:55 break, with ZERO hands dealt inside it,
+   * 64-70 tables held the gate shut for the whole five minutes; the deploy
+   * gave up at :00 and the fallback restarted the engine at 18:02 on live
+   * tables. The gate had never once opened on any real break.
+   *
+   * The honest question is not "has a loop reached the gate" but "are there
+   * cards in the air". `isBetweenHands()` is exactly that: handController is
+   * null, which the engine sets only AFTER the hand-complete listener has
+   * settled the pot (and on the void/abort paths, where there is nothing to
+   * settle). A table with no hand in flight loses nothing to a restart,
+   * wherever its loop happens to be; a table WITH one holds the gate until
+   * it finishes, and `maintenancePaused` stops it starting another. This is
+   * also the predicate the mystery-bounty phase already trusts to move money
+   * only between hands.
    *
    * A stopped engine is not counted: it has no hand to protect.
    */
@@ -564,11 +821,14 @@ export class MaintenanceBreak {
     for (const [tableId, engine] of this.deps.engines()) {
       try {
         if (!engine.isRunning()) continue;
-        if (!engine.isWaitingForHandForHand()) out.push(tableId);
+        if (!engine.isBetweenHands()) out.push(tableId);
       } catch {
         // Unreadable engines are not counted against the gate; an engine that
         // throws on inspection is already being handled by the reapers.
       }
+    }
+    if (this.phase === 'counting_down' && out.length > this.peakUnparked) {
+      this.peakUnparked = out.length;
     }
     return out;
   }
@@ -637,6 +897,7 @@ export class MaintenanceBreak {
       await this.deps.store.save({
         phase: this.phase,
         announcedAt: this.announcedAt,
+        breakStartedAt: this.breakStartedAt > 0 ? this.breakStartedAt : null,
         breakEndsAt: this.breakEndsAt > 0 ? this.breakEndsAt : null,
         reason: this.reason,
       });
@@ -682,7 +943,9 @@ export class MaintenanceBreak {
   readyForRestart(): boolean {
     if (this.phase !== 'counting_down') return false;
     if (this.unparkedTables().length > 0) return false;
-    return this.remainingMs() >= MaintenanceBreak.MIN_REMAINING_FOR_RESTART_MS;
+    const ready = this.remainingMs() >= MaintenanceBreak.MIN_REMAINING_FOR_RESTART_MS;
+    if (ready && this.readyForRestartAtMs === null) this.readyForRestartAtMs = this.now();
+    return ready;
   }
 
   /** Published on /health. */

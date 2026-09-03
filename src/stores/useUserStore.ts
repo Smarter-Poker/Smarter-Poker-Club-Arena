@@ -149,30 +149,68 @@ export const useUserStore = create<UserState>()(
       },
 
       setUser: (userData: Partial<UserProfile> & { id: string }) => {
+        /* ── A PARTIAL WRITE MAY NOT ERASE WHAT A FULL ONE ESTABLISHED ───────
+           Dan 2026-09-03: "IT SHOULD SAY THE POKER ALIAS (KingFish) NOT DAN
+           BEKAVAC."
+
+           This built the object from `userData` alone, so every call REPLACED
+           the stored user. Five call sites pass a partial - two in IdentityDNA,
+           two in AuthGuard, one in useAuthUser - and each carries only
+           `id, username, display_name, avatar_url` off the JWT. So the sequence
+           that actually runs on a cold load was:
+
+             loadProfile()           -> alias 'KingFish' lands in the store
+             IdentityDNA background  -> setUser(partial) wipes it back to null
+
+           and `playerDisplayName(user, 'arena')`, finding no alias, fell
+           through to `display_name` - which on this account holds the LEGAL
+           NAME (profiles.username 'kingfish', alias 'KingFish', display_name
+           and full_name both 'Dan Bekavac'). The club card said "Dan Bekavac".
+           Adding the alias to loadProfile's select on 2026-09-02 could not fix
+           that by itself, because the erasing write lands afterwards.
+
+           Merging over the previous row for the SAME id makes the order stop
+           mattering: whichever call knows the alias, the store keeps it. A
+           different id is an account switch and still replaces outright -
+           never carry one person's name into another's session. */
+        const previous = get().user;
+        const base: Partial<UserProfile> = previous && previous.id === userData.id ? previous : {};
+        const pick = <K extends keyof UserProfile>(key: K): UserProfile[K] =>
+          userData[key] !== undefined
+            ? (userData[key] as UserProfile[K])
+            : (base[key] as UserProfile[K]);
+
+        const username = pick('username') || 'Player';
         const user: UserProfile = {
           id: userData.id,
-          username: userData.username || 'Player',
-          display_name: userData.display_name || userData.username || 'Player',
+          username,
+          display_name: pick('display_name') || username,
           /* The same name fields as loadProfile. setUser is the path used by
              the auth listener and the identity cache, so a user who arrives
              through it rather than through loadProfile must not end up with a
              store that cannot resolve their alias. */
-          alias: userData.alias ?? null,
-          first_name: userData.first_name ?? null,
-          last_name: userData.last_name ?? null,
-          full_name: userData.full_name ?? null,
-          display_name_preference: userData.display_name_preference ?? null,
-          use_real_name: userData.use_real_name ?? null,
-          avatar_url: userData.avatar_url || null,
-          vip_level: userData.vip_level || 'bronze',
-          player_number: userData.player_number,
-          stats: userData.stats || DEFAULT_STATS,
-          created_at: userData.created_at || new Date().toISOString(),
+          alias: pick('alias') ?? null,
+          first_name: pick('first_name') ?? null,
+          last_name: pick('last_name') ?? null,
+          full_name: pick('full_name') ?? null,
+          display_name_preference: pick('display_name_preference') ?? null,
+          use_real_name: pick('use_real_name') ?? null,
+          avatar_url: pick('avatar_url') || null,
+          vip_level: pick('vip_level') || 'bronze',
+          player_number: pick('player_number'),
+          stats: pick('stats') || DEFAULT_STATS,
+          created_at: pick('created_at') || new Date().toISOString(),
         };
+        /* Same hazard, same rule: `chip_balance` is absent from every partial
+           hydration, and `|| 0` turned that absence into a balance of zero.
+           A player watched their chip total blink to 0 whenever the auth
+           listener re-fired. Only a write that actually carries a balance may
+           change one. */
+        const incomingChips = (userData as unknown as { chip_balance?: number }).chip_balance;
         set({
           user,
           isAuthenticated: true,
-          totalChips: (userData as any).chip_balance || 0,
+          ...(incomingChips === undefined ? {} : { totalChips: incomingChips || 0 }),
         });
       },
 

@@ -229,16 +229,93 @@ describe('the arena is always the alias', () => {
     // ...and the header name is resolved unconditionally.
     expect(code(hamburger)).not.toContain('prefUseRealName');
   });
+
+  it('a partial hydration cannot erase the alias the full load established', () => {
+    /* THE HALF THE 2026-09-02 SWEEP MISSED, and Dan saw it the next day:
+       "IT SHOULD SAY THE POKER ALIAS (KingFish) NOT DAN BEKAVAC."
+
+       Adding `alias` to loadProfile's select was necessary and not sufficient,
+       because `setUser` REBUILT the stored user from its argument. Five call
+       sites pass a partial carrying only id/username/display_name/avatar_url
+       off the JWT, and one of them - IdentityDNA's background profile load -
+       lands AFTER loadProfile. So the sequence was: alias arrives, alias is
+       wiped, the resolver falls through to `display_name`, and `display_name`
+       is the legal name on 264 of 1,308 rows, this account among them.
+
+       The store merges over the previous row for the same id now, which is
+       what makes the ordering stop mattering, so that is what is pinned. */
+    const store = code(readFileSync(join(SRC, 'stores', 'useUserStore.ts'), 'utf8'));
+    expect(store).toContain('const previous = get().user;');
+    expect(store).toMatch(/previous && previous\.id === userData\.id \? previous : \{\}/);
+    for (const field of [
+      'alias',
+      'first_name',
+      'last_name',
+      'full_name',
+      'display_name_preference',
+      'use_real_name',
+    ]) {
+      expect(store, `${field} must be merged, not read off userData alone`).toContain(
+        `${field}: pick('${field}')`
+      );
+    }
+  });
+
+  it('no hydration path files a real name under display_name', () => {
+    /* `display_name` is the arena resolver's LAST RESORT, so a legal name
+       parked there gets printed at the tables. Three paths used to fold the
+       JWT's `full_name` into it - `metadata?.display_name || metadata?.full_name`
+       - which is both the first-paint leak and the mechanism by which 264
+       profiles came to hold their own legal name in that column. The real name
+       goes in `full_name` now, where the resolver recognises and refuses it. */
+    for (const rel of [
+      'core/IdentityDNA.ts',
+      'components/auth/AuthGuard.tsx',
+      'hooks/useAuthUser.ts',
+    ]) {
+      const body = code(readFileSync(join(SRC, rel), 'utf8'));
+      expect(body, `${rel} still folds a real name into display_name`).not.toMatch(
+        /display_name:\s*(metadata|user_metadata)\?\.display_name\s*\|\|\s*(metadata|user_metadata)\?\.full_name/
+      );
+      expect(body, `${rel} must carry the real name in full_name`).toMatch(
+        /full_name:\s*(metadata|user_metadata)\?\.full_name/
+      );
+    }
+  });
+
+  it('the second profile loader asks for the name columns too', () => {
+    /* There are TWO loaders. `useUserStore.loadProfile` was fixed on
+       2026-09-02; `IdentityDNA.loadUserProfile` still selected
+       `id, username, display_name, avatar_url, tier, ...`, so the write it
+       makes into the store could not carry an alias even in principle. It
+       imports the shared column list rather than retyping it, so the two
+       selects cannot drift apart again. */
+    const identity = code(readFileSync(join(SRC, 'core', 'IdentityDNA.ts'), 'utf8'));
+    expect(identity).toContain("import { PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName'");
+    expect(identity).toMatch(/\.select\(\s*`id, \$\{PLAYER_NAME_COLUMNS\}/);
+    expect(identity).toContain('alias: profile.alias ?? null');
+  });
 });
 
 /**
  * STILL OPEN, and deliberately not fixed here.
  *
- * 1. Sign-up seeds `display_name` FROM `full_name` (IdentityDNA, AuthGuard,
- *    useAuthUser). That is the mechanism by which 264 profiles ended up with a
- *    display_name that IS their legal name. Changing what sign-up stores is a
- *    product decision about the World Hub's identity record, not a rendering
- *    fix, so it is recorded rather than done.
+ * 1. CLOSED 2026-09-03, and it was not the small thing this note called it.
+ *    "Sign-up seeds display_name FROM full_name (IdentityDNA, AuthGuard,
+ *    useAuthUser)" was filed here as a product decision about the World Hub's
+ *    identity record. It was not: those three write into THIS app's store on
+ *    every load, not only at sign-up, and `setUser` rebuilt the whole user from
+ *    each partial - so the write also ERASED the alias the profile load had
+ *    just fetched. Deferring it is what left Dan's card reading "Dan Bekavac"
+ *    the day after the sweep that was supposed to fix exactly that. All three
+ *    now file the real name under `full_name`, and the store merges. Pinned by
+ *    the three tests above.
+ *
+ *    What genuinely remains a World Hub decision is the 264 EXISTING rows whose
+ *    `display_name` column already holds a legal name. Nothing reads them on an
+ *    arena surface any more (the resolver compares the two and refuses a match),
+ *    so they are inert here, and rewriting somebody's stored profile is not a
+ *    rendering fix.
  *
  * 2. Three dormant profiles have no alias, no usable display_name, and a
  *    username that IS their full name, so the handle step returns a real name

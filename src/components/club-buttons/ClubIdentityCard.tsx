@@ -4,8 +4,20 @@ import './ClubIdentityCard.css';
 /* v3 moved the club and profile icons DOWN 32px so they sit level with the two
    ID lines they label (Dan, 2026-09-01). It is a new filename rather than a new
    copy of v2 because the old file is already in browser and CDN caches, and a
-   card whose labels point one line too high is exactly the bug being fixed. */
-const CLUB_IDENTITY_SHELL = `${import.meta.env.BASE_URL}assets/club-buttons/club/club-identity-template-no-level-v3.png`;
+   card whose labels point one line too high is exactly the bug being fixed.
+
+   v5 REMOVES THE SILVER LOGO FRAME FROM THE ARTWORK ITSELF (Dan 2026-09-03:
+   "THERE IS A BLACK BARCKGROUND BENIND THE SHARK CLUB LOGO THAT NEEDS TO BE
+   REMOVED"). The frame was painted into the PNG, and the previous attempt hid
+   it behind a `#000` div - which is exactly what Dan is looking at. The card's
+   ground is a textured quilt, not black, so covering a silver box with a flat
+   black rectangle trades one wrong thing for another just as visible.
+
+   The frame is gone from the pixels now, healed over with quilt sampled from
+   the clean stretch of the same image, so the logo floats on the real texture
+   and there is nothing left to mask. Same naming rule as v3: caches hold the
+   old bytes, so a change of pixels is a change of filename. */
+const CLUB_IDENTITY_SHELL = `${import.meta.env.BASE_URL}assets/club-buttons/club/club-identity-template-no-level-v5.png`;
 
 export interface ClubIdentityCardProps {
   clubName: string;
@@ -91,6 +103,34 @@ export function fittedNameSizeCqw(available: number, needed: number, from: numbe
   return Math.max(CLUB_NAME_MIN_CQW, Math.min(CLUB_NAME_MAX_CQW, Math.round(scaled * 100) / 100));
 }
 
+/**
+ * "THE W IN PLAYING NOW IS CUT OFF" (Dan 2026-09-03).
+ *
+ * The count line carries the longest string on the card - "1,204 PLAYING NOW" -
+ * in the narrowest bay, between the ID column and the copy frame, and it was
+ * sized with a fixed `cqw`. A fixed size cannot fit a variable string: the bay
+ * has been widened twice already for this exact complaint, and each time the
+ * next longer count or the next slightly wider font clipped it again. Widening
+ * is not available a third time either, because the right edge now stops at the
+ * painted copy frame.
+ *
+ * So it is measured, like the club name above it. Same one-shot arithmetic:
+ * text width is linear in font size, so `have / need` is the answer outright.
+ * Below the floor the line would stop being readable, so it clamps there and
+ * the bay's `overflow: hidden` still guards - but the floor is low enough that
+ * no plausible count reaches it (at 2.05cqw, "1,204,000 PLAYING NOW" still
+ * fits).
+ */
+export const PLAYING_MAX_CQW = 3.15;
+export const PLAYING_MIN_CQW = 2.05;
+
+export function fittedPlayingSizeCqw(available: number, needed: number, from: number): number {
+  if (!available || !needed || needed <= 0) return from;
+  if (needed <= available) return from; // already fits - never grow past the ceiling
+  const scaled = (from * available) / needed;
+  return Math.max(PLAYING_MIN_CQW, Math.min(PLAYING_MAX_CQW, Math.floor(scaled * 100) / 100));
+}
+
 function IdentityLine({
   label,
   accessibleLabel,
@@ -141,6 +181,8 @@ export function ClubIdentityCard({
 }: ClubIdentityCardProps) {
   const nameRef = useRef<HTMLHeadingElement>(null);
   const nameTextRef = useRef<HTMLSpanElement>(null);
+  const playingRef = useRef<HTMLSpanElement>(null);
+  const playingTextRef = useRef<HTMLSpanElement>(null);
 
   /* Fit the club name to its band, once per name and again whenever the card
      is resized. `useLayoutEffect` so the corrected size is in place before the
@@ -171,6 +213,31 @@ export function ClubIdentityCard({
     return () => observer.disconnect();
   }, [clubName]);
 
+  /* The same treatment for the count line — see fittedPlayingSizeCqw. It
+     re-runs on the COUNT, not only on resize: "484" and "1,204" are different
+     widths, and the number changes under the player while they watch. */
+  useLayoutEffect(() => {
+    const band = playingRef.current;
+    const text = playingTextRef.current;
+    if (!band || !text) return;
+
+    const fit = () => {
+      band.style.setProperty('--playing-size', `${PLAYING_MAX_CQW}cqw`);
+      const size = fittedPlayingSizeCqw(
+        band.clientWidth,
+        text.getBoundingClientRect().width,
+        PLAYING_MAX_CQW
+      );
+      band.style.setProperty('--playing-size', `${size}cqw`);
+    };
+
+    fit();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(fit);
+    observer.observe(band);
+    return () => observer.disconnect();
+  }, [playersPlaying]);
+
   return (
     <section
       className={`club-identity ${className}`.trim()}
@@ -197,11 +264,10 @@ export function ClubIdentityCard({
         <span ref={nameTextRef}>{clubName}</span>
       </h2>
 
-      {/* Covers the silver square frame painted into the shell artwork — Dan 2026-09-02:
-          "REMOVE THE SILVER BOX THAT IS BEHIND THE LOGO'S ON ALL THE CLUB CARDS.
-          IT SHOULD JUST BE A LOGO, NO FRAME OR BOX BEHIND IT." */}
-      <div className="club-identity__logo-mask" aria-hidden="true" />
-
+      {/* The silver frame Dan asked to remove on 2026-09-02 ("REMOVE THE SILVER
+          BOX THAT IS BEHIND THE LOGO'S ON ALL THE CLUB CARDS") is no longer in
+          the artwork, so the black `__logo-mask` div that used to cover it is
+          gone with it. See the note on CLUB_IDENTITY_SHELL. */}
       <div className="club-identity__logo">
         {logoUrl ? <img src={logoUrl} alt={`${clubName} Logo`} loading="lazy" /> : logoFallback}
       </div>
@@ -236,9 +302,13 @@ export function ClubIdentityCard({
       </div>
 
       <div className="club-identity__footer">
-        <span className="club-identity__playing" aria-live="polite">
-          <strong>{playersPlaying == null ? '-' : playersPlaying.toLocaleString()}</strong>
-          <span>Playing Now</span>
+        <span className="club-identity__playing" ref={playingRef} aria-live="polite">
+          {/* The measurable half: exactly as wide as the count plus the label,
+              so the effect above can compare it against the bay it sits in. */}
+          <span className="club-identity__playing-fit" ref={playingTextRef}>
+            <strong>{playersPlaying == null ? '-' : playersPlaying.toLocaleString()}</strong>
+            <span>Playing Now</span>
+          </span>
         </span>
         <button
           type="button"

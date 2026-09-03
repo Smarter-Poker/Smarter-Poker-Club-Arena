@@ -1,0 +1,550 @@
+# Club Operations: the full upgrade programme
+
+Owner: Dan (directive 2026-09-03 - "verify, audit and upgrade every single
+page" of `/hub/club-arena/clubs/:club/operations` and every sub page).
+Author of this plan: Cowork/Claude session `feat/club-operations-full-upgrade`.
+Status: **Phases 1, 2 and 3 of 8 built, tested and pushed. Phases 4 to 8 specified below.**
+
+Every finding in this document was produced by reading the page source end to
+end and, where it concerns data, by querying production
+(`kuklfnapbkmacvwxktbh`) and reading the function bodies. Findings are labelled
+**CONFIRMED** (the code path was read end to end, or the query was run) or
+**SUSPECTED** (the shape is there, the reproduction is not). Sample club
+throughout: Deep Stack Society `2a1132b9-5ba2-42e6-9f01-30a7fcffebe3`, 417
+members, 226 live tables.
+
+---
+
+## 1. The inventory: every page and sub page in the workspace
+
+Twenty-four routes reach the operator workspace. Twenty-one are advertised in
+the registry as of Phase 1; three more are reachable and deliberately not
+advertised (`cashier-classic`, the two member detail routes are children of
+Players).
+
+| #   | Tool              | Route                         | Component                  | Lines  | Group / access        |
+| --- | ----------------- | ----------------------------- | -------------------------- | ------ | --------------------- |
+| 1   | Overview          | `/operations`                 | `ClubOperationsPage`       | 260    | overview / staff      |
+| 2   | Dashboard         | `/dashboard-full`             | `ClubDashboard`            | 1838   | people / staff        |
+| 3   | Players           | `/members`                    | `ClubMembersPage`          | 1149   | people / staff        |
+| 4   | Player record     | `/members/:userId`            | `MemberManagementPage`     | 1265   | child of Players      |
+| 5   | Player statistics | `/members/:userId/statistics` | `PlayerStatisticsPage`     | 348    | child of Players      |
+| 6   | Agent Team        | `/agents`                     | `AgentManagementPage`      | 1547   | people / staff        |
+| 7   | Agent Network     | `/agent-dashboard`            | `SuperAgentDashboard`      | 549    | people / staff        |
+| 8   | Reports           | `/reports`                    | `ReportReviewPage`         | 383    | people / staff        |
+| 9   | Disputes          | `/disputes`                   | `DisputeManagementPage`    | 508    | people / staff        |
+| 10  | Anti-Cheat        | `/anti-cheat`                 | `AntiCheatPage`            | 1185   | people / staff        |
+| 11  | Blacklist         | `/blacklist`                  | `BlacklistManagerPage`     | 318    | people / control      |
+| 12  | Finance Overview  | `/finance`                    | `ClubFinanceWorkspacePage` | shared | finance / finance     |
+| 13  | Club Data         | `/data`                       | `ClubDataPage`             | 2773   | finance / finance     |
+| 14  | Financials        | `/financials`                 | `ClubFinancialsPage`       | 629    | finance / finance     |
+| 15  | Cashier           | `/cashier`                    | `CashierTradePage`         | 3396   | finance / finance     |
+| 16  | Cashier (classic) | `/cashier-classic`            | `CashierPage`              | 2878   | unadvertised fallback |
+| 17  | Settlement        | `/settlement`                 | `SettlementPage`           | 1197   | finance / finance     |
+| 18  | Insurance Report  | `/insurance-report`           | `ClubInsuranceReportPage`  | 296    | finance / finance     |
+| 19  | Bomb Pot Report   | `/bomb-pot-report`            | `ClubBombPotReportPage`    | 296    | finance / control     |
+| 20  | Control Overview  | `/control`                    | `ClubControlWorkspacePage` | shared | control / control     |
+| 21  | Announcements     | `/announcements`              | `ClubAnnouncementsPage`    | 448    | control / staff       |
+| 22  | Player Offers     | `/promotions`                 | `PromotionsPage`           | 529    | control / staff       |
+| 23  | Promo Vault       | `/promo-vault`                | `PromoVaultPage`           | 1050   | control / control     |
+| 24  | Table Management  | `/table-management`           | `GameManagementPage`       | shared | control / control     |
+| 25  | Club Rules        | `/rules`                      | `ClubRulesPage`            | 339    | control / control     |
+| 26  | Settings          | `/settings`                   | `ClubSettingsPage`         | 2100   | control / control     |
+
+Adjacent club routes that are NOT part of the operator workspace and stay out
+of it: `/`, `/lobby`, `/tournaments`, `/messages`, `/jackpot`,
+`/create-table`, `/tables/:tableId/bomb-settings` (a per-table config opened
+from Table Management).
+
+---
+
+## 2. The build order, and why
+
+Eight phases. The ordering is by **how badly the page lies to the operator**,
+not by how much code it needs:
+
+1. **The shell** - the page Dan linked, the doors, the permission truth. DONE.
+2. **Integrity and safety** - four pages where a button says "done" and
+   nothing was written. The worst class of defect on the estate: the operator
+   believes they acted.
+3. **The agent network** - a Ban button that is a `toast.success` and nothing
+   else, a transfer that preselects a nonexistent recipient, a payouts table
+   computed in the browser.
+4. **The dashboard** - six numbers that are wrong or truncated on the page
+   most operators open first.
+5. **Players and player records** - a 1.05s roster query, a leaderboard sorted
+   over a truncated set, two identical statistics rows.
+6. **Finance truth** - the reporting pages, where one headline number is 4.6%
+   of the real figure and two pages disagree about rake by 6.2%.
+7. **Money movement** - the cashier pair and settlement. The write paths are
+   already safe; the reporting around them is not.
+8. **Club control** - three settings nothing reads, a rules save that reports
+   success after RLS refused it, and a vault grant that delivers nothing.
+
+Phases 2 through 8 each end the way this one did: built, wired, tested, every
+local gate green, one changelog, one branch pushed.
+
+---
+
+## 3. Phase 1 - The Operations Shell. **DONE**
+
+Shipped: `ca_club_operations_overview` (one staff-gated read: live floor, money
+for finance roles only, eleven queues, alerts carrying severity and the
+registry tool id); live reading strip, "Waiting For You" panel, per-tool and
+per-group queue badges and an honest freshness line on `/operations`; the same
+badges plus headline readings on `/finance` and `/control`; rail badges
+including the workspace total on the identity plate.
+
+Fixed: `anti-cheat` was advertised but absent from `OPERATION_SUFFIXES`, so the
+route had **no capability check at all** and the rail vanished on it; three
+built server-gated tools had no door (`promo-vault`, `bomb-pot-report`,
+`table-management`); the Promotions tile promised a campaign manager and opened
+the player offer feed; two `<main>` landmarks on six pages; three rail rewrites
+that could never select anything; group art bypassing `mediaUrl`; a 460px
+mobile hero.
+
+Tests added: 157 cases across registry integrity, the first mounted render test
+for the workspace, and an SQL/client payload contract.
+
+Detail: `docs/changelog/2026-09-03-club-operations-phase-1-the-shell.md`.
+
+---
+
+## 4. Phase 2 - Integrity and safety: the buttons that write nothing. **DONE**
+
+Shipped 2026-09-03 (migration `20260903170000_an_integrity_decision_is_written_down`):
+one shared gate `fn_ca_can_review_integrity` behind five functions;
+`fn_club_anti_cheat_flags` + `fn_review_anti_cheat_flag` (a flag review is
+written down for the first time, and a zero-row write is a failure);
+`get_anti_cheat_stats` rewritten to the shape the page reads and gated;
+`detect_collusion_pairs` rescoped to the club's own hands and split into the two
+detectors that were being shown as one; `fn_ca_dismiss_collusion_pair`;
+`fn_dispute_start_review` + `fn_dispute_escalate`; two indexes on a 169,530-row
+table that had only a primary key.
+
+Client: the Anti-Cheat console resolves its club before reading (it had been
+sending the slug into every uuid argument since it shipped); the kick goes
+through the engine's own `POST /admin/kick` instead of stamping `left_at` onto
+a seat; the anomalies tab says what its query measures; the reports queue polls
+instead of subscribing to a table that is not published, and states its 100-row
+ceiling; the blacklist form picks a person out of the roster, names them in the
+ledger, warns when an excluded player is still seated, and offers a broom for
+the expired rows nothing sweeps. `anti-cheat` moved from `staff` to `control`.
+
+Corrected the same day, in the phase 2 verification pass (migration
+`20260903180000_a_cleared_pair_stays_cleared`): `fn_ca_dismiss_collusion_pair`
+wrote `status = 'dismissed'`, a value `collusion_tracking_status_check` forbids,
+so the Clear button could only ever have thrown at the operator. Fixing the word
+exposed the larger fault - 169,519 of the table's 169,530 rows were auto-cleared
+on 2026-08-18 when the horse-versus-horse detector bug was fixed at the source,
+and the old `status <> 'dismissed'` filter (true for every row, since no row can
+hold that value) let all of them back in. The screen now reads the rows the
+detector left **open**, reports `closed_pairs` beside them so an empty queue
+reads as "the screen ran and closed itself", labels the non-dump group
+`screening` with each row naming its own pattern, and counts the window off
+`club_hand_daily`. The call went from ~1,400ms to 397ms.
+
+Detail: `docs/changelog/2026-09-03-club-operations-phase-1-the-shell.md` and
+`docs/changelog/2026-09-03-club-operations-phase-2-an-integrity-decision-is-written-down.md`.
+
+Everything below is what the phase found, kept as the record.
+
+**Anti-Cheat (`/anti-cheat`)**
+
+- **CONFIRMED - the page never resolves the club slug.** `AntiCheatPage.tsx:403`
+  does `setClubId(targetClub)` with the raw route param, so every query sends
+  `deep-stack-society-11192` to a `uuid` argument and to `.eq('club_id', ...)`.
+  Postgres answers `22P02 invalid input syntax for type uuid`; all four catch
+  blocks are a `console.warn` and an empty state. **The entire page renders
+  zeros and "Club Is Clean" on every slug URL.** The same file already calls
+  `resolveClubUUID` for its realtime filter, which proves the param needs it.
+- **CONFIRMED - `get_anti_cheat_stats` returns a different shape than the page
+  reads, and is mostly literal zeros.** It returns `total_hands_analyzed`,
+  `flagged_players: 0`, `active_investigations: 0`, `collusion_alerts: 0`,
+  `bot_suspicions: 0`, `chip_dumping_alerts: 0`, `last_scan`. The page reads
+  `open_flags`, `blocks_24h`, `active_sessions`, `by_severity`, `by_type`. No
+  key matches. It is also the only one of the three detectors that is NOT
+  `SECURITY DEFINER` and carries no authorization check.
+- **CONFIRMED - the Flags tab can never show a flag.** All 14 rows in
+  `anti_cheat_flags` have `club_id IS NULL`, and RLS grants `authenticated`
+  only `player_id = auth.uid()` - there is no staff read policy.
+- **CONFIRMED - "Submit Review" writes nothing and reports success.** A client
+  `.update()` with no UPDATE policy returns 204 / zero rows / no error, then
+  `toast.success('Flag reviewed successfully')`.
+- **CONFIRMED - Kick is half-wired and its audit row never lands.**
+  `kickPlayer(f.player_id)` is called with no `tableId`, so the `table_seats`
+  update is skipped entirely; the compensating `anti_cheat_events` insert is
+  service-role only and fails into a `console.warn`. The operator is told
+  "Player removed."
+- **CONFIRMED - horses are filtered out of collusion detection.**
+  `detect_collusion_pairs` requires BOTH players to have a `club_members` row,
+  which yields **0 pairs from 38,267 tracking rows** for a club where 556 of
+  557 tracked players are horses. Direct violation of CLAUDE.md 10.5; scope it
+  by the club's own tables/hands, which is how `analyzed_hands` in the same
+  function is already computed.
+- **CONFIRMED - the Anomalies tab is mislabelled.** `detect_suspicious_plays`
+  returns the winners of big pots (`pot_size >= 40 * big_blind`); the UI titles
+  it "Players Who Folded Strong Hands On The River" and stamps every row with
+  that badge. Its "Critical" tile can never be non-zero.
+- **CONFIRMED - collusion "Net Chips" is always 0**: the RPC reads
+  `evidence->>'net_chips_transferred'` and zero of 169,530 `collusion_tracking`
+  rows carry that key. The CSV exports the same constant.
+
+Work: resolve the UUID before any query; rewrite `get_anti_cheat_stats` to the
+keys the page reads, `SECURITY DEFINER` with the club-admin check its siblings
+use; backfill `anti_cheat_flags.club_id` from `table_id -> tables.club_id`, add
+`NOT NULL`, fix the writer; add a staff SELECT policy and
+`fn_review_anti_cheat_flag(...)`; route the kick through a definer RPC that
+carries the table and writes the event; rescope collusion detection to the
+club's own hands so horses count; relabel the anomalies tab to what the SQL
+computes; populate or drop `net_chips_transferred`; give the page an error
+state so "clean" and "could not read" stop looking identical.
+
+**Disputes (`/disputes`)**
+
+- **CONFIRMED - two of the three actions write nothing.** `disputes` has
+  exactly one policy, `disputes_party_or_admin_select`. `startReview` and
+  `escalateDispute` are direct table UPDATEs, match zero rows, and surface as
+  "Failed to start review". The `open -> under_review` transition is
+  unreachable, so the `under_review` filter tab can never populate. Only
+  Resolve works (it goes through `fn_resolve_dispute`).
+- **CONFIRMED - the 72h SLA is a client constant.** Nothing escalates or alerts
+  on breach. `disputes.assigned_to` exists and is only ever written by the
+  broken `startReview`, so it is always NULL.
+
+Work: `fn_dispute_start_review` and `fn_dispute_escalate` as definer RPCs with
+the club-admin check; surface `assigned_to`; an SLA-breach watcher that raises a
+`financial_alerts` row at 72h (the Phase 1 overview already reads
+`disputes_aged` and paints it critical).
+
+**Reports (`/reports`)**
+
+- **CONFIRMED - the realtime subscription is dead.** `user_reports` is not in
+  the `supabase_realtime` publication, and its RLS SELECT policy is
+  reporter/reported/service_role only, so a moderator matches nothing. No
+  polling fallback.
+- **CONFIRMED - no assignment, no aging, no priority.** Two moderators can work
+  the same case. `fn_list_player_reports` caps at 100 with no cursor and no
+  "there are more" indicator.
+- Note: `user_reports` has no `club_id` at all. Phase 1's badge scopes a report
+  to a club by the reported player's membership; a `club_id` column would make
+  that exact.
+
+**Blacklist (`/blacklist`)**
+
+- **CONFIRMED - expiry is honoured at the buy-in gate but nothing sweeps it.**
+  `atomic_table_buyin`, `atomic_tournament_register` and `atomic_table_rebuy`
+  all check `expires_at`, so an expired ban stops blocking; no cron touches the
+  table, so expired rows accumulate forever and the "Active" figure drifts.
+  Phase 1 surfaces `blacklist_expired` as an info alert; Phase 2 archives them.
+- **CONFIRMED - banning does not evict.** Inserting a row does not remove the
+  membership, clear `table_seats`, or close a session. The player stays seated
+  until they try to re-buy.
+- **CONFIRMED - the form takes a raw UUID typed by hand**, with no player
+  picker and no existence check. Removal is a hard DELETE with no un-ban audit
+  beyond the `fn_blacklists_audit` trigger.
+
+**Route-level gap for the whole group: CONFIRMED.** All four pages carry
+`AuthGuard + ClubMemberGuard` only. After Phase 1 the _capability_ layer covers
+them (`anti-cheat` is now in the suffix set), and the server checks are real for
+the detectors and `fn_action_player_report`, but `agents`, `disputes` and
+`blacklist` still rely on RLS for the write side only. Phase 2 adds the
+server-side read gate to match what the registry advertises.
+
+---
+
+## 5. Phase 3 - The agent network. **DONE**
+
+Shipped 2026-09-03 (migrations `20260903200000_an_agent_payout_is_a_record` and
+`20260903210000_the_payables_read_is_index_only`). Four controls could not do
+what their labels said, each for a different reason: Ban Player was a success
+toast and no write at all; Clawback was dead three times over (a list filtered
+on three transaction types with zero rows estate-wide, a claim step UPDATEing a
+table with no UPDATE policy, and an RPC that is SECURITY INVOKER with no
+EXECUTE for `authenticated`); Add Prepaid Balance sent `fn_admin_update_agent`
+the one pair it refuses, so no positive amount could ever succeed; and Revoke
+Credit called an ungranted invoker function that, had it run, would have moved
+player-wallet chips and left the credit line untouched.
+
+"Upcoming Agent Payouts" was `weekly_rake_generated * commission_rate` with a
+hardcoded "Pending" and no ledger read anywhere - 36,657 printed against 65,790
+genuinely owed across 259,135 unsettled commission rows. `fn_ca_agent_payables`
+reads the ledger behind a new `fn_ca_can_manage_agents` gate (owner, co-owner,
+admin), because `agent_commissions` grants `authenticated` only their own rows.
+`fn_ca_ban_club_player` writes the exclusion that `atomic_table_buyin`,
+`atomic_table_rebuy` and `atomic_tournament_register` all read, and
+deliberately does NOT delete the membership row: it carries the player's chips,
+and the first member the probe picked was holding 10,067.64 of them.
+
+The clawback panel was pointed at `fn_agent_wallet_reversible` and
+`fn_agent_wallet_claim_back`, which the wallet cashier has been using correctly
+all along - the dead parallel copy was deleted and no new money code written.
+Also fixed: the hierarchy Transfer sent the agents primary key where a user id
+was needed; Credit Limits labelled every super agent "Sub-Agent"; the agent
+dashboard read `invited_by` as the downline while every write path uses
+`agent_id` (1,575 memberships against 417); `getAgentPlayers` had no club
+filter; `fn_create_agent` got an unresolved club param; the notes both forms
+collected were discarded; a Cancel button had no content.
+
+The payables aggregate went from 5,198ms cold to 1,731ms by carrying `amount`
+and `created_at` into the partial index, making the scan index-only.
+
+Detail: `docs/changelog/2026-09-03-club-operations-phase-3-the-agent-network.md`.
+
+Everything below is what the phase found, kept as the record.
+
+- **CONFIRMED - the Ban Player action is a lie.** `AgentManagementPage.tsx:505`:
+  `else if (type === 'ban') { toast.success('Player banned'); }`. No write of
+  any kind; the ConfirmModal collects the player id and discards it.
+- **CONFIRMED - the hierarchy tab's Transfer sends the wrong id**: `agent.id`
+  (the `agents` PK) where the agent card correctly sends `agent.userId`, so the
+  modal preselects a recipient that does not exist.
+- **CONFIRMED - "Upcoming Agent Payouts" is computed in the browser and
+  hardcodes its status.** `weeklyRakeGenerated * commissionRate` with
+  `<span>Pending</span>`; no payout or settlement table is read. The
+  "Settlement Schedule" block above it is static copy.
+- **CONFIRMED - Credit Limits mislabels a `super_agent` as "Sub-Agent"** (a
+  two-branch ternary on three roles).
+- **CONFIRMED - four emoji in user-facing strings** across
+  `AgentManagementPage` and `SuperAgentDashboard`, and raw numbers rendered
+  without `toLocaleString` on both.
+- No pagination, search or filter on an agent list capped at 500.
+
+Work: delete or wire the ban branch (a real `blacklists` insert plus membership
+removal); fix the id and the role label; replace the fabricated payouts table
+with a read of the real settlement rows, or label it "Projected" and say what
+it is projecting; strip the emoji; format the numbers; paginate.
+
+---
+
+## 6. Phase 4 - The club dashboard
+
+- **CONFIRMED - the Tables tab hides every live table.** It fetches 50 tables
+  ordered `created_at DESC`. Deep Stack Society has 1,567 tables, 226 live, and
+  **zero of the 226 are in the newest 50**. The header says "227 Active Tables"
+  above 50 dead rows, and `liveTableCount` / `seatedAcrossTables` are computed
+  over that wrong 50.
+- **CONFIRMED - "Humans Only" strips 416 of 417 players from the leaderboard,
+  the attribution denominator and the CSV export.** A persisted localStorage
+  toggle that filters horses out of a total is exactly what CLAUDE.md 10.5
+  forbids. It is also a silent no-op below owner/co_owner/admin, because
+  `fn_can_see_horse_flag` masks the flag for those roles.
+- **CONFIRMED - the leaderboard sorts a pre-truncated set.** `ca_club_top_players`
+  orders by profit and takes 100; choosing Hands or Win Rate re-sorts those 100.
+- **CONFIRMED - `ca_club_tournaments` ignores `p_limit`** (the LIMIT sits after
+  `jsonb_agg`), so the tab renders 439 unvirtualized rows / 97KB when it asked
+  for 25.
+- **CONFIRMED - the Time Range filter is half-wired.** `ca_club_dashboard_stats`
+  takes no date argument, so six metric cards and the 14-day chart never
+  change; Tournaments is fixed at 30 days; Revenue caps at 90 while the heading
+  says "all time".
+- **CONFIRMED - "Seated Now" counts seat rows, not people** (698 against 221),
+  which is why this page and Players disagree at the same instant. Phase 1's
+  overview already counts people; this is where the old number lives.
+- **CONFIRMED - the insurance gate never fires** (`ca_club_revenue` always
+  returns an object, so `revenue.insurance ?` is always truthy).
+- **CONFIRMED - `ClubMemberManagement` swallows a failed read** into an empty
+  list with no error, and offers an unconfirmed hard DELETE of a membership
+  behind a bare glyph; it also prints an avatar URL as text and staggers row
+  visibility by an index into the unfiltered array, so searching leaves rows at
+  `opacity: 0`.
+- **CONFIRMED - `ca_club_dashboard_stats` is called twice on every mount**
+  (`ClubStatsCards` self-loads while the parent prop is still null).
+- **CONFIRMED - Revenue and Tournaments are visible to every plain member**:
+  `ca_can_view_club` is satisfied by any non-banned membership and neither tab
+  has a client gate.
+
+---
+
+## 7. Phase 5 - Players and player records
+
+- **CONFIRMED - `ca_club_members_page` takes 1.05s for 417 members** and does
+  it on every page of the infinite scroll: it rebuilds the whole recursive agent
+  closure, aggregates all of `ca_hand_facts` for the club, computes
+  `filtered_total` over every row, then discards everything before the cursor.
+  **`ca_hand_facts` has no index on `club_id`.**
+- **CONFIRMED - `fn_can_see_horse_flag(p_club_id)` is evaluated per row** inside
+  the projection - 400+ identical club-scoped EXISTS per request.
+- **CONFIRMED - the roster's `mine` / `inactive_*` / `high_fees` filters read
+  `cm.last_active_at`, which is populated for 0 of 417 rows** (the live column
+  is `cm.last_active`), so they run entirely off `profiles.last_login`.
+- **CONFIRMED - the downline list is hard-capped at 50 with no "load more"**, so
+  a 300-strong super agent's tree is unreachable from the member record.
+- **CONFIRMED - Player Statistics shows the same number twice.**
+  `ca_club_member_statistics` sets both `total_games` and `total_hands` to
+  `a.hands`, and `winner` is a copy of `wins`; `mtt_hands` is fetched, typed and
+  never rendered.
+- **CONFIRMED - the dashboard renders the roster twice for staff** (the paged
+  list, then `ClubMemberManagement` re-fetching all 417 rows below it).
+- **SUSPECTED - 3-Bet% may be wrong**: it divides by `faced_three_bet`, which
+  may mean "faced a 3-bet" rather than "had the opportunity to 3-bet".
+- **CONFIRMED, latent - `ca_can_view_club` returns TRUE when `auth.uid()` is
+  NULL.** Not exploitable today (anon has no EXECUTE), but it is one grant away
+  from publishing a club's roster. Phase 1's new function shows the shape the
+  fix should take.
+
+---
+
+## 8. Phase 6 - Finance truth
+
+- **CONFIRMED - four headline numbers on Financials are computed from the
+  OLDEST 5,000 rows.** `.order('created_at', {ascending:true}).limit(5000)`,
+  then reduced in the browser. Measured over 7 days on the sample club: Rake
+  Collected reads **5,822.26 against a true 126,041.44 (4.6%)**; Total Pot
+  Volume 162,524.67 against 3,375,710.17; Hands Played 5,000 against 63,288.
+  Net Revenue inherits all of it. No truncation warning anywhere.
+- **CONFIRMED - per-player Rake is always 0.00 for a club not in a union.** The
+  rake CTE joins `u.union_id = v_union`; with a NULL union that is never true.
+  413 players, `total_rake = 0.00`, and the "Most Rake" sort is dead - while the
+  UI presents 0.00 as a real figure.
+- **CONFIRMED - two pages, two irreconcilable rake numbers for the same window**:
+  `rake_records` 126,218.91 (Financials) against `club_table_daily.rake`
+  118,348.87 (Club Data) - a 6.2% gap, neither page naming its source.
+- **CONFIRMED - "Hands" means two different things across two tabs of one page**
+  (59,321 table hands against 649,997 player-hands, both labelled "Hands"), and
+  **tournament hands are structurally 0** in the game summary.
+- **CONFIRMED - `union_fees` reads `invoice_type='union_to_club'` while Club
+  Data reads `union_weekly_squareup`**; the sample club has zero of either, so
+  the line silently contributes 0 to Net Revenue.
+- **CONFIRMED - the insurance report's "Bank In (Fees + Redirects)" is premiums
+  only**, its funnel and money windows use different date bases (a rolling
+  timestamp against UTC day buckets, so the day rows can never sum to the
+  headline), and its Take Rate double-counts cash-outs and can exceed 100%.
+- **CONFIRMED - the union invoice card computes `overdue`, `paid_total` and
+  `outstanding` and renders none of them.** No pay action, no dispute action.
+- **CONFIRMED - Club Data's Hide Horses recomputes the player totals over
+  non-horse rows** - another 10.5 violation, mitigated by an honest label and an
+  unfiltered export.
+- **CONFIRMED - `SNG` is labelled "Heads Up"** in the game filter.
+- **CONFIRMED - Financials is gated only in the component**: it reads
+  `rake_records`, `chip_transactions` and `settlement_invoices` as direct table
+  selects, and renders `RakeReports` and `TransactionLedgerView` with no role
+  check at all.
+- **CONFIRMED, latent - `ca_can_view_club_finances` also opens with
+  `auth.uid() IS NULL`.**
+- Sign convention unproven: cash "Total Winnings" is +89,166.07 while the
+  aggregate player net over the same window is -11,763.83. Opposite signs,
+  different magnitudes, no documentation of whose perspective either is.
+
+---
+
+## 9. Phase 7 - Money movement
+
+The write paths are the best-defended code in the workspace and this phase must
+not "improve" them: `fn_agent_wallet_send` and its claim-back take a mandatory
+`p_op_id`, take an advisory lock, replay on the op id, and refuse a retry key
+that belongs to a different intent; `fn_cashier_batch_transfer` validates the
+whole envelope before the first item moves and wraps each item in its own
+subtransaction. What is wrong is the reporting around them.
+
+- **CONFIRMED - `fn_respond_chip_request` (approve) is not retry-safe**: it
+  calls `fn_agent_wallet_send` with a fresh `gen_random_uuid()`, so a lost
+  response leaves the chips moved and the request approved while the operator's
+  retry is told the request was already approved and the UI reports failure.
+  Money moved; operator told it did not.
+- **CONFIRMED - the settlement freeze is advisory and half-applied.**
+  `checkSettlementLock` fails open by design and is called only from the classic
+  cashier; the Trade cashier never checks it and no send/claim RPC reads
+  `clubs.settlement_locked`. Chips move freely during a declared freeze.
+- **CONFIRMED - the settlement page writes with the raw route param.** The
+  auto-settlement toggle does `.eq('id', clubId)` with a club code, and its
+  matching read is in a swallowing try/catch, so a club with auto-settlement ON
+  renders "Auto: OFF". The UPDATE has no `.select()`, so an RLS-denied write
+  affects zero rows, returns no error, and toasts "Auto-settlement enabled".
+- **CONFIRMED - the period on the settlement page is not this club's.**
+  `get_current_settlement_period()` takes no club argument and returns the
+  newest platform-wide open row; `SettlementService` then hardcodes
+  `periodNumber: 1` and zeroes BBJ, hands and players. The header permanently
+  reads "Period 1/2026" over a grid of zeros.
+- **CONFIRMED - the receipt hardcodes `status="paid"`** for any period marked
+  settled, without reading any invoice's payment state. The page can and does
+  show a period as paid when the ledger has not said so.
+- **CONFIRMED - "Execute Settlement" calls a documented no-op**, so the
+  double-settle guard above it is currently protecting nothing, while the real
+  closer (`fn_set_settlement_period_status`) has no such guard.
+- **CONFIRMED - `disputed` is missing from the page's own period type**, so a
+  disputed period renders an unstyled badge with no countdown, no action and
+  nothing saying why.
+- **CONFIRMED - the two cashiers disagree about what a chip is**:
+  `parseChipAmount` in the classic page rejects any fraction, citing an integer
+  column, while `club_members.chip_balance` is `numeric(20,2)` and the Trade
+  page sends 2dp happily.
+- **CONFIRMED - the classic cashier reports every outcome through
+  `setMessage` in sentence case** rather than the Toast layer, and its
+  high-value confirmation says "This Action Cannot Be Undone" on a send the
+  same page advertises as claimable back for ten minutes.
+- **CONFIRMED - `fn_club_cashier_members_page_v3` re-runs the full recursive
+  downline walk on every page** (it selects from v2, which selects from v1).
+
+---
+
+## 10. Phase 8 - Club control
+
+- **CONFIRMED - three settings are consumed by nothing.**
+  `clubs.bbj_rake_enabled` has a visible ON/OFF switch and no reader anywhere in
+  `src/` or `server/` (the BBJ engine reads the separate `bbj_enabled`).
+  `spins_preseed_amount` and `spins_wallet_funding` have **no control at all**
+  and are still blind-rewritten on every save, and nothing reads either.
+  `spins_enabled` is read by the lobby but likewise has no control here, so a
+  save rewrites whatever was loaded. `tests/settings-only-write-what-they-offer.test.ts`
+  already codifies this law for `SettingsPage` and does not cover this page.
+- **CONFIRMED - the rules save reports success when RLS refused it.** The
+  `clubs` UPDATE policy is `owner_id = auth.uid()`; the page grants the button
+  to any staff role and the UPDATE has no `.select()`, so a co-owner or admin
+  sees "Club rules updated!" and the new text painted, and nothing was written.
+- **CONFIRMED - the rules save is a lost-update read-modify-write of the whole
+  `clubs.settings` jsonb**, which also carries rake cap, min buy-in, straddle
+  and time bank defaults.
+- **CONFIRMED - rules are write-and-display-on-one-page.** No lobby surface, no
+  join flow, no table and no acknowledgement gate reads `settings->>'rules_text'`,
+  and the audit trigger's watched set does not include `settings`, `tagline` or
+  `lobby_message` - so a rules rewrite leaves zero trace.
+- **CONFIRMED - vault grants deliver nothing to the recipient.**
+  `ca_promo_vault_grant` decrements `promo_vault_inventory` and inserts a
+  `promo_vault_records` row; there is no player-side entitlement table in the
+  schema and no trigger on the records table. The owner spends diamonds, the
+  shelf decrements, the player receives nothing, and the toast says it was sent.
+  There is also no revoke path, though the UI has a label for one.
+- **CONFIRMED - `ca_promo_vault_buy` has no idempotency key and its own body
+  records the unjournaled-diamond-debit incident**; a retry after a timed-out
+  but committed call debits twice with nothing to reconcile against.
+- **CONFIRMED - the Claim button on the offer feed pays nothing.**
+  `claimPromotion` inserts a `promotion_claims` row and increments a counter;
+  nothing reads `bonus_amount` to credit a wallet, yet the page emits
+  `BALANCE_UPDATED` and says "Promotion claimed!". `bonus_amount` is also
+  client-supplied under a policy that only checks `user_id`.
+- **CONFIRMED - there is no operator surface to create, edit, schedule or
+  unpublish a promotion at all**: `promotions` writes are service-role only.
+- **CONFIRMED - announcements have no expiry, targeting, scheduling, edit path
+  or read receipts**, although `club_announcements` already carries
+  `expires_at`, `priority`, `type` and `is_active` and the composer writes none
+  of them and the list filters on none of them.
+- **CONFIRMED - `WATCHED_COLUMNS` for the settings realtime refresh lists five
+  columns the page no longer renders and omits `tagline`, `lobby_message`,
+  `bbj_rake_enabled` and all three `spins_*`.**
+- **CONFIRMED - `inUnion` is dead state** (`setInUnion` is never called), so a
+  club inside a union is still shown club-level rake controls its union governs.
+- Deletion and ownership transfer are the best-defended paths in the group;
+  the only gap is TOCTOU between the impact read and the DELETE.
+
+---
+
+## 11. The standard every phase is held to
+
+1. Read the page end to end before changing it; read the SQL body of every RPC
+   it calls.
+2. Prove the defect against production with a query, or say plainly that it is
+   reasoned rather than reproduced.
+3. Fix forward. Never delete the other side of a contradiction on your own
+   authority (CLAUDE.md 10.8).
+4. A number a page prints must be the number the SQL computes, under the label
+   the operator reads.
+5. Horses count everywhere (CLAUDE.md 10.5). A filter that removes them from a
+   total is a bug, not a preference.
+6. Every mutation reports honestly: a write that matched zero rows is a failure,
+   never a `toast.success`.
+7. `bash scripts/ci/all-gates.sh` green before the push, plus the DB gates
+   (`check-migrations-applied`, `check-definer-authorization`,
+   `check-phantom-*`).
+8. One changelog per phase under `docs/changelog/`, and this file updated with
+   what actually shipped.

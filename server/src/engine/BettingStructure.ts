@@ -35,7 +35,6 @@
 
 import type { HandStage, ActionRecord, ActionType } from '../types.js';
 
-
 export type BettingStructure = 'no_limit' | 'pot_limit' | 'fixed_limit';
 
 /** Variants played pot-limit. */
@@ -65,6 +64,32 @@ export function isFixedLimitVariant(variant?: string | null): boolean {
 
 export function isPotLimitVariant(variant?: string | null): boolean {
   return bettingStructureFor(variant) === 'pot_limit';
+}
+
+/**
+ * THE POT-LIMIT RAISE-TO CEILING (Bible V8 4.14).
+ *
+ * The maximum raise SIZE under pot limit is the pot AFTER calling, so the
+ * biggest legal raise-TO is `currentBet + pot + toCall`. This is the same
+ * arithmetic `calculateBettingState` uses to build `maxRaise`, lifted into
+ * this module so the horses can SIZE to it rather than only be clamped by it,
+ * and so there is one formula rather than one per caller.
+ *
+ * Reading it off the live pot is the whole point: a hardcoded multiple of the
+ * big blind is correct in exactly one blind structure and wrong the moment
+ * there is an ante, a straddle, a dead blind or a limper. At 1/2 six-handed
+ * this returns 7 (3.5x BB) first in, 6 (3x BB) from the small blind, and 9
+ * with one limper - the standard Omaha opening sizes, derived rather than
+ * guessed.
+ *
+ * `pot` must include the chips already wagered on the current street, which is
+ * the convention every caller in the engine already uses.
+ */
+export function potLimitRaiseTo(pot: number, currentBet: number, toCall: number): number {
+  const p = Number.isFinite(pot) ? Math.max(0, pot) : 0;
+  const cb = Number.isFinite(currentBet) ? Math.max(0, currentBet) : 0;
+  const tc = Number.isFinite(toCall) ? Math.max(0, toCall) : 0;
+  return cb + p + tc;
 }
 
 /**

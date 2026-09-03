@@ -97,6 +97,15 @@ export interface RakeAgentRow {
   commission_settled: number | null;
   /** Commission owed to someone with no agents row in this club. */
   is_residual?: boolean;
+  /**
+   * Whether this row opens into that agent's downline FOR THIS VIEWER.
+   *
+   * The server computes it from the same conditions the downline gate
+   * enforces, so it is not a hint - a row that says it opens, opens. It is
+   * per-viewer and not a property of the agent: a club owner sees every row
+   * open, an agent sees only their own branch.
+   */
+  can_drill?: boolean;
 }
 
 /** Agent scope: one row per member beneath the viewer. */
@@ -173,10 +182,55 @@ export interface RakeSnapshot {
    * complete rollup day and this named it; it now reads live and this is null.
    */
   rake_complete_through: string | null;
+  /**
+   * What the server actually searched and sorted by, which is not always what
+   * was asked for. An unrecognised sort falls back to rake, and the fallback
+   * is echoed rather than the request - otherwise a Sort control could sit
+   * there being quietly disregarded, which is worse than having no control.
+   */
+  applied_search: string | null;
+  applied_sort: RakeSortKey;
   top_earner?: { username: string | null; rake: number } | null;
   data_updated_at?: string | null;
   generated_at: string;
 }
+
+/**
+ * Sort keys, whitelisted at both ends. The server maps each to a mapped ORDER
+ * BY and never interpolates the string, so an unknown key is harmless - it
+ * sorts by rake and says so.
+ */
+export type RakeSortKey = 'rake' | 'name' | 'hands' | 'cost' | 'players';
+
+export interface RakeSortOption {
+  key: RakeSortKey;
+  label: string;
+}
+
+/**
+ * Which sorts each list can actually offer. Only the agent breakdown has a
+ * cost or a network size to order by; only the club and downline lists carry
+ * a hand count. Offering all five everywhere would put three dead options in
+ * front of an operator on every list.
+ */
+export const RAKE_SORTS: Record<'club' | 'agent' | 'downline', RakeSortOption[]> = {
+  club: [
+    { key: 'rake', label: 'Rake' },
+    { key: 'hands', label: 'Hands' },
+    { key: 'name', label: 'Name' },
+  ],
+  agent: [
+    { key: 'rake', label: 'Rake' },
+    { key: 'cost', label: 'Cost' },
+    { key: 'players', label: 'Players' },
+    { key: 'name', label: 'Name' },
+  ],
+  downline: [
+    { key: 'rake', label: 'Rake' },
+    { key: 'hands', label: 'Hands' },
+    { key: 'name', label: 'Name' },
+  ],
+};
 
 export interface RakePeriod {
   key: PeriodKey;
@@ -185,12 +239,22 @@ export interface RakePeriod {
   short: string;
 }
 
+/**
+ * Yesterday sits next to Day because it is the first thing asked after it: a
+ * day that is FINISHED, and therefore fully rolled up, where Day is still
+ * accruing. periodToRange has computed it since the panel was written; it was
+ * simply never offered, so the only way to read a closed day was to open the
+ * custom range and set both ends by hand.
+ */
 export const RAKE_PERIODS: RakePeriod[] = [
   { key: 'today', label: 'Day', short: 'D' },
+  { key: 'yesterday', label: 'Yesterday', short: 'Y' },
   { key: 'week', label: 'Week', short: 'W' },
   { key: 'month', label: 'Month', short: 'M' },
   { key: 'quarter', label: 'Quarter', short: 'Q' },
-  { key: 'year', label: 'Year', short: 'Y' },
+  // Not 'Y': Yesterday holds it, and two chips reading the same letter on the
+  // dense rail is worse than one reading two.
+  { key: 'year', label: 'Year', short: 'YR' },
   { key: 'custom', label: 'Custom', short: '…' },
 ];
 
@@ -277,6 +341,10 @@ export const ClubRakeSnapshotService = {
     agentUserId?: string | null;
     limit?: number;
     offset?: number;
+    /** Server-side, because the list is paged: filtering the rows that
+     *  happen to be loaded finds only what was already fetched. */
+    search?: string | null;
+    sort?: RakeSortKey | null;
     signal?: AbortSignal;
   }): Promise<RakeSnapshot> {
     let query = supabase.rpc('ca_rake_snapshot', {
@@ -288,6 +356,8 @@ export const ClubRakeSnapshotService = {
       p_agent_user_id: opts.agentUserId ?? null,
       p_limit: opts.limit ?? 50,
       p_offset: opts.offset ?? 0,
+      p_search: opts.search?.trim() ? opts.search.trim() : null,
+      p_sort: opts.sort ?? 'rake',
     });
     if (opts.signal) query = query.abortSignal(opts.signal);
     const { data, error } = await query;
@@ -311,6 +381,15 @@ export const ClubRakeSnapshotService = {
       breakdown_offset: Number.isFinite(Number(raw.breakdown_offset))
         ? Number(raw.breakdown_offset)
         : 0,
+      // A payload from before search existed carries neither. Reporting the
+      // REQUEST back would be a lie in exactly the case the field exists to
+      // catch, so an absent echo reports what such a server actually did:
+      // no search, rake order.
+      applied_search:
+        typeof raw.applied_search === 'string' && raw.applied_search.trim()
+          ? raw.applied_search
+          : null,
+      applied_sort: (raw.applied_sort ?? 'rake') as RakeSortKey,
     } as RakeSnapshot;
   },
 };

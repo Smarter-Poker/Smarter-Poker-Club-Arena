@@ -19,6 +19,7 @@ import { AgentService } from '../services/AgentService';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 
 interface AgentCredit {
   id: string;
@@ -96,7 +97,7 @@ export default function CreditAdminPanel() {
         try {
           const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, display_name, username')
+            .select(`id, ${PLAYER_NAME_COLUMNS}`)
             .in('id', userIds);
           if (profiles) {
             for (const p of profiles) profileMap[p.id] = p;
@@ -108,10 +109,9 @@ export default function CreditAdminPanel() {
 
         const mapped: AgentCredit[] = data.map((a: any) => ({
           id: a.id,
-          displayName:
-            profileMap[a.user_id]?.display_name ||
-            profileMap[a.user_id]?.username ||
-            a.id.substring(0, 8),
+          displayName: profileMap[a.user_id]
+            ? playerDisplayName(profileMap[a.user_id])
+            : a.id.substring(0, 8),
           creditLimit: a.credit_limit || 0,
           currentBalance: a.agent_wallet_balance || 0,
           debtOwed: Math.max(0, (a.credit_limit || 0) - (a.agent_wallet_balance || 0)),

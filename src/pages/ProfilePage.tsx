@@ -36,6 +36,7 @@ import { generateDefaultAvatar } from '../utils/avatarGenerator';
 import { reportError } from '../utils/errorReporter';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { formatPopupText } from '../utils/popupStyle';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 
 // #5: Lazy-load Recharts (387KB) — only imported when History tab is opened
 const LazyProfitChart = lazyWithRetry(() => import('../components/profile/ProfitChart'));
@@ -466,7 +467,7 @@ export default function ProfilePage() {
             supabase
               .from('profiles')
               .select(
-                'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, login_streak, bio, player_tags'
+                `id, ${PLAYER_NAME_COLUMNS}, player_number, avatar_url, tier, created_at, diamonds, is_vip, login_streak, bio, player_tags`
               )
               .eq('id', authUser.id)
               .maybeSingle()
@@ -480,7 +481,7 @@ export default function ProfilePage() {
           setUser({
             id: profile.id,
             username: profile.username || 'Player',
-            displayName: profile.display_name || profile.username || 'Player',
+            displayName: playerDisplayName(profile),
             playerNumber: profile.player_number || 0,
             avatarUrl: profile.avatar_url || '',
             vipLevel: profile.tier || 'bronze',
@@ -505,7 +506,7 @@ export default function ProfilePage() {
                 user: {
                   id: profile.id,
                   username: profile.username || 'Player',
-                  displayName: profile.display_name || profile.username || 'Player',
+                  displayName: playerDisplayName(profile),
                   playerNumber: profile.player_number || 0,
                   avatarUrl: profile.avatar_url || '',
                   vipLevel: profile.tier || 'bronze',
@@ -574,7 +575,7 @@ export default function ProfilePage() {
           masterBus.emit('USER_PROFILE_LOADED', {
             userId: authUser.id,
             avatarUrl: profile.avatar_url || '',
-            displayName: profile.display_name,
+            displayName: playerDisplayName(profile),
           });
         }
       } catch (err: any) {
@@ -619,7 +620,7 @@ export default function ProfilePage() {
               supabase
                 .from('profiles')
                 .select(
-                  'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, login_streak, bio, player_tags'
+                  `id, ${PLAYER_NAME_COLUMNS}, player_number, avatar_url, tier, created_at, diamonds, is_vip, login_streak, bio, player_tags`
                 )
                 .eq('id', authUser.id)
                 .maybeSingle()
@@ -628,7 +629,7 @@ export default function ProfilePage() {
                     setUser({
                       id: profile.id,
                       username: profile.username || 'Player',
-                      displayName: profile.display_name || profile.username || 'Player',
+                      displayName: playerDisplayName(profile),
                       playerNumber: profile.player_number || 0,
                       avatarUrl: profile.avatar_url || '',
                       vipLevel: profile.tier || 'bronze',

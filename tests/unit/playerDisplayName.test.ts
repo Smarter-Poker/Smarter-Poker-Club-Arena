@@ -116,6 +116,45 @@ describe('display_name is last, everywhere', () => {
     const hasHandle = { display_name: 'Legacy Person', username: 'realhandle' };
     expect(playerDisplayName(hasHandle, 'arena')).toBe('realhandle');
   });
+
+  it('is skipped in the arena when it turns out to BE the real name', () => {
+    /* Dan 2026-09-02: "THE REAL NAME SHOULD NEVER BE DISPLAYED, IT SHOULD
+       ALWAYS BE USING THE POKER ALIAS."
+
+       The header of this module has always promised that an arena surface
+       shows no real name "whatever the profile says", and then the arena
+       branch fell through to `display_name` - which in production is an exact
+       copy of `full_name` on 264 of 1,308 rows. The promise and the code
+       disagreed, and the code is what players saw.
+
+       The legacy fallback above is untouched: it still answers for a row that
+       has nothing else. It is skipped only in the one case it was never meant
+       to cover. 'social' is unaffected either way - that is the surface where
+       a real name may appear, if the player asked for it. */
+    const leaks = { display_name: 'Jane Doe', full_name: 'Jane Doe' };
+    expect(playerDisplayName(leaks, 'arena')).toBe('Player');
+    expect(playerDisplayName(leaks, 'social')).toBe('Jane Doe');
+
+    // Case is not a disclosure boundary.
+    expect(playerDisplayName({ display_name: 'jane doe', full_name: 'Jane Doe' }, 'arena')).toBe(
+      'Player'
+    );
+    // Assembled from first/last, not only from full_name.
+    expect(
+      playerDisplayName({ display_name: 'Jane Doe', first_name: 'Jane', last_name: 'Doe' }, 'arena')
+    ).toBe('Player');
+    // A handle always wins, so for most players this never arises.
+    expect(
+      playerDisplayName(
+        { alias: 'KingFish', display_name: 'Dan Bekavac', full_name: 'Dan Bekavac' },
+        'arena'
+      )
+    ).toBe('KingFish');
+    // A nickname that is NOT the real name still shows, exactly as before.
+    expect(playerDisplayName({ display_name: 'Shortstack', full_name: 'Jane Doe' }, 'arena')).toBe(
+      'Shortstack'
+    );
+  });
 });
 
 describe('never renders nothing', () => {

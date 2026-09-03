@@ -98,3 +98,37 @@ So: the origin is right, the edge still overrides it, and the honest state is
 that this is **fixed at the origin and known-unfixed at the edge**. Closing it
 properly means either serving Club Arena from a host we control end to end, or
 accepting the trade deliberately - not a regex.
+
+---
+
+## Decided, 2026-09-03: accept it at the edge. Do not "fix" this.
+
+Dan handed the call over, so it is made rather than left open. **The edge keeps
+its `immutable` rule. We do not exclude Club Arena from it.**
+
+The trade, stated plainly:
+
+|              | cost                                                                                                                            |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| **Leave it** | a viewer whose tab is older than the 30-day pool prune caches one 404 for a year, and sees a broken page until they hard-reload |
+| **"Fix" it** | a 525 KB entry chunk revalidates on **every navigation, for every player, forever**                                             |
+
+The first is rare, recoverable, and hits one person. The second is certain,
+permanent, and hits everyone on every page load. There is no third option:
+Vercel header rules match on path only, so nothing there can say "immutable
+when found, no-store when missing", and simply dropping the rule hands the
+paths to a blanket `/hub/` rule that is _worse_ than either.
+
+**What actually shrinks the exposure is not a header.** The 404 requires a tab
+older than `find pool -mtime +30`. Raising that retention costs a little disk
+and removes the trigger outright - that is the lever, if anyone wants to pull
+it. The header is the wrong end of the problem.
+
+The origin fix stays regardless: it is correct there, it costs nothing, and it
+is what a future direct-to-origin path would get.
+
+`.github/scripts/origin-contract.sh` reflects this exactly - it **fails** on the
+origin's own behaviour, which is ours to control, and only **warns** on the
+edge, which is not. Do not promote that warning to a failure without changing
+the underlying trade; a permanently red watchdog is how the last two guards
+went unnoticed for a fortnight.

@@ -79,6 +79,15 @@ function count(n: number | null | undefined): string {
   return Number(n).toLocaleString('en-US');
 }
 
+/** Every timestamp on this page is UTC and badged as such. A bare local time
+ *  beside a UTC range is how "updated 19:42" comes to look like it preceded a
+ *  window ending today. */
+function utcTime(iso: string): string {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return 'unknown';
+  return `${d.toLocaleTimeString('en-GB', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' })} UTC`;
+}
+
 function bucketLabel(iso: string, unit: 'day' | 'week' | 'month'): string {
   const d = new Date(`${iso}T00:00:00Z`);
   if (!Number.isFinite(d.getTime())) return iso;
@@ -207,15 +216,22 @@ export default function RakeSnapshotPanel({
   );
 
   /**
-   * The per-player rollup finalises complete UTC days only, so today is not in
-   * it - while the headline above comes from a live table and is. Saying so is
-   * the difference between "my agents did nothing today" and the truth.
+   * The breakdown reads live; the headline is an hourly rollup. Between runs
+   * the agent column can sum to MORE than the club total beside it, which
+   * looks like an error and is not.
+   *
+   * Only declared when the two actually disagree by more than a cent. Saying
+   * it unconditionally would put a permanent caveat under a table that agrees
+   * with itself for most of every hour, and a caveat nobody ever needs is a
+   * caveat nobody reads when they do.
    */
-  const shortBy = useMemo(() => {
-    const through = snapshot?.rake_complete_through;
-    if (!through || !snapshot) return null;
-    if (through >= snapshot.range.end) return null;
-    return through;
+  const liveAhead = useMemo(() => {
+    if (!snapshot?.breakdown_live) return null;
+    const shown = Number(snapshot.breakdown_total);
+    const headline = Number(snapshot.summary?.cash_fee ?? snapshot.summary?.fee);
+    if (!Number.isFinite(shown) || !Number.isFinite(headline)) return null;
+    if (Math.abs(shown - headline) < 0.01) return null;
+    return { shown, headline, at: snapshot.data_updated_at ?? null };
   }, [snapshot]);
 
   const drillInto = useCallback((userId: string, name: string) => {
@@ -752,10 +768,11 @@ export default function RakeSnapshotPanel({
         </div>
       )}
 
-      {shortBy && (
+      {liveAhead && (
         <p className={styles.notice} role="status">
-          Per-Agent Rake Is Complete Through {shortBy} UTC. The Headline Above Includes Today; This
-          Table Does Not Until The Nightly Rollup Runs.
+          This Table Is Live To The Second. The Headline Above Is A Rollup Written Hourly
+          {liveAhead.at ? `, Last At ${utcTime(liveAhead.at)}` : ''}, So The Two Differ Until It
+          Runs Again.
         </p>
       )}
 

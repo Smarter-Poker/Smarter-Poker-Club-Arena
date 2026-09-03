@@ -126,8 +126,19 @@ export interface RakeSnapshot {
    */
   breakdown_total: number | null;
   /**
-   * The last COMPLETE UTC day the per-player rollup holds inside this window.
-   * Null on scopes that read live. Surfaced rather than quietly short.
+   * True when the breakdown reads rake_records for everything the daily rollup
+   * has not finished, so it is current to the second.
+   *
+   * It matters because the HEADLINE is not. club_table_daily is written by an
+   * hourly catch-up job, so between runs a live breakdown can legitimately sum
+   * to MORE than the club total beside it. That looks like an error and is
+   * not, so the panel says which side is live rather than leaving an operator
+   * to find the discrepancy and stop trusting both figures.
+   */
+  breakdown_live: boolean;
+  /**
+   * Retained for older payloads. The club breakdown used to stop at the last
+   * complete rollup day and this named it; it now reads live and this is null.
    */
   rake_complete_through: string | null;
   top_earner?: { username: string | null; rake: number } | null;

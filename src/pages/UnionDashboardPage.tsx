@@ -34,6 +34,7 @@ import UnionClubGovernance from '../components/union/UnionClubGovernance';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { EmptyState, ErrorState } from '../components/common/EmptyState';
 import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 // ── Helpers ─────────────────────────────────────────────────
 const pct = (n: number | null | undefined) => `${((Number(n) || 0) * 100).toFixed(1)}%`;
 
@@ -467,7 +468,7 @@ export default function UnionDashboardPage() {
         const agentUserIds = [...new Set(agentRows.map((a: any) => a.user_id))];
         const { data: agentProfiles } = await supabase
           .from('profiles')
-          .select('id, display_name, username, avatar_url:arena_avatar_url')
+          .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
           .in('id', agentUserIds);
         const agentProfileMap: Record<string, any> = {};
         if (agentProfiles) {
@@ -486,7 +487,7 @@ export default function UnionDashboardPage() {
     // Load admins
     const { data: adminRows } = await supabase
       .from('union_admins')
-      .select('*, profile:user_id(display_name, username, avatar_url:arena_avatar_url)')
+      .select(`*, profile:user_id(${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url)`)
       .eq('union_id', uid);
     if (isCurrent()) setAdmins(adminRows || []);
 
@@ -916,7 +917,7 @@ export default function UnionDashboardPage() {
     const rows = agents.map((a: UnionAgent) => {
       const club = clubs.find((c) => c.id === a.club_id);
       return [
-        a.profiles?.display_name || a.profiles?.username || a.user_id,
+        a.profiles ? playerDisplayName(a.profiles) : a.user_id,
         club?.name || 'Unknown',
         a.role,
         pct(a.commission_rate),
@@ -1574,9 +1575,9 @@ export default function UnionDashboardPage() {
                       return (
                         <tr key={agent.id || agent.user_id}>
                           <td>
-                            {agent.profiles?.display_name ||
-                              agent.profiles?.username ||
-                              agent.user_id?.slice(0, 8)}
+                            {agent.profiles
+                              ? playerDisplayName(agent.profiles)
+                              : agent.user_id?.slice(0, 8)}
                           </td>
                           <td>{club?.name || 'Unknown'}</td>
                           <td>{agent.role}</td>
@@ -2931,9 +2932,9 @@ export default function UnionDashboardPage() {
                                 style={{ width: 28, height: 28, borderRadius: '50%' }}
                               />
                             )}
-                            {admin.profile?.display_name ||
-                              admin.profile?.username ||
-                              admin.user_id?.slice(0, 8)}
+                            {admin.profile
+                              ? playerDisplayName(admin.profile)
+                              : admin.user_id?.slice(0, 8)}
                           </td>
                           <td>
                             <span
@@ -3013,7 +3014,7 @@ export default function UnionDashboardPage() {
                           try {
                             const { data: users } = await supabase
                               .from('profiles')
-                              .select('id, display_name, username')
+                              .select(`id, ${PLAYER_NAME_COLUMNS}`)
                               .ilike('username', `%${adminSearch}%`)
                               .limit(5);
                             setAdminResults(users || []);
@@ -3048,7 +3049,7 @@ export default function UnionDashboardPage() {
                               borderRadius: '8px',
                             }}
                           >
-                            <span>{u.display_name || u.username || u.id.slice(0, 8)}</span>
+                            <span>{playerDisplayName(u)}</span>
                             <button
                               className="admin-btn admin-btn-success admin-btn-sm"
                               disabled={processing}
@@ -3060,7 +3061,7 @@ export default function UnionDashboardPage() {
                                   // insert -> manage-union add_admin.
                                   await unionApi.addAdmin(unionId!, u.id);
                                   masterBus.emit('CLUB_UPDATED', { clubId: unionId || '' });
-                                  setSuccess(`${u.display_name || u.username} added as admin`);
+                                  setSuccess(`${playerDisplayName(u)} added as admin`);
                                   setAdminResults([]);
                                   setAdminSearch('');
                                   loadDashboard(unionId);

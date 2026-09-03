@@ -551,6 +551,55 @@ describe('the resume is staggered, not a burst (phase 3)', () => {
     expect(list.every((e) => e.resumeCount > 0)).toBe(true);
   });
 
+  it('does not drop a batch because the outcome insert is slow at :00', async () => {
+    // Review fix 2026-09-03. The staggered batches check phase === 'idle'.
+    // end() used to reach 'idle' only after `await recordOutcome(...)` - a
+    // database insert made at :00, the slowest instant of the hour. A batch
+    // firing during that await was silently dropped, and a dropped table
+    // parks itself again forever. The break must be idle before any table is
+    // woken, so a batch can fire at any point during the insert.
+    const N = MaintenanceBreak.RESUME_BATCH_SIZE * 3;
+    const engines = new Map<string, FakeEngine>();
+    for (let i = 0; i < N; i++) engines.set(`t${i}`, new FakeEngine());
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    let releaseInsert: () => void = () => {};
+    const insert = new Promise<void>((r) => {
+      releaseInsert = r;
+    });
+    const mb = new MaintenanceBreak({
+      engines: () => engines.entries() as any,
+      isRunning: () => true,
+      emit: () => {},
+      store: new FakeStore(),
+      recordOutcome: () => insert,
+      setTimer: ((fn: () => void, ms: number) => {
+        timers.push({ fn, ms });
+        return 0 as unknown as NodeJS.Timeout;
+      }) as any,
+    });
+    await mb.announceLastHand();
+    await mb.beginCountdown();
+    vi.advanceTimersByTime(MaintenanceBreak.BREAK_DURATION_MS + 1000);
+    const beforeEnd = timers.length;
+    const ending = mb.end(); // parks on the slow insert
+    await Promise.resolve();
+    await Promise.resolve();
+    const resumeTimers = timers.slice(beforeEnd);
+    expect(resumeTimers, 'the later batches are scheduled before the insert resolves').toHaveLength(
+      2
+    );
+    // The insert is still pending. Fire the staggered batches NOW.
+    for (const t of resumeTimers) t.fn();
+    const list = [...engines.values()];
+    expect(
+      list.filter((e) => e.resumeCount > 0).length,
+      'every table resumed while the outcome insert was still in flight'
+    ).toBe(N);
+    releaseInsert();
+    await ending;
+    expect(list.every((e) => e.resumeCount === 1)).toBe(true);
+  });
+
   it('drops a scheduled batch from a superseded break', async () => {
     const N = MaintenanceBreak.RESUME_BATCH_SIZE * 2;
     const { mb, engines, timers } = buildBig(N);
@@ -632,12 +681,48 @@ describe('surviving the restart', () => {
     // outage - the worst case is a visible restart, which is where we were
     // before this existed.
     const { mb, engines, store } = build(2);
+    let loads = 0;
     store.load = async () => {
+      loads++;
       throw new Error('PGRST002');
     };
-    await mb.start();
+    const starting = mb.start();
+    // The read is retried before the engine gives up (review fix 2026-09-03).
+    await vi.advanceTimersByTimeAsync(
+      MaintenanceBreak.RESTORE_ATTEMPTS * MaintenanceBreak.RESTORE_RETRY_MS + 10
+    );
+    await starting;
+    expect(loads).toBe(MaintenanceBreak.RESTORE_ATTEMPTS);
     expect(mb.isActive()).toBe(false);
     expect([...engines.values()][0].paused).toBe(false);
+  });
+
+  it('retries a boot-time read that fails once, and honours the break it then finds', async () => {
+    // Review fix 2026-09-03. The engine boots at ~:55-:58 BECAUSE of the
+    // restart, which is when the database is at its slowest; one timed-out
+    // read used to mean the fleet came back dealing into a break every screen
+    // was still showing. A single blip must not un-freeze the platform.
+    const { mb, engines, store } = build(2);
+    const realLoad = store.load.bind(store);
+    store.row = {
+      phase: 'counting_down',
+      announcedAt: Date.now() - 3 * 60 * 1000,
+      breakStartedAt: Date.now() - 60_000,
+      breakEndsAt: Date.now() + 4 * 60 * 1000,
+      reason: 'Scheduled Engine Maintenance',
+    };
+    let loads = 0;
+    store.load = async () => {
+      loads++;
+      if (loads === 1) throw new Error('canceling statement due to statement timeout');
+      return realLoad();
+    };
+    const starting = mb.start();
+    await vi.advanceTimersByTimeAsync(MaintenanceBreak.RESTORE_RETRY_MS + 10);
+    await starting;
+    expect(loads).toBe(2);
+    expect(mb.isActive()).toBe(true);
+    for (const [id, e] of engines) expect(e.paused, `${id} came back dealing`).toBe(true);
   });
 
   it('parks a table CREATED during the break', async () => {

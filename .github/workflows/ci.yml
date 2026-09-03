@@ -172,9 +172,18 @@ jobs:
           # backfill PR (#2580) merged with the server suite skipped, turned the
           # clobber-era floor into the newest clamp declaration, and every
           # hourly deploy after it was refused by its own test gate.
+          # server/ ALSO counts as touching the client suite. 96 files under
+          # tests/ readFileSync server/src/** to pin engine behaviour, and
+          # `vitest related` cannot see a readFileSync. On 2026-09-02 #2695 -
+          # a correct engine fix that added `maintenancePaused` to
+          # isPausedByDesign() - merged with "Client Unit Tests" SKIPPED as a
+          # server-only diff, turned tournamentRakeAndBreaks.test.ts red on
+          # main, and the ONE publisher's shard 1/4 failed on every merge after
+          # it. Production froze at 19:10 while main kept moving. Same lesson
+          # as the migrations line above, one directory over.
           echo "src=$(has '^src/')"       >> "$GITHUB_OUTPUT"
           echo "server=$(has '^(server/|supabase/migrations/)')" >> "$GITHUB_OUTPUT"
-          echo "tests=$(has '^(tests/|supabase/migrations/)')"   >> "$GITHUB_OUTPUT"
+          echo "tests=$(has '^(tests/|supabase/migrations/|server/)')"   >> "$GITHUB_OUTPUT"
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 1: TypeScript compilation check (fast — ~40s)
@@ -955,7 +964,7 @@ jobs:
       # step, not only the full suite, so a #2537-class regression that outdates
       # them is a named red line on a required check.
       - name: Freeze + watchdog + restart-gate regression suite
-        run: npx vitest run src/engine/FreezeRegression.test.ts src/engine/TableWatchdog.test.ts src/maintenance/MaintenanceBreak.test.ts --reporter=verbose
+        run: npx vitest run src/engine/FreezeRegression.test.ts src/engine/TableWatchdog.test.ts src/maintenance/MaintenanceBreak.test.ts src/maintenance/thawInstallments.test.ts --reporter=verbose
 
       - name: Full server test suite
         run: npm test

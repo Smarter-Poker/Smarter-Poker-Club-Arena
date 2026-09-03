@@ -18,6 +18,7 @@ import { resolveAvatarDisplay } from '../../utils/avatarUtils';
 import { checkSettlementLock } from '../../utils/settlementLock';
 import { reportError } from '../../utils/errorReporter';
 import { fetchAllRows } from '../../utils/fetchAllRows';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 
 /** crypto.randomUUID is not in every embedded webview; fall back rather than throw. */
 function newOpId(): string {
@@ -135,7 +136,7 @@ export default function AgentPromoPanel({
         const pIds = players.map((p: any) => p.user_id);
         const { data: profiles } = await supabase
           .from('profiles')
-          .select('id, display_name, username, avatar_url:arena_avatar_url')
+          .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
           .in('id', pIds);
         if (profiles) {
           for (const pr of profiles) playerProfileMap[pr.id] = pr;
@@ -465,7 +466,7 @@ export default function AgentPromoPanel({
                 <option value="">Choose A Player...</option>
                 {downline.map((p) => (
                   <option key={p.user_id} value={p.user_id}>
-                    {p.profiles?.display_name || p.profiles?.username || p.user_id.slice(0, 8)}
+                    {p.profiles ? playerDisplayName(p.profiles) : p.user_id.slice(0, 8)}
                     {' - '}Chips:{' '}
                     {p.chip_balance !== undefined && p.chip_balance !== null
                       ? p.chip_balance.toLocaleString()
@@ -577,8 +578,7 @@ export default function AgentPromoPanel({
                 Your Players
               </div>
               {downline.slice(0, 10).map((p) => {
-                const name =
-                  p.profiles?.display_name || p.profiles?.username || p.user_id.slice(0, 8);
+                const name = p.profiles ? playerDisplayName(p.profiles) : p.user_id.slice(0, 8);
                 return (
                   <div
                     key={p.user_id}

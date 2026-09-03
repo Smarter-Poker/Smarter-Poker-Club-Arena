@@ -270,12 +270,12 @@ describe('the publish path cannot be left waiting on a push that never comes', (
   });
 
   it('the publisher cannot run without both the bundle and the tests', () => {
-    /* sync-to-world-hub needs BOTH heavy jobs, so a deduped cycle skips it for
+    /* publish-to-origin needs BOTH heavy jobs, so a deduped cycle skips it for
        free: GitHub skips a job whose dependencies were skipped. That is also
        what stops it failing on a dist that was never built - no `always()`
        anywhere near it. */
     expect(SYNC).toMatch(/needs: \[build-and-store, client-tests\]/);
-    const sync = sliceYamlBlock(SYNC, '  sync-to-world-hub:');
+    const sync = sliceYamlBlock(SYNC, '  publish-to-origin:');
     expect(sync).not.toMatch(/if: always\(\)/);
   });
 });

@@ -243,7 +243,11 @@ with main, and a timeout leaves the PR open for you to merge by hand.
 - Never call any deploy hook URL
 - Never add iframe code (`window.parent`, `postMessage`, `ClubArenaEmbed`)
 - Never add `VITE_` prefixed secret keys (use server-side API routes)
-- Never edit `public/hub/club-arena/` in the World Hub directly (always rebuild from source)
+- Never re-create `public/hub/club-arena/` in the World Hub. It was DELETED on
+  2026-09-02 when Club Arena moved to its own origin, and Next.js serves
+  `public/` BEFORE the rewrite, so a file there silently shadows the live
+  bundle. `tests/club-arena-is-a-rewrite.test.mjs` in the World Hub fails CI if
+  it comes back.
 
 ### 1.4 Claiming Success
 
@@ -406,7 +410,9 @@ server/src/index.ts      Game engine server (Hetzner)
 ```
 
 Production URL: `https://smarter.poker/hub/club-arena/`
-Built files: `Smarter-Poker-World-Hub/public/hub/club-arena/`
+Built files: published to `https://ca-static.smarter.poker` (`/srv/club-arena`
+on the Hetzner origin: `releases/<ca_sha>/` + an atomically swapped `current`
+symlink + an additive `pool/`). NOT the World Hub repo - that path is gone.
 API routes: `Smarter-Poker-World-Hub/pages/api/club-arena/`
 
 ---
@@ -416,7 +422,10 @@ API routes: `Smarter-Poker-World-Hub/pages/api/club-arena/`
 Club Arena is a Vite + React SPA inside the smarter.poker Next.js app:
 
 - Production: `smarter.poker/hub/club-arena/*` served from World Hub's `public/` directory
-- Build: Vite produces `dist/`, copied to World Hub's `public/hub/club-arena/`
+- Build: Vite produces `dist/`, which `publish-club-arena.yml` rsyncs to the
+  origin. The World Hub carries ONE rewrite, `/hub/club-arena/:path*` ->
+  `https://ca-static.smarter.poker/:path*`, so the browser never sees the
+  origin hostname and the shared `smarter-poker-auth` session is untouched.
 - Routing: SPA fallback rewrites unmatched routes to `index.html`
 - Auth: Same-origin Supabase session via `smarter-poker-auth` localStorage key
 

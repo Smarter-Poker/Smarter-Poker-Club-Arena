@@ -1,22 +1,28 @@
--- Applied to production 2026-09-02 17:32 UTC. Part 1 of 2.
+-- BACKFILLED 2026-09-02 from supabase_migrations.schema_migrations.statements.
+-- Applied to production 20260902173213; the .sql file was never committed at the
+-- time (chip-std phase 1.5 mirror, docs/changelog/2026-09-02-chip-std-p1-mirror.md).
+-- Content is byte-exact to what ran. Do NOT re-apply; it is already live.
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  THE SPIN LADDER, WRITTEN DOWN WHERE THE AUDITOR CAN READ IT
+-- ═══════════════════════════════════════════════════════════════════════════
 --
--- THE SPIN LADDER, WRITTEN DOWN WHERE THE AUDITOR CAN READ IT
+-- Part 1 of 2. The table, the seed, the guard function and the drift check.
+-- The trigger that attaches the guard is a separate migration because it needs
+-- an AccessExclusiveLock on `tournaments`, which is one of the hottest tables
+-- on the platform - taking it in the same statement as everything else
+-- deadlocked against live play on the first attempt.
 --
--- On 2026-09-02 a trigger rewrote tournaments.payout_structure for Spins from
--- the size of the field, replacing every high multiplier with winner-take-all.
--- 95 games underpaid 1,878.00 chips to second and third place.
+-- WHY THIS EXISTS. On 2026-09-02 a trigger rewrote tournaments.payout_structure
+-- for Spins from the size of the field, replacing every high multiplier with
+-- winner-take-all. 95 games underpaid 1,878.00 chips to second and third place.
 --
--- The reason it ran unnoticed is the part worth fixing:
--- fn_tournament_payout_reconcile reads payout_structure as its SOURCE OF
+-- The reason it ran unnoticed is the part worth fixing: fn_tournament_payout_reconcile,
+-- the estate's own payout auditor, reads payout_structure as its SOURCE OF
 -- TRUTH. With the column corrupted it computed "expected = 100% to place 1",
 -- saw place 1 paid in full, and returned clean:true on a game that had
 -- short-changed two players. The corruption made itself invisible to the one
 -- check built to catch it. So the ladder needs a source of truth of its own.
---
--- The trigger that attaches the guard is a separate migration because it needs
--- an AccessExclusiveLock on `tournaments`, one of the hottest tables here -
--- taking it in the same statement as everything else deadlocked against live
--- play on the first attempt.
 
 CREATE TABLE IF NOT EXISTS public.spin_payout_ladder (
   multiplier  numeric PRIMARY KEY,
@@ -110,12 +116,20 @@ $fn$;
 
 CREATE OR REPLACE FUNCTION public.fn_spin_ladder_drift_check(p_since_days integer DEFAULT 7)
 RETURNS TABLE (
-  tournament_id uuid, multiplier numeric, expected jsonb, actual jsonb, ended_at timestamptz
+  tournament_id uuid,
+  multiplier    numeric,
+  expected      jsonb,
+  actual        jsonb,
+  ended_at      timestamptz
 )
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public'
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path TO 'public'
 AS $fn$
   SELECT t.id, t.spin_multiplier, l.structure,
-         NULLIF(btrim(COALESCE(t.payout_structure,'')),'')::jsonb, t.ended_at
+         NULLIF(btrim(COALESCE(t.payout_structure,'')),'')::jsonb,
+         t.ended_at
     FROM public.tournaments t
     JOIN public.spin_payout_ladder l ON l.multiplier = t.spin_multiplier
    WHERE upper(COALESCE(t.tournament_type,'')) = 'SPIN'
@@ -126,19 +140,6 @@ $fn$;
 
 COMMENT ON FUNCTION public.fn_spin_ladder_drift_check(integer) IS
   'Spins whose payout ladder does not match the one their multiplier owes. '
-  'Should be empty; a non-empty result means something writes the column by a '
-  'path that bypasses the trigger.';
-
--- OPERATOR TELEMETRY, NOT PUBLIC SURFACE.
--- This shipped with the default grant, which is PUBLIC, so an unauthenticated
--- caller could run a SECURITY DEFINER function past RLS and be told every Spin
--- whose ladder disagrees with its multiplier. The pre-push
--- definer-authorization check caught it before the branch landed.
--- Read-only is not the same as harmless. PUBLIC is named as well as the roles
--- because anon inherits whatever PUBLIC holds, so revoking anon alone reads as
--- a fix and does nothing. Confirmed it is not an RLS policy helper, so this
--- cannot deny a SELECT anywhere.
-REVOKE ALL ON FUNCTION public.fn_spin_ladder_drift_check(integer)
-  FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_spin_ladder_drift_check(integer)
-  TO service_role;
+  'Should be empty once zzz_spin_ladder_is_the_drawn_one is attached; a '
+  'non-empty result means something writes the column by a path that bypasses '
+  'the trigger.';

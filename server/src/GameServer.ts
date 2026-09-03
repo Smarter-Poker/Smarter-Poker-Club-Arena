@@ -80,6 +80,7 @@ import { isMaintenanceFrozen } from './maintenance/freezeState.js';
 import { raiseEngineAlert, resolveEngineAlert } from './services/engineAlerts.js';
 import { MaintenanceBreak } from './maintenance/MaintenanceBreak.js';
 import { createSupabaseMaintenanceBreakStore } from './maintenance/maintenanceBreakStore.js';
+import { runThawInstallments } from './maintenance/thawInstallments.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
 import { isWakeableCashTable } from './services/onDemandTableWake.js';
 // 2026-08-16: single-owner table leases + per-process identity. See
@@ -447,15 +448,53 @@ export class GameServer {
     // duration, so "picks back up exactly as it was" is true of the CLOCKS
     // and not only of the chips. fn_thaw_platform is idempotent per freeze -
     // two engines racing at :00 cannot shift the clocks twice.
+    // PHASE 2 (2026-09-02): the break's own measurements, one row per break,
+    // so ca_break_scorecards can show what the GATE saw (unparked at
+    // countdown, peak, when readyForRestart first opened) and not only what
+    // hand_history reveals from outside. Insert-only; a failure is reported
+    // by MaintenanceBreak and never delays the resume.
+    recordOutcome: async (o) => {
+      const { error } = await supabase.from('engine_maintenance_break_log').insert({
+        break_started_at: new Date(o.breakStartedAtMs).toISOString(),
+        break_ended_at: new Date(o.breakEndedAtMs).toISOString(),
+        unparked_at_countdown: o.unparkedAtCountdown,
+        peak_unparked: o.peakUnparked,
+        ready_for_restart_at:
+          o.readyForRestartAtMs === null ? null : new Date(o.readyForRestartAtMs).toISOString(),
+        tables_resumed: o.tablesResumed,
+        thaw_ok: o.thawOk,
+        engine_version:
+          process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
+      });
+      if (error) throw new Error(error.message);
+    },
+    // PHASE 4 (2026-09-02): the thaw runs in INSTALLMENTS. fn_thaw_platform
+    // checkpoints each completed step in engine_maintenance_thaws.shifted and
+    // returns complete:false when it has used its own ~4s budget, so no single
+    // call can hit PostgREST's 8s cap the way the one-statement thaw did
+    // (19.9s before the #2703 indexes; a timeout still at 20:00 after them).
+    // runThawInstallments calls again until complete, and retries a call that
+    // died - a timed-out call committed nothing, so the retry is exactly
+    // right. Idempotent per freeze and per step on the database side.
     thaw: async (freezeStartedAtMs, frozenSeconds) => {
-      const { data, error } = await supabase.rpc('fn_thaw_platform', {
+      const args = {
         p_freeze_started: new Date(freezeStartedAtMs).toISOString(),
         p_frozen_seconds: frozenSeconds,
         p_thawed_by:
           process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
-      });
-      if (error) throw new Error(error.message);
-      console.log('[MaintenanceBreak] thaw:', JSON.stringify(data));
+      };
+      const summary = await runThawInstallments(
+        async () => {
+          const { data, error } = await supabase.rpc('fn_thaw_platform', args);
+          if (error) throw new Error(error.message);
+          return (data ?? {}) as Record<string, unknown>;
+        },
+        { log: (line) => console.log(line) }
+      );
+      console.log(
+        `[MaintenanceBreak] thaw: complete in ${summary.calls} call(s), ${summary.errors} error(s):`,
+        JSON.stringify(summary.last?.shifted ?? null)
+      );
     },
   });
   /**
@@ -634,6 +673,21 @@ export class GameServer {
        *
        * These are infinite while-loops: fire-and-forget with error handling.
        */
+      /**
+       * Step 0b - THE BREAK IS ADOPTED BEFORE ANYTHING THAT CAN SEAT A PLAYER
+       * (THE FREEZE IS TOTAL (Dan 2026-09-03)). This used to be Step 7b, after discovery,
+       * the horse fleet, the recurring launcher and the scheduler had all
+       * started - and every one of those fires an immediate first pass on
+       * start(). On the 23:55 restart the new engine booted at 23:55:23 and
+       * adopted the break at 23:55:26; in between, and in the seconds after,
+       * those first passes seated 68 horses at cash tables and registered
+       * 160 into tournaments while every screen on the platform said the
+       * break was on. The flag those services check (isMaintenanceFrozen) is
+       * set HERE, by restoreFromStore, so this must run first. Engines
+       * adopted later are parked by maintenanceBreak.adopt().
+       */
+      await this.maintenanceBreak.start();
+
       this.discoverCashTables().catch((err) =>
         reportError(err, 'GameServer.Cash_table_discovery_fatal_err')
       );
@@ -711,7 +765,7 @@ export class GameServer {
       // part is why it is awaited here, ahead of any dealing: this process is
       // usually booting *because* of the restart the break was declared for,
       // and it must not deal a hand into a break players are still watching.
-      await this.maintenanceBreak.start();
+      // (the break is adopted at Step 0b now - see above)
 
       // Step 8 (A5): Start the fee reconciler. Rake and the BBJ contribution are
       // taken out of the pot inside the hand; if the banking RPC fails the chips
@@ -1992,226 +2046,32 @@ export class GameServer {
         .neq('horse_status', 'available');
       console.log('[GameServer] Reset stuck horses to available');
 
-      // 2. SAFE CLEANUP: Cash out active CASH-GAME seats before deleting.
-      //    Test table (protectedTableId) is excluded — its seated players /
-      //    bots stay put so the tester can join an already-warmed table.
-      //    This prevents chip loss when the server restarts while players are seated
-      //    FIX 208b: Batch approach — aggregate per user, single wallet update per user
+      // 2. HORSES KEEP THEIR SEATS ACROSS A RESTART (Dan 2026-09-02, BINDING;
+      //    CLAUDE.md 10.5 "horses are players").
       //
-      //    TOURNEY-AUDIT 2026-07-24 [CRITICAL]: this query had NO tournament
-      //    filter — on EVERY restart it credited each seated tournament
-      //    player's TOURNAMENT CHIP STACK (e.g. 10,000 tournament chips) to
-      //    their REAL-MONEY wallet via credit_player_wallet, then deleted the
-      //    seats — minting money on every boot AND destroying the seats a
-      //    resumed tournament needs. Now only seats at CASH tables
-      //    (tables.tournament_id IS NULL) are cashed out, and the delete below
-      //    targets exactly the processed seat rows instead of wiping the table.
-      // Dan 2026-08-18 [P0]: this swept EVERY cash seat on EVERY boot, so an
-      // ordinary deploy cashed out and deleted seats belonging to players who
-      // were mid-session — Dan was removed from a live table twice today by
-      // exactly this. Real people are not stale data. Only seats belonging to
-      // HORSES are reaped here; a human's seat survives a restart (the engine
-      // rebuilds its table from table_seats on boot, which is the whole point
-      // of persisting them). Genuinely orphaned human seats are still handled
-      // by HorseLifecycleManager's 4-hour sweep, which has activity guards.
-      // 2026-08-20: paged. PostgREST caps every response at db-max-rows (1,000)
-      // WITHOUT erroring — the truncation that made HorseFleetManager treat 428
-      // occupied seats as empty and fire ~150,000 duplicate-key buy-ins a day.
-      // Here the consequence would be worse than waste: a horse past the cap
-      // reads as "not a horse", and this sweep's whole job is to reap ONLY
-      // horse seats. Under-reading is safe (fail-closed), but it would leave
-      // orphaned seats forever with no signal.
-      const horsePage = await fetchAllRows<{ id: string }>(
-        (cursor, want) => {
-          let q = supabase
-            .from('profiles')
-            .select('id')
-            .eq('is_horse', true)
-            .order('id', { ascending: true })
-            .limit(want);
-          if (cursor) q = q.gt('id', cursor);
-          return q;
-        },
-        { label: 'GameServer.staleSweep.horses', maxRows: 50_000 }
-      );
-      const horseIdList = horsePage.rows.map((h) => h.id);
-
-      // FAIL CLOSED (2026-08-19 audit). The first version of this guard applied
-      // the horse filter only `if (horseIdList.length > 0)`, so a failed or
-      // empty profiles query silently dropped the filter and the sweep went
-      // straight back to cashing out and DELETING every human seat — the exact
-      // P0 this guard exists to prevent, reintroduced as a failure mode. If we
-      // cannot prove which seats belong to horses, we sweep nothing.
-      // FAIL CLOSED. If we cannot prove which seats belong to horses, we sweep
-      // nothing — this sweep cashes out and DELETES seat rows, and a human's
-      // seat must never be reaped by it.
+      //    This used to be "SAFE CLEANUP": cash out and vacate every HORSE seat
+      //    at every cash table on every boot. It was written on 2026-08-18 to
+      //    stop the sweep removing HUMANS mid-session, by exempting humans only
+      //    - nine days before the horses-are-players law, and never revisited.
+      //    Measured on the 20:55 break of 2026-09-02, the first restart on the
+      //    fixed build: "Cashed out and vacated 383 seat(s) before cleanup
+      //    (78,575.13 chips returned to club wallets)" at 20:58:03, across 223
+      //    cash tables, every one a horse, and then the fleet re-seeded fresh
+      //    horses into the holes. Dan watched every horse leave the table
+      //    during the break and be snap-replaced after it. That is the
+      //    opposite of "everything just freezes, then picks back up exactly as
+      //    it was".
       //
-      // REVIEW FIX 2026-08-20: the previous version wrapped fetchAllRows in a
-      // .catch() and tested `horseErr`. fetchAllRows never rejects — every
-      // error path reports and returns — so that branch was unreachable and the
-      // guard had silently weakened to "sweep whatever partial list we got".
-      // Completeness is now part of the return type, so this cannot rot again.
+      //    Nothing needs the sweep. A seat row IS the persisted state: the
+      //    engine rebuilds every table from table_seats on boot (the very
+      //    reason a human's seat was declared safe), and the fleet seeds only
+      //    genuinely empty seats and refuses "Player already seated". A horse
+      //    mid-hand at restart is resumed by crash recovery like any other
+      //    seat. Genuinely orphaned seats - horse or human - still fall to
+      //    HorseLifecycleManager's guarded 4-hour sweep.
       //
-      // Note this only skips the SEAT SWEEP. It used to `return` out of the
-      // whole of cleanupStaleData, which also skipped resetting cash tables to
-      // 'waiting' and cancelling past-due tournaments WITH REFUNDS — and an
-      // empty horse list is a normal state (DISABLE_HORSE_FLEET, a fresh DB).
-      const canSweepSeats = horsePage.complete && horseIdList.length > 0;
-      if (!canSweepSeats) {
-        console.warn(
-          '[GameServer] Stale-seat sweep SKIPPED - could not resolve the horse list ' +
-            `(complete=${horsePage.complete}, horses=${horseIdList.length}). ` +
-            'The rest of the cleanup still runs.'
-        );
-      }
-      if (canSweepSeats) {
-        // REVIEW FIX 2026-08-20: this said `.range(0, 4999)`, which does NOT
-        // raise the cap — PostgREST applies db-max-rows AFTER the Range header,
-        // so it still returned at most 1,000 rows with no error. That left the
-        // single most dangerous statement on this path (it credits wallets and
-        // DELETEs seat rows) silently truncated, while the read-only horse lookup
-        // above it had been paged. Page it properly.
-        const seatPage = await fetchAllRows<{
-          id: string;
-          user_id: string;
-          table_id: string;
-          seat_number: number;
-          stack: number;
-        }>(
-          (cursor, want) => {
-            let q = supabase
-              .from('table_seats')
-              .select('id, user_id, table_id, seat_number, stack, tables!inner(tournament_id)')
-              .is('left_at', null)
-              .is('tables.tournament_id', null)
-              .order('id', { ascending: true })
-              .limit(want);
-            if (protectedTableId) q = q.neq('table_id', protectedTableId);
-            if (cursor) q = q.gt('id', cursor);
-            return q;
-          },
-          { label: 'GameServer.staleSweep.seats', maxRows: 50_000 }
-        );
-        // Same fail-closed rule as the horse list: this path DELETES seat rows.
-        const horseIdSet = new Set(horseIdList);
-        const activeSeats = seatPage.complete
-          ? seatPage.rows.filter((s) => horseIdSet.has(s.user_id))
-          : [];
-        if (!seatPage.complete) {
-          console.warn(
-            '[GameServer] Stale-seat sweep SKIPPED - the seat read was incomplete. ' +
-              'The rest of the cleanup still runs.'
-          );
-        }
-
-        if (activeSeats && activeSeats.length > 0) {
-          // ── 2026-08-31: ONE LOCKED CASH-OUT PER SEAT, AND NO DELETE ───────
-          //
-          // This block used to credit ONE AGGREGATE per user through
-          // `atomic_credit_wallet_and_log`, keyed
-          // `startup-cashout:{userId}:{sorted seat ids}`, and then bulk-DELETE
-          // the seat rows. Two things were wrong with that, and the second is
-          // the expensive one.
-          //
-          // 1. It is the shape CLAUDE.md 11.5 forbids outright: a seat that
-          //    ends by DELETE ends outside the refund path. Credit and delete
-          //    were two separate round trips, so a boot that died between them
-          //    left the chips paid and the seat still occupied.
-          //
-          // 2. And that is exactly what the retry then made invisible. The
-          //    next boot re-read the identical seat-id set, rebuilt the
-          //    IDENTICAL idempotency key, and `atomic_credit_wallet_and_log`
-          //    correctly deduped it — writing NO fresh ledger row. The seats
-          //    were then deleted anyway, so every one of those exits landed in
-          //    `ca_seat_stack_exits` with no wallet credit inside the matching
-          //    window. 1,033 exits a day, ~432K chips, arriving in
-          //    `ledger_reconcile_log` as CRITICAL and indistinguishable from
-          //    chips actually being destroyed. A reconciliation alarm that
-          //    cries wolf a thousand times a day is not a reconciliation
-          //    alarm.
-          //
-          // `atomic_seat_cashout_locked` is the platform's one cash-out: it
-          // reads the stack under FOR UPDATE, credits, and stamps `left_at` in
-          // the SAME transaction, deriving its idempotency key from the row it
-          // locked. So there is no window to die in, every seat produces its
-          // own ledger row that `fn_unaccounted_seat_exits` can match, and a
-          // failure rolls credit and vacate back together — the seat keeps its
-          // stack for the next pass, which is the `failedUserIds` behaviour
-          // this block always wanted, now structural rather than tracked.
-          //
-          // THE DELETE IS GONE. A vacated seat (`left_at` set) is not a stale
-          // seat: it is the audit trail, and `atomic_table_buyin` clears the
-          // rathole rows it needs to reuse a seat number. Nothing here has to
-          // remove a row, and nothing here may.
-          //
-          // HORSES ARE PLAYERS (CLAUDE.md 10.5): this sweep only ever looks at
-          // horse seats because a human's seat must never be reaped by a boot
-          // sweep, but the chips now travel the IDENTICAL path a human's do —
-          // same RPC, same lock, same ledger row, same club wallet.
-          //
-          // The RPC is called here rather than through `seats.atomicCashout`
-          // because this sweep needs the per-seat error to report how many
-          // seats it left behind; `atomicCashout` folds a failure into a 0
-          // return that a genuinely empty seat also produces. No credit and no
-          // `left_at` write happens in this file — that stays in the database,
-          // where the lock is.
-          let cashedOut = 0;
-          let seatsFailed = 0;
-          let chipsReturned = 0;
-          const failedUserIds = new Set<string>();
-          for (let i = 0; i < activeSeats.length; i += 10) {
-            const batch = activeSeats.slice(i, i + 10);
-            await Promise.all(
-              batch.map(async (seat) => {
-                try {
-                  const { data, error } = await supabase.rpc('atomic_seat_cashout_locked', {
-                    p_user_id: seat.user_id,
-                    p_table_id: seat.table_id,
-                    p_seat_number: seat.seat_number,
-                  });
-                  if (error) {
-                    console.warn(
-                      `[GameServer] Startup cash-out failed for ${seat.user_id} at ` +
-                        `${seat.table_id} seat ${seat.seat_number} - seat preserved: ${error.message}`
-                    );
-                    failedUserIds.add(seat.user_id);
-                    seatsFailed++;
-                    return;
-                  }
-                  const row = (data ?? {}) as { stack?: number };
-                  chipsReturned += Number(row.stack ?? 0);
-                  cashedOut++;
-                } catch (err: any) {
-                  console.warn(
-                    `[GameServer] Startup cash-out threw for ${seat.user_id} at ` +
-                      `${seat.table_id} seat ${seat.seat_number} - seat preserved: ${err?.message}`
-                  );
-                  failedUserIds.add(seat.user_id);
-                  seatsFailed++;
-                }
-              })
-            );
-          }
-
-          if (cashedOut > 0) {
-            console.log(
-              `[GameServer] Cashed out and vacated ${cashedOut} seat(s) before cleanup ` +
-                `(${chipsReturned.toFixed(2)} chips returned to club wallets)`
-            );
-          }
-          if (seatsFailed > 0) {
-            console.warn(
-              `[GameServer] ${seatsFailed} seat(s) across ${failedUserIds.size} player(s) could ` +
-                'not be cashed out - their stacks are still on the felt and the next boot retries them'
-            );
-          }
-        } else {
-          // TOURNEY-AUDIT 2026-07-24: nothing to cash out — do NOT blanket-delete.
-          // The old path here deleted EVERY table_seats row (including tournament
-          // seats and historical left_at rows) on every restart.
-          console.log('[GameServer] No active cash-table seats needed cashout');
-        }
-      } // end if (canSweepSeats)
+      //    Pinned by seatExitMoneyPaths.test.ts: the boot path must not cash
+      //    out or vacate ANY seat, and must not tell horses apart from humans.
 
       // 3. FIX 202: Reset cash tables based on horse fleet mode.
       // E2E test mode (protectedTableId) ALWAYS closes everything-but-test
@@ -3002,6 +2862,11 @@ export class GameServer {
 
         for (const tournament of registering || []) {
           if (this.tournamentEngines.has(tournament.id)) continue;
+          // THE FREEZE IS TOTAL (Dan 2026-09-03): starting an event pre-seats its
+          // field and topping it up buys horses in. Both are chip movement.
+          // The event starts on the first pass after the thaw, exactly as a
+          // human's buy-in would be accepted then and not before.
+          if (isMaintenanceFrozen()) break;
 
           // Guard: skip tournaments with no start_time set
           if (!tournament.start_time) {
@@ -3232,6 +3097,9 @@ export class GameServer {
           }
 
           for (const t of seatFirstRows) {
+            // THE FREEZE IS TOTAL (Dan 2026-09-03): a seat-first start seats its
+            // players and a partial fill buys horses in.
+            if (isMaintenanceFrozen()) break;
             const id = String(t.id);
             const seats = Number(t.max_players) || 0;
             const paid = paidSeatsByTournament.get(id) ?? 0;
@@ -4430,6 +4298,9 @@ export class GameServer {
           );
           const paidSeats = await this.readSeatFirstPaidSeats(seatFirstRows);
           for (const t of seatFirstRows) {
+            // THE FREEZE IS TOTAL (Dan 2026-09-03): a seat-first start seats its
+            // players and a partial fill buys horses in.
+            if (isMaintenanceFrozen()) break;
             const id = String(t.id);
             const seats = Number(t.max_players) || 0;
             const paid = paidSeats.get(id) ?? 0;
@@ -4790,6 +4661,11 @@ export class GameServer {
 
   /** Per-game throttle for fillPartialSeatFirstGame - one attempt per 12s. */
   private lastHumanFillAt = new Map<string, number>();
+  /**
+   * Consecutive top-ups that came back short, per game. Drives the backoff in
+   * fillPartialSeatFirstGame; cleared the moment a top-up fills the board.
+   */
+  private seatFirstFillMisses = new Map<string, number>();
   /** Per-game throttle for the human-waiting alarm - one report per 60s. */
   private lastHumanWaitReportAt = new Map<string, number>();
 
@@ -4819,7 +4695,28 @@ export class GameServer {
   ): Promise<void> {
     const now = Date.now();
     const last = this.lastHumanFillAt.get(tournamentId) ?? 0;
-    if (now - last < 12_000) return;
+    /* BACK OFF A BOARD THAT WILL NOT FILL (2026-09-02).
+
+       Measured on the live engine: 96 Deep Stack Society seat-first boards
+       (heads-up and 3-max) with their human window closed 2.5 to 25 HOURS
+       ago, each retried here every 12 s and each coming back "top-up added 0
+       of 1 needed" - 400 refusals per five minutes. Every attempt is two
+       RPCs, fn_sync_seat_first_player_count (160 ms) and
+       fn_seat_horse_in_seat_first_game (849 ms): 278,970 and 21,781 calls
+       since the 09-01 stats reset, ~7 calls a second, roughly a whole core of
+       a two-core database spent re-asking a question whose answer had not
+       changed since yesterday. That is the same database every hand, every
+       buy-in and every socket handshake was queueing behind.
+
+       So a board that keeps coming back short is asked less and less often:
+       12 s, 24 s, 48 s ... up to ten minutes, and the counter resets the
+       moment a top-up fills it. Only the WINDOW-CLOSED trigger backs off. A
+       board with a HUMAN in a seat keeps the 12 s cadence - Dan 2026-08-29,
+       a human is never left waiting - and if that board cannot fill either,
+       seat_first_human_waiting still says so once a minute. */
+    const misses = windowClosed ? (this.seatFirstFillMisses.get(tournamentId) ?? 0) : 0;
+    const interval = Math.min(12_000 * 2 ** Math.min(misses, 6), 10 * 60_000);
+    if (now - last < interval) return;
     this.lastHumanFillAt.set(tournamentId, now);
 
     /* ROUND 15 OPTIMISATION. When the human window has already closed the
@@ -4894,6 +4791,14 @@ export class GameServer {
   ): Promise<void> {
     const added = await this.tournamentRecurring.topUpWithHorses(tournamentId, seats);
     const shortfall = seats - paid;
+    // See the backoff in fillPartialSeatFirstGame: a filled board forgets its
+    // misses, a short one counts another.
+    if (added >= shortfall) this.seatFirstFillMisses.delete(tournamentId);
+    else
+      this.seatFirstFillMisses.set(
+        tournamentId,
+        (this.seatFirstFillMisses.get(tournamentId) ?? 0) + 1
+      );
     if (added > 0) {
       console.log(
         `[GameServer] Seat-first fill: +${added} horse(s) into ${tournamentId.slice(0, 8)} ` +

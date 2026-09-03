@@ -450,7 +450,7 @@ fi
 #     that the same commit's feature had just replaced.
 #
 # Each one blocked EVERY agent and every deploy until a human noticed, because
-# `npx vitest run tests/` in build-for-world-hub.yml is what publishes the
+# `npx vitest run tests/` in publish-club-arena.yml is what publishes the
 # bundle. This hook already enforces nine house rules about the CONTENT of a
 # push and never once ran the tests.
 #
@@ -604,6 +604,32 @@ if [ "$CA_TESTS_ON" = "1" ] && [ -f package.json ] && [ -x "$VITEST" ]; then
       echo "                      Leaving it red blocks every deploy until"
       echo "                      somebody else finds it."
       FAIL=1
+    fi
+
+    # THE PINS (2026-09-02). `vitest related` follows IMPORTS. A source pin
+    # does not import the file it pins - it readFileSync()s it - so `related`
+    # has never once run a pin for the file it reads. 96 files under tests/
+    # read server/src/** that way. #2695 changed isPausedByDesign() in
+    # ServerTableEngineBase.ts, this hook ran `related` on it, found nothing,
+    # let it through, and tests/unit/tournamentRakeAndBreaks.test.ts went red
+    # on main. Run every test under tests/ that names a changed file, too.
+    PINNED=""
+    for f in $CHANGED_SRC; do
+      base=$(basename "$f")
+      for t in $(grep -rl --include='*.test.ts' --include='*.test.tsx' -F "$base" tests/ 2>/dev/null); do
+        case " $PINNED $CHANGED_TESTS " in *" $t "*) ;; *) PINNED="$PINNED $t" ;; esac
+      done
+    done
+    if [ -n "$PINNED" ]; then
+      echo "[club-arena pre-push] running the pins that READ a file you changed..."
+      if ! "$VITEST" run $PINNED; then
+        echo ""
+        echo "[club-arena pre-push] BLOCKED: a test that reads a file you changed is red."
+        echo "                      It pins the source text. If you deliberately"
+        echo "                      changed what it pins, move the pin in this"
+        echo "                      same commit - never leave it for the merge."
+        FAIL=1
+      fi
     fi
   fi
 fi

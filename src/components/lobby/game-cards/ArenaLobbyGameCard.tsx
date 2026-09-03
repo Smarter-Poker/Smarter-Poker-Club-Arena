@@ -156,16 +156,41 @@ export const ArenaLobbyGameCard = memo(function ArenaLobbyGameCard({
        remembered 3/6. The zero underneath this is in ArenaGameCard's
        LiveValue: cache first, then 0, and never the word Unavailable. */
     const remembered: Partial<typeof normalized> = {};
+    /* What the server ACTUALLY said this time, kept apart from what we merely
+       remember. Writing the MERGED card back would re-persist a remembered
+       figure as though it had just been observed: the entry could never age
+       out of the LRU, and a value the lobby has genuinely stopped reporting
+       would be refreshed forever by the very card still displaying it. */
+    const live: Record<string, string | undefined> = {};
+
     for (const key of CACHED_FIGURE_KEYS) {
-      if (normalized[key] === undefined && cached[key]) {
-        remembered[key] = cached[key];
+      const value = normalized[key];
+      if (value === undefined) {
+        if (cached[key]) remembered[key] = cached[key];
+      } else {
+        live[key] = value;
       }
     }
 
+    /* A CARD THAT IS SHOWING A REMEMBERED NUMBER SAYS SO.
+       ArenaGameCard already has the vocabulary for this - `stale` renders the
+       small "Last Known Game State" chip at the bottom of the card, 9px, no
+       overlay (ArenaGameCard.css) - and nothing in the lobby had ever set it,
+       so the affordance was dead code and the cache was silent. Marking it
+       here is what keeps the cache honest: a figure filled from memory is
+       labelled as memory, and the label disappears by itself the moment the
+       live value arrives. Only set when a bay was ACTUALLY filled, so a card
+       with complete live data carries no chip. */
+    const filledFromMemory = Object.keys(remembered).length > 0;
+
     return {
-      ...normalized,
-      ...remembered,
-      registeredByViewer: playerState === 'registered',
+      card: {
+        ...normalized,
+        ...remembered,
+        registeredByViewer: playerState === 'registered',
+        ...(filledFromMemory ? { dataState: 'stale' as const } : null),
+      },
+      live,
     };
   }, [entry, ctx]);
 
@@ -174,17 +199,14 @@ export const ArenaLobbyGameCard = memo(function ArenaLobbyGameCard({
      business of a render pass. `rememberFigures` skips absent values, so a
      card that arrives without its stakes does not erase the stakes we had. */
   useEffect(() => {
-    rememberFigures(
-      `game:${entry.id}`,
-      Object.fromEntries(CACHED_FIGURE_KEYS.map((key) => [key, data[key]]))
-    );
-  }, [entry.id, data]);
+    rememberFigures(`game:${entry.id}`, data.live);
+  }, [entry.id, data.live]);
 
   const actions = useMemo(() => arenaGameCardActionsForEntry(entry, ctx), [entry, ctx]);
 
   return (
     <div onFocus={() => onSelect?.(entry)}>
-      <ArenaGameCard data={data} actions={actions} presentation="mobile" selected={selected} />
+      <ArenaGameCard data={data.card} actions={actions} presentation="mobile" selected={selected} />
     </div>
   );
 });

@@ -136,7 +136,7 @@ describe('CI box provisioning', () => {
     // provisioner has to know what the workflows call. Scan them and check.
     const workflows = [
       '.github/workflows/ci.yml',
-      '.github/workflows/build-for-world-hub.yml',
+      '.github/workflows/publish-club-arena.yml',
       '.github/workflows/post-deploy-e2e.yml',
     ]
       .map(repo)

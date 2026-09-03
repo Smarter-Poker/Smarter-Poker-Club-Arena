@@ -1,5 +1,24 @@
 # Club Arena -- Agent Instructions
 
+## ↗ RESUMING THE ENGINE-RESTART PROGRAMME? READ `docs/HANDOFF_CURRENT_STATE.md`
+
+If you are picking up the hourly `:55` maintenance break / platform freeze /
+engine restart work, the current state, every measured baseline, the open
+defects and the exact next actions are in
+[`docs/HANDOFF_CURRENT_STATE.md`](./docs/HANDOFF_CURRENT_STATE.md) - a 9-phase
+programme; phases 1-3 built (phase 1 merged + live, phases 2+3 in PR #2715),
+next is phase 4 (thaw installments). The plan is
+[`docs/ENGINE-RESTART-PROGRAMME.md`](./docs/ENGINE-RESTART-PROGRAMME.md).
+
+Read it before touching `server/src/maintenance/**`,
+`server/src/engine/ServerTableEngineBase.ts`,
+`.github/workflows/auto-deploy-hetzner.yml` or
+`.github/scripts/engine-watchdog.sh`. It records three separate guards that
+read as armed while being unreachable, and one trap where a metric reaching
+zero means the opposite of success.
+
+---
+
 ## ↗ START HERE: `AGENT-PLAYBOOK.md`
 
 **Before this file, before anything: read [`AGENT-PLAYBOOK.md`](./AGENT-PLAYBOOK.md).**
@@ -41,33 +60,57 @@ platform plan wins.
 Club Arena is a Vite + React SPA that lives inside the smarter.poker Next.js app.
 It deploys through the World Hub repo, NOT directly.
 
-### 1.1 The Only Deploy Path (Phase U5.4 — one script, one push)
+### 1.1 How your work reaches production (rewritten 2026-09-02 - read this, it changed)
+
+There is exactly ONE route from a commit to a player, and every step of it is
+automatic. Your job ends at step 2.
+
+1. **Work on a branch in your own worktree.** Any name is fine - `fix/<slug>`
+   is the convention. Never commit on `main`; it is a protected mirror.
+2. **Push the branch** over SSH (`git push origin HEAD:refs/heads/<branch>`).
+   **That is the end of your job.** Do not open the pull request yourself, do
+   not merge, do not watch CI (10.8.3). Report the branch name and stop.
+3. `agent-open-pr.yml` opens the pull request within seconds of the branch
+   appearing - for ANY branch name, not only `agent/*` (that was the gap that
+   stranded three agents' finished work on 2026-09-02).
+4. `agent-autopilot.yml` enables squash auto-merge. The required checks run on
+   the estate's own Hetzner runners (`vars.CI_RUNNER`), and GitHub merges when
+   they are green. Red checks never merge (5.8).
+5. **`publish-club-arena.yml` publishes.** On merge it builds the bundle,
+   runs the four-way sharded test gate, and pushes `dist/` into the World Hub
+   repo's `public/hub/club-arena/` with a GitHub App token. Vercel then deploys
+   the World Hub, which is what serves `smarter.poker/hub/club-arena`. It runs
+   on the Hetzner box too, so the only path to production no longer depends on
+   GitHub's hosted pool.
+6. **Verify** by reading, never by assuming:
+   `curl -s https://smarter.poker/hub/club-arena/build-info.json` - `ca_sha`
+   must equal the squash commit on `main`. Nothing else counts as deployed.
+
+**Three nets catch a publish that fails, all automatic:** the `*/30` catch-up
+cron inside the publisher, `publish-watchdog.yml` (re-dispatches up to three
+times, then raises an in-app notification), and the orphan sweep in
+`agent-autopilot.yml` that opens a pull request for any branch under a day old
+that has none. If production is behind `main` for more than ~25 minutes,
+something is genuinely broken - read the watchdog issue it filed.
+
+**There is no second publisher.** `build-for-world-hub.yml` was deleted on
+2026-09-02; for ninety minutes both existed on separate concurrency groups and
+every merge ran two full publishes. `tests/no-commit-left-behind.law.test.ts`
+now counts publishers and requires exactly one. Club Arena cannot bypass the
+World Hub: `club-arena/vercel.json` has `deploymentEnabled: false` on purpose,
+and the bundle is served from the World Hub's `public/`.
+
+**Local preview only, NOT a deploy path:**
 
 ```bash
 cd ~/Documents/Smarter-Poker-World-Hub
 bash scripts/sync-club-arena.sh "feat(ca): <describe what changed>"
 ```
 
-That script builds CA with NODE_ENV=production, copies the new build to the Hub, and stages it for local preview.
-
-**To actually deploy to production:**
-
-1. Commit your changes in the `club-arena` repository.
-2. `git push` to `main` in `club-arena`.
-3. A GitHub Action (`build-for-world-hub.yml`) will automatically build and sync it to the World Hub repository, which triggers the Vercel deploy.
-
-`SENTRY_AUTH_TOKEN/ORG/PROJECT` are read from `~/Documents/club-arena/.env` if
-not already exported. Bulky static dirs (`cards/`, `images/`, `club-logos/`,
-`videos/`) are preserved — they're not in a fresh build.
-
-**Legacy names** still work but just forward to the canonical script:
-
-- `WH scripts/build-club-arena.sh` → `sync-club-arena.sh`
-- `CA scripts/sync-to-world-hub.sh` → `sync-club-arena.sh`
-
-For post-deploy verification that production is serving your commit, follow up
-with `bash scripts/git-safe-push.sh` in the WH repo — but `sync-club-arena.sh`
-already exits non-zero on build/push failure.
+That builds CA with NODE_ENV=production and stages it into the Hub for local
+preview. It does not push and cannot publish; its "Pushed" line is a vestige.
+`SENTRY_AUTH_TOKEN/ORG/PROJECT` come from `~/Documents/club-arena/.env`.
+Legacy names `build-club-arena.sh` and `sync-to-world-hub.sh` forward to it.
 
 ### 1.1.5 SERVER-SIDE PROTECTION (APPLIED - this section is history)
 
@@ -307,7 +350,7 @@ Do NOT audit 10 items and then ask "what should I fix?" -- fix them as you go.
 ---
 
 8. NEVER PUSH A RED TEST (Dan 2026-08-21, binding). `npx vitest run tests/` in
-   `build-for-world-hub.yml` is what PUBLISHES the bundle. A failing test does
+   `publish-club-arena.yml` is what PUBLISHES the bundle. A failing test does
    not fail a report - it stops the World Hub sync for every agent and every
    deploy, until a human notices. On 2026-08-21 that happened four times in one
    day, and every one was a test pushed alongside the feature it was meant to
@@ -621,6 +664,81 @@ why something is BLOCKED is fine. Sitting in a loop is not.
 any worktree that is clean, pushed, and idle for 72 hours. Do not keep state
 you care about only in a worktree: commit and push it, or it will eventually
 be pruned (pushed branches lose nothing — the commits live on origin).
+
+---
+
+## 10.9 YOU DECIDE THE MONEY (Dan, 2026-09-02, BINDING)
+
+**Dan, verbatim: "YOU HAVE FULL CONTROL TO MAKE ANY AND ALL DECISIONS ON WHAT
+SHOULD BE DONE WITH REAL MONEY AND REAL CHIP SCENARIOS. ALL CLAUDE AGENTS CAN
+CHOOSE THE BEST OPTION THATS RECOMMENDED AND MAKE ALL CHANGES WITHOUT ASKING
+ME, IF THEY HAVE A CLEAR PATH OF CORRECTION AND RECONCILIATION."**
+
+This ends the holding pattern where an agent finds a broken payout, writes a
+careful paragraph explaining it, files it "for Dan", and leaves the money
+frozen. That pattern has a cost and the cost is paid by players: on 2026-09-02
+three tournaments sat frozen at once and the oldest had been unpaid for fifteen
+hours, entirely because the last agent to look at it decided the money was
+somebody else's call. It was not. It is yours.
+
+### What the grant covers
+
+Unpaid prizes, wrong finishing positions, refunds owed, shortfall back-pay,
+stranded stacks, a tournament that cannot end itself, a ledger that does not
+balance because of a platform defect. Find it, decide it, ship it, and say
+plainly what you did. You do not open with a question.
+
+### A path is CLEAR only when all five of these hold
+
+1. **The outcome is READ, not assumed.** You can state what actually happened
+   from rows in this database. "Probably" is not evidence. The invented
+   `is_horse` filter in section 10.5 is what an assumption dressed as a
+   decision looks like, and it cost 39 events their entire rake attribution.
+2. **Nobody is paid twice.** The credit goes through the platform's own
+   idempotent path (`fn_tournament_payout_reconcile`, `fn_credit_and_log`, and
+   the per-user prize keys). Never hand-write a wallet row.
+3. **Nothing is taken back from a player for our mistake.** Overpay that our
+   defect caused is absorbed by the house, reported, and left alone. The
+   reconciler already refuses to claw back; do not out-clever it.
+4. **You proved it in a transaction you rolled back first.** Section 11.5 is
+   not softened by this grant, it is what makes the grant safe. The numbers you
+   commit are the numbers the probe returned, and the migration asserts them so
+   it aborts if the board moved underneath you.
+5. **You can write the paragraph.** One paragraph naming every affected player
+   and why they got what they got. If you cannot write it, you do not
+   understand the case well enough to settle it.
+
+If any of the five fails you do not have a clear path. THEN it goes to Dan, and
+it goes as options with their costs and your recommendation, never as a
+question.
+
+### When the evidence disagrees with itself, prefer the witness that was there
+
+Settling the 12:00 AM freeroll, re-deriving all 215 finishing places from
+`eliminated_at` moved players by up to three places and would have paid 168.51
+in top-ups on a pool that already had 282.06 out the door. The live engine had
+watched each of those players bust and recorded the order as it happened; the
+timestamps had not. The recorded order was kept and ONE player was inserted into
+it. A reconstruction that disagrees with the witness is a reconstruction that is
+wrong.
+
+### The record is part of the fix, not paperwork after it
+
+A settlement is finished when all four exist: the migration (with its reasoning
+in the header, not just its SQL), the changelog under `docs/changelog/`, the
+`financial_alerts` row resolved with a `resolution` note saying what was
+accepted and why, and the engine fix that stops it happening again. A payment
+with no explanation attached is the next agent's mystery.
+
+### Still Dan's, and only Dan's
+
+- **Anything that sets what players are owed in FUTURE events**: prices, rake,
+  guarantees, payout structures, retention policy. Fixing what a past event
+  owes is yours. Deciding what the next one owes is his.
+- **Money leaving the platform**: withdrawals, payment providers, anything a
+  bank sees.
+- **Rewriting or deleting a settled record to make a number look tidy.** Correct
+  it forward, with a row that says what changed. Never edit history quiet.
 
 ---
 

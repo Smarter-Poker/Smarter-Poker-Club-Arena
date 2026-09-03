@@ -27,7 +27,7 @@ set -uo pipefail
 
 REPO="${GITHUB_REPOSITORY:?}"
 BUILD_INFO_URL="${BUILD_INFO_URL:-https://smarter.poker/hub/club-arena/build-info.json}"
-PUBLISH_WORKFLOW="${PUBLISH_WORKFLOW:-build-for-world-hub.yml}"
+PUBLISH_WORKFLOW="${PUBLISH_WORKFLOW:-publish-club-arena.yml}"
 LAG_BUDGET_MIN="${LAG_BUDGET_MIN:-25}"
 ISSUE_TITLE="Publish watchdog: production is not serving main"
 

@@ -1,4 +1,9 @@
--- Applied to production 2026-09-02 17:32 UTC. Part 2 of 2.
+-- BACKFILLED 2026-09-02 from supabase_migrations.schema_migrations.statements.
+-- Applied to production 20260902173230; the .sql file was never committed at the
+-- time (chip-std phase 1.5 mirror, docs/changelog/2026-09-02-chip-std-p1-mirror.md).
+-- Content is byte-exact to what ran. Do NOT re-apply; it is already live.
+
+-- Part 2 of 2. Attaching the guard to `tournaments`.
 --
 -- WHY THE NAME BEGINS zzz. Postgres fires BEFORE triggers in alphabetical
 -- order. fn_ca_fund_overlay_on_lock is attached as zz_ca_fund_overlay_on_lock

@@ -1,16 +1,19 @@
--- Applied to production 2026-09-02 17:33 UTC.
---
+-- BACKFILLED 2026-09-02 from supabase_migrations.schema_migrations.statements.
+-- Applied to production 20260902173340; the .sql file was never committed at the
+-- time (chip-std phase 1.5 mirror, docs/changelog/2026-09-02-chip-std-p1-mirror.md).
+-- Content is byte-exact to what ran. Do NOT re-apply; it is already live.
+
 -- A check that permanently reports 139 known-benign rows is a check people
--- learn to ignore, and this repo has already paid for that lesson.
+-- learn to ignore, and this repo has already paid for that lesson twice.
 --
--- fn_spin_ladder_drift_check returned 139 after the back-pay. Every one was a
+-- fn_spin_ladder_drift_check returned 139 after the back-pay. Every one is a
 -- CANCELLED Spin from 2026-07-24 to 2026-08-19 carrying the overwritten
 -- winner-take-all ladder. Cancelled games refund the buy-in and pay no prize -
--- verified: zero of the 139 had a single non-zero prize on any seat - so there
--- was no money in this and nothing to back-pay.
+-- verified: zero of the 139 has a single non-zero prize on any seat - so there
+-- is no money in this and nothing to back-pay.
 --
--- They are corrected anyway, so that "drift is zero" is a statement someone can
--- rely on. A signal with a standing exception is not a signal.
+-- They are corrected anyway, so that "drift is zero" is a statement someone
+-- can rely on. A signal with a standing exception is not a signal.
 DO $fix$
 DECLARE
   v_fixed int := 0;

@@ -447,9 +447,15 @@
   border-radius: 2px;
 }
 
+/* THE COLUMN COUNT BELONGS TO THE LIST, NOT TO .breakdown li.
+   Three lists share this element and they render four cells, six cells and
+   five. Three unconditional grid-template-columns rules had accumulated here,
+   one per phase, each overriding the last - so whichever shipped most recently
+   governed all three, and the club list had been laid into the agent list's
+   grid ever since the agent breakdown was added. Empty trailing columns
+   squeeze the real ones and nothing errors, which is why it survived. */
 .breakdown li {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(70px, 1fr) 100px 58px;
   align-items: center;
   gap: 0.6rem;
   min-height: 42px;
@@ -530,7 +536,7 @@
     flex: 1 1 100%;
   }
 
-  .breakdown li {
+  .listClub li {
     grid-template-columns: minmax(0, 1fr) 92px 52px;
   }
 
@@ -562,13 +568,19 @@
 
 /* Four columns became six once agent and downline rows arrived: name, count,
    bar, direct figure, network figure. The club list keeps the original four. */
-.breakdown li {
+/* Union scope: name, bar, fee, share. */
+.listClub li {
+  grid-template-columns: minmax(0, 1.4fr) minmax(70px, 1fr) 100px 58px;
+}
+
+/* Downline: name, count, bar, rake, their own downline. */
+.listDownline li {
   grid-template-columns: minmax(0, 1.3fr) 108px minmax(60px, 0.8fr) 100px 92px;
 }
 
 .legend {
   display: grid;
-  grid-template-columns: 1fr 100px 92px;
+  grid-template-columns: 1fr 96px 88px 96px;
   gap: 0.6rem;
   padding: 0 0.7rem 0.3rem;
   color: #66737f;
@@ -698,7 +710,7 @@
 }
 
 @media (max-width: 860px) {
-  .breakdown li {
+  .listDownline li {
     grid-template-columns: minmax(0, 1fr) 92px 84px;
   }
 
@@ -775,5 +787,38 @@
 
   .pagerBtn {
     flex: 1 1 100%;
+  }
+}
+
+/* ----------------------------------------------------------------- cost --- */
+
+/* The agent rows gained a sixth column. The club list keeps its four, so this
+   override sits after the shared rule and applies only where a Cost column
+   actually exists. */
+/* Agents: name, players, bar, direct, network, cost. */
+.listAgent li {
+  grid-template-columns: minmax(0, 1.2fr) 96px minmax(50px, 0.7fr) 96px 88px 96px;
+}
+
+/* Money the club owes, not money it took. Gold rather than the energy blue the
+   rake columns use, so an operator scanning the table is never one glance away
+   from reading a cost as a takings. */
+.rowCost {
+  color: var(--gold);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+@media (max-width: 860px) {
+  .listAgent li {
+    grid-template-columns: minmax(0, 1fr) 88px 88px;
+  }
+
+  /* Direct rake and cost survive the narrow layout; network is the one that
+     can be inferred from the rows beneath it. */
+  .rowNetwork {
+    display: none;
   }
 }

@@ -78,6 +78,25 @@ export interface RakeAgentRow {
   sub_agents: number;
   /** Players in the club with no agent. Real rake; it just has no owner. */
   is_unassigned: boolean;
+  /**
+   * Commission money. NULL means NOT DISCLOSED, not zero.
+   *
+   * The club's commission bill is admin-only (fn_is_club_admin_uid), which is
+   * tighter than the finances gate this page runs under - so a super agent
+   * reads every rake figure and gets nulls here. Zero would say "this agent
+   * costs nothing", which is a different claim and a false one.
+   *
+   * Commission CASCADES: an upline earns on their downline's rake and has its
+   * own ledger rows for it. So this is NOT direct_rake times commission_rate,
+   * and the panel must not invite that arithmetic. Unlike network_rake it does
+   * sum - one recipient per ledger row - so the column total is the club's
+   * bill for the window.
+   */
+  commission_earned: number | null;
+  commission_outstanding: number | null;
+  commission_settled: number | null;
+  /** Commission owed to someone with no agents row in this club. */
+  is_residual?: boolean;
 }
 
 /** Agent scope: one row per member beneath the viewer. */
@@ -133,6 +152,11 @@ export interface RakeSnapshot {
    * against it would be quietly and consistently too small.
    */
   breakdown_total: number | null;
+  /**
+   * The club's commission bill for the window, or null when the viewer is not
+   * entitled to it. Reconciles exactly with fn_club_commission_accrued.
+   */
+  commission_total: number | null;
   /**
    * True when the breakdown reads rake_records for everything the daily rollup
    * has not finished, so it is current to the second.

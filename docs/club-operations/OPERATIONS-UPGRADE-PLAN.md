@@ -3,7 +3,7 @@
 Owner: Dan (directive 2026-09-03 - "verify, audit and upgrade every single
 page" of `/hub/club-arena/clubs/:club/operations` and every sub page).
 Author of this plan: Cowork/Claude session `feat/club-operations-full-upgrade`.
-Status: **Phase 1 of 8 built, tested and pushed. Phases 2 to 8 specified below.**
+Status: **Phases 1 and 2 of 8 built, tested and pushed. Phases 3 to 8 specified below.**
 
 Every finding in this document was produced by reading the page source end to
 end and, where it concerns data, by querying production
@@ -110,7 +110,30 @@ Detail: `docs/changelog/2026-09-03-club-operations-phase-1-the-shell.md`.
 
 ---
 
-## 4. Phase 2 - Integrity and safety: the buttons that write nothing
+## 4. Phase 2 - Integrity and safety: the buttons that write nothing. **DONE**
+
+Shipped 2026-09-03 (migration `20260903170000_an_integrity_decision_is_written_down`):
+one shared gate `fn_ca_can_review_integrity` behind five functions;
+`fn_club_anti_cheat_flags` + `fn_review_anti_cheat_flag` (a flag review is
+written down for the first time, and a zero-row write is a failure);
+`get_anti_cheat_stats` rewritten to the shape the page reads and gated;
+`detect_collusion_pairs` rescoped to the club's own hands and split into the two
+detectors that were being shown as one; `fn_ca_dismiss_collusion_pair`;
+`fn_dispute_start_review` + `fn_dispute_escalate`; two indexes on a 169,530-row
+table that had only a primary key.
+
+Client: the Anti-Cheat console resolves its club before reading (it had been
+sending the slug into every uuid argument since it shipped); the kick goes
+through the engine's own `POST /admin/kick` instead of stamping `left_at` onto
+a seat; the anomalies tab says what its query measures; the reports queue polls
+instead of subscribing to a table that is not published, and states its 100-row
+ceiling; the blacklist form picks a person out of the roster, names them in the
+ledger, warns when an excluded player is still seated, and offers a broom for
+the expired rows nothing sweeps. `anti-cheat` moved from `staff` to `control`.
+
+Detail: `docs/changelog/2026-09-03-club-operations-phase-1-the-shell.md`.
+
+Everything below is what the phase found, kept as the record.
 
 **Anti-Cheat (`/anti-cheat`)**
 

@@ -316,7 +316,11 @@ describe('the workspace is still permission aware', () => {
     rpcMock.mockResolvedValue({ data: payload(), error: null });
     mount();
     await waitFor(() => expect(screen.getByText('Players')).toBeTruthy());
-    expect(screen.getByText('Anti-Cheat')).toBeTruthy();
+    expect(screen.getByText('Reports')).toBeTruthy();
+    /* Anti-Cheat moved to 'control' in phase 2: every read on that page is
+       gated in the database to owner/co_owner/admin, so advertising it to an
+       agent advertised a page on which every panel refuses. */
+    expect(screen.queryByText('Anti-Cheat')).toBeNull();
     expect(screen.queryByText('Settings')).toBeNull();
     expect(screen.queryByText('Club Data')).toBeNull();
     expect(screen.queryByText('Blacklist')).toBeNull();

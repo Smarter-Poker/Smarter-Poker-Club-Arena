@@ -21,6 +21,8 @@ import { retryFetch } from '../utils/retryFetch';
 import { exportToCSV } from '../lib/export';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { fmt, fmtChips, timeAgo } from '../utils/format';
+import { isAuthzError } from '../utils/clubDashboard';
+import { adminRemovePlayerFromClubTables } from '../services/IntegrityActionService';
 import { reportError } from '../utils/errorReporter';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 
@@ -69,10 +71,32 @@ interface AntiCheatEvent {
 interface CollusionPair {
   dumper_id: string;
   receiver_id: string;
+  pattern_type: string;
   hands_together: number;
+  score: number;
   chip_flow_ratio: number;
-  net_chips_transferred: number;
   severity: string;
+  /* Whatever the detector that raised this pair actually recorded. CHIP_DUMP
+     writes hands / loser_loss_ratio / pot_volume; WIN_RATE_ANOMALY writes
+     bb_per_100 / direction / hands_together. The old UI printed a
+     `net_chips_transferred` column that no detector has ever written, so
+     COALESCE made it a column of zeroes. */
+  evidence: Record<string, unknown> | null;
+}
+
+interface CollusionGroup {
+  total: number;
+  pairs: CollusionPair[];
+}
+
+interface CollusionReading {
+  analyzed_hands: number;
+  club_players: number;
+  window_days: number;
+  threshold: number;
+  cap: number;
+  chip_dump: CollusionGroup;
+  win_rate: CollusionGroup;
 }
 
 interface Anomaly {
@@ -90,6 +114,32 @@ interface Stats {
   active_sessions: number;
   by_severity: Record<string, number>;
   by_type: Record<string, number>;
+}
+
+/**
+ * What the detector actually recorded, in words. CHIP_DUMP writes hands,
+ * loser_loss_ratio and pot_volume; WIN_RATE_ANOMALY writes bb_per_100 and
+ * direction. Nothing writes net chips transferred, which is why the column
+ * that used to sit here always read zero.
+ */
+export function evidenceSummary(pair: { evidence?: Record<string, unknown> | null }): string {
+  const e = pair.evidence || {};
+  const num = (key: string): number | null => {
+    const raw = e[key];
+    const parsed = typeof raw === 'number' ? raw : Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const parts: string[] = [];
+  const loss = num('loser_loss_ratio');
+  if (loss !== null) parts.push(`Loss Ratio ${(loss * 100).toFixed(0)}%`);
+  const pot = num('pot_volume');
+  if (pot !== null) parts.push(`Pot Volume ${fmt(pot)}`);
+  const bb = num('bb_per_100');
+  if (bb !== null) parts.push(`${bb.toFixed(1)} BB Per 100`);
+  const close = num('close_ratio');
+  if (close !== null) parts.push(`Close Actions ${(close * 100).toFixed(0)}%`);
+  if (typeof e.direction === 'string' && e.direction) parts.push(`Direction ${e.direction}`);
+  return parts.length > 0 ? parts.join(' \u00b7 ') : 'No Evidence Recorded';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -118,6 +168,10 @@ export default function AntiCheatPage() {
   const [loading, setLoading] = useState(true);
   const [clubId, setClubId] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
+  /* An integrity page that cannot read must say so. "Nothing found" and "the
+     read failed" used to render identically here, and the second one printed
+     the words "Club Is Clean". */
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Overview
   const [stats, setStats] = useState<Stats | null>(null);
@@ -132,7 +186,7 @@ export default function AntiCheatPage() {
   const [eventsLoaded, setEventsLoaded] = useState(false);
 
   // Collusion
-  const [collusionPairs, setCollusionPairs] = useState<CollusionPair[]>([]);
+  const [collusion, setCollusion] = useState<CollusionReading | null>(null);
   const [collusionLoaded, setCollusionLoaded] = useState(false);
   const [analyzedHands, setAnalyzedHands] = useState(0);
 
@@ -170,19 +224,18 @@ export default function AntiCheatPage() {
         if (error) throw error;
         if (mountedRef.current) setStats(data || null);
       } catch (err: unknown) {
-        console.warn(
-          '[AntiCheat] Stats load failed:',
-          err instanceof Error ? err.message : String(err)
-        );
-        // Fallback: build stats from flags table
+        /* A read that failed and a club with nothing to report used to look
+           identical: this fallback painted six zeros, and the panel below
+           renders "Club Is Clean" whenever open_flags is 0. An operator cannot
+           tell a quiet club from a broken page, so now it says which it is. */
+        reportError(err, 'AntiCheatPage.Stats_load_failed');
         if (mountedRef.current) {
-          setStats({
-            open_flags: 0,
-            blocks_24h: 0,
-            active_sessions: 0,
-            by_severity: {},
-            by_type: {},
-          });
+          setStats(null);
+          setLoadError(
+            isAuthzError(err)
+              ? 'Integrity Review Is Restricted To Club Owners And Administrators'
+              : 'The Integrity Readings Could Not Be Loaded'
+          );
         }
       } finally {
         loadingRef.current = false;
@@ -197,19 +250,20 @@ export default function AntiCheatPage() {
     async (status?: string) => {
       if (!clubId) return;
       try {
-        let query = supabase
-          .from('anti_cheat_flags')
-          .select('*, player_id')
-          .eq('club_id', clubId)
-          .order('flagged_at', { ascending: false })
-          .limit(50);
-
+        /* anti_cheat_flags grants `authenticated` one policy - read the flags
+           raised against YOURSELF - so a direct club read returned nothing to
+           the operator no matter what club_id was passed. All fourteen rows on
+           the estate also carry club_id NULL and table_id NULL: they are
+           multi_account flags about a person, with nothing to derive a club
+           from. fn_club_anti_cheat_flags scopes them the way phase 1 scoped a
+           player report - your flag when the flagged player is your member -
+           inside a definer function, so the table itself stays closed. */
         const filterStatus = status || flagFilter;
-        if (filterStatus !== 'all') {
-          query = query.eq('status', filterStatus);
-        }
-
-        const { data, error } = await query;
+        const { data, error } = await supabase.rpc('fn_club_anti_cheat_flags', {
+          p_club_id: clubId,
+          p_status: filterStatus,
+          p_limit: 50,
+        });
         if (error) throw error;
 
         // Batch-fetch player profiles (no FK hint needed)
@@ -333,21 +387,63 @@ export default function AntiCheatPage() {
       );
       if (error) throw error;
       if (mountedRef.current) {
-        setCollusionPairs(data?.pairs || data || []);
-        setAnalyzedHands(data?.analyzed_hands || 0);
+        const reading = (data || null) as CollusionReading | null;
+        setCollusion(reading);
+        setAnalyzedHands(reading?.analyzed_hands || 0);
         setCollusionLoaded(true);
       }
     } catch (err: unknown) {
-      console.warn(
-        '[AntiCheat] Collusion load failed:',
-        err instanceof Error ? err.message : String(err)
-      );
+      reportError(err, 'AntiCheatPage.Collusion_load_failed');
       if (mountedRef.current) {
-        setCollusionPairs([]);
+        setCollusion(null);
         setCollusionLoaded(true);
+        setLoadError(
+          isAuthzError(err)
+            ? 'Integrity Review Is Restricted To Club Owners And Administrators'
+            : 'The Collusion Screen Could Not Be Loaded'
+        );
       }
     }
   }, [clubId]);
+
+  /* A pair the operator has looked at and cleared. collusion_tracking carries
+     status / reviewed_by / notes and nothing in this app has ever written them,
+     so a screened pair came back every single load with no way to work the
+     queue down. */
+  const dismissPair = useCallback(
+    async (pair: CollusionPair) => {
+      if (!clubId) return;
+      if (
+        !(await confirmDialog({
+          title: 'Clear This Pair',
+          message:
+            'Mark this pair as reviewed and clear it from the screen? It will return if the detector raises it again in a later scan.',
+          confirmText: 'Clear Pair',
+        }))
+      )
+        return;
+      setProcessing(true);
+      try {
+        const { data, error } = await supabase.rpc('fn_ca_dismiss_collusion_pair', {
+          p_club_id: clubId,
+          p_player_a: pair.dumper_id,
+          p_player_b: pair.receiver_id,
+          p_note: null,
+        });
+        if (error) throw error;
+        const outcome = (data || {}) as { ok?: boolean; updated?: number };
+        if (!outcome.ok) throw new Error('That pair could not be cleared.');
+        toast.success(`Cleared ${fmt(outcome.updated || 0)} Screening Rows.`);
+        setCollusionLoaded(false);
+        void loadCollusion();
+      } catch (err: unknown) {
+        toast.error(err instanceof Error ? err.message : String(err));
+      } finally {
+        setProcessing(false);
+      }
+    },
+    [clubId, loadCollusion, toast]
+  );
 
   // ── Load Anomalies ──────────────────────────────────────
   const loadAnomalies = useCallback(async () => {
@@ -399,11 +495,29 @@ export default function AntiCheatPage() {
         targetClub = mem?.club_id || null;
       }
 
-      if (targetClub && isMounted) {
-        setClubId(targetClub);
-        loadStats(targetClub);
+      /* THE PAGE USED TO SET THE ROUTE PARAM STRAIGHT INTO clubId.
+         Club routes are addressed by slug (deep-stack-society-11192), and every
+         read on this page passes clubId into a uuid argument or an .eq on a
+         uuid column, so Postgres answered 22P02 invalid input syntax for type
+         uuid and every catch block below turned that into an empty state. The
+         page has shown six zeros and "Club Is Clean" on every slug URL since it
+         shipped. The realtime filter twenty lines down already resolved it. */
+      let resolvedClub: string | null = null;
+      if (targetClub) {
+        try {
+          resolvedClub = await resolveClubUUID(targetClub);
+        } catch (resolveError) {
+          reportError(resolveError, 'AntiCheatPage.Club_resolve_failed');
+          resolvedClub = null;
+        }
+      }
+
+      if (resolvedClub && isMounted) {
+        setClubId(resolvedClub);
+        loadStats(resolvedClub);
       } else if (isMounted) {
         toast.error('No club found.');
+        setLoadError('This Club Could Not Be Identified');
         setLoading(false);
       }
     };
@@ -525,16 +639,25 @@ export default function AntiCheatPage() {
     if (!reviewTarget || !clubId) return;
     setProcessing(true);
     try {
-      const { error } = await supabase
-        .from('anti_cheat_flags')
-        .update({
-          status: reviewStatus,
-          reviewed_by: user?.id,
-          review_notes: reviewNotes || null,
-          reviewed_at: new Date().toISOString(),
-        })
-        .eq('id', reviewTarget.id);
+      /* This used to be a client UPDATE against a table with no UPDATE policy
+         for `authenticated`: PostgREST answered 204, zero rows, no error, and
+         the toast below claimed the decision had been recorded. It never had
+         been. The RPC returns { ok } and a zero-row write is a failure. */
+      const { data, error } = await supabase.rpc('fn_review_anti_cheat_flag', {
+        p_club_id: clubId,
+        p_flag_id: reviewTarget.id,
+        p_status: reviewStatus,
+        p_notes: reviewNotes || null,
+      });
       if (error) throw error;
+      const outcome = (data || {}) as { ok?: boolean; reason?: string };
+      if (!outcome.ok) {
+        throw new Error(
+          outcome.reason === 'flag_not_in_this_club'
+            ? 'That flag does not belong to this club.'
+            : 'The review could not be recorded.'
+        );
+      }
 
       toast.success(`Flag ${reviewStatus} successfully.`);
       setReviewTarget(null);
@@ -549,39 +672,77 @@ export default function AntiCheatPage() {
     }
   };
 
-  const kickPlayer = async (playerId: string, tableId?: string) => {
-    if (
-      !(await confirmDialog({
-        title: 'Remove Player',
-        message: 'Remove this player from the table for anti-cheat violation?',
-        confirmText: 'Remove',
-        variant: 'danger',
-      }))
-    )
-      return;
+  /**
+   * REMOVING A PLAYER IS THE ENGINE'S JOB, AND IT ALREADY HAD ONE.
+   *
+   * This used to stamp `left_at` and status 'kicked' straight onto table_seats.
+   * That is the exact write CLAUDE.md 11.5 exists to forbid: closing a seat
+   * without going through a cash-out destroys the stack sitting in it, and the
+   * `ca_seat_stack_exits` trigger files every such exit as a critical
+   * reconciliation failure. It also never had a tableId - every call site
+   * passed only a player - so the seat branch was skipped entirely and the
+   * compensating anti_cheat_events insert was refused by RLS (service-role
+   * only). Nothing was removed, nothing was logged, and the operator was told
+   * "Player removed."
+   *
+   * POST /admin/kick on the engine has done this correctly since Round 68: it
+   * verifies club-admin from the caller's own token, auto-folds a player who is
+   * mid-hand, cashes the stack out between hands, and writes the
+   * anti_cheat_events audit row itself. This finds the tables the player is
+   * actually sitting at in THIS club and asks the engine to remove them.
+   */
+  const kickPlayer = async (playerId: string) => {
+    if (!clubId) return;
     setProcessing(true);
     try {
-      if (tableId) {
-        const { error } = await supabase
-          .from('table_seats')
-          .update({ left_at: new Date().toISOString(), status: 'kicked' })
-          .eq('user_id', playerId)
-          .eq('table_id', tableId)
-          .is('left_at', null);
-        if (error) throw error;
+      const { data: seats, error: seatError } = await supabase
+        .from('table_seats')
+        .select('table_id, tables!inner(club_id, status)')
+        .eq('user_id', playerId)
+        .is('left_at', null)
+        .eq('tables.club_id', clubId);
+      if (seatError) throw seatError;
+
+      const tableIds = [
+        ...new Set(((seats || []) as Array<{ table_id: string }>).map((row) => row.table_id)),
+      ];
+      if (tableIds.length === 0) {
+        toast.info('This Player Is Not Seated At Any Table In This Club.');
+        return;
       }
 
-      // Log the kick event (non-blocking but warn on failure)
-      const { error: logError } = await supabase.from('anti_cheat_events').insert({
-        club_id: clubId,
-        player_id: playerId,
-        event_type: 'player_kicked',
-        details: { reason: 'Anti-cheat violation - removed by admin', table_id: tableId },
-      });
-      if (logError) console.warn('[AntiCheat] Failed to log kick event:', logError.message);
+      if (
+        !(await confirmDialog({
+          title: 'Remove Player From Play',
+          message: `Remove this player from ${tableIds.length} live table${
+            tableIds.length === 1 ? '' : 's'
+          }? Their stack is cashed out to their club wallet and the removal is recorded against your account.`,
+          confirmText: 'Remove Player',
+          variant: 'danger',
+        }))
+      )
+        return;
 
-      toast.success('Player removed.');
+      const outcome = await adminRemovePlayerFromClubTables(
+        tableIds,
+        playerId,
+        'Anti-cheat review - removed by club admin'
+      );
+      if (outcome.removed === 0) {
+        throw new Error(outcome.firstError || 'The engine did not remove this player.');
+      }
+      if (outcome.failed > 0) {
+        toast.warning(
+          `Removed From ${fmt(outcome.removed)} Of ${fmt(tableIds.length)} Tables. ${
+            outcome.firstError || ''
+          }`.trim()
+        );
+      } else {
+        toast.success(`Player Removed From ${fmt(outcome.removed)} Table(s).`);
+      }
       masterBus.emit('PLAYER_KICKED', { clubId: clubId ?? '', userId: playerId });
+      setEventsLoaded(false);
+      loadStats(clubId);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : String(err));
     } finally {
@@ -644,15 +805,29 @@ export default function AntiCheatPage() {
                     { key: 'player_id', label: 'Player ID' },
                     { key: 'created_at', label: 'Time' },
                   ]);
-                } else if (tab === 'collusion' && collusionPairs.length > 0) {
-                  exportToCSV(collusionPairs, 'collusion_pairs.csv', [
-                    { key: 'dumper_id', label: 'Dumper ID' },
-                    { key: 'receiver_id', label: 'Receiver ID' },
-                    { key: 'hands_together', label: 'Hands Together' },
-                    { key: 'chip_flow_ratio', label: 'Flow Ratio' },
-                    { key: 'net_chips_transferred', label: 'Net Chips' },
-                    { key: 'severity', label: 'Severity' },
-                  ]);
+                } else if (
+                  tab === 'collusion' &&
+                  collusion &&
+                  collusion.chip_dump.pairs.length + collusion.win_rate.pairs.length > 0
+                ) {
+                  /* The old export carried a Net Chips column that no detector
+                     has ever written, so every row said 0.00. */
+                  exportToCSV(
+                    [...collusion.chip_dump.pairs, ...collusion.win_rate.pairs].map((pair) => ({
+                      ...pair,
+                      evidence_summary: evidenceSummary(pair),
+                    })),
+                    'collusion_pairs.csv',
+                    [
+                      { key: 'pattern_type', label: 'Pattern' },
+                      { key: 'dumper_id', label: 'Player A' },
+                      { key: 'receiver_id', label: 'Player B' },
+                      { key: 'hands_together', label: 'Hands Together' },
+                      { key: 'score', label: 'Score' },
+                      { key: 'severity', label: 'Severity' },
+                      { key: 'evidence_summary', label: 'Evidence' },
+                    ]
+                  );
                 } else if (tab === 'anomalies' && anomalies.length > 0) {
                   exportToCSV(anomalies, 'anomalies.csv', [
                     { key: 'player_id', label: 'Player ID' },
@@ -757,8 +932,14 @@ export default function AntiCheatPage() {
       {/* ═══════════════ TAB: OVERVIEW ════════════════ */}
       {tab === 'overview' && (
         <div className={styles.section}>
-          {!stats ? (
+          {!stats && loading ? (
             <PageSkeleton variant="list" />
+          ) : !stats ? (
+            <div className={styles.emptyState}>
+              <span className={styles.emptyText}>
+                {loadError || 'The Integrity Readings Could Not Be Loaded'}
+              </span>
+            </div>
           ) : (
             <>
               <div className={styles.statsGrid}>
@@ -768,11 +949,11 @@ export default function AntiCheatPage() {
                 </div>
                 <div className={styles.statCard}>
                   <div className={styles.statValueGold}>{fmt(stats.blocks_24h)}</div>
-                  <div className={styles.statLabel}>Blocks (24H)</div>
+                  <div className={styles.statLabel}>Enforcement (24H)</div>
                 </div>
                 <div className={styles.statCard}>
                   <div className={styles.statValueGreen}>{fmt(stats.active_sessions)}</div>
-                  <div className={styles.statLabel}>Active Sessions</div>
+                  <div className={styles.statLabel}>Players Seated Now</div>
                 </div>
               </div>
 
@@ -832,7 +1013,9 @@ export default function AntiCheatPage() {
               {stats.open_flags === 0 && (
                 <div className={styles.emptyState}>
                   <span className={styles.emptyIcon}>✓</span>
-                  <span className={styles.emptyText}>No Open Flags - Club Is Clean!</span>
+                  <span className={styles.emptyText}>
+                    No Open Integrity Flags Against Members Of This Club
+                  </span>
                 </div>
               )}
             </>
@@ -985,118 +1168,179 @@ export default function AntiCheatPage() {
         <div className={styles.section}>
           {!collusionLoaded ? (
             <PageSkeleton variant="list" />
+          ) : !collusion ? (
+            <div className={styles.emptyState}>
+              <span className={styles.emptyText}>
+                {loadError || 'The Collusion Screen Could Not Be Loaded'}
+              </span>
+            </div>
           ) : (
             <>
               <div className={styles.statsGrid}>
                 <div className={styles.statCard}>
-                  <div className={styles.statValueBlue}>{fmt(analyzedHands)}</div>
+                  <div className={styles.statValueBlue}>{fmt(collusion.analyzed_hands)}</div>
                   <div className={styles.statLabel}>Hands Analyzed</div>
                 </div>
                 <div className={styles.statCard}>
-                  <div className={styles.statValueRed}>{fmt(collusionPairs.length)}</div>
-                  <div className={styles.statLabel}>Suspicious Pairs</div>
+                  <div className={styles.statValueRed}>{fmt(collusion.chip_dump.total)}</div>
+                  <div className={styles.statLabel}>Chip Dump Pairs</div>
                 </div>
                 <div className={styles.statCard}>
-                  <div
-                    className={styles.statValue}
-                    style={{
-                      color:
-                        collusionPairs.filter((p) => p.severity === 'critical').length > 0
-                          ? '#FA383E'
-                          : '#31A24C',
-                    }}
-                  >
-                    {fmt(collusionPairs.filter((p) => p.severity === 'critical').length)}
-                  </div>
-                  <div className={styles.statLabel}>Critical</div>
+                  <div className={styles.statValueGold}>{fmt(collusion.win_rate.total)}</div>
+                  <div className={styles.statLabel}>Win Rate Outliers</div>
+                </div>
+                <div className={styles.statCard}>
+                  <div className={styles.statValue}>{fmt(collusion.club_players)}</div>
+                  <div className={styles.statLabel}>Players Screened</div>
                 </div>
               </div>
 
-              {collusionPairs.length === 0 ? (
+              {/*
+                TWO DETECTORS WRITE INTO ONE TABLE AND THEY DO NOT MEAN THE SAME
+                THING. CHIP_DUMP is one-directional chip flow - what this tab's
+                copy has always claimed to show, and what an operator can act
+                on. WIN_RATE_ANOMALY is a win-rate outlier: on the largest club
+                on the estate it accounts for 5,588 of the 5,591 pairs in the
+                window, so presenting the two as one list turned an actionable
+                queue of three into a wall nobody could work.
+              */}
+              <h3 className={styles.subsectionTitle}>Suspected Chip Dumping</h3>
+              <p className={styles.subsectionDesc}>
+                One-Directional Chip Flow Between Two Players Who Sat At This Club, Scored At Or
+                Above {Math.round(collusion.threshold * 100)} Over The Last {collusion.window_days}{' '}
+                Days.
+              </p>
+              {collusion.chip_dump.pairs.length === 0 ? (
                 <div className={styles.emptyState}>
-                  <span className={styles.emptyIcon}>✓</span>
                   <span className={styles.emptyText}>
-                    No Suspicious Chip-Dumping Patterns Detected Across {fmt(analyzedHands)} Hands
+                    No Chip Dumping Detected Across {fmt(collusion.analyzed_hands)} Hands
                   </span>
                 </div>
               ) : (
-                <>
-                  <h3 className={styles.subsectionTitle}>Suspected Collusion Pairs</h3>
-                  <p className={styles.subsectionDesc}>
-                    Players With One-Directional Chip Flow Above 75% Threshold
-                  </p>
-                  <div className={styles.tableScroll}>
-                    <table className={styles.dataTable}>
-                      <thead>
-                        <tr>
-                          <th>Severity</th>
-                          <th>Dumper → Receiver</th>
-                          <th>Hands</th>
-                          <th>Flow Ratio</th>
-                          <th>Net Chips</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {collusionPairs.map((pair, i) => (
-                          <tr key={i}>
-                            <td>
-                              <SeverityBadge severity={pair.severity} />
-                            </td>
-                            <td>
-                              <span className={styles.collusionFlow}>
-                                <span className={styles.dumper}>
-                                  {pair.dumper_id.substring(0, 8)}
-                                </span>
-                                <span className={styles.arrow}>→</span>
-                                <span className={styles.receiver}>
-                                  {pair.receiver_id.substring(0, 8)}
-                                </span>
+                <div className={styles.tableScroll}>
+                  <table className={styles.dataTable}>
+                    <thead>
+                      <tr>
+                        <th>Severity</th>
+                        <th>Loser To Winner</th>
+                        <th>Hands</th>
+                        <th>Score</th>
+                        <th>Evidence</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {collusion.chip_dump.pairs.map((pair) => (
+                        <tr key={`${pair.dumper_id}-${pair.receiver_id}`}>
+                          <td>
+                            <SeverityBadge severity={pair.severity} />
+                          </td>
+                          <td>
+                            <span className={styles.collusionFlow}>
+                              <span className={styles.dumper}>
+                                {pair.dumper_id.substring(0, 8)}
                               </span>
-                            </td>
-                            <td style={{ fontWeight: 600 }}>{fmt(pair.hands_together)}</td>
-                            <td>
-                              <span
-                                style={{
-                                  fontWeight: 700,
-                                  color:
-                                    pair.chip_flow_ratio >= 0.9
-                                      ? '#FA383E'
-                                      : pair.chip_flow_ratio >= 0.85
-                                        ? '#F5A623'
-                                        : '#F7C52A',
-                                }}
+                              <span className={styles.arrow}>&rarr;</span>
+                              <span className={styles.receiver}>
+                                {pair.receiver_id.substring(0, 8)}
+                              </span>
+                            </span>
+                          </td>
+                          <td style={{ fontWeight: 600 }}>{fmt(pair.hands_together)}</td>
+                          <td style={{ fontWeight: 700 }}>{fmt(pair.score)}</td>
+                          <td className={styles.detailsCell}>{evidenceSummary(pair)}</td>
+                          <td>
+                            <div className={styles.actionBtns}>
+                              <button
+                                onClick={() => kickPlayer(pair.dumper_id)}
+                                className={styles.btnSmallDanger}
+                                disabled={processing}
                               >
-                                {(pair.chip_flow_ratio * 100).toFixed(1)}%
+                                Remove Loser
+                              </button>
+                              <button
+                                onClick={() => kickPlayer(pair.receiver_id)}
+                                className={styles.btnSmallDanger}
+                                disabled={processing}
+                              >
+                                Remove Winner
+                              </button>
+                              <button
+                                onClick={() => dismissPair(pair)}
+                                className={styles.btnSmall}
+                                disabled={processing}
+                              >
+                                Clear
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <h3 className={styles.subsectionTitle}>Win Rate Outliers</h3>
+              <p className={styles.subsectionDesc}>
+                A Screening Signal, Not A Finding: Pairs Whose Results Against Each Other Sit Far
+                From The Field. {fmt(collusion.win_rate.total)} In The Window
+                {collusion.win_rate.total > collusion.win_rate.pairs.length
+                  ? `, Showing The Top ${fmt(collusion.win_rate.pairs.length)}`
+                  : ''}
+                .
+              </p>
+              {collusion.win_rate.pairs.length === 0 ? (
+                <div className={styles.emptyState}>
+                  <span className={styles.emptyText}>No Win Rate Outliers In This Window</span>
+                </div>
+              ) : (
+                <div className={styles.tableScroll}>
+                  <table className={styles.dataTable}>
+                    <thead>
+                      <tr>
+                        <th>Severity</th>
+                        <th>Pair</th>
+                        <th>Hands Together</th>
+                        <th>Score</th>
+                        <th>Evidence</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {collusion.win_rate.pairs.map((pair) => (
+                        <tr key={`${pair.dumper_id}-${pair.receiver_id}`}>
+                          <td>
+                            <SeverityBadge severity={pair.severity} />
+                          </td>
+                          <td>
+                            <span className={styles.collusionFlow}>
+                              <span className={styles.dumper}>
+                                {pair.dumper_id.substring(0, 8)}
                               </span>
-                            </td>
-                            <td style={{ fontWeight: 700, color: '#F7C52A' }}>
-                              {fmtChips(pair.net_chips_transferred)}
-                            </td>
-                            <td>
-                              <div className={styles.actionBtns}>
-                                <button
-                                  onClick={() => kickPlayer(pair.dumper_id)}
-                                  className={styles.btnSmallDanger}
-                                  disabled={processing}
-                                >
-                                  Kick Dumper
-                                </button>
-                                <button
-                                  onClick={() => kickPlayer(pair.receiver_id)}
-                                  className={styles.btnSmallDanger}
-                                  disabled={processing}
-                                >
-                                  Kick Receiver
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
+                              <span className={styles.arrow}>&rarr;</span>
+                              <span className={styles.receiver}>
+                                {pair.receiver_id.substring(0, 8)}
+                              </span>
+                            </span>
+                          </td>
+                          <td style={{ fontWeight: 600 }}>{fmt(pair.hands_together)}</td>
+                          <td style={{ fontWeight: 700 }}>{fmt(pair.score)}</td>
+                          <td className={styles.detailsCell}>{evidenceSummary(pair)}</td>
+                          <td>
+                            <button
+                              onClick={() => dismissPair(pair)}
+                              className={styles.btnSmall}
+                              disabled={processing}
+                            >
+                              Clear
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </>
           )}
@@ -1111,21 +1355,30 @@ export default function AntiCheatPage() {
           ) : (
             <>
               <div className={styles.statsGrid}>
+                {/*
+                  THIS TAB SAID SOMETHING THE QUERY BEHIND IT NEVER MEASURED.
+                  detect_suspicious_plays returns the WINNERS of pots at or
+                  above forty big blinds, ranked by pot size over blind level.
+                  The page called them "Players Who Folded Strong Hands On The
+                  River" and stamped every row with a Folded Strong Hand badge.
+                  Its severity buckets are high at 100 big blinds and medium at
+                  60, so the Critical tile could never be anything but zero.
+                */}
                 <div className={styles.statCard}>
                   <div className={styles.statValueRed}>{fmt(anomalies.length)}</div>
-                  <div className={styles.statLabel}>Anomalies Found</div>
+                  <div className={styles.statLabel}>Outsized Pots</div>
                 </div>
                 <div className={styles.statCard}>
                   <div className={styles.statValue} style={{ color: '#FA383E' }}>
-                    {fmt(anomalies.filter((a) => a.severity === 'critical').length)}
+                    {fmt(anomalies.filter((a) => a.severity === 'high').length)}
                   </div>
-                  <div className={styles.statLabel}>Critical</div>
+                  <div className={styles.statLabel}>100 Big Blinds Or More</div>
                 </div>
                 <div className={styles.statCard}>
                   <div className={styles.statValueGold}>
-                    {fmt(anomalies.filter((a) => a.severity === 'high').length)}
+                    {fmt(anomalies.filter((a) => a.severity === 'medium').length)}
                   </div>
-                  <div className={styles.statLabel}>High</div>
+                  <div className={styles.statLabel}>60 Big Blinds Or More</div>
                 </div>
               </div>
 
@@ -1133,23 +1386,24 @@ export default function AntiCheatPage() {
                 <div className={styles.emptyState}>
                   <span className={styles.emptyIcon}>◎</span>
                   <span className={styles.emptyText}>
-                    No Suspicious Plays Detected - All Hands Look Clean!
+                    No Pot Reached Forty Big Blinds In The Last Thirty Days
                   </span>
                 </div>
               ) : (
                 <>
-                  <h3 className={styles.subsectionTitle}>Suspicious Plays</h3>
+                  <h3 className={styles.subsectionTitle}>Outsized Pots And Who Won Them</h3>
                   <p className={styles.subsectionDesc}>
-                    Players Who Folded Strong Hands On The River (Possible Chip-Dumping Signal)
+                    Every Pot At Or Above Forty Big Blinds In The Last Thirty Days, Largest Relative
+                    To The Blind Level First. A Big Pot Is Not A Finding On Its Own.
                   </p>
                   <div className={styles.tableScroll}>
                     <table className={styles.dataTable}>
                       <thead>
                         <tr>
-                          <th>Severity</th>
-                          <th>Player</th>
-                          <th>Action</th>
-                          <th>Hand Rank</th>
+                          <th>Size</th>
+                          <th>Winner</th>
+                          <th>Outcome</th>
+                          <th>Winning Hand</th>
                           <th>Pot Size</th>
                           <th>Time</th>
                         </tr>
@@ -1162,7 +1416,7 @@ export default function AntiCheatPage() {
                             </td>
                             <td>{a.player_id.substring(0, 8)}</td>
                             <td>
-                              <span className={styles.foldedBadge}>Folded Strong Hand</span>
+                              <span className={styles.foldedBadge}>Won The Pot</span>
                             </td>
                             <td className={styles.handRank}>
                               {String(a.hand_rank).replace(/_/g, ' ')}

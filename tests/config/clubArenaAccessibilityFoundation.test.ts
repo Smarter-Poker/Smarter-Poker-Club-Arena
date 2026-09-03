@@ -177,7 +177,7 @@ describe('Club Arena accessibility foundation', () => {
     expect(disputeSource).toContain('aria-expanded={expandedId === dispute.id}');
     expect(disputeSource).toContain('tabIndex={activeTab === tab ? 0 : -1}');
     expect(disputeSource).toContain('htmlFor="dispute-search"');
-    expect(blacklistSource).toContain('htmlFor="blacklist-user-id"');
+    expect(blacklistSource).toContain('htmlFor="blacklist-member-search"');
     expect(blacklistSource).toContain('htmlFor="blacklist-reason"');
   });
 

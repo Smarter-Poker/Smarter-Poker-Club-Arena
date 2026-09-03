@@ -1,4 +1,12 @@
 {
   "_owner": "feat/club-operations-full-upgrade",
-  "functions": ["ca_club_operations_overview"]
+  "functions": [
+    "ca_club_operations_overview",
+    "fn_ca_can_review_integrity",
+    "fn_club_anti_cheat_flags",
+    "fn_review_anti_cheat_flag",
+    "fn_ca_dismiss_collusion_pair",
+    "fn_dispute_start_review",
+    "fn_dispute_escalate"
+  ]
 }

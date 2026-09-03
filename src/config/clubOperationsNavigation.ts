@@ -147,13 +147,21 @@ const DEFINITIONS: OperationDefinition[] = [
     group: 'people',
     access: 'staff',
   },
+  /**
+   * PHASE 2 (2026-09-03): 'staff' became 'control'. Every read on this page is
+   * gated - in the database - to the club's owner, co-owner or admin: the two
+   * detectors have always raised for anyone else, anti_cheat_events grants
+   * SELECT to those three roles only, and the phase 2 flag and stats functions
+   * use the same gate. An agent could open the page and every panel on it
+   * would refuse. The registry now advertises what the data allows.
+   */
   {
     id: 'anti-cheat',
     label: 'Anti-Cheat',
-    description: 'Collusion Flags, Player Anomalies, And Review Decisions',
+    description: 'Integrity Flags, Collusion Screening, And Review Decisions',
     suffix: 'anti-cheat',
     group: 'people',
-    access: 'staff',
+    access: 'control',
     signals: ['anti_cheat_flags_open'],
   },
   {
@@ -431,6 +439,7 @@ const CONTROL_SUFFIXES = new Set([
   'settings',
   'bomb-pot-report',
   'table-management',
+  'anti-cheat',
 ]);
 
 // These routes combine a member-facing read/buy experience with controls that

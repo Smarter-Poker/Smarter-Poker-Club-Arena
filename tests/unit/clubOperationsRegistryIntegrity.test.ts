@@ -198,11 +198,15 @@ describe('a badge means work waiting, never volume', () => {
 
   it('never counts a queue the viewer cannot open', () => {
     const agentItems = getClubOperationItems(CLUB, getClubNavigationCapabilities('agent'));
-    // An agent has no control or finance tools, so the workspace total is only
-    // the staff queues: players 3 + reports 2 + anti-cheat 7.
+    /* An agent has no control or finance tools, so the workspace total is only
+       the staff queues they can actually open: players 3 + reports 2.
+       Anti-Cheat moved to 'control' in phase 2 - every read on that page is
+       gated in the database to owner/co_owner/admin, so advertising it to an
+       agent meant advertising a page on which every panel refuses. */
+    expect(agentItems.some((entry) => entry.id === 'anti-cheat')).toBe(false);
     const agentOverview = agentItems.find((entry) => entry.id === 'overview');
     expect(agentOverview).toBeDefined();
-    expect(getClubOperationBadge(agentOverview!, counts, agentItems)).toBe(12);
+    expect(getClubOperationBadge(agentOverview!, counts, agentItems)).toBe(5);
   });
 
   it('treats a missing, null or negative count as nothing waiting', () => {

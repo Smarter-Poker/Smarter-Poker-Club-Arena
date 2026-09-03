@@ -114,11 +114,9 @@ function MobileLobbyReview({
           <h1 id="mobile-review-club-name">Shark Club</h1>
         </section>
 
-        <section className="club-mobile-owner-message" aria-label="Club Owner Message">
-          <button type="button" className="club-mobile-owner-message__copy" disabled>
-            Welcome To The Shark Club, All Fish Of All Shapes And Sizes Are Welcome!
-          </button>
-        </section>
+        {/* The club message strip was removed from the lobby on 2026-09-03:
+            it is a full-screen greeting on entry now (ClubEntryMessage). This
+            page mirrors the mobile lobby, so it mirrors that too. */}
 
         <header className="lobby-top">
           <div className="lobby-top__main">

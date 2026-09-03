@@ -442,6 +442,10 @@ function TournamentLobbyCardInner({
     ? Math.max(0, tournament.maxPlayers - tournament.registeredPlayers)
     : Infinity;
   const isFull = hasMaxPlayers && tournament.registeredPlayers >= tournament.maxPlayers;
+  /* Seat-first: a Spin, or any game with two seats. Same rule as
+     isSeatFirstFormat on the server and isSeatFirstTournament in the lobby. */
+  const isSeatFirstCard =
+    tournament.type === 'spin' || (tournament.maxPlayers > 0 && tournament.maxPlayers <= 2);
   const fillPct = hasMaxPlayers
     ? Math.min(100, Math.max(0, (tournament.registeredPlayers / tournament.maxPlayers) * 100))
     : 0;
@@ -628,7 +632,30 @@ function TournamentLobbyCardInner({
             Entry Status Unavailable
           </button>
         ) : null}
+        {/* A SEAT-FIRST GAME IS NOT REGISTERED, IT IS SAT AT (2026-09-03).
+            Every row this card renders on a target's Satellites tab used to be
+            a registerable MTT. The satellite heads-ups added today are two-seat
+            games, and a two-seat game is entered by taking a seat at its table:
+            fn_register_for_tournament refuses it outright with
+            `seat_first_variant` ("This game is entered by taking a seat at its
+            table"). Offering Register there is a button that cannot ever
+            succeed - the same dead end lobbyEntries.isSeatFirstTournament was
+            written to prevent on the main board, which this tab never learned.
+
+            Seats are the test, as everywhere else: two or fewer, or a Spin. */}
+        {tournament.status === 'registering' && isSeatFirstCard && (
+          <button
+            className={styles.registerBtn}
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(`/tournaments/${tournament.id}?seat=1`);
+            }}
+          >
+            Take A Seat ({money(tournament.buyIn)})
+          </button>
+        )}
         {tournament.status === 'registering' &&
+          !isSeatFirstCard &&
           !regCheckFailed &&
           (isRegistered ? (
             <button

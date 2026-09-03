@@ -423,3 +423,19 @@
     transition: none;
   }
 }
+
+/* The queue is capped at 100 rows by fn_list_player_reports; this line says so
+   rather than letting a full page read as a finished queue. */
+.report-cap {
+  margin: 0 0 10px;
+  padding: 9px 12px;
+  color: #d9c49a;
+  font-family: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: rgba(78, 51, 20, 0.28);
+  border: 1px solid rgba(214, 158, 92, 0.34);
+  border-radius: 4px;
+}

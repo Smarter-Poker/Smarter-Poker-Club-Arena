@@ -169,6 +169,141 @@
   font-size: 1.45rem;
 }
 
+/* Work waiting, and live readings, for the two club sub-workspaces
+   (mobile first). Only the queues this group's own tools own appear here. */
+.alerts {
+  margin: 14px 0 0;
+  padding: 14px 15px 15px;
+  background: linear-gradient(180deg, rgba(28, 20, 14, 0.9), rgba(8, 11, 14, 0.96));
+  border: 1px solid rgba(214, 158, 92, 0.36);
+  border-radius: 4px;
+}
+
+.alertsTitle {
+  margin: 0 0 10px;
+  color: #f0c58a;
+  font-family: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.alertList {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.alertRow {
+  display: grid;
+  min-height: 46px;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  color: inherit;
+  text-decoration: none;
+  background: rgba(9, 15, 20, 0.86);
+  border: 1px solid rgba(146, 173, 194, 0.24);
+  border-radius: 3px;
+}
+
+.alertRow:focus-visible {
+  outline: 2px solid #57b3ff;
+  outline-offset: 3px;
+}
+
+.alertPip {
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+}
+
+.critical {
+  background: #ff6b6b;
+  box-shadow: 0 0 12px rgba(255, 107, 107, 0.7);
+}
+
+.warning {
+  background: #f0b357;
+  box-shadow: 0 0 12px rgba(240, 179, 87, 0.6);
+}
+
+.info {
+  background: #75beff;
+  box-shadow: 0 0 12px rgba(117, 190, 255, 0.6);
+}
+
+.alertTitle {
+  min-width: 0;
+  color: #eaf3f9;
+  font-family: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.alertCount {
+  padding: 3px 8px 2px;
+  color: #f6fbff;
+  font-family: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: rgba(37, 102, 151, 0.38);
+  border: 1px solid rgba(117, 190, 255, 0.42);
+  border-radius: 2px;
+}
+
+/* Live readings for the two club sub-workspaces (mobile first). */
+.readings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 14px 0 0;
+}
+
+.reading {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, rgba(16, 25, 33, 0.94), rgba(7, 11, 15, 0.96));
+  border: 1px solid rgba(146, 173, 194, 0.28);
+  border-radius: 2px;
+}
+
+.reading > span {
+  color: #8ba0b1;
+  font-family: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.reading > strong {
+  color: #f1f7fb;
+  font-family: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
+  font-size: clamp(1.3rem, 5vw, 1.7rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+@media (min-width: 760px) {
+  .readings {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 18px;
+  }
+}
+
 @media (max-width: 760px) {
   .page {
     padding: 12px;

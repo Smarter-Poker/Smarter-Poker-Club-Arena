@@ -216,3 +216,44 @@ describe('a badge means work waiting, never volume', () => {
     expect(getClubOperationBadge(item('players'), {}, EVERY_ITEM)).toBe(0);
   });
 });
+
+describe('the rail keeps its reading out of first paint', () => {
+  /**
+   * AppLayout mounts ClubOperationsRail on every page with a global header, so
+   * whatever it imports statically is in the entry chunk - the bundle every
+   * player downloads before they have opened anything. Phase 1's badges brought
+   * useClubOperationsOverview, useVisibilityRefresh and clubDashboard in with
+   * them, and scripts/ci/entry-chunk-delta.mjs caught it: three modules of club
+   * staff machinery paid for by players who will never open a staff tool.
+   *
+   * The rail is split, not baselined. These cases fail if someone puts the
+   * reading back in the half that always loads.
+   */
+  const SHELL = readFileSync('src/components/navigation/ClubOperationsRail.tsx', 'utf8');
+  const BODY = readFileSync('src/components/navigation/ClubOperationsRailBody.tsx', 'utf8');
+
+  it('loads the reading half lazily rather than importing it', () => {
+    expect(SHELL).toContain("lazy(() => import('./ClubOperationsRailBody'))");
+    expect(SHELL).toContain('<Suspense fallback={null}>');
+  });
+
+  it('never imports a module that queries from the always-mounted half', () => {
+    expect(SHELL).not.toContain('useClubOperationsOverview');
+    expect(SHELL).not.toContain('utils/clubDashboard');
+    expect(SHELL).not.toContain('useVisibilityRefresh');
+    expect(SHELL).not.toContain('lib/supabase');
+  });
+
+  it('still answers the two questions that decide whether the rail applies', () => {
+    // Both of these were already in the entry chunk before phase 1, so asking
+    // them in the shell costs nothing new.
+    expect(SHELL).toContain('getClubOperationContext(location.pathname)');
+    expect(SHELL).toContain('useClubNavigationAccess(clubId)');
+    expect(SHELL).toContain('!access.isClubStaff) return null');
+  });
+
+  it('keeps the badges in the half that loaded because it can render them', () => {
+    expect(BODY).toContain('useClubOperationsOverview');
+    expect(BODY).toContain('getClubOperationBadge');
+  });
+});

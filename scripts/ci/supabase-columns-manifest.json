@@ -1847,7 +1847,10 @@
       "unexplained",
       "tournament_liability",
       "leaderboard_liability",
-      "cert_wallets"
+      "cert_wallets",
+      "club_promo",
+      "club_insurance",
+      "agent_promo"
     ],
     "ca_tournament_conservation_samples": [
       "tournament_id",

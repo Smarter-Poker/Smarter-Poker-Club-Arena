@@ -199,9 +199,20 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GH_PAT || secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          # Start in report-only. Flip to 0 once a week of dry runs shows the
-          # windows pick only what a human would have picked anyway.
-          DRY_RUN: '1'
+          # ARMED, for machine-generated branch classes only (ARMED_PREFIXES
+          # in the script: sentry-autofix/ autofix/ rescue/ snapshot/).
+          # Anything else that qualifies on age is printed under "reported
+          # only" and never touched, so the rule's judgement about human
+          # branches is visible for as long as we want before it is trusted.
+          #
+          # Armed on evidence rather than on a calendar: the dry run against
+          # the live repo found 14 candidates, every one of them a
+          # sentry-autofix branch 134-135 days old, with the 147 open-PR
+          # branches exempt. A machine's abandoned autofix attempt from May
+          # cannot be anybody's only copy of anything - and every deletion is
+          # paired with an archive ref in the same atomic push regardless, so
+          # the worst case is a restore command, not a loss.
+          DRY_RUN: '0'
         run: bash .github/scripts/archive-stale-branches.sh
 
   # ── Are the schedules themselves firing? ─────────────────────────────────

@@ -24,6 +24,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceYamlBlock } from './helpers/sourceWindow';
 
 const ROOT = join(__dirname, '..');
 const SCRIPT = join(ROOT, '.github/scripts/archive-stale-branches.sh');
@@ -86,11 +87,37 @@ describe('branch retention never destroys work', () => {
     expect(s).toMatch(/is_protected "\$BR" && continue/);
   });
 
+  it('only armed classes are ever deleted; everything else is reported', () => {
+    // The rule may JUDGE any stale branch, but it may only DELETE the
+    // machine-generated classes. A `fix/...` branch that went quiet might be
+    // a person's work; a `sentry-autofix/*` from 135 days ago cannot be.
+    // Widening ARMED_PREFIXES is a decision with a name on it.
+    expect(script()).toMatch(/ARMED_PREFIXES="\$\{ARMED_PREFIXES:-[^"]*sentry-autofix\//);
+    expect(script()).toMatch(/if is_armed "\$BR"; then ARMED_LIST=/);
+    // and the delete list is built from ARMED_LIST, never from all candidates
+    expect(script()).toMatch(/PICKED=\$\(printf '%s' "\$ARMED_LIST"/);
+  });
+
+  it('refuses a pull-request list that may have been truncated', () => {
+    // An EMPTY list is obvious and already bails. A list clipped at the limit
+    // looks perfectly healthy and silently reclassifies every PR past the cut
+    // as "no open PR" - which is how a retention rule deletes live work.
+    const s = script();
+    const i = s.indexOf('PR_LIMIT');
+    expect(i).toBeGreaterThan(-1);
+    expect(s).toMatch(/if \[ "\$OPEN_COUNT" -ge "\$PR_LIMIT" \]; then/);
+    const after = s.slice(s.indexOf('-ge "$PR_LIMIT"'), s.indexOf('-ge "$PR_LIMIT"') + 400);
+    expect(after).toContain('exit 0');
+  });
+
   it('the workflow step passes a token that can actually write refs', () => {
     const wf = readFileSync(WORKFLOW, 'utf8');
-    const i = wf.indexOf('archive-stale-branches.sh');
-    expect(i).toBeGreaterThan(-1);
-    const step = wf.slice(Math.max(0, i - 900), i);
+    expect(wf).toContain('archive-stale-branches.sh');
+    // Slice the STEP, never a fixed number of characters back from the run
+    // line: this pin broke the moment the step grew a comment, which is the
+    // fixed-window anti-pattern sourceWindow.ts exists to stop.
+    const step = sliceYamlBlock(wf, '- name: Retire branches nothing will publish again');
+    expect(step).toContain('archive-stale-branches.sh');
     // GITHUB_TOKEN alone cannot create refs/archive/* here; the App token can.
     expect(step).toContain('steps.app-token.outputs.token');
   });

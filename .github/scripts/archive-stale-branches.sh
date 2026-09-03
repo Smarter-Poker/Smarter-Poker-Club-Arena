@@ -40,6 +40,7 @@ DRY_RUN="${DRY_RUN:-0}"
 MAX_PER_RUN="${MAX_PER_RUN:-40}"     # a bad rule is caught after 40, not 400
 STALE_DAYS="${STALE_DAYS:-60}"
 SHORT_DAYS="${SHORT_DAYS:-30}"       # machine-made branches expire sooner
+ARMED_PREFIXES="${ARMED_PREFIXES:-sentry-autofix/ autofix/ rescue/ snapshot/}"
 TODAY="$(date -u +%Y-%m-%d)"
 NOW="$(date -u +%s)"
 
@@ -49,6 +50,23 @@ is_short_lived() {
     rescue/*|sentry-autofix/*|autofix/*|snapshot/*) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+# ARMED CLASSES - the branches this script may actually DELETE.
+#
+# Everything else that qualifies on age is still listed in the output, so the
+# rule's judgement stays visible, but it is not touched. This is deliberately
+# narrower than "what is stale": a `sentry-autofix/*` branch from 135 days ago
+# is a machine's abandoned attempt and cannot be anybody's only copy of
+# anything, whereas `fix/some-agent-idea` might be a person's work that simply
+# went quiet. Widening this list is a decision with a name on it, made once
+# the reported-only column has shown what it would have taken.
+is_armed() {
+  local b="$1" pfx
+  for pfx in $ARMED_PREFIXES; do
+    case "$b" in "$pfx"*) return 0 ;; esac
+  done
+  return 1
 }
 
 # Never touched, whatever their age.
@@ -62,6 +80,7 @@ is_protected() {
 echo "repo            : $REPO"
 echo "windows         : ${SHORT_DAYS}d for rescue/autofix/snapshot, ${STALE_DAYS}d otherwise"
 echo "cap             : $MAX_PER_RUN per run"
+echo "armed for       : ${ARMED_PREFIXES:-<nothing>} (everything else is reported, never deleted)"
 echo "dry run         : $DRY_RUN"
 echo
 
@@ -89,12 +108,26 @@ ${MORE}"
   fi
 fi
 
+OPEN_COUNT=$(printf '%s\n' "$OPEN_HEADS" | grep -c . || true)
+
 if [ -z "$(printf '%s' "$OPEN_HEADS" | tr -d '[:space:]')" ]; then
   echo "::warning::could not read the open pull requests - archiving nothing this run."
   echo "(this is the fail-closed path: a branch with an open PR is live work.)"
   exit 0
 fi
-echo "open pull requests: $(printf '%s\n' "$OPEN_HEADS" | grep -c . || true) (their branches are exempt)"
+
+# A TRUNCATED list is more dangerous than an empty one. Empty is obvious and
+# already bails above; a list cut off at the limit looks perfectly healthy and
+# silently reclassifies every PR past the cut as "no open PR". We cannot tell
+# a list that happens to be exactly PR_LIMIT long from one that was clipped,
+# so we refuse both. The cost of being wrong here is deleting live work.
+PR_LIMIT=400
+if [ "$OPEN_COUNT" -ge "$PR_LIMIT" ]; then
+  echo "::warning::the open pull request list came back at the $PR_LIMIT limit, so it may be truncated - archiving nothing this run."
+  echo "(raise PR_LIMIT in this script; a clipped list would treat live branches as abandoned.)"
+  exit 0
+fi
+echo "open pull requests: $OPEN_COUNT (their branches are exempt)"
 
 # -- 2. every branch and its date, in ONE fetch ------------------------------
 git fetch --prune --quiet origin '+refs/heads/*:refs/remotes/origin/*'
@@ -119,10 +152,31 @@ done < <(git for-each-ref --format='%(committerdate:unix) %(refname:short)' refs
 echo "branches        : $TOTAL"
 
 # Oldest first, capped.
-PICKED=$(printf '%s' "$CANDIDATES" | grep . | sort -k2 -rn | head -n "$MAX_PER_RUN" || true)
+ELIGIBLE=$(printf '%s' "$CANDIDATES" | grep . | sort -k2 -rn || true)
+
+# Split: what may be deleted, and what is only reported.
+ARMED_LIST=""
+REPORT_ONLY=""
+while read -r BR AGE; do
+  [ -z "${BR:-}" ] && continue
+  if is_armed "$BR"; then ARMED_LIST="${ARMED_LIST}${BR} ${AGE}
+"; else REPORT_ONLY="${REPORT_ONLY}${BR} ${AGE}
+"; fi
+done <<< "$ELIGIBLE"
+
+PICKED=$(printf '%s' "$ARMED_LIST" | grep . | head -n "$MAX_PER_RUN" || true)
 N=$(printf '%s\n' "$PICKED" | grep -c . || true)
-echo "eligible now    : $(printf '%s' "$CANDIDATES" | grep -c . || true), archiving $N this run"
+R=$(printf '%s' "$REPORT_ONLY" | grep -c . || true)
+echo "eligible now    : $(printf '%s' "$CANDIDATES" | grep -c . || true) ($N armed, $R reported only)"
 echo
+
+if [ "$R" != "0" ]; then
+  echo "  reported only - stale but NOT in an armed class, nothing will touch these:"
+  printf '%s' "$REPORT_ONLY" | grep . | head -n 25 | while read -r BR AGE; do
+    printf '    %-56s %4sd\n' "$BR" "$AGE"
+  done
+  echo
+fi
 
 if [ "$N" = "0" ]; then echo "nothing to do."; exit 0; fi
 

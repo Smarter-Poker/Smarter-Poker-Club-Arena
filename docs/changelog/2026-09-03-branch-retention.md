@@ -28,9 +28,21 @@ same atomic push**. Restoring one is:
 Windows are 30 days for `rescue/*`, `sentry-autofix/*`, `autofix/*` and
 `snapshot/*` - branches a machine made - and 60 days otherwise. 40 per run.
 
-**It ships in report-only.** `DRY_RUN: '1'` in the workflow. It prints what it
-would retire and pushes nothing, until a week of runs shows the windows pick
-only what a human would have picked anyway. Flipping that one value arms it.
+**It ships ARMED, for machine-generated branch classes only.** `ARMED_PREFIXES`
+is `sentry-autofix/ autofix/ rescue/ snapshot/`. Anything else that qualifies
+on age is printed under "reported only" and never touched, so the rule's
+judgement about human branches stays visible for as long as we want before it
+is trusted with them.
+
+Armed on evidence, not on a calendar. The original plan was a week of dry
+runs, and a week would have told us nothing a second run does not: the input
+is the branch list, and it barely moves. What actually needed proving was
+that the SELECTION is right, and the dry run proves it - 14 candidates, every
+one a `sentry-autofix/*` branch 134-135 days old, with all 147 open-PR
+branches exempt. A machine's abandoned autofix attempt from May cannot be
+anybody's only copy of anything. Widening `ARMED_PREFIXES` to human branch
+names is a separate decision, taken when the reported-only column has shown
+what it would have taken.
 
 First dry run, against the live repo:
 
@@ -55,6 +67,16 @@ work. So the guarantee is structural rather than careful:
   old its last commit is - a PR can wait on a human for weeks.
 - **It is capped at 40.** A bad window is caught after 40 branches, not 400.
 - **`main`, `release/*` and `wip/*` are never touched at any age.**
+- **A truncated pull-request list is refused.** An EMPTY list is obvious and
+  already bails; a list clipped at the client's limit looks perfectly healthy
+  and silently reclassifies every PR past the cut as "no open PR". That is
+  precisely how a retention rule deletes live work. We cannot distinguish a
+  list that happens to be exactly `PR_LIMIT` long from one that was clipped,
+  so both are refused. This matters because CI takes the `gh pr list --limit`
+  path while a workstation takes the paginated REST path - only one of the two
+  was exercised by hand, and the guard covers the other.
+- **Only armed classes are ever deleted.** The rule may judge any stale
+  branch; it may only delete a machine-generated one.
 
 `tests/branch-retention-never-destroys.law.test.ts` pins all four. Each pin
 was mutation-verified: removing `--atomic`, turning the fail-closed exit into

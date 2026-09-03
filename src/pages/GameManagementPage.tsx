@@ -10,6 +10,7 @@ import { useToast } from '../components/common/Toast';
 import { confirmDialog } from '../components/common/confirmDialog';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
+import { useCoalescedRefresh } from '../hooks/useCoalescedRefresh';
 import { useGameManagementRealtime } from '../hooks/useGameManagementRealtime';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useDialogEscape } from '../hooks/useDialogEscape';
@@ -626,30 +627,6 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   // spinner it would have got had nothing been in flight. Losing this is how
   // coalescing turns one bug into a quieter one.
   const rerunSilentRef = useRef(true);
-  /* A BACKGROUND REFRESH IS NOT A LIVE VIDEO FEED (Dan 2026-09-02): "CLUBS
-     SHOULD NOT BE RANDOMLY REFRESHING ON THEIR OWN, IT FEELS LIKE A BUG OR
-     GLITCH ... ITS ALSO HAPPENING INSIDE OF THE TABLE MANAGEMENT PAGE."
-
-     The loading flash was fixed above; this is the other half. The event feed
-     this page listens to is not an occasional signal - every running game
-     writes a game_management_events row on each update, measured 2026-09-02 at
-     2,108 rows in ten minutes for ONE club, 3.5 a second. On a 350 ms debounce
-     that is a full five-round-trip reload starting the moment the previous one
-     lands, forever, in every open tab: the board visibly rebuilds itself, and
-     the reads sit near the top of the database's cost table for the whole
-     estate.
-
-     The feed's job is to keep the board honest, not to stream it. Coalesced to
-     one background refresh per REFRESH_MIN_MS, paused while the tab is hidden
-     (a backgrounded console needs nothing), and served immediately on return.
-     An operator's own action still calls load() directly and is never delayed.
-
-     A game whose state matters to the second is watched from the table, not
-     from a management list. */
-  const REFRESH_MIN_MS = 20_000;
-  const lastRefreshAtRef = useRef(0);
-  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const refreshPendingRef = useRef(false);
   const mountedRef = useRef(true);
   const loadRef = useRef<(silent?: boolean) => void>(() => {});
 
@@ -987,49 +964,29 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     return () => document.removeEventListener('click', onClickCapture, true);
   }, [surfaceDirty]);
 
-  /* One coalesced, rate-limited, visibility-gated background refresh, for the
-     traffic that is merely frequent: game events, and the targeted refresh
-     below when it has to give up and read the whole board.
+  /* A BACKGROUND REFRESH IS NOT A LIVE VIDEO FEED (Dan 2026-09-02): "CLUBS
+     SHOULD NOT BE RANDOMLY REFRESHING ON THEIR OWN, IT FEELS LIKE A BUG OR
+     GLITCH ... ITS ALSO HAPPENING INSIDE OF THE TABLE MANAGEMENT PAGE."
 
-     TWO CALLERS DELIBERATELY DO NOT USE IT, and the comment here used to claim
-     otherwise. GAME_MANAGEMENT_ACCESS_CHANGED is rare and changes what the
-     operator is allowed to see, and onResync fires when the realtime channel
-     has just (re)subscribed and is saying "I may have missed something" -
-     which is precisely the moment a rate limiter must not add a delay. Both
-     still call load(true) directly, on purpose. */
-  const requestBackgroundRefresh = useCallback(() => {
-    if (refreshTimerRef.current) return; // already scheduled
-    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-      refreshPendingRef.current = true;
-      return;
-    }
-    const since = Date.now() - lastRefreshAtRef.current;
-    const wait = since >= REFRESH_MIN_MS ? 0 : REFRESH_MIN_MS - since;
-    refreshTimerRef.current = setTimeout(() => {
-      refreshTimerRef.current = null;
-      refreshPendingRef.current = false;
-      lastRefreshAtRef.current = Date.now();
-      if (mountedRef.current) void loadRef.current(true);
-    }, wait);
-  }, []);
+     The event feed this page listens to is not an occasional signal - every
+     running game writes a game_management_events row on each update, measured
+     2026-09-02 at 2,108 rows in ten minutes for ONE club, 3.5 a second. On a
+     350 ms debounce that is a full reload starting the moment the previous one
+     lands, forever, in every open tab.
 
-  // A tab that was hidden while events arrived refreshes once on return, which
-  // is both cheaper and more correct than catching up on a queue of them.
-  useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState !== 'visible') return;
-      if (!refreshPendingRef.current) return;
-      refreshPendingRef.current = false;
-      lastRefreshAtRef.current = 0;
-      requestBackgroundRefresh();
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => {
-      document.removeEventListener('visibilitychange', onVisible);
-      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-      refreshTimerRef.current = null;
-    };
-  }, [requestBackgroundRefresh]);
+     This uses the shared useCoalescedRefresh rather than its own timer. #2728
+     wrote that hook, used it in ClubHomePage, and then hand-rolled the same
+     rate limit, the same visibility gate and the same pending flag here - so
+     the behaviour existed twice, and only the copy in the hook had tests.
+     Deleting the copy also gains refreshNow(), which is the piece the inline
+     version never had and which the two callers below actually need.
+
+     A game whose state matters to the second is watched from the table, not
+     from a management list. */
+  const { request: requestBoardRefresh, refreshNow: refreshBoardNow } = useCoalescedRefresh(
+    () => void loadRef.current(true),
+    { minIntervalMs: 20_000 }
+  );
 
   /**
    * Read back the games that changed, not the whole board.
@@ -1041,7 +998,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
    * against production versus 21 ms for the full page, and one row on the
    * wire instead of a hundred.
    *
-   * It falls back to requestBackgroundRefresh - which is coalesced, rate
+   * It falls back to requestBoardRefresh - which is coalesced, rate
    * limited and skipped while the tab is hidden - whenever a splice would be a
    * lie:
    *   - a changed game is not on the board (created, or on another page)
@@ -1059,7 +1016,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     changedRef.current.clear();
     sawUnnamedRef.current = false;
     if (!scopeId || unnamed) {
-      requestBackgroundRefresh();
+      requestBoardRefresh();
       return;
     }
     // Nothing was named and nothing was unnamed: there is nothing to refresh.
@@ -1069,7 +1026,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       .map((id) => gamesRef.current.find((game) => game.id === id))
       .filter((game): game is ManagedGame => Boolean(game));
     if (known.length !== ids.length || known.length > TARGETED_REFRESH_MAX) {
-      requestBackgroundRefresh();
+      requestBoardRefresh();
       return;
     }
     try {
@@ -1080,7 +1037,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       const mapped = fresh.map((row) => (row ? toManagedGame(row, hostNames, scopeName) : null));
       const splicable = mapped.every((row, index) => row && row.bucket === known[index].bucket);
       if (!splicable) {
-        requestBackgroundRefresh();
+        requestBoardRefresh();
         return;
       }
       const byId = new Map(mapped.map((row) => [row!.id, row as ManagedGame]));
@@ -1088,9 +1045,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     } catch (error) {
       // A targeted read that fails is not a reason to show stale rows.
       reportError(error, 'GameManagementPage.refreshChangedGames');
-      requestBackgroundRefresh();
+      requestBoardRefresh();
     }
-  }, [hosts, requestBackgroundRefresh, scope, scopeId, scopeName]);
+  }, [hosts, requestBoardRefresh, scope, scopeId, scopeName]);
 
   // Accumulate every event. The decider below is debounced, and a debounced
   // subscription only ever sees the LAST payload of a burst - which would
@@ -1111,10 +1068,20 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     { debounce: 350 }
   );
 
+  /* These two must not wait, and must not leave a scheduled refresh behind.
+     refreshNow() is load(true) plus cancelling any pending timer - which is
+     the difference that matters: calling load() directly left the coalescer's
+     timer armed, so a redundant second reload fired up to 20 seconds later
+     having just been superseded.
+
+     An access change alters what the operator is allowed to see. onResync
+     fires when the realtime channel has just (re)subscribed and is saying "I
+     may have missed something", which is precisely the moment a rate limit
+     must not add delay. */
   useMasterBusSubscriptions(
     ['GAME_MANAGEMENT_ACCESS_CHANGED'],
     () => {
-      void load(true);
+      refreshBoardNow();
     },
     { debounce: 100 }
   );
@@ -1123,7 +1090,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     scope,
     scopeId: scopeId || '',
     enabled: allowed === true && Boolean(scopeId),
-    onResync: () => void load(true),
+    onResync: () => refreshBoardNow(),
   });
 
   // The server returned exactly this tab's bucket, so there is nothing left to

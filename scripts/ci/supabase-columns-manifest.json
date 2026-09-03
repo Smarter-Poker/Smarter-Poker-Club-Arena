@@ -1467,6 +1467,67 @@
       "club_id",
       "table_id"
     ],
+    "ca_horse_fleet_heartbeat": [
+      "id",
+      "beat_at",
+      "cycle_ms",
+      "horses_total",
+      "horses_seated",
+      "horses_idle",
+      "horses_stuck",
+      "tables_seen",
+      "tables_seeded",
+      "seats_filled",
+      "seats_released",
+      "policy_version",
+      "degraded",
+      "detail"
+    ],
+    "ca_horse_fleet_policy": [
+      "scope",
+      "scope_id",
+      "scope_key",
+      "enabled",
+      "pause_new_seatings",
+      "max_horses",
+      "max_per_table",
+      "occupancy_bias",
+      "min_humans_to_seat",
+      "stake_bands",
+      "variants",
+      "schedule",
+      "notes",
+      "updated_by",
+      "updated_at",
+      "created_at"
+    ],
+    "ca_horse_fleet_register": [
+      "horse_id",
+      "disclosed",
+      "owner_entity",
+      "funding_source",
+      "created_at",
+      "registered_at",
+      "retired_at",
+      "note"
+    ],
+    "ca_horse_fleet_state": [
+      "horse_id",
+      "state",
+      "club_id",
+      "table_id",
+      "seat_index",
+      "stack",
+      "last_action_at",
+      "last_seen_at",
+      "session_started_at",
+      "hands_this_session",
+      "lane",
+      "stake_band",
+      "bankroll",
+      "note",
+      "updated_at"
+    ],
     "ca_incident_events": [
       "id",
       "incident_id",
@@ -1583,6 +1644,13 @@
       "chip_ledger_id",
       "diamond_tx_id"
     ],
+    "ca_money_path_enforcement": [
+      "only_row",
+      "mode",
+      "changed_at",
+      "changed_by",
+      "note"
+    ],
     "ca_money_path_violations": [
       "id",
       "at",
@@ -1601,6 +1669,11 @@
       "status",
       "notes",
       "added_at"
+    ],
+    "ca_noop_update_stats": [
+      "tbl",
+      "suppressed",
+      "since"
     ],
     "ca_op_claims": [
       "op_id",
@@ -1842,7 +1915,10 @@
       "unexplained",
       "tournament_liability",
       "leaderboard_liability",
-      "cert_wallets"
+      "cert_wallets",
+      "club_promo",
+      "club_insurance",
+      "agent_promo"
     ],
     "ca_tournament_conservation_samples": [
       "tournament_id",
@@ -1857,6 +1933,18 @@
       "ledger_at_baseline",
       "unledgered_gap",
       "taken_at"
+    ],
+    "ca_union_rake_attribution": [
+      "rake_record_id",
+      "user_id",
+      "union_id",
+      "table_id",
+      "hand_id",
+      "played_at",
+      "club_id",
+      "rake_share",
+      "attempts",
+      "attributed_at"
     ],
     "cashier_operations": [
       "id",
@@ -12196,7 +12284,12 @@
       "union_id",
       "club_id",
       "joined_at",
-      "club_commission_rate"
+      "club_commission_rate",
+      "rate_cash",
+      "rate_mtt",
+      "rate_sng",
+      "rate_spin",
+      "rate_satellite"
     ],
     "union_eco_ledger": [
       "union_id",

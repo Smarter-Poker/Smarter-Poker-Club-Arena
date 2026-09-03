@@ -1142,8 +1142,24 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     Live and scheduled are never withheld by age, so only the closed leg is
     horizon-bound.
   */
-  const reachableTotal = counts.live + counts.scheduled + counts.closedWithinHorizon;
-  const archivedBeyondHorizon = Math.max(0, counts.closed - counts.closedWithinHorizon);
+  /*
+    A count that is not a number counts as nothing.
+
+    The service normalises every field through numberValue(), so production
+    cannot reach here with a hole - but this arithmetic is the only place on
+    the page that ADDS three of them together, and a single undefined turns the
+    Total into "NaN" on an operator console. Three tests whose fixtures predate
+    closedWithinHorizon were already rendering exactly that, which is the
+    warning worth listening to: the sum is one field away from lying, and the
+    field can go missing for reasons this component will never see.
+  */
+  const tally = (value: number) => (Number.isFinite(value) ? value : 0);
+  const reachableTotal =
+    tally(counts.live) + tally(counts.scheduled) + tally(counts.closedWithinHorizon);
+  const archivedBeyondHorizon = Math.max(
+    0,
+    tally(counts.closed) - tally(counts.closedWithinHorizon)
+  );
   /*
     `counts` starts as a zero-filled object, and this rail renders as soon as
     access resolves - before the first list has come back. So for the length of

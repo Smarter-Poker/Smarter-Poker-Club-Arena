@@ -73,8 +73,26 @@ describe('fleet straddle table', () => {
     // min_buy_in/max_buy_in so a blind bump resyncs the buy-in band instead
     // of carrying a stale one. Whitespace-tolerant for the same Prettier
     // reason as the line above — the longer list wraps.
-    expect(fleetSrc).toMatch(
-      /select\(\s*'id, status, union_id, game_variant, small_blind, big_blind, straddle_enabled, min_buy_in, max_buy_in'\s*\)/
-    );
+    // `settings` joined the list 2026-09-03: the reuse path must be able to
+    // see `retire_when_empty` so it does not REOPEN a table a club retired.
+    // Pinned as a set of required columns rather than one exact string, so the
+    // next column to join does not break a pin about comparing before writing.
+    // Anchored on straddle_enabled: that column appears in exactly one select
+    // in this file, and it is the reuse lookup.
+    const reuseSelect = /select\(\s*'([^']*straddle_enabled[^']*)'\s*\)/.exec(fleetSrc)?.[1] ?? '';
+    for (const col of [
+      'id',
+      'status',
+      'union_id',
+      'game_variant',
+      'small_blind',
+      'big_blind',
+      'straddle_enabled',
+      'min_buy_in',
+      'max_buy_in',
+      'settings',
+    ]) {
+      expect(reuseSelect.split(', ')).toContain(col);
+    }
   });
 });

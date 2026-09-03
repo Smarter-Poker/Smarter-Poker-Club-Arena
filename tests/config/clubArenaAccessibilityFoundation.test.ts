@@ -149,14 +149,20 @@ describe('Club Arena accessibility foundation', () => {
 
   it('gives the club operations workspace semantic groups and a current-page rail', () => {
     const pageSource = read('src/pages/club/ClubOperationsPage.tsx');
+    /* The rail is two files since 2026-09-03: an entry-chunk shell that decides
+       whether the rail applies, and the body that renders it. AppLayout still
+       mounts the shell; the landmark and the current-page marking live in the
+       body, which is where they are painted. */
     const railSource = read('src/components/navigation/ClubOperationsRail.tsx');
+    const railBodySource = read('src/components/navigation/ClubOperationsRailBody.tsx');
     const layoutSource = read('src/components/layouts/AppLayout.tsx');
 
     expect(pageSource).toContain('aria-labelledby={`ops-${group.id}`}');
     expect(pageSource).toContain('<ul className={styles.toolGrid}>');
     expect(pageSource).toContain('aria-describedby={descriptionId}');
-    expect(railSource).toContain('aria-label="Club Operations Sections"');
-    expect(railSource).toContain("aria-current={isActive ? 'page' : undefined}");
+    expect(railBodySource).toContain('aria-label="Club Operations Sections"');
+    expect(railBodySource).toContain("aria-current={isActive ? 'page' : undefined}");
+    expect(railSource).toContain("lazy(() => import('./ClubOperationsRailBody'))");
     expect(layoutSource).toContain('{showGlobalHeader && <ClubOperationsRail />}');
   });
 
@@ -177,7 +183,7 @@ describe('Club Arena accessibility foundation', () => {
     expect(disputeSource).toContain('aria-expanded={expandedId === dispute.id}');
     expect(disputeSource).toContain('tabIndex={activeTab === tab ? 0 : -1}');
     expect(disputeSource).toContain('htmlFor="dispute-search"');
-    expect(blacklistSource).toContain('htmlFor="blacklist-user-id"');
+    expect(blacklistSource).toContain('htmlFor="blacklist-member-search"');
     expect(blacklistSource).toContain('htmlFor="blacklist-reason"');
   });
 

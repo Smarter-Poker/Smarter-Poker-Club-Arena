@@ -12,12 +12,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const acquire = vi.fn();
 const isSubscribed = vi.fn(() => false);
+const subscriptionCount = vi.fn(() => 0);
 const getSeatedPlayers = vi.fn();
 
 vi.mock('../src/services/EngineSocketMux', () => ({
   engineSocketMux: {
     acquire: (...a: unknown[]) => acquire(...a),
     isSubscribed: (id: string) => isSubscribed(id),
+    subscriptionCount: () => subscriptionCount(),
   },
   isMuxEnabled: () => true,
 }));
@@ -41,6 +43,7 @@ beforeEach(async () => {
   vi.resetModules();
   acquire.mockReset().mockImplementation(() => fakeFacade());
   isSubscribed.mockReset().mockReturnValue(false);
+  subscriptionCount.mockReset().mockReturnValue(0);
   getSeatedPlayers.mockReset();
   warm = await import('../src/services/tableWarmup');
 });
@@ -103,6 +106,37 @@ describe('tableWarmup', () => {
     await vi.waitFor(() => expect(warm.peekWarmSeats(T)).not.toBeNull());
     vi.advanceTimersByTime(warm.SEATS_FRESH_MS + 1);
     expect(warm.peekWarmSeats(T)).toBeNull();
+  });
+
+  it('NEVER spends a socket slot a real table might need', async () => {
+    // The server caps one mux connection at 4 tables and counts pending
+    // subscriptions, so a speculative warm-up that takes the last slot would
+    // make the player's actual join fail with SUB_LIMIT.
+    subscriptionCount.mockReturnValue(warm.LEAVE_FREE_SLOTS_AT);
+    getSeatedPlayers.mockResolvedValue(ROWS);
+    warm.warmTable(T);
+    await vi.waitFor(() => expect(warm.peekWarmSeats(T)).not.toBeNull());
+    expect(acquire).not.toHaveBeenCalled();
+    // The roster half still runs - it costs the socket nothing.
+    expect(warm.peekWarmSeats(T)).toHaveLength(2);
+  });
+
+  it('keeps only ONE speculative subscription as the player browses cards', async () => {
+    const facades = [fakeFacade(), fakeFacade()];
+    facades.forEach((f) => (f.readyState = 1));
+    acquire.mockReturnValueOnce(facades[0]).mockReturnValueOnce(facades[1]);
+    getSeatedPlayers.mockResolvedValue([]);
+
+    warm.warmTable(T);
+    await vi.waitFor(() => expect(acquire).toHaveBeenCalledTimes(1));
+
+    const T2 = 'bbbbbbbb-2222-4222-8222-222222222222';
+    warm.warmTable(T2);
+    await vi.waitFor(() => expect(acquire).toHaveBeenCalledTimes(2));
+
+    // The first card's speculative subscription was released, not left to age out.
+    expect(facades[0].close).toHaveBeenCalled();
+    expect(facades[1].close).not.toHaveBeenCalled();
   });
 
   it('a warm-up nobody claims closes its placeholder after the TTL', async () => {

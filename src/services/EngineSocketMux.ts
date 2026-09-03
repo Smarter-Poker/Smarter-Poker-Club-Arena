@@ -234,6 +234,21 @@ class EngineSocketMuxImpl {
     return !!f && f.readyState !== 3 /* CLOSED */;
   }
 
+  /**
+   * How many tables this socket currently holds, live or mid-subscribe.
+   *
+   * The server caps one connection at MUX_MAX_TABLES (4) and counts PENDING
+   * subscriptions against it, so a caller that opens speculative
+   * subscriptions - the lobby warm-up - has to leave room for the tables the
+   * player is actually going to sit at, or a real join gets SUB_LIMIT and the
+   * felt never connects.
+   */
+  subscriptionCount(): number {
+    let n = 0;
+    for (const f of this.facades.values()) if (f.readyState !== 3) n += 1;
+    return n;
+  }
+
   /** Force-close and detach the physical socket; surviving facades fail and
    *  their clients reconnect (which re-acquires a fresh socket). */
   private teardownPhysical(code: number, reason: string): void {

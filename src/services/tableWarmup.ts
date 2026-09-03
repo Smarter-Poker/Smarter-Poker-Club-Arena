@@ -54,6 +54,18 @@ import { tableService } from './TableService';
 export const WARM_TTL_MS = 25_000;
 /** A cached roster older than this is not painted; the live read replaces it. */
 export const SEATS_FRESH_MS = 15_000;
+/**
+ * Leave this many of the shared socket's table slots free for REAL tables.
+ *
+ * The server caps one mux connection at 4 tables and counts pending
+ * subscriptions against that cap, so a speculative warm-up that takes a slot
+ * can make the player's actual join fail with SUB_LIMIT - the warm-up would
+ * then have caused the exact "table will not connect" it exists to prevent.
+ * A player can have four tables open, so the socket half of the warm-up is
+ * skipped whenever the socket is already carrying this many. The roster half
+ * still runs: it is a REST read and costs the socket nothing.
+ */
+export const LEAVE_FREE_SLOTS_AT = 3;
 
 /** One row of tableService.getSeatedPlayers - what TablePage's prefetch paints from. */
 export type WarmSeat = Awaited<ReturnType<typeof tableService.getSeatedPlayers>>[number];
@@ -95,6 +107,8 @@ function dropEntry(tableId: string, entry: WarmEntry, closeFacade: boolean): voi
 async function warmSocket(tableId: string, entry: WarmEntry): Promise<void> {
   if (!isMuxEnabled()) return;
   if (engineSocketMux.isSubscribed(tableId)) return; // a live table owns it
+  // Never spend a slot a real table might need - see LEAVE_FREE_SLOTS_AT.
+  if (engineSocketMux.subscriptionCount() >= LEAVE_FREE_SLOTS_AT) return;
   let token: string | null = null;
   try {
     token = await getFreshAccessToken();
@@ -105,6 +119,7 @@ async function warmSocket(tableId: string, entry: WarmEntry): Promise<void> {
   // The entry may have expired or been claimed while the token resolved.
   if (entries.get(tableId) !== entry) return;
   if (engineSocketMux.isSubscribed(tableId)) return;
+  if (engineSocketMux.subscriptionCount() >= LEAVE_FREE_SLOTS_AT) return;
   const facade = engineSocketMux.acquire(engineBaseUrl(), tableId, token);
   entry.facade = facade;
   // Frames are not needed here - the resync that follows the real client's
@@ -130,6 +145,17 @@ export function warmTable(tableId: string | null | undefined): void {
     // start over, so the second visit is as warm as the first.
     dropEntry(tableId, existing, true);
   }
+  /* ONE WARM-UP AT A TIME. A player browses cards one after another, and each
+     open would otherwise leave a speculative subscription alive for its whole
+     TTL - four cards in twenty-five seconds and the shared socket is full of
+     tables nobody sat at. Releasing the previous warm-up here keeps the
+     speculative footprint at exactly one table. A warm-up already SUPERSEDED
+     by a real client is left alone: dropEntry only closes a facade that is
+     still open, and a superseded one is CLOSED. */
+  for (const [otherId, other] of entries) {
+    if (otherId !== tableId) dropEntry(otherId, other, true);
+  }
+
   const entry: WarmEntry = {
     startedAt: Date.now(),
     seats: null,

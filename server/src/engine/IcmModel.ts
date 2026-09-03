@@ -28,10 +28,130 @@ const MAX_DEPTH = 4;
 /** MH probability-weighted prize for ONE hero index. stacks: chips, payouts:
  *  prize per place (any monetary unit), descending. Returns hero's equity in
  *  the same unit as payouts. */
+/**
+ * ═══ V37 FLAT PAYOUTS ARE A DIFFERENT OBJECT (Dan 2026-09-02) ═══════════════
+ *
+ * The recursion below truncates at MAX_DEPTH = 4 places and spreads the rest
+ * of the prize mass in proportion to chips. For a top-heavy MTT ladder that
+ * is the standard approximation. For a SATELLITE — K identical seats — it is
+ * exactly wrong: with K = 10 the first four places carry 40% of the mass and
+ * the other 60% is handed out CHIP-PROPORTIONALLY, which says a big stack's
+ * extra chips are worth something. They are worth nothing: the tenth seat
+ * pays the same as the first, and a stack that can fold its way into the
+ * top K has no use for another chip.
+ *
+ * With flat prizes hero's equity is P(hero is not among the P - K players
+ * eliminated) x one prize. That is estimated by simulating eliminations in
+ * order, each bust drawn with probability proportional to 1/stack^2, over a
+ * bucketed field and a fixed trial count, with a fixed-seed generator so the
+ * same spot prices the same way twice. The square is deliberate: the plain
+ * 1/stack hazard (the textbook reverse-Harville) gives a 50,000 stack a 5%
+ * chance of busting BEFORE a 4,000 stack, which no satellite has ever seen -
+ * a big stack has to lose several all-ins to go, a short one loses one.
+ * Squaring the hazard makes the big stack's survival move very little with
+ * chips won or lost, which is precisely the property a locked seat has. The result behaves the way a satellite does: a covering stack's
+ * survival is ~1 and does not move with chips won, so its bubble factor
+ * saturates; a short stack's survival moves with every chip.
+ */
+export function isFlatPayoutCurve(payouts: number[]): boolean {
+  const pos = payouts.filter((p) => isFinite(p) && p > 0);
+  if (pos.length < 2) return false;
+  const first = pos[0];
+  // a trailing cash remainder (below a seat) does not break flatness
+  const seats = pos.filter((p) => p >= first * 0.9);
+  if (seats.length < 2) return false;
+  return seats.every((p) => Math.abs(p - first) <= first * 0.05) && seats.length >= pos.length - 1;
+}
+
+const SURVIVAL_TRIALS = 600;
+const SURVIVAL_MAX_FIELD = 24;
+
+export function flatPayoutSurvival(stacks: number[], seats: number, heroIdx: number): number {
+  const clean = stacks.map((s) => (isFinite(s) && s > 0 ? s : 0));
+  if (heroIdx < 0 || heroIdx >= clean.length || clean[heroIdx] <= 0) return 0;
+  const live = clean.filter((s) => s > 0).length;
+  if (seats <= 0) return 0;
+  if (live <= seats) return 1;
+
+  // Bucket the field: hero exact, the rest merged pairwise smallest-first
+  // until at most SURVIVAL_MAX_FIELD stacks remain. Merging preserves total
+  // chips and the order of magnitude of each elimination hazard.
+  let field: number[] = [];
+  for (let i = 0; i < clean.length; i++) if (i !== heroIdx && clean[i] > 0) field.push(clean[i]);
+  field.sort((a, b) => a - b);
+  const bustsNeeded = live - seats;
+  let mergedAway = 0;
+  while (field.length + 1 > SURVIVAL_MAX_FIELD && field.length >= 2) {
+    const a = field.shift()!;
+    const b = field.shift()!;
+    const merged = a + b;
+    let lo = 0;
+    let hi = field.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (field[mid] < merged) lo = mid + 1;
+      else hi = mid;
+    }
+    field.splice(lo, 0, merged);
+    mergedAway++;
+  }
+  // Each merge removed one seat-holder from the field, so the number of
+  // busts the model must play out shrinks by the same count.
+  const bustsModeled = Math.max(1, Math.min(field.length, bustsNeeded - mergedAway));
+
+  let seed = 0x9e3779b9 ^ (Math.round(clean[heroIdx]) & 0xffff);
+  const rand = (): number => {
+    seed ^= seed << 13;
+    seed >>>= 0;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    seed >>>= 0;
+    return seed / 0x1_0000_0000;
+  };
+
+  let survived = 0;
+  const hazard = new Float64Array(field.length + 1);
+  for (let t = 0; t < SURVIVAL_TRIALS; t++) {
+    // index 0 is hero
+    const alive = new Uint8Array(field.length + 1).fill(1);
+    let heroOut = false;
+    for (let k = 0; k < bustsModeled && !heroOut; k++) {
+      let total = 0;
+      for (let i = 0; i <= field.length; i++) {
+        const st = i === 0 ? clean[heroIdx] : field[i - 1];
+        hazard[i] = alive[i] ? 1 / (st * st) : 0;
+        total += hazard[i];
+      }
+      let r = rand() * total;
+      let bust = -1;
+      for (let i = 0; i <= field.length; i++) {
+        r -= hazard[i];
+        if (hazard[i] > 0 && r <= 0) {
+          bust = i;
+          break;
+        }
+      }
+      if (bust < 0) bust = field.length;
+      alive[bust] = 0;
+      if (bust === 0) heroOut = true;
+    }
+    if (!heroOut) survived++;
+  }
+  return survived / SURVIVAL_TRIALS;
+}
+
 export function icmEquity(stacks: number[], payouts: number[], heroIdx: number): number {
   if (stacks.length === 0 || heroIdx < 0 || heroIdx >= stacks.length) return 0;
   const clean = stacks.map((s) => (isFinite(s) && s > 0 ? s : 0));
   if (clean[heroIdx] <= 0) return 0;
+
+  // V37: identical prizes are a survival problem, not a ladder.
+  if (isFlatPayoutCurve(payouts)) {
+    const pos = payouts.filter((p) => isFinite(p) && p > 0);
+    const seatPrize = pos[0];
+    const seats = pos.filter((p) => p >= seatPrize * 0.9).length;
+    return flatPayoutSurvival(clean, seats, heroIdx) * seatPrize;
+  }
 
   // Bucket the field (hero exact, others merged smallest-first) so the
   // recursion below stays bounded for any field size.

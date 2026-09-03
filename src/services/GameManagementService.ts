@@ -95,7 +95,22 @@ export interface ManagedGameListCursor {
 
 export interface ManagedGameListResult {
   items: any[];
-  counts: { total: number; live: number; scheduled: number; closed: number };
+  /**
+   * Null means UNCHANGED, never zero.
+   *
+   * The counters describe the whole scope, so fn_list_managed_games computes
+   * them on the first page only - on Midway Union that scan is most of the
+   * page's time budget and paging cannot alter a whole-scope total. A caller
+   * that reads null as 0 will wipe the header on Load More.
+   */
+  counts: {
+    total: number;
+    live: number;
+    scheduled: number;
+    closed: number;
+    closedWithinHorizon: number;
+    closedHorizonDays: number;
+  } | null;
   nextCursor: ManagedGameListCursor | null;
 }
 
@@ -207,6 +222,27 @@ function managementError(reason: string | null): string | null {
   return reason ? MANAGEMENT_ERRORS[reason] || reason.replace(/_/g, ' ') : null;
 }
 
+/**
+ * One contract projection, used by both readers.
+ *
+ * fn_list_managed_games now returns each row's published contract inline, so
+ * the board no longer makes a second round trip for it. That is only safe
+ * while the two are mapped identically - a second copy of this object literal
+ * is how the board and the contract dialog would start disagreeing about the
+ * same contract.
+ */
+function mapContractSummary(row: any): ManagedGameContractSummary {
+  return {
+    gameId: String(row.game_id),
+    version: numberValue(row.version),
+    contractHash: String(row.contract_hash || ''),
+    publishedAt: String(row.published_at || ''),
+    changeReason: String(row.change_reason || 'published'),
+    contractLocked: Boolean(row.contract_locked),
+    readiness: mapReadiness(row.readiness),
+  };
+}
+
 function mapCommandReceipt(
   raw: ManagedGameCommandResult & { game_id?: string; command_action?: string; status?: string }
 ): ManagedGameCommandReceipt {
@@ -302,7 +338,14 @@ export const gameManagementService = {
   async list(
     scope: 'club' | 'union',
     scopeId: string,
-    cursor: ManagedGameListCursor | null = null
+    cursor: ManagedGameListCursor | null = null,
+    /**
+     * Restrict the page to one priority bucket - 0 live, 1 scheduled, 2 closed.
+     * This is what makes a board tab a QUERY rather than a filter over whichever
+     * page happened to load; null is the All tab. The counts come back
+     * unfiltered either way, so the header always describes the whole scope.
+     */
+    bucket: number | null = null
   ): Promise<ManagedGameListResult> {
     const { data, error } = await supabase.rpc('fn_list_managed_games', {
       p_scope: scope,
@@ -312,19 +355,31 @@ export const gameManagementService = {
       p_cursor_id: cursor?.id || null,
       p_limit: 100,
       p_cursor_bucket: cursor?.bucket ?? null,
+      p_bucket: bucket,
     });
     if (error) throw new Error(error.message || 'Could not load managed games.');
     const result = data as any;
     if (!result?.ok)
       throw new Error(managementError(result?.reason || null) || 'Could not load managed games.');
     return {
-      items: Array.isArray(result.items) ? result.items : [],
-      counts: {
-        total: numberValue(result.counts?.total),
-        live: numberValue(result.counts?.live),
-        scheduled: numberValue(result.counts?.scheduled),
-        closed: numberValue(result.counts?.closed),
-      },
+      // The row arrives whole: fn_list_managed_games folds in the published
+      // contract and the latest command receipt, so the caller does not make
+      // four more round trips to assemble what it is about to draw.
+      items: (Array.isArray(result.items) ? result.items : []).map((row: any) => ({
+        ...row,
+        contract: row.contract ? mapContractSummary(row.contract) : null,
+        lastCommand: row.last_command ? mapCommandReceipt(row.last_command) : null,
+      })),
+      counts: result.counts
+        ? {
+            total: numberValue(result.counts.total),
+            live: numberValue(result.counts.live),
+            scheduled: numberValue(result.counts.scheduled),
+            closed: numberValue(result.counts.closed),
+            closedWithinHorizon: numberValue(result.counts.closed_within_horizon),
+            closedHorizonDays: numberValue(result.counts.closed_horizon_days),
+          }
+        : null,
       nextCursor: result.next_cursor
         ? {
             sortAt: String(result.next_cursor.sort_at),
@@ -399,6 +454,48 @@ export const gameManagementService = {
     };
   },
 
+  /**
+   * Re-read ONE game, enriched exactly as it arrives in the list - same
+   * function, same projection, so a row cannot mean two things.
+   *
+   * Returns null when the game is no longer visible in this scope (closed and
+   * filtered out, moved, deleted). The caller must treat null as "I do not
+   * know any more" and fall back to a full load rather than dropping the row.
+   *
+   * counts and next_cursor come back null from a single-game read, by design:
+   * it skips both whole-scope scans, which is the entire saving.
+   */
+  async getGame(
+    scope: 'club' | 'union',
+    scopeId: string,
+    kind: ManagedGameKind,
+    gameId: string
+  ): Promise<any | null> {
+    const { data, error } = await supabase.rpc('fn_list_managed_games', {
+      p_scope: scope,
+      p_scope_id: scopeId,
+      p_cursor: null,
+      p_cursor_kind: null,
+      p_cursor_id: null,
+      p_limit: 1,
+      p_cursor_bucket: null,
+      p_bucket: null,
+      p_game_kind: kind,
+      p_game_id: gameId,
+    });
+    if (error) throw new Error(error.message || 'Could not refresh the game.');
+    const result = data as any;
+    if (!result?.ok)
+      throw new Error(managementError(result?.reason || null) || 'Could not refresh the game.');
+    const row = Array.isArray(result.items) ? result.items[0] : null;
+    if (!row) return null;
+    return {
+      ...row,
+      contract: row.contract ? mapContractSummary(row.contract) : null,
+      lastCommand: row.last_command ? mapCommandReceipt(row.last_command) : null,
+    };
+  },
+
   async getContracts(
     kind: ManagedGameKind,
     gameIds: string[]
@@ -414,15 +511,7 @@ export const gameManagementService = {
       throw new Error(
         managementError(result?.reason || null) || 'Could not load published game contracts.'
       );
-    return (result.contracts || []).map((row) => ({
-      gameId: String(row.game_id),
-      version: numberValue(row.version),
-      contractHash: String(row.contract_hash || ''),
-      publishedAt: String(row.published_at || ''),
-      changeReason: String(row.change_reason || 'published'),
-      contractLocked: Boolean(row.contract_locked),
-      readiness: mapReadiness(row.readiness),
-    }));
+    return (result.contracts || []).map(mapContractSummary);
   },
 
   async getContractHistory(

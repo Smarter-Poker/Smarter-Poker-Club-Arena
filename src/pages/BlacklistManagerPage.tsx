@@ -1,6 +1,6 @@
 /** Club access exclusion controls. Route: /clubs/:clubId/blacklist */
 
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ClubIntegrityHeader from '../components/club/ClubIntegrityHeader';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -8,7 +8,21 @@ import { supabase } from '../lib/supabase';
 import type { BlacklistEntry } from '../types/club.types';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { adminRemovePlayerFromClubTables } from '../services/IntegrityActionService';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import styles from './BlacklistManagerPage.module.css';
+
+interface MemberOption {
+  user_id: string;
+  display_name: string;
+  is_horse: boolean;
+  status: string | null;
+}
+
+/** A seat this player still occupies in this club after being excluded. */
+interface SeatedTable {
+  table_id: string;
+}
 
 export default function BlacklistManagerPage() {
   const { clubId } = useParams<{ clubId: string }>();
@@ -18,6 +32,20 @@ export default function BlacklistManagerPage() {
   const [error, setError] = useState<string | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
+  /* THE FORM USED TO TAKE A RAW UUID, TYPED BY HAND, WITH NO VALIDATION AND NO
+     WAY TO SEE WHO IT BELONGED TO. An exclusion is a decision about a person;
+     it is now made by picking that person out of this club's own roster. */
+  const [memberSearch, setMemberSearch] = useState('');
+  const [memberOptions, setMemberOptions] = useState<MemberOption[]>([]);
+  const [searchingMembers, setSearchingMembers] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<MemberOption | null>(null);
+  const [names, setNames] = useState<Record<string, string>>({});
+  const [seatedAfterExclusion, setSeatedAfterExclusion] = useState<{
+    member: MemberOption;
+    tables: SeatedTable[];
+  } | null>(null);
+  const [removingFromPlay, setRemovingFromPlay] = useState(false);
+  const [clearingExpired, setClearingExpired] = useState(false);
   const [newUserId, setNewUserId] = useState('');
   const [newReason, setNewReason] = useState('');
   const [newExpiry, setNewExpiry] = useState('');
@@ -56,11 +84,150 @@ export default function BlacklistManagerPage() {
     void loadEntries();
   }, [loadEntries]);
 
+  /* The ledger printed a bare uuid in its first column, which is not a person.
+     One batched read gives every excluded player their name. */
+  useEffect(() => {
+    const ids = [...new Set(entries.map((entry) => entry.user_id).filter(Boolean))];
+    const missing = ids.filter((id) => !(id in names));
+    if (missing.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const { data, error: nameError } = await supabase
+        .from('profiles')
+        .select(`id, ${PLAYER_NAME_COLUMNS}`)
+        .in('id', missing);
+      if (cancelled || nameError || !data) return;
+      setNames((current) => {
+        const next = { ...current };
+        for (const row of data) next[row.id] = playerDisplayName(row);
+        return next;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [entries, names]);
+
+  /* Search this club's own roster. 300ms of quiet before asking, and the last
+     answer wins, so a fast typist does not paint a stale list. */
+  const searchSeq = useRef(0);
+  useEffect(() => {
+    if (!showAddForm || !clubId) return;
+    const term = memberSearch.trim();
+    if (term.length < 2) {
+      setMemberOptions([]);
+      return;
+    }
+    const seq = ++searchSeq.current;
+    const timer = setTimeout(() => {
+      void (async () => {
+        setSearchingMembers(true);
+        try {
+          const resolvedClubId = await resolveClubUUID(clubId);
+          const { data, error: searchError } = await supabase.rpc('ca_club_members', {
+            p_club_id: resolvedClubId,
+            p_search: term,
+            p_since: null,
+            p_limit: 8,
+            p_offset: 0,
+            p_sort: 'name',
+            p_role: null,
+          });
+          if (seq !== searchSeq.current) return;
+          if (searchError) throw searchError;
+          setMemberOptions((data || []) as MemberOption[]);
+        } catch (searchFailure) {
+          if (seq !== searchSeq.current) return;
+          setMemberOptions([]);
+          setError(safeErrorMessage(searchFailure, 'The member search could not be completed.'));
+        } finally {
+          if (seq === searchSeq.current) setSearchingMembers(false);
+        }
+      })();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [clubId, memberSearch, showAddForm]);
+
+  const expiredEntries = useMemo(
+    () =>
+      entries.filter(
+        (entry) => Boolean(entry.expires_at) && new Date(entry.expires_at!) < new Date()
+      ),
+    [entries]
+  );
+
   const resetForm = () => {
     setShowAddForm(false);
     setNewUserId('');
     setNewReason('');
     setNewExpiry('');
+    setMemberSearch('');
+    setMemberOptions([]);
+    setSelectedMember(null);
+  };
+
+  /**
+   * AN EXCLUSION DOES NOT EMPTY A SEAT. Every buy-in path checks the ledger, so
+   * an excluded player cannot re-enter - but the one they are already sitting
+   * in is untouched until they stand up. The operator was never told that.
+   */
+  const checkSeated = useCallback(async (member: MemberOption, resolvedClubId: string) => {
+    const { data, error: seatError } = await supabase
+      .from('table_seats')
+      .select('table_id, tables!inner(club_id, status)')
+      .eq('user_id', member.user_id)
+      .is('left_at', null)
+      .eq('tables.club_id', resolvedClubId);
+    if (seatError || !data || data.length === 0) return;
+    const tables = [
+      ...new Map(
+        (data as SeatedTable[]).map((row) => [row.table_id, { table_id: row.table_id }])
+      ).values(),
+    ];
+    setSeatedAfterExclusion({ member, tables });
+  }, []);
+
+  const removeFromPlay = async () => {
+    if (!seatedAfterExclusion) return;
+    setRemovingFromPlay(true);
+    setError(null);
+    try {
+      const outcome = await adminRemovePlayerFromClubTables(
+        seatedAfterExclusion.tables.map((table) => table.table_id),
+        seatedAfterExclusion.member.user_id,
+        'Excluded from the club by an operator'
+      );
+      if (outcome.removed === 0) {
+        throw new Error(outcome.firstError || 'The engine did not remove this player.');
+      }
+      setSeatedAfterExclusion(null);
+    } catch (removeError) {
+      setError(safeErrorMessage(removeError, 'The player could not be removed from play.'));
+    } finally {
+      setRemovingFromPlay(false);
+    }
+  };
+
+  /**
+   * Expired rows are honoured at the gate - every buy-in path checks
+   * `expires_at` - but nothing has ever swept them, so they accumulate in the
+   * ledger forever and the Active figure drifts away from the record. This is
+   * the operator's broom.
+   */
+  const clearExpired = async () => {
+    if (expiredEntries.length === 0) return;
+    setClearingExpired(true);
+    setError(null);
+    try {
+      const ids = expiredEntries.map((entry) => entry.id);
+      const { error: deleteError } = await supabase.from('blacklists').delete().in('id', ids);
+      if (deleteError) throw deleteError;
+      await loadEntries();
+    } catch (clearError) {
+      setError(safeErrorMessage(clearError, 'The expired exclusions could not be cleared.'));
+    } finally {
+      setClearingExpired(false);
+    }
   };
 
   const handleAdd = async (event: FormEvent<HTMLFormElement>) => {
@@ -81,8 +248,10 @@ export default function BlacklistManagerPage() {
       if (newExpiry) entry.expires_at = new Date(newExpiry).toISOString();
       const { error: insertError } = await supabase.from('blacklists').insert(entry);
       if (insertError) throw insertError;
+      const excluded = selectedMember;
       resetForm();
       await loadEntries();
+      if (excluded) await checkSeated(excluded, resolvedClubId);
     } catch (addError) {
       setError(safeErrorMessage(addError, 'The player could not be excluded.'));
     } finally {
@@ -173,15 +342,65 @@ export default function BlacklistManagerPage() {
             </div>
             <div className={styles.formGrid}>
               <div className={styles.field}>
-                <label htmlFor="blacklist-user-id">Player User ID</label>
-                <input
-                  id="blacklist-user-id"
-                  autoComplete="off"
-                  placeholder="Player UUID"
-                  value={newUserId}
-                  onChange={(event) => setNewUserId(event.target.value)}
-                  required
-                />
+                <label htmlFor="blacklist-member-search">Player</label>
+                {selectedMember ? (
+                  <div className={styles.selectedMember}>
+                    <span>
+                      {selectedMember.display_name}
+                      {selectedMember.is_horse ? ' (Horse)' : ''}
+                    </span>
+                    <button
+                      className={styles.secondaryButton}
+                      type="button"
+                      onClick={() => {
+                        setSelectedMember(null);
+                        setNewUserId('');
+                        setMemberSearch('');
+                      }}
+                    >
+                      Change
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      id="blacklist-member-search"
+                      autoComplete="off"
+                      placeholder="Search This Club's Roster By Name"
+                      value={memberSearch}
+                      onChange={(event) => setMemberSearch(event.target.value)}
+                      aria-describedby="blacklist-member-help"
+                    />
+                    <p id="blacklist-member-help" className={styles.fieldHelp}>
+                      {searchingMembers
+                        ? 'Searching The Roster'
+                        : memberSearch.trim().length < 2
+                          ? 'Type At Least Two Characters'
+                          : memberOptions.length === 0
+                            ? 'No Member Of This Club Matches That Name'
+                            : 'Choose The Player To Exclude'}
+                    </p>
+                    {memberOptions.length > 0 && (
+                      <ul className={styles.memberOptions}>
+                        {memberOptions.map((option) => (
+                          <li key={option.user_id}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedMember(option);
+                                setNewUserId(option.user_id);
+                                setMemberOptions([]);
+                              }}
+                            >
+                              <span>{option.display_name}</span>
+                              {option.is_horse && <span className={styles.horseTag}>Horse</span>}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                )}
               </div>
               <div className={styles.field}>
                 <label htmlFor="blacklist-reason">Reason</label>
@@ -207,7 +426,7 @@ export default function BlacklistManagerPage() {
               <button
                 className={styles.dangerButton}
                 type="submit"
-                disabled={adding || !newUserId.trim() || !newReason.trim()}
+                disabled={adding || !selectedMember || !newReason.trim()}
               >
                 {adding ? 'Applying Exclusion…' : 'Apply Exclusion'}
               </button>
@@ -218,6 +437,40 @@ export default function BlacklistManagerPage() {
           </form>
         )}
 
+        {seatedAfterExclusion && (
+          <div className={styles.seatedPanel} role="alert">
+            <div>
+              <strong>
+                {seatedAfterExclusion.member.display_name} Is Still Seated At{' '}
+                {seatedAfterExclusion.tables.length} Table
+                {seatedAfterExclusion.tables.length === 1 ? '' : 's'}
+              </strong>
+              <p>
+                The Exclusion Stops Every Future Buy In, Rebuy And Tournament Entry. It Does Not
+                Empty A Seat They Are Already In. Removing Them Now Cashes Their Stack Out To Their
+                Club Wallet.
+              </p>
+            </div>
+            <div className={styles.confirmActions}>
+              <button
+                className={styles.dangerButton}
+                type="button"
+                onClick={() => void removeFromPlay()}
+                disabled={removingFromPlay}
+              >
+                {removingFromPlay ? 'Removing From Play…' : 'Remove From Play'}
+              </button>
+              <button
+                className={styles.secondaryButton}
+                type="button"
+                onClick={() => setSeatedAfterExclusion(null)}
+              >
+                Leave Them Seated
+              </button>
+            </div>
+          </div>
+        )}
+
         {!loadFailed && (
           <section className={styles.ledger} aria-labelledby="blacklist-ledger-title">
             <div className={styles.panelHeader}>
@@ -225,7 +478,21 @@ export default function BlacklistManagerPage() {
                 <p className={styles.kicker}>Live Club Control</p>
                 <h2 id="blacklist-ledger-title">Exclusion Ledger</h2>
               </div>
-              <span>{entries.length} Total</span>
+              <div className={styles.ledgerTools}>
+                <span>{entries.length} Total</span>
+                {expiredEntries.length > 0 && (
+                  <button
+                    className={styles.secondaryButton}
+                    type="button"
+                    onClick={() => void clearExpired()}
+                    disabled={clearingExpired}
+                  >
+                    {clearingExpired
+                      ? 'Clearing Expired…'
+                      : `Clear ${expiredEntries.length} Expired`}
+                  </button>
+                )}
+              </div>
             </div>
 
             {loading ? (
@@ -247,7 +514,7 @@ export default function BlacklistManagerPage() {
                   <caption className={styles.srOnly}>Club Player Exclusion Records</caption>
                   <thead>
                     <tr>
-                      <th scope="col">Player ID</th>
+                      <th scope="col">Player</th>
                       <th scope="col">Reason</th>
                       <th scope="col">Applied</th>
                       <th scope="col">Expires</th>
@@ -261,8 +528,11 @@ export default function BlacklistManagerPage() {
                       const confirming = confirmingRemoval === entry.id;
                       return (
                         <tr key={entry.id}>
-                          <td data-label="Player ID">
-                            <code>{entry.user_id}</code>
+                          <td data-label="Player">
+                            <span className={styles.playerCell}>
+                              <strong>{names[entry.user_id] || 'Loading Name'}</strong>
+                              <code>{entry.user_id.substring(0, 8)}</code>
+                            </span>
                           </td>
                           <td data-label="Reason">{entry.reason}</td>
                           <td data-label="Applied">{formatDate(entry.banned_at)}</td>

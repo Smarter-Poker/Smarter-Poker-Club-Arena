@@ -42,6 +42,7 @@
 import { supabase } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
+import { selectInChunks } from './supabase/chunkedIn.js';
 import { cashTableFill, isActiveNow, isRetiringTable, wantsTableChange } from './HorseBehavior.js';
 import {
   bankrollPolicyFor,
@@ -191,12 +192,30 @@ export class HorseSessionRotator {
     const rolls = new Map<string, number>();
     const investedBySeat = new Map<string, number>();
     try {
-      const horseSeatIds = [...new Set(seats.map((s) => s.user_id))];
+      const horseSeatIds = seats.map((s) => s.user_id);
       if (horseSeatIds.length > 0) {
-        const { data: mem } = await supabase
-          .from('club_members')
-          .select('user_id, club_id, chip_balance')
-          .in('user_id', horseSeatIds);
+        /* CHUNKED, AND AN INCOMPLETE READ IS NOT AN EMPTY WALLET (2026-09-03).
+           Same ceiling as the horse read above, and the consequence here is a
+           money one rather than a quiet one: with `rolls` empty, `roll` is
+           undefined at the top-up below, topUpAllowance() is skipped entirely,
+           and the horse reloads the full desired amount with NO bankroll cap.
+           An unreadable roll now leaves both maps empty AND says so, and the
+           rules below already degrade to the pre-bankroll behaviour - which
+           refuses the top-up rather than uncapping it. */
+        const memRead = await selectInChunks<{
+          user_id: string;
+          club_id: string;
+          chip_balance: unknown;
+        }>(
+          horseSeatIds,
+          (batch) =>
+            supabase
+              .from('club_members')
+              .select('user_id, club_id, chip_balance')
+              .in('user_id', batch),
+          'HorseSessionRotator.bankrollRolls'
+        );
+        const mem = memRead.complete ? memRead.rows : [];
         for (const m of mem ?? []) {
           const v = Number((m as { chip_balance: unknown }).chip_balance);
           if (Number.isFinite(v)) {
@@ -247,14 +266,44 @@ export class HorseSessionRotator {
       byTable.set(s.table_id, arr);
     }
 
-    // Verify horse identity in one query.
-    const userIds = [...new Set(seats.map((s) => s.user_id))];
-    const { data: horses } = await supabase
-      .from('profiles')
-      .select('id')
-      .in('id', userIds)
-      .eq('is_horse', true);
-    const horseIds = new Set((horses || []).map((h) => h.id));
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  WHO IS A HORSE - IN CHUNKS, AND NEVER GUESSED (2026-09-03)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * This was ONE `.in()` over every seated user id and it discarded its
+     * error, and both halves of that were fatal together.
+     *
+     * PostgREST puts the id list in the URL. Measured on production the day
+     * this was written: the largest `.in()` it will accept on this table is
+     * 675 ids (~25 KB of URL); this pass was handing it 713 and getting HTTP
+     * 400 Bad Request. The error went into a discarded `error` field, `horses`
+     * came back null, and `horseIds` was therefore EMPTY - which does not read
+     * as "the query failed", it reads as "nobody at any table is a horse".
+     *
+     * Every rule below is keyed on that set, so the whole service went quiet
+     * without one line of log: no session ends, no breaks, no top-ups, no
+     * table changes, and no retirement drain. `humanPresent` was true at every
+     * table in the room, which is the most protective answer possible and so
+     * looked like nothing to fix. It had been inert since the room crossed 675
+     * seated players, which happened as the fleet grew during 2026-09-03.
+     *
+     * Two changes, and the second matters more than the first. The read is
+     * CHUNKED, like every other id list this repo sends (HorseFleetManager
+     * chunks at 200, the elimination sweep at its own idsForChunk). And a
+     * failed chunk DECLINES THE PASS: an unreadable horse set is not an empty
+     * one, and a pass that cannot tell a horse from a person must do nothing
+     * rather than something. That is the same fail-closed rule the seat read
+     * above already follows.
+     */
+    const userIds = seats.map((s) => s.user_id);
+    const horseRead = await selectInChunks<{ id: string }>(
+      userIds,
+      (batch) => supabase.from('profiles').select('id').in('id', batch).eq('is_horse', true),
+      'HorseSessionRotator.horseIds'
+    );
+    if (!horseRead.complete) return; // an unreadable horse set is not an empty one
+    const horseIds = new Set(horseRead.rows.map((h) => h.id));
     const hourUTC = new Date().getUTCHours();
 
     /* WHO IS WAITING FOR A SEAT (Dan 2026-09-02). The one reason a horse
@@ -322,6 +371,24 @@ export class HorseSessionRotator {
     for (const [tableId, tableSeats] of byTable) {
       const t = (tableSeats[0] as any)?.tables;
       if (!isRetiringTable(t)) continue;
+      /* A PERSON OUTRANKS THE CLOSURE (2026-09-03).
+         Every other departure rule in this file protects a human's game -
+         never thin it below five, halve the leave pressure, hold the floor -
+         and the first draft of this loop had none of them: it took the first
+         horse it found, once a cycle, human or not. On a nine-handed table
+         that empties the person's game in twelve minutes and then strands
+         them, because retireSurplusTables refuses to close an occupied table
+         and the fleet refuses to re-seat a retiring one. Worse, every horse
+         that cashes out calls notifyWaitlistSeatOpen, so the drain would
+         offer the freed seats to MORE people.
+
+         A retiring table with a person at it simply stops draining. The
+         fleet still seats nobody new there, so it empties as its horses
+         leave for their own reasons, and it closes when the last player
+         stands up. A table nobody is playing closes in minutes; a table
+         somebody IS playing closes when they are done, which is the same
+         courtesy a real room extends. */
+      if (tableSeats.some((x) => !horseIds.has(x.user_id))) continue;
       const engine = this.getEngine(tableId);
       if (!engine) continue;
       const horseSeat = tableSeats.find((x) => horseIds.has(x.user_id));

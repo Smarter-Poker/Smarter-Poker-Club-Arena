@@ -186,25 +186,39 @@ export const DisputeService = {
   },
 
   /**
-   * Start reviewing a dispute (assign to reviewer)
+   * Start reviewing a dispute (assign to reviewer).
+   *
+   * THIS WAS A CLIENT UPDATE AGAINST A TABLE WITH NO UPDATE POLICY. `disputes`
+   * carries exactly one policy - disputes_party_or_admin_select - so the write
+   * matched zero rows for every operator who ever pressed the button, the
+   * maybeSingle() came back null, and the page said "Failed to start review".
+   * The open -> under_review transition has therefore never happened on this
+   * platform, which is also why the page's own `under_review` filter tab could
+   * never fill. fn_dispute_start_review is the definer path: it locks the row,
+   * checks the club, refuses a dispute that is not open, and assigns the
+   * caller.
    */
-  async startReview(disputeId: string, reviewerId: string): Promise<Dispute> {
-    const { data, error } = await supabase
-      .from('disputes')
-      .update({
-        status: 'under_review',
-        assigned_to: reviewerId,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', disputeId)
-      .eq('status', 'open')
-      .select()
-      .maybeSingle();
-
+  async startReview(disputeId: string, _reviewerId: string): Promise<Dispute> {
+    const { data, error } = await supabase.rpc('fn_dispute_start_review', {
+      p_dispute_id: disputeId,
+    });
     if (error) throw error;
-    if (!data) throw new Error('Dispute not found or already under review');
-
-    return this.mapDispute(data);
+    const outcome = (data || {}) as { ok?: boolean; reason?: string };
+    if (!outcome.ok) {
+      throw new Error(
+        outcome.reason === 'not_open'
+          ? 'This dispute is no longer open.'
+          : 'This dispute could not be moved into review.'
+      );
+    }
+    const { data: row, error: readError } = await supabase
+      .from('disputes')
+      .select('*')
+      .eq('id', disputeId)
+      .maybeSingle();
+    if (readError) throw readError;
+    if (!row) throw new Error('This dispute could not be read back.');
+    return this.mapDispute(row);
   },
 
   /**
@@ -288,20 +302,21 @@ export const DisputeService = {
    * Escalate a dispute (for critical or complex cases)
    */
   async escalateDispute(disputeId: string, reason: string): Promise<Dispute> {
-    const { data, error } = await supabase
-      .from('disputes')
-      .update({
-        status: 'escalated',
-        resolution: `Escalated: ${reason}`,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', disputeId)
-      .in('status', ['open', 'under_review'])
-      .select()
-      .maybeSingle();
-
+    // Same story as startReview: a client UPDATE with no UPDATE policy behind
+    // it. Escalation has never been written down either.
+    const { data, error } = await supabase.rpc('fn_dispute_escalate', {
+      p_dispute_id: disputeId,
+      p_note: `Escalated: ${reason}`,
+    });
     if (error) throw error;
-    if (!data) throw new Error('Dispute not found');
+    const outcome = (data || {}) as { ok?: boolean; reason?: string };
+    if (!outcome.ok) {
+      throw new Error(
+        outcome.reason?.startsWith('already_')
+          ? `This dispute is already ${outcome.reason.replace('already_', '')}.`
+          : 'This dispute could not be escalated.'
+      );
+    }
 
     // Raise financial alert for ops team
     await FinancialAlertService.logWarning(
@@ -310,7 +325,16 @@ export const DisputeService = {
       { disputeId, reason }
     );
 
-    return this.mapDispute(data);
+    // `data` is the RPC's outcome envelope, not a dispute row - read the row
+    // back rather than mapping the envelope into a Dispute shape.
+    const { data: row, error: readError } = await supabase
+      .from('disputes')
+      .select('*')
+      .eq('id', disputeId)
+      .maybeSingle();
+    if (readError) throw readError;
+    if (!row) throw new Error('This dispute could not be read back.');
+    return this.mapDispute(row);
   },
 
   /**

@@ -1,0 +1,11 @@
+{
+  "_owner": "fix/diamond-c-journal",
+  "tables": ["ca_diamond_journal_archive"],
+  "functions": [
+    "add_diamonds_to_balance",
+    "deduct_diamonds",
+    "fn_ca_journal_profile_deletion",
+    "fn_ca_journal_append_only"
+  ],
+  "columns": {}
+}

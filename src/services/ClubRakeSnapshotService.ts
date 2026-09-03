@@ -54,6 +54,15 @@ export interface RakeClubRow {
   winnings: number;
   hands: number;
   games: number;
+  /**
+   * Whether this club opens into its own breakdown FOR THIS VIEWER.
+   *
+   * The server computes it from the same gate the club scope enforces, so a
+   * row that says it opens, opens. It is per viewer: a union lead sees every
+   * club in their union open; someone reading a union that merely contains a
+   * club they own sees only that one.
+   */
+  can_drill?: boolean;
 }
 
 /**

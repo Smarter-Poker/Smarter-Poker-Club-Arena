@@ -6,8 +6,14 @@ import { optimizeClubLogo } from '../src/utils/clubLogoImage';
 const root = resolve(__dirname, '..');
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8');
 const migration = read('supabase/migrations/20260831150100_club_creation_atomic_workflow.sql');
+const auditMigration = read(
+  'supabase/migrations/20260831140909_club_entry_four_phase_audit_fixes.sql'
+);
 const service = read('src/services/ClubsService.ts');
 const modal = read('src/components/modals/CreateClubModal.tsx');
+const deadJoinRequestRepair = read(
+  'supabase/migrations/20260831163500_remove_dead_club_join_requests_dependency.sql'
+);
 
 describe('Phase 2 atomic club creation', () => {
   it('commits the club, owner membership, and idempotency record in one RPC', () => {
@@ -24,6 +30,9 @@ describe('Phase 2 atomic club creation', () => {
     expect(migration).toContain('v_memberships >= 4');
     expect(migration).toContain('fn_club_name_available');
     expect(migration).toContain('TO authenticated');
+    expect(auditMigration).toContain("status IN ('active', 'approved')");
+    expect(auditMigration).toContain('v_memberships >= 4');
+    expect(auditMigration).not.toContain('is_horse');
   });
 
   it('uses the atomic RPC and cleans the pre-transaction logo on failure', () => {
@@ -34,6 +43,19 @@ describe('Phase 2 atomic club creation', () => {
     expect(service).toContain('definitiveRejection');
     expect(service).toContain('OrphanLogoCleanup');
     expect(service).not.toMatch(/\.from\('clubs'\)\s*\.insert/);
+  });
+
+  it('does not let the retired join-request shadow table roll back club creation', () => {
+    expect(deadJoinRequestRepair).toContain(
+      'DROP TRIGGER IF EXISTS trg_sync_club_join_request ON public.club_members'
+    );
+    expect(deadJoinRequestRepair).toContain(
+      'DROP FUNCTION IF EXISTS public.fn_sync_club_join_request()'
+    );
+    expect(deadJoinRequestRepair).not.toMatch(
+      /(?:INSERT INTO|UPDATE|DELETE FROM) public\.club_join_requests/
+    );
+    expect(deadJoinRequestRepair).toContain("status = 'pending'");
   });
 });
 

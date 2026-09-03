@@ -31,13 +31,15 @@ const MENU = read('src/components/navigation/HamburgerMenu.tsx');
 const MENU_CSS = read('src/components/navigation/HamburgerMenu.module.css');
 const APP = read('src/App.tsx');
 
-describe('1. the ticker only exists while live at a table, and never over the menu', () => {
-  it('route gate is /table/* alone — no club lobbies, no home page', () => {
+describe('1. the ticker exists on tables and club lobbies, and never over the menu', () => {
+  it('route gate covers /table/* and the exact club-lobby route only', () => {
     expect(TICKER).toMatch(/atLiveTable\s*=\s*location\.pathname\.startsWith\('\/table'\)/);
-    // The old gate. If /clubs/ comes back into the visibility rule, the
-    // ticker is back over lobby surfaces Dan removed it from.
+    expect(TICKER).toContain('const atClubLobby =');
+    expect(TICKER).toContain('const onTickerRoute = atLiveTable || atClubLobby;');
+    // A broad startsWith('/clubs/') would leak the ticker onto club settings,
+    // cashier, players, and every other club operation page.
     expect(TICKER).not.toMatch(/startsWith\('\/clubs\/'\)\s*\|\|/);
-    expect(TICKER).toMatch(/atLiveTable\s*&&/);
+    expect(TICKER).toMatch(/onTickerRoute\s*&&/);
   });
 
   it('the open drawer stacks ABOVE the ticker (z 9400) and below dialogs (9600+)', () => {

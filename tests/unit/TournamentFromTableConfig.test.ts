@@ -23,6 +23,7 @@ import {
   canRunAsTournament,
   type TournamentFormInput,
 } from '../../src/lib/tournamentFromTableConfig';
+import { SPIN_TIERS } from '../../src/config/spinSpec';
 
 const base: TournamentFormInput = {
   name: 'Friday Major',
@@ -111,14 +112,28 @@ describe('blind structure', () => {
     for (const lvl of c.blindStructure) expect(lvl.durationMinutes).toBeGreaterThan(0);
   });
 
-  it('a spin uses the spin ramp and is winner-take-all', () => {
+  it('a spin uses the spin ramp and the placeholder tier ladder', () => {
+    /* Was "and is winner-take-all", pinning a hard-coded [{1, 100}]. A Spin is
+       NOT winner-take-all by definition — 25x and above pay 80 / 12 / 8 across
+       all three seats. The creation-time ladder is the PLACEHOLDER tier's,
+       read from SPIN_TIERS, because the real tier is drawn at start and
+       writing it here would leak the multiplier to the lobby. Same value as
+       before; it is now derived from the spec instead of asserted about it. */
     const c = buildTournamentConfig(
       { ...base, gameMode: 'sng', isSpins: true, sngPlayerCount: 3 },
       'nlh'
     );
     expect(c.type).toBe('spin');
     expect(c.maxPlayers).toBe(3);
-    expect(c.payoutStructure).toEqual([{ place: 1, percentage: 100 }]);
+    expect(c.payoutStructure).toEqual(
+      SPIN_TIERS[0].payouts.map((pct, i) => ({
+        place: i + 1,
+        percentage: Math.round(pct * 10000) / 100,
+      }))
+    );
+    // And it must never exceed the seats — the rule both the RPC and
+    // tournaments_creation_guard now enforce as `>`.
+    expect(c.payoutStructure.length).toBeLessThanOrEqual(c.maxPlayers);
   });
 });
 
@@ -188,15 +203,15 @@ describe('start time', () => {
 });
 
 describe('payout structure choice (2026-08-22)', () => {
-  it('payout1/2/3 pay ~10/15/20% of a 100-player field', () => {
+  it('payout1/2/3 pay ~10/12.5/15% of a 100-player field', () => {
     const places = (choice: string) =>
       buildTournamentConfig({ ...base, maxPlayersRange: 100, payoutStructure: choice }, 'nlh')
         .payoutStructure.length;
     // These used to all fall through to autoSelectPayouts, making the four
     // choices identical. Now the choice is honoured.
     expect(places('payout1')).toBe(10);
-    expect(places('payout2')).toBe(15);
-    expect(places('payout3')).toBe(20);
+    expect(places('payout2')).toBe(13);
+    expect(places('payout3')).toBe(15);
   });
 
   it('each choice still totals 100 and pays fewer places than the field', () => {
@@ -416,12 +431,19 @@ describe('game variant', () => {
    * caller cannot catch that. These are now keyed to what the screen emits.
    */
   it('only offers tournaments for variants the engine can deal', () => {
-    for (const v of ['nlh', 'plo4', 'plo5', 'plo6', 'plo8', 'short_deck']) {
+    /* LIMIT JOINED THE LIST ON 2026-08-31, and this assertion moved with it in
+       the same commit rather than being left asserting the old rule.
+       `flh` / `flo8` used to be pinned false here on the reasoning that "limit
+       escalates on a bet-size ladder and every blind structure here is a blind
+       ladder". That is not how this engine works: `fixedLimitBetSize` derives
+       the bet ladder FROM the big blind, and the tournament engine rewrites the
+       table's blinds on every level, so a blind ladder IS the limit ladder. See
+       src/config/tournamentVariants for the full argument. */
+    for (const v of ['nlh', 'plo4', 'plo5', 'plo6', 'plo8', 'short_deck', 'flh', 'flo8']) {
       expect(canRunAsTournament(v)).toBe(true);
     }
-    // Pineapple has no tournament path for its discard street; limit escalates
-    // on a bet-size ladder and every blind structure here is a blind ladder.
-    for (const v of ['flh', 'flo8', 'pineapple', 'mixed', 'ofc']) {
+    // Pineapple still has no tournament path for its discard street.
+    for (const v of ['pineapple', 'mixed', 'ofc']) {
       expect(canRunAsTournament(v)).toBe(false);
     }
     // And the dead keys must not answer true, or the bug returns quietly.
@@ -434,6 +456,39 @@ describe('game variant', () => {
     expect(buildTournamentConfig(base, 'plo6').gameVariant).toBe('PLO6');
     expect(buildTournamentConfig(base, 'plo8').gameVariant).toBe('PLO8');
     expect(buildTournamentConfig(base, 'short_deck').gameVariant).toBe('SHORT_DECK');
+    expect(buildTournamentConfig(base, 'flh').gameVariant).toBe('FLH');
+    expect(buildTournamentConfig(base, 'flo8').gameVariant).toBe('FLO8');
     expect(buildTournamentConfig(base, undefined).gameVariant).toBe('NLH');
+  });
+});
+
+/**
+ * THE SPIN CATALOGUE (2026-08-31).
+ *
+ * Spin & Go sells four games. Before this, the create-table form would happily
+ * build a Short Deck or PLO8 Spin, and the Spins tab of the lobby filter had no
+ * chip for either — so ticking any Games chip deleted that Spin from the board
+ * with nothing to bring it back. The option is gone from the form; this pins
+ * the INDEPENDENT refusal, which is what a restored draft or a saved template
+ * carrying `isSpins: true` actually hits.
+ */
+describe('spin catalogue', () => {
+  const spinBase = { ...base, gameMode: 'sng' as const, isSpins: true, sngPlayerCount: 3 };
+
+  it('builds a Spin for the four games Spin & Go sells', () => {
+    for (const v of ['nlh', 'plo4', 'plo5', 'plo6']) {
+      expect(buildTournamentConfig(spinBase, v).type).toBe('spin');
+      expect(buildTournamentConfig(spinBase, v).spinType).toBe('standard');
+    }
+  });
+
+  it('downgrades a Spin the catalogue does not sell to a plain Sit & Go', () => {
+    for (const v of ['plo8', 'short_deck', 'flh', 'flo8']) {
+      const cfg = buildTournamentConfig(spinBase, v);
+      expect(cfg.type).toBe('sng');
+      // ...and it must not keep the Spin's fingerprints, or it would be a Spin
+      // wearing a Sit & Go label.
+      expect(cfg.spinType).toBeUndefined();
+    }
   });
 });

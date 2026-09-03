@@ -4,3 +4,6 @@ export * from './arenaGameCardAdapter';
 export * from './ArenaGameCard';
 export * from './ArenaGameRuleIcon';
 export * from './ArenaLobbyGameCard';
+export * from './ArenaPremiumText';
+export * from './NlhPremiumCard';
+export * from './nlhPremiumTemplate';

@@ -46,7 +46,12 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { sliceEnclosingBlock, sliceBlockAfter, sliceMethod, sliceStatement } from '../testHelpers/sourceWindow.js';
+import {
+  sliceEnclosingBlock,
+  sliceBlockAfter,
+  sliceMethod,
+  sliceStatement,
+} from '../testHelpers/sourceWindow.js';
 
 const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
@@ -69,10 +74,16 @@ describe('the button comes back to where it was', () => {
 
   it('reads the column that is actually populated', () => {
     // button_seat is written on every settled hand and was read by nobody.
+    // 2026-08-31 (Phase 2.2): `players` joins it in the same read so the seat
+    // that posted the BIG BLIND can be derived on restart too -- without it a
+    // restart between two heads-up hands drops the dead-button rule for one
+    // hand and somebody posts the big blind twice. Same row, same query, no
+    // extra round trip; the pin stays exact so a silent widening is still a
+    // visible change here.
     const at = BASE.indexOf('private async restoreButtonFromHistory');
     const body = sliceMethod(BASE, 'private async restoreButtonFromHistory');
     expect(body).toMatch(/from\('hand_history'\)/);
-    expect(body).toMatch(/select\('button_seat'\)/);
+    expect(body).toMatch(/select\('button_seat, players'\)/);
     expect(body).toMatch(/order\('hand_number', \{ ascending: false \}\)/);
   });
 

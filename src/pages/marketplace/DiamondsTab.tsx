@@ -123,7 +123,7 @@ export default function DiamondsTab({ clubId, wallet, packages }: DiamondsTabPro
       </div>
 
       {/* ── Navigation tabs ────────────────────────────────────────────── */}
-      <nav className={styles.navBar} aria-label="Diamond Store navigation">
+      <nav className={styles.navBar} aria-label="Diamond Store Navigation">
         {NAV_LINKS.map((link) => {
           const content = (
             <>
@@ -180,7 +180,7 @@ export default function DiamondsTab({ clubId, wallet, packages }: DiamondsTabPro
               className={`${styles.card} ${pkg.popular ? styles.cardPopular : ''} ${disabled ? styles.cardDisabled : ''}`}
               onClick={() => handleBuy(pkg)}
               disabled={disabled}
-              aria-label={`Buy ${totalDiamonds.toLocaleString()} Diamonds for $${pkg.priceUsd.toFixed(2)}`}
+              aria-label={`Buy ${totalDiamonds.toLocaleString()} Diamonds For $${pkg.priceUsd.toFixed(2)}`}
               aria-busy={isRedirecting}
             >
               {pkg.popular && <span className={styles.popularBadge}>POPULAR</span>}

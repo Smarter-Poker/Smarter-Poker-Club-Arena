@@ -77,7 +77,9 @@ export function legacyRebuyAmount(bigBlind: number): number {
 
 /** Is this horse done reloading, on temperament alone? Cheap and synchronous. */
 export function atRebuyStopLoss(userId: string, rebuysTaken: number): boolean {
-  const done = rebuysTaken >= bankrollPolicyFor(userId).stopLossBuyIns;
+  // rebuysTaken + 1 is the buy-ins COMMITTED - see rebuyDecision for why the
+  // off-by-one matters to six in ten of the fleet.
+  const done = rebuysTaken + 1 >= bankrollPolicyFor(userId).stopLossBuyIns;
   if (done) bankrollEvent('rebuy_refused_stop_loss');
   return done;
 }
@@ -93,7 +95,7 @@ export async function horseRebuyAmount(req: HorseRebuyRequest): Promise<number> 
   const legacy = legacyRebuyAmount(bigBlind);
   const policy = bankrollPolicyFor(userId);
 
-  if (rebuysTaken >= policy.stopLossBuyIns) {
+  if (rebuysTaken + 1 >= policy.stopLossBuyIns) {
     bankrollEvent('rebuy_refused_stop_loss');
     return 0;
   }

@@ -1,0 +1,90 @@
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE PLUS SITS ON THE WORD'S CENTRE LINE (Dan 2026-09-02)
+   ---------------------------------------------------------------------------
+   "ALL PLUS SIGNS ON ALL BUTTONS NEED TO BE LOWER SO THEY ARE BALANCED AND
+   PERFECTLY CENTERED WITH THE WORDS ON THE BUTTON."
+
+   The glyph and the label were two inline boxes of different sizes - 15px and
+   11px - sharing one baseline. Baseline alignment lines up the BOTTOM of the
+   two shapes, so the taller box necessarily rides higher; and a "+" is drawn
+   around the middle of its em box rather than sitting on the baseline the way
+   a letter does. Both push it up, which is what Dan is seeing.
+
+   A flex row centres the two boxes against each other, which is the geometric
+   answer rather than a nudge: it holds at any font size, at any zoom, and in
+   the `.compact` variant, none of which a magic `top` offset would. */
+.actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(74, 180, 255, 0.62);
+  border-radius: 5px;
+  color: #e9f7ff;
+  background: linear-gradient(180deg, #163b58 0%, #071621 48%, #06101a 100%);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.14),
+    0 0 10px rgba(0, 132, 255, 0.18);
+  font:
+    700 11px/1 Rajdhani,
+    Inter,
+    sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.actions button:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 2px;
+}
+
+.actions button span {
+  color: #35b8ff;
+  font-size: 15px;
+  /* Without this the glyph carries the button's `11px/1` line box scaled to
+     15px and re-introduces a fraction of the offset the flex row just
+     removed. `1` makes its box exactly the glyph's own height, so centring
+     has nothing left to fight. */
+  line-height: 1;
+}
+
+/* DESKTOP ONLY, WHERE A HOST ASKS FOR IT (Dan 2026-09-02): "THIS SHOULDN'T BE
+   DISPLAYED ON MOBILE, THIS IS DESK TOP ONLY BUTTONS REMOVE THEM FROM
+   MOBILE." Opt-in rather than a blanket rule on `.actions`, because the union
+   and game-management screens render this row as their ONLY route to creating
+   a game - hiding it there would strip the feature from a phone rather than
+   tidy a lobby. The club lobby passes this class; nothing else does. */
+@media (max-width: 900px) {
+  .desktopOnly {
+    display: none;
+  }
+}
+
+.compact button {
+  min-height: 30px;
+  padding-inline: 9px;
+  font-size: 10px;
+}
+
+@media (max-width: 760px) {
+  .actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .actions button {
+    width: 100%;
+  }
+}

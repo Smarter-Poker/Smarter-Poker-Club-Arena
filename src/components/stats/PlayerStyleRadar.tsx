@@ -275,7 +275,7 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
         className="psr-svg"
         viewBox="0 0 240 240"
         role="img"
-        aria-label={`Player style radar chart. ${ariaDesc}`}
+        aria-label={`Player Style Radar Chart. ${ariaDesc}`}
       >
         <title>Player Style Radar</title>
         <desc>{ariaDesc}</desc>

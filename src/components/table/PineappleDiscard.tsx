@@ -45,6 +45,13 @@ export interface PineappleDiscardProps {
    */
   deadline?: number | null;
   deckStyle?: DeckStyle;
+  /**
+   * How long the round runs, ms, as the ENGINE reports it. Drives when the
+   * countdown turns urgent. Without it the threshold was a hard-coded 5s,
+   * which is most of a 6-second round and a blink of a 30-second one - and
+   * action_time_seconds is a per-table setting, so both exist.
+   */
+  durationMs?: number;
   /** Time bank uses the player has left. 0 hides the button entirely. */
   timeBanksRemaining?: number;
   /**
@@ -62,6 +69,7 @@ export function PineappleDiscard({
   onDiscard,
   deadline,
   deckStyle,
+  durationMs = 0,
   timeBanksRemaining = 0,
   onTimeBank,
 }: PineappleDiscardProps) {
@@ -118,7 +126,11 @@ export function PineappleDiscard({
 
   if (!isOpen || cards.length !== 3) return null;
 
-  const urgent = secondsLeft !== null && secondsLeft <= 5;
+  /* The last third of whatever the table actually allows, clamped so a very
+     long round does not spend ten seconds shouting and a very short one still
+     warns at all. */
+  const urgentAt = durationMs > 0 ? Math.min(8, Math.max(3, Math.round(durationMs / 3000))) : 5;
+  const urgent = secondsLeft !== null && secondsLeft <= urgentAt;
 
   return (
     <div className="pineapple-discard" role="dialog" aria-labelledby="pd-title">
@@ -200,7 +212,7 @@ export function PineappleDiscard({
           {busy
             ? 'Discarding…'
             : selected === null
-              ? 'Select a card'
+              ? 'Select A Card'
               : `Discard ${cards[selected].rank}${cards[selected].suit}`}
         </button>
       </div>

@@ -303,7 +303,7 @@ class PushNotificationServiceClass {
     messagePreview: string
   ): Promise<boolean> {
     return this.sendToUser(userId, {
-      title: `Message from ${fromUsername}`,
+      title: `Message From ${fromUsername}`,
       message: messagePreview.substring(0, 80) + (messagePreview.length > 80 ? '...' : ''),
       category: 'general',
       url: '/messages',

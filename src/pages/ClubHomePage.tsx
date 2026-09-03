@@ -28,7 +28,13 @@ import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import haptic from '../services/HapticService';
-import CreateTournamentModal from '../components/club/CreateTournamentModal';
+import GameCreationActions, {
+  type GameCreationTarget,
+} from '../components/club/GameCreationActions';
+import ClubLaunchProgress, { type ClubLaunchTask } from '../components/club/ClubLaunchProgress';
+import ClubOpeningWizard from '../components/club/ClubOpeningWizard';
+import { clubOpeningSetupService } from '../services/ClubOpeningSetupService';
+import { hasNewClubOpeningChecklist } from '../utils/clubOpeningEligibility';
 /* LOBBY V2 (Dan 2026-08-22): the large card grid (DynamicGameCard) is replaced
    by the dense line-based LobbyTable + the CasinoPlaque game lobby panel.
    Selecting a row NEVER joins or spends; every commit action goes through the
@@ -50,13 +56,14 @@ import {
 } from '../components/lobby/lobbyEntries';
 import { tournamentService } from '../services/TournamentService';
 import { tableService } from '../services/TableService';
-import { getClubLevel, ClubLevelInfo } from '../utils/clubLevels';
+import { getClubLevelInfoFromMembers, ClubLevelInfo } from '../utils/clubLevels';
 import { useToast } from '../components/common/Toast';
 import { applyClubScope, inClubScope, type ClubScope } from '../utils/clubScope';
 import { waitlistService } from '../services/WaitlistService';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { retryFetch } from '../utils/retryFetch';
 import './ClubHomePage.css';
+import '../components/lobby/ClubLobbyCommandTop.css';
 import { isFixedLimitVariant } from '../lib/bettingStructure';
 
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -74,6 +81,7 @@ import { RakeReports } from '../components/admin/RakeReports';
 import SpinActivationPanel from '../components/club/SpinActivationPanel';
 import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
 import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
+import DiamondWalletModal from '../components/wallet/DiamondWalletModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { readLocalSession } from '../lib/authUtils';
 import { reportError } from '../utils/errorReporter';
@@ -89,9 +97,12 @@ import {
 } from '../components/lobby/lobbyViewPrefs';
 import { useUserStore } from '../stores/useUserStore';
 import ClubLobbyCommandTop from '../components/lobby/ClubLobbyCommandTop';
+import MaintenanceBreakBanner from '../components/common/MaintenanceBreakBanner';
 import HouseAdCard from '../components/ads/HouseAdCard';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
+import { playerDisplayName } from '../utils/playerDisplayName';
+import ClubOwnerMessage from '../components/club/ClubOwnerMessage';
 import AdvancedFilters, {
   loadFilters,
   saveFilters,
@@ -109,6 +120,7 @@ import { IconShareLink, IconSort } from '../components/icons/LobbyIcons';
 import { CLUB_HOME_CACHE_PREFIX } from '../utils/clearUserCaches';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { preloadRoute } from '../utils/ChunkPreloader';
+import { gameManagementService } from '../services/GameManagementService';
 
 // Shark Club fallback logo — used when DB logo_url is null
 /* Dan 2026-08-20: "replace the old logo image with the new one". v25 was a
@@ -121,7 +133,22 @@ const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-logo.jpg`;
 // bypass Vite's configured base path in production and silently 404, leaving
 // the live lobby DOM visible without its premium chassis or campaign artwork.
 const CLUB_LOBBY_ASSET_ROOT = `${import.meta.env.BASE_URL}assets/club-buttons/lobby`;
-const CLUB_LOBBY_CAMPAIGN = `${CLUB_LOBBY_ASSET_ROOT}/shark-club-championship-ad-v2.png`;
+/* ONE CROP, EVERY WIDTH (Dan 2026-09-01: "the 'dynamic ad image' is cut off,
+   and it needs to scale to size. because when you 'shrink the page' it fits
+   perfectly").
+
+   There were two files of the same artwork: `-v2` at 2172 x 724 (3:1, the ad
+   centred in a tall black field) served above 900px, and `-mobile-v4` at
+   2172 x 302 (7.2:1, the identical ad cropped tight) served below it. The
+   campaign bay is a short wide strip at EVERY width - roughly 11:1 on a 1440px
+   desktop - so the 3:1 file could only ever be shown by cropping it, which is
+   the top of the trophy and the whole buy-in line that Dan lost. The tight
+   crop is not a phone variant, it is the shape this bay actually is, so it is
+   what both regimes serve now and the bay's aspect-ratio matches it.
+
+   The filename still says "mobile" because renaming a published asset breaks
+   every cached service-worker entry pointing at it. */
+const CLUB_LOBBY_CAMPAIGN = `${CLUB_LOBBY_ASSET_ROOT}/shark-club-championship-ad-mobile-v4.png`;
 
 /**
  * The order the Omaha tab groups its variants in (Dan 2026-08-25). Four cards
@@ -214,7 +241,7 @@ function setClubHomeCache(clubId: string, data: { club: any; tables: any[] }) {
   }
 }
 
-const CLUB_DESCRIPTION_MAX_LENGTH = 72;
+const CLUB_LOBBY_MESSAGE_MAX_LENGTH = 72;
 
 // Types
 interface ClubData {
@@ -223,6 +250,11 @@ interface ClubData {
   name: string;
   slug?: string;
   description: string;
+  tagline?: string | null;
+  /* Dan 2026-09-01: the owner's custom / day's message, printed at the top of
+     the lobby rail. Its own column so `tagline` stays the permanent identity
+     line the opening checklist and the invite page depend on. */
+  lobby_message?: string | null;
   avatar_url: string;
   logo_url?: string;
   banner_url?: string | null;
@@ -237,6 +269,10 @@ interface ClubData {
   hierarchy_threshold_next: number;
   created_at: string;
   is_union: boolean;
+  union_id?: string | null;
+  opening_checklist_started_at?: string | null;
+  chip_treasury?: number | null;
+  spins_enabled?: boolean | null;
 }
 
 interface TableData {
@@ -275,6 +311,7 @@ interface TournamentData {
   late_reg_levels?: number | null;
   started_at?: string | null;
   current_level?: number | null;
+  variant?: string | null;
   /**
    * Dan 2026-08-24: the MTT title's late-reg countdown needs the level
    * window's real end, which only the blind structure can give.
@@ -300,6 +337,15 @@ interface TournamentData {
 type GameType = 'ALL' | 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MIXED' | 'MTT' | 'SNG' | 'SPIN';
 type SortKey = 'recommended' | 'stakes_high' | 'stakes_low' | 'players' | 'starting_soon';
 type TournVariant = 'ALL' | 'MTT' | 'Spin-It' | 'SN';
+type AllStatusFilter = 'ALL' | 'RUNNING' | 'OPEN_REGISTRATION' | 'LATE_REG' | 'STARTING_SOON';
+
+const ALL_STATUS_FILTERS: ReadonlyArray<{ key: AllStatusFilter; label: string }> = [
+  { key: 'ALL', label: 'All' },
+  { key: 'RUNNING', label: 'Running' },
+  { key: 'OPEN_REGISTRATION', label: 'Open Registration' },
+  { key: 'LATE_REG', label: 'Late Reg' },
+  { key: 'STARTING_SOON', label: 'Starting Soon' },
+];
 /* The CashSubFilter / TournamentSubFilter types went with the state they
    described (see the note further down). Status is one mechanism now:
    GameFilterValue.statuses, defined per game type in advancedFilterSpec. */
@@ -439,6 +485,38 @@ const GAME_TYPE_TABS: { key: GameType; label: string }[] = [
   { key: 'SNG', label: 'HEADS UP' },
 ];
 
+/**
+ * THE CREATE BUTTON BELONGS TO THE TAB YOU ARE LOOKING AT (Dan 2026-09-02).
+ *
+ * "THE ADD TABLE BUTTONS SHOULD NEVER DISPLAY ON THE ALL FIELD AND THERE
+ * SHOULD ONLY BE ONE BUTTON, AND THEY SHOULD BE INDEPENDENT TO THE FIELD. MTT
+ * RECEIVES THE + EVENT BUTTON. NLH RECEIVES THE + ADD TABLE BUTTON, PLO
+ * RECEIVES THE + ADD TABLE BUTTON, SPINS RECEIVES THE + SPINS BUTTON AND HEADS
+ * UP RECEIVES THE + SIT N GO BUTTON."
+ *
+ * LIMIT is the one tab Dan did not name. It is a cash board - it lists the
+ * same `tables` rows NLH and PLO do, and `table-management?create=table` is
+ * the screen that builds them - so Add Table is the only creation it could
+ * mean, and giving it nothing would be the one tab with a missing control.
+ * Named explicitly rather than caught by a default so that a game type added
+ * later shows NO button until somebody decides which one it earns, instead of
+ * silently inheriting a cash table.
+ */
+const CREATE_TARGET_FOR_TAB: Record<GameType, GameCreationTarget | null> = {
+  ALL: null,
+  MTT: 'event',
+  HOLDEM: 'table',
+  OMAHA: 'table',
+  LIMIT: 'table',
+  SPIN: 'spin',
+  SNG: 'sng',
+  /* MIXED is in the GameType union but has no tab in GAME_TYPE_TABS, so this
+     entry is unreachable today. It is written as null rather than 'table'
+     because if a Mixed board is ever surfaced, no button is the honest
+     starting point - somebody chooses what it creates, deliberately. */
+  MIXED: null,
+};
+
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: 'recommended', label: 'Recommended' },
   { key: 'stakes_high', label: 'Stakes: High To Low' },
@@ -552,13 +630,16 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
    * redirect is unchanged.
    */
   const [notAMember, setNotAMember] = useState(false);
-  const bounceToInvite = useCallback(() => {
-    if (clubIdOverride) {
-      setNotAMember(true);
-      return;
-    }
-    navigate(`/invite/${clubId}`);
-  }, [clubIdOverride, clubId, navigate]);
+  const bounceToInvite = useCallback(
+    (playerRequestedExit = false) => {
+      if (clubIdOverride && !playerRequestedExit) {
+        setNotAMember(true);
+        return;
+      }
+      navigate(`/invite/${clubId}`);
+    },
+    [clubIdOverride, clubId, navigate]
+  );
   /* THE LATEST loadClubData, ALWAYS.
      `loadClubData` is redefined every render and closes over that render's
      clubId. The bus effect below and the realtime member handler both have []
@@ -598,13 +679,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const [tables, setTables] = useState<TableData[]>(bootCache?.tables ?? []);
   const [tournaments, setTournaments] = useState<TournamentData[]>([]);
   const [jackpotAmount, setJackpotAmount] = useState(0);
-  // BBJ-TICKER 2026-08-18: the resolved BBJ scope for the lobby ticker.
-  // (jackpotAmount was live-subscribed but rendered NOWHERE before this —
-  // the realtime feed fed a value no player could see.)
-  const [bbjScope, setBbjScope] = useState<{ clubUuid: string | null; unionId: string | null }>({
-    clubUuid: null,
-    unionId: null,
-  });
   // Tapping the lobby jackpot opens the SAME view as tapping it at a table:
   // last 5 hits, qualifying hands per game, payout % per stakes (Dan 2026-08-18).
   const [bbjPoolId, setBbjPoolId] = useState<string | null>(null);
@@ -627,12 +701,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   // ALL TRANSACTIONS AND OTHER AVAILABLE DATA WHEN CLICKED." The row opens the
   // member's own statement - a read-only view, so it is not an activeCashier.
   const [showPlayerWallet, setShowPlayerWallet] = useState(false);
+  const [showDiamondWallet, setShowDiamondWallet] = useState(false);
   /* LOBBY V2 follow-up (Dan's QA, 2026-08-22): the lobby landed on the MTT
      tab, a leftover from before All Games was a real tab. A club with no open
      MTTs therefore opened onto an empty screen blaming "filters" - every
      single visit. All Games is the landing view of a dense lobby. */
   const [gameType, setGameType] = useState<GameType>('ALL');
   const [sortKey, setSortKey] = useState<SortKey>('starting_soon');
+  const [allStatusFilter, setAllStatusFilter] = useState<AllStatusFilter>('ALL');
   /* `sortOpen` used to live here. It was assigned false in three places,
      never assigned true, and read nowhere - the exact dead wiring the comment
      below says had already been removed once. */
@@ -694,7 +770,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const [unionIdForCreate, setUnionIdForCreate] = useState<string | undefined>(undefined);
   /** Owning-club names for a union board. Empty for a club that is in no union. */
   const [clubNames, setClubNames] = useState<Record<string, string>>({});
-  const [showCreateTournament, setShowCreateTournament] = useState(false);
+  const [showOpeningWizard, setShowOpeningWizard] = useState(false);
+  const [openingSetupComplete, setOpeningSetupComplete] = useState(false);
+  const [configuredAgentUserId, setConfiguredAgentUserId] = useState<string | null>(null);
+  const [agentSetupRevision, setAgentSetupRevision] = useState(0);
   const [clubLevel, setClubLevel] = useState<ClubLevelInfo | null>(null);
   /* The last COMMITTED club level. The level-up celebration compares against
      this rather than against the `prev` handed to a state updater, because an
@@ -714,7 +793,71 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const [currentUserId, setCurrentUserId] = useState<string | null>(
     () => useUserStore.getState().user?.id ?? null
   );
+  const openingChecklistEligible = hasNewClubOpeningChecklist(club);
   const toast = useToast();
+  useEffect(() => {
+    if (
+      !club?.id ||
+      !currentUserId ||
+      club.owner_id !== currentUserId ||
+      !openingChecklistEligible
+    ) {
+      setOpeningSetupComplete(false);
+      return;
+    }
+    let cancelled = false;
+    void clubOpeningSetupService
+      .getState(club.id)
+      .then((setup) => {
+        if (!cancelled) setOpeningSetupComplete(Boolean(setup?.completed_at));
+      })
+      .catch((error) => {
+        if (!cancelled) setOpeningSetupComplete(false);
+        reportError(error, 'ClubHomePage.Opening_setup_state');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [club?.id, club?.owner_id, currentUserId, openingChecklistEligible]);
+  useEffect(() => {
+    if (!club?.id || !currentUserId || club.owner_id !== currentUserId) {
+      setConfiguredAgentUserId(null);
+      return;
+    }
+
+    let cancelled = false;
+    void supabase
+      .from('agents')
+      .select('user_id, is_prepaid, credit_limit, player_rakeback_rate')
+      .eq('club_id', club.id)
+      .eq('status', 'active')
+      .in('role', ['super_agent', 'agent', 'sub_agent'])
+      .order('created_at', { ascending: true })
+      .limit(25)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          setConfiguredAgentUserId(null);
+          reportError(error, 'ClubHomePage.Agent_setup_state');
+          return;
+        }
+
+        // Promotion is the authoritative write: it refuses to create an agent
+        // until Prepaid Or Credit, the Credit Limit, and Rakeback have all been
+        // explicitly supplied. A credit LIMIT is permission to borrow; it does
+        // not transfer chips. Funding remains a separate, audited club-bank send.
+        const configured = data?.find((agent) => {
+          const prepaid = agent.is_prepaid === true && Number(agent.credit_limit || 0) === 0;
+          const credit = agent.is_prepaid === false && Number(agent.credit_limit || 0) > 0;
+          return (prepaid || credit) && agent.player_rakeback_rate != null;
+        });
+        setConfiguredAgentUserId(configured?.user_id ?? null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [club?.id, club?.owner_id, currentUserId, agentSetupRevision]);
   // Seeded from the boot cache: if the first painted frame already shows a club
   // (see bootCache above), then data IS on screen, and the stall watchdog and
   // the per-club reset guard must both agree with that. Leaving it false while
@@ -770,10 +913,17 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     setUserRole('player');
     setIsInUnion(false);
     setUnionName(null);
+    setUnionIdForCreate(undefined);
     setDeletingTableId(null);
+    setShowOpeningWizard(false);
+    setOpeningSetupComplete(false);
     setDeleteTableConfirm({ show: false, tableId: null, tableName: null });
     setClubLevel(null);
     setJackpotAmount(0);
+    /* A playing count belongs to exactly one club scope. Leaving this state
+       intact during a route-param switch painted the previous club's live
+       number over a brand-new empty club until the next RPC completed. */
+    setPlayersPlaying(null);
     /* THE LISTS TOO. This reset cleared the viewer's role, level and jackpot
        but left `club`, `tables` and `tournaments` - the three things actually
        on screen - holding the previous club. Entering a club with no cached
@@ -861,6 +1011,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   useEffect(() => {
     if (!clubId) return;
     let isMounted = true;
+    let playingRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let occupancyTimer: ReturnType<typeof setInterval> | null = null;
 
     const setupRealtime = async () => {
       const resolvedId = await resolveClubUUID(clubId);
@@ -889,8 +1041,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
            blip or a timeout was silently read as "this club is not in a union".
            Everything downstream then diverges from the fetch: the two union
            channels are never subscribed (union tables and tournaments stop
-           arriving live), belongsInTableList admits foreign rows, bbjScope
-           loses its unionId so the BBJ subscription binds to the retired
+           arriving live), belongsInTableList admits foreign rows, and the
+           BBJ subscription binds to the retired
            club-level pool instead of the union pool that actually grows, and
            the table-delete scoping narrows to club_id. Fall back to the same
            cached answer loadClubData uses rather than guessing. */
@@ -898,7 +1050,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         if (ucCheck?.union_id) {
           unionId = ucCheck.union_id;
         }
-        if (isMounted) setBbjScope({ clubUuid: resolvedId, unionId });
       } catch (e) {
         reportError(e, 'ClubHomePage.setupRealtime');
         // Last known good, written by loadClubData's own union resolution
@@ -909,7 +1060,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         } catch {
           /* storage disabled */
         }
-        if (isMounted) setBbjScope({ clubUuid: resolvedId, unionId });
       }
 
       if (!isMounted) return;
@@ -968,6 +1118,37 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         return inClubScope(row, rtScope);
       };
 
+      /* `tables.current_players` changes on every live seat transition. Use
+         that scoped realtime event as the trigger, but re-read the count from
+         get_club_home instead of adding deltas in the browser: distinct users,
+         union visibility and tournament seats are database rules and must not
+         be approximated by whichever card happened to update. Bursts (a table
+         opening or balancing several seats) collapse to one authoritative
+         recount. */
+      /* ONE NUMBER, ONE LIGHT CALL (2026-09-02). This re-called get_club_home -
+         the entire lobby payload, 1.8 s mean under RLS - every 250 ms of table
+         churn, just to read `players_playing`. With 1,131 open cash tables
+         changing on every seat transition that was ~70 calls a minute around
+         the clock and 26% of all database time on the platform, and the
+         database it saturated is the one every hand and buy-in queues behind.
+         get_club_players_playing answers the same question in ~50 ms, and two
+         seconds of debounce turns a burst of seat events into one recount. */
+      const refreshScopedPlaying = () => {
+        if (playingRefreshTimer) clearTimeout(playingRefreshTimer);
+        playingRefreshTimer = setTimeout(async () => {
+          const { data, error } = await supabase.rpc('get_club_players_playing', {
+            p_club_key: resolvedId,
+          });
+          if (!isMounted) return;
+          if (error) {
+            reportError(error, 'ClubHomePage.players_playing_realtime_refresh_failed');
+            return;
+          }
+          const next = Number(data);
+          if (Number.isFinite(next)) setPlayersPlaying(next);
+        }, 2_000);
+      };
+
       const handleTableChange = (payload: any) => {
         if (!isMounted) return;
         if (payload.eventType === 'UPDATE' && payload.new) {
@@ -1000,6 +1181,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         } else if (payload.eventType === 'DELETE' && payload.old) {
           setTables((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
         }
+        refreshScopedPlaying();
       };
 
       const handleTournamentChange = (payload: any) => {
@@ -1102,6 +1284,83 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
        * channel is live again. `firstSubscribe` keeps the initial SUBSCRIBED
        * from firing a second fetch on top of the one already in flight.
        */
+      /* THE LOBBY DOES NOT DEPEND ON REALTIME TO BE RIGHT (Dan 2026-09-02:
+         "FIX THE REAL TIME CONNECTION FOR THE MIDWAY UNION, CLUB JAQK AND
+         SHARK CLUB ... ANY AND ALL NEW CLUBS ... MUST HAVE ALL REAL TIME
+         CHANNELS AND FUNCTIONALITY WIRED INTO THEM FROM THE START").
+
+         The postgres_changes stream above is one decoder reading every byte of
+         WAL this platform writes - measured 2.1 MB/s, ~180 GB a day at 220k
+         hands - and its replication slot was 46 MB behind and growing (124 MB
+         four minutes later). Every seat-count tick the lobby receives through
+         it arrives a minute or more late, for every club alike, and there is
+         no per-club switch anywhere that could make one club's stream fresher
+         than another's. So the cards stop trusting the stream for occupancy:
+         every 20 seconds, while the tab is visible, the page re-reads the four
+         columns that change - id, current_players, status, max_players - for
+         the same scope the fetch uses (one indexed query, ~100 ms), patches
+         them onto the rows on screen, and asks for a full reload only when an
+         OCCUPIED table it has never seen turns up (a new game) or a known one
+         has closed. The stream still delivers the instant case when it is
+         healthy; this is the floor under it, and it is wired into every club
+         by construction because it is the lobby's own behaviour, not a
+         per-club setting. */
+      const pollOccupancy = async () => {
+        if (!isMounted) return;
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+        const q = supabase
+          .from('tables')
+          .select('id, current_players, status, max_players, club_id, union_id, is_private');
+        applyClubScope(q, rtScope);
+        const { data, error } = await q
+          .eq('is_deleted', false)
+          .not('status', 'in', '("closed","deleted")')
+          .is('tournament_id', null)
+          .order('current_players', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(QUERY_LIMITS.LIST);
+        if (!isMounted) return;
+        if (error) {
+          reportError(error, 'ClubHomePage.occupancy_poll_failed');
+          return;
+        }
+        const rows = (data ?? []) as Array<{
+          id: string;
+          current_players: number | null;
+          status: string | null;
+          max_players: number | null;
+        }>;
+        const fresh = new Map(rows.map((r) => [String(r.id), r]));
+        let needsReload = false;
+        setTables((prev) => {
+          const known = new Set(prev.map((t) => String(t.id)));
+          for (const r of rows) {
+            if (!known.has(String(r.id)) && Number(r.current_players ?? 0) > 0) needsReload = true;
+          }
+          let changed = false;
+          const next = prev.map((t) => {
+            const r = fresh.get(String(t.id));
+            if (!r) return t;
+            const cp = Number(r.current_players ?? 0);
+            if (
+              Number((t as any).current_players ?? 0) === cp &&
+              (t as any).status === r.status &&
+              Number((t as any).max_players ?? 0) === Number(r.max_players ?? 0)
+            ) {
+              return t;
+            }
+            changed = true;
+            return { ...t, current_players: cp, status: r.status, max_players: r.max_players };
+          });
+          return changed ? (next as typeof prev) : prev;
+        });
+        if (needsReload) void loadClubData(() => isMounted);
+        refreshScopedPlaying();
+      };
+      occupancyTimer = setInterval(() => {
+        void pollOccupancy();
+      }, 20_000);
+
       let firstSubscribe = true;
       channel.subscribe((status: string, err?: Error) => {
         /* Every other handler in this effect checks isMounted; this one did
@@ -1130,6 +1389,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
     return () => {
       isMounted = false;
+      if (playingRefreshTimer) clearTimeout(playingRefreshTimer);
+      if (occupancyTimer) clearInterval(occupancyTimer);
       // Drop the factory FIRST. Removing the channel while its factory is
       // still registered is an invitation for the health monitor to rebuild
       // the one we are deliberately tearing down.
@@ -1453,6 +1714,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   );
 
   const handleMemberUpdate = useCallback(() => {
+    setAgentSetupRevision((revision) => revision + 1);
     loadClubDataRef.current();
   }, []);
 
@@ -1463,6 +1725,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     event: '*',
     onPayload: handleMemberUpdate,
     enabled: !!resolvedClubId,
+  });
+
+  useMasterBusChannel({
+    channelName: clubId ? `club-agents-${clubId}` : null,
+    table: 'agents',
+    filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
+    event: '*',
+    onPayload: () => setAgentSetupRevision((revision) => revision + 1),
+    enabled: !!resolvedClubId && isOwner,
   });
 
   // ── Bus Listeners: cross-page event reactivity (subscribeDebounced) ──
@@ -1561,12 +1832,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           supabase
             .from('clubs')
             .select(
-              'id, club_id, name, slug, description, avatar_url, logo_url, banner_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at, is_union, union_id'
+              'id, club_id, name, slug, description, tagline, lobby_message, avatar_url, logo_url, banner_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, chip_treasury, spins_enabled, created_at, is_union, union_id, opening_checklist_started_at'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
             .then((r) => r),
-        { maxRetries: 2, isMountedRef }
+        { maxRetries: 4, baseDelayMs: 500, isMountedRef }
       );
 
       if (clubError || !clubData) {
@@ -1650,15 +1921,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           if (stale() || (getIsMounted && !getIsMounted())) return;
 
           /**
-           * PLAYERS CURRENTLY PLAYING (Dan, 2026-08-23): "the 0 players
-           * currently playing is a bug... every horse needs to be considered a
-           * current player, this an accumulation of all active players in all
-           * clubs total."
+           * PLAYERS CURRENTLY PLAYING.
            *
-           * clubs.online_count is a denormalised column nothing keeps current
-           * - it read 12 for JAQK and 0 for Shark and Midway while 579 seats
-           * were occupied. get_club_home counts the live seats themselves,
-           * horses included, across the whole platform.
+           * clubs.online_count is a denormalised column nothing keeps current,
+           * so get_club_home counts occupied live seats directly. The RPC now
+           * applies the same club/union visibility scope as the two game lists:
+           * a standalone club sees only its own players, and a union-attached
+           * club sees the players in the games available from that lobby.
+           * No club may inherit the platform-wide total from another room.
            *
            * SET BEFORE THE lobbyPainted GUARD, deliberately. That guard exists
            * to stop a stale SNAPSHOT OF THE LISTS painting over fresher rows;
@@ -1843,7 +2113,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          members does this club have - rather than how many of them this viewer
          is allowed to enumerate. */
       const liveMemberCountPromise = supabase
-        .rpc('fn_get_club_member_count', { p_club_id: resolvedId })
+        .rpc('fn_get_club_realtime_member_count', { p_club_id: resolvedId })
         .then(
           (r) => r,
           (error) => ({ data: null, error })
@@ -2036,13 +2306,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           cacheUnion(ucRow.union_id);
 
           // Get ALL club IDs in this union + member count in parallel
-          const [allUcResult, memberCountResult, unionResult] = await Promise.all([
+          const [allUcResult, memberCountResult] = await Promise.all([
             supabase.from('union_clubs').select('club_id').eq('union_id', unionId),
             // A CLUB's own count. Unions re-query below. Same RPC as the
             // standalone path above, for the same two reasons: a direct count
             // is RLS-filtered (0 for a non-member) and ~370x slower.
-            supabase.rpc('fn_get_club_member_count', { p_club_id: resolvedId }),
-            supabase.from('unions').select('name').eq('id', unionId).maybeSingle(),
+            supabase.rpc('fn_get_club_realtime_member_count', { p_club_id: resolvedId }),
           ]);
 
           // Do NOT throw on allUcResult or memberCountResult error.
@@ -2105,7 +2374,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                the RPC returns one row per club and a player in two clubs is two
                memberships, which is what unions.member_count holds. */
             const { data: perClub, error: perClubErr } = await supabase.rpc(
-              'fn_batch_club_member_counts',
+              'fn_batch_club_realtime_member_counts',
               {
                 p_club_ids: unionClubIds,
               }
@@ -2220,6 +2489,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
            The group form below is what `.in()` builds for itself. */
         .not('status', 'in', '("closed","deleted")')
         .is('tournament_id', null)
+        /* A LIVE GAME MUST NEVER BE TRUNCATED AWAY (2026-09-02). See the note
+           on TableService.getClubTables: ordering by created_at alone under
+           the 200-row cap hid 41 of Deep Stack Society's 51 running tables,
+           and this page then ran every filter tab client-side over the
+           truncated list, so PLO/NLH/etc each read as an empty club. */
+        .order('current_players', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(QUERY_LIMITS.LIST);
 
@@ -2404,82 +2679,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          nothing - the club level below is derived server-side from the
          hierarchy thresholds on the club row. */
 
-      // Auto-recompute club level if stuck at default (1 or null)
-      // The RPC updates clubs.level in-place and returns VOID,
-      // so we re-read the level column after calling it.
-      // Session dedup: only fire the RPC once per session per club to avoid waste
-      let effectiveLevel = clubData.level || 1;
-      const levelRecomputeKey = `level_recomputed_${resolvedId}`;
-      /* Safari private mode and a sandboxed frame THROW on storage access
-         rather than returning null (the four cache helpers at the top of this
-         file all say so and all wrap). These two did not, and the throw landed
-         in the outer catch - which fires a red error toast over a lobby whose
-         tables and tournaments had already been set two hundred lines above. */
-      const levelRecomputeDone = (() => {
-        try {
-          return sessionStorage.getItem(levelRecomputeKey) != null;
-        } catch {
-          return false;
-        }
-      })();
-      if (effectiveLevel <= 1 && !levelRecomputeDone) {
-        try {
-          // Trigger server-side recompute (updates clubs.level in DB)
-          const { error: rpcErr } = await supabase.rpc('recompute_club_levels', {
-            p_club_id: resolvedId,
-          });
-          if (!rpcErr) {
-            try {
-              sessionStorage.setItem(levelRecomputeKey, '1');
-            } catch {
-              /* Dedupe is an optimisation; losing it costs one extra RPC. */
-            }
-            // Re-read the updated level from DB
-            const { data: refreshedClub, error: levelReadErr } = await supabase
-              .from('clubs')
-              .select(
-                'level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
-              )
-              .eq('id', resolvedId)
-              .maybeSingle();
-            // ROUND 9 (2026-08-29): a failed re-read left the badge at level 1
-            // with no trace - the recompute RPC had just SUCCEEDED, so the DB
-            // holds the real level and only this display missed it.
-            if (levelReadErr) {
-              reportError(levelReadErr, 'ClubHomePage.level_reread_failed', {
-                clubId: resolvedId,
-              });
-            }
-            if (refreshedClub && refreshedClub.level > 1) {
-              effectiveLevel = refreshedClub.level;
-              // Also update threshold values for accurate progress bar
-              clubData.hierarchy_units_rounded_up =
-                refreshedClub.hierarchy_units_rounded_up ?? clubData.hierarchy_units_rounded_up;
-              clubData.player_threshold_current =
-                refreshedClub.player_threshold_current ?? clubData.player_threshold_current;
-              clubData.player_threshold_next =
-                refreshedClub.player_threshold_next ?? clubData.player_threshold_next;
-              clubData.hierarchy_threshold_current =
-                refreshedClub.hierarchy_threshold_current ?? clubData.hierarchy_threshold_current;
-              clubData.hierarchy_threshold_next =
-                refreshedClub.hierarchy_threshold_next ?? clubData.hierarchy_threshold_next;
-            }
-          }
-        } catch (e) {
-          reportError(e, 'ClubHomePage');
-          // RPC not available — use default level
-        }
-      }
-
-      const levelInfo = getClubLevel({
-        level: effectiveLevel,
-        playerCount: clubData.member_count || 0,
-        hierarchyUnits: clubData.hierarchy_units_rounded_up || 0,
-        playerThresholdCurrent: clubData.player_threshold_current || 0,
-        playerThresholdNext: clubData.player_threshold_next || 0,
-        hierarchyThresholdCurrent: clubData.hierarchy_threshold_current || 0,
-        hierarchyThresholdNext: clubData.hierarchy_threshold_next || 0,
-      });
+      // Club Level Is A Pure Member-Count Fact. Never call the legacy dual-axis
+      // recompute here: that formula can level up a one-member club from its
+      // owner/admin hierarchy and produce a false celebration.
+      const levelInfo = getClubLevelInfoFromMembers(clubData.member_count || 0);
       if (getIsMounted && !getIsMounted()) return;
 
       /* Level-up celebration, decided OUTSIDE the updater.
@@ -2527,6 +2730,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
     const rows = tables.filter((table) => {
       if (gameType !== 'ALL' && cashKind(table) !== gameType) return false;
+
+      if (gameType === 'ALL' && allStatusFilter !== 'ALL') {
+        const status = String(table.status).toUpperCase();
+        if (allStatusFilter !== 'RUNNING' || !['RUNNING', 'IN_PROGRESS'].includes(status)) {
+          return false;
+        }
+      }
 
       if (advSpec && advValue) {
         /* ONE decision function for both halves of the lobby - see
@@ -2605,7 +2815,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           (a, b) => cmpVariant(a, b) || cmpStakes(a, b) || cmpPlayers(a, b) || cmpName(a, b)
         );
     }
-  }, [tables, gameType, showsCash, sortKey, advFilters]);
+  }, [tables, gameType, showsCash, sortKey, advFilters, allStatusFilter]);
 
   /**
    * Is the lobby showing less than everything, and why.
@@ -2618,14 +2828,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const narrowing = useMemo(() => {
     const fSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
     const fVal = advFilters[gameType as FilterGameType];
-    const filtered = Boolean(fSpec && fVal && isFilterActive(fSpec, fVal));
+    const allStatusFiltered = gameType === 'ALL' && allStatusFilter !== 'ALL';
+    const filtered = allStatusFiltered || Boolean(fSpec && fVal && isFilterActive(fSpec, fVal));
     return {
       fSpec,
       filtered,
       tabbed: gameType !== 'ALL',
       any: filtered || gameType !== 'ALL' || favoritesOnly,
     };
-  }, [gameType, advFilters, favoritesOnly]);
+  }, [gameType, advFilters, favoritesOnly, allStatusFilter]);
 
   /**
    * Clear EVERY narrowing at once.
@@ -2643,6 +2854,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
        visit, which reads as the button not having worked. */
     selectFavoritesOnly(false);
     selectGameType('ALL');
+    setAllStatusFilter('ALL');
     if (narrowing.fSpec) {
       const next: FilterStore = {
         ...advFilters,
@@ -2750,6 +2962,16 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       if (!isWithinLobbyWindow(t, windowNow)) return false;
       if (!matchesVariant(t, variant)) return false;
 
+      if (gameType === 'ALL' && allStatusFilter !== 'ALL') {
+        const status = String(t.status).toUpperCase();
+        const matchesAllStatus =
+          (allStatusFilter === 'RUNNING' && ['RUNNING', 'IN_PROGRESS'].includes(status)) ||
+          (allStatusFilter === 'OPEN_REGISTRATION' && status === 'REGISTERING') ||
+          (allStatusFilter === 'LATE_REG' && ['LATE_REG', 'LATE_REGISTRATION'].includes(status)) ||
+          (allStatusFilter === 'STARTING_SOON' && status === 'STARTING_SOON');
+        if (!matchesAllStatus) return false;
+      }
+
       if (advSpec && advValue) {
         // The tournament price is the TOTAL a player pays, not the prize half.
         const total = (Number(t.buy_in_amount) || 0) + (Number(t.buy_in_fee) || 0);
@@ -2816,7 +3038,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             cmpNameTourn(a, b)
         );
     }
-  }, [tournaments, gameType, showsTournaments, sortKey, advFilters]);
+  }, [tournaments, gameType, showsTournaments, sortKey, advFilters, allStatusFilter]);
 
   /**
    * Tables this player already holds an active place in the queue for.
@@ -2826,6 +3048,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
    * round trips to answer a question one query answers for all of them.
    */
   const [waitlistedTableIds, setWaitlistedTableIds] = useState<Set<string>>(new Set());
+  const [waitlistActionBusy, setWaitlistActionBusy] = useState(false);
+  const waitlistActionBusyRef = useRef(false);
 
   useEffect(() => {
     if (!currentUserId) {
@@ -2863,10 +3087,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
   const handleWaitlistToggle = useCallback(
     async (tableId: string, joining: boolean) => {
+      if (waitlistActionBusyRef.current) return;
       if (!currentUserId) {
         toast.error('Sign In To Join A Waitlist');
         return;
       }
+      waitlistActionBusyRef.current = true;
+      setWaitlistActionBusy(true);
       haptic.selection();
       /* Optimistic, then reconciled. The button is on a card in a long grid
          and the round trip is not instant; leaving it unchanged until the
@@ -2904,6 +3131,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         });
         reportError(e, 'ClubHomePage.handleWaitlistToggle', { tableId, joining });
         toast.error(joining ? 'Could Not Join The Waitlist' : 'Could Not Leave The Waitlist');
+      } finally {
+        waitlistActionBusyRef.current = false;
+        setWaitlistActionBusy(false);
       }
     },
     [currentUserId, toast]
@@ -3507,7 +3737,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         const row = filteredTournamentsRef.current.find((t) => t.id === e.id);
         if (row) void handleUnregister(row);
       },
-      actionBusy,
+      actionBusy: actionBusy || waitlistActionBusy,
       /* SEAT-FIRST (Dan 2026-08-21, binding): a Spin or Heads-Up card's Sit
          Down opens the TABLE — the seat is bought there, by the tap that
          picks it. Same flow the game-lobby panel already runs; the card was
@@ -3584,6 +3814,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       openTournamentLobby,
       spinQuickJoin,
       actionBusy,
+      waitlistActionBusy,
     ]
   );
 
@@ -3737,8 +3968,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         <h2>{loadStalled ? 'Still Loading' : 'Club Not Found'}</h2>
         <p style={{ color: '#888', fontSize: '0.9rem', margin: '0 0 1rem' }}>
           {loadStalled
-            ? 'This is taking longer than usual - the connection may be slow right now. Your chips and seats are safe.'
-            : 'The club may have been moved or deleted.'}
+            ? 'This Is Taking Longer Than Usual - The Connection May Be Slow Right Now. Your Chips And Seats Are Safe.'
+            : 'The Club May Have Been Moved Or Deleted.'}
         </p>
         {/* The cause, verbatim. A player can read it out and it names the bug
             immediately; without it every failure mode looks the same. */}
@@ -3810,28 +4041,159 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   /* Staff may edit the club notice. Derived once so the markup, the keyboard
      path and the visibility test cannot drift apart. */
   const noticeEditable = isOwner || isClubStaff(userRole);
+  const unionManagedClub = Boolean(club.is_union || club.union_id || unionIdForCreate);
+  const canCreateClubGames = noticeEditable && !unionManagedClub;
 
   const saveClubNotice = () => {
-    const newDesc = noticeDraft.replace(/\s+/g, ' ').trim().slice(0, CLUB_DESCRIPTION_MAX_LENGTH);
+    const newDesc = noticeDraft.replace(/\s+/g, ' ').trim().slice(0, CLUB_LOBBY_MESSAGE_MAX_LENGTH);
     const targetId = club.id;
-    setClub((prev) => (prev ? { ...prev, description: newDesc } : prev));
-    setIsEditingNotice(false);
     void (async () => {
-      const { error } = await supabase
-        .from('clubs')
-        .update({ description: newDesc })
-        .eq('id', targetId);
-      if (error) {
-        reportError(error, 'ClubHomePage.Notice_save_failed');
+      const { data, error } = await supabase.rpc('fn_set_club_lobby_message', {
+        p_club_id: targetId,
+        p_message: newDesc,
+      });
+      const result = (data || {}) as { ok?: boolean; lobby_message?: string | null };
+      if (error || !result.ok) {
+        reportError(
+          error || new Error('Club lobby message command was rejected'),
+          'ClubHomePage.Notice_save_failed'
+        );
         toast.error('Could Not Save The Welcome Message');
       } else {
+        setClub((prev) => (prev ? { ...prev, lobby_message: result.lobby_message ?? null } : prev));
+        setIsEditingNotice(false);
         toast.success('Welcome Message Updated');
       }
     })();
   };
 
+  const openCreationFor = (target: GameType) => {
+    if (!canCreateClubGames) {
+      toast.info('This Club Is Managed By A Union. Create Games From The Union Console.');
+      return;
+    }
+    haptic.selection();
+    const create =
+      target === 'MTT' ? 'event' : target === 'SPIN' ? 'spin' : target === 'SNG' ? 'sng' : 'table';
+    navigate(`/clubs/${clubId}/table-management?create=${create}`);
+  };
+
+  const hasCashCategory = (category: 'HOLDEM' | 'OMAHA' | 'LIMIT') =>
+    tables.some((table) => cashKind(table) === category);
+  const tournamentKinds = tournaments.map((tournament) =>
+    classifyTournament(tournament as unknown as LobbyTournamentRow)
+  );
+  const launchTasks: ClubLaunchTask[] = [
+    {
+      id: 'opening-setup',
+      label: 'Complete The Opening Setup Wizard',
+      detail: 'Configure Rake, BBJ, Spins, Promotions, And Leaderboards',
+      complete: openingSetupComplete,
+      actionLabel: 'Start Setup',
+      onAction: () => setShowOpeningWizard(true),
+      disabled: !isOwner,
+      disabledLabel: 'Owner Required',
+    },
+    {
+      id: 'identity',
+      label: 'Choose A Club Profile Picture',
+      detail: 'Add A Recognizable Club Mark',
+      complete: Boolean(club.logo_url || club.avatar_url),
+      actionLabel: 'Add Picture',
+      onAction: () => navigate(`/clubs/${clubId}/settings`),
+    },
+    {
+      id: 'tagline',
+      label: 'Write A Club Tag Line',
+      detail: 'Tell Players What Makes This Club Special',
+      complete: Boolean(club.tagline?.trim()),
+      actionLabel: 'Add Tag Line',
+      onAction: () =>
+        openingSetupComplete ? navigate(`/clubs/${clubId}/settings`) : setShowOpeningWizard(true),
+      disabled: !isOwner && !openingSetupComplete,
+      disabledLabel: 'Owner Required',
+    },
+    {
+      id: 'nlh',
+      label: 'Open Your First NLH Table',
+      detail: 'Create A No-Limit Hold’em Cash Game',
+      complete: hasCashCategory('HOLDEM'),
+      actionLabel: 'Create Table',
+      onAction: () => openCreationFor('HOLDEM'),
+    },
+    {
+      id: 'plo',
+      label: 'Open Your First PLO Table',
+      detail: 'Create A Pot-Limit Omaha Cash Game',
+      complete: hasCashCategory('OMAHA'),
+      actionLabel: 'Create Table',
+      onAction: () => openCreationFor('OMAHA'),
+    },
+    {
+      id: 'limit',
+      label: 'Open Your First Limit Table',
+      detail: 'Create A Fixed-Limit Cash Game',
+      complete: hasCashCategory('LIMIT'),
+      actionLabel: 'Create Table',
+      onAction: () => openCreationFor('LIMIT'),
+    },
+    {
+      id: 'mtt',
+      label: 'Schedule Your First MTT',
+      detail: 'Publish A Multi-Table Tournament',
+      complete: tournamentKinds.includes('mtt'),
+      actionLabel: 'Create MTT',
+      onAction: () => openCreationFor('MTT'),
+    },
+    {
+      id: 'spin',
+      label: 'Launch Your First Spin',
+      detail: club.spins_enabled
+        ? 'Create A Three-Player Spin Event'
+        : 'Enable And Fund Spins First',
+      complete: tournamentKinds.includes('spin'),
+      actionLabel: club.spins_enabled ? 'Create Spin' : 'Set Up Spins',
+      onAction: () => (club.spins_enabled ? openCreationFor('SPIN') : setShowOpeningWizard(true)),
+    },
+    {
+      id: 'heads-up',
+      label: 'Launch Your First Heads Up Game',
+      detail: 'Create A Two-Player Duel',
+      complete: tournamentKinds.includes('sng'),
+      actionLabel: 'Create Heads Up',
+      onAction: () => openCreationFor('SNG'),
+    },
+    {
+      id: 'first-player',
+      label: 'Invite Your First Player',
+      detail: 'Share Your Club Link And Build The Room',
+      complete: Number(club.member_count || 0) > 1,
+      actionLabel: 'Invite Player',
+      onAction: () => bounceToInvite(true),
+    },
+    {
+      id: 'first-agent',
+      label: 'Configure Your First Agent',
+      detail: 'Promote A Player, Choose Prepaid Or Credit, And Assign Rakeback',
+      complete: Boolean(configuredAgentUserId),
+      actionLabel: Number(club.member_count || 0) > 1 ? 'Choose Player' : 'Invite Player First',
+      onAction: () =>
+        configuredAgentUserId
+          ? navigate(`/clubs/${clubId}/members/${configuredAgentUserId}`)
+          : Number(club.member_count || 0) > 1
+            ? navigate(`/clubs/${clubId}/members`)
+            : bounceToInvite(true),
+      disabled: !isOwner,
+      disabledLabel: 'Owner Required',
+    },
+  ];
+  const showLaunchChecklist =
+    openingChecklistEligible &&
+    noticeEditable &&
+    launchTasks.some((task) => !task.complete && !task.skipped);
+
   return (
-    <div className="club-home">
+    <div className="club-home club-home--unified-mobile">
       <GlobalUXIndicators wsConnected={wsConnected} />
       {/* Dan 2026-08-19: the resume bar moved into the persistent multi-table
           layer (PersistentTableLayer in App.tsx), which now shows it on EVERY
@@ -3853,7 +4215,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         </h1>
       </section>
 
-      {(club.description?.trim() || noticeEditable) && (
+      {(club.lobby_message?.trim() || noticeEditable) && (
         <section
           className={`club-mobile-owner-message ${noticeEditable && !isEditingNotice ? 'club-mobile-owner-message--editable' : ''}`}
           aria-label="Club Owner Message"
@@ -3862,7 +4224,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             <div className="club-mobile-owner-message__editor">
               <input
                 value={noticeDraft}
-                maxLength={CLUB_DESCRIPTION_MAX_LENGTH}
+                maxLength={CLUB_LOBBY_MESSAGE_MAX_LENGTH}
                 onChange={(event) => setNoticeDraft(event.target.value.replace(/[\r\n]+/g, ' '))}
                 placeholder="Add A One-Line Club Message"
                 autoFocus
@@ -3875,7 +4237,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 }}
               />
               <span>
-                {noticeDraft.length}/{CLUB_DESCRIPTION_MAX_LENGTH}
+                {noticeDraft.length}/{CLUB_LOBBY_MESSAGE_MAX_LENGTH}
               </span>
               <button type="button" onClick={() => setIsEditingNotice(false)}>
                 Cancel
@@ -3885,24 +4247,64 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               </button>
             </div>
           ) : (
+            /* LIVE FOR EVERY VIEWER, NOT JUST STAFF (Dan 2026-09-02).
+               The second club message on a phone - <ClubOwnerMessage>'s
+               `.lobby-top__house-welcome` trigger - is hidden below 900px now
+               (ClubHomePage.css), and that trigger was the only way a player
+               who cannot edit could open the message in full or reach the
+               club's announcements from the lobby. This strip carries both
+               jobs on a phone: staff still open the inline editor, everyone
+               else goes where the rail's panel would have sent them. Removing
+               a duplicate must not quietly remove a destination. */
             <button
               type="button"
               className="club-mobile-owner-message__copy"
-              disabled={!noticeEditable}
               onClick={() => {
-                if (!noticeEditable) return;
-                setNoticeDraft(club.description || '');
+                if (!noticeEditable) {
+                  navigate(`/clubs/${clubId}/announcements`);
+                  return;
+                }
+                setNoticeDraft(club.lobby_message || '');
                 setIsEditingNotice(true);
               }}
-              title={club.description || 'Add A One-Line Club Message'}
+              title={club.lobby_message || 'Add A One-Line Club Message'}
+              aria-label={
+                noticeEditable
+                  ? `Club Message: ${club.lobby_message?.trim() || 'None Set'}. Open To Edit`
+                  : `Club Message: ${club.lobby_message?.trim() || 'None Set'}. Open Club Announcements`
+              }
             >
-              {club.description?.trim() || 'Add A One-Line Club Message'}
+              {club.lobby_message?.trim() || 'Add A One-Line Club Message'}
             </button>
           )}
         </section>
       )}
 
       <header className="lobby-top">
+        {/* ── THE CLUB'S OWN MESSAGE, FIRST (Dan 2026-09-01) ────────────────
+            "the 'welcome to club jaqk' thats on the bottom of the wallets
+            should be at the top above the club card, and that should be the
+            'custom clickable message' for the club owners to put the days
+            message, or something custom."
+
+            It was the last child of the wallet stack, which on a desktop rail
+            put it under seven wallet rows and, on a short viewport, past the
+            fold. It is the first thing in the rail now, and it is a button:
+            anybody may read the message in full, staff may write it, and both
+            paths continue to the club's announcements. */}
+        <ClubOwnerMessage
+          clubId={club.id}
+          clubName={club.name}
+          message={club.lobby_message}
+          tagline={club.tagline}
+          canEdit={noticeEditable}
+          onMessageSaved={(next) =>
+            setClub((prev) => (prev ? { ...prev, lobby_message: next } : prev))
+          }
+          onOpenAnnouncements={() => navigate(`/clubs/${clubId}/announcements`)}
+          onToast={(kind, text) => (kind === 'success' ? toast.success(text) : toast.error(text))}
+        />
+
         {/* ── Club identity + wallet ── */}
         <div className="lobby-top__main">
           <ClubIdentityCard
@@ -3916,7 +4318,21 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                   : null
             }
             logoFallback={<span>&#9824;</span>}
-            pokerAlias={currentUser?.display_name || currentUser?.username || 'Player'}
+            /* THE CARD SHOWS THE POKER ALIAS, NEVER THE REAL NAME (Dan
+               2026-09-02): "THE REAL NAME SHOULD NEVER BE DISPLAYED, IT SHOULD
+               ALWAYS BE USING THE POKER ALIAS - KingFish instead of the real
+               name here."
+
+               This read `display_name || username`, and `display_name` holds
+               the legal name on 264 of 1,308 production rows - Dan's own among
+               them, which is why his card said "Dan Bekavac" while the alias
+               "KingFish" sat unread one column away.
+
+               `playerDisplayName(_, 'arena')` is the house resolver, and it
+               already encodes this same instruction from 2026-08-23: "IM DAN
+               BEKAVAC ON SOCIAL AND KINGFISH IN THE CLUB ARENA." The prop is
+               called pokerAlias; it now actually carries one. */
+            pokerAlias={playerDisplayName(currentUser, 'arena')}
             clubId={club.club_id}
             playerId={currentUser?.player_number}
             level={clubLevel?.level}
@@ -3967,7 +4383,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 reportError(err, 'ClubHomePage.share_ref_lookup_failed');
               }
               const shareUrl = `${window.location.origin}/hub/club-arena/invite/${club.id}${refQuery}`;
-              const inviterName = currentUser?.display_name || currentUser?.username || 'A player';
+              /* The same leak as the card, and further out: this string is
+                 handed to the OS share sheet, so `display_name` was carrying a
+                 player's legal name into WhatsApp, SMS and anywhere else the
+                 invite was forwarded. An invite to a poker club is signed with
+                 the handle. */
+              const inviterName = playerDisplayName(currentUser, 'arena');
               const playerNumText = profRefNum ? `\nYour Referral Number: ${profRefNum}` : '';
               const shareText = `${inviterName} invited you to join ${club.name}!\n\nClub ID: ${club.club_id}${playerNumText}`;
 
@@ -4022,9 +4443,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               them; one wallet never gets access to the other. Union figures are
               managed on the union's own surfaces and appear nowhere here.
 
-              The compact lobby summary intentionally exposes only the three
-              role-approved balances requested for this surface. Every other
-              wallet remains available through its existing cashier flow. */}
+              The lobby exposes every balance authorized for the viewer's role;
+              each actionable row opens its matching ledger or cashier without
+              leaving the club lobby. */}
           {currentUserId && resolvedClubId && (
             <div className="lobby-top__wallet">
               <button
@@ -4077,7 +4498,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     onVisibleWalletCountChange={setVisibleWalletCount}
                     onBuyDiamonds={() => {
                       haptic.medium();
-                      navigate(`/clubs/${clubId}/detail`);
+                      setShowDiamondWallet(true);
                     }}
                     // Dan 2026-08-23: "if they click on Club Bank, that should
                     // open the Club Bank Cashier." The row only renders for owner,
@@ -4108,18 +4529,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                         balance,
                       });
                     }}
-                    onOpenClubRake={() => setUnionTreasuryModal('rake')}
-                    onOpenClubSpins={(balance) =>
-                      setUnionWalletModal({
-                        key: 'spin_reserve',
-                        label: 'Spins Treasury',
-                        balance,
-                      })
-                    }
+                    onOpenClubRake={() => setStandaloneRakeModal(true)}
+                    onOpenClubSpins={() => setStandaloneSpinsModal(true)}
                   />
-                  <p className="lobby-top__house-welcome">
-                    Welcome To The {club.name}, All Fish Of All Shapes And Sizes Are Welcome!
-                  </p>
                 </div>
               </div>
             </div>
@@ -4215,6 +4627,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         onClose={() => setShowPlayerWallet(false)}
         clubId={resolvedClubId || clubId || ''}
       />
+      <DiamondWalletModal
+        isOpen={showDiamondWallet}
+        onClose={() => setShowDiamondWallet(false)}
+        onBuyClick={() => navigate('/vip')}
+      />
       <BBJInfoModal
         isOpen={showBBJInfo}
         onClose={() => setShowBBJInfo(false)}
@@ -4226,25 +4643,36 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       {/* ═══════════════════════════════════════════════════════════════════
           GAME ACTION BAR — every game type, flat, plus explicit sorting
       ═══════════════════════════════════════════════════════════════════ */}
-      <section className="club-lobby-machine" aria-label={`${club.name} Game Lobby`}>
+      <section
+        className="club-lobby-machine"
+        data-opening-checklist={showLaunchChecklist || undefined}
+        aria-label={`${club.name} Game Lobby`}
+      >
+        {/* The lobby must tell the same truth as the felt during the :55
+            maintenance break (Dan 2026-09-01): without this it shows live
+            counts and working Join buttons for a platform that is
+            deliberately standing still. Renders nothing outside a break. */}
+        <MaintenanceBreakBanner />
         <ClubLobbyCommandTop
           welcome={
             <div
               className={`lobby-top__notice ${isOwner || isClubStaff(userRole) ? 'lobby-top__notice--editable' : ''}`}
               role={noticeEditable && !isEditingNotice ? 'button' : undefined}
               tabIndex={noticeEditable && !isEditingNotice ? 0 : undefined}
-              aria-label={noticeEditable && !isEditingNotice ? 'Edit Club Description' : undefined}
+              aria-label={
+                noticeEditable && !isEditingNotice ? 'Edit Club Lobby Message' : undefined
+              }
               onKeyDown={(e) => {
                 if (!noticeEditable || isEditingNotice) return;
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
-                  setNoticeDraft(club.description || '');
+                  setNoticeDraft(club.lobby_message || '');
                   setIsEditingNotice(true);
                 }
               }}
               onClick={() => {
                 if (noticeEditable && !isEditingNotice) {
-                  setNoticeDraft(club.description || '');
+                  setNoticeDraft(club.lobby_message || '');
                   setIsEditingNotice(true);
                 }
               }}
@@ -4254,9 +4682,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                   <input
                     type="text"
                     value={noticeDraft}
-                    maxLength={CLUB_DESCRIPTION_MAX_LENGTH}
+                    maxLength={CLUB_LOBBY_MESSAGE_MAX_LENGTH}
                     onChange={(e) => setNoticeDraft(e.target.value.replace(/\s+/g, ' '))}
-                    placeholder="Optional Club Description"
+                    placeholder="Optional Club Lobby Message"
                     autoFocus
                     onKeyDown={(e) => {
                       if (e.key === 'Escape') setIsEditingNotice(false);
@@ -4275,31 +4703,42 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 <div className="club-lobby-command-top__welcome-copy">
                   <span className="club-lobby-command-top__welcome-eyebrow">Welcome To The</span>
                   <h2 className="club-lobby-command-top__club-name">{club.name}</h2>
-                  <p className={!club.description?.trim() ? 'is-empty' : undefined}>
-                    {club.description?.trim() ||
-                      (noticeEditable ? 'Add Optional Club Description' : '\u00a0')}
+                  <p className={!club.lobby_message?.trim() ? 'is-empty' : undefined}>
+                    {club.lobby_message?.trim() ||
+                      (noticeEditable ? 'Add Optional Club Lobby Message' : '\u00a0')}
                   </p>
                 </div>
               )}
             </div>
           }
           controls={
-            <section className="lobby-controls" aria-label="Browse games">
+            <section className="lobby-controls" aria-label="Browse Games">
               <div className="lobby-controls__heading">
                 <div>
                   <span className="lobby-controls__eyebrow">Live Club Schedule</span>
                   <strong className="lobby-controls__title">Find Your Game</strong>
                 </div>
-                <span className="lobby-controls__total">
-                  <strong>
-                    {totalGameCount.toLocaleString()}
-                    {countsCapped ? '+' : ''}
-                  </strong>{' '}
-                  Games
-                </span>
+                <div className="lobby-controls__operator-actions">
+                  <span className="lobby-controls__total">
+                    <strong>
+                      {totalGameCount.toLocaleString()}
+                      {countsCapped ? '+' : ''}
+                    </strong>{' '}
+                    Games
+                  </span>
+                  {canCreateClubGames && (
+                    <GameCreationActions
+                      managementPath={`/clubs/${clubId}/table-management`}
+                      compact
+                      only={CREATE_TARGET_FOR_TAB[gameType]}
+                      desktopOnly
+                      onNavigate={(path) => navigate(path)}
+                    />
+                  )}
+                </div>
               </div>
               <div className="game-bar">
-                <div className="game-bar__types" role="tablist" aria-label="Game type">
+                <div className="game-bar__types" role="tablist" aria-label="Game Type">
                   {GAME_TYPE_TABS.map((tab) => (
                     <button
                       key={tab.key}
@@ -4363,7 +4802,26 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           two can never disagree, and the icon on the right opens that sheet
           for everything the row has no space for.
       ═══════════════════════════════════════════════════════════════════ */}
-              {gameType !== 'ALL' &&
+              {gameType === 'ALL' ? (
+                <div className="quickprefs">
+                  <div className="quickprefs__row quickprefs__row--status" aria-label="Game Status">
+                    {ALL_STATUS_FILTERS.map((status) => (
+                      <button
+                        key={status.key}
+                        type="button"
+                        className={`quickprefs__chip ${allStatusFilter === status.key ? 'is-on' : ''}`}
+                        aria-pressed={allStatusFilter === status.key}
+                        onClick={() => {
+                          haptic.selection();
+                          setAllStatusFilter(status.key);
+                        }}
+                      >
+                        {status.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
                 (() => {
                   const qSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
                   if (!qSpec) return null;
@@ -4373,7 +4831,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     <div className="quickprefs">
                       <div
                         className="quickprefs__row quickprefs__row--status"
-                        aria-label="Game status"
+                        aria-label="Game Status"
                       >
                         <button
                           type="button"
@@ -4443,7 +4901,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                       </div>
                     </div>
                   );
-                })()}
+                })()
+              )}
             </section>
           }
           campaign={
@@ -4456,17 +4915,32 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 navigate(`/clubs/${clubId}/announcements`);
               }}
             >
-              <img
-                src={club.banner_url || CLUB_LOBBY_CAMPAIGN}
-                alt={
-                  club.banner_url
-                    ? `${club.name} Promotion`
-                    : 'Shark Club Championship Series, 250,000 Guaranteed Main Event'
-                }
-              />
+              {/* The <picture> wrapper stays although both regimes now resolve
+                  to the same file: it is the box the campaign bay's CSS sizes
+                  (`.club-lobby-command-top__campaign-picture`), and it is where
+                  a per-breakpoint <source> goes if a club ever ships two crops
+                  of its own banner. */}
+              <picture className="club-lobby-command-top__campaign-picture">
+                <img
+                  src={club.banner_url || CLUB_LOBBY_CAMPAIGN}
+                  alt={
+                    club.banner_url
+                      ? `${club.name} Promotion`
+                      : 'Shark Club Championship Series, 250,000 Guaranteed Main Event'
+                  }
+                />
+              </picture>
             </button>
           }
         />
+
+        {showLaunchChecklist && (
+          <ClubLaunchProgress
+            clubName={club.name}
+            openingBank={Number(club.chip_treasury) || 0}
+            tasks={launchTasks}
+          />
+        )}
 
         {/* ═══════════════════════════════════════════════════════════════════
           CLUB / UNION AD STRIP — directly under the action bar
@@ -4516,22 +4990,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           filter or a search is actively hiding games — that one is not a
           statistic, it is the explanation for why the list looks short, and
           it carries the one-tap clear. */}
-        {(isOwner || userRole === 'admin') && club?.is_union === true && (
-          <div className="lobby-resultsbar lobby-resultsbar--create-only">
-            <button
-              type="button"
-              className="lobby-createbtn"
-              onClick={() => {
-                haptic.selection();
-                if (TOURNAMENT_TYPES.includes(gameType)) setShowCreateTournament(true);
-                else navigate(`/clubs/${clubId}/create-table`);
-              }}
-            >
-              + Create {TOURNAMENT_TYPES.includes(gameType) ? 'Tournament' : 'Cash Game'}
-            </button>
-          </div>
-        )}
-
         {/* ═══════════════════════════════════════════════════════════════════
           LOBBY V2 — dense line-based game table + game lobby panel
           ─────────────────────────────────────────────────────────────────
@@ -4627,22 +5085,45 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                       </p>
                     </>
                   ) : !filtered ? (
-                    <>
-                      {/* Tab (or Favorites) is the ONLY narrowing: blaming
-                        "filters" here sent players hunting for filters they
-                        never set (QA 2026-08-22). Name the real cause. */}
-                      <p>Nothing Here On This Tab</p>
-                      <p className="empty-hint">
-                        {totalHere.toLocaleString()}
-                        {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
-                        This Club, Just None Of This Type Right Now.
-                      </p>
-                      <div className="empty-actions">
-                        <button className="empty-action" onClick={clearAllNarrowing}>
-                          Show All Games
-                        </button>
-                      </div>
-                    </>
+                    favoritesOnly ? (
+                      <>
+                        {/* Dan 2026-09-01: the Favorites toggle persisted from
+                          an earlier visit and this branch blamed the TAB
+                          ("None Of This Type Right Now") while 980 cash games
+                          sat one toggle away. When Favorites is the narrowing,
+                          say Favorites. Same rule as the comment below: name
+                          the real cause. */}
+                        <p>No Favorites On This Tab</p>
+                        <p className="empty-hint">
+                          The Favorites Filter Is On And Nothing Here Is Marked As A Favorite Yet.{' '}
+                          {totalHere.toLocaleString()}
+                          {countsCapped ? '+' : ''} Game
+                          {totalHere === 1 ? ' Is' : 's Are'} Open In This Club.
+                        </p>
+                        <div className="empty-actions">
+                          <button className="empty-action" onClick={clearAllNarrowing}>
+                            Show All Games
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {/* Tab is the ONLY narrowing: blaming "filters" here
+                          sent players hunting for filters they never set
+                          (QA 2026-08-22). Name the real cause. */}
+                        <p>Nothing Here On This Tab</p>
+                        <p className="empty-hint">
+                          {totalHere.toLocaleString()}
+                          {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
+                          This Club, Just None Of This Type Right Now.
+                        </p>
+                        <div className="empty-actions">
+                          <button className="empty-action" onClick={clearAllNarrowing}>
+                            Show All Games
+                          </button>
+                        </div>
+                      </>
+                    )
                   ) : (
                     <>
                       <p>Nothing Matches Your Filters</p>
@@ -4695,7 +5176,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
              used, so the Register CTA had no pending state of its own. Both
              feed the panel's busy flag now, which is the control that was
              built for exactly this. */
-          busy={actionBusy || isRegisteringMtt || deletingTableId !== null}
+          busy={actionBusy || waitlistActionBusy || isRegisteringMtt || deletingTableId !== null}
           onClose={() => setPanelOpen(false)}
           onJoinTable={handleJoinTable}
           onWaitlistToggle={handleWaitlistToggle}
@@ -4710,7 +5191,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             selectedEntry.players === 0 &&
             /* resolvedClubId, not clubId (2026-08-28 audit). On a `/clubs/:slug`
                route `clubId` is the SLUG while `raw.club_id` is a UUID, so this
-               comparison was always false and the owner's Delete Table button
+               comparison was always false and the owner's table-close button
                was silently absent from the panel for every game that carries a
                club_id — which is all of them. The resolved UUID is in scope and
                is what every other comparison in this file uses. */
@@ -4752,50 +5233,25 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         </div>
       )}
 
-      {/* Confirm Modal for Table Deletion */}
+      {/* Confirm Modal for Table Closure */}
       <ConfirmModal
         isOpen={deleteTableConfirm.show}
-        title="Delete Table"
-        message={`Delete table "${deleteTableConfirm.tableName || ''}"? This cannot be undone.`}
+        title="Close Table"
+        message={`Close table "${deleteTableConfirm.tableName || ''}"? It can only close after every player has left.`}
         variant="danger"
-        confirmText="Delete"
+        confirmText="Close Table"
         onConfirm={async () => {
           if (deleteTableConfirm.tableId) {
             const id = deleteTableConfirm.tableId;
             setDeleteTableConfirm({ show: false, tableId: null, tableName: null });
             setDeletingTableId(id);
             try {
-              // Defense-in-depth: scope the delete to tables this club can own.
-              // 2026-08-19: this scoped on club_id ALONE. Union games are owned
-              // BY the union, so club_id is the union's id, not club.id — the
-              // UPDATE matched ZERO rows, returned no error, the card was
-              // optimistically removed and the user was told "Table deleted".
-              // The table stayed live and reappeared on reload. Accept either
-              // the club's own tables or its union's.
-              const resolvedClubId = club?.id;
-              let query = supabase
-                .from('tables')
-                /* PHANTOM COLUMN FIX 2026-08-27: `tables` has no `is_active`
-                   column — this write 400'd and the delete always failed. */
-                .update({ status: 'deleted', is_deleted: true })
-                .eq('id', id);
-              if (resolvedClubId) {
-                query = bbjScope.unionId
-                  ? query.or(`club_id.eq.${resolvedClubId},union_id.eq.${bbjScope.unionId}`)
-                  : query.eq('club_id', resolvedClubId);
-              }
-              // Return the affected rows so a no-op cannot masquerade as success.
-              const { data: deleted, error } = await query.select('id');
-              if (error) throw error;
-              if (!deleted || deleted.length === 0) {
-                toast.error('That table could not be deleted - you may not own it.');
-                return;
-              }
+              await gameManagementService.close('table', id);
               setTables((prev) => prev.filter((t) => t.id !== id));
-              toast.success('Table deleted');
+              toast.success('Table Closed');
             } catch (err) {
-              reportError(err, 'ClubHomePage.Failed_to_delete_table');
-              toast.error('Failed to delete table');
+              reportError(err, 'ClubHomePage.Failed_to_close_table');
+              toast.error(err instanceof Error ? err.message : 'Failed To Close Table');
             } finally {
               setDeletingTableId(null);
             }
@@ -4804,19 +5260,25 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         onCancel={() => setDeleteTableConfirm({ show: false, tableId: null, tableName: null })}
       />
 
-      {showCreateTournament && (resolvedClubId || club?.id) && (
-        <CreateTournamentModal
-          clubId={resolvedClubId || club!.id}
-          unionId={unionIdForCreate}
-          initialFormat={
-            gameType === 'SPIN' ? 'spin' : gameType === 'SNG' ? 'sng' : 'mtt_freezeout'
-          }
-          onClose={() => setShowCreateTournament(false)}
-          onSuccess={() => {
-            setShowCreateTournament(false);
-            haptic.success();
-            toast.success('Tournament created successfully');
-            // Tables auto-refresh via the visibility hook / focus return
+      {showOpeningWizard && isOwner && club && openingChecklistEligible && (
+        <ClubOpeningWizard
+          clubId={club.id}
+          clubName={club.name}
+          clubBank={Number(club.chip_treasury) || 0}
+          onClose={() => setShowOpeningWizard(false)}
+          onComplete={({ clubBankAfter, spinsEnabled, tagline }) => {
+            setClub((previous) =>
+              previous
+                ? {
+                    ...previous,
+                    chip_treasury: clubBankAfter,
+                    spins_enabled: spinsEnabled,
+                    tagline,
+                  }
+                : previous
+            );
+            setOpeningSetupComplete(true);
+            setShowOpeningWizard(false);
           }}
         />
       )}

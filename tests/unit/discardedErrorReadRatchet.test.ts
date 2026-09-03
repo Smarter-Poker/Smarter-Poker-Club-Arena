@@ -63,19 +63,23 @@ const countsByFile = (): Map<string, number> => {
 
 /** Frozen 2026-08-30 (Community Command Center). 262 occurrences. Only ever shrink. */
 const BASELINE = new Map<string, number>([
-  ['src/services/HorseOrchestrator.ts', 11],
-  ['src/services/AgentService.ts', 13],
+  ['src/services/HorseOrchestrator.ts', 8],
+  // 13 -> 12: phase 3 of 7 removed distributeFromTreasury, distributeChips and
+  // transferToAgent, and rewired transferToPlayer onto fn_agent_wallet_send.
+  ['src/services/AgentService.ts', 12],
   ['src/pages/UnionDashboardPage.tsx', 10],
   ['src/services/UnionService.ts', 12],
   ['src/pages/AdminDashboardPage.tsx', 7],
   ['src/services/ClubsService.ts', 5],
   ['src/services/PromotionService.ts', 2],
   ['src/services/CreditService.ts', 5],
-  ['src/pages/ClubDetailPage.tsx', 5],
-  ['src/services/FriendSuggestionService.ts', 4],
+  // 5 -> 4: the legacy optimistic table delete and its unchecked reload were
+  // removed when all operator closes moved behind fn_close_managed_game.
+  ['src/pages/ClubDetailPage.tsx', 4],
+  ['src/services/FriendSuggestionService.ts', 1],
   ['src/services/CreditRequestService.ts', 4],
   ['src/services/ChipFlowService.ts', 4],
-  ['src/pages/HomePage.tsx', 4],
+  ['src/pages/HomePage.tsx', 1],
   ['src/pages/BadBeatJackpotPage.tsx', 4],
   ['src/components/social/PlayerActivityFeed.tsx', 4],
   ['src/components/agent/ChipTransferModal.tsx', 4],
@@ -84,7 +88,9 @@ const BASELINE = new Map<string, number>([
   ['src/services/FinancialCronService.ts', 3],
   ['src/services/DisputeService.ts', 3],
   ['src/services/DiamondService.ts', 3],
-  ['src/services/CommissionService.ts', 3],
+  // 3 -> 2 on 2026-09-01: executePayout is gone, and with it the discarded
+  // read it did on agent_commissions after calling execute_commission_payout.
+  ['src/services/CommissionService.ts', 2],
   // TournamentResultsPage was cleared to 0 in round 10 (the deep-link work
   // touched the file, so its three reads were fixed under the ratchet's own
   // rule: shrink what you touch).
@@ -94,10 +100,12 @@ const BASELINE = new Map<string, number>([
   ['src/pages/PlayerSessionsPage.tsx', 3],
   ['src/pages/NotificationsPage.tsx', 3],
   ['src/pages/ClubRulesPage.tsx', 3],
-  ['src/pages/CashierTradePage.tsx', 2],
+  ['src/pages/CashierTradePage.tsx', 0],
   ['src/pages/AntiCheatPage.tsx', 3],
   ['src/components/wallet/ChipMintModal.tsx', 3],
-  ['src/components/agent/AgentCommissionDashboard.tsx', 3],
+  // 3 -> 2 in phase 7: the sub-agent read that discarded its error is gone with
+  // the dropped column it was reading, and its replacement binds the error.
+  ['src/components/agent/AgentCommissionDashboard.tsx', 2],
   ['src/utils/settlementLock.ts', 2],
   ['src/stores/useHeaderDataStore.ts', 2],
   ['src/services/WalletService.ts', 2],
@@ -108,8 +116,10 @@ const BASELINE = new Map<string, number>([
   ['src/services/NotificationService.ts', 2],
   ['src/services/MembershipService.ts', 2],
   ['src/services/LeaderboardService.ts', 2],
-  ['src/services/HydraService.ts', 2],
-  ['src/services/GTOQueryService.ts', 2],
+  // 2 -> 0 in chip-std cash (2026-09-02, C2): both discarded reads lived in
+  // seatHorse, the browser-side seat creator that minted a stack; it is gone
+  // with its reads, and the server fleet is the one seat creator for horses.
+  ['src/services/HydraService.ts', 0],
   ['src/services/FinancialExportService.ts', 2],
   ['src/services/BonusService.ts', 2],
   ['src/services/AchievementTriggerService.ts', 1],
@@ -128,7 +138,7 @@ const BASELINE = new Map<string, number>([
   ['src/components/bbj/BBJTicker.tsx', 2],
   ['src/components/agent/PlayerInviteModal.tsx', 2],
   ['src/components/agent/AgentPromoPanel.tsx', 2],
-  ['src/components/agent/AgentAnalyticsDashboard.tsx', 2],
+  ['src/components/agent/AgentAnalyticsDashboard.tsx', 1],
   ['src/components/admin/ArenaLedger.tsx', 2],
   ['src/utils/unionScope.ts', 1],
   // 1 -> 0 on 2026-08-29. The discarded read was in filterByPreferences(),

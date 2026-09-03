@@ -76,7 +76,7 @@ describe('deriveBountyLandscape', () => {
     expect(l.mysteryTopCents).toBe(3000);
   });
 
-  it('knows when the TOP prize is gone — the read Dan asked for', () => {
+  it('knows when the TOP prize is gone - the read Dan asked for', () => {
     const claimed = deriveBountyLandscape(
       chests([
         ['paid', 100000], // the big one, already won
@@ -228,7 +228,7 @@ describe('V26 the landscape changes play', () => {
     expect(a.action).toBe(b.action);
   });
 
-  it('a cash game is untouched — no tournament, no landscape', () => {
+  it('a cash game is untouched - no tournament, no landscape', () => {
     const hero = mkPlayer(1, { cards: cc('Ah', 'Kd', '9h', '6c'), stack: 12000 });
     const gs = {
       players: [hero, mkPlayer(2, { bet: 350 })],

@@ -67,7 +67,7 @@ const SORT_LABEL: Record<RosterSort, string> = {
 
 type OptionalColumn = 'downlines' | 'wallets' | 'fees' | 'activity';
 type SummaryFreshness = 'loading' | 'fresh' | 'stale' | 'failed';
-type RosterLoadOptions = { forceSummary?: boolean };
+type RosterLoadOptions = { forceSummary?: boolean; resetRecovery?: boolean };
 
 const DEFAULT_SUMMARY: RosterSummary = {
   viewer_role: 'player',
@@ -156,6 +156,7 @@ export default function ClubMembersPage() {
   const feeRollupTouchedAtRef = useRef<number | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recoveryAttemptRef = useRef(0);
+  const recoveryRequestKeyRef = useRef('');
   const realtimeConnectionRef = useRef<'connecting' | 'live' | 'degraded'>('connecting');
   const latestLoadRef = useRef<(options?: RosterLoadOptions) => Promise<void>>(
     async () => undefined
@@ -176,6 +177,10 @@ export default function ClubMembersPage() {
     setLoading(true);
     abortRef.current?.abort();
     moreAbortRef.current?.abort();
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = null;
+    recoveryAttemptRef.current = 0;
+    recoveryRequestKeyRef.current = '';
     requestEpochRef.current += 1;
     setResolvedClubId(null);
     membersRef.current = [];
@@ -264,9 +269,37 @@ export default function ClubMembersPage() {
     }
   }, [resolvedClubId, searchQuery, user?.id]);
 
+  const scheduleConnectionRecovery = useCallback(
+    (maxAttempts: number = Number.POSITIVE_INFINITY): boolean => {
+      if (
+        !resolvedClubId ||
+        refreshTimerRef.current ||
+        !browserOnline ||
+        recoveryAttemptRef.current >= maxAttempts
+      ) {
+        return false;
+      }
+      const delay = computeRosterRetryDelay(recoveryAttemptRef.current, 1_200, 30_000);
+      recoveryAttemptRef.current += 1;
+      refreshTimerRef.current = setTimeout(() => {
+        refreshTimerRef.current = null;
+        void latestLoadRef.current({ forceSummary: true });
+      }, delay);
+      return true;
+    },
+    [browserOnline, resolvedClubId]
+  );
+
   const loadFirstPage = useCallback(
     async (options: RosterLoadOptions = {}) => {
       if (!resolvedClubId) return;
+      const recoveryRequestKey = `${resolvedClubId}:${debouncedSearch}:${filter}:${sortKey}`;
+      if (options.resetRecovery === true || recoveryRequestKeyRef.current !== recoveryRequestKey) {
+        if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+        recoveryAttemptRef.current = 0;
+        recoveryRequestKeyRef.current = recoveryRequestKey;
+      }
       const epoch = ++requestEpochRef.current;
       abortRef.current?.abort();
       const controller = new AbortController();
@@ -360,9 +393,12 @@ export default function ClubMembersPage() {
         },
         onPageError: (error) => {
           if (!isCurrent() || abortLike(error)) return;
-          reportError(error, 'ClubMembersPage.loadFirstPage');
-          setLoadError(true);
-          setDataFreshness(membersRef.current.length > 0 ? 'stale' : 'failed');
+          const hasSavedRows = membersRef.current.length > 0;
+          const recoveryScheduled = scheduleConnectionRecovery(2);
+          if (!recoveryScheduled) reportError(error, 'ClubMembersPage.loadFirstPage');
+          setLoadError(!recoveryScheduled && !hasSavedRows);
+          setLoading(recoveryScheduled && !hasSavedRows);
+          setDataFreshness(hasSavedRows ? 'stale' : recoveryScheduled ? 'loading' : 'failed');
         },
       });
 
@@ -379,7 +415,7 @@ export default function ClubMembersPage() {
         writeRosterCache(user.id, resolvedClubId, pageResult.value.items, summaryResult.value);
       }
     },
-    [debouncedSearch, filter, resolvedClubId, sortKey, user?.id]
+    [debouncedSearch, filter, resolvedClubId, scheduleConnectionRecovery, sortKey, user?.id]
   );
 
   useEffect(() => {
@@ -427,7 +463,7 @@ export default function ClubMembersPage() {
   const refresh = useCallback(async () => {
     if (!resolvedClubId) return;
     setIsRefreshing(true);
-    await latestLoadRef.current({ forceSummary: true });
+    await latestLoadRef.current({ forceSummary: true, resetRecovery: true });
   }, [resolvedClubId]);
 
   const retryLiveSync = useCallback(() => {
@@ -445,19 +481,9 @@ export default function ClubMembersPage() {
     if (!resolvedClubId || refreshTimerRef.current) return;
     refreshTimerRef.current = setTimeout(() => {
       refreshTimerRef.current = null;
-      void latestLoadRef.current({ forceSummary: true });
+      void latestLoadRef.current({ forceSummary: true, resetRecovery: true });
     }, 1200);
   }, [resolvedClubId]);
-
-  const scheduleConnectionRecovery = useCallback(() => {
-    if (!resolvedClubId || refreshTimerRef.current || !browserOnline) return;
-    const delay = computeRosterRetryDelay(recoveryAttemptRef.current, 1_200, 30_000);
-    recoveryAttemptRef.current += 1;
-    refreshTimerRef.current = setTimeout(() => {
-      refreshTimerRef.current = null;
-      void latestLoadRef.current({ forceSummary: true });
-    }, delay);
-  }, [browserOnline, resolvedClubId]);
 
   useEffect(
     () => () => {
@@ -599,7 +625,13 @@ export default function ClubMembersPage() {
   );
 
   const handleExport = useCallback(async () => {
-    if (!resolvedClubId || !summary.capabilities.can_export || isExporting) return;
+    if (
+      !resolvedClubId ||
+      !summary.capabilities.can_export ||
+      isExporting ||
+      searchQuery.trim() !== debouncedSearch.trim()
+    )
+      return;
     setIsExporting(true);
     try {
       const result = await ClubRosterService.exportRoster(
@@ -623,6 +655,7 @@ export default function ClubMembersPage() {
     filter,
     isExporting,
     resolvedClubId,
+    searchQuery,
     selected,
     sortKey,
     summary.capabilities.can_export,
@@ -630,6 +663,7 @@ export default function ClubMembersPage() {
   ]);
 
   const hasPaintedRoster = members.length > 0;
+  const searchIsSettling = searchQuery.trim() !== debouncedSearch.trim();
   const stat = (value: number) => {
     if (!summaryAvailable) return summaryFreshness === 'loading' ? '...' : 'N/A';
     return value.toLocaleString();
@@ -720,6 +754,7 @@ export default function ClubMembersPage() {
             placeholder={titleCase('search name, number, club, or upline')}
             aria-label="Search Club Members"
             value={searchQuery}
+            maxLength={120}
             autoComplete="off"
             spellCheck={false}
             onChange={(event) => setSearchQuery(event.target.value)}
@@ -777,6 +812,23 @@ export default function ClubMembersPage() {
             </details>
           )}
 
+          {summary.capabilities.can_export && members.length > 0 && (
+            <button
+              type="button"
+              className="members-select-loaded"
+              aria-pressed={selected.size === members.length}
+              onClick={() =>
+                setSelected(
+                  selected.size === members.length
+                    ? new Set()
+                    : new Set(members.map((row) => row.user_id))
+                )
+              }
+            >
+              {selected.size === members.length ? 'Clear Selection' : 'Select Loaded'}
+            </button>
+          )}
+
           <button
             type="button"
             className="members-refresh"
@@ -791,7 +843,7 @@ export default function ClubMembersPage() {
               type="button"
               className="members-export"
               onClick={() => void handleExport()}
-              disabled={loading || isRefreshing || isExporting}
+              disabled={loading || isRefreshing || isExporting || searchIsSettling}
             >
               {isExporting
                 ? 'Preparing...'
@@ -824,13 +876,22 @@ export default function ClubMembersPage() {
           <button type="button" onClick={() => setSelected(new Set())}>
             Clear
           </button>
-          <button type="button" onClick={() => void handleExport()} disabled={isExporting}>
+          <button
+            type="button"
+            onClick={() => void handleExport()}
+            disabled={loading || isRefreshing || isExporting || searchIsSettling}
+          >
             Export Selected
           </button>
         </div>
       )}
 
-      <div className="members-list" aria-label="Club Member Directory">
+      <div
+        className="members-list"
+        role="list"
+        aria-label="Club Member Directory"
+        aria-busy={loading || isLoadingMore}
+      >
         {loading && members.length === 0 ? (
           <>
             <PageSkeleton variant="list" />
@@ -856,10 +917,12 @@ export default function ClubMembersPage() {
         ) : (
           <div ref={virtual.containerRef} className="members-viewport" style={{ height: 696 }}>
             <div aria-hidden="true" style={{ height: virtual.paddingTop }} />
-            {virtual.visibleItems.map((member) => (
+            {virtual.visibleItems.map((member, index) => (
               <MemberRow
                 key={member.user_id}
                 member={member}
+                position={virtual.startIndex + index + 1}
+                total={filteredTotal}
                 query={debouncedSearch}
                 onOpen={openMember}
                 selectable={summary.capabilities.can_export}
@@ -927,6 +990,8 @@ function dormancy(iso: string): string {
 
 function MemberRow({
   member,
+  position,
+  total,
   query,
   onOpen,
   selectable,
@@ -935,6 +1000,8 @@ function MemberRow({
   columns,
 }: {
   member: RosterMember;
+  position: number;
+  total: number;
   query: string;
   onOpen: (id: string) => void;
   selectable: boolean;
@@ -947,6 +1014,9 @@ function MemberRow({
   return (
     <article
       className={`member-row${member.is_seated ? ' member-row--seated' : member.is_online ? ' member-row--online' : ''}`}
+      role="listitem"
+      aria-posinset={position}
+      aria-setsize={total}
     >
       {selectable && (
         <label className="member-select" aria-label={`Select ${member.alias}`}>

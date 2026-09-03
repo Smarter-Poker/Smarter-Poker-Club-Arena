@@ -118,14 +118,20 @@ const GAME_TYPES: GameType[] = [
   },
 ];
 
-export default function CreateTablePage() {
-  const { clubId } = useParams<{ clubId: string }>();
+export default function CreateTablePage({
+  clubIdOverride,
+  onBack,
+}: {
+  clubIdOverride?: string;
+  onBack?: () => void;
+} = {}) {
+  const { clubId: routeClubId } = useParams<{ clubId: string }>();
+  const clubId = clubIdOverride || routeClubId;
   const navigate = useNavigate();
   const userLevel = 1; // All game types unlocked at level 1
 
-  // Union governance (2026-08-19): union clubs may create PRIVATE club games
-  // here (the config pages force is_private). No redirect — only union admins
-  // can create union-wide tables, from the union page.
+  // Access is enforced by GameCreationGuard. For a union-managed club that
+  // means only an authorized union operator reaches this selector.
 
   const handleSelectGameType = (gameType: GameType) => {
     if (userLevel < gameType.unlockLevel) {
@@ -137,7 +143,8 @@ export default function CreateTablePage() {
   };
 
   const handleBack = () => {
-    navigate(`/clubs/${clubId}`);
+    if (onBack) onBack();
+    else navigate(`/clubs/${clubId}`);
   };
 
   return (

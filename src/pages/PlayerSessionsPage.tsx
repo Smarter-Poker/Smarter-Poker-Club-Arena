@@ -24,6 +24,7 @@ import { reportError } from '../utils/errorReporter';
 import { EmptyState } from '../components/common/EmptyState';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 interface PlayerSession {
   userId: string;
   displayName: string;
@@ -218,7 +219,7 @@ export default function PlayerSessionsPage() {
             () =>
               supabase
                 .from('profiles')
-                .select('id, username, display_name, avatar_url:arena_avatar_url, last_seen')
+                .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, last_seen`)
                 .in('id', userIds)
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: mountedRef }
@@ -256,8 +257,7 @@ export default function PlayerSessionsPage() {
 
           return {
             userId: m.user_id,
-            displayName:
-              profile.display_name || profile.username || m.user_id?.substring(0, 8) || 'Unknown',
+            displayName: playerDisplayName(profile),
             avatarUrl: profile.avatar_url,
             status,
             role: m.role || 'player',
@@ -347,7 +347,7 @@ export default function PlayerSessionsPage() {
             () =>
               supabase
                 .from('profiles')
-                .select('id, display_name, username, last_seen')
+                .select(`id, ${PLAYER_NAME_COLUMNS}, last_seen`)
                 .in('id', userIds)
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: mountedRef }
@@ -372,7 +372,7 @@ export default function PlayerSessionsPage() {
 
           const playerInfo = {
             userId: m.user_id,
-            name: profile.display_name || profile.username || m.user_id?.substring(0, 8),
+            name: playerDisplayName(profile),
             chipBalance: m.chip_balance || 0,
             daysSinceActive: daysSince,
           };
@@ -695,7 +695,7 @@ export default function PlayerSessionsPage() {
           title="No Managed Club Is Available"
           description={
             error ||
-            'Player sessions, retention, and chip flow are available to club operators from a club workspace.'
+            'Player Sessions, Retention, And Chip Flow Are Available To Club Operators From A Club Workspace.'
           }
           action={{ label: 'Return To Arena', onClick: () => navigate('/') }}
           secondaryAction={{ label: 'Find Clubs', onClick: () => navigate('/search') }}
@@ -1040,8 +1040,8 @@ export default function PlayerSessionsPage() {
                 <span className="admin-empty-icon">◉</span>
                 <span>
                   {searchQuery || statusFilter !== 'all'
-                    ? 'No players match your filters'
-                    : 'No members found'}
+                    ? 'No Players Match Your Filters'
+                    : 'No Members Found'}
                 </span>
               </div>
             ) : (
@@ -1138,7 +1138,7 @@ export default function PlayerSessionsPage() {
                           fontSize: '14px',
                           color: notes[p.userId] ? '#F7C52A' : '#6B7280',
                         }}
-                        title={notes[p.userId] ? 'Edit note' : 'Add note'}
+                        title={notes[p.userId] ? 'Edit Note' : 'Add Note'}
                       >
                         {notes[p.userId] ? '▤' : '✏'}
                       </button>

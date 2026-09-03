@@ -479,7 +479,7 @@ export function HandDetailModal({
           className="hdm-panel"
           role="dialog"
           aria-modal="true"
-          aria-label="Hand detail"
+          aria-label="Hand Detail"
           tabIndex={-1}
           style={sheetStyle}
           onClick={(e) => e.stopPropagation()}
@@ -523,7 +523,7 @@ export function HandDetailModal({
         className="hdm-panel"
         role="dialog"
         aria-modal="true"
-        aria-label="Hand detail"
+        aria-label="Hand Detail"
         tabIndex={-1}
         ref={panelRef}
         style={sheetStyle}
@@ -537,8 +537,8 @@ export function HandDetailModal({
             {onReplay && (
               <button
                 className="hdm-icon-btn"
-                title="Video replay"
-                aria-label="Video replay"
+                title="Video Replay"
+                aria-label="Video Replay"
                 onClick={() => onReplay(hand)}
               >
                 <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
@@ -550,8 +550,8 @@ export function HandDetailModal({
             {onShare && (
               <button
                 className="hdm-icon-btn"
-                title="Share hand"
-                aria-label="Share hand"
+                title="Share Hand"
+                aria-label="Share Hand"
                 onClick={() => onShare(hand)}
               >
                 <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
@@ -684,10 +684,20 @@ export function HandDetailModal({
                             <span className="hdm-pos">{positionOf.get(a.playerId) || ''}</span>
                             <span className="hdm-name">{a.playerName}</span>
                             <span className={`hdm-action hdm-action--${a.action}`}>
-                              {a.action === 'allin' ? 'all in' : a.action}
+                              {a.action === 'allin' ? 'All In' : a.action}
                             </span>
                             <span className="hdm-amount">
-                              {a.amount && a.amount > 0 ? fmt(a.amount) : ''}
+                              {/* PHASE 4 COMPLETION 2026-09-01: the card you
+                                  threw, in the amount slot because a discard
+                                  never has one. Present only on the viewer's
+                                  own discard - the service fills it from
+                                  `hand_discards`, which RLS scopes to the
+                                  caller, so an opponent's stays undefined. */}
+                              {a.discardedCard
+                                ? a.discardedCard
+                                : a.amount && a.amount > 0
+                                  ? fmt(a.amount)
+                                  : ''}
                             </span>
                             <span className="hdm-pot">{fmt(rowPot)}</span>
                           </div>
@@ -740,7 +750,7 @@ export function HandDetailModal({
           <button
             className="hdm-nav__arrow"
             disabled={index >= total - 1}
-            aria-label="Older hand"
+            aria-label="Older Hand"
             onClick={() => setIndex((i) => Math.min(total - 1, i + 1))}
           >
             &#9664;
@@ -755,13 +765,13 @@ export function HandDetailModal({
               max={Math.max(1, total)}
               value={displayPos}
               onChange={(e) => setIndex(total - Number(e.target.value))}
-              aria-label="Hand position"
+              aria-label="Hand Position"
             />
           </div>
           <button
             className="hdm-nav__arrow"
             disabled={index <= 0}
-            aria-label="Newer hand"
+            aria-label="Newer Hand"
             onClick={() => setIndex((i) => Math.max(0, i - 1))}
           >
             &#9654;
@@ -775,7 +785,7 @@ export function HandDetailModal({
         <div
           className="hdm-tabs"
           role="tablist"
-          aria-label="Hand detail view"
+          aria-label="Hand Detail View"
           onKeyDown={onTabsKeyDown}
         >
           <button

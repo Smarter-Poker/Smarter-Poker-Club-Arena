@@ -121,11 +121,28 @@ describe('readPlayerBalance degrades to unknown, not to a stale number', () => {
     expect(res).toEqual({ balance: 250, source: 'rpc' });
   });
 
+  it('recovers a transient PostgREST schema-cache miss before reporting unknown', async () => {
+    mockRpc
+      .mockResolvedValueOnce({
+        data: null,
+        error: { code: 'PGRST002', message: 'schema cache is reconnecting' },
+      })
+      .mockResolvedValueOnce({ data: { balance: 375 }, error: null });
+
+    const res = await WalletService.readPlayerBalance('u1');
+
+    expect(res).toEqual({ balance: 375, source: 'rpc' });
+    expect(mockRpc).toHaveBeenCalledTimes(2);
+  });
+
   it('returns null (unknown) — NOT a frozen fallback — when the RPC fails', async () => {
     // The old code fell back to the retired table here. A confident wrong
     // number could authorise a spend against six-day-old chips; null means
     // "ask the server", and the buy-in RPC refuses an underfunded entry.
-    mockRpc.mockResolvedValue({ data: null, error: { message: 'nope' } });
+    mockRpc.mockResolvedValue({
+      data: null,
+      error: { code: '42501', message: 'permission denied' },
+    });
     const res = await WalletService.readPlayerBalance('u1');
     expect(res.balance).toBeNull();
     expect(res.source).toBe('failed');

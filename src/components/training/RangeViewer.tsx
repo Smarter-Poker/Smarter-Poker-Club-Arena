@@ -54,7 +54,7 @@ export const RangeViewer: React.FC<RangeViewerProps> = ({
            same gesture, which is what a player would expect. */
         tabIndex={0}
         role="button"
-        aria-label={freq > 0 ? `${hand}, played ${freq}%` : hand}
+        aria-label={freq > 0 ? `${hand}, Played ${freq}%` : hand}
         onMouseEnter={() => setHoveredHand(hand)}
         onMouseLeave={() => setHoveredHand(null)}
         onFocus={() => setHoveredHand(hand)}

@@ -319,7 +319,7 @@ export default function AuthPage() {
         {/* Success Message */}
         {success && (
           <div className={styles.successMessage}>
-            <span>\U2713</span> {success}
+            <span>\u2713</span> {success}
           </div>
         )}
 
@@ -340,7 +340,7 @@ export default function AuthPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="Your@email.com"
+                placeholder="your@email.com"
                 required
                 autoComplete="email"
               />
@@ -383,7 +383,7 @@ export default function AuthPage() {
                   }}
                 />
               )}
-              {isLoading ? 'Logging in...' : 'Login'}
+              {isLoading ? 'Logging In...' : 'Login'}
             </button>
 
             <button
@@ -422,7 +422,7 @@ export default function AuthPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="Your@email.com"
+                placeholder="your@email.com"
                 required
                 autoComplete="email"
               />
@@ -467,7 +467,7 @@ export default function AuthPage() {
                 type="text"
                 value={referralCode}
                 onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
-                placeholder="E.g. ABCD1234"
+                placeholder="E.G. ABCD1234"
                 autoComplete="off"
                 style={{ textTransform: 'uppercase', letterSpacing: '1px' }}
               />
@@ -516,7 +516,7 @@ export default function AuthPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="Your@email.com"
+                placeholder="your@email.com"
                 required
                 autoComplete="email"
               />

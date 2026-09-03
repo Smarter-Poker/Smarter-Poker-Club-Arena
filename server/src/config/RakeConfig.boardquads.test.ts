@@ -100,7 +100,7 @@ describe('board quads can never trigger the jackpot', () => {
     expect(r.loserUserId).toBe('L');
   });
 
-  it('FAILS CLOSED when no board is supplied — a missing board must not silently disable the rule', () => {
+  it('FAILS CLOSED when no board is supplied - a missing board must not silently disable the rule', () => {
     const r = detectBBJHit([potWinner, badBeat], 'W', 'nlh', 500, 10, 3, DEALT, undefined);
     expect(r.hit).toBe(false);
   });

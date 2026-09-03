@@ -64,12 +64,23 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { resolveClubUUID, isUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { cashierReasonCode, recordCashierOperation } from '../services/CashierOperationsTelemetry';
+import {
+  cashierReceiptText,
+  clearCashierTransferRecovery,
+  copyCashierText,
+  readCashierTransferRecovery,
+  readCashierOnlineState,
+  writeCashierTransferRecovery,
+  type CashierTransferRecovery,
+} from '../services/CashierResilience';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
 import { DEFAULT_CASHIER_WALLET, secondsLeftFromServer } from '../components/wallet/cashierModes';
 import { canSeeClubBank, canHoldAgentWallet } from '../components/wallet/walletRows';
+import { describeChipTransaction, walletRoute } from '../components/wallet/describeChipTransaction';
 import styles from './CashierTradePage.module.css';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -165,6 +176,14 @@ interface TradeRecordRow {
   amount: number;
   direction: 'in' | 'out';
   counterparty: string;
+  /**
+   * Dan 2026-09-02: a ledger line must say which wallet the chips left and
+   * which they entered, whatever the role. "Agent Wallet To Player Wallet".
+   * Null when the row is not a wallet move (a buy-in, rake, a payout).
+   */
+  route: string | null;
+  /** The full sentence for the receipt: "KINGFISH Sent 500 From ... To ...". */
+  narrative: string | null;
 }
 
 interface ChipRequestRow {
@@ -298,6 +317,8 @@ export default function CashierTradePage() {
   const heldTicketCountVersion = useRef(0);
   const reqSeqRef = useRef(0);
   const ticketSeqRef = useRef(0);
+  const recordSeqRef = useRef(0);
+  const invoiceSeqRef = useRef(0);
 
   const [search, setSearch] = useState('');
   const [groupByRole, setGroupByRole] = useState(false);
@@ -311,6 +332,11 @@ export default function CashierTradePage() {
   const [recordsLimit, setRecordsLimit] = useState(50);
   const [recordsHasMore, setRecordsHasMore] = useState(false);
   const [recordsReload, setRecordsReload] = useState(0);
+  const [receipt, setReceipt] = useState<TradeRecordRow | null>(null);
+  const [isOnline, setIsOnline] = useState(readCashierOnlineState);
+  const [lastVerifiedAt, setLastVerifiedAt] = useState<number | null>(null);
+  const [reconciling, setReconciling] = useState(false);
+  const reconcilingRef = useRef(false);
   // Dan 2026-08-21: the three tabs/buttons that used to say "coming soon" are
   // real features now (chip_requests + tournament_tickets, migration 20260821).
   const [requests, setRequests] = useState<ChipRequestRow[]>([]);
@@ -384,6 +410,7 @@ export default function CashierTradePage() {
   const [transferFailures, setTransferFailures] = useState<
     Array<{ userId: string; name: string; message: string }>
   >([]);
+  const [transferRecovery, setTransferRecovery] = useState<CashierTransferRecovery | null>(null);
   const [amount, setAmount] = useState('');
   const [busy, setBusy] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{ processed: number; total: number } | null>(
@@ -430,6 +457,10 @@ export default function CashierTradePage() {
    * This is `opIdRef` from WalletCashierModal, generalised to a batch.
    */
   const opIdsRef = useRef<Map<string, string>>(new Map());
+  /** Suppresses the "new intent" reset while a persisted intent is restored. */
+  const restoringTransferRecoveryRef = useRef(false);
+  /** The exact local-storage scope owned by the retained batch nonce. */
+  const transferRecoveryScopeRef = useRef<{ userId: string; clubId: string } | null>(null);
   /** One idempotency key per claim intent, retained across an uncertain retry. */
   const claimOpIdsRef = useRef<Map<string, string>>(new Map());
   /** One request intent survives an uncertain network retry. */
@@ -446,6 +477,22 @@ export default function CashierTradePage() {
       isMounted.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    setIsOnline(readCashierOnlineState());
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isOnline) setActiveCashier(null);
+  }, [isOnline]);
 
   // ── Resolve club uuid from the route param ─────────────────────────────────
   useEffect(() => {
@@ -537,6 +584,12 @@ export default function CashierTradePage() {
     [memberships, clubUuid]
   );
 
+  const requireOnline = useCallback(() => {
+    if (isOnline) return true;
+    toast?.error?.('Cashier Is Offline. Reconnect Before Moving Chips');
+    return false;
+  }, [isOnline, toast]);
+
   // The club switcher is a real popup control: focus enters it, Escape returns
   // to the trigger, and a click elsewhere closes it. Previously it remained
   // open over every tab until the user selected another club.
@@ -575,7 +628,7 @@ export default function CashierTradePage() {
   const loadPendingCount = useCallback(async () => {
     if (!clubUuid) {
       setPendingCount(0);
-      return;
+      return false;
     }
     const requestedClub = clubUuid;
     const version = ++pendingCountVersion.current;
@@ -593,16 +646,21 @@ export default function CashierTradePage() {
     }
     const { count, error } = await q;
     if (!isMounted.current || version !== pendingCountVersion.current || requestedClub !== clubUuid)
-      return;
+      return false;
     // A failed count must not claim zero. Leave the previous value alone.
-    if (!error) setPendingCount(count ?? 0);
+    if (error) {
+      reportError(error, 'CashierTradePage.pendingCount');
+      return false;
+    }
+    setPendingCount(count ?? 0);
+    return true;
   }, [clubUuid, myRole, user?.id]);
 
   /** Unredeemed tickets in this viewer's hand, for the Tickets tab badge. */
   const loadHeldTicketCount = useCallback(async () => {
     if (!clubUuid || !user?.id) {
       setHeldTicketCount(0);
-      return;
+      return false;
     }
     const requestedClub = clubUuid;
     const version = ++heldTicketCountVersion.current;
@@ -617,8 +675,13 @@ export default function CashierTradePage() {
       version !== heldTicketCountVersion.current ||
       requestedClub !== clubUuid
     )
-      return;
-    if (!error) setHeldTicketCount(count ?? 0);
+      return false;
+    if (error) {
+      reportError(error, 'CashierTradePage.heldTicketCount');
+      return false;
+    }
+    setHeldTicketCount(count ?? 0);
+    return true;
   }, [clubUuid, user?.id]);
 
   const loadClub = useCallback(async () => {
@@ -627,7 +690,7 @@ export default function CashierTradePage() {
     // gave a permanent "Loading members...". Clear it here instead.
     if (!user?.id || !clubUuid) {
       setLoading(false);
-      return;
+      return false;
     }
     const myVersion = ++loadVersion.current;
     const stale = () => loadVersion.current !== myVersion;
@@ -635,6 +698,7 @@ export default function CashierTradePage() {
     setLoadError(null);
     setRosterWarning(null);
     setRosterLoadingMore(false);
+    let complete = true;
     try {
       const [meRes, floatRes] = await Promise.all([
         supabase
@@ -657,6 +721,10 @@ export default function CashierTradePage() {
       // balance and silently flipped the downline into agent scope. A failure
       // has to look like a failure.
       if (meRes.error) throw meRes.error;
+      if (floatRes.error) {
+        complete = false;
+        reportError(floatRes.error, 'CashierTradePage.agentWallet');
+      }
       const role = meRes.data?.role ? (meRes.data.role as string) : 'player';
       const bal = meRes.data?.chip_balance ? Number(meRes.data.chip_balance) : 0;
       // A row that does not exist is a float of zero. A row we could not READ
@@ -705,6 +773,7 @@ export default function CashierTradePage() {
             }
           );
           if (dlErr) {
+            complete = false;
             recordCashierOperation({
               userId: user.id,
               clubId: clubUuid,
@@ -724,7 +793,7 @@ export default function CashierTradePage() {
             }
             break;
           }
-          if (stale()) return;
+          if (stale()) return false;
           const page = (memberRows || []) as CashierRosterRpcRow[];
           dl.push(...page);
           recordCashierOperation({
@@ -754,13 +823,15 @@ export default function CashierTradePage() {
         }
       }
 
-      if (!isMounted.current || stale()) return;
+      if (!isMounted.current || stale()) return false;
       setMyRole(role);
       setRoleResolved(true);
       setMyBalance(bal);
       setAgentWallet(float);
       setDownline(mapCashierRoster(dl, user.id));
       setRosterLoadingMore(false);
+      if (complete) setLastVerifiedAt(Date.now());
+      return complete;
     } catch (e) {
       reportError(e, 'CashierTradePage.loadClub');
       // An empty list used to be the only symptom of a failed load, so the
@@ -770,6 +841,7 @@ export default function CashierTradePage() {
         setRosterLoadingMore(false);
         setLoadError('Could not load this club. Check your connection and try again.');
       }
+      return false;
     } finally {
       if (isMounted.current && !stale()) setLoading(false);
     }
@@ -835,6 +907,8 @@ export default function CashierTradePage() {
     ++heldTicketCountVersion.current;
     ++reqSeqRef.current;
     ++ticketSeqRef.current;
+    ++recordSeqRef.current;
+    ++invoiceSeqRef.current;
     setTab('trade');
     setRoleResolved(false);
     setRecords([]);
@@ -849,8 +923,17 @@ export default function CashierTradePage() {
     setRosterWarning(null);
     setSelected(new Set());
     setVisibleCount(25);
+    setAmountModal(null);
+    setAmount('');
+    setActiveCashier(null);
     setTransferFailures([]);
+    setTransferRecovery(null);
+    submissionIdRef.current = null;
+    opIdsRef.current = new Map();
+    transferRecoveryScopeRef.current = null;
     setBatchProgress(null);
+    setReceipt(null);
+    setLastVerifiedAt(null);
     // The claimable list belongs to the club it was read from. Leaving it up
     // would offer a claim against a send made in a DIFFERENT club, which the
     // server refuses - after the user has already tapped it.
@@ -878,81 +961,87 @@ export default function CashierTradePage() {
     void loadClub();
   }, [clubUuid, loadClub]);
 
-  useEffect(() => {
-    if (tab !== 'record' || !user?.id || !clubUuid) return;
-    let live = true;
+  const loadRecords = useCallback(async () => {
+    if (!user?.id || !clubUuid) return false;
+    const seq = ++recordSeqRef.current;
     setRecordsLoading(true);
     setRecordsError(null);
-    (async () => {
-      try {
-        const { data, error } = await supabase
-          .from('chip_transactions')
-          .select('id, created_at, transaction_type, amount, from_user_id, to_user_id, notes')
-          .eq('club_id', clubUuid)
-          .or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`)
-          .order('created_at', { ascending: false })
-          // Fetch one sentinel row so the UI only offers "Load Older Entries"
-          // when another page really exists. Initial wire cost stays at 51 rows.
-          .limit(recordsLimit + 1);
-        if (!live) return;
-        // A discarded error rendered as "No trades recorded yet", which is a
-        // different statement from "we could not read them".
-        if (error) throw error;
-        const pageRows = (data || []).slice(0, recordsLimit);
-        const ids = new Set<string>();
-        for (const r of pageRows) {
-          if (r.from_user_id) ids.add(r.from_user_id);
-          if (r.to_user_id) ids.add(r.to_user_id);
-        }
-        const { data: profs, error: profilesError } = ids.size
-          ? await supabase
-              .from('profiles')
-              .select('id, display_name, username')
-              .in('id', Array.from(ids))
-          : { data: [], error: null };
-        // The ledger itself is authoritative. A profile outage must not hide
-        // the money rows, but it should still reach monitoring rather than
-        // silently renaming every counterparty "Club".
-        if (profilesError) reportError(profilesError, 'CashierTradePage.recordProfiles');
-        const nameOf = new Map((profs || []).map((p) => [p.id, p.display_name || p.username]));
-        if (!live) return;
-        setRecordsHasMore((data || []).length > recordsLimit);
-        setRecords(
-          pageRows.map((r) => {
-            const out = r.from_user_id === user.id;
-            const other = out ? r.to_user_id : r.from_user_id;
-            return {
-              id: r.id,
-              createdAt: r.created_at,
-              type: (r.transaction_type as string) || 'transfer',
-              amount: Number(r.amount) || 0,
-              direction: out ? ('out' as const) : ('in' as const),
-              counterparty: (other && nameOf.get(other)) || 'Club',
-            };
-          })
-        );
-      } catch (e) {
-        reportError(e, 'CashierTradePage.records');
-        if (live) {
-          setRecords([]);
-          setRecordsError('Could not load your trade record.');
-        }
-      } finally {
-        if (live) setRecordsLoading(false);
+    try {
+      const { data, error } = await supabase
+        .from('chip_transactions')
+        .select(
+          'id, created_at, transaction_type, amount, from_user_id, to_user_id, notes, metadata'
+        )
+        .eq('club_id', clubUuid)
+        .or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`)
+        .order('created_at', { ascending: false })
+        // Fetch one sentinel row so the UI only offers "Load Older Entries"
+        // when another page really exists. Initial wire cost stays at 51 rows.
+        .limit(recordsLimit + 1);
+      if (!isMounted.current || seq !== recordSeqRef.current) return false;
+      // A discarded error rendered as "No trades recorded yet", which is a
+      // different statement from "we could not read them".
+      if (error) throw error;
+      const pageRows = (data || []).slice(0, recordsLimit);
+      const ids = new Set<string>();
+      for (const r of pageRows) {
+        if (r.from_user_id) ids.add(r.from_user_id);
+        if (r.to_user_id) ids.add(r.to_user_id);
       }
-    })();
-    return () => {
-      live = false;
-    };
-  }, [tab, user?.id, clubUuid, recordsLimit, recordsReload]);
+      const { data: profs, error: profilesError } = ids.size
+        ? await supabase
+            .from('profiles')
+            .select(`id, ${PLAYER_NAME_COLUMNS}`)
+            .in('id', Array.from(ids))
+        : { data: [], error: null };
+      // The ledger itself is authoritative. A profile outage must not hide
+      // the money rows, but reconciliation must report the degraded name
+      // surface rather than announcing complete success.
+      if (profilesError) reportError(profilesError, 'CashierTradePage.recordProfiles');
+      const nameOf = new Map((profs || []).map((p) => [p.id, playerDisplayName(p)]));
+      if (!isMounted.current || seq !== recordSeqRef.current) return false;
+      setRecordsHasMore((data || []).length > recordsLimit);
+      setRecords(
+        pageRows.map((r) => {
+          const out = r.from_user_id === user.id;
+          const other = out ? r.to_user_id : r.from_user_id;
+          return {
+            id: r.id,
+            createdAt: r.created_at,
+            type: (r.transaction_type as string) || 'transfer',
+            amount: Number(r.amount) || 0,
+            direction: out ? ('out' as const) : ('in' as const),
+            counterparty: (other && nameOf.get(other)) || 'Club',
+            route: walletRoute(r),
+            narrative: describeChipTransaction(r, nameOf, user.id),
+          };
+        })
+      );
+      return !profilesError;
+    } catch (e) {
+      reportError(e, 'CashierTradePage.records');
+      if (isMounted.current && seq === recordSeqRef.current) {
+        setRecords([]);
+        setRecordsError('Could not load your trade record.');
+      }
+      return false;
+    } finally {
+      if (isMounted.current && seq === recordSeqRef.current) setRecordsLoading(false);
+    }
+  }, [user?.id, clubUuid, recordsLimit]);
+
+  useEffect(() => {
+    if (tab === 'record') void loadRecords();
+  }, [tab, loadRecords, recordsReload]);
 
   // ── Chip requests (Chip Request tab) ───────────────────────────────────────
   /** Open chip requests in this club. Drives the tab badge. */
   const [pendingCount, setPendingCount] = useState(0);
 
   const loadRequests = useCallback(async () => {
-    if (!user?.id || !clubUuid) return;
+    if (!user?.id || !clubUuid) return false;
     const seq = ++reqSeqRef.current;
+    let complete = true;
     setRequestsLoading(true);
     setRequestsError(null);
     try {
@@ -977,17 +1066,17 @@ export default function CashierTradePage() {
       const ids = [...new Set(visible.map((r) => r.requester_id as string))];
       const names = new Map<string, string>();
       if (ids.length > 0) {
-        const { data: profs } = await supabase
+        const { data: profs, error: profilesError } = await supabase
           .from('profiles')
-          .select('id, display_name, username')
+          .select(`id, ${PLAYER_NAME_COLUMNS}`)
           .in('id', ids);
-        for (const pr of profs || [])
-          names.set(
-            pr.id as string,
-            (pr.display_name as string) || (pr.username as string) || 'Player'
-          );
+        if (profilesError) {
+          complete = false;
+          reportError(profilesError, 'CashierTradePage.requestProfiles');
+        }
+        for (const pr of profs || []) names.set(pr.id as string, playerDisplayName(pr as any));
       }
-      if (!isMounted.current || seq !== reqSeqRef.current) return;
+      if (!isMounted.current || seq !== reqSeqRef.current) return false;
       setPendingCount(visible.length);
       setRequests(
         visible.map((r) => ({
@@ -1001,12 +1090,14 @@ export default function CashierTradePage() {
           mine: r.requester_id === user.id,
         }))
       );
+      return complete;
     } catch (e) {
       reportError(e, 'CashierTradePage.loadRequests');
       // Silent before: a pending request the user has to answer was invisible
       // behind "No Open Chip Requests."
       if (isMounted.current && seq === reqSeqRef.current)
         setRequestsError('Could Not Load Chip Requests.');
+      return false;
     } finally {
       if (isMounted.current && seq === reqSeqRef.current) setRequestsLoading(false);
     }
@@ -1018,8 +1109,9 @@ export default function CashierTradePage() {
 
   // ── Tickets tab data (audit 2026-08-26) ────────────────────────────────────
   const loadTickets = useCallback(async () => {
-    if (!user?.id || !clubUuid) return;
+    if (!user?.id || !clubUuid) return false;
     const seq = ++ticketSeqRef.current;
+    let complete = true;
     setTicketsLoading(true);
     setTicketsError(null);
     try {
@@ -1040,17 +1132,17 @@ export default function CashierTradePage() {
       }
       const names = new Map<string, string>();
       if (ids.size > 0) {
-        const { data: profs } = await supabase
+        const { data: profs, error: profilesError } = await supabase
           .from('profiles')
-          .select('id, display_name, username')
+          .select(`id, ${PLAYER_NAME_COLUMNS}`)
           .in('id', Array.from(ids));
-        for (const pr of profs || [])
-          names.set(
-            pr.id as string,
-            (pr.display_name as string) || (pr.username as string) || 'Member'
-          );
+        if (profilesError) {
+          complete = false;
+          reportError(profilesError, 'CashierTradePage.ticketProfiles');
+        }
+        for (const pr of profs || []) names.set(pr.id as string, playerDisplayName(pr as any));
       }
-      if (!isMounted.current || seq !== ticketSeqRef.current) return;
+      if (!isMounted.current || seq !== ticketSeqRef.current) return false;
       setTickets(
         (data || []).map((t) => {
           const held = t.holder_id === user.id;
@@ -1072,11 +1164,13 @@ export default function CashierTradePage() {
       setHeldTicketCount(
         (data || []).filter((t) => t.holder_id === user.id && t.status === 'issued').length
       );
+      return complete;
     } catch (e) {
       reportError(e, 'CashierTradePage.loadTickets');
       // "No Tickets" is a different statement from "we could not read them".
       if (isMounted.current && seq === ticketSeqRef.current)
         setTicketsError('Could Not Load Your Tickets.');
+      return false;
     } finally {
       if (isMounted.current && seq === ticketSeqRef.current) setTicketsLoading(false);
     }
@@ -1096,6 +1190,7 @@ export default function CashierTradePage() {
    * burn an escrow whose refund has nowhere to land.
    */
   const actOnTicket = async (row: TicketRow, action: 'redeem' | 'cancel') => {
+    if (!requireOnline()) return;
     if (ticketActingRef.current) return;
     ticketActingRef.current = true;
     setTicketActingId(row.id);
@@ -1132,6 +1227,7 @@ export default function CashierTradePage() {
   }, [loadHeldTicketCount]);
 
   const respondToRequest = async (id: string, action: 'approve' | 'decline' | 'cancel') => {
+    if (!requireOnline()) return;
     // Approving a chip request performs the same conserved ledger move as a
     // Send Out. The row's three buttons were never disabled and there was no
     // busy state, so a double-tap fired two RPCs and the second's refusal
@@ -1167,6 +1263,7 @@ export default function CashierTradePage() {
   };
 
   const askForChips = async () => {
+    if (!requireOnline()) return;
     const raw = Number(askAmount);
     if (!Number.isFinite(raw) || raw <= 0) {
       toast?.error?.('Enter A Positive Amount');
@@ -1211,19 +1308,19 @@ export default function CashierTradePage() {
   }, [askAmount, askNote, clubUuid]);
 
   // ── Settlement invoices (Leaderboard Record tab) ───────────────────────────
-  useEffect(() => {
-    if (tab !== 'leaderboard' || !clubUuid) return;
-    let live = true;
+  const loadInvoices = useCallback(async () => {
+    if (!clubUuid) return false;
+    const seq = ++invoiceSeqRef.current;
     setInvoicesLoading(true);
     setInvoicesError(null);
-    (async () => {
+    try {
       const { data, error } = await supabase
         .from('settlement_invoices')
         .select('id, created_at, invoice_type, gross_amount, net_amount, status')
         .eq('club_id', clubUuid)
         .order('created_at', { ascending: false })
         .limit(50);
-      if (!live) return;
+      if (!isMounted.current || seq !== invoiceSeqRef.current) return false;
       if (error) {
         reportError(error, 'CashierTradePage.loadInvoices');
         // "No Settlement Records Yet" is a different statement from "we could
@@ -1231,6 +1328,7 @@ export default function CashierTradePage() {
         // trades tab. Make it here too.
         setInvoicesError('Could Not Load Settlement Records.');
         setInvoices([]);
+        return false;
       } else {
         setInvoicesError(null);
         setInvoices(
@@ -1244,16 +1342,26 @@ export default function CashierTradePage() {
           }))
         );
       }
-      setInvoicesLoading(false);
-    })();
-    return () => {
-      live = false;
-    };
+      return true;
+    } catch (error) {
+      reportError(error, 'CashierTradePage.loadInvoices');
+      if (isMounted.current && seq === invoiceSeqRef.current) {
+        setInvoicesError('Could Not Load Settlement Records.');
+        setInvoices([]);
+      }
+      return false;
+    } finally {
+      if (isMounted.current && seq === invoiceSeqRef.current) setInvoicesLoading(false);
+    }
+  }, [clubUuid]);
+
+  useEffect(() => {
+    if (tab === 'leaderboard') void loadInvoices();
     // invoicesReload, so Retry has something to change. The button used to call
     // setTab('leaderboard') from inside the leaderboard tab, which is a no-op:
     // deps never changed, no refetch happened, and the error banner sat there
     // with a button that did nothing.
-  }, [tab, clubUuid, invoicesReload]);
+  }, [tab, loadInvoices, invoicesReload]);
 
   // ── Derived list ───────────────────────────────────────────────────────────
   const mineCount = useMemo(() => downline.filter((r) => r.isMine).length, [downline]);
@@ -1296,7 +1404,9 @@ export default function CashierTradePage() {
       if (recordDirection !== 'all' && row.direction !== recordDirection) return false;
       if (!q) return true;
       return (
-        row.counterparty.toLowerCase().includes(q) || txLabel(row.type).toLowerCase().includes(q)
+        row.counterparty.toLowerCase().includes(q) ||
+        txLabel(row.type).toLowerCase().includes(q) ||
+        (row.route ?? '').toLowerCase().includes(q)
       );
     });
   }, [records, recordDirection, recordQuery]);
@@ -1363,9 +1473,32 @@ export default function CashierTradePage() {
    * survive; touch either input and the next submission mints fresh ones.
    */
   useEffect(() => {
+    if (restoringTransferRecoveryRef.current) {
+      restoringTransferRecoveryRef.current = false;
+      return;
+    }
+    const recoveryScope = transferRecoveryScopeRef.current;
     submissionIdRef.current = null;
     opIdsRef.current = new Map();
-  }, [amount, selected, clubUuid]);
+    transferRecoveryScopeRef.current = null;
+    if (recoveryScope) {
+      clearCashierTransferRecovery(recoveryScope.userId, recoveryScope.clubId);
+    }
+    setTransferRecovery(null);
+  }, [amount, selected]);
+
+  useEffect(() => {
+    if (!user?.id || !clubUuid) return;
+    const saved = readCashierTransferRecovery(user.id, clubUuid);
+    if (!saved) return;
+    // The club reset above replaces the selection Set. Suppress the resulting
+    // intent-change pass so it cannot erase the recovery we just hydrated.
+    restoringTransferRecoveryRef.current = true;
+    submissionIdRef.current = saved.submissionId;
+    opIdsRef.current = new Map(Object.entries(saved.opIds));
+    transferRecoveryScopeRef.current = { userId: user.id, clubId: clubUuid };
+    setTransferRecovery(saved);
+  }, [user?.id, clubUuid]);
 
   /** Chips the selected players are holding right now. */
   const pickedHeld = useMemo(
@@ -1384,6 +1517,7 @@ export default function CashierTradePage() {
   // ── Money actions ──────────────────────────────────────────────────────────
   const runTransfers = async (kind: 'send' | 'ticket') => {
     if (!user?.id || !clubUuid) return;
+    if (!requireOnline()) return;
     if (loading || !roleResolved || loadError) {
       toast?.error?.('Cashier Is Still Synchronizing. Try Again In A Moment');
       return;
@@ -1467,6 +1601,7 @@ export default function CashierTradePage() {
       submissionIdRef.current = newOpId();
     }
     const submissionId = submissionIdRef.current;
+    transferRecoveryScopeRef.current = { userId: user.id, clubId: clubUuid };
     /** The op_id for one target, minted once and reused by every retry. */
     const opIdFor = (userId: string) => {
       const held = opIdsRef.current.get(userId);
@@ -1475,6 +1610,30 @@ export default function CashierTradePage() {
       opIdsRef.current.set(userId, fresh);
       return fresh;
     };
+    // Persist BEFORE the first round trip. A refresh after the server commits
+    // but before the response reaches this tab is the exact uncertain outcome
+    // idempotency exists to make safe. Mint every send key up front so the
+    // reloaded page can replay the identical intent even if this component
+    // never reaches its finally block.
+    if (kind === 'send') targets.forEach((target) => opIdFor(target.userId));
+    const recoveryCreatedAt = transferRecovery?.createdAt ?? Date.now();
+    const uncertainRecovery: CashierTransferRecovery = {
+      version: 1,
+      userId: user.id,
+      clubId: clubUuid,
+      kind,
+      amount: value,
+      targetIds: targets.map((target) => target.userId),
+      failures: targets.map((target) => ({
+        userId: target.userId,
+        name: target.name,
+        message: 'Outcome Not Yet Confirmed',
+      })),
+      submissionId,
+      opIds: Object.fromEntries(opIdsRef.current),
+      createdAt: recoveryCreatedAt,
+    };
+    writeCashierTransferRecovery(uncertainRecovery);
     let ok = 0;
     const failed: Array<{ userId: string; name: string; message: string }> = [];
     const batchStartedAt = Date.now();
@@ -1581,13 +1740,25 @@ export default function CashierTradePage() {
       // same op_id per target, so whichever targets already committed replay
       // instead of being charged a second time.
       if (ok === targets.length) {
+        clearCashierTransferRecovery(user.id, clubUuid);
         submissionIdRef.current = null;
         opIdsRef.current = new Map();
+        transferRecoveryScopeRef.current = null;
+        setTransferRecovery(null);
       }
+      const recovery: CashierTransferRecovery | null =
+        failed.length > 0
+          ? {
+              ...uncertainRecovery,
+              failures: failed,
+            }
+          : null;
+      if (recovery) writeCashierTransferRecovery(recovery);
       if (isMounted.current) {
         setBusy(false);
         setBatchProgress(null);
         setTransferFailures(failed);
+        if (recovery) setTransferRecovery(recovery);
         // Only close on a clean batch. Closing on failure wiped the amount and
         // the selection, which is the worst possible moment to lose them.
         if (failed.length === 0) {
@@ -1661,6 +1832,7 @@ export default function CashierTradePage() {
 
   const claimBack = async (row: ReversibleSend) => {
     if (!clubUuid || claimingId || busyRef.current) return;
+    if (!requireOnline()) return;
     busyRef.current = true;
     setClaimingId(row.transaction_id);
     try {
@@ -1739,6 +1911,73 @@ export default function CashierTradePage() {
     return reversible.filter((r) => secondsLeftFor(r) > 0);
   }, [reversible, secondsLeftFor, nowTick]);
 
+  const reconcileCashier = useCallback(async () => {
+    if (!requireOnline() || reconcilingRef.current) return;
+    reconcilingRef.current = true;
+    setReconciling(true);
+    try {
+      const checks = await Promise.all([
+        loadClub(),
+        loadPendingCount(),
+        loadHeldTicketCount(),
+        tab === 'record' ? loadRecords() : Promise.resolve(true),
+        tab === 'leaderboard' ? loadInvoices() : Promise.resolve(true),
+        tab === 'request' ? loadRequests() : Promise.resolve(true),
+        tab === 'tickets' ? loadTickets() : Promise.resolve(true),
+      ]);
+      if (checks.every((complete) => complete === true))
+        toast?.success?.('Cashier Balances Reconciled');
+      else toast?.error?.('Cashier Reconciliation Needs Attention');
+    } catch (error) {
+      reportError(error, 'CashierTradePage.reconcileCashier');
+      toast?.error?.('Cashier Reconciliation Needs Attention');
+    } finally {
+      reconcilingRef.current = false;
+      if (isMounted.current) setReconciling(false);
+    }
+  }, [
+    loadClub,
+    loadHeldTicketCount,
+    loadInvoices,
+    loadPendingCount,
+    loadRecords,
+    loadRequests,
+    loadTickets,
+    requireOnline,
+    tab,
+    toast,
+  ]);
+
+  const reopenTransferRecovery = () => {
+    if (!user?.id || !clubUuid || !transferRecovery || transferRecovery.clubId !== clubUuid) return;
+    const saved = readCashierTransferRecovery(user.id, clubUuid) || transferRecovery;
+    const authorized = new Set(downline.map((row) => row.userId));
+    if (saved.targetIds.some((targetId) => !authorized.has(targetId))) {
+      toast?.error?.('Recipients Changed. Review The Roster Before Starting A New Transfer');
+      return;
+    }
+    restoringTransferRecoveryRef.current = true;
+    submissionIdRef.current = saved.submissionId;
+    opIdsRef.current = new Map(Object.entries(saved.opIds));
+    transferRecoveryScopeRef.current = { userId: user.id, clubId: clubUuid };
+    setSearch('');
+    setMineOnly(false);
+    setAmount(String(saved.amount));
+    setSelected(new Set(saved.targetIds));
+    setTransferRecovery(saved);
+    setTransferFailures(saved.failures);
+    setAmountModal(saved.kind);
+  };
+
+  const copyReceipt = async () => {
+    if (!receipt) return;
+    const copied = await copyCashierText(
+      cashierReceiptText(receipt, currentClub?.name || 'Club Cashier')
+    );
+    if (copied) toast?.success?.('Receipt Copied');
+    else toast?.error?.('Receipt Could Not Be Copied');
+  };
+
   /**
    * MODAL KEYBOARD AND SCROLL (Dan 2026-08-25).
    *
@@ -1750,7 +1989,7 @@ export default function CashierTradePage() {
    * The busy guards mirror the overlay-click guards exactly - Escape must never
    * be an escape hatch out of an in-flight batch.
    */
-  const dialogOpen = Boolean(amountModal || askOpen || claimOpen);
+  const dialogOpen = Boolean(amountModal || askOpen || claimOpen || receipt);
 
   useEffect(() => {
     if (!dialogOpen) return;
@@ -1766,6 +2005,7 @@ export default function CashierTradePage() {
         }
         if (askOpen && !asking) setAskOpen(false);
         if (claimOpen && !claimingId) setClaimOpen(false);
+        if (receipt) setReceipt(null);
         return;
       }
       if (e.key !== 'Tab' || !dialogRef.current) return;
@@ -1800,7 +2040,7 @@ export default function CashierTradePage() {
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [dialogOpen, amountModal, askOpen, claimOpen, busy, asking, claimingId]);
+  }, [dialogOpen, amountModal, askOpen, claimOpen, receipt, busy, asking, claimingId]);
 
   useEffect(() => {
     if (dialogWasOpenRef.current && !dialogOpen) {
@@ -1811,19 +2051,27 @@ export default function CashierTradePage() {
 
   const initial = (name: string) => (name || '?').charAt(0).toUpperCase();
 
-  const cashierNeedsAttention = Boolean(loadError || clubResolveFailed || agentWallet === null);
-  const cashierSyncMessage =
-    loading || isHydrating
-      ? 'Synchronizing cashier balances'
-      : rosterLoadingMore
-        ? `Cashier ready; loading the rest of the roster after ${downline.length.toLocaleString()} members`
-        : clubResolveFailed
-          ? 'Club could not be resolved'
-          : loadError
-            ? 'Cashier sync requires attention'
-            : agentWallet === null
-              ? 'Agent wallet could not be verified'
-              : 'Balances synchronized';
+  const cashierNeedsAttention = Boolean(
+    !isOnline || loadError || clubResolveFailed || agentWallet === null || transferRecovery
+  );
+  const cashierSyncMessage = !isOnline
+    ? 'Cashier offline; money actions are locked'
+    : reconciling
+      ? 'Reconciling balances and cashier authority'
+      : loading || isHydrating
+        ? 'Synchronizing cashier balances'
+        : rosterLoadingMore
+          ? `Cashier ready; loading the rest of the roster after ${downline.length.toLocaleString()} members`
+          : clubResolveFailed
+            ? 'Club could not be resolved'
+            : loadError
+              ? 'Cashier sync requires attention'
+              : agentWallet === null
+                ? 'Agent wallet could not be verified'
+                : 'Balances synchronized';
+  const lastVerifiedLabel = lastVerifiedAt
+    ? new Date(lastVerifiedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : 'Not Yet Verified';
   const currentClubLabel = membershipsLoading
     ? 'Loading Club'
     : currentClub?.name || 'Club Cashier';
@@ -1852,7 +2100,7 @@ export default function CashierTradePage() {
             aria-expanded={pickerOpen}
             aria-haspopup="listbox"
             aria-controls="cashier-club-picker"
-            aria-label={`Open another club cashier. Current club: ${currentClubLabel}`}
+            aria-label={`Open Another Club Cashier. Current Club: ${currentClubLabel}`}
           >
             {currentClub?.logoUrl ? (
               <img src={currentClub.logoUrl} alt="" className={styles.entityLogo} />
@@ -1886,7 +2134,7 @@ export default function CashierTradePage() {
           </div>
         </div>
 
-        <div className={styles.heroMetrics} aria-label="Current cashier balances">
+        <div className={styles.heroMetrics} aria-label="Current Cashier Balances">
           <div className={styles.heroMetric}>
             <span className={styles.heroMetricLabel}>Club Chips</span>
             <strong className={styles.heroMetricValue}>
@@ -1920,7 +2168,7 @@ export default function CashierTradePage() {
           className={styles.picker}
           role="region"
           tabIndex={-1}
-          aria-label="Club cashier switcher"
+          aria-label="Club Cashier Switcher"
           onKeyDown={(event) => {
             if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
             const options = Array.from(
@@ -1957,7 +2205,7 @@ export default function CashierTradePage() {
             </div>
           )}
           {!membershipsLoading && !membershipsError && (
-            <div role="listbox" aria-label="Club cashiers">
+            <div role="listbox" aria-label="Club Cashiers">
               {memberships.map((m) => (
                 <button
                   key={m.clubUuid}
@@ -1989,22 +2237,32 @@ export default function CashierTradePage() {
       <nav
         className={styles.tabs}
         role="tablist"
-        aria-label="Cashier actions"
+        aria-label="Cashier Actions"
+        aria-busy={!roleResolved}
         onKeyDown={(event) => {
           if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
           event.preventDefault();
-          const keys = visibleTabs.map(([key]) => key);
-          const index = Math.max(0, keys.indexOf(tab));
-          const next =
+          const buttons = Array.from(
+            event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+          );
+          const focusedIndex = buttons.indexOf(document.activeElement as HTMLButtonElement);
+          const stateIndex = Math.max(
+            0,
+            visibleTabs.findIndex(([key]) => key === tab)
+          );
+          const index = focusedIndex >= 0 ? focusedIndex : stateIndex;
+          const nextIndex =
             event.key === 'Home'
-              ? keys[0]
+              ? 0
               : event.key === 'End'
-                ? keys[keys.length - 1]
+                ? buttons.length - 1
                 : event.key === 'ArrowRight'
-                  ? keys[(index + 1) % keys.length]
-                  : keys[(index - 1 + keys.length) % keys.length];
+                  ? (index + 1) % buttons.length
+                  : (index - 1 + buttons.length) % buttons.length;
+          const next = visibleTabs[nextIndex]?.[0];
+          if (!next) return;
           setTab(next);
-          document.getElementById(`cashier-tab-${next}`)?.focus();
+          buttons[nextIndex]?.focus();
         }}
       >
         {visibleTabs.map(([key, label]) => (
@@ -2035,6 +2293,64 @@ export default function CashierTradePage() {
           </button>
         ))}
       </nav>
+
+      <section
+        className={`${styles.recoveryConsole} ${cashierNeedsAttention ? styles.recoveryConsoleAttention : ''}`}
+        aria-labelledby="cashier-recovery-title"
+        data-cashier-recovery="true"
+      >
+        <div className={styles.recoveryHeading}>
+          <div>
+            <span className={styles.sectionEyebrow}>Operations Integrity</span>
+            <h2 className={styles.recoveryTitle} id="cashier-recovery-title">
+              Reconciliation Console
+            </h2>
+          </div>
+          <button
+            type="button"
+            className={styles.reconcileBtn}
+            onClick={() => void reconcileCashier()}
+            disabled={!isOnline || reconciling || loading || isHydrating || !clubUuid}
+          >
+            {reconciling ? 'Reconciling...' : 'Reconcile Now'}
+          </button>
+        </div>
+        <div className={styles.recoveryGrid}>
+          <div className={styles.recoveryMetric}>
+            <span>Connection</span>
+            <strong className={isOnline ? styles.integrityGood : styles.integrityBad}>
+              {isOnline ? 'Online' : 'Offline'}
+            </strong>
+          </div>
+          <div className={styles.recoveryMetric}>
+            <span>Balances Verified</span>
+            <strong>{lastVerifiedLabel}</strong>
+          </div>
+          <div className={styles.recoveryMetric}>
+            <span>Action Queue</span>
+            <strong>{(pendingCount + heldTicketCount).toLocaleString()} Waiting</strong>
+          </div>
+        </div>
+        {transferRecovery && transferRecovery.clubId === clubUuid && (
+          <div className={styles.recoveryAlert} role="alert">
+            <div>
+              <strong>Transfer Recovery Required</strong>
+              <span>
+                {transferRecovery.failures.length.toLocaleString()} Of{' '}
+                {transferRecovery.targetIds.length.toLocaleString()} Recipients Need Attention. The
+                Original Retry Keys Are Preserved.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={reopenTransferRecovery}
+              disabled={!isOnline || busy || loading}
+            >
+              Review And Retry
+            </button>
+          </div>
+        )}
+      </section>
 
       {tab === 'trade' && (
         <section
@@ -2080,8 +2396,9 @@ export default function CashierTradePage() {
                 {canSeeClubBank(myRole) && (
                   <button
                     className={styles.plusBtn}
-                    aria-label="Open the Club Bank Cashier"
-                    title="Club Bank Cashier - fund agent wallets, ledger, chip mint"
+                    disabled={!isOnline}
+                    aria-label="Open The Club Bank Cashier"
+                    title="Club Bank Cashier - Fund Agent Wallets, Ledger, Chip Mint"
                     onClick={() => setActiveCashier('club_bank')}
                   >
                     +
@@ -2098,7 +2415,7 @@ export default function CashierTradePage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search Members"
-              aria-label={`Search ${downline.length} member${downline.length === 1 ? '' : 's'}`}
+              aria-label={`Search ${downline.length} Member${downline.length === 1 ? '' : 's'}`}
             />
             <span className={styles.memberCount} aria-hidden="true">
               {downline.length}
@@ -2180,10 +2497,10 @@ export default function CashierTradePage() {
             {!loading && !isHydrating && !loadError && !clubResolveFailed && list.length === 0 && (
               <div className={styles.empty}>
                 {mineOnly
-                  ? 'No players are assigned to you in this club.'
+                  ? 'No Players Are Assigned To You In This Club.'
                   : search.trim()
-                    ? 'No members match that search.'
-                    : 'No members in your downline yet.'}
+                    ? 'No Members Match That Search.'
+                    : 'No Members In Your Downline Yet.'}
               </div>
             )}
             {/*
@@ -2223,7 +2540,7 @@ export default function CashierTradePage() {
                       {r.playerNumber ? `ID: ${r.playerNumber} · ` : ''}
                       <span style={{ textTransform: 'capitalize' }}>
                         {roleLabel(r.role as ClubRole)}
-                        {r.isHorse ? ' (horse)' : ''}
+                        {r.isHorse ? ' (Horse)' : ''}
                       </span>
                       {r.username ? ` · @${r.username}` : ''}
                     </span>
@@ -2285,7 +2602,7 @@ export default function CashierTradePage() {
                 player you have just realised you sent to by accident. */}
             <button
               className={styles.footerBtn}
-              disabled={busy || claimingId !== null}
+              disabled={!isOnline || busy || claimingId !== null}
               onClick={(event) => {
                 dialogTriggerRef.current = event.currentTarget;
                 setClaimOpen(true);
@@ -2295,7 +2612,9 @@ export default function CashierTradePage() {
             </button>
             <button
               className={styles.footerBtn}
-              disabled={selected.size === 0 || busy || loading || !roleResolved || !!loadError}
+              disabled={
+                !isOnline || selected.size === 0 || busy || loading || !roleResolved || !!loadError
+              }
               onClick={(event) => {
                 dialogTriggerRef.current = event.currentTarget;
                 setAmountModal('ticket');
@@ -2305,7 +2624,9 @@ export default function CashierTradePage() {
             </button>
             <button
               className={styles.footerBtn}
-              disabled={selected.size === 0 || busy || loading || !roleResolved || !!loadError}
+              disabled={
+                !isOnline || selected.size === 0 || busy || loading || !roleResolved || !!loadError
+              }
               onClick={(event) => {
                 dialogTriggerRef.current = event.currentTarget;
                 setAmountModal('send');
@@ -2336,7 +2657,7 @@ export default function CashierTradePage() {
             <span className={styles.sectionMeta}>Newest Entries First</span>
           </div>
 
-          <div className={styles.ledgerSummary} aria-label="Loaded ledger totals">
+          <div className={styles.ledgerSummary} aria-label="Loaded Ledger Totals">
             <div className={styles.summaryCell}>
               <span className={styles.summaryLabel}>In</span>
               <strong className={`${styles.summaryValue} ${styles.amtIn}`}>
@@ -2366,10 +2687,10 @@ export default function CashierTradePage() {
               type="search"
               value={recordQuery}
               onChange={(event) => setRecordQuery(event.target.value)}
-              placeholder="Search person or entry type"
-              aria-label="Search trade record"
+              placeholder="Search Person Or Entry Type"
+              aria-label="Search Trade Record"
             />
-            <div className={styles.ledgerFilters} aria-label="Filter trade direction">
+            <div className={styles.ledgerFilters} aria-label="Filter Trade Direction">
               {(['all', 'in', 'out'] as const).map((direction) => (
                 <button
                   key={direction}
@@ -2407,14 +2728,24 @@ export default function CashierTradePage() {
             )}
             {!recordsError &&
               filteredRecords.map((r) => (
-                <div key={r.id} className={styles.row}>
+                <button
+                  key={r.id}
+                  type="button"
+                  className={`${styles.row} ${styles.receiptRow}`}
+                  onClick={(event) => {
+                    dialogTriggerRef.current = event.currentTarget;
+                    setReceipt(r);
+                  }}
+                  aria-label={`Open Receipt For ${r.direction === 'out' ? 'Payment To' : 'Payment From'} ${r.counterparty}, ${fmt(r.amount)} Chips`}
+                >
                   <div className={styles.rowInfo}>
                     <span className={styles.rowName}>
                       {r.direction === 'out' ? 'To ' : 'From '}
                       {r.counterparty}
                     </span>
                     <span className={styles.rowSub}>
-                      {txLabel(r.type)} &middot;{' '}
+                      {txLabel(r.type)}
+                      {r.route ? <> &middot; {r.route}</> : null} &middot;{' '}
                       {new Date(r.createdAt).toLocaleString([], {
                         month: 'short',
                         day: 'numeric',
@@ -2429,7 +2760,8 @@ export default function CashierTradePage() {
                     {r.direction === 'in' ? '+' : '-'}
                     {fmt(r.amount)}
                   </span>
-                </div>
+                  <span className={styles.receiptCue}>Receipt</span>
+                </button>
               ))}
             {!recordsLoading && recordsHasMore && recordDirection === 'all' && !recordQuery && (
               <button
@@ -2529,6 +2861,7 @@ export default function CashierTradePage() {
           <div className={styles.list}>
             <button
               className={styles.classicLink}
+              disabled={!isOnline}
               onClick={(event) => {
                 dialogTriggerRef.current = event.currentTarget;
                 setAskOpen(true);
@@ -2570,7 +2903,7 @@ export default function CashierTradePage() {
                 {r.mine ? (
                   <button
                     className={styles.reqBtn}
-                    disabled={respondingId !== null}
+                    disabled={!isOnline || respondingId !== null}
                     onClick={() => respondToRequest(r.id, 'cancel')}
                   >
                     {respondingId === r.id ? 'Working...' : 'Cancel'}
@@ -2579,14 +2912,14 @@ export default function CashierTradePage() {
                   <>
                     <button
                       className={styles.reqBtn}
-                      disabled={respondingId !== null}
+                      disabled={!isOnline || respondingId !== null}
                       onClick={() => respondToRequest(r.id, 'decline')}
                     >
                       {respondingId === r.id ? 'Working...' : 'Decline'}
                     </button>
                     <button
                       className={`${styles.reqBtn} ${styles.reqBtnGo}`}
-                      disabled={respondingId !== null}
+                      disabled={!isOnline || respondingId !== null}
                       onClick={() => respondToRequest(r.id, 'approve')}
                     >
                       {respondingId === r.id ? 'Working...' : 'Approve'}
@@ -2663,7 +2996,7 @@ export default function CashierTradePage() {
                   {t.status === 'issued' && t.held && (
                     <button
                       className={`${styles.reqBtn} ${styles.reqBtnGo}`}
-                      disabled={ticketActingId !== null}
+                      disabled={!isOnline || ticketActingId !== null}
                       onClick={() => void actOnTicket(t, 'redeem')}
                     >
                       {ticketActingId === t.id ? 'Working...' : 'Redeem'}
@@ -2672,7 +3005,7 @@ export default function CashierTradePage() {
                   {t.status === 'issued' && !t.held && (
                     <button
                       className={styles.reqBtn}
-                      disabled={ticketActingId !== null}
+                      disabled={!isOnline || ticketActingId !== null}
                       onClick={() => void actOnTicket(t, 'cancel')}
                     >
                       {ticketActingId === t.id ? 'Working...' : 'Cancel'}
@@ -2682,6 +3015,83 @@ export default function CashierTradePage() {
               ))}
           </div>
         </section>
+      )}
+
+      {receipt && (
+        <div className={styles.modalOverlay} onClick={() => setReceipt(null)}>
+          <div
+            ref={dialogRef}
+            className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cashier-receipt-title"
+            tabIndex={-1}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className={styles.receiptHeader}>
+              <span className={styles.sectionEyebrow}>Immutable Ledger Entry</span>
+              <div className={styles.modalTitle} id="cashier-receipt-title">
+                Transaction Receipt
+              </div>
+            </div>
+            <div className={styles.receiptAmount}>
+              <span>{receipt.direction === 'in' ? 'Incoming' : 'Outgoing'}</span>
+              <strong className={receipt.direction === 'in' ? styles.amtIn : styles.amtOut}>
+                {receipt.direction === 'in' ? '+' : '-'}
+                {fmt(receipt.amount)}
+              </strong>
+              <small>Chips</small>
+            </div>
+            <dl className={styles.receiptFacts}>
+              <div>
+                <dt>Status</dt>
+                <dd className={styles.integrityGood}>Recorded In Ledger</dd>
+              </div>
+              <div>
+                <dt>{receipt.direction === 'in' ? 'From' : 'To'}</dt>
+                <dd>{receipt.counterparty}</dd>
+              </div>
+              <div>
+                <dt>Entry</dt>
+                <dd>{txLabel(receipt.type)}</dd>
+              </div>
+              {receipt.route ? (
+                <div>
+                  <dt>Wallets</dt>
+                  <dd>{receipt.route}</dd>
+                </div>
+              ) : null}
+              {receipt.narrative ? (
+                <div>
+                  <dt>Summary</dt>
+                  <dd>{receipt.narrative}</dd>
+                </div>
+              ) : null}
+              <div>
+                <dt>Recorded</dt>
+                <dd>
+                  {new Date(receipt.createdAt).toLocaleString([], {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </dd>
+              </div>
+              <div className={styles.receiptReference}>
+                <dt>Reference</dt>
+                <dd>{receipt.id}</dd>
+              </div>
+            </dl>
+            <div className={styles.modalActions}>
+              <button onClick={() => setReceipt(null)}>Close</button>
+              <button className={styles.modalConfirm} onClick={() => void copyReceipt()}>
+                Copy Receipt
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Ask-for-chips modal */}
@@ -2734,7 +3144,11 @@ export default function CashierTradePage() {
               <button disabled={asking} onClick={() => setAskOpen(false)}>
                 Cancel
               </button>
-              <button className={styles.modalConfirm} disabled={asking} onClick={askForChips}>
+              <button
+                className={styles.modalConfirm}
+                disabled={!isOnline || asking}
+                onClick={askForChips}
+              >
                 {asking ? 'Sending...' : 'Send Request'}
               </button>
             </div>
@@ -2791,7 +3205,7 @@ export default function CashierTradePage() {
                 if (transferFailures.length) setTransferFailures([]);
               }}
               placeholder={
-                amountModal === 'ticket' ? 'Ticket value per player' : 'Amount per player'
+                amountModal === 'ticket' ? 'Ticket Value Per Player' : 'Amount Per Player'
               }
               autoFocus
             />
@@ -2869,7 +3283,14 @@ export default function CashierTradePage() {
               </button>
               <button
                 className={styles.modalConfirm}
-                disabled={busy || picked.length === 0 || loading || !roleResolved || !!loadError}
+                disabled={
+                  !isOnline ||
+                  busy ||
+                  picked.length === 0 ||
+                  loading ||
+                  !roleResolved ||
+                  !!loadError
+                }
                 onClick={() => runTransfers(amountModal)}
               >
                 {busy && batchProgress
@@ -2952,7 +3373,7 @@ export default function CashierTradePage() {
                       <span className={styles.rowBalance}>{fmt(row.remaining)}</span>
                       <button
                         className={`${styles.reqBtn} ${styles.reqBtnGo}`}
-                        disabled={claimingId !== null}
+                        disabled={!isOnline || claimingId !== null}
                         onClick={() => void claimBack(row)}
                       >
                         {claimingId === row.transaction_id ? 'Working...' : 'Claim Back'}

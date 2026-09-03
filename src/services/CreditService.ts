@@ -21,6 +21,7 @@
 import { supabase } from '../lib/supabase';
 import { WalletService } from './WalletService';
 import { SettlementService } from './SettlementService';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -47,7 +48,25 @@ function creditPaymentReasonText(reason: string | undefined): string {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export type CreditStatus = 'good_standing' | 'warning' | 'suspended' | 'frozen';
-export type InvoiceStatus = 'pending' | 'partial' | 'paid' | 'overdue' | 'disputed';
+// 'void' arrived with 20260901000001. A cancelled invoice is not payable and
+// both payment RPCs refuse one; the type has to be able to say so, or every
+// screen keyed on this union falls through to its default branch.
+export type InvoiceStatus = 'pending' | 'partial' | 'paid' | 'overdue' | 'disputed' | 'void';
+
+/**
+ * The statuses that still represent money owed.
+ *
+ * One definition, because two screens disagreeing about what "owed" means is
+ * how a cancelled invoice got an agent suspended. `checkSuspension` used to
+ * ask `status !== 'paid'`, which counts a VOID invoice as debt - and after
+ * 20260901000001 there are 224 of those, 184 of them past their due date.
+ * A scheduled job (FinancialCronService) reads that answer and suspends people.
+ */
+export const OWED_INVOICE_STATUSES: ReadonlySet<InvoiceStatus> = new Set<InvoiceStatus>([
+  'pending',
+  'partial',
+  'overdue',
+]);
 
 export interface CreditAccount {
   agentId: string;
@@ -143,10 +162,10 @@ export const CreditService = {
       if (agent.user_id) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('display_name')
+          .select(PLAYER_NAME_COLUMNS)
           .eq('id', agent.user_id)
           .maybeSingle();
-        agentName = profile?.display_name || 'Unknown';
+        agentName = playerDisplayName(profile);
       }
     } catch (e) {
       reportError(e, 'CreditService.getCreditAccount');
@@ -458,10 +477,10 @@ export const CreditService = {
       if (agentData?.user_id) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('display_name')
+          .select(PLAYER_NAME_COLUMNS)
           .eq('id', agentData.user_id)
           .maybeSingle();
-        agentName = profile?.display_name || 'Unknown';
+        agentName = playerDisplayName(profile);
       }
     } catch (e) {
       /* non-critical — agent name lookup is a nice-to-have */
@@ -572,8 +591,11 @@ export const CreditService = {
    */
   async checkSuspension(agentId: string): Promise<{ shouldSuspend: boolean; reason?: string }> {
     const invoices = await this.getAgentInvoices(agentId);
+    // `status !== 'paid'` counted a cancelled invoice as debt. With 224 voided
+    // bills on the books, 184 of them past due, that had the cron suspending
+    // every credit agent for 18 million chips nobody owed.
     const overdueInvoices = invoices.filter(
-      (i) => i.status !== 'paid' && new Date(i.dueDate) < new Date()
+      (i) => OWED_INVOICE_STATUSES.has(i.status) && new Date(i.dueDate) < new Date()
     );
 
     if (overdueInvoices.length === 0) {
@@ -620,10 +642,12 @@ export const CreditService = {
    * Reinstate suspended agent after payment
    */
   async reinstateAgent(agentId: string): Promise<boolean> {
-    // Check all invoices are paid
+    // Check nothing is still owed. Same trap as checkSuspension, and worse in
+    // the other direction: counting a cancelled invoice as overdue here means
+    // an agent who has settled everything can never be let back in.
     const invoices = await this.getAgentInvoices(agentId);
     const hasOverdue = invoices.some(
-      (i) => i.status !== 'paid' && new Date(i.dueDate) < new Date()
+      (i) => OWED_INVOICE_STATUSES.has(i.status) && new Date(i.dueDate) < new Date()
     );
 
     if (hasOverdue) {
@@ -694,7 +718,13 @@ export const CreditService = {
       periodEnd: inv.period_end,
       debtOwed: inv.debt_owed,
       amountPaid: inv.amount_paid || 0,
-      amountRemaining: inv.amount_remaining || inv.debt_owed,
+      // `||` not `??` was a live bug the moment any invoice reached zero
+      // remaining: 0 is falsy, so a fully paid - or, since 20260901000001, a
+      // VOIDED - invoice reported its whole original debt as still due, and
+      // AgentInvoicesPanel drew a "Pay now" button on 224 cancelled bills.
+      // The RPC refused them, so no money moved; the user just got "Payment
+      // failed" on something they did not owe.
+      amountRemaining: inv.amount_remaining ?? inv.debt_owed,
       status: inv.status,
       dueDate: inv.due_date,
       createdAt: inv.created_at,

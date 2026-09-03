@@ -31,6 +31,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { HEADS_UP_SEATS, HEADS_UP_STACKS } from '../../src/config/headsUpSpec';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const stripComments = (src: string) =>
@@ -53,14 +54,25 @@ describe('1. the Heads-Up board offers BOTH bands', () => {
   });
 
   it('gives the turbo Dan-s 300 stack and the deep stack its 1000', () => {
-    expect(shapes).toMatch(/turbo:\s*true,\s*startingStack:\s*300/);
-    expect(shapes).toMatch(/turbo:\s*false,\s*startingStack:\s*1000/);
+    /**
+     * 2026-08-31 (Phase 3): the numbers moved into src/config/headsUpSpec.ts,
+     * so this follows them there rather than being deleted. The guarantee is
+     * unchanged and now stronger -- the literal is asserted against the spec,
+     * and the board is asserted to read the spec, so a change to either side
+     * alone fails.
+     */
+    expect(HEADS_UP_STACKS.turbo).toBe(300);
+    expect(HEADS_UP_STACKS.deep).toBe(1000);
+    expect(shapes).toMatch(/turbo:\s*true,\s*startingStack:\s*HEADS_UP_STACKS\.turbo/);
+    expect(shapes).toMatch(/turbo:\s*false,\s*startingStack:\s*HEADS_UP_STACKS\.deep/);
   });
 
   it('keeps both bands two-handed', () => {
-    const seatDecls = shapes.match(/seats:\s*\d+/g) ?? [];
+    expect(HEADS_UP_SEATS).toBe(2);
+    // The type annotation says `seats: number`; only the DECLARATIONS count.
+    const seatDecls = shapes.match(/seats:\s*(?:\d+|HEADS_UP_SEATS)/g) ?? [];
     expect(seatDecls.length).toBe(2);
-    for (const d of seatDecls) expect(d).toBe('seats: 2');
+    for (const d of seatDecls) expect(d).toBe('seats: HEADS_UP_SEATS');
   });
 
   it('makes the " Turbo" name suffix reachable, so the two boards differ', () => {
@@ -189,9 +201,22 @@ describe('4. the payout sweep can actually reach the events it repairs', () => {
   });
 
   it('looks 30 days back on the deep pass, with a limit that covers the window', () => {
-    // Measured: 35,042 events in a 30-day window at ~0.29ms each.
+    // Measured: 48,093 events in a 30-day window; 150,000 restores headroom.
     expect(settler).toMatch(/PAYOUT_SWEEP_DEEP_DAYS\s*=\s*30/);
-    expect(settler).toMatch(/PAYOUT_SWEEP_DEEP_LIMIT\s*=\s*40000/);
+
+    // A FLOOR, NOT A LITERAL. This pinned `= 40000` exactly, the limit was
+    // deliberately raised to 150,000 (about 3x the population, with the
+    // reasoning written beside it in RakebackSettlerService), and the pin went
+    // red on a change that made the sweep strictly better - main published
+    // nothing for anyone until somebody noticed. Re-pinning the new literal
+    // just schedules the same outage for the next improvement.
+    //
+    // The bug this guards is a limit too SMALL to cover its window: a large one
+    // costs seconds, a small one silently shrinks the window back down and is
+    // the original defect in a new coat. Assert the direction that can hurt.
+    const deepLimit = Number(settler.match(/PAYOUT_SWEEP_DEEP_LIMIT\s*=\s*(\d+)/)?.[1] ?? NaN);
+    expect(deepLimit, 'the deep limit must be readable').not.toBeNaN();
+    expect(deepLimit).toBeGreaterThanOrEqual(40000);
   });
 
   it('does not pay the ~10s scan on all 48 cycles a day', () => {

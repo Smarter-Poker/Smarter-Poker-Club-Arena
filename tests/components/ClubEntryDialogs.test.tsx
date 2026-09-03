@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -25,12 +25,15 @@ describe('Club Entry dialog runtime surfaces', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('mounts Find Player, loads its privacy boundary, and closes on Escape', async () => {
+  it('mounts Find Player, explains its access boundary, and closes on Escape', async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     surface(<FindPlayerModal isOpen onClose={onClose} />);
     expect(screen.getByRole('dialog', { name: 'Find A Player' })).toBeVisible();
-    await waitFor(() => expect(screen.getByRole('button', { name: /visibility/i })).toBeVisible());
+    await user.click(screen.getByRole('button', { name: 'Access Rules' }));
+    expect(screen.getByLabelText('Player Search Access Rules')).toBeVisible();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByLabelText('Player Search Access Rules')).not.toBeInTheDocument();
     await user.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalledTimes(1);
   });

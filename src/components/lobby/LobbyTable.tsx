@@ -292,7 +292,7 @@ function FavCell({ entry, ctx }: { entry: LobbyEntry; ctx: LobbyRowContext }) {
     <button
       type="button"
       className={`lt-fav${isFav ? ' is-on' : ''}`}
-      aria-label={isFav ? 'Remove from favorites' : 'Add to favorites'}
+      aria-label={isFav ? 'Remove From Favorites' : 'Add To Favorites'}
       aria-pressed={isFav}
       title={isFav ? 'Remove From Favorites' : 'Add To Favorites'}
       onClick={(e) => {
@@ -378,14 +378,14 @@ function LobbyFlagChips({ entry }: { entry: LobbyEntry }) {
           and only when that club has not switched `hide_club_name` on. On a
           single-club board this is null and nothing renders. */}
       {entry.clubLabel && (
-        <span className="lt-flag lt-flag--club" title={`Hosted by ${entry.clubLabel}`}>
+        <span className="lt-flag lt-flag--club" title={`Hosted By ${entry.clubLabel}`}>
           {entry.clubLabel}
         </span>
       )}
       {entry.featured && (
         <span
           className="lt-flag lt-flag--featured"
-          title="Pinned to the top of the board by the host"
+          title="Pinned To The Top Of The Board By The Host"
         >
           FEATURED
         </span>
@@ -393,13 +393,13 @@ function LobbyFlagChips({ entry }: { entry: LobbyEntry }) {
       {entry.vipOnly && (
         <span
           className="lt-flag lt-flag--vip"
-          title="VIP members only. A seat here needs VIP membership"
+          title="VIP Members Only. A Seat Here Needs VIP Membership"
         >
           VIP
         </span>
       )}
       {entry.isNew && (
-        <span className="lt-flag lt-flag--new" title="Recently opened">
+        <span className="lt-flag lt-flag--new" title="Recently Opened">
           NEW
         </span>
       )}
@@ -1186,6 +1186,9 @@ export default function LobbyTable({
     () => readSort(clubId, category) ?? defaultSortFor(category)
   );
   const bodyRef = useRef<HTMLTableSectionElement>(null);
+  /* Which chip of the mobile sort toolbar owns the single tab stop. */
+  const sortChipsRef = useRef<HTMLDivElement>(null);
+  const [sortFocus, setSortFocus] = useState(0);
   /* Which row the keyboard is on. Deliberately separate from `selectedId`:
      selecting a row opens (and for a running MTT, navigates), and arrowing
      through a list must not do either. */
@@ -1366,9 +1369,132 @@ export default function LobbyTable({
     [sorted, selectedId, keyboardFocusId, onActivate]
   );
 
+  const sortableColumns = columns.filter((col) => col.sortable);
+
+  /**
+   * Roving focus for the mobile sort toolbar.
+   *
+   * Focus is moved imperatively rather than by rendering `autoFocus`, because
+   * the chips are a horizontal scroller: `focus()` brings the target into view
+   * on its own, which is the behaviour a keyboard user wants when the sixth
+   * chip is off the right edge of a 375px phone.
+   */
+  const moveSortFocus = (nextIndex: number) => {
+    const count = sortableColumns.length;
+    if (count === 0) return;
+    const wrapped = ((nextIndex % count) + count) % count;
+    setSortFocus(wrapped);
+    sortChipsRef.current?.querySelectorAll<HTMLButtonElement>('button')[wrapped]?.focus();
+  };
+
+  const handleSortbarKeyDown = (e: React.KeyboardEvent) => {
+    const current = Math.min(sortFocus, sortableColumns.length - 1);
+    switch (e.key) {
+      case 'ArrowRight':
+        e.preventDefault();
+        moveSortFocus(current + 1);
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        moveSortFocus(current - 1);
+        break;
+      case 'Home':
+        e.preventDefault();
+        moveSortFocus(0);
+        break;
+      case 'End':
+        e.preventDefault();
+        moveSortFocus(sortableColumns.length - 1);
+        break;
+      default:
+      /* Enter and Space are the button's own business; anything else belongs
+         to the page. Deliberately NOT swallowed: the grid below listens for
+         its own keys and only acts when the event started on itself. */
+    }
+  };
+
   return (
     <>
-      <div className="arena-lobby-card-list" aria-label={`Game cards, ${sorted.length} games`}>
+      {/* ═══════════════════════════════════════════════════════════════════
+          MOBILE SORT BAR — the phone's copy of the column headings
+          -------------------------------------------------------------------
+          Dan 2026-09-02: "THERE IS NOT FILTERS FOR THE GAME CARDS BELOW, LIKE
+          THERE IS ON DESK TOP, YOU NEED TO ADD THAT TO THE BOTTOM, RIGHT
+          BELOW THE DYNAMIC ADD, SO MOBILE USERS CAN FILTER AND DISPLAY THE
+          RESULTS ACCORDINGLY."
+
+          Below 900px this file stops being a table - `thead` is display:none
+          and every row becomes a card - so GAME / STAKES / VARIANT / PLAYERS /
+          BUY-IN / STATUS, which on a monitor ARE the sort control, had no
+          phone equivalent at all. The board could be ordered on a desktop and
+          not on a phone.
+
+          Built from `columns` and driven by `handleHeaderClick` deliberately,
+          rather than as a parallel control: same keys, same asc/desc flip,
+          same per-club per-tab memory, and the chip set changes with the tab
+          exactly as the heading row does. A second implementation would be a
+          second set of bugs, and would drift the first time a column moved.
+
+          POSITION IS LOAD-BEARING. This renders BEFORE
+          `.arena-lobby-card-list`, never between the list and
+          `.lobby-table-wrap`: LobbyTable.css hides the desktop table on a
+          phone with the ADJACENT-SIBLING selector
+          `.arena-lobby-card-list + .lobby-table-wrap`, so anything inserted
+          between those two would put the dense table back on every phone. */}
+      {sortableColumns.length > 0 && (
+        <div
+          className="lobby-sortbar"
+          role="toolbar"
+          aria-label="Sort Games"
+          aria-orientation="horizontal"
+          /* A toolbar is a COMPOSITE widget: ARIA expects ONE tab stop for the
+             whole group, with the arrow keys moving inside it. Shipping the
+             role without that contract told a screen reader "arrows work here"
+             and then ignored them, and left six separate tab stops in the
+             middle of the lobby for a keyboard user to walk through on the way
+             to the games. The roving tabindex below gives the role what it
+             promises. */
+          onKeyDown={handleSortbarKeyDown}
+        >
+          <span className="lobby-sortbar__eyebrow">Sort</span>
+          <div className="lobby-sortbar__chips" ref={sortChipsRef}>
+            {sortableColumns.map((col, index) => {
+              const active = sort?.key === col.key;
+              return (
+                <button
+                  key={col.key}
+                  type="button"
+                  className={`lobby-sortbar__chip${active ? ' is-active' : ''}`}
+                  aria-pressed={active}
+                  /* The chip set changes with the tab, so a remembered index
+                     can outlive the list it pointed into. Clamped rather than
+                     reset, so the cursor stays roughly where the hand left
+                     it. */
+                  tabIndex={index === Math.min(sortFocus, sortableColumns.length - 1) ? 0 : -1}
+                  onFocus={() => setSortFocus(index)}
+                  onClick={() => handleHeaderClick(col)}
+                >
+                  {col.label}
+                  <span className="lobby-sortbar__mark" aria-hidden="true">
+                    {active ? (sort!.dir === 'asc' ? '▴' : '▾') : '▴▾'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {/* The scroller below announces the sort, but it is display:none on a
+              phone and a hidden element announces nothing - so on the one
+              surface that has just gained a sort control, sorting was silent. */}
+          <span className="sr-only" role="status" aria-live="polite">
+            {sort
+              ? `Sorted By ${columns.find((c) => c.key === sort.key)?.label || sort.key}, ${
+                  sort.dir === 'asc' ? 'Ascending' : 'Descending'
+                }`
+              : 'Default Order'}
+          </span>
+        </div>
+      )}
+      <div className="arena-lobby-card-list" aria-label={`Game Cards, ${sorted.length} Games`}>
         {sorted.map((entry) => (
           <ArenaLobbyGameCard
             key={entry.id}
@@ -1388,7 +1514,7 @@ export default function LobbyTable({
          actually takes focus and handles the keys, which is this one; the
          table below keeps its own grid semantics for the rows. */
         role="grid"
-        aria-label={`Game list, ${sorted.length} game${sorted.length === 1 ? '' : 's'}`}
+        aria-label={`Game List, ${sorted.length} Game${sorted.length === 1 ? '' : 's'}`}
         tabIndex={0}
         onKeyDown={handleKeyDown}
         /* Without this the arrow keys moved a selection no screen reader was
@@ -1405,10 +1531,10 @@ export default function LobbyTable({
           header and nothing was announced. */}
         <span className="sr-only" role="status" aria-live="polite">
           {sort
-            ? `Sorted by ${columns.find((c) => c.key === sort.key)?.label || sort.key}, ${
-                sort.dir === 'asc' ? 'ascending' : 'descending'
+            ? `Sorted By ${columns.find((c) => c.key === sort.key)?.label || sort.key}, ${
+                sort.dir === 'asc' ? 'Ascending' : 'Descending'
               }`
-            : 'Default order'}
+            : 'Default Order'}
         </span>
         {/* The category is on the table so the stylesheet can shed columns per
           BOARD rather than per page width. The wide breakpoints were written

@@ -371,19 +371,25 @@ export function TableMenu({
            name.
 
            `use_real_name` (this row) picks between the player's real name and
-           their username, is read by utils/playerDisplayName and by TablePage's
-           hero-name derivation, and is genuinely live. Its old label —
-           "Using Real Name (vs Alias)" — called the USERNAME an alias, which is
-           the term the OTHER setting uses, so the two were indistinguishable in
-           a list. Relabelled to what it actually switches, with the current
-           value as the badge.
+           their username. Its old label — "Using Real Name (vs Alias)" —
+           called the USERNAME an alias, which is the term the OTHER setting
+           uses, so the two were indistinguishable in a list.
+
+           SCOPE CHANGED 2026-09-02. Dan: "THE CLUB ARENA SHOULD ALWAYS 100% OF
+           THE TIME USE THE POKER ALIAS AND NOT THE REAL NAME, THE REAL NAME IS
+           USED IN THE WORLD HUB." So this preference no longer reaches the
+           felt, the header, or any other arena surface — playerDisplayName's
+           arena branch ignores it by design, and TablePage's hero derivation
+           stopped consulting it. It still governs SOCIAL display, which is
+           what it is now labelled as. A toggle that promises to change the
+           name above your stack, and cannot, is worse than no toggle.
 
            `use_alias` / `table_alias` (the row below) is a club alias worn at
            the table, and it wins over both of the above on the felt. It is
            edited in IdentityModal, which is what `onOpenIdentity` opens. */
         {
           id: 'display-name',
-          label: 'Display Name',
+          label: 'Social Name',
           icon: <NameTagIcon />,
           badge: useRealName ? 'Real Name' : 'Username',
           onClick: handleUseRealNameToggle,
@@ -494,14 +500,14 @@ export function TableMenu({
       <button
         className={`table-menu__trigger ${isOpen ? 'table-menu__trigger--active' : ''}`}
         onClick={onToggle}
-        aria-label="Table menu"
+        aria-label="Table Menu"
         aria-haspopup="menu"
         aria-expanded={isOpen}
       >
         <img src={hamburgerIcon} className="table-menu__trigger-img" alt="" draggable={false} />
         {/* Notification badge */}
         {badgeCount != null && badgeCount > 0 && (
-          <span className="table-menu__badge" aria-label={`${badgeCount} notifications`}>
+          <span className="table-menu__badge" aria-label={`${badgeCount} Notifications`}>
             {badgeCount > 9 ? '9+' : badgeCount}
           </span>
         )}
@@ -516,7 +522,7 @@ export function TableMenu({
               ref={dropdownRef}
               className="table-menu__dropdown"
               role="menu"
-              aria-label={tableName || 'Table menu'}
+              aria-label={tableName || 'Table Menu'}
             >
               {/* Header */}
               {/* Header with table name, connection, and hand info */}

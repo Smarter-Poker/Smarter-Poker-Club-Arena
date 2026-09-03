@@ -118,7 +118,7 @@ const T = {
   ready: 90_000,
   getSubscription: 8_000,
   subscribe: 20_000,
-  save: 10_000,
+  save: 30_000,
 } as const;
 
 function withTimeout<T2>(promise: Promise<T2> | T2, ms: number, label: string): Promise<T2> {

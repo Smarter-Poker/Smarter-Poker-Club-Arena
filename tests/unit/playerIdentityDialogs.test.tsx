@@ -32,8 +32,8 @@ describe('profile editor account mutation states', () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(<UserProfileEdit isOpen onClose={onClose} initialData={profile} onSave={onSave} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Choose profile avatar' }));
-    const choices = screen.getAllByRole('button', { name: 'Select this avatar' });
+    fireEvent.click(screen.getByRole('button', { name: 'Choose Profile Avatar' }));
+    const choices = screen.getAllByRole('button', { name: 'Select This Avatar' });
     fireEvent.click(choices[1]);
     fireEvent.click(screen.getByRole('button', { name: 'Save Profile' }));
 

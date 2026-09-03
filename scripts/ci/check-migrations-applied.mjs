@@ -36,6 +36,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { loadSchemaManifest, loadColumnsManifest } from './schema-manifest.mjs';
 
 const REPO = process.cwd();
 const MANIFEST = join(REPO, 'scripts/ci/supabase-schema-manifest.json');
@@ -84,7 +85,24 @@ function changedMigrations(base) {
   return out
     .split('\n')
     .map((l) => l.trim())
-    .filter((l) => l.startsWith(DIR) && l.endsWith('.sql'));
+    .filter((l) => l.startsWith(DIR) && l.endsWith('.sql'))
+    // BACKFILL EXEMPTION (2026-09-01). A file whose first line marks it as a
+    // recovered record of an ALREADY-APPLIED migration is history, not a new
+    // migration awaiting apply. This gate asks "does what this migration
+    // declares exist in the live schema NOW" - the right question for new
+    // work, a false positive for a backfill of an old migration whose object
+    // was since dropped, renamed or superseded (backup tables, a removed
+    // column, a replaced function). Those objects genuinely ran and are
+    // genuinely gone; the byte-exact record is correct and the live schema is
+    // correct. The gate stays strict on every genuinely new migration. Marker
+    // written by scripts/ci/backfill-unrecorded-migrations.mjs.
+    .filter((f) => {
+      try {
+        return !/^--\s*(BACKFILLED|UNRECOVERABLE STUB)\b/.test(readFileSync(join(REPO, f), 'utf8'));
+      } catch {
+        return true; // unreadable: check it rather than skip it
+      }
+    });
 }
 
 /** Objects a migration CREATES or ADDS. Drops and alters of existing objects
@@ -178,7 +196,16 @@ function main() {
     console.error('[check-migrations-applied] missing schema manifest — cannot judge.');
     process.exit(2);
   }
-  const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
+  /* Base snapshot UNION scripts/ci/schema-manifest.d/*.json. A migration's own
+     branch declares its new functions in its own fragment file, which is what
+     stopped this gate from forcing every migration through one shared array. */
+  let manifest;
+  try {
+    manifest = loadSchemaManifest(REPO);
+  } catch (err) {
+    console.error(`[check-migrations-applied] ${err.message}`);
+    process.exit(2);
+  }
   const liveFns = new Set(manifest.functions || []);
   const liveTables = new Set(manifest.tables || []);
 
@@ -186,10 +213,7 @@ function main() {
      phantom-column gate already depends on it. If it is absent this checks
      what it can rather than exiting 2 - a missing companion file should not
      turn off the function and table checks that do not need it. */
-  const columnsPath = join(REPO, 'scripts/ci/supabase-columns-manifest.json');
-  const liveColumns = existsSync(columnsPath)
-    ? JSON.parse(readFileSync(columnsPath, 'utf8')).columns || {}
-    : null;
+  const liveColumns = loadColumnsManifest(REPO).columns;
 
   const base = baseRef();
   const files = changedMigrations(base);

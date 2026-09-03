@@ -51,7 +51,7 @@ function topUpBody(): string {
   return SRC.slice(start, next > -1 ? next : SRC.length);
 }
 
-describe('seatFirstFillOrder — home before the fleet', () => {
+describe('seatFirstFillOrder - home before the fleet', () => {
   it('offers the game its own unseated registrants first', () => {
     // The seven stuck spins in the numbers above: the free pool cannot help
     // them at all, and their own roster can fill them completely.
@@ -95,7 +95,7 @@ describe('seatFirstFillOrder — home before the fleet', () => {
   });
 });
 
-describe('topUpWithHorses — the seat-first fill wiring', () => {
+describe('topUpWithHorses - the seat-first fill wiring', () => {
   it('asks the roster before it asks the fleet', () => {
     const body = topUpBody();
     const own = body.indexOf('unseatedRegistrantHorses');
@@ -129,7 +129,7 @@ describe('topUpWithHorses — the seat-first fill wiring', () => {
   });
 });
 
-describe('horse load — unreadable is UNKNOWN, never idle', () => {
+describe('horse load - unreadable is UNKNOWN, never idle', () => {
   it('horseLoadMap returns null rather than an empty map when a read fails', () => {
     const start = SRC.indexOf('private async horseLoadMap(');
     expect(start).toBeGreaterThan(-1);

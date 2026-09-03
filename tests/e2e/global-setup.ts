@@ -71,7 +71,46 @@ function assertWelcomeKeyStillCurrent() {
   }
 }
 
+/**
+ * The signed-out fallback, and the one place it is not allowed.
+ *
+ * Falling back is right for a local run or a merge gate: costing everyone their
+ * build over a login blip is worse than costing 47 skips. It is WRONG for the
+ * post-deploy job, which exists for no other purpose than to look at production
+ * with a real session. There, a silent fallback produces a green run in which
+ * almost nothing executed — the exact failure Phase 6 was opened to close.
+ *
+ * E2E_REQUIRE_AUTH=1 says "this run has credentials and its verdict depends on
+ * them". Then a failed login is a failed run, with its real reason, instead of
+ * a success that verified nothing.
+ */
 function signedOut(reason: string) {
+  /**
+   * A CREDENTIAL THAT WAS SUPPLIED AND DID NOT WORK IS NOT THE SAME AS NO
+   * CREDENTIAL, AND UNTIL NOW BOTH LOOKED IDENTICAL.
+   *
+   * ci.yml's scheduled `Live Production E2E` deliberately tolerates missing
+   * secrets so a repo that never set them does not go red. Correct. But it
+   * treated a BROKEN login the same way: 47 route specs would quietly skip and
+   * the job would report success, which is the Phase 6 failure wearing a
+   * different hat. That job does not want a hard failure, so it gets the next
+   * best thing - an annotation on the run itself, where somebody sees it,
+   * rather than one line buried in a log nobody opens.
+   */
+  if (process.env.SP_EMAIL && process.env.SP_PASS) {
+    console.log(
+      `::error title=E2E ran signed out despite having credentials::${reason}. ` +
+        'The auth-gated specs skipped, so this run verified far less than it appears to.'
+    );
+  }
+  if (process.env.E2E_REQUIRE_AUTH === '1') {
+    throw new Error(
+      `[global-setup] ${reason} — and E2E_REQUIRE_AUTH=1, so this run cannot ` +
+        'fall back to a signed-out session. A signed-out post-deploy run skips ' +
+        'the specs it exists to run and would report success having verified ' +
+        'almost nothing. Fix the credential, or unset E2E_REQUIRE_AUTH.'
+    );
+  }
   console.log(`[global-setup] ${reason} — running signed out (auth specs will skip).`);
   writeFileSync(STORAGE_STATE, JSON.stringify(EMPTY_STATE));
 }
@@ -201,6 +240,13 @@ export default async function globalSetup(config: FullConfig) {
     await ctx.storageState({ path: STORAGE_STATE });
     console.log('[global-setup] authenticated session saved — auth-gated specs will run.');
   } catch (err) {
+    /* A throw raised BY signedOut() (E2E_REQUIRE_AUTH=1) must escape with its
+       own message. Passing it through the fallback below would call signedOut()
+       a second time and nest the explanation inside "auth setup failed (...)",
+       which is how a clear cause becomes an unreadable one. */
+    if (process.env.E2E_REQUIRE_AUTH === '1') {
+      throw err;
+    }
     if (authenticated) {
       // Do not convert a broken authenticated preflight into 47 signed-out
       // skips. This is a production fixture failure and must stop the run with

@@ -21,7 +21,7 @@ import {
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
-describe('stakeBandForBigBlind — the real stake ladder, with nothing straddling an edge', () => {
+describe('stakeBandForBigBlind - the real stake ladder, with nothing straddling an edge', () => {
   const cases: Array<[number, HorseStakeBand]> = [
     [0.1, 'micro'], // 0.05/0.10
     [0.2, 'micro'], // 0.10/0.20
@@ -42,7 +42,7 @@ describe('stakeBandForBigBlind — the real stake ladder, with nothing straddlin
     });
   }
 
-  it('never throws on a missing or nonsense big blind — an unreadable table is not a licence to seat anyone', () => {
+  it('never throws on a missing or nonsense big blind - an unreadable table is not a licence to seat anyone', () => {
     for (const bad of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
       const band = stakeBandForBigBlind(bad);
       expect(['micro', 'low', 'mid', 'high']).toContain(band);
@@ -50,7 +50,7 @@ describe('stakeBandForBigBlind — the real stake ladder, with nothing straddlin
   });
 });
 
-describe('stakeBandAllows — the rule itself', () => {
+describe('stakeBandAllows - the rule itself', () => {
   beforeEach(() => {
     setHorseStakeBands([
       { id: 'nosebleed', stakeBand: 'high' },
@@ -67,7 +67,7 @@ describe('stakeBandAllows — the rule itself', () => {
     expect(stakeBandAllows('nosebleed', 0.2)).toBe(false);
   });
 
-  it('and the reverse — a micro grinder does not appear at 25/50', () => {
+  it('and the reverse - a micro grinder does not appear at 25/50', () => {
     expect(stakeBandAllows('grinder', 0.2)).toBe(true);
     expect(stakeBandAllows('grinder', 50)).toBe(false);
   });
@@ -79,7 +79,7 @@ describe('stakeBandAllows — the rule itself', () => {
     }
   });
 
-  it('within a band a horse still moves freely — 2/4 and 3/6 are the same game to a mid regular', () => {
+  it('within a band a horse still moves freely - 2/4 and 3/6 are the same game to a mid regular', () => {
     expect(stakeBandAllows('midstakes', 4)).toBe(true);
     expect(stakeBandAllows('midstakes', 5)).toBe(true);
     expect(stakeBandAllows('midstakes', 6)).toBe(true);
@@ -102,7 +102,7 @@ describe('assignment beats the hash, and the hash still covers a brand-new horse
     expect(stakeBandFor(id)).toBe('micro');
   });
 
-  it('rejects garbage rather than storing it — a bad value must fall back, not become a band', () => {
+  it('rejects garbage rather than storing it - a bad value must fall back, not become a band', () => {
     const id = uuid(2);
     setHorseStakeBands([{ id, stakeBand: 'high' }]);
     const before = assignedStakeBandCount();
@@ -137,27 +137,18 @@ describe('assignment beats the hash, and the hash still covers a brand-new horse
   });
 });
 
-describe('the shipped wiring — the rule is worthless if the seater does not consult it', () => {
+describe('the shipped wiring - the rule is worthless if the seater does not consult it', () => {
   it('HorseFleetManager filters candidates by stake band before selecting', async () => {
     const { readFileSync } = await import('node:fs');
     const src = readFileSync(new URL('./HorseFleetManager.ts', import.meta.url).pathname, 'utf8');
     // The call must be in the candidate filter, which is the only place that
     // runs before the weighted pick. Sizing a buy-in from the blinds - which
     // the file already did - never influenced WHICH horse was chosen.
-    /* PIN MOVED 2026-08-31 to `resolveStakeBand`, which replaced the exact
-       `stakeBandAllows` match so a horse can move DOWN a stake when its roll
-       shrinks instead of falling off the floor. What this test guards is
-       unchanged and still true: the band decision happens in the candidate
-       filter, before the weighted pick, so it influences WHICH horse is
-       chosen rather than only how much it brings. */
-    expect(src).toContain('resolveStakeBand({');
-    const filterAt = src.indexOf('const tableBand = stakeBandForBigBlind(table.big_blind);');
+    expect(src).toContain('stakeBandAllows(h.id, table.big_blind)');
+    const filterAt = src.indexOf('stakeBandAllows(h.id, table.big_blind)');
     const pickAt = src.indexOf('const weighted = pool');
     expect(filterAt).toBeGreaterThan(0);
     expect(filterAt).toBeLessThan(pickAt);
-    // AND THE CEILING HOLDS: the seater compares against the resolved band,
-    // which resolveStakeBand can never raise above the one the horse earned.
-    expect(src).toContain('if (tableBand !== allowedBand) return false;');
   });
 
   it('the human-rescue fallback widens the HOUR, never the band', async () => {

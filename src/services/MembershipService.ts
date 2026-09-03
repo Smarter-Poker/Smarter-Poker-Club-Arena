@@ -21,8 +21,17 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import {
+  playerDisplayName,
+  PLAYER_NAME_COLUMNS,
+  type NameableProfile,
+} from '../utils/playerDisplayName';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
+// The seven roles the DATABASE uses. The MemberRole union below is a second,
+// older vocabulary that club_members_role_check has never accepted; anything
+// that writes a role must speak ClubRole.
+import type { ClubRole } from '../types/clubRoles';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -114,11 +123,11 @@ export const MembershipService = {
 
     // Batch-fetch profiles separately (no FK hint needed)
     const userIds = data.map((m) => m.user_id);
-    const profileMap: Record<string, { display_name?: string; avatar_url?: string }> = {};
+    const profileMap: Record<string, NameableProfile & { avatar_url?: string }> = {};
     try {
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, display_name, avatar_url:arena_avatar_url')
+        .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
         .in('id', userIds);
       if (profiles) {
         for (const p of profiles) profileMap[p.id] = p;
@@ -138,7 +147,7 @@ export const MembershipService = {
       invitedBy: m.invited_by,
       agentId: m.agent_id,
       notes: m.notes,
-      displayName: profileMap[m.user_id]?.display_name,
+      displayName: playerDisplayName(profileMap[m.user_id]),
       avatarUrl: profileMap[m.user_id]?.avatar_url,
     }));
   },
@@ -208,21 +217,71 @@ export const MembershipService = {
   },
 
   /**
-   * Update member role
+   * Change a member's club role.
+   *
+   * TWO BUGS LIVED HERE. It wrote `club_members.role` directly, and it typed
+   * the new role as `MemberRole` - the vocabulary declared at the top of this
+   * file, which the database has never used. `club_owner`, `club_admin`,
+   * `member` and `guest` are not in club_members_role_check, so every write it
+   * made was refused: by the CHECK for those names, and by
+   * trg_club_members_role_guard for the three that do overlap - a trigger that
+   * exists precisely to stop a role changing without the grant matrix being
+   * asked. Both callers (ClubDetailPage's Promote and Demote) had been failing
+   * in production behind a generic "Failed to promote member" toast.
+   *
+   * ONE WRITE PATH: fn_club_set_member_role. It asks fn_club_grantable_roles,
+   * refuses to orphan a downline, applies the co-owner/admin rakeback rule and
+   * writes the audit_trail row. `rates` is REQUIRED by the server when granting
+   * an agent role to somebody who has no agents row yet - MemberManagementPage
+   * is the screen that collects them.
+   *
+   * `funding` is required alongside them, on the same terms. Dan, 2026-08-31:
+   * "THEY ALSO NEED TO BE ASSIGNED 'PRE PAID' OR CREDIT LINE, (AND IF SO, THEN
+   * HOW MUCH)". Omitting it returns needs_funding rather than storing a default,
+   * because a promotion that silently picks "not prepaid, zero limit" produces
+   * an agent who cannot send a single chip.
+   *
+   * Neither is defaulted from the agents row when the member is being PROMOTED
+   * rather than re-graded: a demoted agent's old deal does not return on its own
+   * (Dan's ruling on re-promotion, 2026-08-31).
+   *
+   * Throws with the server's own reason so the caller can show it, rather than
+   * returning false and leaving the user to guess.
    */
-  async updateRole(clubId: string, userId: string, newRole: MemberRole): Promise<boolean> {
+  async updateRole(
+    clubId: string,
+    userId: string,
+    newRole: ClubRole,
+    rates?: { commissionRate: number; playerRakebackRate: number },
+    funding?: { isPrepaid: boolean; creditLimit: number }
+  ): Promise<boolean> {
     const resolvedId = await resolveClubUUID(clubId);
-    const { error } = await supabase
-      .from('club_members')
-      .update({ role: newRole })
-      .eq('club_id', resolvedId)
-      .eq('user_id', userId);
+    const { data, error } = await supabase.rpc('fn_club_set_member_role', {
+      p_club_id: resolvedId,
+      p_user_id: userId,
+      p_role: newRole,
+      ...(rates
+        ? {
+            p_commission_rate: rates.commissionRate,
+            p_player_rakeback_rate: rates.playerRakebackRate,
+          }
+        : {}),
+      ...(funding
+        ? {
+            p_is_prepaid: funding.isPrepaid,
+            p_credit_limit: funding.creditLimit,
+          }
+        : {}),
+    });
 
-    if (!error) {
-      masterBus.emit('CLUB_UPDATED', { clubId: resolvedId });
-    }
+    if (error) throw error;
 
-    return !error;
+    const result = data as { success?: boolean; error?: string } | null;
+    if (!result?.success) throw new Error(result?.error || 'Role change refused');
+
+    masterBus.emit('CLUB_UPDATED', { clubId: resolvedId });
+    masterBus.emit('MEMBER_ROLE_CHANGED', { clubId: resolvedId, userId, newRole });
+    return true;
   },
 
   /**
@@ -271,7 +330,10 @@ export const MembershipService = {
       .select('club_id, user_id, role, status, joined_at')
       .eq('club_id', resolvedId)
       .in('status', ['active', 'approved'])
-      .in('role', ['member', 'guest'])
+      // 'member' and 'guest' are not roles this database has - both were ways
+      // of saying "not staff", which is what 'player' means now. Filtering on
+      // them meant AgentManagementPage's promotion picker was always empty.
+      .in('role', ['player'])
       .order('joined_at', { ascending: false })
       .limit(QUERY_LIMITS.MODERATE);
 
@@ -280,11 +342,11 @@ export const MembershipService = {
 
     // Batch-fetch profiles separately (no FK hint needed)
     const userIds = data.map((m) => m.user_id);
-    const profileMap: Record<string, { display_name?: string; avatar_url?: string }> = {};
+    const profileMap: Record<string, NameableProfile & { avatar_url?: string }> = {};
     try {
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, display_name, avatar_url:arena_avatar_url')
+        .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
         .in('id', userIds);
       if (profiles) {
         for (const p of profiles) profileMap[p.id] = p;
@@ -301,7 +363,7 @@ export const MembershipService = {
       role: m.role as MemberRole,
       status: m.status as MemberStatus,
       joinedAt: m.joined_at,
-      displayName: profileMap[m.user_id]?.display_name || 'Unknown',
+      displayName: playerDisplayName(profileMap[m.user_id]),
       avatarUrl: profileMap[m.user_id]?.avatar_url,
     }));
   },

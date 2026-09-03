@@ -5,7 +5,9 @@ import type {
   ArenaGameCardData,
   ArenaGameDataState,
 } from './arenaGameCardTypes';
+import { zoneText } from './arenaGameCardTypes';
 import { ArenaGameRuleBadge } from './ArenaGameRuleIcon';
+import { NlhPremiumCard } from './NlhPremiumCard';
 import './ArenaGameCard.css';
 
 const CASH_CARD_TITLE_LIMIT = 30;
@@ -17,15 +19,6 @@ function constrainedTitle(value: string, limit: number): string {
   const candidate = normalized.slice(0, Math.max(1, limit - 1));
   const wordBreak = candidate.lastIndexOf(' ');
   return `${candidate.slice(0, wordBreak > limit * 0.62 ? wordBreak : candidate.length).trimEnd()}…`;
-}
-
-function tournamentDisplayTitle(data: ArenaGameCardData): string {
-  const title = constrainedTitle(data.title, TOURNAMENT_CARD_TITLE_LIMIT);
-  if (!data.guarantee) return title;
-  const normalizedGuarantee = data.guarantee.replace(/\s+/g, ' ').trim();
-  const guaranteeNumber = normalizedGuarantee.replace(/\s*GTD$/i, '').trim();
-  if (title.toLowerCase().includes('gtd') || title.includes(guaranteeNumber)) return title;
-  return constrainedTitle(`${normalizedGuarantee} • ${title}`, TOURNAMENT_CARD_TITLE_LIMIT);
 }
 
 function ActionIcon({ label }: { label: string }) {
@@ -98,7 +91,7 @@ function Rules({
     <div
       className={`agc-rules${className ? ` ${className}` : ''}`}
       data-zone="rules"
-      aria-label="Game rules"
+      aria-label="Game Rules"
     >
       {rules.slice(0, limit).map((rule) => (
         <ArenaGameRuleBadge key={rule.key} rule={rule} />
@@ -191,14 +184,14 @@ function LiveValue({
       {icon && (
         <span className={`agc-value-medallion agc-value-medallion--${icon}`} aria-hidden="true" />
       )}
-      {children || <strong>{value || '-'}</strong>}
+      {children || <strong>{zoneText(zone, value)}</strong>}
     </div>
   );
 }
 
 function MttMachine({ data, actions }: ArenaGameCardProps) {
   const visibleRules = data.rules.slice(0, 2);
-  const displayTitle = tournamentDisplayTitle(data);
+  const displayTitle = constrainedTitle(data.title, TOURNAMENT_CARD_TITLE_LIMIT);
   return (
     <div className="agc-machine agc-machine--mtt">
       <span className="agc-mtt-club-chip" aria-hidden="true" />
@@ -207,6 +200,8 @@ function MttMachine({ data, actions }: ArenaGameCardProps) {
           {displayTitle}
         </h3>
         <div className="agc-mtt-meta">
+          {data.guarantee && <strong data-zone="guarantee">{data.guarantee}</strong>}
+          {data.guarantee && <i aria-hidden="true" />}
           <span data-zone="startsIn">{data.startsIn || data.statusLabel}</span>
         </div>
         <div className="agc-mtt-badge-rail">
@@ -230,23 +225,29 @@ function MttMachine({ data, actions }: ArenaGameCardProps) {
           )}
         </div>
       </header>
+      {/* These six bays are hand-rolled rather than LiveValue because the MTT
+          machine paints its own grid areas - but the EMPTY-VALUE decision is
+          not theirs to make. `zoneText` is the one place that answers it, so
+          the tournament board and the cash boards can never disagree about
+          what a bay says while it is waiting. Before this they did: these
+          printed a dash where every LiveValue bay printed 0. */}
       <div className="agc-mtt-value agc-mtt-value--starting-time" data-zone="startingTime">
-        <strong>{data.startTime || '-'}</strong>
+        <strong>{zoneText('startingTime', data.startTime)}</strong>
       </div>
       <div className="agc-mtt-value agc-mtt-value--buy-in" data-zone="buyIn">
-        <strong>{data.buyIn || '-'}</strong>
+        <strong>{zoneText('buyIn', data.buyIn)}</strong>
       </div>
       <div className="agc-mtt-value agc-mtt-value--guarantee" data-zone="guarantee">
-        <strong>{data.guarantee || '-'}</strong>
+        <strong>{zoneText('guarantee', data.guarantee)}</strong>
       </div>
       <div className="agc-mtt-value agc-mtt-value--registered" data-zone="registered">
-        <strong>{data.registered || '-'}</strong>
+        <strong>{zoneText('registered', data.registered)}</strong>
       </div>
       <div className="agc-mtt-value agc-mtt-value--starting-stack" data-zone="startingStack">
-        <strong>{data.startingStack || '-'}</strong>
+        <strong>{zoneText('startingStack', data.startingStack)}</strong>
       </div>
       <div className="agc-mtt-value agc-mtt-value--current-level" data-zone="currentLevel">
-        <strong>{data.currentLevel || '-'}</strong>
+        <strong>{zoneText('currentLevel', data.currentLevel)}</strong>
         {data.currentBlinds && <small>{data.currentBlinds}</small>}
       </div>
       <Actions actions={actions} />
@@ -257,11 +258,9 @@ function MttMachine({ data, actions }: ArenaGameCardProps) {
 function NlhMachine({ data, actions }: ArenaGameCardProps) {
   return (
     <div className="agc-machine agc-machine--nlh">
-      <PremiumHeader data={data} showSubtitle={false} />
-      <span className="agc-semantic-only" data-zone="gameType">
-        {data.gameType}
-      </span>
+      <PremiumHeader data={data} />
       <Rules data={data} className="agc-premium-rules agc-premium-rules--nlh" limit={3} />
+      <LiveValue className="agc-premium-value--game-type" value={data.gameType} zone="gameType" />
       <LiveValue
         className="agc-premium-value--stakes"
         value={data.stakes}
@@ -294,9 +293,24 @@ function PloMachine({ data, actions }: ArenaGameCardProps) {
       <span className="agc-plo-game-repeat" aria-hidden="true">
         {data.gameType}
       </span>
-      <LiveValue className="agc-premium-value--stakes" value={data.stakes} zone="stakes" />
-      <LiveValue className="agc-premium-value--players" value={data.players} zone="players" />
-      <LiveValue className="agc-premium-value--buy-in" value={data.buyIn} zone="buyIn" />
+      <LiveValue
+        className="agc-premium-value--stakes"
+        value={data.stakes}
+        zone="stakes"
+        icon="stakes"
+      />
+      <LiveValue
+        className="agc-premium-value--players"
+        value={data.players}
+        zone="players"
+        icon="players"
+      />
+      <LiveValue
+        className="agc-premium-value--buy-in"
+        value={data.buyIn}
+        zone="buyIn"
+        icon="buy-in"
+      />
       <Actions actions={actions} />
     </div>
   );
@@ -413,7 +427,14 @@ const familyRenderers: Record<
 function stateLabel(state: ArenaGameDataState) {
   if (state === 'loading') return 'Loading Game';
   if (state === 'updating') return 'Updating';
-  if (state === 'error') return 'Game Unavailable';
+  /* WAS 'Game Unavailable' (Dan 2026-09-02): "THE GAME CARDS SHOULD NEVER SAY
+     UNAVAILABLE." A failed refresh does not make the game unavailable - the
+     card is still showing figures, either the ones it was last given or the
+     ones the lobby cache remembered, so what actually happened is that they
+     stopped being current. That is the same thing 'stale' means, and it is
+     what the card should say rather than telling a player a running table is
+     gone. */
+  if (state === 'error') return 'Last Known Game State';
   if (state === 'offline') return 'Offline';
   if (state === 'stale') return 'Last Known Game State';
   return null;
@@ -437,6 +458,10 @@ export const ArenaGameCard = memo(function ArenaGameCard({
   });
   const template = resolved.skin;
   const Renderer = familyRenderers[data.family];
+  const usesLayeredNlh =
+    data.family === 'nlh' &&
+    resolved.skinId === 'spade-nlh-premium-v1' &&
+    resolved.presentation === 'mobile';
   const dataState = data.dataState || 'loaded';
   const notice = stateLabel(dataState);
   const style = {
@@ -445,7 +470,16 @@ export const ArenaGameCard = memo(function ArenaGameCard({
     '--agc-desktop-ratio': template.desktop.aspectRatio,
     '--agc-mobile-ratio': template.mobile.aspectRatio,
   } as CSSProperties;
-  const summary = `${data.title}, ${data.gameType}${data.stakes ? ` ${data.stakes}` : ''}, ${data.players || data.registered || 'player count unavailable'}, ${data.statusLabel}`;
+  /* THE SPOKEN CARD SAYS WHAT THE PRINTED CARD SAYS (Dan 2026-09-02).
+     This read `|| 'player count unavailable'`, so once the bays began printing
+     0 a sighted player saw "0/6" while a screen-reader user heard the one word
+     Dan asked never to appear on a game card - and the two descriptions of the
+     same card disagreed. `zoneText` is the same helper the bay uses, so they
+     cannot drift apart again. */
+  const summary = `${data.title}, ${data.gameType}${data.stakes ? ` ${data.stakes}` : ''}, ${zoneText(
+    'players',
+    data.players || data.registered
+  )}, ${data.statusLabel}`;
 
   return (
     <article
@@ -460,7 +494,11 @@ export const ArenaGameCard = memo(function ArenaGameCard({
     >
       <span className="arena-game-card__art" aria-hidden="true" />
       <div className="arena-game-card__glass">
-        <Renderer data={data} actions={actions} presentation={presentation} />
+        {usesLayeredNlh ? (
+          <NlhPremiumCard data={data} actions={actions} />
+        ) : (
+          <Renderer data={data} actions={actions} presentation={presentation} />
+        )}
       </div>
       {notice && <div className="arena-game-card__notice">{notice}</div>}
     </article>

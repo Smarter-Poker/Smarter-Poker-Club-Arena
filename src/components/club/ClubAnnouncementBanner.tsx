@@ -17,6 +17,7 @@ import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { masterBus } from '../../core/MasterBus';
 import styles from './ClubAnnouncementBanner.module.css';
 import { reportError } from '../../utils/errorReporter';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 
 interface Announcement {
   id: string;
@@ -103,7 +104,7 @@ export default function ClubAnnouncementBanner({
                     created_at,
                     expires_at,
                     created_by,
-                    profiles(display_name)
+                    profiles(${PLAYER_NAME_COLUMNS})
                 `
         )
         .eq('club_id', resolvedId)
@@ -122,7 +123,7 @@ export default function ClubAnnouncementBanner({
           createdAt: a.created_at,
           expiresAt: a.expires_at,
           createdBy: a.created_by,
-          createdByName: a.profiles?.display_name,
+          createdByName: playerDisplayName(a.profiles),
         }));
         setAnnouncements(mapped);
       }
@@ -219,7 +220,7 @@ export default function ClubAnnouncementBanner({
           <div className={styles.pagination}>
             <button
               onClick={() => setCurrentIndex((prev) => prev - 1)}
-              aria-label="Previous announcement"
+              aria-label="Previous Announcement"
             >
               ‹
             </button>
@@ -228,7 +229,7 @@ export default function ClubAnnouncementBanner({
             </span>
             <button
               onClick={() => setCurrentIndex((prev) => prev + 1)}
-              aria-label="Next announcement"
+              aria-label="Next Announcement"
             >
               ›
             </button>
@@ -237,7 +238,7 @@ export default function ClubAnnouncementBanner({
         <button
           className={styles.dismissBtn}
           onClick={() => dismiss(current.id)}
-          aria-label="Dismiss announcement"
+          aria-label="Dismiss Announcement"
         >
           ✕
         </button>

@@ -265,7 +265,14 @@ export default function AgentManagementPage() {
         )
         // wallet_transactions subscription removed (Phase 2 cost cut): the
         // canonical balance / commission state is derived via joins against
-        // wallets + commission_records (both still in supabase_realtime).
+        // wallets and agent_commissions.
+        //
+        // PHASE 7 (2026-09-01): this comment used to name commission_records
+        // and say it was "still in supabase_realtime". Neither was true - that
+        // table held zero rows for its whole life, was never in the
+        // publication, and is now dropped. A comment that points at a dead
+        // table is how the next person wires a subscription to nothing.
+        //
         // Bus 'BALANCE_UPDATED' / 'WALLET_REFRESHED' listeners below backstop
         // admin-side commission edits.
         .subscribe((status: string, err?: Error) => {
@@ -570,7 +577,7 @@ export default function AgentManagementPage() {
           eyebrow="Club Context Required"
           tone="permission"
           title="Choose A Club To Manage Agents"
-          description="Agent roles, commissions, credit lines, and players belong to one club. Open this tool from that club's Operations menu."
+          description="Agent Roles, Commissions, Credit Lines, And Players Belong To One Club. Open This Tool From That Club's Operations Menu."
           action={{ label: 'Return To Arena', onClick: () => navigate('/') }}
         />
       </div>
@@ -952,8 +959,8 @@ export default function AgentManagementPage() {
                           {tx.transaction_type} •{' '}
                           <span style={{ color: remainingSec > 0 ? '#F5A623' : '#FA383E' }}>
                             {remainingSec > 0
-                              ? `${remainingMin}:${String(remainingSecMod).padStart(2, '0')} left`
-                              : 'expired'}
+                              ? `${remainingMin}:${String(remainingSecMod).padStart(2, '0')} Left`
+                              : 'Expired'}
                           </span>
                         </div>
                       </div>
@@ -1170,7 +1177,7 @@ export default function AgentManagementPage() {
         {/* ═══════════════════════════════════════════════════════════════════════════════ */}
         {activeTab === 'commissions' && (
           <div className={styles.commissionsSection}>
-            <AgentCommissionDashboard />
+            <AgentCommissionDashboard clubId={clubId} />
           </div>
         )}
 

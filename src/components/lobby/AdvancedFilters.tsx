@@ -53,6 +53,12 @@ export type FilterStore = Partial<Record<FilterGameType, GameFilterValue>>;
 
 const storageKey = (clubId: string) => `ca_advanced_filters_${clubId}`;
 
+/** How long a burst of changes must settle before the row is written.
+ *  Long enough to swallow a slider drag, short enough that closing the sheet
+ *  a moment later has usually already synced (and the unmount flush covers
+ *  the rest). */
+export const REMOTE_SYNC_DEBOUNCE_MS = 700;
+
 /**
  * Validate a filter store against the CURRENT spec, discarding anything it
  * cannot honour.
@@ -283,17 +289,53 @@ export default function AdvancedFilters({
      itself survives. Skips the very first render so simply opening the sheet
      never rewrites storage. */
   const hasHydrated = useRef(false);
+  const pendingRemoteRef = useRef<FilterStore | null>(null);
+  const remoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!hasHydrated.current) {
       hasHydrated.current = true;
       return;
     }
+    // THIS DEVICE, IMMEDIATELY. localStorage is synchronous and free, so the
+    // choice is durable the instant it is made - that is what "saves when
+    // clicked" means and it must not wait on a network.
     saveFilters(clubId, store);
-    // ... and to the database, so the choice follows the player to their
-    // other devices. Fire and forget: a filter is a preference, not a
-    // transaction, and a sync failure must never block the tap that made it.
-    pushRemoteFilters(clubId, store);
+
+    /* THE DATABASE, DEBOUNCED - AND THIS IS NOT AN OPTIMISATION.
+       The blinds and seat controls are <input type="range">, whose onChange
+       fires on EVERY value change while a thumb is being dragged. Pushing on
+       each one turned a single drag across a 0-15,000 slider into dozens of
+       upserts of the same row - a write storm on the database, paid for again
+       in bandwidth on a phone, for one gesture that has exactly one meaningful
+       result: where the thumb was let go.
+       Only the LAST value in a burst is worth sending, so the timer restarts
+       on each change and only the settled value is written. */
+    pendingRemoteRef.current = store;
+    if (remoteTimerRef.current) clearTimeout(remoteTimerRef.current);
+    remoteTimerRef.current = setTimeout(() => {
+      remoteTimerRef.current = null;
+      const pending = pendingRemoteRef.current;
+      pendingRemoteRef.current = null;
+      if (pending) pushRemoteFilters(clubId, pending);
+    }, REMOTE_SYNC_DEBOUNCE_MS);
   }, [clubId, store]);
+
+  /* FLUSH WHAT IS STILL PENDING. Without this, a player who taps one chip and
+     immediately closes the sheet - the common case - loses the cross-device
+     half of that choice until they happen to change something else. Runs on
+     unmount AND when clubId changes, so switching club cannot strand a write
+     against the club that was just left. */
+  useEffect(() => {
+    return () => {
+      if (remoteTimerRef.current) {
+        clearTimeout(remoteTimerRef.current);
+        remoteTimerRef.current = null;
+      }
+      const pending = pendingRemoteRef.current;
+      pendingRemoteRef.current = null;
+      if (pending) pushRemoteFilters(clubId, pending);
+    };
+  }, [clubId]);
 
   /* CROSS-DEVICE HYDRATION. The sheet opens instantly from this device's
      cache; the saved row arrives a moment later and corrects it if another
@@ -438,15 +480,15 @@ export default function AdvancedFilters({
             <h2>{sortOnly ? 'Sort Games' : 'Game Filters'}</h2>
             <p>
               {sortOnly
-                ? 'Choose how the board is ordered'
-                : `${activeTypeLabel} · ${activeCount} active ${activeCount === 1 ? 'filter' : 'filters'}`}
+                ? 'Choose How The Board Is Ordered'
+                : `${activeTypeLabel} · ${activeCount} Active ${activeCount === 1 ? 'Filter' : 'Filters'}`}
             </p>
           </div>
           <button
             type="button"
             className="afx-close"
             onClick={onClose}
-            aria-label={sortOnly ? 'Close sort' : 'Close game filters'}
+            aria-label={sortOnly ? 'Close Sort' : 'Close Game Filters'}
           >
             Close
           </button>
@@ -614,7 +656,7 @@ export default function AdvancedFilters({
                 <summary>
                   <h3>
                     {spec.seats
-                      ? `${spec.seatsLabel} · ${value.seatMin} min / ${value.seatMax} max`
+                      ? `${spec.seatsLabel} · ${value.seatMin} Min / ${value.seatMax} Max`
                       : spec.seatsLabel}
                   </h3>
                 </summary>
@@ -632,7 +674,7 @@ export default function AdvancedFilters({
                     />
                     <input
                       type="range"
-                      aria-label="Minimum seats"
+                      aria-label="Minimum Seats"
                       min={spec.seats.min}
                       max={spec.seats.max}
                       value={value.seatMin}
@@ -647,7 +689,7 @@ export default function AdvancedFilters({
                     />
                     <input
                       type="range"
-                      aria-label="Maximum seats"
+                      aria-label="Maximum Seats"
                       min={spec.seats.min}
                       max={spec.seats.max}
                       value={value.seatMax}

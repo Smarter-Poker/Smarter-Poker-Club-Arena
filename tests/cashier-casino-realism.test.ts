@@ -33,7 +33,8 @@ describe('the cashier is a rendered Club Arena room, not a generic dark dashboar
 describe('cashier navigation and ledger controls stay operational', () => {
   it('implements a keyboard-operable tablist', () => {
     expect(PAGE).toContain('role="tablist"');
-    expect(PAGE).toContain('aria-label="Cashier actions"');
+    expect(PAGE).toContain('aria-label="Cashier Actions"');
+    expect(PAGE).toContain('aria-busy={!roleResolved}');
     expect(PAGE).toContain("['ArrowRight', 'ArrowLeft', 'Home', 'End']");
     expect(PAGE).toContain('aria-selected={tab === key}');
   });

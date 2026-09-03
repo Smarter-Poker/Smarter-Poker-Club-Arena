@@ -116,7 +116,7 @@ async function authorizeTableAdmin(
         .eq('user_id', auth.userId)
         .in('club_id', clubIds);
       const adminRow = (roles ?? []).find((r) =>
-        ['owner', 'admin', 'super_agent'].includes(String(r.role))
+        ['owner', 'co_owner', 'admin', 'super_agent'].includes(String(r.role))
       );
       if (adminRow) {
         return { ok: true, userId: auth.userId, clubId: tableRow.club_id };
@@ -134,8 +134,11 @@ async function authorizeTableAdmin(
   if (mErr || !membership) {
     return { ok: false, status: 403, error: 'Not a club member' };
   }
-  // Admin tier = owner OR admin OR super_agent (matches kick / waitlist / lobby).
-  if (!['owner', 'admin', 'super_agent'].includes(String(membership.role))) {
+  // Admin tier = owner OR co_owner OR admin OR super_agent (matches kick /
+  // waitlist / lobby). co_owner was missing from both lists in this file, which
+  // made it the only role in the seven that a promotion could grant and the
+  // engine would then refuse - a co-owner could not pause, resume or kick.
+  if (!['owner', 'co_owner', 'admin', 'super_agent'].includes(String(membership.role))) {
     return { ok: false, status: 403, error: 'Admin role required' };
   }
   return { ok: true, userId: auth.userId, clubId: tableRow.club_id };

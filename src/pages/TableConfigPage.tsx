@@ -12,7 +12,7 @@
  * - Save & Start buttons
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -21,8 +21,19 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import './TableConfigPage.css';
 import { reportError } from '../utils/errorReporter';
 import { formatCurrency } from '../lib/utils';
-import { RAKE_INHERIT } from '../config/RakeConfig';
+import { RAKE_INHERIT, getRakeConfig } from '../config/RakeConfig';
 import { stakesLabel, isFixedLimitVariant } from '../lib/bettingStructure';
+import {
+  DEFAULT_BLINDS_INDEX,
+  presetsFor,
+  blindsIndexFor,
+  nearestBlindsIndex,
+} from '../config/blindsPresets';
+import {
+  restoreTemplateConfig,
+  defaultTableName,
+  templateFitsGame,
+} from '../lib/tableTemplateRestore';
 import {
   clampSeatsForVariant,
   maxSeatsForVariant,
@@ -30,16 +41,19 @@ import {
 } from '../config/tableSeating';
 
 import { tournamentService } from '../services/TournamentService';
+import { buildTournamentConfig } from '../lib/tournamentFromTableConfig';
 import {
-  buildTournamentConfig,
   canRunAsTournament as gameTypeCanRunAsTournament,
-} from '../lib/tournamentFromTableConfig';
+  canRunAsSpin as gameTypeCanRunAsSpin,
+} from '../config/tournamentVariants';
 import { gameCreationDeniedMessage, type GameCreationAccess } from '../lib/gameCreationAccess';
 import { fetchGameCreationAccess } from '../services/GameAccessService';
 import { tournamentScheduleService } from '../services/TournamentScheduleService';
 import WeeklyScheduleEditor, {
   validateWeeklySchedule,
 } from '../components/tournament/WeeklyScheduleEditor';
+import { HelpPopover } from '../components/common/HelpPopover';
+import { getTableState } from '../services/GameServerAPI';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -54,7 +68,64 @@ type GameMode = 'regular' | 'sng' | 'mtt';
  * The engine rule is right; offering the switch on a table that can never
  * honour it is what was wrong.
  */
-const SEVEN_DEUCE_VARIANTS = new Set(['nlh', 'nlhe', 'flh', 'limit_holdem', 'pineapple']);
+/**
+ * The variants the 7-2 bounty can actually pay out on.
+ *
+ * EXACTLY WHAT THE ENGINE PAYS, AND NOTHING ELSE (2026-08-31 audit). The gate
+ * in ServerTableEngineSettlement is a string equality:
+ *
+ *     const sevenDeuceIsNlh = (this.tableInfo?.game_variant || 'nlh') === 'nlh';
+ *
+ * so `nlhe`, `flh`, `limit_holdem` and `pineapple` all failed it. The toggle
+ * rendered on a Fixed Limit Hold'em and a Pineapple table, wrote
+ * `seven_deuce_enabled: true`, and the bounty was never paid — the owner
+ * advertised a prize the table could not award. This is the same shape as the
+ * PLO and short-deck removal recorded two comments down; those were taken out
+ * of the set and these four were left in.
+ *
+ * FLH is a legitimate candidate — it is Hold'em and it has deuces — but making
+ * it pay is an ENGINE change to a settlement path, with its own tests, not a
+ * set entry. Until then the honest UI is the one that only offers what pays.
+ */
+const SEVEN_DEUCE_VARIANTS = new Set(['nlh']);
+
+/**
+ * Fixed-limit tables (FLH, FLO8) cannot honour three of this form's controls,
+ * and the engine is the reason for each (2026-08-31 audit):
+ *
+ *  • STRADDLE. `HandController` posts a straddle by assigning
+ *    `state.currentBet = straddleAmount` with no structure branch, while a
+ *    legal fixed-limit wager for the same street is exactly
+ *    `fixedLimitBetSize(bigBlind, stage)`. A straddle is also none of
+ *    bet/raise/full-raise all-in, so `fixedLimitWagerCount` does not count it
+ *    against the four-wager cap — the street silently gains a betting round.
+ *  • CAP. `ServerTableEngineTurns` assigns the mandatory fixed size and THEN
+ *    clamps it with `Math.min(amount, capRemaining)`, so a capped limit table
+ *    can emit a bet that is not the legal size, which the validator refuses.
+ *  • BOMB-POT VARIANT OVERRIDE. The bomb hand's variant is what
+ *    `bettingStructureFor` reads, so a `plo4` bomb on an FLH table plays a
+ *    POT-LIMIT hand at a table the player sat down at for fixed limit.
+ *    (`resolveBombPotVariant` refuses this server-side as well, for the writers
+ *    that are not this form.)
+ *
+ * Hidden rather than disabled, and forced false on the write, so a template
+ * saved on a no-limit table cannot carry a stale `true` onto a limit one.
+ */
+const isFixedLimitGame = (gameType: string | undefined): boolean =>
+  isFixedLimitVariant(String(gameType || 'nlh').toLowerCase());
+
+/**
+ * The variants a Pineapple Hold'em table can be dealt as.
+ *
+ * ServerTableEngineBase.dealtGameVariant deals a table carrying
+ * `pineapple_holdem` as pineapple only when its variant is 'nlh' or 'nlhe',
+ * "because 'Pineapple PLO' is not a game and a stray flag must not silently
+ * turn a PLO table into one". This mirrors that gate exactly, so the switch
+ * is offered where and only where the engine will honour it.
+ */
+const PINEAPPLE_VARIANTS = new Set(['nlh', 'nlhe']);
+const canDealPineapple = (gameType: string | undefined): boolean =>
+  PINEAPPLE_VARIANTS.has(String(gameType || 'nlh').toLowerCase());
 
 type RunItMode = 'none' | 'player_choice' | 'mandatory_twice' | 'mandatory_three';
 type BlindStructure = 'slow' | 'standard' | 'turbo' | 'hyper_turbo';
@@ -157,6 +228,12 @@ interface TableConfig {
 
   // Time & Auto Settings (toggles)
   autoExtension: boolean;
+  // NOT DEAD, despite looking it from a TypeScript grep (2026-08-31). Both
+  // are read by fn_table_lifecycle_pass — SQL, verified against the live
+  // function, not a migration file. auto_restart reopens a host's closed
+  // table the way the fleet reopens its own; auto_create_table is the
+  // overflow spawn extended to a host's table. See
+  // tests/unit/tableLifecycleSwitches.test.ts, which pins exactly this.
   autoRestart: boolean;
   autoCreateTable: boolean;
   autoUtgStraddle: boolean;
@@ -254,27 +331,12 @@ const GAME_TYPE_LABELS: Record<string, { name: string; color: string }> = {
   plo5: { name: 'PLO5', color: '#7c3aed' },
   plo6: { name: 'PLO6', color: '#7c3aed' },
   plo8: { name: 'PLO8', color: '#7c3aed' },
-  pineapple: { name: 'PINEAPPLE', color: '#f59e0b' },
+  pineapple: { name: 'CRAZY PINEAPPLE', color: '#f59e0b' },
   short_deck: { name: '6+', color: '#0d9488' },
   // Green, matching the limit cards on the create-table screen.
   flh: { name: 'FLH', color: '#059669' },
   flo8: { name: 'FLO8', color: '#0d9488' },
 };
-
-const BLINDS_PRESETS = [
-  { label: '0.01/0.02', sb: 0.01, bb: 0.02 },
-  { label: '0.02/0.05', sb: 0.02, bb: 0.05 },
-  { label: '0.05/0.10', sb: 0.05, bb: 0.1 },
-  { label: '0.10/0.25', sb: 0.1, bb: 0.25 },
-  { label: '0.25/0.50', sb: 0.25, bb: 0.5 },
-  { label: '0.50/1', sb: 0.5, bb: 1 },
-  { label: '1/2', sb: 1, bb: 2 },
-  { label: '2/5', sb: 2, bb: 5 },
-  { label: '5/10', sb: 5, bb: 10 },
-  { label: '10/25', sb: 10, bb: 25 },
-  { label: '25/50', sb: 25, bb: 50 },
-  { label: '50/100', sb: 50, bb: 100 },
-];
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DEFAULT CONFIG
@@ -366,7 +428,7 @@ const DEFAULT_CONFIG: TableConfig = {
   buyIn: 100,
   customBuyIn: false,
   blindStructure: 'standard',
-  payoutStructure: 'payout1',
+  payoutStructure: 'payout3',
   startingChips: 1000,
   blindsUpMinutes: 3,
   sngPlayerCount: 9,
@@ -442,18 +504,23 @@ const Toggle = ({
   <div className="config-toggle">
     <span className="toggle-label">
       {label}
-      {tooltip && (
-        <span className="tooltip-icon" title={tooltip}>
-          ?
-        </span>
-      )}
+      {tooltip && <HelpPopover label={label}>{tooltip}</HelpPopover>}
     </span>
-    <label className="toggle-switch">
-      <input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} />
-      <span className="toggle-track">
-        <span className="toggle-thumb"></span>
+    <label className="table-config-switch">
+      <input
+        className="table-config-switch__input"
+        type="checkbox"
+        role="switch"
+        aria-label={label}
+        checked={value}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span className="table-config-switch__track" aria-hidden="true">
+        <span className="table-config-switch__thumb" />
       </span>
-      <span className={`toggle-status ${value ? 'on' : 'off'}`}>{value ? 'ON' : 'OFF'}</span>
+      <span className={`table-config-switch__status ${value ? 'is-on' : 'is-off'}`}>
+        {value ? 'On' : 'Off'}
+      </span>
     </label>
   </div>
 );
@@ -485,11 +552,7 @@ const Slider = ({
       <span className="slider-label">
         {label}: {format ? format(value) : `${value}${suffix}`}
         {format ? '' : ''}
-        {tooltip && (
-          <span className="tooltip-icon" title={tooltip}>
-            ?
-          </span>
-        )}
+        {tooltip && <HelpPopover label={label}>{tooltip}</HelpPopover>}
       </span>
     </div>
     <div className="slider-track-container">
@@ -531,11 +594,7 @@ const NumberField = ({
   <div className="config-toggle">
     <span className="toggle-label">
       {label}
-      {tooltip && (
-        <span className="tooltip-icon" title={tooltip}>
-          ?
-        </span>
-      )}
+      {tooltip && <HelpPopover label={label}>{tooltip}</HelpPopover>}
     </span>
     <input
       type="number"
@@ -565,7 +624,10 @@ export default function TableConfigPage() {
   const toast = useToast();
 
   const [config, setConfig] = useState<TableConfig>({ ...DEFAULT_CONFIG });
-  const [blindsIndex, setBlindsIndex] = useState(2); // Default 0.05/0.10
+  const [blindsIndex, setBlindsIndex] = useState(DEFAULT_BLINDS_INDEX); // 0.05/0.10
+  /* What WE last auto-generated for the name. Anything else in the field was
+     typed by the owner and is never overwritten. */
+  const autoNameRef = useRef<string>('');
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
   const [templates, setTemplates] = useState<TableTemplate[]>([]);
@@ -577,20 +639,12 @@ export default function TableConfigPage() {
 
   // PERMISSION GATE: who is allowed to build a game for this club.
   //
-  // 2026-08-19. This used to ask "is this club in a union?" and bounce every
-  // visitor if so. That is not the rule — it locked out the union owner, the
-  // one person who IS supposed to build games for a union's clubs. Now it asks
-  // the same question the database enforces (fn_can_create_games), via
-  // fn_game_creation_access, which also reports WHY and which union owns the
-  // games so the row can be stamped with it.
+  // The same builder is reached from a standalone club or from the union
+  // console. fn_game_creation_access distinguishes an authorized union
+  // operator from the member club's own staff.
   const [access, setAccess] = useState<GameCreationAccess | null>(null);
   const checkingAccess = access === null;
-  const canCreate = access?.allowed === true;
-  // Union governance (2026-08-19): a union club's own staff may not build
-  // union-visible games, but they MAY build a PRIVATE club game here
-  // (is_private forced true; RLS enforces who can actually insert it).
-  const privateOnly = access?.allowed === false && access?.reason === 'union_only';
-  const canBuildHere = canCreate || privateOnly;
+  const canBuildHere = access?.allowed === true;
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   useEffect(() => {
@@ -621,13 +675,8 @@ export default function TableConfigPage() {
       if (!isMounted) return;
       setAccess(result);
       if (!result.allowed) {
-        if (result.reason === 'union_only') {
-          // Union governance: club staff may still build a PRIVATE club game.
-          toast.info('This club is in a union - the game will be private to your club.');
-        } else {
-          toast.error(gameCreationDeniedMessage(result));
-          navigate(`/clubs/${clubId}`);
-        }
+        toast.error(gameCreationDeniedMessage(result));
+        navigate(`/clubs/${clubId}`);
       }
     })();
     return () => {
@@ -650,6 +699,38 @@ export default function TableConfigPage() {
   // Tournaments are exempt from the cash law (see the tableSeating header)
   // but NOT from the deck: a 10-seat PLO6 SNG cannot physically be dealt.
   const sngSeatCap = Math.min(10, maxSeatsTheDeckAllows(gameType || 'nlh'));
+
+  // Declared beside the seat caps because loadTemplate needs all three.
+  const canRunAsTournament = gameTypeCanRunAsTournament(gameType);
+
+  /* Three controls the engine cannot honour under fixed-limit betting; see
+     isFixedLimitGame for what each one does wrong. */
+  const limitGame = isFixedLimitGame(gameType);
+
+  /* The blind ladder THIS variant may be built on. A limit game's bet sizes
+     are derived from the big blind alone, so a preset where bb is not twice
+     sb produces a table whose posted small blind appears in no label anywhere
+     (see config/blindsPresets). Declared here because loadTemplate needs it. */
+  const offeredPresets = useMemo(() => presetsFor(limitGame), [limitGame]);
+
+  /* Keep the slider ON the ladder this variant offers. Navigating an already
+     mounted form from an nlh route to an flh one narrows the ladder, and the
+     blinds in state may no longer be on it; this also derives the initial
+     index from the config rather than trusting two pieces of state to have
+     been initialised in agreement. */
+  useEffect(() => {
+    const exact = blindsIndexFor(config.smallBlind, config.bigBlind, offeredPresets);
+    if (exact !== null) {
+      setBlindsIndex(exact);
+      return;
+    }
+    const snapped = nearestBlindsIndex(config.bigBlind, offeredPresets);
+    const preset = offeredPresets[snapped];
+    if (!preset) return;
+    setBlindsIndex(snapped);
+    setConfig((prev) => ({ ...prev, smallBlind: preset.sb, bigBlind: preset.bb }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offeredPresets]);
 
   // If the route's variant changes under the mounted form (or a template
   // loaded an over-cap value), snap the seat counts down to the new caps.
@@ -793,39 +874,77 @@ export default function TableConfigPage() {
     }
   }, [clubId]);
 
-  // Generate default table name
+  // Generate the default table name, and KEEP IT TRACKING THE BLINDS.
+  //
+  // 2026-08-23: limit games are named by BET size, not blind size — blinds
+  // 1/2 is a "2/4" limit game. defaultTableName() defers to stakesLabel(),
+  // the one place that decides, so the table name, the stakes column and the
+  // lobby row all agree.
+  //
+  // 2026-08-31 audit: the dependency array was [gameInfo.name] and the write
+  // was guarded by `prev.name ||`, so the name was decided once at mount and
+  // never again. Accept the default, then drag the blinds to 10/25, and you
+  // created a table NAMED "NLH 0.05/0.1" PLAYING 10/25 — tables.name flatly
+  // disagreeing with tables.stakes. A name the OWNER typed is still never
+  // touched: autoNameRef records what we last generated, and only that exact
+  // string is replaced.
   useEffect(() => {
-    // 2026-08-23: limit games are named by BET size, not blind size — blinds
-    // 1/2 is a "2/4" limit game. stakesLabel() is the one place that decides,
-    // so the table name, the stakes column and the lobby row all agree.
-    const blindsLabel = stakesLabel(config.smallBlind, config.bigBlind, gameType);
-
-    setConfig((prev) => ({
-      ...prev,
-      name: prev.name || `${gameInfo.name} ${blindsLabel}`,
-    }));
-  }, [gameInfo.name]);
+    const generated = defaultTableName(gameInfo.name, config.smallBlind, config.bigBlind, gameType);
+    if (config.name && config.name !== autoNameRef.current) return;
+    autoNameRef.current = generated;
+    if (config.name === generated) return;
+    setConfig((prev) => ({ ...prev, name: generated }));
+  }, [gameInfo.name, gameType, config.smallBlind, config.bigBlind, config.name]);
 
   const updateConfig = <K extends keyof TableConfig>(key: K, value: TableConfig[K]) => {
     setConfig((prev) => ({ ...prev, [key]: value }));
   };
 
-  // Load a template's config into the form
+  /**
+   * Load a template's config into the form.
+   *
+   * 2026-08-31 audit. This used to be one line —
+   * `setConfig({ ...DEFAULT_CONFIG, ...template.config, name: '' })` — and it
+   * left the form describing a table the owner was NOT about to create: no
+   * name (so Save and Start both bailed straight after the success toast), a
+   * game mode the variant may not support, a blinds slider still pointing at
+   * whatever it pointed at before, and a seat count the write would silently
+   * clamp. restoreTemplateConfig() is that whole decision as a pure function,
+   * pinned by tests/unit/templateLoadRestoresAConsistentForm.test.ts.
+   */
   const loadTemplate = (templateId: string) => {
     if (!templateId) {
       setSelectedTemplateId('');
       return;
     }
     const template = templates.find((t) => t.id === templateId);
-    if (template) {
-      setConfig({
-        ...DEFAULT_CONFIG,
-        ...template.config,
-        name: '', // Clear name so user enters new name
-      });
-      setSelectedTemplateId(templateId);
-      toast.success(`Loaded template: ${template.name}`);
+    if (!template) return;
+
+    const restored = restoreTemplateConfig<TableConfig>({
+      defaults: DEFAULT_CONFIG,
+      templateConfig: template.config,
+      templateGameType: template.game_type,
+      routeGameType: gameType,
+      gameLabel: gameInfo.name,
+      seatCap,
+      sngSeatCap,
+      canRunAsTournament,
+    });
+
+    if (!restored.ok) {
+      toast.error(restored.reason);
+      setSelectedTemplateId('');
+      return;
     }
+
+    setConfig(restored.config);
+    setBlindsIndex(restored.blindsIndex);
+    // The restored name is OURS, so the blinds keep renaming the table until
+    // the owner types over it.
+    autoNameRef.current = restored.config.name;
+    setSelectedTemplateId(templateId);
+    toast.success(`Loaded Template: ${template.name}`);
+    restored.notices.forEach((notice) => toast.info(notice));
   };
 
   // Save current config as a template
@@ -871,19 +990,52 @@ export default function TableConfigPage() {
     }
   };
 
+  /**
+   * The Players dropdown, narrowed to what this game can actually be.
+   *
+   * "3 Players (Spins)" is the only entry that changes the PRODUCT rather than
+   * the field size, and Spin & Go sells four games (SPIN_GAME_TYPES). Offering
+   * it on a Short Deck or PLO8 page created a Spin the Spins board has no
+   * filter chip for — it vanished from the lobby the moment a player ticked any
+   * Games chip, with nothing to bring it back. Removing the OPTION is the fix;
+   * `buildTournamentConfig` refuses the same combination independently, for a
+   * draft or template that carries it in past this screen.
+   */
+  /**
+   * Templates are fetched for the whole CLUB, not for this variant, so a PLO6
+   * template used to sit in the dropdown of an FLH page. Loading it carried
+   * PLO6's toggles, stakes and seat count onto a fixed-limit table — the same
+   * "promised what it cannot pay" shape the fixed-limit sweep just closed.
+   * Templates saved before game_type existed carry no variant and stay
+   * offered; refusing those would strand every template an owner already has.
+   */
+  const templatesForThisGame = useMemo(
+    () => templates.filter((t) => templateFitsGame(t.game_type, gameType)),
+    [templates, gameType]
+  );
+
+  const sngPlayerOptions = useMemo(
+    () => SNG_PLAYER_OPTIONS.filter((o) => !o.isSpins || gameTypeCanRunAsSpin(gameType)),
+    [gameType]
+  );
+
   // Handle SNG player count change (auto-set spins mode for 3 players)
   const handleSngPlayerChange = (playerCount: number) => {
     const option = SNG_PLAYER_OPTIONS.find((o) => o.value === playerCount);
     setConfig((prev) => ({
       ...prev,
       sngPlayerCount: playerCount,
-      isSpins: option?.isSpins || false,
+      /* `isSpins` follows the CATALOGUE, not just the row: a stale draft that
+         still says 3 on a game Spins does not sell becomes a three-handed Sit &
+         Go rather than an unfilterable Spin. */
+      isSpins: Boolean(option?.isSpins) && gameTypeCanRunAsSpin(gameType),
     }));
   };
 
   const handleBlindsChange = (index: number) => {
     setBlindsIndex(index);
-    const preset = BLINDS_PRESETS[index];
+    const preset = offeredPresets[index];
+    if (!preset) return;
     setConfig((prev) => ({
       ...prev,
       smallBlind: preset.sb,
@@ -891,16 +1043,12 @@ export default function TableConfigPage() {
     }));
   };
 
-  // FIX: Accept resolved UUID — raw clubId from URL params may not be a UUID
-  const canRunAsTournament = gameTypeCanRunAsTournament(gameType);
-
   const buildTableData = (resolvedClubId?: string) => ({
     club_id: resolvedClubId || clubId,
-    // Stamp the owning union when there is one, so a game the union built for a
-    // member club also shows up in the union's own views (getUnionTables).
-    // NULL for a standalone club — matching every existing union table, which
-    // carries BOTH union_id and the member club's club_id.
-    union_id: privateOnly ? null : (access?.unionId ?? null),
+    // Standalone games remain club-scoped. A union operator reaches this same
+    // builder from Table Management, and the authoritative access answer
+    // supplies the union stamped onto the new game.
+    union_id: access?.unionId || null,
     name: config.name,
     // FORMAT, not variant (2026-08-30 audit). tables.game_type is the table
     // FORMAT ('cash' | 'tournament') platform-wide: HorseFleetManager writes
@@ -921,9 +1069,8 @@ export default function TableConfigPage() {
     // Bet sizes on a limit table ("2/4"), blinds everywhere else ("1/2").
     stakes: stakesLabel(config.smallBlind, config.bigBlind, gameType),
 
-    // Basic settings — union clubs build private club games ONLY (the
-    // trg_tables_union_ownership DB trigger enforces this server-side too)
-    is_private: config.isPrivate || privateOnly,
+    // Basic settings
+    is_private: config.isPrivate,
     is_vip_only: config.isVipOnly,
     is_anonymous: config.isAnonymous,
     ban_chat: config.banChat,
@@ -958,7 +1105,11 @@ export default function TableConfigPage() {
       config.bombPotEnabled && config.bombPotAnteFixed > 0 ? config.bombPotAnteFixed : null,
     // VARIANT OVERRIDE (spec §10.1): NULL = bomb hands play the table's own
     // game. The engine whitelists; the DB CHECK mirrors it.
-    bomb_pot_variant: config.bombPotEnabled && config.bombPotVariant ? config.bombPotVariant : null,
+    /* A bomb hand's variant IS the hand's betting structure, so an override
+       on a fixed-limit table would deal one pot-limit or no-limit hand at a
+       table the player sat down at for fixed limit. */
+    bomb_pot_variant:
+      !limitGame && config.bombPotEnabled && config.bombPotVariant ? config.bombPotVariant : null,
     // ANNOUNCE WINDOW (spec §3): 0 = always show the timed clock.
     bomb_pot_announce_seconds:
       config.bombPotEnabled &&
@@ -993,7 +1144,11 @@ export default function TableConfigPage() {
      * this flag as pineapple, and refuses to apply it to anything else,
      * because "Pineapple PLO" is not a game.
      */
-    pineapple_holdem: config.pineappleHoldem,
+    /* Gated on the write as well as in the UI (2026-08-31): the engine
+       ignores this flag off Hold'em, so a stale true from a template or a
+       variant change would sit on a PLO row claiming a game it will never be
+       dealt. lobbyEntries reads the column directly and would badge it. */
+    pineapple_holdem: canDealPineapple(gameType) ? config.pineappleHoldem : false,
     /**
      * NLH ONLY, and that is the engine's rule, not an oversight.
      * ServerTableEngineSettlement: "meaningless in PLO; short-deck has no
@@ -1009,9 +1164,18 @@ export default function TableConfigPage() {
     seven_deuce_enabled: SEVEN_DEUCE_VARIANTS.has(String(gameType || 'nlh').toLowerCase())
       ? config.sevenDeuceEnabled
       : false,
-    // 7-2 bounty size in big blinds each other dealt-in player pays a post-flop
-    // 7-2 winner. Only meaningful when the toggle is on; default 2 BB.
-    seven_deuce_amount: config.sevenDeuceEnabled ? config.sevenDeuceAmountBB : 2,
+    /* 7-2 bounty size in big blinds each other dealt-in player pays a
+       post-flop 7-2 winner.
+       2026-08-31: this read `config.sevenDeuceEnabled ? ... : 2` — the SAME
+       stale-true class the line above was written to prevent, one gate short.
+       A PLO6 table created after loading an NLH template wrote
+       enabled:false alongside amount:8. The amount now follows the switch
+       through the identical variant gate, so the two columns can never
+       describe different tables. */
+    seven_deuce_amount:
+      SEVEN_DEUCE_VARIANTS.has(String(gameType || 'nlh').toLowerCase()) && config.sevenDeuceEnabled
+        ? config.sevenDeuceAmountBB
+        : 2,
     nit_game: config.nitGame,
     /**
      * CAP NEEDS AN AMOUNT (2026-08-27). `cap_enabled` alone is not a cap:
@@ -1022,8 +1186,11 @@ export default function TableConfigPage() {
      * toggle is off, so a stale amount cannot cap a table whose owner turned
      * the switch off.
      */
-    cap_enabled: config.capEnabled && config.capBB > 0,
-    cap_bb: config.capEnabled ? config.capBB : 0,
+    /* Forced off on a fixed-limit table: the cap clamp runs AFTER the
+       mandatory fixed size is assigned, so a capped limit table can emit a
+       wager the validator refuses. See isFixedLimitGame. */
+    cap_enabled: !limitGame && config.capEnabled && config.capBB > 0,
+    cap_bb: !limitGame && config.capEnabled ? config.capBB : 0,
     no_rathole: config.noRathole,
 
     // Table parameters
@@ -1032,10 +1199,25 @@ export default function TableConfigPage() {
     // over-cap row is not a preference, it is a mid-hand engine crash.
     max_players: clampSeatsForVariant(String(gameType || 'nlh').toLowerCase(), config.maxPlayers),
     action_time_seconds: config.actionTimeSeconds,
+    /**
+     * THE BUY-IN BAND IS ONE PAIR OF COLUMNS, IN CHIPS.
+     *
+     * This page used to stamp `min_buy_in_bb` / `max_buy_in_bb` here as well,
+     * in big blinds, beside a sibling written in chips. Nothing ever read
+     * them: `atomic_table_buyin` — the only hard enforcement of a buy-in in
+     * the product — reads `min_buy_in` / `max_buy_in`, and so do the engine
+     * and src/lib/cashBuyIn.ts. What the extra pair did was give a future
+     * reader a column that looks authoritative and is not; on a 1/2 table the
+     * database still carried the 2/25 default, so anyone who picked it up
+     * would have capped a player at 50 chips on a table advertising 400.
+     *
+     * They are now GENERATED columns derived from these two
+     * (supabase/migrations/20260831133000_one_buy_in_band_and_the_rest_are
+     * _derived.sql), so writing them raises 428C9 and the schema itself keeps
+     * the families from disagreeing. Write the chips; the big blinds follow.
+     */
     min_buy_in: config.minBuyInBB * config.bigBlind,
     max_buy_in: config.maxBuyInBB * config.bigBlind,
-    min_buy_in_bb: config.minBuyInBB,
-    max_buy_in_bb: config.maxBuyInBB,
     ante_bb: config.anteBB,
     /**
      * THE ANTE SLIDER WAS DEAD ON EVERY TABLE THIS PAGE CREATED.
@@ -1074,14 +1256,16 @@ export default function TableConfigPage() {
     auto_extension: config.autoExtension,
     auto_restart: config.autoRestart,
     auto_create_table: config.autoCreateTable,
-    auto_utg_straddle: config.autoUtgStraddle,
-    voluntary_straddle: config.voluntaryStraddle,
+    /* Forced off on a fixed-limit table: a straddle sets currentBet with no
+       structure branch and is not counted against the four-wager cap. */
+    auto_utg_straddle: !limitGame && config.autoUtgStraddle,
+    voluntary_straddle: !limitGame && config.voluntaryStraddle,
     insurance_enabled: config.insuranceEnabled,
     // FIX-D2 2026-07-19: the engine reads the canonical top-level columns
     // straddle_enabled / run_it_twice_enabled, NOT auto_utg_straddle /
     // voluntary_straddle / run_it_mode. Without these mirrors, straddle and
     // run-it-twice configured on this page never took effect.
-    straddle_enabled: config.autoUtgStraddle || config.voluntaryStraddle,
+    straddle_enabled: !limitGame && (config.autoUtgStraddle || config.voluntaryStraddle),
     /* "NONE" DID NOT TURN RUN IT TWICE OFF (2026-08-31 audit).
        The engine's gate is
          ((run_it_twice ?? true) && (allow_run_it_twice ?? true)) || run_it_twice_enabled
@@ -1105,40 +1289,49 @@ export default function TableConfigPage() {
     rake_percent: config.rakePercent,
     rake_cap_bb: config.rakeCapBB,
 
+    /**
+     * THE TOURNAMENT BLOCK STOPPED BEING WRITTEN ONTO CASH ROWS (2026-08-31).
+     *
+     * buildTableData runs ONLY when gameMode === 'regular' — handleSave and
+     * handleStart both branch to the tournament path first — so every SNG/MTT
+     * column below was landing on a CASH row. Twenty of them had zero readers
+     * anywhere: not the engine, not the lobby, not any SQL beyond the ALTER
+     * TABLE that created them. Removed by name:
+     *   sng_buy_in, sng_custom_buy_in, blinds_up_minutes, next_step_satellite,
+     *   custom_rebuy_reentry_cost, number_of_rebuys_reentries,
+     *   add_on_multiplier, custom_add_on, add_on_break_length_minutes,
+     *   ko_bounty, gtd_prize_pool, late_registration_level,
+     *   early_bird_registration, featured_tournament, min_players_mtt,
+     *   max_players_mtt, multi_day_mtt, save_start_time,
+     *   restart_tournament_every, tournament_schedule.
+     * Only `name` is NOT NULL without a default on this table
+     * (scripts/ci/supabase-required-columns-manifest.json), so omitting them
+     * cannot refuse the insert.
+     *
+     * TWO THAT LOOK DEAD AND ARE NOT — verified, do not "finish the job":
+     *   game_mode    five live club-data RPCs read it
+     *                (COALESCE(t.game_mode,'') ILIKE '%mixed%').
+     *   ante_bb      live readers use the authored BB value while the engine
+     *                posts the derived chip value in `ante`.
+     * min_buy_in_bb / max_buy_in_bb are intentionally absent here: the schema
+     * now generates them from min_buy_in / max_buy_in (see the buy-in comment
+     * above), and Postgres refuses an explicit write to either mirror.
+     * The rest that remain below have real readers on `tables` rows.
+     */
     // SNG/MTT specific
-    sng_buy_in: config.buyIn,
-    sng_custom_buy_in: config.customBuyIn,
     blind_structure: config.blindStructure,
     payout_structure: config.payoutStructure,
     starting_chips: config.startingChips,
-    blinds_up_minutes: config.blindsUpMinutes,
-    next_step_satellite: config.nextStepSatellite,
 
     // MTT specific
     short_description: config.shortDescription,
     accelerated_mtt: config.acceleratedMtt,
     all_in_or_fold: config.allInOrFold,
-    custom_rebuy_reentry_cost: config.customRebuyReentryCost,
-    number_of_rebuys_reentries: config.numberOfRebuysReentries,
-    add_on_multiplier: config.addOnMultiplier,
-    custom_add_on: config.customAddOn,
-    add_on_break_length_minutes: config.addOnBreakLengthMinutes,
-    ko_bounty: config.koBounty,
-    gtd_prize_pool: config.gtdPrizePool,
     final_table_deal: config.finalTableDeal,
     big_blind_ante: config.bigBlindAnte,
     authorized_to_register: config.authorizedToRegister,
-    late_registration_level: config.lateRegistrationLevel,
-    early_bird_registration: config.earlyBirdRegistration,
     bubble_protection: config.bubbleProtection,
-    featured_tournament: config.featuredTournament,
-    min_players_mtt: config.minPlayers,
-    max_players_mtt: config.maxPlayersRange,
-    multi_day_mtt: config.multiDayMtt,
-    save_start_time: config.saveStartTime,
     start_time: config.startTime || null,
-    restart_tournament_every: config.restartTournamentEvery,
-    tournament_schedule: config.tournamentSchedule,
     synchronized_breaks: config.synchronizedBreaks,
 
     // Security. Only the switch that is actually enforced is written; the
@@ -1156,7 +1349,6 @@ export default function TableConfigPage() {
       return;
     }
     // PERMISSION GATE: re-check at save time (defense-in-depth).
-    // privateOnly (union club staff) may proceed — the game is forced private.
     if (!canBuildHere) {
       toast.error(
         checkingAccess
@@ -1221,9 +1413,7 @@ export default function TableConfigPage() {
          rendered as the same five words, which is how an unsaveable
          configuration became an unexplainable one. handleStartTournament
          already surfaces error.message; this now matches it. */
-      toast.error(
-        error instanceof Error && error.message ? error.message : 'Failed to save table'
-      );
+      toast.error(error instanceof Error && error.message ? error.message : 'Failed to save table');
     } finally {
       setSaving(false);
     }
@@ -1261,7 +1451,7 @@ export default function TableConfigPage() {
     delete rpcConfig.startTime;
     await tournamentScheduleService.upsert({
       clubId: resolvedId,
-      unionId: privateOnly ? null : (access?.unionId ?? null),
+      unionId: null,
       name: config.name.trim() || 'Tournament',
       daysOfWeek: scheduleValue.daysOfWeek,
       startTimesUtc: scheduleValue.mode === 'times' ? scheduleValue.startTimesUtc : [],
@@ -1401,6 +1591,16 @@ export default function TableConfigPage() {
         clubId: clubId || undefined,
         table: data,
       });
+      // A durable row is only half of "Create And Start". Force the same
+      // authenticated engine wake that reconnects use and refuse to navigate
+      // to a dead felt. The state endpoint now adopts an eligible empty cash
+      // table on demand, so this also verifies Supabase -> engine wiring.
+      const engineState = await getTableState(data.id);
+      if (!engineState) {
+        throw new Error(
+          'Table Was Saved, But The Table Engine Did Not Connect. Please Try Start Again.'
+        );
+      }
       toast.success('Table created and started!');
       navigate(`/table/${data.id}`);
     } catch (error) {
@@ -1452,7 +1652,7 @@ export default function TableConfigPage() {
       </div>
 
       {/* Template Selector - At TOP for easy duplication */}
-      {templates.length > 0 && (
+      {templatesForThisGame.length > 0 && (
         <div className="template-selector">
           <label className="template-label">Load Template:</label>
           <select
@@ -1461,7 +1661,7 @@ export default function TableConfigPage() {
             onChange={(e) => loadTemplate(e.target.value)}
           >
             <option value="">-- Start Fresh --</option>
-            {templates.map((t) => (
+            {templatesForThisGame.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
               </option>
@@ -1515,7 +1715,7 @@ export default function TableConfigPage() {
               label="Bomb Pot"
               value={config.bombPotEnabled}
               onChange={(v) => updateConfig('bombPotEnabled', v)}
-              tooltip="Everyone antes and the hand starts on the flop, on a fixed schedule"
+              tooltip="Everyone Antes And The Hand Starts On The Flop, On A Fixed Schedule"
             />
             {config.bombPotEnabled && (
               <>
@@ -1598,7 +1798,7 @@ export default function TableConfigPage() {
                         checked={config.bombPotTriggerMode === 'every_n_hands'}
                         onChange={() => updateConfig('bombPotTriggerMode', 'every_n_hands')}
                       />
-                      <span>Every N Hands</span>
+                      <span>Every Set Number Of Hands</span>
                     </label>
                     <label className="radio-option">
                       <input
@@ -1630,15 +1830,21 @@ export default function TableConfigPage() {
                   </div>
                 </div>
                 {config.bombPotTriggerMode === 'every_n_hands' && (
-                  <Slider
-                    label="Bomb Pot Every"
-                    value={config.bombPotFrequency}
-                    onChange={(v) => updateConfig('bombPotFrequency', v)}
-                    min={5}
-                    max={50}
-                    step={5}
-                    suffix=" hands"
-                  />
+                  <>
+                    <div className="config-inline-help" role="note">
+                      <strong>How This Schedule Works</strong>
+                      <span>Every {config.bombPotFrequency}th Dealt Hand Is A Bomb Pot.</span>
+                    </div>
+                    <Slider
+                      label="Bomb Pot Hand Interval"
+                      value={config.bombPotFrequency}
+                      onChange={(v) => updateConfig('bombPotFrequency', v)}
+                      min={5}
+                      max={50}
+                      step={5}
+                      suffix=" Hands"
+                    />
+                  </>
                 )}
                 {config.bombPotTriggerMode === 'timed' && (
                   <Slider
@@ -1744,7 +1950,15 @@ export default function TableConfigPage() {
                     table whose bombs are PLO4 double boards. The engine
                     whitelists the value and skips the override if the deck
                     cannot cover the seats (9-handed PLO6). */}
-                <div className="config-radio-group">
+                {/* Hidden on a fixed-limit table: the bomb hand's variant IS
+                    the hand's betting structure, so an override would deal one
+                    pot-limit or no-limit hand at a table the player sat down at
+                    for fixed limit. resolveBombPotVariant refuses it
+                    server-side too, for the writers that are not this form. */}
+                <div
+                  className="config-radio-group"
+                  style={limitGame ? { display: 'none' } : undefined}
+                >
                   <span className="radio-group-label">Bomb Pot Game</span>
                   <div className="radio-options">
                     {(
@@ -1810,7 +2024,7 @@ export default function TableConfigPage() {
                   label="Separate Bomb Button"
                   value={config.bombPotSeparateButton}
                   onChange={(v) => updateConfig('bombPotSeparateButton', v)}
-                  tooltip="Bomb pots rotate their own dealer button, and the regular button does not move on bomb hands"
+                  tooltip="Bomb Pots Rotate Their Own Dealer Button, And The Regular Button Does Not Move On Bomb Hands"
                 />
               </>
             )}
@@ -1824,7 +2038,7 @@ export default function TableConfigPage() {
                 label="Seven-Deuce"
                 value={config.sevenDeuceEnabled}
                 onChange={(v) => updateConfig('sevenDeuceEnabled', v)}
-                tooltip="Winner holding any 7-2 collects a bounty from each other player (post-flop only)"
+                tooltip="Winner Holding Any 7-2 Collects A Bounty From Each Other Player (Post-Flop Only)"
               />
             )}
             {SEVEN_DEUCE_VARIANTS.has(String(gameType || 'nlh').toLowerCase()) &&
@@ -1839,24 +2053,43 @@ export default function TableConfigPage() {
                   suffix=" Big Blind"
                 />
               )}
+            {/* 2026-08-31 audit: `pineappleHoldem` had exactly three
+                occurrences in this 2,800-line form — the interface field, the
+                default false, and the write. THERE WAS NO CONTROL. The engine
+                deals it, BettingStructure has the discard street, the lobby
+                badges it, and the only live cash-creation path could not
+                reach it. This is the switch. */}
+            {canDealPineapple(gameType) && (
+              <Toggle
+                label="Pineapple Hold'em"
+                value={config.pineappleHoldem}
+                onChange={(v) => updateConfig('pineappleHoldem', v)}
+                tooltip="Three Hole Cards, Discard One After The Flop"
+              />
+            )}
             <Toggle
               label="NIT Game"
               value={config.nitGame}
               onChange={(v) => updateConfig('nitGame', v)}
-              tooltip="Penalty for tight play"
+              tooltip="Penalty For Tight Play"
             />
             <Toggle
               label="Anonymous Table"
               value={config.isAnonymous}
               onChange={(v) => updateConfig('isAnonymous', v)}
             />
-            <Toggle
-              label="Cap"
-              value={config.capEnabled}
-              onChange={(v) => updateConfig('capEnabled', v)}
-              tooltip="Limit the total chips a player can commit in one hand"
-            />
-            {config.capEnabled && (
+            {/* Hidden on a fixed-limit table: the cap clamp runs after the
+                mandatory fixed size is assigned, so a capped limit table can
+                emit a wager the validator refuses. See isFixedLimitGame. */}
+            {!limitGame && (
+              <Toggle
+                label="Cap"
+                value={config.capEnabled}
+                onChange={(v) => updateConfig('capEnabled', v)}
+                tooltip="Limit The Total Chips A Player Can Commit In One Hand"
+              />
+            )}
+            {!limitGame && config.capEnabled && (
               <Slider
                 label="Cap Amount"
                 value={config.capBB}
@@ -1865,7 +2098,7 @@ export default function TableConfigPage() {
                 max={200}
                 step={5}
                 suffix=" Big Blinds"
-                tooltip="The most a player can put in across the whole hand. Reaching the cap does not put them all-in."
+                tooltip="The Most A Player Can Put In Across The Whole Hand. Reaching The Cap Does Not Put Them All-In."
               />
             )}
             <Toggle
@@ -1874,22 +2107,22 @@ export default function TableConfigPage() {
               onChange={(v) => updateConfig('banChat', v)}
             />
             <Toggle
-              label="Label as NEW"
+              label="Label As NEW"
               value={config.labelAsNew}
               onChange={(v) => updateConfig('labelAsNew', v)}
-              tooltip="Show NEW badge"
+              tooltip="Show NEW Badge"
             />
             <Toggle
               label="Featured Table"
               value={config.isFeatured}
               onChange={(v) => updateConfig('isFeatured', v)}
-              tooltip="Feature at top of list"
+              tooltip="Feature At Top Of List"
             />
             <Toggle
               label="No Rathole"
               value={config.noRathole}
               onChange={(v) => updateConfig('noRathole', v)}
-              tooltip="Prevent leaving with winnings"
+              tooltip="Prevent Leaving With Winnings"
             />
 
             {/* SECTION: Table Parameters */}
@@ -1940,7 +2173,7 @@ export default function TableConfigPage() {
                 <input
                   type="range"
                   min={0}
-                  max={BLINDS_PRESETS.length - 1}
+                  max={offeredPresets.length - 1}
                   value={blindsIndex}
                   onChange={(e) => handleBlindsChange(Number(e.target.value))}
                   className="slider-input"
@@ -2038,37 +2271,48 @@ export default function TableConfigPage() {
               label="Auto Extension"
               value={config.autoExtension}
               onChange={(v) => updateConfig('autoExtension', v)}
-              tooltip="Keep this table open when it empties"
+              tooltip="Keep This Table Open When It Empties"
             />
+            {/* Auto Restart and Auto Create Table look dead from a
+                TypeScript grep and are NOT: fn_table_lifecycle_pass reads
+                both columns in SQL. Checked against the live function on
+                2026-08-31 before nearly deleting them. */}
             <Toggle
               label="Auto Restart"
               value={config.autoRestart}
               onChange={(v) => updateConfig('autoRestart', v)}
-              tooltip="Reopen this table if it closes"
+              tooltip="Reopen This Table If It Closes"
             />
             <Toggle
               label="Auto Create Table"
               value={config.autoCreateTable}
               onChange={(v) => updateConfig('autoCreateTable', v)}
-              tooltip="Create new table when full"
+              tooltip="Create New Table When Full"
             />
-            <Toggle
-              label="Auto UTG Straddle"
-              value={config.autoUtgStraddle}
-              onChange={(v) => updateConfig('autoUtgStraddle', v)}
-              tooltip="Automatic UTG straddle"
-            />
-            <Toggle
-              label="Voluntary Straddle"
-              value={config.voluntaryStraddle}
-              onChange={(v) => updateConfig('voluntaryStraddle', v)}
-              tooltip="Allow voluntary straddle"
-            />
+            {/* Hidden on a fixed-limit table: HandController posts a straddle
+                by assigning currentBet with no structure branch, and the
+                straddle is not counted against the four-wager cap. */}
+            {!limitGame && (
+              <>
+                <Toggle
+                  label="Auto UTG Straddle"
+                  value={config.autoUtgStraddle}
+                  onChange={(v) => updateConfig('autoUtgStraddle', v)}
+                  tooltip="Automatic UTG Straddle"
+                />
+                <Toggle
+                  label="Voluntary Straddle"
+                  value={config.voluntaryStraddle}
+                  onChange={(v) => updateConfig('voluntaryStraddle', v)}
+                  tooltip="Allow Voluntary Straddle"
+                />
+              </>
+            )}
             <Toggle
               label="Insurance"
               value={config.insuranceEnabled}
               onChange={(v) => updateConfig('insuranceEnabled', v)}
-              tooltip="All-in insurance option"
+              tooltip="All-In Insurance Option"
             />
 
             {/* Run It Multi-Times */}
@@ -2124,16 +2368,14 @@ export default function TableConfigPage() {
               <div className="config-toggle">
                 <span className="toggle-label">
                   Players
-                  <span className="tooltip-icon" title="Number of players in SNG">
-                    ?
-                  </span>
+                  <HelpPopover label="Players">Number Of Players In SNG</HelpPopover>
                 </span>
                 <select
                   className="config-select sng-player-select"
                   value={config.sngPlayerCount}
                   onChange={(e) => handleSngPlayerChange(Number(e.target.value))}
                 >
-                  {SNG_PLAYER_OPTIONS.map((opt) => (
+                  {sngPlayerOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>
                       {opt.label}
                     </option>
@@ -2148,9 +2390,9 @@ export default function TableConfigPage() {
                 Regular tab. ── */}
             <Toggle
               label="Private Game"
-              value={config.isPrivate || privateOnly}
+              value={config.isPrivate}
               onChange={(v) => updateConfig('isPrivate', v)}
-              tooltip="Visible only inside your club, never in the union lobby"
+              tooltip="Visible Only Inside Your Club, Never In The Union Lobby"
             />
             <Toggle
               label="VIP Only"
@@ -2171,25 +2413,25 @@ export default function TableConfigPage() {
               label="Ban Chat"
               value={config.banChat}
               onChange={(v) => updateConfig('banChat', v)}
-              tooltip="Table chat is disabled for players in this tournament"
+              tooltip="Table Chat Is Disabled For Players In This Tournament"
             />
             <Toggle
-              label="All-in or Fold"
+              label="All-In Or Fold"
               value={config.allInOrFold}
               onChange={(v) => updateConfig('allInOrFold', v)}
-              tooltip="Players may only move all-in or fold"
+              tooltip="Players May Only Move All-In Or Fold"
             />
             <Toggle
-              label="Label as NEW"
+              label="Label As NEW"
               value={config.labelAsNew}
               onChange={(v) => updateConfig('labelAsNew', v)}
-              tooltip="Show NEW badge in the lobby"
+              tooltip="Show NEW Badge In The Lobby"
             />
             <Toggle
               label="Featured Tournament"
               value={config.featuredTournament}
               onChange={(v) => updateConfig('featuredTournament', v)}
-              tooltip="Pinned to the top of every tournament list"
+              tooltip="Pinned To The Top Of Every Tournament List"
             />
             <Toggle
               label="Hide Club Name"
@@ -2224,12 +2466,9 @@ export default function TableConfigPage() {
             <div className="config-toggle">
               <span className="toggle-label">
                 Fee
-                <span
-                  className="tooltip-icon"
-                  title="Taken out of the buy-in, never added on top. Spins carry no fee."
-                >
-                  ?
-                </span>
+                <HelpPopover label="Fee">
+                  Taken Out Of The Buy-In, Never Added On Top. Spins Carry No Fee.
+                </HelpPopover>
               </span>
               <span style={{ color: '#1877f2', fontWeight: 600, fontSize: '0.85rem' }}>
                 {config.gameMode === 'sng'
@@ -2241,22 +2480,22 @@ export default function TableConfigPage() {
             </div>
 
             <Toggle
-              label="Custom Buy-in"
+              label="Custom Buy-In"
               value={config.customBuyIn}
               onChange={(v) => updateConfig('customBuyIn', v)}
-              tooltip="Type any whole-number buy-in instead of using the slider"
+              tooltip="Type Any Whole-Number Buy-In Instead Of Using The Slider"
             />
             {config.customBuyIn ? (
               <NumberField
-                label="Buy-in"
+                label="Buy-In"
                 value={config.buyIn}
                 onChange={(v) => updateConfig('buyIn', v)}
                 min={0}
-                tooltip="Whole chips only. 0 = freeroll."
+                tooltip="Whole Chips Only. 0 = Freeroll."
               />
             ) : (
               <Slider
-                label="Buy-in"
+                label="Buy-In"
                 value={config.buyIn}
                 onChange={(v) => updateConfig('buyIn', v)}
                 min={10}
@@ -2312,19 +2551,19 @@ export default function TableConfigPage() {
             <div className="config-toggle">
               <span className="toggle-label">
                 Payout Structure
-                <span className="tooltip-icon" title="Prize distribution">
-                  ?
-                </span>
+                <HelpPopover label="Payout Structure">Prize Distribution</HelpPopover>
               </span>
               <select
                 className="config-select"
                 value={config.payoutStructure}
                 onChange={(e) => updateConfig('payoutStructure', e.target.value as PayoutStructure)}
               >
-                <option value="payout1">Payout 1</option>
-                <option value="payout2">Payout 2</option>
-                <option value="payout3">Payout 3</option>
-                <option value="winner_take_all">Winner Take All</option>
+                <option value="payout1">Top 10% Of Field</option>
+                <option value="payout2">Top 12.5% Of Field</option>
+                <option value="payout3">Top 15% Of Field (Standard)</option>
+                {config.gameMode === 'sng' && (
+                  <option value="winner_take_all">Winner Take All</option>
+                )}
               </select>
             </div>
 
@@ -2350,19 +2589,19 @@ export default function TableConfigPage() {
               label="Big Blind Ante"
               value={config.bigBlindAnte}
               onChange={(v) => updateConfig('bigBlindAnte', v)}
-              tooltip="The big blind posts the ante for the whole table"
+              tooltip="The Big Blind Posts The Ante For The Whole Table"
             />
             <Toggle
-              label="Authorized to Register"
+              label="Authorized To Register"
               value={config.authorizedToRegister}
               onChange={(v) => updateConfig('authorizedToRegister', v)}
-              tooltip="Only players you approve can register"
+              tooltip="Only Players You Approve Can Register"
             />
             <Toggle
               label="Synchronized Breaks"
               value={config.synchronizedBreaks}
               onChange={(v) => updateConfig('synchronizedBreaks', v)}
-              tooltip="All tables break at the same time"
+              tooltip="All Tables Break At The Same Time"
             />
           </>
         )}
@@ -2374,11 +2613,11 @@ export default function TableConfigPage() {
               label="Accelerated MTT"
               value={config.acceleratedMtt}
               onChange={(v) => updateConfig('acceleratedMtt', v)}
-              tooltip="Faster level progression once the field shrinks"
+              tooltip="Faster Level Progression Once The Field Shrinks"
             />
 
             <Slider
-              label="Number of Rebuys/Re-entries"
+              label="Number Of Rebuys/Re-Entries"
               value={config.numberOfRebuysReentries}
               onChange={(v) => updateConfig('numberOfRebuysReentries', v)}
               min={0}
@@ -2387,18 +2626,18 @@ export default function TableConfigPage() {
             {config.numberOfRebuysReentries > 0 && (
               <>
                 <Toggle
-                  label="Custom Rebuy/Re-entry Cost"
+                  label="Custom Rebuy/Re-Entry Cost"
                   value={config.customRebuyReentryCost}
                   onChange={(v) => updateConfig('customRebuyReentryCost', v)}
-                  tooltip="Charge a different price than the buy-in"
+                  tooltip="Charge A Different Price Than The Buy-In"
                 />
                 {config.customRebuyReentryCost && (
                   <NumberField
-                    label="Rebuy/Re-entry Cost"
+                    label="Rebuy/Re-Entry Cost"
                     value={config.rebuyReentryCost}
                     onChange={(v) => updateConfig('rebuyReentryCost', v)}
                     min={0}
-                    tooltip="Whole chips only. 0 = same as the buy-in."
+                    tooltip="Whole Chips Only. 0 = Same As The Buy-In."
                   />
                 )}
               </>
@@ -2406,34 +2645,34 @@ export default function TableConfigPage() {
 
             {/* Add-on Options */}
             <Slider
-              label="Add-on"
+              label="Add-On"
               value={config.addOnMultiplier}
               onChange={(v) => updateConfig('addOnMultiplier', v)}
               min={0}
               max={3}
               step={0.5}
               suffix="x"
-              tooltip="Add-on chips as a multiple of the starting stack. 0 = no add-on."
+              tooltip="Add-On Chips As A Multiple Of The Starting Stack. 0 = No Add-On."
             />
             {config.addOnMultiplier > 0 && (
               <>
                 <Toggle
-                  label="Custom Add-on"
+                  label="Custom Add-On"
                   value={config.customAddOn}
                   onChange={(v) => updateConfig('customAddOn', v)}
-                  tooltip="Charge a different add-on price than the buy-in"
+                  tooltip="Charge A Different Add-On Price Than The Buy-In"
                 />
                 {config.customAddOn && (
                   <NumberField
-                    label="Add-on Cost"
+                    label="Add-On Cost"
                     value={config.customAddOnCost}
                     onChange={(v) => updateConfig('customAddOnCost', v)}
                     min={0}
-                    tooltip="Whole chips only. 0 = same as the buy-in."
+                    tooltip="Whole Chips Only. 0 = Same As The Buy-In."
                   />
                 )}
                 <Slider
-                  label="Add-on Break Length"
+                  label="Add-On Break Length"
                   value={config.addOnBreakLengthMinutes}
                   onChange={(v) => updateConfig('addOnBreakLengthMinutes', v)}
                   min={1}
@@ -2453,7 +2692,7 @@ export default function TableConfigPage() {
               label="GTD Prize Pool"
               value={config.gtdPrizePool}
               onChange={(v) => updateConfig('gtdPrizePool', v)}
-              tooltip="Guarantee a minimum prize pool. The club covers any overlay."
+              tooltip="Guarantee A Minimum Prize Pool. The Club Covers Any Overlay."
             />
             {config.gtdPrizePool && (
               <NumberField
@@ -2461,20 +2700,20 @@ export default function TableConfigPage() {
                 value={config.gtdPrizeAmount}
                 onChange={(v) => updateConfig('gtdPrizeAmount', v)}
                 min={0}
-                tooltip="Whole chips only"
+                tooltip="Whole Chips Only"
               />
             )}
             <Toggle
               label="Final Table Deal"
               value={config.finalTableDeal}
               onChange={(v) => updateConfig('finalTableDeal', v)}
-              tooltip="Final table players may vote to split the remaining prizes"
+              tooltip="Final Table Players May Vote To Split The Remaining Prizes"
             />
             <Toggle
               label="Bubble Protection"
               value={config.bubbleProtection}
               onChange={(v) => updateConfig('bubbleProtection', v)}
-              tooltip="The bubble finisher gets their buy-in back"
+              tooltip="The Bubble Finisher Gets Their Buy-In Back"
             />
 
             {/* Registration & Players */}
@@ -2490,7 +2729,7 @@ export default function TableConfigPage() {
               label="Early Bird Registration"
               value={config.earlyBirdRegistration}
               onChange={(v) => updateConfig('earlyBirdRegistration', v)}
-              tooltip="Players who register before the start get bonus chips"
+              tooltip="Players Who Register Before The Start Get Bonus Chips"
             />
             {config.earlyBirdRegistration && (
               <NumberField
@@ -2498,14 +2737,14 @@ export default function TableConfigPage() {
                 value={config.earlyBirdChips}
                 onChange={(v) => updateConfig('earlyBirdChips', v)}
                 min={0}
-                tooltip="Extra starting chips for registering before the start"
+                tooltip="Extra Starting Chips For Registering Before The Start"
               />
             )}
             <Toggle
               label="Next Step (Satellite)"
               value={config.nextStepSatellite}
               onChange={(v) => updateConfig('nextStepSatellite', v)}
-              tooltip="Winners earn seats into a bigger tournament instead of cash"
+              tooltip="Winners Earn Seats Into A Bigger Tournament Instead Of Cash"
             />
             {config.nextStepSatellite && (
               <>
@@ -2529,7 +2768,7 @@ export default function TableConfigPage() {
                   value={config.satelliteSeats}
                   onChange={(v) => updateConfig('satelliteSeats', v)}
                   min={1}
-                  tooltip="Top N finishers win a seat"
+                  tooltip="Top N Finishers Win A Seat"
                 />
               </>
             )}
@@ -2549,12 +2788,11 @@ export default function TableConfigPage() {
             <div className="config-toggle">
               <span className="toggle-label">
                 Multi-Day MTT
-                <span
-                  className="tooltip-icon"
-                  title="Day 2 resume and flight merging are not built. Setting this would badge the event Multi-Day while it played down to one winner in a single session, so it is refused rather than promised."
-                >
-                  ?
-                </span>
+                <HelpPopover label="Multi-Day MTT">
+                  Day 2 Resume And Flight Merging Are Not Built. Setting This Would Badge The Event
+                  Multi-Day While It Played Down To One Winner In A Single Session, So It Is Refused
+                  Rather Than Promised.
+                </HelpPopover>
               </span>
               <span className="toggle-status off">NOT AVAILABLE YET</span>
             </div>
@@ -2601,17 +2839,17 @@ export default function TableConfigPage() {
                 picked start time in localStorage per club and prefills it on
                 the next visit — simple and honest about what it does. */}
             <Toggle
-              label="Save the Start Time"
+              label="Save The Start Time"
               value={config.saveStartTime}
               onChange={(v) => updateConfig('saveStartTime', v)}
-              tooltip="Remember this start time on this device and prefill it next time"
+              tooltip="Remember This Start Time On This Device And Prefill It Next Time"
             />
 
             <Toggle
-              label="Restart the Tournament"
+              label="Restart The Tournament"
               value={config.restartTournamentEvery}
               onChange={(v) => updateConfig('restartTournamentEvery', v)}
-              tooltip="Automatically respawn this tournament on a fixed interval"
+              tooltip="Automatically Respawn This Tournament On A Fixed Interval"
             />
             {config.restartTournamentEvery && (
               <Slider
@@ -2633,7 +2871,7 @@ export default function TableConfigPage() {
               label="Tournament Schedule"
               value={config.tournamentSchedule}
               onChange={(v) => updateConfig('tournamentSchedule', v)}
-              tooltip="Repeat this tournament weekly. With no start time picked, only the schedule is created."
+              tooltip="Repeat This Tournament Weekly. With No Start Time Picked, Only The Schedule Is Created."
             />
             {config.tournamentSchedule && (
               <WeeklyScheduleEditor
@@ -2679,7 +2917,7 @@ export default function TableConfigPage() {
               max={10}
               step={0.5}
               format={(v) => (v < 0 ? 'Schedule (10%)' : `${v}%`)}
-              tooltip="Percentage of each raked pot. Schedule = use the house rake schedule."
+              tooltip="Percentage Of Each Raked Pot. Schedule = Use The House Rake Schedule."
             />
 
             <Slider
@@ -2693,15 +2931,74 @@ export default function TableConfigPage() {
                   ? 'Schedule'
                   : `${v} x Big Blind${config.bigBlind ? ` (= ${formatCurrency(v * config.bigBlind)})` : ''}`
               }
-              tooltip="Most that can be raked from one pot. Schedule = use the house cap for this stake."
+              tooltip="Most That Can Be Raked From One Pot. Schedule = Use The House Cap For This Stake."
             />
+
+            {/*
+              WHAT THIS TABLE WILL ACTUALLY CHARGE (2026-08-31).
+
+              The two sliders above say "Schedule" by default and the schedule
+              is a fourteen-row table in a config file, so an owner could set
+              up a game without ever seeing its price. That is not
+              hypothetical: the rake gap this audit found - six of the twelve
+              blind presets had no schedule row, and the DEFAULT preset was
+              being priced off a tier fallback at 30 big blinds - sat in the
+              product for months precisely because nothing on this screen ever
+              said the number out loud.
+
+              Resolved through getRakeConfig, the same function and the same
+              precedence the engine applies (an override may only ever move
+              DOWN from the published schedule), so this cannot drift into
+              advertising a rate we do not charge. The Game Rules modal made
+              exactly that mistake in 2026-08 by rendering placeholder props.
+            */}
+            {(() => {
+              const priced = getRakeConfig(config.bigBlind, gameType || 'nlh', config.smallBlind, {
+                rakePercent: config.rakePercent,
+                rakeCapBB: config.rakeCapBB,
+              });
+              const capInBB = config.bigBlind > 0 ? priced.rakeCap / config.bigBlind : 0;
+              const overridden =
+                config.rakePercent !== RAKE_INHERIT || config.rakeCapBB !== RAKE_INHERIT;
+              return (
+                <div className="config-slider">
+                  <div className="slider-header">
+                    <span className="slider-label">
+                      This Table Charges {priced.rakePercent}% Of Each Raked Pot, Up To{' '}
+                      {formatCurrency(priced.rakeCap)} ({Number(capInBB.toFixed(1))} Big Blinds)
+                    </span>
+                  </div>
+                  <div className="slider-header">
+                    <span className="slider-label">
+                      {priced.bbjEnabled ? (
+                        <>
+                          Bad Beat Jackpot Drop {formatCurrency(config.bigBlind * priced.bbjFeeBB)}{' '}
+                          Per Flopped Hand ({priced.bbjFeeBB} Big Blinds)
+                        </>
+                      ) : (
+                        <>No Bad Beat Jackpot On This Game</>
+                      )}
+                    </span>
+                  </div>
+                  <div className="slider-header">
+                    <span className="slider-label">
+                      {overridden ? (
+                        <>Your Override, Held To The Published Schedule</>
+                      ) : (
+                        <>Published Schedule For {priced.tier} Stakes</>
+                      )}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* SECTION: Security */}
             <Toggle
               label="IP Restriction"
               value={config.ipRestriction}
               onChange={(v) => updateConfig('ipRestriction', v)}
-              tooltip="Two different accounts cannot sit at this table from the same internet connection. Players already seated are not affected."
+              tooltip="Two Different Accounts Cannot Sit At This Table From The Same Internet Connection. Players Already Seated Are Not Affected."
             />
             <Toggle
               label="Hide Club Name"
@@ -2719,7 +3016,7 @@ export default function TableConfigPage() {
       {/* Footer Buttons */}
       <footer className="config-footer">
         <button className="btn-template" onClick={handleSaveAsTemplate} disabled={savingTemplate}>
-          {savingTemplate ? 'Saving...' : 'Save as Template'}
+          {savingTemplate ? 'Saving...' : 'Save As Template'}
         </button>
         <button className="btn-save" onClick={handleSave} disabled={saving}>
           {saving ? 'Saving...' : 'Save'}

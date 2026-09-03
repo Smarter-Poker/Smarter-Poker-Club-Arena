@@ -36,7 +36,10 @@
  *   something NEW appears        -> fail, and say exactly what and how to close it
  *   something baselined is gone  -> succeed, and say the baseline can shrink
  *
- * IT ASKS TWO QUESTIONS, and the second exists because the first missed a live
+ * IT ASKS FOUR QUESTIONS, and each one after the first exists because the ones
+ * before it missed something real.
+ *
+ * The second exists because the first missed a live
  * exploit. `unauthenticated_writers` finds functions that never reference
  * auth.uid(), auth.role() or auth.jwt(). process_tournament_rebuy DOES
  * reference auth.uid() - just uselessly:
@@ -50,6 +53,27 @@
  * apart. So `anon_writers` asks a blunter question that needs no reasoning at
  * all: can a logged-out caller execute a SECURITY DEFINER function that writes?
  * The live answer is zero, and it should stay zero.
+ *
+ * The third, `rls_disabled_writable`, is a table in `public` with RLS off that
+ * a browser role can write: no policy in the way and no function either, so
+ * the grant is the whole story.
+ *
+ * THE FOURTH, `anon_readers`, was added 2026-08-31 because the first three are
+ * ALL ABOUT WRITES. Three SECURITY DEFINER functions were found anon-executable
+ * that every one of them cleared, because not one of them writes a row:
+ *
+ *   fn_tournament_metrics    operator dashboard numbers
+ *   fn_truly_unused_indexes  table names, index names, sizes, scan counts
+ *   fn_nit_evictions         who was evicted from which table, and when
+ *
+ * The middle one hands an unauthenticated caller a partial column map of the
+ * schema, because index names here encode their columns. Reading is not
+ * writing and this question is not the same severity as `anon_writers` - but
+ * three arrived in one afternoon while this script reported all clear.
+ *
+ * Unlike questions 1 and 2, question 4 needs a baseline (`reviewedAnonReaders`):
+ * a leaderboard and a name-availability check genuinely must answer somebody
+ * with no account. The finding is anything NEW.
  *
  * IT NEVER FAILS ON AN UNREADABLE DATABASE. A network problem is not a security
  * finding, and a script that cries wolf when Supabase hiccups is one whose red
@@ -95,6 +119,11 @@ const allowed = new Set(Object.keys(baseline.reviewedExceptions ?? {}));
 // Tables in `public` with RLS off that a browser role can write. Separate list
 // because the remedy is different: there is no guard to fix, only a grant.
 const allowedTables = new Set(Object.keys(baseline.reviewedTables ?? {}));
+/* Question 4's baseline: SECURITY DEFINER functions a LOGGED-OUT caller may
+   execute that only READ. Unlike anon_writers this one needs a list, because a
+   leaderboard, a name-availability check and a public profile genuinely must
+   answer somebody with no account. The finding is anything NEW. */
+const allowedReaders = new Set(Object.keys(baseline.reviewedAnonReaders ?? {}));
 
 if (!URL_ || !KEY) {
   console.error(
@@ -128,6 +157,10 @@ try {
 const found = Array.isArray(live) ? live : (live?.unauthenticated_writers ?? []);
 const anonWriters = Array.isArray(live) ? [] : (live?.anon_writers ?? []);
 const rlsOffWritable = Array.isArray(live) ? [] : (live?.rls_disabled_writable ?? []);
+// Question 4, added 2026-08-31. Absent on an older database, which reads as an
+// empty list rather than a throw — same tolerance as the other three.
+const anonReaders = Array.isArray(live) ? [] : (live?.anon_readers ?? []);
+const newReaders = anonReaders.filter((f) => !allowedReaders.has(f.function));
 const newTables = rlsOffWritable.filter((t) => !allowedTables.has(t.table));
 const newly = found.filter((f) => !allowed.has(f.function));
 const goneQuiet = [...allowed].filter((name) => !found.some((f) => f.function === name));
@@ -135,7 +168,8 @@ const goneQuiet = [...allowed].filter((name) => !found.some((f) => f.function ==
 console.log(
   `[definer-exposure] live: ${found.length}, baselined: ${allowed.size}, new: ${newly.length}; ` +
     `anon-executable writers: ${anonWriters.length} (must be 0); ` +
-    `RLS-off writable tables: ${rlsOffWritable.length} (${newTables.length} new)`
+    `RLS-off writable tables: ${rlsOffWritable.length} (${newTables.length} new); ` +
+    `anon-readable functions: ${anonReaders.length} (${newReaders.length} new)`
 );
 
 if (goneQuiet.length > 0) {
@@ -204,13 +238,82 @@ if (newTables.length > 0) {
   process.exit(1);
 }
 
+/* A NEW FUNCTION THAT ANSWERS A CALLER WITH NO ACCOUNT. Reported after the
+   three write findings above because it is genuinely less severe than any of
+   them — and reported at all because on 2026-08-31 three of these arrived in a
+   single afternoon while this script said all clear. Every question it asked
+   was about writes, and not one of the three wrote a row:
+
+     fn_tournament_metrics    operator dashboard numbers
+     fn_truly_unused_indexes  table names, index names, sizes, scan counts
+     fn_nit_evictions         who was evicted from which table, and when
+
+   The middle one returns the schema's table and index names to anybody who
+   asks, and index names here encode their columns. That is the reconnaissance
+   step, free. */
+if (newReaders.length > 0) {
+  console.error('');
+  console.error('[definer-exposure] A NEW FUNCTION ANSWERS A CALLER WITH NO ACCOUNT.');
+  console.error('');
+  summary('### Live DEFINER exposure: ANON CAN READ SOMETHING NEW');
+  summary('');
+  for (const f of newReaders) {
+    console.error(`  ${f.function}(${f.args})  executable by anon, and never asks who is asking`);
+    summary(`- \`${f.function}(${f.args})\` readable by **anon**`);
+  }
+  console.error('');
+  console.error('  It runs as the owner, past RLS, for somebody with no account.');
+  console.error('');
+  console.error('  1. OPERATOR OR ENGINE TELEMETRY — metrics, audits, diagnostics:');
+  console.error('');
+  console.error(
+    '       REVOKE ALL ON FUNCTION public.<name>(<types>) FROM PUBLIC, anon, authenticated;'
+  );
+  console.error('       GRANT EXECUTE ON FUNCTION public.<name>(<types>) TO service_role;');
+  console.error('');
+  console.error('     Name PUBLIC too: anon inherits whatever PUBLIC holds, so revoking anon');
+  console.error('     alone reads as a fix and does nothing.');
+  console.error('');
+  console.error('  2. A LOGGED-IN PLAYER SHOULD READ IT — revoke PUBLIC and anon, keep');
+  console.error('     authenticated. This question only ever asks about the pre-login roles.');
+  console.error('');
+  console.error('  3. DELIBERATE PUBLIC SURFACE — add it to reviewedAnonReaders in');
+  console.error('     scripts/ci/definer-exposure-baseline.json, saying what an');
+  console.error('     unauthenticated caller is allowed to learn from it.');
+  console.error('');
+  console.error('  CHECK IT IS NOT AN RLS POLICY HELPER BEFORE YOU REVOKE:');
+  console.error('');
+  console.error('       SELECT polrelid::regclass, polname FROM pg_policy');
+  console.error("        WHERE pg_get_expr(polqual, polrelid) ~ '<name>';");
+  console.error('');
+  console.error('     A policy runs as the QUERYING role, so revoking a helper denies every');
+  console.error('     SELECT on the tables whose policies call it. fn_home_is_group_staff');
+  console.error('     backs 15 policies across 8 tables; it was fixed by binding it to');
+  console.error('     auth.uid() instead, which is option 4 and often the right one:');
+  console.error('');
+  console.error('  4. MAKE IT ASK. A function that derives the caller from auth.uid() leaves');
+  console.error('     this list on its own merits, and keeps working inside a policy.');
+  console.error('');
+  process.exit(1);
+}
+
+const readersGoneQuiet = [...allowedReaders].filter(
+  (name) => !anonReaders.some((f) => f.function === name)
+);
+if (readersGoneQuiet.length > 0) {
+  console.log(
+    `[definer-exposure] no longer anon-readable, so that baseline can shrink: ${readersGoneQuiet.join(', ')}`
+  );
+}
+
 if (newly.length === 0) {
   summary('### Live DEFINER exposure: OK');
   summary('');
   summary(
     `${found.length} function(s) exposed, all reviewed and baselined; no writing function a ` +
       `logged-out caller can execute; ${rlsOffWritable.length} RLS-off writable table(s), all ` +
-      'baselined. Nothing unaccounted for.'
+      `baselined; ${anonReaders.length} anon-readable function(s), all baselined. ` +
+      'Nothing unaccounted for.'
   );
   process.exit(0);
 }

@@ -53,9 +53,11 @@ export function describeSchedule(
 export default function WeeklyScheduleEditor({
   value,
   onChange,
+  hideDays = false,
 }: {
   value: WeeklyScheduleValue;
   onChange: (next: WeeklyScheduleValue) => void;
+  hideDays?: boolean;
 }) {
   const toggleDay = (day: number) => {
     const has = value.daysOfWeek.includes(day);
@@ -73,19 +75,21 @@ export default function WeeklyScheduleEditor({
 
   return (
     <div className="weekly-schedule-editor">
-      <div className="wse-days">
-        {DAY_LABELS.map((label, day) => (
-          <button
-            key={day}
-            type="button"
-            title={DAY_NAMES[day]}
-            className={`wse-day-chip ${value.daysOfWeek.includes(day) ? 'active' : ''}`}
-            onClick={() => toggleDay(day)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      {!hideDays && (
+        <div className="wse-days">
+          {DAY_LABELS.map((label, day) => (
+            <button
+              key={day}
+              type="button"
+              title={DAY_NAMES[day]}
+              className={`wse-day-chip ${value.daysOfWeek.includes(day) ? 'active' : ''}`}
+              onClick={() => toggleDay(day)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="wse-mode-row">
         <label className="wse-mode-option">
@@ -120,7 +124,7 @@ export default function WeeklyScheduleEditor({
                 <button
                   type="button"
                   className="wse-remove-time"
-                  aria-label="Remove this start time"
+                  aria-label="Remove This Start Time"
                   onClick={() =>
                     onChange({
                       ...value,
@@ -161,8 +165,9 @@ export default function WeeklyScheduleEditor({
       )}
 
       <p className="wse-hint">
-        Days And Times Are In UTC. Pick At Least One Day
-        {value.mode === 'interval' ? ' - the interval runs on the selected days.' : '.'}
+        Days And Times Are In UTC.{' '}
+        {hideDays ? 'Choose At Least One Start Time' : 'Pick At Least One Day'}
+        {value.mode === 'interval' ? ' - The Interval Runs On The Selected Days.' : '.'}
       </p>
     </div>
   );

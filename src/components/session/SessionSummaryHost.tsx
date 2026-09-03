@@ -349,7 +349,7 @@ export function SessionSummaryHost() {
       >
         {/* Dan asked for an X in the top-right. The old modal could only be
             dismissed by the backdrop or the big button. */}
-        <button className="ssh-close" onClick={close} aria-label="Close session summary">
+        <button className="ssh-close" onClick={close} aria-label="Close Session Summary">
           &times;
         </button>
 
@@ -463,7 +463,7 @@ export function SessionSummaryHost() {
             and falls back to the clipboard everywhere else — a share control
             that silently does nothing on desktop is worse than none. */}
         <div className="ssh-actions">
-          <button className="ssh-share" onClick={share} aria-label="Share this session">
+          <button className="ssh-share" onClick={share} aria-label="Share This Session">
             {shareLabel}
           </button>
           <button className="ssh-done" onClick={close}>

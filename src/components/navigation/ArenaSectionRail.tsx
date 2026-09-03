@@ -16,7 +16,7 @@ export default function ArenaSectionRail() {
   return (
     <nav
       className={styles.rail}
-      aria-label={`${section.label} sections`}
+      aria-label={`${section.label} Sections`}
       data-arena-section={section.id}
     >
       <div className={styles.chassis}>

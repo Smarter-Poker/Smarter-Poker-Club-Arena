@@ -504,7 +504,7 @@ function checkMidHand(ctx: Ctx, where: string): void {
       'INV-10',
       `side-pot partition disagrees with the rules at ${where}` +
         (foldedEligible.length
-          ? ` — FOLDED player(s) ${JSON.stringify([...new Set(foldedEligible)])} are eligible to win`
+          ? ` - FOLDED player(s) ${JSON.stringify([...new Set(foldedEligible)])} are eligible to win`
           : '') +
         `\n  engine:   ${JSON.stringify(got)}` +
         `\n  expected: ${JSON.stringify(want)}`
@@ -642,6 +642,15 @@ export function fuzzOneHand(seed: number): FuzzHandResult {
         hc.performDiscard(seat, Math.floor(rnd() * 3));
         checkMidHand(ctx, `after discard seat ${seat}`);
       }
+      /* PHASE 3 2026-08-31: the last discard buys a HAND_COMPLETION
+         .DISCARD_SETTLE_MS beat so the card leaving the hand finishes its
+         flight before a betting round opens over it. This driver has no
+         clock - it walks an entire hand inside one synchronous loop - so it
+         collapses the beat instead of waiting it out. Without this the very
+         next iteration finds a stage with nobody to act and reports LIVENESS,
+         which would be the fuzzer correctly describing a hand that, in wall
+         clock, is 600ms from continuing. */
+      if (hc.flushPineappleSettle()) checkMidHand(ctx, 'after discard settle beat');
       continue;
     }
 
@@ -838,7 +847,7 @@ export function fuzzOneHand(seed: number): FuzzHandResult {
     fail(
       ctx,
       'INV-9',
-      `sawFlop=${st.sawFlop} but the board has ${board.length} card(s) — ` +
+      `sawFlop=${st.sawFlop} but the board has ${board.length} card(s) - ` +
         `the rake / BBJ gate and the dealt board disagree`
     );
   }

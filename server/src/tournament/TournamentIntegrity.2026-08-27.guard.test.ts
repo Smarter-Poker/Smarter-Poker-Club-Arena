@@ -54,6 +54,27 @@ describe('A1: the cached blind structure is never mutated', () => {
     expect(MANAGER).not.toMatch(/blindStructure\[\s*\n?\s*Math\.min\(/);
     expect(BASE).toMatch(/protected resolveBlindLevel\(/);
   });
+
+  it('the resume path resolves the level instead of indexing the array', () => {
+    // 2026-08-31. resume() read `(tournament.blind_structure || [])[currentLevel]`
+    // and fell back to `[0]`, so a tournament PAST THE END of its structure
+    // resumed its level clock on LEVEL 1's duration — the one case
+    // resolveBlindLevel exists to answer.
+    //
+    // It failed in the expensive direction. Most structures SHORTEN toward the
+    // end (that is what makes a final table), so a 2-minute level resumed as a
+    // 4-minute one and the blinds stalled for twice as long at exactly the
+    // depth where blind speed decides the tournament. The staleness window
+    // (`durationMs * 4`) was doubled by the same mistake. Measured over 14
+    // days: 1,499 tournaments ran past their structure with varying level
+    // lengths.
+    //
+    // Same defect as A1 above — a restart freezing blind escalation — which
+    // had been fixed everywhere except here.
+    const fn = sliceMethod(BASE, 'async resume(');
+    expect(fn).not.toMatch(/blind_structure\s*\|\|\s*\[\]\s*\)\s*\[\s*this\.currentLevel\s*\]/);
+    expect(fn).toMatch(/this\.resolveBlindLevel\(\s*tournament\.blind_structure/);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -101,10 +122,25 @@ describe('A3: the spin reveal', () => {
 
   it('exposes the hold to the client as an absolute instant', () => {
     const emit = sliceEnclosingBlock(BASE, "type: 'spin_reveal'");
+    /* Both now carry `effectiveHold` (moved 2026-09-02 with the fix, §10.6).
+       The comment beside hold_until in the engine calls it "the same number
+       holdDealingUntil was just given, so it is the contract and not a
+       description of one" - and it was not, because the engine was held to
+       effectiveHold and the client was told holdUntil. This pins the contract
+       the comment always claimed. */
+    // The EARLY packet keeps announcing the planned hold on purpose: three
+    // wheels are already turning on those numbers, and moving a shared moment
+    // is worse than a slightly short budget (the client is allowed to finish
+    // early). Its replay window still has to cover the real hold.
     expect(emit).toMatch(/hold_until:\s*holdUntil/);
     expect(emit).toMatch(/reveal_at:\s*revealAt/);
-    // The hub retention still ends at the same instant (D3, 2026-08-25).
-    expect(emit).toMatch(/replay_until:\s*holdUntil/);
+
+    // The MAIN packet is the contract: the number the client is told must BE
+    // the number holdDealingUntil was given. It was not until 2026-09-02 -
+    // the engine held to effectiveHold and told the client holdUntil.
+    const main = sliceEnclosingBlock(BASE, "type: 'spin_reveal'", 1);
+    expect(main).toMatch(/hold_until:\s*effectiveHold/);
+    expect(main).toMatch(/replay_until:\s*effectiveHold/);
   });
 
   it('MEASURES the gap instead of letting it come off the wheel', () => {

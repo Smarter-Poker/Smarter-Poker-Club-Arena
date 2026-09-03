@@ -54,7 +54,7 @@ function timeOutToTheCap(engine: DisconnectEngine, offerTurns = true) {
 describe('the canary fires for a broken client', () => {
   beforeEach(() => vi.restoreAllMocks());
 
-  it('connected, offered turns, never acted once — that is a client, not a person', () => {
+  it('connected, offered turns, never acted once - that is a client, not a person', () => {
     const engine = makeEngine();
     engine.onPlayerTurn(TABLE, PLAYER, true);
     engine.onPlayerTurn(TABLE, PLAYER, true);
@@ -127,7 +127,7 @@ describe('the canary stays quiet for everything else', () => {
     expect(spy.mock.results.at(-1)?.value).toMatchObject({ suspected: false });
   });
 
-  it('too few turns offered to judge — silence, not a guess', () => {
+  it('too few turns offered to judge - silence, not a guess', () => {
     const engine = makeEngine();
     engine.recordConnectedTimeout(TABLE, PLAYER); // one strike, no turns recorded
     const verdict = engine.reportSuspectedSilentClient(TABLE, PLAYER, stateOf(engine));
@@ -136,7 +136,7 @@ describe('the canary stays quiet for everything else', () => {
   });
 });
 
-describe('HORSES ARE PLAYERS — no exemption needed, and none present', () => {
+describe('HORSES ARE PLAYERS - no exemption needed, and none present', () => {
   beforeEach(() => vi.restoreAllMocks());
 
   it('a horse clears the canary the same way a human does: by acting', () => {

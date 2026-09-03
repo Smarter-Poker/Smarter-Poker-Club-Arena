@@ -53,3 +53,13 @@ the Club Arena imagery.
 
 The phase is complete only after the guarded publisher merges this work and a
 cache-busted live desktop/mobile inspection confirms the deployed commit.
+
+## Live-gate correction
+
+The authenticated production inspection exposed a cold-query edge case that
+the mocked failure tests did not: totals could arrive while the first directory
+page exhausted its bounded read deadline. A manual Refresh recovered all 593
+rows, but requiring that click was not acceptable. The page now schedules up
+to two bounded, jittered first-page recovery cycles while keeping the loading
+surface honest; only an exhausted recovery becomes a hard error. Successful
+reads reset the recovery budget as before.

@@ -20,6 +20,7 @@ import { BBJRecentHits } from '../components/bbj/BBJRecentHits';
 import { BBJHandDetail } from '../components/bbj/BBJHandDetail';
 import BBJRulesPanel from '../components/bbj/BBJRulesPanel';
 import { ArenaJackpotDisplay } from '../components/club-buttons';
+import { playerDisplayName } from '../utils/playerDisplayName';
 
 interface JackpotInfo {
   id: string;
@@ -102,7 +103,7 @@ export default function BadBeatJackpotPage() {
     }
     if (
       !(await confirmDialog({
-        title: 'Distribute promo pool',
+        title: 'Distribute Promo Pool',
         message: `Rain ${amount.toLocaleString()} chips from the promo pool, split evenly among all currently-active players? This can't be undone.`,
         confirmText: 'Rain it',
         variant: 'default',
@@ -561,7 +562,7 @@ export default function BadBeatJackpotPage() {
               value={promoAmount}
               onChange={(e) => setPromoAmount(e.target.value)}
               placeholder="Amount"
-              aria-label="Promo rain amount"
+              aria-label="Promo Rain Amount"
               style={{
                 flex: '1 1 120px',
                 minWidth: 0,
@@ -607,7 +608,7 @@ export default function BadBeatJackpotPage() {
                 opacity: distributingPromo ? 0.6 : 1,
               }}
             >
-              {distributingPromo ? 'Raining…' : 'Rain to Active Players'}
+              {distributingPromo ? 'Raining…' : 'Rain To Active Players'}
             </button>
           </div>
         </div>
@@ -660,7 +661,7 @@ export default function BadBeatJackpotPage() {
             lineHeight: 1.5,
           }}
         >
-          Applied To The Stakes-Tiered Share Of The Pool Shown Above &mdash; Not The Whole Pool.
+          Applied To The Stakes-Tiered Share Of The Pool Shown Above - Not The Whole Pool.
         </p>
         <div className="payout-bars">
           <div className="payout-bar">
@@ -688,7 +689,7 @@ export default function BadBeatJackpotPage() {
             <BBJHandDetail
               payoutId={openHandPayoutId}
               onBack={() => setOpenHandPayoutId(null)}
-              currentUserName={user?.display_name || null}
+              currentUserName={user ? playerDisplayName(user) : null}
               currentUserId={user?.id}
             />
           </div>
@@ -698,7 +699,7 @@ export default function BadBeatJackpotPage() {
             limit={10}
             poolAmount={jackpot?.main_balance || 0}
             currentUserId={user?.id}
-            currentUserName={user?.display_name || null}
+            currentUserName={user ? playerDisplayName(user) : null}
             onOpenHand={setOpenHandPayoutId}
           />
         )}

@@ -67,7 +67,12 @@ export type PositionBadge =
   | 'HJ'
   | 'CO'
   | null;
-export type LastAction = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | null;
+/* CRAZY PINEAPPLE PHASE 3 2026-08-31: 'discard' was missing from this union
+   even though the engine has emitted PLAYER_ACTION action:'discard' since the
+   variant shipped and TablePage writes it into lastActions like any other
+   action. The seat therefore had a live action it could not name, could not
+   label and could not animate. */
+export type LastAction = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | 'discard' | null;
 
 /**
  * AVATAR CHOREOGRAPHY 2026-08-21 (Dan: "if they could move to put chips in the
@@ -111,36 +116,23 @@ const TENSE_AT_PERCENT = 33;
  * Derived rather than random so a seat's rhythm survives re-renders — a random
  * phase would resample on every mount and make avatars visibly jump.
  */
-/** Holo sweep period. Must match the duration in `.seat__avatar--holo::after`. */
-const HOLO_CYCLE_S = 7;
-
 function breathingStyle(seatNumber: number): React.CSSProperties {
   // 3.4s - 5.0s. Prime-ish spread so seats drift apart instead of re-syncing.
   const duration = 3.4 + ((seatNumber * 7) % 9) * 0.2;
   const delay = -((seatNumber * 13) % 40) * 0.1;
 
-  /**
-   * The holo sweep needs its OWN phase, not the breathing's.
-   *
-   * Reusing --sp-breath-delay looked fine and was measurably wrong: that value
-   * spans only 1.1s-3.9s, which is a good spread across a ~4s breath but a poor
-   * one across a 7s sweep. All nine VIPs would flash inside a single narrow
-   * window and then sit dark together — the synchronised-machinery look the
-   * per-seat phase exists to prevent, just on a longer clock.
-   *
-   * `(seat * 4) % 9` is a permutation of 0..8, so the nine phases land EVENLY
-   * across the full cycle and, because it is a permutation rather than a ramp,
-   * physically adjacent seats get distant phases. A plain `seat / 9` ramp would
-   * also be even but would sweep round the table like a lighthouse.
-   */
-  const holoDelay = -(((seatNumber * 4) % 9) / 9) * HOLO_CYCLE_S;
-
   return {
     ['--sp-breath-dur' as string]: `${duration.toFixed(2)}s`,
     ['--sp-breath-delay' as string]: `${delay.toFixed(2)}s`,
-    ['--sp-holo-delay' as string]: `${holoDelay.toFixed(2)}s`,
+    /* --sp-holo-delay is no longer an idle phase. Since Dan 2026-09-02 the
+       shine is an on-the-clock cue set on the acting seat's avatar element
+       (see holoOnClockDelayMs in the render), not ambient life spread round
+       the table. */
   };
 }
+
+/** The shine waits this long on the clock before its first sweep (Dan 2026-09-02). */
+const HOLO_ON_CLOCK_MS = 3_000;
 
 /** How long the "it's on you" posture change plays. Matches spAvatarAlert. */
 const ALERT_MS = 480;
@@ -160,6 +152,16 @@ const GESTURE_FOR_ACTION: Partial<
   all_in: { gesture: 'push', ms: 560 },
   check: { gesture: 'check', ms: 440 },
   fold: { gesture: 'fold', ms: 660 },
+  /* 'discard' is DELIBERATELY absent, and this note is here so nobody adds it
+     by pattern-matching. The library is push / check / fold / celebrate / lose
+     / alert, and none of them means "throws one card away and keeps playing".
+     `fold` is the tempting one and it is the worst: it is the slump that tells
+     the whole table a hand has DIED, played over a player who is still in the
+     pot - which is precisely the confusion Dan reported ("auto folded my hand,
+     even though it didn't"). The discard already has its own card animation
+     and its own cue; a wrong gesture would subtract from it, not add. If a
+     real throw-away gesture is ever rigged, wire it here.
+     Pinned in tests/animations-always-play.law.test.ts. */
 };
 
 /** Celebration window — must outlast spAvatarCelebrate (900ms) by a hair. */
@@ -326,6 +328,24 @@ export interface SeatSlotProps {
    * rather than rendering nothing.
    */
   holeCardCount?: number;
+  /**
+   * CRAZY PINEAPPLE PHASE 3 2026-08-31 - the card this seat just discarded,
+   * for the ghost that flies to the muck.
+   *
+   * HERO ONLY, and it never crosses the wire. In Crazy Pineapple the discarded
+   * card is never revealed to opponents - not on the discard, not at showdown -
+   * and hole cards on this platform do not travel on the public broadcast at
+   * all: they go through the RLS-protected `table_hole_cards` table, which
+   * exists because of a god-mode vulnerability (migration
+   * 20260312_secure_hole_cards_fix.sql). The public `player_action` event
+   * carries a seat and the word 'discard' and NOTHING card-shaped, so a
+   * villain's ghost is drawn face DOWN from that event alone. The hero's own
+   * card is already in their own client, and they are the one who chose it.
+   *
+   * Null or undefined = draw a back, which is the correct treatment for every
+   * seat that is not the hero.
+   */
+  discardFlightCard?: Card | null;
   /**
    * Is there a HAND at this table right now?
    *
@@ -532,6 +552,9 @@ function getActionLabel(action: LastAction, amount?: number): string {
       return amount ? `Raise ${formatStack(amount)}` : 'Raise';
     case 'all_in':
       return 'ALL IN';
+    case 'discard':
+      /* CLAUDE.md 5.7: Title Case Every Word. */
+      return 'Discard';
     default:
       return '';
   }
@@ -614,6 +637,7 @@ function HoleCard({
   cardBack = 'classic_blue',
   eager = false,
   fanIndex,
+  discardFlight = false,
 }: {
   card?: Card | null;
   hidden?: boolean;
@@ -637,22 +661,37 @@ function HoleCard({
    * Undefined for hero cards, whose row derives its index via nth-child.
    */
   fanIndex?: number;
+  /**
+   * CRAZY PINEAPPLE PHASE 3 2026-08-31: this card is the one being thrown, and
+   * is drawn only for as long as it takes to reach the muck. It is a GHOST -
+   * the hand it came from has already lost it (hero's row shrank the instant
+   * the engine accepted; a villain's back count dropped on the public event) -
+   * so it must never be counted, clicked or read as part of the holding.
+   * `seat__card--discarding` in SeatSlot.css carries the flight.
+   */
+  discardFlight?: boolean;
 }) {
   const size = isHero ? 'md' : 'sm';
   const fanStyle =
     fanIndex !== undefined ? ({ '--vh-i': fanIndex } as React.CSSProperties) : undefined;
+  const flightClass = discardFlight ? ' seat__card--discarding' : '';
 
   if (hidden || !card) {
     return (
-      <div className="seat__card seat__card--back" style={fanStyle}>
+      <div
+        className={`seat__card seat__card--back${flightClass}`}
+        style={fanStyle}
+        aria-hidden={discardFlight || undefined}
+      >
         <CardBack size={size} style={cardBack} />
       </div>
     );
   }
   return (
     <div
-      className={`seat__card seat__card--face${isWinner ? ' seat__card--winner' : ''}${isDimmed ? ' seat__card--dimmed' : ''}`}
+      className={`seat__card seat__card--face${isWinner ? ' seat__card--winner' : ''}${isDimmed ? ' seat__card--dimmed' : ''}${flightClass}`}
       style={fanStyle}
+      aria-hidden={discardFlight || undefined}
     >
       <CardImage
         card={card}
@@ -741,6 +780,7 @@ export const SeatSlot = memo(
       deckStyle,
       cardBack = 'classic_blue',
       holeCardCount = 2,
+      discardFlightCard = null,
       handInPlay = true,
       showStackInBB = false,
       onSit,
@@ -1057,7 +1097,12 @@ export const SeatSlot = memo(
        disappear" means on a screen that cannot see the packet in flight.
        Keyed by the turn's start stamp so re-renders mid-turn reuse the same
        anchor instead of re-anchoring (which would freeze the ring). */
-    const turnPaintAnchorRef = useRef<{ key: number; baseElapsedMs: number } | null>(null);
+    const turnPaintAnchorRef = useRef<{
+      key: number;
+      baseElapsedMs: number;
+      /** Time left until 3s on the clock, frozen at this client's first paint of the turn. */
+      holoDelayMs: number;
+    } | null>(null);
     useEffect(() => {
       return () => {
         if (peekTimerRef.current) clearTimeout(peekTimerRef.current);
@@ -1105,6 +1150,57 @@ export const SeatSlot = memo(
         return () => clearTimeout(timer);
       }
       prevActionRef.current = lastAction;
+    }, [lastAction]);
+
+    /**
+     * CRAZY PINEAPPLE PHASE 3 2026-08-31 - one card leaves the hand.
+     *
+     * Deliberately its own effect, its own ref and its own timer, for the same
+     * reason the avatar choreography below is: the all-in/fold effect above
+     * early-returns per branch to scope its cleanup to a single timer, so a
+     * third branch added there would be unreachable (all_in and fold both
+     * return first) or would silently change which timeout gets cleaned up.
+     *
+     * Fired off `lastAction` and NOTHING else, which is what makes a horse's
+     * discard identical to a human's (CLAUDE.md §10.5): both arrive as the
+     * same PLAYER_ACTION event, on the same code path, at the horse's own
+     * humanlike delay. There is no `is_horse` anywhere near this.
+     *
+     * The window outlasts the CSS the way the fold's does - cardDiscardOut is
+     * 420ms and this is 500ms, both scaled by --animation-speed, so the ghost
+     * is never unmounted mid-flight at any speed setting (ANIMATION AUDIT
+     * 2026-08-19 found exactly that bug on the fold).
+     *
+     * NOT marked data-motion="keep", and that is deliberate: the length of
+     * this animation carries no information. What it MEANS - a card left this
+     * hand - is carried by its final frame and by the row that is now one card
+     * shorter, both of which reduced motion preserves (reducedMotion.css
+     * collapses to 1ms rather than `animation: none` precisely so `forwards`
+     * animations still land). Motion collapses; the meaning does not.
+     */
+    const [discardFlight, setDiscardFlight] = useState(false);
+    const prevDiscardActionRef = React.useRef<LastAction>(null);
+    /* AUDIT 2026-08-31: belt to the engine's braces. The trigger is now durable
+       (HandController records the discard on state.actionHistory, so a snapshot
+       re-asserts it instead of erasing it), but a seat discards exactly ONCE
+       per hand, so a second flight is never correct however lastAction gets
+       there. This makes a fall-then-rise from any source - a dropped snapshot,
+       a resync, a re-mount - unable to throw the same card twice. */
+    const inFlightRef = React.useRef(false);
+    useEffect(() => {
+      const rising = lastAction === 'discard' && prevDiscardActionRef.current !== 'discard';
+      prevDiscardActionRef.current = lastAction;
+      if (!rising || inFlightRef.current) return;
+      inFlightRef.current = true;
+      setDiscardFlight(true);
+      const timer = setTimeout(() => {
+        inFlightRef.current = false;
+        setDiscardFlight(false);
+      }, 500 * getAnimationSpeed());
+      return () => {
+        clearTimeout(timer);
+        inFlightRef.current = false;
+      };
     }, [lastAction]);
 
     /**
@@ -1570,12 +1666,12 @@ export const SeatSlot = memo(
                Interaction model unchanged — no onClick, no tabIndex, no role:
                the seat is removed from the interaction model entirely. */
             aria-label={
-              isHeroReservedSeat ? `Seat ${seatNumber}: your seat` : `Seat ${seatNumber}: empty`
+              isHeroReservedSeat ? `Seat ${seatNumber}: Your Seat` : `Seat ${seatNumber}: Empty`
             }
           >
             <img
               src={`${import.meta.env.BASE_URL}images/icons/empty-button.png`}
-              alt={isHeroReservedSeat ? 'Your reserved seat' : 'Empty seat'}
+              alt={isHeroReservedSeat ? 'Your Reserved Seat' : 'Empty Seat'}
               className="seat__empty-img"
               draggable={false}
             />
@@ -1597,12 +1693,12 @@ export const SeatSlot = memo(
           }}
           role="button"
           tabIndex={0}
-          aria-label={`Seat ${seatNumber}: open - click to sit`}
+          aria-label={`Seat ${seatNumber}: Open - Click To Sit`}
         >
           {/* 2026-08-26: replaced +/SIT text stack with the SIT coin image. */}
           <img
             src={`${import.meta.env.BASE_URL}images/icons/sit-button.png`}
-            alt="Sit down"
+            alt="Sit Down"
             className="seat__empty-img seat__empty-img--sit"
             draggable={false}
           />
@@ -1662,7 +1758,7 @@ export const SeatSlot = memo(
      * artwork, so over a rig — which draws its own, moving pixels — the mask and
      * the character would no longer agree. A rigged avatar carries its own look.
      */
-    const showHolo = isVipBust && !avatarBroken && !rigActive;
+    const holoEligible = isVipBust && !avatarBroken && !rigActive;
     // The hero can now be clicked to open the profile modal.
     const avatarClickable = !!onAvatarClick;
 
@@ -1796,6 +1892,22 @@ export const SeatSlot = memo(
     // unavailable so the prior JS-driven visual still shows.
     let timerStyle: React.CSSProperties | undefined;
     let timerKey: number | string = 'no-turn';
+    /* THE SHINE IS AN "ON THE CLOCK" CUE, NOT AMBIENT LIFE (Dan 2026-09-02):
+       "THE SHINE EFFECT THAT GOES OVER EVERY PLAYER EVERY COUPLE OF SECONDS
+       ... SHOULD ONLY APPEAR WHEN IT'S A PLAYER'S TURN, AND THEY HAVE BEEN ON
+       THE CLOCK FOR AT LEAST 3 SECONDS. IT SHOULD NEVER APPEAR ON IDLE PLAYERS,
+       OR PLAYERS IF THE ACTION ISN'T ON THEM."
+
+       The holo scan line used to run on every VIP seat forever (7s cycle,
+       phased per seat, so somewhere on the table a player was lit every
+       second or two). It is now armed only for the seat that is acting, and
+       its animation-delay is the time LEFT until three seconds on the clock -
+       measured on the engine's clock through the same elapsed figure the
+       countdown ring uses, so a mid-turn rejoin with five seconds already
+       gone shines at once rather than restarting the wait. null = not on the
+       clock = no class, no pseudo-element, nothing to see. A turn the engine
+       has not stamped a deadline on waits the full three seconds. */
+    let holoOnClockDelayMs: number | null = isActingNow ? HOLO_ON_CLOCK_MS : null;
     if (isActingNow && turnDeadlineMs && turnDeadlineMs > 0) {
       // ── Dan 2026-08-20: "the yellow countdown timer is not 15 seconds — it
       //    needs to be exactly 15 seconds long to make the yellow disappear."
@@ -1849,9 +1961,17 @@ export const SeatSlot = memo(
       const TURN_PAINT_LATENCY_ALLOWANCE_MS = 3_000;
       const anchorKey = turnStartTimeMs || turnDeadlineMs;
       if (turnPaintAnchorRef.current?.key !== anchorKey) {
+        const baseAtFirstPaint = rawElapsedMs <= TURN_PAINT_LATENCY_ALLOWANCE_MS ? rawElapsedMs : 0;
         turnPaintAnchorRef.current = {
           key: anchorKey,
-          baseElapsedMs: rawElapsedMs <= TURN_PAINT_LATENCY_ALLOWANCE_MS ? rawElapsedMs : 0,
+          baseElapsedMs: baseAtFirstPaint,
+          /* Frozen ONCE per turn. animation-delay is read by the browser
+             when the class mounts; feeding it a value that shrinks on every
+             countdown tick would re-time a running animation and bring the
+             sweep forward of the three seconds Dan asked for. A rejoin with
+             more than three seconds already gone (base 0, elapsed large)
+             lands at 0 and shines at once. */
+          holoDelayMs: Math.max(0, HOLO_ON_CLOCK_MS - (rawElapsedMs - baseAtFirstPaint)),
         };
       }
       const baseElapsedMs = Math.min(
@@ -1860,6 +1980,7 @@ export const SeatSlot = memo(
       );
       const effDurationMs = durationMs - baseElapsedMs;
       const elapsedMs = Math.max(0, rawElapsedMs - baseElapsedMs);
+      holoOnClockDelayMs = turnPaintAnchorRef.current.holoDelayMs;
       // Dan 2026-08-15: the yellow countdown is a full 15 seconds. On a normal
       // 15s turn that is the entire clock (never goes red); when a time bank
       // extends the turn, yellow still owns the first 15s and the borrowed
@@ -1928,6 +2049,9 @@ export const SeatSlot = memo(
         '--timer-progress': `${timerProgress}%`,
       } as React.CSSProperties;
     }
+    // Eligible art (VIP bust, not broken, not rigged) AND on the clock. Never
+    // an idle seat, never a seat the action is not on.
+    const showHolo = holoEligible && holoOnClockDelayMs !== null;
 
     return (
       <div
@@ -1943,7 +2067,7 @@ export const SeatSlot = memo(
         /* isActingNow: a screen reader must not keep announcing a folded seat
            as "acting now" for the round trip it takes the snapshot to move the
            turn along - the same stale-turn window the countdown ring had. */
-        aria-label={`Seat ${seatNumber}: ${player.name}${isActingNow ? ' (acting now)' : ''}${player.status === 'folded' ? ' (folded)' : ''}${player.status === 'all_in' ? ' (all in)' : ''}, stack ${player.stack}`}
+        aria-label={`Seat ${seatNumber}: ${player.name}${isActingNow ? ' (Acting Now)' : ''}${player.status === 'folded' ? ' (Folded)' : ''}${player.status === 'all_in' ? ' (All In)' : ''}, Stack ${player.stack}`}
         aria-live={isActingNow ? 'polite' : 'off'}
       >
         {/* Last Action Badge — floats ABOVE the seat (premium style) */}
@@ -2004,7 +2128,11 @@ export const SeatSlot = memo(
               className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length && !revealHeld ? ' seat__cards--revealed' : ''}${isFolding || isMucking ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
               style={
                 {
-                  '--vh-n': opponentCardCount,
+                  /* PHASE 3 2026-08-31: the flying card still counts toward
+                     the fan's geometry while it is on screen. Without this the
+                     cluster re-centres for two cards the same frame the third
+                     starts leaving, and the two survivors visibly slide. */
+                  '--vh-n': opponentCardCount + (discardFlight ? 1 : 0),
                   '--vh-rot-step': `${(VILLAIN_FAN[opponentCardCount] ?? VILLAIN_FAN[2]).rot}deg`,
                   /* -base, not --vh-step-f itself: the showdown reveal widens
                      the step to 0.55 via a class rule, and an inline value
@@ -2078,10 +2206,26 @@ export const SeatSlot = memo(
                       fanIndex={i}
                     />
                   ))}
+              {/* PHASE 3 2026-08-31: the card on its way to the muck. Drawn
+                  OUTSIDE the count above, at the fan position the hand just
+                  gave up, so the two remaining backs never reflow to make room
+                  for a card that is leaving. Face DOWN, always: this is a
+                  villain, and their discard is not revealed in this variant. */}
+              {discardFlight && (
+                <HoleCard
+                  key="discard-flight"
+                  hidden={true}
+                  deckStyle={deckStyle}
+                  cardBack={cardBack}
+                  fanIndex={opponentCardCount}
+                  discardFlight
+                />
+              )}
             </div>
           )}
 
         {/* Avatar Circle — large, sits on top of info box */}
+        {/* showHolo: eligible art AND on the clock - see holoOnClockDelayMs. */}
         {/* Bible V8 §11.1: show_avatars toggle */}
         <div
           /* `--rigged` hands ALL motion to the rig. Without it a rigged avatar
@@ -2132,7 +2276,15 @@ export const SeatSlot = memo(
             style={
               showHolo || bustGain !== 1
                 ? ({
-                    ...(showHolo ? { '--sp-avatar-src': `url("${avatarUrl}")` } : null),
+                    ...(showHolo
+                      ? {
+                          '--sp-avatar-src': `url("${avatarUrl}")`,
+                          // Overrides the per-seat idle phase from breathingStyle:
+                          // the first sweep lands exactly three seconds on the
+                          // clock (see holoOnClockDelayMs), then every 7s after.
+                          '--sp-holo-delay': `${holoOnClockDelayMs ?? HOLO_ON_CLOCK_MS}ms`,
+                        }
+                      : null),
                     ...(bustGain !== 1 ? { '--sp-bust-gain': bustGain } : null),
                   } as React.CSSProperties)
                 : undefined
@@ -2153,7 +2305,7 @@ export const SeatSlot = memo(
                hover ring for "clickable opponent avatars". */
             role={avatarClickable ? 'button' : undefined}
             tabIndex={avatarClickable ? 0 : undefined}
-            aria-label={avatarClickable ? `Player actions for ${player.name}` : undefined}
+            aria-label={avatarClickable ? `Player Actions For ${player.name}` : undefined}
             onKeyDown={
               avatarClickable
                 ? (e) => {
@@ -2281,7 +2433,7 @@ export const SeatSlot = memo(
           )}
           {/* FIX 186: Disconnected overlay — shows DISCONNECTED label + countdown */}
           {player.status === 'disconnected' && (
-            <div className="seat__disconnect-overlay" title="Player disconnected">
+            <div className="seat__disconnect-overlay" title="Player Disconnected">
               <span className="seat__disconnect-label">DISCONNECTED</span>
               {secondsLeft != null && secondsLeft > 0 && (
                 <span className="seat__disconnect-timer">{Math.ceil(secondsLeft)}s</span>
@@ -2426,7 +2578,7 @@ export const SeatSlot = memo(
             tabIndex={squeezeDown ? 0 : undefined}
             aria-label={
               squeezeDown
-                ? 'Your cards are face down. Drag up to squeeze them open, or press Enter.'
+                ? 'Your Cards Are Face Down. Drag Up To Squeeze Them Open, Or Press Enter.'
                 : undefined
             }
             {...(squeezeDown
@@ -2488,8 +2640,8 @@ export const SeatSlot = memo(
                 aria-label={
                   onToggleShowCard && !squeezeDown
                     ? showPickedCardIndexes?.includes(i)
-                      ? `Card ${i + 1} will be shown after the hand. Activate to keep it hidden.`
-                      : `Show card ${i + 1} after the hand`
+                      ? `Card ${i + 1} Will Be Shown After The Hand. Activate To Keep It Hidden.`
+                      : `Show Card ${i + 1} After The Hand`
                     : undefined
                 }
                 onClick={(e) => {
@@ -2561,6 +2713,30 @@ export const SeatSlot = memo(
                 )}
               </span>
             ))}
+            {/* PHASE 3 2026-08-31: hero's discarded card, on its way out.
+                By the time this renders the row above is already two cards -
+                the engine accepted, TablePage took the card off the felt, and
+                that removal is also what closes the picker. So the card the
+                player just chose has nowhere left to live, and without a ghost
+                the hero's hand simply pops from three to two.
+
+                Deliberately NOT inside a .seat__card-pick wrapper: this card
+                is gone, so it must not be clickable, focusable, or markable as
+                "show after the hand". Face UP, because it is the hero's own
+                card and they are the one who picked it - see discardFlightCard
+                on the interface for why nobody else's is. */}
+            {discardFlight && (
+              <HoleCard
+                key="discard-flight"
+                card={discardFlightCard}
+                hidden={!discardFlightCard}
+                isHero={true}
+                deckStyle={deckStyle}
+                cardBack={cardBack}
+                eager
+                discardFlight
+              />
+            )}
           </div>
         )}
 
@@ -2668,7 +2844,7 @@ export const SeatSlot = memo(
             className="seat__bounty"
             aria-label={`Bounty ${bountyValue.toLocaleString('en-US', {
               maximumFractionDigits: 2,
-            })} chips`}
+            })} Chips`}
           >
             <span className="seat__bounty-target" aria-hidden="true">
               ◎
@@ -2714,6 +2890,12 @@ export const SeatSlot = memo(
      * seat is supposed to read YOUR SEAT instead of EMPTY, and it never did.
      */
     if (prev.holeCardCount !== next.holeCardCount) return false;
+    /* PHASE 3 2026-08-31: without this the ghost would render whatever card
+       was in the prop at the last render this comparator DID let through -
+       i.e. the previous hand's discard, or nothing at all. `lastAction` is
+       compared above and is what starts the flight, but the two arrive in
+       different renders. */
+    if (prev.discardFlightCard !== next.discardFlightCard) return false;
     /* The first hand of a Spin flips this from false to true, and it is what
        puts every villain's cards on the felt. Swallowed here, the table would
        stay card-less through the whole hand. */

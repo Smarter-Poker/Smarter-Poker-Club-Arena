@@ -74,6 +74,21 @@ const cursorPages = readFileSync(
   resolve(__dirname, '../supabase/migrations/20260831020000_club_data_cursor_pages.sql'),
   'utf8'
 );
+const snapshotCursorOrder = readFileSync(
+  resolve(__dirname, '../supabase/migrations/20260831020001_club_data_snapshot_cursor_order.sql'),
+  'utf8'
+);
+const defaultSnapshotFastPath = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20260831020002_club_data_default_snapshot_fast_path.sql'
+  ),
+  'utf8'
+);
+const exportStatementBudget = readFileSync(
+  resolve(__dirname, '../supabase/migrations/20260831181000_club_data_export_statement_budget.sql'),
+  'utf8'
+);
 
 describe('Club Data reporting stays inside the authenticated query budget', () => {
   it('covers both high-volume tournament fact reads with partial indexes', () => {
@@ -134,16 +149,19 @@ describe('Club Data reporting stays inside the authenticated query budget', () =
   it('keeps the first browser render bounded while allowing queued ledger traffic to finish', () => {
     expect(page).toContain('const PLAYER_PAGE_SIZE = 100;');
     expect(page).toContain('p_limit: PLAYER_PAGE_SIZE');
-    expect(page).toContain('const SNAPSHOT_REQUEST_TIMEOUT_MS = 25_000;');
     expect(page).toContain('const PLAYER_REQUEST_TIMEOUT_MS = 25_000;');
     expect(page).toContain('const COLD_READ_ATTEMPT_TIMEOUT_MS = 12_000;');
     expect(page).toContain('const COLD_READ_RETRY_DELAY_MS = 350;');
-    expect(page).toMatch(
-      /retryFetch\([\s\S]*maxRetries: 1,[\s\S]*baseDelayMs: COLD_READ_RETRY_DELAY_MS/
-    );
+    expect(page).toMatch(/retryFetch\([\s\S]*maxRetries,[\s\S]*baseDelayMs/);
     expect(page).toMatch(/coldRead\([\s\S]*'Club data request timed out'/);
     expect(page).toMatch(/coldRead\([\s\S]*'Player data request timed out'/);
-    expect(page).toMatch(/setPlayersLoading\(true\);\s*setPlayersError\(null\);/);
+    expect(page).toContain("p_limit: gameSort === 'recent' ? GAME_PAGE_SIZE : 1");
+    expect(page).toContain('p_limit: GAME_PAGE_SIZE * 2');
+    expect(page).toContain('prefetchedGamePageRef.current');
+    expect(page).toMatch(/gameSort === 'recent'[\s\S]{0,80}\? recentCursor\(rows\)/);
+    expect(page).toContain('setPlayersLoading(!preserveOnError || !playersRef.current);');
+    expect(page).toContain('if (manualRefreshingRef.current) return;');
+    expect(page).toContain('disabled={manualRefreshing || !clubUuid || isHydrating}');
   });
 
   it('serves both reports from incrementally maintained daily facts', () => {
@@ -172,6 +190,16 @@ describe('Club Data reporting stays inside the authenticated query budget', () =
     expect(players).toContain('public.ca_club_player_daily');
     expect(players).not.toContain('public.wallet_transactions');
     expect(players).toContain("'is_horse',COALESCE(pr.is_horse,false)");
+  });
+
+  it('gives exact immutable exports enough time without weakening the browser role globally', () => {
+    expect(exportStatementBudget).toMatch(
+      /ALTER FUNCTION public\.ca_club_game_export_start[\s\S]*SET statement_timeout TO '120s'/
+    );
+    expect(exportStatementBudget).toMatch(
+      /ALTER FUNCTION public\.ca_club_player_export_start[\s\S]*SET statement_timeout TO '120s'/
+    );
+    expect(exportStatementBudget).not.toMatch(/ALTER ROLE/);
   });
 
   it('preserves tournament home-club attribution without leaking cross-club hands', () => {
@@ -215,6 +243,29 @@ describe('Club Data reporting stays inside the authenticated query budget', () =
     expect(boundedSnapshot).toContain('ORDER BY r.started_at DESC NULLS LAST LIMIT $7');
     expect(boundedSnapshot).toContain(
       'v_rows:=public.fn_ca_club_game_rows(p_club_id,v_start,v_end,v_game,v_stakes,v_q,v_lim)'
+    );
+  });
+
+  it('uses the page cursor tie-breakers on the bounded recent snapshot', () => {
+    expect(snapshotCursorOrder).toContain(
+      'ORDER BY r.started_at DESC NULLS LAST,r.kind DESC,r.id DESC LIMIT $7'
+    );
+    expect(snapshotCursorOrder).toContain(
+      'ORDER BY q.started_at DESC NULLS LAST,q.kind DESC,q.id DESC'
+    );
+  });
+
+  it('keeps concurrent default first paint off the complete filtered game plan', () => {
+    expect(defaultSnapshotFastPath).toContain('fn_ca_club_game_summary_filtered');
+    expect(defaultSnapshotFastPath).toContain('fn_ca_club_game_rows_filtered');
+    expect(defaultSnapshotFastPath).toMatch(/count\(DISTINCT d\.tournament_id\)::bigint games/);
+    expect(defaultSnapshotFastPath).toContain('recent_tournament_ids AS MATERIALIZED');
+    expect(defaultSnapshotFastPath).toContain('ORDER BY tr.start_time DESC NULLS LAST,tr.id DESC');
+    expect(defaultSnapshotFastPath).toContain(
+      'ORDER BY r.started_at DESC NULLS LAST,r.kind DESC,r.id DESC'
+    );
+    expect(defaultSnapshotFastPath).toContain(
+      "OR NULLIF(btrim(COALESCE(p_search,'')),'') IS NOT NULL THEN"
     );
   });
 

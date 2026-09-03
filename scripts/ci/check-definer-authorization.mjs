@@ -33,11 +33,22 @@
  * speed people write code.
  *
  * WHAT IT CHECKS. For every function DECLARED by a migration this branch adds
- * or modifies:
+ * or modifies, TWO rules:
  *
+ *   RULE 1, the writer rule (2026-08-27):
  *     SECURITY DEFINER  and  it writes  and  a browser role can execute it
  *     and  the body never consults auth.uid() / auth.role() / auth.jwt()
  *         -> FAIL
+ *
+ *   RULE 2, the anon rule (2026-08-31, see anonReadableDefiners below):
+ *     SECURITY DEFINER  and  ANON can execute it
+ *     and  the body never consults auth.uid() / auth.role() / auth.jwt()
+ *         -> FAIL, whether or not it writes
+ *
+ * Rule 2 exists because rule 1 only ever looked at WRITERS, and in one
+ * afternoon three read-only SECURITY DEFINER functions arrived anon-executable
+ * and it cleared every one of them. One returned the schema's table and index
+ * names to anybody who asked.
  *
  * DEFAULT GRANTS ARE THE COMMON CASE, not an edge case. A migration that
  * writes no GRANT at all still leaves EXECUTE with PUBLIC, which every browser
@@ -62,12 +73,22 @@
  * RPC; Postgres refuses it outside a trigger context, so the grant is inert.
  *
  * ESCAPE HATCH. scripts/ci/definer-authorization.allowlist.json, which carries
- * a written reason per entry. Two functions are in it and both were read line
- * by line. Adding a third is a decision, not a formality: say in the reason why
- * a caller cannot point the function at anything that matters.
+ * a written reason per entry, under two separate keys: `reviewedExceptions`
+ * for rule 1 and `anonPublicSurface` for rule 2. Two functions are in the
+ * first and both were read line by line; the second starts empty. Adding to
+ * either is a decision, not a formality: say in the reason why a caller cannot
+ * point the function at anything that matters, or what an unauthenticated
+ * caller is allowed to learn from it.
+ *
+ * IT CANNOT SEE THE LIVE DATABASE, and on this estate schema is applied
+ * straight to production through the Supabase MCP, so a function can arrive
+ * without ever passing through a migration in this repo. That gap is covered
+ * by scripts/ci/audit-live-definer-exposure.mjs, which asks production the
+ * same four questions daily. Neither one replaces the other.
  *
  * Usage:  node scripts/ci/check-definer-authorization.mjs [baseRef] [--all]
- * Exit:   0 clean · 1 an unauthorised writer · 2 script error
+ * Exit:   0 clean · 1 an unauthorised writer or a new anon-readable definer
+ *         · 2 script error
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
@@ -119,7 +140,25 @@ function changedMigrations(base) {
   return out
     .split('\n')
     .map((l) => l.trim())
-    .filter((l) => l.startsWith(DIR) && l.endsWith('.sql'));
+    .filter((l) => l.startsWith(DIR) && l.endsWith('.sql'))
+    // BACKFILL EXEMPTION (2026-09-01). A file whose first line marks it as a
+    // recovered record of an ALREADY-APPLIED migration is history, not new
+    // work. It cannot introduce a new definer: the function is already live in
+    // whatever state later migrations left it, and THAT live grant - not this
+    // file's historical creation-time GRANT - is what a browser can actually
+    // reach. Judging a backfill on its own creation-time grants produces false
+    // positives against production truth (verified 2026-09-01). New
+    // declarations are unaffected, and live grants stay covered by
+    // audit-live-definer-exposure.mjs (which asks production directly) and by
+    // this gate on every genuinely new migration. Marker is machine-written by
+    // scripts/ci/backfill-unrecorded-migrations.mjs.
+    .filter((f) => {
+      try {
+        return !/^--\s*(BACKFILLED|UNRECOVERABLE STUB)\b/.test(readFileSync(join(REPO, f), 'utf8'));
+      } catch {
+        return true; // unreadable: check it rather than skip it
+      }
+    });
 }
 
 /** Comments carry no behaviour, and a comment that merely NAMES auth.uid()
@@ -164,10 +203,24 @@ const BROWSER_ROLES = ['public', 'anon', 'authenticated'];
  * lone `REVOKE ... FROM PUBLIC` does not close a function that was also granted
  * to `authenticated` explicitly.
  */
-function browserReachable(sql, name) {
+function effectiveGrants(sql, name) {
   const held = { public: true, anon: false, authenticated: false };
+  /* THE GAP CANNOT CROSS A STATEMENT BOUNDARY (2026-09-01). This used to be
+     `[\s\S]*?`, which let the word "grant" ANYWHERE - inside a RAISE EXCEPTION
+     string, a column name, a comment that survived stripping - reach forward to
+     the next `ON FUNCTION` in the file and label somebody else's statement with
+     its own verb. It really happened: 20260901090000 ends with
+
+       RAISE EXCEPTION 'Deep Stack Society still has a duplicate opening
+                        owner-wallet grant';
+
+     and that lone word turned the next REVOKE into a GRANT. Here it read as
+     stricter than the truth, which is the harmless direction; reversed - a
+     stray "revoke" ahead of a real GRANT - it clears a function that is wide
+     open, which is the whole failure this file exists to prevent. `[^;]*?`
+     keeps a verb inside its own statement. */
   const re = new RegExp(
-    String.raw`\b(GRANT|REVOKE)\b([\s\S]*?)\bON\s+FUNCTION\s+(?:public\.)?(\w+)\s*\(([^)]*)\)([\s\S]*?);`,
+    String.raw`\b(GRANT|REVOKE)\b([^;]*?)\bON\s+FUNCTION\s+(?:public\.)?(\w+)\s*\(([^)]*)\)([^;]*?);`,
     'gi'
   );
   let m;
@@ -181,13 +234,30 @@ function browserReachable(sql, name) {
       }
     }
   }
+  return held;
+}
+
+function browserReachable(sql, name) {
+  const held = effectiveGrants(sql, name);
   return held.public || held.anon || held.authenticated;
 }
 
-function loadAllowlist() {
+/**
+ * Can a caller with NO ACCOUNT execute it?
+ *
+ * `anon` inherits everything PUBLIC holds, so a function that was never granted
+ * anything is anon-reachable by default — the same silence-means-open rule the
+ * writer check uses. Revoking from `authenticated` alone does not close it.
+ */
+function anonReachable(sql, name) {
+  const held = effectiveGrants(sql, name);
+  return held.public || held.anon;
+}
+
+function loadAllowlist(key = 'reviewedExceptions') {
   if (!existsSync(ALLOWLIST)) return new Map();
   const raw = JSON.parse(readFileSync(ALLOWLIST, 'utf8'));
-  const entries = raw.reviewedExceptions ?? {};
+  const entries = raw[key] ?? {};
   return new Map(Object.entries(entries));
 }
 
@@ -199,14 +269,64 @@ function loadAllowlist() {
  *
  * Returns the names this SQL declares that break the rule.
  */
-export function unauthorisedWriters(sql, allowlist = new Set()) {
+/**
+ * True when the body derives identity from auth.uid() but FALLS BACK to
+ * something the caller controls.
+ *
+ * `COALESCE(auth.uid(), p_actor_user_id)` is the shape that shipped in
+ * fn_club_set_member_role. A LITERAL fallback is deliberately allowed:
+ * `COALESCE(auth.role(), 'service_role')` is the documented way to recognise a
+ * trusted backend and cannot be steered from a browser.
+ */
+export function spoofableIdentityFallback(body) {
+  const re = /coalesce\s*\(\s*auth\.(?:uid|role|jwt)\s*\(\s*\)\s*,\s*([^),]+)/gi;
+  let m;
+  while ((m = re.exec(body)) !== null) {
+    const fallback = m[1].trim();
+    if (/^'([^']*)'$/.test(fallback) || /^[0-9.]+$/.test(fallback)) continue;
+    return true;
+  }
+  return false;
+}
+
+export function unauthorisedWriters(sql, allowlist = new Set(), grantSql = sql) {
   const clean = stripComments(sql);
+  /* GRANTS ARE READ ACROSS THE WHOLE BRANCH (2026-08-31). A branch's migrations
+     are applied as a unit, so a REVOKE landing in a sibling migration in the
+     same pull request really does close the function. Reading one file alone
+     reports a hole that will never exist — which is exactly what happened to
+     fn_definer_exposure_audit, whose body contains the literal string
+     '(insert into|update |delete from)' as its own detection regex and so reads
+     as a writer. Its REVOKE is in the next migration along.
+
+     The write-detection regex is deliberately NOT taught to ignore string
+     literals: `EXECUTE 'insert into ...'` is a real write, and a blind spot
+     there would be worse than an occasional false positive here.
+
+     `grantSql` defaults to `sql`, so every test that passes a single migration
+     behaves exactly as before. */
+  const grants = grantSql === sql ? clean : stripComments(grantSql);
   const out = [];
   for (const fn of declaredFunctions(clean)) {
     if (!/SECURITY\s+DEFINER/i.test(fn.header)) continue;
     if (/RETURNS\s+trigger\b/i.test(fn.header)) continue;
     if (!/(?:^|[^a-z_])(?:insert\s+into|update\s+[a-z_"]|delete\s+from)/i.test(fn.body)) continue;
-    if (!browserReachable(clean, fn.name)) continue;
+    if (!browserReachable(grants, fn.name)) continue;
+    /* ASKING, THEN ACCEPTING THE CALLER'S ANSWER, IS NOT ASKING (2026-08-31).
+       The test below used to be the whole rule: mention auth.uid() anywhere and
+       you were cleared. `fn_club_set_member_role` mentioned it - inside
+       `COALESCE(auth.uid(), p_actor_user_id)` - and held EXECUTE for PUBLIC and
+       anon. auth.uid() is NULL for anon BY DEFINITION, so that COALESCE fell
+       through to a value the CALLER supplied, and fn_club_grantable_roles then
+       authorised against the spoofed actor: an unauthenticated caller could
+       name any club owner and set any member's role, co_owner included.
+
+       The guidance this script prints already said "Never from a parameter: a
+       caller-supplied ...". It did not enforce its own sentence. It does now. */
+    if (spoofableIdentityFallback(fn.body) && !allowlist.has(fn.name)) {
+      out.push(fn.name);
+      continue;
+    }
     if (/auth\.(?:uid|role|jwt)\s*\(/i.test(fn.body)) continue;
     if (allowlist.has(fn.name)) continue;
     out.push(fn.name);
@@ -214,7 +334,151 @@ export function unauthorisedWriters(sql, allowlist = new Set()) {
   return out;
 }
 
-export { stripComments, declaredFunctions, browserReachable };
+/**
+ * ─── THE SECOND RULE: READ-ONLY IS NOT THE SAME AS HARMLESS (2026-08-31) ─────
+ *
+ * `unauthorisedWriters` above only ever looks at functions that WRITE. That was
+ * the whole rule for four days, and in one afternoon THREE new SECURITY DEFINER
+ * functions arrived anon-executable and walked straight past it, because every
+ * one of them was read-only:
+ *
+ *   fn_tournament_metrics    operator dashboard numbers
+ *   fn_truly_unused_indexes  table names, index names, sizes, scan counts
+ *   fn_nit_evictions         who was evicted from which table, and when
+ *
+ * None writes a row, so none was a "writer". All three ran as the owner with
+ * BYPASSRLS and answered a caller with no account. The third one hands over a
+ * partial column map of the schema for free.
+ *
+ * THE RULE. A function this branch declares fails when it is
+ *
+ *     SECURITY DEFINER  and  anon can execute it
+ *     and  the body never consults auth.uid() / auth.role() / auth.jwt()
+ *     and  it is not on the anonPublicSurface allowlist
+ *
+ * — whether or not it writes. Consulting auth is the exemption because a
+ * function that asks who is calling is at least AWARE there is a caller; one
+ * that never asks cannot be authorising anything.
+ *
+ * ANON, NOT "BROWSER". The writer rule fails on public OR anon OR
+ * authenticated, because a logged-in player must not be able to move money
+ * unchecked. This rule fails only on public OR anon, because a great many
+ * read-only functions are legitimately open to a logged-in player and failing
+ * those would train everybody to stuff the allowlist. The line worth defending
+ * is the one before login.
+ *
+ * TRIGGERS are out of scope for the same reason as above: `RETURNS trigger`
+ * cannot be reached as an RPC, so the grant is inert.
+ *
+ * THE ALLOWLIST IS THE POINT, not a loophole. Leaderboards, name-availability
+ * checks and public profiles genuinely must answer a caller with no account.
+ * Each one goes in scripts/ci/definer-authorization.allowlist.json under
+ * `anonPublicSurface` with a written reason — so that "an unauthenticated
+ * caller may run this" becomes a sentence a human typed, instead of a default
+ * nobody chose.
+ */
+/**
+ * GRANTS ARE READ ACROSS THE WHOLE BRANCH, not just the declaring file
+ * (2026-08-31). A branch's migrations are applied as a unit, so a REVOKE that
+ * lands in a sibling migration in the same pull request really does close the
+ * function — reading one file in isolation would report a hole that will never
+ * exist. `grantSql` defaults to `sql`, so a caller passing a single migration
+ * (every test below) behaves exactly as before.
+ */
+export function anonReadableDefiners(sql, allowlist = new Set(), grantSql = sql) {
+  const clean = stripComments(sql);
+  const grants = grantSql === sql ? clean : stripComments(grantSql);
+  const out = [];
+  for (const fn of declaredFunctions(clean)) {
+    if (!/SECURITY\s+DEFINER/i.test(fn.header)) continue;
+    if (/RETURNS\s+trigger\b/i.test(fn.header)) continue;
+    if (!anonReachable(grants, fn.name)) continue;
+    if (/auth\.(?:uid|role|jwt)\s*\(/i.test(fn.body)) continue;
+    if (allowlist.has(fn.name)) continue;
+    out.push(fn.name);
+  }
+  return out;
+}
+
+/**
+ * --- THE THIRD RULE: A CLONE IS A DECLARATION (2026-09-01) ------------------
+ *
+ * Everything above reads `CREATE FUNCTION`. On 2026-09-01 a function arrived
+ * that never wrote those two words.
+ *
+ * 20260901090000_club_card_human_realtime_stats.sql needed three functions
+ * duplicated under new names, so it did what the database makes easy: read the
+ * old definition with pg_get_functiondef, rewrite the name in the text, and
+ * EXECUTE it.
+ *
+ *   IF to_regprocedure('public.fn_join_club_membership_impl(uuid)') IS NULL THEN
+ *     SELECT pg_get_functiondef('public.fn_join_club(uuid)'::regprocedure) INTO v_def;
+ *     v_def := regexp_replace(v_def, 'FUNCTION public\.fn_join_club\(',
+ *       'FUNCTION public.fn_join_club_membership_impl(', 1, 1);
+ *     EXECUTE v_def;
+ *   END IF;
+ *
+ * Two of the three clones were revoked from PUBLIC, anon and authenticated in
+ * that same file. The third, fn_seat_club_for_user_membership_unchecked, was
+ * not, and CREATE FUNCTION grants EXECUTE to PUBLIC by default. It went live
+ * SECURITY DEFINER, owned by postgres, answering any caller with no account at
+ * all: hand it a user id and a table id and it returns which club that player
+ * is seated under and which clubs they belong to.
+ *
+ * The author knew the rule -- they applied it twice in the same block, and
+ * revoked the wrapper four lines earlier. This gate simply had nothing to
+ * judge, because a clone is not spelled `CREATE FUNCTION`. The daily live
+ * audit found it hours after it shipped, which is the right backstop and the
+ * wrong moment.
+ *
+ * THE RULE. A name this migration clones into must have its grants stated. A
+ * clone starts PUBLIC-executable like any other new function, so silence is
+ * open here too, and unlike a declaration the file cannot tell us whether the
+ * body consults auth.uid() -- the body lives in the database. There is
+ * therefore no "it asks who is calling" exemption to earn: either the
+ * migration says who may execute the clone, or it does not ship.
+ *
+ * READING A CLONE. Two signals, both from the file:
+ *   * a `'FUNCTION public.<name>('` string literal -- how the new name is
+ *     spliced into the definition text;
+ *   * MINUS every name handed to pg_get_functiondef, which is the SOURCE being
+ *     copied and already exists with grants of its own.
+ * The source half of the regexp_replace is a regular expression, so its dot
+ * and paren are escaped, but subtracting the pg_get_functiondef argument is
+ * what actually tells source from target -- and it keeps working if somebody
+ * writes the pattern unescaped.
+ */
+export function clonedFunctions(sql) {
+  const clean = stripComments(sql);
+  const spliced = new Set();
+  const nameInLiteral = /'FUNCTION\s+public\\?\.([A-Za-z_]\w*)\\?\s*\(/g;
+  let m;
+  while ((m = nameInLiteral.exec(clean))) spliced.add(m[1]);
+
+  const sources = new Set();
+  const fromDefinition = /pg_get_functiondef\s*\(\s*'\s*(?:public\.)?([A-Za-z_]\w*)\s*\(/gi;
+  while ((m = fromDefinition.exec(clean))) sources.add(m[1]);
+
+  return [...spliced].filter((n) => !sources.has(n));
+}
+
+/**
+ * The clone rule, in the same shape as the two above so the test can drive it
+ * directly. Returns the cloned names a caller with no account could execute.
+ */
+export function unrevokedClones(sql, allowlist = new Set(), grantSql = sql) {
+  const clean = stripComments(sql);
+  const grants = grantSql === sql ? clean : stripComments(grantSql);
+  return clonedFunctions(clean).filter((name) => anonReachable(grants, name) && !allowlist.has(name));
+}
+
+export {
+  stripComments,
+  declaredFunctions,
+  browserReachable,
+  anonReachable,
+  effectiveGrants,
+};
 
 function main() {
   const base = ALL ? null : baseRef();
@@ -233,8 +497,20 @@ function main() {
   }
 
   const allowlist = new Set(loadAllowlist().keys());
+  const anonAllowlist = new Set(loadAllowlist('anonPublicSurface').keys());
   const offenders = [];
+  const anonOffenders = [];
+  const cloneOffenders = [];
   let inspected = 0;
+
+  // Every migration this branch touches, concatenated, so a REVOKE in one file
+  // is seen by a declaration in another. They ship together; they are read
+  // together. See anonReadableDefiners for why.
+  const branchSql = files
+    .map((f) => join(REPO, f))
+    .filter((p) => existsSync(p))
+    .map((p) => readFileSync(p, 'utf8'))
+    .join('\n');
 
   for (const file of files) {
     const path = join(REPO, file);
@@ -243,9 +519,103 @@ function main() {
     inspected += declaredFunctions(stripComments(sql)).filter((f) =>
       /SECURITY\s+DEFINER/i.test(f.header)
     ).length;
-    for (const name of unauthorisedWriters(sql, allowlist)) {
+    for (const name of unauthorisedWriters(sql, allowlist, branchSql)) {
       offenders.push({ name, file });
     }
+    // A writer already reported above is not reported twice: the writer verdict
+    // is the more specific one and its guidance is the one worth reading.
+    const alreadyNamed = new Set(offenders.map((o) => o.name));
+    for (const name of anonReadableDefiners(sql, anonAllowlist, branchSql)) {
+      if (!alreadyNamed.has(name)) anonOffenders.push({ name, file });
+    }
+    // A clone is judged on its grants alone: its body is in the database, not
+    // in this file, so there is no auth.uid() exemption to read.
+    for (const name of unrevokedClones(sql, anonAllowlist, branchSql)) {
+      cloneOffenders.push({ name, file });
+    }
+  }
+
+  if (cloneOffenders.length > 0) {
+    console.error('');
+    console.error('[check-definer-authorization] BLOCKED -- a clone with nobody named on it.');
+    console.error('');
+    for (const o of cloneOffenders) {
+      console.error(`  ${o.name}`);
+      console.error(`    cloned in ${o.file}`);
+      console.error('    A function copied into a new name is a NEW function, and a new function');
+      console.error('    holds EXECUTE for PUBLIC until something revokes it. This migration never');
+      console.error('    says who may execute this one.');
+      console.error('');
+    }
+    console.error('  On 2026-09-01 three functions were cloned in one migration. Two were');
+    console.error('  revoked in the same file and the third was not, and it went live answering');
+    console.error('  a caller with no account: give it a user id and a table id and it returned');
+    console.error('  which club that player was seated under and which clubs they belonged to.');
+    console.error('');
+    console.error('  There is no "the body checks auth.uid()" exemption here. The body lives in');
+    console.error('  the database, not in this file, so the grants have to be said out loud:');
+    console.error('');
+    console.error(
+      '       REVOKE ALL ON FUNCTION public.<name>(<types>) FROM PUBLIC, anon, authenticated;'
+    );
+    console.error('       GRANT EXECUTE ON FUNCTION public.<name>(<types>) TO service_role;');
+    console.error('');
+    console.error('  Keep `authenticated` instead if a logged-in player calls it directly. If it');
+    console.error('  is genuinely open to callers with no account, add it to the');
+    console.error('  anonPublicSurface block of scripts/ci/definer-authorization.allowlist.json');
+    console.error('  with a reason.');
+    console.error('');
+    process.exit(1);
+  }
+
+  if (anonOffenders.length > 0) {
+    console.error('');
+    console.error('[check-definer-authorization] BLOCKED — reachable without an account.');
+    console.error('');
+    for (const o of anonOffenders) {
+      console.error(`  ${o.name}`);
+      console.error(`    declared in ${o.file}`);
+      console.error('    SECURITY DEFINER, anon can execute it, and it never calls auth.uid(),');
+      console.error('    auth.role() or auth.jwt(). It runs as the owner, past RLS, for a caller');
+      console.error('    with no account — and it never asks who that caller is.');
+      console.error('');
+    }
+    console.error('  READ-ONLY IS NOT THE SAME AS HARMLESS. On 2026-08-31 three functions');
+    console.error('  arrived this way in one afternoon, every one of them read-only, and the');
+    console.error('  writer check above cleared all three. One of them returned every table');
+    console.error('  name, index name and index size in the schema to anybody who asked.');
+    console.error('');
+    console.error('  Pick one, in this order of preference:');
+    console.error('');
+    console.error('  1. IT IS OPERATOR OR ENGINE TELEMETRY. Almost always true for a metrics,');
+    console.error('     audit or diagnostics function. Close it in the same migration:');
+    console.error('');
+    console.error(
+      '       REVOKE ALL ON FUNCTION public.<name>(<types>) FROM PUBLIC, anon, authenticated;'
+    );
+    console.error('       GRANT EXECUTE ON FUNCTION public.<name>(<types>) TO service_role;');
+    console.error('');
+    console.error('     Name PUBLIC as well as the roles: anon inherits whatever PUBLIC holds,');
+    console.error('     so revoking anon alone reads as a fix and does nothing.');
+    console.error('');
+    console.error('  2. A LOGGED-IN PLAYER SHOULD READ IT. Revoke PUBLIC and anon, keep');
+    console.error('     authenticated. This check only ever fails on the pre-login roles.');
+    console.error('');
+    console.error('  3. IT IS DELIBERATE PUBLIC SURFACE — a leaderboard, a name-availability');
+    console.error('     check, a public profile. Add it to the anonPublicSurface block of');
+    console.error('     scripts/ci/definer-authorization.allowlist.json with a reason saying');
+    console.error('     what an unauthenticated caller is allowed to learn from it.');
+    console.error('');
+    console.error('  BEFORE YOU REVOKE, CHECK IT IS NOT AN RLS POLICY HELPER:');
+    console.error('');
+    console.error('       SELECT polrelid::regclass, polname FROM pg_policy');
+    console.error("        WHERE pg_get_expr(polqual, polrelid) ~ '<name>';");
+    console.error('');
+    console.error('     A policy expression evaluates as the QUERYING role, so revoking a');
+    console.error('     helper denies every SELECT on the tables whose policies call it.');
+    console.error('     fn_home_is_group_staff backs 15 policies across 8 tables.');
+    console.error('');
+    process.exit(1);
   }
 
   if (offenders.length > 0) {
@@ -255,9 +625,7 @@ function main() {
     for (const o of offenders) {
       console.error(`  ${o.name}`);
       console.error(`    declared in ${o.file}`);
-      console.error(
-        '    SECURITY DEFINER, it writes, a browser role can execute it, and it never'
-      );
+      console.error('    SECURITY DEFINER, it writes, a browser role can execute it, and it never');
       console.error(
         '    calls auth.uid(), auth.role() or auth.jwt(). It cannot know who is asking.'
       );
@@ -271,17 +639,13 @@ function main() {
     console.error(
       '       REVOKE ALL ON FUNCTION public.<name>(<types>) FROM PUBLIC, anon, authenticated;'
     );
-    console.error(
-      '       GRANT EXECUTE ON FUNCTION public.<name>(<types>) TO service_role;'
-    );
+    console.error('       GRANT EXECUTE ON FUNCTION public.<name>(<types>) TO service_role;');
     console.error('');
     console.error('     Name PUBLIC as well as the roles. Revoking one role while PUBLIC still');
     console.error('     holds it reads as a fix and does nothing.');
     console.error('');
     console.error('  2. A PLAYER SHOULD CALL IT, FOR THEMSELVES. Derive the actor from');
-    console.error(
-      '     auth.uid() inside the function. Never from a parameter: a caller-supplied'
-    );
+    console.error('     auth.uid() inside the function. Never from a parameter: a caller-supplied');
     console.error('     id is a caller-supplied answer. Gate the engine path on');
     console.error(
       "     COALESCE(auth.role(), 'service_role') = 'service_role', not on current_user,"
@@ -298,7 +662,8 @@ function main() {
 
   console.log(
     `[check-definer-authorization] OK — ${inspected} SECURITY DEFINER function(s) declared across ` +
-      `${files.length} migration(s); every writer a browser can reach consults the request.`
+      `${files.length} migration(s); every writer a browser can reach consults the request, ` +
+      'and nothing new answers a caller with no account.'
   );
 }
 

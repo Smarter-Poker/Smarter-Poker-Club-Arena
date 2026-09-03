@@ -14,7 +14,7 @@ export const GAME_VARIANTS = {
   PLO5: 'Pot-Limit Omaha 5',
   PLO6: 'Pot-Limit Omaha 6',
   SHORT_DECK: '6+ Short Deck',
-  PINEAPPLE: 'Pineapple',
+  PINEAPPLE: 'Crazy Pineapple',
   STUD: 'Seven Card Stud',
   RAZZ: 'Razz',
   HORSE: 'H.O.R.S.E.',

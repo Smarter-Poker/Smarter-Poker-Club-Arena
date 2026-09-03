@@ -138,7 +138,7 @@ describe('TableStateHub', () => {
       expect(msg.state).toEqual({ pot: 20 });
     });
 
-    it('no snapshot yet — subscriber waits for first publish', () => {
+    it('no snapshot yet - subscriber waits for first publish', () => {
       const sub = makeSub('s1');
       hub.subscribe(TABLE, sub);
       expect(sub.outbox).toHaveLength(0);
@@ -257,7 +257,7 @@ describe('TableStateHub', () => {
       expect(hub.totalSubscribers()).toBe(3);
     });
   });
-  describe('C16 — payload is serialized once per publish, not per subscriber', () => {
+  describe('C16 - payload is serialized once per publish, not per subscriber', () => {
     it('hands every subscriber the identical string instance', () => {
       const a = makeSub('a');
       const b = makeSub('b');
@@ -280,7 +280,7 @@ describe('TableStateHub', () => {
     });
   });
 
-  describe('B12 — WebSocket backpressure', () => {
+  describe('B12 - WebSocket backpressure', () => {
     const SOFT = 256 * 1024;
     const HARD = 4 * 1024 * 1024;
 
@@ -326,7 +326,7 @@ describe('TableStateHub', () => {
       expect(slow.outbox).toHaveLength(2);
     });
 
-    it('never drops a SNAPSHOT — it is how a gapped client recovers', () => {
+    it('never drops a SNAPSHOT - it is how a gapped client recovers', () => {
       const slow = makeSub('slow');
       slow._bufferedAmount = SOFT + 1;
       hub.subscribe(TABLE, slow);

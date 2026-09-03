@@ -35,13 +35,20 @@ export function useVirtualScroll<T>(
   const sentinelRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
 
+  // The viewport is conditionally mounted after the first page arrives. On a
+  // true cold load the ref is null during the hook's first effect; an empty
+  // dependency list therefore never attaches a scroll listener and the window
+  // remains frozen on its first slice. Re-run when the list crosses the
+  // empty/non-empty boundary so the newly mounted viewport is always wired.
+  const hasItems = items.length > 0;
   useEffect(() => {
     const node = containerRef.current;
     if (!node) return;
     const update = () => setScrollTop(node.scrollTop);
+    update();
     node.addEventListener('scroll', update, { passive: true });
     return () => node.removeEventListener('scroll', update);
-  }, []);
+  }, [hasItems]);
 
   const visibleCapacity = Math.max(1, Math.ceil(viewportHeight / itemHeight));
   const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - buffer);

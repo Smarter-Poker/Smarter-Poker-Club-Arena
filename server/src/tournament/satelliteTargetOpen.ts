@@ -21,6 +21,15 @@
  *     target produced a full-price ticket and the full advertised seat count,
  *     then paid those seats out as cash the satellite had never collected:
  *     15 completed satellites took in 3,325.50 and paid out 6,908.00.
+ *
+ * A third was found on 2026-08-31, in the fix for the first: this gate said
+ * `level <= cap` where `current_level` is a ZERO-BASED index, so it stayed
+ * open for one level after fn_register_for_tournament, process_tournament_rebuy
+ * and TournamentManagerBase had all closed; and it never looked at
+ * `prize_pool_finalized` at all, which is the flag that says the payout ladder
+ * has been sized. `fn_award_satellite_seat` carried both defects identically
+ * and was corrected in the same commit
+ * (supabase/migrations/20260831210000_a_satellite_seat_closes_when_every_other_door_closes.sql).
  */
 
 export interface SatelliteTargetState {
@@ -33,6 +42,11 @@ export interface SatelliteTargetState {
   rebuy_levels?: number | null;
   current_players?: number | null;
   max_players?: number | null;
+  /** The platform's single statement that the pool has stopped moving. Once it
+   *  is true `fn_register_for_tournament` refuses every entry and
+   *  `isLateRegClosed()` returns true regardless of level, because the payout
+   *  ladder has been sized against the pool as it stands. */
+  prize_pool_finalized?: boolean | null;
 }
 
 /**
@@ -41,6 +55,15 @@ export interface SatelliteTargetState {
  */
 export function isSatelliteTargetOpen(target: SatelliteTargetState | null): boolean {
   if (!target) return false;
+
+  /* A FINALIZED POOL IS A CLOSED DOOR (2026-08-31). This is checked before the
+     status and before the level because it outranks both: `start()` sets it
+     immediately for an event with no late-reg window at all, and
+     `finalizeAfterAddOn()` sets it at the end of the add-on window, which can
+     be later than the late-reg cap. Seating a satellite winner after it is set
+     adds a buy-in to a prize pool the payout ladder was already computed
+     from. */
+  if (target.prize_pool_finalized) return false;
 
   const status = (target.status || '').toUpperCase();
   const hasRoom =
@@ -51,8 +74,18 @@ export function isSatelliteTargetOpen(target: SatelliteTargetState | null): bool
 
   if (status === 'RUNNING') {
     const cap = Number(target.late_reg_levels ?? target.rebuy_levels ?? 0);
+    /* `current_level` is a ZERO-BASED INDEX into blind_structure, so a cap of N
+       covers indices 0..N-1 and index N is the first level past the window.
+       This was `level <= cap`, which held the door open for one extra level
+       after every other reader in the codebase had shut it:
+       fn_register_for_tournament, process_tournament_rebuy,
+       TournamentManagerBase.isLateRegClosed, TournamentInfoPanel and
+       TournamentDetails all close on `>=`. A satellite winner could therefore
+       be seated into an event that had been refusing direct buy-ins for a
+       whole level. See tests/unit/currentLevelIsAnIndex.test.ts for the rule
+       itself. */
     const level = Number(target.current_level ?? 0);
-    return cap > 0 && level <= cap;
+    return cap > 0 && level < cap;
   }
 
   // COMPLETED, COMPLETING, CANCELLED: nothing to enter.

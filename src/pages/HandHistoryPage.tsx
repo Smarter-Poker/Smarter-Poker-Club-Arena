@@ -62,7 +62,7 @@ type HistoryFilter = 'all' | 'won' | 'lost' | 'big-pots';
    Order still matters: PLO8 must be tested before the PLO catch-all. */
 function toShareVariant(gameType: string | undefined): ShareableHand['variant'] {
   const g = (gameType || '').toUpperCase();
-  if (g.includes('PINEAPPLE')) return 'Pineapple';
+  if (g.includes('PINEAPPLE')) return 'Crazy Pineapple';
   if (g.includes('SHORT')) return 'Short Deck';
   if (g.includes('PLO8')) return 'PLO8';
   if (g.includes('PLO6')) return 'PLO6';
@@ -352,7 +352,7 @@ export default function HandHistoryPage() {
       <CasinoSurfaceHeader
         eyebrow="Play & Review / Hands"
         title="Hand Archive"
-        description="Filter, replay, export, share, or send loaded hands into Jarvis analysis while the existing hand-history service remains the record authority."
+        description="Filter, Replay, Export, Share, Or Send Loaded Hands Into Jarvis Analysis While The Existing Hand-History Service Remains The Record Authority."
         artPath="assets/club-buttons/lobby/lobby-command-chassis-v2.png"
         status="HAND INDEX // SYNCHRONIZED"
         metrics={[
@@ -417,7 +417,7 @@ export default function HandHistoryPage() {
           <button
             className="export-btn"
             onClick={handleExport}
-            aria-label="Export the loaded hands to CSV"
+            aria-label="Export The Loaded Hands To CSV"
           >
             {' '}
             Export

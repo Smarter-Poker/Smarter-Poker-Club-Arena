@@ -40,6 +40,7 @@
  */
 
 import { supabase } from './supabase.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
 import { sharesForRakeRecord, sharesForRakeRecordWithLedger } from './rakeAllocation.js';
 
@@ -297,6 +298,10 @@ export class RakebackSettlerService {
       )
     );
     this.intervalHandle = setInterval(() => {
+      // THE FREEZE (Dan 2026-09-01): settlement credits commissions and
+      // rakeback - chip movement by definition. A 30-minute cadence loses
+      // nothing to a 5-minute wait.
+      if (isMaintenanceFrozen()) return;
       this.runSettlement().catch((e: any) =>
         reportError(
           new Error(e?.message || JSON.stringify(e) || String(e)),
@@ -425,7 +430,7 @@ export class RakebackSettlerService {
     // described on the isSettling field). The guard wraps the whole run in try/finally
     // so the flag always clears even on a thrown error.
     if (this.isSettling) {
-      console.warn('[RakebackSettler] settlement already in progress — skipping overlapping run');
+      console.warn('[RakebackSettler] settlement already in progress - skipping overlapping run');
       return;
     }
     this.isSettling = true;
@@ -443,7 +448,7 @@ export class RakebackSettlerService {
           backlogRemains = true;
           console.warn(
             `[RakebackSettler] drain cap reached after ${batch} full batches ` +
-              `(${batch * FETCH_LIMIT} records) — backlog REMAINS, resuming in ` +
+              `(${batch * FETCH_LIMIT} records) - backlog REMAINS, resuming in ` +
               `${CATCH_UP_DELAY_MS / 1000}s instead of waiting the full interval`
           );
           break;
@@ -519,7 +524,7 @@ export class RakebackSettlerService {
   /**
    * SWEEP #6 — Tournament invariant sentinel.
    *
-   * For each tournament newly observed as COMPLETED (watermarked by updated_at in
+   * For each tournament newly observed as COMPLETED (watermarked by ended_at in
    * daemon_state under 'tournament_sentinel'), verify:
    *
    *   (1) PAYOUT CONSERVATION — for non-satellite events, the sum of paid
@@ -539,7 +544,32 @@ export class RakebackSettlerService {
    *       regressed.
    *
    * Idempotent and cheap: bounded batch per cycle, advances the watermark to the
-   * newest processed updated_at so each tournament is checked once.
+   * newest processed ended_at so each tournament is checked once.
+   *
+   * THE WINDOW COLUMN WAS WRONG UNTIL 2026-08-31, in exactly the way the payout
+   * sweep's was until 2026-08-29 (see the long note on payoutSweepCycles, and
+   * `20260829125035_payout_sweep_window_means_finished_not_created`). This scan
+   * filtered, ordered and watermarked on `tournaments.updated_at`, which NOTHING
+   * maintains — no trigger, no engine write. Measured on 2026-08-31: 2,286 of
+   * 2,286 tournaments created in 24 hours had `updated_at = created_at`, and
+   * `updated_at < started_at` on every one.
+   *
+   * So the watermark was a CREATION time, and the batch advanced it past every
+   * lobby created before the one it happened to finish on. A tournament created
+   * before the mark and finished after it was never checked — not late, never.
+   * Measured at the live watermark (14:47:57, itself the creation time of a spin
+   * that had just completed): 63 COMPLETED events created before it and ended
+   * after it, 44 of them Spins, none of which this sentinel had looked at. That
+   * recurs on every batch, so it is a permanent blind spot for anything that
+   * finishes out of creation order — which, for lobbies opened minutes to hours
+   * before they fill, is most of the board.
+   *
+   * What went unchecked is the point: payout conservation (chips destroyed or
+   * minted), stranded players, and raked tournament hands.
+   *
+   * `ended_at` is the honest column here — "newly observed as COMPLETED" means
+   * finished, not scheduled — and it is safe to order on: it is set on 100% of
+   * the 43,482 events COMPLETED in the last 30 days.
    */
   private async runTournamentSentinel(): Promise<void> {
     const SENTINEL_KEY = 'tournament_sentinel';
@@ -551,7 +581,7 @@ export class RakebackSettlerService {
         .eq('daemon', SENTINEL_KEY)
         .maybeSingle();
       if (stateErr) {
-        console.warn('[TournamentSentinel] watermark read failed — skipping cycle');
+        console.warn('[TournamentSentinel] watermark read failed - skipping cycle');
         return;
       }
       // Epoch fallback on genuine first run so we don't rescan all history at once;
@@ -562,10 +592,10 @@ export class RakebackSettlerService {
 
       const { data: tourneys, error: tErr } = await supabase
         .from('tournaments')
-        .select('id, name, prize_pool, variant, satellite_target_id, updated_at')
+        .select('id, name, prize_pool, variant, satellite_target_id, ended_at')
         .eq('status', 'COMPLETED')
-        .gt('updated_at', sinceIso)
-        .order('updated_at', { ascending: true })
+        .gt('ended_at', sinceIso)
+        .order('ended_at', { ascending: true })
         .limit(BATCH);
       if (tErr) {
         console.warn(`[TournamentSentinel] tournament read failed: ${tErr.message}`);
@@ -582,9 +612,9 @@ export class RakebackSettlerService {
         prize_pool: number | null;
         variant: string | null;
         satellite_target_id: string | null;
-        updated_at: string;
+        ended_at: string;
       }>) {
-        if (t.updated_at > newWatermark) newWatermark = t.updated_at;
+        if (t.ended_at > newWatermark) newWatermark = t.ended_at;
         // Pool-equality is only meaningful for events where the ENTIRE cash pool
         // flows through tournament_players.prize. It does NOT hold for:
         //   • satellites — they pay tickets/seats, not the cash pool;
@@ -809,7 +839,7 @@ export class RakebackSettlerService {
       if (rows.length > 0) {
         reportError(
           new Error(
-            `TOURNAMENT CHIPS: ${rows.length} live tournament(s) do not hold the chips they issued — ` +
+            `TOURNAMENT CHIPS: ${rows.length} live tournament(s) do not hold the chips they issued - ` +
               rows
                 .map(
                   (r) =>
@@ -919,12 +949,57 @@ export class RakebackSettlerService {
    * has to EXCEED the window's population or the window is decorative.
    * Measured 2026-08-27: 35,220 COMPLETED events in 30 days, ~1,174/day, so a
    * 2-day window normally holds ~2,350. Five times that, ~1.7s of scan.
+   *
+   * 2026-09-01: RAISED 6,000 -> 20,000, because the window overtook the limit.
+   *
+   * The 2-day window now holds **6,959** events, not ~2,350 -- daily volume has
+   * roughly tripled since the figure above was measured. So the narrow pass was
+   * examining 6,000 of 6,959 and stopping, and by the reasoning in the comment
+   * directly above this one the window had become decorative again.
+   *
+   * This is not a silent miss -- the deep pass (30 days / 40,000, every 24th
+   * cycle) reaches the remainder within about twelve hours, which is why nobody
+   * noticed. It is still twelve hours of an underpaid player waiting on a pass
+   * that had the budget to reach them and did not.
+   *
+   * Measured against production 2026-09-01: the FULL 2-day window, all 6,959
+   * events, reconciles in **5.7 seconds** -- so the headroom costs about a
+   * second. The old comment's worry about PostgREST's single-digit statement
+   * timeout no longer applies either: the RPC sets its own
+   * `statement_timeout = 600s`, which overrides it for the duration of the call.
+   *
+   * 20,000 is ~3x the current population, the same multiple the original 6,000
+   * was chosen at. When the window overtakes this one too, the sweep now says
+   * so out loud (fn_tournament_payout_sweep raises a truncation alert on any
+   * applying pass) rather than leaving it to be rediscovered.
    */
-  private static readonly PAYOUT_SWEEP_RECENT_LIMIT = 6000;
+  private static readonly PAYOUT_SWEEP_RECENT_LIMIT = 20000;
   /** Days back the periodic pass looks — far enough to reach the May backlog. */
   private static readonly PAYOUT_SWEEP_DEEP_DAYS = 30;
-  /** 35,220 events live in a 30-day window; 40,000 covers it with headroom. */
-  private static readonly PAYOUT_SWEEP_DEEP_LIMIT = 40000;
+  /**
+   * 2026-09-01: RAISED 40,000 -> 150,000, for the same reason the narrow limit
+   * was raised hours earlier, and caught by the same alert.
+   *
+   * The comment this replaces read "35,220 events live in a 30-day window;
+   * 40,000 covers it with headroom", measured 2026-08-27. Measured again today
+   * the window holds **48,093**, so the deep pass was scanning the newest
+   * 40,000 and stopping 8,093 short -- and the deep pass is the one thing that
+   * reaches an event after it ages out of the hourly 7-day pg_cron sweep. A
+   * deep pass that truncates is a safety net with a hole in the far corner,
+   * which is exactly where it is meant to catch.
+   *
+   * Nothing was missed in practice: every event is swept hourly by
+   * `ca-payout-sweep-hourly` (7 days / 40,000 against a 30,878 population)
+   * while it is fresh, so the unreached tail had already been reconciled many
+   * times over before it aged past the deep pass. The hole is in the
+   * guarantee, not yet in the money.
+   *
+   * 150,000 is ~3x the current population, the same multiple the other two
+   * limits were chosen at. The full 2-day window (6,959 events) reconciles in
+   * 5.7s, so a full 30-day pass is on the order of 40s against the RPC's own
+   * 600s statement timeout, twice a day.
+   */
+  private static readonly PAYOUT_SWEEP_DEEP_LIMIT = 150000;
   /** Cycles between deep passes. 30-minute cycle, so ~twice a day. */
   private static readonly PAYOUT_SWEEP_DEEP_EVERY = 24;
 
@@ -961,7 +1036,7 @@ export class RakebackSettlerService {
         const t = data as { candidates_matched?: number; candidates_scanned?: number } | null;
         reportError(
           new Error(
-            `fn_tournament_payout_sweep (${label}: ${days}d/${limit}) was TRUNCATED — ` +
+            `fn_tournament_payout_sweep (${label}: ${days}d/${limit}) was TRUNCATED - ` +
               `${t?.candidates_matched ?? '?'} completed event(s) in the window, only ` +
               `${t?.candidates_scanned ?? '?'} examined. The rest were not checked and their ` +
               `findings are not in this result. Raise the limit.`
@@ -1192,7 +1267,7 @@ export class RakebackSettlerService {
         .eq('daemon', WEEKLY_KEY)
         .maybeSingle();
       if (stateErr) {
-        console.warn('[RakebackSettler] weekly-close state read failed — will retry next cycle');
+        console.warn('[RakebackSettler] weekly-close state read failed - will retry next cycle');
         return;
       }
       const lastClosedWeek = state?.high_water_mark
@@ -1276,7 +1351,7 @@ export class RakebackSettlerService {
       if (!hwm.ok) {
         // RAKE-AUDIT 2026-07-24: watermark read failed — do NOT fall back to a
         // 7-day rescan (double-credits player_stats). Retry next interval.
-        console.warn('[RakebackSettler] high-water-mark read failed — skipping cycle');
+        console.warn('[RakebackSettler] high-water-mark read failed - skipping cycle');
         return 'halted';
       }
       this.cursor = hwm.value;
@@ -1518,7 +1593,7 @@ export class RakebackSettlerService {
 
     if (buckets.size === 0) {
       console.log(
-        `[RakebackSettler] Processed ${rows.length} rake_records — no eligible player-credits`
+        `[RakebackSettler] Processed ${rows.length} rake_records - no eligible player-credits`
       );
       this.cursor = nextCursor;
       await this.saveHighWaterMark(nextCursor);
@@ -1607,7 +1682,7 @@ export class RakebackSettlerService {
       console.log(
         `[RakebackSettler] Agent-commission credits: ${agentCreditsAttempted - agentCreditsFailed}/${agentCreditsAttempted} OK` +
           (agentCreditsSkippedNoHand > 0
-            ? `, ${agentCreditsSkippedNoHand} skipped (no hand_id — pre-R38 legacy rows)`
+            ? `, ${agentCreditsSkippedNoHand} skipped (no hand_id - pre-R38 legacy rows)`
             : '') +
           ' (RPC silently skips non-agent players)'
       );
@@ -1808,7 +1883,7 @@ export class RakebackSettlerService {
     if (failures > 0) {
       reportError(
         new Error(
-          `[RakebackSettler] ${failures} period recompute(s) failed across ${buckets.size} bucket(s) — ` +
+          `[RakebackSettler] ${failures} period recompute(s) failed across ${buckets.size} bucket(s) - ` +
             `holding the watermark at ${this.cursor?.createdAt ?? 'start'} so the next cycle retries them. ` +
             `Advancing would leave those rake_records permanently unsettled, and rake_generated selects the ` +
             `rakeback tier, so a partial period can pay a whole band low.`

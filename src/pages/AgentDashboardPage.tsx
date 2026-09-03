@@ -33,6 +33,7 @@ import AgentBackOffice from '../components/agent/AgentBackOffice';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { EmptyState } from '../components/common/EmptyState';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 type AgentTab =
   | 'overview'
   | 'players'
@@ -80,6 +81,10 @@ interface AgentCommission {
   source_id?: string;
   notes?: string;
   created_at: string;
+  // Whether this row has been claimed. Phase 6 made commission claimable and
+  // phase 7 made every other surface say so; this list showed a claimed row and
+  // an owed one identically, which is the same figure meaning two things.
+  settled_at?: string | null;
 }
 // ChipTransaction imported from types/database.types (canonical definition)
 
@@ -205,7 +210,7 @@ export default function AgentDashboardPage() {
             () =>
               supabase
                 .from('profiles')
-                .select('id, display_name, username, avatar_url:arena_avatar_url, last_seen')
+                .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, last_seen`)
                 .in('id', allUserIds)
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: mountedRef }
@@ -240,7 +245,9 @@ export default function AgentDashboardPage() {
           () =>
             supabase
               .from('agent_commissions')
-              .select('id, user_id, club_id, amount, source_type, source_id, notes, created_at')
+              .select(
+                'id, user_id, club_id, amount, source_type, source_id, notes, created_at, settled_at'
+              )
               .eq('club_id', uuid)
               .eq('user_id', user.id)
               .order('created_at', { ascending: false })
@@ -323,7 +330,9 @@ export default function AgentDashboardPage() {
               .from('club_members')
               .select('club_id')
               .eq('user_id', user.id)
-              .in('role', ['agent', 'sub_agent', 'super_agent', 'owner', 'admin'])
+              // co_owner was missing, so a co-owner with no other membership
+              // was told they belong to no club at all.
+              .in('role', ['agent', 'sub_agent', 'super_agent', 'owner', 'co_owner', 'admin'])
               .then((r) => r),
           { maxRetries: 2, isMountedRef: mountedRef }
         );
@@ -527,12 +536,7 @@ export default function AgentDashboardPage() {
     if (!playerSearch) return players;
     const q = playerSearch.toLowerCase();
     return players.filter((p) => {
-      const name = (
-        p.profile?.display_name ||
-        p.profile?.username ||
-        p.user_id ||
-        ''
-      ).toLowerCase();
+      const name = (p.profile ? playerDisplayName(p.profile) : p.user_id || '').toLowerCase();
       return name.includes(q);
     });
   }, [players, playerSearch]);
@@ -581,7 +585,7 @@ export default function AgentDashboardPage() {
           title="No Agent Workspace Is Available"
           description={
             error ||
-            'Agent balances, downlines, cashouts, and commissions belong to a club. Open the Agent Team from an authorized club workspace.'
+            'Agent Balances, Downlines, Cashouts, And Commissions Belong To A Club. Open The Agent Team From An Authorized Club Workspace.'
           }
           action={{ label: 'Return To Arena', onClick: () => navigate('/') }}
           secondaryAction={{ label: 'Find Clubs', onClick: () => navigate('/search') }}
@@ -664,7 +668,7 @@ export default function AgentDashboardPage() {
                 >
                   {processing
                     ? 'Processing...'
-                    : `Transfer ${transferAmount ? fmtChips(parseFloat(transferAmount)) : '0'} chips`}
+                    : `Transfer ${transferAmount ? fmtChips(parseFloat(transferAmount)) : '0'} Chips`}
                 </button>
               </div>
             </div>
@@ -700,7 +704,7 @@ export default function AgentDashboardPage() {
                   if (tab === 'players' && players.length > 0) {
                     exportToCSV(
                       players.map((p) => ({
-                        username: p.profile?.display_name || p.profile?.username || p.user_id,
+                        username: p.profile ? playerDisplayName(p.profile) : p.user_id,
                         role: p.role,
                         chip_balance: p.chip_balance,
                         status: p.status,
@@ -725,6 +729,9 @@ export default function AgentDashboardPage() {
                   } else if (tab === 'commissions' && commissions.length > 0) {
                     exportToCSV(commissions, 'agent_commissions.csv', [
                       { key: 'amount', label: 'Amount' },
+                      // The export carries the same fact the table now shows:
+                      // a claimed row and an owed row are not the same money.
+                      { key: 'settled_at', label: 'Claimed At' },
                       { key: 'source_type', label: 'Source' },
                       { key: 'notes', label: 'Notes' },
                       { key: 'created_at', label: 'Date' },
@@ -870,7 +877,7 @@ export default function AgentDashboardPage() {
                       {paginatedTx.map((tx, i: number) => (
                         <tr key={tx.id || i}>
                           <td>
-                            <span className="admin-badge">{tx.transaction_type || 'transfer'}</span>
+                            <span className="admin-badge">{tx.transaction_type || 'Transfer'}</span>
                           </td>
                           <td style={{ fontWeight: 600 }}>{fmtChips(tx.amount)}</td>
                           <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
@@ -947,8 +954,8 @@ export default function AgentDashboardPage() {
                 <span className="admin-empty-icon">◉</span>
                 <span>
                   {playerSearch
-                    ? 'No players match your search'
-                    : 'No players in your downline yet'}
+                    ? 'No Players Match Your Search'
+                    : 'No Players In Your Downline Yet'}
                 </span>
               </div>
             ) : (
@@ -960,8 +967,9 @@ export default function AgentDashboardPage() {
                 }}
               >
                 {filteredPlayers.map((p) => {
-                  const name =
-                    p.profile?.display_name || p.profile?.username || p.user_id?.substring(0, 8);
+                  const name = p.profile
+                    ? playerDisplayName(p.profile)
+                    : p.user_id?.substring(0, 8);
                   const isOnline =
                     p.profile?.last_seen &&
                     Date.now() - new Date(p.profile.last_seen).getTime() < 300000;
@@ -1125,6 +1133,7 @@ export default function AgentDashboardPage() {
                   <thead>
                     <tr>
                       <th>Amount</th>
+                      <th>Status</th>
                       <th>Type</th>
                       <th>Notes</th>
                       <th>Date</th>
@@ -1134,8 +1143,20 @@ export default function AgentDashboardPage() {
                     {commissions.map((c: AgentCommission, i: number) => (
                       <tr key={c.id || i}>
                         <td style={{ fontWeight: 700, color: '#31A24C' }}>{fmtChips(c.amount)}</td>
+                        {/* Claimed or not. Until phase 6 there was no way to claim
+                            commission at all, so every row here meant the same
+                            thing; now they do not, and a list that cannot tell
+                            them apart is a list of two different numbers. */}
                         <td>
-                          <span className="admin-badge">{c.source_type || 'rake'}</span>
+                          <span
+                            className="admin-badge"
+                            style={{ color: c.settled_at ? '#31A24C' : '#f59e0b' }}
+                          >
+                            {c.settled_at ? 'Claimed' : 'Unclaimed'}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="admin-badge">{c.source_type || 'Rake'}</span>
                         </td>
                         <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                           {c.notes || '-'}
@@ -1237,9 +1258,7 @@ export default function AgentDashboardPage() {
                             {daysSince <= 5 ? 'Active' : daysSince <= 14 ? 'At Risk' : 'Churned'}
                           </td>
                           <td style={{ fontWeight: 600 }}>
-                            {p.profile?.display_name ||
-                              p.profile?.username ||
-                              p.user_id?.substring(0, 8)}
+                            {p.profile ? playerDisplayName(p.profile) : p.user_id?.substring(0, 8)}
                           </td>
                           <td>{p.chip_balance !== undefined ? fmtChips(p.chip_balance) : '...'}</td>
                           <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
@@ -1278,7 +1297,7 @@ export default function AgentDashboardPage() {
                   <option value="">Select Agent...</option>
                   {agents.map((a: DownlineMember) => (
                     <option key={a.user_id} value={a.user_id}>
-                      {a.profile?.display_name || a.profile?.username || a.user_id?.slice(0, 8)} (
+                      {a.profile ? playerDisplayName(a.profile) : a.user_id?.slice(0, 8)} (
                       {a.chip_balance !== undefined ? fmtChips(a.chip_balance) : '...'} Chips)
                     </option>
                   ))}
@@ -1356,9 +1375,7 @@ export default function AgentDashboardPage() {
                       {agents.map((a: DownlineMember) => (
                         <tr key={a.user_id}>
                           <td style={{ fontWeight: 600 }}>
-                            {a.profile?.display_name ||
-                              a.profile?.username ||
-                              a.user_id?.substring(0, 8)}
+                            {a.profile ? playerDisplayName(a.profile) : a.user_id?.substring(0, 8)}
                           </td>
                           <td>
                             <span className="admin-badge">{a.role}</span>
@@ -1407,7 +1424,7 @@ export default function AgentDashboardPage() {
                     <option value="">Select Agent...</option>
                     {agents.map((a: DownlineMember) => (
                       <option key={a.user_id} value={a.user_id}>
-                        {a.profile?.display_name || a.profile?.username || a.user_id?.slice(0, 8)} -{' '}
+                        {a.profile ? playerDisplayName(a.profile) : a.user_id?.slice(0, 8)} -{' '}
                         {a.role}
                       </option>
                     ))}

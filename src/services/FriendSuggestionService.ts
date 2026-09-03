@@ -9,8 +9,14 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { readLocalSession } from '../lib/authUtils';
 import { blockService } from './BlockService';
 import { QUERY_LIMITS } from '../lib/constants';
+import {
+  playerDisplayName,
+  PLAYER_NAME_COLUMNS,
+  type NameableProfile,
+} from '../utils/playerDisplayName';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -22,10 +28,9 @@ interface FriendshipRow {
   friend_id?: string;
 }
 
-interface ProfileRow {
+interface ProfileRow extends NameableProfile {
   id: string;
   username: string;
-  display_name?: string | null;
   avatar_url?: string | null;
   is_online?: boolean;
 }
@@ -85,7 +90,7 @@ class FriendSuggestionServiceClass {
             reasons: [
               {
                 type: 'shared_club',
-                label: `Member of ${candidate.clubName}`,
+                label: `Member Of ${candidate.clubName}`,
                 count: 1,
               },
             ],
@@ -102,7 +107,7 @@ class FriendSuggestionServiceClass {
           existing.score += 2;
           existing.reasons.push({
             type: 'recent_opponent',
-            label: 'Played together recently',
+            label: 'Played Together Recently',
           });
         } else {
           candidates.set(opponent.userId, {
@@ -111,7 +116,7 @@ class FriendSuggestionServiceClass {
             reasons: [
               {
                 type: 'recent_opponent',
-                label: 'Played together recently',
+                label: 'Played Together Recently',
               },
             ],
           });
@@ -204,7 +209,7 @@ class FriendSuggestionServiceClass {
         try {
           const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, username, display_name, avatar_url, is_online')
+            .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url, is_online`)
             .in('id', [...new Set(userIds)]);
           if (profiles) {
             for (const p of profiles) profileMap[p.id] = p as ProfileRow;
@@ -219,8 +224,8 @@ class FriendSuggestionServiceClass {
         const userId = m.user_id as string;
         return {
           userId,
-          username: profileMap[userId]?.username || 'Unknown',
-          displayName: profileMap[userId]?.display_name ?? undefined,
+          username: playerDisplayName(profileMap[userId]),
+          displayName: playerDisplayName(profileMap[userId]),
           avatarUrl: profileMap[userId]?.avatar_url ?? undefined,
           isOnline: profileMap[userId]?.is_online || false,
           score: 0,
@@ -270,7 +275,7 @@ class FriendSuggestionServiceClass {
         .select(
           `
           user_id,
-          profiles:user_id!inner(username, display_name, avatar_url, is_online, is_horse)
+          profiles:user_id!inner(${PLAYER_NAME_COLUMNS}, avatar_url, is_online, is_horse)
         `
         )
         .in('table_id', tableIds)
@@ -290,8 +295,8 @@ class FriendSuggestionServiceClass {
         })
         .map((o: any) => ({
           userId: o.user_id as string,
-          username: o.profiles?.username || 'Unknown',
-          displayName: o.profiles?.display_name ?? undefined,
+          username: playerDisplayName(o.profiles),
+          displayName: playerDisplayName(o.profiles),
           avatarUrl: o.profiles?.avatar_url ?? undefined,
           isOnline: o.profiles?.is_online || false,
           score: 0,
@@ -314,43 +319,12 @@ class FriendSuggestionServiceClass {
     otherUserId: string
   ): Promise<{ id: string; username: string; avatarUrl?: string }[]> {
     try {
-      // Get friends of userId
-      const { data: myFriends } = await supabase
-        .from('friendships')
-        .select('user_id, friend_id')
-        .or(`user_id.eq.${userId},friend_id.eq.${userId}`)
-        .eq('status', 'accepted');
-
-      const myFriendIds = new Set<string>();
-      (myFriends || []).forEach((row: any) => {
-        if (row.user_id && row.friend_id) {
-          myFriendIds.add(row.user_id === userId ? row.friend_id : row.user_id);
-        }
+      const session = readLocalSession();
+      if (session?.userId !== userId) return [];
+      const { data: profiles, error } = await supabase.rpc('get_mutual_friends', {
+        p_other_user_id: otherUserId,
       });
-
-      // Get friends of otherUserId
-      const { data: theirFriends } = await supabase
-        .from('friendships')
-        .select('user_id, friend_id')
-        .or(`user_id.eq.${otherUserId},friend_id.eq.${otherUserId}`)
-        .eq('status', 'accepted');
-
-      const theirFriendIds = new Set<string>();
-      (theirFriends || []).forEach((row: any) => {
-        if (row.user_id && row.friend_id) {
-          theirFriendIds.add(row.user_id === otherUserId ? row.friend_id : row.user_id);
-        }
-      });
-
-      // Intersection
-      const mutualIds = [...myFriendIds].filter((id) => theirFriendIds.has(id));
-      if (mutualIds.length === 0) return [];
-
-      // Fetch profiles
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, username, avatar_url')
-        .in('id', mutualIds);
+      if (error) throw error;
 
       return (profiles || []).map((p: any) => ({
         id: p.id as string,

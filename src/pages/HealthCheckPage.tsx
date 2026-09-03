@@ -27,7 +27,7 @@ export default function HealthCheckPage() {
           minHeight: '100vh',
         }}
       >
-        <pre>{'{ "status": "checking..." }'}</pre>
+        <pre>{'{ "Status": "Checking..." }'}</pre>
       </div>
     );
   }

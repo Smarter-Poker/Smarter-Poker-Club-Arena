@@ -26,7 +26,7 @@ export const LEVELS: TrainingLevel[] = [
   {
     level: 1,
     name: 'Foundations',
-    description: 'Basic pre-flop scenarios',
+    description: 'Basic Pre-Flop Scenarios',
     timer_seconds: 30,
     difficulty: 'easy',
     min_questions: 20,
@@ -35,7 +35,7 @@ export const LEVELS: TrainingLevel[] = [
   {
     level: 2,
     name: 'Position Play',
-    description: 'Positional awareness',
+    description: 'Positional Awareness',
     timer_seconds: 28,
     difficulty: 'easy',
     min_questions: 20,
@@ -44,7 +44,7 @@ export const LEVELS: TrainingLevel[] = [
   {
     level: 3,
     name: 'Bet Sizing',
-    description: 'Optimal bet sizes',
+    description: 'Optimal Bet Sizes',
     timer_seconds: 25,
     difficulty: 'medium',
     min_questions: 20,
@@ -53,7 +53,7 @@ export const LEVELS: TrainingLevel[] = [
   {
     level: 4,
     name: 'C-Bet Strategy',
-    description: 'Continuation betting',
+    description: 'Continuation Betting',
     timer_seconds: 22,
     difficulty: 'medium',
     min_questions: 20,
@@ -62,7 +62,7 @@ export const LEVELS: TrainingLevel[] = [
   {
     level: 5,
     name: 'Turn Decisions',
-    description: 'Complex turn strategy',
+    description: 'Complex Turn Strategy',
     timer_seconds: 20,
     difficulty: 'medium',
     min_questions: 20,
@@ -71,7 +71,7 @@ export const LEVELS: TrainingLevel[] = [
   {
     level: 6,
     name: 'River Play',
-    description: 'River value & bluffs',
+    description: 'River Value & Bluffs',
     timer_seconds: 18,
     difficulty: 'hard',
     min_questions: 20,
@@ -80,7 +80,7 @@ export const LEVELS: TrainingLevel[] = [
   {
     level: 7,
     name: '3-Bet Pots',
-    description: 'Navigating 3-bet pots',
+    description: 'Navigating 3-Bet Pots',
     timer_seconds: 15,
     difficulty: 'hard',
     min_questions: 20,
@@ -89,7 +89,7 @@ export const LEVELS: TrainingLevel[] = [
   {
     level: 8,
     name: 'Multi-Way Pots',
-    description: 'Multi-way dynamics',
+    description: 'Multi-Way Dynamics',
     timer_seconds: 12,
     difficulty: 'expert',
     min_questions: 20,
@@ -107,7 +107,7 @@ export const LEVELS: TrainingLevel[] = [
   {
     level: 10,
     name: 'Elite GTO',
-    description: 'Solver-level play',
+    description: 'Solver-Level Play',
     timer_seconds: 8,
     difficulty: 'master',
     min_questions: 20,

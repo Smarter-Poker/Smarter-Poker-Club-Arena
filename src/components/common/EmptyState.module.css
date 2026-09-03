@@ -259,6 +259,47 @@
   }
 }
 
+/* A short landscape viewport must show the complete physical frame. The
+   message scrolls inside that frame when necessary; the page edge never cuts
+   through its lower corners or strands its actions below the viewport. */
+@media (max-height: 560px) {
+  .container {
+    min-height: 0;
+    padding-block: 8px;
+  }
+
+  .content {
+    max-height: calc(100dvh - 96px);
+    padding: 18px 20px 16px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .beacon {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 12px;
+  }
+
+  .beacon::after {
+    inset: 9px;
+  }
+
+  .title {
+    font-size: clamp(23px, 4vw, 29px);
+  }
+
+  .description {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .actions {
+    margin-top: 14px;
+  }
+}
+
 @media (max-width: 520px) {
   .container {
     min-height: 330px;

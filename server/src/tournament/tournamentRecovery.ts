@@ -11,7 +11,11 @@
 import { supabase } from '../services/supabase.js';
 import { computePlacePrize } from './payoutMath.js';
 import { resolvePayoutStructure } from './payoutStructure.js';
+import { fieldIsStillLive } from './recoveryFieldGuard.js';
+import { chipsCannotRank, noHandWasEverDealt } from './recoveryRankEvidence.js';
 import { reportError } from '../services/errorReporter.js';
+import { raiseFinancialAlert } from '../services/financialAlerts.js';
+import { settleTournamentObligation } from './settleObligation.js';
 
 /**
  * TOURNEY-AUDIT 2026-07-24: Recover tournaments stuck in COMPLETING by PAYING
@@ -102,7 +106,7 @@ export async function refundAndCloseCancelledTournament(
     if (openRowsErr) {
       reportError(
         new Error(
-          `[GameServer] Cancel refund ABORTED for ${tournamentId.slice(0, 8)}: open-registration list unreadable (${openRowsErr.message}) — refunding nobody and closing nothing this pass`
+          `[GameServer] Cancel refund ABORTED for ${tournamentId.slice(0, 8)}: open-registration list unreadable (${openRowsErr.message}) - refunding nobody and closing nothing this pass`
         ),
         'GameServer.cancel_refund_open_rows_unreadable'
       );
@@ -136,36 +140,50 @@ export async function refundAndCloseCancelledTournament(
       // everything else -- despite the comment above this block already
       // stating that ignoring rebuys/add-ons/re-entries was the old bug.
       // (Re-entries are written with category 'rebuy'.)
-      let paid = 0;
+      let gross = 0;
+      let refunded = 0;
       for (const t of txRows ?? []) {
         if (
           t.type === 'debit' &&
           (t.category === 'tournament_buyin' || t.category === 'rebuy' || t.category === 'addon')
         ) {
-          paid += Number(t.amount || 0);
+          gross += Number(t.amount || 0);
         } else if (t.type === 'credit' && t.category === 'refund') {
-          paid -= Number(t.amount || 0);
+          refunded += Number(t.amount || 0);
         }
       }
-      paid = Math.round(paid * 100) / 100;
-      if (paid <= 0) continue; // never paid (legacy free entry) or already refunded
+      gross = Math.round(gross * 100) / 100;
+      refunded = Math.round(refunded * 100) / 100;
+      if (gross <= 0) continue; // never paid (legacy free entry)
+      if (gross - refunded <= 0) continue; // already refunded in full
 
-      // LEDGER-INTEGRITY 2026-08-22: credit and ledger row under one key.
-      const { error: refErr } = await supabase.rpc('fn_credit_and_log', {
-        p_user_id: row.user_id,
-        p_amount: paid,
-        // A3 FIX (2026-07-28): keyed on the tournament_players row id, in the
-        // SAME format used by the startup pre-start sweep and the SNG lifecycle
-        // sweep (both now delegate here), so every cancel-refund path dedupes.
-        p_idempotency_key: `tourney:${tournamentId}:cancelrefund:${row.id}`,
-        p_category: 'refund',
-        p_description: `${refundReason}: ${fullT?.name || tournamentName || 'tournament'}`,
-        p_related_entity_id: tournamentId,
+      // ONE SETTLE PATH (2026-09-02): a user-keyed 'refund' obligation,
+      // UNIQUE on (tournament, 'refund', user). Every cancel-refund path
+      // (startup pre-start sweep, SNG lifecycle sweep, this helper) delegates
+      // here and settles the same row, so a re-run refunds nobody twice - the
+      // dedupe the old `cancelrefund:{row.id}` key gave, as a constraint.
+      //
+      // THE AMOUNT IS THE GROSS ENTITLEMENT, NOT THE NET (phase 1.5,
+      // 2026-09-02). fn_settle_tournament_obligation takes the TOTAL owed and
+      // pays the difference: when it first meets a refund obligation it seeds
+      // amount_paid from this player's prior refund credits for this
+      // tournament, exactly the credits subtracted above. Passing the net
+      // (gross - prior refunds) as the total therefore counted every earlier
+      // partial refund twice: gross 20, refunded 5 -> total 15, seeded paid 5
+      // -> it paid 10, and the player was 5 short. The total is what the
+      // player paid; the function already knows what came back.
+      const refund = await settleTournamentObligation(supabase, {
+        tournamentId,
+        kind: 'refund',
+        userId: row.user_id,
+        amount: gross,
+        source: 'engine.refundAndCloseCancelledTournament',
+        memo: `${refundReason}: ${fullT?.name || tournamentName || 'tournament'}`,
       });
-      if (refErr) {
+      if (!refund.ok) {
         reportError(
           new Error(
-            `[GameServer] Cancel refund FAILED for ${row.user_id} (${tournamentId.slice(0, 8)}): ${refErr.message}`
+            `[GameServer] Cancel refund FAILED for ${row.user_id} (${tournamentId.slice(0, 8)}): ${refund.refused_reason}${refund.transport_error ? ` (${refund.transport_error})` : ''}`
           ),
           'GameServer.cancel_refund_failed'
         );
@@ -189,7 +207,7 @@ export async function refundAndCloseCancelledTournament(
         if (feeErr) {
           reportError(
             new Error(
-              `[GameServer] Cancel refund: fee-ledger read failed for ${row.user_id.slice(0, 8)} (${tournamentId.slice(0, 8)}): ${feeErr.message} — fee NOT reversed`
+              `[GameServer] Cancel refund: fee-ledger read failed for ${row.user_id.slice(0, 8)} (${tournamentId.slice(0, 8)}): ${feeErr.message} - fee NOT reversed`
             ),
             'GameServer.cancel_refund_fee_read_failed'
           );
@@ -221,7 +239,7 @@ export async function refundAndCloseCancelledTournament(
           if (revErr) {
             reportError(
               new Error(
-                `[GameServer] Cancel refund: fee reversal INSERT failed for ${row.user_id.slice(0, 8)} (${tournamentId.slice(0, 8)}): ${revErr.message} — ${feePaid} still booked as rake`
+                `[GameServer] Cancel refund: fee reversal INSERT failed for ${row.user_id.slice(0, 8)} (${tournamentId.slice(0, 8)}): ${revErr.message} - ${feePaid} still booked as rake`
               ),
               'GameServer.cancel_refund_fee_reversal_failed'
             );
@@ -242,7 +260,7 @@ export async function refundAndCloseCancelledTournament(
     if (closeRowsErr) {
       reportError(
         new Error(
-          `[GameServer] Cancel refund: could not close player rows for ${tournamentId.slice(0, 8)}: ${closeRowsErr.message} — registrations left stranded`
+          `[GameServer] Cancel refund: could not close player rows for ${tournamentId.slice(0, 8)}: ${closeRowsErr.message} - registrations left stranded`
         ),
         'GameServer.cancel_refund_close_rows_failed'
       );
@@ -279,7 +297,12 @@ export async function recoverStuckCompletingTournaments(
       // structure makes computePlacePrize return 0 for every place). The spec
       // rebuilds it from the multiplier. Same rule as the two live payout
       // sites — see payoutStructure.ts.
-      .select('id, name, prize_pool, payout_structure, variant, tournament_type, spin_multiplier')
+      // started_at: NO RESULT WITHOUT A HAND (2026-09-01) needs to know how old
+      // the event is before it trusts an empty hand_history - see
+      // recoveryRankEvidence.ts on the 7-day horse-only prune.
+      .select(
+        'id, name, prize_pool, payout_structure, variant, tournament_type, spin_multiplier, started_at'
+      )
       .eq('status', 'COMPLETING');
     if (onlyTournamentId) q = q.eq('id', onlyTournamentId);
     const { data: stuck, error: stuckErr } = await q;
@@ -289,7 +312,7 @@ export async function recoverStuckCompletingTournaments(
     if (stuckErr) {
       reportError(
         new Error(
-          `[GameServer] recoverStuckCompleting (${reason}): COMPLETING scan failed: ${stuckErr.message} — recovered nothing this pass`
+          `[GameServer] recoverStuckCompleting (${reason}): COMPLETING scan failed: ${stuckErr.message} - recovered nothing this pass`
         ),
         'GameServer.recoverStuckCompleting_scan_failed'
       );
@@ -359,15 +382,119 @@ export async function recoverStuckCompletingTournaments(
               .eq('status', 'COMPLETING');
             reportError(
               new Error(
-                `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is an UNDECIDED satellite (${aliveCount} alive) stuck in COMPLETING — ${reviveErr ? `revive failed: ${reviveErr.message}` : 'flipped back to RUNNING for discovery to resume'}`
+                `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is an UNDECIDED satellite (${aliveCount} alive) stuck in COMPLETING - ${reviveErr ? `revive failed: ${reviveErr.message}` : 'flipped back to RUNNING for discovery to resume'}`
               ),
               'GameServer.recoverStuckCompleting_satellite_revived'
             );
             continue;
           }
+          /**
+           * A DECIDED SATELLITE MUST ALSO GO SOMEWHERE (2026-08-31, phase 5).
+           *
+           * The 2026-08-30 rule above resolved the UNDECIDED case and left
+           * this one exactly as it found it: reported, then `continue`, on
+           * every recovery cycle, forever. The comment two blocks up already
+           * admits why that is terminal - "a COMPLETING tournament is not
+           * RUNNING, so discovery never resumes a manager for it, and
+           * processSatelliteAwards only runs inside a manager's finish path."
+           * Nothing else drives it. Grepped: no pg_cron job, no edge
+           * function, no workflow, no other caller anywhere transitions a
+           * COMPLETING satellite. The pool was collected and the seats are
+           * never awarded.
+           *
+           * Worse, leaving the row COMPLETING is not merely inert, it is
+           * ACTIVELY BLOCKING: finishTournament claims the event with
+           * `.eq('status', 'RUNNING')`, so even if a manager did resume, the
+           * claim would return no row and the awards pass would be skipped.
+           *
+           * Three outcomes, and every stuck satellite now takes one:
+           *
+           *   ALREADY AWARDED  -> COMPLETED. Phase 3's payout record is what
+           *     makes "did this satellite already pay?" answerable at all;
+           *     before it there was nothing to ask. A seat carrying this
+           *     satellite's id in the target counts too, for events that ran
+           *     before the record existed.
+           *
+           *   ONE SURVIVOR     -> RUNNING. The manager resumes, the
+           *     elimination sweep sees remainingCount <= 1 on its first tick
+           *     and runs the finish path, awards included. It cannot deal a
+           *     card on the way: minPlayersToDeal() is 2 for a tournament
+           *     table, so the loop parks in `idle_not_enough_players`. That
+           *     answers the "flipping that one would deal cards at a settled
+           *     event" worry in the block above - measured, not assumed.
+           *     The survivor holds no position yet, so stamping them first
+           *     cannot collide with an existing place.
+           *
+           *   NOBODY ALIVE, NOTHING AWARDED -> a CRITICAL alert, and it stays
+           *     COMPLETING. Here the engine would fall back to treating the
+           *     LAST ELIMINATED player as the winner, which in a normal
+           *     finish is second place. Guessing a winner and then moving
+           *     money on the guess is not a repair. A human decides this one.
+           *
+           * Idempotent if it re-drives: every cash leg is keyed
+           * `tourney:{id}:prize:place:{n}` (or `:satremainder:{user}:{n}`)
+           * and the seat leg dedupes on the target's unique registration, so
+           * a satellite that already paid pays nobody twice.
+           */
+          const [{ count: recordCount }, { count: seatCount }] = await Promise.all([
+            supabase
+              .from('tournament_payouts')
+              .select('id', { count: 'exact', head: true })
+              .eq('tournament_id', t.id),
+            supabase
+              .from('tournament_players')
+              .select('id', { count: 'exact', head: true })
+              .eq('source_satellite_id', t.id),
+          ]);
+          const alreadyAwarded = (recordCount ?? 0) > 0 || (seatCount ?? 0) > 0;
+
+          if (alreadyAwarded) {
+            const { error: closeErr } = await supabase
+              .from('tournaments')
+              .update({ status: 'COMPLETED', ended_at: new Date().toISOString() })
+              .eq('id', t.id)
+              .eq('status', 'COMPLETING');
+            reportError(
+              new Error(
+                `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is a DECIDED satellite that ALREADY AWARDED (${recordCount ?? 0} payout record(s), ${seatCount ?? 0} seat(s)) - ${closeErr ? `close failed: ${closeErr.message}` : 'closed COMPLETING -> COMPLETED'}`
+              ),
+              'GameServer.recoverStuckCompleting_satellite_closed'
+            );
+            continue;
+          }
+
+          if (typeof aliveCount === 'number' && aliveCount === 1) {
+            const { error: reviveErr } = await supabase
+              .from('tournaments')
+              .update({ status: 'RUNNING' })
+              .eq('id', t.id)
+              .eq('status', 'COMPLETING');
+            reportError(
+              new Error(
+                `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is a DECIDED satellite with ONE SURVIVOR and no awards - ${reviveErr ? `revive failed: ${reviveErr.message}` : 'flipped back to RUNNING so its manager can run processSatelliteAwards'}`
+              ),
+              'GameServer.recoverStuckCompleting_satellite_revived_decided'
+            );
+            continue;
+          }
+
+          await raiseFinancialAlert(
+            'critical',
+            'Satellite.stuck_completing_unawarded',
+            'A satellite is stuck COMPLETING with no survivor and no seats or payouts awarded. Its pool was collected and nobody has been paid. Deciding the winner is a human call: the engine would fall back to the LAST ELIMINATED player, which in a normal finish is second place.',
+            {
+              tournament_id: t.id,
+              tournament_name: (t as { name?: string }).name ?? null,
+              reason,
+              alive_count: aliveCount ?? null,
+              prize_pool: (t as { prize_pool?: number }).prize_pool ?? null,
+              satellite_target_id:
+                (t as { satellite_target_id?: string }).satellite_target_id ?? null,
+            }
+          );
           reportError(
             new Error(
-              `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is a SATELLITE — it awards seats, not structure cash. Left COMPLETING for processSatelliteAwards.`
+              `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is a SATELLITE - it awards seats, not structure cash. Decided, nothing awarded, no survivor to re-drive: left COMPLETING and raised a critical alert.`
             ),
             'GameServer.recoverStuckCompleting_satellite_skipped'
           );
@@ -396,7 +523,7 @@ export async function recoverStuckCompletingTournaments(
           // exist is exactly the thing this guard is for.
           reportError(
             new Error(
-              `[GameServer] recoverStuckCompleting (${reason}): could not tell whether ${t.id.slice(0, 8)} was chopped (${dealErr.message}) — skipped rather than risk paying over a deal`
+              `[GameServer] recoverStuckCompleting (${reason}): could not tell whether ${t.id.slice(0, 8)} was chopped (${dealErr.message}) - skipped rather than risk paying over a deal`
             ),
             'GameServer.recoverStuckCompleting_deal_check_failed'
           );
@@ -406,7 +533,7 @@ export async function recoverStuckCompletingTournaments(
         if ((dealRows?.length ?? 0) > 0) {
           reportError(
             new Error(
-              `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} settled by a final-table deal — structure prizes would be new money on top of it. Skipped.`
+              `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} settled by a final-table deal - structure prizes would be new money on top of it. Skipped.`
             ),
             'GameServer.recoverStuckCompleting_chopped_skipped'
           );
@@ -469,48 +596,115 @@ export async function recoverStuckCompletingTournaments(
          */
         if (playersErr) {
           throw new Error(
-            `player field unreadable for ${t.id.slice(0, 8)} "${t.name}": ${playersErr.message} — refusing to complete a tournament we cannot pay`
+            `player field unreadable for ${t.id.slice(0, 8)} "${t.name}": ${playersErr.message} - refusing to complete a tournament we cannot pay`
           );
         }
         const rows = players ?? [];
 
         /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  A TOURNAMENT WITH MORE SURVIVORS THAN PRIZES IS NOT FINISHING
+         *  (2026-08-30)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * This rescue exists for a tournament that crashed BETWEEN the
+         * COMPLETING claim and the payout — the finish had happened, the money
+         * had not. It ranks whoever is left by chip count and pays the
+         * structure. That is right for a finish, and catastrophic for a
+         * tournament that was merely still being played when the engine died,
+         * because it has no idea which of the two it is looking at.
+         *
+         * On 2026-08-30 it paid a 20,880 prize pool to the top nine by
+         * chipstack on the Sunday $200 Deep Stack. That event was at LEVEL 7
+         * of twelve late-registration levels with NINETY players still holding
+         * 2,730,654 chips. Nothing was finishing. Supabase had gone into
+         * RESIZING, the engine died mid-flight, the tournament was left in
+         * COMPLETING, and this function — which runs on EVERY boot, via
+         * `recoverStuckCompletingTournaments('startup-cleanup')` — settled it
+         * on the way back up. The places were chip counts, not results.
+         *
+         * The sibling sweep thirty lines above it in GameServer already knows
+         * how to ask this question ("found recent hands in last hour (still
+         * active) — skipping"). That guard was simply never given to this path.
+         *
+         * WHY THIS TEST AND NOT A TIME-BASED ONE. "Dealt a hand recently" does
+         * not separate the two cases: a tournament that crashes during
+         * finishTournament also dealt its last hand seconds earlier, so any
+         * recency window short enough to catch a live event would also block
+         * the legitimate rescue this function exists to perform. The structural
+         * question has no such overlap — an event at its finish cannot have
+         * more players left than it has places to pay. Ninety survivors against
+         * eighteen paid places is not a close call, and it needs no clock.
+         *
+         * REFUSING IS THE SAFE SIDE. A refusal leaves the tournament in
+         * COMPLETING, which is where it already was; every step below is
+         * idempotent, the next pass retries, and the alert names the numbers so
+         * a human can settle it deliberately. Paying wrongly moves real chips
+         * out of the club to players who did not win them, and today that took
+         * an approved reversal to undo.
+         */
+        const livePlayers = rows.filter((r) => r.status === 'playing').length;
+        const paidPlaces = payouts.length;
+        if (fieldIsStillLive({ livePlayers, paidPlaces })) {
+          reportError(
+            new Error(
+              `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} "${t.name}" ` +
+                `has ${livePlayers} player(s) still playing against ${paidPlaces} paid place(s) - ` +
+                'that is a tournament that was still being PLAYED when its engine died, not one ' +
+                'that was finishing. Refusing to rank it by chipstack and pay the structure; left ' +
+                'in COMPLETING for a live engine to resume or an operator to settle.'
+            ),
+            'GameServer.recoverStuckCompleting_field_still_live'
+          );
+          continue;
+        }
+
+        /**
          * @returns true when this call actually moved chips; false when the
-         *          idempotency key had already paid.
+         *          obligation had already been paid in full.
          *
          * 2026-08-29: the boolean used to be discarded, and that is the whole
-         * of the step-3 defect below. `fn_credit_and_log` returns false when
-         * the key has paid before, which is the ONLY signal distinguishing
-         * "already done" from "just done" -- and step 3 was recording the
-         * second when it had the first.
+         * of the step-3 defect below. "Already done" and "just done" are
+         * different answers, and step 3 was recording the second when it had
+         * the first. The obligation RPC reports `paid` (chips moved by THIS
+         * call), which is that signal.
+         *
+         * ONE SETTLE PATH (2026-09-02). This used to call `fn_credit_and_log`
+         * under the finish path's exact key so the two deduped; it is the path
+         * that produced the phantom ledger rows of 2026-08-22 and, on
+         * 2026-08-30, paid a 20,880 pool to nine chip leaders of an event that
+         * was still being played. Both paths now settle the SAME obligation
+         * row - (tournament, 'place', N) - so the dedupe is a database
+         * constraint and not a shared string.
+         *
+         * A refusal THROWS here, deliberately, unlike the finish path. Every
+         * step below is idempotent and the tournament is already in
+         * COMPLETING; throwing leaves it there for the next pass, whereas
+         * continuing would stamp `prize` on a row that was never paid. The
+         * helper has already raised the critical alert for an escrow_short.
          */
         const credit = async (
           userId: string,
           amount: number,
           desc: string,
-          idempotencyKey: string
+          obligation: { kind: 'place' | 'late_reg_adjustment'; place: number }
         ): Promise<boolean> => {
           if (amount <= 0) return false;
-          // P1 FIX (2026-07-24): idempotency key in the SAME format the main
-          // elimination-prize path uses (`tourney:{id}:prize:place:{position}`)
-          // so this recovery path and the main path dedupe against each other and
-          // repeated recovery scans of a COMPLETING tournament cannot double-pay.
-          // LEDGER-INTEGRITY 2026-08-22: this is the path that produced the
-          // phantom rows. It shares its key with the normal finish path on
-          // purpose, so it credits nothing when that path got there first —
-          // and it used to write a "Tournament prize (recovery)" ledger row
-          // anyway, 0.06s-0.7s after the real one. Both halves now sit under
-          // the one key.
-          const { data, error } = await supabase.rpc('fn_credit_and_log', {
-            p_user_id: userId,
-            p_amount: amount,
-            p_idempotency_key: idempotencyKey,
-            p_category: 'prize',
-            p_description: desc,
-            p_related_entity_id: t.id,
+          const res = await settleTournamentObligation(supabase, {
+            tournamentId: t.id,
+            kind: obligation.kind,
+            place: obligation.place,
+            userId,
+            amount,
+            source: 'engine.recoverStuckCompleting',
+            memo: desc,
           });
-          if (error) throw new Error(`credit failed for ${userId}: ${error.message}`);
-          return data === true;
+          if (!res.ok) {
+            throw new Error(
+              `settle ${obligation.kind} place ${obligation.place} failed for ${userId}: ${res.refused_reason}${res.transport_error ? ` (${res.transport_error})` : ''}`
+            );
+          }
+          return res.paid > 0;
         };
 
         // 2. Rank the still-alive players by chips and pay their places
@@ -553,9 +747,88 @@ export async function recoverStuckCompletingTournaments(
         if (alive.length > 0 && !anyDealtIn) {
           reportError(
             new Error(
-              `[GameServer] recoverStuckCompleting: ${t.id.slice(0, 8)} "${t.name}" — all ${alive.length} surviving entrant(s) are still 'registered', so none of them has been dealt a card in this event. Ranking them by chips would invent a podium. Paying nobody; left COMPLETING for review.`
+              `[GameServer] recoverStuckCompleting: ${t.id.slice(0, 8)} "${t.name}" - all ${alive.length} surviving entrant(s) are still 'registered', so none of them has been dealt a card in this event. Ranking them by chips would invent a podium. Paying nobody; left COMPLETING for review.`
             ),
             'GameServer.recoverStuckCompleting_no_dealt_in_survivor'
+          );
+          continue;
+        }
+
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  NO RESULT WITHOUT A HAND (2026-09-01)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * The guard directly above asks whether any survivor is 'playing' and
+         * reads that as "somebody was dealt a card". It is a proxy for the real
+         * question and it is the wrong one: an event promotes its whole field
+         * to 'playing' the moment it starts, before a card exists. Seven events
+         * between 2026-08-15 and 2026-08-30 were ranked end to end here with
+         * `hand_history` empty and every survivor holding exactly
+         * `starting_chips` - 313 and 326 entrants in two of them - and 775.00
+         * chips were paid against those invented podiums. The full table, and
+         * why `fieldIsStillLive` abstained on a 313-player field, are in
+         * recoveryRankEvidence.ts.
+         *
+         * Two independent tests, because they fail in different weather.
+         *
+         * ONE - THE SORT MUST ACTUALLY SORT. `alive` is ordered by chips and
+         * places are handed out 1..N against that order. If every survivor
+         * holds the same stack to the chip, that order is whatever Postgres
+         * returned, not a result. This costs no query: the chips are already
+         * in `rows`, it is immune to the hand-history prune, and a genuine
+         * crash-at-finish never trips it (one survivor is skipped by design,
+         * and a real finish has a chip leader).
+         *
+         * TWO - AND NO HAND WAS DEALT AT ALL. Stated outright rather than
+         * inferred, for the case where stacks differ for some reason that is
+         * not poker. Bounded to events younger than the horse-only retention
+         * window, because past that an empty `hand_history` means the prune
+         * ran, not that nothing happened.
+         *
+         * REFUSING IS THE SAFE SIDE, exactly as for the two guards above: the
+         * tournament stays COMPLETING, which is where it already was, every
+         * step below is idempotent, the next pass retries, and the alert names
+         * the numbers so a human can settle it deliberately.
+         */
+        if (chipsCannotRank(alive)) {
+          reportError(
+            new Error(
+              `[GameServer] recoverStuckCompleting: ${t.id.slice(0, 8)} "${t.name}" - all ${alive.length} survivor(s) hold an identical stack of ${Math.floor(Number(alive[0]?.chips) || 0)} chips, so ranking them by chips would hand out places in arbitrary order. Paying nobody; left COMPLETING for review.`
+            ),
+            'GameServer.recoverStuckCompleting_chips_cannot_rank'
+          );
+          continue;
+        }
+
+        const { data: anyHand, error: handErr } = await supabase
+          .from('hand_history')
+          .select('id')
+          .eq('tournament_id', t.id)
+          .limit(1)
+          .maybeSingle();
+        // An unreadable hand list is UNKNOWN, and UNKNOWN never authorizes a
+        // payout on this path. Same stance as the player-field read above.
+        if (handErr) {
+          reportError(
+            new Error(
+              `[GameServer] recoverStuckCompleting: ${t.id.slice(0, 8)} "${t.name}" - hand list unreadable (${handErr.message}), so we cannot tell a finished event from one that never dealt. Paying nobody; left COMPLETING.`
+            ),
+            'GameServer.recoverStuckCompleting_hand_evidence_unreadable'
+          );
+          continue;
+        }
+        if (
+          noHandWasEverDealt({
+            startedAt: (t as { started_at?: string | null }).started_at ?? null,
+            anyHandDealt: Boolean(anyHand),
+          })
+        ) {
+          reportError(
+            new Error(
+              `[GameServer] recoverStuckCompleting: ${t.id.slice(0, 8)} "${t.name}" - not one hand was ever dealt in this event, so it has no result to pay. Ranking its ${alive.length} entrant(s) would invent one. Paying nobody; left COMPLETING for review.`
+            ),
+            'GameServer.recoverStuckCompleting_no_hand_ever_dealt'
           );
           continue;
         }
@@ -606,7 +879,7 @@ export async function recoverStuckCompletingTournaments(
         if (collisions.length > 0) {
           reportError(
             new Error(
-              `[GameServer] recoverStuckCompleting: ${t.id.slice(0, 8)} "${t.name}" — ${alive.length} survivor(s) would be given place(s) already held by eliminated players: ${collisions.join(', ')}. Paying nobody; left COMPLETING for review.`
+              `[GameServer] recoverStuckCompleting: ${t.id.slice(0, 8)} "${t.name}" - ${alive.length} survivor(s) would be given place(s) already held by eliminated players: ${collisions.join(', ')}. Paying nobody; left COMPLETING for review.`
             ),
             'GameServer.recoverStuckCompleting_position_collision'
           );
@@ -616,11 +889,13 @@ export async function recoverStuckCompletingTournaments(
         for (let i = 0; i < alive.length; i++) {
           const place = i + 1;
           const prize = prizeFor(place);
+          // The place obligation itself - the SAME row the finish path pays,
+          // so whichever path got there first, the other moves nothing.
           await credit(
             alive[i].user_id,
             prize,
-            `Tournament prize (recovery): position ${place} — ${t.name || 'tournament'}`,
-            `tourney:${t.id}:prize:place:${place}`
+            `Tournament prize (recovery): position ${place} - ${t.name || 'tournament'}`,
+            { kind: 'place', place }
           );
           // PAYOUT-INTEGRITY 2026-08-25: the credit is only half of it. When
           // this UPDATE was discarded, a paid survivor kept status='playing'
@@ -653,48 +928,50 @@ export async function recoverStuckCompletingTournaments(
           if (owed > recorded) {
             const diff = Math.round((owed - recorded) * 100) / 100;
             /**
-             * ── THE TOP-UP NEEDS ITS OWN KEY (2026-08-29) ──────────────────
+             * ── THE TOP-UP IS AN OBLIGATION, NOT A KEY (2026-09-02) ────────
              *
-             * This used `tourney:{id}:prize:place:{N}` -- the SAME key
-             * `eliminatePlayer` already paid this place under. The comment
-             * above says "recorded with a zero prize", but the condition is
-             * `owed > recorded`, so it also fires on a PARTIAL shortfall: the
-             * late-reg pool grew, the place is owed more, and the player has
-             * already had the smaller amount under that key.
+             * History, because it explains the shape. On 2026-08-29 this
+             * used `tourney:{id}:prize:place:{N}` -- the SAME key
+             * `eliminatePlayer` already paid this place under -- so on a
+             * PARTIAL shortfall (the late-reg pool grew, more is owed, the
+             * smaller amount was already paid under that key) the credit
+             * deduped to NOTHING, the boolean was discarded, and the next
+             * statement stamped `prize = owed`: a payment recorded that never
+             * happened. The fix that day was a `prizeadj` key carrying the
+             * AMOUNT, matching `recalculateEliminatedPrizes`.
              *
-             * `fn_credit_and_log` then deduped the credit to NOTHING, the
-             * boolean saying so was discarded, and the very next statement
-             * stamped `prize = owed` -- so tournament_players claimed a
-             * payment that never happened and no later pass would ever look
-             * again. Exposure: the whole late-reg and guarantee growth for
-             * every in-the-money place on every rescued event.
+             * The chip standard (2.2, payer 4) found the other edge of that
+             * blade: an amount in the key means a re-run with a NEW amount is
+             * a NEW payment stacked on the old one, and nothing reconciled the
+             * two. So the amount is out of the key and into the row. The
+             * obligation (tournament, 'late_reg_adjustment', N) is told what
+             * this place is OWED in total; the database raises `amount_owed`
+             * to it and pays only what has not yet been paid. This path and
+             * `recalculateEliminatedPrizes` settle the same row, so they
+             * still dedupe against each other - by constraint now.
              *
-             * `recalculateEliminatedPrizes` had this right all along: a
-             * `prizeadj` namespace carrying the AMOUNT, so a different amount
-             * is a different key and a re-run of the same amount is still
-             * deduped. Same key shape here, deliberately, so the two
-             * adjustment paths also dedupe against each other.
+             * `diff` is kept for the log line and the alert: it is what we
+             * EXPECT to move. What actually moved is `res.paid`, and that is
+             * what `credited` reports.
              *
-             * Step 2 above keeps the shared `prize:place` key on purpose --
-             * there it is paying the place itself and MUST collide with the
-             * main path.
+             * Step 2 above settles the place obligation itself and MUST
+             * collide with the main path; this settles the top-up.
              */
             const credited = await credit(
               r.user_id,
-              diff,
-              `Tournament prize top-up (recovery): position ${r.position} — ${t.name || 'tournament'}`,
-              `tourney:${t.id}:prizeadj:${r.user_id}:${r.position}:${owed}`
+              owed,
+              `Tournament prize top-up (recovery): position ${r.position} - ${t.name || 'tournament'}`,
+              { kind: 'late_reg_adjustment', place: Number(r.position) }
             );
 
             if (!credited) {
-              // The adjustment was already made under this exact key and
-              // amount, so the row is genuinely owed `owed` and the stamp
-              // below is correct. Anything else would be a key collision, and
-              // this key carries the amount, so there is nothing else it can
-              // be.
+              // The adjustment had already been paid in full, so the row is
+              // genuinely owed `owed` and the stamp below is correct. The
+              // obligation row carries what was paid; there is no key
+              // collision left to suspect.
               reportError(
                 new Error(
-                  `[recovery:${t.id.slice(0, 8)}] top-up of ${diff} for place ${r.position} was already credited under its adjustment key; recording the prize only`
+                  `[recovery:${t.id.slice(0, 8)}] top-up of ${diff} for place ${r.position} was already settled on its late_reg_adjustment obligation; recording the prize only`
                 ),
                 'TournamentRecovery.top_up_already_credited'
               );
@@ -729,7 +1006,7 @@ export async function recoverStuckCompletingTournaments(
           if (rakeErr || !rakeRes?.ok) {
             reportError(
               new Error(
-                `[GameServer] recoverStuckCompleting: rake settlement failed for ${t.id.slice(0, 8)}: ${rakeErr?.message || rakeRes?.reason} — sweep will re-drive`
+                `[GameServer] recoverStuckCompleting: rake settlement failed for ${t.id.slice(0, 8)}: ${rakeErr?.message || rakeRes?.reason} - sweep will re-drive`
               ),
               'GameServer.recoverStuckCompleting_rake_settle_failed'
             );

@@ -32,6 +32,7 @@ import {
   STARTING_SOON_WINDOW_MINUTES,
   type FilterableTournament,
 } from '../../utils/tournamentFilters';
+import { SPIN_VARIANT_KEYS, TOURNAMENT_VARIANT_KEYS } from '../../config/tournamentVariants';
 
 export type FilterGameType = 'ALL' | 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MTT' | 'SPIN' | 'SNG';
 
@@ -108,7 +109,7 @@ const CASH_FEATURES: FeatureOption[] = [
      suffix, so the chip never matched the table it names. */
   { key: 'seven_deuce', label: 'Seven-Deuce', match: ['seven_deuce_enabled'] },
   { key: 'time_bank', label: 'Time Bank', match: ['time_bank_enabled'] },
-  { key: 'all_in_or_fold', label: 'All-in or Fold', match: ['all_in_or_fold'] },
+  { key: 'all_in_or_fold', label: 'All-In Or Fold', match: ['all_in_or_fold'] },
 ];
 
 /**
@@ -170,6 +171,59 @@ const CASH_STATUSES = [
   { key: 'open', label: 'Open Seats' },
 ];
 
+/**
+ * ── THE GAMES ROW OF EVERY TOURNAMENT TAB IS DERIVED, NOT TYPED ──────────────
+ *
+ * Dan 2026-08-31, with the Heads Up tab open: "LIMIT POKER NEEDS TO BE ADDED TO
+ * THE GAME VARIATIONS FILTER."
+ *
+ * It could not be added as a chip alone. This file records, three times over,
+ * that a chip whose key nothing can produce EMPTIES THE TAB when it is ticked —
+ * the FLH chip and the "OMAHA High" chip were both deleted for exactly that. So
+ * limit first had to become a game a tournament can BE
+ * (src/config/tournamentVariants), and the chips now come from that same list.
+ *
+ * Deriving them also closed two live instances of the OPPOSITE defect, which
+ * this file also records ("a producible variant with no chip is deleted by the
+ * games filter the moment a player ticks any other chip"):
+ *
+ *   • the Heads Up tab had no PLO8 chip while a PLO8 Sit & Go was creatable;
+ *   • the Spins tab had no PLO8 or Short Deck chip while both were creatable
+ *     from the create-table form. That pair is fixed at the SOURCE instead —
+ *     the spin catalogue is now enforced where spins are authored, so the Spins
+ *     row stays the four games Spin & Go actually sells.
+ *
+ * Adding a variant is now one entry in one map, and the chip follows it.
+ */
+const VARIANT_CHIP_LABELS: Record<string, string> = {
+  nlh: 'NLH',
+  plo4: 'PLO 4c',
+  plo5: 'PLO 5c',
+  plo6: 'PLO 6c',
+  plo8: 'PLO Hi/Lo',
+  short_deck: '6+',
+  pineapple: 'Crazy Pineapple',
+  flh: 'FLH',
+  flo8: 'FLO8',
+};
+
+/* The MTT tab has always said OMAHA where the cash and Sit & Go tabs say PLO.
+   That wording predates this change, so it is preserved as an override rather
+   than quietly normalised by the refactor that derived the row. */
+const MTT_CHIP_LABELS: Record<string, string> = {
+  ...VARIANT_CHIP_LABELS,
+  plo4: 'OMAHA 4c',
+  plo5: 'OMAHA 5c',
+  plo6: 'OMAHA 6c',
+  plo8: 'OMAHA Hi/Lo',
+};
+
+const chipsFor = (
+  keys: readonly string[],
+  labels: Record<string, string> = VARIANT_CHIP_LABELS
+): { key: string; label: string }[] =>
+  keys.map((key) => ({ key, label: labels[key] ?? key.toUpperCase() }));
+
 export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec> = {
   HOLDEM: {
     games: [
@@ -177,7 +231,7 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
       /* Pineapple is a Hold'em-family variant and cashKind routes it here, so
          without a chip of its own every Pineapple table vanished the moment a
          player ticked NLH. Five of them run in production. */
-      { key: 'pineapple', label: 'Pineapple' },
+      { key: 'pineapple', label: 'Crazy Pineapple' },
       // 2026-08-23: the FLH chip used to live here and could never match a
       // single row. ClubHomePage.cashKind() routes every fixed-limit variant to
       // the LIMIT tab, so an FLH table is by construction absent from the
@@ -237,27 +291,17 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
     features: CASH_FEATURES,
   },
   MTT: {
-    games: [
-      { key: 'nlh', label: 'NLH' },
-      { key: 'plo4', label: 'OMAHA 4c' },
-      { key: 'plo5', label: 'OMAHA 5c' },
-      { key: 'plo6', label: 'OMAHA 6c' },
-      { key: 'short_deck', label: '6+' },
-      { key: 'plo8', label: 'OMAHA Hi/Lo' },
-      /* Pineapple has a chip because the census below lists OFC_PINEAPPLE and
-         variantKey now maps it (lobbyEntries.TOURNEY_VARIANT_KEYS). A
-         producible variant with no chip is deleted by the games filter the
-         moment a player ticks any other chip - the same shape as the FLH and
-         'OMAHA High' defects recorded here, in the opposite direction. */
-      { key: 'pineapple', label: 'Pineapple' },
-      /* 'OMAHA High' removed 2026-08-25. `variantKey` can only ever return
-         `plo_high` for an input that is literally that string, and no variant
-         in the database is: game_type across 23,116 tournaments is NLH, PLO4,
-         PLO5, PLO6, PLO8, SHORT_DECK and OFC_PINEAPPLE. Selecting the chip
-         therefore matched zero rows and emptied the MTT tab - the same defect
-         already removed once for the FLH chip above. Plain PLO is covered by
-         the plo4/5/6 chips. */
-    ],
+    /* Every game an MTT can be created as, plus `pineapple` — which is NOT
+       creatable but IS present: one legacy OFC_PINEAPPLE row survives and
+       variantKey maps it (lobbyEntries.TOURNEY_VARIANT_KEYS), so without a chip
+       that event is deleted from the board the moment any other chip is ticked.
+       A chip for something that exists is right even when nothing new can make
+       one; a chip for something that cannot exist is the defect.
+
+       'OMAHA High' was removed here on 2026-08-25 and must not come back:
+       `variantKey` can only ever return `plo_high` for an input literally equal
+       to that string, and no row in the database is. */
+    games: chipsFor([...TOURNAMENT_VARIANT_KEYS, 'pineapple'], MTT_CHIP_LABELS),
     range: BUYIN_RANGE,
     statuses: [
       { key: 'running', label: 'Running' },
@@ -270,12 +314,11 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
     features: MTT_FEATURES,
   },
   SPIN: {
-    games: [
-      { key: 'nlh', label: 'NLH' },
-      { key: 'plo4', label: 'PLO 4c' },
-      { key: 'plo5', label: 'PLO 5c' },
-      { key: 'plo6', label: 'PLO 6c' },
-    ],
+    /* The spin CATALOGUE, not the tournament catalogue: Spin & Go sells four
+       games and the tier table is tuned around them. Derived so that the day a
+       fifth is added to SPIN_GAME_TYPES it appears here, and so that a game the
+       catalogue does not sell can no longer be created without a chip. */
+    games: chipsFor(SPIN_VARIANT_KEYS),
     range: BUYIN_RANGE,
     statuses: CASH_STATUSES,
     // Spins are always three-handed, so the reference screen shows a fixed
@@ -289,13 +332,10 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
       { key: 'sats', label: 'SNG SATS' },
       { key: 'regular', label: 'Regular SNG' },
     ],
-    games: [
-      { key: 'nlh', label: 'NLH' },
-      { key: 'plo4', label: 'PLO 4c' },
-      { key: 'plo5', label: 'PLO 5c' },
-      { key: 'plo6', label: 'PLO 6c' },
-      { key: 'short_deck', label: '6+' },
-    ],
+    /* THE TAB IN DAN'S SCREENSHOT. Same source as MTT, so Heads Up offers
+       every game a Sit & Go can be — which is how FLH and FLO8 arrived, and how
+       the missing PLO Hi/Lo chip was found. */
+    games: chipsFor(TOURNAMENT_VARIANT_KEYS),
     range: BUYIN_RANGE,
     statuses: CASH_STATUSES,
     seats: { min: 2, max: 9 },

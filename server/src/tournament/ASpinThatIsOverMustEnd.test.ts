@@ -92,7 +92,7 @@ describe('it settles, and never cancels', () => {
     expect(SWEEP).toContain("recoverStuckCompletingTournaments('seat-first-finish-sweep', id)");
   });
 
-  it('never writes CANCELLED — tournaments run, they do not cancel', () => {
+  it('never writes CANCELLED - tournaments run, they do not cancel', () => {
     expect(SWEEP).not.toMatch(/CANCELLED/);
   });
 });

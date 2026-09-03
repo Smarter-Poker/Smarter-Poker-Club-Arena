@@ -424,7 +424,7 @@ export default function UnionStatementsPage() {
       <CasinoSurfaceHeader
         eyebrow="Union Network / Finance"
         title="Union Statements"
-        description="Audit every member club for the selected period, including issued, delivered, paid, outstanding, and missing statements."
+        description="Audit Every Member Club For The Selected Period, Including Issued, Delivered, Paid, Outstanding, And Missing Statements."
         artPath="assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp"
         status="STATEMENT BOARD // AUTHORITATIVE"
         metrics={[
@@ -438,7 +438,7 @@ export default function UnionStatementsPage() {
               type="button"
               className={styles.headerBtn}
               onClick={() => navigate(-1)}
-              aria-label="Go back"
+              aria-label="Go Back"
             >
               Back
             </button>
@@ -447,7 +447,7 @@ export default function UnionStatementsPage() {
               className={styles.headerBtn}
               onClick={exportCsv}
               disabled={!board?.clubs?.length}
-              aria-label="Export as CSV"
+              aria-label="Export As CSV"
             >
               Export CSV
             </button>
@@ -461,7 +461,7 @@ export default function UnionStatementsPage() {
       </div>
 
       {board && (board.history?.length ?? 0) > 1 && (
-        <div className={styles.periodChips} role="tablist" aria-label="Statement period">
+        <div className={styles.periodChips} role="tablist" aria-label="Statement Period">
           {(board.history || []).map((h) => (
             <button
               key={h.period_end}
@@ -524,7 +524,7 @@ export default function UnionStatementsPage() {
           <span>Insurance Last 14 Days:</span>
           <span
             className={insurancePnl.totals.net < 0 ? styles.neg : styles.pos}
-            title="Premiums collected minus payouts paid, settled to the union insurance wallet"
+            title="Premiums Collected Minus Payouts Paid, Settled To The Union Insurance Wallet"
           >
             {money(insurancePnl.totals.net)} Net
           </span>
@@ -545,7 +545,7 @@ export default function UnionStatementsPage() {
               }}
               disabled={issuing}
             >
-              {issuing ? 'Issuing...' : 'Yes, issue and deliver'}
+              {issuing ? 'Issuing...' : 'Yes, Issue And Deliver'}
             </button>
             <button
               type="button"
@@ -610,11 +610,11 @@ export default function UnionStatementsPage() {
                     <div className={styles.clubName}>{c.club_name}</div>
                     <div className={styles.clubMeta}>
                       <span className={`${styles.pill} ${pillClass}`}>
-                        {c.status === 'missing' ? 'no statement' : c.overdue ? 'overdue' : c.status}
+                        {c.status === 'missing' ? 'No Statement' : c.overdue ? 'Overdue' : c.status}
                       </span>
                       {c.status !== 'missing' && (
                         <span className={c.message_sent ? styles.deliveredYes : styles.deliveredNo}>
-                          {c.message_sent ? 'delivered' : 'not delivered'}
+                          {c.message_sent ? 'Delivered' : 'Not Delivered'}
                         </span>
                       )}
                       {c.due_at && <span>Due {String(c.due_at).slice(0, 10)}</span>}
@@ -628,10 +628,10 @@ export default function UnionStatementsPage() {
                     </div>
                     <div className={styles.amountLabel}>
                       {c.status === 'missing'
-                        ? 'not billed'
+                        ? 'Not Billed'
                         : c.direction === 'union owes club'
-                          ? 'union owes'
-                          : 'club owes'}
+                          ? 'Union Owes'
+                          : 'Club Owes'}
                     </div>
                   </div>
                 </button>
@@ -644,12 +644,12 @@ export default function UnionStatementsPage() {
                       </div>
                     ) : (
                       [
-                        ['Rake generated', c.rake_generated],
+                        ['Rake Generated', c.rake_generated],
                         ['Club rakeback (90%)', c.rakeback_due],
                         ['Union fee kept (10%)', c.union_fee_kept],
-                        ['Player win/loss', c.players_won],
-                        ['ECO adjustment', c.eco_amount],
-                        ['Payments received', c.presettled],
+                        ['Player Win/Loss', c.players_won],
+                        ['ECO Adjustment', c.eco_amount],
+                        ['Payments Received', c.presettled],
                       ].map(([label, value]) => (
                         <div className={styles.breakdownLine} key={String(label)}>
                           <span>{String(label)}</span>
@@ -677,7 +677,7 @@ export default function UnionStatementsPage() {
                           value={payAmount}
                           onChange={(e) => setPayAmount(e.target.value)}
                           placeholder="Amount Received"
-                          aria-label={`Payment received from ${c.club_name}`}
+                          aria-label={`Payment Received From ${c.club_name}`}
                         />
                         <button
                           type="button"
@@ -722,7 +722,7 @@ export default function UnionStatementsPage() {
                             ? 'Saving...'
                             : c.status === 'paid'
                               ? 'Reopen'
-                              : 'Mark paid'}
+                              : 'Mark Paid'}
                         </button>
                       )}
                     </div>
@@ -740,7 +740,7 @@ export default function UnionStatementsPage() {
             ? ` Read ${new Date(board.generated_at).toLocaleTimeString()}.`
             : ''}
           {totals && totals.missing > 0
-            ? ' A club shown as "no statement" was never billed for this period.'
+            ? ' A Club Shown As "No Statement" Was Never Billed For This Period.'
             : ''}
         </div>
       )}

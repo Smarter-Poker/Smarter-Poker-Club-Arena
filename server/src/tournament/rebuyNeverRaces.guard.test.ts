@@ -49,7 +49,7 @@ describe('a busted player holds an open decision window, and the felt rolls on',
     expect(block).toMatch(/prize_pool_finalized/);
   });
 
-  it('a horse that answered this pass is not deferred — its decision is final', () => {
+  it('a horse that answered this pass is not deferred - its decision is final', () => {
     // Horses decide inside tryTournamentRebuys (their input device); the
     // window is identical for everyone, a horse simply replies immediately.
     expect(ELIM).toMatch(/answered\.has\(b\.user_id\)/);

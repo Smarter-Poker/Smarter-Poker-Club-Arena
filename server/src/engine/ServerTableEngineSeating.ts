@@ -134,9 +134,9 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       this.pendingAddOns.set(userId, livePending + applied);
       // A2: a durable ledger row now exists (written by the RPC in the same
       // transaction as the debit). Make sure the next sweep looks for it.
-      this.pendingAddOnSweepNeeded = true;
+      this.requestPendingAddOnSweep();
       console.log(
-        `[ServerTableEngine:${this.tableId}] Add-on debited + queued for ${userId}: +${applied} (pending ${livePending + applied}) — hand in progress`
+        `[ServerTableEngine:${this.tableId}] Add-on debited + queued for ${userId}: +${applied} (pending ${livePending + applied}) - hand in progress`
       );
       this.broadcastCurrentState();
       return { success: true, queued: true, applied };
@@ -229,6 +229,12 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   protected async processPendingAddOns(players: SeatedPlayer[]): Promise<void> {
     if (!this.pendingAddOnSweepNeeded && this.pendingAddOns.size === 0) return;
 
+    /* CHIP STANDARD C3 (2026-09-02): rows now arrive from outside the engine
+       (the browser's bust rebuy goes straight to atomic_table_rebuy). A sweep
+       request that lands while THIS sweep's read is in flight must survive
+       it, so the flag is only cleared below if the generation is unchanged.
+       See pendingAddOnSweepGen on the base. */
+    const genAtStart = this.pendingAddOnSweepGen;
     const maxBuyIn = this.getMaxBuyIn();
 
     const { data: rows, error: readErr } = await supabase
@@ -244,7 +250,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     }
     if (!rows || rows.length === 0) {
       this.pendingAddOns.clear();
-      this.pendingAddOnSweepNeeded = false;
+      if (this.pendingAddOnSweepGen === genAtStart) this.pendingAddOnSweepNeeded = false;
       return;
     }
 
@@ -284,7 +290,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       console.log(
         `[ServerTableEngine:${this.tableId}] Pending add-on ${row.id} for ${row.user_id}: ` +
           `debited ${row.amount}, applied ${applied}, refunded ${refunded}` +
-          (wasResolvedByUs ? '' : ' (already resolved elsewhere — no-op)')
+          (wasResolvedByUs ? '' : ' (already resolved elsewhere - no-op)')
       );
     }
 
@@ -293,9 +299,9 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     // the next engine start — tries again rather than stranding the money.
     if (unresolved === 0) {
       this.pendingAddOns.clear();
-      this.pendingAddOnSweepNeeded = false;
+      if (this.pendingAddOnSweepGen === genAtStart) this.pendingAddOnSweepNeeded = false;
     } else {
-      this.pendingAddOnSweepNeeded = true;
+      this.requestPendingAddOnSweep();
     }
     if (delivered > 0) this.broadcastCurrentState();
   }
@@ -341,7 +347,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         p_user_id: userId,
         p_amount: amount,
         p_category: 'addon_refund',
-        p_description: 'Add-on exceeded table max buy-in — refunded',
+        p_description: 'Add-on exceeded table max buy-in - refunded',
         p_table_id: this.tableId,
         p_hand_id: null,
         p_related_entity_id: null,
@@ -441,7 +447,19 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    * POST /leave — Player leaves the table. If mid-hand, auto-fold then mark leave_pending.
    * If between hands, mark seat as left immediately.
    */
-  public leaveTable(userId: string): { success: boolean; error?: string; immediate: boolean } {
+  public leaveTable(userId: string): {
+    success: boolean;
+    error?: string;
+    immediate: boolean;
+    /**
+     * CHIP STANDARD C1 (2026-09-02): set ONLY when this engine will not cash
+     * the seat out itself and the browser must (a reserved seat the engine
+     * never loaded). Absent on the between-hands path, where the engine cashes
+     * out after settlement persists the final stack; the browser used to race
+     * that with its own cash-out of the stale pre-hand stack.
+     */
+    clientCashout?: boolean;
+  } {
     // ═══════════════════════════════════════════════════════════════════════
     // NOBODY LEAVES WHILE THEY ARE ALL-IN. CASH OR TOURNAMENT.
     //
@@ -474,7 +492,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     const liveSelf = liveHand?.players.find((p) => p.user_id === userId);
     if (liveSelf?.is_all_in && !liveSelf.is_folded) {
       console.log(
-        `[ServerTableEngine:${this.tableId}] refusing leave for ${userId} — all-in in a live hand`
+        `[ServerTableEngine:${this.tableId}] refusing leave for ${userId} - all-in in a live hand`
       );
       return {
         success: false,
@@ -496,9 +514,9 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       // success + immediate so the client proceeds with atomic DB cashout,
       // exactly like the engine-not-running branch of the /leave handler.
       console.log(
-        `[ServerTableEngine:${this.tableId}] leave for ${userId}: not in hand roster (reserved/waiting) — acking, client handles DB cleanup`
+        `[ServerTableEngine:${this.tableId}] leave for ${userId}: not in hand roster (reserved/waiting) - acking, client handles DB cleanup`
       );
-      return { success: true, immediate: true };
+      return { success: true, immediate: true, clientCashout: true };
     }
 
     if (this.isTournamentTable()) {
@@ -606,7 +624,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         if (!folded) {
           this.preActionEngine.setPreAction(this.tableId, userId, 'auto_fold');
           console.log(
-            `[ServerTableEngine:${this.tableId}] Player ${userId} left out of turn — auto_fold queued`
+            `[ServerTableEngine:${this.tableId}] Player ${userId} left out of turn - auto_fold queued`
           );
         }
       }
@@ -706,7 +724,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     if (this.tableFSM.state === 'paused') {
       this.tableFSM.transition('running');
     }
-    console.log(`[ServerTableEngine:${this.tableId}] Admin resume — dealing will continue`);
+    console.log(`[ServerTableEngine:${this.tableId}] Admin resume - dealing will continue`);
     // Phase X5 (2026-04-29) — Bible V8 §1.16 table_resumed discrete event.
     this.hub?.emitEvent(this.tableId, {
       type: 'table_resumed',
@@ -797,7 +815,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     ) {
       this.mustPostBB.add(userId);
       console.log(
-        `[ServerTableEngine:${this.tableId}] tournament arrival ${userId} took the seat the big blind just passed — owes one big blind`
+        `[ServerTableEngine:${this.tableId}] tournament arrival ${userId} took the seat the big blind just passed - owes one big blind`
       );
     }
   }

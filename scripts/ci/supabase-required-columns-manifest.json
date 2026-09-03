@@ -113,11 +113,6 @@
       "id",
       "source"
     ],
-    "avatar_photo_migration_backup": [
-      "user_id",
-      "old_avatar_url",
-      "new_avatar_url"
-    ],
     "avatar_shop_aliases": [
       "alias",
       "avatar_id"
@@ -291,12 +286,35 @@
     "bus_event_log": [
       "event_type"
     ],
+    "ca_alarm_drills": [
+      "pass",
+      "results"
+    ],
+    "ca_browser_definer_allowlist": [
+      "proname",
+      "reason"
+    ],
+    "ca_cert_accounts": [
+      "user_id",
+      "reason"
+    ],
     "ca_chip_baseline": [
       "club_id",
       "user_id",
       "opening_balance",
       "ledger_at_baseline",
       "unledgered_gap"
+    ],
+    "ca_club_data_export_rows": [
+      "export_id",
+      "ordinal",
+      "payload"
+    ],
+    "ca_club_data_exports": [
+      "user_id",
+      "club_id",
+      "request_id",
+      "kind"
     ],
     "ca_club_player_daily": [
       "club_id",
@@ -314,9 +332,66 @@
       "user_id",
       "stat_date"
     ],
+    "ca_collusion_signals": [
+      "window_days",
+      "user_a",
+      "user_b",
+      "hands_together",
+      "gross_flow",
+      "net_flow",
+      "direction_ratio",
+      "both_cert"
+    ],
+    "ca_ddl_events": [
+      "command_tag"
+    ],
+    "ca_diamond_snapshots": [
+      "profile_diamonds",
+      "wallet_diamonds",
+      "cert_diamonds",
+      "total"
+    ],
+    "ca_drift_incidents": [
+      "source",
+      "dedupe_key"
+    ],
+    "ca_dropped_index_ledger": [
+      "index_name",
+      "table_name",
+      "ddl",
+      "size_bytes",
+      "covered_by",
+      "coverer_scans",
+      "reason"
+    ],
+    "ca_engine_deploy_attempts": [
+      "target_sha",
+      "shipped"
+    ],
+    "ca_financial_epochs": [
+      "name"
+    ],
     "ca_frozen_pool_baseline": [
       "pool",
       "frozen_total"
+    ],
+    "ca_gate_runs": [
+      "pass",
+      "window_hours",
+      "result"
+    ],
+    "ca_guard_def_history": [
+      "proname",
+      "def_hash",
+      "def_text"
+    ],
+    "ca_guard_defs": [
+      "proname",
+      "def_hash"
+    ],
+    "ca_guard_inventory": [
+      "kind",
+      "object_a"
     ],
     "ca_hand_facts": [
       "hand_id",
@@ -332,6 +407,9 @@
       "net_bb",
       "ev_net",
       "ev_net_bb"
+    ],
+    "ca_hand_financial_facts": [
+      "hand_id"
     ],
     "ca_hand_player_idx": [
       "user_id",
@@ -376,16 +454,113 @@
       "amount",
       "played_at"
     ],
+    "ca_incident_events": [
+      "incident_id",
+      "kind"
+    ],
+    "ca_incident_notify_ledger": [
+      "recipient_id",
+      "finding_key",
+      "state_hash"
+    ],
+    "ca_incident_recipients": [
+      "user_id"
+    ],
+    "ca_ledger_accounts": [
+      "account_type",
+      "side",
+      "backing"
+    ],
+    "ca_ledger_day_manifests": [
+      "day",
+      "row_count",
+      "net_amount",
+      "sha256"
+    ],
+    "ca_ledger_mutation_log": [
+      "source_table",
+      "operation",
+      "db_role",
+      "reason",
+      "old_row"
+    ],
+    "ca_money_rpc_registry": [
+      "proname"
+    ],
+    "ca_op_claims": [
+      "op_id",
+      "fn_name"
+    ],
+    "ca_pending_promo_accruals": [
+      "club_id",
+      "user_id",
+      "wagered"
+    ],
+    "ca_pgrst_reload_log": [
+      "ddl_events",
+      "reason"
+    ],
+    "ca_rake_schedule": [
+      "sb",
+      "bb",
+      "rake_percent",
+      "rake_cap",
+      "bbj_fee_bb"
+    ],
+    "ca_rake_tier": [
+      "label",
+      "min_bb",
+      "rake_percent",
+      "rake_cap",
+      "bbj_fee_bb"
+    ],
+    "ca_ratchet_baselines": [
+      "ratchet",
+      "baseline"
+    ],
     "ca_seat_stack_exits": [
       "table_id",
       "user_id",
       "stack",
       "exit_kind"
     ],
+    "ca_settlements": [
+      "settlement_type",
+      "external_ref"
+    ],
     "ca_stat_distribution": [
       "cohort",
       "metric",
       "sample_size"
+    ],
+    "ca_supply_breach_ack": [
+      "snapshot_id",
+      "acknowledged_by",
+      "reason"
+    ],
+    "ca_supply_snapshot_classifications": [
+      "snapshot_id",
+      "original_unexplained",
+      "classification"
+    ],
+    "ca_supply_snapshots": [
+      "member_wallets",
+      "member_promo",
+      "felt",
+      "treasuries",
+      "chip_pools",
+      "club_wallets",
+      "union_wallets",
+      "agent_wallets",
+      "bbj_pools",
+      "spin_pools",
+      "total"
+    ],
+    "ca_tournament_conservation_samples": [
+      "tournament_id",
+      "drift",
+      "hands_dealt",
+      "players"
     ],
     "ca_treasury_baseline": [
       "club_id",
@@ -532,6 +707,13 @@
     "club_entry_feature_flags": [
       "key"
     ],
+    "club_financial_quarantine": [
+      "source_table",
+      "source_id",
+      "club_id",
+      "reason",
+      "row_data"
+    ],
     "club_financial_summary": [
       "club_id",
       "period_start",
@@ -569,11 +751,6 @@
       "user_id",
       "stat_date"
     ],
-    "club_member_daily_stats_profit_backup_20260826": [
-      "club_id",
-      "user_id",
-      "stat_date"
-    ],
     "club_member_table_state": [
       "table_id",
       "user_id",
@@ -582,6 +759,25 @@
     "club_members": [
       "club_id",
       "user_id"
+    ],
+    "club_opening_setup_funding": [
+      "club_id",
+      "operation_id",
+      "destination",
+      "amount",
+      "balance_after",
+      "created_by"
+    ],
+    "club_opening_setups": [
+      "club_id",
+      "owner_id",
+      "rake_mode",
+      "rake_percent",
+      "rake_cap_bb",
+      "bbj_enabled",
+      "spins_enabled",
+      "promo_enabled",
+      "last_operation_id"
     ],
     "club_profit_reconcile_log": [
       "stat_date",
@@ -663,10 +859,6 @@
       "actor_type",
       "action",
       "action_category"
-    ],
-    "commander_blind_structure_backup_20260822": [
-      "tournament_id",
-      "blind_structure"
     ],
     "commander_buyin_transactions": [
       "session_id"
@@ -1057,21 +1249,12 @@
     "commander_waitlist_groups": [
       "game_type"
     ],
-    "commission_history": [
-      "club_id",
-      "agent_id",
-      "period_start"
-    ],
     "commission_rate_audit": [
       "agent_id",
       "changed_by",
       "old_rate",
       "new_rate",
       "rate_type"
-    ],
-    "commission_records": [
-      "period_id",
-      "agent_id"
     ],
     "content_authors": [
       "name",
@@ -1159,10 +1342,32 @@
     "daily_challenge_dashboard_revisions": [
       "user_id"
     ],
+    "daily_challenge_event_outbox": [
+      "user_id",
+      "event_key",
+      "amounts",
+      "occurred_at"
+    ],
+    "daily_challenge_milestone_claims": [
+      "user_id",
+      "streak_started_on",
+      "milestone_days",
+      "reward_chips"
+    ],
     "daily_challenge_milestones": [
       "days",
       "reward_chips",
       "label"
+    ],
+    "daily_challenge_progress_events": [
+      "user_id",
+      "event_key",
+      "amounts",
+      "occurred_at"
+    ],
+    "daily_mission_operations": [
+      "user_id",
+      "event"
     ],
     "daily_spins": [
       "user_id",
@@ -1191,6 +1396,13 @@
       "user_id",
       "category",
       "file_url"
+    ],
+    "deep_stack_delete_attempts": [
+      "source_table",
+      "allowed",
+      "db_user",
+      "db_role",
+      "old_row"
     ],
     "deploy_alerts": [
       "alert_key",
@@ -1256,6 +1468,14 @@
     ],
     "engine_leader": [
       "instance_id"
+    ],
+    "engine_maintenance_break": [
+      "phase"
+    ],
+    "engine_maintenance_thaws": [
+      "freeze_started_at",
+      "frozen_seconds",
+      "shifted"
     ],
     "engine_recovery_events": [
       "event"
@@ -1350,6 +1570,9 @@
       "bravo_slug",
       "venue_name",
       "game_type"
+    ],
+    "game_management_events": [
+      "event_type"
     ],
     "game_registry": [
       "title",
@@ -1471,6 +1694,13 @@
       "player_action",
       "classification"
     ],
+    "hand_discards": [
+      "table_id",
+      "hand_number",
+      "user_id",
+      "seat_number",
+      "discarded_card"
+    ],
     "hand_histories": [
       "id",
       "table_id",
@@ -1508,11 +1738,6 @@
     ],
     "horse_analytics": [
       "metric_type"
-    ],
-    "horse_avatar_swap_backup": [
-      "user_id",
-      "old_avatar_url",
-      "new_avatar_url"
     ],
     "horse_brain_telemetry": [
       "day",
@@ -1676,6 +1901,28 @@
       "event_type",
       "source"
     ],
+    "leaderboard_payout_batches": [
+      "club_id",
+      "period",
+      "period_start",
+      "period_end",
+      "metric",
+      "program_id",
+      "program_version",
+      "program_hash",
+      "funding_owner_type",
+      "total_paid",
+      "seed_funded",
+      "promo_funded",
+      "overlay_funded",
+      "winner_count"
+    ],
+    "leaderboard_payout_failures": [
+      "club_id",
+      "period",
+      "period_start",
+      "error_message"
+    ],
     "leaderboard_payouts": [
       "club_id",
       "period",
@@ -1809,6 +2056,34 @@
       "reward_type",
       "amount",
       "weight"
+    ],
+    "managed_game_command_receipts": [
+      "command_id",
+      "actor_id",
+      "game_kind",
+      "game_id",
+      "command_action",
+      "expected_version",
+      "request_hash",
+      "status"
+    ],
+    "managed_game_contract_versions": [
+      "game_kind",
+      "game_id",
+      "club_id",
+      "version",
+      "contract",
+      "contract_hash"
+    ],
+    "managed_game_schedules": [
+      "actor_id",
+      "game_kind",
+      "game_id",
+      "expected_version",
+      "execute_at"
+    ],
+    "member_fee_lifetime": [
+      "user_id"
     ],
     "member_fee_rollup": [
       "user_id",
@@ -1989,6 +2264,9 @@
     "orders": [
       "user_id"
     ],
+    "pa_leak_audit_jobs": [
+      "user_id"
+    ],
     "page_activity": [
       "page_type",
       "page_id",
@@ -2057,6 +2335,11 @@
       "player_id",
       "name",
       "archetype"
+    ],
+    "pgrst_reload_watchdog_log": [
+      "breach_count",
+      "warn_count",
+      "result"
     ],
     "phase22_remediation_playbook": [
       "priority",
@@ -2368,6 +2651,10 @@
       "bucket_key",
       "window_start"
     ],
+    "rate_limits": [
+      "user_id",
+      "action"
+    ],
     "raw_games": [
       "game_pk",
       "official_date",
@@ -2641,9 +2928,6 @@
       "author_id",
       "content"
     ],
-    "social_posts_thumbnail_backup_20260815": [
-      "post_id"
-    ],
     "social_reels": [
       "author_id",
       "video_url"
@@ -2699,6 +2983,10 @@
       "kind",
       "amount",
       "balance_after"
+    ],
+    "spin_tier_spec": [
+      "multiplier",
+      "freq"
     ],
     "spin_tournaments": [
       "club_id",
@@ -2996,6 +3284,14 @@
     "tournament_players": [
       "tournament_id",
       "user_id"
+    ],
+    "tournament_players_position_repair_20260901": [
+      "tournament_id",
+      "user_id",
+      "new_position",
+      "place_worth",
+      "already_paid",
+      "top_up"
     ],
     "tournament_rake_settlements": [
       "tournament_id"
@@ -3681,9 +3977,6 @@
       "description",
       "bluff_frequency"
     ],
-    "vip_backfill_20260812_backup": [
-      "user_id"
-    ],
     "vip_diamond_purchase_requests": [
       "reference_id",
       "user_id",
@@ -3761,11 +4054,6 @@
       "type",
       "category"
     ],
-    "wallet_transactions_phantom_archive": [
-      "id",
-      "reason",
-      "row"
-    ],
     "wallets": [
       "user_id",
       "wallet_type"
@@ -3778,15 +4066,6 @@
     ],
     "youtube_embed_failures": [
       "video_id"
-    ],
-    "zz_reopen2_20260830_backup": [
-      "table_id"
-    ],
-    "zz_reopen3_20260830_backup": [
-      "table_id"
-    ],
-    "zz_reopen_20260830_backup": [
-      "table_id"
     ]
   }
 }

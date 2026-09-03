@@ -10,8 +10,9 @@ export interface StatsScopeContract {
 export interface StatsQualityContract {
   cash_money_source: 'exact_settlement' | 'reconstructed_actions' | 'mixed';
   cash_money_exact: boolean;
-  advanced_facts_source: 'ca_hand_facts';
+  advanced_facts_source: 'ca_hand_facts' | 'ca_hand_player_stat';
   historical_club_breakdown_available: boolean;
+  live_tail_included: boolean;
 }
 
 export interface StatsCoverageContract {
@@ -20,10 +21,13 @@ export interface StatsCoverageContract {
   lifetime_index_complete: boolean;
   first_hand_at: string | null;
   last_hand_at: string | null;
+  rollup_covered_through: string | null;
+  rollup_updated_at: string | null;
 }
 
 export interface StatsContractMetadata {
-  contract_version: typeof STATS_CONTRACT_VERSION;
+  contract_version: typeof STATS_CONTRACT_VERSION | null;
+  valid: boolean;
   generated_at: string | null;
   scope: StatsScopeContract;
   quality: StatsQualityContract;
@@ -104,8 +108,15 @@ export const STATS_METRIC_DEFINITIONS: Readonly<Record<string, StatsMetricDefini
 };
 
 const finite = (value: unknown, fallback = 0): number => {
+  if (value == null || value === '') return fallback;
   const parsed = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const nullableFinite = (value: unknown): number | null => {
+  if (value == null || value === '') return null;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 };
 
 const isoOrNull = (value: unknown): string | null => {
@@ -120,12 +131,21 @@ export function normalizeStatsContractMetadata(data: unknown): StatsContractMeta
   const coverage = raw.coverage && typeof raw.coverage === 'object' ? raw.coverage : {};
 
   return {
-    contract_version: STATS_CONTRACT_VERSION,
+    contract_version:
+      raw.contract_version === STATS_CONTRACT_VERSION ? STATS_CONTRACT_VERSION : null,
+    valid:
+      raw.contract_version === STATS_CONTRACT_VERSION &&
+      raw.scope != null &&
+      typeof raw.scope === 'object' &&
+      raw.quality != null &&
+      typeof raw.quality === 'object' &&
+      raw.coverage != null &&
+      typeof raw.coverage === 'object',
     generated_at: isoOrNull(raw.generated_at),
     scope: {
       target_user_id: typeof scope.target_user_id === 'string' ? scope.target_user_id : null,
       club_id: typeof scope.club_id === 'string' ? scope.club_id : null,
-      range_days: scope.range_days == null ? null : finite(scope.range_days),
+      range_days: nullableFinite(scope.range_days),
       visibility: scope.visibility === 'shared_club' ? 'shared_club' : 'owner',
     },
     quality: {
@@ -134,8 +154,12 @@ export function normalizeStatsContractMetadata(data: unknown): StatsContractMeta
           ? quality.cash_money_source
           : 'reconstructed_actions',
       cash_money_exact: quality.cash_money_exact === true,
-      advanced_facts_source: 'ca_hand_facts',
+      advanced_facts_source:
+        quality.advanced_facts_source === 'ca_hand_player_stat'
+          ? 'ca_hand_player_stat'
+          : 'ca_hand_facts',
       historical_club_breakdown_available: quality.historical_club_breakdown_available === true,
+      live_tail_included: quality.live_tail_included === true,
     },
     coverage: {
       analysis_hand_cap: finite(coverage.analysis_hand_cap, 750),
@@ -143,6 +167,8 @@ export function normalizeStatsContractMetadata(data: unknown): StatsContractMeta
       lifetime_index_complete: coverage.lifetime_index_complete === true,
       first_hand_at: isoOrNull(coverage.first_hand_at),
       last_hand_at: isoOrNull(coverage.last_hand_at),
+      rollup_covered_through: isoOrNull(coverage.rollup_covered_through),
+      rollup_updated_at: isoOrNull(coverage.rollup_updated_at),
     },
   };
 }

@@ -215,6 +215,16 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
       FAIL=1
     fi
   fi
+  # A commit carrying [skip ci] starts NO workflow run, so the bundle is never
+  # built and production keeps serving the previous one with nothing red
+  # anywhere. Every other net in the estate RECOVERS from that; this one
+  # prevents it. Real precedent: 454fa1da4.
+  if [ -f scripts/ci/check-no-skip-markers.mjs ]; then
+    if ! node scripts/ci/check-no-skip-markers.mjs; then
+      echo "[club-arena pre-push] BLOCKED: a commit would suppress its own publish"
+      FAIL=1
+    fi
+  fi
   # A SECURITY DEFINER function that writes and that a browser can call must
   # consult the request. Nineteen did not on 2026-08-27; one let any member
   # rewrite a club's member_count, another pays chips. Scoped to the migrations
@@ -380,6 +390,15 @@ if [ -f scripts/ci/check-title-case.mjs ]; then
   fi
 fi
 
+# The third surface of the same rule: text painted from a string ATTRIBUTE or
+# from a string literal inside a JSX EXPRESSION. Autofix:
+#   node scripts/ci/check-painted-text-case.mjs --fix
+if [ -f scripts/ci/check-painted-text-case.mjs ]; then
+  if ! node scripts/ci/check-painted-text-case.mjs; then
+    FAIL=1
+  fi
+fi
+
 # The other half of the same rule. check-title-case.mjs inspects JsxText only
 # and states in its own header that expression values "are cased at their
 # source" - a promise nothing enforced. Every navigation surface renders its
@@ -431,7 +450,7 @@ fi
 #     that the same commit's feature had just replaced.
 #
 # Each one blocked EVERY agent and every deploy until a human noticed, because
-# `npx vitest run tests/` in build-for-world-hub.yml is what publishes the
+# `npx vitest run tests/` in publish-club-arena.yml is what publishes the
 # bundle. This hook already enforces nine house rules about the CONTENT of a
 # push and never once ran the tests.
 #
@@ -585,6 +604,32 @@ if [ "$CA_TESTS_ON" = "1" ] && [ -f package.json ] && [ -x "$VITEST" ]; then
       echo "                      Leaving it red blocks every deploy until"
       echo "                      somebody else finds it."
       FAIL=1
+    fi
+
+    # THE PINS (2026-09-02). `vitest related` follows IMPORTS. A source pin
+    # does not import the file it pins - it readFileSync()s it - so `related`
+    # has never once run a pin for the file it reads. 96 files under tests/
+    # read server/src/** that way. #2695 changed isPausedByDesign() in
+    # ServerTableEngineBase.ts, this hook ran `related` on it, found nothing,
+    # let it through, and tests/unit/tournamentRakeAndBreaks.test.ts went red
+    # on main. Run every test under tests/ that names a changed file, too.
+    PINNED=""
+    for f in $CHANGED_SRC; do
+      base=$(basename "$f")
+      for t in $(grep -rl --include='*.test.ts' --include='*.test.tsx' -F "$base" tests/ 2>/dev/null); do
+        case " $PINNED $CHANGED_TESTS " in *" $t "*) ;; *) PINNED="$PINNED $t" ;; esac
+      done
+    done
+    if [ -n "$PINNED" ]; then
+      echo "[club-arena pre-push] running the pins that READ a file you changed..."
+      if ! "$VITEST" run $PINNED; then
+        echo ""
+        echo "[club-arena pre-push] BLOCKED: a test that reads a file you changed is red."
+        echo "                      It pins the source text. If you deliberately"
+        echo "                      changed what it pins, move the pin in this"
+        echo "                      same commit - never leave it for the merge."
+        FAIL=1
+      fi
     fi
   fi
 fi

@@ -143,10 +143,10 @@ const s01: SimViewState = {
 export const scenario01: Scenario = {
   id: 'scenario-01',
   name: '01 - Normal hand (baseline)',
-  description: '4 players, limp preflop, bet/fold turn. Sanity check for the sim itself.',
+  description: '4 Players, Limp Preflop, Bet/Fold Turn. Sanity Check For The Sim Itself.',
   steps: [
     {
-      label: 'Hand started - blinds posted, hole cards dealt',
+      label: 'Hand Started - Blinds Posted, Hole Cards Dealt',
       event: 'HAND_STARTED',
       state: cloneState(s01, {
         players: [
@@ -161,7 +161,7 @@ export const scenario01: Scenario = {
       expect: 'Pot shows 3. SB (seat 2) chip in front = 1. BB (seat 3) chip in front = 2.',
     },
     {
-      label: 'UTG (seat 4) calls 2',
+      label: 'UTG (Seat 4) Calls 2',
       event: 'PLAYER_ACTION',
       state: cloneState(s01, {
         players: [
@@ -179,7 +179,7 @@ export const scenario01: Scenario = {
       }),
     },
     {
-      label: 'BTN (seat 1) calls 2',
+      label: 'BTN (Seat 1) Calls 2',
       event: 'PLAYER_ACTION',
       state: cloneState(s01, {
         players: [
@@ -199,7 +199,7 @@ export const scenario01: Scenario = {
       }),
     },
     {
-      label: 'SB (seat 2) completes - calls 1 more',
+      label: 'SB (Seat 2) Completes - Calls 1 More',
       event: 'PLAYER_ACTION',
       state: cloneState(s01, {
         players: [
@@ -217,7 +217,7 @@ export const scenario01: Scenario = {
       }),
     },
     {
-      label: 'BB (hero seat 3) checks',
+      label: 'BB (Hero Seat 3) Checks',
       event: 'PLAYER_ACTION',
       state: cloneState(s01, {
         pot: 8,
@@ -227,7 +227,7 @@ export const scenario01: Scenario = {
       }),
     },
     {
-      label: 'Flop dealt - chips collected into pot',
+      label: 'Flop Dealt - Chips Collected Into Pot',
       event: 'COMMUNITY_CARDS_DEALT',
       state: cloneState(s01, {
         boardStage: 'flop',
@@ -241,7 +241,7 @@ export const scenario01: Scenario = {
       expect: 'Board shows 3 cards. All per-seat chip stacks cleared. Pot = 8.',
     },
     {
-      label: 'SB (seat 2) bets 5',
+      label: 'SB (Seat 2) Bets 5',
       event: 'PLAYER_ACTION',
       state: cloneState(s01, {
         boardStage: 'flop',
@@ -273,10 +273,10 @@ export const scenario02: Scenario = {
   name: '02 - BUG 029: turn bet clears on river',
   bug: 'BUG 029',
   description:
-    'Seat 1 bets 20 on turn, seat 2 calls. River is dealt. The bet-chip in front of both seats MUST disappear. Before the mapEngineSnapshot street-filter fix, those chips persisted.',
+    'Seat 1 Bets 20 On Turn, Seat 2 Calls. River Is Dealt. The Bet-Chip In Front Of Both Seats MUST Disappear. Before The MapEngineSnapshot Street-Filter Fix, Those Chips Persisted.',
   steps: [
     {
-      label: 'State at end of turn - seat1 bet 20, seat2 called',
+      label: 'State At End Of Turn - Seat1 Bet 20, Seat2 Called',
       event: 'PLAYER_ACTION',
       state: {
         handNumber: 7,
@@ -306,7 +306,7 @@ export const scenario02: Scenario = {
       expect: 'Both seats show bet-20 chip in front. Pot = 48.',
     },
     {
-      label: 'River dealt - street advanced (BUG 029: chips must clear)',
+      label: 'River Dealt - Street Advanced (BUG 029: Chips Must Clear)',
       event: 'COMMUNITY_CARDS_DEALT',
       state: {
         handNumber: 7,
@@ -355,10 +355,10 @@ export const scenario03: Scenario = {
   name: '03 - BUG 030: "Three of a Kind" cleared on new hand',
   bug: 'BUG 030',
   description:
-    'Previous hand ended with Lockdown winning with Three of a Kind. Next hand starts in under 3 seconds. The floating "Three of a Kind" label MUST be gone before the next hand renders its pot and hole cards.',
+    'Previous Hand Ended With Lockdown Winning With Three Of A Kind. Next Hand Starts In Under 3 Seconds. The Floating "Three Of A Kind" Label MUST Be Gone Before The Next Hand Renders Its Pot And Hole Cards.',
   steps: [
     {
-      label: 'Hand #7 complete - Lockdown wins with Three of a Kind',
+      label: 'Hand #7 Complete - Lockdown Wins With Three Of A Kind',
       event: 'HAND_COMPLETE',
       state: {
         handNumber: 7,
@@ -395,7 +395,7 @@ export const scenario03: Scenario = {
         '"Three of a Kind" hand-strength label visible in center of board. Lockdown (seat 4) highlighted.',
     },
     {
-      label: 'Hand #8 starts < 3s later - stale label MUST be gone',
+      label: 'Hand #8 Starts < 3s Later - Stale Label MUST Be Gone',
       event: 'HAND_STARTED',
       state: {
         handNumber: 8,
@@ -438,10 +438,10 @@ export const scenario04: Scenario = {
   name: '04 - BUG 031: blinds-to-pot atomicity',
   bug: 'BUG 031',
   description:
-    'User reported: SB/BB taken from stacks but pot showed 0. Snapshot must be atomic - the SB + BB amounts must be in pot in the SAME tick that shows the stacks reduced.',
+    'User Reported: SB/BB Taken From Stacks But Pot Showed 0. Snapshot Must Be Atomic - The SB + BB Amounts Must Be In Pot In The SAME Tick That Shows The Stacks Reduced.',
   steps: [
     {
-      label: 'Hand start - pre-blinds (freshly dealt)',
+      label: 'Hand Start - Pre-Blinds (Freshly Dealt)',
       event: 'HAND_STARTED',
       state: {
         handNumber: 10,
@@ -470,7 +470,7 @@ export const scenario04: Scenario = {
       },
     },
     {
-      label: 'Blinds posted - stacks AND pot both update atomically',
+      label: 'Blinds Posted - Stacks AND Pot Both Update Atomically',
       event: 'BLINDS_POSTED',
       state: {
         handNumber: 10,
@@ -572,36 +572,36 @@ export const scenario05: Scenario = {
   id: 'villain-fan',
   name: 'Villain Fan - 2/4/5/6 Cards',
   description:
-    'Unified villain fan at every hand size. Every villain shows one tucked, outward-mirrored fan; only the card count changes between steps. Then a showdown reveal (grows in place) and a fold (fan removed, no pod reflow).',
+    'Unified Villain Fan At Every Hand Size. Every Villain Shows One Tucked, Outward-Mirrored Fan; Only The Card Count Changes Between Steps. Then A Showdown Reveal (Grows In Place) And A Fold (Fan Removed, No Pod Reflow).',
   steps: [
     {
-      label: 'NLH - every villain fans 2 cards',
+      label: 'NLH - Every Villain Fans 2 Cards',
       event: 'HOLE_CARDS_DEALT',
       state: cloneState(FAN_BASE, { players: fanPlayers(2) }),
       expect:
         'Left-half seats fan left, right-half fan right, innermost card tucked under the avatar.',
     },
     {
-      label: 'PLO4 - every villain fans 4 cards',
+      label: 'PLO4 - Every Villain Fans 4 Cards',
       event: 'HOLE_CARDS_DEALT',
       state: cloneState(FAN_BASE, { players: fanPlayers(4) }),
       expect:
         'Four countable card edges per fan; fan no wider than the 2-card fan by more than ~50%.',
     },
     {
-      label: 'PLO5 - every villain fans 5 cards',
+      label: 'PLO5 - Every Villain Fans 5 Cards',
       event: 'HOLE_CARDS_DEALT',
       state: cloneState(FAN_BASE, { players: fanPlayers(5) }),
       expect: 'Five countable edges; hero hand shows the held-hand arc.',
     },
     {
-      label: 'PLO6 - every villain fans 6 cards',
+      label: 'PLO6 - Every Villain Fans 6 Cards',
       event: 'HOLE_CARDS_DEALT',
       state: cloneState(FAN_BASE, { players: fanPlayers(6) }),
       expect: 'Six countable edges at every seat; no fan crosses the rail or the betting lane.',
     },
     {
-      label: 'Showdown - seat 4 reveals a 6-card hand',
+      label: 'Showdown - Seat 4 Reveals A 6-Card Hand',
       event: 'SHOWDOWN',
       state: cloneState(FAN_BASE, {
         boardStage: 'showdown',
@@ -626,7 +626,7 @@ export const scenario05: Scenario = {
         'Revealed fan flips in place at the same anchor, 1.25x with a wider step, above the nameplate.',
     },
     {
-      label: 'Fold - seats 2 and 5 fold, fans removed',
+      label: 'Fold - Seats 2 And 5 Fold, Fans Removed',
       event: 'PLAYER_ACTION',
       state: cloneState(FAN_BASE, {
         players: fanPlayers(6).map((pl, i) =>

@@ -25,10 +25,33 @@ import {
   spinBlindsForLevel,
 } from '../config/spinSpec.js';
 import { reportError } from '../services/errorReporter.js';
-import { clampSeatsForVariant } from '../config/tableSeating.js';
+/**
+ * THE TOURNAMENT CEILING IS THE DECK, NOT THE CASH SEAT LAW (2026-08-31).
+ *
+ * This line used to import `clampSeatsForVariant` from
+ * `../config/tableSeating.js`. That module's own header says CASH GAMES ONLY —
+ * "Nothing here may be applied to a table with a tournament_id" — and the
+ * client copy carries Dan verbatim: "WHAT I GAVE YOU WAS FOR CASH GAMES ONLY,
+ * YOU CAN NOT RUN IT TWO OR THREE TIMES IN A TOURNAMENT". The cash cap is
+ * deliberately TIGHTER than the deck so Run It Twice still has three boards to
+ * come out of (PLO6 dies at 7 seats: 52 - 6n >= 15 means n <= 6). Run It Twice
+ * is hard-disabled on a tournament table — ServerTableEngineBase, `ritIsTournament`
+ * forces `ritEnabled` false — so a tournament was paying that seat for a board
+ * it can never be dealt.
+ *
+ * REUSED, not copied. `maxSeatsFor` is floor((deck - 5) / holeCards), which
+ * already exists in exactly two places: here, and `maxSeatsTheDeckAllows` in
+ * src/config/tableSeating.ts, which the browser bundle needs because it cannot
+ * import from server/. A third copy of the formula would be a third thing to
+ * keep in step; importing the engine's own module keeps the number the deal
+ * path uses and the number the seating path uses the same by construction.
+ */
+import { maxSeatsFor as maxSeatsTheDeckAllows } from '../engine/VariantRules.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { refundAndCloseCancelledTournament } from './tournamentRecovery.js';
 import { acceleratedLevelMs } from './acceleratedLevels.js';
+import { spinRevealWouldSkipABeat, spinRevealLag } from './spinRevealWindow.js';
+import { SpinOverrunReporter, describeOverrun } from './spinOverrunReporter.js';
 import { isShortFormat, mayTakeSynchronizedBreak } from './breakEligibility.js';
 import {
   capLevelToChipsInPlay,
@@ -56,6 +79,7 @@ import {
   type MysteryBountyStage,
 } from './mysteryBountyActivation.js';
 import { mayTakeSeat } from './seatClaim.js';
+import { applySpinDrawPatch } from './spinDrawSync.js';
 import type { GameServer } from '../GameServer.js';
 import {
   ELIMINATION_SWEEP_STUCK_MS,
@@ -254,7 +278,7 @@ export abstract class TournamentManagerBase {
   // FIX 154: TableBalancer for proper gap-1 rebalancing across tournament tables
   protected tableBalancer: TableBalancer = new TableBalancer((event) => {
     console.log(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] TableBalance: ${event.type} — ${(event as any).moveCount || 0} moves`
+      `[Tournament:${this.tournamentId.slice(0, 8)}] TableBalance: ${event.type} - ${(event as any).moveCount || 0} moves`
     );
   });
   // Reusable broadcast channel (prevents memory leak from creating per-event)
@@ -268,6 +292,38 @@ export abstract class TournamentManagerBase {
 
   isRunning(): boolean {
     return this.running;
+  }
+
+  /**
+   * The tables this manager currently owns an engine for.
+   *
+   * Added 2026-09-01 so GameServer can bound `tournamentOwnedTables`, which
+   * had only ever been added to. Pruning that set against GameServer's own
+   * `tableEngines` alone would drop the hub room of a tournament table during
+   * the window where its manager is rebuilding the engine, which is precisely
+   * the case the set was created to protect.
+   */
+  getTableIds(): string[] {
+    return [...this.tableEngines.keys()];
+  }
+
+  /**
+   * Is this tournament on a break of its own right now?
+   *
+   * Added 2026-09-01 for the maintenance break, which resumes EVERY table on
+   * the platform when it ends. Without this it would also resume a tournament
+   * that is still on a break of a different length - an add-on break runs up
+   * to ten minutes (`addon_break_minutes`), so one starting near :55 outlives
+   * the five-minute maintenance break and its tables would be dealt back into
+   * play while the tournament clock still says they are away.
+   *
+   * Read-only, and deliberately the ONLY thing exposed: whoever paused a table
+   * is responsible for resuming it, and this lets a second pause authority ask
+   * "is somebody else still holding this" without being able to answer for
+   * them.
+   */
+  isOnBreak(): boolean {
+    return this.onBreak;
   }
 
   /** Reusable broadcast — single channel per tournament lifecycle */
@@ -384,7 +440,7 @@ export abstract class TournamentManagerBase {
      */
     if (!(await this.breakApplies())) {
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] Break refused — this format does not take the :55 break`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Break refused - this format does not take the :55 break`
       );
       return;
     }
@@ -418,7 +474,7 @@ export abstract class TournamentManagerBase {
     this.suspendLevelClock();
 
     console.log(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] SYNCHRONIZED BREAK — ${Math.round(breakDurationMs / 60000)} minutes`
+      `[Tournament:${this.tournamentId.slice(0, 8)}] SYNCHRONIZED BREAK - ${Math.round(breakDurationMs / 60000)} minutes`
     );
 
     /**
@@ -612,7 +668,7 @@ export abstract class TournamentManagerBase {
     await this.clearPersistedBreak();
     if (!this.running) return;
 
-    console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] BREAK ENDED — resuming play`);
+    console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] BREAK ENDED - resuming play`);
 
     await this.broadcast('break_ended', { level: this.currentLevel });
 
@@ -925,7 +981,7 @@ export abstract class TournamentManagerBase {
       if (seedErr) {
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: mystery bounty seed FAILED (${seedErr.message}) — chests never opened, knockouts keep paying the flat bounty`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: mystery bounty seed FAILED (${seedErr.message}) - chests never opened, knockouts keep paying the flat bounty`
           ),
           'Tournament.mystery_bounty_seed_failed'
         );
@@ -954,7 +1010,7 @@ export abstract class TournamentManagerBase {
         profile,
       });
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] MYSTERY BOUNTY OPEN — ${decision.drawCount} chests, ${poolCents}c, profile ${profile}`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] MYSTERY BOUNTY OPEN - ${decision.drawCount} chests, ${poolCents}c, profile ${profile}`
       );
     } catch (err) {
       reportError(err, 'Tournament.mystery_bounty_activation_threw');
@@ -1037,7 +1093,7 @@ export abstract class TournamentManagerBase {
       const allWaiting = engines.every((e) => e.isWaitingForHandForHand());
       if (allWaiting) {
         console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Hand-for-hand: all ${engines.length} tables done — resuming for next hand`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Hand-for-hand: all ${engines.length} tables done - resuming for next hand`
         );
         // Resume all engines together for the next hand, then immediately re-pause
         for (const engine of engines) {
@@ -1148,11 +1204,68 @@ export abstract class TournamentManagerBase {
        * touches 'registered' rows), and createTablesAndSeatPlayers skips
        * players who are already seated.
        */
-      const { count: regCount } = await supabase
-        .from('tournament_players')
-        .select('*', { count: 'exact', head: true })
-        .eq('tournament_id', this.tournamentId)
-        .in('status', ['registered', 'playing']);
+      /**
+       * ═════════════════════════════════════════════════════════════════
+       *  ONE READ, NOT TWO (2026-08-31 audit)
+       * ═════════════════════════════════════════════════════════════════
+       *
+       * This head-count and the paid-entry roster below issued the SAME
+       * query — `tournament_players` for this tournament with status in
+       * ('registered','playing') — one asking for the count and one for the
+       * rows, back to back, both on the critical path between the third
+       * payment and the wheel.
+       *
+       * `spin_reveal_lag_ms` now measures that path (p50 4.2s, and 93% of
+       * spins miss Dan's one-second rule outright), and five sequential
+       * round trips sit inside it. This is the one that was free to remove:
+       * a Spin holds three players, so the rows ARE the count.
+       *
+       * Only for a Spin with a buy-in — i.e. only where the paid gate below
+       * is going to read them anyway. An MTT keeps the head count, because
+       * reading 390 player rows to learn there are 390 would be the same
+       * trade made backwards.
+       */
+      const spinPaidGateWillRun =
+        (tournament.variant === 'spin' || tournament.tournament_type === 'SPIN') &&
+        Number(tournament.buy_in_amount || 0) > 0;
+
+      let regCount: number | null = null;
+      let spinRoster: Array<{ user_id?: string | null; table_id?: string | null }> | null = null;
+
+      if (spinPaidGateWillRun) {
+        /* THE GATE MUST NOT DISABLE ITSELF ON A FAILED READ (2026-08-28).
+           Unreadable evidence is not evidence of an empty field: stand down
+           and let the next pass retry, exactly as the paid gate below does
+           with its own read. Hoisting the read must not weaken that. */
+        const { data: roster, error: rosterErr } = await supabase
+          .from('tournament_players')
+          /* `table_id` costs nothing here — this read already happens — and
+             it is what lets the wheel fire the INSTANT the draw resolves
+             rather than after the settle, the row write, the per-player
+             updates and the table build (round 18). */
+          .select('user_id, table_id')
+          .eq('tournament_id', this.tournamentId)
+          .in('status', ['registered', 'playing']);
+        if (rosterErr) {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Paid-entry roster unreadable (${rosterErr.message}) - standing down, will retry`
+            ),
+            'Tournament.spin_paid_roster_unreadable'
+          );
+          this.running = false;
+          return;
+        }
+        spinRoster = roster ?? [];
+        regCount = spinRoster.length;
+      } else {
+        const { count } = await supabase
+          .from('tournament_players')
+          .select('*', { count: 'exact', head: true })
+          .eq('tournament_id', this.tournamentId)
+          .in('status', ['registered', 'playing']);
+        regCount = count ?? 0;
+      }
 
       /**
        * Never more than the table holds, never fewer than two -- a game of
@@ -1174,7 +1287,7 @@ export abstract class TournamentManagerBase {
          * scheduled game disappears from the lobby.
          */
         console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Only ${regCount} of ${requiredField} player(s) — standing down so the field can be filled (NOT cancelling)`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Only ${regCount} of ${requiredField} player(s) - standing down so the field can be filled (NOT cancelling)`
         );
         this.running = false;
         return;
@@ -1213,27 +1326,14 @@ export abstract class TournamentManagerBase {
              above), reopened by any transient failure. The very next read
              already treats unreadable evidence as a stand-down; these two
              adjacent reads had opposite failure policies. */
-          const { data: regs, error: regsErr } = await supabase
-            .from('tournament_players')
-            /* `table_id` costs nothing here — this read already happens — and
-               it is what lets the wheel fire the INSTANT the draw resolves
-               rather than after the settle, the row write, the per-player
-               updates and the table build. See emitSpinRevealNow (round 18):
-               a seat-first player is already sitting at that table, so its id
-               is all the reveal needs to reach them. */
-            .select('user_id, table_id')
-            .eq('tournament_id', this.tournamentId)
-            .in('status', ['registered', 'playing']);
-          if (regsErr) {
-            reportError(
-              new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Paid-entry roster unreadable (${regsErr.message}) — standing down, will retry`
-              ),
-              'Tournament.spin_paid_roster_unreadable'
-            );
-            this.running = false;
-            return;
-          }
+          /* ALREADY READ, ABOVE. The head-count gate issued this exact query
+             and kept the rows (see "ONE READ, NOT TWO"). Its failure policy
+             is identical — an unreadable roster stands the start down — so
+             nothing this gate depends on has been weakened; the second round
+             trip is simply gone from the path between the third payment and
+             the wheel. `spinRoster` is non-null here by construction:
+             spinPaidGateWillRun is the same condition as this block. */
+          const regs = spinRoster ?? [];
           const regIds = (regs ?? []).map((r: any) => r.user_id).filter(Boolean);
           /* The tables these paid seats are already sitting at. Distinct, and
              usually exactly one for a Spin. Used only by the early reveal. */
@@ -1258,7 +1358,7 @@ export abstract class TournamentManagerBase {
             // try again next pass rather than kicking players over a blip.
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Paid-entry check unreadable (${debitErr.message}) — standing down, will retry`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Paid-entry check unreadable (${debitErr.message}) - standing down, will retry`
               ),
               'Tournament.spin_paid_check_unreadable'
             );
@@ -1277,7 +1377,7 @@ export abstract class TournamentManagerBase {
               new Error(
                 `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN PAID-GATE: ${unpaid.length} registration(s) with no ${buyIn}-chip buy-in ledger row (${unpaid
                   .map((u) => u.slice(0, 8))
-                  .join(', ')}) — removing them; a spin NEVER starts until 3 players have paid`
+                  .join(', ')}) - removing them; a spin NEVER starts until 3 players have paid`
               ),
               'Tournament.spin_unpaid_registration_removed'
             );
@@ -1527,12 +1627,12 @@ export abstract class TournamentManagerBase {
           if (!spinMultiplier || spinMultiplier <= 0) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw UNAVAILABLE after 3 attempts (${drawFailure ?? 'no multiplier returned'}) — standing down; NO multiplier is invented and NO wheel is shown`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw UNAVAILABLE after 3 attempts (${drawFailure ?? 'no multiplier returned'}) - standing down; NO multiplier is invented and NO wheel is shown`
               ),
               'Tournament.spin_draw_unavailable'
             );
             console.error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw unavailable — standing down so the start can be retried (NOT cancelling, NOT defaulting to a tier)`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw unavailable - standing down so the start can be retried (NOT cancelling, NOT defaulting to a tier)`
             );
             this.running = false;
             return; // discovery calls start() again once the RPC answers
@@ -1598,7 +1698,18 @@ export abstract class TournamentManagerBase {
                 reveal_lag_ms: this.spinRevealLagMs,
                 prize_pool: prizePool,
                 timestamp: revealAt,
-                replay_until: holdUntil,
+                /* THE REPLAY WINDOW COVERS THE HOLD THE ENGINE WILL ACTUALLY
+                   KEEP, NOT THE ONE PLANNED HERE (fixed 2026-09-02).
+
+                   This read `holdUntil`, but the pass further down extends the
+                   hold to `Math.max(holdUntil, now + spinPostRevealMs())` so
+                   the post-reveal beats always have room. The hub drops a
+                   replay packet once `replay_until` passes, so on exactly the
+                   bad day the extension exists for, a player reconnecting
+                   between the planned hold and the real one got NO reveal at
+                   all while the cards were still legally undealt. Same floor,
+                   computed the same way. */
+                replay_until: Math.max(holdUntil, Date.now() + spinPostRevealMs()),
               });
             } catch (err) {
               /* The reveal is theatre; it must never stop a game starting. */
@@ -1609,7 +1720,7 @@ export abstract class TournamentManagerBase {
             }
           }
           console.log(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reveal broadcast EARLY — ${spinMultiplier}x to ${this.seatFirstTableIds.length} table(s), ${this.spinRevealLagMs}ms behind the third payment, settle and table build still to come inside the hold`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reveal broadcast EARLY - ${spinMultiplier}x to ${this.seatFirstTableIds.length} table(s), ${this.spinRevealLagMs}ms behind the third payment, settle and table build still to come inside the hold`
           );
         }
 
@@ -1661,13 +1772,13 @@ export abstract class TournamentManagerBase {
               // full regardless; this says the club needs seeding.
               reportError(
                 new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] Spin pool SHORTFALL ${settle.operator_shortfall} on a ${spinMultiplier}x — club ${tournament.club_id} needs a larger reserve seed`
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] Spin pool SHORTFALL ${settle.operator_shortfall} on a ${spinMultiplier}x - club ${tournament.club_id} needs a larger reserve seed`
                 ),
                 'Tournament.spin_pool_shortfall'
               );
             }
             console.log(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN ${spinMultiplier}x — pool ${prizePool}, rake ${settle.house_rake}, reserve ${settle.balance}`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN ${spinMultiplier}x - pool ${prizePool}, rake ${settle.house_rake}, reserve ${settle.balance}`
             );
           } catch (settleErr: any) {
             if (attempt === 3) {
@@ -1676,7 +1787,7 @@ export abstract class TournamentManagerBase {
               // fn_spin_sweep_unbooked() will catch it on the next pass.
               reportError(
                 new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reserve settlement FAILED after 3 attempts (${settleErr?.message}) — prize pool is correct but this game is unbooked`
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reserve settlement FAILED after 3 attempts (${settleErr?.message}) - prize pool is correct but this game is unbooked`
                 ),
                 'Tournament.spin_settle_failed'
               );
@@ -1686,10 +1797,16 @@ export abstract class TournamentManagerBase {
           }
         }
 
-        // Structure scales with the drawn tier: 300 chips and 1-minute
-        // levels at 2x, 500 chips and 5-minute levels at 500x. Since the
-        // draw moved to start, creation writes only a smallest-tier
-        // placeholder, so the blinds MUST be rewritten here — before
+        // BLINDS scale with the drawn tier. THE STACK DOES NOT, and has not
+        // since 2026-09-01: it is a property of the BOARD (Turbo 300, Deep
+        // Stack 1000, spinSpec SPIN_STACKS), written at creation and held by
+        // the seat from the moment the buy-in is paid. This comment used to
+        // read "300 chips at 2x, 500 chips at 500x", describing the retired
+        // behaviour where the wheel decided how many chips you played with.
+        // The code below never did that; the sentence did, and spinSpec warns
+        // in as many words not to reintroduce it. Since the draw moved to
+        // start, creation writes only a smallest-tier placeholder, so the
+        // blinds MUST be rewritten here — before
         // createTablesAndSeatPlayers below reads them — or a 500x would run
         // on 1-minute levels.
         const spinBlinds = Array.from({ length: 12 }, (_, i) => {
@@ -1727,12 +1844,30 @@ export abstract class TournamentManagerBase {
           prize_pool: prizePool,
           spin_multiplier: spinMultiplier,
           is_premium_spin: spinMultiplier >= 100,
-          starting_chips: tier?.startingStack ?? tournament.starting_chips,
+          /* THE STACK IS NOT WRITTEN HERE ANY MORE (Dan, 2026-09-01).
+             It used to read `tier?.startingStack ?? tournament.starting_chips`,
+             so the wheel decided how many chips the players had -- 300, 1000 or
+             5000 depending on what it landed on. That is retired: the stack
+             belongs to the board (Turbo 300, Deep Stack 1000, spinSpec
+             SPIN_STACKS), it is written at creation, and the seat holds it from
+             the moment the buy-in is paid. Re-adding it here would put the seat
+             back to guessing until the draw lands. */
+          starting_chips: tournament.starting_chips,
           blind_structure: spinBlinds,
           payout_structure: (tier?.payouts ?? [1]).map((pct, i) => ({
             place: i + 1,
             percentage: Math.round(pct * 10000) / 100,
           })),
+          /* THE ONE NUMBER DAN ASKS ABOUT, WRITTEN DOWN (2026-08-31 audit).
+             How far behind the third payment the wheel actually went out.
+             It was computed on every spin, logged to the console and sent to
+             the client — and persisted nowhere, so the only way to answer
+             "is the wheel still opening on time?" was for an agent to
+             hand-measure it, which is how a 3.0s p50 drifted to 13.7s over a
+             day without anything noticing. It rides the write that already
+             carries the draw, so it costs no extra round trip, and
+             v_spin_reveal_latency reads it back. */
+          spin_reveal_lag_ms: Math.round(this.spinRevealLagMs),
           ...(redrawnLockedTiers ? { spin_locked_tiers: redrawnLockedTiers } : {}),
         };
         let spinRowWritten = false;
@@ -1754,7 +1889,7 @@ export abstract class TournamentManagerBase {
             // the multiplier from the prize actually paid on the next sweep.
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw row write FAILED after 3 attempts (${spinRowErr.message}) — ${spinMultiplier}x was drawn but the row still reads NULL; this game will run on the placeholder structure and NO client can show the wheel until the row is repaired`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Spin draw row write FAILED after 3 attempts (${spinRowErr.message}) - ${spinMultiplier}x was drawn but the row still reads NULL; this game will run on the placeholder structure and NO client can show the wheel until the row is repaired`
               ),
               'Tournament.spin_draw_row_write_failed'
             );
@@ -1764,7 +1899,7 @@ export abstract class TournamentManagerBase {
         }
         if (!spinRowWritten) {
           console.error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN ROW NOT WRITTEN (${spinRowLastError}) — ${spinMultiplier}x drawn, starting background repair`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] SPIN ROW NOT WRITTEN (${spinRowLastError}) - ${spinMultiplier}x drawn, starting background repair`
           );
           // Safe to keep trying: the repair only ever writes the value THIS
           // start already drew and settled against, and only while the column
@@ -1772,17 +1907,31 @@ export abstract class TournamentManagerBase {
           this.scheduleSpinRowRepair(spinRowPatch, spinMultiplier);
         }
 
-        tournament.prize_pool = prizePool;
-        tournament.spin_multiplier = spinMultiplier;
-        // The in-memory object drives table creation and the level timer, so
-        // it must agree with what was just written — the DB write alone would
-        // leave this start running on the placeholder structure.
-        tournament.blind_structure = spinBlinds;
-        if (tier?.startingStack) tournament.starting_chips = tier.startingStack;
-        if (this.tournamentCache) {
-          this.tournamentCache.blind_structure = spinBlinds;
-          this.tournamentCache.spin_multiplier = spinMultiplier;
-        }
+        // The stack came from the board and is already on the row; the draw
+        // does not change it (see spinRowPatch above).
+        /* THE WHOLE PATCH, ONTO BOTH COPIES (2026-08-31).
+           The in-memory object drives table creation and the level timer, and
+           tournamentCache is what the elimination and bubble paths read for
+           the rest of the game, so both must agree with what was just written
+           — the DB write alone would leave this start running on the
+           placeholder structure.
+
+           This was a hand-written list of field names and it copied FOUR of
+           the patch's five fields. `payout_structure` was the one it dropped,
+           so a started Spin's cache kept the pre-draw winner-take-all
+           placeholder for the life of the game, and
+           `recalculateEliminatedPrizes` (which reads the cache) topped up
+           eliminated players against a different structure than the one that
+           had paid them. On a 10x that is 80/20 versus 100/0.
+
+           applySpinDrawPatch copies EVERY key of the patch, so the patch is
+           now the only list there is: add a sixth field and it is synced by
+           construction. Never re-introduce a per-field copy here. */
+        applySpinDrawPatch(
+          spinRowPatch as unknown as Record<string, unknown>,
+          tournament as unknown as Record<string, unknown>,
+          this.tournamentCache as unknown as Record<string, unknown> | null
+        );
       }
 
       // Migrate registrations (registered -> playing).
@@ -1815,10 +1964,13 @@ export abstract class TournamentManagerBase {
       /**
        * SEAT-FIRST STACK SYNC — but NOT yet, if a wheel is about to turn.
        *
-       * A player who sat down before the game started holds a RESERVATION at
-       * zero chips: stack depth is a property of the tier, and spin tiers run
-       * 300/400/500, so there is no honest number to seat them with until the
-       * draw lands.
+       * A player who sat down before the game started used to hold a
+       * RESERVATION at zero chips, because stack depth was read off the drawn
+       * tier and there was no honest number to seat them with until the wheel
+       * landed. THAT IS RETIRED. The stack belongs to the board (Turbo 300,
+       * Deep Stack 1000), it is known before anybody sits, and Dan's rule is
+       * that it appears the instant the buy-in is paid: "as soon as they buy
+       * in 300 chips should appear in their action box (not 0)".
        *
        * Dan 2026-08-21: "AFTER THE SPIN COMPLETES, CHIP STACKS GET ADDED,
        * BUTTON RANDOMLY ASSIGNED AND THE SPIN STARTS." Crediting here — which
@@ -1889,7 +2041,7 @@ export abstract class TournamentManagerBase {
           engine.holdDealingUntil(scheduledStartMs);
         }
         console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Pre-seated ${this.tableEngines.size} table(s) — holding the deal ${Math.round(this.preStartLeadMs / 1000)}s until the advertised start ${new Date(scheduledStartMs).toISOString()}`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Pre-seated ${this.tableEngines.size} table(s) - holding the deal ${Math.round(this.preStartLeadMs / 1000)}s until the advertised start ${new Date(scheduledStartMs).toISOString()}`
         );
       }
 
@@ -1996,7 +2148,15 @@ export abstract class TournamentManagerBase {
                * has, so a client that loads late shortens its own sequence
                * instead of being dealt over.
                */
-              hold_until: holdUntil,
+              /* `effectiveHold`, not `holdUntil` (fixed 2026-09-02). The
+                 comment above says this is "the same number
+                 `holdDealingUntil` was just given, so it is the contract and
+                 not a description of one" - and it was not: the engine was
+                 held to `effectiveHold` while the client was told
+                 `holdUntil`. On the overrun path, the only path where the two
+                 differ, the client clamped against a deadline the engine had
+                 already abandoned. */
+              hold_until: effectiveHold,
               /** How far the broadcast slipped behind the third payment. */
               reveal_lag_ms: this.spinRevealLagMs,
               prize_pool: Number(tournament.prize_pool) || 0,
@@ -2011,7 +2171,7 @@ export abstract class TournamentManagerBase {
                * multiplier. Past `holdUntil` the wheel is meaningless (cards
                * are out), so the hub drops it on its own; there is no log.
                */
-              replay_until: holdUntil,
+              replay_until: effectiveHold,
             });
           } catch (err) {
             // The reveal is theatre; it must never stop a game from starting.
@@ -2020,7 +2180,7 @@ export abstract class TournamentManagerBase {
         }
         this.scheduleSpinPostReveal(tournament, revealAt);
         console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reveal broadcast — ${revealMultiplier}x, holding the deal until ${new Date(holdUntil).toISOString()} (${Math.max(0, holdUntil - Date.now())}ms from now, ${this.spinRevealLagMs}ms behind the third payment)`
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Spin reveal broadcast - ${revealMultiplier}x, holding the deal until ${new Date(holdUntil).toISOString()} (${Math.max(0, holdUntil - Date.now())}ms from now, ${this.spinRevealLagMs}ms behind the third payment)`
         );
       }
 
@@ -2109,7 +2269,7 @@ export abstract class TournamentManagerBase {
         // safety net that settles it if this never lands.
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] RUNNING flip FAILED after 3 attempts — the game is starting with its row still REGISTERING`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] RUNNING flip FAILED after 3 attempts - the game is starting with its row still REGISTERING`
           ),
           'Tournament.running_flip_failed'
         );
@@ -2244,7 +2404,7 @@ export abstract class TournamentManagerBase {
       this.startEliminationChecker();
 
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] RUNNING — ${this.tableEngines.size} tables`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] RUNNING - ${this.tableEngines.size} tables`
       );
     } catch (err) {
       reportError(err, 'TournamentthistournamentIdslic.Start_failed');
@@ -2310,7 +2470,7 @@ export abstract class TournamentManagerBase {
 
         if ((liveEntrants || 0) > 0) {
           console.warn(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Resuming with NO open tables — rebuilding for ${liveEntrants} entrant(s) instead of abandoning the tournament`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Resuming with NO open tables - rebuilding for ${liveEntrants} entrant(s) instead of abandoning the tournament`
           );
           /**
            * NON-FATAL (2026-08-25). createTablesAndSeatPlayers throws
@@ -2375,6 +2535,9 @@ export abstract class TournamentManagerBase {
       // restart mid-add-on doesn't re-broadcast ADDON_PERIOD_START or skip
       // finalizeAfterAddOn forever (they previously reset to defaults).
       this.addOnPeriodTriggered = !!tournament.addon_period_triggered;
+      if (this.addOnPeriodTriggered && !this.prizePoolFinalized) {
+        this.scheduleAddOnPeriodEnd(tournament.addon_period_ends_at);
+      }
       // Initialize broadcast channel on resume
       this.broadcastChannel = null;
       this.broadcastReady = false;
@@ -2382,8 +2545,21 @@ export abstract class TournamentManagerBase {
       // persisted level_started_at instead of granting a fresh full level on
       // every restart (which nearly froze blind escalation across restarts).
       {
+        /**
+         * THROUGH resolveBlindLevel, NOT AN INDEX (2026-08-31, Phase 2.3).
+         *
+         * This was the one caller that ignored resolveBlindLevel's own closing
+         * instruction ("callers must read levels through THIS function rather
+         * than indexing the array"). Past the end of a persisted structure --
+         * which every deep Spin and every long duel reaches, the ladders are
+         * 10-12 rows -- the index is undefined and this fell back to level 0,
+         * so a restarted late-stage game timed its level off the FIRST row of
+         * the ladder. Engine restarts are frequent (auto-deploy on server/**),
+         * and the resumed clock is what decides when the next escalation
+         * lands.
+         */
         const levelData =
-          (tournament.blind_structure || [])[this.currentLevel] ||
+          this.resolveBlindLevel(tournament.blind_structure || [], this.currentLevel) ||
           (tournament.blind_structure || [])[0];
         const durationMs = this.levelDurationMs(levelData);
         let remainingMs: number | undefined;
@@ -2470,7 +2646,7 @@ export abstract class TournamentManagerBase {
           // then granted a fresh full level on top. See suspendLevelClock.
           this.suspendLevelClock();
           console.log(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Resumed DURING a break — re-pausing for the remaining ${Math.round(remainingMs / 1000)}s`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Resumed DURING a break - re-pausing for the remaining ${Math.round(remainingMs / 1000)}s`
           );
           for (const engine of this.tableEngines.values()) {
             try {
@@ -2500,7 +2676,7 @@ export abstract class TournamentManagerBase {
       }
 
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] Resumed — ${this.tableEngines.size} tables, level ${this.currentLevel}`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Resumed - ${this.tableEngines.size} tables, level ${this.currentLevel}`
       );
     } catch (err) {
       reportError(err, 'TournamentthistournamentIdslic.Resume_failed');
@@ -2621,11 +2797,67 @@ export abstract class TournamentManagerBase {
       );
       return 0;
     }
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  A CREDIT MAY FUND AN EMPTY SEAT. IT MAY NOT RESCUE A LOSING ONE.
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * `stack < target` is the right question BEFORE a hand is dealt and the
+     * wrong one after it. Every seat that is losing is below the starting
+     * stack by definition, so once play is under way this raised the loser
+     * back to a full stack and MINTED the difference onto the felt.
+     *
+     * Measured on production 2026-08-31, spins completed in 24 hours:
+     *
+     *     2,168 games at a 300 stack   418 drifted, worst +470
+     *       305 games at a 1,000 stack  84 drifted, worst +1,603
+     *
+     * and NOT ONE of the 502 exceeded twice the starting stack - exactly the
+     * ceiling of topping up the two players who can be behind. That is the
+     * signature of this line and nothing else.
+     *
+     * A Spin's prize is buy_in x multiplier, so no money is created directly.
+     * What is created is a different WINNER: the engine decides the game on
+     * chips, and a player who was busting got their stack back. On an MTT,
+     * where finishing position is the payout, it moves real money.
+     *
+     * All four callers are pre-deal by intent - start(), the post-reveal beat,
+     * its safety net, and resume(), whose own note scopes it to "a process
+     * restart INSIDE THAT WINDOW". None of them checked, and resume() runs on
+     * every restart forever, which is why this fired on one game in five.
+     *
+     * So the question is now asked against the state of the game:
+     *   - no hand dealt yet  -> fund anything short of the target, unchanged;
+     *   - play under way     -> fund ONLY a seat still sitting on zero, which
+     *                           is the stranded reservation the resume path
+     *                           exists for. A losing stack is left alone.
+     *
+     * If the hand read itself fails, take the conservative branch and say so.
+     * The stranded-at-zero case is still rescued either way; the only thing
+     * given up is raising a placeholder tier, which the next call redoes.
+     */
+    const { data: dealtRows, error: dealtErr } = await supabase
+      .from('hand_history')
+      .select('id')
+      .eq('tournament_id', this.tournamentId)
+      .limit(1);
+
+    if (dealtErr) {
+      reportError(
+        new Error(`seat stack credit could not tell whether play had started: ${dealtErr.message}`),
+        'Tournament.' + this.tournamentId.slice(0, 8) + '.seat_stack_dealt_probe_failed'
+      );
+    }
+
+    const playUnderWay = dealtErr ? true : (dealtRows?.length ?? 0) > 0;
+
     // Strictly RAISE, never lower: the legitimate case is a reservation seat
     // holding 0 (or a smaller placeholder tier) waiting on the drawn stack.
     // An early-bird seat (starting chips + bonus, 2026-08-22) sits ABOVE the
     // plain starting stack, and flattening it here would destroy the bonus.
-    const stale = (seatRows ?? []).filter((r: any) => Number(r.stack) < target);
+    const stale = (seatRows ?? []).filter((r: any) =>
+      playUnderWay ? Number(r.stack) <= 0 : Number(r.stack) < target
+    );
     if (stale.length === 0) return 0;
     const { error } = await supabase
       .from('table_seats')
@@ -2696,7 +2928,7 @@ export abstract class TournamentManagerBase {
         .maybeSingle();
       if (Number(before?.spin_multiplier) > 0) {
         console.warn(
-          `[Tournament:${tag}] Spin row repair: multiplier already present (${before?.spin_multiplier}x) after ${pass} pass(es) — nothing to do`
+          `[Tournament:${tag}] Spin row repair: multiplier already present (${before?.spin_multiplier}x) after ${pass} pass(es) - nothing to do`
         );
         return;
       }
@@ -2715,7 +2947,7 @@ export abstract class TournamentManagerBase {
         .maybeSingle();
       if (Number(after?.spin_multiplier) > 0) {
         console.warn(
-          `[Tournament:${tag}] Spin row repair SUCCEEDED on pass ${pass} — ${drawnMultiplier}x is on the row; the wheel can fire again`
+          `[Tournament:${tag}] Spin row repair SUCCEEDED on pass ${pass} - ${drawnMultiplier}x is on the row; the wheel can fire again`
         );
         return;
       }
@@ -2723,7 +2955,7 @@ export abstract class TournamentManagerBase {
       if (pass >= MAX_PASSES) {
         reportError(
           new Error(
-            `[Tournament:${tag}] Spin row repair EXHAUSTED after ${MAX_PASSES} passes — ${drawnMultiplier}x was drawn and settled but spin_multiplier is still empty; no client can show the wheel for this game`
+            `[Tournament:${tag}] Spin row repair EXHAUSTED after ${MAX_PASSES} passes - ${drawnMultiplier}x was drawn and settled but spin_multiplier is still empty; no client can show the wheel for this game`
           ),
           'Tournament.spin_row_repair_exhausted'
         );
@@ -2824,6 +3056,13 @@ export abstract class TournamentManagerBase {
    * player who refreshes mid-spin rejoins the shared moment already in
    * progress. What it no longer has to absorb is the engine's own delay.
    */
+  /**
+   * Process-wide overrun aggregator. STATIC on purpose: the overrun is a
+   * property of the ENGINE being late, not of any one tournament, so a
+   * per-instance limiter would report once per spin exactly as before.
+   */
+  private static readonly spinOverruns = new SpinOverrunReporter();
+
   protected resolveSpinReveal(): { revealAt: number; holdUntil: number } {
     const now = Date.now();
     if (this.spinRevealAt <= 0) {
@@ -2832,7 +3071,7 @@ export abstract class TournamentManagerBase {
       this.spinRevealLagMs = 0;
       return { revealAt: this.spinRevealAt, holdUntil: this.spinHoldUntil };
     }
-    this.spinRevealLagMs = Math.max(0, now - this.spinRevealAt);
+    this.spinRevealLagMs = spinRevealLag({ now, revealAt: this.spinRevealAt });
     /* ONCE IT IS PUBLIC, IT DOES NOT MOVE (round 18). The early emit puts
        these exact numbers on three screens; re-anchoring afterwards would
        leave the second broadcast disagreeing with the wheels already turning,
@@ -2840,15 +3079,33 @@ export abstract class TournamentManagerBase {
     if (this.spinRevealEmitted) {
       return { revealAt: this.spinRevealAt, holdUntil: this.spinHoldUntil };
     }
-    /* The full sequence must still fit between now and the deal. Anything
-       less and some beat is being cut, so the wheel starts here instead. */
-    if (this.spinHoldUntil - now < spinRevealToDealMs()) {
-      reportError(
-        new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Spin start overran its own reveal window by ${this.spinRevealLagMs}ms — the wheel is being re-anchored to now so it plays in full, and the three players see it start late`
-        ),
-        'Tournament.spin_reveal_window_overrun'
-      );
+    /* HAS THE WHEEL'S OWN START ALREADY PASSED? That is the only question,
+       because the client skips exactly the beats behind `Date.now() -
+       revealAt` and nothing else. Asked through spinRevealWindow rather than
+       inline: this used to be `this.spinHoldUntil - now < spinRevealToDealMs()`,
+       which meant the same thing only while the hold was stamped from
+       `spinRevealAt`. When the double-counted lead-in was removed on
+       2026-08-31 the hold became `anchor + toDeal` and the comparison
+       collapsed to `anchor < now` — true for every spin ever run, so the
+       anchor was discarded every time and the overrun was reported ~1,500
+       times a day. See spinRevealWindow.ts for the full account. */
+    const wouldSkipABeat = spinRevealWouldSkipABeat({ now, revealAt: this.spinRevealAt });
+    if (wouldSkipABeat) {
+      /* AGGREGATED, NOT SILENCED (2026-08-31). This fired once per spin, on
+         88-97% of ~2,500 spins a day, which is over a thousand identical
+         reports daily out of one call site - loud enough to bury every other
+         error in the stream. The per-spin number now lives at full
+         resolution on poker_spin_reveal_lag_p50_ms and
+         poker_spin_reveal_past_lead_in; what survives here is one report per
+         incident, opening immediately and then carrying the count. See
+         spinOverrunReporter.ts. */
+      const overrun = TournamentManagerBase.spinOverruns.record(this.spinRevealLagMs, now);
+      if (overrun) {
+        reportError(
+          new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] ${describeOverrun(overrun)}`),
+          'Tournament.spin_reveal_window_overrun'
+        );
+      }
       this.spinRevealAt = now;
       this.spinHoldUntil = now + spinRevealToDealMs();
     }
@@ -2894,7 +3151,7 @@ export abstract class TournamentManagerBase {
           // already have dealt" — re-forcing the button on a live table is the
           // damaging direction.
           console.warn(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Could not check hand history for table ${table.id.slice(0, 8)} (${error.message}) — leaving the drawn button alone`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Could not check hand history for table ${table.id.slice(0, 8)} (${error.message}) - leaving the drawn button alone`
           );
           continue;
         }
@@ -2969,8 +3226,16 @@ export abstract class TournamentManagerBase {
             timestamp: Date.now(),
             replay_until: replayUntil, // D3
           });
-        } catch {
-          /* theatre */
+        } catch (err) {
+          /* Still never fatal - a lost beat must not stop a game. But it is
+             REPORTED now (2026-09-02). This was a bare `catch { }`, so when
+             beat 1 failed the player's chips simply appeared in the next state
+             diff with no cue and no trace, which is the exact outcome the
+             comment above says this scheduling exists to prevent. An animation
+             that silently does not play is a bug by the animation law (10.6);
+             one that silently does not play AND leaves no evidence cannot even
+             be found. */
+          reportError(err, 'Tournament.' + this.tournamentId.slice(0, 8) + '.spin_chips_emit');
         }
       }
     });
@@ -3018,7 +3283,7 @@ export abstract class TournamentManagerBase {
             .then(({ error }: { error: { message?: string } | null }) => {
               if (error) {
                 console.warn(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] Drawn button seat ${seat} not persisted for table ${tableId.slice(0, 8)} (${error.message}) — a restart before the first hand would revert it to the lowest seat`
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] Drawn button seat ${seat} not persisted for table ${tableId.slice(0, 8)} (${error.message}) - a restart before the first hand would revert it to the lowest seat`
                 );
               }
             })
@@ -3129,9 +3394,8 @@ export abstract class TournamentManagerBase {
     /**
      * THE DECK HAS TO BE ABLE TO SERVE THE TABLE (2026-08-25).
      *
-     * Cash tables have run through clampSeatsForVariant since the seat law was
-     * written. Tournament tables never did - they took table_size verbatim, and
-     * table_size knows nothing about how many hole cards the game deals.
+     * Tournament tables took table_size verbatim, and table_size knows nothing
+     * about how many hole cards the game deals.
      *
      * A 9-handed PLO6 table needs 9 x 6 = 54 hole cards plus a 5-card board
      * from a 52-card deck. It cannot be dealt, ever. ServerTableEngineDealing
@@ -3146,12 +3410,22 @@ export abstract class TournamentManagerBase {
      * NLH 22.3%. The whole 5-and-6-card excess is this one line.
      *
      * Clamped LAST so it wins over every branch above, including spin and sng.
+     *
+     * 2026-08-31: the ceiling used to be `clampSeatsForVariant`, which is the
+     * CASH seat law — a house rule that keeps a table small enough to run it
+     * twice, not an arithmetic limit. Applying it here made a tournament pay
+     * for boards it can never deal (Run It Twice is hard-disabled on tournament
+     * tables) and shrank real events: PLO4 8 -> 9, PLO5 7 -> 9, PLO6 6 -> 7,
+     * PLO8 8 -> 9, and a table_size 10 NLH MTT lost its tenth seat to
+     * DEFAULT_MAX_SEATS. The ceiling is now the deck and only the deck:
+     * floor((52 - 5) / holeCards) — nlh/flh 23, short_deck 15, pineapple 15,
+     * plo4/plo8/flo8 11, plo5 9, plo6 7. The cash cap is untouched.
      */
     const seatVariant = (tournament.game_type || '').toLowerCase();
-    const deckSafe = clampSeatsForVariant(seatVariant, maxPerTable);
+    const deckSafe = Math.min(maxPerTable, maxSeatsTheDeckAllows(seatVariant));
     if (deckSafe !== maxPerTable) {
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] ${seatVariant || 'nlh'} seats ${maxPerTable} -> ${deckSafe} (deck cannot serve more)`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] ${seatVariant || 'nlh'} seats ${maxPerTable} -> ${deckSafe} (the deck seats ${maxSeatsTheDeckAllows(seatVariant)} at this variant)`
       );
       maxPerTable = deckSafe;
     }
@@ -3177,8 +3451,8 @@ export abstract class TournamentManagerBase {
      * one of them with 10 live seats; 54 such seats across 53 tournament
      * tables platform-wide. A seat past the table's own ceiling is not
      * cosmetic — it is the deck-exhaustion deadlock (#782) reopened through a
-     * different door, because clampSeatsForVariant clamps `max_players` and
-     * this loop then walked straight past it.
+     * different door, because the deck ceiling clamps `max_players` and this
+     * loop then walked straight past it.
      *
      * The shortfall is now measured in SEATS, against the real free capacity
      * of the tables the tournament already has.
@@ -3196,7 +3470,28 @@ export abstract class TournamentManagerBase {
 
     for (let i = alreadyHave; i < alreadyHave + tablesToCreate; i++) {
       const blindStructure = tournament.blind_structure || [];
-      const firstLevel = blindStructure[0] || { smallBlind: 10, bigBlind: 20 };
+      /**
+       * THE LEVEL THIS TABLE IS BEING BORN INTO, NOT LEVEL ONE (2026-09-01).
+       *
+       * This loop runs whenever a tournament needs MORE tables than it has --
+       * late registration, a rebalance -- which by definition happens after
+       * the clock has started. It stamped `stakes` from blindStructure[0]
+       * regardless, so a table created at level 8 advertised the level 1
+       * blinds for the rest of its life. 197 tables across 60 tournaments in
+       * the last three days were created after their tournament started, and
+       * every one of them carries level 1.
+       *
+       * `stakes` is a display string (the lobby reads it; the engine takes its
+       * blinds from the tournament level, never from this row), and the lobby
+       * shows buy-in rather than stakes on a tournament row -- so this is a
+       * lie that is currently hard to see rather than one anybody has
+       * complained about. It is still a lie, and it is the last place in this
+       * file that reached into the structure by index instead of asking
+       * resolveBlindLevel, which is the closing hazard Phase 2.3 went through
+       * the rest of the file to remove.
+       */
+      const firstLevel = this.resolveBlindLevel(blindStructure, this.currentLevel) ||
+        blindStructure[0] || { smallBlind: 10, bigBlind: 20 };
 
       const { data: table, error } = await supabase
         .from('tables')
@@ -3249,7 +3544,7 @@ export abstract class TournamentManagerBase {
     const toSeat = players.filter((p: any) => !alreadySeated.has(p.user_id));
     if (toSeat.length < players.length) {
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] ${players.length - toSeat.length} player(s) already seated — seating the remaining ${toSeat.length}`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] ${players.length - toSeat.length} player(s) already seated - seating the remaining ${toSeat.length}`
       );
     }
     /**
@@ -3297,7 +3592,7 @@ export abstract class TournamentManagerBase {
         if (claim.unknown) {
           reportError(
             new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Not seating ${toSeat[i].user_id.slice(0, 8)} — ${claim.reason}. Leaving them to the 5s seat sweep rather than risking a second live seat.`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Not seating ${toSeat[i].user_id.slice(0, 8)} - ${claim.reason}. Leaving them to the 5s seat sweep rather than risking a second live seat.`
             ),
             'Tournament.seat_claim_unreadable'
           );
@@ -3335,7 +3630,7 @@ export abstract class TournamentManagerBase {
          */
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] No seat within capacity for ${toSeat.length - i} player(s) across ${tableIds.length} table(s) — leaving them unseated for the 5s seat sweep rather than writing a seat past a table's max_players`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] No seat within capacity for ${toSeat.length - i} player(s) across ${tableIds.length} table(s) - leaving them unseated for the 5s seat sweep rather than writing a seat past a table's max_players`
           ),
           'Tournament.seating_capacity_exhausted'
         );
@@ -3470,6 +3765,9 @@ export abstract class TournamentManagerBase {
     if (this.onBreak) return;
     this.revivingTables = true;
     try {
+      // A table missing from the map is invisible to every loop below, so it
+      // has to be put back before any of them run. See adoptEnginelessTables.
+      await this.adoptEnginelessTables();
       for (const [tableId, engine] of this.tableEngines) {
         // Belt and braces alongside the onBreak guard above: a table parked on
         // purpose (break OR hand-for-hand) is healthy — but only for as long as
@@ -3487,7 +3785,7 @@ export abstract class TournamentManagerBase {
               Math.round(engine.msSinceProgress() / 1000) +
               's (running=' +
               engine.isRunning() +
-              ') — rebuilding'
+              ') - rebuilding'
           ),
           'Tournament.' + this.tournamentId.slice(0, 8) + '.table_engine_rebuilt',
           { tableId }
@@ -3512,6 +3810,119 @@ export abstract class TournamentManagerBase {
       reportError(err, 'Tournament.' + this.tournamentId.slice(0, 8) + '.revive_sweep_threw');
     } finally {
       this.revivingTables = false;
+    }
+  }
+
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   *  A TABLE THIS PROCESS FORGOT IS A TABLE NOBODY DEALS (2026-09-02)
+   * ════════════════════════════════════════════════════════════════════════
+   *
+   * The sweep above was written on 2026-08-15 for precisely the failure its
+   * own comment names: "the reaper deleted it from the map and NOTHING
+   * recreated it". It does not cover that. It iterates `this.tableEngines`,
+   * so the one state it was built for -- the map entry GONE -- is the single
+   * state it cannot see.
+   *
+   * Measured live 2026-09-02, "$100 Freeroll 6:00 AM" (3e8e2afa):
+   *
+   *   table 10   status 'waiting'   6 live seats   63 hands, then silence
+   *   table 22   status 'running'   1 live seat    loopPhase start_wait_for_players
+   *
+   * /health listed table 22 and did not list table 10 at all. Six players and
+   * their stacks sat frozen for three hours and eleven minutes under a RUNNING
+   * tournament while every guard on the platform reported healthy, because
+   * every one of them walks the engine map:
+   *
+   *   reviveDeadTableEngines  iterates tableEngines - no entry, no revive
+   *   checkTableBalance       iterates tableEngines - saw ONE table, so its
+   *                                                   `size <= 1` early return
+   *                                                   fired and the field was
+   *                                                   never consolidated
+   *   absorbOrphanedSeats     skips OPEN tables     - 'waiting' is open, so
+   *                                                   the six were left alone
+   *   reopen sweep            only reopens 'closed' - declined
+   *   stalledTableCount       counts engines        - reported 0
+   *
+   * A table that is open in the database and absent from the map is invisible
+   * to all five, and nothing on the platform can end that state. The repair is
+   * the one the balancer would have made had it been able to see the felt:
+   * give the table its dealer back and let the existing consolidation run on
+   * the next cycle.
+   *
+   * Deliberately narrow, because an engine is not free:
+   *   - only tables of THIS tournament, which this process already leads;
+   *   - only rows that are open and not deleted;
+   *   - only rows that still hold a LIVE SEAT. A forgotten empty row deals to
+   *     nobody, so adopting one buys an engine for no player;
+   *   - at most ADOPT_BUDGET a pass, on the 20-second liveness cadence.
+   *
+   * Every read fails CLOSED: an unreadable board adopts nothing, never
+   * "adopt everything". The map slot is written before `start()` resolves, so
+   * the next pass twenty seconds later cannot build a second dealer for the
+   * same felt -- the duplicate-dealer failure `registerTableEngine` documents.
+   */
+  protected async adoptEnginelessTables(): Promise<void> {
+    const ADOPT_BUDGET = 4;
+
+    const { data: rows, error } = await supabase
+      .from('tables')
+      .select('id, status, is_deleted')
+      .eq('tournament_id', this.tournamentId)
+      .in('status', ['running', 'waiting', 'active']);
+    if (error) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] engineless-table scan failed: ${error.message} - adopting nothing this pass`
+        ),
+        'Tournament.adopt_scan_failed'
+      );
+      return;
+    }
+
+    const candidates = (rows ?? [])
+      .filter((r: any) => r?.is_deleted !== true)
+      .map((r: any) => String(r?.id ?? ''))
+      .filter((id: string) => id.length > 0 && !this.tableEngines.has(id));
+    if (candidates.length === 0) return;
+
+    const { data: seatRows, error: seatErr } = await supabase
+      .from('table_seats')
+      .select('table_id')
+      .in('table_id', candidates)
+      .is('left_at', null);
+    if (seatErr) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] engineless-table seat read failed: ${seatErr.message} - adopting nothing this pass`
+        ),
+        'Tournament.adopt_seat_read_failed'
+      );
+      return;
+    }
+
+    const occupied = new Set((seatRows ?? []).map((s: any) => String(s?.table_id ?? '')));
+    // Sorted so two passes, or two processes, pick the same tables in the same
+    // order rather than each adopting a different slice of the same backlog.
+    const adoptable = candidates.filter((id: string) => occupied.has(id)).sort();
+    if (adoptable.length === 0) return;
+
+    for (const tableId of adoptable.slice(0, ADOPT_BUDGET)) {
+      if (this.tableEngines.has(tableId)) continue;
+      const engine = new ServerTableEngine(tableId);
+      engine.setHub(tableStateHub);
+      this.tableEngines.set(tableId, engine);
+      this.gameServer.registerTableEngine(tableId, engine);
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] adopted engineless table ${tableId.slice(0, 8)} - it held live seats, had no dealer, and no sweep could see it`
+        ),
+        'Tournament.adopted_engineless_table',
+        { tableId }
+      );
+      engine
+        .start()
+        .catch((err) => reportError(err, 'Tournament.adopted_table_start_failed', { tableId }));
     }
   }
 
@@ -3674,7 +4085,7 @@ export abstract class TournamentManagerBase {
     if (!this.blindCapReported) {
       this.blindCapReported = true;
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] Blind cap engaged — level would have been ` +
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Blind cap engaged - level would have been ` +
           `${Number((level as any).smallBlind)}/${Number((level as any).bigBlind)} against ~${Math.round(total)} chips in play; ` +
           `capped to ${capped.smallBlind}/${capped.bigBlind} so the event keeps at least 20 big blinds on the felt`
       );
@@ -3693,20 +4104,18 @@ export abstract class TournamentManagerBase {
   protected blindCapReported = false;
 
   /**
-   * Replace the stored payout structure with one whose DEPTH matches the field
-   * that actually turned up. Called exactly once, at prize-pool finalisation.
+   * Replace the stored payout structure with one whose DEPTH matches the final
+   * field that actually turned up. Called exactly once, after entry closes.
    *
    * FAIL-CLOSED IN EVERY DIRECTION. It returns without writing when:
    *   - the entrant count cannot be read (never guess a field size — too small
    *     a guess promotes an earlier place to residual holder and overpays it);
    *   - the event is a Spin (its structure is derived from the multiplier and
    *     is not a ladder at all);
-   *   - the existing structure is already at least as deep as the field
-   *     warrants, so a hand-authored deep ladder is never narrowed;
    *   - the write fails, in which case the old structure stands and the reprice
    *     below simply runs against it, exactly as it did before this existed.
    */
-  protected async widenPayoutStructureToField(): Promise<void> {
+  protected async fitPayoutStructureToField(): Promise<void> {
     try {
       const t = this.tournamentCache as Record<string, unknown> | null;
       if (isSpinTournament(t as never)) return;
@@ -3718,16 +4127,16 @@ export abstract class TournamentManagerBase {
       if (fieldErr || typeof field !== 'number' || field < 1) {
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] payout widen skipped — entrant count unreadable (${fieldErr?.message ?? 'null count'}); the advertised structure stands`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] payout widen skipped - entrant count unreadable (${fieldErr?.message ?? 'null count'}); the advertised structure stands`
           ),
           'Tournament.payout_widen_field_unreadable'
         );
         return;
       }
 
-      const current = parsePayoutStructure(t?.payout_structure) ?? [];
       const wanted = paidPlacesForField(field);
-      if (current.length >= wanted) return;
+      const current = parsePayoutStructure(t?.payout_structure) ?? [];
+      if (current.length === wanted) return;
 
       const widened = payoutStructureForField(field);
       const { error: writeErr } = await supabase
@@ -3738,7 +4147,7 @@ export abstract class TournamentManagerBase {
       if (writeErr) {
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] payout widen write failed (${writeErr.message}) — the advertised ${current.length}-place structure stands`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] payout widen write failed (${writeErr.message}) - the advertised ${current.length}-place structure stands`
           ),
           'Tournament.payout_widen_write_failed'
         );
@@ -3750,7 +4159,7 @@ export abstract class TournamentManagerBase {
           JSON.stringify(widened);
       }
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] Payout structure widened ${current.length} -> ${widened.length} places for a field of ${field}`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Payout structure fitted ${current.length} -> ${widened.length} places for a final field of ${field}`
       );
     } catch (err) {
       reportError(err, 'Tournament.payout_widen_threw');
@@ -3901,7 +4310,7 @@ export abstract class TournamentManagerBase {
         if (this.onBreak) {
           this.savedBlindTimerRemaining = 1000;
           console.log(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Level was due during a break — holding it until play resumes`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Level was due during a break - holding it until play resumes`
           );
           return;
         }
@@ -4126,7 +4535,7 @@ export abstract class TournamentManagerBase {
             const finalPool = await this.applyPrizeGuarantee('late_reg_close');
             if (finalPool !== null) {
               console.log(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Late reg/rebuy closed at level ${this.currentLevel} — prize pool finalized: ${finalPool}`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Late reg/rebuy closed at level ${this.currentLevel} - prize pool finalized: ${finalPool}`
               );
             }
             // The close is still announced when funding failed — late
@@ -4183,13 +4592,13 @@ export abstract class TournamentManagerBase {
              * from the nine-place structure while everyone after them was paid
              * from the wide one.
              */
-            await this.widenPayoutStructureToField();
+            await this.fitPayoutStructureToField();
             if (poolToPriceBy > 0) {
               await this.recalculateEliminatedPrizes(poolToPriceBy);
             } else {
               reportError(
                 new Error(
-                  `[Tournament:${this.tournamentId.slice(0, 8)}] late reg closed but no pool to price by (guarantee funding returned ${finalPool}, cached pool ${this.tournamentCache?.prize_pool}) — eliminated prizes NOT repriced against the now-trimmed structure`
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] late reg closed but no pool to price by (guarantee funding returned ${finalPool}, cached pool ${this.tournamentCache?.prize_pool}) - eliminated prizes NOT repriced against the now-trimmed structure`
                 ),
                 'Tournament.late_reg_close_no_pool_to_reprice'
               );
@@ -4338,7 +4747,7 @@ export abstract class TournamentManagerBase {
         console.log(
           `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ONS: ${taken} taken` +
             (declined.size > 0
-              ? ` — declined: ${[...declined.entries()].map(([m, n]) => `${m} x${n}`).join(', ')}`
+              ? ` - declined: ${[...declined.entries()].map(([m, n]) => `${m} x${n}`).join(', ')}`
               : '')
         );
       }
@@ -4354,10 +4763,20 @@ export abstract class TournamentManagerBase {
     // TOURNEY-AUDIT 2026-07-24: persist the flag so a restart mid-add-on
     // restores it (resume() reads addon_period_triggered) instead of
     // re-broadcasting ADDON_PERIOD_START and losing finalizeAfterAddOn.
+    const addonPeriodStartedAt = new Date().toISOString();
+    const addonPeriodEndsAt = new Date(Date.now() + 60_000).toISOString();
+    if (this.tournamentCache) {
+      this.tournamentCache.addon_period_started_at = addonPeriodStartedAt;
+      this.tournamentCache.addon_period_ends_at = addonPeriodEndsAt;
+    }
     void Promise.resolve(
       supabase
         .from('tournaments')
-        .update({ addon_period_triggered: true })
+        .update({
+          addon_period_triggered: true,
+          addon_period_started_at: addonPeriodStartedAt,
+          addon_period_ends_at: addonPeriodEndsAt,
+        })
         .eq('id', this.tournamentId)
     )
       .then(({ error }: { error: { message?: string } | null }) => {
@@ -4376,21 +4795,22 @@ export abstract class TournamentManagerBase {
     const addonCost = this.tournamentCache?.addon_cost || this.tournamentCache?.buy_in_amount || 0;
     const addonChips =
       this.tournamentCache?.addon_chips || this.tournamentCache?.starting_chips || 0;
-    const addonLevels = this.tournamentCache?.addon_levels ?? 1;
     const rebuyLevelCap =
       this.tournamentCache?.late_reg_levels ?? this.tournamentCache?.rebuy_levels ?? 8;
 
     console.log(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ON PERIOD START — ${addonLevels} level(s) (Level ${rebuyLevelCap} to ${rebuyLevelCap + addonLevels}), cost: ${addonCost}, chips: ${addonChips}`
+      `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ON PERIOD START - 60 seconds after level ${rebuyLevelCap}, cost: ${addonCost}, chips: ${addonChips}`
     );
 
-    // Broadcast ADDON_PERIOD_START via Supabase Realtime (no fixed duration — level-based)
+    // The client receives one explicit 60-second offer with the exact price
+    // and chip grant. There is no rake on the purchase.
     await this.broadcast('ADDON_PERIOD_START', {
+      message: 'The Add-On Period Has Begun',
       addOnCost: addonCost,
       addOnChips: addonChips,
-      addonLevels,
-      startLevel: rebuyLevelCap,
-      endLevel: rebuyLevelCap + addonLevels,
+      addOnFee: 0,
+      durationSeconds: 60,
+      endsAt: addonPeriodEndsAt,
     });
 
     // ADD-ON BREAK (2026-08-22 parity): the add-on window opens with a short
@@ -4398,10 +4818,7 @@ export abstract class TournamentManagerBase {
     // tournaments.addon_break_minutes (clamped 1-10 at creation), never a
     // hardcoded value. A synchronized break or hand-for-hand already owns the
     // pause state when active, so this stands down rather than fighting them.
-    const addonBreakMinutes = Math.min(
-      10,
-      Math.max(1, Number(this.tournamentCache?.addon_break_minutes) || 1)
-    );
+    const addonBreakMinutes = 1;
     if (!this.onBreak && !this.handForHandActive) {
       const breakMs = addonBreakMinutes * 60 * 1000;
       for (const engine of this.tableEngines.values()) {
@@ -4436,8 +4853,22 @@ export abstract class TournamentManagerBase {
     // Offer the add-on to the field now that the window is open.
     await this.tryTournamentAddOns();
 
-    // NOTE: Add-on period end is now handled by the level-up handler (finalizeAfterAddOn)
-    // No more hardcoded 60-second timer!
+    this.scheduleAddOnPeriodEnd(addonPeriodEndsAt);
+  }
+
+  /** Close the offer and finalize the pool exactly sixty seconds after it
+   * opens. The persisted end time makes a process restart resume the same
+   * clock instead of granting a new window or leaving it open for a level. */
+  protected scheduleAddOnPeriodEnd(endsAt: string | null | undefined): void {
+    const parsed = Date.parse(String(endsAt || ''));
+    const delay = Number.isFinite(parsed) ? Math.max(0, parsed - Date.now()) : 0;
+    const timer = setTimeout(() => {
+      if (!this.running || this.prizePoolFinalized) return;
+      void this.finalizeAfterAddOn().catch((err) =>
+        reportError(err, 'TournamentManagerBase.addon_period_finalize')
+      );
+    }, delay);
+    if (typeof (timer as any)?.unref === 'function') (timer as any).unref();
   }
 
   /**
@@ -4497,7 +4928,7 @@ export abstract class TournamentManagerBase {
       if (error || res.ok !== true) {
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Prize guarantee could not be funded (${error?.message ?? res.reason ?? 'unknown'}) — the pool is NOT being bumped locally; no chips are being created`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Prize guarantee could not be funded (${error?.message ?? res.reason ?? 'unknown'}) - the pool is NOT being bumped locally; no chips are being created`
           ),
           'Tournament.prize_guarantee_unfunded'
         );
@@ -4538,10 +4969,14 @@ export abstract class TournamentManagerBase {
     if (this.prizePoolFinalized) return;
 
     console.log(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ON PERIOD ENDED at level ${this.currentLevel} — finalizing prize pool`
+      `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ON PERIOD ENDED at level ${this.currentLevel} - finalizing prize pool`
     );
 
     this.prizePoolFinalized = true;
+    await supabase
+      .from('tournaments')
+      .update({ prize_pool_finalized: true })
+      .eq('id', this.tournamentId);
     // GUARANTEE (2026-08-27): same rule as the late-reg-close site — the pool
     // is final now, so the advertised guarantee is FUNDED here (not declared).
     const finalPool = await this.applyPrizeGuarantee('addon_period_end');

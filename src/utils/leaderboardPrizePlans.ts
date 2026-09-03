@@ -1,6 +1,7 @@
 import type { LeaderboardPrize, LeaderboardPrizePlanKey } from '../services/LeaderboardService';
 
 const MAX_PRIZE_RANKS = 5;
+export const MAX_PRIZE_PLAN_BUDGET = 1_000_000_000;
 
 const SPLITS: Record<Exclude<LeaderboardPrizePlanKey, 'custom'>, number[]> = {
   balanced: [0.5, 0.3, 0.2],
@@ -24,17 +25,30 @@ export function suggestedPrizeBudgets(availableBalance: number | null): {
   }
 
   const wholeBalance = Math.floor(availableBalance);
-  const weekly = Math.min(wholeBalance, Math.max(25, Math.floor(wholeBalance * 0.01)));
+  const weekly = Math.min(
+    wholeBalance,
+    MAX_PRIZE_PLAN_BUDGET,
+    Math.max(25, Math.floor(wholeBalance * 0.01))
+  );
   const remainingAfterWeekly = Math.max(0, wholeBalance - weekly);
-  const monthly = Math.min(remainingAfterWeekly, Math.max(100, Math.floor(wholeBalance * 0.04)));
+  const monthly = Math.min(
+    remainingAfterWeekly,
+    MAX_PRIZE_PLAN_BUDGET,
+    Math.max(100, Math.floor(wholeBalance * 0.04))
+  );
   return { weekly, monthly };
+}
+
+export function clampPrizeBudget(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(MAX_PRIZE_PLAN_BUDGET, Math.max(0, Math.round(value * 100) / 100));
 }
 
 export function distributePrizeBudget(
   budget: number,
   plan: Exclude<LeaderboardPrizePlanKey, 'custom'>
 ): LeaderboardPrize[] {
-  const cents = Math.max(0, Math.round((Number.isFinite(budget) ? budget : 0) * 100));
+  const cents = Math.round(clampPrizeBudget(budget) * 100);
   if (cents === 0) return [];
 
   const split = SPLITS[plan];
@@ -56,7 +70,8 @@ export function normalizeCustomPrizes(prizes: LeaderboardPrize[]): LeaderboardPr
       !Number.isFinite(amount) ||
       rank < 1 ||
       rank > MAX_PRIZE_RANKS ||
-      amount <= 0
+      amount <= 0 ||
+      amount > MAX_PRIZE_PLAN_BUDGET
     ) {
       continue;
     }
@@ -67,8 +82,38 @@ export function normalizeCustomPrizes(prizes: LeaderboardPrize[]): LeaderboardPr
     .map(([rank, amount]) => ({ rank, amount }));
 }
 
+export function scaleCustomPrizesToBudget(
+  prizes: LeaderboardPrize[],
+  requestedBudget: number
+): LeaderboardPrize[] {
+  const budget = clampPrizeBudget(requestedBudget);
+  if (budget === 0) return [];
+  const normalized = normalizeCustomPrizes(prizes);
+  if (normalized.length === 0) return distributePrizeBudget(budget, 'balanced');
+
+  const sourceTotal = totalPrizePlan(normalized);
+  if (sourceTotal <= 0) return distributePrizeBudget(budget, 'balanced');
+  const targetCents = Math.round(budget * 100);
+  const allocations = normalized.map((prize) => {
+    const exactCents = targetCents * (prize.amount / sourceTotal);
+    return { prize, cents: Math.floor(exactCents), remainder: exactCents % 1 };
+  });
+  const remainingCents = targetCents - allocations.reduce((sum, row) => sum + row.cents, 0);
+  const byLargestRemainder = allocations
+    .map((row, index) => ({ index, remainder: row.remainder }))
+    .sort((a, b) => b.remainder - a.remainder || a.index - b.index);
+  for (let index = 0; index < remainingCents; index += 1) {
+    allocations[byLargestRemainder[index].index].cents += 1;
+  }
+  return allocations
+    .filter((row) => row.cents > 0)
+    .map(({ prize, cents }) => ({ rank: prize.rank, amount: cents / 100 }));
+}
+
 export function totalPrizePlan(prizes: LeaderboardPrize[]): number {
-  return (
-    Math.round(prizes.reduce((total, prize) => total + Number(prize.amount || 0), 0) * 100) / 100
-  );
+  const total = prizes.reduce((sum, prize) => {
+    const amount = Number(prize.amount);
+    return Number.isFinite(amount) ? sum + amount : sum;
+  }, 0);
+  return Math.round(total * 100) / 100;
 }

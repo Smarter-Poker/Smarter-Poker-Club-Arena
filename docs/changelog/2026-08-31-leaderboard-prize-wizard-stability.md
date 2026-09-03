@@ -11,6 +11,17 @@ publishes the program. Background leaderboard, membership, and settings
 refreshes can no longer dismiss an in-progress wizard or expose the page below
 the modal to the remainder of the click.
 
+Late authentication hydration follows the same rule. Refreshing the signed-in
+owner's club list no longer clears an already-open wizard, and prize-setup deep
+links now snapshot their authorized setup before opening the dialog. A real
+sign-out remains protected by the route guard and every publication attempt is
+still re-authorized by the server.
+
+The wizard is also rendered into the document-level modal layer. This keeps it
+outside the leaderboard page's stacking context, so the persistent Club Arena
+bottom navigation can never sit above the wizard footer or receive a Continue
+click intended for the setup flow.
+
 Publishing behavior is unchanged: the server still derives the funding owner,
 program versions still activate at the next canonical period, and opening or
 advancing the wizard never moves chips.

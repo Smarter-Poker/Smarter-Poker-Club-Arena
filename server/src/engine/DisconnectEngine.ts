@@ -15,6 +15,7 @@
  */
 
 import { PreciseActionTimer } from './PreciseActionTimer.js';
+import { sitOutAutoActionDelayMs } from './sitOutBeat.js';
 import { reportError } from '../services/errorReporter.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 
@@ -449,9 +450,21 @@ export class DisconnectEngine {
 
     if (!state) return true; // Untracked player — let them act
 
-    // Player is sitting out — auto-fold immediately
+    // Player is sitting out - auto-act, on the same beat as every other seat.
+    //
+    // 2026-09-01: this used to call executeAutoAction() straight from here, at
+    // zero milliseconds, while a horse floors at 350/1250 ms and a pre-action
+    // waits 900. Heads-up against a disconnected opponent that resolved every
+    // hand at machine speed. See engine/sitOutBeat.ts for why the rhythm is
+    // part of the treatment and not a detail.
+    //
+    // The caller already reads `false` as "DisconnectEngine will handle the
+    // auto-action via callback", so deferring changes nothing for it, and the
+    // timer is keyed `disconnect:<playerId>` like the timeout countdown - so
+    // cancelTimeout and cancelAllCountdowns already reach it, and a beat can
+    // never leak past the hand boundary.
     if (state.isSittingOut) {
-      this.executeAutoAction(tableId, playerId, canCheck, 'sitting_out');
+      this.scheduleSitOutAutoAction(tableId, playerId, canCheck);
       return false;
     }
 
@@ -569,17 +582,17 @@ export class DisconnectEngine {
     state: PlayerConnectionState
   ): { suspected: boolean; reason: string } {
     if (!state.isConnected) {
-      return { suspected: false, reason: 'disconnected — ordinary timeout ladder' };
+      return { suspected: false, reason: 'disconnected - ordinary timeout ladder' };
     }
     if (state.everActed) {
-      return { suspected: false, reason: 'has acted here before — ordinary AFK' };
+      return { suspected: false, reason: 'has acted here before - ordinary AFK' };
     }
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
     if ((state.turnsOffered ?? 0) < config.maxConsecutiveTimeouts) {
       return { suspected: false, reason: 'not enough turns offered to judge' };
     }
     if (state.lastTurnRenderedAt) {
-      return { suspected: false, reason: 'client confirmed it rendered the turn — AFK' };
+      return { suspected: false, reason: 'client confirmed it rendered the turn - AFK' };
     }
 
     const detail =
@@ -1022,6 +1035,23 @@ export class DisconnectEngine {
   // ═══════════════════════════════════════════════════════════════════════════
   // PRIVATE
   // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * The beat a sitting-out seat waits before the engine acts for it.
+   *
+   * Re-checked at the deadline rather than trusted from the top of the beat:
+   * a player who sits back in during those few hundred milliseconds gets their
+   * turn, which is the whole point of not folding them instantly. If they are
+   * still out, the auto-action runs exactly as it always did.
+   */
+  private scheduleSitOutAutoAction(tableId: string, playerId: string, canCheck: boolean): void {
+    const delayMs = sitOutAutoActionDelayMs(canCheck);
+    this.preciseTimer.startTimer(tableId, `disconnect:${playerId}`, delayMs, () => {
+      const state = this.playerStates.get(`${tableId}:${playerId}`);
+      if (!state || !state.isSittingOut) return; // they came back - the turn is theirs
+      this.executeAutoAction(tableId, playerId, canCheck, 'sitting_out');
+    });
+  }
 
   private startTimeoutCountdown(
     tableId: string,

@@ -165,7 +165,7 @@ describe('what it must never do', () => {
     expect(markSeatAsLeft).not.toHaveBeenCalled();
   });
 
-  it('has no is_horse test in it — CLAUDE.md 10.5', async () => {
+  it('has no is_horse test in it - CLAUDE.md 10.5', async () => {
     // A human whose seat release failed is sitting in the same ghost chair for
     // the same reason. The reported case being a horse says nothing about who
     // it happens to.

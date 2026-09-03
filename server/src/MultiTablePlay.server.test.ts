@@ -160,7 +160,7 @@ describe('per-user concurrent-table cap (atomic_table_buyin model)', () => {
   });
 });
 
-describe('per-user table cap — shipped-source pins', () => {
+describe('per-user table cap - shipped-source pins', () => {
   const MIG = readFileSync(
     join(process.cwd(), '../supabase/migrations/20260819_per_user_concurrent_table_cap.sql'),
     'utf8'

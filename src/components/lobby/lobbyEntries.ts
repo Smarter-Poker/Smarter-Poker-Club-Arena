@@ -25,6 +25,7 @@ import {
 } from './tournamentFigures';
 import { cashBuyInLabel, cashBuyInRange } from '../../lib/cashBuyIn';
 import { spinMultiplierLabel } from '../../utils/spinReveal';
+import { lateRegEndMs } from './lateRegWindow';
 import { SPIN_TIERS } from '../../config/spinSpec';
 
 // ─── Raw row shapes (subset the lobby queries actually select) ─────────────
@@ -228,7 +229,10 @@ const VARIANT_LABELS: Record<string, { short: string; long: string }> = {
   plo5: { short: 'PLO5', long: 'Pot Limit Omaha 5' },
   plo6: { short: 'PLO6', long: 'Pot Limit Omaha 6' },
   plo8: { short: 'PLO8', long: 'Pot Limit Omaha Hi-Lo' },
-  pineapple: { short: 'PNPL', long: 'Pineapple' },
+  /* Long name corrected 2026-09-01: the engine deals CRAZY Pineapple (the
+     discard is after the flop). The short code stays PNPL - it is a compact
+     column label, not a sentence, and the lobby's own filters key on it. */
+  pineapple: { short: 'PNPL', long: 'Crazy Pineapple' },
   short_deck: { short: '6+', long: 'Short Deck' },
   /* OFC removed 2026-08-23. Open Face Chinese is a card-PLACEMENT game with no
      betting rounds and no board; this platform has never dealt one. Every row
@@ -259,6 +263,18 @@ const TOURNEY_VARIANT_KEYS: Record<string, string> = {
   OFC_PINEAPPLE: 'pineapple',
   SHORT_DECK: 'short_deck',
   PLO: 'plo4',
+  /* LIMIT (2026-08-31). Limit tournaments became creatable the day these were
+     added; without a key here `variantDisplay` falls through to its own
+     fallback and prints the raw enum as BOTH labels, so a Fixed Limit Hold'em
+     event would have read "FLH" / "FLH" on the card instead of
+     "FLH" / "Fixed Limit Hold'em" — the identical defect this map already
+     records for OFC_PINEAPPLE. The two legacy spellings are here for the same
+     reason `variantKey` still folds them: a row written before the `flh` /
+     `flo8` names settled must still be able to name its own game. */
+  FLH: 'flh',
+  FLO8: 'flo8',
+  LIMIT_HOLDEM: 'flh',
+  LIMIT_OMAHA: 'flo8',
 };
 
 /**
@@ -893,7 +909,7 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
      *
      * Report what is actually true: how the seats are going.
      */
-    const seatFirst = classifyTournament(t) !== 'mtt';
+    const seatFirst = isSeatFirstTournament(t);
     if (seatFirst) {
       const cap = t.max_players || 0;
       const taken = t.current_players || 0;
@@ -1053,62 +1069,10 @@ export function formatClock(ms: number): string {
    canonical `duration_minutes`. They read through tournamentFigures now,
    which takes either spelling and is the only parser in the folder. */
 
-/**
- * When does late registration CLOSE, in ms epoch — or null when the row does
- * not carry enough to know. Mirrors isInLateRegistration's OR: minutes and
- * levels each keep the door open, so the close is the LATER of the two
- * windows the row can prove.
- *
- * The level window is exact when the row carries blind_structure and
- * level_started_at: the remainder of the current level plus every remaining
- * late-reg level's configured duration. (Dan 2026-08-24: the late reg closing
- * needs a countdown timer, not a static "Thru Level N".)
- */
-export function lateRegEndMs(t: LobbyTournamentRow): number | null {
-  const candidates: number[] = [];
-
-  const begun = new Date(t.started_at || t.start_time || '').getTime();
-  const lateMins = Number(t.late_reg_mins) || 0;
-  if (lateMins > 0 && Number.isFinite(begun)) candidates.push(begun + lateMins * 60000);
-
-  const lateLevels = Number(t.late_reg_levels) || 0;
-  if (lateLevels > 0) {
-    const structure = parseBlindStructure(t.blind_structure);
-    if (structure) {
-      /**
-       * INDEXES, NOT DISPLAY NUMBERS (2026-08-25).
-       *
-       * `late_reg_levels` counts 0-BASED indices: isInLateRegistration keeps
-       * the door open while `current_level < late_reg_levels`, and
-       * TournamentManagerBase closes it on `currentLevel >= cap`. This block
-       * compared that cap against tournamentLevel(), the 1-based DISPLAY
-       * number, so on the final late-reg level it added the remainder of the
-       * current level PLUS an entire extra level that registration would
-       * never see. The card counted down past the moment the RPC began
-       * refusing entries, and Register was dead for the difference.
-       */
-      const curIdx = Math.max(0, Number(t.current_level) || 0);
-      /* `|| t.started_at` measured the CURRENT level's remaining time from
-         the tournament's start - hours in the past on level 5 - so the levels
-         candidate returned a moment already gone and the card froze on
-         "Late Reg 0:00 Left" beside a working Register button. levelRemainingMs
-         already refuses to guess without level_started_at; this now agrees. */
-      const levelBegun = new Date(t.level_started_at || '').getTime();
-      if (Number.isFinite(levelBegun) && curIdx < lateLevels) {
-        // Rest of the level now running, then every remaining level up to but
-        // NOT including the cap. A level with no configured duration adds 0 —
-        // the estimate degrades toward "sooner", never invents time.
-        // blindLevelMinutes takes a 1-based level, hence the +1 on each index.
-        let end = levelBegun + blindLevelMinutes(structure, curIdx + 1) * 60000;
-        for (let idx = curIdx + 1; idx < lateLevels; idx++)
-          end += blindLevelMinutes(structure, idx + 1) * 60000;
-        candidates.push(end);
-      }
-    }
-  }
-
-  return candidates.length > 0 ? Math.max(...candidates) : null;
-}
+/* lateRegEndMs moved to ./lateRegWindow so the root-mounted tournament
+   ticker can read it without pulling this entire module into the entry
+   bundle. Re-exported here so every existing caller is unchanged. */
+export { lateRegEndMs };
 
 /**
  * The live phrase on line 2 of an MTT title: "Starting In 17:33...",
@@ -1414,6 +1378,36 @@ export function mttTitleLine(entry: LobbyEntry): string {
   return name.toUpperCase().includes(entry.gameLabel.toUpperCase())
     ? name
     : `${name} (${entry.gameLabel})`;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  SEAT-FIRST MEANS WHAT THE SERVER MEANS BY IT (2026-08-31, Phase 3)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The server has one definition, in TournamentRecurringService:
+ *
+ *     isSeatFirstFormat(variant, maxPlayers) =
+ *       variant === 'spin' || maxPlayers <= 2
+ *
+ * and `fn_take_seat_and_buy_in` honours the same rule. The lobby had a
+ * different one: anything `classifyTournament` called an 'sng', which is every
+ * capped field up to TEN seats. A six- or nine-max SNG therefore rendered a Sit
+ * Down affordance for a seat the server will not sell -- the player clicks and
+ * the buy-in is refused.
+ *
+ * No such row is created today ("WE AREN'T DOING ANY OTHER SIT N GO'S", Dan
+ * 2026-08-21), which is exactly why this is worth pinning rather than leaving:
+ * the day one is, the lobby lies about it and nothing fails first.
+ *
+ * classifyTournament keeps its own job -- it decides the TAB and the label, and
+ * a 6-max SNG genuinely belongs on the sit-n-go tab. What it must not decide,
+ * alone, is whether a seat can be taken.
+ */
+export function isSeatFirstTournament(t: LobbyTournamentRow): boolean {
+  if (classifyTournament(t) === 'spin') return true;
+  const seats = Number((t as { max_players?: unknown }).max_players);
+  return Number.isFinite(seats) && seats > 0 && seats <= 2;
 }
 
 export function classifyTournament(t: LobbyTournamentRow): 'mtt' | 'spin' | 'sng' {

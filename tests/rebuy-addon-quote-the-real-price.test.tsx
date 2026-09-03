@@ -101,7 +101,7 @@ describe('AddOnModal charges what it advertises', () => {
 
   it('gates on the fee-inclusive total', () => {
     render(<AddOnModal {...base} walletBalance={105} onAccept={vi.fn()} onDecline={vi.fn()} />);
-    const accept = screen.getByRole('button', { name: /Accept for 110/ }) as HTMLButtonElement;
+    const accept = screen.getByRole('button', { name: /Accept For 110/ }) as HTMLButtonElement;
     expect(accept.disabled).toBe(true);
     expect(screen.getByText(/you need 110 chips/i)).toBeTruthy();
   });
@@ -131,7 +131,7 @@ describe('AddOnModal charges what it advertises', () => {
         onDecline={vi.fn()}
       />
     );
-    fireEvent.click(screen.getByRole('button', { name: /Accept for 110/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Accept For 110/ }));
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
     expect(screen.getByRole('alert').textContent).toMatch(/Add-On Failed/);
     expect(screen.queryByText(/Add-On Accepted/)).toBeNull();
@@ -146,7 +146,7 @@ describe('AddOnModal charges what it advertises', () => {
         onDecline={vi.fn()}
       />
     );
-    fireEvent.click(screen.getByRole('button', { name: /Accept for 110/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Accept For 110/ }));
     await waitFor(() => expect(screen.getByText(/Add-On Accepted/)).toBeTruthy());
   });
 
@@ -157,7 +157,7 @@ describe('AddOnModal charges what it advertises', () => {
     });
     const onAccept = vi.fn().mockReturnValue(gate);
     render(<AddOnModal {...base} walletBalance={5000} onAccept={onAccept} onDecline={vi.fn()} />);
-    const btn = screen.getByRole('button', { name: /Accept for 110/ });
+    const btn = screen.getByRole('button', { name: /Accept For 110/ });
     fireEvent.click(btn);
     fireEvent.click(btn);
     fireEvent.click(btn);

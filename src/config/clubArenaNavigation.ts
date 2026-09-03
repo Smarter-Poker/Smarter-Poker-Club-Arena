@@ -14,6 +14,7 @@ interface ClubArenaNavigationContext {
   clubId: string | null;
   clubRole?: string | null;
   isPlatformStaff?: boolean;
+  canManageGames?: boolean;
 }
 
 const CLUB_STAFF_ROLES = new Set(['owner', 'co_owner', 'admin', 'manager', 'super_agent', 'agent']);
@@ -57,6 +58,7 @@ export function getClubArenaNavigation({
   clubId,
   clubRole = null,
   isPlatformStaff = false,
+  canManageGames = false,
 }: ClubArenaNavigationContext): ClubArenaNavGroup[] {
   const clubPath = (suffix = '') => (clubId ? `/clubs/${clubId}${suffix}` : '/');
 
@@ -192,7 +194,31 @@ export function getClubArenaNavigation({
       },
     ];
 
+    if (canManageGames) {
+      operationItems.push({
+        label: 'Table Management',
+        path: clubPath('/table-management'),
+        description: 'Create, Schedule, Edit, Close Games, And Control The Ticker',
+      });
+    }
+
     if (isClubStaff) {
+      /**
+       * PHASE 7 — the agent dashboard had no door anywhere.
+       *
+       * AgentDashboardPage is eight tabs of agent operations (Overview,
+       * Players, Cashouts, Commissions, Score, Analytics, Promo, Credit) and
+       * was reachable only by typing /agent-dashboard, while
+       * agent_commissions carried 1,490,109 rows against 113 agents. It
+       * resolves its own club, so the path stays global; the entry is gated
+       * with the rest of the staff tools because agents and super agents are
+       * club staff and owners oversee them.
+       */
+      operationItems.push({
+        label: 'Agent Dashboard',
+        path: '/agent-dashboard',
+        description: 'Downline Players, Commissions, Cashouts, And Credit',
+      });
       operationItems.push({
         label: 'Operations Center',
         path: clubPath('/operations'),

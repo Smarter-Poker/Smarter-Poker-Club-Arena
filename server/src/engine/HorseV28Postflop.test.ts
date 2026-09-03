@@ -35,7 +35,7 @@ function mkPlayer(over: Partial<SeatPlayer> = {}): SeatPlayer {
 // 200 is 25%; the code demanded ~48% and folded correct calls against any
 // covering opponent — worst on short stacks and tournament bubbles.
 // ═══════════════════════════════════════════════════════════════════════════
-describe('A1 — a covering overbet jam no longer inflates the price', () => {
+describe('A1 - a covering overbet jam no longer inflates the price', () => {
   it('a strong hand calls off a short stack against a monster covering jam', () => {
     // Hero: top pair top kicker on a dry river, 50 behind, pot was 100,
     // villain jams 500. True price: 50 to win 200 = 25%. TPTK is far ahead
@@ -90,7 +90,7 @@ describe('A1 — a covering overbet jam no longer inflates the price', () => {
 // with the board's own kings via the fall-through, making the V12/V16
 // aggressor conditioning a no-op on ~17% of flops.
 // ═══════════════════════════════════════════════════════════════════════════
-describe('connectsBoard — the board is not the hand', () => {
+describe('connectsBoard - the board is not the hand', () => {
   it('32o on K K 7 does NOT connect', () => {
     expect(connectsBoard([D('3'), S('2')], [H('K'), D('K'), CL('7')], false)).toBeLessThan(2);
   });
@@ -116,7 +116,7 @@ describe('connectsBoard — the board is not the hand', () => {
 // nut flush. higherFlushRanks defaulted to 0, which every consumer read as
 // "nut flush", leaving the stack-off path open for a can-only-chop hand.
 // ═══════════════════════════════════════════════════════════════════════════
-describe('nlhNutStatus — playing the board flush', () => {
+describe('nlhNutStatus - playing the board flush', () => {
   it('zero suited hole cards on a monotone board reports a dominated flush', () => {
     const ns = nlhNutStatus(
       [H('Q'), H('J')], // no clubs at all
@@ -140,7 +140,7 @@ describe('nlhNutStatus — playing the board flush', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 // Mind B2/B3/B5/B6/B8 — the opponent-model fixes.
 // ═══════════════════════════════════════════════════════════════════════════
-describe('HorseMind — the reads mean what their names say', () => {
+describe('HorseMind - the reads mean what their names say', () => {
   beforeEach(() => {
     HorseMind.reset();
   });
@@ -162,7 +162,7 @@ describe('HorseMind — the reads mean what their names say', () => {
       ...extra,
     }) as unknown as ActionRecord;
 
-  it('B2 — a limp in an unraised pot is NOT "faced aggression"', () => {
+  it('B2 - a limp in an unraised pot is NOT "faced aggression"', () => {
     // 20 hands of pure limping: no aggression ever faced.
     for (let h = 0; h < 20; h++) {
       HorseMind.observe([act('limper', 'call', 'preflop', 2, { timestamp: h * 1000 + 1 })], []);
@@ -171,7 +171,7 @@ describe('HorseMind — the reads mean what their names say', () => {
     expect(s?.facedAggr ?? 0).toBe(0);
   });
 
-  it('B2 — a raise OVER a bet counts in the faced-aggression denominator', () => {
+  it('B2 - a raise OVER a bet counts in the faced-aggression denominator', () => {
     for (let h = 0; h < 12; h++) {
       HorseMind.observe(
         [
@@ -188,7 +188,7 @@ describe('HorseMind — the reads mean what their names say', () => {
     expect(s?.folds ?? 0).toBe(0);
   });
 
-  it('B5 — a table of pure folders finally raises the multiway bluff mod', () => {
+  it('B5 - a table of pure folders finally raises the multiway bluff mod', () => {
     // Build three opponents who fold to aggression relentlessly.
     for (let h = 0; h < 40; h++) {
       for (const v of ['f1', 'f2', 'f3']) {
@@ -213,7 +213,7 @@ describe('HorseMind — the reads mean what their names say', () => {
     expect(e.bluffMod).toBeGreaterThan(1.2);
   });
 
-  it('B8 — a 4-bet is read as a top-few-percent range, not a 3-bet range', () => {
+  it('B8 - a 4-bet is read as a top-few-percent range, not a 3-bet range', () => {
     const history = [
       act('opener', 'raise', 'preflop', 6, { timestamp: 1, isFullRaise: true }),
       act('threebettor', 'raise', 'preflop', 18, { timestamp: 2, isFullRaise: true }),
@@ -235,7 +235,7 @@ describe('HorseMind — the reads mean what their names say', () => {
     expect(fourBetBand![0]).toBeGreaterThanOrEqual(0.8);
   });
 
-  it('B9 — the ace blocks the wheel, and a nine can block a low straight', () => {
+  it('B9 - the ace blocks the wheel, and a nine can block a low straight', () => {
     // Wheel window on board: the ace is the canonical blocker.
     expect(HorseMind.hasBlocker([H('A'), D('8')], [S('2'), D('3'), CL('4'), H('9'), S('K')])).toBe(
       true

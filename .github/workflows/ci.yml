@@ -1301,6 +1301,27 @@ jobs:
           # this step must not go red on a repo that has never set them.
           SP_EMAIL: ${{ secrets.SP_EMAIL }}
           SP_PASS: ${{ secrets.SP_PASS }}
+          # CUSTOMIZATION COMMERCE CERTIFICATION (2026-09-02).
+          #
+          # tests/e2e/support/temporaryCustomizationAccount.ts THROWS when these
+          # three are absent, and they were never passed here - so four
+          # customization specs failed on every scheduled run for a reason that
+          # had nothing to do with the product. This job has failed 14 times in
+          # a row and "is main green?" is the only question it exists to answer,
+          # so a self-inflicted red is expensive: it hides the five real
+          # failures underneath it.
+          #
+          # SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY already exist as repo
+          # secrets and just were not wired in. VITE_SUPABASE_ANON_KEY does NOT
+          # exist yet; it is the PUBLISHABLE key that already ships inside the
+          # browser bundle, so it is a repo variable rather than a secret, and
+          # it is read here with a secret fallback so either home works. Until
+          # one of them is set GitHub substitutes an empty string and this step
+          # behaves exactly as it does today - the change cannot make anything
+          # worse than the current red.
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY }}
         continue-on-error: false
 
       # ── MOBILE FIT + AVATAR WATCHDOG (2026-08-24) ─────────────────────────

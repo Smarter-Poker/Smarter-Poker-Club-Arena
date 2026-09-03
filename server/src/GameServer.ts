@@ -4325,7 +4325,7 @@ export class GameServer {
             /**
              * ── AND THE WINDOW IS A WINDOW, NOT A WAIT (round 15) ───────────
              *
-             * A horse-opened board holds its LAST seat for a human for 60-180
+             * A horse-opened board holds its LAST seat for a human for 60-150
              * randomised seconds (seatFirstHumanWindowMs), and `start_time` is
              * the instant that window closes. After it closes the board is
              * supposed to fill itself immediately. Measured over 6 hours it
@@ -4367,7 +4367,7 @@ export class GameServer {
              * one does, topUpWithHorses fills the remaining seats"). A
              * partial game with only horses is left alone on purpose: that
              * is the horse-opened board holding its last seat for a human
-             * (60-180s window), and the held-empty rotation — filling those
+             * (60-150s window), and the held-empty rotation — filling those
              * here would erase both designs.
              */
             if (seats > 0 && paid > 0 && paid < seats) {

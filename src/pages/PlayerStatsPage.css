@@ -1242,12 +1242,20 @@
   .stats-pill-tabs,
   .stats-range-row,
   .stats-hero-art,
-  /* A Suspense fallback must never reach paper. printDossier awaits the three
+  /* A Suspense fallback must never reach paper. printDossier awaits the
      lazy chart chunks before printing, so this should be unreachable - but the
      failure mode it guards against is a dossier containing the literal words
      "Loading Charts...", in a document read months later as authoritative.
-     Dan 2026-08-25. */
-  .hand-empty,
+     Dan 2026-08-25.
+
+     Only the LOADING variants are hidden (2026-09-03). `.hand-empty` on its own
+     was in this list, and it is also the class on "No Hands Recorded Yet" and
+     on the failed-read alert - so a dossier for a player whose hand fetch
+     failed printed an empty Notable Hands section with the explanation
+     removed. */
+  .hand-loading,
+  .stats-section-loading,
+  .stats-loading-readout,
   .stats-action-row,
   .stats-brief-actions,
   .export-btn,
@@ -1447,6 +1455,25 @@
   }
 }
 
+/* Section-level loading text (the Suspense fallback and the rake loader).
+   Referenced by the page since 2026-08-25 and never defined, so it rendered
+   as unstyled body text. */
+.stats-section-loading {
+  padding: 18px 14px;
+  text-align: center;
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+  color: rgba(200, 224, 245, 0.55);
+}
+
+.stats-page-loading .stats-command-deck-loading {
+  min-height: 200px;
+}
+
+.stats-page-loading .stats-loading-details {
+  padding: 0 0.75rem;
+}
+
 /* PanelBoundary fallback: one panel failing should read as a small, honest
    gap in the page, not as a broken app. */
 .panel-boundary-fallback {
@@ -1466,6 +1493,25 @@
 .panel-boundary-fallback strong {
   color: #fbbf24;
   font-size: 0.82rem;
+}
+
+.panel-boundary-retry {
+  align-self: flex-start;
+  margin-top: 0.35rem;
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.panel-boundary-retry:focus-visible {
+  outline: 2px solid #fbbf24;
+  outline-offset: 2px;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2527,8 +2573,12 @@
       font-size: 0.92rem;
     }
 
+    /* The sub-label says what the headline number is measured over
+       ("750 Analysed" under "Hands Played"). It was hidden on every phone,
+       which is where this product is mostly read; it is smaller here, not
+       gone. */
     .hero-stat-sub {
-      display: none;
+      font-size: 0.58rem;
     }
 
     .stats-notice-deck {

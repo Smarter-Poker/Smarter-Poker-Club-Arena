@@ -51,3 +51,50 @@ Config served locally on a real Caddy with a fake release tree:
 | `/build-info.json` | 200, `no-store, no-cache, must-revalidate` | **unchanged**       |
 
 Only the miss changed, which is the whole intent.
+
+---
+
+## Correction, same day: two things above are overstated
+
+Written while verifying the deploy. Both corrections make the bug _smaller_,
+and leaving the original wording would have handed the next agent a scarier
+story than the truth.
+
+**1. The publish-window race is not real on the normal path.** I described a
+browser holding a new `index.html` asking for a chunk that had not arrived
+yet. It cannot: `publish-club-arena.yml` uploads the release and fills
+`pool/{assets,fonts}` **before** it swaps the `current` symlink. By the time
+any browser can see the new index, its chunks are already served.
+
+The genuine source of a hashed-asset 404 is the **30-day pool prune**: a tab
+left open longer than that asks for a chunk that has since been aged out.
+Rarer than I implied, and the fix is still right - caching _that_ 404 for a
+year is what turns a recoverable stale tab into a permanently broken one.
+
+**2. The fix does not reach a player yet, because Vercel overrides it.**
+The origin is correct - `curl https://ca-static.smarter.poker/assets/nope.js`
+returns `404` with `cache-control: no-store`. But every player arrives through
+`smarter.poker`, and Vercel applies its OWN header rules to the proxied
+response, overwriting the origin's. Measured:
+
+| path                   | origin says                           | player gets                                 |
+| ---------------------- | ------------------------------------- | ------------------------------------------- |
+| `/assets/<missing>.js` | `no-store`                            | `public, max-age=31536000, immutable`       |
+| `/build-info.json`     | `no-store, no-cache, must-revalidate` | that **plus** `proxy-revalidate, max-age=0` |
+
+The rule doing it is `"/hub/:orb*/assets/(.*)"` in the World Hub's
+`vercel.json`.
+
+**I tried to fix that and backed the change out.** Excluding club-arena from
+that rule does not make Vercel pass the origin's header through - everything
+under `/hub/` is also matched by a blanket rule, so the assets would have
+fallen through to `no-cache, must-revalidate` and a 525 KB entry chunk would
+be revalidated on **every navigation**. That is a real, permanent performance
+regression traded against a rare, recoverable 404. Vercel header rules match
+on path only and cannot be made conditional on status, so there is no
+formulation that expresses "immutable when found, no-store when missing".
+
+So: the origin is right, the edge still overrides it, and the honest state is
+that this is **fixed at the origin and known-unfixed at the edge**. Closing it
+properly means either serving Club Arena from a host we control end to end, or
+accepting the trade deliberately - not a regex.

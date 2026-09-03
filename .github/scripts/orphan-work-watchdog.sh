@@ -80,8 +80,21 @@ COUNT=0
 # stuck-PR pass below. The workflow checks main out with full history, so
 # every question here is answerable by git in a few seconds with no API at all.
 git fetch -q origin '+refs/heads/*:refs/remotes/origin/*' 2>/dev/null || true
-OPEN_PR_HEADS=$(gh pr list --repo "$REPO" --state open --limit 200 \
-  --json headRefName --jq '.[].headRefName' 2>/dev/null || true)
+
+# THE PULL-REQUEST LIST IS NOT OPTIONAL (2026-09-03). It is the difference
+# between "stranded" and "proposed". When it cannot be read, nothing below can
+# be trusted: every proposed branch reads as unproposed, and the conflicted-PR
+# pass finds nothing. That is what every run of this sweep had done in the two
+# repos whose workflow granted the token no `pull-requests: read`: the last
+# one filed 416 "branches with no pull request", 148 of which had one, and 0
+# stuck pull requests, while 16 sat conflicted. A list that fails is an error,
+# spoken, and the sweep stops rather than filing fiction with a green step.
+if ! OPEN_PR_HEADS=$(gh pr list --repo "$REPO" --state open --limit 200 \
+  --json headRefName --jq '.[].headRefName' 2>&1); then
+  say "::error::could not list open pull requests: $OPEN_PR_HEADS"
+  say "::error::the token needs pull-requests: read. Without the list this sweep cannot tell stranded from proposed, so it reports nothing rather than everything."
+  exit 1
+fi
 MAIN_TREES=$(git log -200 --format=%T origin/main 2>/dev/null || true)
 while read -r BR LAST_EPOCH LAST; do
   [ -z "${BR:-}" ] && continue
@@ -127,9 +140,12 @@ COUNT_BRANCHES=$COUNT
 # costs one API call per open PR past the cutoff, and GitHub answers `null`
 # while it is still thinking, so a `null` is retried once after a short pause
 # rather than being read as "fine".
-PRS=$(gh pr list --repo "$REPO" --state open --limit 200 \
+if ! PRS=$(gh pr list --repo "$REPO" --state open --limit 200 \
   --json number,title,isDraft,updatedAt \
-  --jq '.[] | [.number, .isDraft, .updatedAt, .title] | @tsv' 2>/dev/null || true)
+  --jq '.[] | [.number, .isDraft, .updatedAt, .title] | @tsv' 2>&1); then
+  say "::error::could not list open pull requests for the stuck-PR pass: $PRS"
+  exit 1
+fi
 
 # A bound on the API work, so this pass can never be the reason the job is
 # killed the way the branch walk was on 2026-09-02. Oldest first - the ones

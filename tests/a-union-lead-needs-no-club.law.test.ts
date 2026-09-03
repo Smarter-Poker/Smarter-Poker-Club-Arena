@@ -110,8 +110,8 @@ describe('a union lead needs no club', () => {
   });
 
   it('a union overseer may open a club in their own union', () => {
-    const sql = body('ca_can_view_club_finances');
-    expect(sql, 'the finances gate is gone').not.toBe('');
+    const sql = body('ca_can_read_club_production');
+    expect(sql, 'the production helper is gone').not.toBe('');
     expect(sql, 'no union branch, so an overseer is refused their own clubs').toMatch(
       /fn_is_union_overseer/
     );
@@ -120,13 +120,37 @@ describe('a union lead needs no club', () => {
     expect(sql).toMatch(/union_clubs uc[\s\S]*?uc\.club_id = p_club_id/);
   });
 
-  it('the club row flag is the club gate, not a second opinion', () => {
+  it('and that claim does not leak into the other nine club RPCs', () => {
+    // The first cut put the union branch straight into
+    // ca_can_view_club_finances - which is not this feature's gate. It is the
+    // gate for nine other RPCs as well: the game ledger, the player
+    // breakdown, the insurance report, the CSV exports and the union invoice
+    // reader. Widening it handed every overseer the whole club data page for
+    // every member club, while the commit described a drill-down.
+    //
+    // Reading what a club PRODUCED is what a union bills against. Reading its
+    // player list and its cost structure is not.
+    const gate = body('ca_can_view_club_finances');
+    expect(gate, 'the finances gate is gone').not.toBe('');
+    expect(
+      gate,
+      'the union branch is back in the shared gate, and reaches nine RPCs it was never meant to'
+    ).not.toMatch(/fn_is_union_overseer/);
+
+    // And the two places that DO need it ask for it by its narrower name.
+    expect(body('ca_rake_snapshot')).toMatch(/ca_can_read_club_production\(p_club_id\)/);
+    expect(body('fn_ca_rake_by_club')).toMatch(/ca_can_read_club_production\(a\.club_id\)/);
+  });
+
+  it('the club row flag is the same check the club scope makes', () => {
     const sql = body('fn_ca_rake_by_club');
     expect(sql, 'the union list cannot say which rows open').toMatch(/AS can_drill/);
+    // Not merely "some gate" - the SAME one ca_rake_snapshot's club branch
+    // enforces, or the button and the refusal can disagree.
     expect(
       sql,
-      'a flag computed from anything but the gate can disagree with the gate'
-    ).toMatch(/public\.ca_can_view_club_finances\(a\.club_id\) AS can_drill/);
+      'a flag computed from anything but that check can disagree with it'
+    ).toMatch(/public\.ca_can_read_club_production\(a\.club_id\) AS can_drill/);
   });
 
   it('the panel offers a club row only when the server says it opens', () => {

@@ -17675,9 +17675,39 @@ export default function TablePage({
    * already use.
    */
   const handleActivateTimeBank = useCallback(async () => {
-    if (!tableId || !userId || (timeBanksRemaining ?? 0) <= 0) return;
+    if (!tableId || !userId) return;
+    /* ONE PRESS USES A BANK YOU OWN (Dan 2026-09-03) ────────────────────────
+     *
+     * "IF A USER HAS TIME BANKS ALREADY IN THEIR ACCOUNT (LIKE I DO NOW WITH
+     * 366) IF YOU CLICK THE TIME BANK IT SHOULD AUTO ENGAGE OR AUTO USE THE
+     * TIME BANK FOR THIS ACTION ... IT SHOULD JUST BE ABLE TO CLICK AND USE AS
+     * SOON AS THEIR 15 SECOND TIMER IS UP. THIS SHOULD NOT WORK IF THEY DON'T
+     * HAVE ANY, IT SHOULD DIRECT THEM TO BUY MORE."
+     *
+     * The engine has done the "arm now, spend it the moment the clock runs
+     * out" half since 2026-08-23, and it re-reads the player's PURCHASED
+     * allowance from the database before it refuses (refreshTimeBankFromDb).
+     * The client was the thing saying no: this early-returned on
+     * `timeBanksRemaining <= 0`, and that number is the seat's per-session
+     * counter off the engine snapshot (it defaults to 4), NOT what the player
+     * owns. Dan holds 7,620 purchased seconds plus VIP - measured through
+     * fn_time_bank_allowance - and still got a dead button the moment the
+     * seat's four were gone, with no toast and nothing to buy.
+     *
+     * So the client no longer pre-judges the press. It asks, and the engine -
+     * the only thing that knows the pool, the per-street cap and the purchase
+     * ledger - decides. A refusal for genuinely having none is the ONE case
+     * that opens the store, which is the other half of what Dan asked for.
+     */
     const result = await GameServerAPI.activateTimeBank(tableId, userId);
     if (!result?.success) {
+      /* "IT SHOULD DIRECT THEM TO BUY MORE." Only for actually being out -
+         'Not Your Turn' and 'Your Time Bank Is Already Running' are ordinary
+         refusals and must not throw a store in the player's face mid-decision. */
+      if (/no time bank uses remaining/i.test(String(result?.error ?? ''))) {
+        setShowTimeBankStore(true);
+        return;
+      }
       toast?.error?.(result?.error || 'Could Not Start Your Time Bank');
       return;
     }
@@ -17728,7 +17758,7 @@ export default function TablePage({
     // ANIMATION/SOUND AUDIT 2026-08-19: was playChips (a wager sound) — the
     // dedicated time-bank cue existed and was only wired to the REMOTE event.
     soundService.playTimeBankActivated();
-  }, [tableId, userId, timeBanksRemaining, toast, heroPineappleCards]);
+  }, [tableId, userId, toast, heroPineappleCards]);
 
   /* An arm belongs to ONE turn. Hero acts, folds, times out or the hand moves
      on, and a leftover `true` would keep the pending indicator lit on a seat
@@ -21222,7 +21252,14 @@ export default function TablePage({
                     className="control-strip__btn control-strip__btn--icon-img"
                     title="Time Bank"
                     onClick={handleActivateTimeBank}
-                    disabled={(timeBanksRemaining ?? 0) <= 0 || timeBankActive}
+                    /* Disabled ONLY while a bank is actually running (pressing
+                       again would be a no-op the engine already refuses). It is
+                       deliberately NOT disabled on the count: that number is
+                       the seat's per-session counter, not what the player owns,
+                       and disabling on it is what made the button dead for a
+                       player holding hundreds of purchased banks. A press with
+                       none left opens the store - see handleActivateTimeBank. */
+                    disabled={timeBankActive}
                   >
                     <span className="control-strip__icon-wrap" aria-hidden="true">
                       <img

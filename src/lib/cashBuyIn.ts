@@ -30,6 +30,7 @@
  * the RPC will enforce, and printing the band instead would advertise a
  * buy-in that is guaranteed to be rejected.
  */
+import { isDeadSessionError, standDownDeadSession } from './deadSession';
 
 /** The standard band the table's BuyInModal offers, in big blinds. */
 export const CASH_MIN_BB = 40;
@@ -111,6 +112,18 @@ export function cashBuyInLabel(row: CashBuyInSource): string {
 export function cashBuyInRefusalText(raw: unknown): string | null {
   const m = String((raw as { message?: string })?.message ?? raw ?? '');
   if (!m) return null;
+
+  /* THE SESSION IS GONE (Dan 2026-09-03). SESSION_REVOKED means the token
+     this tab holds names a session that no longer exists - it was signed out,
+     here or on another device. Naming the rule is not enough for this one:
+     the felt is still on screen and the next tap would try again. Stand the
+     player down (lib/deadSession) - that signs this device out, which unmounts
+     every table and closes every engine socket - and say why. Checked FIRST so
+     no later pattern can claim it. */
+  if (isDeadSessionError(raw)) {
+    standDownDeadSession('cashBuyInRefusalText');
+    return 'You Are Signed Out. Sign In Again To Take A Seat';
+  }
 
   /* The four-table cap, raised by fn_enforce_four_table_limit /
      fn_enforce_booking_game_cap as a 23514 that used to escape untranslated. */

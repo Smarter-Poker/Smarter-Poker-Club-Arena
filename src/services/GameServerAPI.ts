@@ -12,6 +12,7 @@
  * sent via Realtime but never reached the server-side engine.
  */
 
+import { standDownDeadSession } from '../lib/deadSession';
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
 
@@ -277,6 +278,19 @@ export async function submitAction(
       if (response.status === 429) {
         // Every retry exhausted. Never show the number.
         return { success: false, error: 'The table is busy - please try again' };
+      }
+
+      /* 401 IS NOT A "SERVER ERROR" (Dan 2026-09-03). The engine verifies every
+         action through GoTrue, which checks that the session behind the token
+         still exists - so a 401 here means this tab is signed out. It is the
+         notice Dan actually saw ("I DID GET A SERVER ERROR NOTICE AT LEAST")
+         while the DATABASE, which only checks a JWT's signature and expiry,
+         was still letting the same tab take a seat and buy chips. The database
+         half is closed in migration 20260903213000; this is the client half:
+         stop being at a table rather than reporting a number. */
+      if (response.status === 401) {
+        standDownDeadSession('GameServerAPI.submitAction');
+        return { success: false, error: 'You Are Signed Out. Sign In Again To Play' };
       }
 
       return { success: false, error: `Server error (${response.status})` };

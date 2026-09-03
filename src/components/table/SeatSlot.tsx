@@ -1100,6 +1100,12 @@ export const SeatSlot = memo(
     const turnPaintAnchorRef = useRef<{
       key: number;
       baseElapsedMs: number;
+      /**
+       * How far into the turn this client was when it first painted it, frozen.
+       * Every timing variable handed to CSS is derived from THIS, never from a
+       * fresh clock read, so a re-render cannot re-time the running ring.
+       */
+      originElapsedMs: number;
       /** Time left until 3s on the clock, frozen at this client's first paint of the turn. */
       holoDelayMs: number;
     } | null>(null);
@@ -1965,6 +1971,27 @@ export const SeatSlot = memo(
         turnPaintAnchorRef.current = {
           key: anchorKey,
           baseElapsedMs: baseAtFirstPaint,
+          /* THE RING'S ORIGIN, FROZEN (Dan 2026-09-03: "the disappearing blue
+             timer is not disappearing smoothly like it used to, it's
+             disappearing in chunks").
+             `animation-delay` is not a value a running animation ignores: the
+             browser RE-TIMES the animation to the new offset every time it
+             changes. --sp-timer-delay was recomputed from serverNow() on EVERY
+             render, so each re-render of this seat - a stack change, a pot
+             change, any per-second tick anywhere above - snapped the arc to a
+             freshly quantised position instead of letting it interpolate. The
+             result is a ring that jumps rather than drains, which is exactly
+             what the note two lines below already warned about for the holo
+             sweep ("feeding it a value that shrinks on every countdown tick
+             would re-time a running animation") - the warning was there, but
+             only the holo delay was ever frozen.
+             Freeze the ORIGIN once per turn and derive every timing variable
+             from it. Re-renders then produce byte-identical style values, so
+             the animation mounts once and runs continuously in the compositor;
+             a genuine new turn changes anchorKey and re-freezes, and a
+             time-bank extension changes only the DURATION, which is the one
+             re-time that is supposed to happen. */
+          originElapsedMs: Math.max(0, rawElapsedMs - baseAtFirstPaint),
           /* Frozen ONCE per turn. animation-delay is read by the browser
              when the class mounts; feeding it a value that shrinks on every
              countdown tick would re-time a running animation and bring the
@@ -1979,7 +2006,10 @@ export const SeatSlot = memo(
         Math.max(0, durationMs - 1_000)
       );
       const effDurationMs = durationMs - baseElapsedMs;
-      const elapsedMs = Math.max(0, rawElapsedMs - baseElapsedMs);
+      /* The frozen origin, not a live clock read - see the note in the anchor
+         above. `rawElapsedMs` is still what FREEZES it on the turn's first
+         paint; it must not keep feeding the style afterwards. */
+      const elapsedMs = turnPaintAnchorRef.current.originElapsedMs;
       holoOnClockDelayMs = turnPaintAnchorRef.current.holoDelayMs;
       // Dan 2026-08-15: the yellow countdown is a full 15 seconds. On a normal
       // 15s turn that is the entire clock (never goes red); when a time bank

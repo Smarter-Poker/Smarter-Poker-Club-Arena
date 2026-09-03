@@ -42,7 +42,7 @@
 import { supabase } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
-import { cashTableFill, isActiveNow, wantsTableChange } from './HorseBehavior.js';
+import { cashTableFill, isActiveNow, isRetiringTable, wantsTableChange } from './HorseBehavior.js';
 import {
   bankrollPolicyFor,
   referenceBuyIn,
@@ -53,6 +53,7 @@ import { bankrollEvent } from './HorseBankrollTelemetry.js';
 
 const CYCLE_MS = 90_000; // examine the floor every 90s
 const GLOBAL_DEPARTURES_PER_CYCLE = 4;
+
 const MIN_SESSION_MINUTES = 20; // nobody hit-and-runs a 5-minute session
 const MEAN_SESSION_MINUTES = 75;
 // V8: session-behavior knobs
@@ -155,7 +156,7 @@ export class HorseSessionRotator {
       const { data: chunk, error } = await supabase
         .from('table_seats')
         .select(
-          'table_id, user_id, seat_number, stack, joined_at, club_id, tables!inner(id, big_blind, tournament_id, status)'
+          'table_id, user_id, seat_number, stack, joined_at, club_id, tables!inner(id, big_blind, tournament_id, status, settings)'
         )
         .is('left_at', null)
         .order('table_id', { ascending: true })
@@ -294,10 +295,58 @@ export class HorseSessionRotator {
       }
     }
 
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  A TABLE MARKED FOR RETIREMENT IS WALKED OUT, ONE HORSE A CYCLE
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Dan 2026-09-03: "CLOSE ANY TABLES OVER 2/5." Deep Stack Society's ladder
+     * ran to $50/$100; the empty rungs closed in SQL, but a dozen fixed-limit
+     * $3/$6 and $4/$8 tables had horses in hands. A table cannot be closed
+     * from outside while its engine is mid-hand - the seats would be cashed
+     * out under the pot - so a running table is closed the way a real room
+     * closes one: `settings.retire_when_empty` is set on the row, the fleet
+     * stops seating anyone there (it joins surplusTableIds in
+     * HorseFleetManager.seedAllTables), this pass asks one horse a cycle to
+     * stand up through the engine's own leaveTable() (folds if mid-hand,
+     * cashes out at the end of the hand), and retireSurplusTables() closes
+     * the row once nobody is left.
+     *
+     * These departures sit OUTSIDE the realism cap below on purpose: the cap
+     * keeps a healthy floor from thinning itself, and a retiring table is not
+     * a healthy floor - twelve tables at one horse per cycle would otherwise
+     * queue behind four discretionary departures for the better part of an
+     * hour. One horse per table per cycle keeps the last hand dealing for the
+     * others while the table empties over a few minutes.
+     */
+    for (const [tableId, tableSeats] of byTable) {
+      const t = (tableSeats[0] as any)?.tables;
+      if (!isRetiringTable(t)) continue;
+      const engine = this.getEngine(tableId);
+      if (!engine) continue;
+      const horseSeat = tableSeats.find((x) => horseIds.has(x.user_id));
+      if (!horseSeat) continue;
+      try {
+        const result = engine.leaveTable(horseSeat.user_id);
+        if (result.success) {
+          this.breaks.delete(HorseSessionRotator.breakKey(tableId, horseSeat.user_id));
+          console.log(
+            `[SessionRotator] horse=${horseSeat.user_id.slice(0, 8)} leaving table=${tableId.slice(0, 8)} ` +
+              `- the table is retiring (${tableSeats.length} seated)`
+          );
+        }
+      } catch (err) {
+        reportError(err, 'HorseSessionRotator.retireLeave');
+      }
+    }
+
     let departures = 0;
     let breakTaken = false;
     for (const [tableId, tableSeats] of byTable) {
       if (departures >= GLOBAL_DEPARTURES_PER_CYCLE) break;
+      // A retiring table was handled above; nothing discretionary happens on
+      // it - no top-ups into a table that is closing, no breaks.
+      if (isRetiringTable((tableSeats[0] as any)?.tables)) continue;
       // V8: tables with a HUMAN present are protected harder — never thin a
       // human's game below 5, and horse-only tables absorb most rotation.
       const humanPresent = tableSeats.some((x) => !horseIds.has(x.user_id));

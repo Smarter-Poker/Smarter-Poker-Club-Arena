@@ -1144,6 +1144,18 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   */
   const reachableTotal = counts.live + counts.scheduled + counts.closedWithinHorizon;
   const archivedBeyondHorizon = Math.max(0, counts.closed - counts.closedWithinHorizon);
+  /*
+    `counts` starts as a zero-filled object, and this rail renders as soon as
+    access resolves - before the first list has come back. So for the length of
+    the first load every figure here is a placeholder, and the ONLY one that
+    makes a claim is the tooltip: "Every Game In This Scope Is On The Board"
+    asserted about a scope nothing has read yet. Same failure as the health
+    rail's `?? 0`, introduced in the same breath as the fix for it.
+
+    A zero next to the word Live is read as "counting"; a sentence is read as
+    an answer. The sentence waits for the read.
+  */
+  const countsAreKnown = !loading;
   /* The tab decides what "of" means: paging the Closed tab reaches the closed
      games within the horizon, not the whole board. */
   const viewTotal =
@@ -1294,7 +1306,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
               title={
                 archivedBeyondHorizon
                   ? `${archivedBeyondHorizon} More Closed Games Are Older Than The ${counts.closedHorizonDays}-Day Board Horizon And Are Not Listed`
-                  : 'Every Game In This Scope Is On The Board'
+                  : countsAreKnown
+                    ? 'Every Game In This Scope Is On The Board'
+                    : undefined
               }
             >
               <strong>{reachableTotal}</strong> Total

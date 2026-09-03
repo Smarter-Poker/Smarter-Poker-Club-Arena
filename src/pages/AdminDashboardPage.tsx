@@ -28,6 +28,7 @@ import { clubGamesOrFilter } from '../utils/unionScope';
 import { confirmDialog } from '../components/common/confirmDialog';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { resolvePageClubId, pickPreferredClubId } from '../utils/resolvePageClubId';
 // ── Helpers ─────────────────────────────────────────────────
 const formatDate = (ts: string | null | undefined) => {
   if (!ts) return '';
@@ -2456,17 +2457,30 @@ export default function AdminDashboardPage() {
       if (!user?.id) return;
 
       try {
-        const qClub = searchParams.get('club') || searchParams.get('clubId');
-        let targetClub = qClub;
+        /* The param is RESOLVED now (slug or 6-digit code both work, and the
+           result is the UUID the role check below compares against) — it used
+           to be used raw, so a slug reached `.eq('club_id', <slug>)` and
+           raised 22P02 rather than denying access cleanly.
 
-        // Auto-discover club if none in URL
+           The auto-discovery keeps its role filter, because picking a club
+           where this operator is an ordinary member would hand them a page
+           their own role check then refuses. Only the CHOICE changed: it was
+           `mems[0]` on a query with no ORDER BY, so an operator working two
+           clubs got whichever row Postgres returned first and that could
+           change under them. Now the club they were last in wins. */
+        const qClub = searchParams.get('club') || searchParams.get('clubId');
+        let targetClub = qClub
+          ? await resolvePageClubId({ routeClubId: qClub, allowFallback: false })
+          : null;
+
         if (!targetClub) {
           const { data: mems } = await supabase
             .from('club_members')
             .select('club_id, role')
             .eq('user_id', user.id)
-            .in('role', ['owner', 'co_owner', 'admin', 'manager']);
-          if (mems && mems.length > 0) targetClub = mems[0].club_id;
+            .in('role', ['owner', 'co_owner', 'admin', 'manager'])
+            .order('joined_at', { ascending: true });
+          targetClub = pickPreferredClubId((mems || []).map((m) => m.club_id));
         }
 
         if (targetClub && !cancelled) {

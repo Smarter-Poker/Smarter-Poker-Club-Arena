@@ -65,6 +65,7 @@ import ManageTab from './marketplace/ManageTab';
 // that render raw server text.
 import { formatPopupText } from '../utils/popupStyle';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
+import { resolvePageClubId } from '../utils/resolvePageClubId';
 
 type TabKey = 'store' | 'diamonds' | 'membership' | 'my_items' | 'manage';
 const VALID_TABS: TabKey[] = ['store', 'diamonds', 'membership', 'my_items', 'manage'];
@@ -268,29 +269,26 @@ export default function MarketplacePage() {
     if (!user) return;
     let isMounted = true;
     const init = async () => {
-      let targetClub: string | null = null;
-      if (qClubParam) {
-        // Accept both UUIDs and legacy 6-digit club codes
-        // resolveClubUUID never throws - it swallows the miss, warns, and
-        // returns the raw param, which is exactly what the catch did. Optional
-        // catch binding so the belt costs no unused variable.
-        try {
-          targetClub = await resolveClubUUID(qClubParam);
-        } catch {
-          targetClub = qClubParam;
-        }
-      }
-      if (!targetClub) {
-        const { data: mem } = await supabase
-          .from('club_members')
-          .select('club_id')
-          .eq('user_id', user.id)
-          .limit(1)
-          .maybeSingle();
-        targetClub = mem?.club_id || null;
-      }
+      /* The `?club=` handling and the no-param fallback both live in
+         `resolvePageClubId` now. What was here instead picked the fallback
+         with `.limit(1)` and NO `.order()` — "a" membership, not "the" one —
+         so a player in several clubs could be shown a different shop on two
+         consecutive loads with no action of their own. The shared resolver
+         prefers the explicit identifier, then the club they were last in,
+         then a deterministic first eligible club.
+
+         RESOLVED IN TWO STEPS ON PURPOSE. A URL that NAMES a club and a URL
+         that names none are different situations, and letting the resolver
+         fall back in one call would collapse them — a bad link would quietly
+         open a different club's shop, which is the exact failure this whole
+         branch exists to remove. `qClubParam` is passed rather than the raw
+         search because this page also honours the older `?clubId=` spelling. */
+      const explicitClub = qClubParam
+        ? await resolvePageClubId({ routeClubId: qClubParam, allowFallback: false })
+        : null;
+
       if (!isMounted) return;
-      if (targetClub && !isUuid(targetClub)) {
+      if (qClubParam && !explicitClub) {
         // Do NOT keep browsing the previous club's shop behind an invalid URL.
         toast.error('That club link looks invalid.');
         setClubId(null);
@@ -300,6 +298,9 @@ export default function MarketplacePage() {
         loadWallet();
         return;
       }
+
+      const targetClub = explicitClub ?? (await resolvePageClubId({ userId: user.id }));
+      if (!isMounted) return;
       if (targetClub) {
         // Reset club-scoped state OUTSIDE the setState updater -- updaters must
         // be pure, and React 19 StrictMode double-invokes them.

@@ -81,10 +81,9 @@ describe('a list that stops early says so', () => {
     // plainly exist. The count is now counted over the filtered set, which
     // cannot depend on which page was asked for. What the law actually forbids
     // is deriving the count from the rows that came back.
-    expect(
-      sql,
-      'a count taken from the page reports zero whenever the page is empty'
-    ).toMatch(/'total',\s*\(SELECT count\(\*\) FROM filtered\)/);
+    expect(sql, 'a count taken from the page reports zero whenever the page is empty').toMatch(
+      /'total',\s*\(SELECT count\(\*\) FROM filtered\)/
+    );
   });
 
   it.each(HELPERS)('%s sums the WHOLE set, not the page', (fn) => {
@@ -98,10 +97,9 @@ describe('a list that stops early says so', () => {
     expect(sql, 'the denominator needs a set of its own to sum').toMatch(
       /totals AS \(\s*SELECT COALESCE\(SUM\([a-z_.]+\),0\) AS total_direct[\s\S]*?FROM listed/
     );
-    expect(
-      sql,
-      'total_direct must be read from that set, not from the page'
-    ).toMatch(/'total_direct',\s*\(SELECT t\.total_direct FROM totals t\)/);
+    expect(sql, 'total_direct must be read from that set, not from the page').toMatch(
+      /'total_direct',\s*\(SELECT t\.total_direct FROM totals t\)/
+    );
   });
 
   it('the snapshot reads total_direct instead of summing what it was handed', () => {

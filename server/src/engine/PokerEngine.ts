@@ -22,6 +22,7 @@ import type {
 } from '../types.js';
 
 import { secureShuffle } from './CryptoRandom.js';
+import { RAKE_SPEC } from '../config/rakeSpec.js';
 import { isOmahaVariant, isHiLoVariant, isShortDeckVariant } from './VariantRules.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -867,7 +868,10 @@ export function validateAction(
  * job on the big pots, which is why the average sat between the two rates and
  * why this went unnoticed.
  */
-export const HEADS_UP_RAKE_PERCENT = 5;
+// 2026-09-02: the number lives in RAKE_SPEC (config/rakeSpec.ts), the one
+// specification the database mirrors as ca_rake_rules.heads_up_percent. This
+// export is the same value under its historical name.
+export const HEADS_UP_RAKE_PERCENT = RAKE_SPEC.rules.headsUpPercent;
 
 export function calculateRake(
   pot: number,

@@ -76,8 +76,13 @@ function payload(kind: 'club' | 'agent', rows: unknown[]) {
     range: { start: '2026-09-01', end: '2026-09-03', days: 3 },
     previous_range: { start: '2026-08-29', end: '2026-08-31', days: 3 },
     summary: {
-      games: 12, total_winnings: 100, mtt_winnings: 0,
-      cash_fee: 2000, mtt_fee: 0, fee: 2000, hands: 900,
+      games: 12,
+      total_winnings: 100,
+      mtt_winnings: 0,
+      cash_fee: 2000,
+      mtt_fee: 0,
+      fee: 2000,
+      hands: 900,
     },
     previous: { fee: 1800 },
     delta: { fee_pct: 11, games_pct: null, fee_abs: 200, winnings_abs: 5 },
@@ -100,10 +105,15 @@ function payload(kind: 'club' | 'agent', rows: unknown[]) {
 function asked() {
   return rpcMock.mock.calls
     .filter(([fn]) => fn === 'ca_rake_snapshot')
-    .map(([, a]) => a as {
-      p_scope?: string; p_club_id?: string | null; p_union_id?: string | null;
-      p_search?: string | null;
-    });
+    .map(
+      ([, a]) =>
+        a as {
+          p_scope?: string;
+          p_club_id?: string | null;
+          p_union_id?: string | null;
+          p_search?: string | null;
+        }
+    );
 }
 
 beforeEach(() => {
@@ -161,9 +171,10 @@ describe('the rake snapshot on a union', () => {
     rpcMock.mockImplementation((fn: string, a: { p_scope?: string }) => {
       if (fn !== 'ca_rake_snapshot') return Promise.resolve({ data: null, error: null });
       return Promise.resolve({
-        data: a?.p_scope === 'club'
-          ? payload('agent', [agentRow(1)])
-          : payload('club', [clubRow(CLUB_A, 'SHARK CLUB')]),
+        data:
+          a?.p_scope === 'club'
+            ? payload('agent', [agentRow(1)])
+            : payload('club', [clubRow(CLUB_A, 'SHARK CLUB')]),
         error: null,
       });
     });
@@ -191,9 +202,10 @@ describe('the rake snapshot on a union', () => {
     rpcMock.mockImplementation((fn: string, a: { p_scope?: string }) =>
       fn === 'ca_rake_snapshot'
         ? Promise.resolve({
-            data: a?.p_scope === 'club'
-              ? payload('agent', [agentRow(1)])
-              : payload('club', [clubRow(CLUB_A, 'SHARK CLUB')]),
+            data:
+              a?.p_scope === 'club'
+                ? payload('agent', [agentRow(1)])
+                : payload('club', [clubRow(CLUB_A, 'SHARK CLUB')]),
             error: null,
           })
         : Promise.resolve({ data: null, error: null })
@@ -215,9 +227,10 @@ describe('the rake snapshot on a union', () => {
     rpcMock.mockImplementation((fn: string, a: { p_scope?: string; p_search?: string | null }) =>
       fn === 'ca_rake_snapshot'
         ? Promise.resolve({
-            data: a?.p_scope === 'club'
-              ? payload('agent', [agentRow(1)])
-              : payload('club', [clubRow(CLUB_A, 'SHARK CLUB')]),
+            data:
+              a?.p_scope === 'club'
+                ? payload('agent', [agentRow(1)])
+                : payload('club', [clubRow(CLUB_A, 'SHARK CLUB')]),
             error: null,
           })
         : Promise.resolve({ data: null, error: null })
@@ -258,10 +271,17 @@ describe('the rake snapshot on a union', () => {
             breakdown_kind: 'downline',
             breakdown: [
               {
-                player_id: 'p1', name: 'Player One', role: 'member', depth: 1,
-                upline_user_id: 'agent-1', upline_name: 'Agent 1',
-                rake: 10, hands: 5, last_hand_at: null,
-                downline_players: 0, downline_rake: 0,
+                player_id: 'p1',
+                name: 'Player One',
+                role: 'member',
+                depth: 1,
+                upline_user_id: 'agent-1',
+                upline_name: 'Agent 1',
+                rake: 10,
+                hands: 5,
+                last_hand_at: null,
+                downline_players: 0,
+                downline_rake: 0,
               },
             ],
           },
@@ -269,9 +289,10 @@ describe('the rake snapshot on a union', () => {
         });
       }
       return Promise.resolve({
-        data: a?.p_scope === 'club'
-          ? payload('agent', [{ ...agentRow(1), can_drill: true }])
-          : payload('club', [clubRow(CLUB_A, 'SHARK CLUB')]),
+        data:
+          a?.p_scope === 'club'
+            ? payload('agent', [{ ...agentRow(1), can_drill: true }])
+            : payload('club', [clubRow(CLUB_A, 'SHARK CLUB')]),
         error: null,
       });
     });
@@ -325,9 +346,10 @@ describe('the rake snapshot on a union', () => {
     rpcMock.mockImplementation((fn: string, a: { p_scope?: string }) =>
       fn === 'ca_rake_snapshot'
         ? Promise.resolve({
-            data: a?.p_scope === 'club'
-              ? payload('agent', [agentRow(1)])
-              : payload('club', [clubRow(CLUB_A, 'SHARK CLUB')]),
+            data:
+              a?.p_scope === 'club'
+                ? payload('agent', [agentRow(1)])
+                : payload('club', [clubRow(CLUB_A, 'SHARK CLUB')]),
             error: null,
           })
         : Promise.resolve({ data: null, error: null })

@@ -214,7 +214,7 @@ describe('a search term is text, not a pattern', () => {
     expect(sql, 'no escaper').not.toBe('');
 
     const BS = String.fromCharCode(92);
-    expect(sql, "the term is not run through three replaces").toMatch(
+    expect(sql, 'the term is not run through three replaces').toMatch(
       /replace\(\s*replace\(\s*replace\(/
     );
     // The INNERMOST replace is the one applied first, and it must be the
@@ -222,12 +222,13 @@ describe('a search term is text, not a pattern', () => {
     // had just introduced, turning every search containing a percent sign
     // into a search for a literal backslash.
     const innermost = sql.slice(sql.lastIndexOf('replace('));
-    expect(innermost.startsWith(`replace(p_term, '${BS}'`),
-      'the innermost replace is not the backslash one').toBe(true);
+    expect(
+      innermost.startsWith(`replace(p_term, '${BS}'`),
+      'the innermost replace is not the backslash one'
+    ).toBe(true);
     // And all three characters are handled.
     for (const c of [BS, '%', '_']) {
-      expect(sql.includes(`'${BS}${c}'`),
-        `${c} is never escaped`).toBe(true);
+      expect(sql.includes(`'${BS}${c}'`), `${c} is never escaped`).toBe(true);
     }
   });
 

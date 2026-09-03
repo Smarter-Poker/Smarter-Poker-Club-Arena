@@ -25,7 +25,7 @@ import { act } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ counts: null as any }));
+const mocks = vi.hoisted(() => ({ counts: null as any, holdList: false }));
 
 vi.mock('../../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({ user: { id: 'operator-1' } }),
@@ -70,23 +70,31 @@ vi.mock('../../src/services/GameManagementService', () => ({
       _scopeId: string,
       _cursor: unknown = null,
       bucket: number | null = null
-    ) => ({
-      items: [
-        {
-          id: 'g1',
+    ) => {
+      if (mocks.holdList) await new Promise(() => {});
+      return {
+        items: [
+          {
+            id: 'g1',
+            kind: 'table',
+            name: 'Friday Deep Stack',
+            status: bucket === 2 ? 'closed' : 'running',
+            club_id: 'club-uuid-1',
+            players: 0,
+            max_players: 9,
+            bucket: bucket ?? 0,
+          },
+        ],
+        counts: mocks.counts,
+        // A cursor, so the pager renders and can be read.
+        nextCursor: {
+          sortAt: '2026-09-01T00:00:00Z',
           kind: 'table',
-          name: 'Friday Deep Stack',
-          status: bucket === 2 ? 'closed' : 'running',
-          club_id: 'club-uuid-1',
-          players: 0,
-          max_players: 9,
+          id: 'g1',
           bucket: bucket ?? 0,
         },
-      ],
-      counts: mocks.counts,
-      // A cursor, so the pager renders and can be read.
-      nextCursor: { sortAt: '2026-09-01T00:00:00Z', kind: 'table', id: 'g1', bucket: bucket ?? 0 },
-    }),
+      };
+    },
     getContracts: async () => [],
     getCommandReceipts: async () => [],
     getHealth: async () => ({
@@ -146,6 +154,7 @@ const pagerText = () =>
 describe('the total counts what the board can reach', () => {
   beforeEach(() => {
     mocks.counts = MIDWAY;
+    mocks.holdList = false;
   });
 
   it('shows the reachable total, not the whole archive', async () => {
@@ -209,5 +218,35 @@ describe('the total counts what the board can reach', () => {
     expect(screen.getByText('1814')).toBeInTheDocument();
     const total = screen.getByText('1814').closest('span');
     expect(total?.getAttribute('title')).toMatch(/every game in this scope is on the board/i);
+  });
+  /**
+   * Found reviewing my own change, before calling it done.
+   *
+   * `counts` starts as a zero-filled object and this rail renders as soon as
+   * ACCESS resolves - which is before the first list has come back. For the
+   * length of that first load every figure in the rail is a placeholder. The
+   * numbers can live with that; a zero beside the word Live reads as
+   * "counting". The tooltip could not: "Every Game In This Scope Is On The
+   * Board" is a sentence, and a sentence reads as an answer. It was being
+   * asserted about a scope nothing had read yet.
+   *
+   * Exactly the failure the health rail's `?? 0` had, introduced in the same
+   * breath as the fix for it, which is the reason this test exists.
+   */
+  it('claims nothing about the horizon before the first read returns', async () => {
+    mocks.holdList = true;
+    render(
+      <MemoryRouter initialEntries={['/clubs/midway-union/table-management']}>
+        <Routes>
+          <Route
+            path="/clubs/:clubId/table-management"
+            element={<GameManagementPage scope="club" />}
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+    // The rail is up (access resolved); the list has not answered.
+    const total = await screen.findByText('Total');
+    expect(total.closest('span')?.getAttribute('title')).toBeNull();
   });
 });

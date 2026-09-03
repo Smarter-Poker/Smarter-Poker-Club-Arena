@@ -1,0 +1,64 @@
+/* Spins console (shark-spins-premium-v1). Positions live in
+   SpinsPremiumCard.tsx; this file is typography only. The master uses a
+   wide sans (Inter-like) for its silver headline and plaque values, so the
+   spin card is set in Inter rather than the condensed face the cash cards use. */
+
+.agc-spins-premium .agc-layered__text {
+  font-family: Inter, 'Roboto Condensed', system-ui, sans-serif;
+  font-stretch: normal;
+}
+
+.agc-spins-premium__title {
+  --size: 8.2cqw;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.agc-spins-premium .agc-layered__text--value {
+  --size: 6.4cqw;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* Dark lettering on the gold promo pill. */
+.agc-spins-premium__promo {
+  --size: 3.6cqw;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #2b1d04;
+  text-shadow: 0 0.15cqw 0 rgb(255 236 170 / 55%);
+}
+
+.agc-spins-premium .agc-layered__status {
+  border-radius: 1.4cqw;
+}
+
+.agc-spins-premium .agc-layered__status-text {
+  --size: 2.9cqw;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+
+.agc-spins-premium__lead {
+  --size: 4.3cqw;
+  font-weight: 600;
+}
+
+.agc-spins-premium__hero {
+  --size: 9.6cqw;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.agc-spins-premium__prize {
+  --size: 3.4cqw;
+  font-weight: 600;
+}
+
+.agc-spins-premium__action .agc-layered__action-text {
+  --size: 5.6cqw;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}

@@ -1,5 +1,7 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
+  RESTART_MAX_MINUTES,
+  RESTART_WEEKLY_MINUTES,
   tournamentService,
   BLIND_STRUCTURES,
   SPIN_BLIND_STRUCTURE,
@@ -281,17 +283,40 @@ export default function CreateTournamentModal({
   const [earlyBirdChips, setEarlyBirdChips] = useState('0');
   const [bubbleProtection, setBubbleProtection] = useState(false);
   const [finalTableDeal, setFinalTableDeal] = useState(false);
-  /** Empty string = no auto-restart; otherwise minutes, 5-1440. */
+  /** Empty string = no auto-restart; otherwise minutes, 5 to a week (10080). */
   const [restartEvery, setRestartEvery] = useState('');
   const [maxRebuysStr, setMaxRebuysStr] = useState('');
 
   // ── Weekly recurring schedule (tournament_schedules) ──
+  /**
+   * REPEATS WEEKLY (Dan 2026-09-03): "ALL MTT'S SHOULD BE ON A RECURRING
+   * WEEKLY CYCLE ... ADDED TO THE 'CREATE EVENT' FUNCTIONALITY ... AS A CHECK
+   * BOX OPTION." One checkbox, no editor: the event repeats on the weekday and
+   * UTC time of its own start, through the same tournament_schedules row the
+   * Recurring Tournament section below writes. The row is published a week
+   * ahead (spawnAheadMinutes), so next week's copy is on the board as soon as
+   * this one exists, and it is spawner-owned: the first instance is created
+   * by the spawner rather than by hand, so this week's occurrence is never
+   * made twice.
+   */
+  const [repeatsWeekly, setRepeatsWeekly] = useState(false);
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [schedule, setSchedule] = useState<WeeklyScheduleValue>({ ...DEFAULT_WEEKLY_SCHEDULE });
   const [scheduleCadence, setScheduleCadence] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
   const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState(new Date().getUTCDate());
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  /** The weekday and UTC time this event starts, read from the start-time
+   *  fields (or "about now" for an event that starts now). */
+  const weeklySlotFromStart = useCallback((): { daysOfWeek: number[]; startTimesUtc: string[] } => {
+    const when =
+      startTimeMode === 'scheduled' && scheduledDate && scheduledTime
+        ? new Date(`${scheduledDate}T${scheduledTime}`)
+        : new Date(Date.now() + 10 * 60 * 1000);
+    const at = Number.isFinite(when.getTime()) ? when : new Date(Date.now() + 10 * 60 * 1000);
+    return { daysOfWeek: [at.getUTCDay()], startTimesUtc: [at.toISOString().slice(11, 16)] };
+  }, [startTimeMode, scheduledDate, scheduledTime]);
 
   // ── The buy-in, split ──
   // total = what the player pays (the typed whole number)
@@ -675,14 +700,30 @@ export default function CreateTournamentModal({
 
       // ── Advanced-options validation mirroring the server ──
       const restartMinutes = restartEvery.trim() === '' ? null : Math.round(Number(restartEvery));
-      if (restartMinutes !== null && (restartMinutes < 5 || restartMinutes > 1440)) {
-        toast.error('Restart interval must be between 5 and 1440 minutes.');
+      if (restartMinutes !== null && (restartMinutes < 5 || restartMinutes > RESTART_MAX_MINUTES)) {
+        toast.error('Restart interval must be between 5 minutes and one week (10080 minutes).');
         submittingRef.current = false;
         setIsSubmitting(false);
         return;
       }
-      if (scheduleEnabled) {
-        const problem = validateWeeklySchedule(schedule);
+      // Repeats Weekly: the slot is the start time's own weekday and hour,
+      // read at submit so a start time changed after the box was ticked still
+      // wins. The event is spawner-owned (no hand-made first instance).
+      const effectiveSchedule: WeeklyScheduleValue = repeatsWeekly
+        ? {
+            ...schedule,
+            mode: 'times',
+            intervalMinutes: schedule.intervalMinutes,
+            ...weeklySlotFromStart(),
+          }
+        : schedule;
+      const effectiveScheduleEnabled = scheduleEnabled || repeatsWeekly;
+      const effectiveCadence: 'daily' | 'weekly' | 'monthly' = repeatsWeekly
+        ? 'weekly'
+        : scheduleCadence;
+      const effectiveStartTimeMode = repeatsWeekly ? 'schedule_only' : startTimeMode;
+      if (effectiveScheduleEnabled) {
+        const problem = validateWeeklySchedule(effectiveSchedule);
         if (problem) {
           toast.error(problem);
           submittingRef.current = false;
@@ -835,27 +876,36 @@ export default function CreateTournamentModal({
       // the exact p_config a hand-created tournament would send, minus
       // startTime (the spawner owns it). A one-off is also created unless the
       // owner chose "Schedule only". ──
-      if (scheduleEnabled) {
+      if (effectiveScheduleEnabled) {
         const resolvedClubId = await resolveClubUUID(clubId);
         const rpcConfig = tournamentService.buildRpcConfig(tournamentConfig);
         delete rpcConfig.startTime;
-        rpcConfig.recurrenceCadence = scheduleCadence;
-        if (scheduleCadence === 'monthly') rpcConfig.recurrenceDayOfMonth = scheduleDayOfMonth;
+        rpcConfig.recurrenceCadence = effectiveCadence;
+        if (effectiveCadence === 'monthly') rpcConfig.recurrenceDayOfMonth = scheduleDayOfMonth;
+        // A weekly event is on the board a week ahead, the way the house
+        // programme's Sunday majors are: next week's copy appears the moment
+        // this week's is created.
+        if (repeatsWeekly) rpcConfig.spawnAheadMinutes = RESTART_WEEKLY_MINUTES;
         await tournamentScheduleService.upsert({
           clubId: resolvedClubId,
           unionId: unionId || null,
           name,
-          daysOfWeek: schedule.daysOfWeek,
+          daysOfWeek: effectiveSchedule.daysOfWeek,
           startTimesUtc:
-            schedule.mode === 'times' ? schedule.startTimesUtc.filter((t) => t.trim() !== '') : [],
-          intervalMinutes: schedule.mode === 'interval' ? schedule.intervalMinutes : null,
+            effectiveSchedule.mode === 'times'
+              ? effectiveSchedule.startTimesUtc.filter((t) => t.trim() !== '')
+              : [],
+          intervalMinutes:
+            effectiveSchedule.mode === 'interval' ? effectiveSchedule.intervalMinutes : null,
           active: true,
           config: rpcConfig,
         });
-        toast.success('Recurring schedule saved.');
+        toast.success(
+          repeatsWeekly ? 'Saved. This Event Repeats Every Week.' : 'Recurring schedule saved.'
+        );
       }
 
-      if (!scheduleEnabled || startTimeMode !== 'schedule_only') {
+      if (!effectiveScheduleEnabled || effectiveStartTimeMode !== 'schedule_only') {
         const mainTournament = await tournamentService.createTournament(clubId, tournamentConfig);
 
         // Auto Satellite Generation
@@ -2020,12 +2070,12 @@ export default function CreateTournamentModal({
                         onChange={(e) => setRestartEvery(digitsOnly(e.target.value))}
                         placeholder="Off"
                         min={5}
-                        max={1440}
+                        max={RESTART_MAX_MINUTES}
                         step={5}
                         inputMode="numeric"
                       />
                       <span className={styles.helperText}>
-                        Blank = Off. 5 To 1440: The Tournament Respawns On This Interval.
+                        Blank = Off. 5 To 10080: The Tournament Respawns On This Interval.
                       </span>
                     </div>
                   </div>
@@ -2058,21 +2108,49 @@ export default function CreateTournamentModal({
                 <label className={styles.toggleLabel}>
                   <input
                     type="checkbox"
-                    checked={scheduleEnabled}
+                    checked={repeatsWeekly}
                     onChange={(e) => {
-                      setScheduleEnabled(e.target.checked);
-                      if (e.target.checked) setStartTimeMode('schedule_only');
-                      else if (startTimeMode === 'schedule_only') setStartTimeMode('now');
+                      setRepeatsWeekly(e.target.checked);
+                      if (e.target.checked) {
+                        setScheduleEnabled(false);
+                        setScheduleCadence('weekly');
+                        setSchedule((current) => ({
+                          ...current,
+                          mode: 'times',
+                          ...weeklySlotFromStart(),
+                        }));
+                      }
                     }}
                     className={styles.checkbox}
                   />
-                  Recurring Tournament
+                  Repeats Weekly
                 </label>
                 <span className={styles.helperText}>
-                  Repeat This Tournament Daily, Weekly, Or Monthly With The Same Configuration.
+                  Same Day And Time Every Week, With This Configuration. Next Week's Event Is
+                  Published As Soon As This One Is Created.
                 </span>
               </div>
-              {scheduleEnabled && (
+              {!repeatsWeekly && (
+                <div className={styles.formGroup}>
+                  <label className={styles.toggleLabel}>
+                    <input
+                      type="checkbox"
+                      checked={scheduleEnabled}
+                      onChange={(e) => {
+                        setScheduleEnabled(e.target.checked);
+                        if (e.target.checked) setStartTimeMode('schedule_only');
+                        else if (startTimeMode === 'schedule_only') setStartTimeMode('now');
+                      }}
+                      className={styles.checkbox}
+                    />
+                    Recurring Tournament
+                  </label>
+                  <span className={styles.helperText}>
+                    Repeat This Tournament Daily, Weekly, Or Monthly With The Same Configuration.
+                  </span>
+                </div>
+              )}
+              {scheduleEnabled && !repeatsWeekly && (
                 <>
                   <div className={styles.choiceGrid}>
                     {(['daily', 'weekly', 'monthly'] as const).map((cadence) => (

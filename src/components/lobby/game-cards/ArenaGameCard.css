@@ -2744,3 +2744,31 @@
   box-shadow: none;
   clip-path: none;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LAYERED (BITMAP-CHASSIS) SKINS — one rule for all of them.
+   `arena-game-card--layered` is set by ArenaGameCard whenever the resolved
+   skin has a layered renderer (NLH spade, PLO four-bay, Spins, Heads-Up).
+   The bitmap owns every visible pixel; the glass is a plain full-bleed stage.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.arena-game-card--layered {
+  width: min(100%, 430px);
+  aspect-ratio: var(--agc-mobile-ratio);
+  overflow: hidden;
+  background: #000;
+}
+
+.arena-game-card--layered .arena-game-card__art {
+  display: none;
+}
+
+.arena-game-card--layered .arena-game-card__glass {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  clip-path: none;
+}

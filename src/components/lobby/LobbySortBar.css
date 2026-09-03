@@ -1,0 +1,135 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE SORT BAR — the chrome (structure lives in LobbyTable.css)
+
+   Dan 2026-09-03: the mobile action bar should be the DESKTOP column-heading
+   row, brought to the phone - "THE SAME DROP DOWNS THAT ARE ON DESK TOP": one
+   black strip, GAME / STAKES / VARIANT / PLAYERS / BUY-IN / STATUS as six
+   equal cells separated by hairline dividers, spaced grey capitals, the live
+   sort in blue with its caret. Not chips (his first look at chips: "THOSE
+   BUTTONS FEEL CHEAP AND NOT PREMIUM").
+
+   It is styled as `.lobby-table thead th` is, cell for cell, because it IS
+   that control rendered for a surface that has no table. Six cells fit a
+   375px phone without scrolling, so the scroller in LobbyTable.css never
+   actually scrolls; its overflow declarations stay because the law that pins
+   them (footer-stays-on-the-footer) is about what a scroll container does to
+   the fixed nav, not about whether this one ever moves.
+
+   Kept OUT of LobbyTable.css on purpose: that sheet is pinned solid-colour
+   from the tournament-board anchor to its end, and the strip's sheen is a
+   ramp. No :hover anywhere (tests/no-hover-effects.law.test.ts); press
+   feedback is on :active, which fires on touch.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 900px) {
+  /* A defined steel frame around the strip (Dan 2026-09-03 review: "THE
+     BORDER FRAME NEEDS TO BE THICKER AND MORE DEFINED"): a 2px brushed rim
+     with a lit blue edge beneath it, the same rim the card plaques carry. */
+  .lobby-sortbar {
+    position: relative;
+    gap: 0;
+    padding: 0;
+    box-sizing: border-box;
+    width: calc(100% - 12px);
+    margin: 0 6px;
+    border: 2px solid transparent;
+    border-radius: 3px;
+    background:
+      linear-gradient(180deg, #101317 0%, #000 100%) padding-box,
+      linear-gradient(180deg, #d9dee5 0%, #7c858f 35%, #3f464e 60%, #b6bdc5 100%) border-box;
+    box-shadow:
+      0 0 0 1px #000,
+      0 0 0 2px rgb(91 157 255 / 35%),
+      0 2px 6px rgb(0 0 0 / 80%),
+      inset 0 1px 0 rgb(255 255 255 / 8%);
+  }
+
+  /* The desktop heading row carries no "Sort" word; the phone's is kept for
+     screen readers only so the strip reads as the desktop row does. */
+  .lobby-sortbar__eyebrow {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .lobby-sortbar__chips {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 0;
+    padding: 0;
+  }
+
+  .lobby-sortbar__chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 2px;
+    border: 0;
+    border-right: 1px solid rgb(255 255 255 / 12%);
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-tertiary, #8b8f98);
+    font-family: var(--font-primary, 'Inter', sans-serif);
+    font-size: 0.5625rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .lobby-sortbar__chip:last-child {
+    border-right: 0;
+  }
+
+  .lobby-sortbar__label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .lobby-sortbar__mark {
+    flex: 0 0 auto;
+    font-size: 0.5rem;
+    letter-spacing: -0.1em;
+    opacity: 0.55;
+  }
+
+  .lobby-sortbar__chip.is-active {
+    position: relative;
+    color: var(--club-blue-light, #5b83e8);
+    background: linear-gradient(180deg, rgb(91 131 232 / 10%) 0%, transparent 100%);
+  }
+
+  /* The lit underline of the live column, as the desktop header's border. */
+  .lobby-sortbar__chip.is-active::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent 0%, #5b9dff 50%, transparent 100%);
+  }
+
+  .lobby-sortbar__chip.is-active .lobby-sortbar__mark {
+    opacity: 1;
+  }
+
+  .lobby-sortbar__chip:active {
+    background: rgb(255 255 255 / 4%);
+  }
+
+  .lobby-sortbar__chip:focus-visible {
+    outline: 2px solid #8fd4ff;
+    outline-offset: -2px;
+  }
+}

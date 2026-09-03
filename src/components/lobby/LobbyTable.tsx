@@ -37,6 +37,7 @@ import {
 } from './lobbyCardContext';
 export type { LobbyRowContext } from './lobbyCardContext';
 import './LobbyTable.css';
+import './LobbySortBar.css';
 
 type SortDir = 'asc' | 'desc';
 
@@ -1474,7 +1475,7 @@ export default function LobbyTable({
                   onFocus={() => setSortFocus(index)}
                   onClick={() => handleHeaderClick(col)}
                 >
-                  {col.label}
+                  <span className="lobby-sortbar__label">{col.label}</span>
                   <span className="lobby-sortbar__mark" aria-hidden="true">
                     {active ? (sort!.dir === 'asc' ? '▴' : '▾') : '▴▾'}
                   </span>

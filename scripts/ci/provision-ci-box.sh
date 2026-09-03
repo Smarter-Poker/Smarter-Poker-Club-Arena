@@ -273,7 +273,15 @@ PW_CACHE="${PW_CACHE:-/home/ci/.cache/ms-playwright}"
 # unpacked browsers there. Create the directory so the verify step has
 # something to look at, and let a still-empty cache take the "no browsers
 # unpacked yet" branch below as designed.
+# OWN THE PARENT TOO. `install -d` creates missing parents as ROOT, so this
+# line alone left /home/ci/.cache owned by root on a fresh box - and the ci
+# user could then create nothing else in it. Measured 2026-09-03 on
+# estate-ci-3: every World Hub `npm ci` failed in puppeteer's postinstall with
+# `EACCES: permission denied, mkdir /home/ci/.cache/puppeteer`, which reads
+# like a network problem and is not one.
+install -d -o ci -g ci "$(dirname "$PW_CACHE")"
 install -d -o ci -g ci "$PW_CACHE"
+chown -R ci:ci "$(dirname "$PW_CACHE")" 2>/dev/null || true
 missing=$(
   find "$PW_CACHE" -type f \( -name chrome -o -name headless_shell -o -name MiniBrowser \) 2>/dev/null |
   while read -r bin; do

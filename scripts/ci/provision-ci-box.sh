@@ -265,6 +265,15 @@ say "playwright system deps (chromium + webkit)"
 # and it is true or false regardless of what apt felt about it.
 npx --yes "playwright@${PLAYWRIGHT_VERSION}" install-deps chromium webkit >/tmp/pwdeps.log 2>&1 || true
 PW_CACHE="${PW_CACHE:-/home/ci/.cache/ms-playwright}"
+# A FRESH BOX HAS NO CACHE DIR YET (2026-09-03, estate-ci-3). `find` on a path
+# that does not exist returns 1; under `set -o pipefail` that made the
+# `missing=$(...)` assignment fail and `set -e` aborted the whole provisioner
+# with exit 1 and no message, right after the "playwright system deps" header.
+# The first two boxes never hit it because a Playwright job had already
+# unpacked browsers there. Create the directory so the verify step has
+# something to look at, and let a still-empty cache take the "no browsers
+# unpacked yet" branch below as designed.
+install -d -o ci -g ci "$PW_CACHE"
 missing=$(
   find "$PW_CACHE" -type f \( -name chrome -o -name headless_shell -o -name MiniBrowser \) 2>/dev/null |
   while read -r bin; do ldd "$bin" 2>/dev/null | grep -F "not found" | sed "s|^|$(basename "$(dirname "$bin")")/$(basename "$bin"): |"; done

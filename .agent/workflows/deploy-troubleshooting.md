@@ -1,6 +1,23 @@
+> **SUPERSEDED 2026-09-03 - READ THIS FIRST.**
+> Club Arena no longer publishes by committing its build into the World Hub
+> repo. It publishes by rsync to its own origin, `https://ca-static.smarter.poker`
+> (`/srv/club-arena` on the Hetzner box: `releases/<ca_sha>/`, an atomically
+> swapped `current` symlink, an additive `pool/`), and the World Hub carries a
+> single Next.js rewrite `/hub/club-arena/:path*` to it. `public/hub/club-arena/`
+> is GONE from that repo and a law test refuses to let it back.
+>
+> **Every `sync-club-arena.sh` / `build-club-arena.sh` / `sync-to-world-hub.sh`
+> command below is dead.** Those scripts are deleted from `main`. If you find one
+> on disk you are on a stale branch - it still works, and running it would
+> re-vendor the bundle and shadow the origin.
+>
+> **You do not publish by hand at all now:** push a branch, and
+> `agent-open-pr` -> `agent-autopilot` -> `publish-club-arena` does the rest.
+> The current path is `.agent/architecture/deploy-paths.md`.
+
 ---
-description: MANDATORY deploy troubleshooting guide — read this when ANY deploy isn't working. Covers every known failure mode for Club Arena → World Hub → Vercel → smarter.poker.
----
+
+## description: MANDATORY deploy troubleshooting guide — read this when ANY deploy isn't working. Covers every known failure mode for Club Arena → World Hub → Vercel → smarter.poker.
 
 # Club Arena Deploy Troubleshooting Guide
 

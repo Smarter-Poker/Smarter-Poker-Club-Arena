@@ -829,7 +829,7 @@ export default function RakeSnapshotPanel({
       {kind === 'club' && rows.length > 0 && (
         <div className={styles.breakdown}>
           <h3>Rake By Club</h3>
-          <ul>
+          <ul className={styles.listClub}>
             {(rows as RakeClubRow[]).map((r) => {
               const pct = share(r.fee, total ?? summary?.fee);
               return (
@@ -859,7 +859,7 @@ export default function RakeSnapshotPanel({
             <span>Network</span>
             <span>Cost</span>
           </div>
-          <ul>
+          <ul className={styles.listAgent}>
             {(rows as RakeAgentRow[]).map((r) => {
               const pct = share(r.direct_rake, total);
               return (
@@ -951,7 +951,7 @@ export default function RakeSnapshotPanel({
               {loading ? 'Reading The Chain' : 'Nobody Beneath You Has Played In This Period.'}
             </p>
           ) : (
-            <ul>
+            <ul className={styles.listDownline}>
               {(rows as RakeDownlineRow[]).map((r) => {
                 const pct = share(r.rake, total);
                 const opens = r.downline_players > 0 && crumbs.length < MAX_DRILL;

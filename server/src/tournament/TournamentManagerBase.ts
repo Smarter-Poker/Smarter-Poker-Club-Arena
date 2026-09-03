@@ -79,6 +79,7 @@ import {
   type MysteryBountyStage,
 } from './mysteryBountyActivation.js';
 import { mayTakeSeat } from './seatClaim.js';
+import { selectSeatsToFund, tournamentChipSupply } from './seatStackCredit.js';
 import { applySpinDrawPatch } from './spinDrawSync.js';
 import type { GameServer } from '../GameServer.js';
 import {
@@ -2835,6 +2836,28 @@ export abstract class TournamentManagerBase {
      * If the hand read itself fails, take the conservative branch and say so.
      * The stranded-at-zero case is still rescued either way; the only thing
      * given up is raising a placeholder tier, which the next call redoes.
+     *
+     * ═══════════════════════════════════════════════════════════════════════
+     *  AND A SEAT AT ZERO DURING PLAY IS A BUST, NOT A RESERVATION
+     *  (chip-std Lane F, 2026-09-02)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * The "fund ONLY a seat still sitting on zero" branch above was the next
+     * mint. Every one of the 23 games sampled from the two alerts after
+     * #2333 broke its chip total across a restart gap, and the two shapes
+     * that survived were: a busted seat (0, elimination not yet finalised
+     * when SIGTERM arrived) revived at `starting_chips` on resume
+     * (`0573b719`, +1000; `40be4b3b`, `d1bbea54`, +300 each), and a game
+     * whose hand_history rows had not landed before the restart, which this
+     * probe read as "no hand dealt yet" and topped every short seat up
+     * (`3a2fee36`: a seat holding 620 on a 300 board, +320).
+     *
+     * The decision now lives in `selectSeatsToFund` (seatStackCredit.ts),
+     * where those games are the fixtures. Play under way means a hand was
+     * recorded OR any seat holds more than the target - chips are conserved,
+     * so a seat above the target is proof of play that no lost history row
+     * can hide. Once play is under way nothing is funded. Before play, the
+     * credit is also capped by the tournament's chip supply.
      */
     const { data: dealtRows, error: dealtErr } = await supabase
       .from('hand_history')
@@ -2849,23 +2872,63 @@ export abstract class TournamentManagerBase {
       );
     }
 
-    const playUnderWay = dealtErr ? true : (dealtRows?.length ?? 0) > 0;
+    const handRecorded = dealtErr ? true : (dealtRows?.length ?? 0) > 0;
+
+    // The chip supply: what the roster says was ever issued. A failed read
+    // means "no ceiling" rather than "no credit" - the reveal beat must still
+    // be able to fund a healthy reservation on a flaky read, and the decision
+    // above already refuses everything once play is under way.
+    let chipSupply: number | null = null;
+    const { data: roster, error: rosterErr } = await supabase
+      .from('tournament_players')
+      .select('rebuys, add_on')
+      .eq('tournament_id', this.tournamentId);
+    if (rosterErr) {
+      reportError(
+        new Error(
+          `seat stack credit could not read the roster for a supply ceiling: ${rosterErr.message}`
+        ),
+        'Tournament.' + this.tournamentId.slice(0, 8) + '.seat_stack_supply_read_failed'
+      );
+    } else {
+      const rows = (roster ?? []) as Array<{ rebuys: number | null; add_on: boolean | null }>;
+      chipSupply = tournamentChipSupply({
+        entrants: rows.length,
+        startingChips: target,
+        rebuyCount: rows.reduce((n, r) => n + Math.max(0, Number(r.rebuys) || 0), 0),
+        addonCount: rows.filter((r) => r.add_on === true).length,
+        rebuyChips: tournament?.rebuy_chips,
+        addonChips: tournament?.addon_chips,
+        bonusChips: 0,
+      });
+    }
+
+    const decision = selectSeatsToFund({
+      seats: (seatRows ?? []).map((r: any) => ({ id: String(r.id), stack: Number(r.stack) })),
+      target,
+      handRecorded,
+      chipSupply,
+    });
+
+    if (decision.refused) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] seat stack credit REFUSED: the felt holds ` +
+            `${decision.refused.feltTotal} and the tournament issued ${decision.refused.chipSupply}; ` +
+            `raising short seats to ${target} would mint chips, so nothing was written`
+        ),
+        'Tournament.seat_stack_credit_exceeds_supply'
+      );
+      return 0;
+    }
 
     // Strictly RAISE, never lower: the legitimate case is a reservation seat
     // holding 0 (or a smaller placeholder tier) waiting on the drawn stack.
     // An early-bird seat (starting chips + bonus, 2026-08-22) sits ABOVE the
     // plain starting stack, and flattening it here would destroy the bonus.
-    const stale = (seatRows ?? []).filter((r: any) =>
-      playUnderWay ? Number(r.stack) <= 0 : Number(r.stack) < target
-    );
+    const stale = decision.fund;
     if (stale.length === 0) return 0;
-    const { error } = await supabase
-      .from('table_seats')
-      .update({ stack: target })
-      .in(
-        'id',
-        stale.map((r: any) => r.id)
-      );
+    const { error } = await supabase.from('table_seats').update({ stack: target }).in('id', stale);
     if (error) {
       reportError(
         new Error(`seat stack credit failed: ${error.message}`),

@@ -62,6 +62,7 @@
 import { supabase } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
+import { IN_LIST_CHUNK } from './supabase/chunkedIn.js';
 import { raiseEngineAlert, resolveEngineAlert } from './engineAlerts.js';
 
 /** How often to ask the database. */
@@ -351,11 +352,35 @@ export class DealRateVerifier {
 
     const since = new Date(Date.now() - LOOKBACK_MS).toISOString();
     try {
-      const { count, error } = await supabase
-        .from('hand_history')
-        .select('id', { count: 'exact', head: true })
-        .in('table_id', tableIds)
-        .gt('created_at', since);
+      /* THE ID LIST IS CHUNKED, AND A FAILURE IS SAID OUT LOUD (2026-09-03).
+         `tableIds` is every table this process is dealing - 1,131 on the floor
+         the day this was written - and one `.in()` that long is a ~40 KB URL
+         that PostgREST answers with HTTP 400 (the ceiling is about 675 ids).
+         The guard below then read the 400 as "not evidence of silence", reset
+         the counter and returned, every cycle, forever: the watchdog whose
+         only job is noticing the fleet stopped dealing had silently switched
+         itself off, and precisely at the scale where a fleet outage matters.
+         It also said nothing, so nothing else could notice either. */
+      let count = 0;
+      let error: { message: string } | null = null;
+      for (let i = 0; i < tableIds.length; i += IN_LIST_CHUNK) {
+        const { count: c, error: e } = await supabase
+          .from('hand_history')
+          .select('id', { count: 'exact', head: true })
+          .in('table_id', tableIds.slice(i, i + IN_LIST_CHUNK))
+          .gt('created_at', since);
+        if (e) {
+          error = e;
+          reportError(
+            new Error(
+              `[DealRateVerifier] hand count failed on the chunk at ${i} of ${tableIds.length}: ${e.message}`
+            ),
+            'DealRateVerifier.hand_count_chunk_failed'
+          );
+          break;
+        }
+        count += c ?? 0;
+      }
 
       // Guard 1: an error is NOT evidence of silence.
       if (error) {

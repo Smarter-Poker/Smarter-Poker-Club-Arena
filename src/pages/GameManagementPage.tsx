@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import GameCreationActions, {
@@ -10,6 +10,7 @@ import { useToast } from '../components/common/Toast';
 import { confirmDialog } from '../components/common/confirmDialog';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
+import { useCoalescedRefresh } from '../hooks/useCoalescedRefresh';
 import { useGameManagementRealtime } from '../hooks/useGameManagementRealtime';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useDialogEscape } from '../hooks/useDialogEscape';
@@ -75,6 +76,65 @@ interface ManagedGame {
 const BUCKET_LIVE = 0;
 const BUCKET_SCHEDULED = 1;
 const BUCKET_CLOSED = 2;
+/**
+ * Which bucket each tab asks the server for. `all` asks for every bucket.
+ *
+ * These used to be applied here, with games.filter(...), over the ONE page of
+ * 100 rows that happened to be loaded - which stopped working the moment the
+ * list became bucket-ordered, because then page 1 is entirely live games and
+ * the Scheduled and Closed tabs had nothing local to find. A tab is a query.
+ */
+/**
+ * One place that turns a server row into a board row.
+ *
+ * There were two copies of this object literal and a targeted refresh would
+ * have made a third. A board row that means slightly different things
+ * depending on which code path produced it is the bug this whole page has been
+ * paying for all day.
+ */
+function toManagedGame(row: any, hostNames: Record<string, string>, fallbackName: string) {
+  return {
+    id: row.id,
+    kind: row.kind,
+    bucket: Number(row.bucket ?? 0),
+    name: row.name,
+    status: row.status,
+    clubId: row.club_id,
+    hostName: hostNames[row.club_id] || fallbackName,
+    variant: row.variant || (row.kind === 'table' ? 'NLH' : 'MTT'),
+    players: row.players || 0,
+    maxPlayers: row.max_players || 0,
+    startTime: row.start_time ?? null,
+    smallBlind: Number(row.small_blind || 0),
+    bigBlind: Number(row.big_blind || 0),
+    minBuyIn: Number(row.min_buy_in || 0),
+    maxBuyIn: Number(row.max_buy_in || 0),
+    buyIn: Number(row.buy_in || 0),
+    contract: row.contract || null,
+    lastCommand: row.lastCommand || null,
+    pendingSchedule: row.pending_schedule
+      ? {
+          scheduleId: row.pending_schedule.schedule_id,
+          executeAt: row.pending_schedule.execute_at,
+          status: row.pending_schedule.status,
+        }
+      : null,
+  };
+}
+
+/**
+ * Above this many distinct games changed at once, one full board read is
+ * cheaper than N targeted ones. The feed reaches 421 table updates in a
+ * minute, so the busy case must NOT turn into a request storm of its own.
+ */
+const TARGETED_REFRESH_MAX = 8;
+
+const VIEW_BUCKET: Record<View, number | null> = {
+  all: null,
+  running: BUCKET_LIVE,
+  scheduled: BUCKET_SCHEDULED,
+  closed: BUCKET_CLOSED,
+};
 const CREATE_TARGETS = new Set<GameCreationTarget>(['table', 'event', 'spin', 'sng']);
 /** A refresh keeps the identity of every row it did not change. */
 const mergeManagedGames = (current: ManagedGame[], next: ManagedGame[]): ManagedGame[] =>
@@ -97,6 +157,17 @@ function formatTime(value: string | null): string {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+/**
+ * The tooltip on the events-per-hour tile. `lastEventAt` is read from the
+ * health RPC and, until now, was fetched on every load and never shown - so an
+ * operator watching a rate could not tell a genuinely quiet floor from a feed
+ * that stopped an hour ago. Both read zero; only the timestamp separates them.
+ */
+function formatEventClock(lastEventAt: string | null): string {
+  if (!lastEventAt) return 'No Realtime Event Recorded Yet';
+  return `Last Realtime Event ${formatTime(lastEventAt)}`;
 }
 
 function toLocalDateTimeInput(value: Date): string {
@@ -521,7 +592,14 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const [hosts, setHosts] = useState<HostClub[]>([]);
   const [hostClubId, setHostClubId] = useState('');
   const [games, setGames] = useState<ManagedGame[]>([]);
-  const [counts, setCounts] = useState({ total: 0, live: 0, scheduled: 0 });
+  const [counts, setCounts] = useState({
+    total: 0,
+    live: 0,
+    scheduled: 0,
+    closed: 0,
+    closedWithinHorizon: 0,
+    closedHorizonDays: 7,
+  });
   const [nextCursor, setNextCursor] = useState<ManagedGameListCursor | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -536,8 +614,28 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const [contractVersions, setContractVersions] = useState<ManagedGameContractVersion[]>([]);
   const [contractLoading, setContractLoading] = useState(false);
   const [health, setHealth] = useState<GameManagementHealth | null>(null);
+  /*
+    Health has THREE states, not two, and collapsing them is how the last two
+    bugs here happened. `health === null` means "no answer yet" - which is true
+    while the first read is still in flight AND true when the read failed.
+    Reading null as zero invented an all-clear; reading it as failure raised a
+    false alarm on every page open. This flag is the difference.
+  */
+  const [healthFailed, setHealthFailed] = useState(false);
   const loadEpochRef = useRef(0);
   const loadedRouteRef = useRef('');
+  const loadedViewRef = useRef<View>('all');
+  /** Latest rows, so the refresh below never closes over a stale board. */
+  const gamesRef = useRef<ManagedGame[]>([]);
+  /** Games named by events since the last flush, deduplicated. */
+  const changedRef = useRef<Set<string>>(new Set());
+  /**
+   * An event arrived that did NOT name a game. Not every refresh event is
+   * obliged to carry an id, and a targeted refresh cannot act on one that
+   * does not - so it forces the full reload rather than quietly doing nothing,
+   * which would drop a real change on the floor.
+   */
+  const sawUnnamedRef = useRef(false);
   // One load at a time, with at most one queued behind it, and a stable handle
   // so the queued one can be started from inside load's own `finally`.
   const loadInFlightRef = useRef(false);
@@ -548,30 +646,6 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   // spinner it would have got had nothing been in flight. Losing this is how
   // coalescing turns one bug into a quieter one.
   const rerunSilentRef = useRef(true);
-  /* A BACKGROUND REFRESH IS NOT A LIVE VIDEO FEED (Dan 2026-09-02): "CLUBS
-     SHOULD NOT BE RANDOMLY REFRESHING ON THEIR OWN, IT FEELS LIKE A BUG OR
-     GLITCH ... ITS ALSO HAPPENING INSIDE OF THE TABLE MANAGEMENT PAGE."
-
-     The loading flash was fixed above; this is the other half. The event feed
-     this page listens to is not an occasional signal - every running game
-     writes a game_management_events row on each update, measured 2026-09-02 at
-     2,108 rows in ten minutes for ONE club, 3.5 a second. On a 350 ms debounce
-     that is a full five-round-trip reload starting the moment the previous one
-     lands, forever, in every open tab: the board visibly rebuilds itself, and
-     the reads sit near the top of the database's cost table for the whole
-     estate.
-
-     The feed's job is to keep the board honest, not to stream it. Coalesced to
-     one background refresh per REFRESH_MIN_MS, paused while the tab is hidden
-     (a backgrounded console needs nothing), and served immediately on return.
-     An operator's own action still calls load() directly and is never delayed.
-
-     A game whose state matters to the second is watched from the table, not
-     from a management list. */
-  const REFRESH_MIN_MS = 20_000;
-  const lastRefreshAtRef = useRef(0);
-  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const refreshPendingRef = useRef(false);
   const mountedRef = useRef(true);
   const loadRef = useRef<(silent?: boolean) => void>(() => {});
 
@@ -614,6 +688,15 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       // the board, so this can never be served silently: without the spinner the
       // operator reads the empty board as "this club has no games".
       const routeChanged = loadedRouteRef.current !== routeKey;
+      // Switching tabs asks a different question of the server, so the rows on
+      // screen belong to the previous answer. Clear them and show the spinner
+      // rather than leaving the old tab's games under the new tab's heading.
+      const viewChanged = loadedViewRef.current !== view;
+      if (viewChanged) {
+        loadedViewRef.current = view;
+        setGames([]);
+        setNextCursor(null);
+      }
       if (routeChanged) {
         loadedRouteRef.current = routeKey;
         setAllowed(null);
@@ -621,12 +704,20 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         setHosts([]);
         setHostClubId('');
         setGames([]);
-        setCounts({ total: 0, live: 0, scheduled: 0 });
+        setCounts({
+          total: 0,
+          live: 0,
+          scheduled: 0,
+          closed: 0,
+          closedWithinHorizon: 0,
+          closedHorizonDays: 7,
+        });
         setNextCursor(null);
         setHealth(null);
+        setHealthFailed(false);
         setSurfaceDirty(false);
       }
-      if (!silent || routeChanged) setLoading(true);
+      if (!silent || routeChanged || viewChanged) setLoading(true);
       setLoadError(null);
       try {
         let resolvedScopeId: string;
@@ -694,30 +785,23 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           nextHosts.some((host) => host.id === current) ? current : nextHosts[0]?.id || ''
         );
 
-        const page = await gameManagementService.list(scope, resolvedScopeId);
+        // ONE wave. The board row now arrives whole - fn_list_managed_games
+        // folds in each game's published contract and latest command receipt -
+        // so the four dependent calls that used to sit here are gone, and the
+        // health read has no reason to wait for any of it.
+        const [page, healthResult] = await Promise.all([
+          gameManagementService.list(scope, resolvedScopeId, null, VIEW_BUCKET[view]),
+          gameManagementService
+            .getHealth(scope, resolvedScopeId)
+            .catch((healthError): GameManagementHealth | null => {
+              // Health is telemetry beside the board, never a reason to fail it.
+              reportError(healthError, 'GameManagementPage.health');
+              return null;
+            }),
+        ]);
         if (!isCurrent()) return;
         const tableRows = page.items.filter((row: any) => row.kind === 'table');
         const tournamentRows = page.items.filter((row: any) => row.kind === 'tournament');
-        const tableIds = tableRows.map((row: any) => row.id);
-        const tournamentIds = tournamentRows.map((row: any) => row.id);
-        const [tableContracts, tournamentContracts, tableReceipts, tournamentReceipts] =
-          await Promise.all([
-            gameManagementService.getContracts('table', tableIds),
-            gameManagementService.getContracts('tournament', tournamentIds),
-            gameManagementService.getCommandReceipts('table', tableIds),
-            gameManagementService.getCommandReceipts('tournament', tournamentIds),
-          ]);
-        if (!isCurrent()) return;
-        const tableContractMap = new Map(
-          tableContracts.map((contract) => [contract.gameId, contract])
-        );
-        const tournamentContractMap = new Map(
-          tournamentContracts.map((contract) => [contract.gameId, contract])
-        );
-        const tableReceiptMap = new Map(tableReceipts.map((receipt) => [receipt.gameId, receipt]));
-        const tournamentReceiptMap = new Map(
-          tournamentReceipts.map((receipt) => [receipt.gameId, receipt])
-        );
         const hostNames = Object.fromEntries(nextHosts.map((host) => [host.id, host.name]));
         const rows: ManagedGame[] = [
           ...tableRows.map((row: any) => ({
@@ -737,8 +821,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
             minBuyIn: Number(row.min_buy_in || 0),
             maxBuyIn: Number(row.max_buy_in || 0),
             buyIn: 0,
-            contract: tableContractMap.get(row.id) || null,
-            lastCommand: tableReceiptMap.get(row.id) || null,
+            contract: row.contract || null,
+            lastCommand: row.lastCommand || null,
             pendingSchedule: row.pending_schedule
               ? {
                   scheduleId: row.pending_schedule.schedule_id,
@@ -764,8 +848,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
             minBuyIn: 0,
             maxBuyIn: 0,
             buyIn: Number(row.buy_in || 0),
-            contract: tournamentContractMap.get(row.id) || null,
-            lastCommand: tournamentReceiptMap.get(row.id) || null,
+            contract: row.contract || null,
+            lastCommand: row.lastCommand || null,
             pendingSchedule: row.pending_schedule
               ? {
                   scheduleId: row.pending_schedule.schedule_id,
@@ -782,15 +866,17 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
            previous identity and its DOM is left alone, which is what makes a
            background refresh invisible instead of a glitch. */
         setGames((current) => mergeManagedGames(current, rows));
-        setCounts(page.counts);
+        // Null counts mean unchanged, not zero: a paged read does not recount
+        // the scope, and reading null as 0 would blank the header.
+        if (page.counts) setCounts(page.counts);
         setNextCursor(page.nextCursor);
-        try {
-          const nextHealth = await gameManagementService.getHealth(scope, resolvedScopeId);
-          if (isCurrent()) setHealth(nextHealth);
-        } catch (healthError) {
-          reportError(healthError, 'GameManagementPage.health');
-          if (isCurrent()) setHealth(null);
-        }
+        /*
+          A refused read must not silently replace the numbers already on
+          screen with an alarm, and must not leave stale numbers looking live
+          either. It keeps nothing and says so.
+        */
+        setHealth(healthResult);
+        setHealthFailed(healthResult === null);
       } catch (error) {
         if (!isCurrent()) return;
         reportError(error, 'GameManagementPage.load');
@@ -816,7 +902,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         }
       }
     },
-    [clubId, scope, unionId, user?.id]
+    [clubId, scope, unionId, user?.id, view]
   );
   loadRef.current = load;
 
@@ -838,77 +924,26 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     if (!scopeId || !nextCursor || loadingMore) return;
     setLoadingMore(true);
     try {
-      const page = await gameManagementService.list(scope, scopeId, nextCursor);
-      const tableRows = page.items.filter((row: any) => row.kind === 'table');
-      const tournamentRows = page.items.filter((row: any) => row.kind === 'tournament');
-      const [tableContracts, tournamentContracts, tableReceipts, tournamentReceipts] =
-        await Promise.all([
-          gameManagementService.getContracts(
-            'table',
-            tableRows.map((row: any) => row.id)
-          ),
-          gameManagementService.getContracts(
-            'tournament',
-            tournamentRows.map((row: any) => row.id)
-          ),
-          gameManagementService.getCommandReceipts(
-            'table',
-            tableRows.map((row: any) => row.id)
-          ),
-          gameManagementService.getCommandReceipts(
-            'tournament',
-            tournamentRows.map((row: any) => row.id)
-          ),
-        ]);
-      const contractMap = new Map(
-        [...tableContracts, ...tournamentContracts].map((contract) => [
-          `${contract.gameId}`,
-          contract,
-        ])
-      );
-      const receiptMap = new Map(
-        [...tableReceipts, ...tournamentReceipts].map((receipt) => [`${receipt.gameId}`, receipt])
-      );
+      const page = await gameManagementService.list(scope, scopeId, nextCursor, VIEW_BUCKET[view]);
+      // Same as the first page: the rows already carry their contract and
+      // their last command, so Load More is one request, not five.
       const hostNames = Object.fromEntries(hosts.map((host) => [host.id, host.name]));
-      const rows: ManagedGame[] = page.items.map((row: any) => ({
-        id: row.id,
-        kind: row.kind,
-        bucket: Number(row.bucket ?? 0),
-        name: row.name,
-        status: row.status,
-        clubId: row.club_id,
-        hostName: hostNames[row.club_id] || scopeName,
-        variant: row.variant || (row.kind === 'table' ? 'NLH' : 'MTT'),
-        players: row.players || 0,
-        maxPlayers: row.max_players || 0,
-        startTime: row.start_time,
-        smallBlind: Number(row.small_blind || 0),
-        bigBlind: Number(row.big_blind || 0),
-        minBuyIn: Number(row.min_buy_in || 0),
-        maxBuyIn: Number(row.max_buy_in || 0),
-        buyIn: Number(row.buy_in || 0),
-        contract: contractMap.get(row.id) || null,
-        lastCommand: receiptMap.get(row.id) || null,
-        pendingSchedule: row.pending_schedule
-          ? {
-              scheduleId: row.pending_schedule.schedule_id,
-              executeAt: row.pending_schedule.execute_at,
-              status: row.pending_schedule.status,
-            }
-          : null,
-      }));
+      const rows: ManagedGame[] = page.items.map((row: any) =>
+        toManagedGame(row, hostNames, scopeName)
+      );
       setGames((current) => {
         const seen = new Set(current.map((game) => `${game.kind}:${game.id}`));
         return [...current, ...rows.filter((game) => !seen.has(`${game.kind}:${game.id}`))];
       });
-      setCounts(page.counts);
+      // Null on a paged read means unchanged, not zero.
+      if (page.counts) setCounts(page.counts);
       setNextCursor(page.nextCursor);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not load more games.');
     } finally {
       setLoadingMore(false);
     }
-  }, [hosts, loadingMore, nextCursor, scope, scopeId, scopeName, toast]);
+  }, [hosts, loadingMore, nextCursor, scope, scopeId, scopeName, toast, view]);
 
   useEffect(() => {
     void load();
@@ -955,54 +990,124 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     return () => document.removeEventListener('click', onClickCapture, true);
   }, [surfaceDirty]);
 
-  /* One coalesced, rate-limited, visibility-gated background refresh. Every
-     caller below funnels through this rather than through load() directly. */
-  const requestBackgroundRefresh = useCallback(() => {
-    if (refreshTimerRef.current) return; // already scheduled
-    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-      refreshPendingRef.current = true;
+  /* A BACKGROUND REFRESH IS NOT A LIVE VIDEO FEED (Dan 2026-09-02): "CLUBS
+     SHOULD NOT BE RANDOMLY REFRESHING ON THEIR OWN, IT FEELS LIKE A BUG OR
+     GLITCH ... ITS ALSO HAPPENING INSIDE OF THE TABLE MANAGEMENT PAGE."
+
+     The event feed this page listens to is not an occasional signal - every
+     running game writes a game_management_events row on each update, measured
+     2026-09-02 at 2,108 rows in ten minutes for ONE club, 3.5 a second. On a
+     350 ms debounce that is a full reload starting the moment the previous one
+     lands, forever, in every open tab.
+
+     This uses the shared useCoalescedRefresh rather than its own timer. #2728
+     wrote that hook, used it in ClubHomePage, and then hand-rolled the same
+     rate limit, the same visibility gate and the same pending flag here - so
+     the behaviour existed twice, and only the copy in the hook had tests.
+     Deleting the copy also gains refreshNow(), which is the piece the inline
+     version never had and which the two callers below actually need.
+
+     A game whose state matters to the second is watched from the table, not
+     from a management list. */
+  const { request: requestBoardRefresh, refreshNow: refreshBoardNow } = useCoalescedRefresh(
+    () => void loadRef.current(true),
+    { minIntervalMs: 20_000 }
+  );
+
+  /**
+   * Read back the games that changed, not the whole board.
+   *
+   * Every management event used to become a full reload. The feed is not
+   * gentle - 421 table updates in one measured minute - and what actually
+   * moved was usually one row's player count. fn_list_managed_games can now
+   * return a single enriched row, skipping both whole-scope scans: 2 ms
+   * against production versus 21 ms for the full page, and one row on the
+   * wire instead of a hundred.
+   *
+   * It falls back to requestBoardRefresh - which is coalesced, rate
+   * limited and skipped while the tab is hidden - whenever a splice would be a
+   * lie:
+   *   - a changed game is not on the board (created, or on another page)
+   *   - the row is gone from this scope (null)
+   *   - the row changed BUCKET, so it belongs under a different tab now
+   *   - more games changed at once than a full read is worth
+   * The bucket case matters twice over: the counters are per-bucket totals, so
+   * a row that stays in its bucket cannot move any of them, and one that
+   * leaves it moves two. That is precisely why the counters can be left alone
+   * on the fast path and must be recomputed on the slow one.
+   */
+  const refreshChangedGames = useCallback(async () => {
+    const ids = Array.from(changedRef.current);
+    const unnamed = sawUnnamedRef.current;
+    changedRef.current.clear();
+    sawUnnamedRef.current = false;
+    if (!scopeId || unnamed) {
+      requestBoardRefresh();
       return;
     }
-    const since = Date.now() - lastRefreshAtRef.current;
-    const wait = since >= REFRESH_MIN_MS ? 0 : REFRESH_MIN_MS - since;
-    refreshTimerRef.current = setTimeout(() => {
-      refreshTimerRef.current = null;
-      refreshPendingRef.current = false;
-      lastRefreshAtRef.current = Date.now();
-      if (mountedRef.current) void loadRef.current(true);
-    }, wait);
-  }, []);
+    // Nothing was named and nothing was unnamed: there is nothing to refresh.
+    // Reloading here would turn a spurious wake into a full board read.
+    if (ids.length === 0) return;
+    const known = ids
+      .map((id) => gamesRef.current.find((game) => game.id === id))
+      .filter((game): game is ManagedGame => Boolean(game));
+    if (known.length !== ids.length || known.length > TARGETED_REFRESH_MAX) {
+      requestBoardRefresh();
+      return;
+    }
+    try {
+      const hostNames = Object.fromEntries(hosts.map((host) => [host.id, host.name]));
+      const fresh = await Promise.all(
+        known.map((game) => gameManagementService.getGame(scope, scopeId, game.kind, game.id))
+      );
+      const mapped = fresh.map((row) => (row ? toManagedGame(row, hostNames, scopeName) : null));
+      const splicable = mapped.every((row, index) => row && row.bucket === known[index].bucket);
+      if (!splicable) {
+        requestBoardRefresh();
+        return;
+      }
+      const byId = new Map(mapped.map((row) => [row!.id, row as ManagedGame]));
+      setGames((current) => current.map((game) => byId.get(game.id) ?? game));
+    } catch (error) {
+      // A targeted read that fails is not a reason to show stale rows.
+      reportError(error, 'GameManagementPage.refreshChangedGames');
+      requestBoardRefresh();
+    }
+  }, [hosts, requestBoardRefresh, scope, scopeId, scopeName]);
 
-  // A tab that was hidden while events arrived refreshes once on return, which
-  // is both cheaper and more correct than catching up on a queue of them.
-  useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState !== 'visible') return;
-      if (!refreshPendingRef.current) return;
-      refreshPendingRef.current = false;
-      lastRefreshAtRef.current = 0;
-      requestBackgroundRefresh();
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => {
-      document.removeEventListener('visibilitychange', onVisible);
-      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-      refreshTimerRef.current = null;
-    };
-  }, [requestBackgroundRefresh]);
+  // Accumulate every event. The decider below is debounced, and a debounced
+  // subscription only ever sees the LAST payload of a burst - which would
+  // refresh one game and silently miss the other four hundred.
+  useMasterBusSubscriptions([...GAME_REFRESH_EVENTS], (payload: unknown) => {
+    const id =
+      (payload as { tableId?: string; tournamentId?: string } | null)?.tableId ??
+      (payload as { tableId?: string; tournamentId?: string } | null)?.tournamentId;
+    if (id) changedRef.current.add(String(id));
+    else sawUnnamedRef.current = true;
+  });
 
   useMasterBusSubscriptions(
     [...GAME_REFRESH_EVENTS],
     () => {
-      requestBackgroundRefresh();
+      void refreshChangedGames();
     },
     { debounce: 350 }
   );
 
+  /* These two must not wait, and must not leave a scheduled refresh behind.
+     refreshNow() is load(true) plus cancelling any pending timer - which is
+     the difference that matters: calling load() directly left the coalescer's
+     timer armed, so a redundant second reload fired up to 20 seconds later
+     having just been superseded.
+
+     An access change alters what the operator is allowed to see. onResync
+     fires when the realtime channel has just (re)subscribed and is saying "I
+     may have missed something", which is precisely the moment a rate limit
+     must not add delay. */
   useMasterBusSubscriptions(
     ['GAME_MANAGEMENT_ACCESS_CHANGED'],
     () => {
-      void load(true);
+      refreshBoardNow();
     },
     { debounce: 100 }
   );
@@ -1011,22 +1116,72 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     scope,
     scopeId: scopeId || '',
     enabled: allowed === true && Boolean(scopeId),
-    onResync: () => void load(true),
+    onResync: () => refreshBoardNow(),
   });
 
-  const filteredGames = useMemo(
-    () =>
-      games.filter((game) => {
-        if (view === 'running') return game.bucket === BUCKET_LIVE;
-        if (view === 'closed') return game.bucket === BUCKET_CLOSED;
-        if (view === 'scheduled') return game.bucket === BUCKET_SCHEDULED;
-        return true;
-      }),
-    [games, view]
-  );
+  // The server returned exactly this tab's bucket, so there is nothing left to
+  // filter. Kept as a named value because the render reads it in several places.
+  useEffect(() => {
+    gamesRef.current = games;
+  }, [games]);
+
+  const filteredGames = games;
 
   const liveCount = counts.live;
   const scheduledCount = counts.scheduled;
+
+  /*
+    What paging can actually reach.
+
+    `counts.total` summarises the whole scope; the ROWS honour the closed
+    horizon. On Midway Union that was 79,142 against 35,745 - the header
+    promised forty-three thousand games the board would never hand over, and
+    "Load More - 50 Of 79142" counted towards a number no amount of clicking
+    could arrive at. A total nobody can reconcile is worse than no total.
+
+    Live and scheduled are never withheld by age, so only the closed leg is
+    horizon-bound.
+  */
+  /*
+    A count that is not a number counts as nothing.
+
+    The service normalises every field through numberValue(), so production
+    cannot reach here with a hole - but this arithmetic is the only place on
+    the page that ADDS three of them together, and a single undefined turns the
+    Total into "NaN" on an operator console. Three tests whose fixtures predate
+    closedWithinHorizon were already rendering exactly that, which is the
+    warning worth listening to: the sum is one field away from lying, and the
+    field can go missing for reasons this component will never see.
+  */
+  const tally = (value: number) => (Number.isFinite(value) ? value : 0);
+  const reachableTotal =
+    tally(counts.live) + tally(counts.scheduled) + tally(counts.closedWithinHorizon);
+  const archivedBeyondHorizon = Math.max(
+    0,
+    tally(counts.closed) - tally(counts.closedWithinHorizon)
+  );
+  /*
+    `counts` starts as a zero-filled object, and this rail renders as soon as
+    access resolves - before the first list has come back. So for the length of
+    the first load every figure here is a placeholder, and the ONLY one that
+    makes a claim is the tooltip: "Every Game In This Scope Is On The Board"
+    asserted about a scope nothing has read yet. Same failure as the health
+    rail's `?? 0`, introduced in the same breath as the fix for it.
+
+    A zero next to the word Live is read as "counting"; a sentence is read as
+    an answer. The sentence waits for the read.
+  */
+  const countsAreKnown = !loading;
+  /* The tab decides what "of" means: paging the Closed tab reaches the closed
+     games within the horizon, not the whole board. */
+  const viewTotal =
+    view === 'running'
+      ? counts.live
+      : view === 'scheduled'
+        ? counts.scheduled
+        : view === 'closed'
+          ? counts.closedWithinHorizon
+          : reachableTotal;
 
   const tournamentFormat =
     requestedCreate === 'spin' ? 'spin' : requestedCreate === 'sng' ? 'sng' : 'mtt_freezeout';
@@ -1163,23 +1318,50 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
             <span>
               <strong>{scheduledCount}</strong> Scheduled
             </span>
-            <span>
-              <strong>{counts.total}</strong> Total
+            <span
+              title={
+                archivedBeyondHorizon
+                  ? `${archivedBeyondHorizon} More Closed Games Are Older Than The ${counts.closedHorizonDays}-Day Board Horizon And Are Not Listed`
+                  : countsAreKnown
+                    ? 'Every Game In This Scope Is On The Board'
+                    : undefined
+              }
+            >
+              <strong>{reachableTotal}</strong> Total
             </span>
           </div>
           <div className={styles.healthRail} aria-label="Management Health">
-            <span>{health?.commandsLast24h ?? 0} Commands / 24h</span>
-            <span>{health?.rejectedLast24h ?? 0} Rejected</span>
-            <span className={health?.integrityAlerts ? styles.healthAlert : undefined}>
-              {health?.integrityAlerts ?? 0} Integrity Alerts
-            </span>
-            <span>{health?.scheduledPending ?? 0} Pending Schedules</span>
-            <span className={health?.scheduledRejected24h ? styles.healthAlert : undefined}>
-              {health?.scheduledRejected24h ?? 0} Schedule Rejects
-            </span>
-            <span title={`${health?.retentionDays ?? 30}-Day Realtime Retention`}>
-              {health?.eventRows ?? 0} Realtime Events
-            </span>
+            {/*
+              A health read that FAILED must not render as zeros. `?? 0` used to
+              paint "0 Integrity Alerts" whether the answer was zero or whether
+              nobody could be asked - and the operator has no way to tell those
+              apart. Health is telemetry, so a failed read still never blocks the
+              board; it just says so instead of impersonating an all-clear.
+            */}
+            {healthFailed ? (
+              <span className={styles.healthAlert}>Management Health Unavailable</span>
+            ) : health === null ? (
+              /* Still in flight. Not an alarm, and not a row of zeros either. */
+              <span>Reading Management Health</span>
+            ) : (
+              <>
+                <span>{health.commandsLast24h} Commands / 24h</span>
+                <span>{health.rejectedLast24h} Rejected</span>
+                <span className={health.integrityAlerts ? styles.healthAlert : undefined}>
+                  {health.integrityAlerts} Integrity Alerts
+                </span>
+                <span>{health.scheduledPending} Pending Schedules</span>
+                <span className={health.scheduledRejected24h ? styles.healthAlert : undefined}>
+                  {health.scheduledRejected24h} Schedule Rejects
+                </span>
+                <span title={formatEventClock(health.lastEventAt)}>
+                  {health.eventsLastHour} Events / Hour
+                </span>
+                <span title={`${health.retentionDays}-Day Realtime Retention`}>
+                  {health.eventRows} Realtime Events
+                </span>
+              </>
+            )}
           </div>
           <GameCreationActions managementPath={managementPath} />
         </div>
@@ -1382,30 +1564,39 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                     >
                       Contract
                     </button>
-                    <button
-                      onClick={() => {
-                        if (game.kind === 'tournament' && game.contract?.contractLocked) {
-                          toast.error(
-                            'This tournament cannot be modified after a player has registered.'
-                          );
-                          return;
+                    {/*
+                      Open, Pause, Schedule and Close are all gated on !closed
+                      and Edit was not, so a finished game could be renamed and
+                      re-limited from the board. Nothing downstream refuses it:
+                      fn_update_managed_game never looks at the status for a
+                      table. A closed game is history, so it is read-only here.
+                    */}
+                    {!closed && (
+                      <button
+                        onClick={() => {
+                          if (game.kind === 'tournament' && game.contract?.contractLocked) {
+                            toast.error(
+                              'This tournament cannot be modified after a player has registered.'
+                            );
+                            return;
+                          }
+                          setEditing(game);
+                        }}
+                        disabled={busyId === game.id}
+                        title={
+                          game.kind === 'tournament' && game.contract?.contractLocked
+                            ? 'Locked After The First Registration'
+                            : 'Edit Game'
                         }
-                        setEditing(game);
-                      }}
-                      disabled={busyId === game.id}
-                      title={
-                        game.kind === 'tournament' && game.contract?.contractLocked
-                          ? 'Locked After The First Registration'
-                          : 'Edit Game'
-                      }
-                      aria-disabled={
-                        game.kind === 'tournament' && game.contract?.contractLocked
-                          ? true
-                          : undefined
-                      }
-                    >
-                      Edit
-                    </button>
+                        aria-disabled={
+                          game.kind === 'tournament' && game.contract?.contractLocked
+                            ? true
+                            : undefined
+                        }
+                      >
+                        Edit
+                      </button>
+                    )}
                     {game.kind === 'table' && !closed && <Link to={`/table/${game.id}`}>Open</Link>}
                     {game.kind === 'table' && !closed && (
                       <button
@@ -1496,7 +1687,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                 onClick={() => void loadMore()}
                 disabled={loadingMore}
               >
-                {loadingMore ? 'Loading More…' : `Load More · ${games.length} Of ${counts.total}`}
+                {loadingMore ? 'Loading More…' : `Load More · ${games.length} Of ${viewTotal}`}
               </button>
             )}
           </section>

@@ -12,8 +12,10 @@ import { SPIN_TIERS } from '../config/spinSpec';
 // Type-only: erased at compile time, so this module never boots the Supabase
 // client that TournamentService constructs at import.
 import type { TournamentConfig } from '../services/TournamentService';
+import { RESTART_MAX_MINUTES } from '../services/TournamentService';
 import { payoutEngine } from '../services/PayoutEngine';
 import { rakeRateFor, splitBuyIn } from '../utils/buyIn';
+import { freeBuyConfig } from '../utils/freeBuy';
 import { maxSeatsTheDeckAllows } from '../config/tableSeating';
 /* Value imports as well as the re-export below: `export … from` does not bind
    the names locally, and buildTournamentConfig uses both. */
@@ -267,6 +269,19 @@ export function buildTournamentConfig(
     addOnCost,
     addOnChips: Math.round(config.startingChips * Math.max(1, config.addOnMultiplier)),
     addOnLevels: 1,
+    /**
+     * FREEROLLS ARE FREE BUY (Dan 2026-09-02). A 0 buy-in MTT built on the
+     * table-config form is a freeroll: rebuys and add-ons are ON at 1 chip
+     * each whatever the sliders say (the form locks them and says why). Spread
+     * LAST so it wins. Empty for a paid event, a Spin or an SNG.
+     */
+    ...freeBuyConfig({
+      buyIn: split.total,
+      type: isSpins ? 'spin' : isSng ? 'sng' : 'mtt',
+      startingStack: config.startingChips,
+      addOnChips: Math.round(config.startingChips * Math.max(1, config.addOnMultiplier)),
+      maxRebuys: config.numberOfRebuysReentries,
+    }),
     guaranteedPrize:
       isMtt && config.gtdPrizePool ? Math.max(0, Math.round(config.gtdPrizeAmount ?? 0)) : 0,
     gameVariant: VARIANT_MAP[String(gameType ?? 'nlh').toLowerCase()] ?? 'NLH',
@@ -344,7 +359,7 @@ export function buildTournamentConfig(
     finalTableDealEnabled: isMtt ? (config.finalTableDeal ?? false) : false,
     restartEveryMinutes:
       isMtt && config.restartTournamentEvery
-        ? clampInt(config.restartEveryMinutes ?? 60, 5, 1440)
+        ? clampInt(config.restartEveryMinutes ?? 60, 5, RESTART_MAX_MINUTES)
         : undefined,
     /* MULTI-DAY IS NOT BUILT, SO IT IS NOT SENT (2026-08-26).
        `is_multi_day` and `total_days` are stored, badged in two places, and

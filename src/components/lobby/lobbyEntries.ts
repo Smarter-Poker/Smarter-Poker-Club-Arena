@@ -14,6 +14,7 @@
  * platform behavior, not new inference.
  */
 
+import { FREE_BUY_HELPER, FREE_BUY_LABEL } from '../../utils/freeBuy';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import { isInLateRegistration, STARTING_SOON_WINDOW_MINUTES } from '../../utils/tournamentFilters';
 import { stakesLabel as stakesLabelFor } from '../../lib/bettingStructure';
@@ -716,19 +717,40 @@ export function cashRuleMedallions(row: CashFeatureSource): RuleMedallion[] {
 // ─── Tournament trait medallions — from real columns + house name convention ─
 function detectTourneyType(name: string): string {
   const l = (name || '').toLowerCase();
+  /* SATELLITE IS DECIDED FIRST (2026-09-03). First match wins here, and
+     'satellite' used to be tested LAST - which was harmless while every
+     satellite was named "Satellite to X", and wrong the moment a feeder
+     carried its TARGET's name. The satellite heads-ups added today are named
+     "<target> Satellite Heads-Up", so a feeder into "Saturday Mystery"
+     resolved to 'mystery' and into "Friday Fight Night PKO" to 'pko': the
+     SATELLITE badge - the one fact that makes the prize a SEAT rather than
+     chips - was dropped, and a bounty medallion the row's own is_bounty and
+     is_pko columns say is false was pushed in its place.
+
+     A satellite that also carries a real bounty flag still shows the bounty
+     medallion: those come from the COLUMNS below, which outrank this. */
+  if (l.includes('satellite')) return 'satellite';
   if (l.includes('freeroll') || l.includes('free roll')) return 'freeroll';
   if (l.includes('mystery')) return 'mystery';
   if (l.includes('pko') || l.includes('progressive')) return 'pko';
   if (l.includes('bounty') || l.includes('ko ')) return 'ko';
-  if (l.includes('satellite')) return 'satellite';
   return 'freezeout';
 }
 
 export function tournamentSpeed(name: string): string | null {
   const l = (name || '').toLowerCase();
-  if (l.includes('hyper')) return 'Hyper';
-  if (l.includes('turbo')) return 'Turbo';
-  if (l.includes('deep')) return 'Deepstack';
+  /* A FEEDER DOES NOT INHERIT ITS TARGET'S SPEED (2026-09-03). This reads the
+     name, and a satellite heads-up is named after the event it feeds - so
+     "Sunday $200 Deep Stack Satellite Heads-Up" read as 'Deepstack' while
+     actually running a 300-chip turbo stack on three-minute levels, and the
+     target's own Satellites tab called the same game "Hyper". Two surfaces,
+     two labels, neither true. The word that describes the TARGET is dropped
+     from the part of the name after "satellite"; what is left is the feeder's
+     own speed if it names one, and stackDepthLabel's structural read if not. */
+  const own = l.includes('satellite') ? l.slice(l.indexOf('satellite')) : l;
+  if (own.includes('hyper')) return 'Hyper';
+  if (own.includes('turbo')) return 'Turbo';
+  if (own.includes('deep')) return 'Deepstack';
   return null;
 }
 
@@ -747,7 +769,10 @@ export function tournamentMedallions(t: LobbyTournamentRow): RuleMedallion[] {
   const isMystery = t.is_mystery_bounty === true || type === 'mystery';
   const isBounty = t.is_bounty === true || Number(t.bounty_amount) > 0 || type === 'ko';
 
-  if (type === 'freeroll') rules.push({ key: 'freeroll', label: 'FREEROLL', tip: 'Free entry' });
+  /* FREEROLLS ARE FREE BUY (Dan 2026-09-02): the medallion names the deal a
+     freeroll always carries - free to enter, 1-chip rebuys and add-ons. */
+  if (type === 'freeroll')
+    rules.push({ key: 'freeroll', label: FREE_BUY_LABEL, tip: FREE_BUY_HELPER });
   /* One medallion for the bounty family, most specific first: a PKO is a
      bounty event and a mystery bounty is a bounty event, so pushing all three
      would say the same thing three times on one card. */
@@ -1017,7 +1042,7 @@ export function tournamentEntry(t: LobbyTournamentRow, kind: 'mtt' | 'spin' | 's
      * different prices for the same seat. A whole total still prints whole,
      * because that is what it is.
      */
-    buyInLabel: total <= 0 ? 'FREE' : formatChipTotal(total),
+    buyInLabel: total <= 0 ? FREE_BUY_LABEL : formatChipTotal(total),
     buyInValue: total,
     guaranteeLabel:
       (Number(t.guaranteed_prize) || 0) > 0

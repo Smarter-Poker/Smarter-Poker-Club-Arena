@@ -1,0 +1,24 @@
+-- The board reads two tables. Only one of them had an index for it.
+--
+-- fn_list_managed_games pages over tables UNION ALL tournaments, filtered by
+-- scope. `tables` has idx_tables_management_scope_club_page (club_id,
+-- created_at, id) with NO union_id predicate, so it serves both the club scope
+-- and the union scope. `tournaments` had only the two HALVES:
+--   idx_tournaments_management_club_page  ... WHERE union_id IS NULL
+--   idx_tournaments_management_union_page ... WHERE union_id IS NOT NULL
+-- and the union branch asks `union_id = X OR club_id = ANY(scope_clubs)`,
+-- which neither partial index can answer on its own. So the tournaments side
+-- fell back to a sequential scan while the tables side used an index:
+--
+--   Seq Scan on tournaments  (actual rows=35989 loops=1)
+--     Rows Removed by Filter: 43399
+--     Buffers: shared hit=12670          172ms of a 249ms page
+--
+-- This is the missing sibling of the tables index, with the same shape and
+-- the same absence of a union_id predicate, so one index covers both scopes.
+--
+-- Already live: created CONCURRENTLY on 2026-09-03 to avoid taking a write
+-- lock on tournaments while games were running. This migration records it, and
+-- IF NOT EXISTS makes it a no-op against the box it was created on.
+CREATE INDEX IF NOT EXISTS idx_tournaments_management_scope_club_page
+  ON public.tournaments USING btree (club_id, start_time, id);

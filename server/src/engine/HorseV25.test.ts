@@ -65,9 +65,17 @@ describe('V25 the pot-limit commitment zone', () => {
   it('a 12bb PLO stack raises POT, never a fictional all-in', () => {
     const r = decidePreflopV7(ploT() as never);
     expect(r.a).toBe('raiseTo');
-    // ~3.5bb: the pot-limit maximum, which at this depth IS the commitment.
-    expect(r.to).toBeGreaterThan(300);
-    expect(r.to).toBeLessThanOrEqual(400);
+    // The pot-limit maximum, which at this depth IS the commitment.
+    //
+    // 2026-09-03: this used to assert 300 < to <= 400, pinning the layer's
+    // old `bb * 3.5` shorthand. That shorthand is the pot only in a game with
+    // no ante, no straddle, no dead blind and no limper, and THIS fixture has
+    // an ante - the pot is 2.5bb, not 1.5bb. The real pot-limit ceiling here
+    // is currentBet + pot + toCall = 100 + 250 + 100 = 450, and asking for
+    // 350 left a fifth of the legal raise on the table every time an ante was
+    // in play. The sizer now reads the live pot, so the number moved to the
+    // one the game actually allows.
+    expect(r.to).toBe(450);
   });
 
   it('WITHOUT the layer the same stack emits a jam pot limit cannot honour', () => {
@@ -149,16 +157,25 @@ describe('V25 the Omaha reshove', () => {
     expect(r.a).toBe('raiseTo');
   });
 
-  it('it re-raises to POT, where the generic 3-bet asks for an illegal size', () => {
-    // The honest difference, after the first version of this test proved the
-    // "no move at all" claim wrong: BOTH raise, but the generic 3-bet asks
-    // for currentBet * 2.2-2.6 and pot limit then clamps whatever it likes.
-    // The PLO path asks for the pot, which is the largest LEGAL raise.
+  it('it re-raises to POT - and so does the generic 3-bet now', () => {
+    // What this test used to prove, and why it changed (2026-09-03).
+    //
+    // The honest difference used to be SIZING: both paths raised, but the
+    // generic 3-bet asked for currentBet * 2.2-2.6 and pot limit clamped
+    // whatever it liked, while this layer asked for the pot. That gap was
+    // half of the defect Dan raised - the generic path was a NO-LIMIT sizing
+    // ladder running the pot-limit games, and in position it asked for LESS
+    // than the pot and got it. Every preflop raise in a pot-limit game is now
+    // sized off the pot-limit ceiling, so the two paths agree here by
+    // construction, and agreeing is the fix rather than a regression.
+    //
+    // 350 + 500 + 300 = 1150, the largest legal raise-to in this spot.
     const withLayer = decidePreflopV7(reshove() as never);
     const without = decidePreflopV7(reshove({ ploTourney: false }) as never);
     expect(withLayer.a).toBe('raiseTo');
     expect(without.a).toBe('raiseTo');
-    expect(withLayer.to).not.toBe(without.to);
+    expect(withLayer.to).toBe(1150);
+    expect(without.to).toBe(1150);
   });
 
   it('a MIDDLE-position open is included, where the generic bar is tighter', () => {

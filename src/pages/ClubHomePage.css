@@ -129,34 +129,6 @@
    a bare element did not need. Everything else about how it draws is
    unchanged, deliberately: Dan asked for it to move and to become clickable,
    not to look like something else. */
-.lobby-top__house-welcome {
-  display: block;
-  width: 100%;
-  margin: 0 0 8px;
-  padding: 6px 10px;
-  overflow: hidden;
-  cursor: pointer;
-  text-align: center;
-  border: 1px solid rgb(74 145 202 / 32%);
-  background: linear-gradient(180deg, rgb(10 24 36 / 92%), rgb(2 7 11 / 98%));
-  color: #36aaff;
-  font-family: 'Roboto Condensed', Inter, sans-serif;
-  font-size: clamp(7px, 1.25vw, 10px);
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  line-height: 1.2;
-  text-align: center;
-  text-overflow: ellipsis;
-  text-shadow: 0 0 7px rgb(32 157 255 / 35%);
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.lobby-top__house-welcome:focus-visible {
-  outline: 2px solid #65c4ff;
-  outline-offset: 2px;
-}
-
 .lobby-top__identity {
   width: 100%;
   justify-self: stretch;
@@ -2163,64 +2135,17 @@
     white-space: nowrap;
   }
 
-  .club-home--unified-mobile .club-mobile-owner-message,
-  .agc-mobile-page .club-mobile-owner-message {
-    width: calc(100% - 8px);
-    min-height: 26px;
-    aspect-ratio: auto;
-    margin: 0 4px;
-    padding: 0 18px;
-    border: 0;
-    border-right: 2px solid #7d8992;
-    border-bottom: 1px solid #4e5961;
-    border-left: 2px solid #7d8992;
-    border-radius: 0;
-    background: #020507;
-    box-shadow:
-      inset 2px 0 #111820,
-      inset -2px 0 #111820;
-  }
-
-  .club-home--unified-mobile .club-mobile-owner-message__copy,
-  .agc-mobile-page .club-mobile-owner-message__copy {
-    min-height: 24px;
-    font-size: clamp(7px, 1.95vw, 9px);
-  }
-
   /* ═══════════════════════════════════════════════════════════════════════
-     ONE CLUB MESSAGE ON A PHONE, NOT TWO (Dan 2026-09-02)
+     THE CLUB MESSAGE IS NOT IN THIS STYLESHEET ANY MORE (Dan 2026-09-03)
      -----------------------------------------------------------------------
-     "ON MOBILE, THE CLUB MESSAGE DISPLAYS TWICE, IT SHOULD ONLY BE ONCE,
-     REMOVE THE DUPLICATE."
+     Two elements used to print `club.lobby_message` at every width, which is
+     why Dan saw the same line twice on a phone in September 2026, and the
+     rules that hid one of them lived here.
 
-     Two elements print `club.lobby_message`, and both are in the tree at
-     every width:
-
-       .club-mobile-owner-message   ClubHomePage's own strip, written FOR the
-                                    phone and styled by the rules just above -
-                                    the thin blue line under the club name.
-       .lobby-top__house-welcome    <ClubOwnerMessage>'s trigger, promoted to
-                                    the first row of the desktop rail on
-                                    2026-09-01 ("should be at the top above
-                                    the club card"). Below 900px the rail
-                                    collapses into this same vertical stack.
-
-     So Dan saw "WEST COAST GRINDERS" twice, a few pixels apart. The rail
-     trigger is the one that goes, because the strip above it is load-bearing:
-     its 2px left and right borders ARE two of the mobile chassis rails, and
-     hiding it would open a gap in the frame between the welcome plate and
-     `.lobby-top`.
-
-     Nothing is lost by hiding it. The component stays mounted and keeps
-     owning the panel, the save path and the announcements link; the strip is
-     now a live control for every viewer (ClubHomePage.tsx), so a player who
-     cannot edit still taps the message and lands on the club's
-     announcements - the same destination the rail's panel offers. */
-  .club-home--unified-mobile .lobby-top > .lobby-top__house-welcome,
-  .agc-mobile-page .lobby-top > .lobby-top__house-welcome {
-    display: none;
-  }
-
+     Both are gone. The message is a full-screen greeting shown once on entry
+     (ClubEntryMessage), so there is no lobby element to style, no duplicate to
+     hide, and no breakpoint at which the two can disagree. `.lobby-top` keeps
+     its chassis rails below, which is the part that was load-bearing. */
   .club-home--unified-mobile .lobby-top,
   .agc-mobile-page .lobby-top {
     width: calc(100% - 8px);
@@ -2305,7 +2230,6 @@
   }
 
   .club-home--unified-mobile .club-mobile-welcome,
-  .club-home--unified-mobile .club-mobile-owner-message,
   .club-home--unified-mobile .lobby-top,
   .club-home--unified-mobile .club-lobby-command-top {
     border-right: 2px solid var(--mobile-chassis-edge);
@@ -2378,28 +2302,6 @@
   .club-home--unified-mobile .club-mobile-welcome h1 {
     font-size: clamp(22px, 6.4vw, 31px);
     line-height: 1;
-  }
-
-  .club-home--unified-mobile .club-mobile-owner-message {
-    width: calc(100% - 8px);
-    min-height: 26px;
-    aspect-ratio: auto;
-    margin: 0 4px;
-    padding: 0 18px;
-    border-top: 1px solid #4e5961;
-    border-bottom: 1px solid #4e5961;
-  }
-
-  .club-home--unified-mobile .club-mobile-owner-message::before {
-    display: none;
-  }
-
-  .club-home--unified-mobile .club-mobile-owner-message__copy {
-    min-height: 24px;
-    padding: 0 3px;
-    color: #20b8ff;
-    font-size: clamp(7px, 1.95vw, 9px);
-    letter-spacing: 0.025em;
   }
 
   .club-home--unified-mobile .lobby-top {
@@ -2620,7 +2522,6 @@
    actions. The two breakpoints deliberately share one DOM/data tree.
 ═══════════════════════════════════════════════════════════════════════════ */
 .club-mobile-welcome,
-.club-mobile-owner-message,
 .lobby-wallets-trigger {
   display: none;
 }
@@ -2731,11 +2632,6 @@
      row now, so the desktop spacing is stated against `.lobby-top` itself.
      Left as a scoped rule rather than deleted outright because this block is
      the desktop rail's own sizing pass and the margin belongs with it. */
-  .lobby-top > .lobby-top__house-welcome {
-    flex: 0 0 auto;
-    margin: 3px 3px 7px;
-  }
-
   .lobby-top__wallet .dw__rows {
     display: flex;
     flex-direction: column;
@@ -2847,75 +2743,6 @@
       0 4px 8px #000;
     text-transform: uppercase;
     white-space: nowrap;
-  }
-
-  .club-mobile-owner-message {
-    width: calc(100% - 32px);
-    min-height: 54px;
-    margin: 5px 16px 10px;
-    display: grid;
-    place-items: center;
-    padding: 9px 24px;
-    border: 0;
-    background:
-      url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center / 100% 100% no-repeat,
-      #02070a;
-    box-shadow: inset 0 0 12px #000;
-  }
-
-  .club-mobile-owner-message__copy {
-    width: 100%;
-    min-height: 28px;
-    padding: 0;
-    overflow: hidden;
-    border: 0;
-    background: transparent;
-    color: #21baff;
-    font-size: clamp(11px, 2.8vw, 15px);
-    font-weight: 650;
-    line-height: 1.22;
-    letter-spacing: 0.035em;
-    text-align: center;
-    text-overflow: ellipsis;
-    text-shadow: 0 0 8px rgb(20 160 255 / 35%);
-    text-transform: uppercase;
-    white-space: nowrap;
-  }
-
-  .club-mobile-owner-message__copy:disabled {
-    cursor: default;
-    opacity: 1;
-  }
-
-  .club-mobile-owner-message__editor {
-    width: 100%;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto auto;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .club-mobile-owner-message__editor input {
-    min-width: 0;
-    height: 36px;
-    padding: 0 9px;
-    border: 1px solid #2878b7;
-    border-radius: 2px;
-    background: #02070b;
-    color: #eaf7ff;
-  }
-
-  .club-mobile-owner-message__editor span,
-  .club-mobile-owner-message__editor button {
-    color: #8eb9d5;
-    font-size: 10px;
-  }
-
-  .club-mobile-owner-message__editor button {
-    min-height: 36px;
-    padding: 0 7px;
-    border: 1px solid #285577;
-    background: #07131e;
   }
 
   .lobby-top {
@@ -3064,13 +2891,6 @@
 }
 
 @media (max-width: 520px) {
-  .club-mobile-owner-message__editor {
-    grid-template-columns: minmax(0, 1fr) auto auto;
-  }
-
-  .club-mobile-owner-message__editor span {
-    display: none;
-  }
 }
 
 @media (max-width: 360px) {
@@ -3078,12 +2898,6 @@
     margin-inline: 8px;
     width: calc(100% - 16px);
     padding-inline: 0;
-  }
-
-  .club-mobile-owner-message {
-    width: calc(100% - 16px);
-    margin-inline: 8px;
-    padding-inline: 22px;
   }
 
   .lobby-top__main {
@@ -3122,8 +2936,7 @@
       inset -1px 0 #000;
   }
 
-  .club-mobile-welcome::before,
-  .club-mobile-owner-message::before {
+  .club-mobile-welcome::before {
     content: '';
     position: absolute;
     z-index: 4;
@@ -3133,19 +2946,6 @@
     width: 1px;
     background: #000;
     pointer-events: none;
-  }
-
-  .club-mobile-owner-message {
-    position: relative;
-    box-sizing: border-box;
-    width: calc(100% - 8px);
-    min-height: 0;
-    aspect-ratio: 20 / 1;
-    margin: 2px 4px 6px;
-    padding: 0 7%;
-    box-shadow:
-      inset 1px 0 #000,
-      inset -1px 0 #000;
   }
 
   .lobby-top {
@@ -3227,20 +3027,10 @@
   .club-mobile-welcome h1 {
     font-size: clamp(20px, 6.2vw, 31px);
   }
-
-  .club-mobile-owner-message__copy {
-    min-height: 0;
-    font-size: clamp(7px, 2.05vw, 11px);
-  }
 }
 
 @media (max-width: 360px) {
   .lobby-top {
-    width: calc(100% - 8px);
-    margin-inline: 4px;
-  }
-
-  .club-mobile-owner-message {
     width: calc(100% - 8px);
     margin-inline: 4px;
   }
@@ -3295,24 +3085,6 @@
     line-height: 11px;
     transform: translateX(-50%);
     white-space: nowrap;
-  }
-
-  .club-home--unified-mobile .club-mobile-owner-message,
-  .agc-mobile-page .club-mobile-owner-message {
-    width: calc(100% - 8px);
-    min-height: 26px;
-    aspect-ratio: auto;
-    margin: 0 4px;
-    padding: 0 18px;
-    border: 0;
-    border-right: 2px solid #7d8992;
-    border-bottom: 1px solid #4e5961;
-    border-left: 2px solid #7d8992;
-    border-radius: 0;
-    background: #020507;
-    box-shadow:
-      inset 2px 0 #111820,
-      inset -2px 0 #111820;
   }
 
   .club-home--unified-mobile .lobby-top,

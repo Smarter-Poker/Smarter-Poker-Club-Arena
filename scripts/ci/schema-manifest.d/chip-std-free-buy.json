@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/chip-std-free-buy",
+  "tables": ["ca_freeroll_free_buy_log"],
+  "functions": ["fn_is_free_buy_event", "fn_freerolls_are_free_buy"]
+}

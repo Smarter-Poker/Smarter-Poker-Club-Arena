@@ -69,7 +69,16 @@ describe('Table Management Phase 6 scale and retention', () => {
     expect(migration).toContain('t.club_id=ANY(v_scope_clubs)');
     expect(service).toContain("rpc('fn_list_managed_games'");
     expect(service).toContain('p_limit: 100');
-    expect(page).toContain('Load More · ${games.length} Of ${counts.total}');
+    /*
+      2026-09-03: this used to pin the literal `Of ${counts.total}`, and that
+      literal was the bug. `counts.total` summarises the whole scope while the
+      rows honour the closed horizon, so the pager counted towards a number no
+      amount of clicking reaches - 79,142 on a union that pages out at 35,745.
+      The property Phase 6 actually cares about is that the pager reports
+      progress against a total at all; WHICH total is pinned, against the open
+      tab, in theTotalCountsWhatTheBoardCanReach.
+    */
+    expect(page).toContain('Load More · ${games.length} Of $');
     expect(page).not.toContain('.limit(500)');
   });
 

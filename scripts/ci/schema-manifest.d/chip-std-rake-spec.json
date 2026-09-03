@@ -1,0 +1,37 @@
+{
+  "_owner": "fix/chip-std-rake-spec",
+  "tables": ["ca_rake_rules", "ca_rake_schedule_caps"],
+  "functions": [
+    "fn_unscheduled_cap_bb",
+    "fn_rake_stake_price",
+    "fn_rake_tier_price",
+    "fn_rake_cap_for_dealt",
+    "fn_rake_spec_rebuild_caps",
+    "fn_effective_rake",
+    "fn_effective_bbj_drop",
+    "fn_rake_spec_canonical",
+    "fn_rake_spec_checksum",
+    "fn_rake_spec_self_check",
+    "fn_rake_law_violations",
+    "fn_rake_law_check",
+    "fn_rake_bbj_invariants"
+  ],
+  "columns": {
+    "ca_rake_rules": [
+      "id",
+      "heads_up_percent",
+      "heads_up_cap_factor",
+      "short_handed_cap_factor",
+      "short_handed_max_players",
+      "no_flop_no_drop",
+      "bbj_min_players_dealt",
+      "bbj_min_pot_bb",
+      "max_rake_percent",
+      "max_rake_cap_bb",
+      "bbj_ineligible_variants",
+      "tier_priced_big_blinds",
+      "updated_at"
+    ],
+    "ca_rake_schedule_caps": ["bb", "players_dealt", "rake_cap", "source"]
+  }
+}

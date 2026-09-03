@@ -66,6 +66,8 @@ import {
   auditGuaranteesKept,
 } from './services/FeeReconciler.js';
 import { reportError, initSentry, flushSentry } from './services/errorReporter.js';
+import { startRakeSpecGuard } from './services/rakeSpecGuard.js';
+import { rakeSpecDriftState } from './config/rakeSpec.js';
 import { fetchAllRows } from './services/supabase/pagination.js';
 // Phase 1.1 PR-2: native WebSocket transport for authoritative state
 import { tableStateHub } from './transport/TableStateHub.js';
@@ -636,6 +638,18 @@ export class GameServer {
     // Step 1: Clean up stale data from previous runs.
     // Test mode passes the protected id so cleanup spares it.
     await this.cleanupStaleData(testTableId);
+
+    /**
+     * ONE RAKE SPEC (Chip Accounting Standard R7, 2026-09-02). Before any
+     * table engine boots, compare the database's rake spec checksum with the
+     * one this build was compiled with. A mismatch raises a CRITICAL
+     * `RakeSpec.drift` alert (once per boot, both checksums and both
+     * canonical texts) and is published on /health; dealing CONTINUES on the
+     * compiled-in spec. Dan's risk ruling: nothing high risk for live play
+     * is enforced, so this never holds a table, never throws and never stops
+     * the boot. See services/rakeSpecGuard.ts.
+     */
+    await startRakeSpecGuard();
 
     if (!maintenanceMode && !testTableId) {
       /**
@@ -1262,6 +1276,9 @@ export class GameServer {
        * than a race the workflow observes.
        */
       maintenance: { ...this.maintenanceBreak.snapshot(), dbClockSkewMs: this.lastDbSkewMs },
+      // ONE RAKE SPEC (R7): both checksums and whether they last agreed.
+      // Informational: a drift alerts, it never holds a table.
+      rakeSpec: rakeSpecDriftState(),
       stalledTables: stalledTables.slice(0, 20),
       discoveryStaleMs,
       tableLiveness,
@@ -4308,7 +4325,7 @@ export class GameServer {
             /**
              * ── AND THE WINDOW IS A WINDOW, NOT A WAIT (round 15) ───────────
              *
-             * A horse-opened board holds its LAST seat for a human for 60-180
+             * A horse-opened board holds its LAST seat for a human for 60-150
              * randomised seconds (seatFirstHumanWindowMs), and `start_time` is
              * the instant that window closes. After it closes the board is
              * supposed to fill itself immediately. Measured over 6 hours it
@@ -4350,7 +4367,7 @@ export class GameServer {
              * one does, topUpWithHorses fills the remaining seats"). A
              * partial game with only horses is left alone on purpose: that
              * is the horse-opened board holding its last seat for a human
-             * (60-180s window), and the held-empty rotation — filling those
+             * (60-150s window), and the held-empty rotation — filling those
              * here would erase both designs.
              */
             if (seats > 0 && paid > 0 && paid < seats) {

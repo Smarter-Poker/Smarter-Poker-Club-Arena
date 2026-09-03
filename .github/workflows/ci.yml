@@ -955,7 +955,7 @@ jobs:
       # step, not only the full suite, so a #2537-class regression that outdates
       # them is a named red line on a required check.
       - name: Freeze + watchdog + restart-gate regression suite
-        run: npx vitest run src/engine/FreezeRegression.test.ts src/engine/TableWatchdog.test.ts src/maintenance/MaintenanceBreak.test.ts --reporter=verbose
+        run: npx vitest run src/engine/FreezeRegression.test.ts src/engine/TableWatchdog.test.ts src/maintenance/MaintenanceBreak.test.ts src/maintenance/thawInstallments.test.ts --reporter=verbose
 
       - name: Full server test suite
         run: npm test

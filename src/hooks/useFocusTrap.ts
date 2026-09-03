@@ -10,14 +10,23 @@
  * Usage:
  *   const trapRef = useFocusTrap(isOpen);
  *   return <div ref={trapRef}>...modal content...</div>
+ *
+ * Pass initialFocusRef when the element that should receive focus is NOT first
+ * in DOM order. The default lands on the first focusable descendant, which
+ * silently defeats autoFocus: React applies autoFocus during commit, this
+ * effect runs afterwards, and the rAF below then moves focus elsewhere. Any
+ * dialog whose header holds a button before its input needs this.
  */
 
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback, type RefObject } from 'react';
 
 const FOCUSABLE_SELECTORS =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(isActive: boolean) {
+export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
+  isActive: boolean,
+  initialFocusRef?: RefObject<HTMLElement | null>
+) {
   const containerRef = useRef<T>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
@@ -70,10 +79,10 @@ export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(isActive: b
     const focusableElements =
       containerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS);
     let rafId: number | null = null;
-    if (focusableElements.length > 0) {
+    if (initialFocusRef?.current || focusableElements.length > 0) {
       // Small delay to allow the modal animation to start
       rafId = requestAnimationFrame(() => {
-        focusableElements[0]?.focus();
+        (initialFocusRef?.current ?? focusableElements[0])?.focus();
       });
     }
 
@@ -85,7 +94,9 @@ export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(isActive: b
       // Restore focus to the previously focused element
       previousFocusRef.current?.focus();
     };
-  }, [isActive, handleKeyDown]);
+    // initialFocusRef is a ref object, so its identity is stable; listed to keep
+    // the exhaustive-deps rule satisfied rather than because it can change.
+  }, [isActive, handleKeyDown, initialFocusRef]);
 
   return containerRef;
 }

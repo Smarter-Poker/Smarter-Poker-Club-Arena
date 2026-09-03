@@ -106,8 +106,11 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
       // Apply search filter based on type.
       //
       // `%` and `_` are ILIKE wildcards and used to pass straight through, so a
-      // username containing an underscore over-matched. Escaped here the same
-      // way FindPlayerModal's escapeSearchQuery does it.
+      // username containing an underscore over-matched. The locator escapes the
+      // same three characters server-side, in fn_search_players (see
+      // 20260903040000_player_search_escapes_like_wildcards.sql). This comment
+      // used to cite a FindPlayerModal helper that never existed, which is part
+      // of how the locator went so long without the guard.
       const likeSafe = query.trim().replace(/([\\%_])/g, '\\$1');
 
       if (searchType === 'username') {

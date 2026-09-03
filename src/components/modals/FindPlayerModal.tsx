@@ -8,6 +8,7 @@ import {
   type PlayerClubAffiliation,
   type PlayerPresenceFilter,
   type PlayerSearchResult,
+  type PlayerSearchPreferences,
   type PlayerSearchScope,
   type PlayerSearchSort,
   type PlayerSearchTable,
@@ -43,7 +44,11 @@ export default function FindPlayerModal({
   onMembershipRequired,
 }: FindPlayerModalProps) {
   const navigate = useNavigate();
-  const trapRef = useFocusTrap(isOpen);
+  // Without this the trap focuses the first focusable descendant, which is the
+  // Access Rules button in the header, one frame after autoFocus put the caret
+  // in the search box. Opening the locator and typing did nothing.
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const trapRef = useFocusTrap<HTMLDivElement>(isOpen, searchInputRef);
   const [searchQuery, setSearchQuery] = useState('');
   const [results, setResults] = useState<PlayerSearchResult[]>([]);
   const [suggestions, setSuggestions] = useState<PlayerSearchResult[]>([]);
@@ -59,6 +64,9 @@ export default function FindPlayerModal({
   const [presence, setPresence] = useState<PlayerPresenceFilter>('all');
   const [sort, setSort] = useState<PlayerSearchSort>('relevance');
   const [showAccessRules, setShowAccessRules] = useState(false);
+  const [preferences, setPreferences] = useState<PlayerSearchPreferences | null>(null);
+  const [savingPreferences, setSavingPreferences] = useState(false);
+  const [preferencesError, setPreferencesError] = useState<string | null>(null);
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set());
   const [verifyingTableId, setVerifyingTableId] = useState<string | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
@@ -74,6 +82,12 @@ export default function FindPlayerModal({
         return;
       }
       searchAbortRef.current?.abort();
+      // Also cancel any suggestion in flight or still on the debounce. Without
+      // this, hitting Enter within the debounce window let the type-ahead
+      // resolve afterwards and pop its dropdown open on top of the results the
+      // user just asked for.
+      if (suggestionTimerRef.current) window.clearTimeout(suggestionTimerRef.current);
+      suggestionAbortRef.current?.abort();
       const controller = new AbortController();
       searchAbortRef.current = controller;
       if (append) setIsLoadingMore(true);
@@ -174,6 +188,42 @@ export default function FindPlayerModal({
       () => fetchSuggestions(value.trim()),
       SUGGEST_DEBOUNCE_MS
     );
+  };
+
+  // The server enforces these three preferences; until now nothing set them, so
+  // the enforcement governed a value no player could reach. Loaded lazily on
+  // first open of the panel so the locator's own search path stays one request.
+  useEffect(() => {
+    if (!showAccessRules || preferences) return;
+    let cancelled = false;
+    void PlayerSearchService.getPreferences()
+      .then((value) => {
+        if (!cancelled) setPreferences(value);
+      })
+      .catch((prefsError) => {
+        reportError(prefsError, 'FindPlayerModal.LoadPreferences');
+        if (!cancelled) setPreferencesError('Could Not Load Your Search Privacy Settings.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showAccessRules, preferences]);
+
+  const savePreference = async (patch: Partial<PlayerSearchPreferences>) => {
+    if (!preferences || savingPreferences) return;
+    const next = { ...preferences, ...patch };
+    setPreferences(next); // optimistic, reverted below if the write fails
+    setSavingPreferences(true);
+    setPreferencesError(null);
+    try {
+      setPreferences(await PlayerSearchService.setPreferences(next));
+    } catch (prefsError) {
+      reportError(prefsError, 'FindPlayerModal.SavePreferences');
+      setPreferences(preferences);
+      setPreferencesError('Could Not Save. Please Try Again.');
+    } finally {
+      setSavingPreferences(false);
+    }
   };
 
   /** Join / apply to a club straight from the affiliations panel, with no table to return to. */
@@ -351,15 +401,56 @@ export default function FindPlayerModal({
                   Accounts Your Club, Union, Administrator, Or Agent Role Authorizes You To Manage.
                 </p>
                 <p>
-                  You Can Turn Off Discovery, Presence, And Current Table In Your Own Search Privacy
-                  Settings. Staff And Agents Who Administer Your Account Still See You.
+                  Your Own Visibility Is Yours To Set. Staff And Agents Who Administer Your Account
+                  Still See You.
                 </p>
+                {preferences ? (
+                  <>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={preferences.discoverable}
+                        disabled={savingPreferences}
+                        onChange={(event) =>
+                          void savePreference({ discoverable: event.target.checked })
+                        }
+                      />
+                      Let Other Players Find Me
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={preferences.showPresence}
+                        disabled={savingPreferences}
+                        onChange={(event) =>
+                          void savePreference({ showPresence: event.target.checked })
+                        }
+                      />
+                      Show When I Am Online Or Playing
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={preferences.showCurrentTable}
+                        disabled={savingPreferences}
+                        onChange={(event) =>
+                          void savePreference({ showCurrentTable: event.target.checked })
+                        }
+                      />
+                      Show Which Game I Am In
+                    </label>
+                    {preferencesError && <p>{preferencesError}</p>}
+                  </>
+                ) : (
+                  <p>{preferencesError || 'Loading Your Search Privacy Settings…'}</p>
+                )}
               </section>
             )}
 
             <div className={styles.searchSection}>
               <div className={styles.searchInputWrapper}>
                 <input
+                  ref={searchInputRef}
                   type="search"
                   className={styles.searchInput}
                   placeholder="Name, Alias, Or Player Number…"
@@ -526,7 +617,9 @@ export default function FindPlayerModal({
                             {presenceCopy(player)}
                           </span>
                         </span>
-                        <span className={styles.relationshipBadge}>{player.relationship}</span>
+                        <span className={styles.relationshipBadge}>
+                          {relationshipLabel(player.relationship)}
+                        </span>
                       </button>
 
                       <PlayerAffiliations player={player} onJoinClub={handleClubJoin} />
@@ -554,7 +647,7 @@ export default function FindPlayerModal({
                                   <header>
                                     <strong>{account.club_name}</strong>
                                     <span>
-                                      {account.access} / {account.role}
+                                      {enumLabel(account.access)} / {enumLabel(account.role)}
                                     </span>
                                   </header>
                                   <dl>
@@ -680,6 +773,38 @@ function presenceCopy(player: PlayerSearchResult): string {
   if (player.presence_status === 'playing') return 'Playing Now';
   if (player.presence_status === 'online') return 'Online';
   return 'Offline';
+}
+
+/**
+ * CLAUDE.md section 9 lists rendering a raw DB enum as a known bug shape
+ * (HIGH_HAND reaching a player instead of "High Hand"). These two were doing it:
+ * the relationship badge printed "public"/"managed", and the account card
+ * printed "downline / super_agent".
+ */
+function relationshipLabel(relationship: PlayerSearchResult['relationship']): string {
+  switch (relationship) {
+    case 'self':
+      return 'You';
+    case 'friend':
+      return 'Friend';
+    case 'club':
+      return 'Your Club';
+    case 'union':
+      return 'Your Union';
+    case 'managed':
+      return 'Your Player';
+    default:
+      return 'Arena';
+  }
+}
+
+function enumLabel(value: string | null | undefined): string {
+  if (!value) return '';
+  return value
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
 }
 
 function gameKind(table: PlayerSearchTable): 'tournament' | 'cash' {

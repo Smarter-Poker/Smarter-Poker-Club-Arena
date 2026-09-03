@@ -54,7 +54,11 @@ describe('Club entry dialogs', () => {
   ])('%s is modal, labelled, and focus trapped', (_name, source) => {
     expect(source).toContain('role="dialog"');
     expect(source).toContain('aria-modal="true"');
-    expect(source).toContain('useFocusTrap(');
+    // Tolerates an explicit type argument and extra arguments. FindPlayerModal
+    // calls useFocusTrap<HTMLDivElement>(isOpen, searchInputRef) so the caret
+    // lands in the search box instead of the first header button; the trap
+    // itself is unchanged, which is what this assertion exists to pin.
+    expect(source).toMatch(/useFocusTrap(<[^>]+>)?\(/);
   });
 
   it('preserves the authoritative create service', () => {

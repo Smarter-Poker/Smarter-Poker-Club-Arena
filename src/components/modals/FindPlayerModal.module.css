@@ -76,8 +76,9 @@
 }
 .privacyButton {
   align-self: start;
+  min-height: 44px;
   margin-top: 18px;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border: 1px solid #294451;
   border-radius: 2px;
   background: #081017;
@@ -245,6 +246,15 @@
 .suggestItem:active {
   background: rgba(0, 169, 255, 0.08);
 }
+/*
+ * Arrow-key highlight. Without this rule the Up/Down keys moved highlightedIndex
+ * and aria-selected with nothing on screen to show for it, so Enter jumped to a
+ * player the user never saw chosen.
+ */
+.suggestItem[aria-selected='true'] {
+  background: rgba(0, 169, 255, 0.1);
+  box-shadow: inset 2px 0 0 #45c8ff;
+}
 .suggestAvatar,
 .playerAvatar {
   display: grid;
@@ -359,7 +369,8 @@
   text-transform: uppercase;
 }
 .filterControls select {
-  min-height: 32px;
+  /* 44px touch floor: these are the primary filters on a mobile-first surface. */
+  min-height: 44px;
   border: 1px solid #293842;
   border-radius: 2px;
   background: #05090d;
@@ -488,7 +499,7 @@
 }
 .accountAccessToggle {
   width: 100%;
-  min-height: 34px;
+  min-height: 44px;
   border: 1px solid rgba(70, 166, 211, 0.34);
   border-radius: 2px;
   background: #07131a;
@@ -547,6 +558,9 @@
   color: #d9e5eb;
   font: 600 10px/1 var(--font-mono, monospace);
   text-overflow: ellipsis;
+  /* Ellipsis is inert without this, so a long chip balance was clipped with no
+     marker at all. A balance read short is better than one read wrong. */
+  white-space: nowrap;
 }
 /* --- Club and union affiliations --- */
 .affiliations {
@@ -580,8 +594,10 @@
 .affiliationChip {
   display: inline-flex;
   align-items: center;
+  /* Joining a club is a money-adjacent action; it does not get a 24px target. */
+  min-height: 44px;
   gap: 7px;
-  padding: 5px 9px;
+  padding: 5px 12px;
   border: 1px solid #24343d;
   border-radius: 999px;
   background: #070d12;
@@ -867,8 +883,15 @@ button.affiliationChip:focus-visible {
   .searchButton {
     font-size: 10px;
   }
+  /*
+   * On a phone the results were jailed in a ~349px nested scroller inside
+   * .scrollBody, which already scrolls, so one result card filled the window
+   * and momentum scrolling fought the outer container. Let .scrollBody be the
+   * single scroll surface here, as the short-viewport block below already does.
+   */
   .resultsArea {
-    max-height: 43vh;
+    max-height: none;
+    overflow-y: visible;
   }
   .accountGrid {
     grid-template-columns: 1fr;

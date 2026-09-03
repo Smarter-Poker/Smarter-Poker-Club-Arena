@@ -149,6 +149,27 @@ describe('Find A Player locator', () => {
       expect(PlayerSearchService.search).not.toHaveBeenCalled();
     });
 
+    it('puts the caret in the search box, not on the header button', async () => {
+      renderLocator();
+
+      // The focus trap grabs the first focusable descendant one frame after
+      // autoFocus, and in DOM order that is the Access Rules button.
+      await waitFor(() => expect(screen.getByRole('searchbox')).toHaveFocus());
+    });
+
+    it('does not reopen the suggestion list over the results it raced', async () => {
+      const user = userEvent.setup();
+      renderLocator();
+
+      // Typing arms a 180ms debounce; searching immediately must cancel it.
+      await user.type(screen.getByRole('searchbox'), 'shark');
+      await user.click(screen.getByRole('button', { name: 'Search' }));
+      await screen.findByText('Midnight Cash');
+
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    });
+
     it(`queries for suggestions as soon as ${FUZZY_MIN_CHARS} characters are typed`, async () => {
       const user = userEvent.setup();
       renderLocator();
@@ -355,6 +376,55 @@ describe('Find A Player locator', () => {
           watchTableId: 'live-table-2',
         })
       );
+    });
+  });
+
+  describe('search privacy settings', () => {
+    it('lets a player turn off discovery from the Access Rules panel', async () => {
+      const user = userEvent.setup();
+      const prefs = {
+        discoverable: true,
+        showDisplayName: true,
+        showPresence: true,
+        showCurrentTable: true,
+      };
+      vi.spyOn(PlayerSearchService, 'getPreferences').mockResolvedValue(prefs);
+      const save = vi
+        .spyOn(PlayerSearchService, 'setPreferences')
+        .mockResolvedValue({ ...prefs, discoverable: false });
+      renderLocator();
+
+      await user.click(screen.getByRole('button', { name: 'Access Rules' }));
+      const toggle = await screen.findByRole('checkbox', { name: 'Let Other Players Find Me' });
+      expect(toggle).toBeChecked();
+
+      await user.click(toggle);
+
+      // The RPC has enforced `discoverable` since the last migration; before
+      // this panel existed there was no way for a player to set it.
+      await waitFor(() =>
+        expect(save).toHaveBeenCalledWith(expect.objectContaining({ discoverable: false }))
+      );
+    });
+
+    it('reverts the toggle and says so when the save fails', async () => {
+      const user = userEvent.setup();
+      vi.spyOn(PlayerSearchService, 'getPreferences').mockResolvedValue({
+        discoverable: true,
+        showDisplayName: true,
+        showPresence: true,
+        showCurrentTable: true,
+      });
+      vi.spyOn(PlayerSearchService, 'setPreferences').mockRejectedValue(new Error('nope'));
+      renderLocator();
+
+      await user.click(screen.getByRole('button', { name: 'Access Rules' }));
+      const toggle = await screen.findByRole('checkbox', { name: 'Let Other Players Find Me' });
+      await user.click(toggle);
+
+      await screen.findByText('Could Not Save. Please Try Again.');
+      // A privacy control that silently keeps the old value is worse than none.
+      expect(toggle).toBeChecked();
     });
   });
 

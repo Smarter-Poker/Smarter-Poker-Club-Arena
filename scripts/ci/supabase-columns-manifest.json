@@ -2198,7 +2198,8 @@
       "type",
       "is_active",
       "created_by",
-      "management_revision"
+      "management_revision",
+      "updated_at"
     ],
     "club_arena_audit_logs": [
       "id",

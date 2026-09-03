@@ -31,6 +31,7 @@ import {
   gameLaneFor,
   horseHash,
   isActiveNow,
+  isRetiringTable,
   occupancyTargetFor,
   stakeBandAllows,
   stakeBandForBigBlind,
@@ -104,6 +105,50 @@ const DEFAULT_TABLES: TableConfig[] = [
     maxPlayers: 9,
     horsesPerTable: 5,
     gameVariant: 'nlh',
+  },
+  /* THE HIGH-STAKES LADDER, CAPPED AT 25/50 (Dan 2026-09-03: "ADD THE HIGHER
+     STAKES FOR MIDWAY UNION, CAP IT AT 25-50").
+
+     Until today the union's cash ladder stopped at 2/5 - three tables, all
+     nine of nine - while the population that could play higher sat idle:
+     measured 2026-09-03, 48 high-band horses across Shark, JAQK and Midway,
+     every one of them rolled for 5/10 and 10/20 under HorseBankroll's
+     buy-ins-to-sit rule and 35 of them for 25/50. stakeBandForBigBlind puts
+     every big blind above 6 in the 'high' band, so these four rungs share one
+     pool of about thirty cash-lane horses; four configs at up to three tables
+     each is what that pool can keep populated, and 25/50 is the top by
+     order. Anything above it is not added here and must not be. */
+  {
+    name: 'NLH 5.00/10.00',
+    smallBlind: 5.0,
+    bigBlind: 10.0,
+    maxPlayers: 9,
+    horsesPerTable: 5,
+    gameVariant: 'nlh',
+  },
+  {
+    name: 'NLH 10.00/20.00',
+    smallBlind: 10.0,
+    bigBlind: 20.0,
+    maxPlayers: 9,
+    horsesPerTable: 5,
+    gameVariant: 'nlh',
+  },
+  {
+    name: 'NLH 25.00/50.00',
+    smallBlind: 25.0,
+    bigBlind: 50.0,
+    maxPlayers: 9,
+    horsesPerTable: 5,
+    gameVariant: 'nlh',
+  },
+  {
+    name: 'PLO4 5.00/10.00',
+    smallBlind: 5.0,
+    bigBlind: 10.0,
+    maxPlayers: 8,
+    horsesPerTable: 5,
+    gameVariant: 'plo4',
   },
   {
     // V23: the fleet's first STRADDLE game — gives the V18 straddle brain
@@ -663,7 +708,7 @@ export class HorseFleetManager {
           let q = supabase
             .from('tables')
             .select(
-              'id, name, max_players, small_blind, big_blind, game_variant, club_id, union_id, min_buy_in, max_buy_in, current_players, created_at'
+              'id, name, max_players, small_blind, big_blind, game_variant, club_id, union_id, min_buy_in, max_buy_in, current_players, created_at, settings'
             )
             .is('tournament_id', null)
             .in('status', ['waiting', 'running'])
@@ -1028,9 +1073,23 @@ export class HorseFleetManager {
           .sort((a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')));
         for (const t of family.slice(MAX_TABLES_PER_CONFIG)) surplusTableIds.add(t.id);
       }
+      /* A table marked `settings.retire_when_empty` is surplus by declaration
+         (Dan 2026-09-03, "close any tables over 2/5"): it gets no new horses,
+         HorseSessionRotator walks its horses out, and retireSurplusTables()
+         closes it once it is empty. This is how a RUNNING table above a
+         club's stake cap is closed without cashing seats out under a hand.
+         See isRetiringTable. */
+      let retiring = 0;
+      for (const t of tables) {
+        if (isRetiringTable(t as { settings?: unknown })) {
+          surplusTableIds.add(t.id);
+          retiring++;
+        }
+      }
       if (surplusTableIds.size > 0) {
         console.log(
-          `[HorseFleet] ${surplusTableIds.size} surplus table(s) draining - not seeding them`
+          `[HorseFleet] ${surplusTableIds.size} surplus table(s) draining - not seeding them` +
+            (retiring > 0 ? ` (${retiring} marked retire_when_empty)` : '')
         );
       }
 

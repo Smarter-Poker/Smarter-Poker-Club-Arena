@@ -29,9 +29,28 @@ if [ "$REMOTE" = "$(cat "$HERE/Caddyfile")" ]; then
 else
   diff <(printf '%s\n' "$REMOTE") "$HERE/Caddyfile" | head -40 || true
   [ "${DRY_RUN:-0}" = "1" ] && { echo "[origin] dry run, nothing sent."; exit 0; }
-  scp -q -i "$KEY" "$HERE/Caddyfile" "root@$HOST:/etc/caddy/Caddyfile"
-  $SSH 'caddy validate --config /etc/caddy/Caddyfile >/dev/null' || { echo "[origin] REFUSING: the config does not validate on the box"; exit 2; }
-  $SSH 'systemctl reload caddy || systemctl restart caddy'
+  # VALIDATE BEFORE OVERWRITING, not after. The previous order scp'd straight
+  # onto /etc/caddy/Caddyfile and validated afterwards, so a bad config left a
+  # broken file on disk and only exited 2. The running Caddy survives on its
+  # in-memory config, which makes it look survivable - but the next reload,
+  # restart or reboot then serves nothing, and this origin is now in front of
+  # every Club Arena page load. Stage it, validate the staged copy, and only
+  # then move it into place.
+  scp -q -i "$KEY" "$HERE/Caddyfile" "root@$HOST:/etc/caddy/Caddyfile.staged"
+  $SSH 'caddy validate --config /etc/caddy/Caddyfile.staged >/dev/null 2>&1' || {
+    echo "[origin] REFUSING: the config does not validate on the box. The live"
+    echo "[origin] Caddyfile is UNTOUCHED; the rejected copy is at"
+    echo "[origin] /etc/caddy/Caddyfile.staged if you want to look at it."
+    exit 2
+  }
+  # Keep the outgoing config so a bad-but-valid change can be undone by hand.
+  $SSH 'cp -a /etc/caddy/Caddyfile /etc/caddy/Caddyfile.prev 2>/dev/null || true
+        mv -f /etc/caddy/Caddyfile.staged /etc/caddy/Caddyfile'
+  $SSH 'systemctl reload caddy || systemctl restart caddy' || {
+    echo "[origin] reload FAILED after a valid config - rolling back."
+    $SSH 'cp -a /etc/caddy/Caddyfile.prev /etc/caddy/Caddyfile && (systemctl reload caddy || systemctl restart caddy)'
+    exit 4
+  }
 fi
 
 # Verify against the public hostname, not the box: that is what a player hits.

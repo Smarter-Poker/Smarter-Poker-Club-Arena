@@ -509,9 +509,36 @@ jobs:
           # ADDITIVE pool of every hashed asset and font, served for /assets/*
           # and /fonts/*, pruned by age (30 days) and never by "not in this
           # bundle". No --delete here, ever.
-          rsync -az -e "ssh $SSHOPTS" dist/assets/ "$ORIGIN_USER@$ORIGIN_HOST:$ORIGIN_ROOT/pool/assets/"
-          rsync -az -e "ssh $SSHOPTS" dist/fonts/  "$ORIGIN_USER@$ORIGIN_HOST:$ORIGIN_ROOT/pool/fonts/"
-          $SSH "set -e; cd $ORIGIN_ROOT && ln -sfn $ORIGIN_ROOT/releases/$SHA current.tmp && mv -Tf current.tmp current && ls -1dt releases/*/ | tail -n +$((KEEP_RELEASES+1)) | xargs -r rm -rf && find pool -type f -mtime +30 -delete && readlink current"
+          # The pool is ADDITIVE and both of these are OPTIONAL. rsync exits 23
+          # when its source directory does not exist, and under `set -e` that
+          # kills the job HERE - after the release has been uploaded but before
+          # the symlink swap below - so nothing ships and the publish is red
+          # for a reason that has nothing to do with the build.
+          #
+          # dist/fonts is genuinely not guaranteed: scripts/self-host-fonts.mjs
+          # is deliberately non-fatal and returns early when dist/index.html is
+          # missing, when it finds no Google Fonts URL, or on any download
+          # failure ("non-fatal, Google Fonts links remain"). No font file is
+          # committed to this repo. So a build with fonts.gstatic.com
+          # unreachable from the runner produces no dist/fonts and, before this
+          # guard, could not publish at all.
+          for POOLED in assets fonts; do
+            if [ -d "dist/$POOLED" ]; then
+              rsync -az -e "ssh $SSHOPTS" "dist/$POOLED/" "$ORIGIN_USER@$ORIGIN_HOST:$ORIGIN_ROOT/pool/$POOLED/"
+            else
+              echo "::notice::dist/$POOLED absent in this build - nothing to add to the pool."
+            fi
+          done
+          # Everything up to `mv -Tf` is the publish; everything after it is
+          # housekeeping. They are separated deliberately: once `current`
+          # points at the new release the site IS live, so a failure while
+          # pruning old releases or ageing the pool must not report a shipped
+          # publish as a failed one. The swap is the only part under `set -e`.
+          $SSH "set -e; cd $ORIGIN_ROOT && ln -sfn $ORIGIN_ROOT/releases/$SHA current.tmp && mv -Tf current.tmp current && readlink current"
+          $SSH "cd $ORIGIN_ROOT || exit 0
+                ls -1dt releases/*/ | tail -n +$((KEEP_RELEASES+1)) | xargs -r rm -rf || echo 'release prune skipped'
+                find pool -type f -mtime +30 -delete 2>/dev/null || echo 'pool prune skipped'" \
+            || echo "::warning::housekeeping on the origin did not complete - the release IS live (see readlink above), retry is the next run."
 
       - name: Verify the origin serves this bundle
         if: steps.verdict.outputs.verdict == 'publish'

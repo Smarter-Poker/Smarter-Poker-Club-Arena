@@ -1453,6 +1453,22 @@ export default function UnionDetailPage() {
               Weekly Statements And Square-Up
             </button>
 
+            {/*
+              What the union PRODUCED, as against what it billed. Until this
+              existed the rake snapshot could only be reached from inside a
+              member club, so a union lead who owns no club had no door to
+              their own union's figures. A route with nothing linking to it is
+              a route nobody finds - /union-dashboard sat unlinked for months,
+              two comments below this one.
+            */}
+            <button
+              type="button"
+              className={styles.statementsLink}
+              onClick={() => navigate(`/unions/${unionId}/data`)}
+            >
+              Union Rake And Production Data
+            </button>
+
             {/* Summary Cards */}
             <div className={styles.financialCards}>
               <div className={styles.financialCard}>

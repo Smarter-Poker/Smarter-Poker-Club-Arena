@@ -95,7 +95,15 @@ describe('a seat call is answered by whoever is first in line', () => {
   it('claims a called seat BEFORE seeding fills it with somebody else', () => {
     const src = read(FLEET);
     const claimAt = src.indexOf('await this.claimOfferedSeats(');
-    const seedAt = src.indexOf('for (const table of orderedTables) {');
+    // The seeding loop reads the ordered tables. Since the fleet policy landed
+    // it reads them through `tablesToSeed`, which IS `orderedTables` unless the
+    // whole cycle is withheld, in which case the list is empty and the loop
+    // does not run. Either spelling is the same loop; what this law is about is
+    // that the claim happens BEFORE it.
+    const seedAt = Math.max(
+      src.indexOf('for (const table of orderedTables) {'),
+      src.indexOf('for (const table of tablesToSeed) {')
+    );
     expect(claimAt, 'the seeding cycle never claims offered seats').toBeGreaterThan(-1);
     expect(seedAt).toBeGreaterThan(-1);
     // The hold stops further OFFERS, not this manager seeding that same seat.
@@ -121,9 +129,7 @@ describe('a seat call is answered by whoever is first in line', () => {
   });
 
   it('the migration that removed the exclusion carries its own guard', () => {
-    const sql = read(
-      'supabase/migrations/20260831190110_the_seat_call_never_skips_a_horse.sql'
-    );
+    const sql = read('supabase/migrations/20260831190110_the_seat_call_never_skips_a_horse.sql');
     // The guard re-runs on every replay and fails if the filter comes back.
     expect(sql).toMatch(/still excludes horses from the queue/);
     expect(sql).toMatch(/RAISE EXCEPTION/);

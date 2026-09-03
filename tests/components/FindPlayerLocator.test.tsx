@@ -51,9 +51,11 @@ const locatedPlayer: PlayerSearchResult = {
     unions: [{ union_id: 'union-1', union_name: 'Midway Union', union_code: '900' }],
     hidden_count: 2,
   },
+  // `id` mirrors `table_id` because the RPC builds the object with
+  // 'id', live.table_id -- the fixture must not drift from the server shape.
   tables: [
     {
-      id: 'seat-1',
+      id: 'live-table-1',
       table_id: 'live-table-1',
       name: 'Midnight Cash',
       game_variant: 'NLH',
@@ -67,7 +69,7 @@ const locatedPlayer: PlayerSearchResult = {
       access_action: 'watch',
     },
     {
-      id: 'seat-2',
+      id: 'live-table-2',
       table_id: 'live-table-2',
       tournament_id: 'tourney-1',
       name: 'Ivory Nightly',
@@ -112,6 +114,11 @@ async function search(user: ReturnType<typeof userEvent.setup>) {
  */
 function affiliations() {
   return within(screen.getByRole('region', { name: /Clubs And Unions/ }));
+}
+
+/** Same, but waits for the panel to arrive when there is no game card to await. */
+async function affiliationsAsync() {
+  return within(await screen.findByRole('region', { name: /Clubs And Unions/ }));
 }
 
 describe('Find A Player locator', () => {
@@ -165,6 +172,36 @@ describe('Find A Player locator', () => {
       await search(user);
 
       expect(screen.getByText('2 Private Clubs Not Shown.')).toBeInTheDocument();
+    });
+
+    it('says Club, not Clubs, when exactly one is withheld', async () => {
+      const user = userEvent.setup();
+      vi.mocked(PlayerSearchService.search).mockResolvedValue(
+        page([
+          {
+            ...locatedPlayer,
+            affiliations: { ...locatedPlayer.affiliations, hidden_count: 1 },
+          },
+        ])
+      );
+      renderLocator();
+      await search(user);
+
+      expect(screen.getByText('1 Private Club Not Shown.')).toBeInTheDocument();
+    });
+
+    it('renders a player who has affiliations but no live games', async () => {
+      const user = userEvent.setup();
+      vi.mocked(PlayerSearchService.search).mockResolvedValue(
+        page([{ ...locatedPlayer, presence_status: 'offline', tables: [] }])
+      );
+      renderLocator();
+      await user.type(screen.getByRole('searchbox'), 'shark');
+      await user.click(screen.getByRole('button', { name: 'Search' }));
+
+      expect(await affiliationsAsync()).toBeTruthy();
+      expect(screen.getByText('Offline')).toBeInTheDocument();
+      expect(screen.queryByText('Cash Game')).not.toBeInTheDocument();
     });
 
     it('routes a gated club chip into the join flow with no table to return to', async () => {
@@ -280,6 +317,42 @@ describe('Find A Player locator', () => {
 
       await user.keyboard('{Escape}');
 
+      expect(onClose).toHaveBeenCalled();
+    });
+
+    it('reopens with no stale suggestion list, so the first Escape still closes', async () => {
+      const user = userEvent.setup();
+      const onClose = vi.fn();
+      const onMembershipRequired = vi.fn();
+      // HomePage keeps this mounted and toggles isOpen, so state must survive a
+      // close/reopen cycle without leaking an empty listbox or eating an Escape.
+      const { rerender } = render(
+        <MemoryRouter>
+          <FindPlayerModal isOpen onClose={onClose} onMembershipRequired={onMembershipRequired} />
+        </MemoryRouter>
+      );
+
+      await user.type(screen.getByRole('searchbox'), 'sha');
+      await screen.findByRole('listbox');
+      await user.click(screen.getByRole('button', { name: 'Close The Player Locator' }));
+
+      const reopen = (open: boolean) =>
+        rerender(
+          <MemoryRouter>
+            <FindPlayerModal
+              isOpen={open}
+              onClose={onClose}
+              onMembershipRequired={onMembershipRequired}
+            />
+          </MemoryRouter>
+        );
+      reopen(false);
+      reopen(true);
+
+      expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+
+      onClose.mockClear();
+      await user.keyboard('{Escape}');
       expect(onClose).toHaveBeenCalled();
     });
 

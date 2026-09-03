@@ -1,38 +1,73 @@
 -- FIND A PLAYER: TRIGRAM FUZZY MATCHING + CLUB/UNION AFFILIATIONS
 --
--- Two additions to the locator, both load-bearing for the UI:
+-- Three additions to the locator, all load-bearing for the UI:
 --
 -- 1. Fuzzy matching. Substring LIKE only finds a player if the typed run of
 --    characters appears verbatim. Once the caller has typed three characters
 --    we additionally accept trigram-similar names, so "kingfsh" and "kngfish"
---    both reach @kingfish. The `%` operator is index-accelerated by the
---    existing gin_trgm_ops indexes on lower(username) / lower(display_name),
---    but it reads pg_trgm.similarity_threshold from the session, and that
---    parameter is not settable by our role on Supabase. So `%` is paired with
---    an explicit similarity() >= 0.3 floor: `%` narrows via the index, the
---    floor makes the cut deterministic even if a session moved the GUC.
+--    both reach @kingfish.
 --
--- 2. Affiliations. The locator previously answered "is this player online"
---    but never "where do they belong". We now return the clubs and unions a
---    matched player is in, with the viewer's own membership status and the
---    join action they would need, so the UI can route a non-member into the
---    correct join / request-approval flow instead of a dead end.
+--    The predicate is written as `lower(p.username) % v_query`, NOT
+--    `lower(coalesce(p.username,'')) % v_query`. The indexes are on the bare
+--    expression `lower(username)`; wrapping the column in coalesce() produces a
+--    different expression, the planner cannot match it to the index, and the
+--    whole of profiles is scanned on every keystroke past the third. The
+--    coalesce is unnecessary anyway: `NULL % x` is NULL, which the OR-chain
+--    discards exactly like false. alias gets its own trigram index below for
+--    the same reason - without one it forces a scan no matter what the other
+--    two columns do.
 --
---    Visibility rule: open clubs are listed to any authenticated searcher.
---    A gated club (is_private, or is_public explicitly false) is disclosed
---    only when the viewer already shares that club or its union, or is
---    looking at their own profile. Gated rosters stay closed; this endpoint
---    must not become a way to enumerate private club membership.
+--    `%` reads pg_trgm.similarity_threshold from the session. It is paired with
+--    an explicit `similarity() >= 0.3` floor so a session that LOWERED the
+--    threshold cannot widen discovery underneath us. (A session that raised it
+--    would narrow results; that is a degradation, not a disclosure, and the
+--    floor cannot help there.)
 --
---    Unions follow their clubs: a union is listed only if it is public or the
---    viewer belongs to it, and only via a club that survived the rule above.
+-- 2. Affiliations. The locator previously answered "is this player online" but
+--    never "where do they belong". We now return the clubs and unions a matched
+--    player is in, with the viewer's own membership status and the join action
+--    they would need, so the UI can route a non-member into the correct
+--    join / request-approval flow instead of a dead end.
 --
--- Wallets, stats, notes and hierarchy remain untouched -- they still flow
+--    A club is GATED when it requires approval or is not public. `is_private`
+--    is deliberately NOT consulted: it is false on every row in this database
+--    and every reference to it in the client is about tables and tournaments,
+--    not clubs. src/components/clubs/ClubDiscovery.tsx is the app's own
+--    definition and it reads `requires_approval || !is_public` - this function
+--    now agrees with it. The first draft of this migration used is_private and
+--    therefore treated the two largest approval-gated clubs on the platform as
+--    open, naming their members to any searcher. That is the bug this comment
+--    exists to stop someone re-introducing.
+--
+--    A gated club is named only to a viewer who already shares it (same club,
+--    or same union), who is looking at their own profile, or who can ALREADY
+--    see that club named in this same response because the player is sitting at
+--    one of its live tables. Everything else is counted, not named, so this
+--    endpoint cannot be used to enumerate a private roster. That last clause
+--    matters: without it a response could say "1 Private Club Not Shown"
+--    directly above a game card naming the very same club.
+--
+-- 3. Search privacy preferences are finally enforced. player_search_preferences
+--    has existed since 20260831150200 and the settings UI writes to it, but
+--    fn_search_players never read it, so `discoverable = false` did nothing.
+--    That was survivable while the endpoint only revealed a name; it is not
+--    survivable now that it reveals club and union membership. Self and
+--    accounts the viewer administers are exempt, so an agent can still find
+--    their own downline.
+--
+-- Wallets, stats, notes and hierarchy are untouched - they still flow
 -- exclusively through ca_club_member_detail's authorization decision.
+
+BEGIN;
 
 CREATE INDEX IF NOT EXISTS idx_club_members_user_active
   ON public.club_members (user_id, club_id)
   WHERE status IN ('active', 'approved');
+
+-- Without this, alias matching forces a sequential scan of profiles even when
+-- username and display_name can both be answered from their trigram indexes.
+CREATE INDEX IF NOT EXISTS idx_profiles_alias_trgm
+  ON public.profiles USING gin (lower(alias) gin_trgm_ops);
 
 CREATE OR REPLACE FUNCTION public.fn_search_players(
   p_query text,
@@ -118,6 +153,11 @@ BEGIN
              similarity(lower(coalesce(p.display_name, '')), v_query),
              similarity(lower(coalesce(p.alias, '')), v_query)
            ) AS match_score,
+           -- Defaults are permissive, so a player with no preferences row keeps
+           -- exactly the behaviour they had before this migration.
+           coalesce(sp.discoverable, true) AS pref_discoverable,
+           coalesce(sp.show_presence, true) AS pref_show_presence,
+           coalesce(sp.show_current_table, true) AS pref_show_current_table,
            CASE
              WHEN p.id = v_uid THEN 'self'
              WHEN EXISTS (SELECT 1 FROM friend_ids f WHERE f.user_id = p.id) THEN 'friend'
@@ -134,17 +174,19 @@ BEGIN
              ELSE 'public'
            END AS relationship
       FROM public.profiles p
+      LEFT JOIN public.player_search_preferences sp ON sp.user_id = p.id
      WHERE lower(coalesce(p.username, '')) LIKE '%' || v_query || '%'
         OR lower(coalesce(p.display_name, '')) LIKE '%' || v_query || '%'
         OR lower(coalesce(p.alias, '')) LIKE '%' || v_query || '%'
         OR coalesce(p.player_number, '') = v_query
+        -- Bare lower(col), no coalesce: this is the indexed expression.
         OR (v_fuzzy AND (
-              (lower(coalesce(p.username, '')) % v_query
-                AND similarity(lower(coalesce(p.username, '')), v_query) >= v_min_similarity)
-           OR (lower(coalesce(p.display_name, '')) % v_query
-                AND similarity(lower(coalesce(p.display_name, '')), v_query) >= v_min_similarity)
-           OR (lower(coalesce(p.alias, '')) % v_query
-                AND similarity(lower(coalesce(p.alias, '')), v_query) >= v_min_similarity)
+              (lower(p.username) % v_query
+                AND similarity(lower(p.username), v_query) >= v_min_similarity)
+           OR (lower(p.display_name) % v_query
+                AND similarity(lower(p.display_name), v_query) >= v_min_similarity)
+           OR (lower(p.alias) % v_query
+                AND similarity(lower(p.alias), v_query) >= v_min_similarity)
         ))
   ), managed AS MATERIALIZED (
     SELECT DISTINCT m.id AS user_id
@@ -153,27 +195,39 @@ BEGIN
      WHERE m.id = v_uid
         OR public.ca_club_roster_access(cm.club_id, m.id) IN ('staff', 'downline', 'service')
   ), scoped AS MATERIALIZED (
-    SELECT m.*
+    SELECT m.*,
+           (m.id = v_uid OR EXISTS (SELECT 1 FROM managed x WHERE x.user_id = m.id))
+             AS is_privileged
       FROM matched m
-     WHERE p_scope = 'all'
+     WHERE (p_scope = 'all'
         OR (p_scope = 'friends' AND m.relationship IN ('self', 'friend'))
         OR (p_scope = 'clubs' AND m.relationship IN ('self', 'club'))
         OR (p_scope = 'union' AND m.relationship IN ('self', 'union'))
-        OR (p_scope = 'managed' AND EXISTS (SELECT 1 FROM managed x WHERE x.user_id = m.id))
+        OR (p_scope = 'managed' AND EXISTS (SELECT 1 FROM managed x WHERE x.user_id = m.id)))
+       -- Opting out of discovery hides you from strangers, never from yourself
+       -- or from the staff/agents who administer your account.
+       AND (m.pref_discoverable
+            OR m.id = v_uid
+            OR EXISTS (SELECT 1 FROM managed x WHERE x.user_id = m.id))
   ), presence_rows AS MATERIALIZED (
     SELECT s.*,
-           EXISTS (
-             SELECT 1 FROM public.table_seats ts
-             JOIN public.tables t ON t.id = ts.table_id
-              WHERE ts.user_id = s.id AND ts.left_at IS NULL
-                AND t.status IN ('waiting', 'running') AND coalesce(t.is_deleted, false) = false
-           ) OR EXISTS (
-             SELECT 1 FROM public.tournament_players tp
-             JOIN public.tournaments tr ON tr.id = tp.tournament_id
-              WHERE tp.user_id = s.id AND tp.status = 'playing' AND tp.table_id IS NOT NULL
-                AND lower(coalesce(tr.status::text, '')) IN ('running', 'in_progress', 'active')
+           (s.pref_show_presence OR s.is_privileged) AND (
+             EXISTS (
+               SELECT 1 FROM public.table_seats ts
+               JOIN public.tables t ON t.id = ts.table_id
+                WHERE ts.user_id = s.id AND ts.left_at IS NULL
+                  AND t.status IN ('waiting', 'running') AND coalesce(t.is_deleted, false) = false
+             ) OR EXISTS (
+               SELECT 1 FROM public.tournament_players tp
+               JOIN public.tournaments tr ON tr.id = tp.tournament_id
+                WHERE tp.user_id = s.id AND tp.status = 'playing' AND tp.table_id IS NOT NULL
+                  AND lower(coalesce(tr.status::text, '')) IN ('running', 'in_progress', 'active')
+             )
            ) AS is_playing,
-           coalesce(p.is_online, false) AND p.last_seen > now() - interval '5 minutes' AS is_online
+           (s.pref_show_presence OR s.is_privileged)
+             AND coalesce(p.is_online, false)
+             AND p.last_seen > now() - interval '5 minutes' AS is_online,
+           (s.pref_show_current_table OR s.is_privileged) AS can_show_tables
       FROM scoped s JOIN public.profiles p ON p.id = s.id
   ), filtered AS MATERIALIZED (
     SELECT *, count(*) OVER () AS full_count
@@ -189,6 +243,29 @@ BEGIN
        CASE WHEN p_sort = 'name' THEN lower(coalesce(display_name, username, '')) END,
        lower(coalesce(username, '')), id
      LIMIT v_limit OFFSET v_offset
+  ), live_clubs AS MATERIALIZED (
+    -- Clubs whose NAME this response already discloses through a live game
+    -- card. Treating them as visible in the affiliations panel is not a
+    -- widening: it stops the panel claiming to withhold a club that the card
+    -- beside it has just named.
+    SELECT DISTINCT pg.id AS user_id, t.club_id
+      FROM page pg
+      JOIN public.table_seats ts ON ts.user_id = pg.id AND ts.left_at IS NULL
+      JOIN public.tables t ON t.id = ts.table_id AND t.tournament_id IS NULL
+     WHERE pg.can_show_tables
+       AND t.status IN ('waiting', 'running')
+       AND coalesce(t.is_deleted, false) = false
+       AND coalesce(t.is_anonymous, false) = false
+    UNION
+    SELECT DISTINCT pg.id, tr.club_id
+      FROM page pg
+      JOIN public.tournament_players tp
+        ON tp.user_id = pg.id AND tp.status = 'playing' AND tp.table_id IS NOT NULL
+      JOIN public.tournaments tr ON tr.id = tp.tournament_id
+      JOIN public.tables t ON t.id = tp.table_id
+     WHERE pg.can_show_tables
+       AND lower(coalesce(tr.status::text, '')) IN ('running', 'in_progress', 'active')
+       AND coalesce(t.is_anonymous, false) = false
   ), decorated AS (
     SELECT pg.*,
       CASE WHEN pg.is_playing THEN 'playing' WHEN pg.is_online THEN 'online' ELSE 'offline' END
@@ -241,7 +318,7 @@ BEGIN
             JOIN public.tables t ON t.id = ts.table_id AND t.tournament_id IS NULL
             JOIN public.clubs c ON c.id = t.club_id
             LEFT JOIN public.club_members cm ON cm.club_id = c.id AND cm.user_id = v_uid
-           WHERE ts.user_id = pg.id AND ts.left_at IS NULL
+           WHERE ts.user_id = pg.id AND ts.left_at IS NULL AND pg.can_show_tables
              AND t.status IN ('waiting', 'running') AND coalesce(t.is_deleted, false) = false
              AND coalesce(t.is_anonymous, false) = false
           UNION ALL
@@ -263,6 +340,7 @@ BEGIN
             JOIN public.clubs c ON c.id = tr.club_id
             LEFT JOIN public.club_members cm ON cm.club_id = c.id AND cm.user_id = v_uid
            WHERE tp.user_id = pg.id AND tp.status = 'playing' AND tp.table_id IS NOT NULL
+             AND pg.can_show_tables
              AND lower(coalesce(tr.status::text, '')) IN ('running', 'in_progress', 'active')
              AND coalesce(t.is_anonymous, false) = false
         ) live
@@ -293,22 +371,30 @@ BEGIN
     LEFT JOIN LATERAL (
       -- Club and union affiliations under disclosure rules. `visible` decides
       -- whether this specific viewer may learn that this player is in this
-      -- club; hidden_count lets the UI honestly say "2 private clubs" without
+      -- club; hidden_count lets the UI say "2 Private Clubs Not Shown" without
       -- naming them.
       WITH club_rows AS (
         SELECT c.id AS club_uuid, c.club_id AS club_number, c.slug AS club_slug,
                c.name::text AS club_name, cm.role::text AS role,
-               (coalesce(c.is_private, false) OR coalesce(c.is_public, true) = false) AS is_gated,
-               coalesce(c.requires_approval, false) AS requires_approval,
+               -- Matches ClubDiscovery.tsx: approval-gated OR not public.
+               -- is_private is NOT consulted; see the header comment.
+               (coalesce(c.requires_approval, false)
+                 OR coalesce(c.is_public, true) = false) AS is_gated,
+               lower(coalesce(c.status, 'active')) = 'active' AS club_active,
                viewer.status AS viewer_status,
                (
                  pg.id = v_uid
-                 OR NOT (coalesce(c.is_private, false) OR coalesce(c.is_public, true) = false)
+                 OR NOT (coalesce(c.requires_approval, false)
+                         OR coalesce(c.is_public, true) = false)
                  OR EXISTS (SELECT 1 FROM viewer_clubs vc WHERE vc.club_id = c.id)
                  OR EXISTS (
                    SELECT 1 FROM public.union_clubs uc
                    JOIN viewer_unions vu ON vu.union_id = uc.union_id
                     WHERE uc.club_id = c.id
+                 )
+                 OR EXISTS (
+                   SELECT 1 FROM live_clubs lc
+                    WHERE lc.user_id = pg.id AND lc.club_id = c.id
                  )
                ) AS visible
           FROM public.club_members cm
@@ -332,7 +418,9 @@ BEGIN
               WHEN cr.viewer_status IN ('active', 'approved') THEN 'member'
               WHEN cr.viewer_status = 'pending' THEN 'pending'
               WHEN cr.viewer_status IN ('banned', 'suspended', 'rejected') THEN 'unavailable'
-              WHEN cr.is_gated OR cr.requires_approval THEN 'request_join'
+              -- Never offer to join a club that is not currently active.
+              WHEN NOT cr.club_active THEN 'unavailable'
+              WHEN cr.is_gated THEN 'request_join'
               ELSE 'join'
             END
           ) ORDER BY cr.club_name)
@@ -384,4 +472,53 @@ GRANT EXECUTE ON FUNCTION public.fn_search_players(text, integer, integer, text,
   TO authenticated, service_role;
 
 COMMENT ON FUNCTION public.fn_search_players(text, integer, integer, text, text, text) IS
-  'Global safe player locator. Trigram fuzzy matching engages at three characters. Returns club/union affiliations under open-club disclosure rules, live cash and tournament seats with a membership-aware watch decision, and sensitive account contexts only where canonical club/union/downline authorization permits.';
+  'Global safe player locator. Trigram fuzzy matching engages at three characters. Returns club/union affiliations under approval-gated disclosure rules, live cash and tournament seats with a membership-aware watch decision, honours player_search_preferences, and includes sensitive account contexts only where canonical club/union/downline authorization permits.';
+
+-- Post-apply assertions. Each aborts the migration on its own violated
+-- assumption rather than leaving a half-correct function in production.
+DO $assert$
+DECLARE
+  v_src text;
+BEGIN
+  SELECT pg_get_functiondef(p.oid) INTO v_src
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = 'fn_search_players';
+
+  IF v_src IS NULL THEN
+    RAISE EXCEPTION 'fn_search_players did not survive the replace';
+  END IF;
+
+  -- The bug this migration exists to fix. c.is_private is false on every club
+  -- row in this database, so gating on it silently disclosed every
+  -- approval-gated roster. Assert the dead flag never comes back.
+  IF position('c.is_private' IN v_src) > 0 THEN
+    RAISE EXCEPTION 'is_gated is keyed off the dead c.is_private flag again';
+  END IF;
+  IF position('AS is_gated' IN v_src) = 0 THEN
+    RAISE EXCEPTION 'affiliations no longer compute is_gated';
+  END IF;
+
+  -- The index-defeating coalesce must not come back on the fuzzy predicate:
+  -- the trigram indexes are on bare lower(username) / lower(display_name).
+  IF position('lower(coalesce(p.username, '''')) %' IN v_src) > 0
+     OR position('lower(coalesce(p.display_name, '''')) %' IN v_src) > 0 THEN
+    RAISE EXCEPTION 'fuzzy predicate wraps a column in coalesce and cannot use the trigram index';
+  END IF;
+  IF position('lower(p.username) %' IN v_src) = 0 THEN
+    RAISE EXCEPTION 'fuzzy predicate lost its indexable username clause';
+  END IF;
+
+  IF position('player_search_preferences' IN v_src) = 0 THEN
+    RAISE EXCEPTION 'fn_search_players no longer reads player_search_preferences';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+     WHERE schemaname = 'public' AND indexname = 'idx_profiles_alias_trgm'
+  ) THEN
+    RAISE EXCEPTION 'idx_profiles_alias_trgm missing';
+  END IF;
+END;
+$assert$;
+
+COMMIT;

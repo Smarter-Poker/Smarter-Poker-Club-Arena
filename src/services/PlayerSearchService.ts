@@ -78,7 +78,12 @@ export interface PlayerAffiliations {
   hidden_count: number;
 }
 
-export const EMPTY_AFFILIATIONS: PlayerAffiliations = { clubs: [], unions: [], hidden_count: 0 };
+/** Frozen: it is shared by every result that arrives without an affiliations payload. */
+export const EMPTY_AFFILIATIONS: PlayerAffiliations = Object.freeze({
+  clubs: Object.freeze([]) as unknown as PlayerClubAffiliation[],
+  unions: Object.freeze([]) as unknown as PlayerUnionAffiliation[],
+  hidden_count: 0,
+}) as PlayerAffiliations;
 
 /** Minimum characters before the server widens matching from substring to trigram-similar. */
 export const FUZZY_MIN_CHARS = 3;

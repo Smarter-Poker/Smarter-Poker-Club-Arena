@@ -740,8 +740,14 @@ button.affiliationChip:focus-visible {
 /*
  * The locator has no corner X and an inert backdrop, so this is the only pointer
  * route out. It is deliberately quiet - borderless, low-contrast, small - but it
- * still spans the footer, clears the 44px touch target, and lifts to readable
- * contrast on press and keyboard focus, so anyone who goes looking for it finds it.
+ * still spans the footer and clears the 44px touch target.
+ *
+ * #6f7f8b on the footer's near-black is 4.8:1 - over the 4.5:1 AA floor. It was
+ * #4a5862 (2.8:1) for one commit, which was defensible only while a corner X
+ * and a click-outside also existed. As the ONLY pointer route out of a
+ * full-screen z-index 9999 overlay, an exit you cannot read is an exit you do
+ * not have. Quiet is the goal; invisible is a trap.
+ *
  * No :hover rule: Club Arena forbids hover styling outright.
  */
 .closeButton {
@@ -750,7 +756,7 @@ button.affiliationChip:focus-visible {
   border: 0;
   border-radius: 3px;
   background: transparent;
-  color: #4a5862;
+  color: #6f7f8b;
   cursor: pointer;
   font:
     600 10px/1 'Rajdhani',

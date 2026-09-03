@@ -255,6 +255,14 @@ export default function FindPlayerModal({
     setSearchQuery('');
     setResults([]);
     setSuggestions([]);
+    // HomePage keeps this modal mounted and only toggles isOpen, so any panel
+    // flag left standing here is still standing on reopen. Leaving
+    // showSuggestions set produced an empty listbox under the input AND made
+    // the first Escape after reopening do nothing, which is exactly the trap
+    // the layered Escape above exists to prevent.
+    setShowSuggestions(false);
+    setShowAccessRules(false);
+    setHighlightedIndex(-1);
     setError(null);
     setTotal(0);
     setHasMore(false);
@@ -362,15 +370,31 @@ export default function FindPlayerModal({
                   }}
                   onFocus={() => suggestions.length && setShowSuggestions(true)}
                   aria-label="Player Name, Poker Alias, Or Number"
+                  // Arrow keys move a purely visual highlight; aria-controls and
+                  // aria-activedescendant are what make that movement audible to
+                  // a screen reader. Deliberately NOT role="combobox": that would
+                  // override the implicit searchbox role of <input type="search">,
+                  // which this app and its tests query by.
                   aria-autocomplete="list"
                   aria-expanded={showSuggestions}
+                  aria-controls="find-player-suggestions"
+                  aria-activedescendant={
+                    showSuggestions && highlightedIndex >= 0 && suggestions[highlightedIndex]
+                      ? `find-player-suggestion-${suggestions[highlightedIndex].id}`
+                      : undefined
+                  }
                   autoFocus
                 />
                 {showSuggestions && (
-                  <div className={styles.suggestDropdown} role="listbox">
+                  <div
+                    className={styles.suggestDropdown}
+                    role="listbox"
+                    id="find-player-suggestions"
+                  >
                     {suggestions.map((player, index) => (
                       <button
                         key={player.id}
+                        id={`find-player-suggestion-${player.id}`}
                         role="option"
                         aria-selected={index === highlightedIndex}
                         className={styles.suggestItem}

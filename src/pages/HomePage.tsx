@@ -946,13 +946,14 @@ function HomePageInner() {
                  per-club active counts over `union_clubs` — the union's MEMBER
                  clubs — and never looked at the union's OWN club row, which is
                  exactly where its tables live. Midway Union had 377 players
-                 seated across 72 running tables and its card read 0. Summing
-                 per-club counts also double-counted anyone seated in two member
-                 clubs at once.
+                 seated across 72 running tables and its card read 0.
 
-                 fn_union_active_player_counts answers for the union directly:
-                 DISTINCT users across the union's own club row AND its member
-                 clubs, in one query. */
+                 Dan 2026-09-03: "midway union 'active players' is a combination
+                 of all active players inside all of the clubs." A DISTINCT
+                 count across the union collapsed to the biggest club's number
+                 because the rosters overlap. fn_batch_union_realtime_active_counts
+                 is now the SUM of each member club's own active count (the same
+                 RPC the club cards use), matching how MEMBERS is summed. */
               const unionMemberMap: Record<string, number> = {};
               const unionActiveMap: Record<string, number> = {};
               for (const r of unionMembersResult.data || [])

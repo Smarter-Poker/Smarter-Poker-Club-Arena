@@ -45,7 +45,14 @@ describe('GameManagementService Phase 6 RPC contracts', () => {
       data: {
         ok: true,
         items: [{ id: 'game-1', kind: 'table' }],
-        counts: { total: 140, live: 7, scheduled: 12, closed: 121 },
+        counts: {
+          total: 140,
+          live: 7,
+          scheduled: 12,
+          closed: 121,
+          closed_within_horizon: 30,
+          closed_horizon_days: 7,
+        },
         next_cursor: { sort_at: '2026-09-01T12:00:00Z', kind: 'table', id: 'game-1', bucket: 0 },
       },
     });
@@ -60,8 +67,16 @@ describe('GameManagementService Phase 6 RPC contracts', () => {
       p_cursor_id: null,
       p_limit: 100,
       p_cursor_bucket: null,
+      p_bucket: null,
     });
-    expect(result.counts).toEqual({ total: 140, live: 7, scheduled: 12, closed: 121 });
+    expect(result.counts).toEqual({
+      total: 140,
+      live: 7,
+      scheduled: 12,
+      closed: 121,
+      closedWithinHorizon: 30,
+      closedHorizonDays: 7,
+    });
     expect(result.nextCursor).toEqual({
       sortAt: '2026-09-01T12:00:00Z',
       kind: 'table',
@@ -83,12 +98,13 @@ describe('GameManagementService Phase 6 RPC contracts', () => {
       data: {
         ok: true,
         items: [],
-        counts: { total: 140, live: 7, scheduled: 12, closed: 121 },
+        // A paged read returns counts null: unchanged, never zero.
+        counts: null,
         next_cursor: null,
       },
     });
 
-    await gameManagementService.list('club', 'club-1', {
+    const paged = await gameManagementService.list('club', 'club-1', {
       sortAt: '2026-09-01T12:00:00Z',
       kind: 'tournament',
       id: 'game-9',
@@ -103,7 +119,11 @@ describe('GameManagementService Phase 6 RPC contracts', () => {
       p_cursor_id: 'game-9',
       p_limit: 100,
       p_cursor_bucket: 1,
+      p_bucket: null,
     });
+    // Null must survive as null. Mapped to zeros it would wipe the header the
+    // moment an operator pressed Load More.
+    expect(paged.counts).toBeNull();
   });
 
   it('maps schedule evidence and exposes database rejection reasons', async () => {

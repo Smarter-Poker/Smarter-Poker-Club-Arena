@@ -27,6 +27,7 @@ import { supabase } from '../lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { reportError } from '../utils/errorReporter';
 import { STORAGE_KEYS } from '../lib/storage';
+import { playerDisplayName } from '../utils/playerDisplayName';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // EVENT TYPES
@@ -1718,7 +1719,7 @@ class MasterBusCore {
           user.id,
           {
             id: user.id,
-            displayName: user.display_name || user.username,
+            displayName: playerDisplayName(user),
             playerNumber: 0,
             avatarUrl: user.avatar_url || '',
             status: 'online',

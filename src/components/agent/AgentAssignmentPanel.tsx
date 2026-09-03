@@ -13,6 +13,11 @@ import { UnionOpsService } from '../../services/UnionOpsService';
 import { useToast } from '../common/Toast';
 import { reportError } from '../../utils/errorReporter';
 import { fetchAllRows } from '../../utils/fetchAllRows';
+import {
+  playerDisplayName,
+  PLAYER_NAME_COLUMNS,
+  type NameableProfile,
+} from '../../utils/playerDisplayName';
 
 interface Member {
   user_id: string;
@@ -61,12 +66,11 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
       for (let i = 0; i < ids.length; i += 500) {
         const { data: profs } = await supabase
           .from('profiles')
-          .select('id, username, display_name')
+          .select(`id, ${PLAYER_NAME_COLUMNS}`)
           .in('id', ids.slice(i, i + 500));
         (profs ?? []).forEach((pr) => {
-          const r = pr as { id: string; username?: string; display_name?: string };
-          const label = r.display_name || r.username;
-          if (label) names.set(r.id, label);
+          const r = pr as NameableProfile & { id: string };
+          names.set(r.id, playerDisplayName(r));
         });
       }
 

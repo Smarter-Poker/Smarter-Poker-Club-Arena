@@ -12,6 +12,7 @@ import { masterBus } from '../../core/MasterBus';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import './AuditLog.css';
 import { reportError } from '../../utils/errorReporter';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 
 interface AuditEntry {
   id: string;
@@ -123,11 +124,11 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
         if (userIds.length > 0) {
           const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, username, display_name')
+            .select(`id, ${PLAYER_NAME_COLUMNS}`)
             .in('id', userIds);
           if (!isMounted.current) return;
           (profiles || []).forEach((p: any) => {
-            profileMap[p.id] = p.display_name || p.username || p.id.slice(0, 8);
+            profileMap[p.id] = playerDisplayName(p);
           });
         }
 

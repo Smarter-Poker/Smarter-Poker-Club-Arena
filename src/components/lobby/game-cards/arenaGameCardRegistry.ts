@@ -271,6 +271,18 @@ const ploV2 = skin(
   ),
   'approved'
 );
+/* THE FOUR-BAY OMAHA CONSOLE (Dan 2026-09-03): every PLO / PLO5 / PLO6 / PLO8
+   card on a phone is the shark-crest four-bay master with the variant first
+   ("PLO5 25/50") and the table name under it. Layered renderer:
+   PloFourBayCard.tsx. */
+const ploFourBayV1 = skin(
+  'plo',
+  'shark-plo-four-bay-v1',
+  'Shark PLO Four-Bay V1 - Layered',
+  presentation('plo', 'desktop', 'plo/shell-desktop-v2.webp', '1148 / 1370', 360, 'v2'),
+  presentation('plo', 'mobile', 'plo/shark-four-bay-v1/chassis.png', '1 / 1', 280, 'four-bay-v1'),
+  'approved'
+);
 const spinsV1 = skin(
   'spins',
   'shark-spins-v1',
@@ -290,6 +302,22 @@ const spinsV2 = skin(
     '1122 / 1402',
     280,
     'v4'
+  ),
+  'approved'
+);
+/* The approved Spins master, dynamic words lifted out (SpinsPremiumCard.tsx). */
+const spinsPremiumV1 = skin(
+  'spins',
+  'shark-spins-premium-v1',
+  'Shark Spins Premium V1 - Layered',
+  presentation('spins', 'desktop', 'spins/shell-desktop-v2.webp', '1111 / 1416', 360, 'v2'),
+  presentation(
+    'spins',
+    'mobile',
+    'spins/shark-spins-premium-v1/chassis.png',
+    '734 / 949',
+    280,
+    'premium-v1'
   ),
   'approved'
 );
@@ -316,13 +344,37 @@ const headsUpV2 = skin(
   'approved'
 );
 
+/* The approved Heads-Up master, dynamic words lifted out (HeadsUpPremiumCard.tsx). */
+const headsUpPremiumV1 = skin(
+  'heads-up',
+  'shark-headsup-premium-v1',
+  'Shark Heads-Up Premium V1 - Layered',
+  presentation('heads-up', 'desktop', 'heads-up/shell-desktop-v2.webp', '1085 / 1450', 360, 'v2'),
+  presentation(
+    'heads-up',
+    'mobile',
+    'heads-up/shark-headsup-premium-v1/chassis.png',
+    '733 / 979',
+    280,
+    'premium-v1'
+  ),
+  'approved'
+);
+
 /** The one canonical source of truth for Club Arena lobby-card visual skins. */
 export const ARENA_GAME_CARD_TEMPLATE_REGISTRY: ArenaGameCardTemplateRegistry = {
   mtt: familyRegistry('mtt', mttV2.id, [mttV2, mttV1]),
   nlh: familyRegistry('nlh', nlhPremiumV1.id, [nlhPremiumV1, nlhV2, nlhTallV2, nlhV1]),
-  plo: familyRegistry('plo', ploV2.id, [ploV2, ploV1]),
-  spins: familyRegistry('spins', spinsV2.id, [spinsV2, spinsV1]),
-  'heads-up': familyRegistry('heads-up', headsUpV2.id, [headsUpV2, headsUpV1]),
+  /* Approved by Dan 2026-09-03 (side-by-side review): the layered masters are
+     the mobile defaults for Omaha, Spins and Heads-Up; the V2 CSS shells stay
+     registered for desktop and as fallbacks. */
+  plo: familyRegistry('plo', ploFourBayV1.id, [ploFourBayV1, ploV2, ploV1]),
+  spins: familyRegistry('spins', spinsPremiumV1.id, [spinsPremiumV1, spinsV2, spinsV1]),
+  'heads-up': familyRegistry('heads-up', headsUpPremiumV1.id, [
+    headsUpPremiumV1,
+    headsUpV2,
+    headsUpV1,
+  ]),
 };
 
 const warned = new Set<string>();

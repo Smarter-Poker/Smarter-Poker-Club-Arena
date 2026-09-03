@@ -40,38 +40,24 @@ CREATE OR REPLACE FUNCTION public.fn_ca_rake_by_agent(
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO 'public'
 AS $function$
 DECLARE
-  v_now        timestamptz := now();
-  v_from       timestamptz := p_start::timestamptz;
+  v_now   timestamptz := now();
+  v_from  timestamptz := p_start::timestamptz;
   -- Exclusive, and never the future: an end date of today must not open a
-  -- window that runs to tomorrow midnight and scans hands that do not exist.
-  v_to         timestamptz := LEAST((p_end + 1)::timestamptz, v_now);
-  v_day_lo     date;
-  v_day_hi     date;
-  v_head_end   timestamptz;
-  v_tail_start timestamptz;
-  v_out        jsonb;
+  -- window running to tomorrow midnight and scan hands that do not exist.
+  v_to    timestamptz := LEAST((p_end + 1)::timestamptz, v_now);
+  v_out   jsonb;
 BEGIN
-  IF v_to <= v_from THEN
-    RETURN '[]'::jsonb;
-  END IF;
-
-  v_day_lo := date_trunc('day', v_from)::date;
-  IF date_trunc('day', v_from) < v_from THEN v_day_lo := v_day_lo + 1; END IF;
-  v_day_hi := LEAST(date_trunc('day', v_to), date_trunc('day', v_now))::date;
-  IF v_day_hi < v_day_lo THEN v_day_hi := v_day_lo; END IF;
-
-  v_head_end   := LEAST(v_day_lo::timestamptz, v_to);
-  v_tail_start := GREATEST(v_day_hi::timestamptz, v_from);
+  IF v_to <= v_from THEN RETURN '[]'::jsonb; END IF;
 
   WITH RECURSIVE ok_days AS MATERIALIZED (
+    -- Only a day the marker calls finished may be read from the rollup. Every
+    -- other instant in the window - the partial first day, the live tail, and
+    -- any day in between the rollup never wrote - is read live below.
     SELECT rc.day
       FROM public.club_rake_rollup_complete rc
-     WHERE rc.club_id = p_club_id AND rc.day >= v_day_lo AND rc.day < v_day_hi
-  ), gap_days AS MATERIALIZED (
-    SELECT g::date AS day
-      FROM generate_series(v_day_lo, v_day_hi - 1, interval '1 day') g
-     WHERE v_day_hi > v_day_lo
-       AND NOT EXISTS (SELECT 1 FROM ok_days o WHERE o.day = g::date)
+     WHERE rc.club_id = p_club_id
+       AND rc.day >= date_trunc('day', v_from)::date
+       AND rc.day <  date_trunc('day', v_to)::date
   ), from_rollup AS (
     SELECT rd.user_id, SUM(rd.rake_amount) AS rake, SUM(rd.hands)::bigint AS hands
       FROM public.club_rake_daily_user rd
@@ -79,25 +65,26 @@ BEGIN
      WHERE rd.club_id = p_club_id
      GROUP BY rd.user_id
   ), edge_hands AS MATERIALIZED (
+    -- ONE range scan, not one per day. The first version of this generated a
+    -- row per calendar day in the window and joined rake_records to each, so a
+    -- year-long window produced 359 separate per-day scans. Anti-joining a
+    -- single range against ok_days is exactly equivalent - the head, the tail
+    -- and the gaps are precisely the instants NOT inside a finished day - and
+    -- it rides idx_rake_records_club_created, which is partial on
+    -- rake_amount > 0, the same predicate this needs.
+    --
+    -- The cost that remains is the per-hand allocator below, and it is bounded
+    -- by how much play is NOT yet rolled up rather than by the window: a Day
+    -- and a Year on the same club read the same live hands and cost the same.
     SELECT r.hand_id, r.rake_amount, r.player_contributions, r.rake_method
       FROM public.rake_records r
      WHERE r.club_id = p_club_id
-       AND r.created_at >= v_from AND r.created_at < v_head_end
-       AND r.rake_amount > 0 AND r.player_contributions IS NOT NULL
-    UNION ALL
-    SELECT r.hand_id, r.rake_amount, r.player_contributions, r.rake_method
-      FROM public.rake_records r
-     WHERE r.club_id = p_club_id
-       AND r.created_at >= v_tail_start AND r.created_at < v_to
-       AND r.rake_amount > 0 AND r.player_contributions IS NOT NULL
-    UNION ALL
-    SELECT r.hand_id, r.rake_amount, r.player_contributions, r.rake_method
-      FROM gap_days gd
-      JOIN public.rake_records r
-        ON r.club_id = p_club_id
-       AND r.created_at >= gd.day::timestamptz
-       AND r.created_at <  (gd.day + 1)::timestamptz
-     WHERE r.rake_amount > 0 AND r.player_contributions IS NOT NULL
+       AND r.created_at >= v_from AND r.created_at < v_to
+       AND r.rake_amount > 0
+       AND r.player_contributions IS NOT NULL
+       AND NOT EXISTS (
+         SELECT 1 FROM ok_days o
+          WHERE o.day = (r.created_at AT TIME ZONE 'UTC')::date)
   ), from_live AS (
     -- Cents, then divided once. Summing rounded currency per hand and rounding
     -- again at the end is how a per-player column drifts from its own total.
@@ -121,10 +108,10 @@ BEGIN
      WHERE a.club_id = p_club_id AND a.status = 'active'
   ), direct AS (
     SELECT cm.agent_id,
-           COUNT(*)                                          AS players,
-           COUNT(*) FILTER (WHERE COALESCE(e.rake, 0) <> 0)  AS active,
-           COALESCE(SUM(e.rake), 0)                          AS rake,
-           COALESCE(SUM(e.hands), 0)::bigint                 AS hands
+           COUNT(*)                                         AS players,
+           COUNT(*) FILTER (WHERE COALESCE(e.rake, 0) <> 0) AS active,
+           COALESCE(SUM(e.rake), 0)                         AS rake,
+           COALESCE(SUM(e.hands), 0)::bigint                AS hands
       FROM public.club_members cm
       LEFT JOIN earned e ON e.user_id = cm.user_id
      WHERE cm.club_id = p_club_id
@@ -147,19 +134,16 @@ BEGIN
       LEFT JOIN direct d ON d.agent_id = n.user_id
      GROUP BY t.root_id
   ), listed AS (
-    SELECT ca.user_id                     AS agent_user_id,
-           COALESCE(pr.username, 'Agent') AS name,
-           pr.avatar_url,
-           ca.role,
-           ca.commission_rate,
-           COALESCE(dr.players, 0)        AS direct_players,
-           COALESCE(dr.active, 0)         AS direct_active,
-           round(COALESCE(dr.rake, 0), 2) AS direct_rake,
-           COALESCE(dr.hands, 0)          AS direct_hands,
-           COALESCE(nw.players, 0)        AS network_players,
-           round(COALESCE(nw.rake, 0), 2) AS network_rake,
-           COALESCE(nw.sub_agents, 0)     AS sub_agents,
-           false                          AS is_unassigned
+    SELECT ca.user_id AS agent_user_id, COALESCE(pr.username,'Agent') AS name,
+           pr.avatar_url, ca.role, ca.commission_rate,
+           COALESCE(dr.players,0) AS direct_players,
+           COALESCE(dr.active,0)  AS direct_active,
+           round(COALESCE(dr.rake,0),2) AS direct_rake,
+           COALESCE(dr.hands,0)   AS direct_hands,
+           COALESCE(nw.players,0) AS network_players,
+           round(COALESCE(nw.rake,0),2) AS network_rake,
+           COALESCE(nw.sub_agents,0) AS sub_agents,
+           false AS is_unassigned
       FROM club_agents ca
       LEFT JOIN direct  dr ON dr.agent_id = ca.user_id
       LEFT JOIN network nw ON nw.root_id  = ca.id
@@ -167,20 +151,17 @@ BEGIN
     UNION ALL
     -- Players with no agent are not nobody's rake. Dropping them makes the
     -- column sum to less than the club total with nothing saying why.
-    SELECT NULL, 'Unassigned', NULL, 'none', NULL,
-           d.players, d.active, round(d.rake, 2), d.hands,
-           d.players, round(d.rake, 2), 0, true
+    SELECT NULL,'Unassigned',NULL,'none',NULL,
+           d.players,d.active,round(d.rake,2),d.hands,
+           d.players,round(d.rake,2),0,true
       FROM direct d WHERE d.agent_id IS NULL AND d.players > 0
   )
-  SELECT COALESCE(jsonb_agg(x ORDER BY x.is_unassigned, x.network_rake DESC NULLS LAST), '[]'::jsonb)
+  SELECT COALESCE(jsonb_agg(x ORDER BY x.is_unassigned, x.network_rake DESC NULLS LAST),'[]'::jsonb)
     INTO v_out
-    FROM (
-      SELECT * FROM listed
-       ORDER BY is_unassigned, network_rake DESC NULLS LAST
-       LIMIT GREATEST(LEAST(COALESCE(p_limit, 50), 200), 1)
-    ) x;
+    FROM (SELECT * FROM listed ORDER BY is_unassigned, network_rake DESC NULLS LAST
+           LIMIT GREATEST(LEAST(COALESCE(p_limit,50),200),1)) x;
 
-  RETURN COALESCE(v_out, '[]'::jsonb);
+  RETURN COALESCE(v_out,'[]'::jsonb);
 END;
 $function$;
 

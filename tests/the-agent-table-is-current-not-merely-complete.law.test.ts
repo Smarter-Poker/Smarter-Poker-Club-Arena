@@ -77,10 +77,18 @@ describe('the agent table is current, not merely complete', () => {
     expect(body('fn_ca_rake_by_agent')).toContain('fn_rake_shares_for_record');
   });
 
-  it('keeps a gap-day path, so a day the rollup skipped is not silently zero', () => {
+  it('covers a day the rollup skipped, so it is never silently zero', () => {
+    // This asserts the INVARIANT, not the mechanism. The first implementation
+    // reached it by generating a row per calendar day and joining
+    // rake_records to each; that was replaced by one range scan anti-joined
+    // against the finished days, which is equivalent and far cheaper. A law
+    // that named `gap_days` failed the better version of the same guarantee,
+    // which is a law testing its own history rather than the estate's rule.
     const sql = body('fn_ca_rake_by_agent');
-    expect(sql).toMatch(/gap_days/);
-    expect(sql).toMatch(/NOT EXISTS[\s\S]{0,120}ok_days/);
+    expect(
+      sql,
+      'the live read must exclude finished days rather than assume the rest are covered'
+    ).toMatch(/NOT EXISTS[\s\S]{0,200}ok_days/);
   });
 
   it('never lets the live window run past now', () => {

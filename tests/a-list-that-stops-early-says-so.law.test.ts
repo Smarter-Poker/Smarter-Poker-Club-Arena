@@ -73,16 +73,35 @@ describe('a list that stops early says so', () => {
 
   it.each(HELPERS)('%s reports how many rows exist behind the page', (fn) => {
     const sql = body(fn);
-    expect(sql, 'a page with no count cannot admit it is a page').toMatch(/count\(\*\) OVER \(\)/);
-    expect(sql).toMatch(/'total'/);
+    expect(sql, 'a page with no count cannot admit it is a page').toMatch(/'total'/);
+    // Originally this asserted count(*) OVER (), which was the MECHANISM and
+    // not the law. Search replaced it, because a window over the SLICE reads
+    // correctly right up until the slice is empty: ask for offset 60 of a 33
+    // row result and it answers "total 0" - nothing matches, while matches
+    // plainly exist. The count is now counted over the filtered set, which
+    // cannot depend on which page was asked for. What the law actually forbids
+    // is deriving the count from the rows that came back.
+    expect(
+      sql,
+      'a count taken from the page reports zero whenever the page is empty'
+    ).toMatch(/'total',\s*\(SELECT count\(\*\) FROM filtered\)/);
   });
 
   it.each(HELPERS)('%s sums the WHOLE set, not the page', (fn) => {
-    // SUM(...) OVER () with no PARTITION spans every row the CTE produced,
-    // and window functions are evaluated before OFFSET/LIMIT trim it.
+    // Also once a mechanism assertion (SUM(...) OVER ()). The law is that the
+    // denominator spans every row, so that a share does not change as the
+    // operator pages or types. It is now a totals CTE reading the unsliced,
+    // unfiltered set - which additionally survives search, where a window
+    // would have silently started summing only the matches.
     const sql = body(fn);
-    expect(sql).toMatch(/SUM\([a-z_.]+\) OVER \(\)/);
     expect(sql).toMatch(/total_direct/);
+    expect(sql, 'the denominator needs a set of its own to sum').toMatch(
+      /totals AS \(\s*SELECT COALESCE\(SUM\([a-z_.]+\),0\) AS total_direct[\s\S]*?FROM listed/
+    );
+    expect(
+      sql,
+      'total_direct must be read from that set, not from the page'
+    ).toMatch(/'total_direct',\s*\(SELECT t\.total_direct FROM totals t\)/);
   });
 
   it('the snapshot reads total_direct instead of summing what it was handed', () => {

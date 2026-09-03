@@ -150,7 +150,6 @@ import { playerStatusService } from '../services/PlayerStatusService';
 import { avatarService } from '../services/AvatarService';
 import { waitlistService } from '../services/WaitlistService';
 import { roomService, type RoomMessage } from '../services/RoomService';
-import { HydraService } from '../services/HydraService';
 import TableChat from '../components/table/TableChat';
 import { ChatBubble, bubbleForSeat, useSeatChatBubbles } from '../components/table/ChatBubble';
 import { useTableVoice } from '../hooks/useTableVoice';
@@ -5789,10 +5788,6 @@ export default function TablePage({
   // player object; gates the recovery-poll teardown so it doesn't stop while
   // heroIdx=-1 mid-reload. Reset when the fetch is re-armed for a new hand.
   const heroCardsRecoveredRef = useRef(false);
-  /* One horse-yield failure report per table per mount. The yield runs every
-     15s on every seated client; without this a broken RPC would file four
-     reports a minute per player. See the catch block in the yield interval. */
-  const horseYieldReportedRef = useRef(false);
   // CA-21 BUG FIX: bbjTimerRef tracks the 3s BBJ celebration delay timer.
   const bbjTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // CA-22 BUG FIX: handCompleteTimerRef tracks the 3s HAND_COMPLETE table-reset timer.
@@ -11579,7 +11574,7 @@ export default function TablePage({
         const { data: existingSeats, error: seatsRestoreErr } = await supabase
           .from('table_seats')
           .select(
-            'seat_number, user_id, stack, status, horse_id, is_sitting_out, time_bank_remaining, time_bank_uses_remaining'
+            'seat_number, user_id, stack, status, is_sitting_out, time_bank_remaining, time_bank_uses_remaining'
           )
           .eq('table_id', table.id)
           .is('left_at', null);
@@ -11600,9 +11595,7 @@ export default function TablePage({
           const userIds = existingSeats.map((s) => s.user_id).filter(Boolean);
           const { data: profiles, error: seatProfilesErr } = await supabase
             .from('profiles')
-            .select(
-              'id, username, display_name, avatar_url:arena_avatar_url, is_horse, horse_profile'
-            )
+            .select('id, username, display_name, avatar_url:arena_avatar_url')
             .in('id', userIds);
 
           // ROUND 9 (2026-08-29): every seat degrading to 'Player' with no
@@ -11712,8 +11705,6 @@ export default function TablePage({
                     : ('active' as const),
                 isHero,
                 showCards: isHero,
-                isHorse: profile?.is_horse || !!seat.horse_id,
-                horseProfile: undefined,
               } as any;
 
               // Restore hero seat for the current user.
@@ -12377,8 +12368,10 @@ export default function TablePage({
      table_seats read at mount, the pre-start roster sync, and the engine
      snapshot. Nothing was replacing this block, so nothing replaces it.
 
-     HydraService keeps its read-only helpers (getActiveHorses, and the
-     waitlist yield below); its seat WRITERS refuse outright — see seedTable. */
+     HydraService is no longer imported by this page at all (2026-09-02). Its
+     seat WRITERS already refused outright, and its READ helpers were the last
+     thing telling a player's browser which opponents are horses — see the
+     tombstone above the removed waitlist-yield effect. */
 
   // REALTIME PROFILES — a seated player's avatar or cosmetics changed
   // ═══════════════════════════════════════════════════════════════════════════
@@ -12438,73 +12431,39 @@ export default function TablePage({
   // Seated-only gate for the waitlist yield below. A spectator has no seat to
   // give up and no stake in table liquidity; only players actually sitting at
   // the table should be running this.
-  const heroIsSeatedForWaitlist = tableState.heroSeat > 0;
-  useEffect(() => {
-    if (!tableId || !tableState.blinds || tableState.blinds === '?/?') return;
-    if (tableState.isTournament) return; // No horse cap in tournaments
-    if (!heroIsSeatedForWaitlist) return;
+  /* ── THE CLIENT-SIDE HORSE YIELD IS DELETED (Dan, 2026-09-02) ─────────────
+     A `heroIsSeatedForWaitlist` effect used to poll here every 15 seconds, on
+     every seated client, and try to free a horse's seat for a waitlisted
+     human. It is gone for two independent reasons, either sufficient.
 
-    // Poll the waitlist — if real players are waiting, yield a horse seat.
-    //
-    // PERF 2026-08-24. Two problems, one fixed here and one recorded.
-    //
-    // FIXED: this ran for EVERY client with the table open, including
-    // spectators and railbirds, who have no business performing table
-    // maintenance. A popular table can carry far more watchers than seats, and
-    // every one of them was issuing a waitlist read every 10 seconds plus a
-    // liquidity check. Restricted to SEATED players below.
-    //
-    // NOT FIXED, deliberately: the remaining seated players still duplicate
-    // this work N ways, and the yield is a MUTATION, so N clients race to
-    // perform the same one. The correct home for it is the engine - CLAUDE.md
-    // already records horse fleet management as server-authoritative, and
-    // HorseFleetManager seeds tables and populates `table_waitlist`. What it
-    // does NOT do is give a seat back when a human queues behind a full table
-    // of horses; HydraService.checkWaitlistAndYield is the only implementation
-    // of that anywhere, which is why it is left running rather than deleted as
-    // the old client-side AutoRebuyService was. Moving it server-side needs an
-    // engine change, not a client one.
-    //
-    // Interval also raised 10s -> 15s and jittered, so seated clients at the
-    // same table stop hitting the database in lockstep.
-    const JITTER_MS = Math.floor(Math.random() * 4000);
-    horseYieldReportedRef.current = false;
-    const interval = setInterval(async () => {
-      try {
-        // null = read failed ("could not find out") — yield nothing on a guess.
-        const entries = (await waitlistService.getTableWaitlist(tableId)) ?? [];
-        if (entries && entries.length > 0) {
-          const yielded = await HydraService.checkWaitlistAndYield(tableId, entries.length);
-          if (yielded) {
-            console.debug('[Horses] Yielded horse seat for waiting real player');
-          }
-        }
-      } catch (err) {
-        /* ── THIS IS NOT "NON-CRITICAL" (2026-08-26) ────────────────────────
-           The comment here said "Non-critical — silently ignore", and it was
-           wrong in the way that costs the most: the ONLY implementation of
-           "give a horse's seat back when a human is queued behind a full
-           table" is the call above. When it throws, a real player sits on the
-           waitlist forever while horses play in front of them, every 15
-           seconds, on every seated client, with nothing written anywhere.
-           Nobody would ever learn this was happening.
+     1. IT LEAKED WHO THE HORSES WERE. `HydraService.checkWaitlistAndYield`
+        reaches `getActiveHorses`, which asks PostgREST
+        `profiles?id=in.(...)&is_horse=eq.true` for the people at YOUR table.
+        Both the request URL and the response body name them, and the body
+        carried `horse_profile` ('fish' / 'nit' / 'maniac') and `horse_status`
+        besides. Dan: "HUMAN USERS CAN NEVER KNOW THAT THIS IS A 'HORSE' AND
+        NOT A 'HUMAN'." One open Network tab was the whole answer, plus the
+        playing style.
 
-           It stays non-fatal — a failed yield must never take the felt down,
-           and the next tick retries anyway — but it is now REPORTED, and
-           reported once per table per mount so a persistently broken RPC does
-           not bury Sentry under four-per-minute duplicates. */
-        if (!horseYieldReportedRef.current) {
-          horseYieldReportedRef.current = true;
-          reportError(err, 'TablePage.horse_yield_failed', {
-            tableId,
-            note: 'a waitlisted player may be unable to get a seat from the horses',
-          });
-        }
-      }
-    }, 15000 + JITTER_MS);
+     2. IT HAD NOT WORKED SINCE 2026-09-02 ANYWAY. The chain ends at
+        `HydraService.removeHorse`, which chip standard C1 turned into a
+        refusal: it reports an error and returns false, always. So the poll
+        read the seats, asked which were horses, failed, wrote a Sentry line,
+        and returned false — four times a minute per seated client.
 
-    return () => clearInterval(interval);
-  }, [tableId, tableState.blinds, tableState.isTournament, heroIsSeatedForWaitlist]);
+     The comment that stood here called this "the ONLY implementation" of
+     giving a seat back to a queued human and said it was "left running rather
+     than deleted". That was true when written and stopped being true when C1
+     landed; it then read as armed while being unreachable, which is exactly
+     the trap docs/HANDOFF_CURRENT_STATE.md warns about.
+
+     BE CLEAR ABOUT WHAT THIS MEANS: yielding a horse seat to a waitlisted
+     human is now UNIMPLEMENTED, not relocated. It has been unimplemented in
+     practice since C1. It belongs in the engine beside the rest of fleet
+     management (HorseFleetManager seats them; `notifyWaitlistSeatOpen` in
+     server/src/services/supabase/seats.ts already hands a freed seat to the
+     waitlist head) — it must NOT come back to the browser, because a browser
+     cannot do it without first being told which opponents are horses. */
 
   // ═══════════════════════════════════════════════════════════════════════════
   //HandController removed — server is authoritative
@@ -16712,7 +16671,7 @@ export default function TablePage({
     const reloadRoster = async () => {
       const { data: seats, error } = await supabase
         .from('table_seats')
-        .select('seat_number, user_id, stack, is_sitting_out, horse_id')
+        .select('seat_number, user_id, stack, is_sitting_out')
         .eq('table_id', tableId)
         .is('left_at', null);
       if (cancelled) return;
@@ -16727,7 +16686,7 @@ export default function TablePage({
       if (userIds.length > 0) {
         const { data: profiles, error: profErr } = await supabase
           .from('profiles')
-          .select('id, username, display_name, avatar_url:arena_avatar_url, is_horse')
+          .select('id, username, display_name, avatar_url:arena_avatar_url')
           .in('id', userIds);
         if (profErr) {
           reportError(profErr, 'TablePage.seat_first_roster_profiles', { tableId });
@@ -16757,7 +16716,6 @@ export default function TablePage({
                 username?: string;
                 display_name?: string;
                 avatar_url?: string;
-                is_horse?: boolean;
               }
             | undefined;
           const isHero = seat.user_id === userId;
@@ -16791,8 +16749,6 @@ export default function TablePage({
             status: 'active' as const,
             isHero,
             showCards: isHero,
-            isHorse: Boolean(profile?.is_horse) || !!seat.horse_id,
-            horseProfile: undefined,
           } as unknown as (typeof prev.players)[number];
         }
         return {
@@ -18522,12 +18478,12 @@ export default function TablePage({
       const ids = Array.from(new Set(entries.map((e) => e.userId).filter(Boolean)));
       const profileById = new Map<
         string,
-        { username?: string; display_name?: string; avatar_url?: string; is_horse?: boolean }
+        { username?: string; display_name?: string; avatar_url?: string }
       >();
       if (ids.length > 0) {
         const { data: profiles, error: wlProfilesErr } = await supabase
           .from('profiles')
-          .select('id, username, display_name, avatar_url:arena_avatar_url, is_horse')
+          .select('id, username, display_name, avatar_url:arena_avatar_url')
           .in('id', ids);
         // ROUND 9 (2026-08-29): the 2026-08-20 fix promised names would
         // resolve like the felt's; a resolved error quietly regressed the
@@ -22445,7 +22401,14 @@ export default function TablePage({
                 seatAcquiredAtRef.current = Date.now();
                 // A new seat is a clean slate: a later removal must be announced again.
                 bootNoticeShownRef.current = false;
-                HydraService.onRealPlayerJoined(tableId, userId);
+                /* `HydraService.onRealPlayerJoined` was called here. Removed
+                   2026-09-02 with the yield poll: it asks the database which
+                   players at this table are horses (`is_horse=eq.true`, in
+                   the request URL) purely to pick one to retire, and the
+                   retirement it then attempts has been a refusal since chip
+                   standard C1. All leak, no effect. Fleet size is the
+                   engine's business; see the tombstone above the removed
+                   yield effect. */
                 await sendAction('player_seated', {
                   seat: selectedSeat,
                   userId,

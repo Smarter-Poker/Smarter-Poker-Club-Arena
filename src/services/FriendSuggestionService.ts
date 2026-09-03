@@ -276,16 +276,22 @@ class FriendSuggestionServiceClass {
          decision. Dan: "HORSES ARE NEVER EVER DISCLUDED BY DESIGN ON
          ANYTHING! THEY MUST ALWAYS BE TREATED LIKE REAL LIVE PLAYERS!"
 
-         A horse you sat with is an opponent you sat with. `is_horse` stays in
-         the SELECT — identification is one of the two sanctioned uses, and
-         the caller may badge the row — but it no longer decides who is
-         suggestible. */
+         A horse you sat with is an opponent you sat with.
+
+         `is_horse` is GONE FROM THE SELECT TOO (Dan, 2026-09-02): "HUMAN
+         USERS CAN NEVER KNOW THAT THIS IS A 'HORSE' AND NOT A 'HUMAN'. MAKE
+         SURE THERE IS NO DIFFERENCE BETWEEN THAT AS ITS DISPLAYED." 10.5
+         allows the flag as identification DATA, but that permission is for
+         staff surfaces. On a player-facing read it is a tell twice over: the
+         filter used to put `is_horse=eq.false` in the request URL, and the
+         column itself would label every suggestion in the response body. A
+         player with DevTools open needs neither a badge nor a guess. */
       const { data: opponents, error: oErr } = await supabase
         .from('table_seats')
         .select(
           `
           user_id,
-          profiles:user_id!inner(username, display_name, avatar_url, is_online, is_horse)
+          profiles:user_id!inner(username, display_name, avatar_url, is_online)
         `
         )
         .in('table_id', tableIds)

@@ -855,8 +855,7 @@ class TableService {
                 profiles(
                     display_name,
                     username,
-                    avatar_url:arena_avatar_url,
-                    is_horse
+                    avatar_url:arena_avatar_url
                 )
             `
       )

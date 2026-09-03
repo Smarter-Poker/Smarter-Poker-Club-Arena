@@ -81,23 +81,45 @@ describe('the felt never shows a card that is not the card', () => {
   });
 });
 
-describe('a waitlisted player is never stranded behind the horses silently', () => {
-  it('the horse-yield failure is reported, not swallowed', () => {
-    /* Was: `catch (err) { // Non-critical — silently ignore }`. It is the only
-       implementation of "give a horse's seat back when a human is queued", so
-       a throw here means a real player waits forever while horses play. */
-    expect(TABLE_PAGE).not.toMatch(/Non-critical — silently ignore/);
-    expect(TABLE_PAGE).toMatch(/TablePage\.horse_yield_failed/);
+describe('the client no longer runs the horse-yield poll at all', () => {
+  /* REWRITTEN 2026-09-02 with the change it pins, per CLAUDE.md section 5
+     rule 8. These three cases guarded the ERROR REPORTING of a client-side
+     poll that gave a horse's seat back to a waitlisted human. The poll is
+     deleted, so its reporting cannot be asserted — and the reason it went is
+     worth keeping here, because the original comment ("it is the only
+     implementation") is exactly what made it look load-bearing.
+
+     Two independent reasons, either sufficient:
+
+     1. It leaked. The chain reached `HydraService.getActiveHorses`, which
+        asks PostgREST `profiles?id=in.(...)&is_horse=eq.true` for the people
+        at the player's own table, and returns `horse_profile` and
+        `horse_status` besides. Dan, 2026-09-02: "HUMAN USERS CAN NEVER KNOW
+        THAT THIS IS A 'HORSE' AND NOT A 'HUMAN'."
+
+     2. It had not worked since chip standard C1 (2026-09-02) turned
+        `HydraService.removeHorse` into a refusal that reports and returns
+        false. The poll read the seats, asked which were horses, failed, filed
+        a Sentry line and returned false, four times a minute per seated
+        client.
+
+     Yielding a horse seat to a waitlisted human is therefore UNIMPLEMENTED,
+     not relocated, and it belongs in the engine. It must not come back to the
+     browser: a browser cannot do it without first being told which of its
+     opponents are horses. */
+  it('no yield poll, and so no yield-failure reporting to guard', () => {
+    expect(TABLE_PAGE).not.toMatch(/horseYieldReportedRef/);
+    expect(TABLE_PAGE).not.toMatch(/TablePage\.horse_yield_failed/);
+    expect(TABLE_PAGE).not.toMatch(/checkWaitlistAndYield/);
   });
 
-  it('reports once per mount, not four times a minute', () => {
-    // The yield runs every 15s on every seated client.
-    expect(TABLE_PAGE).toMatch(/horseYieldReportedRef/);
-    expect(TABLE_PAGE).toMatch(/horseYieldReportedRef\.current = true;/);
-  });
-
-  it('stays non-fatal — a failed yield must never take the felt down', () => {
-    expect(TABLE_PAGE).not.toMatch(/throw err;\s*\}\s*\}, 15000/);
+  it('records why, so the next author does not restore it as a "missing feature"', () => {
+    /* `raw`, not `read`: this file's `read` strips comments on purpose, so a
+       tombstone is not mistaken for the corpse. Here the tombstone IS the
+       subject — the risk being guarded against is a future author seeing a
+       waitlisted player stuck behind horses, finding no implementation, and
+       writing a new one back into the browser. */
+    expect(raw('src/pages/TablePage.tsx')).toMatch(/UNIMPLEMENTED, not relocated/);
   });
 });
 

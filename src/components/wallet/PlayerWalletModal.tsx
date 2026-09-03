@@ -140,7 +140,13 @@ const TX_TYPE_LABELS: Record<string, string> = {
   rakeback: 'Rakeback',
   bbj_promo_sweep: 'BBJ Promo Sweep',
   promo_closed_on_union_join: 'Promo Wallet Closed On Union Join',
-  horse_treasury_funding: 'Horse Treasury Funding',
+  /* Neutralised 2026-09-02. This modal renders the VIEWER'S OWN ledger, so a
+     club owner funding the fleet would read the word "Horse" in their own
+     transaction list — and the string ships in every player's bundle either
+     way. `TransactionHistory.tsx` and `CashierPage.tsx` already neutralise the
+     same family ('horse_refill' -> 'Auto Refill'); this row was the one that
+     was missed. The key stays; only the label a human reads changes. */
+  horse_treasury_funding: 'Treasury Funding',
   union_hold: 'Union Hold',
   union_pnl_collect: 'Union PnL Collected',
   union_pnl_payout: 'Union PnL Payout',

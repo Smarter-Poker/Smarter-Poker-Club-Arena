@@ -42,11 +42,18 @@ interface SeatedPlayer {
   /** table_seats has `joined_at`, not `created_at` — selecting the latter
       returned 42703 and emptied this list on every load. */
   joined_at: string;
+  /* `is_horse: boolean` was declared here. It came from
+     `TableService.getSeatedPlayers`, which stopped selecting the column on
+     2026-09-02 because that one query runs for EVERY player who opens a table
+     — the easiest possible read of who the horses are. Nothing in this panel
+     ever rendered it, so the field was a type promising data that is no
+     longer fetched. This panel is staff-gated and may show horse-ness if it
+     ever needs to, but it must ask a staff-scoped query for it rather than
+     ride along on the felt's own seat read. */
   profiles: {
     display_name: string;
     username: string;
     avatar_url: string | null;
-    is_horse: boolean;
   } | null;
 }
 

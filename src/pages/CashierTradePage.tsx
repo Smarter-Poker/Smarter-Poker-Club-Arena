@@ -99,7 +99,6 @@ interface DownlineRow {
   avatarUrl: string | null;
   role: string;
   chipBalance: number;
-  isHorse: boolean;
   /**
    * How many club_members.agent_id hops below the viewer this member sits, as
    * computed by fn_club_cashier_members. 1 is a direct assignee; 0 means the
@@ -128,7 +127,6 @@ const mapCashierRoster = (rows: CashierRosterRpcRow[], viewerId: string): Downli
         avatarUrl: (row.avatar_url as string) || null,
         role: (row.role as string) || 'player',
         chipBalance: Number(row.chip_balance) || 0,
-        isHorse: row.is_horse === true,
         depth,
         isMine: depth === 1,
         playerNumber: (row.player_number as string) || null,
@@ -2546,8 +2544,13 @@ export default function CashierTradePage() {
                     <span className={styles.rowSub}>
                       {r.playerNumber ? `ID: ${r.playerNumber} · ` : ''}
                       <span style={{ textTransform: 'capitalize' }}>
+                        {/* ` (Horse)` was appended here. Removed 2026-09-02:
+                            Dan — "HUMAN USERS CAN NEVER KNOW THAT THIS IS A
+                            'HORSE' AND NOT A 'HUMAN'." This roster renders for
+                            every agent, sub-agent and super-agent, all of whom
+                            are ordinary human users, as plain English beside a
+                            player's name. No tooling required, no ambiguity. */}
                         {roleLabel(r.role as ClubRole)}
-                        {r.isHorse ? ' (Horse)' : ''}
                       </span>
                       {r.username ? ` · @${r.username}` : ''}
                     </span>

@@ -1,5 +1,19 @@
 /* The page is a frame for the snapshot panel, which carries its own surface. */
 .page {
+  /*
+   * --energy is NOT global. It is declared on .panel inside
+   * RakeSnapshotPanel.module.css and on the club page's own root, so it
+   * reaches the panel's descendants and nothing else.
+   *
+   * The header buttons below are SIBLINGS of the panel, not descendants. They
+   * referenced var(--energy) for their focus ring, it resolved to nothing, and
+   * an outline with no colour is invalid at computed-value time - so a
+   * keyboard user got no visible focus ring at all on the only two controls
+   * this page owns. Declared here, on the page root, exactly as the club data
+   * page declares it.
+   */
+  --energy: #279cff;
+
   max-width: 1180px;
   margin: 0 auto;
   padding: 0 0.75rem 3rem;

@@ -60,7 +60,7 @@ platform plan wins.
 Club Arena is a Vite + React SPA that lives inside the smarter.poker Next.js app.
 It deploys through the World Hub repo, NOT directly.
 
-### 1.1 How your work reaches production (rewritten 2026-09-02 - read this, it changed)
+### 1.1 How your work reaches production (rewritten 2026-09-03 - the World Hub is no longer in the path)
 
 There is exactly ONE route from a commit to a player, and every step of it is
 automatic. Your job ends at step 2.
@@ -70,47 +70,63 @@ automatic. Your job ends at step 2.
 2. **Push the branch** over SSH (`git push origin HEAD:refs/heads/<branch>`).
    **That is the end of your job.** Do not open the pull request yourself, do
    not merge, do not watch CI (10.8.3). Report the branch name and stop.
-3. `agent-open-pr.yml` opens the pull request within seconds of the branch
-   appearing - for ANY branch name, not only `agent/*` (that was the gap that
-   stranded three agents' finished work on 2026-09-02).
+3. `agent-open-pr.yml` opens the pull request within seconds of the push - on
+   `create` AND on `push`, for any branch name.
 4. `agent-autopilot.yml` enables squash auto-merge. The required checks run on
    the estate's own Hetzner runners (`vars.CI_RUNNER`), and GitHub merges when
    they are green. Red checks never merge (5.8).
-5. **`publish-club-arena.yml` publishes.** On merge it builds the bundle,
-   runs the four-way sharded test gate, and pushes `dist/` into the World Hub
-   repo's `public/hub/club-arena/` with a GitHub App token. Vercel then deploys
-   the World Hub, which is what serves `smarter.poker/hub/club-arena`. It runs
-   on the Hetzner box too, so the only path to production no longer depends on
-   GitHub's hosted pool.
+5. **`publish-club-arena.yml` publishes - to Club Arena's own origin.** On
+   merge it builds the bundle, runs the four-way sharded test gate, and
+   rsyncs `dist/` to the static origin (Caddy on `estate-ci-1`,
+   `ca-static.smarter.poker`) as `/srv/club-arena/releases/<ca_sha>/`, then
+   swaps the `current` symlink atomically. The World Hub carries ONE rewrite,
+   `/hub/club-arena/*` -> that origin, so the player is still on
+   `smarter.poker` and the shared session (`smarter-poker-auth`) still works.
+   A publish takes seconds. Nothing is committed to the World Hub repo any
+   more, and Vercel does not rebuild the World Hub for a Club Arena merge.
+   Rollback is re-pointing the symlink; ten releases are kept.
 6. **Verify** by reading, never by assuming:
    `curl -s https://smarter.poker/hub/club-arena/build-info.json` - `ca_sha`
    must equal the squash commit on `main`. Nothing else counts as deployed.
 
+**Why it used to go through the World Hub, and why it stopped (2026-09-03).**
+`smarter.poker/hub/club-arena` is a path on the World Hub's Vercel deployment,
+and until today the only way a file got there was to commit it into that
+repo's `public/` tree: every Club Arena merge produced a
+`chore(club-arena): sync build` commit in the World Hub and a 4-5 minute
+rebuild of the entire World Hub, twenty times a day. The origin removes both.
+The browser never sees the origin's hostname - Vercel proxies the rewrite -
+so section 7's "everything from smarter.poker" still holds for the player;
+what changed is where Vercel fetches the bytes from.
+
+**The origin keeps old assets.** A player whose tab still holds the previous
+`index.html` asks for the previous hashed chunks mid-hand. `/assets/*` and
+`/fonts/*` are served from an ADDITIVE pool the publisher never `--delete`s,
+pruned by age (30 days) only. Do not "clean up" the pool by removing what is
+not in the current bundle - that is the 404 the old sync's retention logic
+existed to prevent.
+
 **Three nets catch a publish that fails, all automatic:** the `*/30` catch-up
 cron inside the publisher, `publish-watchdog.yml` (re-dispatches up to three
 times, then raises an in-app notification), and the orphan sweep in
-`agent-autopilot.yml` that opens a pull request for any branch under a day old
-that has none. If production is behind `main` for more than ~25 minutes,
-something is genuinely broken - read the watchdog issue it filed.
+`agent-autopilot.yml`. If production is behind `main` for more than ~25
+minutes, something is genuinely broken - read the watchdog issue it filed.
 
-**There is no second publisher.** `build-for-world-hub.yml` was deleted on
-2026-09-02; for ninety minutes both existed on separate concurrency groups and
-every merge ran two full publishes. `tests/no-commit-left-behind.law.test.ts`
-now counts publishers and requires exactly one. Club Arena cannot bypass the
-World Hub: `club-arena/vercel.json` has `deploymentEnabled: false` on purpose,
-and the bundle is served from the World Hub's `public/`.
+**There is no second publisher.** `tests/no-commit-left-behind.law.test.ts`
+counts publishers and requires exactly one. Club Arena's own `vercel.json`
+still has `deploymentEnabled: false`; the bundle is served through the World
+Hub's rewrite, never from a Vercel project of its own.
 
-**Local preview only, NOT a deploy path:**
+**Local preview:**
 
 ```bash
-cd ~/Documents/Smarter-Poker-World-Hub
-bash scripts/sync-club-arena.sh "feat(ca): <describe what changed>"
+cd ~/Documents/club-arena && npm run dev
 ```
 
-That builds CA with NODE_ENV=production and stages it into the Hub for local
-preview. It does not push and cannot publish; its "Pushed" line is a vestige.
-`SENTRY_AUTH_TOKEN/ORG/PROJECT` come from `~/Documents/club-arena/.env`.
-Legacy names `build-club-arena.sh` and `sync-to-world-hub.sh` forward to it.
+The Vite dev server is the local preview. `sync-club-arena.sh` in the World
+Hub repo (which copied a build into `public/hub/club-arena/` for a local
+Next.js preview) is retired with the sync; the World Hub's dev server proxies
+the rewrite to the live origin instead.
 
 ### 1.1.5 SERVER-SIDE PROTECTION (APPLIED - this section is history)
 
@@ -227,7 +243,11 @@ with main, and a timeout leaves the PR open for you to merge by hand.
 - Never call any deploy hook URL
 - Never add iframe code (`window.parent`, `postMessage`, `ClubArenaEmbed`)
 - Never add `VITE_` prefixed secret keys (use server-side API routes)
-- Never edit `public/hub/club-arena/` in the World Hub directly (always rebuild from source)
+- Never re-create `public/hub/club-arena/` in the World Hub. It was DELETED on
+  2026-09-02 when Club Arena moved to its own origin, and Next.js serves
+  `public/` BEFORE the rewrite, so a file there silently shadows the live
+  bundle. `tests/club-arena-is-a-rewrite.test.mjs` in the World Hub fails CI if
+  it comes back.
 
 ### 1.4 Claiming Success
 
@@ -390,7 +410,9 @@ server/src/index.ts      Game engine server (Hetzner)
 ```
 
 Production URL: `https://smarter.poker/hub/club-arena/`
-Built files: `Smarter-Poker-World-Hub/public/hub/club-arena/`
+Built files: published to `https://ca-static.smarter.poker` (`/srv/club-arena`
+on the Hetzner origin: `releases/<ca_sha>/` + an atomically swapped `current`
+symlink + an additive `pool/`). NOT the World Hub repo - that path is gone.
 API routes: `Smarter-Poker-World-Hub/pages/api/club-arena/`
 
 ---
@@ -400,7 +422,10 @@ API routes: `Smarter-Poker-World-Hub/pages/api/club-arena/`
 Club Arena is a Vite + React SPA inside the smarter.poker Next.js app:
 
 - Production: `smarter.poker/hub/club-arena/*` served from World Hub's `public/` directory
-- Build: Vite produces `dist/`, copied to World Hub's `public/hub/club-arena/`
+- Build: Vite produces `dist/`, which `publish-club-arena.yml` rsyncs to the
+  origin. The World Hub carries ONE rewrite, `/hub/club-arena/:path*` ->
+  `https://ca-static.smarter.poker/:path*`, so the browser never sees the
+  origin hostname and the shared `smarter-poker-auth` session is untouched.
 - Routing: SPA fallback rewrites unmatched routes to `index.html`
 - Auth: Same-origin Supabase session via `smarter-poker-auth` localStorage key
 

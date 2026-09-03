@@ -96,7 +96,15 @@ LOG=/var/log/ci-gc.log
        -exec rm -rf {} + 2>/dev/null
   find /home/ci/actions-runner-*/_work/_temp -mindepth 1 -maxdepth 1 -mtime +1 -exec rm -rf {} + 2>/dev/null
   find /home/ci/actions-runner-*/_diag -type f -mtime +7 -delete 2>/dev/null
-  rm -rf /tmp/* 2>/dev/null
+  # NOT `rm -rf /tmp/*` (2026-09-03). That deletes the systemd PrivateTmp
+  # namespace of every RUNNING service - caddy on the origin box could not
+  # reload at all until it was restarted, because its /tmp had been pulled out
+  # from under it at 04:17 - and it deletes the scratch files of any CI job in
+  # flight at that minute, which is a random red build nobody can reproduce.
+  # Age it instead, and never touch the namespaces or the socket dirs.
+  find /tmp -mindepth 1 -maxdepth 1 -mtime +1 \
+       ! -name "systemd-private-*" ! -name ".X11-unix" ! -name ".ICE-unix" \
+       -exec rm -rf {} + 2>/dev/null
   command -v docker >/dev/null && docker system prune -af --filter "until=72h" >/dev/null 2>&1
   su - ci -c "npm cache verify" >/dev/null 2>&1
   echo "    after: $(df -h / | awk 'NR==2{print $5" used, "$4" free"}')"
@@ -265,9 +273,32 @@ say "playwright system deps (chromium + webkit)"
 # and it is true or false regardless of what apt felt about it.
 npx --yes "playwright@${PLAYWRIGHT_VERSION}" install-deps chromium webkit >/tmp/pwdeps.log 2>&1 || true
 PW_CACHE="${PW_CACHE:-/home/ci/.cache/ms-playwright}"
+# A FRESH BOX HAS NO CACHE DIR YET (2026-09-03, estate-ci-3). `find` on a path
+# that does not exist returns 1; under `set -o pipefail` that made the
+# `missing=$(...)` assignment fail and `set -e` aborted the whole provisioner
+# with exit 1 and no message, right after the "playwright system deps" header.
+# The first two boxes never hit it because a Playwright job had already
+# unpacked browsers there. Create the directory so the verify step has
+# something to look at, and let a still-empty cache take the "no browsers
+# unpacked yet" branch below as designed.
+# OWN THE PARENT TOO. `install -d` creates missing parents as ROOT, so this
+# line alone left /home/ci/.cache owned by root on a fresh box - and the ci
+# user could then create nothing else in it. Measured 2026-09-03 on
+# estate-ci-3: every World Hub `npm ci` failed in puppeteer's postinstall with
+# `EACCES: permission denied, mkdir /home/ci/.cache/puppeteer`, which reads
+# like a network problem and is not one.
+install -d -o ci -g ci "$(dirname "$PW_CACHE")"
+install -d -o ci -g ci "$PW_CACHE"
+chown -R ci:ci "$(dirname "$PW_CACHE")" 2>/dev/null || true
 missing=$(
   find "$PW_CACHE" -type f \( -name chrome -o -name headless_shell -o -name MiniBrowser \) 2>/dev/null |
-  while read -r bin; do ldd "$bin" 2>/dev/null | grep -F "not found" | sed "s|^|$(basename "$(dirname "$bin")")/$(basename "$bin"): |"; done
+  while read -r bin; do
+    # `grep` exits 1 when NOTHING is missing - the healthy case - and under
+    # `set -o pipefail` inside this `set -e` substitution that used to abort
+    # the provisioner on a box whose browsers were fine (estate-ci-3,
+    # 2026-09-03, second run). A miss is data here, not a failure.
+    { ldd "$bin" 2>/dev/null | grep -F "not found" || true; } | sed "s|^|$(basename "$(dirname "$bin")")/$(basename "$bin"): |"
+  done
 )
 bins=$(find "$PW_CACHE" -type f \( -name chrome -o -name headless_shell -o -name MiniBrowser \) 2>/dev/null | wc -l)
 if [ -z "$missing" ] && [ "$bins" -gt 0 ]; then

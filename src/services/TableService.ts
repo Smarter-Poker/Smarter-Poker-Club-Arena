@@ -10,6 +10,7 @@ import { masterBus } from '../core/MasterBus';
 
 import { resolveClubUUID, isUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
+import { PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { reportError } from '../utils/errorReporter';
 import { notifyServerLeave } from './GameServerAPI';
 
@@ -853,8 +854,7 @@ class TableService {
                 stack,
                 joined_at,
                 profiles(
-                    display_name,
-                    username,
+                    ${PLAYER_NAME_COLUMNS},
                     avatar_url:arena_avatar_url,
                     is_horse
                 )

@@ -20,6 +20,7 @@ import { BBJRecentHits } from '../components/bbj/BBJRecentHits';
 import { BBJHandDetail } from '../components/bbj/BBJHandDetail';
 import BBJRulesPanel from '../components/bbj/BBJRulesPanel';
 import { ArenaJackpotDisplay } from '../components/club-buttons';
+import { playerDisplayName } from '../utils/playerDisplayName';
 
 interface JackpotInfo {
   id: string;
@@ -688,7 +689,7 @@ export default function BadBeatJackpotPage() {
             <BBJHandDetail
               payoutId={openHandPayoutId}
               onBack={() => setOpenHandPayoutId(null)}
-              currentUserName={user?.display_name || null}
+              currentUserName={user ? playerDisplayName(user) : null}
               currentUserId={user?.id}
             />
           </div>
@@ -698,7 +699,7 @@ export default function BadBeatJackpotPage() {
             limit={10}
             poolAmount={jackpot?.main_balance || 0}
             currentUserId={user?.id}
-            currentUserName={user?.display_name || null}
+            currentUserName={user ? playerDisplayName(user) : null}
             onOpenHand={setOpenHandPayoutId}
           />
         )}

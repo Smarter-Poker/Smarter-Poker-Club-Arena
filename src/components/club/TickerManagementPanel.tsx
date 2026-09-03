@@ -168,11 +168,24 @@ export default function TickerManagementPanel({
       setSettings(snapshot.settings);
       setSavedSettings(snapshot.settings);
       setRevision(snapshot.revision);
-      setMessageDraft('');
-      setServiceDraft('');
       setRemoteUpdate(false);
-      dirtyRef.current = false;
-      toast.success('Ticker settings saved.');
+      /*
+        The composers are NOT cleared here, and that is the fix.
+
+        This button saves SETTINGS; a composed message is sent with Add
+        Message. Clearing the drafts here threw away text the operator had
+        typed and then said "Ticker settings saved", so the work was gone and
+        the confirmation said otherwise. `dirty` counts a non-empty draft as
+        unsaved work and the footer warns about it on unload, so the panel
+        already knew the text mattered before it discarded it.
+      */
+      const unsent = Boolean(messageDraft.trim()) || Boolean(serviceDraft.trim());
+      dirtyRef.current = unsent;
+      toast.success(
+        unsent
+          ? 'Ticker settings saved. Your unsent message is still in the composer.'
+          : 'Ticker settings saved.'
+      );
     } catch (error) {
       if (isManagementContentConflict(error)) setRemoteUpdate(true);
       toast.error(error instanceof Error ? error.message : 'Could not save ticker settings.');

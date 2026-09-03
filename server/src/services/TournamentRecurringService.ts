@@ -18,7 +18,13 @@ import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
 import nodeCrypto from 'node:crypto';
-import { DEFAULT_RAKE_RATE, buyInFor, rakeRateFor, wholeChips } from '../config/buyIn.js';
+import {
+  DEFAULT_RAKE_RATE,
+  buyInFor,
+  freeBuyColumns,
+  rakeRateFor,
+  wholeChips,
+} from '../config/buyIn.js';
 import { gameLaneFor, horseHash, isActiveNow } from './HorseBehavior.js';
 import { bankrollPolicyFor, canEnterTournament } from './HorseBankroll.js';
 import { bankrollEvent } from './HorseBankrollTelemetry.js';
@@ -952,6 +958,58 @@ export function isJoinableTableRow(row: TournamentTableJoinability | null | unde
 
 export function isSeatFirstFormat(variant: string, maxPlayers: number): boolean {
   return String(variant).toLowerCase() === 'spin' || maxPlayers <= 2;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A CLUB BOARD FILLS FROM ITS OWN MEMBERS, OR IT NEVER FILLS AT ALL
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan, 2026-09-01 (the Deep Stack Society directive): heads-up / SNG boards
+ * must open for activated CLUB owners, not just the house board.
+ * Dan, 2026-09-02: DSS horses "PLAY OPENLY INSIDE THE DEEP STACK SOCIETY ONLY."
+ * Dan, 2026-09-02 and 2026-09-03: those boards sit at 1/2 seated forever.
+ *
+ * All three are the same story. checkAndLaunchSNGs was taught to open boards
+ * for activated club owners, and topUpWithHorses was never taught to fill
+ * them: it refused every top-up outside the house board. So the platform
+ * opened boards it had forbidden itself to fill. Measured on production
+ * 2026-09-03 08:2x UTC:
+ *
+ *   Midway Union (the house board)   62 heads-up RUNNING, 60 spins RUNNING
+ *   Deep Stack Society                6 heads-up REGISTERING, ZERO EVER RUNNING
+ *
+ * Every DSS board took a real buy-in from the first player to sit and then
+ * held it forever: 32 stuck since 09-01 18:42, another 32 created 09-02
+ * 22:26-22:51 and stuck the same way, both batches cancelled and refunded by
+ * hand. The engine also retried each one every twelve seconds, which is where
+ * 24,490 calls of fn_sync_seat_first_player_count in 76 minutes came from -
+ * 2,292 seconds of database time spent on boards that could not move.
+ *
+ * The gate's own comment already stated the right rule: "a user-owned club
+ * fills its tournaments with users who joined that club through Join A Club."
+ * The CODE said "the house board only", which is stricter than the rule it
+ * documents and is what contradicted the 09-01 directive.
+ *
+ * The rule is now enforced where it belongs - in the POOL, not in a gate.
+ * pickFreeHorses already narrows every candidate to
+ * clubMemberIdsForTournament(): a standalone club draws on its own members and
+ * nothing else, a union event on every club in that union. DSS boards fill
+ * from DSS horses, exactly as Dan asked, and no house horse can wander into a
+ * user club's game.
+ *
+ * This predicate now names only what is still house-only: automated
+ * REGISTRATION for a scheduled MTT, where the pool is not club-scoped. Widen
+ * that separately, with its own measurement, if it is ever wanted.
+ */
+export function automatedRegistrationIsPermitted(
+  clubId: string | null | undefined,
+  houseClubId: string | null | undefined
+): boolean {
+  const club = String(clubId ?? '');
+  const house = String(houseClubId ?? '');
+  if (!club || !house) return false;
+  return club === house;
 }
 
 /**
@@ -2685,6 +2743,16 @@ export class TournamentRecurringService {
             addon_cost: (config as { addOn?: boolean }).addOn ? split.total : null,
             addon_chips: (config as { addOn?: boolean }).addOn ? config.startingStack : null,
             addon_levels: (config as { addOn?: boolean }).addOn ? 1 : null,
+            // FREEROLLS ARE FREE BUY (Dan 2026-09-02): 0 to enter, rebuys and
+            // add-ons on at 1 chip each. Spread LAST so it wins over the
+            // template's opt-in keys above. Empty for any paid event.
+            ...freeBuyColumns({
+              buyIn: split.total,
+              tournamentType: 'MTT',
+              variant: config.type === 'mtt' ? 'freezeout' : config.type,
+              startingStack: config.startingStack,
+              maxRebuys: (config as { rebuy?: boolean }).rebuy ? 2 : null,
+            }),
           })
           .select()
           .maybeSingle(); // FIX 168
@@ -2918,6 +2986,16 @@ export class TournamentRecurringService {
             addon_cost: (config as { addOn?: boolean }).addOn ? split.total : null,
             addon_chips: (config as { addOn?: boolean }).addOn ? config.startingStack : null,
             addon_levels: (config as { addOn?: boolean }).addOn ? 1 : null,
+            // FREEROLLS ARE FREE BUY (Dan 2026-09-02): 0 to enter, rebuys and
+            // add-ons on at 1 chip each. Spread LAST so it wins over the
+            // template's opt-in keys above. Empty for any paid event.
+            ...freeBuyColumns({
+              buyIn: split.total,
+              tournamentType: 'MTT',
+              variant: config.type === 'mtt' ? 'freezeout' : config.type,
+              startingStack: config.startingStack,
+              maxRebuys: (config as { rebuy?: boolean }).rebuy ? 2 : null,
+            }),
           })
           .select()
           .maybeSingle(); // FIX 168
@@ -4132,15 +4210,29 @@ export class TournamentRecurringService {
         Number((tRow as { max_players?: number } | null)?.max_players ?? 0)
       );
 
-      // Membership is explicit. Automated liquidity is permitted on the
-      // platform house board only; a user-owned club fills its tournaments
-      // with users who joined that club through Join A Club.
-      if (String((tRow as { club_id?: string | null }).club_id ?? '') !== this.houseOwner.clubId) {
-        if (seatFirst) {
-          await supabase.rpc('fn_sync_seat_first_player_count', {
-            p_tournament_id: tournamentId,
-          });
-        }
+      /* MEMBERSHIP IS EXPLICIT, AND IT IS ENFORCED IN THE POOL.
+         See automatedRegistrationIsPermitted above for the measurement and the
+         history. A SEAT-FIRST board now fills wherever it was opened, because
+         every candidate below is drawn from clubMemberIdsForTournament() - the
+         host club's own members for a standalone club, the whole union for a
+         union event. A user club's board fills with that club's own people,
+         which is the rule this gate was always meant to express.
+
+         Automated REGISTRATION for a scheduled MTT stays house-only: that path
+         goes through registerHorses, whose pool is not club-scoped, so opening
+         it here would put house horses on a user club's entry list. */
+      if (
+        !seatFirst &&
+        !automatedRegistrationIsPermitted(
+          (tRow as { club_id?: string | null }).club_id,
+          this.houseOwner.clubId
+        )
+      ) {
+        /* And it does not pay for its own refusal: the old code called
+           fn_sync_seat_first_player_count on EVERY refused attempt, a ~100 ms
+           SECURITY DEFINER round trip reconciling a counter that cannot have
+           changed, on a board retried every twelve seconds, forever. Nothing
+           here touched a seat, so nothing needs syncing. */
         return 0;
       }
 

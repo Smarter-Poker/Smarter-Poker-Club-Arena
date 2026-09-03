@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useLayoutEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import './ClubIdentityCard.css';
 
 /* v3 moved the club and profile icons DOWN 32px so they sit level with the two
@@ -25,6 +25,70 @@ export interface ClubIdentityCardProps {
   onShare?: () => void;
   shareIcon: ReactNode;
   className?: string;
+}
+
+/**
+ * THE CLUB NAME IS ONE LINE, FULL WIDTH, AND ALWAYS COMPLETE (Dan 2026-09-02).
+ *
+ * "the club name should be across the very top of the card, all the way left
+ * to right ... So DEEP STACK SOCIETY IS ONE LINE ACROSS THE TOP."
+ *
+ * Two of Dan's rules meet here and they pull against each other: the name may
+ * never wrap, and it may never be cut off ("CLUB NAME SHOULD ALWAYS BE FULLY
+ * DISPLAYED NEVER A 'MIDWAY UN...' FONT NEEDS TO BE DYNAMIC IT ALWAYS DISPLAYS
+ * THE FULL NAME", 2026-09-02). CSS cannot fit text to a line on its own -
+ * `clamp()` picks a size from the CARD's width, never from how much text there
+ * is - so the size is computed from the name's own length and handed to the
+ * stylesheet as a custom property.
+ *
+ * The unit is `cqw`, like every other size on this card, so the answer is the
+ * same proportion of the card at any width and the card still only shrinks.
+ *
+ * THIS IS ONLY THE FIRST PAINT. A character count is not a width, so the exact
+ * size comes from `fittedNameSizeCqw` below, which measures the text the
+ * browser actually laid out. This estimate exists so the name is already close
+ * before that measurement lands and nothing visibly jumps; 0.68em per character
+ * is a middling advance for uppercase at weight 850, and 82cqw is the band's
+ * usable width.
+ *
+ * The floor is deliberately low: a name long enough to reach it should become
+ * hard to read rather than become truncated, which is the trade Dan chose when
+ * he said the full name always shows.
+ */
+/* The ceiling, trimmed from 7.4 after looking at the rendered card: on the
+   squat 2.4/1 lobby card 7.4cqw put the caps against the painted top rail.
+   "DEEP STACK SOCIETY" still fills about 78 of the band's 85cqw at 7.0. */
+export const CLUB_NAME_MAX_CQW = 7;
+export const CLUB_NAME_MIN_CQW = 1.9;
+
+export function clubNameSizeCqw(name: string): number {
+  const characters = Math.max(name.trim().length, 1);
+  const fitted = 82 / (0.68 * characters);
+  return Math.min(CLUB_NAME_MAX_CQW, Math.max(CLUB_NAME_MIN_CQW, Math.round(fitted * 100) / 100));
+}
+
+/**
+ * ...and then MEASURE, because a character count is not a width.
+ *
+ * Measured in Chromium at weight 850: "DEEP STACK SOCIETY" averages 0.62em per
+ * character, "ACES" 0.70, and a name of all Ws 0.95. No single coefficient can
+ * be both safe for the widest name and generous to the ordinary one - pick 0.95
+ * and every real club name is shrunk by a third for a case that never happens;
+ * pick 0.62 and the one club called "WWW..." runs off the card.
+ *
+ * So the estimate above is only the FIRST PAINT, chosen to be close enough that
+ * nothing visibly jumps. This then measures the text it actually rendered and
+ * scales to the exact fit. Text width is linear in font size, so one
+ * measurement gives the answer outright - no loop, no binary search.
+ *
+ * Returns the same value it was given when there is nothing to measure, which
+ * is what happens under happy-dom in the unit tests and in any environment
+ * without layout: the length estimate stands rather than collapsing to zero.
+ */
+export function fittedNameSizeCqw(available: number, needed: number, from: number): number {
+  if (!available || !needed || needed <= 0) return from;
+  const scaled = (from * available) / needed;
+  return Math.max(CLUB_NAME_MIN_CQW, Math.min(CLUB_NAME_MAX_CQW, Math.round(scaled * 100) / 100));
 }
 
 function IdentityLine({
@@ -75,6 +139,38 @@ export function ClubIdentityCard({
   shareIcon,
   className = '',
 }: ClubIdentityCardProps) {
+  const nameRef = useRef<HTMLHeadingElement>(null);
+  const nameTextRef = useRef<HTMLSpanElement>(null);
+
+  /* Fit the club name to its band, once per name and again whenever the card
+     is resized. `useLayoutEffect` so the corrected size is in place before the
+     browser paints and the name never appears at the wrong size first.
+
+     No loop is possible: the h2's width comes from its `left`/`right`
+     percentages, so shrinking the text inside it cannot change the box being
+     measured, and the observer only fires when the CARD resizes. */
+  useLayoutEffect(() => {
+    const band = nameRef.current;
+    const text = nameTextRef.current;
+    if (!band || !text) return;
+
+    const fit = () => {
+      band.style.setProperty('--club-name-size', `${CLUB_NAME_MAX_CQW}cqw`);
+      const size = fittedNameSizeCqw(
+        band.clientWidth,
+        text.getBoundingClientRect().width,
+        CLUB_NAME_MAX_CQW
+      );
+      band.style.setProperty('--club-name-size', `${size}cqw`);
+    };
+
+    fit();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(fit);
+    observer.observe(band);
+    return () => observer.disconnect();
+  }, [clubName]);
+
   return (
     <section
       className={`club-identity ${className}`.trim()}
@@ -83,6 +179,23 @@ export function ClubIdentityCard({
       <picture className="club-identity__shell" aria-hidden="true">
         <img src={CLUB_IDENTITY_SHELL} alt="" />
       </picture>
+
+      {/* ── ROW 1: THE CLUB NAME, EDGE TO EDGE (Dan 2026-09-02) ──────────────
+          "the club name should be across the very top of the card, all the way
+          left to right, with the logo under it."
+
+          It used to share a two-row grid with the alias, in the right-hand
+          column beside the logo, which is why a long name wrapped into the
+          alias and collided with it. It is its own band now: full width, one
+          line, sized to the name so it is never cut off. */}
+      <h2
+        ref={nameRef}
+        className="club-identity__name"
+        title={clubName}
+        style={{ '--club-name-size': `${clubNameSizeCqw(clubName)}cqw` } as CSSProperties}
+      >
+        <span ref={nameTextRef}>{clubName}</span>
+      </h2>
 
       {/* Covers the silver square frame painted into the shell artwork — Dan 2026-09-02:
           "REMOVE THE SILVER BOX THAT IS BEHIND THE LOGO'S ON ALL THE CLUB CARDS.
@@ -99,12 +212,14 @@ export function ClubIdentityCard({
         </span>
       )}
 
-      <div className="club-identity__details">
-        <h2 title={clubName}>{clubName}</h2>
-        <p className="club-identity__alias" title={pokerAlias}>
-          {pokerAlias}
-        </p>
-      </div>
+      {/* ── ROW 2 of the right column: the player's own name ────────────────
+          "UNDER THAT SHOULD BE DAN BEKAVAC, NEXT LINE CLUB ID, NEXT LINE
+          PLAYER ID". The alias leads the four-line stack that runs beside the
+          logo; the two ID lines below it stay where they are, because the club
+          and profile icons that label them are painted into the shell. */}
+      <p className="club-identity__alias" title={pokerAlias}>
+        {pokerAlias}
+      </p>
 
       {/* Its own bay, pinned to the artwork icons that label these two lines.
           They used to be rows three and four of the details grid, which meant

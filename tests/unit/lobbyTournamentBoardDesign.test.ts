@@ -34,12 +34,81 @@ describe('Club Arena Tournament Board lobby design', () => {
        box, in the logo's column, starting beneath the logo square. */
     expect(identityCard).toContain('club-identity__level');
     expect(identityCardCss).toContain('.club-identity__level');
-    expect(identityCardCss).toContain('top: 72.8%');
     expect(identityCardCss).toContain('linear-gradient(180deg, #1c4fd8 0%, #0f2f8c 100%)');
     expect(identityCard).toContain('Copy Referral Link');
     expect(identityCardCss).toContain('aspect-ratio: 1650 / 953');
     expect(identityCardCss).toContain('line-height: 1.18');
-    expect(identityCardCss).toContain('top: 52%');
+
+    /* ── THE STACK (Dan 2026-09-02) ────────────────────────────────────────
+       "the club name should be across the very top of the card, all the way
+       left to right, with the logo under it ... UNDER THAT SHOULD BE DAN
+       BEKAVAC, NEXT LINE CLUB ID, NEXT LINE PLAYER ID LAST LIKE 192 PLAYING
+       AND THE COPY LINK."
+
+       This block replaces two bare pins - `top: 52%` (the logo) and
+       `top: 72.8%` (the level) - which recorded where those boxes sat while
+       the club name was a column BESIDE the logo. Both rose when the name
+       became a band of its own, so the pins move with them in the same commit,
+       and are stated as the ORDER Dan asked for rather than as two loose
+       numbers that say nothing about why they are what they are. */
+    /* Declarations only. This stylesheet explains every position in a comment
+       beside it, so a NEGATIVE pin that greps raw text matches the note about
+       the value that was removed and reports it as still present. That has now
+       cost three separate red runs in two days - a CSS function name, the
+       phrase "Game Unavailable", and `bottom: 15%` below. */
+    const identityDeclarations = identityCardCss.replace(/\/\*[\s\S]*?\*\//g, '');
+
+    const topOf = (selector: string) => {
+      const rule = identityDeclarations.match(
+        new RegExp(`\\${selector}\\s*\\{[^}]*?top:\\s*([\\d.]+)%`, 's')
+      );
+      expect(rule, `no top declared for ${selector}`).toBeTruthy();
+      return Number(rule![1]);
+    };
+
+    /* Row 1 spans the card edge to edge. The exact `top` is deliberately not
+       pinned to a literal - it was nudged once already, after the rendered
+       card showed the caps grazing the painted top rail on the squat 2.4/1
+       lobby variant - so what is pinned is the span, and the ORDER below. */
+    expect(identityDeclarations).toMatch(
+      /\.club-identity__name\s*\{[^}]*left:\s*7\.5%[^}]*right:\s*7\.5%[^}]*top:\s*[\d.]+%/s
+    );
+    // One line, and never an ellipsis: the club name is the one string Dan has
+    // said twice must always be shown in full.
+    expect(identityDeclarations).toMatch(
+      /\.club-identity__name\s*\{[^}]*white-space:\s*nowrap[^}]*text-overflow:\s*clip/s
+    );
+    expect(identityDeclarations).not.toMatch(
+      /\.club-identity__name\s*\{[^}]*text-overflow:\s*ellipsis/s
+    );
+
+    // Top to bottom: name, then logo, then level; and name, alias, the IDs.
+    expect(topOf('.club-identity__name')).toBeLessThan(topOf('.club-identity__logo'));
+    expect(topOf('.club-identity__logo')).toBeLessThan(topOf('.club-identity__level'));
+    expect(topOf('.club-identity__name')).toBeLessThan(topOf('.club-identity__alias'));
+    expect(topOf('.club-identity__alias')).toBeLessThan(topOf('.club-identity__ids'));
+
+    /* The count and the copy link are the LAST line, so they share one band.
+       They were already the last two things on the card, but the count was
+       anchored `bottom: 15%` and the share to the painted frame at 65.19%, so
+       they were never actually on the same line. */
+    expect(identityDeclarations).toMatch(
+      /\.club-identity__playing\s*\{[^}]*top:\s*65\.19%[^}]*height:\s*15\.88%/s
+    );
+    expect(identityDeclarations).not.toMatch(/\.club-identity__playing\s*\{[^}]*bottom:\s*15%/s);
+
+    /* The alias carries the same 7.2cqw gutter as the two ID lines below it,
+       so those three read as one column past the painted icons.
+
+       The playing line deliberately does NOT. It was given the gutter for a
+       straight edge and the copy was cut off - it holds the longest string on
+       the card ("1,204 PLAYING NOW") in the narrowest bay, and Dan has already
+       reported that symptom once: "NEVER CUTTING OFF THE 446 PLAYING NOW
+       FONT". A tidier left edge is not worth re-shipping it. */
+    expect(identityDeclarations).toMatch(
+      /\.club-identity__alias\s*\{[^}]*padding-left:\s*7\.2cqw/s
+    );
+    expect(identityDeclarations).not.toMatch(/\.club-identity__playing\s*\{[^}]*padding-left/s);
 
     /* ── THE CARD ONLY SHRINKS (Dan, 2026-09-01) ───────────────────────────
        These four pins replace `translateY(1.65cqw)`, `margin-top: 1.4cqw`,

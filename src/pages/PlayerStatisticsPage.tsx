@@ -106,6 +106,9 @@ export default function PlayerStatisticsPage() {
   const [stats, setStats] = useState<MemberStatistics | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  /* A failed read is not "not a member". They were the same screen. */
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const [variant, setVariant] = useState<string | null>(null);
   const [rangeMode, setRangeMode] = useState<StatsRange>('month');
@@ -130,7 +133,10 @@ export default function PlayerStatisticsPage() {
       if (!clubId || !userId) return;
       const live = () => (getIsMounted ? getIsMounted() : true) && isMountedRef.current;
 
-      if (live()) setLoading(true);
+      if (live()) {
+        setLoading(true);
+        setLoadFailed(false);
+      }
       try {
         const resolved = await resolveClubUUID(clubId);
         if (!live()) return;
@@ -156,7 +162,10 @@ export default function PlayerStatisticsPage() {
         }
       } catch (error) {
         reportError(error, 'PlayerStatisticsPage.load');
-        if (live()) toast.error('Failed To Load Player Statistics');
+        if (live()) {
+          setLoadFailed(true);
+          toast.error('Failed To Load Player Statistics');
+        }
       } finally {
         if (live()) setLoading(false);
       }
@@ -170,7 +179,7 @@ export default function PlayerStatisticsPage() {
     return () => {
       mounted = false;
     };
-  }, [load, variant, range]);
+  }, [load, variant, range, reloadKey]);
 
   /* ── Range ──────────────────────────────────────────────────────────────── */
 
@@ -271,6 +280,23 @@ export default function PlayerStatisticsPage() {
 
       {loading && !stats ? (
         <PageSkeleton variant="stats" />
+      ) : loadFailed && !stats ? (
+        <div className="ps-empty" role="alert">
+          <span className="ps-empty__mark" aria-hidden="true">
+            !
+          </span>
+          <p className="ps-empty__heading">Could Not Load Statistics</p>
+          <p className="ps-empty__body">
+            This Player's Statistics Are Still There - We Just Could Not Reach Them Right Now.
+          </p>
+          <button
+            type="button"
+            className="ps-range__pill"
+            onClick={() => setReloadKey((n) => n + 1)}
+          >
+            Try Again
+          </button>
+        </div>
       ) : notFound || !stats ? (
         <EmptyStats
           heading="Member Not Found"

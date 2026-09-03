@@ -31,17 +31,40 @@ import {
   periodToRange,
   type PeriodKey,
   type RakeAgentRow,
+  type RakeBreakdownRow,
   type RakeClubRow,
   type RakeDownlineRow,
   type RakeScope,
   type RakeSnapshot,
 } from '../../services/ClubRakeSnapshotService';
 import { reportError } from '../../utils/errorReporter';
+import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
+import type { BusEventType } from '../../core/MasterBus';
+import { clubDataQueryKey, readClubDataCache, writeClubDataCache } from '../../lib/clubDataCache';
 import { downloadCsv, csvEscape } from '../../utils/downloadCsv';
 import styles from './RakeSnapshotPanel.module.css';
 
 const NO_VALUE = '-';
 const REFRESH_MS = 60_000;
+/** One page. Deliberately smaller than the RPC's 200 ceiling. */
+const PAGE_SIZE = 50;
+
+/**
+ * The same events the ledger below this panel listens to. A snapshot that only
+ * polled was up to a minute stale next to a ledger that was not, on the same
+ * screen, with no way for an operator to tell which one to believe.
+ */
+const RAKE_BUS_EVENTS: BusEventType[] = [
+  'CLUB_UPDATED',
+  'BALANCE_UPDATED',
+  'TABLE_UPDATED',
+  'TABLE_CLOSED',
+  'TABLE_CREATED',
+  'TOURNAMENT_UPDATED',
+  'SETTLEMENT_COMPLETED',
+  'SETTLEMENT_CYCLE_COMPLETED',
+  'MEMBER_ROLE_CHANGED',
+];
 /** Deeper than any real agent chain, and a hard stop if one ever loops. */
 const MAX_DRILL = 8;
 
@@ -104,6 +127,17 @@ function share(part: number, total: number | null | undefined): number {
   return Math.max(0, Math.min(100, (Number(part) / t) * 100));
 }
 
+/**
+ * One stable identity per row, whatever the breakdown is of. Used to dedupe an
+ * appended page: the window keeps moving while an operator reads it, so a row
+ * can legitimately arrive twice, and appending blind would double it on screen
+ * and in anything summed from it.
+ */
+function rowKey(r: RakeBreakdownRow): string {
+  const any = r as Partial<RakeClubRow & RakeAgentRow & RakeDownlineRow>;
+  return String(any.club_id ?? any.agent_user_id ?? any.player_id ?? any.name ?? '');
+}
+
 interface Crumb {
   userId: string;
   name: string;
@@ -111,6 +145,8 @@ interface Crumb {
 
 export interface RakeSnapshotPanelProps {
   clubId: string | null;
+  /** Cache is keyed per viewer; without it one operator could paint another's. */
+  userId?: string | null;
   /** Scopes the viewer holds, in the order they should be offered. */
   scopes: RakeScope[];
   /** Only meaningful for the agent scope; null means "me". */
@@ -121,6 +157,7 @@ export interface RakeSnapshotPanelProps {
 
 export default function RakeSnapshotPanel({
   clubId,
+  userId = null,
   scopes,
   agentUserId = null,
   refreshToken = 0,
@@ -132,7 +169,15 @@ export default function RakeSnapshotPanel({
   const [period, setPeriod] = useState<PeriodKey>('month');
   const [custom, setCustom] = useState(() => periodToRange('month'));
   const [snapshot, setSnapshot] = useState<RakeSnapshot | null>(null);
+  /**
+   * Rows accumulate across pages; the snapshot only ever holds the LAST page.
+   * Keeping them apart is what lets a Load More append without the summary,
+   * the trend or the totals flickering through a re-read they did not need.
+   */
+  const [rows, setRows] = useState<RakeBreakdownRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [pageError, setPageError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** The chain walked into, deepest last. Empty means "my own book". */
   const [crumbs, setCrumbs] = useState<Crumb[]>([]);
@@ -165,11 +210,79 @@ export default function RakeSnapshotPanel({
 
   const focusUserId = crumbs.length ? crumbs[crumbs.length - 1].userId : agentUserId;
 
-  const load = useCallback(async () => {
-    if (!clubId) return;
-    const mine = ++version.current;
-    setLoading(true);
-    setError(null);
+  /**
+   * One key per distinct question. Scope, period and the agent being drilled
+   * into all change the answer, so all three are in it - a cache keyed only on
+   * the club would serve the Union figure under the Club chip.
+   */
+  const cacheKey = useMemo(
+    () =>
+      clubDataQueryKey({
+        kind: 'rake-snapshot',
+        scope,
+        start: range.start,
+        end: range.end,
+        agent: scope === 'agent' ? (focusUserId ?? 'me') : null,
+      }),
+    [scope, range.start, range.end, focusUserId]
+  );
+
+  /** Paint the last verified answer immediately, then read live over it. */
+  useEffect(() => {
+    if (!userId || !clubId) return;
+    const cached = readClubDataCache<RakeSnapshot>(userId, clubId, cacheKey);
+    if (!cached) return;
+    setSnapshot(cached);
+    setRows(Array.isArray(cached.breakdown) ? cached.breakdown : []);
+    setLoading(false);
+  }, [userId, clubId, cacheKey]);
+
+  const load = useCallback(
+    async (quiet = false) => {
+      if (!clubId) return;
+      const mine = ++version.current;
+      if (!quiet) setLoading(true);
+      setError(null);
+      setPageError(null);
+      try {
+        const next = await ClubRakeSnapshotService.get({
+          scope,
+          clubId,
+          start: range.start,
+          end: range.end,
+          agentUserId: scope === 'agent' ? focusUserId : null,
+          limit: PAGE_SIZE,
+          offset: 0,
+        });
+        if (cancelled.current || mine !== version.current) return;
+        setSnapshot(next);
+        // A reload always restarts the list. Appending onto rows from the
+        // PREVIOUS question is how a Union page ends up under a Club heading.
+        setRows(next.breakdown);
+        if (userId) writeClubDataCache<RakeSnapshot>(userId, clubId, cacheKey, next);
+      } catch (e) {
+        if (cancelled.current || mine !== version.current) return;
+        // The previous snapshot stays on screen. A refusal for one scope must not
+        // wipe the figure the operator was already reading.
+        setError(describeRakeSnapshotError(e));
+        reportError(e, 'RakeSnapshotPanel.load');
+      } finally {
+        if (!cancelled.current && mine === version.current) setLoading(false);
+      }
+    },
+    [clubId, scope, range.start, range.end, focusUserId, userId, cacheKey]
+  );
+
+  /**
+   * Append the next page. It carries its own error state: a failed Load More
+   * must not blank the rows already on screen, which is what a shared error
+   * would do.
+   */
+  const loadMore = useCallback(async () => {
+    if (!clubId || loadingMore) return;
+    const mine = version.current;
+    setLoadingMore(true);
+    setPageError(null);
     try {
       const next = await ClubRakeSnapshotService.get({
         scope,
@@ -177,19 +290,25 @@ export default function RakeSnapshotPanel({
         start: range.start,
         end: range.end,
         agentUserId: scope === 'agent' ? focusUserId : null,
+        limit: PAGE_SIZE,
+        offset: rows.length,
       });
       if (cancelled.current || mine !== version.current) return;
-      setSnapshot(next);
+      setRows((cur) => {
+        // The window moves while an operator reads it, so a row already shown
+        // can arrive again in the next page. Appending blind duplicates it and
+        // double-counts it in anything the client sums.
+        const seen = new Set(cur.map(rowKey));
+        return [...cur, ...next.breakdown.filter((r) => !seen.has(rowKey(r)))];
+      });
     } catch (e) {
       if (cancelled.current || mine !== version.current) return;
-      // The previous snapshot stays on screen. A refusal for one scope must not
-      // wipe the figure the operator was already reading.
-      setError(describeRakeSnapshotError(e));
-      reportError(e, 'RakeSnapshotPanel.load');
+      setPageError(describeRakeSnapshotError(e));
+      reportError(e, 'RakeSnapshotPanel.loadMore');
     } finally {
-      if (!cancelled.current && mine === version.current) setLoading(false);
+      if (!cancelled.current) setLoadingMore(false);
     }
-  }, [clubId, scope, range.start, range.end, focusUserId]);
+  }, [clubId, scope, range.start, range.end, focusUserId, rows.length, loadingMore]);
 
   useEffect(() => {
     void load();
@@ -198,16 +317,45 @@ export default function RakeSnapshotPanel({
   // Same 60s cadence as the ledger, and only while the tab is visible.
   useEffect(() => {
     const t = setInterval(() => {
-      if (document.visibilityState === 'visible') void load();
+      if (document.visibilityState === 'visible') void load(true);
     }, REFRESH_MS);
     return () => clearInterval(t);
   }, [load]);
+
+  /**
+   * Live invalidation, same events and same debounce as the ledger below.
+   * Quiet, because a bus event should refresh the figures without throwing the
+   * panel back to a loading state under the operator's eyes.
+   */
+  useMasterBusSubscriptions(
+    RAKE_BUS_EVENTS,
+    (payload) => {
+      const eventClubId =
+        payload && typeof payload === 'object' && 'clubId' in payload
+          ? String((payload as { clubId?: unknown }).clubId || '')
+          : '';
+      if (eventClubId && eventClubId !== clubId) return;
+      void load(true);
+    },
+    { debounce: 750 }
+  );
 
   const summary = snapshot?.summary ?? null;
   const delta = snapshot?.delta ?? null;
   const isAgent = snapshot?.scope === 'agent';
   const kind = snapshot?.breakdown_kind ?? 'none';
   const total = snapshot?.breakdown_total ?? null;
+
+  /**
+   * Never below what is already on screen. The window keeps moving, so a later
+   * read can return a smaller count than the rows already accumulated, and
+   * "Showing 60 of 55" reads as a bug in the page rather than in the world.
+   */
+  const breakdownCount = useMemo(
+    () => Math.max(Number(snapshot?.breakdown_count ?? 0) || 0, rows.length),
+    [snapshot, rows.length]
+  );
+  const hasMore = rows.length < breakdownCount;
 
   const series = useMemo(() => snapshot?.series ?? [], [snapshot]);
   const peak = useMemo(
@@ -299,7 +447,10 @@ export default function RakeSnapshotPanel({
         .join(',')
     );
 
-    if (snapshot.breakdown.length) {
+    // The EXPORT takes what is on screen, which is rows, not the last page the
+    // RPC happened to return. Exporting snapshot.breakdown after a Load More
+    // would hand the operator page two only.
+    if (rows.length) {
       lines.push('');
       if (snapshot.breakdown_kind === 'club') {
         lines.push(
@@ -315,7 +466,7 @@ export default function RakeSnapshotPanel({
             'winnings',
           ].join(',')
         );
-        for (const r of snapshot.breakdown as RakeClubRow[]) {
+        for (const r of rows as RakeClubRow[]) {
           lines.push(
             [r.club_id, r.name, r.code, r.games, r.hands, r.fee, r.cash_fee, r.mtt_fee, r.winnings]
               .map(csvEscape)
@@ -338,7 +489,7 @@ export default function RakeSnapshotPanel({
             'network_rake',
           ].join(',')
         );
-        for (const r of snapshot.breakdown as RakeAgentRow[]) {
+        for (const r of rows as RakeAgentRow[]) {
           lines.push(
             [
               r.agent_user_id,
@@ -371,7 +522,7 @@ export default function RakeSnapshotPanel({
             'downline_rake',
           ].join(',')
         );
-        for (const r of snapshot.breakdown as RakeDownlineRow[]) {
+        for (const r of rows as RakeDownlineRow[]) {
           lines.push(
             [
               r.player_id,
@@ -395,7 +546,7 @@ export default function RakeSnapshotPanel({
       `rake-snapshot-${snapshot.scope}-${snapshot.range.start}-to-${snapshot.range.end}.csv`,
       lines.join('\n')
     );
-  }, [snapshot]);
+  }, [snapshot, rows]);
 
   return (
     <section className={styles.panel} aria-labelledby="rake-snapshot-title">
@@ -626,11 +777,11 @@ export default function RakeSnapshotPanel({
       )}
 
       {/* ------------------------------------------------------ by club --- */}
-      {kind === 'club' && snapshot!.breakdown.length > 0 && (
+      {kind === 'club' && rows.length > 0 && (
         <div className={styles.breakdown}>
           <h3>Rake By Club</h3>
           <ul>
-            {(snapshot!.breakdown as RakeClubRow[]).map((r) => {
+            {(rows as RakeClubRow[]).map((r) => {
               const pct = share(r.fee, total ?? summary?.fee);
               return (
                 <li key={r.club_id}>
@@ -651,7 +802,7 @@ export default function RakeSnapshotPanel({
       )}
 
       {/* ----------------------------------------------------- by agent --- */}
-      {kind === 'agent' && snapshot!.breakdown.length > 0 && (
+      {kind === 'agent' && rows.length > 0 && (
         <div className={styles.breakdown}>
           <h3>Rake By Agent</h3>
           <div className={styles.legend} aria-hidden="true">
@@ -659,7 +810,7 @@ export default function RakeSnapshotPanel({
             <span>Network</span>
           </div>
           <ul>
-            {(snapshot!.breakdown as RakeAgentRow[]).map((r) => {
+            {(rows as RakeAgentRow[]).map((r) => {
               const pct = share(r.direct_rake, total);
               return (
                 <li
@@ -723,13 +874,13 @@ export default function RakeSnapshotPanel({
             </nav>
           )}
 
-          {snapshot!.breakdown.length === 0 ? (
+          {rows.length === 0 ? (
             <p className={styles.rowNote}>
               {loading ? 'Reading The Chain' : 'Nobody Beneath You Has Played In This Period.'}
             </p>
           ) : (
             <ul>
-              {(snapshot!.breakdown as RakeDownlineRow[]).map((r) => {
+              {(rows as RakeDownlineRow[]).map((r) => {
                 const pct = share(r.rake, total);
                 const opens = r.downline_players > 0 && crumbs.length < MAX_DRILL;
                 return (
@@ -766,6 +917,35 @@ export default function RakeSnapshotPanel({
             </ul>
           )}
         </div>
+      )}
+
+      {kind !== 'none' && rows.length > 0 && (
+        <div className={styles.pager}>
+          <span className={styles.pagerCount}>
+            {/* The count is the whole point. A list that stops at fifty and
+                says nothing makes the fifty-first row indistinguishable from
+                a row that does not exist. */}
+            Showing {count(rows.length)} Of {count(breakdownCount)}
+          </span>
+          {hasMore && (
+            <button
+              type="button"
+              className={styles.pagerBtn}
+              onClick={() => void loadMore()}
+              disabled={loadingMore}
+            >
+              {loadingMore
+                ? 'Loading'
+                : `Load ${count(Math.min(PAGE_SIZE, breakdownCount - rows.length))} More`}
+            </button>
+          )}
+        </div>
+      )}
+
+      {pageError && (
+        <p className={styles.error} role="status">
+          {pageError}
+        </p>
       )}
 
       {liveAhead && (

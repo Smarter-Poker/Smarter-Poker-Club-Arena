@@ -38,13 +38,19 @@
   box-shadow: 0 0 12px rgba(59, 162, 250, 0.3);
 }
 
+/* Now a link, not a label: it needs the affordances of one. */
 .identity {
   display: flex;
   min-width: max-content;
+  min-height: 44px;
   align-items: center;
   gap: 9px;
   padding: 0 12px;
   color: #a8bac8;
+  text-decoration: none;
+  transition:
+    color 150ms ease,
+    background 150ms ease;
   font:
     700 11px/1 'Rajdhani',
     'Roboto Condensed',
@@ -106,6 +112,38 @@
     border-color 150ms ease;
 }
 
+/* NO HOVER EFFECTS (Dan 2026-08-29, binding). Club Arena is mobile-first and
+   :hover does not exist on a phone, so a hover-only affordance ships to
+   nobody who matters - and iOS synthesises one on first tap, leaving a sticky
+   highlight behind. Press feedback lives in :active, which fires on touch;
+   :focus-visible stays because removing hover makes it more load-bearing,
+   not less. */
+.identity:active {
+  color: #f0f8ff;
+  background: rgba(42, 111, 164, 0.22);
+}
+
+.identity:focus-visible {
+  color: #f0f8ff;
+  background: rgba(42, 111, 164, 0.16);
+  outline: 2px solid #75beff;
+  outline-offset: -2px;
+}
+
+.identityActive {
+  color: #f3f9ff;
+  background: linear-gradient(180deg, rgba(31, 81, 119, 0.7), rgba(11, 31, 46, 0.85));
+}
+
+/* The rail acknowledged a press nowhere. On a phone that is the only feedback
+   channel there is, so it goes in :active rather than the :hover this
+   originally reached for. */
+.item:active {
+  color: #dceaf6;
+  background: rgba(42, 111, 164, 0.2);
+  border-color: rgba(142, 200, 245, 0.28);
+}
+
 .item:focus-visible {
   color: #f0f8ff;
   background: rgba(42, 111, 164, 0.2);
@@ -133,7 +171,7 @@
   }
 
   .identity {
-    min-height: 30px;
+    min-height: 38px;
     padding: 0 10px;
     border-right: 0;
     border-bottom: 1px solid rgba(159, 184, 203, 0.18);
@@ -150,7 +188,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .item {
+  .item,
+  .identity {
     transition: none;
   }
 }

@@ -121,6 +121,7 @@ import { IconShareLink, IconSort } from '../components/icons/LobbyIcons';
 import { CLUB_HOME_CACHE_PREFIX } from '../utils/clearUserCaches';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { preloadRoute } from '../utils/ChunkPreloader';
+import { warmTable } from '../services/tableWarmup';
 import { gameManagementService } from '../services/GameManagementService';
 
 // Shark Club fallback logo — used when DB logo_url is null
@@ -3403,6 +3404,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       // the actual "Join" tap resolves from the module cache instead of
       // stalling on a network fetch. No-op when idle preload already ran.
       preloadRoute(`/table/${entry.id}`);
+      /* And start LOADING THE TABLE ITSELF (Dan 2026-09-03: "the table should
+         already be loading in the background as soon as it's clicked"). For a
+         cash game the panel's id IS the table id, so the roster read and the
+         engine SUBSCRIBE go out now, while the player reads the buy-in sheet -
+         so the felt mounts with players and avatars already on it. Spin / SNG
+         resolve their live table later (spinQuickJoin), so they are warmed at
+         the join tap instead, below. */
+      if (entry.kind === 'cash') warmTable(entry.id);
     },
     [openTournamentLobby]
   );
@@ -3435,6 +3444,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       setPanelOpen(false);
       // Execute navigate in the next tick to ensure the panel unmounts safely
       // without interrupting React Router transition internals
+      // The card is closing and TablePage is one tick away - warm the table so
+      // its roster and engine subscription are in flight before it mounts.
+      warmTable(tableId);
       setTimeout(() => {
         const entry = tablesRef.current.find((t) => t.id === tableId);
         navigate(`/table/${tableId}`, {
@@ -3806,7 +3818,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                SCREEN" — unconditionally, not only once it is running. */
       onViewTable: (e) =>
         e.kind === 'cash'
-          ? navigate(`/table/${e.id}`)
+          ? (warmTable(e.id), navigate(`/table/${e.id}`))
           : /* Dan 2026-08-20: "there is 'no lobby' for a spin, you just start
                on a table." Watch and Return To Game on a spin therefore open
                the game's live TABLE (spinQuickJoin resolves the current one,

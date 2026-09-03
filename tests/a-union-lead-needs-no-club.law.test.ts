@@ -151,4 +151,40 @@ describe('a union lead needs no club', () => {
       /v_cost boolean := public\.ca_can_view_club_finances/
     );
   });
+
+  it('the page own controls have a focus ring that actually resolves', () => {
+    // --energy is NOT global. It is declared on .panel inside the snapshot
+    // panel's module and on the club page's own root, so it reaches the
+    // panel's descendants and nothing else.
+    //
+    // The union page's header buttons are SIBLINGS of the panel. They asked
+    // for var(--energy) and got nothing, and an outline with no colour is
+    // invalid at computed-value time - so a keyboard user had no visible focus
+    // ring at all on the only two controls this page owns.
+    const css = readFileSync(resolve(ROOT, 'src/pages/UnionDataPage.module.css'), 'utf8');
+    const used = [...new Set([...css.matchAll(/var\((--[a-z-]+)\)/g)].map((m) => m[1]))];
+    const declared = new Set([...css.matchAll(/^\s*(--[a-z-]+):/gm)].map((m) => m[1]));
+    const unresolved = used.filter((k) => !declared.has(k));
+    expect(
+      unresolved,
+      'a custom property used here is declared somewhere this page cannot see'
+    ).toEqual([]);
+    // And it has to PAINT something. Asserting the selector exists passed a
+    // mutation that replaced the outline with none - the rule was still there,
+    // and still drew nothing.
+    const blocks = [...css.matchAll(/:focus-visible[^{]*\{([^}]*)\}/g)].map((m) => m[1]);
+    expect(blocks.length, 'nothing on this page reacts to keyboard focus').toBeGreaterThan(0);
+    for (const block of blocks) {
+      // Read the VALUE rather than pattern-matching around it. The first cut
+      // used a negative lookahead after \s*, and backtracking walked straight
+      // through it: with zero spaces consumed the lookahead saw " none" - not
+      // "none" - and passed a rule that drew nothing.
+      const declared = /outline:\s*([^;]+);/.exec(block);
+      expect(declared, 'a focus rule with no outline at all').not.toBeNull();
+      expect(
+        declared ? declared[1].trim() : 'none',
+        'a focus rule that draws nothing is not a focus ring'
+      ).not.toBe('none');
+    }
+  });
 });

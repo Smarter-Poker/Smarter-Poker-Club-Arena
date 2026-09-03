@@ -113,8 +113,18 @@ describe('what an agent costs', () => {
   it('sums the commission column, because one row has one recipient', () => {
     // Unlike network_rake this genuinely sums - the cascade is already
     // expanded into per-recipient rows by the ledger.
+    //
+    // This asserted SUM(...) OVER () until search arrived, which was the
+    // MECHANISM rather than the law. A window sums whatever rows survive the
+    // WHERE, so once a search could filter the set, the club's commission bill
+    // would silently have become the bill for the rows that matched what
+    // somebody typed. It is now summed from the unfiltered set, and the law is
+    // that the total spans every agent - not how it is reached.
     const sql = body('fn_ca_rake_by_agent');
-    expect(sql).toMatch(/SUM\(l\.commission_earned\) OVER \(\)/);
+    expect(sql).toMatch(
+      /totals AS \([\s\S]*?SUM\(l\.commission_earned\)\s+AS total_commission[\s\S]*?FROM listed l/
+    );
+    expect(sql).toMatch(/'total_commission',\s*\(SELECT t\.total_commission FROM totals t\)/);
   });
 
   it('the snapshot passes the club total out rather than dropping it', () => {

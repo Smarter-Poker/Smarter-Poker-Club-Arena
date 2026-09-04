@@ -100,10 +100,20 @@ describe('the page is live', () => {
     expect(v2).not.toMatch(/'cash_money_source', 'reconstructed_actions'/);
   });
 
-  it('subscribes the page to its own hands from any tab', () => {
-    expect(PAGE).toMatch(/table: 'ca_hand_player_idx'/);
-    expect(PAGE).toMatch(/filter: `user_id=eq\.\$\{targetUserId\}`/);
-    expect(MIG).toMatch(/ALTER PUBLICATION supabase_realtime ADD TABLE public\.ca_hand_player_idx/);
+  it('keeps the page live from any tab: the pulse poll replaced the dead realtime channel', () => {
+    /**
+     * This used to pin a postgres_changes subscription on ca_hand_player_idx.
+     * On 2026-09-04 that table left the realtime publication (4.5M inserts a
+     * day decoded out of WAL for one page; the slot was 136 MB behind), which
+     * was the right call and also meant the subscription could never fire
+     * again. Phase 3 replaced it with ca_player_stats_pulse, polled by the
+     * open page while visible; the intent of this pin is unchanged.
+     */
+    expect(PAGE).toMatch(/useStatsPulse\(\{/);
+    expect(PAGE).toMatch(/enabled: Boolean\(targetUserId && isOwnProfile\)/);
+    expect(PAGE).toMatch(/onChange: scheduleRefresh/);
+    expect(PAGE).not.toMatch(/postgres_changes/);
+    expect(PAGE).not.toMatch(/table: 'ca_hand_player_idx'/);
     expect(MIG).toMatch(/FOR SELECT TO authenticated USING \(user_id = auth\.uid\(\)\)/);
   });
 });

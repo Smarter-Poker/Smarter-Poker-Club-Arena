@@ -71,7 +71,8 @@ import {
   type LifetimeStats,
 } from './stats/types';
 import PageSkeleton from '../components/common/PageSkeleton';
-import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { useStatsPulse } from '../hooks/useStatsPulse';
+import { resolvedTimeZone, localDateFromYmd } from '../lib/localTime';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import './PlayerStatsPage.css';
 import { reportError } from '../utils/errorReporter';
@@ -829,6 +830,10 @@ export default function PlayerStatsPage() {
               .rpc('ca_player_stats_overview_v2', {
                 p_user: targetUserId,
                 p_days: windowDays,
+                // Day buckets are cut in the player's zone, server-side
+                // (phase 3). The RPC falls back to UTC for a name it does
+                // not know and reports the zone it used as `window_tz`.
+                p_tz: resolvedTimeZone(),
               })
               .then((r: any) => r),
           { maxRetries: 2, isMountedRef: isMounted }
@@ -1055,8 +1060,54 @@ export default function PlayerStatsPage() {
     activeRangeKeyRef.current = rangeKey;
   }, [rangeKey]);
 
-  // A tab return means time has passed, so it CLEARS the memo and refetches.
-  useVisibilityRefresh(() => loadAllData({ fresh: true }));
+  /**
+   * ── ONE debounce window for everything that says "something changed" ────
+   *
+   * MEASURED 2026-08-25. The underlying overview rollup costs 2.6s warm and 15s
+   * COLD for a heavy account, against an 8s statement_timeout on the
+   * `authenticated` role. This used to be five INDEPENDENT `subscribeDebounced`
+   * calls, each with its own 2000ms window - and a single completed hand emits
+   * HAND_COMPLETED, BALANCE_UPDATED and CHIPS_DISTRIBUTED within milliseconds
+   * of each other. Three windows, three refetches per hand, plus the
+   * pendingRefreshRef replay for a fourth. One shared debouncer collapses
+   * that to one, and the pulse below feeds the same window, so a hand that
+   * arrives by both routes still costs one refetch.
+   *
+   * The loader goes through loadRef so the timer always calls the CURRENT
+   * loader: `loadAllData` closes over `rangeKey`, and firing a stale copy
+   * refetches the previous window and overwrites newer data with it.
+   */
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = setTimeout(() => {
+      refreshTimerRef.current = null;
+      void loadRef.current?.({ fresh: true });
+    }, 2000);
+  }, []);
+  useEffect(
+    () => () => {
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    },
+    []
+  );
+
+  /**
+   * LIVE FROM ANY TAB, AND THE TAB RETURN (phase 3, 2026-09-04). masterBus
+   * only carries events for the tables THIS tab is watching, so a player
+   * grinding in one tab with Stats open in another never saw a refresh. The
+   * realtime subscription on ca_hand_player_idx that used to cover this went
+   * dead the day that table left the publication (4.5M rows a day of WAL for
+   * one page), so the page now asks: ca_player_stats_pulse every 8s while
+   * visible, one refetch when the player's newest hand or a tournament row
+   * moves. The hook also owns the tab return, so a return costs one refetch,
+   * not one for "time passed" and another for "the pulse moved".
+   */
+  useStatsPulse({
+    userId: targetUserId,
+    enabled: Boolean(targetUserId && isOwnProfile),
+    onChange: scheduleRefresh,
+  });
 
   // SWR: show cached stats instantly on mount
   useEffect(() => {
@@ -1095,23 +1146,9 @@ export default function PlayerStatsPage() {
   }, [targetUserId, isOwnProfile, loadAllData]);
 
   /**
-   * ── Bus listeners: ONE debounce window, not five ────────────────────────
-   *
-   * MEASURED 2026-08-25. The underlying overview rollup costs 2.6s warm and 15s COLD for
-   * a heavy account, against an 8s statement_timeout on the `authenticated`
-   * role. This used to be five INDEPENDENT `subscribeDebounced` calls, each
-   * with its own 2000ms window - and a single completed hand emits
-   * HAND_COMPLETED, BALANCE_UPDATED and CHIPS_DISTRIBUTED within milliseconds
-   * of each other. Three windows, three refetches per hand, plus the
-   * pendingRefreshRef replay for a fourth.
-   *
-   * So a player sitting on this page with one table running was asking the
-   * database for up to four multi-second scans of a 10GB table per hand. One
-   * shared debouncer collapses that to one.
-   *
-   * The handler goes through a ref so the replay and the timer always call the
-   * CURRENT loader: `loadAllData` closes over `rangeKey`, and firing a stale
-   * copy refetches the previous window and overwrites newer data with it.
+   * ── Bus listeners for same-tab hands, into the shared debounce window ───
+   * The five events one completed hand emits all land in scheduleRefresh, so
+   * they cost one refetch between them (see the debouncer above).
    */
   useEffect(() => {
     const REFRESH_EVENTS = [
@@ -1121,59 +1158,11 @@ export default function PlayerStatsPage() {
       'CASHOUT_APPROVED',
       'CREDIT_UPDATED',
     ] as const;
-
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const schedule = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
-        timer = null;
-        void loadRef.current?.({ fresh: true });
-      }, 2000);
-    };
-
-    const unsubs = REFRESH_EVENTS.map((e) => masterBus.subscribe(e as never, schedule));
-
-    /**
-     * LIVE FROM ANY TAB (2026-09-03). masterBus only carries events for the
-     * tables THIS tab is watching, so a player grinding in one tab with Stats
-     * open in another never saw a refresh. The hand_history trigger now writes
-     * one ca_hand_player_idx row per seat the moment a hand is recorded, and
-     * that table is in the realtime publication with an owner-only policy - so
-     * this subscription fires for exactly the hands this player was dealt
-     * into, wherever they were played, and nothing else. It feeds the SAME
-     * debouncer as the bus, so a hand that arrives by both routes still costs
-     * one refetch.
-     */
-    const channelKey = targetUserId && isOwnProfile ? `stats-live-${targetUserId}` : null;
-    if (channelKey) {
-      masterBus
-        .getOrCreateChannel(channelKey)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'ca_hand_player_idx',
-            filter: `user_id=eq.${targetUserId}`,
-          },
-          schedule
-        )
-        .subscribe((status: string, err?: Error) => {
-          if (status === 'CHANNEL_ERROR' && err) {
-            reportError(err, 'PlayerStatsPage.realtime_channel_error');
-          }
-        });
-    }
-
+    const unsubs = REFRESH_EVENTS.map((e) => masterBus.subscribe(e as never, scheduleRefresh));
     return () => {
-      if (timer) clearTimeout(timer);
       unsubs.forEach((u) => u());
-      if (channelKey) masterBus.removeRegisteredChannel(channelKey);
     };
-    // loadRef is a ref wrapper; the only real dependency is whose hands to
-    // listen for. Re-subscribing on a range change would drop a pending
-    // debounce window on the floor, so rangeKey is deliberately not here.
-  }, [targetUserId, isOwnProfile]);
+  }, [scheduleRefresh]);
 
   /**
    * ALL-TIME PAYLOAD FOR LIFETIME READOUTS (2026-09-03).
@@ -1200,25 +1189,31 @@ export default function PlayerStatsPage() {
     }
     let cancelled = false;
     setAllTimeError(false);
-    supabase.rpc('ca_player_stats_overview_v2', { p_user: targetUserId, p_days: null }).then(
-      ({ data, error }: any) => {
-        if (cancelled || !isMounted.current) return;
-        const contract = normalizeStatsContractMetadata(data);
-        if (error || !data?.overall || !contract.valid) {
-          if (error) reportError(error, 'PlayerStatsPage.rpc_all_time_for_trophies');
+    supabase
+      .rpc('ca_player_stats_overview_v2', {
+        p_user: targetUserId,
+        p_days: null,
+        p_tz: resolvedTimeZone(),
+      })
+      .then(
+        ({ data, error }: any) => {
+          if (cancelled || !isMounted.current) return;
+          const contract = normalizeStatsContractMetadata(data);
+          if (error || !data?.overall || !contract.valid) {
+            if (error) reportError(error, 'PlayerStatsPage.rpc_all_time_for_trophies');
+            setAllTimeError(true);
+            return;
+          }
+          const resolved = normalizeFull(data);
+          writeStatsRangeMemo(targetUserId, 'all', resolved);
+          setAllTimeFetched(resolved);
+        },
+        (err: unknown) => {
+          if (cancelled || !isMounted.current) return;
+          reportError(err, 'PlayerStatsPage.rpc_all_time_for_trophies');
           setAllTimeError(true);
-          return;
         }
-        const resolved = normalizeFull(data);
-        writeStatsRangeMemo(targetUserId, 'all', resolved);
-        setAllTimeFetched(resolved);
-      },
-      (err: unknown) => {
-        if (cancelled || !isMounted.current) return;
-        reportError(err, 'PlayerStatsPage.rpc_all_time_for_trophies');
-        setAllTimeError(true);
-      }
-    );
+      );
     return () => {
       cancelled = true;
     };
@@ -1266,7 +1261,13 @@ export default function PlayerStatsPage() {
     return (full?.daily || []).map((d) => {
       cumulative += d.profit || 0;
       return {
-        date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        // 'YYYY-MM-DD' is a LOCAL day the server cut in the player's zone;
+        // new Date('YYYY-MM-DD') would read it as UTC midnight and label a
+        // Chicago player's Sep 3 as Sep 2.
+        date: localDateFromYmd(d.date).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+        }),
         profit: d.profit || 0,
         hands: d.hands || 0,
         cumulative: Math.round(cumulative * 100) / 100,

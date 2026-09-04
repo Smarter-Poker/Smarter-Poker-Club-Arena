@@ -178,7 +178,9 @@ export async function buildFloorSnapshot(): Promise<FloorSnapshot> {
       (cursor, want) => {
         let q = supabase
           .from('tables')
-          .select('id, game_variant, small_blind, big_blind, max_players, status, current_players')
+          .select(
+            'id, game_variant, small_blind, big_blind, max_players, status, current_players, cluster_id'
+          )
           .eq('club_id', hostId)
           .is('tournament_id', null)
           .in('status', ['waiting', 'running', 'active'])
@@ -300,6 +302,7 @@ export async function buildFloorSnapshot(): Promise<FloorSnapshot> {
             stack: Number(h.stack ?? 0),
           })),
           status: String(t.status ?? ''),
+          clusterId: t.cluster_id ? String(t.cluster_id) : null,
         };
       }),
     });

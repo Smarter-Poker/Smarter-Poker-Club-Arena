@@ -415,8 +415,28 @@
 .hh-run {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 2px 0;
+}
+
+/* Who won this board, with what (winners_by_board, 2026-09-04). */
+.hh-run__winner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+  font-size: 0.6875rem;
+}
+
+.hh-run__winner-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.hh-entry__rake {
+  color: rgba(255, 255, 255, 0.38);
 }
 
 .hh-run__badge {

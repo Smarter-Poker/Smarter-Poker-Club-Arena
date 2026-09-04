@@ -142,6 +142,14 @@ export interface ReplayInput {
   showdown?: ReplayShowdownInput[] | null;
   pots?: { index?: number; amount?: number }[] | null;
   /**
+   * WHO WON EACH BOARD (hand_history.winners_by_board, 2026-09-04). Per
+   * (board, winner): 1-based board index, pre-rake share, the hand ON THAT
+   * board. Absent on single-board hands and rows older than the column.
+   */
+  winnersByBoard?:
+    | { board?: number; userId?: string; user_id?: string; amount?: number; handName?: string }[]
+    | null;
+  /**
    * Set for rows whose `amount` is already incremental on EVERY verb. Nothing
    * the engine writes is; this exists so a fixture or an imported history can
    * declare itself rather than be mis-read as raise-to levels.
@@ -849,12 +857,44 @@ export function buildReplay(input: ReplayInput): ReplayModel {
     return Number(a.seat) - Number(b.seat);
   });
 
+  /* WHO WON EACH BOARD, when the row says (2026-09-04). Keyed `${board}|${uid}`
+     with the 1-based board index the writer uses. */
+  const perBoard = new Map<string, { amount: number; handName?: string }>();
+  for (const w of input.winnersByBoard || []) {
+    const uid = w.userId || w.user_id;
+    if (!uid) continue;
+    perBoard.set(`${Number(w.board) || 1}|${uid}`, {
+      amount: Number(w.amount) || 0,
+      handName: w.handName || undefined,
+    });
+  }
+  const hasPerBoard = perBoard.size > 0;
+
+  /* A SHOWDOWN ROW IS A PLAYER WHOSE CARDS WERE SHOWN, OR WHO MUCKED AT
+     SHOWDOWN (Dan 2026-09-04: "doesn't display the correct hands"). This used
+     to emit a row for EVERY player in the hand, on EVERY board - so a six-way
+     fold-around listed six seats of card backs under a "Showdown" heading. A
+     player with no cards on record and no showdown ruling folded earlier;
+     they are in the action log, not here. */
+  const atShowdown = ordered.filter((p) => holeByUser.has(p.userId) || muckedByUser.has(p.userId));
+
   boards.forEach((b, boardIndex) => {
-    for (const p of ordered) {
+    for (const p of atShowdown) {
       const hole = holeByUser.get(p.userId) || null;
       const made = hole ? bestFive(hole, b, input.gameVariant) : null;
       const won = wonByUser.get(p.userId) || 0;
       const inv = invested.get(Number(p.seat)) || 0;
+      const onThisBoard = perBoard.get(`${boardIndex + 1}|${p.userId}`);
+      /* THE HAND ON THIS BOARD. The hand-level name (showdown / engine) is
+         board 1's; on a multi-board hand the row used to draw board 2's best
+         five under board 1's name. Per-board name first, then the local
+         evaluation against THIS board, then the hand-level name only for
+         board 1. */
+      const boardName =
+        onThisBoard?.handName ||
+        (boards.length > 1 && boardIndex > 0
+          ? made?.name || ''
+          : showdownName.get(p.userId) || engineHandName.get(p.userId) || made?.name || '');
       showdownRows.push({
         key: `sd-${boardIndex}-${p.userId}`,
         userId: p.userId,
@@ -864,20 +904,27 @@ export function buildReplay(input: ReplayInput): ReplayModel {
         hole,
         made: made?.cards || [],
         playing: new Set((made?.cards || []).map(cardKey)),
-        handName: titleCase(
-          showdownName.get(p.userId) || engineHandName.get(p.userId) || made?.name || ''
-        ),
+        handName: titleCase(boardName),
         boardIndex,
         boardLabel: boards.length > 1 ? `Board ${boardIndex + 1}` : null,
-        // The engine records ONE winners[] entry for the whole hand, not one per
-        // run. On a hand that ran twice the split between boards is not stored,
-        // so it is shown once against board one rather than invented for both.
-        net: boardIndex === 0 ? money(won - inv) : null,
+        /* Per board when the record has it (the pre-rake share of that board);
+           otherwise the whole-hand net once, against board one, rather than
+           invented for every board. */
+        net: hasPerBoard
+          ? onThisBoard
+            ? money(onThisBoard.amount)
+            : boards.length > 1
+              ? null
+              : money(won - inv)
+          : boardIndex === 0
+            ? money(won - inv)
+            : null,
         // Names the pot this player actually contested. It was hard-coded to
         // "Main pot" for every row, which is a claim rather than a label the
         // moment a hand has a side pot.
         potLabel: potLabelFor(p.userId),
-        isWinner: won > 0,
+        // A one-board winner is not a winner on the other boards.
+        isWinner: hasPerBoard ? !!onThisBoard : won > 0,
       });
     }
   });

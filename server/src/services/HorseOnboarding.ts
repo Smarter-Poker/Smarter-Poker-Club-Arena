@@ -43,6 +43,7 @@
 
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
+import { styledAlias, usernameFromAlias } from './horseAliasStyles.js';
 
 const SHARK_CLUB_ID = 'a41434bb-0000-0000-0000-000000000001';
 
@@ -92,51 +93,10 @@ const SPECIALTIES = [
 
 const STAKES = ['1/2', '2/5', '5/10', '10/25', '25/50', '1/3', '2/3'];
 
-/** Alias halves — combined into a poker nickname like "RiverRat" / "NitCity". */
-const ALIAS_A = [
-  'River',
-  'Nut',
-  'Chip',
-  'Ace',
-  'Blind',
-  'Tilt',
-  'Rake',
-  'Flop',
-  'Turn',
-  'Bluff',
-  'Cooler',
-  'Runner',
-  'Boat',
-  'Wheel',
-  'Kicker',
-  'Snap',
-  'Check',
-  'Shove',
-  'Stack',
-  'Draw',
-];
-const ALIAS_B = [
-  'Rat',
-  'Hunter',
-  'King',
-  'Queen',
-  'Shark',
-  'Whale',
-  'Fox',
-  'Wolf',
-  'Bandit',
-  'Machine',
-  'Doctor',
-  'Wizard',
-  'Sniper',
-  'Grinder',
-  'Merchant',
-  'Bandito',
-  'Cowboy',
-  'Jester',
-  'Monk',
-  'Ghost',
-];
+/* ALIAS_A / ALIAS_B used to live here: two twenty-word lists composed as
+   CapitalCapital, 400 shapes, one silhouette - 867 of 1,000 horses were
+   `RakeHunter`-shaped by 2026-09-04. The alias now comes from
+   horseAliasStyles.ts: fifty styles, deterministic in the id. */
 
 const FIRST = [
   'Marcus',
@@ -222,14 +182,15 @@ export interface HorseIdentity {
 export function identityFor(horseId: string, existingName?: string | null): HorseIdentity {
   const h = hash(horseId);
   const realName = existingName?.trim() || `${pick(FIRST, h, 0)} ${pick(LAST, h, 7)}`;
-  const alias = `${pick(ALIAS_A, h, 3)}${pick(ALIAS_B, h, 11)}`;
+  // Dan 2026-09-04: fifty styles, not one. See horseAliasStyles.ts.
+  const alias = styledAlias(horseId);
   const home = pick(HOMES, h, 13);
   const specialty = pick(SPECIALTIES, h, 17);
   const stakes = pick(STAKES, h, 19);
   return {
     realName,
     alias,
-    username: `${alias.toLowerCase()}${(h % 900) + 100}`,
+    username: usernameFromAlias(alias, horseId),
     timezone: home.timezone,
     location: home.location,
     specialty,

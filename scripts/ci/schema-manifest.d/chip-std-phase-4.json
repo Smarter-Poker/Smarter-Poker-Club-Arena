@@ -1,0 +1,59 @@
+{
+  "_owner": "fix/chip-std-phase-4 (chip standard Phase 4, the jackpot, 2026-09-04). Applied as 20260904210917 (4.3), 20260904211714 (4.2), 20260904211800 (ACLs). Second cut 20260904212347 (rounding residue). Third cut 20260904213506 (auto-opened baselines).",
+  "tables": ["ca_bbj_policy", "ca_bbj_bucket_moves", "ca_bbj_pool_snapshots", "ca_bbj_alloc_state"],
+  "functions": [
+    "fn_bbj_allocate",
+    "fn_bbj_move_between_banks",
+    "fn_bbj_reconcile",
+    "fn_bbj_reconcile_all",
+    "fn_bbj_open_pool_baseline"
+  ],
+  "columns": {
+    "ca_bbj_policy": [
+      "id",
+      "pivot_threshold",
+      "standard_main",
+      "standard_backup",
+      "pivot_main",
+      "pivot_backup",
+      "note",
+      "updated_at"
+    ],
+    "ca_bbj_bucket_moves": [
+      "id",
+      "pool_id",
+      "from_bank",
+      "to_bank",
+      "amount",
+      "reason",
+      "op_id",
+      "performed_by",
+      "db_role",
+      "created_at"
+    ],
+    "ca_bbj_pool_snapshots": [
+      "id",
+      "pool_id",
+      "taken_at",
+      "is_baseline",
+      "prev_id",
+      "main",
+      "backup",
+      "promo",
+      "journal_main",
+      "journal_backup",
+      "journal_promo",
+      "drops_since",
+      "payouts_since",
+      "sweeps_since",
+      "funding_since",
+      "moves_since",
+      "write_failures",
+      "unexplained_main",
+      "unexplained_backup",
+      "unexplained_promo",
+      "note"
+    ],
+    "ca_bbj_alloc_state": ["pool_id", "main_residue", "backup_residue", "updated_at"]
+  }
+}

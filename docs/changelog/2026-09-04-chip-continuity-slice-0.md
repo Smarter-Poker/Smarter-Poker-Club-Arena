@@ -119,6 +119,16 @@ while running, the menu item label, an early refusal in `handleLeaveTable`),
 (`BUYIN_BELOW_FLOOR` / `BUYIN_ABOVE_MAX` copy). Deleted:
 `GameServerAPI.removeChips`, `TablePage.handleWithdrawChips`.
 
+## Applied
+
+Applied to production 2026-09-04 11:38 UTC via psql in one transaction
+(exit 0, post-apply assertions passed) and recorded as
+`supabase_migrations.schema_migrations` version `20260904120000`
+`chip_continuity_slice_0`. First live effects within a minute: a buy-in at
+PLO4 5/10 #2 at 11:39:20 opened the first `cash_player_session` row; a
+cash-out at 11:39:19 through the OLD engine's three-argument call resolved
+against the new signature and wrote the first `cash_rejoin_constraints` row.
+
 ## Rollout order and the window in between
 
 The migration applies before the engine deploys (merge -> publish -> Hetzner

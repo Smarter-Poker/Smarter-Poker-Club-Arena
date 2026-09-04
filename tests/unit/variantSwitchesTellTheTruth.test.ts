@@ -18,14 +18,20 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { sliceMethod, sliceStatement } from '../helpers/sourceWindow';
+import { sliceMethod } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const BASE = read('server/src/engine/ServerTableEngineBase.ts');
 const DEALING = read('server/src/engine/ServerTableEngineDealing.ts');
 const SETTLEMENT = read('server/src/engine/ServerTableEngineSettlement.ts');
 const SELECT = read('server/src/services/supabase/tables.ts');
-const PAGE = read('src/pages/TableConfigPage.tsx');
+/**
+ * 2026-09-04 (Operation Table Stakes, Slice 1): the cash create path is
+ * fn_cash_game_create (SQL) fed by CashGameCreateFlow.tsx. The Seven-Deuce
+ * pins read those two instead of TableConfigPage.buildTableData.
+ */
+const FLOW = read('src/components/cash/CashGameCreateFlow.tsx');
+const SQL = read('supabase/migrations/20260904160500_cash_games_slice_1.sql');
 
 describe('Pineapple Hold’em', () => {
   it('is reachable by the engine at all', () => {
@@ -66,16 +72,21 @@ describe('Seven-Deuce', () => {
   });
 
   it('is not offered on a variant that can never pay it', () => {
-    expect(PAGE).toContain('SEVEN_DEUCE_VARIANTS');
-    const set = sliceStatement(PAGE, 'const SEVEN_DEUCE_VARIANTS');
-    expect(set).toContain("'nlh'");
-    expect(set).not.toContain("'plo");
-    expect(set).not.toContain('short_deck');
+    // The switch renders inside one gate, and that gate is the engine's own
+    // equality: NLH and nothing else.
+    expect(FLOW).toMatch(/\{variant === 'nlh' && \(\s*<Toggle\s*label="Seven Deuce Bonus"/);
+    expect(FLOW).not.toMatch(/'plo[^']*'[^\n]*Seven Deuce/);
   });
 
   it('forces the column false rather than leaving a stale true behind', () => {
-    // A host who switches an NLH table to PLO must not leave a flag set that
-    // the table will never honour.
-    expect(PAGE).toMatch(/seven_deuce_enabled: SEVEN_DEUCE_VARIANTS\.has\([\s\S]{0,120}: false,/);
+    // A host who switches an NLH game to PLO must not leave a flag set that
+    // the table will never honour. The snapshot ANDs it with the variant on
+    // the way in, and the tables row is written from the snapshot.
+    expect(SQL).toMatch(
+      /'seven_deuce_enabled', coalesce\(\(v_o->'options'->>'seven_deuce_enabled'\)::boolean, false\) AND v_v = 'nlh'/
+    );
+    expect(SQL).toMatch(
+      /\(v_opts->>'seven_deuce_enabled'\)::boolean, CASE WHEN \(v_opts->>'seven_deuce_enabled'\)::boolean THEN 2 ELSE 0 END/
+    );
   });
 });

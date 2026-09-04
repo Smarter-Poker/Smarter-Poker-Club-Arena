@@ -10,7 +10,6 @@ const hamburger = read('src/components/navigation/HamburgerMenu.tsx');
 const tickerPanel = read('src/components/club/TickerManagementPanel.tsx');
 const ticker = read('src/components/tournament/TournamentStartingTicker.tsx');
 const unionGames = read('src/pages/UnionGamesPage.tsx');
-const tableConfig = read('src/pages/TableConfigPage.tsx');
 const messagePanel = read('src/components/club/ClubMessageManagementPanel.tsx');
 const messageService = read('src/services/ClubMessageManagementService.ts');
 const clubHome = read('src/pages/ClubHomePage.tsx');
@@ -97,7 +96,21 @@ describe('canonical table management architecture', () => {
   });
 
   it('stamps union-created cash tables into the union game scope', () => {
-    expect(tableConfig).toContain('union_id: access?.unionId || null');
+    // 2026-09-04 (Operation Table Stakes, Slice 1): the page used to write
+    // `union_id: access?.unionId`, the answer fn_game_creation_access gave
+    // it. fn_cash_game_create resolves the same answer server-side, through
+    // the same fn_club_union_context, onto both the cash_games row and its
+    // Main 1 tables row.
+    const sql = readFileSync(
+      resolve(__dirname, '../../supabase/migrations/20260904160500_cash_games_slice_1.sql'),
+      'utf8'
+    );
+    expect(sql).toMatch(/FROM public\.fn_club_union_context\(p_club_id\) ctx/);
+    expect(sql).toMatch(/COALESCE\(ctx\.own_union_id, ctx\.member_union_id\)/);
+    expect(sql).toMatch(
+      /\(p_club_id, v_union, v_name, v_t, v_v, p_sb, p_bb, v_seats, v_snap, v_uid\)/
+    );
+    expect(sql).toMatch(/p_club_id, v_union, v_name, 'cash', v_v, 'regular',/);
   });
 });
 

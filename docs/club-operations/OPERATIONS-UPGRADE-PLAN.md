@@ -464,14 +464,35 @@ Closed 2026-09-04 before phase 6 (changelog
 migration `20260904200000`): the payables estimate and the phase 4 / 5
 legacy payload keys are off the live functions; the roster summary counts
 the club the directory lists; the engine's dead fee-rollup loop is retired
-(table drop deferred to the phase 6 DDL batch, after the engine deploys);
+(the table was NOT dropped in phase 6: `member_fee_lifetime` hangs off it by
+trigger and "no reader in this repo" is not "no reader anywhere" - see that
+changelog's Still Open);
 the agent console's exclusion takes a reason and an expiry; the agent
 dashboard pages its ledgers from the server and its cache no longer
 truncates what the cards sum; the rake channel is shared; three dead
 AgentService methods and the empty icon wrappers are gone; the agent list
 cap is announced; all-gates.sh runs entry-chunk-delta.
 
-## 8. Phase 6 - Finance truth
+## 8. Phase 6 - Finance truth. **DONE**
+
+Shipped 2026-09-04 (migration `20260904220000_the_money_is_read_from_the_ledger`,
+changelog
+`docs/changelog/2026-09-04-club-operations-phase-6-the-money-is-read-from-the-ledger.md`).
+Every item below was proved against production before it was changed, and the
+audit found five more the plan had not: `club_hand_daily.pot_total` mixes
+tournament chips into cash pots (118,254,757 against 5,239,484 on one day), so
+the dashboard's Average Pot was twenty times out; per-player CASH results were
+never written at all for a club outside a union (415 players, not one non-zero
+row), which is what the unexplained sign disagreement at the end of this
+section actually was; table add-ons (713,968.61 chips in seven days), rebuys
+and refunds were money to nobody; `club_table_daily` silently dropped every
+raked hand whose contributions were not recorded; and the "Club Chip Audit
+Trail" showed the viewer their own movements, not the club's.
+
+The money now has one source - `rake_records`, kept as an exact per-day rollup
+by statement-level triggers and reconciled hourly - and each page one gated
+read. Verified end to end through PostgREST with a real session: the owner's
+club 200, a club he is not a member of 403/42501, anon 401.
 
 - **CONFIRMED - four headline numbers on Financials are computed from the
   OLDEST 5,000 rows.** `.order('created_at', {ascending:true}).limit(5000)`,

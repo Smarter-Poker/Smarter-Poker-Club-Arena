@@ -1465,9 +1465,18 @@ export class HorseFleetManager {
          is stable, opaque and spreads the populated set across variants and
          stakes rather than favouring whatever the database happened to return
          first. */
+      /* A MUST-MOVE GAME'S TABLES COME FIRST (OPORD 1.4 18.4: "an enabled
+         game's Main 1 is the fleet's responsibility ... seeded to the horse
+         occupancy target"). The fleet runs out of horses partway down this
+         list; a cluster table at the back sat at 0 for an hour on 2026-09-04
+         while a dozen fleet clones were filled ahead of it. Dan: "you have to
+         add horses to the game, or show them it's available". Humans still
+         first, then the clusters, then everything else by id. */
       const orderedTables = [...tables].sort(
         (a, b) =>
-          Number(humanShort(b)) - Number(humanShort(a)) || String(a.id).localeCompare(String(b.id))
+          Number(humanShort(b)) - Number(humanShort(a)) ||
+          Number(!!b.cluster_id) - Number(!!a.cluster_id) ||
+          String(a.id).localeCompare(String(b.id))
       );
 
       /* ── A HORSE ANSWERS A SEAT CALL ────────────────────────────────────

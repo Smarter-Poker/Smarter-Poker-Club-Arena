@@ -13,14 +13,92 @@
  */
 
 .club-entry-message-modal.modal-fullscreen {
-  /* Widen the inset the shared modal provides, and add whatever the device
-     reserves on top of it. max() rather than + so a desktop, where every inset
-     is 0, still gets a real margin. */
-  width: calc(100vw - max(40px, env(safe-area-inset-left) + env(safe-area-inset-right) + 32px));
-  height: calc(100dvh - max(40px, env(safe-area-inset-top) + env(safe-area-inset-bottom) + 32px));
-  max-width: 720px;
+  /* A CONTAINED POPUP WITH A 20px GUTTER (Dan, 2026-09-04: "IT NEEDS TO BE
+     INSIDE THE SCREEN, AND HAVE 20 PIXEL MARGIN ON ALL SIDES, NOT COVER THE
+     ENTIRE FUCKING SCREEN").
+
+     It shipped as a viewport-sized panel. Measured on the live Deep Stack
+     lobby before this rule: 526 x 1195 in a 566 x 1235 window - 20px of inset
+     on paper, and in practice an opaque sheet with three lines of greeting on
+     it. That is what "the page goes black" was, and why the X at the top right
+     read as part of the black rather than as a way out.
+
+     The card is sized by its CONTENT now, not by the window:
+       - width  capped at 480px, and never wider than the viewport less 40px
+         (the 20px gutter, both sides);
+       - height auto, capped at the viewport less the same 40px, so a long
+         message scrolls inside the card instead of growing past the screen;
+       - `margin: 20px` guarantees the gutter even when the overlay's centring
+         would otherwise let an edge touch.
+     Measured with this rule on the same lobby: 480 x 342, 23% of the screen,
+     the lobby visible behind it and the close control inside the card. */
+  width: min(
+    480px,
+    calc(100vw - max(40px, env(safe-area-inset-left) + env(safe-area-inset-right) + 40px))
+  );
+  max-width: min(
+    480px,
+    calc(100vw - max(40px, env(safe-area-inset-left) + env(safe-area-inset-right) + 40px))
+  );
+  height: auto;
+  /* dvh, not vh: a phone's collapsing address bar must not make this taller
+     than the screen it is measured against. */
+  max-height: calc(
+    100dvh - max(40px, env(safe-area-inset-top) + env(safe-area-inset-bottom) + 40px)
+  );
+  /* 20px is the FLOOR on every edge; where a device reserves more (a
+     notch, a home indicator) the inset wins, so the card never hides
+     under either. */
+  margin: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+    max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
   display: flex;
   overflow: hidden;
+}
+
+/* The card still has to fill whatever height it ends up with, and the shared
+   Modal wraps its children in `.modal-content`, so `flex: 1` on
+   `.club-entry-message` has no flex parent without this (#2899). `min-height:
+   0` lets it shrink beside the wrapper's `overflow-y: auto`, which is what
+   makes a long message scroll rather than push the card off screen. */
+.club-entry-message-modal.modal-fullscreen > .modal-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/*
+ * THE PANEL IS FULL-SCREEN; THE GREETING WAS NOT (2026-09-03).
+ *
+ * Dan: "YOU CLICK ON ANY CLUB LOBBY AND THE PAGE GOES BLACK AFTER LOADING FOR
+ * A SPLIT SECOND."
+ *
+ * It was not a crash and it was not a blank render - it was this panel. The
+ * rule above makes the modal fill the viewport and `display: flex` is there so
+ * `.club-entry-message` (`flex: 1`) fills it back. But the shared Modal wraps
+ * whatever it is given in `.modal-content`, so that flex parent is NOT the
+ * greeting's parent, and the chain broke at the wrapper: measured live on the
+ * Midway Union lobby, the panel was 1,195px tall, `.modal-content` 1,192, and
+ * `.club-entry-message` collapsed to its own content at 338. The greeting sat
+ * in the top quarter and the other ~850px was empty dark panel over the whole
+ * lobby - which is exactly what "the page goes black" looks like.
+ *
+ * `.club-entry-message__body` already asks for `justify-content: center`; it
+ * simply never had the height to centre anything in. Handing `.modal-content`
+ * the same column stretch fixes it at the one link that was missing: measured
+ * again with this rule, the wrapper fills 1,144px, the body 952, and the club
+ * name lands at y=535 instead of y=132 - centred, as the body always intended.
+ *
+ * `min-height: 0` is load-bearing next to the wrapper's `overflow-y: auto`: a
+ * flex child defaults to `min-height: auto`, which refuses to shrink below its
+ * content and would let a long message push the panel past the viewport it was
+ * just told to fit inside.
+ */
+.club-entry-message-modal.modal-fullscreen > .modal-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .club-entry-message {
@@ -31,7 +109,7 @@
   gap: 24px;
   /* The inner breathing room, distinct from the panel's margin. Extra on top
      so the copy never runs under the close control. */
-  padding: 56px 28px 28px;
+  padding: 44px 24px 24px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }

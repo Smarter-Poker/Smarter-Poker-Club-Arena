@@ -244,3 +244,26 @@ whichever test the next agent notices first.
 | tests/every-member-is-discoverable-in-the-cashier.law.test.ts         | Every member the server returned is listed and searchable in the cashier roster (Dan 2026-09-04): the client drops nobody before the search, matches the arena name, the @handle and the printed member ID, and marks - never deletes - the viewer's own row, which is the one row that cannot be a recipient                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | tests/bars-stack-on-the-footers-live-height.law.test.ts               | The footer publishes the height it occupies (--ca-bottom-chrome-h: measured while shown, 0px while scroll has hidden it or it is unmounted); --bottom-nav-stack-base IS that number and every fixed bar that stacks on the footer stacks on the base, never on the designed clearance, so it snap-locks to the bottom edge the frame the footer leaves (Dan 2026-09-04); page content keeps padding with the clearance                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | server/src/observability/theTableFeelIsMeasured.law.test.ts           | The table's feel is measured (Realtime programme Phase 1): poker_act_to_broadcast_ms{audience=human                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | horse} and poker_actions_fleet_total ride the always-on /metrics (the per-table registry is gated off in production); the ActionLatencyDegraded / ActionLatencyCritical rules read the human series only and carry the maintenance-break guard; never a table_id label |
+
+**The registry is the directory `docs/laws.d/` - one file per law.** This
+table used to live here, and every law appended to its last line, so any two
+law-bearing pull requests conflicted with each other on this file. Measured
+on 2026-09-04: one PR went merge-dirty FOUR times in an afternoon on nothing
+but this table. That is the same failure `MIGRATION-CHANGELOG.md` had
+(CLAUDE.md 10.9), fixed the same way: two files written independently cannot
+conflict.
+
+Each file is `docs/laws.d/<slug>.md` and reads:
+
+    # tests/<the-law-test-file>.law.test.ts
+
+    <one line: what it guards>
+
+`tests/law-registry.law.test.ts` enforces both directions: a law test with
+no file here fails CI with the exact file to create; a file here whose test
+no longer exists is a ghost and fails CI too. Rules 1-4 above are unchanged;
+"its row here" now means "its file in `docs/laws.d/`".
+
+To read the whole registry as one table:
+
+    node scripts/laws-registry.mjs

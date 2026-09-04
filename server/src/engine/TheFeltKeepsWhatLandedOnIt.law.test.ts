@@ -330,6 +330,23 @@ describe('LAW 4: the database applies the difference and honours the declaration
     expect(m).toMatch(
       /RAISE EXCEPTION 'seat missing or left for % - hand write rejected whole', v_uid;/
     );
+    // CASH TABLES ONLY. Tournament chips are play chips: the guard landed in
+    // 20260904130701 after the first ten minutes of delta mode debited 230
+    // tournament chips from a real wallet. The live definition is what the
+    // engine calls, so the pin reads the latest re-creation of the function.
+    const latest = readdirSync(migrationsDir)
+      .filter((f) => /^\d{14}_.*\.sql$/.test(f))
+      .sort()
+      .reverse()
+      .find((f) =>
+        /CREATE (OR REPLACE )?FUNCTION public\.fn_ca_settle_hand_stacks_absolute\(/.test(
+          readFileSync(resolve(migrationsDir, f), 'utf8')
+        )
+      );
+    const live = readFileSync(resolve(migrationsDir, latest as string), 'utf8');
+    expect(live).toMatch(
+      /IF v_delta_mode AND NOT EXISTS \(SELECT 1 FROM public\.tables tb WHERE tb\.id = p_table_id AND tb\.tournament_id IS NOT NULL\) THEN/
+    );
   });
 
   it('the detector is conservative: same players, felt moved by exactly -rake-bbj, one credit, no other movement', () => {

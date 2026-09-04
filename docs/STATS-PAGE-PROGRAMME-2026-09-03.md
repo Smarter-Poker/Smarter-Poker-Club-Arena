@@ -111,7 +111,11 @@ writers' uuid regex demanded RFC 4122 bits the stat writer did not. Fixed,
 backfilled, and the audit now counts seats without an index row (changelog
 section 4).
 
-### 1.2 Finish the money repair and re-measure the hand write
+### 1.2 Finish the money repair and re-measure the hand write: DONE 2026-09-04 (phase 2)
+
+Hand write 38.2 ms mean over 1,938 hands with the trigger and the repair
+both running (57.6 before the trigger; the 267 was the repair's IO before
+the facts split). Repair self-unschedules at its ceiling. The original ask:
 
 - Watch `ca_hand_player_stat_repair_state` until `done = true`. Then confirm
   `SELECT count(*) FROM ca_hand_player_stat WHERE settlement_source IS NULL`
@@ -346,7 +350,7 @@ See 1.12. Also: custom date validation copy is Title Cased already; the
 
 ---
 
-## 3. Dead code and consolidation (one PR, no behaviour change)
+## 3. Dead code and consolidation: DONE 2026-09-04 (phase 2), except LeakPanel/findLeaks which were wired in rather than deleted
 
 - Delete `PerformanceTrends`, `StakeLevelComparison`, `PlayerStyleRadar`
   (its axes are fabricated), `LeakPanel`, `StatsExportButton`: exported and
@@ -635,19 +639,19 @@ production data where it touches the database, written up in its own
 `docs/changelog/` file, and pushed. Then stop (CLAUDE.md 1.1, 10.8.3) and
 report; the next phase starts on a fresh branch off `main`.
 
-| Phase | Scope                                                                                                                                                           | Status                                         |
-| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| 1     | Data foundation: 1.1 measured and closed, facts function split (10x on ranges), witness audit + `ca_stats_health()`, engine monitor + alerts + rules, 1.3, 1.14 | DONE 2026-09-04, `fix/stats-phase-1-positions` |
-| 2     | Section 3: dead code out, `PlayerStatsPage.tsx` split into one lazy chunk per tab, inline colours out; 1.2 repair readout + hand-write re-measure               | next                                           |
-| 3     | 1.4 EV coverage, 1.5 tournament finishes live, 1.6 session rule into the RPC, 1.15 time zone                                                                    |                                                |
-| 4     | 1.7 field percentiles rollup, 1.8 transfers-equal-settlement pin, 1.13 horses sweep, section 6 conservation + horses laws                                       |                                                |
-| 5     | 1.9 trophy persistence + unlock toast, 1.10 rake pagination, 1.16 PLO grid                                                                                      |                                                |
-| 6     | Visual foundation: 7.3 renders #1 + #15, 7.4 tokens, 7.5 type, 7.6 nav rail + hero + section header bar, 6 visual law                                           |                                                |
-| 7     | Visual: Overview, Performance, Positions tiles + charts, plates #2-#4                                                                                           |                                                |
-| 8     | Visual: Hands, Tournaments, Analysis, plates #5-#7                                                                                                              |                                                |
-| 9     | Visual: Trophies medallions #9-#13, Rake plate #8, share card #14                                                                                               |                                                |
-| 10    | 1.12 club-staff member view on the shared components, 1.11 privacy matrix                                                                                       |                                                |
-| 11    | 7.8 mobile pass, 7.9 print dossier, section 4 deep links + a11y, section 5 measurements, 9 definition of done                                                   |                                                |
+| Phase | Scope                                                                                                                                                                            | Status                                         |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| 1     | Data foundation: 1.1 measured and closed, facts function split (10x on ranges), witness audit + `ca_stats_health()`, engine monitor + alerts + rules, 1.3, 1.14                  | DONE 2026-09-04, `fix/stats-phase-1-positions` |
+| 2     | Section 3: dead code out, `PlayerStatsPage.tsx` split into one lazy chunk per tab, inline colours out; 1.2 repair readout + hand-write re-measure; LeakPanel wired into Analysis | DONE 2026-09-04, `fix/stats-phase-2-split`     |
+| 3     | 1.4 EV coverage, 1.5 tournament finishes live, 1.6 session rule into the RPC, 1.15 time zone                                                                                     | next                                           |
+| 4     | 1.7 field percentiles rollup, 1.8 transfers-equal-settlement pin, 1.13 horses sweep, section 6 conservation + horses laws                                                        |                                                |
+| 5     | 1.9 trophy persistence + unlock toast, 1.10 rake pagination, 1.16 PLO grid                                                                                                       |                                                |
+| 6     | Visual foundation: 7.3 renders #1 + #15, 7.4 tokens, 7.5 type, 7.6 nav rail + hero + section header bar, 6 visual law                                                            |                                                |
+| 7     | Visual: Overview, Performance, Positions tiles + charts, plates #2-#4                                                                                                            |                                                |
+| 8     | Visual: Hands, Tournaments, Analysis, plates #5-#7                                                                                                                               |                                                |
+| 9     | Visual: Trophies medallions #9-#13, Rake plate #8, share card #14                                                                                                                |                                                |
+| 10    | 1.12 club-staff member view on the shared components, 1.11 privacy matrix                                                                                                        |                                                |
+| 11    | 7.8 mobile pass, 7.9 print dossier, section 4 deep links + a11y, section 5 measurements, 9 definition of done                                                                    |                                                |
 
 Phases 6 to 9 read the `smarter-casino-realism` skill in full first and hand
 it to every subagent.

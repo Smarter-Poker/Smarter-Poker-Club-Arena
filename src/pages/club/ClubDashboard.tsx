@@ -190,7 +190,9 @@ interface RevenueData {
     name: string;
     status: string;
     stakes: string;
+    /** RAKED hands at this table, the same basis as the rake beside it. */
     hands: number;
+    rake?: number;
     players: number;
   }>;
 }
@@ -1227,7 +1229,9 @@ export default function ClubDashboard() {
                       </div>
                     }
                   >
-                    <ClubActivityChart data={dashStats.dailySeries} />
+                    {/* ca_club_dashboard_stats.daily_series carries hands
+                        DEALT beside the club's cash rake. */}
+                    <ClubActivityChart data={dashStats.dailySeries} handsLabel="Hands Dealt" />
                   </Suspense>
                 </div>
               )}
@@ -1892,9 +1896,12 @@ export default function ClubDashboard() {
                 </Link>
 
                 <Suspense fallback={<p className={styles.empty}>Loading Chart...</p>}>
+                  {/* ca_club_revenue.daily.hands is RAKED hands, the same
+                      basis as the rake plotted against it. */}
                   <ClubActivityChart
                     data={revenue.daily.map((d) => ({ d: d.d, hands: d.hands, rake: d.rake }))}
                     height={260}
+                    handsLabel="Raked Hands"
                   />
                 </Suspense>
 
@@ -1916,7 +1923,10 @@ export default function ClubDashboard() {
                             {t.stakes} {'•'} {formatInt(t.players)} Players
                           </span>
                         </div>
-                        <span className={styles.playerStats}>{formatInt(t.hands)} Hands</span>
+                        {/* Raked hands AT the table. This printed
+                            club_member_daily_stats.hands_played, one row per
+                            player per hand: 2,113,324 against 596,730 dealt. */}
+                        <span className={styles.playerStats}>{formatInt(t.hands)} Raked Hands</span>
                       </Link>
                     ))
                   )}

@@ -276,7 +276,25 @@ function StartsCell({ entry }: { entry: LobbyEntry }) {
   );
 }
 
+/**
+ * R10 (Dan 2026-09-04): a must-move game's players are counted like a
+ * tournament's - the number inside the whole game, no denominator, no bar -
+ * with how many tables are open beside it.
+ */
+function GameCounter({ entry }: { entry: LobbyEntry }) {
+  const tables = entry.game?.tables ?? 1;
+  return (
+    <span className="lt-seats lt-seats--game">
+      <span className="lt-seats__num">{entry.players.toLocaleString()}</span>
+      <span className="lt-seats__tables">
+        {tables} {tables === 1 ? 'Table' : 'Tables'}
+      </span>
+    </span>
+  );
+}
+
 function SeatsMeter({ entry }: { entry: LobbyEntry }) {
+  if (entry.game) return <GameCounter entry={entry} />;
   const pct =
     entry.capacity > 0 ? Math.min(100, Math.round((entry.players / entry.capacity) * 100)) : 0;
   const full = entry.capacity > 0 && entry.players >= entry.capacity;

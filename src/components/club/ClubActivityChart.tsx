@@ -29,9 +29,21 @@ export interface ClubActivityPoint {
   rake: number;
 }
 
+/**
+ * WHICH HANDS (2026-09-04, the gate on phase 6). This component is rendered
+ * twice on the club dashboard, from two different series: the Overview tab
+ * passes hands DEALT (every hand the engine finished, tournament hands
+ * included) and the Revenue tab passes RAKED hands, which on this club is
+ * 182,035 against 596,817 for the same week. Both were drawn under a legend
+ * that said "Hands". The caller names its series now, because a chart that
+ * relabels itself between tabs is the defect phase 6 exists to remove.
+ */
+
 interface Props {
   data: ClubActivityPoint[];
   height?: number;
+  /** What the hands series counts. Required by every caller - see above. */
+  handsLabel: string;
 }
 
 /** "2026-08-19" -> "Aug 19", without dragging in a date library. */
@@ -48,7 +60,7 @@ const fmtChips = (n: number) =>
     maximumFractionDigits: 2,
   });
 
-export default function ClubActivityChart({ data, height = 240 }: Props) {
+export default function ClubActivityChart({ data, height = 240, handsLabel }: Props) {
   const points = (data || []).map((p) => ({ ...p, label: shortDay(p.d) }));
 
   if (points.length === 0 || points.every((p) => p.hands === 0 && p.rake === 0)) {
@@ -125,7 +137,7 @@ export default function ClubActivityChart({ data, height = 240 }: Props) {
             yAxisId="hands"
             type="monotone"
             dataKey="hands"
-            name="Hands"
+            name={handsLabel}
             stroke="#a855f7"
             strokeWidth={2}
             fill="url(#caHands)"

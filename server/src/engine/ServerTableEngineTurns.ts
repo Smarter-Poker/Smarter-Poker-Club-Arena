@@ -1517,6 +1517,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // ── ADDITIVE observability (#5): actions-processed counter + act→broadcast timer start ──
       try {
         EngineMetrics.actionsTotal.inc(1, { table_id: this.tableId });
+        EngineMetrics.actionsFleetTotal.inc(1, {
+          audience: this.humansSeated() > 0 ? 'human' : 'horse',
+        });
         this.lastActionAcceptedAtMs = Date.now();
       } catch {
         /* metrics must never affect gameplay */

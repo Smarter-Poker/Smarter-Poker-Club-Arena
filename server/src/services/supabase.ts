@@ -26,6 +26,7 @@ export * from './supabase/bbj.js';
 export * from './supabase/handHistory.js';
 export * from './supabase/snapshots.js';
 export * from './supabase/cashSessions.js';
+export * from './supabase/seatMoves.js';
 
 // `export *` does not forward a default export — re-declare it so the legacy
 // `import supabase from '../services/supabase.js'` form still resolves.

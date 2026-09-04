@@ -537,9 +537,30 @@ club 200, a club he is not a member of 403/42501, anon 401.
 
 ## 9. Phase 7 - Money movement
 
-**FIRST, AND MEASURED BY THE PHASE 6 GATE (2026-09-04): the rake-by-agent
-breakdown cannot be read at this club's volume, and the page retries it into
-the ground.** Opening `/clubs/<slug>/data` in a browser:
+**FIRST, AND MEASURED BY THE PHASE 6 GATE (2026-09-04): two reads on the
+finance pages are still too slow to answer, and one of them is not yet
+explained.**
+
+**(a) The bomb pot report. Half fixed, and the half that remains is a
+mystery worth solving before anything is built on it.** The missing index is
+in (`idx_hand_history_bomb_pot_created`, applied inside the freeze) and it did
+what it should: the report's core scan went from **46 seconds to 489ms**, and
+the whole function runs in **684ms** when called as `postgres`. Called as
+`authenticated` - same session, same data, same warm cache - the same function
+takes **9.7 and 17.3 seconds**, and through PostgREST it still times out at
+8.2s, so the page still says "Could Not Load The Bomb Pot Report".
+
+Ruled out by measurement, not by reasoning: it is not the missing index (added,
+and the scan is fast); not RLS inside the function (`SET row_security TO 'off'`
+on the function changed nothing); not a second overload (there is one); not the
+`safeupdate` preload (absent in the psql test that was still slow). What is
+left is something role-dependent about how this function is planned or
+executed, and the honest position is that I do not yet know what. It needs a
+plan captured from inside the function as the real caller (`auto_explain`, or
+an `EXPLAIN` executed inside the body), not another guess.
+
+**(b) The rake-by-agent breakdown cannot be read at this club's volume, and
+the page retried it into the ground.** Opening `/clubs/<slug>/data` in a browser:
 
 ```
 ca_club_data_snapshot   200 in  300-1,000ms

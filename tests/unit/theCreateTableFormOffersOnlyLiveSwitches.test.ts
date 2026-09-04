@@ -19,19 +19,33 @@
  * These are source-level assertions on purpose. The defect is what the form
  * OFFERS and what it WRITES, and both are visible in the file. Same technique
  * as oneTableWriter.test.ts.
+ *
+ * 2026-09-04 (Operation Table Stakes, Slice 1): the cash writer moved out of
+ * TableConfigPage.buildTableData and into SQL. fn_cash_game_create projects
+ * the resolved ruleset snapshot onto the SAME engine columns, so every pin
+ * below now reads the INSERT in that migration instead of a TSX object
+ * literal. What the form OFFERS is now CashGameCreateFlow.tsx.
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 
-const FORM = path.join(process.cwd(), 'src', 'pages', 'TableConfigPage.tsx');
-const source = fs.readFileSync(FORM, 'utf8');
-/** The file minus its doc comments — the removed names are NAMED in those. */
-const code = source
-  .replace(/\/\*[\s\S]*?\*\//g, '')
-  .split('\n')
-  .filter((line) => !/^\s*\/\//.test(line))
-  .join('\n');
+const read = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), 'utf8');
+const SQL = read('supabase/migrations/20260904160500_cash_games_slice_1.sql');
+const FLOW = read('src/components/cash/CashGameCreateFlow.tsx');
+const VOCAB = read('src/config/cashGames.ts');
+
+/** The column list of the one INSERT INTO public.tables the create function makes. */
+const insertColumns = (() => {
+  const at = SQL.indexOf('INSERT INTO public.tables (');
+  const close = SQL.indexOf(') VALUES (', at);
+  if (at < 0 || close < 0) throw new Error('fn_cash_game_create: tables INSERT not found');
+  return SQL.slice(at, close)
+    .replace('INSERT INTO public.tables (', '')
+    .split(',')
+    .map((c) => c.trim())
+    .filter(Boolean);
+})();
 
 /** Columns written on a cash row with zero readers anywhere. */
 const DEAD_ON_A_CASH_ROW = [
@@ -55,6 +69,12 @@ const DEAD_ON_A_CASH_ROW = [
   'save_start_time',
   'restart_tournament_every',
   'tournament_schedule',
+  // 2026-08-29: true on 0 of 97,944 rows; the engine reads bomb_pot_double_board.
+  'double_board',
+  // 2026-09-04: pineapple is a dealt VARIANT now (game_variant = 'pineapple'),
+  // so the flag that used to turn an NLH table into one is never written and
+  // can never go stale on a PLO row.
+  'pineapple_holdem',
 ];
 
 /**
@@ -76,89 +96,84 @@ const ALIVE_DESPITE_APPEARANCES = [
 /**
  * DERIVED COLUMNS. WRITING ONE IS AN ERROR, NOT A PREFERENCE (2026-08-31).
  *
- * These used to sit in ALIVE_DESPITE_APPEARANCES on the grounds that
- * 20260828_cash_buyins_are_40bb_to_200bb.sql "resyncs them deliberately". That
- * resync only ever touched the six rows its WHERE clause matched and left
- * 103,684 on the 2/25 DEFAULT from 010_table_configuration.sql, which is how a
- * 1/2 table came to advertise a 400-chip maximum while carrying a column that
- * said 50.
- *
- * 20260831133000_one_buy_in_band_and_the_rest_are_derived.sql ended that: all
- * four are now GENERATED ALWAYS ... STORED from the canonical chips pair, so
- * Postgres itself refuses a write with 428C9 and the families cannot disagree.
- * A page that stamps one of these does not write a stale value any more, it
- * breaks table creation outright.
- *
- * The pin is therefore INVERTED for these, not deleted. That distinction is
- * the point: the columns are still read everywhere, so a plain "no longer
- * writes" entry in DEAD_ON_A_CASH_ROW would have said something false about
- * why.
+ * 20260831133000_one_buy_in_band_and_the_rest_are_derived.sql made all four
+ * GENERATED ALWAYS ... STORED from the canonical chips pair, so Postgres
+ * itself refuses a write with 428C9. A create function that names one of
+ * these does not write a stale value, it breaks table creation outright.
  */
 const DERIVED_AND_UNWRITABLE = ['min_buy_in_bb', 'max_buy_in_bb', 'min_buyin', 'max_buyin'];
 
-describe('5a — the three lifecycle switches are read in SQL and stay', () => {
-  it.each(['Auto Restart', 'Auto Extension', 'Auto Create Table'])(
-    'still offers the "%s" toggle',
-    (label) => {
-      expect(code).toContain(`label="${label}"`);
-    }
-  );
-
+describe('5a — the three lifecycle switches are read in SQL and stay written', () => {
   it.each(['auto_restart', 'auto_extension', 'auto_create_table'])(
     'still writes %s, which fn_table_lifecycle_pass reads',
     (column) => {
-      expect(code).toMatch(new RegExp(`^\\s*${column}: config\\.`, 'm'));
+      expect(insertColumns).toContain(column);
     }
   );
+
+  it('but no longer OFFERS them: the cluster lifecycle is autonomous (OPORD 1.4 section 18)', () => {
+    for (const label of ['Auto Restart', 'Auto Extension', 'Auto Create Table']) {
+      expect(FLOW).not.toContain(`label="${label}"`);
+    }
+    // R3: Main 1 is always on. auto_extension keeps it open, auto_restart
+    // reopens it; auto_create_table stays off because the pass's clone
+    // would not carry cluster_id.
+    expect(SQL).toMatch(/auto_extension, auto_restart, auto_create_table,/);
+    expect(SQL).toMatch(/^\s*true, true, false,\s*$/m);
+  });
 });
 
 describe('5b — the tournament block is not written onto a cash row', () => {
-  it.each(DEAD_ON_A_CASH_ROW)('no longer writes %s', (column) => {
-    expect(code).not.toMatch(new RegExp(`^\\s*${column}:`, 'm'));
+  it.each(DEAD_ON_A_CASH_ROW)('does not write %s', (column) => {
+    expect(insertColumns).not.toContain(column);
   });
 
   it.each(ALIVE_DESPITE_APPEARANCES)('still writes %s, which has live readers', (column) => {
-    expect(code).toMatch(new RegExp(`^\\s*${column}:`, 'm'));
+    expect(insertColumns).toContain(column);
   });
 
   it.each(DERIVED_AND_UNWRITABLE)(
     'does not write %s, which the database now generates',
     (column) => {
       expect(
-        code,
+        insertColumns,
         `${column} is GENERATED ALWAYS since ` +
           '20260831133000_one_buy_in_band_and_the_rest_are_derived.sql. Writing it ' +
           'raises 428C9 and breaks table creation. Write min_buy_in / max_buy_in ' +
           '(chips) instead; the big-blind columns follow.'
-      ).not.toMatch(new RegExp(`^\\s*${column}:`, 'm'));
+      ).not.toContain(column);
     }
   );
 
   it('still writes the canonical chips pair the engine actually enforces', () => {
     // The inverted pins above only say what must NOT be written. Without this,
     // deleting the real band would turn the whole block green.
-    expect(code).toMatch(/^\s*min_buy_in:/m);
-    expect(code).toMatch(/^\s*max_buy_in:/m);
+    expect(insertColumns).toContain('min_buy_in');
+    expect(insertColumns).toContain('max_buy_in');
+    // In chips: the band is authored in big blinds and multiplied out here.
+    expect(SQL).toMatch(/round\(p_bb \* v_min_bb, 2\), round\(p_bb \* v_max_bb, 2\)/);
   });
 });
 
-describe('5c — the Pineapple switch exists and matches the engine gate', () => {
-  it('offers the control the engine has always honoured', () => {
-    expect(code).toContain(`label="Pineapple Hold'em"`);
-    expect(code).toContain("updateConfig('pineappleHoldem'");
+describe('5c — Pineapple is a variant the picker offers and the engine deals', () => {
+  it('offers the control the engine has always honoured - as a variant card', () => {
+    expect(VOCAB).toMatch(/id: 'pineapple'/);
   });
 
   it('offers it only where ServerTableEngineBase will deal it', () => {
-    // dealtGameVariant: pineapple_holdem is honoured on 'nlh' and 'nlhe' only,
-    // "because Pineapple PLO is not a game".
-    expect(code).toMatch(/PINEAPPLE_VARIANTS = new Set\(\['nlh', 'nlhe'\]\)/);
-    expect(code).toContain('{canDealPineapple(gameType) && (');
+    // game_variant = 'pineapple' is dealt as pineapple outright; the create
+    // function refuses anything outside the dealt list (VARIANT_UNAVAILABLE).
+    const engine = read('server/src/engine/ServerTableEngineBase.ts');
+    expect(engine).toContain("if (variant === 'pineapple') return 'pineapple';");
+    expect(SQL).toMatch(
+      /IF v_v NOT IN \('nlh','plo4','plo5','plo6','plo8','flo8','flh','short_deck','pineapple'\) THEN/
+    );
   });
 
   it('cannot leave a stale true on a variant the engine ignores', () => {
-    expect(code).toMatch(
-      /pineapple_holdem:\s*canDealPineapple\(gameType\) \? config\.pineappleHoldem : false/
-    );
+    // There is no flag to leave stale: pineapple_holdem is not written.
+    expect(insertColumns).not.toContain('pineapple_holdem');
+    expect(FLOW).not.toContain('pineapple_holdem');
   });
 });
 
@@ -166,9 +181,13 @@ describe('5d — the 7-2 amount is gated exactly like the 7-2 switch', () => {
   it('writes the default amount off a variant that can never pay the bounty', () => {
     // The switch was gated and the amount was not, so a PLO6 table created
     // after loading an NLH template wrote enabled:false beside amount:8.
-    const amount = code.match(/seven_deuce_amount:[\s\S]{0,220}?,\n/);
-    expect(amount).not.toBeNull();
-    expect(amount?.[0]).toContain('SEVEN_DEUCE_VARIANTS.has');
-    expect(amount?.[0]).toContain('config.sevenDeuceEnabled');
+    // Now: the snapshot forces the flag false off NLH, and the amount is a
+    // CASE on that same flag.
+    expect(SQL).toMatch(
+      /'seven_deuce_enabled', coalesce\(\(v_o->'options'->>'seven_deuce_enabled'\)::boolean, false\) AND v_v = 'nlh'/
+    );
+    expect(SQL).toMatch(/CASE WHEN \(v_opts->>'seven_deuce_enabled'\)::boolean THEN 2 ELSE 0 END/);
+    // And the form only offers the switch on NLH.
+    expect(FLOW).toMatch(/\{variant === 'nlh' && \(/);
   });
 });

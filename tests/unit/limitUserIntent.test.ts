@@ -197,18 +197,31 @@ describe('the Pineapple control tracks whether the engine honours it', () => {
    * path had no way to set it. Removing the control was right in a world
    * where nothing read the column; it is wrong in this one.
    */
-  it('offers the toggle now that the engine deals it', () => {
-    const cfg = read('src/pages/TableConfigPage.tsx');
-    expect(cfg).toMatch(/label="Pineapple Hold'em"/);
-    expect(cfg).toMatch(/updateConfig\('pineappleHoldem'/);
+  /**
+   * 2026-09-04 (Operation Table Stakes, Slice 1): the toggle became a
+   * VARIANT. The New Cash Game flow offers Pineapple as its own card
+   * (game_variant = 'pineapple'), which ServerTableEngineBase.dealtGameVariant
+   * deals outright, and fn_cash_game_create admits it by name. The
+   * pineapple_holdem flag is no longer written by any create path, so it
+   * cannot go stale on a PLO row.
+   */
+  it('offers it as a variant now that the engine deals it', () => {
+    const vocab = read('src/config/cashGames.ts');
+    expect(vocab).toMatch(/\{ id: 'pineapple', label: 'Pineapple', family: 'pineapple' \}/);
+    const sql = read('supabase/migrations/20260904160500_cash_games_slice_1.sql');
+    expect(sql).toMatch(
+      /variant IN \('nlh','plo4','plo5','plo6','plo8','flo8','flh','short_deck','pineapple'\)/
+    );
   });
 
-  it('offers it only on the variants dealtGameVariant will honour', () => {
+  it('offers it only where dealtGameVariant will honour it', () => {
     // "Pineapple PLO is not a game and a stray flag must not silently turn a
-    // PLO table into one" — ServerTableEngineBase.
-    const cfg = read('src/pages/TableConfigPage.tsx');
-    expect(cfg).toMatch(/PINEAPPLE_VARIANTS = new Set\(\['nlh', 'nlhe'\]\)/);
-    expect(cfg).toContain('{canDealPineapple(gameType) && (');
+    // PLO table into one" — ServerTableEngineBase. There is no flag now.
+    const engine = read('server/src/engine/ServerTableEngineBase.ts');
+    expect(engine).toContain("if (variant === 'pineapple') return 'pineapple';");
+    const flow = read('src/components/cash/CashGameCreateFlow.tsx');
+    expect(flow).not.toContain('pineapple_holdem');
+    expect(read('src/pages/TableConfigPage.tsx')).not.toContain("updateConfig('pineappleHoldem'");
   });
 
   it('the engine still reads the column this switch writes', () => {

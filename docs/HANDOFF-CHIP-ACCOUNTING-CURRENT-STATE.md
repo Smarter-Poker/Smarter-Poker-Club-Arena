@@ -10,6 +10,48 @@ working in five minutes; read the rest before you change anything.
 
 ---
 
+## 0. ADDENDUM, 2026-09-04 00:35 UTC - READ THIS FIRST
+
+The body below was drafted at 00:10. Between 00:10 and 00:35 I re-measured
+production for this document and four things came out of it. Where the body
+disagrees with this section, this section wins.
+
+**1. `clubs` read SIX, not four.** The club-create certification leaked two more
+fixtures at 23:41 UTC - an hour after the fleet of fifteen was retired, on the
+build (#2898) that was supposed to have made that impossible. The guard that PR
+added worked perfectly and reported the leak; the cleanup it guarded could not
+finish. `public.clubs` has seventy foreign keys, a DELETE checks every one, and
+seven of them had no index that could answer them - two of the seven *looked*
+indexed but were **partial**, and a partial index cannot answer a foreign key
+check. The whole thing timed out inside the PostgREST request budget. Closed in
+`fix/chip-std-club-fk-indexes` (13 indexes, `fn_ca_fk_index_gaps`,
+`scripts/ci/check-club-fk-indexes.mjs` wired into `ci.yml`, a law test). Both
+fixtures retired through the real door in 2.43s and 2.58s; `clubs` = 4;
+200,000.00 left as two declared burns to `chip_retirement`. **Defect 1b, closed.**
+
+**2. The unexplained supply drift is now root-caused to exactly two accounts.**
+This is the single most useful number in this document and it did not exist at
+00:10. `fn_ca_trial_balance('2026-09-03 23:05:00.618832+00')` over a clean hour:
+**every** account reconciles at 0.00 except `table_stack` (**-2,050.05**) and
+`tournament_liability` (**-888.70**), and those two are the whole of
+`total_supply`'s -2,938.75. The felt is losing about two thousand chips an hour
+that the journal says it should still have. **Defect 0. Start here.**
+
+**3. Two migrations were live in production with no repository file at all** -
+`20260903233601` and `20260903233649`, the two cron repairs. Not in a merged PR,
+not in an open one. Exported byte-exact and committed in the same branch as (1).
+The lesson is in section 15: `check-applied-migrations-are-recorded` passing does
+**not** mean the repository is a complete record of production. Run the parity
+comparator (section 13) as well.
+
+**4. Publish caught up.** `origin/main` and the published `ca_sha` were both
+`d2471ff7` at 00:24Z. PRs #2900 and #2903 merged. #2896, #2904 and #2905 were
+open at the time of writing - section 11 has their state and what each needs.
+
+---
+
+---
+
 ## 1. Executive continuation brief
 
 **What is being built.** Club Arena is a live poker platform (cash, MTT, SNG,
@@ -706,6 +748,13 @@ git -c credential.helper= fetch origin
 git -c credential.helper= push --force-with-lease origin <branch>
 ```
 
+**`check-applied-migrations-are-recorded` is not a parity check.** It passes when
+every migration file in the repo has been applied. It says nothing about the
+other direction, and on 2026-09-04 two migrations were live in production with no
+file anywhere while that gate read green. Run `/tmp/parity2.mjs` as well - it is
+the only thing that reads production's migration ledger and asks the repository
+whether it has each one.
+
 **Where `.env` lives**: `~/Documents/club-arena/.env`. It is **not** in
 `~/Documents/Smarter-Poker-Club-Arena` (that checkout has only `.env.example`),
 and it is not in the worktrees. Source it, then
@@ -815,6 +864,10 @@ green next cycle is **UNVERIFIED**.
 18. **"Is there an index on this column" is the wrong question.** A partial
     index leads on the column and cannot answer a foreign key check. Ask for
     valid, non-partial, leading-column - the query is in `fn_ca_fk_index_gaps`.
+20. **A green gate is not a proof of the thing you want proved.**
+    `check-applied-migrations-are-recorded` was green while two migrations sat in
+    production with no repository file. It checks repo-to-production, not
+    production-to-repo. Ask what a gate actually asserts before you rest on it.
 19. **Do not assume a GUC does what it reads like.** I was about to give
     `fn_ca_retire_certification_club` a function-level `SET statement_timeout`
     and call the leak fixed. It does nothing for the statement already running.

@@ -54,8 +54,21 @@ describe('Create-Table Help', () => {
 });
 
 describe('Create-Table Switch And Bomb-Schedule Markup', () => {
+  // 2026-09-04 (Operation Table Stakes, Slice 1): the switch moved verbatim
+  // into src/components/table-config/controls.tsx so the New Cash Game flow
+  // and the tournament form draw the same one. The bomb schedule on a cash
+  // game is now Every 15 Minutes or Every Orbit (OPORD 1.3 section 8), so
+  // there is no hands interval to explain on the cash side at all.
   const form = fs.readFileSync(
     path.join(process.cwd(), 'src', 'pages', 'TableConfigPage.tsx'),
+    'utf8'
+  );
+  const controls = fs.readFileSync(
+    path.join(process.cwd(), 'src', 'components', 'table-config', 'controls.tsx'),
+    'utf8'
+  );
+  const flow = fs.readFileSync(
+    path.join(process.cwd(), 'src', 'components', 'cash', 'CashGameCreateFlow.tsx'),
     'utf8'
   );
   const css = fs.readFileSync(
@@ -64,24 +77,33 @@ describe('Create-Table Switch And Bomb-Schedule Markup', () => {
   );
 
   it('Uses An Isolated Conventional Switch With A Visible On Or Off Status', () => {
-    expect(form).toContain('className="table-config-switch"');
-    expect(form).toContain('role="switch"');
-    expect(form).toContain("{value ? 'On' : 'Off'}");
+    expect(controls).toContain('className="table-config-switch"');
+    expect(controls).toContain('role="switch"');
+    expect(controls).toContain("{value ? 'On' : 'Off'}");
+    expect(controls).not.toContain('className="toggle-switch"');
     expect(form).not.toContain('className="toggle-switch"');
+    expect(flow).not.toContain('className="toggle-switch"');
+    // Both forms draw THAT switch, not a copy.
+    expect(form).toMatch(
+      /import \{ Toggle, Slider, NumberField \} from '\.\.\/components\/table-config\/controls'/
+    );
+    expect(flow).toMatch(/import \{ Slider, Toggle \} from '\.\.\/table-config\/controls'/);
     expect(css).toContain('.table-config-switch__track');
     expect(css).toContain('width: 52px');
     expect(css).toContain('height: 28px');
   });
 
-  it('Explains The Hands Interval Without An Unexplained N', () => {
+  it('Explains The Bomb Schedule Without An Unexplained N', () => {
     expect(form).not.toContain('Every N Hands');
-    expect(form).toContain('Every Set Number Of Hands');
-    expect(form).toContain('Bomb Pot Hand Interval');
-    expect(form).toContain('th Dealt Hand Is A Bomb Pot.');
+    expect(flow).not.toContain('Every N Hands');
+    expect(flow).toContain('Every 15 Minutes');
+    expect(flow).toContain('Every Orbit');
   });
 
   it('Leaves No Passive Tooltip Spans On The Create-Table Page', () => {
-    expect(form).not.toContain('tooltip-icon');
-    expect(form).not.toMatch(/title=.{0,80}\?/);
+    for (const src of [form, controls, flow]) {
+      expect(src).not.toContain('tooltip-icon');
+      expect(src).not.toMatch(/title=.{0,80}\?/);
+    }
   });
 });

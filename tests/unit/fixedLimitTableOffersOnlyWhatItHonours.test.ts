@@ -34,62 +34,82 @@ import { join } from 'node:path';
 import { isFixedLimitVariant } from '../../src/lib/bettingStructure';
 
 const page = readFileSync(join(process.cwd(), 'src/pages/TableConfigPage.tsx'), 'utf8');
+/**
+ * 2026-09-04 (Operation Table Stakes, Slice 1): the cash create path is
+ * fn_cash_game_create in SQL, fed by CashGameCreateFlow.tsx. The four
+ * controls this file is about are not a limit-table special case any more:
+ * OPORD 1.3 section 8 takes straddles, caps and the bomb-pot variant
+ * override off EVERY cash game (R2), so a limit table cannot be offered them
+ * because nobody can. The pins move to where that is written.
+ */
+const sql = readFileSync(
+  join(process.cwd(), 'supabase/migrations/20260904160500_cash_games_slice_1.sql'),
+  'utf8'
+);
+const flow = readFileSync(
+  join(process.cwd(), 'src/components/cash/CashGameCreateFlow.tsx'),
+  'utf8'
+);
+const tablesInsert = (() => {
+  const at = sql.indexOf('INSERT INTO public.tables (');
+  const end = sql.indexOf('RETURNING id INTO v_table_id', at);
+  if (at < 0 || end < 0) throw new Error('fn_cash_game_create: tables INSERT not found');
+  return sql.slice(at, end);
+})();
 
 describe('the seven-deuce bounty is offered only where it is paid', () => {
   it('lists exactly the variant the engine settles on', () => {
-    const line = page.match(/const SEVEN_DEUCE_VARIANTS = new Set\(\[([^\]]*)\]\)/);
-    expect(line, 'SEVEN_DEUCE_VARIANTS not found').toBeTruthy();
-    const variants = line![1]
-      .split(',')
-      .map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
-      .filter(Boolean);
-    expect(variants).toEqual(['nlh']);
+    // The gate is the same string equality the engine uses.
+    expect(sql).toMatch(/'seven_deuce_enabled', [^\n]* AND v_v = 'nlh'/);
+    expect(flow).toMatch(/\{variant === 'nlh' && \(\s*<Toggle\s*label="Seven Deuce Bonus"/);
   });
 
   it('does not offer it on a limit or pineapple table', () => {
     // Each of these reached the toggle and wrote seven_deuce_enabled: true,
     // and none of them could ever be paid.
     for (const dead of ['flh', 'limit_holdem', 'pineapple', 'nlhe']) {
-      expect(page).not.toMatch(new RegExp(`SEVEN_DEUCE_VARIANTS[^)]*'${dead}'`));
+      expect(sql).not.toMatch(new RegExp(`seven_deuce_enabled[^\\n]*'${dead}'`));
     }
   });
 });
 
 describe('the three controls a limit table cannot honour', () => {
   it('knows which games are fixed limit', () => {
-    // The predicate the page's gate is built on. If this stops being true the
-    // assertions below are checking nothing.
+    // The predicate the stakes ladder is built on. If this stops being true
+    // the assertions below are checking nothing.
     expect(isFixedLimitVariant('flh')).toBe(true);
     expect(isFixedLimitVariant('flo8')).toBe(true);
     expect(isFixedLimitVariant('nlh')).toBe(false);
     expect(isFixedLimitVariant('plo4')).toBe(false);
   });
 
-  it('computes the limit gate once, from the route variant', () => {
+  it('computes the limit gate once, from the chosen variant', () => {
+    expect(flow).toMatch(/const limitGame = isFixedLimitVariant\(variant\)/);
+    // The tournament tabs keep theirs.
     expect(page).toMatch(/const limitGame = isFixedLimitGame\(gameType\)/);
   });
 
   it('forces straddle off in the written row, not only in the UI', () => {
-    // Hiding a control is not enough: a template saved on a no-limit table can
-    // carry `autoUtgStraddle: true` onto a limit one.
-    expect(page).toMatch(/auto_utg_straddle:\s*!limitGame && config\.autoUtgStraddle/);
-    expect(page).toMatch(/voluntary_straddle:\s*!limitGame && config\.voluntaryStraddle/);
-    expect(page).toMatch(/straddle_enabled:\s*!limitGame &&/);
+    // R2: the straddle lane is folded on every cash game, limit or not.
+    expect(tablesInsert).toMatch(/straddle_enabled, auto_utg_straddle, voluntary_straddle,/);
+    expect(tablesInsert).toMatch(/^\s*false, false, false,\s*$/m);
+    expect(sql).toMatch(/'straddle', false/);
   });
 
-  it('forces the cap off in the written row', () => {
-    expect(page).toMatch(/cap_enabled:\s*!limitGame && config\.capEnabled/);
-    expect(page).toMatch(/cap_bb:\s*!limitGame && config\.capEnabled/);
+  it('writes no cap at all, so the row keeps the column default of false', () => {
+    // 010_table_configuration.sql: cap_enabled BOOLEAN DEFAULT false.
+    expect(tablesInsert).not.toMatch(/\bcap_enabled\b/);
+    expect(tablesInsert).not.toMatch(/\bcap_bb\b/);
   });
 
-  it('forces the bomb-pot variant override off in the written row', () => {
-    expect(page).toMatch(/bomb_pot_variant:\s*\n?\s*!limitGame &&/);
+  it('writes no bomb-pot variant override, so a bomb hand plays the table variant', () => {
+    expect(tablesInsert).not.toMatch(/\bbomb_pot_variant\b/);
   });
 
-  it('hides all three controls rather than leaving them dead on screen', () => {
-    // A disabled control still says the feature exists. These are gated out.
-    expect(page).toMatch(/\{!limitGame && \(/);
-    expect(page).toMatch(/label="Auto UTG Straddle"/);
-    expect(page).toMatch(/limitGame \? \{ display: 'none' \} : undefined/);
+  it('offers none of the three, rather than leaving them dead on screen', () => {
+    expect(flow).not.toMatch(/label="Auto UTG Straddle"/);
+    expect(flow).not.toMatch(/label="Cap"/);
+    expect(flow).not.toMatch(/bomb_pot_variant/);
+    expect(flow.replace(/\s+/g, ' ')).toContain('Straddles Are Off');
   });
 });

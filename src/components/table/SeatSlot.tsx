@@ -40,7 +40,7 @@ import { bustArtGain, BUST_ART_GAIN } from './bustArtGain';
 import { displayOrderWithDealtIndex } from '../../lib/tableCardDisplay';
 import { seatCardSide, type CardSide } from '../../lib/tableSeatGeometry';
 import './avatarChoreography.css';
-import { formatTableChips } from '../../utils/format';
+import { formatStackChips, formatTableChips } from '../../utils/format';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -468,10 +468,11 @@ export interface SeatSlotProps {
 // number the player is about to act on. One formatter, shared with every
 // other chip surface on the table.
 function formatStack(amount: number): string {
-  // Same reason as ChipAnimation: fractional cents on a big stack are rake
-  // and split artifacts, not chips anyone can bet. Squared off for display
-  // only, and only above 1 so micro-stakes keep their cents.
-  return formatTableChips(amount >= 1 ? Math.round(amount) : amount);
+  // Whole chips from 100 up (engine sub-chip noise is rake and split
+  // artifacts, not chips anyone can bet); to the penny below it, always two
+  // places (Dan 2026-09-04). The rule lives in utils/format so the seat, the
+  // stack-delta float and the net-win line cannot disagree about a stack.
+  return formatStackChips(amount);
 }
 
 // Dan 2026-08-28: the same rule as chips. A 1,500 BB stack read "1.5K BB",

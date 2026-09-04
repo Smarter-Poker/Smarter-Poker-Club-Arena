@@ -1,5 +1,4 @@
 export const ROSTER_SUMMARY_REUSE_MS = 30_000;
-export const ROSTER_FEE_ROLLUP_TOUCH_MS = 30_000;
 
 interface SummaryEntry<T> {
   key: string;
@@ -64,10 +63,6 @@ export class RosterSummaryCoordinator<T> {
     this.generation += 1;
     this.entry = null;
   }
-}
-
-export function shouldTouchFeeRollup(lastTouchedAt: number | null, now = Date.now()): boolean {
-  return lastTouchedAt === null || now - lastTouchedAt >= ROSTER_FEE_ROLLUP_TOUCH_MS;
 }
 
 interface IndependentRosterReads<TSummary, TPage> {

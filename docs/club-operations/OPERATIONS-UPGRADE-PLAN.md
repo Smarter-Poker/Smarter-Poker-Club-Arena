@@ -457,6 +457,20 @@ Original audit, kept for the record:
 
 ---
 
+## 7b. Loose ends from phases 1-5. **DONE**
+
+Closed 2026-09-04 before phase 6 (changelog
+`docs/changelog/2026-09-04-club-operations-the-loose-ends-are-tied-off.md`,
+migration `20260904200000`): the payables estimate and the phase 4 / 5
+legacy payload keys are off the live functions; the roster summary counts
+the club the directory lists; the engine's dead fee-rollup loop is retired
+(table drop deferred to the phase 6 DDL batch, after the engine deploys);
+the agent console's exclusion takes a reason and an expiry; the agent
+dashboard pages its ledgers from the server and its cache no longer
+truncates what the cards sum; the rake channel is shared; three dead
+AgentService methods and the empty icon wrappers are gone; the agent list
+cap is announced; all-gates.sh runs entry-chunk-delta.
+
 ## 8. Phase 6 - Finance truth
 
 - **CONFIRMED - four headline numbers on Financials are computed from the

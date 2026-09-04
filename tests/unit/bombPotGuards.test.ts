@@ -677,9 +677,19 @@ describe('ROUND 8 (2026-08-29) — the last of the open items', () => {
     // `double_board` is true on 0 of 97,944 rows despite being written on every
     // double-board table ever created, because nothing has ever read it. The
     // lobby reads the settings blob; the engine reads bomb_pot_double_board.
+    // 2026-09-04 (Operation Table Stakes, Slice 1): the cash writer is
+    // fn_cash_game_create in SQL; the page builds no tables row any more.
     expect(blankNonCode(CONFIG)).not.toMatch(/^\s*double_board:/m);
-    // Its canonical sibling is still written — that one has readers.
-    expect(CONFIG).toMatch(/bomb_pot_double_board: config\.bombPotEnabled/);
+    const CREATE_SQL = read('supabase/migrations/20260904230000_cash_games_slice_1_hardening.sql');
+    const insert = CREATE_SQL.slice(
+      CREATE_SQL.indexOf('INSERT INTO public.tables ('),
+      CREATE_SQL.indexOf('RETURNING id INTO v_table_id')
+    );
+    expect(insert).not.toMatch(/\bdouble_board\b/);
+    // Its canonical sibling is still written — that one has readers — from
+    // the board count the snapshot carries.
+    expect(insert).toMatch(/bomb_pot_board_count, bomb_pot_double_board,/);
+    expect(insert).toMatch(/coalesce\(v_bomb_boards, 1\), coalesce\(v_bomb_boards, 1\) >= 2,/);
   });
 
   it('a host can edit a table that is already running', () => {
@@ -747,8 +757,10 @@ describe('ROUND 8 (2026-08-29) — the last of the open items', () => {
     // The fractional case is not lost - bomb_pot_ante_fixed is `numeric` and
     // prices the ante in chips, which is the honest way to say "two and a half
     // big blinds" anyway.
-    const CONFIG_PAGE = read('src/pages/TableConfigPage.tsx');
-    const anteSlider = sliceEnclosingBlock(CONFIG_PAGE, 'label="Bomb Pot Ante"');
+    // 2026-09-04 (Operation Table Stakes, Slice 1): the cash form is
+    // CashGameCreateFlow, whose "Bomb Ante" slider steps by whole big blinds.
+    const FLOW = read('src/components/cash/CashGameCreateFlow.tsx');
+    const anteSlider = sliceEnclosingBlock(FLOW, 'label="Bomb Ante"');
     expect(anteSlider).toMatch(/step=\{1\}/);
     expect(blankNonCode(anteSlider)).not.toMatch(/step=\{0\.5\}/);
 

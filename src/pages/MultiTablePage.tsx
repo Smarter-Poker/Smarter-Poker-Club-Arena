@@ -60,6 +60,7 @@ import { resolveLobbyClubId } from '../utils/clubQuickLink';
 import { useUserStore } from '../stores/useUserStore';
 import { TableErrorBoundary } from '../components/common/TableErrorBoundary';
 import { betSliderStep, sliderUnitFor } from '../components/table/ActionPanel';
+import { publishInTabLobbyActive } from '../components/club/inTabLobbySurface';
 
 // Lazy-load TablePage for code splitting
 const TablePage = lazyWithRetry(() => import('./TablePage'));
@@ -3207,6 +3208,17 @@ export default function MultiTablePage() {
     else body.removeAttribute('data-ca-pinned-bar');
     return () => body.removeAttribute('data-ca-pinned-bar');
   }, [pinnedBarVisible]);
+
+  // THE FOOTER FOLLOWS THE LOBBY (Dan 2026-09-04). The "+" lobby is a tab on
+  // /table/<id>, a route the global footer is (rightly) denied on. Tell the
+  // app root when the tab on screen is a lobby, so the footer shows there and
+  // ONLY there - never over a live felt, never for a lobby tab parked behind
+  // one, and never after this container unmounts. See inTabLobbySurface.ts.
+  useEffect(() => {
+    const cur = tables[activeIndex];
+    publishInTabLobbyActive(!hidden && !!cur && isLobbyTab(cur));
+  }, [hidden, tables, activeIndex]);
+  useEffect(() => () => publishInTabLobbyActive(false), []);
 
   // Remember the last REAL table the player had on screen, so the dock can
   // send them back to it rather than to whichever tab happens to be oldest.

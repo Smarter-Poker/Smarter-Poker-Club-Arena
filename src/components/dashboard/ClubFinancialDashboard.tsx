@@ -11,6 +11,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { isAuthzError } from '../../utils/clubDashboard';
 import { useVisibilityRefresh } from '../../hooks/useVisibilityRefresh';
 import {
   AreaChart,
@@ -63,11 +64,12 @@ const getEmptyRevenueData = () => {
  * as rake * 0.1 and agent commissions as rake * 0.05, labelled as if they were
  * real"; this is the last of that family.
  *
- * The three sources, all live:
- *   rake      rake_records (the ledger the bar chart already reads)
- *   agents    fn_club_commission_accrued - the definer aggregate over
- *             agent_commissions, staff-only, added in phase 7
- *   players   chip_transactions of type 'rakeback'
+ * The three sources, all live, and since phase 6 (2026-09-04) all from ONE
+ * gated read, ca_club_financials:
+ *   rake      ca_club_rake_daily, the per-day rollup of rake_records
+ *   agents    ca_club_commission_daily, the per-day rollup of agent_commissions
+ *   players   chip_transactions of type 'rakeback', summed server-side (the
+ *             browser read only ever saw the caller's own rows)
  * The club's own share is what is left, floored at zero.
  */
 const EMPTY_SPLIT = [
@@ -197,67 +199,67 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
 
   const fetchRevenueData = async () => {
     try {
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - 6);
-      startDate.setHours(0, 0, 0, 0);
+      // PHASE 6 (2026-09-04): the three shares came from three browser reads -
+      // up to 10,000 rake_records rows (this club deals 93,465 raked hands in
+      // a day), plus chip_transactions under an RLS policy that returns the
+      // CALLER's own rows, so "Players" was the rakeback paid to whoever was
+      // looking. ca_club_financials returns all three from the ledgers, for
+      // the same seven days, behind the finance gate.
+      const { resolveClubUUIDStrict } = await import('../../utils/strictClubIdResolver');
+      const resolvedId = await resolveClubUUIDStrict(clubId);
+      const today = new Date();
+      const end = today.toISOString().slice(0, 10);
+      const from = new Date(today);
+      from.setUTCDate(from.getUTCDate() - 6);
 
-      const resolvedId = await resolveClubUUID(clubId);
-      // 2026-08-19: this read rake_history, whose last write was 2026-05-01 —
-      // so this revenue widget has been drawing a flat zero line for three and
-      // a half months. The comment it carried ("so this widget agrees with the
-      // summary cards on ClubFinancialsPage") was accurate and was exactly the
-      // problem: both agreed, and both were wrong. rake_records is the live
-      // ledger, and ClubFinancialsPage now reads it too.
-      const { data: records, error } = await supabase
-        .from('rake_records')
-        .select('rake_amount, created_at')
-        .eq('club_id', resolvedId)
-        .gte('created_at', startDate.toISOString())
-        .limit(10000);
+      const { data: payload, error } = await supabase.rpc('ca_club_financials', {
+        p_club_id: resolvedId,
+        p_start: from.toISOString().slice(0, 10),
+        p_end: end,
+      });
+      if (error) {
+        if (isAuthzError(error)) {
+          // Not staff of this club. The page above renders its own gate; this
+          // panel simply has nothing to draw, and zeroes are not an answer.
+          if (isMounted.current) {
+            setRevenueData(getEmptyRevenueData());
+            setSplit(EMPTY_SPLIT);
+          }
+          return;
+        }
+        throw error;
+      }
+      if (!isMounted.current) return;
 
-      if (error) throw error;
+      const daily = ((payload as any)?.daily || []) as Array<{
+        d: string;
+        gross_rake: number;
+        rakeback_paid: number;
+        agent_commissions: number;
+      }>;
+      const totals = (payload as any)?.totals || {};
 
       const newData = getEmptyRevenueData();
-
-      (records || []).forEach((record: any) => {
-        const dateKey = new Date(record.created_at).toLocaleDateString();
+      for (const row of daily) {
+        // The rollup's day is a UTC date; getEmptyRevenueData keys on the
+        // local date string, so the label is built from the same parts rather
+        // than parsed as an instant (which shifted every bar by a day west of
+        // UTC).
+        const [y, m, dd] = String(row.d).slice(0, 10).split('-').map(Number);
+        if (!y || !m || !dd) continue;
+        const dateKey = new Date(y, m - 1, dd).toLocaleDateString();
         const daySlot = newData.find((d) => d.fullDate === dateKey);
-
         if (daySlot) {
-          daySlot.rake += Number(record.rake_amount || 0);
+          daySlot.rake += Number(row.gross_rake) || 0;
           // In this context, club revenue is derived from rake
-          daySlot.revenue += Number(record.rake_amount || 0);
+          daySlot.revenue += Number(row.gross_rake) || 0;
         }
-      });
-
+      }
       setRevenueData(newData);
 
-      // The split, from the same window and the same ledgers.
-      const totalRake = (records || []).reduce(
-        (sum: number, r: any) => sum + Number(r.rake_amount || 0),
-        0
-      );
-
-      const { data: agentShare, error: agentErr } = await supabase.rpc(
-        'fn_club_commission_accrued',
-        { p_club_id: resolvedId, p_since: startDate.toISOString() }
-      );
-      if (agentErr) reportError(agentErr, 'ClubFinancialDashboard.commission_accrued');
-
-      const { data: rakebackRows, error: rakebackErr } = await supabase
-        .from('chip_transactions')
-        .select('amount')
-        .eq('club_id', resolvedId)
-        .eq('transaction_type', 'rakeback')
-        .gte('created_at', startDate.toISOString())
-        .limit(5000);
-      if (rakebackErr) reportError(rakebackErr, 'ClubFinancialDashboard.rakeback_paid');
-
-      const agents = Number(agentShare ?? 0) || 0;
-      const players = (rakebackRows || []).reduce(
-        (sum: number, r: any) => sum + Number(r.amount || 0),
-        0
-      );
+      const totalRake = Number(totals.gross_rake) || 0;
+      const agents = Number(totals.agent_commissions) || 0;
+      const players = Number(totals.rakeback_paid) || 0;
       const club = Math.max(totalRake - agents - players, 0);
 
       // THE WHOLE IS THE RAKE, and that choice matters. Commission books to the
@@ -283,6 +285,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
             ]
       );
     } catch (error) {
+      if ((error as { name?: string } | null)?.name === 'ClubNotFoundError') return;
       reportError(error, 'ClubFinancialDashboard.Failed_to_load_revenue_data');
     }
   };

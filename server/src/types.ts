@@ -279,6 +279,12 @@ export interface TableInfo {
   maintain_hands?: number | null;
   /** Minimum LIFETIME VPIP, checked at the door by atomic_table_buyin. */
   career_percent_min?: number | null;
+  /** Operation Table Stakes: the cash game this table belongs to (null for a
+   *  pre-cutover fleet table). Read by the must-move hooks. */
+  cluster_id?: string | null;
+  role?: 'main' | 'feeder' | null;
+  main_index?: number | null;
+  lifecycle?: 'opening' | 'live' | 'breaking' | 'closed' | null;
 }
 
 export interface SeatedPlayer {

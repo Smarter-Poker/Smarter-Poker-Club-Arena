@@ -49,6 +49,7 @@ import { SEAT_LAYOUTS } from '../../src/lib/tableSeatGeometry';
 import {
   FELT_WINDOW,
   FELT_MARKER_MARGIN_WIDTH_PCT,
+  buttonRadiusWidthPct,
   chipRestPosition,
   dealerButtonPosition,
 } from '../../src/components/table/tableGeometry';
@@ -281,7 +282,7 @@ describe('item 2 - the felt board is as wide as the bet chips allow', () => {
           ).toBe(false);
           const btn = dealerButtonPosition(seat, table);
           expect(
-            markerOnBoard(btn, FELT_MARKER_MARGIN_WIDTH_PCT, anchor, rect, table),
+            markerOnBoard(btn, buttonRadiusWidthPct(table), anchor, rect, table),
             `${n}-max ${label}: seat ${JSON.stringify(seat)} put its button at ` +
               `${btn.x.toFixed(1)},${btn.y.toFixed(1)} - on the board`
           ).toBe(false);
@@ -441,7 +442,7 @@ describe('item 2 - the felt board is as wide as the bet chips allow', () => {
         for (const seat of ring) {
           const markers: Array<[string, { x: number; y: number }, number]> = [
             ['chips', chipRestPosition(seat, table), CHIP_HALF_W_PCT],
-            ['button', dealerButtonPosition(seat, table), FELT_MARKER_MARGIN_WIDTH_PCT],
+            ['button', dealerButtonPosition(seat, table), buttonRadiusWidthPct(table)],
             ['seat box', seat, (SEAT_BOX_PX / 2 / table.w) * 100],
           ];
           for (const [what, p, r] of markers) {

@@ -1,0 +1,3 @@
+# tests/a-money-door-nothing-calls-is-closed.law.test.ts
+
+Chip-std phase 2 lane 2.5 (F9 + F10 advisory): fn_wallet_claim_back and fn_union_send_chips_to_club are revoked from PUBLIC, anon, authenticated and service_role with exact signatures, never dropped, registered `closed` in ca_money_rpc_registry, and fn_ca_money_rpc_drift raises when a closed door is executable again; the five live doors are named by no REVOKE/GRANT/DROP and no quoted caller of either closed door exists in src/, server/src/ or supabase/functions/; fn_ca_adjustments_report is SECURITY DEFINER, service_role only behind the management gate, reads all four ledgers, writes nothing, schedules nothing and enforces no threshold

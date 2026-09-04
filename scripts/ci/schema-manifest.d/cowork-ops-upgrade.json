@@ -24,7 +24,8 @@
     "trg_ca_club_rake_daily_change",
     "fn_rebuild_ca_club_commission_daily",
     "ca_club_financials",
-    "ca_club_chip_ledger"
+    "ca_club_chip_ledger",
+    "fn_ca_club_rake_daily_ledger_total"
   ],
   "tables": ["agent_commission_unsettled_rollup", "ca_club_rake_daily", "ca_club_commission_daily"]
 }

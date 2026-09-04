@@ -47,7 +47,14 @@ describe('settlement reads its own hand, never the live fields', () => {
       src.indexOf('protected async handleHandCompleteEvent'),
       src.indexOf('private async settleCompletedHand')
     );
-    expect(wrapper).toContain('this.postHandTasksPromise = wholeSettlement');
+    // 2026-09-04 (chip standard, felt erasure): the wrapper assigns the
+    // barrier synchronously, but it CHAINS onto whatever settleCompletedHand
+    // already assigned instead of replacing it - the replacement dropped
+    // postHandTasks from the barrier. TheFeltKeepsWhatLandedOnIt.law.test.ts
+    // proves the chain behaviourally; this pin keeps the assignment in the
+    // wrapper, before the body can yield.
+    expect(wrapper).toContain('const assignedByBody = this.postHandTasksPromise');
+    expect(wrapper).toMatch(/this\.postHandTasksPromise = assignedByBody/);
   });
 
   it('the dealing loop waits with liveness instead of walking away at 45s', () => {

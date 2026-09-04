@@ -354,6 +354,16 @@ describe('the insurance cards appear when a policy has been sold, not whenever a
   });
 });
 
+describe('the club chat is given a uuid, never the route slug', () => {
+  it('mounts ClubChat with resolvedClubId', () => {
+    // Seen live on 2026-09-04: club_chat?club_id=eq.deep-stack-society-11192
+    // answered 400. ClubChat also inserts with the same id, so no message
+    // could ever be sent from this page.
+    expect(PAGE).toContain('<ClubChat clubId={resolvedClubId}');
+    expect(PAGE).not.toContain('<ClubChat clubId={clubId}');
+  });
+});
+
 describe('the metric cards fetch once', () => {
   it('self-load only when no parent owns the read', () => {
     expect(CARDS).toContain('const selfLoading = statsProp === undefined;');

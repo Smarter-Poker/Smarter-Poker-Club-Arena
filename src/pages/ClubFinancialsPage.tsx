@@ -153,7 +153,6 @@ export default function ClubFinancialsPage() {
     const unsubCommission = masterBus.subscribeDebounced('COMMISSION_PAID', refresh, 500);
     const unsubSettlement = masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', refresh, 500);
     const unsubChipsAdded = masterBus.subscribeDebounced('CHIPS_ADDED', refresh, 500);
-    const unsubChipsWithdrawn = masterBus.subscribeDebounced('CHIPS_WITHDRAWN', refresh, 500);
     const unsubChipsDistributed = masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', refresh, 1000);
     const unsubClubUpdated = masterBus.subscribeDebounced('CLUB_UPDATED', refresh, 1000);
     const unsubTxLogged = masterBus.subscribeDebounced('TRANSACTION_LOGGED', refresh, 2000);
@@ -163,7 +162,6 @@ export default function ClubFinancialsPage() {
       unsubCommission();
       unsubSettlement();
       unsubChipsAdded();
-      unsubChipsWithdrawn();
       unsubChipsDistributed();
       unsubTxLogged();
       unsubClubUpdated();

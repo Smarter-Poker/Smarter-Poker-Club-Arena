@@ -32,7 +32,8 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import { enumToTitleCase } from '../utils/titleCase';
-import { resolveClubUUID } from '../utils/clubIdResolver';
+import { isUUID } from '../utils/clubIdResolver';
+import { ClubNotFoundError, resolveClubUUIDStrict } from '../utils/strictClubIdResolver';
 import ClubRosterService, {
   lastDaysRange,
   isoDate,
@@ -138,12 +139,30 @@ export default function PlayerStatisticsPage() {
         setLoadFailed(false);
       }
       try {
-        const resolved = await resolveClubUUID(clubId);
-        if (!live()) return;
-        if (!resolved) {
-          setNotFound(true);
+        // resolveClubUUID never returned falsy (it hands back the slug), so
+        // the old `!resolved` guard was dead and a bad slug reached the uuid
+        // RPC as 22P02, shown as an outage. Strict resolution names not-found.
+        if (!isUUID(userId)) {
+          if (live()) {
+            setNotFound(true);
+            setStats(null);
+          }
           return;
         }
+        let resolved: string;
+        try {
+          resolved = await resolveClubUUIDStrict(clubId);
+        } catch (e) {
+          if (e instanceof ClubNotFoundError) {
+            if (live()) {
+              setNotFound(true);
+              setStats(null);
+            }
+            return;
+          }
+          throw e;
+        }
+        if (!live()) return;
 
         const result = await ClubRosterService.getMemberStatistics(
           resolved,
@@ -153,7 +172,7 @@ export default function PlayerStatisticsPage() {
         );
         if (!live()) return;
         setStats(result);
-        setNotFound(false);
+        setNotFound(!result.authorized && result.reason === 'not_member');
         if (result.variants.length > 0) {
           setKnownVariants((prev) => {
             const merged = new Set([...prev, ...result.variants]);
@@ -202,7 +221,7 @@ export default function PlayerStatisticsPage() {
     setRange({ from: customFrom, to: customTo });
   }, [customFrom, customTo, toast]);
 
-  const hasHands = !!stats && stats.total_hands > 0;
+  const hasHands = !!stats && stats.hands > 0;
 
   /* ── Render ─────────────────────────────────────────────────────────────── */
 
@@ -238,6 +257,7 @@ export default function PlayerStatisticsPage() {
               key={mode}
               type="button"
               className={rangeMode === mode ? 'active' : ''}
+              aria-pressed={rangeMode === mode}
               onClick={() => chooseRange(mode)}
             >
               {RANGE_LABEL[mode]}
@@ -271,10 +291,14 @@ export default function PlayerStatisticsPage() {
           </div>
         )}
 
-        <p className="ps-range__caption">
-          {stats?.is_overall
-            ? 'Showing Lifetime Totals'
-            : `Showing ${stats?.from ?? range.from ?? '?'} To ${stats?.to ?? range.to ?? '?'}`}
+        {/* The caption names the range the figures on screen BELONG to. While
+            a new range or variant loads the figures below are dimmed. */}
+        <p className="ps-range__caption" aria-live="polite">
+          {loading && stats
+            ? 'Loading The Selected Range...'
+            : stats?.is_overall
+              ? 'Showing Lifetime Totals'
+              : `Showing ${stats?.from ?? range.from ?? '?'} To ${stats?.to ?? range.to ?? '?'}`}
         </p>
       </div>
 
@@ -298,10 +322,7 @@ export default function PlayerStatisticsPage() {
           </button>
         </div>
       ) : notFound || !stats ? (
-        <EmptyStats
-          heading="Member Not Found"
-          body="This Player Is Not A Member Of This Club, Or You Do Not Have Permission To View Them."
-        />
+        <EmptyStats heading="Member Not Found" body="This Player Is Not A Member Of This Club." />
       ) : !stats.authorized ? (
         <EmptyStats
           heading="Statistics Restricted"
@@ -313,20 +334,43 @@ export default function PlayerStatisticsPage() {
           body={`${variantLabel(variant)} Has No Recorded Hands For The Dates You Chose. Widen The Range Or Choose Another Game.`}
         />
       ) : (
-        <>
+        <div className={loading ? 'ps-cards ps-cards--busy' : 'ps-cards'} aria-busy={loading}>
           <section className="ps-card">
             <h2 className="ps-card__title">Style</h2>
             <StatRow label="VPIP" value={pct(stats.vpip)} />
             <StatRow label="PFR" value={pct(stats.pfr)} />
-            <StatRow label="3-Bet" value={pct(stats.three_bet)} />
-            <StatRow label="C-Bet" value={pct(stats.cbet)} />
+            {/* Per hand dealt, and labelled so. The old figure divided 3-bets
+                by the hands this player was 3-bet in after opening, and read
+                316.7% for one of the club's most active players. */}
+            <StatRow
+              label="3-Bet Per Hand"
+              value={`${pct(stats.three_bet)} (${count(stats.three_bets)})`}
+            />
+            <StatRow
+              label="Fold To 3-Bet"
+              value={
+                stats.faced_three_bets > 0
+                  ? `${pct(stats.fold_to_three_bet)} Of ${count(stats.faced_three_bets)}`
+                  : 'Never 3-Bet After Opening'
+              }
+            />
+            <StatRow
+              label="C-Bet"
+              value={
+                stats.cbet_opportunities > 0
+                  ? `${pct(stats.cbet)} Of ${count(stats.cbet_opportunities)}`
+                  : 'No Flop Led As Aggressor'
+              }
+            />
           </section>
 
           <section className="ps-card">
             <h2 className="ps-card__title">Volume</h2>
-            <StatRow label="Total Games" value={count(stats.total_games)} />
-            <StatRow label="Total Hands" value={count(stats.total_hands)} />
-            <StatRow label="Winner" value={count(stats.winner)} />
+            {/* total_games, total_hands and winner were three labels on two
+                numbers: hands twice, and hands won as "Winner". */}
+            <StatRow label="Hands" value={count(stats.hands)} />
+            <StatRow label="Hands Won" value={count(stats.hands_won)} />
+            <StatRow label="Win Rate" value={pct(stats.win_rate)} />
           </section>
 
           <section className="ps-card">
@@ -334,7 +378,7 @@ export default function PlayerStatisticsPage() {
             <StatRow label="Net" value={money(stats.net)} signed={stats.net} />
             <StatRow label="Fees" value={money(stats.fees)} />
           </section>
-        </>
+        </div>
       )}
     </div>
   );

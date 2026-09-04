@@ -27,6 +27,16 @@ export async function saveHandStateSnapshot(params: {
   dealerSeat: number;
   playersJson: Record<string, unknown>[];
   stage: string;
+  /**
+   * Folded in on 2026-09-04. These used to be written by a SECOND statement
+   * (saveHandSnapshotExtras) against the row this call had just inserted,
+   * costing ~1.2M extra row versions per stats window on the largest table in
+   * the database - and only 16.5% of them were HOT, so most also rewrote all
+   * three indexes. The row that lands is identical; it now lands in one
+   * statement.
+   */
+  pendingDeadlines?: PendingDeadline[];
+  disconnectStates?: Record<string, DisconnectStateEntry>;
 }): Promise<void> {
   try {
     const { error } = await supabase.rpc('save_hand_state_snapshot', {
@@ -37,6 +47,8 @@ export async function saveHandStateSnapshot(params: {
       p_dealer_seat: params.dealerSeat,
       p_players_json: params.playersJson,
       p_stage: params.stage,
+      p_pending_deadlines: params.pendingDeadlines ?? [],
+      p_disconnect_states: params.disconnectStates ?? {},
     });
     if (error) {
       console.warn(`[saveHandStateSnapshot] Error:`, error.message);
@@ -116,37 +128,6 @@ export interface DisconnectStateEntry {
   state: DisconnectFsmState;
   sinceMs: number;
   graceDeadlineMs: number | null;
-}
-
-/**
- * Save pending deadlines + disconnect states onto the active (incomplete)
- * snapshot row for a table. Called by ServerTableEngine on each
- * broadcastCurrentState so the latest deadlines live in the DB.
- * A no-op + warning if no active snapshot exists yet.
- */
-export async function saveHandSnapshotExtras(params: {
-  tableId: string;
-  handNumber: number;
-  pendingDeadlines: PendingDeadline[];
-  disconnectStates: Record<string, DisconnectStateEntry>;
-}): Promise<void> {
-  try {
-    const { error } = await supabase
-      .from('hand_state_snapshots')
-      .update({
-        pending_deadlines: params.pendingDeadlines,
-        disconnect_states: params.disconnectStates,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('table_id', params.tableId)
-      .eq('hand_number', params.handNumber)
-      .eq('is_complete', false);
-    if (error) {
-      console.warn(`[saveHandSnapshotExtras] Error:`, error.message);
-    }
-  } catch (e) {
-    console.warn(`[saveHandSnapshotExtras] Exception:`, e);
-  }
 }
 
 /**

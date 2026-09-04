@@ -365,6 +365,48 @@ Do NOT audit 10 items and then ask "what should I fix?" -- fix them as you go.
 
 ---
 
+## 4.5 NEVER HAND-PICK A MIGRATION VERSION (2026-09-04, BINDING)
+
+**Always run:**
+
+```bash
+node scripts/new-migration.mjs "what it does"
+```
+
+Never type a `20260904...` version yourself, and never copy one from another
+file and edit the digits.
+
+### Why, measured
+
+Over 24 hours this was the single biggest source of red CI in the repo:
+**21 of ~62 real check failures** were one collision - 15 in `TypeScript Check`
+(`Supabase Invariants - New Migration`) and 6 in `Client Unit Tests`
+(`migrationVersionUniqueness`).
+
+Agents pick the 14-digit version by hand, reach for a round number, and two of
+them land on the same one. **Neither branch is wrong on its own** - each holds
+one file, so both go green. The collision appears the moment the second branch
+takes `main`, and then CI fails for work that was correct when it was written.
+That is what "CI keeps failing for no reason" has been.
+
+### It is not only a red build
+
+Supabase keys `schema_migrations` on the version. Of two files sharing one,
+**the second is SILENTLY NEVER APPLIED**. A migration that never ran is worse
+than a failing test, because nothing tells you.
+
+### What the script does that a timestamp cannot
+
+It asks what is already taken - this tree, `origin/main`, **and every remote
+branch** - and steps forward a second at a time until it finds a free version.
+Checking the branches is the whole point: the version you collide with usually
+lives on work nobody has merged yet, which no clock can see.
+
+It writes the file from the correct skeleton too, including the single-
+transaction requirement from the production DDL policy in section 2.
+
+---
+
 ## 5. CODE SAFETY RULES
 
 1. Use `.maybeSingle()` never `.single()` for Supabase queries

@@ -20,22 +20,12 @@
 
 import { supabase } from '../services/supabase.js';
 import {
-  FREE_BUY_HOSTS,
   FREE_BUY_SLOTS,
-  FREE_BUY_TIERS,
+  auditFreeBuyBoard,
   chicagoParts,
   chicagoDayKey,
   slotForChicagoHour,
 } from '../services/FreeBuy.js';
-
-interface Problem {
-  event: string;
-  says: string;
-}
-
-function check(problems: Problem[], event: string, ok: boolean, says: string): void {
-  if (!ok) problems.push({ event, says });
-}
 
 async function main(): Promise<void> {
   const { data, error } = await (supabase as any)
@@ -64,128 +54,27 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const problems: Problem[] = [];
-  const seen = new Map<string, number>();
+  /* THE RULES LIVE IN ONE PLACE. `auditFreeBuyBoard` is the same function the
+     engine's hourly watch calls, so a one-shot check and the standing watch
+     cannot drift into two opinions about what a correct Free Buy looks like. */
+  const { problems } = auditFreeBuyBoard(events, Date.now());
 
   for (const e of events) {
-    const label = `${e.name} @ ${e.start_time}`;
     const startMs = Date.parse(String(e.start_time));
-    const parts = chicagoParts(startMs);
-    const slot = slotForChicagoHour(parts.hour);
-
-    check(
-      problems,
-      label,
-      !!slot,
-      `starts at ${parts.hour}:00 Chicago, which is not a Free Buy slot`
-    );
-    check(
-      problems,
-      label,
-      parts.minute === 0,
-      `starts at ${parts.hour}:${parts.minute}, not on the hour`
-    );
-    if (!slot) continue;
-    const cfg = FREE_BUY_TIERS[slot.tier];
-
-    // one per host per slot per Chicago day
-    const key = `${e.club_id}|${slot.chicagoHour}|${chicagoDayKey(startMs)}`;
-    seen.set(key, (seen.get(key) ?? 0) + 1);
-
-    check(
-      problems,
-      label,
-      Number(e.buy_in_amount) === 0 && Number(e.buy_in_fee) === 0,
-      'the first entry is not free'
-    );
-    check(
-      problems,
-      label,
-      Number(e.guaranteed_prize) === cfg.guarantee,
-      `guarantee is ${e.guaranteed_prize}, the ${slot.tier} tier is ${cfg.guarantee}`
-    );
-    check(
-      problems,
-      label,
-      Number(e.starting_chips) === cfg.startingChips,
-      `starting stack is ${e.starting_chips}, not ${cfg.startingChips}`
-    );
-
-    // THE LAW CONFLICT. zz_freerolls_are_free_buy forces every 0-buy-in MTT to
-    // 1.00 unless free_buy is set AND the price is positive. This is the line
-    // that proves the tier survived the trigger.
-    check(
-      problems,
-      label,
-      Number(e.rebuy_cost) === cfg.rebuyCost,
-      `rebuy is ${e.rebuy_cost}, the ${slot.tier} tier is ${cfg.rebuyCost}`
-    );
-    check(
-      problems,
-      label,
-      Number(e.addon_cost) === cfg.addOnCost,
-      `add-on is ${e.addon_cost}, the ${slot.tier} tier is ${cfg.addOnCost}`
-    );
-    check(
-      problems,
-      label,
-      Number(e.addon_chips) === cfg.addOnChips,
-      `the add-on pays ${e.addon_chips} chips, not ${cfg.addOnChips}`
-    );
-
-    check(problems, label, e.addon_from_start === true, 'the add-on does not open at sit-down');
-    check(problems, label, e.add_on_available === true, 'the add-on is switched off');
-    check(problems, label, e.is_rebuy === true, 'rebuys are switched off');
-    check(
-      problems,
-      label,
-      e.max_rebuys === null,
-      `max_rebuys is ${e.max_rebuys}, and a NOT NULL value denies every rebuy`
-    );
-    check(
-      problems,
-      label,
-      Number(e.late_reg_mins) === cfg.lateRegMinutes,
-      `late reg is ${e.late_reg_mins} minutes, not ${cfg.lateRegMinutes}`
-    );
-    check(
-      problems,
-      label,
-      Number(e.rebuy_levels) === Number(e.late_reg_levels),
-      'the rebuy period and late registration do not close together'
-    );
-
-    const host = FREE_BUY_HOSTS.find((h) => h.clubId === e.club_id);
-    check(problems, label, !!host, `club ${e.club_id} is not a Free Buy host`);
-    if (host) {
-      // The overlay bank depends on this and on nothing else.
-      check(
-        problems,
-        label,
-        (e.union_id ?? null) === host.unionId,
-        `union_id is ${e.union_id}, and the overlay bank is chosen by it`
-      );
-    }
-
+    const at = chicagoParts(startMs);
+    const slot = slotForChicagoHour(at.hour);
     console.log(
-      `  ${slot.tier.padEnd(8)} ${String(parts.hour).padStart(2, '0')}:00 ` +
+      `  ${(slot?.tier ?? '?').padEnd(8)} ${String(at.hour).padStart(2, '0')}:00 ` +
         `${String(e.name).padEnd(28)} gtd ${e.guaranteed_prize} rebuy ${e.rebuy_cost} ` +
         `addon ${e.addon_cost}x${e.addon_chips} entrants ${e.current_players} pool ${e.prize_pool} [${e.status}]`
     );
   }
 
-  for (const [key, n] of seen) {
-    if (n > 1)
-      problems.push({ event: key, says: `${n} events for one host, slot and Chicago day` });
-  }
-
   const perDay = new Map<string, number>();
   for (const e of events) {
     if (String(e.status).toUpperCase() === 'CANCELLED') continue;
-    perDay.set(
-      `${e.club_id}|${chicagoDayKey(Date.parse(String(e.start_time)))}`,
-      (perDay.get(`${e.club_id}|${chicagoDayKey(Date.parse(String(e.start_time)))}`) ?? 0) + 1
-    );
+    const k = `${e.club_id}|${chicagoDayKey(Date.parse(String(e.start_time)))}`;
+    perDay.set(k, (perDay.get(k) ?? 0) + 1);
   }
   console.log('[freebuy:verify] per host per Chicago day:');
   for (const [k, n] of [...perDay].sort()) {
@@ -197,7 +86,7 @@ async function main(): Promise<void> {
     process.exit(0);
   }
   console.error(`[freebuy:verify] ${problems.length} problem(s):`);
-  for (const p of problems) console.error(`   ${p.event}: ${p.says}`);
+  for (const p of problems) console.error(`   ${p}`);
   process.exit(1);
 }
 

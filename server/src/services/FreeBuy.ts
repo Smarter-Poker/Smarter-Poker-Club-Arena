@@ -543,3 +543,179 @@ export function freeBuyTournamentRow(opts: {
     addon_levels: 1,
   };
 }
+
+/* ------------------------------------------------------------------ */
+/* THE AUDIT - one implementation, read by the script and the watcher   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A `tournaments` row as the audit needs to see it. Deliberately loose: the
+ * row comes from the database, and the point of the audit is to catch a row
+ * that is not what the code built.
+ */
+export interface FreeBuyRowUnderAudit {
+  name?: unknown;
+  club_id?: unknown;
+  union_id?: unknown;
+  start_time?: unknown;
+  guaranteed_prize?: unknown;
+  buy_in_amount?: unknown;
+  buy_in_fee?: unknown;
+  starting_chips?: unknown;
+  rebuy_cost?: unknown;
+  addon_cost?: unknown;
+  addon_chips?: unknown;
+  addon_from_start?: unknown;
+  add_on_available?: unknown;
+  is_rebuy?: unknown;
+  max_rebuys?: unknown;
+  late_reg_mins?: unknown;
+  late_reg_levels?: unknown;
+  rebuy_levels?: unknown;
+}
+
+/**
+ * PURE. Everything wrong with one live Free Buy row, in plain sentences.
+ *
+ * WHY THIS EXISTS SEPARATELY FROM THE UNIT TESTS. The tests pin the row the
+ * code BUILDS. This reads the row the database KEPT, and those are different
+ * questions: five triggers rewrite a tournament row on the way in, and one of
+ * them exists specifically to force every 0-buy-in MTT's rebuy and add-on to
+ * 1.00. The whole point of the tier-aware migration is that it must not touch
+ * a scheduled Free Buy, and only a real row can show that.
+ *
+ * Pure so the one-shot script and the engine's own hourly watch cannot drift
+ * into two different opinions about what a correct Free Buy looks like.
+ */
+export function auditFreeBuyRow(
+  row: FreeBuyRowUnderAudit,
+  hosts: readonly FreeBuyHost[] = FREE_BUY_HOSTS
+): string[] {
+  const problems: string[] = [];
+  const num = (v: unknown): number => Number(v);
+  const startMs = Date.parse(String(row.start_time ?? ''));
+
+  if (!Number.isFinite(startMs)) {
+    problems.push('has no readable start time');
+    return problems;
+  }
+  const at = chicagoParts(startMs);
+  const slot = slotForChicagoHour(at.hour);
+  if (!slot) {
+    problems.push(`starts at ${at.hour}:00 Chicago, which is not one of the five slots`);
+    return problems;
+  }
+  if (at.minute !== 0) problems.push(`starts at ${at.hour}:${at.minute}, not on the hour`);
+
+  const cfg = FREE_BUY_TIERS[slot.tier];
+  const say = (ok: boolean, msg: string) => {
+    if (!ok) problems.push(msg);
+  };
+
+  say(num(row.buy_in_amount) === 0 && num(row.buy_in_fee) === 0, 'the first entry is not free');
+  say(
+    num(row.guaranteed_prize) === cfg.guarantee,
+    `guarantee ${row.guaranteed_prize}, the ${slot.tier} tier is ${cfg.guarantee}`
+  );
+  say(
+    num(row.starting_chips) === cfg.startingChips,
+    `starting stack ${row.starting_chips}, not ${cfg.startingChips}`
+  );
+
+  /* THE LAW CONFLICT, checked on a real row. zz_freerolls_are_free_buy forces
+     1.00 unless free_buy is set AND the price is positive. */
+  say(
+    num(row.rebuy_cost) === cfg.rebuyCost,
+    `rebuy ${row.rebuy_cost}, the ${slot.tier} tier is ${cfg.rebuyCost}`
+  );
+  say(
+    num(row.addon_cost) === cfg.addOnCost,
+    `add-on ${row.addon_cost}, the ${slot.tier} tier is ${cfg.addOnCost}`
+  );
+  say(
+    num(row.addon_chips) === cfg.addOnChips,
+    `the add-on pays ${row.addon_chips} chips, not ${cfg.addOnChips}`
+  );
+
+  say(row.addon_from_start === true, 'the add-on does not open at sit-down');
+  say(row.add_on_available === true, 'the add-on is switched off');
+  say(row.is_rebuy === true, 'rebuys are switched off');
+  /* A NOT NULL zero reads as "Rebuy limit reached (0 of 0)" and denies every
+     rebuy on the event. */
+  say(
+    row.max_rebuys === null || row.max_rebuys === undefined,
+    `max_rebuys is ${row.max_rebuys}, and a non-null value denies every rebuy`
+  );
+  say(
+    num(row.late_reg_mins) === cfg.lateRegMinutes,
+    `late reg ${row.late_reg_mins} minutes, not ${cfg.lateRegMinutes}`
+  );
+  say(
+    num(row.rebuy_levels) === num(row.late_reg_levels),
+    'the rebuy period and late registration do not close together'
+  );
+
+  const host = hosts.find((h) => h.clubId === String(row.club_id ?? ''));
+  if (!host) {
+    problems.push(`club ${row.club_id} is not a Free Buy host`);
+  } else {
+    /* fn_ca_fund_overlay_on_lock chooses the overlay bank by this and by
+       nothing else: union_wallets when it is set, clubs.chip_treasury when it
+       is not. */
+    const uni = (row.union_id ?? null) as string | null;
+    say(uni === host.unionId, `union_id is ${uni}, and the overlay bank is chosen by it`);
+  }
+  return problems;
+}
+
+/**
+ * PURE. What a whole board should look like, and what is missing from it.
+ *
+ * `expected` is deliberately the number of slots whose start has ALREADY been
+ * inside the publication lead today - not five - because a board read at 09:00
+ * has not had a chance to publish the 20:00 event yet, and reporting that as a
+ * fault would make the watch cry wolf every morning.
+ */
+export function auditFreeBuyBoard(
+  rows: readonly FreeBuyRowUnderAudit[],
+  nowMs: number,
+  hosts: readonly FreeBuyHost[] = FREE_BUY_HOSTS
+): { problems: string[]; checked: number } {
+  const problems: string[] = [];
+  for (const row of rows) {
+    for (const p of auditFreeBuyRow(row, hosts)) {
+      problems.push(`${String(row.name ?? 'unnamed')} @ ${String(row.start_time ?? '?')}: ${p}`);
+    }
+  }
+
+  /* One per host per slot per Chicago day, which is what
+     uq_scheduled_tournament_one_live_per_occurrence enforces - this catches the
+     case where the index was dropped or the owner changed. */
+  const seen = new Map<string, number>();
+  for (const row of rows) {
+    const ms = Date.parse(String(row.start_time ?? ''));
+    if (!Number.isFinite(ms)) continue;
+    const key = `${String(row.club_id)}|${chicagoParts(ms).hour}|${chicagoDayKey(ms)}`;
+    seen.set(key, (seen.get(key) ?? 0) + 1);
+  }
+  for (const [key, n] of seen) {
+    if (n > 1) problems.push(`${n} events share one host, slot and Chicago day (${key})`);
+  }
+
+  /* A slot whose publication window has passed and which produced nothing. */
+  const today = chicagoDayKey(nowMs);
+  for (const host of hosts) {
+    for (const slot of FREE_BUY_SLOTS) {
+      const startMs = chicagoWallClockToUtcMs(today, slot.chicagoHour);
+      const shouldExist = startMs <= nowMs && nowMs - startMs < 12 * 60 * 60_000;
+      if (!shouldExist) continue;
+      const key = `${host.clubId}|${slot.chicagoHour}|${today}`;
+      if (!seen.has(key)) {
+        problems.push(
+          `${host.label} published no ${slot.label} for ${today} - the slot came and went`
+        );
+      }
+    }
+  }
+  return { problems, checked: rows.length };
+}

@@ -232,6 +232,8 @@ import {
   ladderMinutesThrough,
   FREE_BUY_PUBLISH_LEAD_MS,
   FREE_BUY_HOSTS,
+  auditFreeBuyRow,
+  auditFreeBuyBoard,
   type DueFreeBuy,
 } from './FreeBuy.js';
 import { BLIND_STRUCTURES } from './TournamentRecurringService.js';
@@ -558,5 +560,146 @@ describe('the Free Buy ladder', () => {
     expect(ladderMinutesThrough(T, T.length)).toBeLessThan(60);
     const lv = lateRegLevelsForMinutes(T, 60);
     expect(EFFECTIVE / T[lv - 1].bigBlind).toBeLessThan(1);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE AUDIT. The tests above pin the row the code BUILDS. This is the rule
+   set that reads the row the DATABASE KEPT - five triggers rewrite a
+   tournament on the way in, and one of them exists to force every 0-buy-in
+   MTT's rebuy and add-on to 1.00.
+   ══════════════════════════════════════════════════════════════════════════ */
+describe('auditFreeBuyRow', () => {
+  const startOf = (hour: number) =>
+    new Date(chicagoWallClockToUtcMs('2026-09-05', hour)).toISOString();
+  const good = (over: Record<string, unknown> = {}) => ({
+    name: 'Morning Free Buy (NLH)',
+    club_id: FREE_BUY_HOSTS[0].clubId,
+    union_id: FREE_BUY_HOSTS[0].unionId,
+    start_time: startOf(8),
+    guaranteed_prize: 250,
+    buy_in_amount: 0,
+    buy_in_fee: 0,
+    starting_chips: 3000,
+    rebuy_cost: 1,
+    addon_cost: 1,
+    addon_chips: 10000,
+    addon_from_start: true,
+    add_on_available: true,
+    is_rebuy: true,
+    max_rebuys: null,
+    late_reg_mins: 60,
+    late_reg_levels: 11,
+    rebuy_levels: 11,
+    ...over,
+  });
+
+  it('says nothing about a correct row', () => {
+    expect(auditFreeBuyRow(good())).toEqual([]);
+  });
+
+  it('catches the trigger repricing the feature tier back to 1.00', () => {
+    // This is the whole reason the audit reads the DATABASE and not the code.
+    const feature = good({
+      name: 'Prime Time Free Buy (NLH)',
+      start_time: startOf(20),
+      guaranteed_prize: 500,
+      rebuy_cost: 1,
+      addon_cost: 1,
+    });
+    const p = auditFreeBuyRow(feature);
+    expect(p.some((x) => x.includes('rebuy 1'))).toBe(true);
+    expect(p.some((x) => x.includes('add-on 1'))).toBe(true);
+  });
+
+  it('catches a paid first entry', () => {
+    expect(auditFreeBuyRow(good({ buy_in_amount: 5 }))).toContain('the first entry is not free');
+  });
+
+  it('catches a max_rebuys that would deny every rebuy', () => {
+    // process_tournament_rebuy reads a NOT NULL 0 as "Rebuy limit reached".
+    expect(
+      auditFreeBuyRow(good({ max_rebuys: 0 })).some((x) => x.includes('denies every rebuy'))
+    ).toBe(true);
+  });
+
+  it('catches an add-on that does not open at sit-down', () => {
+    expect(auditFreeBuyRow(good({ addon_from_start: false }))).toContain(
+      'the add-on does not open at sit-down'
+    );
+  });
+
+  it('CATCHES A MISSING union_id, which chooses the overlay bank', () => {
+    expect(auditFreeBuyRow(good({ union_id: null })).some((x) => x.includes('overlay bank'))).toBe(
+      true
+    );
+  });
+
+  it('catches an event that is not on a slot hour', () => {
+    expect(
+      auditFreeBuyRow(good({ start_time: startOf(9) })).some((x) =>
+        x.includes('not one of the five slots')
+      )
+    ).toBe(true);
+  });
+
+  it('catches rebuys and late registration closing at different times', () => {
+    expect(
+      auditFreeBuyRow(good({ rebuy_levels: 4 })).some((x) => x.includes('do not close together'))
+    ).toBe(true);
+  });
+});
+
+describe('auditFreeBuyBoard', () => {
+  const now = chicagoWallClockToUtcMs('2026-09-05', 10); // 10:00 Chicago
+  const row = (hour: number, host = FREE_BUY_HOSTS[0], over: Record<string, unknown> = {}) => ({
+    name: 'x',
+    club_id: host.clubId,
+    union_id: host.unionId,
+    start_time: new Date(chicagoWallClockToUtcMs('2026-09-05', hour)).toISOString(),
+    guaranteed_prize: FREE_BUY_TIERS[slotForChicagoHour(hour)!.tier].guarantee,
+    buy_in_amount: 0,
+    buy_in_fee: 0,
+    starting_chips: 3000,
+    rebuy_cost: FREE_BUY_TIERS[slotForChicagoHour(hour)!.tier].rebuyCost,
+    addon_cost: FREE_BUY_TIERS[slotForChicagoHour(hour)!.tier].addOnCost,
+    addon_chips: 10000,
+    addon_from_start: true,
+    add_on_available: true,
+    is_rebuy: true,
+    max_rebuys: null,
+    late_reg_mins: 60,
+    late_reg_levels: 11,
+    rebuy_levels: 11,
+    ...over,
+  });
+
+  it('is happy with the slots that have actually come round', () => {
+    // At 10:00 only the 00:00 and 08:00 slots have passed.
+    const rows = FREE_BUY_HOSTS.flatMap((h) => [row(0, h), row(8, h)]);
+    expect(auditFreeBuyBoard(rows, now).problems).toEqual([]);
+  });
+
+  it('DOES NOT cry wolf about a slot whose hour has not arrived', () => {
+    // A board read at 10:00 has not had a chance to publish the 20:00 event.
+    const rows = FREE_BUY_HOSTS.flatMap((h) => [row(0, h), row(8, h)]);
+    const p = auditFreeBuyBoard(rows, now).problems;
+    expect(p.some((x) => x.includes('Prime Time'))).toBe(false);
+  });
+
+  it('notices a slot that came and went with nothing published', () => {
+    const rows = [row(0), row(8)]; // Deep Stack published nothing
+    const p = auditFreeBuyBoard(rows, now).problems;
+    expect(p.some((x) => x.includes('Deep Stack Society published no'))).toBe(true);
+  });
+
+  it('notices two events sharing one host, slot and day', () => {
+    const rows = FREE_BUY_HOSTS.flatMap((h) => [row(0, h), row(8, h), row(8, h)]);
+    const p = auditFreeBuyBoard(rows, now).problems;
+    expect(p.some((x) => x.includes('share one host, slot and Chicago day'))).toBe(true);
+  });
+
+  it('reports the count it actually checked', () => {
+    expect(auditFreeBuyBoard([row(8)], now).checked).toBe(1);
   });
 });

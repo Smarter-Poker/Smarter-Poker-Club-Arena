@@ -35,6 +35,7 @@ import { clampSeatsForVariant } from '../config/tableSeating.js';
 import {
   FREE_BUY_HOSTS,
   FREE_BUY_TIERS,
+  auditFreeBuyBoard,
   freeBuySlotsDue,
   freeBuyTournamentRow,
   lateRegLevelsForMinutes,
@@ -1216,6 +1217,9 @@ export const MTT_PUBLISH_LEAD_MS = 30 * 60 * 1000;
 /** How often the Free Buy board is reconciled. See checkAndCreateFreeBuys. */
 export const FREE_BUY_TICK_MS = 5 * 60 * 1000;
 
+/** How often the board is AUDITED against its own spec. See the watch. */
+export const FREE_BUY_AUDIT_EVERY_MS = 60 * 60 * 1000;
+
 /**
  * How often one tournament may be ramped. Mirrors the throttle in
  * GameServer.discoverTournaments (`now - lastRamp >= 45_000`), and exists here
@@ -2271,6 +2275,9 @@ export class TournamentRecurringService {
    *  snapshot - the exact shape that put two copies of sixteen Spin names on
    *  the board within two minutes of the 30-second cadence going live. */
   private freeBuyTickInFlight = false;
+  /** When the Free Buy board was last audited, and what it last said. */
+  private lastFreeBuyAuditAt = 0;
+  private lastFreeBuyAuditProblems = -1;
   private isRunning = false;
 
   // RETIRED 2026-08-19. Scheduled tournaments are created BY the union, not
@@ -2502,6 +2509,7 @@ export class TournamentRecurringService {
           }
         }
       }
+      await this.auditFreeBuyBoardOnce();
     } catch (err: any) {
       reportError(
         new Error(`[TournamentRecurring] Free Buy check error: ${err?.message ?? err}`),
@@ -2509,6 +2517,77 @@ export class TournamentRecurringService {
       );
     } finally {
       this.freeBuyTickInFlight = false;
+    }
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  THE FREE BUY WATCH - the board checks itself, hourly, forever
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Creating the events is not the same as their being RIGHT. Five triggers
+   * rewrite a tournament row on the way in and one of them exists to force
+   * every 0-buy-in MTT's rebuy and add-on to 1.00; the tier-aware migration
+   * says it must not touch a scheduled Free Buy, and only a live row can show
+   * whether that is still true after somebody edits a trigger next month.
+   *
+   * WHY IT LIVES IN THE ENGINE. A Claude scheduled task belongs to one account
+   * and dies silently when Dan is on another - `smarter-poker-cron-health` read
+   * `enabled: true` for two and a half months after it last fired. A GitHub
+   * `schedule:` is barred for application logic. The engine already runs this
+   * cycle every five minutes, already has the database, and already has the
+   * alert path, so the watch costs one indexed read an hour and survives
+   * every session that is not this one.
+   *
+   * It shares its rules with `npm run freebuy:verify` through
+   * `auditFreeBuyBoard`, so a one-shot check and the standing watch cannot
+   * drift into two opinions about what a correct Free Buy looks like.
+   *
+   * Alerts ON CHANGE, like every other watch here: a row re-filed hourly is a
+   * row somebody mutes, and it stays open until it is resolved anyway.
+   */
+  private async auditFreeBuyBoardOnce(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastFreeBuyAuditAt < FREE_BUY_AUDIT_EVERY_MS) return;
+    this.lastFreeBuyAuditAt = now;
+    try {
+      const { data, error } = await supabase
+        .from('tournaments')
+        .select(
+          'name, club_id, union_id, start_time, guaranteed_prize, buy_in_amount, buy_in_fee, ' +
+            'starting_chips, rebuy_cost, addon_cost, addon_chips, addon_from_start, ' +
+            'add_on_available, is_rebuy, max_rebuys, late_reg_mins, late_reg_levels, rebuy_levels'
+        )
+        .eq('free_buy', true)
+        .gte('start_time', new Date(now - 24 * 60 * 60_000).toISOString());
+      // An unreadable board is not a wrong board.
+      if (error) return;
+
+      const { problems, checked } = auditFreeBuyBoard((data ?? []) as any[], now);
+      if (problems.length === 0) {
+        if (this.lastFreeBuyAuditProblems > 0) {
+          console.log(`[TournamentRecurring] Free Buy audit: ${checked} event(s), all correct now`);
+        }
+        this.lastFreeBuyAuditProblems = 0;
+        return;
+      }
+      console.warn(
+        `[TournamentRecurring] Free Buy audit: ${problems.length} problem(s) across ` +
+          `${checked} event(s)\n  ${problems.slice(0, 10).join('\n  ')}`
+      );
+      if (problems.length === this.lastFreeBuyAuditProblems) return;
+      this.lastFreeBuyAuditProblems = problems.length;
+      await supabase.rpc('fn_raise_server_financial_alert', {
+        p_severity: 'warning',
+        p_source: 'TournamentRecurring.freeBuyAudit',
+        p_message:
+          `The Free Buy board is not what it was specified to be: ${problems.length} problem(s) ` +
+          `across ${checked} event(s). First: ${problems[0]}`,
+        p_context: { kind: 'free_buy_board_wrong', checked, problems: problems.slice(0, 25) },
+        p_entity_id: 'free_buy_board',
+      });
+    } catch (err) {
+      reportError(err, 'TournamentRecurring.freeBuyAudit');
     }
   }
 

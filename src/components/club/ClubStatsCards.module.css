@@ -87,3 +87,10 @@
     font-size: 20px;
   }
 }
+
+/* The parent's read failed: one honest line where six cards would be. */
+.unavailable {
+  color: var(--text-secondary, #8a8f98);
+  font-size: 0.85rem;
+  padding: 12px 0;
+}

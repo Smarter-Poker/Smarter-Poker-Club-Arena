@@ -8,6 +8,7 @@ import { ArenaPremiumTitle, ArenaPremiumValueText } from './ArenaPremiumText';
 import { NLH_PREMIUM_ASSETS, NLH_PREMIUM_ZONES, premiumZoneStyle } from './nlhPremiumTemplate';
 import { premiumStatusBadge } from './premiumStatus';
 import { useFitText } from './useFitText';
+import { splitBuyInRange } from './layeredCard';
 import './NlhPremiumCard.css';
 
 interface NlhPremiumCardProps {
@@ -49,13 +50,10 @@ function ArtLayer({
  * 2026-09-03, screenshots 2 and 7).
  */
 function StatusBadge({ data }: { data: ArenaGameCardData }) {
+  /* No live dot beside the title (Dan 2026-09-03: "remove the green dots to
+     the left of the titles"); the RUNNING pill already says it. */
   if (data.status === 'running') {
-    return (
-      <>
-        <ArtLayer src={NLH_PREMIUM_ASSETS.liveDot} zone="liveDot" />
-        <ArtLayer src={NLH_PREMIUM_ASSETS.statusRunning} zone="status" />
-      </>
-    );
+    return <ArtLayer src={NLH_PREMIUM_ASSETS.statusRunning} zone="status" />;
   }
   const badge = premiumStatusBadge(data);
   return (
@@ -71,14 +69,22 @@ function StatusBadge({ data }: { data: ArenaGameCardData }) {
   );
 }
 
+/* Minimum over maximum, no dash, each line centred (Dan 2026-09-03; the
+   shared rule is in layeredCard.tsx / splitBuyInRange). */
+function NlhBuyIn({ value }: { value: string }) {
+  const range = splitBuyInRange(value);
+  if (!range) return <ArenaPremiumValueText>{value}</ArenaPremiumValueText>;
+  return (
+    <span className="agc-nlh-premium__buy-in-stack">
+      <ArenaPremiumValueText as="span">{range[0]}</ArenaPremiumValueText>
+      <ArenaPremiumValueText as="span">{range[1]}</ArenaPremiumValueText>
+    </span>
+  );
+}
+
 export function NlhPremiumCard({ data, actions }: NlhPremiumCardProps) {
   const titleRef = useFitText<HTMLElement>(data.title, TITLE_SCALE_X);
-  const titleZone =
-    data.status === 'running'
-      ? NLH_PREMIUM_ZONES.title
-      : data.subtitle
-        ? NLH_PREMIUM_ZONES.titleNoDot
-        : NLH_PREMIUM_ZONES.titleAlone;
+  const titleZone = data.subtitle ? NLH_PREMIUM_ZONES.titleNoDot : NLH_PREMIUM_ZONES.titleAlone;
 
   return (
     <div className="agc-nlh-premium">
@@ -137,7 +143,7 @@ export function NlhPremiumCard({ data, actions }: NlhPremiumCardProps) {
         data-zone="buyIn"
         style={premiumZoneStyle(NLH_PREMIUM_ZONES.buyIn)}
       >
-        <ArenaPremiumValueText>{zoneText('buyIn', data.buyIn)}</ArenaPremiumValueText>
+        <NlhBuyIn value={zoneText('buyIn', data.buyIn)} />
       </div>
 
       {actions.secondaryLabel && (

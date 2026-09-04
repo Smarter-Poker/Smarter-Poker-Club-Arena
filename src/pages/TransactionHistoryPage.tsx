@@ -167,12 +167,10 @@ export default function TransactionHistoryPage() {
     const unsubWallet = masterBus.subscribeDebounced('WALLET_REFRESHED', refresh, 500);
     const unsubBalance = masterBus.subscribeDebounced('BALANCE_UPDATED', refresh, 500);
     const unsubChipsAdded = masterBus.subscribeDebounced('CHIPS_ADDED', refresh, 500);
-    const unsubChipsWithdrawn = masterBus.subscribeDebounced('CHIPS_WITHDRAWN', refresh, 500);
     return () => {
       unsubWallet();
       unsubBalance();
       unsubChipsAdded();
-      unsubChipsWithdrawn();
     };
   }, [user?.id]);
 

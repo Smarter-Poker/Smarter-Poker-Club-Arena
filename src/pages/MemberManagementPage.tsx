@@ -51,7 +51,8 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { toTitleCase } from '../utils/titleCase';
-import { resolveClubUUID } from '../utils/clubIdResolver';
+import { isUUID, resolveClubUUID } from '../utils/clubIdResolver';
+import { ClubNotFoundError, resolveClubUUIDStrict } from '../utils/strictClubIdResolver';
 import {
   ROLE_DESCRIPTION,
   isAgentRole,
@@ -112,7 +113,8 @@ const RANGE_LABEL: Record<RangeMode, string> = {
   custom: 'Select',
 };
 
-/** The downline list is capped so a 319-strong agent does not render 319 rows. */
+/** The downline list renders this many rows at a time; "Show More" adds another page.
+    A 319-strong super agent's tree was reachable only to row 50 before. */
 const DOWNLINE_RENDER_CAP = 50;
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -135,7 +137,12 @@ export default function MemberManagementPage() {
   const [downline, setDownline] = useState<DownlineMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  // The club or the member does not exist. Distinct from a read that failed:
+  // a mistyped slug used to reach the uuid RPC as 22P02 and be shown as
+  // "The Member Ledger Did Not Respond", which reads as an outage.
+  const [notFound, setNotFound] = useState(false);
   const [myRole, setMyRole] = useState<ClubRole>('player');
+  const [downlineShown, setDownlineShown] = useState(DOWNLINE_RENDER_CAP);
 
   const [rangeMode, setRangeMode] = useState<RangeMode>('overall');
   const [customFrom, setCustomFrom] = useState<string>(() => isoDate(new Date()));
@@ -154,12 +161,31 @@ export default function MemberManagementPage() {
         setLoadError(false);
       }
       try {
-        const resolved = await resolveClubUUID(clubId);
-        if (!live()) return;
-        if (!resolved) {
-          setDetail(null);
+        // resolveClubUUID never returns falsy: it hands back the raw slug when
+        // it cannot resolve, so a `!resolved` guard here was dead and the slug
+        // went into p_club_id uuid. Strict resolution names the not-found.
+        if (!isUUID(userId)) {
+          if (live()) {
+            setNotFound(true);
+            setDetail(null);
+          }
           return;
         }
+        let resolved: string;
+        try {
+          resolved = await resolveClubUUIDStrict(clubId);
+        } catch (e) {
+          if (e instanceof ClubNotFoundError) {
+            if (live()) {
+              setNotFound(true);
+              setDetail(null);
+            }
+            return;
+          }
+          throw e;
+        }
+        if (!live()) return;
+        setNotFound(false);
         setResolvedClubId(resolved);
 
         const [memberDetail, memberDownline] = await Promise.all([
@@ -169,6 +195,7 @@ export default function MemberManagementPage() {
         if (!live()) return;
         setDetail(memberDetail);
         setDownline(memberDownline);
+        setDownlineShown(DOWNLINE_RENDER_CAP);
 
         // Whoever is reading decides what this page lets them do. One row, and
         // only for the viewer, so it costs a single indexed lookup.
@@ -231,9 +258,9 @@ export default function MemberManagementPage() {
   /* ── Derived ────────────────────────────────────────────────────────────── */
 
   const identity = detail?.identity;
-  const found = !!identity?.user_id;
+  const found = !notFound && !!identity?.user_id;
 
-  const shownDownline = downline.slice(0, DOWNLINE_RENDER_CAP);
+  const shownDownline = downline.slice(0, downlineShown);
 
   /* ── Render ─────────────────────────────────────────────────────────────── */
 
@@ -347,16 +374,20 @@ export default function MemberManagementPage() {
           <InfoLine label="Last Login" value={formatTimestamp(identity!.last_login)} />
         )}
         <InfoLine label="Joined" value={formatTimestamp(identity!.joined_at)} />
-        <InfoLine
-          label="Upline Agent"
-          value={
-            identity!.upline_name
-              ? identity!.upline_player_number
-                ? `${identity!.upline_name} (ID: ${identity!.upline_player_number})`
-                : identity!.upline_name
-              : 'None'
-          }
-        />
+        {/* The RPC nulls upline_name for viewers without financial access;
+            printing "None" for them said the player has no upline. */}
+        {detail!.capabilities.can_view_financials && (
+          <InfoLine
+            label="Upline Agent"
+            value={
+              identity!.upline_name
+                ? identity!.upline_player_number
+                  ? `${identity!.upline_name} (ID: ${identity!.upline_player_number})`
+                  : identity!.upline_name
+                : 'None'
+            }
+          />
+        )}
         {identity!.home_club_name && (
           <InfoLine label="Home Club" value={identity!.home_club_name} />
         )}
@@ -372,6 +403,7 @@ export default function MemberManagementPage() {
                 key={mode}
                 type="button"
                 className={rangeMode === mode ? 'active' : ''}
+                aria-pressed={rangeMode === mode}
                 onClick={() => chooseRange(mode)}
               >
                 {RANGE_LABEL[mode]}
@@ -405,10 +437,15 @@ export default function MemberManagementPage() {
             </div>
           )}
 
-          <p className="mm-range__caption">
-            {detail!.range.is_overall
-              ? 'Showing Lifetime Totals'
-              : `Showing ${detail!.range.from ?? '?'} To ${detail!.range.to ?? '?'}`}
+          {/* The caption names the range the numbers BELONG to, which is the
+              one the server answered for, not the tab just pressed. While a
+              new range loads the figures are dimmed and say so. */}
+          <p className="mm-range__caption" aria-live="polite">
+            {loading
+              ? 'Loading The Selected Range...'
+              : detail!.range.is_overall
+                ? 'Showing Lifetime Totals'
+                : `Showing ${detail!.range.from ?? '?'} To ${detail!.range.to ?? '?'}`}
           </p>
         </section>
       )}
@@ -416,9 +453,16 @@ export default function MemberManagementPage() {
       {/* ── Stats ────────────────────────────────────────────────────────── */}
 
       {stats && (
-        <section className="mm-card mm-stats">
+        <section
+          className={`mm-card mm-stats${loading ? ' mm-stats--busy' : ''}`}
+          aria-busy={loading}
+        >
           <h2 className="mm-card__title">Activity</h2>
-          <StatRow label="Hands" value={count(stats.hands)} />
+          {/* The RPC splits hands by tournament_id, and every other pair on
+              this card is shown as cash / MTT. "Hands" was the cash half
+              labelled as the whole; mtt_hands was fetched and never drawn. */}
+          <StatRow label="Cash Hands" value={count(stats.hands)} />
+          <StatRow label="MTT Hands" value={count(stats.mtt_hands)} />
           <StatRow label="Total Fee" value={money(stats.total_fee)} />
           <StatRow label="MTT Fee" value={money(stats.mtt_fee)} />
           <StatRow label="Claimed Back" value={money(stats.claimed_back)} />
@@ -441,7 +485,8 @@ export default function MemberManagementPage() {
       {wallets && (
         <section className="mm-card mm-stats">
           <h2 className="mm-card__title">Wallets</h2>
-          <StatRow label="Club Chips" value={chips(wallets.chip_balance)} />
+          {/* chip_balance and player_wallet are the same club_members row
+              read twice; two labels on one number read as two wallets. */}
           <StatRow label="Player Wallet" value={chips(wallets.player_wallet)} />
           <StatRow label="Agent Wallet" value={chips(wallets.agent_wallet)} />
           <StatRow label="Promo Wallet" value={chips(wallets.promo_wallet)} />
@@ -473,9 +518,18 @@ export default function MemberManagementPage() {
                   <span className="mm-downline__fees">{money(d.total_fees)}</span>
                 </div>
               ))}
-              {downline.length > DOWNLINE_RENDER_CAP && (
+              {downline.length > shownDownline.length && (
                 <p className="mm-downline__more">
                   Showing {count(shownDownline.length)} Of {count(downline.length)}
+                  <button
+                    type="button"
+                    className="mm-downline__show-more"
+                    onClick={() => setDownlineShown((n) => n + DOWNLINE_RENDER_CAP)}
+                  >
+                    Show{' '}
+                    {count(Math.min(DOWNLINE_RENDER_CAP, downline.length - shownDownline.length))}{' '}
+                    More
+                  </button>
                 </p>
               )}
             </div>
@@ -635,8 +689,24 @@ function NotesEditor({
       };
       savedRef.current = persisted;
       if (!isMountedRef.current) return;
-      setNicknameUnsaved(draftRef.current.nickname !== persisted.nickname);
-      setRemarkUnsaved(draftRef.current.remark !== persisted.remark);
+      // The server trims and nulls empties. If the draft is still what was
+      // sent, the normalised text IS the draft now; otherwise the user typed
+      // more meanwhile and that newer text stays marked unsaved. Before this,
+      // "Bob " saved as "Bob" toasted "Saved" and lit "Not Saved Yet" for ever.
+      if (draftRef.current.nickname === draft.nickname) {
+        draftRef.current.nickname = persisted.nickname;
+        setNickname(persisted.nickname);
+        setNicknameUnsaved(false);
+      } else {
+        setNicknameUnsaved(draftRef.current.nickname !== persisted.nickname);
+      }
+      if (draftRef.current.remark === draft.remark) {
+        draftRef.current.remark = persisted.remark;
+        setRemark(persisted.remark);
+        setRemarkUnsaved(false);
+      } else {
+        setRemarkUnsaved(draftRef.current.remark !== persisted.remark);
+      }
       toast.success('Member Notes Saved');
     } catch (e) {
       reportError(e, 'MemberManagementPage.saveNotes');
@@ -950,13 +1020,15 @@ function RoleSection({
       setConfirmRole(null);
       toast.success(`${targetName} Is Now ${roleLabel(newRole)}`);
 
-      masterBus.emit('CLUB_UPDATED', { clubId });
+      // Listeners filter on payload.clubId === <uuid>; every other emitter
+      // sends the resolved uuid, and this one sent the route slug.
+      masterBus.emit('CLUB_UPDATED', { clubId: resolvedClubId });
       const agentRoles: ClubRole[] = ['super_agent', 'agent', 'sub_agent'];
       if (agentRoles.includes(newRole) || agentRoles.includes(targetRole)) {
-        masterBus.emit('AGENT_UPDATED', { clubId, agentId: targetUserId });
+        masterBus.emit('AGENT_UPDATED', { clubId: resolvedClubId, agentId: targetUserId });
       }
       masterBus.emit('MEMBER_ROLE_CHANGED', {
-        clubId,
+        clubId: resolvedClubId,
         userId: targetUserId,
         newRole,
         previousRole: targetRole,
@@ -1225,7 +1297,7 @@ function RoleSection({
           }}
           onTransferComplete={() => {
             toast.success(`${targetName} Has Been Funded.`);
-            masterBus.emit('AGENT_UPDATED', { clubId, agentId: targetUserId });
+            masterBus.emit('AGENT_UPDATED', { clubId: resolvedClubId, agentId: targetUserId });
           }}
         />
       )}

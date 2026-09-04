@@ -613,7 +613,10 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                 <dl className="glp__grid">
                   <div>
                     <dt>Game</dt>
-                    <dd>{entry.variantLabel}</dd>
+                    {/* The short label, as the card's GAME TYPE plaque prints it -
+                        "Pot Limit Omaha 5" does not fit a plaque and was clipping
+                        to "Pot Limit Omah..."; the long name rides on the title. */}
+                    <dd title={entry.variantLabel}>{entry.gameLabel}</dd>
                   </div>
                   {/* `stakesLabel: string | null` — null means "this row cannot
                       say its stakes", and the contract (lobbyEntries) is that

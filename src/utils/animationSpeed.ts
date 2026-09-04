@@ -43,3 +43,5 @@ export function prefersReducedMotion(): boolean {
     return false;
   }
 }
+
+// stress-test 060524-3: pipeline timing probe, no behaviour change.

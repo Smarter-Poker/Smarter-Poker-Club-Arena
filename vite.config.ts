@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { cpus } from 'node:os';
 import react from '@vitejs/plugin-react';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
 import path from 'path';
@@ -144,7 +145,13 @@ export default defineConfig({
     // request nobody can explain.
     //
     // Local builds are untouched: CI is capped, a laptop keeps the default.
-    maxParallelFileOps: process.env.CI ? 4 : 20,
+    // Sized from the BOX for the same reason as vitest.config.ts: this was a
+    // hard 4 for 8-core runners, and the boxes are 16-core since 2026-09-04.
+    maxParallelFileOps: process.env.ROLLUP_MAX_FILE_OPS
+      ? Number(process.env.ROLLUP_MAX_FILE_OPS)
+      : process.env.CI
+        ? Math.max(4, Math.floor(cpus().length / 2))
+        : 20,
     rollupOptions: {
       output: {
         // 2026-04-15 cache-bust: append a build-time tag to every emitted

@@ -722,6 +722,12 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // league cannot deal, so those ship scenario-tested with telemetry.
   { name: 'plo4_v24_price', variant: 'plo4', pairs: 6000, a: {}, b: { v24PloDefense: false } },
   { name: 'plo6_v24_price', variant: 'plo6', pairs: 6000, a: {}, b: { v24PloDefense: false } },
+  // ── V40 (2026-09-04) ── "horses are playing PLO like it's hold'em". The
+  // tiered aggressor sampler, the pair/two-pair/trips pressure cap and the
+  // small-ball betting law, measured where the naked-aces call-down
+  // happened (plo6) and on the widest-played Omaha card (plo4).
+  { name: 'plo6_v40_omaha', variant: 'plo6', pairs: 6000, a: {}, b: { v40Omaha: false } },
+  { name: 'plo4_v40_omaha', variant: 'plo4', pairs: 6000, a: {}, b: { v40Omaha: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
   // both reads and writes; A-seats read a memory that includes B's actions.
   { name: 'mind_layer', a: {}, b: { mind: false } },
@@ -767,6 +773,7 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v24Bounty: false,
       v24PloDefense: false,
       v25PloTourney: false,
+      v40Omaha: false,
       mind: false,
       streetIQ: false,
       handReading: false,

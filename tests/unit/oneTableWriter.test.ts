@@ -50,17 +50,20 @@ function tableInserters(): string[] {
 }
 
 describe('exactly one writer per kind of table', () => {
-  it('is the sanctioned four, and nothing else', () => {
+  it('is the sanctioned two in src/, and nothing else', () => {
     expect(tableInserters()).toEqual(
       [
-        // The host's own creation screen: Save creates the table and returns
-        // to the lobby, Start creates it and sits down. Both insert status
-        // 'waiting' from ONE buildTableData().
-        //
         // 2026-08-27: TableService left this list. Its createTable was the
         // Create Table modal's service, and the modal had zero imports — the
         // whole path was unreachable. Deleted, not preserved.
-        'src/pages/TableConfigPage.tsx',
+        //
+        // 2026-09-04 (Operation Table Stakes, Slice 1): TableConfigPage left
+        // it too. A cash game is created by fn_cash_game_create in SQL — the
+        // cash_games row AND its Main 1 tables row in one function — and the
+        // page's Regular tab renders CashGameCreateFlow, which calls that RPC
+        // and never touches `tables`. The browser no longer has a column list
+        // to get wrong.
+        //
         // Tournament tables. Sized from the tournament's own structure, never
         // through the cash path.
         'src/services/TournamentService.ts',
@@ -68,6 +71,17 @@ describe('exactly one writer per kind of table', () => {
         'src/services/HorseOrchestrator.ts',
       ].sort()
     );
+  });
+
+  it('the cash writer is the SQL function, reached by exactly one RPC call', () => {
+    const flow = fs.readFileSync(path.join(SRC, 'components/cash/CashGameCreateFlow.tsx'), 'utf8');
+    expect(flow.match(/supabase\.rpc\('fn_cash_game_create'/g)?.length).toBe(1);
+    expect(flow).not.toMatch(/\.from\(\s*'tables'\s*\)/);
+    const sql = fs.readFileSync(
+      path.join(process.cwd(), 'supabase/migrations/20260904160500_cash_games_slice_1.sql'),
+      'utf8'
+    );
+    expect(sql.match(/INSERT INTO public\.tables \(/g)?.length).toBe(1);
   });
 
   it('nobody writes the legacy min_buyin / max_buyin spellings', () => {
@@ -92,6 +106,11 @@ describe('exactly one writer per kind of table', () => {
 
 describe('Save and Start both create tables the engine can adopt', () => {
   const page = fs.readFileSync(path.join(SRC, 'pages/TableConfigPage.tsx'), 'utf8');
+  const flow = fs.readFileSync(path.join(SRC, 'components/cash/CashGameCreateFlow.tsx'), 'utf8');
+  const sql = fs.readFileSync(
+    path.join(process.cwd(), 'supabase/migrations/20260904160500_cash_games_slice_1.sql'),
+    'utf8'
+  );
 
   it("neither writes status 'active', which no engine query matches", () => {
     // cash_tables_needing_engine selects status IN ('waiting','running').
@@ -99,30 +118,27 @@ describe('Save and Start both create tables the engine can adopt', () => {
     // in the lobby forever and never deals. This test USED TO PIN that bug
     // ("Start writes status 'active'"); it now pins the fix.
     expect(page).not.toContain("status: 'active'");
+    expect(sql).toMatch(/^\s*'waiting', 0, v_uid,\s*$/m);
   });
 
   it('neither writes is_template, which nothing anywhere reads', () => {
-    // The template store is table_templates (the Save as Template button).
-    // A tables row flagged is_template rendered in the lobby as a joinable
-    // game because no lobby query filters the column.
     expect(page).not.toContain('is_template: true');
+    expect(sql).not.toMatch(/INSERT INTO public\.tables \([\s\S]*?is_template[\s\S]*?\) VALUES/);
   });
 
-  it('both build the SAME payload, so a feature cannot reach one and not the other', () => {
-    const uses = page.match(/\.\.\.buildTableData\(resolvedId\)/g) || [];
-    expect(uses.length).toBe(2);
+  it('both go through the SAME create, so a feature cannot reach one and not the other', () => {
+    // One `create(mode)`; Save and Start differ only in where they go next.
+    expect(flow.match(/void create\('save'\)/g)?.length).toBe(1);
+    expect(flow.match(/void create\('start'\)/g)?.length).toBe(1);
+    expect(flow.match(/supabase\.rpc\('fn_cash_game_create'/g)?.length).toBe(1);
   });
 
-  it('the Cap toggle now carries an amount the engine can enforce', () => {
-    // cap_enabled alone is not a cap: the engine computes the ceiling from
-    // cap_bb and treats <= 0 as uncapped.
-    /* 2026-08-31: the expression gained a `!limitGame &&` guard, so this now
-       asserts the RULE rather than one spelling of it. A fixed-limit table
-       cannot carry a cap at all — ServerTableEngineTurns assigns the mandatory
-       fixed size and THEN clamps it with `Math.min(amount, capRemaining)`,
-       which can emit a wager that is not a legal size. The amount is still
-       forced to 0 whenever the cap is not written. */
-    expect(page).toMatch(/cap_bb:\s*!limitGame && config\.capEnabled \? config\.capBB : 0/);
+  it('the Cap is not offered, and not written, so the column default (false) holds', () => {
+    // cap_enabled alone was never a cap: the engine computes the ceiling from
+    // cap_bb and treats <= 0 as uncapped. OPORD 1.3 section 8 offers no cap
+    // on any cash game; the row keeps 010_table_configuration.sql's default.
+    expect(flow).not.toMatch(/label="Cap"/);
+    expect(sql).not.toMatch(/INSERT INTO public\.tables \([\s\S]*?\bcap_bb\b[\s\S]*?\) VALUES/);
   });
 });
 

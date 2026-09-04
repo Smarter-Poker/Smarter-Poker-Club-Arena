@@ -20,25 +20,15 @@ import { useToast } from '../components/common/Toast';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import './TableConfigPage.css';
 import { reportError } from '../utils/errorReporter';
-import { formatCurrency } from '../lib/utils';
-import { RAKE_INHERIT, getRakeConfig } from '../config/RakeConfig';
-import { stakesLabel, isFixedLimitVariant } from '../lib/bettingStructure';
-import {
-  DEFAULT_BLINDS_INDEX,
-  presetsFor,
-  blindsIndexFor,
-  nearestBlindsIndex,
-} from '../config/blindsPresets';
+import { RAKE_INHERIT } from '../config/RakeConfig';
+import { isFixedLimitVariant } from '../lib/bettingStructure';
+import { presetsFor, blindsIndexFor, nearestBlindsIndex } from '../config/blindsPresets';
 import {
   restoreTemplateConfig,
   defaultTableName,
   templateFitsGame,
 } from '../lib/tableTemplateRestore';
-import {
-  clampSeatsForVariant,
-  maxSeatsForVariant,
-  maxSeatsTheDeckAllows,
-} from '../config/tableSeating';
+import { maxSeatsForVariant, maxSeatsTheDeckAllows } from '../config/tableSeating';
 
 import { tournamentService } from '../services/TournamentService';
 import { buildTournamentConfig } from '../lib/tournamentFromTableConfig';
@@ -53,6 +43,8 @@ import WeeklyScheduleEditor, {
   validateWeeklySchedule,
 } from '../components/tournament/WeeklyScheduleEditor';
 import { HelpPopover } from '../components/common/HelpPopover';
+import { Toggle, Slider, NumberField } from '../components/table-config/controls';
+import CashGameCreateFlow from '../components/cash/CashGameCreateFlow';
 import {
   FREE_BUY_ADDON_COST,
   FREE_BUY_HELPER,
@@ -60,41 +52,11 @@ import {
   FREE_BUY_REBUY_COST,
   isFreeBuyEvent,
 } from '../utils/freeBuy';
-import { getTableState } from '../services/GameServerAPI';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 type GameMode = 'regular' | 'sng' | 'mtt';
-/**
- * The variants a 7-2 bounty can actually pay out on.
- *
- * ServerTableEngineSettlement gates the bounty to Hold'em and says why:
- * "meaningless in PLO; short-deck has no deuces". Holding four cards, a 7 and
- * a 2 is nearly every hand, and a bounty that always fires is not a bounty.
- * The engine rule is right; offering the switch on a table that can never
- * honour it is what was wrong.
- */
-/**
- * The variants the 7-2 bounty can actually pay out on.
- *
- * EXACTLY WHAT THE ENGINE PAYS, AND NOTHING ELSE (2026-08-31 audit). The gate
- * in ServerTableEngineSettlement is a string equality:
- *
- *     const sevenDeuceIsNlh = (this.tableInfo?.game_variant || 'nlh') === 'nlh';
- *
- * so `nlhe`, `flh`, `limit_holdem` and `pineapple` all failed it. The toggle
- * rendered on a Fixed Limit Hold'em and a Pineapple table, wrote
- * `seven_deuce_enabled: true`, and the bounty was never paid — the owner
- * advertised a prize the table could not award. This is the same shape as the
- * PLO and short-deck removal recorded two comments down; those were taken out
- * of the set and these four were left in.
- *
- * FLH is a legitimate candidate — it is Hold'em and it has deuces — but making
- * it pay is an ENGINE change to a settlement path, with its own tests, not a
- * set entry. Until then the honest UI is the one that only offers what pays.
- */
-const SEVEN_DEUCE_VARIANTS = new Set(['nlh']);
 
 /**
  * Fixed-limit tables (FLH, FLO8) cannot honour three of this form's controls,
@@ -120,19 +82,6 @@ const SEVEN_DEUCE_VARIANTS = new Set(['nlh']);
  */
 const isFixedLimitGame = (gameType: string | undefined): boolean =>
   isFixedLimitVariant(String(gameType || 'nlh').toLowerCase());
-
-/**
- * The variants a Pineapple Hold'em table can be dealt as.
- *
- * ServerTableEngineBase.dealtGameVariant deals a table carrying
- * `pineapple_holdem` as pineapple only when its variant is 'nlh' or 'nlhe',
- * "because 'Pineapple PLO' is not a game and a stray flag must not silently
- * turn a PLO table into one". This mirrors that gate exactly, so the switch
- * is offered where and only where the engine will honour it.
- */
-const PINEAPPLE_VARIANTS = new Set(['nlh', 'nlhe']);
-const canDealPineapple = (gameType: string | undefined): boolean =>
-  PINEAPPLE_VARIANTS.has(String(gameType || 'nlh').toLowerCase());
 
 type RunItMode = 'none' | 'player_choice' | 'mandatory_twice' | 'mandatory_three';
 type BlindStructure = 'slow' | 'standard' | 'turbo' | 'hyper_turbo';
@@ -495,140 +444,6 @@ const DEFAULT_CONFIG: TableConfig = {
 // inside the component would create new component types every render and remount
 // every <Toggle>/<Slider>, breaking slider drags mid-gesture)
 // ═══════════════════════════════════════════════════════════════════════════════
-const Toggle = ({
-  label,
-  value,
-  onChange,
-  tooltip,
-  disabled = false,
-}: {
-  label: string;
-  value: boolean;
-  onChange: (v: boolean) => void;
-  tooltip?: string;
-  /** Locked by a rule (Free Buy): rendered, readable, not changeable. */
-  disabled?: boolean;
-}) => (
-  <div className={`config-toggle${disabled ? ' is-locked' : ''}`}>
-    <span className="toggle-label">
-      {label}
-      {tooltip && <HelpPopover label={label}>{tooltip}</HelpPopover>}
-    </span>
-    <label className="table-config-switch">
-      <input
-        className="table-config-switch__input"
-        type="checkbox"
-        role="switch"
-        aria-label={label}
-        checked={value}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-      <span className="table-config-switch__track" aria-hidden="true">
-        <span className="table-config-switch__thumb" />
-      </span>
-      <span className={`table-config-switch__status ${value ? 'is-on' : 'is-off'}`}>
-        {value ? 'On' : 'Off'}
-      </span>
-    </label>
-  </div>
-);
-
-const Slider = ({
-  label,
-  value,
-  onChange,
-  min,
-  max,
-  step = 1,
-  suffix = '',
-  tooltip,
-  format,
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-  min: number;
-  max: number;
-  step?: number;
-  suffix?: string;
-  tooltip?: string;
-  /** Render the value yourself — used to show "Schedule" for the -1 sentinel. */
-  format?: (v: number) => string;
-}) => (
-  <div className="config-slider">
-    <div className="slider-header">
-      <span className="slider-label">
-        {label}: {format ? format(value) : `${value}${suffix}`}
-        {format ? '' : ''}
-        {tooltip && <HelpPopover label={label}>{tooltip}</HelpPopover>}
-      </span>
-    </div>
-    <div className="slider-track-container">
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="slider-input"
-      />
-    </div>
-  </div>
-);
-
-/**
- * Whole-number entry row (2026-08-22). Used wherever a "Custom ..." toggle
- * switches a slider to free numeric entry — buy-in, rebuy cost, add-on cost,
- * GTD amount, early-bird chips, total days. Whole numbers only: anything a
- * player pays must never be a decimal (Dan 2026-08-20), so the field rounds
- * on input rather than letting a fraction sit in state.
- */
-const NumberField = ({
-  label,
-  value,
-  onChange,
-  min = 0,
-  max,
-  tooltip,
-  disabled = false,
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-  min?: number;
-  max?: number;
-  tooltip?: string;
-  /** Locked by a rule (Free Buy): rendered, readable, not changeable. */
-  disabled?: boolean;
-}) => (
-  <div className={`config-toggle${disabled ? ' is-locked' : ''}`}>
-    <span className="toggle-label">
-      {label}
-      {tooltip && <HelpPopover label={label}>{tooltip}</HelpPopover>}
-    </span>
-    <input
-      type="number"
-      className="config-datetime"
-      inputMode="numeric"
-      min={min}
-      max={max}
-      step={1}
-      value={value}
-      disabled={disabled}
-      aria-label={label}
-      onChange={(e) => {
-        let v = Math.round(Number(e.target.value) || 0);
-        if (v < min) v = min;
-        if (max !== undefined && v > max) v = max;
-        onChange(v);
-      }}
-      style={{ width: 110, textAlign: 'right' }}
-    />
-  </div>
-);
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -645,7 +460,6 @@ export default function TableConfigPage() {
     type: config.gameMode === 'mtt' ? 'mtt' : config.gameMode === 'sng' ? 'sng' : 'cash',
     tournamentType: config.gameMode === 'mtt' ? 'MTT' : config.gameMode === 'sng' ? 'SNG' : 'CASH',
   });
-  const [blindsIndex, setBlindsIndex] = useState(DEFAULT_BLINDS_INDEX); // 0.05/0.10
   /* What WE last auto-generated for the name. Anything else in the field was
      typed by the owner and is never overwritten. */
   const autoNameRef = useRef<string>('');
@@ -741,14 +555,10 @@ export default function TableConfigPage() {
      been initialised in agreement. */
   useEffect(() => {
     const exact = blindsIndexFor(config.smallBlind, config.bigBlind, offeredPresets);
-    if (exact !== null) {
-      setBlindsIndex(exact);
-      return;
-    }
+    if (exact !== null) return;
     const snapped = nearestBlindsIndex(config.bigBlind, offeredPresets);
     const preset = offeredPresets[snapped];
     if (!preset) return;
-    setBlindsIndex(snapped);
     setConfig((prev) => ({ ...prev, smallBlind: preset.sb, bigBlind: preset.bb }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [offeredPresets]);
@@ -959,7 +769,6 @@ export default function TableConfigPage() {
     }
 
     setConfig(restored.config);
-    setBlindsIndex(restored.blindsIndex);
     // The restored name is OURS, so the blinds keep renaming the table until
     // the owner types over it.
     autoNameRef.current = restored.config.name;
@@ -1053,315 +862,9 @@ export default function TableConfigPage() {
     }));
   };
 
-  const handleBlindsChange = (index: number) => {
-    setBlindsIndex(index);
-    const preset = offeredPresets[index];
-    if (!preset) return;
-    setConfig((prev) => ({
-      ...prev,
-      smallBlind: preset.sb,
-      bigBlind: preset.bb,
-    }));
-  };
-
-  const buildTableData = (resolvedClubId?: string) => ({
-    club_id: resolvedClubId || clubId,
-    // Standalone games remain club-scoped. A union operator reaches this same
-    // builder from Table Management, and the authoritative access answer
-    // supplies the union stamped onto the new game.
-    union_id: access?.unionId || null,
-    name: config.name,
-    // FORMAT, not variant (2026-08-30 audit). tables.game_type is the table
-    // FORMAT ('cash' | 'tournament') platform-wide: HorseFleetManager writes
-    // 'cash', and the sit-out / zero-chip eviction sweeps
-    // (20260828220000_sitting_out_and_zero_chip_evictions.sql) gate on
-    // t.game_type = 'cash'. This page wrote the VARIANT ('NLH', 'PLO6', ...)
-    // here, so owner-created tables never booted 5-minute sit-outs or
-    // zero-chip seats, and those zombie seats kept the table in
-    // cash_tables_needing_engine, holding an engine forever. The variant
-    // belongs in game_variant, one line down, where it already was.
-    game_type: 'cash',
-    game_variant: gameType || 'nlh',
-    game_mode: config.gameMode,
-
-    // Stakes
-    small_blind: config.smallBlind,
-    big_blind: config.bigBlind,
-    // Bet sizes on a limit table ("2/4"), blinds everywhere else ("1/2").
-    stakes: stakesLabel(config.smallBlind, config.bigBlind, gameType),
-
-    // Basic settings
-    is_private: config.isPrivate,
-    is_vip_only: config.isVipOnly,
-    is_anonymous: config.isAnonymous,
-    ban_chat: config.banChat,
-    label_as_new: config.labelAsNew,
-    is_featured: config.isFeatured,
-    hide_club_name: config.hideClubName,
-
-    // Game variants
-    bomb_pot_enabled: config.bombPotEnabled,
-    // FIX-D10 2026-07-19: the engine only fires bomb pots when
-    // bomb_pot_frequency > 0. The knobs are the host's now (2026-08-27) —
-    // they were hard-coded 10 / 2 "until the UI exposes knobs", and it does.
-    bomb_pot_frequency: config.bombPotEnabled ? config.bombPotFrequency : 0,
-    bomb_pot_ante_multiplier: config.bombPotEnabled ? config.bombPotAnteBB : 0,
-    // BOMB POT STANDARDIZATION 2026-08-27 (spec §3): the canonical config —
-    // trigger mode, timed interval, board count (1-3) and minimum players.
-    // The engine's BombPotScheduler reads these; the legacy pair below stays
-    // in lockstep for old readers (lobby badges, old engine builds).
-    bomb_pot_trigger_mode: config.bombPotEnabled ? config.bombPotTriggerMode : 'every_n_hands',
-    bomb_pot_interval_seconds:
-      config.bombPotEnabled && config.bombPotTriggerMode === 'timed'
-        ? Math.max(60, Math.round(config.bombPotIntervalMinutes * 60))
-        : null,
-    bomb_pot_board_count: config.bombPotEnabled ? config.bombPotBoards : 1,
-    // Clamped for the same reason as auto_start_players: a template blob can
-    // carry a value the slider would not allow (2026-08-31 audit).
-    bomb_pot_min_players: config.bombPotEnabled
-      ? Math.max(2, Math.min(config.bombPotMinPlayers, config.maxPlayers))
-      : 3,
-    // FIXED ante mode (spec §3): a positive amount overrides the multiplier.
-    bomb_pot_ante_fixed:
-      config.bombPotEnabled && config.bombPotAnteFixed > 0 ? config.bombPotAnteFixed : null,
-    // VARIANT OVERRIDE (spec §10.1): NULL = bomb hands play the table's own
-    // game. The engine whitelists; the DB CHECK mirrors it.
-    /* A bomb hand's variant IS the hand's betting structure, so an override
-       on a fixed-limit table would deal one pot-limit or no-limit hand at a
-       table the player sat down at for fixed limit. */
-    bomb_pot_variant:
-      !limitGame && config.bombPotEnabled && config.bombPotVariant ? config.bombPotVariant : null,
-    // ANNOUNCE WINDOW (spec §3): 0 = always show the timed clock.
-    bomb_pot_announce_seconds:
-      config.bombPotEnabled &&
-      config.bombPotTriggerMode === 'timed' &&
-      config.bombPotAnnounceMinutes > 0
-        ? Math.round(config.bombPotAnnounceMinutes * 60)
-        : null,
-    // SEPARATE BOMB BUTTON (spec §5.3).
-    bomb_pot_button_policy:
-      config.bombPotEnabled && config.bombPotSeparateButton ? 'separate' : 'regular',
-    // DOUBLE-BOARD BOMB POT 2026-08-20 (legacy pair, kept in sync): the
-    // engine used to read bomb_pot_double_board; board_count supersedes it.
-    bomb_pot_double_board: config.bombPotEnabled && config.bombPotBoards >= 2,
-    // `double_board` is no longer written (2026-08-29), for the same reason
-    // `triple_board` stopped being written in 2026-08-27: it has ZERO readers.
-    // Verified across both repos — the lobby reads the settings-blob key of
-    // the same name, never the column, and the engine reads
-    // bomb_pot_double_board. Live proof: the column is `true` on 0 of 97,944
-    // rows despite this line writing it on every double-board table created.
-    // A write-only column is a promise to a reader that does not exist.
-    // triple_board is no longer written (2026-08-27): the column has zero
-    // readers, so the toggle that fed it promised a game that never existed.
-    /**
-     * 2026-08-25: THE COLUMN HAS A READER NOW.
-     *
-     * The note that stood here said nothing in server/src had ever read this,
-     * and that the control "promised a different game and delivered ordinary
-     * Hold'em". Both were true. The fix was never to delete the switch: the
-     * pineapple VARIANT is fully built — three hole cards, a real discard
-     * street, its own timer — and only the mapping was missing.
-     * ServerTableEngineBase.dealtGameVariant now deals a Hold'em table with
-     * this flag as pineapple, and refuses to apply it to anything else,
-     * because "Pineapple PLO" is not a game.
-     */
-    /* Gated on the write as well as in the UI (2026-08-31): the engine
-       ignores this flag off Hold'em, so a stale true from a template or a
-       variant change would sit on a PLO row claiming a game it will never be
-       dealt. lobbyEntries reads the column directly and would badge it. */
-    pineapple_holdem: canDealPineapple(gameType) ? config.pineappleHoldem : false,
-    /**
-     * NLH ONLY, and that is the engine's rule, not an oversight.
-     * ServerTableEngineSettlement: "meaningless in PLO; short-deck has no
-     * deuces" — holding four cards, a 7 and a 2 is nearly every hand, and a
-     * bounty that always fires is not a bounty.
-     *
-     * So the SWITCH is what was wrong: the creation screen offered it on PLO
-     * and short-deck tables where it could never pay out once, and said
-     * nothing. It is not offered there now (see the toggle below), and the
-     * column is forced false so a variant change cannot leave a stale true
-     * behind on a table that will never honour it.
-     */
-    seven_deuce_enabled: SEVEN_DEUCE_VARIANTS.has(String(gameType || 'nlh').toLowerCase())
-      ? config.sevenDeuceEnabled
-      : false,
-    /* 7-2 bounty size in big blinds each other dealt-in player pays a
-       post-flop 7-2 winner.
-       2026-08-31: this read `config.sevenDeuceEnabled ? ... : 2` — the SAME
-       stale-true class the line above was written to prevent, one gate short.
-       A PLO6 table created after loading an NLH template wrote
-       enabled:false alongside amount:8. The amount now follows the switch
-       through the identical variant gate, so the two columns can never
-       describe different tables. */
-    seven_deuce_amount:
-      SEVEN_DEUCE_VARIANTS.has(String(gameType || 'nlh').toLowerCase()) && config.sevenDeuceEnabled
-        ? config.sevenDeuceAmountBB
-        : 2,
-    nit_game: config.nitGame,
-    /**
-     * CAP NEEDS AN AMOUNT (2026-08-27). `cap_enabled` alone is not a cap:
-     * ServerTableEngineTurns computes the ceiling as cap_bb x big_blind and
-     * treats cap_bb <= 0 as "no cap". This page toggled cap_enabled since
-     * February and never wrote cap_bb, so every cap table it built played
-     * uncapped. The amount is authored in big blinds and forced to 0 when the
-     * toggle is off, so a stale amount cannot cap a table whose owner turned
-     * the switch off.
-     */
-    /* Forced off on a fixed-limit table: the cap clamp runs AFTER the
-       mandatory fixed size is assigned, so a capped limit table can emit a
-       wager the validator refuses. See isFixedLimitGame. */
-    cap_enabled: !limitGame && config.capEnabled && config.capBB > 0,
-    cap_bb: !limitGame && config.capEnabled ? config.capBB : 0,
-
-    // Table parameters
-    // Clamped to the variant's seat law even if UI state slipped past the
-    // slider (template load, stale state, variant switch mid-edit). An
-    // over-cap row is not a preference, it is a mid-hand engine crash.
-    max_players: clampSeatsForVariant(String(gameType || 'nlh').toLowerCase(), config.maxPlayers),
-    action_time_seconds: config.actionTimeSeconds,
-    /**
-     * THE BUY-IN BAND IS ONE PAIR OF COLUMNS, IN CHIPS.
-     *
-     * This page used to stamp `min_buy_in_bb` / `max_buy_in_bb` here as well,
-     * in big blinds, beside a sibling written in chips. Nothing ever read
-     * them: `atomic_table_buyin` — the only hard enforcement of a buy-in in
-     * the product — reads `min_buy_in` / `max_buy_in`, and so do the engine
-     * and src/lib/cashBuyIn.ts. What the extra pair did was give a future
-     * reader a column that looks authoritative and is not; on a 1/2 table the
-     * database still carried the 2/25 default, so anyone who picked it up
-     * would have capped a player at 50 chips on a table advertising 400.
-     *
-     * They are now GENERATED columns derived from these two
-     * (supabase/migrations/20260831133000_one_buy_in_band_and_the_rest_are
-     * _derived.sql), so writing them raises 428C9 and the schema itself keeps
-     * the families from disagreeing. Write the chips; the big blinds follow.
-     */
-    min_buy_in: config.minBuyInBB * config.bigBlind,
-    max_buy_in: config.maxBuyInBB * config.bigBlind,
-    ante_bb: config.anteBB,
-    /**
-     * THE ANTE SLIDER WAS DEAD ON EVERY TABLE THIS PAGE CREATED.
-     *
-     * `ante_bb` is not in the engine's select list (server/src/services/
-     * supabase/tables.ts) — the engine reads `ante` and `ante_enabled`, and
-     * this page wrote neither. So a host could drag Ante to 2 BB, save, sit
-     * down, and no ante was ever posted. The only path that worked was the
-     * older CreateTableModal, which happens to map to the right columns.
-     *
-     * `ante_bb` is kept because it is the authored unit (big blinds, which
-     * survives a blind change); `ante` is the chip figure the engine actually
-     * posts, derived here so the two cannot drift.
-     */
-    ante_enabled: Number(config.anteBB) > 0,
-    ante: Number(config.anteBB) > 0 ? Number(config.anteBB) * Number(config.bigBlind || 0) : 0,
-    career_percent_min: config.careerPercentMin,
-    maintain_percent_min: config.maintainPercentMin,
-    maintain_hands: config.maintainHands,
-    /* CLAMPED (2026-08-31 audit). The slider is bounded to the seat count,
-       but a saved template is raw JSONB spread straight into state, so a
-       stale autoStartPlayers can arrive above it. auto_start_players over
-       the seat count is a table that can never deal and is not even flagged
-       as stuck (ServerTableEngineBase.minPlayersToDeal / dealThreshold). */
-    auto_start_players: Math.max(
-      2,
-      Math.min(
-        config.autoStartPlayers,
-        clampSeatsForVariant(String(gameType || 'nlh').toLowerCase(), config.maxPlayers)
-      )
-    ),
-    // game_length_hours and calltime_enabled are no longer written
-    // (2026-08-27): zero readers each — see the TableConfig comment.
-
-    // Time & auto settings
-    auto_extension: config.autoExtension,
-    auto_restart: config.autoRestart,
-    auto_create_table: config.autoCreateTable,
-    /* Forced off on a fixed-limit table: a straddle sets currentBet with no
-       structure branch and is not counted against the four-wager cap. */
-    auto_utg_straddle: !limitGame && config.autoUtgStraddle,
-    voluntary_straddle: !limitGame && config.voluntaryStraddle,
-    insurance_enabled: config.insuranceEnabled,
-    // FIX-D2 2026-07-19: the engine reads the canonical top-level columns
-    // straddle_enabled / run_it_twice_enabled, NOT auto_utg_straddle /
-    // voluntary_straddle / run_it_mode. Without these mirrors, straddle and
-    // run-it-twice configured on this page never took effect.
-    straddle_enabled: !limitGame && (config.autoUtgStraddle || config.voluntaryStraddle),
-    /* "NONE" DID NOT TURN RUN IT TWICE OFF (2026-08-31 audit).
-       The engine's gate is
-         ((run_it_twice ?? true) && (allow_run_it_twice ?? true)) || run_it_twice_enabled
-       and this page wrote ONLY the third column. The other two carry a
-       DEFAULT of true, so the first term was satisfied on every row this
-       page has ever created and the radio could not switch the feature off.
-       Measured on production the day it was found: 924 live cash tables,
-       921 of them running RIT while the host's setting read 'none'. RIT
-       splits real pots, so a host who declined it still had their players'
-       money run twice. fn_tables_sync_rit cannot rescue it either - it
-       mirrors only when one side is NULL, and this page writes a non-null
-       false. All three columns are now written from the one control. */
-    run_it_twice: config.runItMode !== 'none',
-    allow_run_it_twice: config.runItMode !== 'none',
-    run_it_twice_enabled: config.runItMode !== 'none',
-
-    // Run it multi-times
-    run_it_mode: config.runItMode,
-
-    // Rake settings
-    rake_percent: config.rakePercent,
-    rake_cap_bb: config.rakeCapBB,
-
-    /**
-     * THE TOURNAMENT BLOCK STOPPED BEING WRITTEN ONTO CASH ROWS (2026-08-31).
-     *
-     * buildTableData runs ONLY when gameMode === 'regular' — handleSave and
-     * handleStart both branch to the tournament path first — so every SNG/MTT
-     * column below was landing on a CASH row. Twenty of them had zero readers
-     * anywhere: not the engine, not the lobby, not any SQL beyond the ALTER
-     * TABLE that created them. Removed by name:
-     *   sng_buy_in, sng_custom_buy_in, blinds_up_minutes, next_step_satellite,
-     *   custom_rebuy_reentry_cost, number_of_rebuys_reentries,
-     *   add_on_multiplier, custom_add_on, add_on_break_length_minutes,
-     *   ko_bounty, gtd_prize_pool, late_registration_level,
-     *   early_bird_registration, featured_tournament, min_players_mtt,
-     *   max_players_mtt, multi_day_mtt, save_start_time,
-     *   restart_tournament_every, tournament_schedule.
-     * Only `name` is NOT NULL without a default on this table
-     * (scripts/ci/supabase-required-columns-manifest.json), so omitting them
-     * cannot refuse the insert.
-     *
-     * TWO THAT LOOK DEAD AND ARE NOT — verified, do not "finish the job":
-     *   game_mode    five live club-data RPCs read it
-     *                (COALESCE(t.game_mode,'') ILIKE '%mixed%').
-     *   ante_bb      live readers use the authored BB value while the engine
-     *                posts the derived chip value in `ante`.
-     * min_buy_in_bb / max_buy_in_bb are intentionally absent here: the schema
-     * now generates them from min_buy_in / max_buy_in (see the buy-in comment
-     * above), and Postgres refuses an explicit write to either mirror.
-     * The rest that remain below have real readers on `tables` rows.
-     */
-    // SNG/MTT specific
-    blind_structure: config.blindStructure,
-    payout_structure: config.payoutStructure,
-    starting_chips: config.startingChips,
-
-    // MTT specific
-    short_description: config.shortDescription,
-    accelerated_mtt: config.acceleratedMtt,
-    all_in_or_fold: config.allInOrFold,
-    final_table_deal: config.finalTableDeal,
-    big_blind_ante: config.bigBlindAnte,
-    authorized_to_register: config.authorizedToRegister,
-    bubble_protection: config.bubbleProtection,
-    start_time: config.startTime || null,
-    synchronized_breaks: config.synchronizedBreaks,
-
-    // Security. Only the switch that is actually enforced is written; the
-    // other seven were removed (see TableConfig above).
-    ip_restriction: config.ipRestriction,
-
-    // Status
-    status: 'waiting',
-    current_players: 0,
-  });
+  /* buildTableData was removed on 2026-09-04 (Operation Table Stakes, Slice
+     1). A cash game's `tables` row is written by fn_cash_game_create from the
+     game's resolved ruleset snapshot; this page no longer builds one. */
 
   const handleSave = async () => {
     if (!config.name.trim()) {
@@ -1395,45 +898,12 @@ export default function TableConfigPage() {
      *   SNG/MTT — create the tournament exactly as Start does (the engine owns
      *             starting either way). Templates have their own button.
      */
-    if (config.gameMode !== 'regular') {
-      setSaving(true);
-      try {
-        await handleStartTournament();
-      } finally {
-        setSaving(false);
-      }
-      return;
-    }
-
+    // Regular (cash) never reaches here: the New Cash Game flow owns Save and
+    // Start for cash and this footer is tournament-only.
+    if (config.gameMode === 'regular') return;
     setSaving(true);
     try {
-      const {
-        data: { user },
-      } = await getAuthUser();
-      if (!user) throw new Error('Not authenticated');
-
-      const resolvedId = await resolveClubUUID(clubId || '');
-
-      const tableData = {
-        ...buildTableData(resolvedId),
-        created_by: user.id,
-      };
-
-      const { error } = await supabase.from('tables').insert(tableData);
-      if (error) throw error;
-
-      toast.success('Table created. It is open in your club lobby.');
-      navigate(`/clubs/${clubId}`);
-    } catch (error) {
-      reportError(error, 'TableConfigPage.Failed_to_save_table');
-      /* SAY WHAT WENT WRONG (2026-08-31 audit). fn_tables_creation_guard
-         raises host-actionable messages ("big blind must exceed small
-         blind", "seat law: plo6 allows at most 6 seats", the action-time
-         range) and an RLS refusal returns a permission error. All of them
-         rendered as the same five words, which is how an unsaveable
-         configuration became an unexplainable one. handleStartTournament
-         already surfaces error.message; this now matches it. */
-      toast.error(error instanceof Error && error.message ? error.message : 'Failed to save table');
+      await handleStartTournament();
     } finally {
       setSaving(false);
     }
@@ -1567,68 +1037,12 @@ export default function TableConfigPage() {
     // 2026-08-19: the SNG and MTT tabs used to fall through to the cash-table
     // insert below and produce an ordinary ring game. They build a real
     // tournament now.
-    if (config.gameMode !== 'regular') {
-      await handleStartTournament();
-      return;
-    }
-
+    // Regular (cash) never reaches here: the New Cash Game flow owns Save and
+    // Start for cash and this footer is tournament-only.
+    if (config.gameMode === 'regular') return;
     setStarting(true);
     try {
-      const {
-        data: { user },
-      } = await getAuthUser();
-      if (!user) throw new Error('Not authenticated');
-
-      const resolvedId = await resolveClubUUID(clubId || '');
-
-      /**
-       * STATUS IS 'waiting', NOT 'active' (2026-08-27).
-       *
-       * The engine discovers cash tables through cash_tables_needing_engine,
-       * whose WHERE clause is `status IN ('waiting', 'running')`. 'active' is a
-       * legal column value that no engine query has ever matched — so every
-       * table Start created sat in the lobby, accepted seats, and never dealt
-       * a hand: no engine adopted it and every socket closed 4404. 'waiting'
-       * is what the working writers (TableService, the lifecycle pass) use;
-       * the engine flips it to 'running' when it starts dealing.
-       */
-      const tableData = {
-        ...buildTableData(resolvedId),
-        created_by: user.id,
-      };
-
-      const { data, error } = await supabase
-        .from('tables')
-        .insert(tableData)
-        .select()
-        .maybeSingle();
-
-      if (error) throw error;
-      if (!data) throw new Error('Table start returned no data');
-
-      masterBus.emit('TABLE_CREATED', {
-        tableId: data.id,
-        clubId: clubId || undefined,
-        table: data,
-      });
-      // A durable row is only half of "Create And Start". Force the same
-      // authenticated engine wake that reconnects use and refuse to navigate
-      // to a dead felt. The state endpoint now adopts an eligible empty cash
-      // table on demand, so this also verifies Supabase -> engine wiring.
-      const engineState = await getTableState(data.id);
-      if (!engineState) {
-        throw new Error(
-          'Table Was Saved, But The Table Engine Did Not Connect. Please Try Start Again.'
-        );
-      }
-      toast.success('Table created and started!');
-      navigate(`/table/${data.id}`);
-    } catch (error) {
-      reportError(error, 'TableConfigPage.Failed_to_start_table');
-      // Same reasoning as handleSave: the server's reason is the useful part.
-      toast.error(
-        error instanceof Error && error.message ? error.message : 'Failed to start table'
-      );
+      await handleStartTournament();
     } finally {
       setStarting(false);
     }
@@ -1671,8 +1085,9 @@ export default function TableConfigPage() {
         )}
       </div>
 
-      {/* Template Selector - At TOP for easy duplication */}
-      {templatesForThisGame.length > 0 && (
+      {/* Template Selector - At TOP for easy duplication (tournaments; cash
+          games have the three house templates inside the flow) */}
+      {config.gameMode !== 'regular' && templatesForThisGame.length > 0 && (
         <div className="template-selector">
           <label className="template-label">Load Template:</label>
           <select
@@ -1698,16 +1113,18 @@ export default function TableConfigPage() {
         </div>
       )}
 
-      {/* Table Name */}
-      <div className="config-name">
-        <input
-          type="text"
-          placeholder="Enter Table Name Here..."
-          value={config.name}
-          maxLength={30}
-          onChange={(e) => updateConfig('name', e.target.value.slice(0, 30))}
-        />
-      </div>
+      {/* Table Name (tournaments; the cash flow names the game itself) */}
+      {config.gameMode !== 'regular' && (
+        <div className="config-name">
+          <input
+            type="text"
+            placeholder="Enter Table Name Here..."
+            value={config.name}
+            maxLength={30}
+            onChange={(e) => updateConfig('name', e.target.value.slice(0, 30))}
+          />
+        </div>
+      )}
 
       {/* Scrollable Options */}
       <div className="config-options">
@@ -1718,665 +1135,20 @@ export default function TableConfigPage() {
             starts. Leaving these on the SNG/MTT tabs meant an owner could set
             blinds, buy-in caps, bomb pots and straddle rules for a tournament
             and have every one of them silently ignored. */}
+        {/* OPERATION TABLE STAKES, Slice 1 (2026-09-04): a host creates a
+            GAME, not a table. The cash configuration that lived here - every
+            section from Basic Settings to Security, and the two
+            `tables` inserts behind Save / Start - is replaced by the New
+            Cash Game flow, which persists a `cash_games` row and its
+            resolved ruleset snapshot through fn_cash_game_create. Nothing
+            on this page writes `tables` for a cash game any more. */}
         {config.gameMode === 'regular' && (
-          <>
-            {/* SECTION: Basic Settings */}
-            <Toggle
-              label="Private Game"
-              value={config.isPrivate}
-              onChange={(v) => updateConfig('isPrivate', v)}
-            />
-            <Toggle
-              label="VIP Only"
-              value={config.isVipOnly}
-              onChange={(v) => updateConfig('isVipOnly', v)}
-            />
-            <Toggle
-              label="Bomb Pot"
-              value={config.bombPotEnabled}
-              onChange={(v) => updateConfig('bombPotEnabled', v)}
-              tooltip="Everyone Antes And The Hand Starts On The Flop, On A Fixed Schedule"
-            />
-            {config.bombPotEnabled && (
-              <>
-                {/* HOST PRESETS (spec §3.2, 2026-08-28): one tap sets the
-                    whole bomb configuration; every control below still works
-                    for fine-tuning afterwards. */}
-                <div className="config-radio-group">
-                  <span className="radio-group-label">Bomb Pot Presets</span>
-                  <div className="radio-options">
-                    {(
-                      [
-                        [
-                          'Classic Double Board',
-                          {
-                            bombPotTriggerMode: 'once_per_orbit' as const,
-                            bombPotBoards: 2,
-                            bombPotAnteBB: 3,
-                            bombPotAnteFixed: 0,
-                            bombPotVariant: '' as const,
-                          },
-                        ],
-                        [
-                          'Timed Bomb',
-                          {
-                            bombPotTriggerMode: 'timed' as const,
-                            bombPotIntervalMinutes: 30,
-                            bombPotBoards: 2,
-                            bombPotAnteBB: 2,
-                            bombPotAnteFixed: 0,
-                            bombPotAnnounceMinutes: 5,
-                            bombPotVariant: '' as const,
-                          },
-                        ],
-                        [
-                          'Triple Board Special',
-                          {
-                            bombPotTriggerMode: 'timed' as const,
-                            bombPotIntervalMinutes: 60,
-                            bombPotBoards: 3,
-                            bombPotAnteBB: 2,
-                            bombPotAnteFixed: 0,
-                            bombPotAnnounceMinutes: 5,
-                            bombPotVariant: '' as const,
-                          },
-                        ],
-                        [
-                          'PLO Bomb Only',
-                          {
-                            bombPotTriggerMode: 'bomb_pot_only' as const,
-                            bombPotBoards: 2,
-                            bombPotAnteBB: 2,
-                            bombPotAnteFixed: 0,
-                            bombPotVariant: 'plo4' as const,
-                          },
-                        ],
-                      ] as const
-                    ).map(([label, preset]) => (
-                      <button
-                        key={label}
-                        type="button"
-                        className="config-preset-chip"
-                        onClick={() => setConfig((prev) => ({ ...prev, ...preset }))}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {/* BOMB POT STANDARDIZATION 2026-08-27 (spec §2.1): the host
-                    picks WHEN bombs fire — the legacy every-N-hands cadence,
-                    once per dealer-button orbit, on a timer, or every hand
-                    (a dedicated bomb-pot table). */}
-                <div className="config-radio-group">
-                  <span className="radio-group-label">Bomb Pot Schedule</span>
-                  <div className="radio-options">
-                    <label className="radio-option">
-                      <input
-                        type="radio"
-                        name="bombSchedule"
-                        checked={config.bombPotTriggerMode === 'every_n_hands'}
-                        onChange={() => updateConfig('bombPotTriggerMode', 'every_n_hands')}
-                      />
-                      <span>Every Set Number Of Hands</span>
-                    </label>
-                    <label className="radio-option">
-                      <input
-                        type="radio"
-                        name="bombSchedule"
-                        checked={config.bombPotTriggerMode === 'once_per_orbit'}
-                        onChange={() => updateConfig('bombPotTriggerMode', 'once_per_orbit')}
-                      />
-                      <span>Once Per Orbit</span>
-                    </label>
-                    <label className="radio-option">
-                      <input
-                        type="radio"
-                        name="bombSchedule"
-                        checked={config.bombPotTriggerMode === 'timed'}
-                        onChange={() => updateConfig('bombPotTriggerMode', 'timed')}
-                      />
-                      <span>Timed</span>
-                    </label>
-                    <label className="radio-option">
-                      <input
-                        type="radio"
-                        name="bombSchedule"
-                        checked={config.bombPotTriggerMode === 'bomb_pot_only'}
-                        onChange={() => updateConfig('bombPotTriggerMode', 'bomb_pot_only')}
-                      />
-                      <span>Every Hand</span>
-                    </label>
-                  </div>
-                </div>
-                {config.bombPotTriggerMode === 'every_n_hands' && (
-                  <>
-                    <div className="config-inline-help" role="note">
-                      <strong>How This Schedule Works</strong>
-                      <span>Every {config.bombPotFrequency}th Dealt Hand Is A Bomb Pot.</span>
-                    </div>
-                    <Slider
-                      label="Bomb Pot Hand Interval"
-                      value={config.bombPotFrequency}
-                      onChange={(v) => updateConfig('bombPotFrequency', v)}
-                      min={5}
-                      max={50}
-                      step={5}
-                      suffix=" Hands"
-                    />
-                  </>
-                )}
-                {config.bombPotTriggerMode === 'timed' && (
-                  <Slider
-                    label="Bomb Pot Countdown Shows"
-                    value={config.bombPotAnnounceMinutes}
-                    onChange={(v) => updateConfig('bombPotAnnounceMinutes', v)}
-                    min={0}
-                    max={15}
-                    step={1}
-                    suffix=" min before (0 = always)"
-                  />
-                )}
-                {config.bombPotTriggerMode === 'timed' && (
-                  <Slider
-                    label="Bomb Pot Interval"
-                    value={config.bombPotIntervalMinutes}
-                    onChange={(v) => updateConfig('bombPotIntervalMinutes', v)}
-                    min={10}
-                    max={60}
-                    step={5}
-                    suffix=" minutes"
-                  />
-                )}
-                {/* Spec §3 anteMode: BB multiple (default) or a FIXED chip
-                    amount. The fixed amount overrides the multiplier in the
-                    engine (bomb_pot_ante_fixed > 0 wins). */}
-                <div className="config-radio-group">
-                  <span className="radio-group-label">Bomb Pot Ante Mode</span>
-                  <div className="radio-options">
-                    <label className="radio-option">
-                      <input
-                        type="radio"
-                        name="bombAnteMode"
-                        checked={!(config.bombPotAnteFixed > 0)}
-                        onChange={() => updateConfig('bombPotAnteFixed', 0)}
-                      />
-                      <span>Multiple Of BB</span>
-                    </label>
-                    <label className="radio-option">
-                      <input
-                        type="radio"
-                        name="bombAnteMode"
-                        checked={config.bombPotAnteFixed > 0}
-                        onChange={() =>
-                          updateConfig(
-                            'bombPotAnteFixed',
-                            config.bombPotAnteFixed > 0
-                              ? config.bombPotAnteFixed
-                              : Math.max(config.bigBlind * 2, 1)
-                          )
-                        }
-                      />
-                      <span>Fixed Amount</span>
-                    </label>
-                  </div>
-                </div>
-                {config.bombPotAnteFixed > 0 ? (
-                  <Slider
-                    label="Bomb Pot Fixed Ante"
-                    value={config.bombPotAnteFixed}
-                    onChange={(v) => updateConfig('bombPotAnteFixed', v)}
-                    min={Math.max(config.bigBlind * 0.5, 0.5)}
-                    max={Math.max(config.bigBlind * 20, 10)}
-                    step={Math.max(config.bigBlind * 0.5, 0.5)}
-                    suffix=" chips"
-                  />
-                ) : (
-                  <Slider
-                    label="Bomb Pot Ante"
-                    value={config.bombPotAnteBB}
-                    onChange={(v) => updateConfig('bombPotAnteBB', v)}
-                    min={1}
-                    max={10}
-                    /* 2026-08-29: was 0.5, and it was a LIE. tables
-                       .bomb_pot_ante_multiplier is an INTEGER column (verified
-                       against the live schema), so a host who dragged this to
-                       2.5 had it silently stored as 3 and every player at the
-                       table was charged the larger ante. A control must not
-                       offer a value the database cannot hold.
-
-                       The half-step is not lost: the Fixed Ante above is
-                       `numeric` and takes any amount, which is the right home
-                       for "two and a half big blinds" anyway — it states the
-                       price in chips rather than in a multiple. */
-                    step={1}
-                    suffix=" Big Blind"
-                  />
-                )}
-                <Slider
-                  label="Bomb Pot Min Players"
-                  value={config.bombPotMinPlayers}
-                  onChange={(v) => updateConfig('bombPotMinPlayers', v)}
-                  min={2}
-                  /* NEVER ABOVE THE SEAT COUNT (2026-08-31 audit). A fixed 6
-                     here meant a heads-up table could require 4 players for a
-                     bomb pot: the switch reads ON and no bomb ever fires. */
-                  max={Math.min(6, config.maxPlayers)}
-                  step={1}
-                  suffix=" players"
-                />
-                {/* VARIANT OVERRIDE (spec §10.1): the bomb hand can play a
-                    different game from the table — the classic is an NLH
-                    table whose bombs are PLO4 double boards. The engine
-                    whitelists the value and skips the override if the deck
-                    cannot cover the seats (9-handed PLO6). */}
-                {/* Hidden on a fixed-limit table: the bomb hand's variant IS
-                    the hand's betting structure, so an override would deal one
-                    pot-limit or no-limit hand at a table the player sat down at
-                    for fixed limit. resolveBombPotVariant refuses it
-                    server-side too, for the writers that are not this form. */}
-                <div
-                  className="config-radio-group"
-                  style={limitGame ? { display: 'none' } : undefined}
-                >
-                  <span className="radio-group-label">Bomb Pot Game</span>
-                  <div className="radio-options">
-                    {(
-                      [
-                        ['', 'Same As Table'],
-                        ['nlh', 'NLH'],
-                        ['plo4', 'PLO4'],
-                        ['plo5', 'PLO5'],
-                        ['plo6', 'PLO6'],
-                      ] as const
-                    ).map(([value, label]) => (
-                      <label className="radio-option" key={value || 'same'}>
-                        <input
-                          type="radio"
-                          name="bombVariant"
-                          checked={config.bombPotVariant === value}
-                          onChange={() => updateConfig('bombPotVariant', value)}
-                        />
-                        <span>{label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                {/* Spec §8/§9: each pot layer splits across the boards; the
-                    engine downgrades when the deck cannot cover the boards. */}
-                <div className="config-radio-group">
-                  <span className="radio-group-label">Bomb Pot Boards</span>
-                  <div className="radio-options">
-                    <label className="radio-option">
-                      <input
-                        type="radio"
-                        name="bombBoards"
-                        checked={config.bombPotBoards <= 1}
-                        onChange={() => updateConfig('bombPotBoards', 1)}
-                      />
-                      <span>Single</span>
-                    </label>
-                    <label className="radio-option">
-                      <input
-                        type="radio"
-                        name="bombBoards"
-                        checked={config.bombPotBoards === 2}
-                        onChange={() => updateConfig('bombPotBoards', 2)}
-                      />
-                      <span>Double Board</span>
-                    </label>
-                    <label className="radio-option">
-                      <input
-                        type="radio"
-                        name="bombBoards"
-                        checked={config.bombPotBoards >= 3}
-                        onChange={() => updateConfig('bombPotBoards', 3)}
-                      />
-                      <span>Triple Board</span>
-                    </label>
-                  </div>
-                </div>
-                {/* SEPARATE BOMB BUTTON (spec §5.3): bomb hands rotate their
-                    own button; the regular button never sees bomb hands. The
-                    spec's own default is the regular button for ordinary cash
-                    tables — this is for structured formats. */}
-                <Toggle
-                  label="Separate Bomb Button"
-                  value={config.bombPotSeparateButton}
-                  onChange={(v) => updateConfig('bombPotSeparateButton', v)}
-                  tooltip="Bomb Pots Rotate Their Own Dealer Button, And The Regular Button Does Not Move On Bomb Hands"
-                />
-              </>
-            )}
-            {/* The freestanding Double Board toggle moved into the Bomb Pot
-                Boards group above (2026-08-27) — it only ever meant "bomb
-                pots deal two boards", so it belongs behind the Bomb Pot
-                switch it modifies. Triple Board is back as a real choice now
-                that the engine deals and settles three boards. */}
-            {SEVEN_DEUCE_VARIANTS.has(String(gameType || 'nlh').toLowerCase()) && (
-              <Toggle
-                label="Seven-Deuce"
-                value={config.sevenDeuceEnabled}
-                onChange={(v) => updateConfig('sevenDeuceEnabled', v)}
-                tooltip="Winner Holding Any 7-2 Collects A Bounty From Each Other Player (Post-Flop Only)"
-              />
-            )}
-            {SEVEN_DEUCE_VARIANTS.has(String(gameType || 'nlh').toLowerCase()) &&
-              config.sevenDeuceEnabled && (
-                <Slider
-                  label="7-2 Bounty"
-                  value={config.sevenDeuceAmountBB}
-                  onChange={(v) => updateConfig('sevenDeuceAmountBB', v)}
-                  min={0.5}
-                  max={10}
-                  step={0.5}
-                  suffix=" Big Blind"
-                />
-              )}
-            {/* 2026-08-31 audit: `pineappleHoldem` had exactly three
-                occurrences in this 2,800-line form — the interface field, the
-                default false, and the write. THERE WAS NO CONTROL. The engine
-                deals it, BettingStructure has the discard street, the lobby
-                badges it, and the only live cash-creation path could not
-                reach it. This is the switch. */}
-            {canDealPineapple(gameType) && (
-              <Toggle
-                label="Pineapple Hold'em"
-                value={config.pineappleHoldem}
-                onChange={(v) => updateConfig('pineappleHoldem', v)}
-                tooltip="Three Hole Cards, Discard One After The Flop"
-              />
-            )}
-            <Toggle
-              label="NIT Game"
-              value={config.nitGame}
-              onChange={(v) => updateConfig('nitGame', v)}
-              tooltip="Penalty For Tight Play"
-            />
-            <Toggle
-              label="Anonymous Table"
-              value={config.isAnonymous}
-              onChange={(v) => updateConfig('isAnonymous', v)}
-            />
-            {/* Hidden on a fixed-limit table: the cap clamp runs after the
-                mandatory fixed size is assigned, so a capped limit table can
-                emit a wager the validator refuses. See isFixedLimitGame. */}
-            {!limitGame && (
-              <Toggle
-                label="Cap"
-                value={config.capEnabled}
-                onChange={(v) => updateConfig('capEnabled', v)}
-                tooltip="Limit The Total Chips A Player Can Commit In One Hand"
-              />
-            )}
-            {!limitGame && config.capEnabled && (
-              <Slider
-                label="Cap Amount"
-                value={config.capBB}
-                onChange={(v) => updateConfig('capBB', v)}
-                min={10}
-                max={200}
-                step={5}
-                suffix=" Big Blinds"
-                tooltip="The Most A Player Can Put In Across The Whole Hand. Reaching The Cap Does Not Put Them All-In."
-              />
-            )}
-            <Toggle
-              label="Ban Chat"
-              value={config.banChat}
-              onChange={(v) => updateConfig('banChat', v)}
-            />
-            <Toggle
-              label="Label As NEW"
-              value={config.labelAsNew}
-              onChange={(v) => updateConfig('labelAsNew', v)}
-              tooltip="Show NEW Badge"
-            />
-            <Toggle
-              label="Featured Table"
-              value={config.isFeatured}
-              onChange={(v) => updateConfig('isFeatured', v)}
-              tooltip="Feature At Top Of List"
-            />
-            {/* CHIP CONTINUITY (2026-09-04): the return-with-what-you-left
-                toggle is gone. Every cash table has the same house law now -
-                chips stay on the table, a winner stays seated ten minutes, and
-                a return inside two hours brings back the stack that left. It
-                is not a per-table option. */}
-
-            {/* SECTION: Table Parameters */}
-            <Slider
-              label="Table Size"
-              value={config.maxPlayers}
-              onChange={(v) => updateConfig('maxPlayers', v)}
-              min={2}
-              max={seatCap}
-              suffix=" max"
-            />
-
-            {/* Calltime removed 2026-08-27: calltime_enabled has zero readers.
-                The shot clock the tooltip promised never ticked. Action Time
-                below is the real timer. */}
-            <Slider
-              label="Action Time"
-              value={config.actionTimeSeconds}
-              onChange={(v) => updateConfig('actionTimeSeconds', v)}
-              /* 10 IS THE FLOOR (2026-08-31 audit). The slider offered 5s while
-                 the engine's own floor is 10 and the DB creation guard
-                 (fn_tables_creation_guard) now refuses anything under it — so a
-                 5s table was an unsaveable table. */
-              min={10}
-              max={60}
-              suffix=" sec"
-            />
-
-            {/* Blinds Slider */}
-            <div className="config-slider">
-              <div className="slider-header">
-                <span className="slider-label">
-                  {isFixedLimitVariant(gameType) ? (
-                    <>
-                      {/* A limit player thinks in bet sizes, but still needs to
-                          know what they are posting — show both. */}
-                      Limits: {stakesLabel(config.smallBlind, config.bigBlind, gameType)} (Blinds{' '}
-                      {config.smallBlind}/{config.bigBlind})
-                    </>
-                  ) : (
-                    <>
-                      Blinds: {config.smallBlind}/{config.bigBlind}
-                    </>
-                  )}
-                </span>
-              </div>
-              <div className="slider-track-container">
-                <input
-                  type="range"
-                  min={0}
-                  max={offeredPresets.length - 1}
-                  value={blindsIndex}
-                  onChange={(e) => handleBlindsChange(Number(e.target.value))}
-                  className="slider-input"
-                />
-              </div>
-            </div>
-
-            {/* Buy-in Range */}
-            <div className="config-slider">
-              <div className="slider-header">
-                <span className="slider-label">
-                  Buy-In: {config.minBuyInBB} - {config.maxBuyInBB}
-                </span>
-              </div>
-              <div className="buyin-sliders">
-                {/* Dan 2026-08-28: cash buy-ins are 40BB-200BB. The min
-                    slider used to reach down to 2BB, which is precisely the
-                    shape of the broken "NLH 25/50, buy-in 100-200" row — a
-                    2BB/4BB band nobody could play. 40BB is the floor. */}
-                <input
-                  type="range"
-                  min={40}
-                  max={config.maxBuyInBB}
-                  value={config.minBuyInBB}
-                  onChange={(e) => updateConfig('minBuyInBB', Number(e.target.value))}
-                  className="slider-input"
-                />
-                <input
-                  type="range"
-                  min={Math.max(config.minBuyInBB, 40)}
-                  max={500}
-                  value={config.maxBuyInBB}
-                  onChange={(e) => updateConfig('maxBuyInBB', Number(e.target.value))}
-                  className="slider-input"
-                />
-              </div>
-            </div>
-
-            <Slider
-              label="Ante"
-              value={config.anteBB}
-              onChange={(v) => updateConfig('anteBB', v)}
-              min={0}
-              max={5}
-              step={0.5}
-              suffix=" Big Blind"
-            />
-
-            <Slider
-              label="Career %"
-              value={config.careerPercentMin}
-              onChange={(v) => updateConfig('careerPercentMin', v)}
-              min={0}
-              max={100}
-              suffix="%"
-            />
-
-            <Slider
-              label="Maintain %"
-              value={config.maintainPercentMin}
-              onChange={(v) => updateConfig('maintainPercentMin', v)}
-              min={0}
-              max={100}
-              suffix="%"
-            />
-
-            <Slider
-              label="Maintain #"
-              value={config.maintainHands}
-              onChange={(v) => updateConfig('maintainHands', v)}
-              min={1}
-              max={100}
-              suffix=" hands"
-            />
-
-            <Slider
-              label="AutoStart"
-              value={config.autoStartPlayers}
-              onChange={(v) => updateConfig('autoStartPlayers', v)}
-              min={2}
-              /* NEVER ABOVE THE SEAT COUNT (2026-08-31 audit). This was a
-                 fixed 10 while Table Size is capped at seatCap (6 for PLO6,
-                 7 for PLO5, 8 for PLO4/PLO8/FLO8). The engine honours
-                 auto_start_players with only a lower bound
-                 (ServerTableEngineBase.minPlayersToDeal), and dealThreshold
-                 exports the same number to the zombie reaper - so a 6-seat
-                 table asking for 10 players would sit forever, never deal,
-                 and never even be reported as stuck. */
-              max={Math.min(seatCap, config.maxPlayers)}
-              suffix=" players"
-            />
-
-            {/* SECTION: Auto Settings */}
-            <Toggle
-              label="Auto Extension"
-              value={config.autoExtension}
-              onChange={(v) => updateConfig('autoExtension', v)}
-              tooltip="Keep This Table Open When It Empties"
-            />
-            {/* Auto Restart and Auto Create Table look dead from a
-                TypeScript grep and are NOT: fn_table_lifecycle_pass reads
-                both columns in SQL. Checked against the live function on
-                2026-08-31 before nearly deleting them. */}
-            <Toggle
-              label="Auto Restart"
-              value={config.autoRestart}
-              onChange={(v) => updateConfig('autoRestart', v)}
-              tooltip="Reopen This Table If It Closes"
-            />
-            <Toggle
-              label="Auto Create Table"
-              value={config.autoCreateTable}
-              onChange={(v) => updateConfig('autoCreateTable', v)}
-              tooltip="Create New Table When Full"
-            />
-            {/* Hidden on a fixed-limit table: HandController posts a straddle
-                by assigning currentBet with no structure branch, and the
-                straddle is not counted against the four-wager cap. */}
-            {!limitGame && (
-              <>
-                <Toggle
-                  label="Auto UTG Straddle"
-                  value={config.autoUtgStraddle}
-                  onChange={(v) => updateConfig('autoUtgStraddle', v)}
-                  tooltip="Automatic UTG Straddle"
-                />
-                <Toggle
-                  label="Voluntary Straddle"
-                  value={config.voluntaryStraddle}
-                  onChange={(v) => updateConfig('voluntaryStraddle', v)}
-                  tooltip="Allow Voluntary Straddle"
-                />
-              </>
-            )}
-            <Toggle
-              label="Insurance"
-              value={config.insuranceEnabled}
-              onChange={(v) => updateConfig('insuranceEnabled', v)}
-              tooltip="All-In Insurance Option"
-            />
-
-            {/* Run It Multi-Times */}
-            <div className="config-radio-group">
-              <span className="radio-group-label">Run It Multi-Times</span>
-              <div className="radio-options">
-                <label className="radio-option">
-                  <input
-                    type="radio"
-                    name="runIt"
-                    checked={config.runItMode === 'none'}
-                    onChange={() => updateConfig('runItMode', 'none')}
-                  />
-                  <span>None</span>
-                </label>
-                <label className="radio-option">
-                  <input
-                    type="radio"
-                    name="runIt"
-                    checked={config.runItMode === 'player_choice'}
-                    onChange={() => updateConfig('runItMode', 'player_choice')}
-                  />
-                  <span>Player's Choice</span>
-                </label>
-                <label className="radio-option">
-                  <input
-                    type="radio"
-                    name="runIt"
-                    checked={config.runItMode === 'mandatory_twice'}
-                    onChange={() => updateConfig('runItMode', 'mandatory_twice')}
-                  />
-                  <span>Mandatory Twice</span>
-                </label>
-                <label className="radio-option">
-                  <input
-                    type="radio"
-                    name="runIt"
-                    checked={config.runItMode === 'mandatory_three'}
-                    onChange={() => updateConfig('runItMode', 'mandatory_three')}
-                  />
-                  <span>Mandatory 3 Times</span>
-                </label>
-              </div>
-            </div>
-          </>
+          <CashGameCreateFlow
+            clubId={clubId || ''}
+            initialVariant={gameType}
+            canBuildHere={canBuildHere}
+            deniedMessage={access ? gameCreationDeniedMessage(access) : null}
+          />
         )}
 
         {/* SNG/MTT SPECIFIC OPTIONS */}
@@ -2954,137 +1726,22 @@ export default function TableConfigPage() {
             )}
           </>
         )}
-
-        {/* Rake, security and game length are cash-table settings for the same
-            reason as the block above: a tournament is raked once at entry (a
-            flat 10% of the buy-in, enforced in fn_create_tournament) and never
-            per hand, so a per-pot rake override has nothing to act on. */}
-        {config.gameMode === 'regular' && (
-          <>
-            {/* SECTION: Rake Settings
-            Both sliders sit at -1 ("Schedule") by default, which means the
-            published rake schedule decides — 10% with a cash cap that varies by
-            stake. Sliding either one off -1 is a deliberate override, and an
-            override can only ever take LESS than the schedule: the engine
-            clamps percent to 10 and the cap to 10 BB (getFullRakeConfig).
-            The cap is entered in big blinds; the live cash value is shown
-            beside it because 3 BB is $0.60 at 0.10/0.20 and $75 at 10/25. */}
-            <Slider
-              label="Fee"
-              value={config.rakePercent}
-              onChange={(v) => updateConfig('rakePercent', v)}
-              min={RAKE_INHERIT}
-              max={10}
-              step={0.5}
-              format={(v) => (v < 0 ? 'Schedule (10%)' : `${v}%`)}
-              tooltip="Percentage Of Each Raked Pot. Schedule = Use The House Rake Schedule."
-            />
-
-            <Slider
-              label="FeeCap"
-              value={config.rakeCapBB}
-              onChange={(v) => updateConfig('rakeCapBB', v)}
-              min={RAKE_INHERIT}
-              max={10}
-              format={(v) =>
-                v < 0
-                  ? 'Schedule'
-                  : `${v} x Big Blind${config.bigBlind ? ` (= ${formatCurrency(v * config.bigBlind)})` : ''}`
-              }
-              tooltip="Most That Can Be Raked From One Pot. Schedule = Use The House Cap For This Stake."
-            />
-
-            {/*
-              WHAT THIS TABLE WILL ACTUALLY CHARGE (2026-08-31).
-
-              The two sliders above say "Schedule" by default and the schedule
-              is a fourteen-row table in a config file, so an owner could set
-              up a game without ever seeing its price. That is not
-              hypothetical: the rake gap this audit found - six of the twelve
-              blind presets had no schedule row, and the DEFAULT preset was
-              being priced off a tier fallback at 30 big blinds - sat in the
-              product for months precisely because nothing on this screen ever
-              said the number out loud.
-
-              Resolved through getRakeConfig, the same function and the same
-              precedence the engine applies (an override may only ever move
-              DOWN from the published schedule), so this cannot drift into
-              advertising a rate we do not charge. The Game Rules modal made
-              exactly that mistake in 2026-08 by rendering placeholder props.
-            */}
-            {(() => {
-              const priced = getRakeConfig(config.bigBlind, gameType || 'nlh', config.smallBlind, {
-                rakePercent: config.rakePercent,
-                rakeCapBB: config.rakeCapBB,
-              });
-              const capInBB = config.bigBlind > 0 ? priced.rakeCap / config.bigBlind : 0;
-              const overridden =
-                config.rakePercent !== RAKE_INHERIT || config.rakeCapBB !== RAKE_INHERIT;
-              return (
-                <div className="config-slider">
-                  <div className="slider-header">
-                    <span className="slider-label">
-                      This Table Charges {priced.rakePercent}% Of Each Raked Pot, Up To{' '}
-                      {formatCurrency(priced.rakeCap)} ({Number(capInBB.toFixed(1))} Big Blinds)
-                    </span>
-                  </div>
-                  <div className="slider-header">
-                    <span className="slider-label">
-                      {priced.bbjEnabled ? (
-                        <>
-                          Bad Beat Jackpot Drop {formatCurrency(config.bigBlind * priced.bbjFeeBB)}{' '}
-                          Per Flopped Hand ({priced.bbjFeeBB} Big Blinds)
-                        </>
-                      ) : (
-                        <>No Bad Beat Jackpot On This Game</>
-                      )}
-                    </span>
-                  </div>
-                  <div className="slider-header">
-                    <span className="slider-label">
-                      {overridden ? (
-                        <>Your Override, Held To The Published Schedule</>
-                      ) : (
-                        <>Published Schedule For {priced.tier} Stakes</>
-                      )}
-                    </span>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* SECTION: Security */}
-            <Toggle
-              label="IP Restriction"
-              value={config.ipRestriction}
-              onChange={(v) => updateConfig('ipRestriction', v)}
-              tooltip="Two Different Accounts Cannot Sit At This Table From The Same Internet Connection. Players Already Seated Are Not Affected."
-            />
-            <Toggle
-              label="Hide Club Name"
-              value={config.hideClubName}
-              onChange={(v) => updateConfig('hideClubName', v)}
-            />
-
-            {/* Game Length removed 2026-08-27: game_length_hours has zero
-                readers. Every "12 hour" table ran forever; the closest real
-                lifecycle controls are Auto Extension / Auto Restart above. */}
-          </>
-        )}
       </div>
 
-      {/* Footer Buttons */}
-      <footer className="config-footer">
-        <button className="btn-template" onClick={handleSaveAsTemplate} disabled={savingTemplate}>
-          {savingTemplate ? 'Saving...' : 'Save As Template'}
-        </button>
-        <button className="btn-save" onClick={handleSave} disabled={saving}>
-          {saving ? 'Saving...' : 'Save'}
-        </button>
-        <button className="btn-start" onClick={handleStart} disabled={starting}>
-          {starting ? 'Starting...' : 'Start'}
-        </button>
-      </footer>
+      {/* Footer Buttons (tournaments; the cash flow carries its own) */}
+      {config.gameMode !== 'regular' && (
+        <footer className="config-footer">
+          <button className="btn-template" onClick={handleSaveAsTemplate} disabled={savingTemplate}>
+            {savingTemplate ? 'Saving...' : 'Save As Template'}
+          </button>
+          <button className="btn-save" onClick={handleSave} disabled={saving}>
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+          <button className="btn-start" onClick={handleStart} disabled={starting}>
+            {starting ? 'Starting...' : 'Start'}
+          </button>
+        </footer>
+      )}
     </div>
   );
 }

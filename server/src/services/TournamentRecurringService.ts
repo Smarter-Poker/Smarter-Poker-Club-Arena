@@ -32,6 +32,13 @@ import { bankrollPolicyFor, canEnterTournament } from './HorseBankroll.js';
 import { bankrollEvent } from './HorseBankrollTelemetry.js';
 import { buildLadder } from '../tournament/blindLadder.js';
 import { clampSeatsForVariant } from '../config/tableSeating.js';
+import {
+  FREE_BUY_HOSTS,
+  FREE_BUY_TIERS,
+  freeBuySlotsDue,
+  freeBuyTournamentRow,
+  lateRegLevelsForMinutes,
+} from './FreeBuy.js';
 
 /**
  * Derive the two buy-in columns from ONE whole-dollar total.
@@ -1251,6 +1258,9 @@ export const MTT_PRESTART_MAX_STEP = 6;
  */
 export const MTT_PUBLISH_LEAD_MS = 30 * 60 * 1000;
 
+/** How often the Free Buy board is reconciled. See checkAndCreateFreeBuys. */
+export const FREE_BUY_TICK_MS = 5 * 60 * 1000;
+
 /**
  * How often one tournament may be ramped. Mirrors the throttle in
  * GameServer.discoverTournaments (`now - lastRamp >= 45_000`), and exists here
@@ -2300,6 +2310,12 @@ export class TournamentRecurringService {
    */
   private boardTickInFlight: Record<'spin' | 'sng', boolean> = { spin: false, sng: false };
   private xmttInterval: ReturnType<typeof setInterval> | null = null;
+  private freeBuyInterval: ReturnType<typeof setInterval> | null = null;
+  /** One Free Buy pass at a time. setInterval does not wait for the previous
+   *  callback, and two overlapping passes read the same "which slots exist"
+   *  snapshot - the exact shape that put two copies of sixteen Spin names on
+   *  the board within two minutes of the 30-second cadence going live. */
+  private freeBuyTickInFlight = false;
   private isRunning = false;
 
   // RETIRED 2026-08-19. Scheduled tournaments are created BY the union, not
@@ -2382,11 +2398,21 @@ export class TournamentRecurringService {
       5 * 60 * 1000
     );
 
+    /* THE FREE BUY BOARD (Dan 2026-09-04). Every five minutes, which is 36
+       ticks inside the three-hour publication lead - a restart, a maintenance
+       break and a failed insert can all happen and the slot is still
+       published with hours to spare. */
+    this.freeBuyInterval = setInterval(
+      () => (isMaintenanceFrozen() ? undefined : this.checkAndCreateFreeBuys()),
+      FREE_BUY_TICK_MS
+    );
+
     // Run checks immediately on start
     this.checkAndLaunchTournaments();
     this.checkAndLaunchSNGs();
     this.checkAndLaunchSpins();
     this.checkAndLaunchXMTTs();
+    this.checkAndCreateFreeBuys();
   }
 
   stop(): void {
@@ -2396,14 +2422,139 @@ export class TournamentRecurringService {
     if (this.sngInterval) clearInterval(this.sngInterval);
     if (this.spinInterval) clearInterval(this.spinInterval);
     if (this.xmttInterval) clearInterval(this.xmttInterval);
+    if (this.freeBuyInterval) clearInterval(this.freeBuyInterval);
 
     this.tournamentInterval = null;
     this.sngInterval = null;
     this.spinInterval = null;
     this.xmttInterval = null;
+    this.freeBuyInterval = null;
     this.isRunning = false;
 
     console.log('[TournamentRecurring] Stopped');
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // THE FREE BUY BOARD
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  FIVE FREE BUYS A DAY, PER HOST (Dan 2026-09-04)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Dan, verbatim: "EVERY 4 HOURS STARTING AT 8 AM, 12PM, 4PM 8PM, 12AM. SO 5
+   * FREE ROLLS A DAY $250'S EACH. 8PM IS $500." First entry free, 3,000
+   * starting stack, paid rebuys and a 10,000-chip add-on that opens at
+   * sit-down and closes after the break.
+   *
+   * WHY THIS IS NOT A ROW IN HOURLY_SCHEDULE. That board matches on
+   * `now.getUTCHours()` and creates its events at `now + MTT_PUBLISH_LEAD_MS`,
+   * so an event lands whenever the tick happens to fire inside a three-hour
+   * UTC block. A Free Buy has to start at 20:00 CHICAGO to the minute, on a
+   * clock that moves twice a year, and the whole point of the board is that a
+   * player can rely on the hour. So the slot decides the start time and the
+   * publication lead is measured BACKWARDS from it - the inverse of every
+   * other creator in this file. See freeBuySlotsDue.
+   *
+   * IDEMPOTENCY IS THE DATABASE'S, NOT THIS LOOP'S. The pre-read below is a
+   * courtesy that saves an insert; the guarantee is
+   * uq_scheduled_tournament_one_live_per_occurrence, unique on (club_id,
+   * tournament_type, name, start_time) while the event is pre-start. Two
+   * engines, two overlapping ticks or a retry all converge on one event per
+   * (host, slot, Chicago date), and the loser sees 23505 - which is the guard
+   * working, not a failure.
+   *
+   * NO HORSES ARE REGISTERED HERE, deliberately. Every other creator seeds a
+   * field at creation because it publishes 30 minutes out; this one publishes
+   * three hours out, and registering then would hold horses off the cash floor
+   * for three hours for nothing. The pre-start ramp in GameServer's discovery
+   * loop fills every REGISTERING tournament on a squared curve "however it was
+   * created", which puts one entrant on the row immediately and the rest in
+   * the last hour. That is the tuned path; this pass does not second-guess it.
+   */
+  private async checkAndCreateFreeBuys(): Promise<void> {
+    // THE FREEZE IS TOTAL (Dan 2026-09-03). Creating a tournament is not
+    // itself a chip movement, but the ramp seats horses into it within
+    // seconds, and start() runs this once immediately - a boot inside the
+    // break must not open a board.
+    if (isMaintenanceFrozen()) return;
+    if (this.freeBuyTickInFlight) return;
+    this.freeBuyTickInFlight = true;
+    try {
+      const due = freeBuySlotsDue(Date.now());
+      if (due.length === 0) return;
+
+      for (const host of FREE_BUY_HOSTS) {
+        for (const d of due) {
+          if (isMaintenanceFrozen()) return;
+          const cfg = FREE_BUY_TIERS[d.slot.tier];
+          const row = freeBuyTournamentRow({
+            host,
+            due: d,
+            blindStructure: BLIND_STRUCTURES.TURBO,
+            payoutStructure: PAYOUT_STRUCTURES.NINE,
+            // NLH full ring. Written through the same clamp the engine applies
+            // at deal time, so the row states what will actually be dealt.
+            tableSize: clampSeatsForVariant('nlh', 9),
+            // late_reg_levels is what the engine enforces; late_reg_mins is the
+            // legacy fallback. Derived from the ladder rather than guessed, so
+            // the hour Dan asked for is the hour the engine gives.
+            lateRegLevels: lateRegLevelsForMinutes(BLIND_STRUCTURES.TURBO, cfg.lateRegMinutes),
+          });
+          const name = String(row.name);
+          const startTime = String(row.start_time);
+
+          const { count, error: readErr } = await supabase
+            .from('tournaments')
+            .select('id', { count: 'exact', head: true })
+            .eq('club_id', host.clubId)
+            .eq('tournament_type', 'MTT')
+            .eq('name', name)
+            .eq('start_time', startTime);
+          // Fail CLOSED, exactly like getActiveCount: an unreadable board is
+          // not an empty board, and creating on a failed read is how a
+          // duplicate storm starts. The slot has 36 more ticks to land.
+          if (readErr) continue;
+          if ((count ?? 0) > 0) continue;
+
+          const { data, error } = await supabase
+            .from('tournaments')
+            .insert(row)
+            .select('id')
+            .maybeSingle();
+
+          if (error) {
+            const msg = String(error.message ?? '');
+            if (error.code === '23505' || /duplicate key|unique constraint/i.test(msg)) continue;
+            if (isGuaranteeRefusal(error)) {
+              await notifyGuaranteeShort(host.clubId, 'checkAndCreateFreeBuys');
+              continue;
+            }
+            reportError(
+              new Error(
+                `[TournamentRecurring] Free Buy "${name}" for ${host.label} failed: ${msg || JSON.stringify(error)}`
+              ),
+              'TournamentRecurring.free_buy_create_failed'
+            );
+            continue;
+          }
+          if (data) {
+            console.log(
+              `[TournamentRecurring] Free Buy published: "${name}" for ${host.label}, ` +
+                `${cfg.guarantee} guaranteed, starts ${startTime}`
+            );
+          }
+        }
+      }
+    } catch (err: any) {
+      reportError(
+        new Error(`[TournamentRecurring] Free Buy check error: ${err?.message ?? err}`),
+        'TournamentRecurring.free_buy_check_error'
+      );
+    } finally {
+      this.freeBuyTickInFlight = false;
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────

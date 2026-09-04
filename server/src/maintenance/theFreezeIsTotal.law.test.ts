@@ -132,6 +132,10 @@ describe('every horse buy-in RPC call is gated on the freeze', () => {
       'private async checkAndLaunchSNGs(): Promise<void> {',
       'private async checkAndLaunchSpins(): Promise<void> {',
       'private async checkAndLaunchXMTTs(): Promise<void> {',
+      // Added 2026-09-04 with the Free Buy board. It does not seat anyone
+      // itself, but the pre-start ramp registers horses into whatever it
+      // publishes within 45 seconds, and start() runs it once immediately.
+      'private async checkAndCreateFreeBuys(): Promise<void> {',
     ]) {
       const body = sliceMethod(src, m);
       const gate = body.search(GATE_RETURN);

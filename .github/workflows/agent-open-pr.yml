@@ -160,6 +160,14 @@ jobs:
             fi
           } | tee "$LOG"
 
+          {
+            echo '### Agent Open PR'
+            echo
+            echo '```'
+            cat "$LOG"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
           # THE RESULT GOES TO THE JOB SUMMARY, NOT TO A BRANCH (2026-09-03).
           #
           # Until today this step published $LOG by force-pushing an ORPHAN
@@ -229,10 +237,3 @@ jobs:
             cat /tmp/am.log || true
           fi
 
-          {
-            echo '### Agent Open PR'
-            echo
-            echo '```'
-            cat "$LOG"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"

@@ -27,6 +27,7 @@ import {
 import { ScheduledTournamentService } from './services/ScheduledTournamentService.js';
 import { TournamentMetrics } from './services/TournamentMetrics.js';
 import { SpinMetrics } from './services/SpinMetrics.js';
+import { ReplicationMetrics } from './services/ReplicationMetrics.js';
 import {
   planTableReopens,
   freshHumanWindowMs,
@@ -367,6 +368,7 @@ export class GameServer {
    */
   private tournamentMetrics = new TournamentMetrics();
   private spinMetrics = new SpinMetrics();
+  private replicationMetrics = new ReplicationMetrics();
   private lifecycle = new HorseLifecycleManager();
 
   /**
@@ -754,6 +756,14 @@ export class GameServer {
       // takes what it advertises, and until this collector shipped nothing had
       // ever checked it except a human typing SQL. Same fail-loud contract.
       this.spinMetrics.start();
+
+      // Step 3e: Replication gauges. The realtime slot was 136 MB behind on
+      // 2026-09-04 and nothing on the platform could see it - logical decoding
+      // degrades as a spiral, not a cliff, because a slot that falls behind
+      // must read WAL from disk rather than memory, which is slower. Its own
+      // collector, deliberately: a catalog read must never be able to blind
+      // the spin fairness gauges, or be blinded by them.
+      this.replicationMetrics.start();
 
       // Step 4: Start lifecycle manager (stuck horse detection, cleanup)
       this.lifecycle.start();
@@ -1439,6 +1449,10 @@ export class GameServer {
       // EQUALITY the Spin format is sold on, and watch the punctuality of
       // the wheel that sells it. See services/SpinMetrics.ts.
       ...this.spinMetrics.toPrometheus(),
+      // ── REPLICATION OBSERVABILITY (2026-09-04) ───────────────────────
+      // How far behind the realtime replication slot is, in bytes, per slot.
+      // See services/ReplicationMetrics.ts.
+      ...this.replicationMetrics.toPrometheus(),
     ];
 
     if (allLines.length === 0) {

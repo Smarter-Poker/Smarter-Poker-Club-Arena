@@ -360,6 +360,11 @@ Never say "should be live in a few minutes" or "deploy triggered."
   remove the budget from `beforeSend`, and do not raise its limits to make a
   loop visible: the summary event already names it.
   `docs/changelog/2026-09-04-engine-sentry-budget.md`.
+- The engine is ONE core and horse Monte Carlo was 90% of it (profiled
+  2026-09-04). `server/src/engine/EquityLoadGovernor.ts` scales the sample
+  when the event loop saturates; `/health.equityGovernor.scale < 1` means the
+  core is hot. If a timer, refresh or sweep "times out" while Postgres is
+  fast, look at the loop first. `docs/changelog/2026-09-04-equity-load-governor.md`.
 
 ### Supabase
 

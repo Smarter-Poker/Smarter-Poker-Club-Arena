@@ -31,6 +31,7 @@ import {
   isShortDeckVariant,
 } from './VariantRules.js';
 import { isPotLimitVariant, isFixedLimitVariant } from './BettingStructure.js';
+import { equityGovernor, governedIterations } from './EquityLoadGovernor.js';
 
 const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 
@@ -1609,6 +1610,12 @@ export function simulateEquity(
 ): number {
   // V3 perf: banded Omaha sampling adds rejection-scoring cost; trim the
   // iteration count to stay inside the per-decision millisecond budget.
+  // 2026-09-04 EQUITY LOAD GOVERNOR: the one choke point every Monte Carlo
+  // read goes through. When the event loop is saturated (measured: 90% of
+  // the core in this function's callees), the sample shrinks so the table -
+  // every seat on it - stops waiting on horse arithmetic. See
+  // EquityLoadGovernor.ts for the measurement and the scale table.
+  iterations = governedIterations(iterations, equityGovernor.current());
   if (oppBands && vi.isOmaha) {
     // V13: the trim was HALVING the sample in exactly the spots that matter
     // most — multiway banded pots — and the measured cost was severe. Run to

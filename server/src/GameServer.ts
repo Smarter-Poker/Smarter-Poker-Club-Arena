@@ -8,6 +8,7 @@
  */
 
 import { ServerTableEngine } from './engine/ServerTableEngine.js';
+import { equityGovernor } from './engine/EquityLoadGovernor.js';
 import {
   supabase,
   startHandHistoryRetry,
@@ -83,6 +84,7 @@ import { isMaintenanceFrozen } from './maintenance/freezeState.js';
 import { raiseEngineAlert, resolveEngineAlert } from './services/engineAlerts.js';
 import { MaintenanceBreak } from './maintenance/MaintenanceBreak.js';
 import { createSupabaseMaintenanceBreakStore } from './maintenance/maintenanceBreakStore.js';
+import { StatsHealthMonitor } from './observability/StatsHealthMonitor.js';
 import { runThawInstallments } from './maintenance/thawInstallments.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
 import { isWakeableCashTable } from './services/onDemandTableWake.js';
@@ -501,6 +503,26 @@ export class GameServer {
       );
     },
   });
+
+  /**
+   * The stats pipeline's pulse (Stats Page Programme phase 1, 2026-09-04):
+   * one ca_stats_health() read a minute, published on /health as `stats`
+   * and on /metrics as poker_stats_*, raising through the same alert path as
+   * clock skew when the hand index lags 30 minutes, the live stat trigger
+   * misses a hand, or the witness audit finds the engine's recorded button or
+   * showdown roster disagreeing with the action log. Declared after the
+   * maintenance break because it asks it whether a break is on.
+   */
+  private readonly statsHealth = new StatsHealthMonitor({
+    read: async () => {
+      const { data, error } = await supabase.rpc('ca_stats_health');
+      if (error) throw new Error(error.message);
+      return data;
+    },
+    raise: (a) => raiseEngineAlert(a),
+    resolve: (name, component, note) => resolveEngineAlert(name, component, note),
+    paused: () => this.maintenanceBreak.isActive(),
+  });
   /**
    * A5: drains `pending_fee_distributions` — rake / BBJ fees that left a pot but
    * whose banking RPC failed — and runs the independent BBJ ledger-drift alarm.
@@ -801,6 +823,7 @@ export class GameServer {
       this.startFeeReconciler();
       this.startLeaseReaper();
       this.startClockSkewMonitor();
+      this.statsHealth.start();
       this.startBombLedgerRepairSweep();
 
       // Step 8b (2026-08-20): drain the hand_history retry queue. hand_history
@@ -892,6 +915,7 @@ export class GameServer {
      * expiring it if no engine ever comes back.
      */
     this.maintenanceBreak.stop();
+    this.statsHealth.stop();
     if (this.feeReconcileTimer) {
       clearInterval(this.feeReconcileTimer);
       this.feeReconcileTimer = null;
@@ -1262,6 +1286,9 @@ export class GameServer {
       tournamentLease: tournamentLeaseDiagnostics(),
       leadership: leadershipDiagnostics(),
       stalledTableCount: stalledTables.length,
+      // 2026-09-04: is horse Monte Carlo being throttled to protect the loop?
+      // scale < 1 means the core is saturated; see EquityLoadGovernor.ts.
+      equityGovernor: equityGovernor.snapshot(),
       // Deploy drain gate reads this. A restart voids in-flight hands, so a
       // routine server/ push waits (or is explicitly forced) while real people
       // are seated. Horses are excluded — they do not care.
@@ -1286,6 +1313,9 @@ export class GameServer {
        * than a race the workflow observes.
        */
       maintenance: { ...this.maintenanceBreak.snapshot(), dbClockSkewMs: this.lastDbSkewMs },
+      // The stats pipeline: index lag, trigger gaps, the money repair cursor
+      // and the last witness audit. null until the first read completes.
+      stats: this.statsHealth.publish(),
       // ONE RAKE SPEC (R7): both checksums and whether they last agreed.
       // Informational: a drift alerts, it never holds a table.
       rakeSpec: rakeSpecDriftState(),
@@ -1454,6 +1484,11 @@ export class GameServer {
       // See services/ReplicationMetrics.ts.
       ...this.replicationMetrics.toPrometheus(),
     ];
+
+    // ── STATS PIPELINE (2026-09-04) ─────────────────────────────────────
+    // Fleet-independent, so it rides with the freeze block: an empty fleet
+    // still has a hand index that can fall behind.
+    freeze.push(...this.statsHealth.prometheusLines());
 
     if (allLines.length === 0) {
       // Still emit freeze metrics: "no engines at all" is itself the loudest

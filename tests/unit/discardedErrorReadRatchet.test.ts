@@ -69,7 +69,7 @@ const BASELINE = new Map<string, number>([
   // 12 -> 11 on 2026-09-03: phase 3 removed clawbackDistribution and
   // getRecentDistributions, a dead parallel implementation of agent undo whose
   // reads went nowhere anyway.
-  ['src/services/AgentService.ts', 11],
+  ['src/services/AgentService.ts', 7],
   ['src/pages/UnionDashboardPage.tsx', 10],
   ['src/services/UnionService.ts', 12],
   ['src/pages/AdminDashboardPage.tsx', 7],
@@ -85,7 +85,7 @@ const BASELINE = new Map<string, number>([
   ['src/pages/HomePage.tsx', 1],
   ['src/pages/BadBeatJackpotPage.tsx', 4],
   ['src/components/social/PlayerActivityFeed.tsx', 4],
-  ['src/components/agent/ChipTransferModal.tsx', 3],
+  ['src/components/agent/ChipTransferModal.tsx', 2],
   ['src/components/agent/AgentScoreCard.tsx', 4],
   ['src/services/VoiceSignalService.ts', 3],
   ['src/services/FinancialCronService.ts', 3],

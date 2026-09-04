@@ -138,12 +138,16 @@ export default function ChipTransferModal({
     loadSenderInfo();
   }, [isOpen, user?.id, clubId]);
 
-  // Load recipients when modal opens
+  // Load recipients when modal opens. The Agent Team console reuses ONE
+  // modal instance for every agent it funds, so everything learned about the
+  // previous recipient is forgotten here: a stale 'missing' verdict or a
+  // stale pinned role would otherwise decide the next send.
   useEffect(() => {
     if (!isOpen || !user?.id) return;
-    if (recipientId) {
-      setSelectedRecipient(recipientId);
-    }
+    setPinnedRecipient(null);
+    setDestinationBalance(null);
+    setError(null);
+    setSelectedRecipient(recipientId || '');
     loadRecipients();
   }, [isOpen, user?.id, clubId, recipientId]);
 
@@ -175,7 +179,23 @@ export default function ChipTransferModal({
         reportError(memberErr, 'ChipTransferModal.sender_role_read');
         return;
       }
-      const role = member?.role || 'player';
+      let role = member?.role || null;
+      if (!role) {
+        // The club's owner need not hold a club_members row; fn_club_bank_role
+        // and fn_can_use_club_bank both treat clubs.owner_id as 'owner'.
+        const { data: ownedClub, error: ownedErr } = await supabase
+          .from('clubs')
+          .select('owner_id')
+          .eq('id', resolvedId)
+          .maybeSingle();
+        if (ownedErr) {
+          setSenderRole(null);
+          setSenderRoleFailed(true);
+          reportError(ownedErr, 'ChipTransferModal.sender_owner_read');
+          return;
+        }
+        role = ownedClub?.owner_id === user.id ? 'owner' : 'player';
+      }
       setSenderRole(role);
       setSenderRoleFailed(false);
 
@@ -215,16 +235,7 @@ export default function ChipTransferModal({
     setIsLoadingRecipients(true);
     try {
       // Get the sender's role to determine who they can send to
-      const { data: senderMember } = await supabase
-        .from('club_members')
-        .select('role')
-        .eq('club_id', await resolveClubUUID(clubId))
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      const role = senderMember?.role || 'player';
       const resolvedClub = await resolveClubUUID(clubId);
-
       /* THE RECIPIENT THE CALLER NAMED IS READ ON ITS OWN. Member Management
          opens this modal with recipientId set and Confirm was enabled the
          moment an amount was typed, while the recipient's role was still
@@ -253,6 +264,26 @@ export default function ChipTransferModal({
             balance: Number(pinned.chip_balance ?? 0) || 0,
           });
         }
+      }
+
+      const { data: senderMember, error: senderErr } = await supabase
+        .from('club_members')
+        .select('role')
+        .eq('club_id', resolvedClub)
+        .eq('user_id', user.id)
+        .maybeSingle();
+      // A failed read used to fall to 'player' and hand an owner the
+      // downline-scoped list; the toast below is the honest outcome.
+      if (senderErr) throw senderErr;
+      let role = senderMember?.role || null;
+      if (!role) {
+        const { data: ownedClub, error: ownedErr } = await supabase
+          .from('clubs')
+          .select('owner_id')
+          .eq('id', resolvedClub)
+          .maybeSingle();
+        if (ownedErr) throw ownedErr;
+        role = ownedClub?.owner_id === user.id ? 'owner' : 'player';
       }
 
       /* WHO THIS MODAL MAY SEND TO (Dan 2026-08-25, binding):

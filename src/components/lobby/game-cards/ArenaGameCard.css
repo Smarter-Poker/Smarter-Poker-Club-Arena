@@ -2727,7 +2727,7 @@
   width: min(100%, 430px);
   aspect-ratio: 729 / 945;
   overflow: hidden;
-  background: #000;
+  background: transparent;
 }
 
 .arena-game-card--nlh[data-skin='spade-nlh-premium-v1'] .arena-game-card__art {
@@ -2755,7 +2755,10 @@
   width: min(100%, 430px);
   aspect-ratio: var(--agc-mobile-ratio);
   overflow: hidden;
-  background: #000;
+  /* Dan 2026-09-03: "MAKE SURE YOU'VE REMOVED THE BACKGROUND OF ALL GAME
+     CARDS." The chassis PNG is transparent outside its chamfered chrome, so a
+     painted wrapper showed as a black box behind every corner. */
+  background: transparent;
 }
 
 .arena-game-card--layered .arena-game-card__art {

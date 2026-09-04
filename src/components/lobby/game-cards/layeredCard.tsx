@@ -134,6 +134,46 @@ export function LayeredFitText({
   );
 }
 
+/**
+ * A buy-in RANGE printed as two centred lines, minimum over maximum, with no
+ * dash. Dan 2026-09-03: "REMOVE ALL THE - FOR THE BUY IN CARDS. HAVE IT JUST
+ * MINIMUM ON TOP 40 AND BELOW IT THE MAX 200. THE - IS THROWING EVERYTHING
+ * OFF ... IF THE NUMBER ON TOP IS LESS DIGITS THEN THE NUMBER ON THE BOTTOM,
+ * THE NUMBER ON THE TOP SHOULD BE CENTERED ON TOP OF THE BOTTOM NUMBER."
+ * A single figure (no range) prints on one line as before.
+ */
+export function splitBuyInRange(value: string): [string, string] | null {
+  const parts = value.split(/\s*[-\u2013\u2014]\s*/).filter(Boolean);
+  return parts.length === 2 ? [parts[0], parts[1]] : null;
+}
+
+export function LayeredBuyIn({
+  value,
+  className,
+  lineClassName,
+}: {
+  value: string;
+  className?: string;
+  lineClassName?: string;
+}) {
+  const range = splitBuyInRange(value);
+  if (!range) return <LayeredFitText text={value} className={className} />;
+  return (
+    <span className="agc-layered__stack">
+      <LayeredFitText
+        as="span"
+        text={range[0]}
+        className={`${className || ''} ${lineClassName || ''}`.trim()}
+      />
+      <LayeredFitText
+        as="span"
+        text={range[1]}
+        className={`${className || ''} ${lineClassName || ''}`.trim()}
+      />
+    </span>
+  );
+}
+
 /** Lit DOM-text status pill: Empty / Full / Waitlist N / Filling / … */
 export function LayeredStatus({
   canvas,

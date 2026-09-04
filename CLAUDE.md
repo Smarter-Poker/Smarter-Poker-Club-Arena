@@ -140,6 +140,75 @@ Hub repo (which copied a build into `public/hub/club-arena/` for a local
 Next.js preview) is retired with the sync; the World Hub's dev server proxies
 the rewrite to the live origin instead.
 
+### 1.1.6 HOW THE BUILD IS PUT TOGETHER (added 2026-09-04 - read before you touch a build step)
+
+Push to live was ~10.1 minutes. It is not any more, and the way it got faster
+constrains what you may do to these files. Three facts that are easy to undo
+by accident:
+
+1. **`npm run build` is `tsc -b && npm run build:ci`.** ONE definition, so the
+   two cannot drift. `ci.yml`'s two build jobs run `build:ci`;
+   `publish-club-arena.yml` runs the full `npm run build`. THE ASYMMETRY IS
+   DELIBERATE and either half alone is a bug: the tree that reaches players is
+   typechecked on the commit that ships it, and the throwaway pull-request
+   builds are not, because the required `TypeScript Check` job has already
+   checked that same tree, ungated, on every pull request. `tsc -b` emits
+   nothing here (all three tsconfigs are `noEmit`, none is `composite`, no dts
+   or checker plugin) - if you add `composite`, `references` or a dts plugin,
+   `tsc -b` starts emitting and `build:ci` silently stops producing the same
+   bundle. `tests/the-build-typechecks-where-it-ships.law.test.ts` fails first.
+
+2. **`sharp` is a declared devDependency.** It used to be deliberately absent
+   and installed over the network into `os.tmpdir()` mid-build - 97s cold, 77s
+   warm, three times per merge. Do not remove it, and do not remove the
+   temp-prefix fallback in `scripts/lib/sharp-loader.mjs` either: that is the
+   no-regression net. The lockfile must keep the `@img/sharp-linux-x64` and
+   `@img/sharp-libvips-linux-x64` entries or `npm ci` on a runner installs
+   sharp with no binary and the fallback quietly resumes paying the 97s.
+
+3. **`scripts/optimize-dist-media.mjs` is parallel and content-addressed.**
+   Results are cached by the sha256 of the INPUT bytes plus the rule, the
+   extension, `ENCODER_SETTINGS_VERSION` and sharp's version. **If you change
+   the png/webp/jpeg encoder options, bump `ENCODER_SETTINGS_VERSION` in the
+   same edit** - it is the only thing between an encoder change and a cache
+   that keeps serving the previous encoder's bytes. The script also recognises
+   its own output, so a second pass re-encodes nothing; before 2026-09-04 a
+   second pass re-encoded 90 files and lost quality every time.
+
+**Source maps go to Sentry and never to players.** `SENTRY_AUTH_TOKEN` belongs
+to `publish-club-arena.yml` and nowhere else. It used to sit in `ci.yml`, so
+the plugin uploaded maps for the pull-request bundle that gets thrown away,
+uploaded none for the bundle that ships, and - because
+`filesToDeleteAfterUpload` only runs on a successful upload - shipped 267 `.map`
+files (27MB) to players on every deploy. The publisher now strips them
+unconditionally and refuses to publish a survivor.
+
+Full reasoning and every measurement:
+`docs/changelog/2026-09-04-push-to-live-under-six-minutes.md`.
+
+### 1.1.7 THE RUNNERS (rescaled 2026-09-04)
+
+| Box              | Type  | Cores | Runners | Serves                         |
+| ---------------- | ----- | ----- | ------- | ------------------------------ |
+| `estate-ci-eu-1` | cpx62 | 16    | 12      | Club Arena                     |
+| `estate-ci-eu-2` | cpx62 | 16    | 12      | World Hub (6) + Club Arena (6) |
+| `estate-ci-eu-3` | cpx62 | 16    | 12      | Club Arena                     |
+| `estate-ci-1`    | cpx31 | 4     | 3       | World Hub + Club Arena         |
+
+52 cores, 33 Club Arena runners. The three EU boxes were 8-core (cpx42) until
+2026-09-04; loads of 40.9 were the reason. `cx53` and `cax41` are NOT orderable
+on this account - both were tried and refused.
+
+**A NUMBER TUNED TO HARDWARE AND WRITTEN DOWN AS A CONSTANT OUTLIVES THE
+HARDWARE.** The old 8-core concurrency caps became the bottleneck the hour the
+boxes became 16-core. Derive from the box (`os.cpus().length`,
+`nproc`), never from a literal.
+
+**Counting busy runners: `pgrep -f 'Runner.Worker'` matches your own ssh
+command** and makes every box look permanently busy. Use
+`ps -eo comm | grep -c '^Runner.Worker$'`. The GitHub API's `busy` flag is not
+reliable either; inspect processes.
+
 ### 1.1.5 SERVER-SIDE PROTECTION (APPLIED - this section is history)
 
 `.husky/pre-push` is a seatbelt on an unlocked door: `--no-verify` skips it and
@@ -283,6 +352,14 @@ Never say "should be live in a few minutes" or "deploy triggered."
 - ALL game logic lives here: HandController, ServerTableEngine, all engines
 - HTTP endpoints: POST /action, POST /timebank, GET /actions, GET /health
 - Uses `SUPABASE_SERVICE_ROLE_KEY` (bypasses RLS)
+- Sentry: its OWN project `club-arena-engine` (since 2026-09-04) and an
+  SDK-side event budget (`server/src/services/sentryEventBudget.ts`, 10/min per
+  fingerprint, 60/min overall, dropped counts summarised every 10 min). An
+  engine loop burned the whole org quota in August and blinded every other
+  app for three weeks. Never point `SENTRY_DSN` back at the hub project, never
+  remove the budget from `beforeSend`, and do not raise its limits to make a
+  loop visible: the summary event already names it.
+  `docs/changelog/2026-09-04-engine-sentry-budget.md`.
 
 ### Supabase
 
@@ -362,6 +439,48 @@ When auditing or reviewing code:
 4. REPEAT until all items in the current phase are done
 
 Do NOT audit 10 items and then ask "what should I fix?" -- fix them as you go.
+
+---
+
+## 4.5 NEVER HAND-PICK A MIGRATION VERSION (2026-09-04, BINDING)
+
+**Always run:**
+
+```bash
+node scripts/new-migration.mjs "what it does"
+```
+
+Never type a `20260904...` version yourself, and never copy one from another
+file and edit the digits.
+
+### Why, measured
+
+Over 24 hours this was the single biggest source of red CI in the repo:
+**21 of ~62 real check failures** were one collision - 15 in `TypeScript Check`
+(`Supabase Invariants - New Migration`) and 6 in `Client Unit Tests`
+(`migrationVersionUniqueness`).
+
+Agents pick the 14-digit version by hand, reach for a round number, and two of
+them land on the same one. **Neither branch is wrong on its own** - each holds
+one file, so both go green. The collision appears the moment the second branch
+takes `main`, and then CI fails for work that was correct when it was written.
+That is what "CI keeps failing for no reason" has been.
+
+### It is not only a red build
+
+Supabase keys `schema_migrations` on the version. Of two files sharing one,
+**the second is SILENTLY NEVER APPLIED**. A migration that never ran is worse
+than a failing test, because nothing tells you.
+
+### What the script does that a timestamp cannot
+
+It asks what is already taken - this tree, `origin/main`, **and every remote
+branch** - and steps forward a second at a time until it finds a free version.
+Checking the branches is the whole point: the version you collide with usually
+lives on work nobody has merged yet, which no clock can see.
+
+It writes the file from the correct skeleton too, including the single-
+transaction requirement from the production DDL policy in section 2.
 
 ---
 

@@ -13,7 +13,6 @@ import { QUERY_LIMITS } from '../lib/constants';
 import { PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { reportError } from '../utils/errorReporter';
 import { notifyServerLeave } from './GameServerAPI';
-import { leaveAvailableLabel } from '../lib/chipContinuity';
 
 /**
  * The governed command gateway, loaded on demand.
@@ -496,6 +495,9 @@ class TableService {
             // error-less failure. Map it to the one label and return it.
             const locked = /LEAVE_LOCKED:(\d+)/.exec(String(cashoutError.message || ''));
             if (locked) {
+              // Lazy: TableService is in the entry chunk and the label helper
+              // must not ride into first paint (entry-chunk-delta gate).
+              const { leaveAvailableLabel } = await import('../lib/chipContinuity');
               return {
                 success: false,
                 chipsReturned: 0,

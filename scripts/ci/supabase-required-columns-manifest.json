@@ -520,6 +520,15 @@
       "amount",
       "played_at"
     ],
+    "ca_horse_fleet_policy": [
+      "scope"
+    ],
+    "ca_horse_fleet_register": [
+      "horse_id"
+    ],
+    "ca_horse_fleet_state": [
+      "horse_id"
+    ],
     "ca_incident_events": [
       "incident_id",
       "kind"
@@ -573,6 +582,9 @@
     ],
     "ca_money_rpc_registry": [
       "proname"
+    ],
+    "ca_noop_update_stats": [
+      "tbl"
     ],
     "ca_op_claims": [
       "op_id",
@@ -687,6 +699,12 @@
       "opening_balance",
       "ledger_at_baseline",
       "unledgered_gap"
+    ],
+    "ca_union_rake_attribution": [
+      "rake_record_id",
+      "user_id",
+      "union_id",
+      "played_at"
     ],
     "cashier_operations": [
       "user_id",
@@ -879,6 +897,11 @@
     "club_members": [
       "club_id",
       "user_id"
+    ],
+    "club_message_dismissals": [
+      "user_id",
+      "club_id",
+      "dismissed_revision"
     ],
     "club_opening_setup_funding": [
       "club_id",

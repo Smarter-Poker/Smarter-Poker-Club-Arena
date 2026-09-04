@@ -16,6 +16,7 @@ import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { isSatelliteTargetOpen, satelliteTicketCost } from './satelliteTargetOpen.js';
 import { type BalancerTable, type MoveInstruction } from '../engine/TableBalancer.js';
 import { reportError } from '../services/errorReporter.js';
+import { selectInChunks } from '../services/supabase/chunkedIn.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { TournamentManagerEliminations } from './TournamentManagerEliminations.js';
 // The DECK is the tournament ceiling, never the cash seat law — see the note on
@@ -1035,12 +1036,33 @@ export class TournamentManager extends TournamentManagerEliminations {
       if (!tourneyTables || tourneyTables.length === 0) return;
       const tableIds = tourneyTables.map((t) => t.id);
 
-      const { data: seatRows } = await supabase
-        .from('table_seats')
-        .select('user_id, table_id, seat_number')
-        .in('table_id', tableIds)
-        .is('left_at', null);
-      const seatedUsers = new Set((seatRows ?? []).map((s) => s.user_id));
+      /* CHUNKED, AND A FAILED READ MUST NOT MEAN "NOBODY IS SEATED" (2026-09-03).
+         `tableIds` is every live table of this tournament and the largest field
+         on record here is 1,076 tables, so one `.in()` goes past the ~675-id
+         ceiling PostgREST accepts in a URL and answers HTTP 400. The error was
+         discarded, `seatedUsers` came back EMPTY, and every entrant in the
+         field then read as unseated - a seat-write storm every five seconds
+         across the whole tournament, and `best` never null so nobody is ever
+         promoted to 'playing' and table expansion never fires. Declining the
+         pass is the safe answer: seatClaim still fails closed, and the next
+         cycle tries again. */
+      const seatRead = await selectInChunks<{
+        user_id: string;
+        table_id: string;
+        seat_number: number;
+      }>(
+        tableIds,
+        (batch) =>
+          supabase
+            .from('table_seats')
+            .select('user_id, table_id, seat_number')
+            .in('table_id', batch)
+            .is('left_at', null),
+        `Tournament.lateRegSeated(${this.tournamentId.slice(0, 8)})`
+      );
+      if (!seatRead.complete) return;
+      const seatRows = seatRead.rows;
+      const seatedUsers = new Set(seatRows.map((s) => s.user_id));
       const unseated = entrants.filter((e) => !seatedUsers.has(e.user_id));
       if (unseated.length === 0) return;
 

@@ -59,6 +59,9 @@ interface DownlineMember {
   chip_balance: number;
   status: string;
   created_at: string;
+  /** club_members.agent_id - the assignment every write path in this app uses. */
+  agent_id?: string;
+  /** club_members.invited_by - the older referral column, kept as a fallback. */
   referred_by?: string;
   profile?: AgentProfile;
 }
@@ -186,12 +189,31 @@ export default function AgentDashboardPage() {
         );
         if (mountedRef.current) setRole(membership?.role || 'agent');
 
-        // Get agent's players (downline)
+        /*
+          AN AGENT'S DOWNLINE IS club_members.agent_id, NOT invited_by.
+
+          This page read `invited_by` and called it referred_by, while
+          AgentService.getAgentPlayers, assignPlayerToAgent and
+          fn_agent_attach_player all use `agent_id`. They are not the same
+          column and they do not hold the same people: estate-wide, 1,575
+          memberships carry an agent_id and 417 carry an invited_by. So every
+          count on this page - Total Players, Online Now, Player Chips, the
+          Players tab, the churn buckets, the CSV export - was computed over a
+          different set of players than the agent network screen shows for the
+          same agent, and a player assigned through the proper attach path
+          appeared in neither.
+
+          Both columns are read now: agent_id is the assignment, invited_by is
+          kept as a fallback for the memberships that predate it, and a player
+          who satisfies either is this agent's.
+        */
         const { data: downline } = await retryFetch(
           () =>
             supabase
               .from('club_members')
-              .select('user_id, role, chip_balance, status, created_at, referred_by:invited_by')
+              .select(
+                'user_id, role, chip_balance, status, created_at, agent_id, referred_by:invited_by'
+              )
               .eq('club_id', uuid)
               .then((r) => r),
           { maxRetries: 2, isMountedRef: mountedRef }
@@ -199,7 +221,8 @@ export default function AgentDashboardPage() {
 
         // Filter to downline for non-owners
         const myDownline = (downline || []).filter(
-          (m: DownlineMember) => isClubStaff(membership?.role) || m.referred_by === user.id
+          (m: DownlineMember) =>
+            isClubStaff(membership?.role) || m.agent_id === user.id || m.referred_by === user.id
         );
 
         // Get profiles for all relevant users
@@ -508,6 +531,22 @@ export default function AgentDashboardPage() {
   };
 
   // ── Transfer ───────────────────────────────────────────────
+  /**
+   * WHAT THIS USED TO CALL, AND WHY NOTHING EVER MOVED.
+   *
+   * `WalletService.transferToUser` goes to the `wallet_user_transfer` RPC,
+   * which is SECURITY INVOKER and on which `authenticated` holds no EXECUTE.
+   * Every press of this button, on a modal titled "Agent-To-Agent Transfer",
+   * came back a permission error. Had it been granted it would still have been
+   * the wrong call: a bare PLAYER to PLAYER wallet move, with no club in it at
+   * all, from a form that asks for a club member.
+   *
+   * fn_agent_wallet_send is the send the platform actually uses. It is
+   * definer, it is granted, it enforces the downline server-side, it derives
+   * the destination wallet from the recipient's role, and it takes a retry key
+   * so a repeated call replays rather than sending twice. The note the form
+   * has always collected and thrown away is now the send's reason.
+   */
   const executeTransfer = async () => {
     if (!transferTarget || !transferAmount || !clubId) return;
     setProcessing(true);
@@ -515,8 +554,18 @@ export default function AgentDashboardPage() {
     try {
       const uuid = await resolveClubUUID(clubId);
       const amt = parseFloat(transferAmount);
-      if (isNaN(amt) || amt <= 0) throw new Error('Invalid transfer amount');
-      await WalletService.transferToUser(user?.id || '', transferTarget, amt);
+      if (isNaN(amt) || amt <= 0) throw new Error('Enter a valid transfer amount');
+      const { data, error: sendError } = await supabase.rpc('fn_agent_wallet_send', {
+        p_club_id: uuid,
+        p_to_user_id: transferTarget,
+        p_amount: amt,
+        p_destination: 'player_wallet',
+        p_reason: transferNotes.trim() || 'Agent transfer',
+        p_op_id: crypto.randomUUID(),
+      });
+      if (sendError) throw sendError;
+      const outcome = (data || {}) as { success?: boolean; error?: string };
+      if (!outcome.success) throw new Error(outcome.error || 'That transfer was refused.');
       setSuccess(`Transferred ${fmtChips(amt)} chips.`);
       masterBus.emit('CHIPS_DISTRIBUTED', { clubId: uuid, amount: amt });
       setShowTransfer(false);
@@ -1324,25 +1373,17 @@ export default function AgentDashboardPage() {
                         setProcessing(false);
                         return;
                       }
-                      // Resolve agent PK — distributePromo expects agents.id, NOT auth.users.id
+                      // Promo is disbursed by the owner of the float: the union
+                      // when this club is in one, the club itself when it is not.
+                      // WalletService.disbursePromo resolves that and the database
+                      // refuses anyone who is not that owner.
                       const resolvedClub = await resolveClubUUID(clubId || '');
-                      const { data: agentRow } = await retryFetch(
-                        () =>
-                          supabase
-                            .from('agents')
-                            .select('id')
-                            .eq('user_id', creditTarget)
-                            .eq('club_id', resolvedClub)
-                            .maybeSingle()
-                            .then((r) => r),
-                        { maxRetries: 2, isMountedRef: mountedRef }
+                      await WalletService.disbursePromo(
+                        resolvedClub,
+                        creditTarget,
+                        promoAmt,
+                        'Promo granted from the club dashboard'
                       );
-                      if (!agentRow?.id) {
-                        setError('Agent record not found for this club');
-                        setProcessing(false);
-                        return;
-                      }
-                      await WalletService.distributePromo(agentRow.id, creditTarget, promoAmt);
                       setSuccess(`Granted ${fmtChips(promoAmt)} promo chips!`);
                       setCreditTarget('');
                       setCreditAmount('');
@@ -1437,9 +1478,9 @@ export default function AgentDashboardPage() {
                     value={creditAction}
                     onChange={(e) => setCreditAction(e.target.value)}
                   >
-                    <option value="issue_credit">Issue Credit Line</option>
-                    <option value="add_prepaid">Add Prepaid Balance</option>
-                    <option value="revoke_credit">Revoke Credit</option>
+                    <option value="issue_credit">Set Credit Line To</option>
+                    <option value="add_prepaid">Send Prepaid Chips</option>
+                    <option value="revoke_credit">Reduce Credit Line By</option>
                   </select>
                 </div>
                 <div>
@@ -1476,21 +1517,73 @@ export default function AgentDashboardPage() {
                         setProcessing(false);
                         return;
                       }
-                      if (creditAction === 'issue_credit' || creditAction === 'add_prepaid') {
+                      /*
+                        ALL THREE OF THESE WERE WRONG, EACH IN ITS OWN WAY.
+
+                        ISSUE CREDIT was the only one that could work, and it
+                        passed the raw route param where a uuid was expected -
+                        CreditService looks the agent up with
+                        .eq('club_id', clubId), so on a slug or code URL it
+                        found no row and told the operator "No agent found for
+                        this club" about an agent that exists.
+
+                        ADD PREPAID could never succeed at all. It called
+                        setCreditLine(..., isPrepaid: true) with the amount as
+                        the LIMIT, and fn_admin_update_agent refuses exactly
+                        that pair: "a prepaid agent carries no credit line".
+                        Any positive amount was rejected. Funding a prepaid
+                        agent means sending them chips, which is
+                        fn_agent_wallet_send into their agent wallet.
+
+                        REVOKE CREDIT did not touch credit. It called
+                        wallet_user_transfer - an ungranted invoker function,
+                        so it errored - and had it run it would have moved
+                        chips out of the agent's own player wallet into the
+                        signed-in owner's player wallet, leaving credit_limit
+                        and credit_used untouched. Revoking credit is lowering
+                        the line, which is fn_admin_update_agent, and which
+                        refuses on its own terms when the agent has already
+                        drawn more than the new limit.
+                      */
+                      const resolvedCreditClub = await resolveClubUUID(clubId || '');
+                      const note = creditNotes.trim() || undefined;
+                      if (creditAction === 'issue_credit') {
                         await CreditService.setCreditLine(
                           creditTarget,
-                          clubId || '',
+                          resolvedCreditClub,
                           amt,
-                          creditAction === 'add_prepaid'
+                          false,
+                          note
                         );
+                      } else if (creditAction === 'add_prepaid') {
+                        const { data, error: fundError } = await supabase.rpc(
+                          'fn_agent_wallet_send',
+                          {
+                            p_club_id: resolvedCreditClub,
+                            p_to_user_id: creditTarget,
+                            p_amount: amt,
+                            p_destination: 'agent_wallet',
+                            p_reason: note || 'Prepaid funding',
+                            p_op_id: crypto.randomUUID(),
+                          }
+                        );
+                        if (fundError) throw fundError;
+                        const funded = (data || {}) as { success?: boolean; error?: string };
+                        if (!funded.success) {
+                          throw new Error(funded.error || 'That funding was refused.');
+                        }
                       } else {
-                        // revoke_credit: use atomic wallet deduction
-                        await WalletService.transferToUser(creditTarget, user?.id || '', amt);
+                        await CreditService.lowerCreditLine(
+                          creditTarget,
+                          resolvedCreditClub,
+                          amt,
+                          note
+                        );
                       }
                       const labels: Record<string, string> = {
-                        issue_credit: 'Credit issued',
-                        add_prepaid: 'Prepaid added',
-                        revoke_credit: 'Credit revoked',
+                        issue_credit: 'Credit line set to',
+                        add_prepaid: 'Prepaid balance sent',
+                        revoke_credit: 'Credit line reduced by',
                       };
                       setSuccess(`${labels[creditAction] || 'Done'} - ${fmtChips(amt)} chips`);
                       masterBus.emit('CREDIT_UPDATED', {
@@ -1510,10 +1603,10 @@ export default function AgentDashboardPage() {
                   {processing
                     ? 'Processing...'
                     : creditAction === 'issue_credit'
-                      ? 'Issue Credit'
+                      ? 'Set Credit Line'
                       : creditAction === 'add_prepaid'
-                        ? 'Add Prepaid'
-                        : 'Revoke Credit'}
+                        ? 'Send Prepaid Chips'
+                        : 'Reduce Credit Line'}
                 </button>
               </div>
             </div>

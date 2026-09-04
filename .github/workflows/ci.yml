@@ -473,6 +473,12 @@ jobs:
 
       # ── Dependency Audit ──────────────────────────────────────────────────
       - name: Dependency Audit
+        # 2026-09-04: schedule-only. This step is `continue-on-error` - it has
+        # never failed a build, it only writes a summary - but it cost 2.2 of
+        # the 6.6 minutes of TypeScript Check, on the critical path of every
+        # pull request. It still runs against main on the schedules above, so
+        # nothing stops being audited; it just stops delaying merges.
+        if: github.event_name == 'schedule'
         continue-on-error: true
         run: |
           echo "## 🔒 Dependency Audit" >> $GITHUB_STEP_SUMMARY
@@ -1225,8 +1231,21 @@ jobs:
   # serves THIS COMMIT'S OWN BUILD locally — that one is required.
   # ───────────────────────────────────────────────────────────────────────────
   live-e2e:
-    # Moved off push:main to the two-hourly schedule above.
-    if: github.event_name == 'schedule'
+    # Moved off push:main to the two-hourly schedule above, and on 2026-09-04
+    # narrowed again to the DAILY cron only.
+    #
+    # post-deploy-e2e.yml runs the production specs on workflow_run after every
+    # publish, and Club Arena publishes roughly nineteen times an hour, so
+    # production is already exercised continuously by the thing that changed it.
+    # This job's distinct value is catching drift NOT caused by a publish - an
+    # expired certificate, a Supabase change, a DNS or CDN regression - and that
+    # does not need a 25-minute browser run twelve times a day.
+    #
+    # The two-hourly cron is deliberately left in place for `unit` and `server`:
+    # that is the "is main actually green" net (see the note on the schedule
+    # block), it is free on self-hosted runners, and shrinking it to daily would
+    # widen broken-main detection from 2 hours to 24.
+    if: github.event_name == 'schedule' && github.event.schedule == '35 6 * * *'
     name: Live Production E2E
     # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
     # runner when set; unset it is ubuntu-latest exactly as before.
@@ -1627,117 +1646,3 @@ jobs:
 
       - name: Insurance and Rabbit Hunt 375px decision gate
         run: npm run test:e2e:financial-decisions
-
-  # ─────────────────────────────────────────────────────────────────────────────
-  # STEP 5: AUTO-REVERT — DISABLED (was causing revert loops during migration)
-  # ─────────────────────────────────────────────────────────────────────────────
-  auto-revert:
-    name: Auto-Revert Broken Commit (DISABLED)
-    needs: [typecheck, build]
-    if: false # DISABLED — was auto-reverting valid commits during active migration
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      issues: write
-
-    steps:
-      - name: Checkout (full history for revert)
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Configure Git
-        run: |
-          git config user.name "CI Auto-Revert Bot"
-          git config user.email "ci-bot@smarter.poker"
-
-      - name: Auto-Revert Breaking Commit
-        id: revert
-        run: |
-          BREAKING_SHA=$(git rev-parse HEAD)
-          BREAKING_MSG=$(git log -1 --pretty=%s)
-          BREAKING_AUTHOR=$(git log -1 --pretty=%an)
-
-          echo "sha=${BREAKING_SHA}" >> $GITHUB_OUTPUT
-          echo "msg=${BREAKING_MSG}" >> $GITHUB_OUTPUT
-          echo "author=${BREAKING_AUTHOR}" >> $GITHUB_OUTPUT
-
-          echo "🔴 Auto-reverting broken commit: ${BREAKING_SHA:0:8}"
-          echo "   Message: ${BREAKING_MSG}"
-          echo "   Author: ${BREAKING_AUTHOR}"
-
-          # Revert the commit
-          git revert --no-edit HEAD
-
-          # Push the revert (bypass branch protection with GITHUB_TOKEN)
-          git push origin main
-
-          echo "✅ Successfully reverted ${BREAKING_SHA:0:8}"
-
-      - name: Create GitHub Issue
-        if: always()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { owner, repo } = context.repo;
-            const sha = '${{ steps.revert.outputs.sha }}'.substring(0, 8);
-            const msg = '${{ steps.revert.outputs.msg }}';
-            const author = '${{ steps.revert.outputs.author }}';
-            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${context.runId}`;
-
-            // Check for existing open CI failure issue
-            const issues = await github.rest.issues.listForRepo({
-              owner, repo,
-              labels: 'ci-failure,auto-reverted',
-              state: 'open',
-              per_page: 1
-            });
-
-            const body = [
-              `## 🔴 Auto-Reverted: Broken commit \`${sha}\``,
-              '',
-              `**Commit:** \`${sha}\``,
-              `**Message:** ${msg}`,
-              `**Author:** ${author}`,
-              `**CI Run:** [View details](${runUrl})`,
-              '',
-              `### What happened`,
-              `The CI pipeline detected that this commit broke the build (TypeScript errors or build failure).`,
-              `The commit was **automatically reverted** to keep \`main\` stable.`,
-              '',
-              `### Required action`,
-              `1. Check the CI run for the exact error`,
-              `2. Fix the error locally`,
-              `3. Run \`npx tsc --noEmit\` and confirm it passes`,
-              `4. Push the fixed code`,
-              '',
-              `> This issue was auto-created by the CI auto-revert system.`,
-            ].join('\n');
-
-            if (issues.data.length > 0) {
-              await github.rest.issues.createComment({
-                owner, repo,
-                issue_number: issues.data[0].number,
-                body
-              });
-            } else {
-              await github.rest.issues.create({
-                owner, repo,
-                title: `🔴 Auto-Reverted: ${msg.substring(0, 60)}`,
-                body,
-                labels: ['ci-failure', 'auto-reverted']
-              });
-            }
-
-      - name: Report Revert
-        if: success()
-        run: |
-          echo "## 🔴 AUTO-REVERT EXECUTED" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Reverted commit:** \`${{ steps.revert.outputs.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Message:** ${{ steps.revert.outputs.msg }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Author:** ${{ steps.revert.outputs.author }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "The breaking commit has been automatically reverted." >> $GITHUB_STEP_SUMMARY
-          echo "A GitHub issue has been created for tracking." >> $GITHUB_STEP_SUMMARY

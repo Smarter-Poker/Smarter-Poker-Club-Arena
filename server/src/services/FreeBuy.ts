@@ -34,7 +34,17 @@ export interface FreeBuyConfig {
   addOnCost: number;
   addOnChips: number;
   lateRegMinutes: number;
-  blindStructure: 'TURBO';
+  /**
+   * The Free Buy's own ladder, NOT the house turbo.
+   *
+   * Three of Dan's numbers decide this and they are not compatible with
+   * TURBO: 3,000 to start, a 10,000 add-on, and an hour of late registration.
+   * The house TURBO is 24 levels and 57 minutes end to end, so at the one-hour
+   * mark the big blind is 1,500,000 against a 13,000 stack - zero big blinds,
+   * and an add-on worth nothing by the time it can be taken. See
+   * BLIND_STRUCTURES.FREE_BUY for the measured comparison.
+   */
+  blindStructure: 'FREE_BUY';
   /** Seats on the board. Sized so the field's own rebuys and add-ons cover the
    *  guarantee without help: see freeBuyBreakEvenEntrants. */
   maxPlayers: number;
@@ -56,7 +66,7 @@ export const FREE_BUY_TIERS: Record<FreeBuyTier, FreeBuyConfig> = {
     addOnCost: 1,
     addOnChips: 10000,
     lateRegMinutes: 60,
-    blindStructure: 'TURBO',
+    blindStructure: 'FREE_BUY',
     maxPlayers: 200,
     minPlayers: 10,
   },
@@ -70,7 +80,7 @@ export const FREE_BUY_TIERS: Record<FreeBuyTier, FreeBuyConfig> = {
     addOnCost: 2,
     addOnChips: 10000,
     lateRegMinutes: 60,
-    blindStructure: 'TURBO',
+    blindStructure: 'FREE_BUY',
     maxPlayers: 300,
     minPlayers: 10,
   },

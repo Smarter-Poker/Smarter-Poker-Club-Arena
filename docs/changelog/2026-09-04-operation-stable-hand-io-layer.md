@@ -48,7 +48,7 @@ because a table nobody is tagged for can never be seated.
 
 | Piece              | Where                                                                                            |
 | ------------------ | ------------------------------------------------------------------------------------------------ |
-| Tag + state schema | `supabase/migrations/20260904020000_stable_hand_tag_and_state_tables.sql`, applied to production |
+| Tag + state schema | `supabase/migrations/20260904060838_stable_hand_tag_and_state_tables.sql`, applied to production |
 | Tagger CLI         | `server/src/scripts/horsesTag.ts`, `npm run horses:tag`                                          |
 | Floor planner      | `server/src/services/StableHandController.ts`                                                    |
 | Dashboard          | `GET /stable-hand` (`server/src/handlers/stableHand.ts`)                                         |

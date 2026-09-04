@@ -179,9 +179,14 @@ describe('every horse buy-in RPC call is gated on the freeze', () => {
        loop-level check it replaces is gone rather than missing. */
     const stand = sliceMethod(
       src,
-      'private stand(order: StandOrder, nowMs: number, why: string): boolean {'
+      'private async stand(order: StandOrder, nowMs: number, why: string): Promise<boolean> {'
     );
     const seatGate = stand.search(/isMaintenanceFrozen\(\)\)\s*return false;/);
+    /* And the stand is AWAITED. leaveTable became async on 2026-09-04 with
+       chip continuity; an un-awaited call would return a pending promise,
+       which is truthy, and every refused stand would have been counted as a
+       success. */
+    expect(src, 'the stand must be awaited').toMatch(/await this\.stand\(/);
     expect(seatGate, 'stand() does not re-check the freeze').toBeGreaterThan(-1);
     expect(seatGate).toBeLessThan(at(stand, 'engine.leaveTable(', 'the stand itself'));
     // and there is exactly ONE door to leaveTable, so the gate cannot be

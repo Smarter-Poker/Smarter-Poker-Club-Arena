@@ -64,11 +64,31 @@ import {
 } from './StableHandController.js';
 import { buildFloorSnapshot } from './StableHandSnapshot.js';
 import { buildBeats, writeBeats, bankVerdict, type BankVerdict } from './StableHandBeats.js';
+import { publishPlan } from './StableHandPlanBus.js';
 import { dailyGuaranteePerHost } from './FreeBuy.js';
 
-/** The engine surface a yield needs. Matches ServerTableEngine. */
+/**
+ * The engine surface a stand needs. Matches ServerTableEngine.
+ *
+ * CHIP CONTINUITY (Operation Table Stakes, landed on main 2026-09-04): a cash
+ * player who is AHEAD of the money they put in stays seated until a stay clock
+ * runs down, and `leaveTable` answers `LEAVE_LOCKED` with the milliseconds
+ * remaining. `forced` bypasses it and IS DELIBERATELY NOT PASSED HERE - horses
+ * are players, and a horse let out of a stay clock a human is held to is
+ * exactly the "equal outcome by a different mechanism" exemption Dan rejected
+ * outright (CLAUDE.md 10.5). A locked horse waits, like anybody else.
+ */
 export interface YieldEngine {
-  leaveTable(userId: string): { success: boolean; error?: string; immediate?: boolean };
+  leaveTable(
+    userId: string,
+    opts?: { forced?: boolean }
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    immediate?: boolean;
+    code?: 'LEAVE_LOCKED';
+    stay_remaining_ms?: number;
+  }>;
 }
 
 export const STABLE_HAND_CYCLE_MS = 30_000;
@@ -168,18 +188,17 @@ export function yieldKey(o: StandOrder): string {
 export function ripeYields(
   requests: YieldRequest[],
   nowMs: number,
-  lastOrderedAt: ReadonlyMap<string, number>,
-  opts: { cooldownMs?: number; max?: number } = {}
+  holdUntil: ReadonlyMap<string, number>,
+  opts: { max?: number } = {}
 ): { execute: YieldRequest[]; heldByCooldown: number; heldByCap: number } {
-  const cooldownMs = opts.cooldownMs ?? YIELD_COOLDOWN_MS;
   const max = opts.max ?? MAX_YIELDS_PER_CYCLE;
   let heldByCooldown = 0;
   const ready: YieldRequest[] = [];
 
   for (const r of requests) {
     if (r.order.reason !== 'human_yield') continue;
-    const last = lastOrderedAt.get(yieldKey(r.order));
-    if (last !== undefined && nowMs - last < cooldownMs) {
+    const until = holdUntil.get(yieldKey(r.order));
+    if (until !== undefined && nowMs < until) {
       heldByCooldown++;
       continue;
     }
@@ -252,10 +271,9 @@ export function standOrdersFor(snap: FloorSnapshot): FloorStandOrders {
 export function ripeWindDowns(
   requests: WindDownRequest[],
   nowMs: number,
-  lastOrderedAt: ReadonlyMap<string, number>,
-  opts: { cooldownMs?: number; maxPerHost?: number } = {}
+  holdUntil: ReadonlyMap<string, number>,
+  opts: { maxPerHost?: number } = {}
 ): { execute: WindDownRequest[]; heldByCooldown: number; heldByCap: number } {
-  const cooldownMs = opts.cooldownMs ?? YIELD_COOLDOWN_MS;
   const maxPerHost = opts.maxPerHost ?? MAX_WIND_DOWN_PER_HOST_PER_CYCLE;
   let heldByCooldown = 0;
   let heldByCap = 0;
@@ -264,8 +282,8 @@ export function ripeWindDowns(
 
   for (const r of requests) {
     if (r.order.reason !== 'occupancy_wind_down') continue;
-    const last = lastOrderedAt.get(yieldKey(r.order));
-    if (last !== undefined && nowMs - last < cooldownMs) {
+    const until = holdUntil.get(yieldKey(r.order));
+    if (until !== undefined && nowMs < until) {
       heldByCooldown++;
       continue;
     }
@@ -284,9 +302,21 @@ export class StableHandExecutor {
   private handle: ReturnType<typeof setInterval> | null = null;
   private running = false;
   private inFlight = false;
-  private readonly lastOrderedAt = new Map<string, number>();
+  /**
+   * `${tableId}:${horseId}` -> the moment this seat may be ordered again.
+   *
+   * A NOT-BEFORE rather than a last-ordered-at, because the wait is no longer
+   * one number. An ordinary stand settles inside the cooldown; a stand refused
+   * by the chip-continuity stay clock knows EXACTLY when it can be retried,
+   * and re-asking every thirty seconds until then is thirty pointless refusals
+   * per minute per seat.
+   */
+  private readonly holdUntil = new Map<string, number>();
   /** Stands skipped this cycle because the table had no live engine. */
   private noEngine = 0;
+  /** Stands held this cycle by a chip-continuity stay clock. Expected, not a
+   *  failure: the horse is ahead of its buy-in and stays, like anybody else. */
+  private stayLocked = 0;
   /** Stands that actually LANDED this cycle, per host, for the heartbeat. The
    *  gap between planned and executed is the only way to see a controller that
    *  decides correctly and cannot act. */
@@ -417,7 +447,7 @@ export class StableHandExecutor {
    * the wallet through atomic_seat_cashout_locked, and this module never
    * touches a seat row itself.
    */
-  private stand(order: StandOrder, nowMs: number, why: string): boolean {
+  private async stand(order: StandOrder, nowMs: number, why: string): Promise<boolean> {
     /* Re-checked per seat: a break can begin between the snapshot and the last
        order in it. */
     if (isMaintenanceFrozen()) return false;
@@ -426,11 +456,15 @@ export class StableHandExecutor {
       this.noEngine++;
       return false;
     }
-    const result = engine.leaveTable(order.horseId);
-    /* Recorded whatever the answer: a refusal re-issued every 30 seconds is
-       the loop the cooldown exists to prevent. */
-    this.lastOrderedAt.set(yieldKey(order), nowMs);
+    /* NO `forced`. Chip continuity holds a player who is ahead of their buy-in
+       in the seat until a stay clock runs down, and a horse is held to it like
+       anybody else - a horse let out of a clock a human cannot escape is the
+       "equal outcome by a different mechanism" exemption Dan rejected. */
+    const result = await engine.leaveTable(order.horseId);
+    const key = yieldKey(order);
+
     if (result?.success) {
+      this.holdUntil.set(key, nowMs + YIELD_COOLDOWN_MS);
       console.log(
         `[StableHand] ${order.reason}: horse ${order.horseId.slice(0, 8)} stood from table ` +
           `${order.tableId.slice(0, 8)} - ${why} ` +
@@ -438,6 +472,19 @@ export class StableHandExecutor {
       );
       return true;
     }
+
+    /* A STAY CLOCK IS NOT A FAILURE, and it knows exactly when it lifts. Held
+       until then rather than for a flat cooldown: re-asking every thirty
+       seconds is thirty refusals a minute for a seat that answers the same way
+       every time until the clock reaches zero. */
+    if (result?.code === 'LEAVE_LOCKED') {
+      const remaining = Math.max(0, Number(result.stay_remaining_ms) || 0);
+      this.holdUntil.set(key, nowMs + remaining + 1_000);
+      this.stayLocked++;
+      return false;
+    }
+
+    this.holdUntil.set(key, nowMs + YIELD_COOLDOWN_MS);
     console.warn(
       `[StableHand] ${order.reason} refused for ${order.horseId.slice(0, 8)} at ` +
         `${order.tableId.slice(0, 8)}: ${result?.error ?? 'unknown'}`
@@ -489,17 +536,24 @@ export class StableHandExecutor {
       const orders = standOrdersFor(snap);
       const now = Date.now();
 
+      /* SEAT AND OPEN GO TO THE SEEDER, not to this module. Choosing which
+         horse, from which wallet, for how much, against a bankroll, a tag, a
+         mutex and a club membership is one implementation and it lives in
+         HorseFleetManager. Publishing is how the shape reaches it without
+         becoming a second answer to "may this horse sit here". */
+      publishPlan(orders.plan, now);
+
       /* YIELDS FIRST, ALWAYS. Somebody is waiting for one of these seats and
          nobody is waiting for a wind-down, so a yield never queues behind the
          shape of the floor. */
-      const yields = ripeYields(orders.yields, now, this.lastOrderedAt);
+      const yields = ripeYields(orders.yields, now, this.holdUntil);
       if (yields.heldByCap > 0) {
         console.warn(
           `[StableHand] yield cap hit: ${yields.heldByCap} ripe yield(s) deferred to the next ` +
             `cycle (ceiling ${MAX_YIELDS_PER_CYCLE})`
         );
       }
-      const winds = ripeWindDowns(orders.windDowns, now, this.lastOrderedAt);
+      const winds = ripeWindDowns(orders.windDowns, now, this.holdUntil);
 
       const hostOfTable = new Map<string, string>();
       for (const h of snap.hosts) for (const t of h.tables) hostOfTable.set(t.tableId, h.hostId);
@@ -508,7 +562,11 @@ export class StableHandExecutor {
       for (const r of yields.execute) {
         const waited = Math.round((now - r.waitingSinceMs) / 1000);
         if (
-          this.stand(r.order, now, `after ${Number.isFinite(waited) ? waited : 0}s of human wait`)
+          await this.stand(
+            r.order,
+            now,
+            `after ${Number.isFinite(waited) ? waited : 0}s of human wait`
+          )
         ) {
           stood++;
           const host = hostOfTable.get(r.order.tableId);
@@ -516,10 +574,23 @@ export class StableHandExecutor {
         }
       }
       for (const r of winds.execute) {
-        if (this.stand(r.order, now, `host ${r.hostId.slice(0, 8)} is above its occupancy curve`)) {
+        if (
+          await this.stand(
+            r.order,
+            now,
+            `host ${r.hostId.slice(0, 8)} is above its occupancy curve`
+          )
+        ) {
           stood++;
           this.executedWindDowns.set(r.hostId, (this.executedWindDowns.get(r.hostId) ?? 0) + 1);
         }
+      }
+      if (this.stayLocked > 0) {
+        console.log(
+          `[StableHand] ${this.stayLocked} stand(s) held by a stay clock - those horses are ` +
+            `ahead of their buy-in and stay seated, like anybody else`
+        );
+        this.stayLocked = 0;
       }
 
       /* The table flags. Not stands and not money: this marks a table so the

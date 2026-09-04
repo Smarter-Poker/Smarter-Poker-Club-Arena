@@ -27,6 +27,7 @@ import {
   isNightWindow,
   evaluateSit,
   gameKey,
+  variantLabel,
   killed as stableHandKilled,
   type SitRejection,
 } from './StableHand.js';
@@ -49,6 +50,8 @@ import {
   type StateMutation,
 } from './StableHandState.js';
 import { beatVerdict, lastBeatAt } from './StableHandBeats.js';
+import { seatBoosts, takeOpenOrders } from './StableHandPlanBus.js';
+import { stakeForBand } from './StableHandController.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
 import { clampSeatsForVariant, maxSeatsForVariant } from '../config/tableSeating.js';
@@ -1400,6 +1403,10 @@ export class HorseFleetManager {
         const host = hostOfTable.get(String(seat.table_id));
         if (host && !activeHostOf.has(seat.user_id)) activeHostOf.set(seat.user_id, host);
       }
+      /* WHAT THE SHAPE ASKED FOR. Empty when the controller is off or its plan
+         has expired, which puts every table back on its own per-table target -
+         today's behaviour, unchanged. */
+      const shapeBoosts = controllerEnabled() ? seatBoosts() : new Map<string, number>();
       let hostCapRefused = 0;
       if (stableHandCaps.size > 0) {
         console.log(
@@ -1660,6 +1667,19 @@ export class HorseFleetManager {
              cap this is `seatTarget - currentCount`, the same subtraction that
              was here before, and a table already at or over its target still
              seats nobody rather than standing anybody up. */
+          /* ── THE SHAPE'S OWN ASK ────────────────────────────────────────
+             `occupancyTargetFor` decides what ONE table should look like on
+             its own 22-minute drift. The planner decides what the FLOOR should
+             look like - 60% full, 20% with a seat open, 20% joinable - and
+             those are different questions. Where the planner has asked for a
+             table to be fuller, its number wins, clamped to the seats that
+             exist. It can only ever raise the target: a shape order that could
+             LOWER one would be a stand order, and stands go through the
+             executor where the leave path is. */
+          const boost = shapeBoosts.get(table.id);
+          if (boost !== undefined && boost > 0) {
+            seatTarget = Math.min(table.max_players, Math.max(seatTarget, currentCount + boost));
+          }
           const seatsAllowed = capBySeatedCount(seatTarget, currentCount, policy.maxPerTable);
           if (seatsAllowed <= 0) continue;
           let seatsNeeded = seatsAllowed;
@@ -2182,6 +2202,7 @@ export class HorseFleetManager {
       // V8 DEMAND RESPONSE: when every table of a config is effectively full,
       // spawn an overflow table so arriving humans always find a seat.
       await this.spawnOverflowTables(tables, allActiveSeats || []);
+      await this.openPlannedTables(tables, bodiesOnHost, stableHandCaps);
 
       // ...and the other direction, which never existed until 2026-08-19.
       // Note it now skips any table carrying `auto_extension` — see there.
@@ -2578,6 +2599,102 @@ export class HorseFleetManager {
       }
     } catch (err) {
       reportError(err, 'HorseFleet.tableLifecyclePass_error');
+    }
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  THE PLANNER'S OPEN ORDERS - the only path that creates a Stable Hand
+   *  table, and the most cautious thing in this file
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * `planFloor` asks for a table when the floor is BELOW its curve and the
+   * neediest stake band has nowhere to put anybody. That is a real gap and it
+   * is worth closing - but creating tables is the one order that can make the
+   * floor worse in the direction Dan has just spent a day pulling it back
+   * from ("fewer tables, more players at each"), so every rule here is a
+   * refusal:
+   *
+   *   - ONE table per host per cycle, whatever the order asked for;
+   *   - NEVER during the night window, when the other half of this system is
+   *     parking thin tables. Opening and parking on the same cycle is a
+   *     controller arguing with itself;
+   *   - NEVER while the host is at or above its occupancy cap. A new table
+   *     cannot be filled by bodies the curve does not allow;
+   *   - and ONLY when the host has NO open table of that variant at that
+   *     stake. This is what makes it safe: the count cannot creep, because a
+   *     second table of the same game is never opened, and there is no name to
+   *     collide with because there was nothing there.
+   *
+   * Tables opened here carry the HOST as club_id, so the snapshot sees them
+   * and the close and park machinery owns them. They are outside
+   * DEFAULT_TABLES, so neither ensureAllTablesExist nor spawnOverflowTables
+   * touches them.
+   */
+  private async openPlannedTables(
+    tables: Array<{ id: string; name: string; club_id?: string | null }>,
+    bodiesOnHost: ReadonlyMap<string, ReadonlySet<string>>,
+    caps: ReadonlyMap<string, number>
+  ): Promise<void> {
+    if (!controllerEnabled()) return;
+    if (isMaintenanceFrozen()) return;
+    // The night is for consolidating, not for opening.
+    if (isNightWindow(chicagoNow().hour)) return;
+
+    const orders = takeOpenOrders();
+    if (orders.length === 0) return;
+
+    const openedThisCycle = new Set<string>();
+    const existing = new Set(
+      tables.map((t) => `${String(t.club_id ?? '')}|${String(t.name ?? '').toLowerCase()}`)
+    );
+
+    for (const order of orders) {
+      try {
+        if (openedThisCycle.has(order.hostId)) continue;
+        const cap = caps.get(order.hostId);
+        if (cap !== undefined && (bodiesOnHost.get(order.hostId)?.size ?? 0) >= cap) continue;
+
+        const stake = stakeForBand(order.band);
+        if (!stake) continue;
+        const variant = String(order.variant ?? 'nlh').toLowerCase();
+        const name = `${variantLabel(variant)} ${stake.sb.toFixed(2)}/${stake.bb.toFixed(2)}`;
+        if (existing.has(`${order.hostId}|${name.toLowerCase()}`)) continue;
+
+        const { error } = await supabase.from('tables').insert({
+          club_id: order.hostId,
+          // The union's own board carries both, which is how every club in
+          // that union has always found these games. A standalone club has no
+          // union and must not be given one.
+          union_id: order.hostId === MIDWAY_UNION_ID ? MIDWAY_UNION_ID : null,
+          name,
+          game_type: 'cash',
+          game_variant: variant,
+          stakes: `${stake.sb}/${stake.bb}`,
+          small_blind: stake.sb,
+          big_blind: stake.bb,
+          min_buy_in: Math.round(stake.bb * 40 * 100) / 100,
+          max_buy_in: Math.round(stake.bb * 200 * 100) / 100,
+          max_players: clampSeatsForVariant(variant, 9),
+          current_players: 0,
+          status: 'waiting',
+          insurance_enabled: true,
+        });
+        if (error) {
+          // A name race between cycles is expected and harmless.
+          if (!(error.message || '').includes('duplicate')) {
+            reportError(error, 'HorseFleet.openPlannedTable_failed');
+          }
+          continue;
+        }
+        openedThisCycle.add(order.hostId);
+        console.log(
+          `[HorseFleet] Stable Hand opened "${name}" on host ${order.hostId.slice(0, 8)} - ` +
+            `the ${order.band} band had no ${variant} game and the floor is under its curve`
+        );
+      } catch (err) {
+        reportError(err, 'HorseFleet.openPlannedTables_error');
+      }
     }
   }
 

@@ -33,6 +33,7 @@ import {
   peakCap,
   nightCap,
   isNightWindow,
+  STAKE_LADDER,
   NIGHT_MIN_PLAYERS,
   nightTablesNeeded,
   MIDWAY_UNION_ID,
@@ -569,6 +570,19 @@ export type { ShapeBucket };
    a floor: an unreadable population yields no cap at all, which is exactly
    today's behaviour.
    ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * The blinds a new table of this band opens at.
+ *
+ * The HIGHEST rung inside the band, because the alternative - the lowest - puts
+ * every new micro table at 0.01/0.02, and a floor whose new games are always
+ * its cheapest is not a floor anybody grows into. Never above the phase clamp
+ * by construction: `stakeBandOf` returns null past it, so no band maps there.
+ */
+export function stakeForBand(band: StakeBand): { sb: number; bb: number } | null {
+  const inBand = STAKE_LADDER.filter((s) => stakeBandOf(s.bb) === band);
+  return inBand.length === 0 ? null : inBand[inBand.length - 1];
+}
 
 /**
  * The most unique BODIES each host may carry right now, from the 24-hour

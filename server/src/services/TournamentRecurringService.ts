@@ -224,6 +224,41 @@ export const BLIND_STRUCTURES = {
     floorMinutes: 2,
     anteFromLevel: 1,
   }),
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  THE FREE BUY LADDER, and why it is not TURBO
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Dan set the Free Buy at a 3,000 starting stack, a 10,000 add-on, and
+   * "ONE HOUR FOR LATE REG, THEN THE ADD ON PERIOD". Those three numbers
+   * together decide the structure, and TURBO cannot satisfy them. Measured on
+   * the real ladders before this was written:
+   *
+   *   BLIND_STRUCTURES.TURBO is 24 levels and 57 MINUTES END TO END. At the
+   *   one-hour mark the big blind is 1,500,000 against a 13,000 stack - ZERO
+   *   big blinds. The event would be a forced all-in lottery long before the
+   *   break, and the 10,000-chip add-on Dan specified would be worth nothing
+   *   by the time anybody could take it. Lengthening TURBO's levels does not
+   *   help: at 1.58x a level the blind is 10,000 by minute 60 either way.
+   *
+   * This ladder is chosen so the hour Dan asked for is still poker:
+   *
+   *   3,000 chips at a 25 big blind          120 BB to start
+   *   the hour ends inside level 11, bb 400   33 BB with the add-on taken
+   *   30 levels over 153 minutes              19 levels left after late reg
+   *
+   * `blindLadder.ts` exists because 38.1% of completed events ended with every
+   * chip in play worth under three big blinds. A Free Buy on TURBO would have
+   * joined them by design rather than by accident.
+   */
+  FREE_BUY: buildLadder({
+    startBigBlind: 25,
+    speed: 'STANDARD',
+    levels: 30,
+    openingMinutes: 6,
+    floorMinutes: 5,
+    anteFromLevel: 1,
+  }),
   // 40 levels at ~1.33x — the reference MTT ladder.
   STANDARD: buildLadder({
     startBigBlind: 50,
@@ -2412,7 +2447,7 @@ export class TournamentRecurringService {
           const row = freeBuyTournamentRow({
             host,
             due: d,
-            blindStructure: BLIND_STRUCTURES.TURBO,
+            blindStructure: BLIND_STRUCTURES.FREE_BUY,
             payoutStructure: PAYOUT_STRUCTURES.NINE,
             // NLH full ring. Written through the same clamp the engine applies
             // at deal time, so the row states what will actually be dealt.
@@ -2420,7 +2455,7 @@ export class TournamentRecurringService {
             // late_reg_levels is what the engine enforces; late_reg_mins is the
             // legacy fallback. Derived from the ladder rather than guessed, so
             // the hour Dan asked for is the hour the engine gives.
-            lateRegLevels: lateRegLevelsForMinutes(BLIND_STRUCTURES.TURBO, cfg.lateRegMinutes),
+            lateRegLevels: lateRegLevelsForMinutes(BLIND_STRUCTURES.FREE_BUY, cfg.lateRegMinutes),
           });
           const name = String(row.name);
           const startTime = String(row.start_time);

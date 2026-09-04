@@ -74,32 +74,39 @@ describe('a yield waits the delay the human has already served', () => {
   });
 });
 
-describe('the cooldown stops a settling seat being re-ordered every cycle', () => {
-  it('holds a seat ordered inside the cooldown', () => {
+describe('the hold stops a settling seat being re-ordered every cycle', () => {
+  /* The map is a NOT-BEFORE, not a last-ordered-at. An ordinary stand settles
+     inside the cooldown; one refused by the chip-continuity stay clock knows
+     exactly when it lifts, and those are not the same wait. */
+  it('holds a seat whose hold has not expired', () => {
     const o = order();
-    const last = new Map([[yieldKey(o), NOW - 30_000]]);
-    const r = ripeYields([req(o, 5 * 60_000)], NOW, last);
+    const hold = new Map([[yieldKey(o), NOW + 90_000]]);
+    const r = ripeYields([req(o, 5 * 60_000)], NOW, hold);
     expect(r.execute).toHaveLength(0);
     expect(r.heldByCooldown).toBe(1);
   });
 
-  it('releases it once the cooldown expires', () => {
+  it('releases it the moment the hold expires', () => {
     const o = order();
-    const last = new Map([[yieldKey(o), NOW - YIELD_COOLDOWN_MS - 1]]);
-    expect(ripeYields([req(o, 5 * 60_000)], NOW, last).execute).toHaveLength(1);
+    expect(
+      ripeYields([req(o, 5 * 60_000)], NOW, new Map([[yieldKey(o), NOW]])).execute
+    ).toHaveLength(1);
+    expect(
+      ripeYields([req(o, 5 * 60_000)], NOW, new Map([[yieldKey(o), NOW + 1]])).execute
+    ).toHaveLength(0);
   });
 
-  it('is longer than any cash hand, because leaveTable defers mid-hand', () => {
+  it('the ordinary cooldown is longer than any cash hand, because leaveTable defers mid-hand', () => {
     expect(YIELD_COOLDOWN_MS).toBeGreaterThanOrEqual(2 * 60_000);
   });
 
   it('the key is the SEAT, not the horse - a horse plays four tables at once', () => {
     expect(yieldKey(order({ tableId: 'a' }))).not.toBe(yieldKey(order({ tableId: 'b' })));
-    const last = new Map([[yieldKey(order({ tableId: 'a' })), NOW]]);
+    const hold = new Map([[yieldKey(order({ tableId: 'a' })), NOW + 60_000]]);
     const r = ripeYields(
       [req(order({ tableId: 'a' }), 5 * 60_000), req(order({ tableId: 'b' }), 5 * 60_000)],
       NOW,
-      last
+      hold
     );
     expect(r.execute.map((x) => x.order.tableId)).toEqual(['b']);
   });
@@ -348,10 +355,10 @@ describe('the per-host wind-down ceiling', () => {
     expect(r.execute.length + r.heldByCap).toBe(9);
   });
 
-  it('respects the settling cooldown, keyed by seat', () => {
+  it('respects the settling hold, keyed by seat', () => {
     const w = wind(MIDWAY_UNION_ID, 0);
-    const last = new Map([[yieldKey(w.order), NOW - 1000]]);
-    const r = ripeWindDowns([w], NOW, last);
+    const hold = new Map([[yieldKey(w.order), NOW + 1000]]);
+    const r = ripeWindDowns([w], NOW, hold);
     expect(r.execute).toHaveLength(0);
     expect(r.heldByCooldown).toBe(1);
   });
@@ -455,5 +462,58 @@ describe('SOURCE LAW: closing is marking, and the two flags never swap', () => {
 
   it('only ever touches the two Stable Hand hosts', () => {
     expect(src).toContain("in('club_id', [MIDWAY_UNION_ID, DSS_CLUB_ID])");
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CHIP CONTINUITY: a horse ahead of its buy-in stays, like anybody else
+
+   Operation Table Stakes slice 0 landed on main while this branch was open.
+   leaveTable became async and now refuses with LEAVE_LOCKED and the
+   milliseconds left on the stay clock when a player is up on the money they
+   put in.
+   ══════════════════════════════════════════════════════════════════════════ */
+describe('SOURCE LAW: the stay clock is respected, never forced', () => {
+  const raw = readFileSync(resolve(__dirname, 'StableHandExecutor.ts'), 'utf8');
+  const src = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
+  it('NEVER passes forced - a horse is held to the clock a human is held to', () => {
+    /* CLAUDE.md 10.5: there is no "equal outcome by a different mechanism"
+       exemption. A horse let out of a stay clock is exactly the thing Dan
+       rejected outright. */
+    // The interface DECLARES the opts (that is the engine's signature); the
+    // call site must not pass them.
+    expect(src).toContain('await engine.leaveTable(order.horseId);');
+    expect(src).not.toMatch(/engine\.leaveTable\([^)]*forced/);
+    expect(src).not.toContain('forced: true');
+    // exactly one call site, and it takes exactly one argument
+    const calls = src.match(/engine\.leaveTable\([^)]*\)/g) ?? [];
+    expect(calls).toEqual(['engine.leaveTable(order.horseId)']);
+  });
+
+  it('AWAITS the stand - an un-awaited promise is truthy and every refusal would read as a success', () => {
+    expect(src).toContain('const result = await engine.leaveTable(');
+    expect(src.match(/await this\.stand\(/g)?.length).toBe(2);
+  });
+
+  it('holds a stay-locked seat until the clock lifts, not for a flat cooldown', () => {
+    // Re-asking every thirty seconds is thirty refusals a minute for a seat
+    // that answers the same way until the clock reaches zero.
+    expect(src).toContain("if (result?.code === 'LEAVE_LOCKED') {");
+    expect(src).toContain('this.holdUntil.set(key, nowMs + remaining + 1_000);');
+  });
+
+  it('does not log a stay clock as a failure', () => {
+    // It is the rule working. It gets a counted, once-a-cycle line instead.
+    const lockBranch = src.slice(
+      src.indexOf("if (result?.code === 'LEAVE_LOCKED') {"),
+      src.indexOf('this.holdUntil.set(key, nowMs + YIELD_COOLDOWN_MS);\n    console.warn')
+    );
+    expect(lockBranch).not.toContain('console.warn');
+    expect(src).toContain('stand(s) held by a stay clock');
+  });
+
+  it('treats an unreadable remaining time as zero rather than as forever', () => {
+    expect(src).toContain('Math.max(0, Number(result.stay_remaining_ms) || 0)');
   });
 });

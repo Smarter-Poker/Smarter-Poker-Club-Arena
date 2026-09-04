@@ -345,6 +345,31 @@ export interface Stake {
   bb: number;
 }
 
+/**
+ * The name a table of this variant carries in the lobby.
+ *
+ * Title Case with no em dash, per CLAUDE.md section 5: a table name is copy a
+ * player reads. Unknown variants fall back to their own key upper-cased rather
+ * than to "NLH", because a table labelled as a game it is not dealing is worse
+ * than one labelled awkwardly.
+ */
+export const VARIANT_LABEL: Record<string, string> = {
+  nlh: 'NLH',
+  plo4: 'PLO',
+  plo5: 'PLO5',
+  plo6: 'PLO6',
+  plo8: 'PLO8',
+  pineapple: 'Crazy Pineapple',
+  short_deck: 'Short Deck',
+  flh: 'Limit Holdem',
+  flo8: 'Limit Omaha8',
+};
+
+export function variantLabel(variant: string): string {
+  const key = String(variant ?? '').toLowerCase();
+  return VARIANT_LABEL[key] ?? key.toUpperCase();
+}
+
 export const STAKE_LADDER: Stake[] = [
   { sb: 0.01, bb: 0.02 },
   { sb: 0.02, bb: 0.05 },

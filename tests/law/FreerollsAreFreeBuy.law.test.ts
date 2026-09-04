@@ -65,7 +65,7 @@ const MIGRATION = read('supabase/migrations/20260902183602_freerolls_are_free_bu
    requires the pin to move to the new mechanism in the same commit, so the
    tier-aware assertions below read this file, not the older one. */
 const PRICING = read(
-  'supabase/migrations/20260904032000_free_buy_tiers_may_set_their_own_price.sql'
+  'supabase/migrations/20260904065106_free_buy_tiers_may_set_their_own_price.sql'
 );
 const RECURRING = read('server/src/services/TournamentRecurringService.ts');
 const SCHEDULED = read('server/src/services/ScheduledTournamentService.ts');

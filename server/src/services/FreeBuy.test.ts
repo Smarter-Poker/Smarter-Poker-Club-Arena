@@ -31,7 +31,7 @@ describe('the two tiers carry Dan 2026-09-04 exactly', () => {
       addOnCost: 1,
       addOnChips: 10000,
       lateRegMinutes: 60,
-      blindStructure: 'TURBO',
+      blindStructure: 'FREE_BUY',
     });
   });
   it('$500 tier: same shape, $2 rebuy and $2 add-on', () => {
@@ -43,7 +43,7 @@ describe('the two tiers carry Dan 2026-09-04 exactly', () => {
       addOnCost: 2,
       addOnChips: 10000,
       lateRegMinutes: 60,
-      blindStructure: 'TURBO',
+      blindStructure: 'FREE_BUY',
     });
   });
   it('the first entry is free in both tiers - that is what makes it a Free Buy', () => {
@@ -376,10 +376,10 @@ describe('the late-reg level count is derived from the ladder, not guessed', () 
     expect(lateRegLevelsForMinutes([{ durationMinutes: 4 }], 0)).toBe(1);
   });
 
-  it('the real TURBO ladder lands within one level of the hour Dan asked for', () => {
-    const levels = lateRegLevelsForMinutes(BLIND_STRUCTURES.TURBO, 60);
-    const minutes = ladderMinutesThrough(BLIND_STRUCTURES.TURBO, levels);
-    expect(Math.abs(minutes - 60)).toBeLessThanOrEqual(4);
+  it('the real Free Buy ladder lands within one level of the hour Dan asked for', () => {
+    const levels = lateRegLevelsForMinutes(BLIND_STRUCTURES.FREE_BUY, 60);
+    const minutes = ladderMinutesThrough(BLIND_STRUCTURES.FREE_BUY, levels);
+    expect(Math.abs(minutes - 60)).toBeLessThanOrEqual(6);
   });
 });
 
@@ -413,7 +413,7 @@ describe('the row a Free Buy is created as', () => {
     freeBuyTournamentRow({
       host: FREE_BUY_HOSTS[hostIdx],
       due: dueFor('2026-07-15', hour),
-      blindStructure: BLIND_STRUCTURES.TURBO as unknown[],
+      blindStructure: BLIND_STRUCTURES.FREE_BUY as unknown[],
       payoutStructure: [{ place: 1, percentage: 100 }],
       tableSize: 9,
       lateRegLevels: 15,
@@ -516,5 +516,47 @@ describe('the field is sized to cover its own guarantee', () => {
 
   it('add-ons alone do not cover it, which is why rebuys are priced at all', () => {
     expect(freeBuyBreakEvenEntrants(std, 0)).toBeGreaterThan(std.maxPlayers);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE LADDER HAS TO SURVIVE THE HOUR DAN ASKED FOR
+
+   Three of his numbers decide this together: 3,000 to start, a 10,000 add-on,
+   and one hour of late registration. Measured against the house TURBO before
+   this was written: 24 levels, 57 MINUTES end to end, and a big blind of
+   1,500,000 at the one-hour mark - zero big blinds against a 13,000 stack, and
+   an add-on worth nothing by the time anyone could take it.
+   ══════════════════════════════════════════════════════════════════════════ */
+describe('the Free Buy ladder', () => {
+  const L = BLIND_STRUCTURES.FREE_BUY as Array<{ bigBlind: number; durationMinutes: number }>;
+  const START = 3000;
+  const EFFECTIVE = START + FREE_BUY_TIERS.standard.addOnChips;
+
+  it('starts deep: 3,000 chips is a real stack at level one', () => {
+    expect(START / L[0].bigBlind).toBeGreaterThanOrEqual(100);
+  });
+
+  it('is still poker at the hour, so the add-on is worth taking', () => {
+    const lv = lateRegLevelsForMinutes(L, 60);
+    const bb = L[lv - 1].bigBlind;
+    const depth = EFFECTIVE / bb;
+    expect(depth).toBeGreaterThanOrEqual(20);
+  });
+
+  it('OUTLASTS late registration - the break is not the end of the structure', () => {
+    const lv = lateRegLevelsForMinutes(L, 60);
+    expect(L.length - lv).toBeGreaterThanOrEqual(8);
+    expect(ladderMinutesThrough(L, L.length)).toBeGreaterThan(120);
+  });
+
+  it('and the house TURBO could not have done any of that', () => {
+    // Kept as a comparison rather than deleted: this is the number that
+    // decided the structure, and without it the next agent reads "STANDARD"
+    // as somebody's taste.
+    const T = BLIND_STRUCTURES.TURBO as Array<{ bigBlind: number; durationMinutes: number }>;
+    expect(ladderMinutesThrough(T, T.length)).toBeLessThan(60);
+    const lv = lateRegLevelsForMinutes(T, 60);
+    expect(EFFECTIVE / T[lv - 1].bigBlind).toBeLessThan(1);
   });
 });

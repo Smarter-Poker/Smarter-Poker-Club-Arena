@@ -49,7 +49,6 @@ import {
   logHandHistory,
   saveHandStateSnapshot,
   completeHandSnapshot,
-  saveHandSnapshotExtras,
   getActiveHandSnapshotFull,
   supabase,
   atomicCashout,
@@ -3581,22 +3580,18 @@ export abstract class ServerTableEngineBase {
         is_horse: p.is_horse ?? false,
       })),
       stage: state.stage,
+      // Phase 1.2 PR-D: pending deadlines.
+      // Phase 1.2 PR-E: disconnect FSM states.
+      //
+      // These used to be a SECOND statement against the row the line above had
+      // just inserted. Measured 2026-09-04: 1,210,782 such updates in one stats
+      // window against 1,209,476 inserts, on the largest table in the database,
+      // and only 16.5% of them HOT - so ~83% rewrote a ~1.7 KB tuple and all
+      // three indexes to fill in two columns we already had in hand. Folded
+      // into the insert. The row that lands is identical.
+      pendingDeadlines: deadlineScheduler.persistPending(this.tableId),
+      disconnectStates: this.disconnectEngine.getFsmStatesForTable(this.tableId),
     });
-
-    // Phase 1.2 PR-D: pending deadlines.
-    // Phase 1.2 PR-E: disconnect FSM states.
-    // Both live on the same snapshot row. Skip the UPDATE if there's
-    // nothing to write — saves an unnecessary round-trip for idle tables.
-    const pendingDeadlines = deadlineScheduler.persistPending(this.tableId);
-    const disconnectStates = this.disconnectEngine.getFsmStatesForTable(this.tableId);
-    if (pendingDeadlines.length > 0 || Object.keys(disconnectStates).length > 0) {
-      await saveHandSnapshotExtras({
-        tableId: this.tableId,
-        handNumber: this.handCount,
-        pendingDeadlines,
-        disconnectStates,
-      });
-    }
   }
 
   /**

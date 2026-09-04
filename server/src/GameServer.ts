@@ -30,6 +30,7 @@ import { ScheduledTournamentService } from './services/ScheduledTournamentServic
 import { TournamentMetrics } from './services/TournamentMetrics.js';
 import { SpinMetrics } from './services/SpinMetrics.js';
 import { ReplicationMetrics } from './services/ReplicationMetrics.js';
+import { alwaysOnPrometheusLines } from './observability/engineInstruments.js';
 import {
   planTableReopens,
   freshHumanWindowMs,
@@ -1504,6 +1505,12 @@ export class GameServer {
       // How far behind the realtime replication slot is, in bytes, per slot.
       // See services/ReplicationMetrics.ts.
       ...this.replicationMetrics.toPrometheus(),
+      // ── ACTION LATENCY, ALWAYS ON (Realtime programme Phase 1, 2026-09-04)
+      // The number that defines how a table feels, scraped for the first
+      // time. Two series (audience=human|horse), never per table. See
+      // observability/engineInstruments.ts and ActionLatency* in
+      // infra/monitoring/alert-rules.yml.
+      ...alwaysOnPrometheusLines(),
     ];
 
     // ── STATS PIPELINE (2026-09-04) ─────────────────────────────────────

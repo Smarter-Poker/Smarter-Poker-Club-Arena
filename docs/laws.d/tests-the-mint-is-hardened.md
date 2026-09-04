@@ -1,0 +1,3 @@
+# tests/the-mint-is-hardened.law.test.ts
+
+The Mint, audited and hardened (2026-09-04): the register ca_mint_ledger is append-only on the journal's terms with one row per leg as a unique index; fn_ca_mint and fn_ca_burn declare and find their journal leg by idempotency key, never by shape; an issuance ceiling (ca_mint_policy, per-operation and rolling 24h) is refused readably in the door and refused again at commit by the chip_ledger constraint trigger for every door, and raising it is a recorded change with a reason; the overview reconciles the register against the supply meter as of the meter's snapshot and says where every row came from; the free mint mint_club_chips and the stub mint_club_promo are closed

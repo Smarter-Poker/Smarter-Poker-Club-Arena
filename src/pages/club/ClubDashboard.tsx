@@ -1753,7 +1753,7 @@ export default function ClubDashboard() {
               <p className={styles.empty}>Loading Revenue...</p>
             ) : revenueError === 'restricted' ? (
               <p className={styles.empty}>
-                Revenue Is Restricted To Club Owners, Co-Owners, Admins And Super Agents
+                Revenue Is Restricted To Club Owners, Admins And Super Agents
               </p>
             ) : revenueError === 'failed' || !revenue ? (
               <p className={styles.empty}>The Revenue Figures Could Not Be Loaded</p>

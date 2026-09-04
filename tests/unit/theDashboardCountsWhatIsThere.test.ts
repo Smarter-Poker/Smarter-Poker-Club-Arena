@@ -335,9 +335,7 @@ describe('the revenue tab is offered to the finance roles and refused to everyon
   });
 
   it('names the refusal instead of calling it "No Revenue Data Available"', () => {
-    expect(PAGE).toContain(
-      'Revenue Is Restricted To Club Owners, Co-Owners, Admins And Super Agents'
-    );
+    expect(PAGE).toContain('Revenue Is Restricted To Club Owners, Admins And Super Agents');
     expect(PAGE).not.toContain('>No Revenue Data Available<');
   });
 

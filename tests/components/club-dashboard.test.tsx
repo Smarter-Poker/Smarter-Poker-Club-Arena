@@ -322,7 +322,7 @@ describe('the revenue tab', () => {
     await mountAndOpen('Revenue');
     await waitFor(() =>
       expect(
-        screen.getByText('Revenue Is Restricted To Club Owners, Co-Owners, Admins And Super Agents')
+        screen.getByText('Revenue Is Restricted To Club Owners, Admins And Super Agents')
       ).toBeTruthy()
     );
   });

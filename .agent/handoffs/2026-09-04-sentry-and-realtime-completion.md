@@ -1,3 +1,14 @@
+> **SUPERSEDED 2026-09-04 by [`docs/SENTRY-AND-REALTIME-PROGRAMME.md`](../../docs/SENTRY-AND-REALTIME-PROGRAMME.md).**
+> That file merges this handoff with the second Sentry handoff of the same day and
+> re-verifies every item against live production and `origin/main`. Five items below
+> are already shipped, moot, or forbidden.
+>
+> **In particular: section A1 of this document — gating the `hand_history` INSERT
+> triggers on `has_human` — was written, shipped, REJECTED BY DAN and REVERTED on
+> 2026-09-04 (PR #2913). It violates `CLAUDE.md` §10.5, eight law tests and
+> `scripts/ci/check-horses-are-players.mjs`. Do not revive it in any form.**
+> The programme fixes the same write amplification without denying a horse anything.
+
 # HANDOFF: Sentry completion + realtime WAL saturation
 
 **Issued** 2026-09-04 · **Scope** club-arena, Smarter-Poker-World-Hub, engine host, Supabase

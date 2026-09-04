@@ -13,7 +13,6 @@
  */
 
 import { supabase } from '../lib/supabase';
-import { getFreshAccessToken } from '../lib/authToken';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -45,7 +44,14 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
        logged in to. getFreshAccessToken() is the path every socket already
        uses: in-memory cache, then getSession() (which refreshes), then the
        raw localStorage session. A refreshSession() is the last resort before
-       going out unauthenticated. */
+       going out unauthenticated.
+
+       Imported lazily: this file is in the entry chunk and a static import
+       pulled authToken.ts (and its tree) into first paint - the entry-chunk
+       gate (scripts/ci/entry-chunk-delta.mjs) refused it. The call is on an
+       async path, so the import costs nothing the request was not already
+       waiting on, and the module is cached after the first. */
+    const { getFreshAccessToken } = await import('../lib/authToken');
     let token = await getFreshAccessToken();
     if (!token) {
       const refreshed = await supabase.auth.refreshSession();

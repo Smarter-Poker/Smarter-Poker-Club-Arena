@@ -854,7 +854,6 @@ export default function CashierTradePage() {
     const events = [
       'BALANCE_UPDATED',
       'CHIPS_ADDED',
-      'CHIPS_WITHDRAWN',
       'CHIPS_DISTRIBUTED',
       'CASHIER_BALANCE_CHANGED',
       'SETTLEMENT_COMPLETED',

@@ -101,11 +101,12 @@ describe('auto_restart reaches the column from the live creation path', () => {
   // (retireSurplusTables skips it) and auto_restart = true
   // (fn_table_lifecycle_pass reopens it). auto_create_table stays false
   // because the lifecycle pass's clone would not carry cluster_id.
-  const sql = src('supabase/migrations/20260904160500_cash_games_slice_1.sql');
+  const sql = src('supabase/migrations/20260904230000_cash_games_slice_1_hardening.sql');
 
   it('the cash create function writes the columns the lifecycle pass reads', () => {
     expect(sql).toMatch(/auto_extension, auto_restart, auto_create_table,/);
-    expect(sql).toMatch(/^\s*true, true, false,\s*$/m);
+    // R9: a must-move game keeps Main 1 alive; a manual table does not.
+    expect(sql).toMatch(/^\s*v_must_move, v_must_move, false,\s*$/m);
   });
 
   it('the dead modal path stayed deleted', () => {

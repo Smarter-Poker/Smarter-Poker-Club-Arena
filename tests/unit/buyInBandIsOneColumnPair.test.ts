@@ -81,7 +81,7 @@ describe('the cash buy-in band is one pair of columns', () => {
        `min_buy_in = v_min_bb` would recreate the unit mismatch this whole
        change exists to end. */
     const sql = readFileSync(
-      join(ROOT, 'supabase/migrations/20260904160500_cash_games_slice_1.sql'),
+      join(ROOT, 'supabase/migrations/20260904230000_cash_games_slice_1_hardening.sql'),
       'utf8'
     );
     for (const col of CANONICAL) {

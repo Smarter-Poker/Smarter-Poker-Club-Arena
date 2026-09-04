@@ -102,13 +102,16 @@ describe('canonical table management architecture', () => {
     // the same fn_club_union_context, onto both the cash_games row and its
     // Main 1 tables row.
     const sql = readFileSync(
-      resolve(__dirname, '../../supabase/migrations/20260904160500_cash_games_slice_1.sql'),
+      resolve(
+        __dirname,
+        '../../supabase/migrations/20260904230000_cash_games_slice_1_hardening.sql'
+      ),
       'utf8'
     );
     expect(sql).toMatch(/FROM public\.fn_club_union_context\(p_club_id\) ctx/);
     expect(sql).toMatch(/COALESCE\(ctx\.own_union_id, ctx\.member_union_id\)/);
     expect(sql).toMatch(
-      /\(p_club_id, v_union, v_name, v_t, v_v, p_sb, p_bb, v_seats, v_snap, v_uid\)/
+      /\(p_club_id, v_union, v_name, v_t, v_v, p_sb, p_bb, v_seats, v_snap, v_uid, v_must_move\)/
     );
     expect(sql).toMatch(/p_club_id, v_union, v_name, 'cash', v_v, 'regular',/);
   });

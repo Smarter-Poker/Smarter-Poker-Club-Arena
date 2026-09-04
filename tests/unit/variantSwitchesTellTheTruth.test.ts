@@ -31,7 +31,7 @@ const SELECT = read('server/src/services/supabase/tables.ts');
  * pins read those two instead of TableConfigPage.buildTableData.
  */
 const FLOW = read('src/components/cash/CashGameCreateFlow.tsx');
-const SQL = read('supabase/migrations/20260904160500_cash_games_slice_1.sql');
+const SQL = read('supabase/migrations/20260904230000_cash_games_slice_1_hardening.sql');
 
 describe('Pineapple Hold’em', () => {
   it('is reachable by the engine at all', () => {
@@ -83,7 +83,7 @@ describe('Seven-Deuce', () => {
     // the table will never honour. The snapshot ANDs it with the variant on
     // the way in, and the tables row is written from the snapshot.
     expect(SQL).toMatch(
-      /'seven_deuce_enabled', coalesce\(\(v_o->'options'->>'seven_deuce_enabled'\)::boolean, false\) AND v_v = 'nlh'/
+      /'seven_deuce_enabled', public\.fn_cash_override_bool\(v_oo, 'seven_deuce_enabled', false\) AND v_v = 'nlh'/
     );
     expect(SQL).toMatch(
       /\(v_opts->>'seven_deuce_enabled'\)::boolean, CASE WHEN \(v_opts->>'seven_deuce_enabled'\)::boolean THEN 2 ELSE 0 END/

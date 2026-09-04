@@ -9,9 +9,10 @@ DECLARE
   r text := E'PROBE-S1 REPORT\n';
   owner uuid := '__OWNER__';
   club uuid := '__CLUB__';
-  stranger uuid := '2a8c045e-cc0d-404f-896b-7e441a3c495a';
+  stranger uuid := '2a8c045e-cc0d-404f-896b-7e441a3c495a';   -- a member without create rights
+  outsider uuid;                                              -- not a member at all (picked below)
   sid uuid := gen_random_uuid();
-  j jsonb; msg text; n int; x record; g uuid; t uuid; s int;
+  j jsonb; msg text; n int; x record; g uuid; t uuid; t_sd uuid; s int;
 BEGIN
   EXECUTE $mig$
 __MIGRATION__
@@ -30,7 +31,7 @@ $mig$;
   SELECT role, main_index, lifecycle, max_players, min_buy_in, max_buy_in, stakes, name, status, ante_enabled, nit_game, bomb_pot_enabled INTO x FROM tables WHERE id = t;
   r := r || format(E'A1.1 classic nlh: tables=%s role=%s idx=%s lifecycle=%s seats=%s buyin=%s-%s stakes=%s name=%s status=%s ante=%s nit=%s bomb=%s %s\n',
         n, x.role, x.main_index, x.lifecycle, x.max_players, x.min_buy_in, x.max_buy_in, x.stakes, x.name, x.status, x.ante_enabled, x.nit_game, x.bomb_pot_enabled,
-        CASE WHEN n=1 AND x.role='main' AND x.main_index=1 AND x.max_players=9 AND x.min_buy_in=120 AND x.max_buy_in=600 AND x.stakes='1.5/3' AND NOT x.ante_enabled AND NOT x.nit_game AND NOT x.bomb_pot_enabled THEN 'PASS' ELSE 'FAIL' END);
+        CASE WHEN n=1 AND x.role='main' AND x.main_index=1 AND x.max_players=9 AND x.min_buy_in=120 AND x.max_buy_in=600 AND x.stakes='1.50/3' AND NOT x.ante_enabled AND NOT x.nit_game AND NOT x.bomb_pot_enabled THEN 'PASS' ELSE 'FAIL' END);
 
   -- R3 + union scope: Main 1 carries the keep-alive flags, and union_id is
   -- what fn_game_creation_access would have told the old page.
@@ -95,7 +96,7 @@ $mig$;
     r := r || format(E'ROE7 stay clock 5 refused: %s %s\n', msg, CASE WHEN msg LIKE 'STAY_CLOCK_BELOW_FLOOR%' THEN 'PASS' ELSE 'FAIL' END);
   END;
   j := public.fn_cash_game_create(club, 'classic', 'short_deck', 1, 2, 8, '{"stay_clock_min": 20, "rejoin_window_min": 240}'::jsonb, NULL);
-  t := (j->>'table_id')::uuid;
+  t_sd := (j->>'table_id')::uuid;
   r := r || format(E'ROE7 raised clocks accepted: snapshot stay=%s rejoin=%s seats=%s %s\n', j->'snapshot'->>'stay_clock_min', j->'snapshot'->>'rejoin_window_min', j->'snapshot'->>'seats',
         CASE WHEN (j->'snapshot'->>'stay_clock_min')::int=20 AND (j->'snapshot'->>'rejoin_window_min')::int=240 AND (j->'snapshot'->>'seats')::int=8 THEN 'PASS' ELSE 'FAIL' END);
 
@@ -108,14 +109,126 @@ $mig$;
     r := r || format(E'KEY duplicate refused: %s %s\n', msg, CASE WHEN msg LIKE 'GAME_EXISTS%' THEN 'PASS' ELSE 'FAIL' END);
   END;
 
+  -- ── Hardening (2026-09-04 audit) + R9 ───────────────────────────────────
+  -- H2/H7: a limit game is labelled by bet size, decimals print two places
+  j := public.fn_cash_game_create(club, 'classic', 'flh', 1, 2, 6, '{}'::jsonb, NULL);
+  SELECT name, stakes INTO x FROM tables WHERE id = (j->>'table_id')::uuid;
+  r := r || format(E'H2 flh 1/2 labelled by bet size: name=%s stakes=%s label(0.05,0.10)=%s %s\n', x.name, x.stakes, public.fn_cash_stakes_label(0.05, 0.10, 'nlh'),
+        CASE WHEN x.name='FLH 2/4 Classic' AND x.stakes='2/4' AND public.fn_cash_stakes_label(0.05,0.10,'nlh')='0.05/0.10' THEN 'PASS' ELSE 'FAIL' END);
+
+  -- H3: NaN and sub-cent blinds are STAKES_INVALID, not a raw cast or CHECK
+  BEGIN
+    PERFORM public.fn_cash_game_create(club, 'classic', 'nlh', 1, 'NaN'::numeric, NULL, '{}'::jsonb, NULL);
+    r := r || E'H3 FAIL NaN accepted\n';
+  EXCEPTION WHEN others THEN
+    GET STACKED DIAGNOSTICS msg = MESSAGE_TEXT;
+    r := r || format(E'H3 NaN refused: %s %s\n', msg, CASE WHEN msg LIKE 'STAKES_INVALID%' THEN 'PASS' ELSE 'FAIL' END);
+  END;
+  BEGIN
+    PERFORM public.fn_cash_game_create(club, 'classic', 'nlh', 0.005, 0.01, NULL, '{}'::jsonb, NULL);
+    r := r || E'H3 FAIL sub-cent accepted\n';
+  EXCEPTION WHEN others THEN
+    GET STACKED DIAGNOSTICS msg = MESSAGE_TEXT;
+    r := r || format(E'H3 sub-cent refused: %s %s\n', msg, CASE WHEN msg LIKE 'STAKES_INVALID%' THEN 'PASS' ELSE 'FAIL' END);
+  END;
+
+  -- H4: a malformed override names its key; bombs as an array is refused
+  BEGIN
+    PERFORM public.fn_cash_game_create(club, 'classic', 'nlh', 5, 10, NULL, '{"vpip_floor": "abc"}'::jsonb, NULL);
+    r := r || E'H4 FAIL bad override accepted\n';
+  EXCEPTION WHEN others THEN
+    GET STACKED DIAGNOSTICS msg = MESSAGE_TEXT;
+    r := r || format(E'H4 bad override refused: %s %s\n', msg, CASE WHEN msg LIKE 'OVERRIDE_INVALID: vpip_floor%' THEN 'PASS' ELSE 'FAIL' END);
+  END;
+  BEGIN
+    PERFORM public.fn_cash_game_create(club, 'action', 'nlh', 5, 10, NULL, '{"bombs": [1]}'::jsonb, NULL);
+    r := r || E'H4 FAIL bombs array accepted\n';
+  EXCEPTION WHEN others THEN
+    GET STACKED DIAGNOSTICS msg = MESSAGE_TEXT;
+    r := r || format(E'H4 bombs array refused: %s %s\n', msg, CASE WHEN msg LIKE 'OVERRIDE_INVALID: bombs%' THEN 'PASS' ELSE 'FAIL' END);
+  END;
+
+  -- R9: a manual table may be created twice at one key, carries no keep-alive flags, snapshot says so
+  j := public.fn_cash_game_create(club, 'classic', 'plo4', 5, 10, NULL, '{}'::jsonb, 'Hand Made', false);
+  PERFORM public.fn_cash_game_create(club, 'classic', 'plo4', 5, 10, NULL, '{}'::jsonb, 'Hand Made Two', false);
+  SELECT auto_extension, auto_restart, auto_create_table INTO x FROM tables WHERE id = (j->>'table_id')::uuid;
+  SELECT count(*) INTO n FROM cash_games WHERE club_id=club AND variant='plo4' AND sb=5 AND bb=10 AND NOT must_move;
+  r := r || format(E'R9 manual: two at one key=%s ext=%s restart=%s mode=%s must_move=%s %s\n', n, x.auto_extension, x.auto_restart, j->'snapshot'->>'table_mode', j->>'must_move',
+        CASE WHEN n=2 AND NOT x.auto_extension AND NOT x.auto_restart AND j->'snapshot'->>'table_mode'='manual' AND (j->>'must_move')::boolean=false THEN 'PASS' ELSE 'FAIL' END);
+  -- ...and a must-move game at that same key is still one per club
+  PERFORM public.fn_cash_game_create(club, 'classic', 'plo4', 5, 10, NULL, '{}'::jsonb, NULL, true);
+  BEGIN
+    PERFORM public.fn_cash_game_create(club, 'classic', 'plo4', 5, 10, NULL, '{}'::jsonb, NULL, true);
+    r := r || E'R9 FAIL second must-move game at one key accepted\n';
+  EXCEPTION WHEN others THEN
+    GET STACKED DIAGNOSTICS msg = MESSAGE_TEXT;
+    r := r || format(E'R9 must-move still one per key: %s %s\n', msg, CASE WHEN msg LIKE 'GAME_EXISTS%' THEN 'PASS' ELSE 'FAIL' END);
+  END;
+
+  -- H1: closing Main 1 closes the game, the lifecycle pass leaves it closed, the key frees up
+  j := public.fn_cash_game_create(club, 'action', 'plo6', 5, 10, NULL, '{}'::jsonb, NULL);
+  g := (j->>'game_id')::uuid; t := (j->>'table_id')::uuid;
+  EXECUTE 'RESET ROLE';   -- the browser learns the version from fn_list_managed_games; the probe reads it directly
+  SELECT coalesce(max(version), 1) INTO n FROM managed_game_contract_versions WHERE game_kind='table' AND game_id=t;
+  PERFORM set_config('request.jwt.claims', json_build_object('sub', owner, 'role', 'authenticated', 'session_id', sid)::text, true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  j := public.fn_execute_managed_game_command(gen_random_uuid(), 'table', t, 'close', n, '{}'::jsonb);
+  EXECUTE 'RESET ROLE';   -- the pass is the fleet's (service_role); run it as the engine would
+  PERFORM public.fn_table_lifecycle_pass();
+  PERFORM set_config('request.jwt.claims', json_build_object('sub', owner, 'role', 'authenticated', 'session_id', sid)::text, true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  SELECT g2.enabled, g2.state, (g2.closed_by = owner) AS by_owner, tb.status AS tstatus INTO x FROM cash_games g2 JOIN tables tb ON tb.id = t WHERE g2.id = g;
+  BEGIN
+    PERFORM public.fn_cash_game_create(club, 'action', 'plo6', 5, 10, NULL, '{}'::jsonb, NULL);
+    msg := 'recreated';
+  EXCEPTION WHEN others THEN
+    GET STACKED DIAGNOSTICS msg = MESSAGE_TEXT;
+  END;
+  r := r || format(E'H1 close main 1 (via the command door): ok=%s enabled=%s state=%s by_owner=%s table=%s after pass; recreate=%s %s\n', j->>'ok', x.enabled, x.state, x.by_owner, x.tstatus, msg,
+        CASE WHEN (j->>'ok')::boolean AND NOT x.enabled AND x.state='dormant' AND x.by_owner AND x.tstatus='closed' AND msg='recreated' THEN 'PASS' ELSE 'FAIL' END);
+  -- ...and a must-move game that is NOT closed is reopened by the pass (R3)
+  j := public.fn_cash_game_create(club, 'madness', 'plo6', 5, 10, NULL, '{}'::jsonb, NULL);
+  t := (j->>'table_id')::uuid;
+  EXECUTE 'RESET ROLE';
+  UPDATE tables SET status='closed' WHERE id = t;   -- something other than the host closed it
+  PERFORM public.fn_table_lifecycle_pass();
+  SELECT status INTO x FROM tables WHERE id = t;
+  r := r || format(E'R3 an open game reopens after a stray close: status=%s %s\n', x.status, CASE WHEN x.status='waiting' THEN 'PASS' ELSE 'FAIL' END);
+  PERFORM set_config('request.jwt.claims', json_build_object('sub', owner, 'role', 'authenticated', 'session_id', sid)::text, true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+
+  -- H5: a private game is invisible to a non-member; a public one is not
+  EXECUTE 'RESET ROLE';
+  SELECT p.id INTO outsider FROM profiles p
+   WHERE NOT EXISTS (SELECT 1 FROM club_members cm WHERE cm.user_id = p.id AND cm.club_id = club)
+     AND coalesce(p.is_horse, false) = false LIMIT 1;
+  PERFORM set_config('request.jwt.claims', json_build_object('sub', owner, 'role', 'authenticated', 'session_id', sid)::text, true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  j := public.fn_cash_game_create(club, 'classic', 'pineapple', 5, 10, NULL, '{"options": {"is_private": true}}'::jsonb, 'Secret');
+  g := (j->>'game_id')::uuid;
+  PERFORM public.fn_cash_game_create(club, 'classic', 'pineapple', 25, 50, NULL, '{}'::jsonb, 'Open');
+  EXECUTE 'RESET ROLE';
+  PERFORM set_config('request.jwt.claims', json_build_object('sub', outsider, 'role', 'authenticated', 'session_id', sid)::text, true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  SELECT count(*) FILTER (WHERE name='Secret') AS secret, count(*) FILTER (WHERE name='Open') AS open INTO x FROM cash_games WHERE club_id=club AND variant='pineapple';
+  r := r || format(E'H5 outsider sees private=%s public=%s %s\n', x.secret, x.open, CASE WHEN x.secret=0 AND x.open=1 THEN 'PASS' ELSE 'FAIL' END);
+  EXECUTE 'RESET ROLE';
+  PERFORM set_config('request.jwt.claims', json_build_object('sub', stranger, 'role', 'authenticated', 'session_id', sid)::text, true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  SELECT count(*) FILTER (WHERE name='Secret') AS secret INTO x FROM cash_games WHERE club_id=club AND variant='pineapple';
+  r := r || format(E'H5 member sees private=%s %s\n', x.secret, CASE WHEN x.secret=1 THEN 'PASS' ELSE 'FAIL' END);
+  EXECUTE 'RESET ROLE';
+  PERFORM set_config('request.jwt.claims', json_build_object('sub', owner, 'role', 'authenticated', 'session_id', sid)::text, true);
+  EXECUTE 'SET LOCAL ROLE authenticated';
+
   EXECUTE 'RESET ROLE';
   PERFORM set_config('request.jwt.claims', '', true);
 
   -- the session inherits the game's raised clocks (engine buy-in at the short-deck table)
-  SELECT MIN(gs) INTO s FROM generate_series(1,(SELECT max_players FROM tables WHERE id=t)) gs
-   WHERE NOT EXISTS (SELECT 1 FROM table_seats ts WHERE ts.table_id=t AND ts.seat_number=gs AND ts.left_at IS NULL);
-  PERFORM public.atomic_table_buyin(stranger, t, s, 100, false, NULL, NULL);
-  SELECT stay_clock_ms, rejoin_window_ms, stay_remaining_ms INTO x FROM cash_player_session WHERE player_id=stranger AND scope_id=t AND closed_at IS NULL;
+  SELECT MIN(gs) INTO s FROM generate_series(1,(SELECT max_players FROM tables WHERE id=t_sd)) gs
+   WHERE NOT EXISTS (SELECT 1 FROM table_seats ts WHERE ts.table_id=t_sd AND ts.seat_number=gs AND ts.left_at IS NULL);
+  PERFORM public.atomic_table_buyin(stranger, t_sd, s, 100, false, NULL, NULL);
+  SELECT stay_clock_ms, rejoin_window_ms, stay_remaining_ms INTO x FROM cash_player_session WHERE player_id=stranger AND scope_id=t_sd AND closed_at IS NULL;
   r := r || format(E'SESSION inherits clocks: stay=%s rejoin=%s remaining=%s %s\n', x.stay_clock_ms, x.rejoin_window_ms, x.stay_remaining_ms,
         CASE WHEN x.stay_clock_ms=1200000 AND x.rejoin_window_ms=14400000 AND x.stay_remaining_ms=1200000 THEN 'PASS' ELSE 'FAIL' END);
 

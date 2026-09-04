@@ -537,6 +537,39 @@ club 200, a club he is not a member of 403/42501, anon 401.
 
 ## 9. Phase 7 - Money movement
 
+**FIRST, AND MEASURED BY THE PHASE 6 GATE (2026-09-04): the rake-by-agent
+breakdown cannot be read at this club's volume, and the page retries it into
+the ground.** Opening `/clubs/<slug>/data` in a browser:
+
+```
+ca_club_data_snapshot   200 in  300-1,000ms
+ca_rake_snapshot        500 in  ~8,200ms   (57014 statement timeout)  x7 in 14s
+```
+
+The tiles sit on dashes and "Reading Rollups" for ever. Inside
+`ca_rake_snapshot`, `fn_ca_rake_window` is 0.6s and `fn_ca_rake_series` 0.13s;
+**`fn_ca_rake_by_agent` is 29.7 seconds**. Its `from_live` CTE recomputes
+per-player rake for every day not yet in `club_rake_rollup_complete` - which is
+always today - by calling `fn_rake_shares_for_record` once per raked hand:
+61,156 hands today, each doing an indexed lookup into `rake_attributions` plus
+a NOT EXISTS. Expanding the same rows set-based instead of per-hand still costs
+11.5 seconds, so this is not a query to tune: **the per-player live edge has to
+stop being recomputed on every page load**, exactly as the club-level figure
+did in phase 6 (`ca_club_rake_daily`).
+
+The shape that fits: `rake_attributions` already carries the per-player credit
+the engine wrote at hand time, and `club_rake_daily_user` (the completed-day
+rollup) is built from it - so one grouped read of `rake_attributions` over the
+incomplete days, behind an index on `(club_id, created_at)`, replaces 61,156
+lookups with one range scan AND makes the live edge agree with the rolled-up
+days by construction. It belongs here rather than in phase 6 because it is the
+agent breakdown, and because it needs an index build on a hot table inside a
+maintenance freeze.
+
+The retry storm itself is already fixed (`RakeSnapshotPanel` no longer lets the
+money-event firehose re-issue a read that is failing), so the page now fails
+once a minute instead of seven times in fourteen seconds - but it still fails.
+
 The write paths are the best-defended code in the workspace and this phase must
 not "improve" them: `fn_agent_wallet_send` and its claim-back take a mandatory
 `p_op_id`, take an advisory lock, replay on the op id, and refuse a retry key

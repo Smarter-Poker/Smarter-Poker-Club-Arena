@@ -5,7 +5,7 @@
 
 Three independent branches could swallow that click. The drawer's own e2e
 spec never caught any of them because `tests/e2e/routes/hamburger-menu.spec.ts`
-asserts Log Out is *visible* and never clicks it.
+asserts Log Out is _visible_ and never clicks it.
 
 ## 1. A failed signOut left the session in place, and the safety net restored it
 

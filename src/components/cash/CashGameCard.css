@@ -1,0 +1,125 @@
+/* THE CASH GAME CARD. The artwork is the layout; every text zone is placed in
+   percent of the 784 x 1168 frame (see CashGameCard.tsx ZONES) and sized in
+   container-query units, so one set of numbers serves 340px and 784px alike.
+   Mobile first: a card fills its column; the lobby grid decides how many. */
+
+.cgc {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 784 / 1168;
+  container-type: inline-size;
+  overflow: hidden;
+  user-select: none;
+  --cgc-size: 9cqw;
+  --cgc-fit: 1;
+  --cgc-text: #d9dde2;
+  --cgc-accent: #3ee5ea;
+  --cgc-shadow: rgba(0, 0, 0, 0.9);
+  font-family: 'Roboto Condensed', 'Rajdhani', system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cgc-text);
+}
+
+.cgc--classic {
+  --cgc-accent: #3ee5ea;
+}
+.cgc--action {
+  --cgc-accent: #4be05a;
+}
+.cgc--madness {
+  --cgc-accent: #ff3b3b;
+}
+
+.cgc__art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+}
+
+.cgc__zone {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  line-height: 1;
+  pointer-events: none;
+  text-shadow:
+    0 0.15cqw 0.4cqw var(--cgc-shadow),
+    0 0 1.2cqw rgba(0, 0, 0, 0.6);
+}
+
+/* "$1 / $2": the biggest dynamic line, brushed silver like the title. */
+.cgc__zone {
+  font-size: calc(var(--cgc-size) * var(--cgc-fit, 1));
+}
+
+.cgc__stakes {
+  color: #e6e9ee;
+  background: linear-gradient(180deg, #ffffff 0%, #cfd4da 45%, #8e959e 55%, #dfe3e8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: none;
+  filter: drop-shadow(0 0.3cqw 0.3cqw rgba(0, 0, 0, 0.85));
+}
+
+.cgc__variant {
+  --cgc-size: 4.8cqw;
+  letter-spacing: 0.1em;
+  color: var(--cgc-accent);
+  text-shadow: 0 0 1.4cqw color-mix(in srgb, var(--cgc-accent) 55%, transparent);
+}
+
+.cgc__status,
+.cgc__mode {
+  --cgc-size: 3.5cqw;
+  letter-spacing: 0.08em;
+  color: #f2f4f6;
+}
+.cgc--waiting .cgc__status,
+.cgc--dormant .cgc__status {
+  color: #b9c0c8;
+}
+.cgc__mode {
+  color: #cfd4da;
+}
+
+.cgc__row {
+  --cgc-size: 3.6cqw;
+  justify-content: flex-end;
+  padding-right: 4cqw;
+  color: #dfe3e8;
+}
+
+.cgc__rules {
+  --cgc-size: 2cqw;
+  letter-spacing: 0.06em;
+  color: #c9ced5;
+}
+
+/* The button faces are painted; these are their hit areas. */
+.cgc__hit {
+  position: absolute;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 1.5cqw;
+  -webkit-tap-highlight-color: transparent;
+}
+.cgc__hit:focus-visible {
+  outline: 0.4cqw solid var(--cgc-accent);
+  outline-offset: 0.3cqw;
+}
+.cgc__hit:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+.cgc__hit:disabled {
+  cursor: not-allowed;
+  background: rgba(0, 0, 0, 0.45);
+}

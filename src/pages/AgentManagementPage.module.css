@@ -1485,3 +1485,110 @@
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
+
+/* Wallet rows: the three balances name themselves. */
+.walletLabel {
+  min-width: 3.25rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Exclusion dialog */
+.banOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0.75rem;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.banDialog {
+  width: 100%;
+  max-width: 440px;
+  padding: 1rem;
+  border-radius: 14px;
+  background: var(--bg-elevated, #12131a);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.banDialog h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.banHelp {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.banField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.banField textarea,
+.banField select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  font: inherit;
+}
+
+.banActions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.banCancel,
+.banConfirm {
+  padding: 0.55rem 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.banConfirm {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.banCancel:disabled,
+.banConfirm:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+@media (min-width: 640px) {
+  .banOverlay {
+    align-items: center;
+  }
+}
+
+.capNotice {
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.08);
+  color: #fbbf24;
+  font-size: 0.8rem;
+}

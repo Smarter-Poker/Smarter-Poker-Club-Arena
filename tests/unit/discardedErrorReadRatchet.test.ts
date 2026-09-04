@@ -66,7 +66,10 @@ const BASELINE = new Map<string, number>([
   ['src/services/HorseOrchestrator.ts', 8],
   // 13 -> 12: phase 3 of 7 removed distributeFromTreasury, distributeChips and
   // transferToAgent, and rewired transferToPlayer onto fn_agent_wallet_send.
-  ['src/services/AgentService.ts', 12],
+  // 12 -> 11 on 2026-09-03: phase 3 removed clawbackDistribution and
+  // getRecentDistributions, a dead parallel implementation of agent undo whose
+  // reads went nowhere anyway.
+  ['src/services/AgentService.ts', 11],
   ['src/pages/UnionDashboardPage.tsx', 10],
   ['src/services/UnionService.ts', 12],
   ['src/pages/AdminDashboardPage.tsx', 7],
@@ -97,7 +100,7 @@ const BASELINE = new Map<string, number>([
   ['src/pages/tournament/TournamentLobbyPage.tsx', 3],
   ['src/pages/VIPPage.tsx', 3],
   ['src/pages/RakebackDashboard.tsx', 3],
-  ['src/pages/PlayerSessionsPage.tsx', 3],
+  ['src/pages/PlayerSessionsPage.tsx', 2],
   ['src/pages/NotificationsPage.tsx', 3],
   ['src/pages/ClubRulesPage.tsx', 3],
   ['src/pages/CashierTradePage.tsx', 0],

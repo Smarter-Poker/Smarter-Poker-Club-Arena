@@ -7,6 +7,8 @@
  * open for activated CLUB owners, not just the house board.
  * Dan, 2026-09-02: DSS horses "PLAY OPENLY INSIDE THE DEEP STACK SOCIETY ONLY."
  * Dan, 2026-09-02 and again 2026-09-03: those boards sit at 1/2 forever.
+ * Dan, 2026-09-03 (afternoon): the club's MTT schedule mirrors the Midway
+ * Union's - which only means anything if those events can fill.
  *
  * One story. checkAndLaunchSNGs was taught to open boards for activated club
  * owners; topUpWithHorses was never taught to fill them and refused every
@@ -63,24 +65,23 @@ describe('automatedRegistrationIsPermitted', () => {
   });
 });
 
-describe('a seat-first board fills wherever it was opened', () => {
+describe('a board fills wherever it was opened, whatever its format', () => {
   const body = topUpSource();
 
-  it('the refusal applies to MTT registration ONLY, never to a seat-first board', () => {
-    // `!seatFirst &&` is the whole fix: without it, a club board opened by
-    // checkAndLaunchSNGs could never be topped up and never started.
-    expect(body).toMatch(/!seatFirst &&\s*!automatedRegistrationIsPermitted\(/);
+  it('the top-up never consults the house-only predicate (Dan 2026-09-03)', () => {
+    // The seat-first half of the gate went on the morning of 09-03; the MTT
+    // half went that afternoon, when it turned out to be the reason every
+    // scheduled Deep Stack Society event sat at 0.3 entrants. The pool is
+    // club-scoped for every format, so there is nothing left for a gate to do.
+    expect(body).not.toMatch(/automatedRegistrationIsPermitted\(/);
   });
 
-  it('and it no longer pays for its own refusal', () => {
-    // The refusal branch used to call fn_sync_seat_first_player_count on every
-    // attempt - ~100 ms, every 12 seconds, per unfillable board, forever.
-    const refusal = body.slice(
-      body.indexOf('!automatedRegistrationIsPermitted('),
-      body.indexOf('MEASURE THE SHORTFALL')
-    );
-    expect(refusal).not.toMatch(/rpc\('fn_sync_seat_first_player_count'/);
-    expect(refusal).toMatch(/return 0;/);
+  it('and a refused top-up never paid for its own refusal', () => {
+    // The old refusal branch called fn_sync_seat_first_player_count on every
+    // attempt - ~100 ms, every 12 seconds, per unfillable board, forever. With
+    // the gate gone the only sync left is the one after a real seat change.
+    const beforeShortfall = body.slice(0, body.indexOf('MEASURE THE SHORTFALL'));
+    expect(beforeShortfall).not.toMatch(/rpc\('fn_sync_seat_first_player_count'/);
   });
 });
 

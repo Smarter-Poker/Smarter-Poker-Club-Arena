@@ -30,6 +30,8 @@
  * NEVER refer to the horses as "bots" — they are HORSES only.
  */
 
+import { potLimitRaiseTo } from './BettingStructure.js';
+
 export type PreflopPosition = 'early' | 'middle' | 'late' | 'sb' | 'bb';
 
 export interface PreflopIntent {
@@ -228,6 +230,73 @@ const PUSH_FOLD_MAX_BB = 22;
  * SB (folded to) ~40% raise plus a limp mix.  Full ring tightens UTG below
  * (see the tableSize adjustment where the bar is applied).
  */
+/**
+ * ═══ PLO PREFLOP SIZING IS POT-LIMIT SIZING (Dan, 2026-09-03, binding) ═══
+ *
+ * Dan: "horses min-raising in PLO is unacceptable ... a min-raise is NOT the
+ * standard PLO opening raise." Measured against production on 2026-09-02 over
+ * 40,232 PLO opens: the average open was 2.62x BB, 37.4% of opens were at or
+ * under 2x BB, and only 11.7% were pot or bigger. The same day's NLH opens
+ * averaged 2.87x with 26.8% min-raises - the POT-LIMIT games were opening
+ * SMALLER than the no-limit game, which is backwards, and 786 of the 825
+ * horses with five or more PLO opens did it. One shared code path, not a
+ * persona dial.
+ *
+ * The path was the V28 open-size ladder below: `2.2 + rand()*0.8` big blinds,
+ * trimmed to 2.05-2.40 with an ante and 2.0-2.4 at 25bb or less (its own
+ * comment says "min-raise territory"), then multiplied by the persona's
+ * sizingMultiplier, whose base runs down to 0.88 before style modifiers. That
+ * is a no-limit ladder, and nothing in it had ever asked what betting
+ * structure the game was played under. A 2x PLO open gives everyone behind an
+ * unfoldable price, guarantees a multiway pot, and buys no fold equity.
+ *
+ * A pot-sized raise is the standard open, the standard 3-bet and the standard
+ * 4-bet in Omaha, so under pot limit the CEILING is the target. The size comes
+ * from `potLimitRaiseTo` - the engine's own pot-limit formula read off the
+ * live pot - so it stays correct with antes, straddles, dead blinds and
+ * limpers instead of being a multiple of the big blind that happens to be
+ * right at 1/2 six-handed and wrong everywhere else.
+ */
+
+/**
+ * The floor for a PLO OPEN, in big blinds (in a straddled pot, in straddles -
+ * the unit the open is sized off). Dan: a min-raise open must be unreachable,
+ * not merely rare. Nothing below this reaches the felt except the pot-limit
+ * ceiling itself and an all-in for less, both of which are the largest legal
+ * wager available.
+ */
+export const PLO_MIN_OPEN_BB = 3;
+
+/**
+ * How far below the pot a persona's sizing dial may shade a pot-limit raise.
+ * Pot is correct; a shade under it exists only so the fleet is not sizing
+ * every raise to the same cent, which is itself a tell. At 0.92 the band runs
+ * 3.22-3.50bb for a first-in open from a non-blind seat, which sits inside
+ * the 3.2-3.5x average Dan asked for; the floor above is the hard guarantee
+ * underneath it, not the operating point, and it binds only where the pot is
+ * genuinely smaller (the small blind, where a pot raise IS 3x).
+ */
+export const PLO_SIZE_MIN_FRACTION = 0.92;
+
+/**
+ * Size a pot-limit preflop raise. `potTo` is the pot-limit ceiling from
+ * `potLimitRaiseTo`; `floorTo` is an absolute floor (the open floor above, or
+ * 0 for a re-raise, where the min-raise rules already bind well above a
+ * min-open). The result never exceeds the ceiling, so when the ceiling is
+ * itself below the floor - a stack shorter than one pot raise - the largest
+ * legal wager wins and `legalize` turns it into the all-in it is.
+ */
+export function ploRaiseTo(
+  sizingMultiplier: number,
+  potTo: number,
+  rand: () => number,
+  floorTo = 0
+): number {
+  const shade = Math.max(PLO_SIZE_MIN_FRACTION, Math.min(1, sizingMultiplier));
+  const frac = shade + rand() * (1 - shade);
+  return Math.min(potTo, Math.max(potTo * frac, floorTo));
+}
+
 const OPEN_THRESH: Record<PreflopPosition, number> = {
   early: 0.56, // ~15% (was 0.62 = 12%)
   middle: 0.48, // ~20% (was 0.54 = 17%)
@@ -539,6 +608,14 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     : Math.min(stack, 3 * currentBet + Math.max(0, pot - currentBet));
   const commitRatio = stack > 0 ? potRaiseCost / stack : 1;
   /**
+   * The EXACT pot-limit raise-to ceiling for this decision. `potRaiseCost`
+   * above is an approximation that feeds the commitment-zone THRESHOLDS, and
+   * it is deliberately left alone - moving a threshold is a strategy change
+   * and needs league evidence. This is the number every pot-limit raise is
+   * SIZED to, which is a correctness question, not a strategy one.
+   */
+  const potRaiseTo = potLimitRaiseTo(pot, currentBet, toCall);
+  /**
    * ═══ V34 (2026-09-02): A COMMITMENT ZONE IS ABOUT RAISING, NOT CALLING ═══
    *
    * The zone was one gate for both shapes of decision, and at 0.25 it
@@ -657,7 +734,10 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       if (strength >= t(commitBar)) {
         // Sized as a pot raise; the engine clamps it, and at this depth that
         // clamp IS the all-in.
-        return { a: 'raiseTo', to: unopened ? bb * 3.5 : potRaiseCost };
+        // Sized as a pot raise off the live pot; the engine clamps it, and
+        // at this depth that clamp IS the all-in. (Was `bb * 3.5`, which is
+        // the pot only in an ante-free, straddle-free, limper-free 1/2 game.)
+        return { a: 'raiseTo', to: potRaiseTo };
       }
       if (toCall === 0) return { a: 'check' };
       return { a: 'fold' };
@@ -678,7 +758,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     // test drove the sequence end to end.
     if (investedShare >= 0.28) callOff -= 0.18;
     if (strength >= t(Math.max(0.34, callOff))) {
-      return { a: 'raiseTo', to: potRaiseCost };
+      return { a: 'raiseTo', to: potRaiseTo };
     }
     if (toCall === 0) return { a: 'check' };
     return { a: 'fold' };
@@ -784,7 +864,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     (raiserPosition === 'late' || raiserPosition === 'middle') &&
     strength >= t((raiserPosition === 'late' ? 0.72 : 0.78) - anteWiden)
   ) {
-    return { a: 'raiseTo', to: potRaiseCost };
+    return { a: 'raiseTo', to: potRaiseTo };
   }
 
   // V20 YELLOW ZONE RESHOVE: at M<12 the reshove is the whole playbook —
@@ -867,6 +947,19 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       // it: antes pull toward ~2.2x (the dead money already pays the raise),
       // short stacks open smaller (min-raise territory), deep cash opens a
       // shade bigger. Late position opens the smaller end of its band.
+      // ═══ POT LIMIT OPENS POT (Dan 2026-09-03) ═══ The ladder below is a
+      // NO-LIMIT ladder — see the PLO_MIN_OPEN_BB header for the 40,232-open
+      // measurement that found it running the pot-limit games. Under pot
+      // limit the open is the pot, floored so a min-raise open cannot be
+      // produced at all. `potRaiseTo` already carries the straddle, the
+      // antes, the dead blinds and one pot's worth per limper, so none of
+      // the ladder's adjustments below have anything left to add.
+      if (ctx.isPotLimit) {
+        return {
+          a: 'raiseTo',
+          to: ploRaiseTo(ctx.sizingMultiplier, potRaiseTo, rand, PLO_MIN_OPEN_BB * openUnit),
+        };
+      }
       let baseOpen = 2.2 + rand() * 0.8;
       if (ctx.anteInPlay) baseOpen = 2.05 + rand() * 0.35;
       else if (stackBB <= 25) baseOpen = 2.0 + rand() * 0.4;
@@ -982,6 +1075,15 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       // ~3.2x out) — the stack behind it is what makes the size, and a cash
       // 3.8x from a 30bb stack is a third of it. Solver MTT 3-bets sit at
       // 2.3-2.6x IP / 3-3.5x OOP at those depths.
+      // Pot limit: a PLO 3-bet is a pot raise. The multiplier below is a
+      // no-limit shape — out of position it asks for more than the pot and is
+      // clamped down to it, in position it asks for 2.5-3.0x and LANDS under
+      // it, which is where the 2.5x-open pots Dan flagged kept getting built
+      // cheaply. Sizing to the ceiling makes both cases the same number, and
+      // the number the game actually allows.
+      if (ctx.isPotLimit) {
+        return { a: 'raiseTo', to: ploRaiseTo(ctx.sizingMultiplier, potRaiseTo, rand) };
+      }
       const mult = (ip ? 3.0 : 3.8) - tourney3betTrim + callers * 1.0 + rand() * 0.4;
       return { a: 'raiseTo', to: currentBet * mult * ctx.sizingMultiplier };
     }
@@ -1025,6 +1127,9 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       strength < threeBetThresh &&
       rand() < bluffFreqHere
     ) {
+      if (ctx.isPotLimit) {
+        return { a: 'raiseTo', to: ploRaiseTo(ctx.sizingMultiplier, potRaiseTo, rand) };
+      }
       const ip = position === 'late';
       const mult = (ip ? 3.0 : 3.8) - tourney3betTrim + rand() * 0.4;
       return { a: 'raiseTo', to: currentBet * mult * ctx.sizingMultiplier };
@@ -1155,6 +1260,10 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
           return { a: 'call' };
         }
         return { a: 'jam' };
+      }
+      // Pot limit: the 4-bet is a pot raise for the same reason the 3-bet is.
+      if (ctx.isPotLimit) {
+        return { a: 'raiseTo', to: ploRaiseTo(ctx.sizingMultiplier, potRaiseTo, rand) };
       }
       const mult = 2.2 + rand() * 0.4;
       return { a: 'raiseTo', to: currentBet * mult * ctx.sizingMultiplier };

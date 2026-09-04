@@ -86,6 +86,25 @@ export interface CreateAgentInput {
   isPrepaid?: boolean;
 }
 
+/**
+ * A send this agent can still take back, as fn_agent_wallet_reversible
+ * describes it. `seconds_left` is computed by the database against
+ * `reversible_until`, so the countdown an operator sees and the clock that
+ * decides whether the claim back is allowed are the same clock.
+ */
+export interface ReversibleDistribution {
+  transaction_id: string;
+  to_user_id: string;
+  to_name: string;
+  amount: number;
+  claimed_back: number;
+  remaining: number;
+  destination: string;
+  created_at: string;
+  reversible_until: string;
+  seconds_left: number;
+}
+
 export interface AgentPlayer {
   id: string;
   userId: string;
@@ -281,9 +300,15 @@ class AgentServiceClass {
     // DEFINER RPC, which authorizes the caller as the club owner/admin, enforces
     // the sub-agent parent rate caps, inserts the agent, and syncs the
     // club_members role. The direct browser insert here silently no-op'd.
+    /* Every other method in this file resolves first, and this one did not:
+       the club id reaching here comes from a route param, which is a slug or a
+       six-digit code as often as it is a uuid, so "Create Agent" failed with an
+       invalid-uuid error on every club URL that was not already a uuid. */
+    const resolvedCreateClubId = await resolveClubUUID(input.clubId);
+
     const { data: res, error } = await supabase.rpc('fn_create_agent', {
       p_user_id: input.userId,
-      p_club_id: input.clubId,
+      p_club_id: resolvedCreateClubId,
       p_role: input.role,
       p_parent_agent_id: input.parentAgentId ?? null,
       p_commission_rate: input.commissionRate,
@@ -803,14 +828,24 @@ class AgentServiceClass {
   /**
    * Get players under an agent
    */
-  async getAgentPlayers(agentId: string): Promise<AgentPlayer[]> {
+  async getAgentPlayers(agentId: string, clubId?: string): Promise<AgentPlayer[]> {
     const { data: agent } = await supabase
       .from('agents')
-      .select('user_id')
+      .select('user_id, club_id')
       .eq('id', agentId)
       .maybeSingle();
 
     if (!agent?.user_id) return [];
+
+    /* SCOPED TO ONE CLUB. This query had no club filter, so it returned the
+       agent's players from EVERY club they hold an agents row in. That list is
+       what SuperAgentDashboard counts on its stat card and offers in its
+       transfer picker - and the transfer it then makes is scoped to the club
+       being viewed, so an operator could pick a name that belongs to another
+       club entirely. The agent row names its own club; a caller may override
+       it, and neither may be omitted. */
+    const scopedClubId = clubId ? await resolveClubUUID(clubId) : agent.club_id;
+    if (!scopedClubId) return [];
 
     // club_members.agent_id is a FK to users(id) and stores the agent's USER id
     // (not membership_id) everywhere it is written — filter on that.
@@ -818,6 +853,7 @@ class AgentServiceClass {
       .from('club_members')
       .select('club_id, user_id, chip_balance, joined_at')
       .eq('agent_id', agent.user_id)
+      .eq('club_id', scopedClubId)
       .limit(QUERY_LIMITS.MODERATE);
 
     if (error) throw error;
@@ -1022,209 +1058,85 @@ class AgentServiceClass {
   // CLAWBACK — Reverse a chip distribution within 10-minute window
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /** Time window (ms) within which clawback is allowed */
-  private static readonly CLAWBACK_WINDOW_MS = 10 * 60 * 1000;
-
   /**
-   * Clawback (reverse) a chip distribution within the 10-minute security window.
+   * ═════════════════════════════════════════════════════════════════════════
+   *  UNDOING A DISTRIBUTION, THROUGH THE ONLY PATH THAT CAN
+   * ═════════════════════════════════════════════════════════════════════════
    *
-   * RULES:
-   *   - Must be within 10 minutes of the original distribution
-   *   - Can only clawback your own distributions
-   *   - Can clawback full or partial amount (up to original)
-   *   - After 10 minutes, the only recourse is a player cashout request
+   * WHAT WAS HERE (removed 2026-09-03, phase 3)
+   *
+   * `clawbackDistribution` and `getRecentDistributions`: a second, parallel
+   * implementation of agent undo that could not work, for three independent
+   * reasons, any one of which was fatal.
+   *
+   *   1. THE LIST WAS ALWAYS EMPTY. It filtered `transaction_type` in
+   *      ('agent_to_player', 'promo_agent_to_player', 'send'). Those three
+   *      types have ZERO rows in chip_transactions, estate-wide. The only
+   *      agent distribution type is `agent_wallet_send`.
+   *   2. THE CLAIM STEP COULD NOT WRITE. It began by UPDATEing
+   *      chip_transactions to stake the row. That table carries SELECT
+   *      policies only, so the update matched zero rows and the method
+   *      returned "Transaction already clawed back or claim failed" - naming
+   *      a cause that was never true.
+   *   3. THE RPC WAS UNREACHABLE. `fn_clawback_chips_atomic` is SECURITY
+   *      INVOKER and `authenticated` holds no EXECUTE on it. Even reached, it
+   *      updates agents and wallets, neither of which grants a browser a
+   *      write, so its own arithmetic would have landed on nothing.
+   *
+   * WHAT REPLACES IT. Nothing new. The platform already does this correctly
+   * and has since the agent wallet shipped: `fn_agent_wallet_reversible` lists
+   * what the signed-in agent may still undo, and `fn_agent_wallet_claim_back`
+   * undoes it. Both are SECURITY DEFINER, both are granted to `authenticated`,
+   * both are what WalletCashierModal has been calling all along. The window is
+   * `reversible_until` on the row and the clock that decides is the database's,
+   * not the browser's - which also removes the ten-minute constant this file
+   * used to keep in parallel with it.
    */
-  async clawbackDistribution(
-    transactionId: string,
-    clubId: string,
-    agentUserId: string,
-    requestedAmount?: number
-  ): Promise<{
-    success: boolean;
-    partial?: boolean;
-    recovered?: number;
-    originalAmount?: number;
-    playerNewBalance?: number;
-    agentNewBalance?: number;
-    windowRemaining?: string;
-    error?: string;
-  }> {
-    // 0. Resolve clubId to UUID (URL param may be integer)
+  async reversibleDistributions(clubId: string): Promise<ReversibleDistribution[]> {
     const resolvedClubId = await resolveClubUUID(clubId);
-
-    // 1. Get the original transaction
-    const { data: txn, error: txnErr } = await supabase
-      .from('chip_transactions')
-      .select(
-        'id, from_user_id, to_user_id, amount, club_id, created_at, transaction_type, notes, clawed_back'
-      )
-      .eq('id', transactionId)
-      .maybeSingle();
-
-    if (txnErr || !txn) {
-      return { success: false, error: 'Transaction not found' };
-    }
-
-    // 2. Verify caller is the agent who sent the chips
-    if (txn.from_user_id !== agentUserId) {
-      return { success: false, error: 'You can only clawback your own distributions' };
-    }
-
-    if (txn.club_id !== resolvedClubId) {
-      return { success: false, error: 'Club ID mismatch' };
-    }
-
-    // Must be an agent→player distribution
-    const clawbackableTypes = ['agent_to_player', 'promo_agent_to_player', 'send'];
-    if (!clawbackableTypes.includes(txn.transaction_type) || txn.from_user_id === txn.to_user_id) {
-      return { success: false, error: 'Can only clawback agent→player distributions' };
-    }
-
-    // Check if already clawed back (boolean column takes priority, notes fallback for legacy)
-    if (txn.clawed_back || txn.notes?.includes('[CLAWED BACK:')) {
-      return { success: false, error: 'This transaction has already been clawed back' };
-    }
-
-    // 3. Check the 10-minute window
-    const txnTime = new Date(txn.created_at).getTime();
-    const elapsed = Date.now() - txnTime;
-
-    if (elapsed > AgentServiceClass.CLAWBACK_WINDOW_MS) {
-      const minutesAgo = Math.floor(elapsed / 60000);
-      return {
-        success: false,
-        error: `Clawback window expired. Distribution was ${minutesAgo} minutes ago (limit: 10 min). The player must submit a cashout request instead.`,
-      };
-    }
-
-    const remainingSeconds = Math.ceil((AgentServiceClass.CLAWBACK_WINDOW_MS - elapsed) / 1000);
-
-    // 4. Determine clawback amount
-    let clawbackAmount: number;
-    if (requestedAmount != null) {
-      clawbackAmount = Math.floor(Number(requestedAmount));
-      if (!Number.isFinite(clawbackAmount) || clawbackAmount <= 0 || clawbackAmount > 100_000_000) {
-        return { success: false, error: 'Amount must be a positive integer (max 100M)' };
-      }
-      clawbackAmount = Math.min(clawbackAmount, txn.amount); // cap at original
-    } else {
-      clawbackAmount = txn.amount; // default to full
-    }
-
-    // 5. Atomically claim the transaction (prevents double-clawback)
-    const clawbackNote = `${txn.notes || ''} [CLAWED BACK: ${clawbackAmount} at ${new Date().toISOString()}]`;
-    const { data: claimed, error: claimErr } = await supabase
-      .from('chip_transactions')
-      .update({ notes: clawbackNote, clawed_back: true })
-      .eq('id', transactionId)
-      .eq('clawed_back', false)
-      .select('id')
-      .maybeSingle();
-
-    if (claimErr || !claimed) {
-      return { success: false, error: 'Transaction already clawed back or claim failed' };
-    }
-
-    // 6. Execute atomic clawback via RPC
-    const { data: rpcResult, error: rpcErr } = await retryAsync(
-      () =>
-        supabase.rpc('fn_clawback_chips_atomic', {
-          p_transaction_id: transactionId,
-          p_club_id: resolvedClubId,
-          p_agent_id: agentUserId,
-          p_amount: clawbackAmount,
-        }),
-      3
-    );
-
-    if (rpcErr || !rpcResult?.success) {
-      // Revert claim note on failure
-      await supabase
-        .from('chip_transactions')
-        .update({ notes: txn.notes || '', clawed_back: false })
-        .eq('id', transactionId);
-
-      return {
-        success: rpcResult?.partial || false,
-        partial: rpcResult?.partial || false,
-        recovered: rpcResult?.recovered || 0,
-        playerNewBalance: rpcResult?.player_new_balance || 0,
-        error: rpcResult?.error || 'Clawback RPC failed',
-        windowRemaining: `${remainingSeconds}s`,
-      };
-    }
-
-    masterBus.emit('BALANCE_UPDATED', { source: 'clawback', userId: agentUserId });
-
-    return {
-      success: true,
-      partial: rpcResult.partial,
-      recovered: rpcResult.recovered,
-      originalAmount: txn.amount,
-      playerNewBalance: rpcResult.player_new_balance,
-      agentNewBalance: rpcResult.agent_new_balance,
-      windowRemaining: `${remainingSeconds}s`,
-    };
+    const { data, error } = await supabase.rpc('fn_agent_wallet_reversible', {
+      p_club_id: resolvedClubId,
+    });
+    if (error) throw error;
+    return (data || []) as ReversibleDistribution[];
   }
 
   /**
-   * Get recent distributions (for showing clawback-eligible items in the UI).
-   * Returns only distributions within the clawback window (10 minutes).
+   * Undo part or all of a send this agent made, inside its own window.
+   *
+   * `opId` is required by the function and is the retry key: the same key
+   * replays the same claim back rather than taking the chips twice, which is
+   * what makes a failed network call safe to repeat.
    */
-  async getRecentDistributions(
-    agentUserId: string,
+  async claimBackDistribution(
     clubId: string,
-    limit = 20
-  ): Promise<
-    {
-      id: string;
-      toUserId: string;
-      toDisplayName: string;
-      amount: number;
-      createdAt: string;
-      canClawback: boolean;
-      minutesRemaining: number;
-    }[]
-  > {
-    const cutoff = new Date(Date.now() - AgentServiceClass.CLAWBACK_WINDOW_MS).toISOString();
-
-    const { data, error } = await supabase
-      .from('chip_transactions')
-      .select('id, to_user_id, amount, created_at, notes, transaction_type, clawed_back')
-      .eq('from_user_id', agentUserId)
-      .eq('club_id', clubId)
-      .in('transaction_type', ['agent_to_player', 'promo_agent_to_player', 'send'])
-      .gte('created_at', cutoff)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
-    if (error || !data?.length) return [];
-
-    // Fetch display names for recipients
-    const toUserIds = [...new Set(data.map((t) => t.to_user_id))];
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select(`id, ${PLAYER_NAME_COLUMNS}`)
-      .in('id', toUserIds);
-
-    const nameMap = new Map(profiles?.map((p) => [p.id, playerDisplayName(p)]) || []);
-
-    return data.map((t) => {
-      const elapsed = Date.now() - new Date(t.created_at).getTime();
-      const minutesRemaining = Math.max(
-        0,
-        Math.ceil((AgentServiceClass.CLAWBACK_WINDOW_MS - elapsed) / 60000)
-      );
-      return {
-        id: t.id,
-        toUserId: t.to_user_id,
-        toDisplayName: nameMap.get(t.to_user_id) || 'Unknown',
-        amount: t.amount,
-        createdAt: t.created_at,
-        canClawback: !t.clawed_back && !t.notes?.includes('[CLAWED BACK:') && minutesRemaining > 0,
-        minutesRemaining,
-      };
+    transactionId: string,
+    amount: number,
+    reason?: string,
+    opId?: string
+  ): Promise<{ success: boolean; error?: string; claimedBack?: number; replayed?: boolean }> {
+    const resolvedClubId = await resolveClubUUID(clubId);
+    const { data, error } = await supabase.rpc('fn_agent_wallet_claim_back', {
+      p_club_id: resolvedClubId,
+      p_transaction_id: transactionId,
+      p_amount: amount,
+      p_reason: reason ?? null,
+      p_op_id: opId ?? crypto.randomUUID(),
     });
+    if (error) return { success: false, error: error.message };
+    const res = (data || {}) as {
+      success?: boolean;
+      error?: string;
+      amount?: number;
+      replayed?: boolean;
+    };
+    if (!res.success) return { success: false, error: res.error || 'That Claim Back Was Refused.' };
+
+    masterBus.emit('BALANCE_UPDATED', {
+      source: 'agent_wallet_claim_back',
+      clubId: resolvedClubId,
+    });
+    return { success: true, claimedBack: res.amount ?? amount, replayed: res.replayed };
   }
 }
 

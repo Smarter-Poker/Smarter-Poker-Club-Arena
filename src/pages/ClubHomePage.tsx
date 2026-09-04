@@ -103,7 +103,7 @@ import HouseAdCard from '../components/ads/HouseAdCard';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
 import { playerDisplayName } from '../utils/playerDisplayName';
-import ClubOwnerMessage from '../components/club/ClubOwnerMessage';
+import ClubEntryMessage from '../components/club/ClubEntryMessage';
 import AdvancedFilters, {
   loadFilters,
   saveFilters,
@@ -121,6 +121,7 @@ import { IconShareLink, IconSort } from '../components/icons/LobbyIcons';
 import { CLUB_HOME_CACHE_PREFIX } from '../utils/clearUserCaches';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { preloadRoute } from '../utils/ChunkPreloader';
+import { warmTable } from '../services/tableWarmup';
 import { gameManagementService } from '../services/GameManagementService';
 
 // Shark Club fallback logo — used when DB logo_url is null
@@ -241,8 +242,6 @@ function setClubHomeCache(clubId: string, data: { club: any; tables: any[] }) {
     }
   }
 }
-
-const CLUB_LOBBY_MESSAGE_MAX_LENGTH = 72;
 
 // Types
 interface ClubData {
@@ -738,8 +737,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   // LOBBY V2: show only starred cash tables. Declared here (not with the rest
   // of the V2 state) because `narrowing` and `clearAllNarrowing` read it.
   const [favoritesOnly, setFavoritesOnly] = useState(false);
-  const [isEditingNotice, setIsEditingNotice] = useState(false);
-  const [noticeDraft, setNoticeDraft] = useState('');
   const [walletsExpanded, setWalletsExpanded] = useState(false);
   const [visibleWalletCount, setVisibleWalletCount] = useState(0);
   // Status defaults are 'all' on BOTH axes now. They used to be 'live' and
@@ -3407,6 +3404,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       // the actual "Join" tap resolves from the module cache instead of
       // stalling on a network fetch. No-op when idle preload already ran.
       preloadRoute(`/table/${entry.id}`);
+      /* And start LOADING THE TABLE ITSELF (Dan 2026-09-03: "the table should
+         already be loading in the background as soon as it's clicked"). For a
+         cash game the panel's id IS the table id, so the roster read and the
+         engine SUBSCRIBE go out now, while the player reads the buy-in sheet -
+         so the felt mounts with players and avatars already on it. Spin / SNG
+         resolve their live table later (spinQuickJoin), so they are warmed at
+         the join tap instead, below. */
+      if (entry.kind === 'cash') warmTable(entry.id);
     },
     [openTournamentLobby]
   );
@@ -3439,6 +3444,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       setPanelOpen(false);
       // Execute navigate in the next tick to ensure the panel unmounts safely
       // without interrupting React Router transition internals
+      // The card is closing and TablePage is one tick away - warm the table so
+      // its roster and engine subscription are in flight before it mounts.
+      warmTable(tableId);
       setTimeout(() => {
         const entry = tablesRef.current.find((t) => t.id === tableId);
         navigate(`/table/${tableId}`, {
@@ -3810,7 +3818,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                SCREEN" — unconditionally, not only once it is running. */
       onViewTable: (e) =>
         e.kind === 'cash'
-          ? navigate(`/table/${e.id}`)
+          ? (warmTable(e.id), navigate(`/table/${e.id}`))
           : /* Dan 2026-08-20: "there is 'no lobby' for a spin, you just start
                on a table." Watch and Return To Game on a spin therefore open
                the game's live TABLE (spinQuickJoin resolves the current one,
@@ -4079,29 +4087,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const unionManagedClub = Boolean(club.is_union || club.union_id || unionIdForCreate);
   const canCreateClubGames = noticeEditable && !unionManagedClub;
 
-  const saveClubNotice = () => {
-    const newDesc = noticeDraft.replace(/\s+/g, ' ').trim().slice(0, CLUB_LOBBY_MESSAGE_MAX_LENGTH);
-    const targetId = club.id;
-    void (async () => {
-      const { data, error } = await supabase.rpc('fn_set_club_lobby_message', {
-        p_club_id: targetId,
-        p_message: newDesc,
-      });
-      const result = (data || {}) as { ok?: boolean; lobby_message?: string | null };
-      if (error || !result.ok) {
-        reportError(
-          error || new Error('Club lobby message command was rejected'),
-          'ClubHomePage.Notice_save_failed'
-        );
-        toast.error('Could Not Save The Welcome Message');
-      } else {
-        setClub((prev) => (prev ? { ...prev, lobby_message: result.lobby_message ?? null } : prev));
-        setIsEditingNotice(false);
-        toast.success('Welcome Message Updated');
-      }
-    })();
-  };
-
   const openCreationFor = (target: GameType) => {
     if (!canCreateClubGames) {
       toast.info('This Club Is Managed By A Union. Create Games From The Union Console.');
@@ -4230,6 +4215,25 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   return (
     <div className="club-home club-home--unified-mobile">
       <GlobalUXIndicators wsConnected={wsConnected} />
+
+      {/* ── THE CLUB MESSAGE, AT THE DOOR (Dan 2026-09-03) ────────────────────
+          "Club Message should appear as a full screen pop up when you enter
+          the club, not anywhere baked into the screen."
+
+          Mounted once, here, rather than inside the lobby markup: it is not
+          part of the page's layout and must not reserve space in it. It decides
+          for itself whether to open, because only the server knows whether THIS
+          person has already retired THIS revision of the message. */}
+      <ClubEntryMessage
+        clubId={club.id}
+        clubName={club.name}
+        canEdit={noticeEditable}
+        onMessageSaved={(next) =>
+          setClub((prev) => (prev ? { ...prev, lobby_message: next } : prev))
+        }
+        onOpenAnnouncements={() => navigate(`/clubs/${clubId}/announcements`)}
+        onToast={(kind, text) => (kind === 'success' ? toast.success(text) : toast.error(text))}
+      />
       {/* Dan 2026-08-19: the resume bar moved into the persistent multi-table
           layer (PersistentTableLayer in App.tsx), which now shows it on EVERY
           non-/table route — a per-page copy here would double-render it. */}
@@ -4250,96 +4254,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         </h1>
       </section>
 
-      {(club.lobby_message?.trim() || noticeEditable) && (
-        <section
-          className={`club-mobile-owner-message ${noticeEditable && !isEditingNotice ? 'club-mobile-owner-message--editable' : ''}`}
-          aria-label="Club Owner Message"
-        >
-          {isEditingNotice ? (
-            <div className="club-mobile-owner-message__editor">
-              <input
-                value={noticeDraft}
-                maxLength={CLUB_LOBBY_MESSAGE_MAX_LENGTH}
-                onChange={(event) => setNoticeDraft(event.target.value.replace(/[\r\n]+/g, ' '))}
-                placeholder="Add A One-Line Club Message"
-                autoFocus
-                onKeyDown={(event) => {
-                  if (event.key === 'Escape') setIsEditingNotice(false);
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    saveClubNotice();
-                  }
-                }}
-              />
-              <span>
-                {noticeDraft.length}/{CLUB_LOBBY_MESSAGE_MAX_LENGTH}
-              </span>
-              <button type="button" onClick={() => setIsEditingNotice(false)}>
-                Cancel
-              </button>
-              <button type="button" onClick={saveClubNotice}>
-                Save
-              </button>
-            </div>
-          ) : (
-            /* LIVE FOR EVERY VIEWER, NOT JUST STAFF (Dan 2026-09-02).
-               The second club message on a phone - <ClubOwnerMessage>'s
-               `.lobby-top__house-welcome` trigger - is hidden below 900px now
-               (ClubHomePage.css), and that trigger was the only way a player
-               who cannot edit could open the message in full or reach the
-               club's announcements from the lobby. This strip carries both
-               jobs on a phone: staff still open the inline editor, everyone
-               else goes where the rail's panel would have sent them. Removing
-               a duplicate must not quietly remove a destination. */
-            <button
-              type="button"
-              className="club-mobile-owner-message__copy"
-              onClick={() => {
-                if (!noticeEditable) {
-                  navigate(`/clubs/${clubId}/announcements`);
-                  return;
-                }
-                setNoticeDraft(club.lobby_message || '');
-                setIsEditingNotice(true);
-              }}
-              title={club.lobby_message || 'Add A One-Line Club Message'}
-              aria-label={
-                noticeEditable
-                  ? `Club Message: ${club.lobby_message?.trim() || 'None Set'}. Open To Edit`
-                  : `Club Message: ${club.lobby_message?.trim() || 'None Set'}. Open Club Announcements`
-              }
-            >
-              {club.lobby_message?.trim() || 'Add A One-Line Club Message'}
-            </button>
-          )}
-        </section>
-      )}
-
+      {/* The club message used to live here as a phone strip with its own
+          inline editor. It is a full-screen greeting at the door now
+          (<ClubEntryMessage>, mounted once below), so there is nothing to bake
+          into the lobby. Dan 2026-09-03. */}
       <header className="lobby-top">
-        {/* ── THE CLUB'S OWN MESSAGE, FIRST (Dan 2026-09-01) ────────────────
-            "the 'welcome to club jaqk' thats on the bottom of the wallets
-            should be at the top above the club card, and that should be the
-            'custom clickable message' for the club owners to put the days
-            message, or something custom."
-
-            It was the last child of the wallet stack, which on a desktop rail
-            put it under seven wallet rows and, on a short viewport, past the
-            fold. It is the first thing in the rail now, and it is a button:
-            anybody may read the message in full, staff may write it, and both
-            paths continue to the club's announcements. */}
-        <ClubOwnerMessage
-          clubId={club.id}
-          clubName={club.name}
-          message={club.lobby_message}
-          tagline={club.tagline}
-          canEdit={noticeEditable}
-          onMessageSaved={(next) =>
-            setClub((prev) => (prev ? { ...prev, lobby_message: next } : prev))
-          }
-          onOpenAnnouncements={() => navigate(`/clubs/${clubId}/announcements`)}
-          onToast={(kind, text) => (kind === 'success' ? toast.success(text) : toast.error(text))}
-        />
-
         {/* ── Club identity + wallet ── */}
         <div className="lobby-top__main">
           <ClubIdentityCard
@@ -4690,60 +4609,27 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         <MaintenanceBreakBanner />
         <ClubLobbyCommandTop
           welcome={
-            <div
-              className={`lobby-top__notice ${isOwner || isClubStaff(userRole) ? 'lobby-top__notice--editable' : ''}`}
-              role={noticeEditable && !isEditingNotice ? 'button' : undefined}
-              tabIndex={noticeEditable && !isEditingNotice ? 0 : undefined}
-              aria-label={
-                noticeEditable && !isEditingNotice ? 'Edit Club Lobby Message' : undefined
-              }
-              onKeyDown={(e) => {
-                if (!noticeEditable || isEditingNotice) return;
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  setNoticeDraft(club.lobby_message || '');
-                  setIsEditingNotice(true);
-                }
-              }}
-              onClick={() => {
-                if (noticeEditable && !isEditingNotice) {
-                  setNoticeDraft(club.lobby_message || '');
-                  setIsEditingNotice(true);
-                }
-              }}
-            >
-              {isEditingNotice ? (
-                <div className="lobby-top__notice-editor" onClick={(e) => e.stopPropagation()}>
-                  <input
-                    type="text"
-                    value={noticeDraft}
-                    maxLength={CLUB_LOBBY_MESSAGE_MAX_LENGTH}
-                    onChange={(e) => setNoticeDraft(e.target.value.replace(/\s+/g, ' '))}
-                    placeholder="Optional Club Lobby Message"
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === 'Escape') setIsEditingNotice(false);
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        saveClubNotice();
-                      }
-                    }}
-                  />
-                  <div className="lobby-top__notice-actions">
-                    <button onClick={() => setIsEditingNotice(false)}>Cancel</button>
-                    <button onClick={saveClubNotice}>Save</button>
-                  </div>
-                </div>
-              ) : (
-                <div className="club-lobby-command-top__welcome-copy">
-                  <span className="club-lobby-command-top__welcome-eyebrow">Welcome To The</span>
-                  <h2 className="club-lobby-command-top__club-name">{club.name}</h2>
-                  <p className={!club.lobby_message?.trim() ? 'is-empty' : undefined}>
-                    {club.lobby_message?.trim() ||
-                      (noticeEditable ? 'Add Optional Club Lobby Message' : '\u00a0')}
-                  </p>
-                </div>
-              )}
+            /* The welcome block keeps the club name and loses the message.
+               The lobby message is a full-screen greeting at the door now
+               (ClubEntryMessage), and this element was the third place it was
+               baked into the page, each with its own editor and its own length
+               cap. Dan 2026-09-03. */
+            <div className="lobby-top__notice">
+              <div className="club-lobby-command-top__welcome-copy">
+                <span className="club-lobby-command-top__welcome-eyebrow">Welcome To The</span>
+                <h2 className="club-lobby-command-top__club-name">{club.name}</h2>
+                {/* The TAGLINE, not the day's message. It used to reach the
+                    lobby only as the second link of the removed strip's
+                    fallback chain, so taking that strip out would have left a
+                    club that wrote a tag line with nowhere to show it. It
+                    belongs here anyway: this is the club's permanent identity
+                    line, and it is the one thing on this block that is safe to
+                    bake in, because it does not change from one day to the
+                    next. */}
+                {club.tagline?.trim() && (
+                  <p className="club-lobby-command-top__tagline">{club.tagline.trim()}</p>
+                )}
+              </div>
             </div>
           }
           controls={

@@ -1,0 +1,324 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+ *  CLUB ENTRY MESSAGE — the full-screen greeting (Dan, 2026-09-03)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Dan asked for padding around all edges, top and bottom included. `.modal-
+ * fullscreen` already insets by 20px, and on a desktop that is the whole job.
+ * On a phone it is not: 20px of margin still leaves the panel underneath the
+ * notch and behind the home indicator, so the eyebrow is clipped at the top
+ * and the "Do Not Show Me This Message Again" button sits under the gesture
+ * bar, where the OS eats the tap. The safe-area insets below are the
+ * difference between padding that looks right in a simulator and padding that
+ * works in a hand.
+ */
+
+.club-entry-message-modal.modal-fullscreen {
+  /* A CONTAINED POPUP WITH A 20px GUTTER (Dan, 2026-09-04: "IT NEEDS TO BE
+     INSIDE THE SCREEN, AND HAVE 20 PIXEL MARGIN ON ALL SIDES, NOT COVER THE
+     ENTIRE FUCKING SCREEN").
+
+     It shipped as a viewport-sized panel. Measured on the live Deep Stack
+     lobby before this rule: 526 x 1195 in a 566 x 1235 window - 20px of inset
+     on paper, and in practice an opaque sheet with three lines of greeting on
+     it. That is what "the page goes black" was, and why the X at the top right
+     read as part of the black rather than as a way out.
+
+     The card is sized by its CONTENT now, not by the window:
+       - width  capped at 480px, and never wider than the viewport less 40px
+         (the 20px gutter, both sides);
+       - height auto, capped at the viewport less the same 40px, so a long
+         message scrolls inside the card instead of growing past the screen;
+       - `margin: 20px` guarantees the gutter even when the overlay's centring
+         would otherwise let an edge touch.
+     Measured with this rule on the same lobby: 480 x 342, 23% of the screen,
+     the lobby visible behind it and the close control inside the card. */
+  width: min(
+    480px,
+    calc(100vw - max(40px, env(safe-area-inset-left) + env(safe-area-inset-right) + 40px))
+  );
+  max-width: min(
+    480px,
+    calc(100vw - max(40px, env(safe-area-inset-left) + env(safe-area-inset-right) + 40px))
+  );
+  height: auto;
+  /* dvh, not vh: a phone's collapsing address bar must not make this taller
+     than the screen it is measured against. */
+  max-height: calc(
+    100dvh - max(40px, env(safe-area-inset-top) + env(safe-area-inset-bottom) + 40px)
+  );
+  /* 20px is the FLOOR on every edge; where a device reserves more (a
+     notch, a home indicator) the inset wins, so the card never hides
+     under either. */
+  margin: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+    max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  display: flex;
+  overflow: hidden;
+}
+
+/* The card still has to fill whatever height it ends up with, and the shared
+   Modal wraps its children in `.modal-content`, so `flex: 1` on
+   `.club-entry-message` has no flex parent without this (#2899). `min-height:
+   0` lets it shrink beside the wrapper's `overflow-y: auto`, which is what
+   makes a long message scroll rather than push the card off screen. */
+.club-entry-message-modal.modal-fullscreen > .modal-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/*
+ * THE PANEL IS FULL-SCREEN; THE GREETING WAS NOT (2026-09-03).
+ *
+ * Dan: "YOU CLICK ON ANY CLUB LOBBY AND THE PAGE GOES BLACK AFTER LOADING FOR
+ * A SPLIT SECOND."
+ *
+ * It was not a crash and it was not a blank render - it was this panel. The
+ * rule above makes the modal fill the viewport and `display: flex` is there so
+ * `.club-entry-message` (`flex: 1`) fills it back. But the shared Modal wraps
+ * whatever it is given in `.modal-content`, so that flex parent is NOT the
+ * greeting's parent, and the chain broke at the wrapper: measured live on the
+ * Midway Union lobby, the panel was 1,195px tall, `.modal-content` 1,192, and
+ * `.club-entry-message` collapsed to its own content at 338. The greeting sat
+ * in the top quarter and the other ~850px was empty dark panel over the whole
+ * lobby - which is exactly what "the page goes black" looks like.
+ *
+ * `.club-entry-message__body` already asks for `justify-content: center`; it
+ * simply never had the height to centre anything in. Handing `.modal-content`
+ * the same column stretch fixes it at the one link that was missing: measured
+ * again with this rule, the wrapper fills 1,144px, the body 952, and the club
+ * name lands at y=535 instead of y=132 - centred, as the body always intended.
+ *
+ * `min-height: 0` is load-bearing next to the wrapper's `overflow-y: auto`: a
+ * flex child defaults to `min-height: auto`, which refuses to shrink below its
+ * content and would let a long message push the panel past the viewport it was
+ * just told to fit inside.
+ */
+.club-entry-message-modal.modal-fullscreen > .modal-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.club-entry-message {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 24px;
+  /* The inner breathing room, distinct from the panel's margin. Extra on top
+     so the copy never runs under the close control. */
+  padding: 44px 24px 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* ── The X ────────────────────────────────────────────────────────────────── */
+
+.club-entry-message__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 44px is the smallest target a thumb hits reliably. A greeting nobody can
+     dismiss on the first try is worse than no greeting. */
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.35);
+  color: #e8eef2;
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+/* No pointer-over states anywhere. Club Arena is touch-first and a law test
+   enforces it: on a phone that state latches after the tap and the control
+   looks stuck. Active and focus-visible carry the feedback instead, and both
+   are real on a touchscreen. */
+.club-entry-message__close:active {
+  transform: scale(0.94);
+}
+
+.club-entry-message__close:focus-visible {
+  outline: 2px solid #c8a65a;
+  outline-offset: 2px;
+}
+
+/* ── The message ──────────────────────────────────────────────────────────── */
+
+.club-entry-message__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  /* The message is the reason the screen was taken. Centre it rather than
+     leaving it stranded at the top of a tall empty panel. */
+  justify-content: center;
+  min-height: 0;
+  text-align: center;
+}
+
+.club-entry-message__eyebrow {
+  color: #8da3af;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.club-entry-message__club {
+  margin: 0;
+  color: #c8a65a;
+  font-size: clamp(20px, 5vw, 28px);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.club-entry-message__copy {
+  margin: 8px 0 0;
+  color: #eef3f6;
+  font-size: clamp(16px, 4.2vw, 21px);
+  line-height: 1.5;
+  /* 240 characters is the server cap. Long words in a narrow phone panel still
+     need somewhere to break or they push the panel sideways. */
+  overflow-wrap: anywhere;
+}
+
+/* ── Staff editor ─────────────────────────────────────────────────────────── */
+
+.club-entry-message__editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+
+.club-entry-message__editor label {
+  color: #8da3af;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.club-entry-message__editor textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  color: #eef3f6;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.club-entry-message__editor textarea:focus-visible {
+  outline: 2px solid #c8a65a;
+  outline-offset: 1px;
+}
+
+.club-entry-message__editor-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #8da3af;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.club-entry-message__editor-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ── Footer controls ──────────────────────────────────────────────────────── */
+
+.club-entry-message__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  /* Never lets the last control sit under a home indicator. */
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.club-entry-message__btn {
+  padding: 11px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #e8eef2;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.club-entry-message__btn:focus-visible {
+  outline: 2px solid #c8a65a;
+  outline-offset: 2px;
+}
+
+.club-entry-message__btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.club-entry-message__btn--primary {
+  border-color: #c8a65a;
+  background: #c8a65a;
+  color: #14181b;
+}
+
+/* The permanent choice reads quieter than the ways back into the club. It is
+   the least reversible control here and should not be the loudest. */
+.club-entry-message__btn--quiet {
+  border-color: transparent;
+  background: transparent;
+  color: #8da3af;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 480px) {
+  .club-entry-message {
+    padding: 52px 18px 18px;
+    gap: 18px;
+  }
+
+  .club-entry-message__foot {
+    flex-direction: column;
+  }
+
+  .club-entry-message__btn {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .club-entry-message__close {
+    transition: none;
+  }
+
+  .club-entry-message__close:active {
+    transform: none;
+  }
+}

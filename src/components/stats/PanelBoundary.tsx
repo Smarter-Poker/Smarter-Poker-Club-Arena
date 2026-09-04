@@ -15,6 +15,12 @@
  * The error is reported (via PageErrorBoundary's own reporting path, which
  * writes to client_crash_log) rather than swallowed, so a degraded panel is
  * still a visible, diagnosable event and not a silent hole in the page.
+ *
+ * RECOVERY (2026-09-03). `hasError` used to be permanent for the life of the
+ * page: one bad payload for one range killed the panel until a reload, and
+ * changing the range - which fetches a different payload - could not bring it
+ * back. The boundary now resets when `resetKey` changes (the page passes the
+ * range and the user) and offers a Try Again that does the same in place.
  */
 
 import React from 'react';
@@ -23,20 +29,24 @@ interface Props {
   children: React.ReactNode;
   /** Shown in the fallback and recorded with the crash. */
   name: string;
+  /** When this changes, a failed panel gets another go with the new data. */
+  resetKey?: string | number | null;
 }
 
 interface State {
   hasError: boolean;
   message: string | null;
+  /** Bumped by Try Again so the children remount. */
+  attempt: number;
 }
 
 export class PanelBoundary extends React.Component<Props, State> {
   constructor(props: Props) {
     super(props);
-    this.state = { hasError: false, message: null };
+    this.state = { hasError: false, message: null, attempt: 0 };
   }
 
-  static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): Partial<State> {
     return { hasError: true, message: error?.message ?? 'unknown' };
   }
 
@@ -44,6 +54,16 @@ export class PanelBoundary extends React.Component<Props, State> {
     console.error(`[PanelBoundary] ${this.props.name} failed to render:`, error, errorInfo);
     void this.report(error, errorInfo);
   }
+
+  componentDidUpdate(prevProps: Props) {
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.retry();
+    }
+  }
+
+  private retry = () => {
+    this.setState((s) => ({ hasError: false, message: null, attempt: s.attempt + 1 }));
+  };
 
   private async report(error: Error, errorInfo: React.ErrorInfo): Promise<void> {
     try {
@@ -85,15 +105,16 @@ export class PanelBoundary extends React.Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="panel-boundary-fallback">
+        <div className="panel-boundary-fallback" role="alert">
           <strong>{this.props.name}</strong>
-          <span>
-            Could Not Be Shown. The Rest Of Your Stats Are Unaffected, And This Has Been Reported.
-          </span>
+          <span>Could Not Be Shown. The Rest Of Your Stats Are Unaffected.</span>
+          <button type="button" className="panel-boundary-retry" onClick={this.retry}>
+            Try Again
+          </button>
         </div>
       );
     }
-    return this.props.children;
+    return <React.Fragment key={this.state.attempt}>{this.props.children}</React.Fragment>;
   }
 }
 

@@ -693,6 +693,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       }
 
       if (insuranceDeltas.size > 0) this.handController?.applyStackDeltas(insuranceDeltas);
+      // Chip standard 2026-09-04: what the bank net moved onto the seats, as
+      // applied. Declared to the stack write as inflow (see postHandTasks).
+      let insuranceNet = 0;
+      for (const d of insuranceDeltas.values()) insuranceNet += d;
+      this.currentHandInsuranceNet = Math.round(insuranceNet * 100) / 100;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -1168,6 +1173,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       perPotAwards: [...this.currentHandPerPotAwards],
       showdownResults: [...this.currentHandShowdownResults],
       insuranceSettlements: [...this.currentHandInsuranceSettlements],
+      insuranceNet: this.currentHandInsuranceNet,
       cashoutRedirects: new Map(this.currentHandCashoutRedirects),
       returnedUncalled: new Map(this.currentHandReturnedUncalled),
       bbjHit: this.currentHandBBJHit,
@@ -1294,6 +1300,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         {
           rake: this.isTournamentTable() ? 0 : snap.rake,
           bbj: this.isTournamentTable() ? 0 : snap.bbjFee,
+          // Insurance payouts and premiums moved chips between the bank and
+          // these seats before this write; declared, or the identity refuses
+          // every insured hand.
+          inflow: snap.insuranceNet,
         }
       );
     });

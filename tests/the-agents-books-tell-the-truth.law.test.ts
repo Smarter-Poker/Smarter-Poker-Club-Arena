@@ -247,10 +247,22 @@ describe('the client asks the ledger', () => {
 
   it('the club financials page stops summing an empty table', () => {
     expect(FINANCIALS).not.toMatch(/from\('commission_history'\)/);
-    expect(FINANCIALS).toMatch(/fn_club_commission_accrued/);
+    // 2026-09-04, phase 6: the aggregate moved from fn_club_commission_accrued
+    // (a 608,280-row scan per page load, growing by ~300,000 rows a day) to
+    // ca_club_commission_daily, the per-day rollup the same statement-level
+    // triggers maintain, read through the one gated call this page now makes.
+    expect(FINANCIALS).toMatch(/ca_club_financials/);
+    const migration = read(
+      'supabase/migrations/20260904220000_the_money_is_read_from_the_ledger.sql'
+    );
+    expect(migration).toMatch(/FROM ca_club_commission_daily k/);
   });
 
   it('and binds the error rather than reading a denied read as zero', () => {
-    expect(FINANCIALS).toMatch(/ClubFinancialsPage\.commission_accrued/);
+    // The refusal is now a permission state, not a zero: a denied read and a
+    // club that has accrued nothing are still not the same thing.
+    expect(FINANCIALS).toMatch(/isAuthzError\(error\)/);
+    expect(FINANCIALS).toMatch(/setDenied\(true\)/);
+    expect(FINANCIALS).toMatch(/ClubFinancialsPage\.load/);
   });
 });

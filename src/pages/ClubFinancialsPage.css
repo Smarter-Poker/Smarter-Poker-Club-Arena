@@ -323,3 +323,86 @@
 .fadeInUp {
   animation: fadeInUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
 }
+
+/* PHASE 6 (2026-09-04): the ledger card, the table list and the caveat line
+   under the period selector, all of which were inline style objects. */
+.financials-page .range-note {
+  margin: 0 16px 12px;
+  font-size: 0.72rem;
+  color: var(--text-muted, #8a8f98);
+}
+
+.financials-page .card-sub {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.66rem;
+  color: var(--text-muted, #8a8f98);
+}
+
+.financials-page .chart-section {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 12px;
+  padding: 16px;
+  margin: 0 16px 16px;
+}
+
+.financials-page .chart-section h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #888;
+}
+
+.financials-page .table-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.financials-page .table-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 10px;
+}
+
+.financials-page .table-row .tx-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.financials-page .ledger-section {
+  padding: 0 16px 16px;
+}
+
+.financials-page .ledger-card {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 12px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.financials-page .ledger-card h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #e0e0e0;
+}
+
+.financials-page .export-btn {
+  margin-left: auto;
+  padding: 6px 14px;
+  background: rgba(24, 119, 242, 0.1);
+  border: 1px solid rgba(24, 119, 242, 0.3);
+  border-radius: 8px;
+  color: #1877f2;
+  font-weight: 700;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.financials-page .export-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

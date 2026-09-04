@@ -49,6 +49,7 @@ import { startGtoAggregationDriver } from './services/GtoAggregationDriver.js';
 import { startGtoAggregationDriverV31 } from './services/GtoAggregationDriverV31.js';
 import { startHorseOverlayGuard } from './services/HorseOverlayGuard.js';
 import { HorseSessionRotator } from './services/HorseSessionRotator.js';
+import { StableHandExecutor } from './services/StableHandExecutor.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -334,6 +335,13 @@ httpServer.listen(PORT, () => {
   // sessions via the SAME hand-boundary-safe leaveTable() path humans use;
   // the fleet manager reseeds fresh horses within its 30s cycle.
   new HorseSessionRotator((tableId) => gameServer.getTableEngine(tableId)).start();
+  /* OPERATION STABLE HAND (Dan 2026-09-04): the floor planner's FIRST live
+     order, and for now its only one. It stands a horse up when a human is on
+     that table's waitlist, through the same hand-boundary-safe leaveTable()
+     path above. Everything else planFloor decides - seat, open, close - is
+     still reported by GET /stable-hand and executed by nobody. Set
+     STABLE_HAND_CONTROLLER=false to go back to planning only. */
+  new StableHandExecutor((tableId) => gameServer.getTableEngine(tableId)).start();
   // 2026-08-23: keep public.member_fee_rollup current (club roster "Fees",
   // Member Management stats, Player Statistics). See the block above for why.
   startMemberFeeRollup();

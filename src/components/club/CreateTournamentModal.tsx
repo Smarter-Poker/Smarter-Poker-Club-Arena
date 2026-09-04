@@ -78,7 +78,7 @@ interface Props {
 // while registration and payouts continue to follow the actual field.
 const DEFAULT_MTT_FIELD = '1000000';
 
-type MttEntryRules = 'freezeout' | 'rebuy' | 'reentry';
+type MttEntryRules = 'freezeout' | 'rebuy' | 'reentry' | 'free_buy';
 type MttPrizeStyle = 'regular' | 'bounty' | 'progressive_bounty' | 'mystery_bounty';
 
 const VARIANT_OPTIONS: { value: TournamentGameVariant; label: string }[] = [
@@ -94,6 +94,7 @@ const VARIANT_OPTIONS: { value: TournamentGameVariant; label: string }[] = [
 
 type TournamentFormat =
   | 'mtt_freezeout'
+  | 'mtt_free_buy'
   | 'mtt_rebuy'
   | 'mtt_reentry'
   | 'sng'
@@ -544,9 +545,30 @@ export default function CreateTournamentModal({
     setLateRegLevels('8');
     setMaxPlayers(DEFAULT_MTT_FIELD);
     setAddOnAvailable(rules !== 'freezeout');
+    /* FREE BUY (Dan 2026-09-04). The first entry is free and the rebuys and
+       add-ons are paid, so it is NOT a freeroll - a freeroll never charges.
+       Selecting it fills in the house standard so an owner does not have to
+       remember five numbers: 3,000 start, 10,000 add-on chips, and an add-on
+       window that opens at sit-down instead of only at the break. */
+    if (rules === 'free_buy') {
+      setBuyIn('0');
+      setStartingChips('3000');
+      setAddOnAvailable(true);
+      setAddOnChips('10000');
+      setAddOnCost('1');
+      setRebuyCost('1');
+      setRebuyChips('3000');
+      setGuaranteedPrize('250');
+    }
     if (mttPrizeStyle === 'regular') {
       setFormat(
-        rules === 'rebuy' ? 'mtt_rebuy' : rules === 'reentry' ? 'mtt_reentry' : 'mtt_freezeout'
+        rules === 'free_buy'
+          ? 'mtt_free_buy'
+          : rules === 'rebuy'
+            ? 'mtt_rebuy'
+            : rules === 'reentry'
+              ? 'mtt_reentry'
+              : 'mtt_freezeout'
       );
     }
   };
@@ -607,7 +629,9 @@ export default function CreateTournamentModal({
       // fire on a pasted or programmatically-set value. It refuses rather than
       // silently rounding: a club owner has to know the price changed.
       const wholeFields: Array<[string, string, boolean]> = [
-        ['Buy-in', buyIn, true],
+        // A Free Buy's first entry is free, so zero is the correct value
+        // rather than a missing one. Every other price stays whole and positive.
+        ['Buy-in', buyIn, mttEntryRules !== 'free_buy'],
         ['Guaranteed prize', guaranteedPrize, false],
         ...((isRebuy || isReentry) && rebuyCost.trim()
           ? ([[isRebuy ? 'Rebuy cost' : 'Re-entry cost', rebuyCost, true]] as Array<
@@ -775,6 +799,9 @@ export default function CreateTournamentModal({
         // `addonBreakMinutes` carries the duration; addonLevels remains one
         // only for compatibility with older database rows.
         addOnLevels: addOnAvailable ? 1 : undefined,
+        freeBuy: mttEntryRules === 'free_buy',
+        // One window, opening at sit-down and staying open through the break.
+        addOnFromStart: mttEntryRules === 'free_buy',
         guaranteedPrize: Math.max(0, Math.round(Number(guaranteedPrize)) || 0),
         satelliteTarget:
           isSatellite && satelliteTargetId
@@ -1002,7 +1029,10 @@ export default function CreateTournamentModal({
   const coreValid = (() => {
     if (!name.trim()) return false;
     // Whole numbers only — no decimal buy-ins on any tournament or SNG.
-    if (!isWholeBuyIn(buyIn)) return false;
+    // A Free Buy is the one event whose entry price is legitimately 0.
+    if (mttEntryRules === 'free_buy') {
+      if (Number(buyIn) !== 0) return false;
+    } else if (!isWholeBuyIn(buyIn)) return false;
     if (isNaN(parseInt(startingChips)) || parseInt(startingChips) <= 0) return false;
     /* EVERY format needs a real field now, not only SNG and Spin: the database
        refuses a non-positive cap, so "unlimited" was uncreatable. */
@@ -1082,6 +1112,7 @@ export default function CreateTournamentModal({
                   onChange={(e) => applyMttEntryRules(e.target.value as MttEntryRules)}
                 >
                   <option value="freezeout">Freezeout</option>
+                  <option value="free_buy">Free Buy (First Entry Free)</option>
                   <option value="rebuy">Rebuy (Same Seat)</option>
                   <option value="reentry">Re-Entry (New Seat)</option>
                 </select>

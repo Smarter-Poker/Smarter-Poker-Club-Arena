@@ -1528,7 +1528,14 @@ jobs:
       always() && github.event_name == 'pull_request' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: CSS Beat E2E (multi-table + animations)
-    runs-on: ubuntu-latest
+    # The longest job in the pipeline was the only one still pinned to a
+    # GitHub-hosted 2-core runner while the estate's 16-core boxes sat idle:
+    # 11.13m on 2026-09-04, against 5.35m for Production Build and 1.38m for
+    # the unit suite, all of which ran on the estate. It was also the last job
+    # billing GitHub minutes. Chromium and WebKit are already cached on the
+    # boxes and the install step below already branches on runner.environment,
+    # so this was prepared for and simply never routed.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 20
 
     steps:

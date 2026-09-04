@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { cpus } from 'node:os';
 
 const isCI = !!process.env.CI;
 /**
@@ -36,7 +37,11 @@ export default defineConfig({
    * twenty minutes of everybody's pipeline. Four workers brings it under
    * three, and the run stays well inside what production shrugs off.
    */
-  workers: isCI ? 4 : undefined,
+  workers: process.env.PLAYWRIGHT_WORKERS
+    ? Number(process.env.PLAYWRIGHT_WORKERS)
+    : isCI
+      ? Math.max(4, Math.floor(cpus().length / 2))
+      : undefined,
   reporter: 'html',
   /**
    * Optional authenticated session. tests/e2e/global-setup.ts logs in when

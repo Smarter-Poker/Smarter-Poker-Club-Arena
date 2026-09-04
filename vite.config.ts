@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { cpus } from 'node:os';
 import react from '@vitejs/plugin-react';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
 import path from 'path';
@@ -69,9 +70,18 @@ export default defineConfig({
           filesToDeleteAfterUpload: ['./dist/**/*.js.map', './dist/**/*.css.map'],
         },
 
-        // Release management
+        // Release management.
+        //
+        // THIS NAME MUST EQUAL THE ONE THE RUNTIME REPORTS or symbolication
+        // cannot work, and until 2026-09-04 it did not: this read
+        // npm_package_version and tagged every upload `club-arena@1.0.1`,
+        // while src/core/SentryInit.ts tags every event
+        // `club-arena@${VITE_APP_VERSION}` - the publishing commit's sha. Two
+        // different releases, so no event could ever find its maps. The
+        // publisher sets VITE_APP_VERSION to the sha it is shipping; the
+        // fallbacks below keep a local production build from throwing.
         release: {
-          name: `club-arena@${process.env.npm_package_version || '1.0.0'}`,
+          name: `club-arena@${process.env.VITE_APP_VERSION || process.env.npm_package_version || '1.0.0'}`,
           setCommits: {
             auto: true, // Automatically associate commits
           },
@@ -129,6 +139,28 @@ export default defineConfig({
   },
   build: {
     sourcemap: true, // Enabled — Sentry source maps are uploaded for readable production stack traces
+    // BUILD CONCURRENCY CAP, for the same reason vitest.config.ts caps its
+    // thread pool: on CI this build does not own the machine.
+    //
+    // Rollup defaults maxParallelFileOps to 20. On a laptop that is free
+    // speed. On an 8-core runner box hosting six runners it is six builds
+    // each asking for twenty concurrent file operations, and the box goes to
+    // load 63 - measured on estate-ci-eu-3, 2026-09-04, while estate-ci-eu-1
+    // sat at 38 doing the same thing.
+    //
+    // A thrashing box does not merely build slowly. It times out tests that
+    // pass in seconds elsewhere, and those timeouts are indistinguishable
+    // from real failures, which is how a green suite turns into a red pull
+    // request nobody can explain.
+    //
+    // Local builds are untouched: CI is capped, a laptop keeps the default.
+    // Sized from the BOX for the same reason as vitest.config.ts: this was a
+    // hard 4 for 8-core runners, and the boxes are 16-core since 2026-09-04.
+    maxParallelFileOps: process.env.ROLLUP_MAX_FILE_OPS
+      ? Number(process.env.ROLLUP_MAX_FILE_OPS)
+      : process.env.CI
+        ? Math.max(4, Math.floor(cpus().length / 2))
+        : 20,
     rollupOptions: {
       output: {
         // 2026-04-15 cache-bust: append a build-time tag to every emitted

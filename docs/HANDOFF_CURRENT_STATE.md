@@ -56,9 +56,14 @@ WHAT CHANGED SINCE 22:25.
   ~/Documents/club-arena/.env at CALL time; a long-lived background script
   that sourced it once holds a revoked value. Dan also flagged that CI now
   runs on the self-hosted Hetzner box (docs/HANDOFF-2026-09-02-push-publish-
-  cost-audit.md): branch -> autopilot opens the PR -> checks on estate-ci-1 ->
-  autopilot merges -> build-for-world-hub publishes. Nothing in this
-  programme's workflow changes; the deploy is still auto-deploy-hetzner.yml.
+  cost-audit.md): branch -> autopilot opens the PR -> checks on the estate
+  runners -> autopilot merges -> **publish-club-arena.yml** publishes. (That
+  last name was `build-for-world-hub` until 2026-09-03; the publisher no longer
+  commits anything to the World Hub, it rsyncs dist/ to
+  ca-static.smarter.poker. Corrected 2026-09-04 - CLAUDE.md line 3 sends every
+  engine-restart agent to this file first, so a dead workflow name here is read
+  before anything else.) Nothing in this programme's workflow changes; the
+  engine deploy is still auto-deploy-hetzner.yml.
 - Worktrees: cowork-maintbreak (this programme) and cowork-thawidx (#2703
   fix, disposable). Both clean. Node modules in cowork-thawidx are symlinks
   into cowork-maintbreak.

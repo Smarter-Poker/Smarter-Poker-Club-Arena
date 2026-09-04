@@ -491,7 +491,7 @@ describe('ThemeSettingsModal hardening', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Neon City, Purchase Or VIP Required' }));
 
     const addDiamonds = await screen.findByRole('button', { name: 'Add 250 Diamonds' });
-    expect(addDiamonds).toBeEnabled();
+    await waitFor(() => expect(addDiamonds).toBeEnabled());
     fireEvent.click(addDiamonds);
 
     const store = await screen.findByRole('dialog', { name: 'Diamond Store' });

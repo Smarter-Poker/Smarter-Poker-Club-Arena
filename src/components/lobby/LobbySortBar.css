@@ -133,3 +133,123 @@
     outline-offset: -2px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   VARIANT MENU — the game selector under the Variant heading (Dan 2026-09-03)
+   Same chassis as the framed sort bar: brushed rim, black well, one row per
+   game in canonical order, the live rows lit blue. Shown on the phone bar
+   (anchored under the bar) and on the desktop heading (anchored under the
+   cell). No :hover; press feedback on :active.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.lt-variant-menu-anchor {
+  position: absolute;
+  z-index: 30;
+}
+
+.lt-variant-menu-anchor--bar {
+  top: calc(100% + 6px);
+  left: 6px;
+  right: 6px;
+}
+
+.lt-variant-menu-anchor--th {
+  top: calc(100% + 4px);
+  left: 50%;
+  min-width: 180px;
+  transform: translateX(-50%);
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+  cursor: default;
+}
+
+.lt-variant-menu {
+  box-sizing: border-box;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border: 2px solid transparent;
+  border-radius: 3px;
+  background:
+    linear-gradient(180deg, #101317 0%, #000 100%) padding-box,
+    linear-gradient(180deg, #d9dee5 0%, #7c858f 35%, #3f464e 60%, #b6bdc5 100%) border-box;
+  box-shadow:
+    0 0 0 1px #000,
+    0 0 0 2px rgb(91 157 255 / 35%),
+    0 8px 22px rgb(0 0 0 / 85%);
+}
+
+.lt-variant-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: #c7ced6;
+  font-family: var(--font-primary, 'Inter', sans-serif);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.lt-variant-menu__item + .lt-variant-menu__item {
+  border-top: 1px solid rgb(255 255 255 / 6%);
+}
+
+.lt-variant-menu__item--sort {
+  margin-top: 4px;
+  border-top: 1px solid rgb(91 157 255 / 30%) !important;
+  color: #8b95a3;
+  font-size: 0.6875rem;
+}
+
+.lt-variant-menu__check {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid #7c858f;
+  border-radius: 2px;
+  background: #05070a;
+}
+
+.lt-variant-menu__item.is-on {
+  color: #fff;
+  background: linear-gradient(180deg, rgb(91 131 232 / 18%) 0%, rgb(91 131 232 / 6%) 100%);
+}
+
+.lt-variant-menu__item.is-on .lt-variant-menu__check {
+  border-color: #5b9dff;
+  background: #1f5fc4;
+  box-shadow:
+    inset 0 0 0 2px #05070a,
+    0 0 6px rgb(91 157 255 / 70%);
+}
+
+.lt-variant-menu__item:active {
+  background: rgb(255 255 255 / 5%);
+}
+
+.lt-variant-menu__item:focus-visible {
+  outline: 2px solid #8fd4ff;
+  outline-offset: -2px;
+}
+
+@media (max-width: 900px) {
+  .lobby-sortbar {
+    /* The menu anchors to the bar. */
+    position: relative;
+  }
+}
+
+.lobby-table thead th.lt-col-variant {
+  position: relative;
+  overflow: visible;
+}

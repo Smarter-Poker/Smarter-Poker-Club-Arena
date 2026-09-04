@@ -140,6 +140,75 @@ Hub repo (which copied a build into `public/hub/club-arena/` for a local
 Next.js preview) is retired with the sync; the World Hub's dev server proxies
 the rewrite to the live origin instead.
 
+### 1.1.6 HOW THE BUILD IS PUT TOGETHER (added 2026-09-04 - read before you touch a build step)
+
+Push to live was ~10.1 minutes. It is not any more, and the way it got faster
+constrains what you may do to these files. Three facts that are easy to undo
+by accident:
+
+1. **`npm run build` is `tsc -b && npm run build:ci`.** ONE definition, so the
+   two cannot drift. `ci.yml`'s two build jobs run `build:ci`;
+   `publish-club-arena.yml` runs the full `npm run build`. THE ASYMMETRY IS
+   DELIBERATE and either half alone is a bug: the tree that reaches players is
+   typechecked on the commit that ships it, and the throwaway pull-request
+   builds are not, because the required `TypeScript Check` job has already
+   checked that same tree, ungated, on every pull request. `tsc -b` emits
+   nothing here (all three tsconfigs are `noEmit`, none is `composite`, no dts
+   or checker plugin) - if you add `composite`, `references` or a dts plugin,
+   `tsc -b` starts emitting and `build:ci` silently stops producing the same
+   bundle. `tests/the-build-typechecks-where-it-ships.law.test.ts` fails first.
+
+2. **`sharp` is a declared devDependency.** It used to be deliberately absent
+   and installed over the network into `os.tmpdir()` mid-build - 97s cold, 77s
+   warm, three times per merge. Do not remove it, and do not remove the
+   temp-prefix fallback in `scripts/lib/sharp-loader.mjs` either: that is the
+   no-regression net. The lockfile must keep the `@img/sharp-linux-x64` and
+   `@img/sharp-libvips-linux-x64` entries or `npm ci` on a runner installs
+   sharp with no binary and the fallback quietly resumes paying the 97s.
+
+3. **`scripts/optimize-dist-media.mjs` is parallel and content-addressed.**
+   Results are cached by the sha256 of the INPUT bytes plus the rule, the
+   extension, `ENCODER_SETTINGS_VERSION` and sharp's version. **If you change
+   the png/webp/jpeg encoder options, bump `ENCODER_SETTINGS_VERSION` in the
+   same edit** - it is the only thing between an encoder change and a cache
+   that keeps serving the previous encoder's bytes. The script also recognises
+   its own output, so a second pass re-encodes nothing; before 2026-09-04 a
+   second pass re-encoded 90 files and lost quality every time.
+
+**Source maps go to Sentry and never to players.** `SENTRY_AUTH_TOKEN` belongs
+to `publish-club-arena.yml` and nowhere else. It used to sit in `ci.yml`, so
+the plugin uploaded maps for the pull-request bundle that gets thrown away,
+uploaded none for the bundle that ships, and - because
+`filesToDeleteAfterUpload` only runs on a successful upload - shipped 267 `.map`
+files (27MB) to players on every deploy. The publisher now strips them
+unconditionally and refuses to publish a survivor.
+
+Full reasoning and every measurement:
+`docs/changelog/2026-09-04-push-to-live-under-six-minutes.md`.
+
+### 1.1.7 THE RUNNERS (rescaled 2026-09-04)
+
+| Box              | Type  | Cores | Runners | Serves                         |
+| ---------------- | ----- | ----- | ------- | ------------------------------ |
+| `estate-ci-eu-1` | cpx62 | 16    | 12      | Club Arena                     |
+| `estate-ci-eu-2` | cpx62 | 16    | 12      | World Hub (6) + Club Arena (6) |
+| `estate-ci-eu-3` | cpx62 | 16    | 12      | Club Arena                     |
+| `estate-ci-1`    | cpx31 | 4     | 3       | World Hub + Club Arena         |
+
+52 cores, 33 Club Arena runners. The three EU boxes were 8-core (cpx42) until
+2026-09-04; loads of 40.9 were the reason. `cx53` and `cax41` are NOT orderable
+on this account - both were tried and refused.
+
+**A NUMBER TUNED TO HARDWARE AND WRITTEN DOWN AS A CONSTANT OUTLIVES THE
+HARDWARE.** The old 8-core concurrency caps became the bottleneck the hour the
+boxes became 16-core. Derive from the box (`os.cpus().length`,
+`nproc`), never from a literal.
+
+**Counting busy runners: `pgrep -f 'Runner.Worker'` matches your own ssh
+command** and makes every box look permanently busy. Use
+`ps -eo comm | grep -c '^Runner.Worker$'`. The GitHub API's `busy` flag is not
+reliable either; inspect processes.
+
 ### 1.1.5 SERVER-SIDE PROTECTION (APPLIED - this section is history)
 
 `.husky/pre-push` is a seatbelt on an unlocked door: `--no-verify` skips it and
@@ -283,6 +352,14 @@ Never say "should be live in a few minutes" or "deploy triggered."
 - ALL game logic lives here: HandController, ServerTableEngine, all engines
 - HTTP endpoints: POST /action, POST /timebank, GET /actions, GET /health
 - Uses `SUPABASE_SERVICE_ROLE_KEY` (bypasses RLS)
+- Sentry: its OWN project `club-arena-engine` (since 2026-09-04) and an
+  SDK-side event budget (`server/src/services/sentryEventBudget.ts`, 10/min per
+  fingerprint, 60/min overall, dropped counts summarised every 10 min). An
+  engine loop burned the whole org quota in August and blinded every other
+  app for three weeks. Never point `SENTRY_DSN` back at the hub project, never
+  remove the budget from `beforeSend`, and do not raise its limits to make a
+  loop visible: the summary event already names it.
+  `docs/changelog/2026-09-04-engine-sentry-budget.md`.
 
 ### Supabase
 
@@ -362,6 +439,48 @@ When auditing or reviewing code:
 4. REPEAT until all items in the current phase are done
 
 Do NOT audit 10 items and then ask "what should I fix?" -- fix them as you go.
+
+---
+
+## 4.5 NEVER HAND-PICK A MIGRATION VERSION (2026-09-04, BINDING)
+
+**Always run:**
+
+```bash
+node scripts/new-migration.mjs "what it does"
+```
+
+Never type a `20260904...` version yourself, and never copy one from another
+file and edit the digits.
+
+### Why, measured
+
+Over 24 hours this was the single biggest source of red CI in the repo:
+**21 of ~62 real check failures** were one collision - 15 in `TypeScript Check`
+(`Supabase Invariants - New Migration`) and 6 in `Client Unit Tests`
+(`migrationVersionUniqueness`).
+
+Agents pick the 14-digit version by hand, reach for a round number, and two of
+them land on the same one. **Neither branch is wrong on its own** - each holds
+one file, so both go green. The collision appears the moment the second branch
+takes `main`, and then CI fails for work that was correct when it was written.
+That is what "CI keeps failing for no reason" has been.
+
+### It is not only a red build
+
+Supabase keys `schema_migrations` on the version. Of two files sharing one,
+**the second is SILENTLY NEVER APPLIED**. A migration that never ran is worse
+than a failing test, because nothing tells you.
+
+### What the script does that a timestamp cannot
+
+It asks what is already taken - this tree, `origin/main`, **and every remote
+branch** - and steps forward a second at a time until it finds a free version.
+Checking the branches is the whole point: the version you collide with usually
+lives on work nobody has merged yet, which no clock can see.
+
+It writes the file from the correct skeleton too, including the single-
+transaction requirement from the production DDL policy in section 2.
 
 ---
 
@@ -702,6 +821,59 @@ why something is BLOCKED is fine. Sitting in a loop is not.
 any worktree that is clean, pushed, and idle for 72 hours. Do not keep state
 you care about only in a worktree: commit and push it, or it will eventually
 be pruned (pushed branches lose nothing — the commits live on origin).
+
+---
+
+## 10.85 NEVER SCHEDULE ANYTHING ON THE CLAUDE SCHEDULER (Dan, 2026-09-04, BINDING)
+
+**Dan, verbatim: "IF YOU ARE SCHEDULING ANYTHING TO 'RUN ON CLAUDE SCHEDULER' IT
+WON'T WORK OR SAVE, BECAUSE IM NEVER ON THE SAME ACCOUNT LONG ENOUGH" and "MAKE
+IT A HARD LAW THAT NO OTHER AGENT SCHEDULES ANY CRITICAL TASK, WATCH DOG OR
+ANYTHING ELSE THERE ... ALWAYS CREATE A REAL CRON USING OPEN CLAW".**
+
+An agent MUST NOT create a scheduled task with the Claude scheduled-tasks tool
+(`mcp__scheduled-tasks__create_scheduled_task`, the "Scheduled" panel). Not for
+a watchdog, not for a verification timer, not for a follow-up check, not for
+"I will look at this again in an hour". Not ever.
+
+### Why it silently fails
+
+Those tasks are bound to ONE Claude account. Dan works across several, so a
+task installed from this session is invisible and unreachable from the next
+one. It does not error. It does not warn. It reports itself as `enabled: true`
+and simply never fires again.
+
+That is not hypothetical. `smarter-poker-cron-health` was scheduled every six
+hours, sat there reading `enabled: true`, and its `lastRunAt` was
+**2026-06-17** - dead for two and a half months while looking healthy. It was
+also a duplicate of `.github/workflows/cron-health.yml`, which had been doing
+the job correctly the whole time. Deleted 2026-09-04.
+
+A scheduler that lies about running is worse than no scheduler, because
+somebody stops watching the thing it claimed to watch.
+
+### Where scheduled work actually goes
+
+| kind of work                                  | where                                                                                                                                         |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Application logic on a schedule               | **Open Claw on Hetzner** - `scripts/openclaw-cron-dispatcher.py`, deployed with `scripts/deploy-openclaw.sh` (World Hub CLAUDE.md section 11) |
+| CI-side work needing GitHub's own environment | a `.github/workflows` `schedule:` trigger, and ONLY if it is on the allowlist                                                                 |
+| A follow-up you personally want to make       | do it now, or open an issue. Never a timer                                                                                                    |
+
+If you catch yourself wanting a timer to "come back and check whether the PR
+merged", stop: Playbook 7b already forbids that. Push, open the PR, report the
+number, end the session. Autopilot merges it and the watchdogs verify it, all
+server-side, on infrastructure that does not care which account you were.
+
+### The one thing this does NOT forbid
+
+**Dan installs tasks there himself, deliberately, on every account at once.**
+`horse-daily-audit-analysis` is his, it is intentionally present on multiple
+accounts for redundancy, and it claims a row in `horse_job_runs` so exactly one
+account runs it per day. That is his design and it works. Leave it alone.
+
+The ban is on AGENTS putting platform-critical work somewhere it will quietly
+disappear. It is not a ban on Dan's own tooling.
 
 ---
 

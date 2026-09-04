@@ -21,7 +21,7 @@ import { ReactNode, useEffect, useState, useRef } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useUserStore } from '../../stores/useUserStore';
-import { readLocalSession, hasLocalSession } from '../../lib/authUtils';
+import { readLocalSession, hasLocalSession, SPA_AUTH_BREADCRUMB } from '../../lib/authUtils';
 import { reportError } from '../../utils/errorReporter';
 
 const SESSION_CHECK_TIMEOUT = 5000; // 5s max wait for getSession (increased from 3s)
@@ -31,7 +31,8 @@ const SESSION_CHECK_TIMEOUT = 5000; // 5s max wait for getSession (increased fro
  * in this browser session. Used to prevent spurious redirects during in-SPA
  * navigation when a token refresh or transient store reset occurs.
  */
-const SPA_AUTH_BREADCRUMB = 'club-arena-auth-breadcrumb';
+// SPA_AUTH_BREADCRUMB now lives in lib/authUtils so the sign-out path can
+// clear the same key this writes. Nothing used to clear it at all.
 
 function markAuthenticated(): void {
   try {

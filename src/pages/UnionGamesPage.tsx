@@ -7,7 +7,8 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+import { useUnionRouteId } from '../hooks/useUnionRouteId';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
@@ -91,7 +92,7 @@ export default function UnionGamesPage() {
 
   const { user } = useAuthUser();
   const toast = useToast();
-  const { unionId: paramUnionId } = useParams<{ unionId: string }>();
+  const { unionId: paramUnionId, unionRef } = useUnionRouteId();
   const [searchParams] = useSearchParams();
 
   const [tab, setTab] = useState<'tournaments' | 'tables' | 'bbj'>('tournaments');
@@ -392,17 +393,20 @@ export default function UnionGamesPage() {
           <>
             {unionId && canManageGames && (
               <>
-                <Link to={`/unions/${unionId}/table-management`} className={styles.btnGhost}>
+                <Link
+                  to={`/unions/${unionRef || unionId}/table-management`}
+                  className={styles.btnGhost}
+                >
                   Table Management
                 </Link>
                 <GameCreationActions
-                  managementPath={`/unions/${unionId}/table-management`}
+                  managementPath={`/unions/${unionRef || unionId}/table-management`}
                   compact
                 />
               </>
             )}
             {unionId && (
-              <Link to={`/unions/${unionId}`} className={styles.btnGhost}>
+              <Link to={`/unions/${unionRef || unionId}`} className={styles.btnGhost}>
                 Union
               </Link>
             )}

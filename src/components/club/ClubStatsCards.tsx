@@ -38,8 +38,19 @@ export interface DashboardStats {
 
 interface ClubStatsCardsProps {
   clubId: string;
-  /** Preloaded stats from the parent (avoids a duplicate RPC). */
+  /**
+   * Preloaded stats from the parent. Three states, not two:
+   *   undefined  - no parent is loading these; the cards fetch for themselves;
+   *   null       - the parent owns the read and it has not answered yet;
+   *   object     - the parent's answer.
+   * Until 2026-09-04 `null` was treated as `undefined`, so ClubDashboard,
+   * which passes its own not-yet-loaded state, triggered a second
+   * ca_club_dashboard_stats call on every mount (~910 ms and 132,855 buffers
+   * each at the time) that the parent's answer then overwrote.
+   */
   stats?: DashboardStats | null;
+  /** The parent's read failed: say so instead of holding the skeleton. */
+  failed?: boolean;
 }
 
 const EMPTY_STATS: DashboardStats = {
@@ -88,24 +99,32 @@ function Sparkline({ points, color }: { points: number[]; color: string }) {
   );
 }
 
-export default function ClubStatsCards({ clubId, stats: statsProp }: ClubStatsCardsProps) {
+export default function ClubStatsCards({
+  clubId,
+  stats: statsProp,
+  failed = false,
+}: ClubStatsCardsProps) {
+  const selfLoading = statsProp === undefined;
   const [stats, setStats] = useState<DashboardStats>(statsProp || EMPTY_STATS);
   const [loading, setLoading] = useState(!statsProp);
   const isMounted = useIsMounted();
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  // Parent-driven mode: mirror the prop whenever it changes.
+  // Parent-driven mode: mirror the prop whenever it changes. A null prop
+  // means the parent is still reading, so the skeleton stays up.
   useEffect(() => {
     if (statsProp) {
       setStats(statsProp);
       setLoading(false);
+    } else if (statsProp === null) {
+      setLoading(true);
     }
   }, [statsProp]);
 
-  // Self-loading mode: only when no stats prop is ever provided.
+  // Self-loading mode: only when no parent owns the read at all.
   useEffect(() => {
-    if (statsProp) return;
+    if (!selfLoading) return;
     loadStats();
 
     const reload = () => {
@@ -127,7 +146,7 @@ export default function ClubStatsCards({ clubId, stats: statsProp }: ClubStatsCa
       unsubscribes.forEach((unsub) => unsub());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clubId, !!statsProp]);
+  }, [clubId, selfLoading]);
 
   const loadStats = async () => {
     setLoading(true);
@@ -356,6 +375,10 @@ export default function ClubStatsCards({ clubId, stats: statsProp }: ClubStatsCa
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading]);
+
+  if (failed && !statsProp) {
+    return <p className={styles.unavailable}>The Club Metrics Could Not Be Loaded</p>;
+  }
 
   if (loading) {
     return (

@@ -13,6 +13,8 @@ import { masterBus } from '../../core/MasterBus';
 import { MembershipService } from '../../services/MembershipService';
 import { useToast } from '../common/Toast';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { liveSeatTableIds } from '../../services/IntegrityActionService';
+import { confirmDialog } from '../common/confirmDialog';
 import './ClubMemberManagement.css';
 import { reportError } from '../../utils/errorReporter';
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
@@ -28,11 +30,35 @@ interface Member {
   avatarUrl: string;
   role: ClubRole;
   balance: number;
+  /**
+   * Everything a club_members row carries that a hard DELETE would destroy:
+   * chip_balance + held_chips + locked_chips + promo_balance, plus any credit
+   * drawn. Removal is refused while this is above zero.
+   */
+  chipsAtRisk: number;
   totalRake: number;
   handsPlayed: number;
   joinedAt: Date;
   lastActive: Date | null;
   isBanned: boolean;
+}
+
+/** The chips a membership row holds. Exported so the refusal is testable. */
+export function chipsHeldByMembership(row: {
+  chip_balance?: number | string | null;
+  held_chips?: number | string | null;
+  locked_chips?: number | string | null;
+  promo_balance?: number | string | null;
+  credit_used?: number | string | null;
+}): number {
+  const n = (v: unknown) => Number(v) || 0;
+  return (
+    n(row.chip_balance) +
+    n(row.held_chips) +
+    n(row.locked_chips) +
+    n(row.promo_balance) +
+    n(row.credit_used)
+  );
 }
 
 // The canonical colour and label for all seven roles live in RoleBadge and
@@ -45,17 +71,27 @@ interface Member {
 // refuses one without them), and Member Management is the screen that asks.
 const ASSIGNABLE_HERE: ClubRole[] = ['co_owner', 'admin', 'player'];
 
+/** Rows past this index appear together rather than one every 60 ms. */
+const STAGGER_CAP = 12;
+
 export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementProps) {
   const toast = useToast();
 
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
+  // A failed read is its own state. It used to fall through to an empty
+  // list, which reads as "this club has no members".
+  const [loadError, setLoadError] = useState(false);
   const isMounted = useIsMounted();
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'name' | 'balance' | 'rake' | 'joined'>('name');
-  const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  // Keyed by member id, not list index: the rendered list is searched,
+  // filtered and sorted, so an index into the unfiltered array named a
+  // different row and a search left survivors stuck at opacity 0.
+  const [visibleIds, setVisibleIds] = useState<Set<string>>(new Set());
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   // Cleanup stagger timers on unmount
   useEffect(() => {
@@ -66,55 +102,58 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
 
   const loadMembers = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const resolvedId = await resolveClubUUID(clubId);
       const { data, error } = await supabase
         .from('club_members')
         .select(
-          'user_id, role, chip_balance, hands_played, created_at, last_active, status, total_rake:total_rake_paid'
+          'user_id, role, chip_balance, held_chips, locked_chips, promo_balance, credit_used, hands_played, created_at, last_active, status, total_rake:total_rake_paid'
         )
         .eq('club_id', resolvedId)
         .order('created_at', { ascending: true });
 
-      if (!error && data && isMounted.current) {
-        // Batch-fetch profiles (no FK between club_members → profiles)
-        const cmUserIds = data.map((m: any) => m.user_id);
-        const cmProfileMap: Record<string, any> = {};
-        if (cmUserIds.length > 0) {
-          const { data: cmProfiles } = await supabase
-            .from('profiles')
-            .select('id, username, avatar_url:arena_avatar_url')
-            .in('id', cmUserIds);
-          if (cmProfiles) {
-            for (const p of cmProfiles) cmProfileMap[p.id] = p;
-          }
+      if (error) throw error;
+      if (!data || !isMounted.current) return;
+
+      // Batch-fetch profiles (no FK between club_members → profiles)
+      const cmUserIds = data.map((m: any) => m.user_id);
+      const cmProfileMap: Record<string, any> = {};
+      if (cmUserIds.length > 0) {
+        const { data: cmProfiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, username, avatar_url:arena_avatar_url')
+          .in('id', cmUserIds);
+        if (profilesError) throw profilesError;
+        if (cmProfiles) {
+          for (const p of cmProfiles) cmProfileMap[p.id] = p;
         }
-        setMembers(
-          data.map((m: any) => {
-            const profile = cmProfileMap[m.user_id];
-            return {
-              id: m.user_id,
-              username: profile?.username || 'Unknown',
-              avatarUrl: profile?.avatar_url || '',
-              role: m.role || 'member',
-              balance: m.chip_balance || 0,
-              totalRake: m.total_rake || 0,
-              handsPlayed: m.hands_played || 0,
-              joinedAt: new Date(m.created_at),
-              lastActive: m.last_active ? new Date(m.last_active) : null,
-              isBanned: m.status === 'banned',
-            };
-          })
-        );
-        setVisibleItems(new Set());
-        staggerTimersRef.current.forEach((t) => clearTimeout(t));
-        staggerTimersRef.current = data.map((_, i) =>
-          setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
-        );
       }
+      if (!isMounted.current) return;
+      setMembers(
+        data.map((m: any) => {
+          const profile = cmProfileMap[m.user_id];
+          return {
+            id: m.user_id,
+            username: profile?.username || 'Unknown',
+            avatarUrl: profile?.avatar_url || '',
+            role: m.role || 'player',
+            balance: Number(m.chip_balance) || 0,
+            chipsAtRisk: chipsHeldByMembership(m),
+            totalRake: Number(m.total_rake) || 0,
+            handsPlayed: Number(m.hands_played) || 0,
+            joinedAt: new Date(m.created_at),
+            lastActive: m.last_active ? new Date(m.last_active) : null,
+            isBanned: m.status === 'banned',
+          };
+        })
+      );
     } catch (err) {
-      console.error(err);
-      if (isMounted.current) toast.error('Failed to load members');
+      reportError(err, 'ClubMemberManagement.loadMembers');
+      if (isMounted.current) {
+        setLoadError(true);
+        toast.error('The Member List Could Not Be Loaded');
+      }
     }
     if (isMounted.current) setLoading(false);
   }, [clubId, isMounted, toast]);
@@ -138,45 +177,91 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
     }
   };
 
+  // A PostgREST update that matches no row (RLS said no, or the row is gone)
+  // answers 204 with no error. `.select()` makes the row count visible, so a
+  // refusal is reported as one instead of as success.
   const toggleBan = async (memberId: string, currentlyBanned: boolean) => {
+    if (busyId) return;
+    setBusyId(memberId);
     try {
       const resolvedId = await resolveClubUUID(clubId);
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('club_members')
         .update({ status: currentlyBanned ? 'active' : 'banned' })
         .eq('club_id', resolvedId)
-        .eq('user_id', memberId);
+        .eq('user_id', memberId)
+        .select('user_id');
 
       if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error('The Club Did Not Accept The Change. Your Role May Not Allow It.');
+      }
 
-      if (isMounted.current) toast.success(currentlyBanned ? 'Member unbanned' : 'Member banned');
+      if (isMounted.current) toast.success(currentlyBanned ? 'Member Unbanned' : 'Member Banned');
       masterBus.emit('CLUB_UPDATED', { clubId });
       loadMembers();
     } catch (err) {
-      console.error(err);
-      reportError(err, 'ClubMemberManagement.Error');
-      if (isMounted.current) toast.error('Failed to update ban status');
+      reportError(err, 'ClubMemberManagement.toggleBan');
+      if (isMounted.current) toast.error(safeErrorMessage(err, 'Failed To Update Ban Status'));
+    } finally {
+      if (isMounted.current) setBusyId(null);
     }
   };
 
-  const kickMember = async (memberId: string) => {
+  /**
+   * Removal is a hard DELETE of the membership row, and that row IS the
+   * member's club wallet: chip_balance, held_chips, locked_chips,
+   * promo_balance and credit_used all live on it (CLAUDE.md 11.5 - a probe
+   * on 2026-09-03 found the first member it picked holding 10,067.64). So:
+   * refused while the member holds anything or sits at a table, confirmed
+   * when they do not, and the deleted row count checked afterwards.
+   */
+  const kickMember = async (member: Member) => {
+    if (busyId) return;
+    if (member.chipsAtRisk > 0) {
+      toast.error(
+        `${member.username} Holds Or Owes ${member.chipsAtRisk.toLocaleString()} Chips In This Club. Settle Them Before Removing The Membership.`
+      );
+      return;
+    }
+    setBusyId(member.id);
     try {
       const resolvedId = await resolveClubUUID(clubId);
-      const { error } = await supabase
+      const seats = await liveSeatTableIds(resolvedId, member.id);
+      if (seats.length > 0) {
+        toast.error(
+          `${member.username} Is Seated At ${seats.length} ${seats.length === 1 ? 'Table' : 'Tables'}. Remove Them From Play First.`
+        );
+        return;
+      }
+      const confirmed = await confirmDialog({
+        title: 'Remove Member',
+        message: `Remove ${member.username} From The Club? They Hold No Chips And Are Not Seated.`,
+        confirmText: 'Remove',
+        variant: 'danger',
+      });
+      if (!confirmed) return;
+
+      const { data, error } = await supabase
         .from('club_members')
         .delete()
         .eq('club_id', resolvedId)
-        .eq('user_id', memberId);
+        .eq('user_id', member.id)
+        .select('user_id');
 
       if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error('The Club Did Not Accept The Removal. Your Role May Not Allow It.');
+      }
 
-      if (isMounted.current) toast.success('Member removed from club');
+      if (isMounted.current) toast.success('Member Removed From Club');
       masterBus.emit('CLUB_UPDATED', { clubId });
       loadMembers();
     } catch (err) {
-      console.error(err);
-      reportError(err, 'ClubMemberManagement.Error');
-      if (isMounted.current) toast.error('Failed to remove member');
+      reportError(err, 'ClubMemberManagement.kickMember');
+      if (isMounted.current) toast.error(safeErrorMessage(err, 'Failed To Remove Member'));
+    } finally {
+      if (isMounted.current) setBusyId(null);
     }
   };
 
@@ -201,14 +286,46 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
     }
   });
 
+  // Stagger only the rows actually rendered, by id, whenever the rendered
+  // set changes. Rows already shown stay shown. The delay is capped: with
+  // 417 members, an uncapped i * 60 left the last row invisible for 25
+  // seconds.
+  const renderedSignature = filteredMembers.map((m) => m.id).join('|');
+  useEffect(() => {
+    staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    const ids = renderedSignature ? renderedSignature.split('|') : [];
+    staggerTimersRef.current = ids
+      .filter((id) => !visibleIds.has(id))
+      .map((id, i) =>
+        setTimeout(
+          () => {
+            if (isMounted.current) setVisibleIds((prev) => new Set(prev).add(id));
+          },
+          Math.min(i, STAGGER_CAP) * 60
+        )
+      );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renderedSignature]);
+
   if (loading) {
     return <div className="member-management loading">Loading...</div>;
+  }
+
+  if (loadError) {
+    return (
+      <div className="member-management">
+        <p className="member-management__error">The Member List Could Not Be Loaded.</p>
+        <button type="button" className="member-management__retry" onClick={() => loadMembers()}>
+          Retry
+        </button>
+      </div>
+    );
   }
 
   return (
     <div className="member-management">
       <div className="member-management__header">
-        <h3> Members ({members.length})</h3>
+        <h3>Members ({members.length.toLocaleString()})</h3>
         <input
           type="text"
           placeholder="Search..."
@@ -235,17 +352,29 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       </div>
 
       <div className="member-management__list">
-        {filteredMembers.map((member, i) => (
+        {filteredMembers.length === 0 && (
+          <p className="member-management__empty">
+            {searchTerm || roleFilter !== 'all' ? 'No Members Match' : 'No Members Yet'}
+          </p>
+        )}
+        {filteredMembers.map((member) => (
           <div
             key={member.id}
             className={`member-row ${member.isBanned ? 'banned' : ''}`}
             style={{
-              opacity: visibleItems.has(i) ? 1 : 0,
-              transform: visibleItems.has(i) ? 'translateY(0)' : 'translateY(8px)',
+              opacity: visibleIds.has(member.id) ? 1 : 0,
+              transform: visibleIds.has(member.id) ? 'translateY(0)' : 'translateY(8px)',
               transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
             }}
           >
-            <span className="avatar">{member.avatarUrl}</span>
+            {/* The avatar is a picture, not the text of its URL. */}
+            <span className="avatar" aria-hidden="true">
+              {member.avatarUrl ? (
+                <img src={member.avatarUrl} alt="" loading="lazy" />
+              ) : (
+                member.username.charAt(0).toUpperCase()
+              )}
+            </span>
             <div className="info">
               <span className="name">
                 {member.username}
@@ -256,6 +385,9 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
               <span className="stats">
                 Balance: {member.balance.toLocaleString()} • Rake:{' '}
                 {member.totalRake.toLocaleString()}
+                {member.chipsAtRisk > member.balance && (
+                  <> • Held {(member.chipsAtRisk - member.balance).toLocaleString()}</>
+                )}
               </span>
             </div>
             {isAdmin && member.role !== 'owner' && (
@@ -277,13 +409,26 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
                   ))}
                 </select>
                 <button
+                  type="button"
                   className={member.isBanned ? 'unban' : 'ban'}
+                  disabled={busyId !== null}
                   onClick={() => toggleBan(member.id, member.isBanned)}
                 >
                   {member.isBanned ? 'Unban' : 'Ban'}
                 </button>
-                <button className="kick" onClick={() => kickMember(member.id)}>
-                  ✕
+                <button
+                  type="button"
+                  className="kick"
+                  disabled={busyId !== null}
+                  aria-label={`Remove ${member.username} From The Club`}
+                  title={
+                    member.chipsAtRisk > 0
+                      ? 'Holds Or Owes Chips In This Club. Settle Before Removing.'
+                      : 'Remove From Club'
+                  }
+                  onClick={() => kickMember(member)}
+                >
+                  Remove
                 </button>
               </div>
             )}

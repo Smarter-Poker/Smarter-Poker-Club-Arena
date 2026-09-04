@@ -129,6 +129,18 @@ PLO4 5/10 #2 at 11:39:20 opened the first `cash_player_session` row; a
 cash-out at 11:39:19 through the OLD engine's three-argument call resolved
 against the new signature and wrote the first `cash_rejoin_constraints` row.
 
+## Published and deployed (Gate 1 closed)
+
+PR #2959 merged 12:37 UTC as `55f435af8`. `build-info.json` served
+`ca_sha 55f435af8` at 12:39. `auto-deploy-hetzner` (dispatch 12:41) cut the
+engine over on the 12:55 break. Live evidence at 13:01, one minute after the
+thaw: 560 open `cash_player_session` rows, 538 settled by the new engine's
+first sweep (everyone seated got a session with baseline = stack), 145 stay
+clocks running, 77 already counting, 373 hands in three minutes, 226 live
+floors. At 13:03 the first voluntary leave was refused at the door
+(`LEAVE_LOCKED:461740`, 7:41 left) and a horse refused at a 726.66 floor
+re-bought at exactly 726.66 - the same door, the same number, no human in it.
+
 ## Rollout order and the window in between
 
 The migration applies before the engine deploys (merge -> publish -> Hetzner

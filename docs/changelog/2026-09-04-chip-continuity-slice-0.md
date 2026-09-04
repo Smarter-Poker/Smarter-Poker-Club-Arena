@@ -216,6 +216,83 @@ in `docs/LAWS.md`.
 | A0.16 | PASS   | probe (`SET ROLE authenticated` + jwt claims -> LEAVE_LOCKED)         |
 | A0.17 | PASS   | probe (`BUYIN_ABOVE_MAX`) + engine cap in `addChips` (unchanged)      |
 
+## Gate 1 deep audit (same day) - what three hostile reviews found, and what changed
+
+Three independent reviewers (SQL, engine, client) were pointed at the shipped
+slice with instructions to find bugs, gaps, stubs and wiring holes. Every
+finding below is fixed in this branch; the SQL ones are in
+`20260904140000_chip_continuity_slice_0_hardening.sql` (applied 2026-09-04
+12:10 UTC, recorded, and re-probed in a rolled-back transaction together with
+the whole A0.x scenario set).
+
+**P0 - the between-hands leave answered before the database ruled.**
+`leaveTable` returned `success: true` and cashed out in the background; a
+refusal at the door (mirror empty for up to 10 s after every hourly restart,
+or a settlement landing between the check and the cash-out) reached a client
+that had already navigated away from a seat still holding its chips, and the
+old `markSeatAsLeft` fallback then tore down the player's engine
+registrations while they were still in the chair. `leaveTable` is async now:
+the cash-out is awaited, a refusal is returned as `{success:false, code:
+'LEAVE_LOCKED', error: label}`, `seat_left` follows the money, and there is
+no fallback. Behaviour-tested for a human and a horse in
+`server/src/engine/ChipContinuityLeave.behaviour.test.ts`.
+
+**P1 - a leave refused at settlement stranded the player sat out with a
+frozen clock.** The only way out was the 5-minute sit-out eviction. Now the
+engine holds the leave (`leaveHeldByClock`): the clock COUNTS for a player
+who asked to go (they are sat out by the engine, not by choice), and the
+heartbeat tick opens the door through the same guarded call the moment the
+clock reaches zero. Sitting back in withdraws the request.
+
+**P1 - mid-hand, the payload judged the lock on the hand stack net of bets**,
+so a hero who opened for more than their profit saw the leave control unlock
+for a street. All three payloads now judge on the roster stack, which is
+what the leave check itself uses.
+
+**P1 - the admin kick was judged by the target's clock (engine) and, in the
+database, was a third hand-written cash-out that skipped clock, floor and
+session** (a club owner could point it at their own seat). Engine:
+`leaveTable(userId, { forced: true })` is a system exit. Database:
+`fn_admin_kick_player` delegates to `atomic_seat_cashout_locked` as
+`'forced'` under a transaction-local authority marker only it sets after
+`is_club_admin()` passes; the session closes and the floor is written.
+
+**P1 - the floor could be raced** (cash out at T1 and buy in at T2 in the
+same instant). The cash-out now takes the buy-in's own
+`table_cap:<user>` advisory lock before the seat row.
+
+**P1 - after a freeze the mirror was stale by the frozen minutes** for
+players whose presence did not change. The tracker re-sends everyone on the
+first sweep after a thaw.
+
+**P2, all fixed:** `fn_cash_session_open` raced itself under two engines
+(ON CONFLICT DO NOTHING); `now()` vs `clock_timestamp()` double-counted
+transaction age; integer overflow at 24.8 days on an unsettled running row
+(bigint, clamped); `p_leave_mode` unvalidated (two words or NULL);
+`fn_cash_effective_buyin` executable by anon; `fn_thaw_platform` lost its
+comments in the re-creation (restored verbatim); the leave handler answered
+a lawful refusal with HTTP 400 so the client reported it to Sentry (200 +
+code now, and neither `TableService` nor `handleForceLeaveTable` reports a
+`LEAVE_LOCKED` refusal); the no-engine `clientCashout` path rendered a
+refusal as "you were never seated" and navigated away (mapped to the label
+now); the buy-in floor was read once per mount and never lowered (re-read
+every time the sheet opens, cleared when none applies); departed seats were
+re-sent to the database every tick until the roster reloaded (`departed`
+set); `forget()` missing on the eviction, bust and horse stop-loss paths;
+the retired per-table `record_table_cashout` write on leave (gone); the
+CashierPage "cash out from the table" copy (now "Leave The Table To Cash
+Out"); `CashierModal`'s dead `minBuyIn` prop; two brittle law-test pins.
+
+**Named and NOT changed (design, recorded):** the sit-out eviction
+(2 orbits / 5 min) still releases a locked player's seat as a system exit
+with the floor written - OPORD 1.3 section 6.5 lists sit-out seat release
+as a constraint-writing leave, and the floor is the money protection; the
+floor is keyed on the HOST club (`tables.club_id`) per the OPORD's key, not
+the wallet club - a player who can sit at two host clubs' NLH 1/2 is "another
+club" for the floor, as A0.10 specifies; `leave_blocked` is emitted for
+observability and has no client consumer (the synchronous refusal carries
+the label).
+
 ## Not in this slice, on purpose
 
 - `tables.no_rathole` column and the `table_cashout_history` table are not

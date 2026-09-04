@@ -85,6 +85,15 @@ export class ChipContinuityTracker {
   private readonly rows = new Map<string, CashSessionRow>();
   /** Last `active` value sent per player; a change is a transition worth a round trip. */
   private readonly lastActive = new Map<string, boolean>();
+  /**
+   * Seats that left (cashed out, evicted, kicked). The hand roster keeps them
+   * until the next reload, and the database returns nothing for a vacated
+   * seat, so without this the sweep re-sent every departed seat on every
+   * tick until the next hand. Cleared the moment the roster stops naming them.
+   */
+  private readonly departed = new Set<string>();
+  /** The platform was frozen at the last sweep; the thaw shifted every clock. */
+  private sawFrozen = false;
   private inflight: Promise<void> | null = null;
 
   constructor(private readonly deps: ChipContinuityDeps) {}
@@ -134,6 +143,13 @@ export class ChipContinuityTracker {
   forget(userId: string): void {
     this.rows.delete(userId);
     this.lastActive.delete(userId);
+    this.departed.add(userId);
+  }
+
+  /** A new seat for a player the mirror had written off (re-buy before the roster reload). */
+  welcome(userId: string): void {
+    this.departed.delete(userId);
+    this.lastActive.delete(userId);
   }
 
   /** A refusal came back from the database with a remaining time: trust it over the mirror. */
@@ -158,8 +174,9 @@ export class ChipContinuityTracker {
       try {
         const rows = await this.deps.evaluate(this.deps.tableId, entries);
         if (!rows) return;
-        for (const r of rows) this.rows.set(r.user_id, r);
-        for (const e of entries) this.lastActive.set(e.user_id, e.active);
+        for (const r of rows) if (!this.departed.has(r.user_id)) this.rows.set(r.user_id, r);
+        for (const e of entries)
+          if (!this.departed.has(e.user_id)) this.lastActive.set(e.user_id, e.active);
       } catch (err) {
         this.deps.report(err, `ChipContinuity.${this.deps.tableId}.evaluate_failed`);
       }
@@ -184,8 +201,23 @@ export class ChipContinuityTracker {
     players: Array<{ user_id: string }>,
     isActive: (userId: string) => boolean
   ): Promise<void> {
+    if (!this.deps.isCash()) return Promise.resolve();
+    // The thaw (fn_thaw_platform) moved every running clock by the frozen
+    // minutes. The mirror did not move with it, so the first sweep after a
+    // freeze re-sends everyone and adopts the database's answer.
+    if (this.deps.isFrozen()) {
+      this.sawFrozen = true;
+      return Promise.resolve();
+    }
+    if (this.sawFrozen) {
+      this.sawFrozen = false;
+      this.lastActive.clear();
+    }
+    const present = new Set(players.map((p) => p.user_id));
+    for (const id of [...this.departed]) if (!present.has(id)) this.departed.delete(id);
     const entries: CashSessionEntry[] = [];
     for (const p of players) {
+      if (this.departed.has(p.user_id)) continue;
       const active = isActive(p.user_id);
       const known = this.rows.has(p.user_id);
       if (!known || this.lastActive.get(p.user_id) !== active) {
@@ -195,7 +227,6 @@ export class ChipContinuityTracker {
       }
     }
     // Players who left the roster take their mirror with them.
-    const present = new Set(players.map((p) => p.user_id));
     for (const id of [...this.rows.keys()]) if (!present.has(id)) this.forget(id);
     return this.evaluate(entries);
   }

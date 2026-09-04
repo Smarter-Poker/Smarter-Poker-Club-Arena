@@ -64,6 +64,14 @@ reply. It does not stop to ask.
 | R4  | 1.3 section 6.3 uses `_cents`. Repo money is `numeric` chips.                                                                    | **`numeric` chips.** Every `_cents` column in 1.3 is `_chips numeric(14,2)` in repo convention. No cents anywhere.                                                                                  |
 | R5  | 1.3 variant enum `plo8o`, `shortdeck`. Repo uses `plo8`, `short_deck`, and also deals `flo8`.                                    | **Repo names.** The variant picker is whatever `ServerTableEngine` deals today, read from the engine, not typed by hand. ROE 16 governs the rest.                                                   |
 
+### Rulings made at Gate 1 (2026-09-04, applied; overrule if wrong)
+
+| #   | Case                                                                                                                 | Ruling                                                                                                                                                                                                             |
+| --- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| R6  | A leave refused at settlement (the player won the hand they asked to leave during and is now ahead with clock left). | The engine HOLDS the leave. The stay clock counts for a player who asked to go, even though the engine sat them out, and the door opens automatically when it reaches zero. Sitting back in withdraws the request. |
+| R7  | The admin kick vs the target's stay clock.                                                                           | A kick is a SYSTEM exit: the clock never blocks it, the session closes, the floor is written. Both the engine path and the database RPC.                                                                           |
+| R8  | The sit-out eviction (2 orbits / 5 min) of a locked player.                                                          | Stays a system exit with the floor written, per 1.3 section 6.5. Not softened.                                                                                                                                     |
+
 ## 2. CHANGES TO 1.3, SECTION BY SECTION
 
 ### 2.1 Section 2 - Commander intent

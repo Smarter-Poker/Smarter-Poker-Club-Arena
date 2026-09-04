@@ -803,7 +803,11 @@ export async function notifyServerLeave(tableId: string): Promise<ActionResult> 
       // nobody anything.
       try {
         const body = (await resp.json()) as ActionResult;
-        return { success: false, error: body?.error || `Server error (${resp.status})` };
+        return {
+          success: false,
+          error: body?.error || `Server error (${resp.status})`,
+          code: body?.code,
+        };
       } catch {
         return { success: false, error: `Server error (${resp.status})` };
       }

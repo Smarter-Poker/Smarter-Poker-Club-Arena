@@ -169,7 +169,7 @@ describe('the tracker reports transitions and renders answers', () => {
 
 describe('the engine wiring (source pins - each one is a leak that shipped once already elsewhere)', () => {
   it('leaveTable refuses a locked cash player with the label and LEAVE_LOCKED (A0.2)', () => {
-    const body = sliceMethod(SEATING, 'public leaveTable(userId: string)');
+    const body = sliceMethod(SEATING, 'public async leaveTable(');
     expect(body).toContain('this.chipContinuity.leaveLock(userId, player.stack)');
     expect(body).toContain("code: 'LEAVE_LOCKED'");
     expect(body).toContain('leaveLabel(lock.remainingMs)');
@@ -177,13 +177,53 @@ describe('the engine wiring (source pins - each one is a leak that shipped once 
     expect(body.indexOf('if (this.isTournamentTable())')).toBeLessThan(
       body.indexOf('chipContinuity.leaveLock')
     );
+    // A forced (kick) exit skips the mirror check and cashes out with leaveMode forced.
+    expect(body).toContain('if (!opts.forced) {');
+    expect(body).toContain("leaveMode: 'forced'");
   });
 
-  it('a voluntary leave goes through the guarded door and never falls back to markSeatAsLeft (A0.16)', () => {
-    const body = sliceMethod(SEATING, 'public leaveTable(userId: string)');
-    expect(body).toContain('atomicCashoutVoluntary(userId, this.tableId, player.seat_number)');
+  it('the between-hands answer IS the database answer: awaited, seat_left only after the money, no fallback (A0.16)', () => {
+    const body = sliceMethod(SEATING, 'public async leaveTable(');
+    expect(body).toContain(
+      'await atomicCashoutVoluntary(userId, this.tableId, player.seat_number)'
+    );
     expect(blankNonCode(body)).not.toContain('markSeatAsLeft');
-    expect(blankNonCode(body)).not.toMatch(/\batomicCashout\(/);
+    const emit = body.indexOf('const emitSeatLeft = () =>');
+    const voluntary = body.indexOf('await atomicCashoutVoluntary(');
+    const emitAfter = body.indexOf('emitSeatLeft();', voluntary);
+    expect(emit).toBeGreaterThan(-1);
+    expect(emitAfter).toBeGreaterThan(voluntary);
+    expect(body).toContain("if (res.code === 'LEAVE_LOCKED') {");
+    expect(body.slice(body.indexOf("if (res.code === 'LEAVE_LOCKED') {"))).toContain(
+      "code: 'LEAVE_LOCKED',"
+    );
+  });
+
+  it('a leave refused at settlement is held by the clock and released by the heartbeat', () => {
+    expect(sliceMethod(BASE, 'protected onLeaveRefusedAtSettlement(')).toContain(
+      'this.leaveHeldByClock.add(userId)'
+    );
+    expect(sliceMethod(BASE, 'protected isContinuityActive(userId: string)')).toContain(
+      'if (this.leaveHeldByClock.has(userId)) return true;'
+    );
+    const release = sliceMethod(BASE, 'protected async releaseLeavesHeldByClock()');
+    expect(release).toContain('atomicCashoutVoluntary(userId, this.tableId, seated.seat_number)');
+    expect(sliceMethod(BASE, 'protected scheduleHeartbeatCheck()')).toContain(
+      'releaseLeavesHeldByClock()'
+    );
+    expect(sliceMethod(SEATING, 'public sitOut(')).toContain(
+      'this.leaveHeldByClock.delete(userId)'
+    );
+  });
+
+  it('the leave handler answers a lawful refusal with 200, and the admin kick is forced', () => {
+    const LEAVE = read('src/handlers/leave.ts');
+    expect(LEAVE).toContain("result.success || result.code === 'LEAVE_LOCKED' ? 200 : 400");
+    expect(LEAVE).toContain('await engine.leaveTable(userId)');
+    const ADMIN = read('src/handlers/admin.ts');
+    expect(ADMIN).toContain('await engine.leaveTable(targetUserId, { forced: true })');
+    const ROTATOR = read('src/services/HorseSessionRotator.ts');
+    expect((ROTATOR.match(/await engine\.leaveTable\(/g) ?? []).length).toBe(2);
   });
 
   it('there is no partial cash-out: no withdrawChips, no /withdrawchips route (A0.1)', () => {
@@ -219,7 +259,7 @@ describe('the engine wiring (source pins - each one is a leak that shipped once 
 
   it('a leave_pending seat is cashed out through the guarded door and a refusal keeps the seat', () => {
     const body = sliceMethod(SEATS, 'export async function processLeavePending(');
-    expect(body).toContain("leaveMode: 'voluntary'");
+    expect(body).toContain("forcedUserIds?.has(seat.user_id) ? 'forced' : 'voluntary'");
     expect(body).toContain('leave_pending: false');
     expect(body).toContain('onLocked?.(');
   });
@@ -237,15 +277,22 @@ describe('the engine wiring (source pins - each one is a leak that shipped once 
   });
 
   it('all three state payloads carry the same stay-clock fields (the two-out-of-three bug)', () => {
-    const spreads =
+    // Two hand-state builders judge on the roster stack (a bet is not a loss
+    // yet); the idle builder's roster IS the hand roster.
+    const rosterSpreads =
+      ENGINE.match(
+        /\.\.\.this\.chipContinuity\.seatFields\(p\.user_id, this\.continuityStack\(p\.user_id, p\.stack\)\)/g
+      ) ?? [];
+    const idleSpreads =
       ENGINE.match(/\.\.\.this\.chipContinuity\.seatFields\(p\.user_id, p\.stack\)/g) ?? [];
-    expect(spreads.length).toBe(3);
+    expect(rosterSpreads.length).toBe(2);
+    expect(idleSpreads.length).toBe(1);
     for (const sig of [
       'public getTableState(',
       'protected broadcastCurrentState()',
       'protected publishIdleState()',
     ]) {
-      expect(sliceMethod(ENGINE, sig)).toContain('chipContinuity.seatFields(p.user_id, p.stack)');
+      expect(sliceMethod(ENGINE, sig)).toContain('chipContinuity.seatFields(p.user_id,');
     }
   });
 });

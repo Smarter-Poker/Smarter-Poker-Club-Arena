@@ -276,7 +276,9 @@ export async function processLeavePending(
    * cleared so this sweep does not re-ask every tick, and the caller is told
    * so it can show the player the countdown instead of an empty seat.
    */
-  onLocked?: (userId: string, stayRemainingMs: number) => void
+  onLocked?: (userId: string, stayRemainingMs: number) => void,
+  /** Seats whose leave is a system exit (admin kick): the clock does not block them. */
+  forcedUserIds?: ReadonlySet<string>
 ): Promise<string[]> {
   /* Deliberately does NOT select `stack`. This query only ENUMERATES which
      seats asked to leave; the amount comes from the locked read inside
@@ -297,7 +299,7 @@ export async function processLeavePending(
   for (const seat of pendingSeats) {
     const out: { lockedMs: number | null; failed: boolean } = { lockedMs: null, failed: false };
     await atomicCashout(seat.user_id, tableId, seat.seat_number, {
-      leaveMode: 'voluntary',
+      leaveMode: forcedUserIds?.has(seat.user_id) ? 'forced' : 'voluntary',
       onLocked: (ms) => {
         out.lockedMs = ms;
       },

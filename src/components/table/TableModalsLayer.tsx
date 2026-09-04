@@ -1077,7 +1077,6 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         onAddChips={onAddChips}
         currentStack={heroStack}
         accountBalance={accountBalance}
-        minBuyIn={minBuyIn}
         maxBuyIn={maxBuyIn}
         maxStack={maxBuyIn}
       />

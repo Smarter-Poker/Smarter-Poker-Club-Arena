@@ -213,6 +213,17 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
     };
   }
 
+  /**
+   * CHIP CONTINUITY: the stack the stay clock is judged on. Between hands the
+   * roster and the hand agree; mid-hand the hand's copy is net of the current
+   * bets, which would flip `leave_locked` off every time the hero opened for
+   * more than their profit. The roster stack is what the seat holds.
+   */
+  private continuityStack(userId: string, fallback: number): number {
+    const seated = this.seatedPlayers.find((sp) => sp.user_id === userId);
+    return seated ? seated.stack : fallback;
+  }
+
   public getTableState(requestingUserId: string): Record<string, any> | null {
     if (!this.handController || !this.tableInfo) return null;
 
@@ -350,7 +361,10 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             position: positionLabels.get(p.seat) ?? '',
             is_horse: p.is_horse ?? false, // Bible V8 §2.3
             // CHIP CONTINUITY: the stay clock, identical in all three payloads.
-            ...this.chipContinuity.seatFields(p.user_id, p.stack),
+            // Judged on the ROSTER stack (what the seat holds outside the
+            // hand), not the live hand stack net of bets - a bet is not a loss
+            // yet, and the leave check itself uses the roster stack.
+            ...this.chipContinuity.seatFields(p.user_id, this.continuityStack(p.user_id, p.stack)),
           };
         });
       })(),
@@ -610,7 +624,8 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             position: positionLabels.get(p.seat) ?? '', // Bible V8 §2.3, Appendix B
             is_horse: p.is_horse ?? false, // Bible V8 §2.3
             // CHIP CONTINUITY: the stay clock, identical in all three payloads.
-            ...this.chipContinuity.seatFields(p.user_id, p.stack),
+            // Roster stack, not the live hand stack - see getTableState().
+            ...this.chipContinuity.seatFields(p.user_id, this.continuityStack(p.user_id, p.stack)),
             // Bible V8 §4.2 — Wait-for-BB flag exposed to clients so the
             // post-BB UI button can render. Walkthrough Step 4 fix
             // 2026-04-29: previously the engine tracked this internally but

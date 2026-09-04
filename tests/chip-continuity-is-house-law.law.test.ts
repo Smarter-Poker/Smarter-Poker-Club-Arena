@@ -114,6 +114,17 @@ describe('A0.1 - chips cannot leave a seat without the player', () => {
     expect(code).toContain('Add Chips');
   });
 
+  it('the no-engine cash-out path shows a stay-clock refusal instead of navigating away', () => {
+    const TS = read('src/services/TableService.ts');
+    expect(TS).toContain('/LEAVE_LOCKED:(\\d+)/.exec(String(cashoutError.message');
+    expect(TS).toContain('error: leaveAvailableLabel(Number(locked[1]))');
+    // The retired per-table floor is no longer written on leave.
+    expect(stripComments(TS)).not.toContain('record_table_cashout');
+    // A lawful refusal is not reported as an error.
+    expect(TS).toContain("if (serverLeave?.code !== 'LEAVE_LOCKED') {");
+    expect(read('src/services/GameServerAPI.ts')).toContain('code: body?.code,');
+  });
+
   it('the lobby has no rule chip and the host has no toggle for the floor', () => {
     expect(stripComments(read('src/components/lobby/lobbyEntries.ts'))).not.toContain(
       "key: 'no_rathole'"
@@ -192,7 +203,10 @@ describe('6.1 / 6.3 - the leave control renders the engine clock and nothing els
     expect(TABLE_PAGE).toContain(
       "label: heroLeaveLocked ? leaveAvailableLabel(heroLeaveMs) : 'Leave Table'"
     );
-    expect(TABLE_PAGE).toContain("supabase.rpc(\n            'fn_cash_effective_buyin'");
+    // The floor is read from the server at mount AND every time the buy-in
+    // sheet opens (whitespace-tolerant: Prettier owns the layout).
+    expect((TABLE_PAGE.match(/supabase\.rpc\(\s*'fn_cash_effective_buyin'/g) ?? []).length).toBe(2);
+    expect(TABLE_PAGE).toContain('}, [showBuyInModal, tableId, userId]);');
     const BUYIN = read('src/components/table/BuyInModal.tsx');
     expect(stripComments(BUYIN)).not.toContain('For 2 Hours');
     expect(stripComments(BUYIN)).not.toContain('You Cashed Out');
@@ -200,9 +214,18 @@ describe('6.1 / 6.3 - the leave control renders the engine clock and nothing els
 
   it('House Rules carry exactly the three sentences allowed', () => {
     const RULES = read('src/components/table/GameRulesModal.tsx');
-    expect(RULES).toContain('Chips On The Table Stay On The Table Until You Leave.');
-    expect(RULES).toContain('You Remain Seated For 10 Minutes');
-    expect(RULES).toContain('You Buy In For At');
-    expect(RULES).toContain('Least The Stack You Left With.');
+    const flat = RULES.replace(/\s+/g, ' ');
+    expect(flat).toContain('Chips On The Table Stay On The Table Until You Leave.');
+    expect(flat).toContain(
+      'If You Are Ahead Of The Money You Put In, You Remain Seated For 10 Minutes Before You Can Leave.'
+    );
+    expect(flat).toContain(
+      'If You Return To The Same Game In This Club Within 2 Hours, You Buy In For At Least The Stack You Left With.'
+    );
+    // Cash tables only: a tournament seat has no stay clock and no floor.
+    expect(RULES).toContain('{isCashTable && (');
+    expect(read('src/components/table/TableModalsLayer.tsx')).toContain(
+      'isCashTable={!isTournament}'
+    );
   });
 });

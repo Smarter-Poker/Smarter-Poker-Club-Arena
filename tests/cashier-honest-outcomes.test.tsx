@@ -20,7 +20,6 @@ const base = {
   isOpen: true,
   currentStack: 100,
   accountBalance: 1000,
-  minBuyIn: 40,
   maxBuyIn: 200,
   maxStack: 400,
 };

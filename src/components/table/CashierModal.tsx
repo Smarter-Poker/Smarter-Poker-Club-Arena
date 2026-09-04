@@ -52,7 +52,6 @@ export interface CashierModalProps {
   onAddChips: (amount: number, opId?: string) => Promise<boolean>;
   currentStack: number;
   accountBalance: number;
-  minBuyIn: number;
   maxBuyIn: number;
   maxStack: number; // Max stack allowed at table
   transactions?: CashierTransaction[];
@@ -102,7 +101,6 @@ export function CashierModal({
   onAddChips,
   currentStack,
   accountBalance,
-  minBuyIn,
   maxBuyIn,
   maxStack,
   transactions = [],
@@ -146,10 +144,6 @@ export function CashierModal({
     const spaceInStack = maxStack - currentStack;
     return Math.min(spaceInStack, accountBalance, maxBuyIn);
   }, [currentStack, maxStack, accountBalance, maxBuyIn]);
-
-  // The table minimum is still a prop because the parent computes the seat's
-  // buy-in band from it; the add path only needs the ceiling.
-  void minBuyIn;
 
   const activeMax = canAddAmount;
 

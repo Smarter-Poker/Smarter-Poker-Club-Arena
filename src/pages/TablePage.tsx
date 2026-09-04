@@ -6212,6 +6212,31 @@ export default function TablePage({
   }, []);
   // FIX 136: 2-hour re-entry restriction — minimum buy-in from recent cashout
   const [cashoutMinBuyIn, setCashoutMinBuyIn] = useState(0);
+  /* CHIP CONTINUITY (2026-09-04): the rejoin floor is re-read every time the
+     buy-in sheet opens, and cleared when none applies. It used to be read once
+     at mount and only ever raised, so a floor earned at another table of the
+     same game while this page was open was invisible until the server refused
+     the buy-in, and a floor that had expired kept the slider's minimum high. */
+  useEffect(() => {
+    if (!showBuyInModal || !tableId || !userId || userId === 'guest') return;
+    let live = true;
+    void (async () => {
+      const { data, error } = await supabase.rpc('fn_cash_effective_buyin', {
+        p_table_id: tableId,
+      });
+      if (!live) return;
+      if (error) {
+        reportError(error, 'TablePage.effective_buyin_reread');
+        return;
+      }
+      const d = (data ?? null) as { min?: unknown; floor_applied?: unknown } | null;
+      const floorMin = Number(d?.min ?? 0);
+      setCashoutMinBuyIn(d?.floor_applied === true && floorMin > 0 ? floorMin : 0);
+    })();
+    return () => {
+      live = false;
+    };
+  }, [showBuyInModal, tableId, userId]);
 
   // Handle cashier add chips (deducts from wallet, adds to table stack)
   // Returns TRUE only when the engine actually credited the stack. The cashier
@@ -8163,10 +8188,14 @@ export default function TablePage({
       const forced = await tableService.leaveTable(tableId, tableState.heroSeat, userId);
       if (!forced?.success && forced?.error) {
         // Engine explicitly refused a REAL seated leave — chips are live, stay.
-        reportError(
-          new Error(forced.error || 'force leave rejected'),
-          'TablePage.handleForceLeaveTable.refused'
-        );
+        // CHIP CONTINUITY: a stay-clock refusal ("Leave Available In M:SS")
+        // is the rule working, not an error to report.
+        if (!/^Leave Available In /.test(forced.error)) {
+          reportError(
+            new Error(forced.error || 'force leave rejected'),
+            'TablePage.handleForceLeaveTable.refused'
+          );
+        }
         setLeaveNotice(
           forced.error || 'Could not leave the table - your chips are still in your seat.'
         );

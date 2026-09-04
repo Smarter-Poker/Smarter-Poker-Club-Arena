@@ -55,7 +55,7 @@ import {
   markSeatAsLeft,
 } from '../services/supabase.js';
 import { collectNitEvictions } from '../services/supabase/nitGame.js';
-import { evaluateCashSessions } from '../services/supabase/cashSessions.js';
+import { evaluateCashSessions, atomicCashoutVoluntary } from '../services/supabase/cashSessions.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { ChipContinuityTracker } from './ChipContinuity.js';
 import { deadlineScheduler } from './DeadlineScheduler.js';
@@ -1256,6 +1256,17 @@ export abstract class ServerTableEngineBase {
    * transitions and renders the answer. See ChipContinuity.ts.
    */
   protected chipContinuity: ChipContinuityTracker;
+  /**
+   * CHIP CONTINUITY: players whose leave was REFUSED at settlement (they won
+   * the hand they asked to leave during and are now ahead with clock left).
+   * They asked to go, so the clock counts for them even though they are sat
+   * out, and the heartbeat tick opens the door the moment it reaches zero.
+   * Sitting back in withdraws the request. Not persisted: after a restart the
+   * seat is an ordinary sat-out seat and the sit-out eviction handles it.
+   */
+  protected leaveHeldByClock: Set<string> = new Set();
+  /** CHIP CONTINUITY: mid-hand leaves that are system exits (admin kick). */
+  protected forcedLeaves: Set<string> = new Set();
   protected disconnectEngine: DisconnectEngine;
   protected preActionEngine: PreActionEngine;
   protected atomicStackService: AtomicStackService;
@@ -2160,6 +2171,54 @@ export abstract class ServerTableEngineBase {
    * this explicitly during the PR-G-real refactor.)
    */
   /**
+   * CHIP CONTINUITY: open the door for every held leave whose clock has run
+   * out. Runs after each presence sweep (10 s). The database is asked through
+   * the same guarded call as any other voluntary leave, so a mirror that is
+   * ahead of the truth is simply refused again and the mirror re-adopts the
+   * database's remaining time.
+   */
+  protected async releaseLeavesHeldByClock(): Promise<void> {
+    if (this.leaveHeldByClock.size === 0 || this.isTournamentTable()) return;
+    if (isMaintenanceFrozen()) return;
+    for (const userId of [...this.leaveHeldByClock]) {
+      const seated = this.seatedPlayers.find((p) => p.user_id === userId);
+      if (!seated) {
+        // Gone by another path (eviction, kick): nothing to release.
+        this.leaveHeldByClock.delete(userId);
+        continue;
+      }
+      if (this.chipContinuity.leaveLock(userId, seated.stack).locked) continue;
+      if (this.handController) {
+        const live = this.handController.getState().players.find((p) => p.user_id === userId);
+        if (live && !live.is_folded) continue; // dealt in after all: wait for the boundary
+      }
+      const res = await atomicCashoutVoluntary(userId, this.tableId, seated.seat_number);
+      if (res.ok) {
+        this.leaveHeldByClock.delete(userId);
+        this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+        this.timeBankEngine.removePlayer(this.tableId, userId);
+        this.straddleEngine.removePlayer(this.tableId, userId);
+        this.preActionEngine.removePlayer(this.tableId, userId);
+        this.chipContinuity.forget(userId);
+        this.hub?.emitEvent(this.tableId, {
+          type: 'seat_left',
+          table_id: this.tableId,
+          seat: seated.seat_number,
+          user_id: userId,
+          mid_hand: false,
+          timestamp: Date.now(),
+        });
+        console.log(
+          `[ServerTableEngine:${this.tableId}] held leave released for ${userId} - stay clock reached zero`
+        );
+        void this.broadcastCurrentState();
+      } else if (res.code === 'LEAVE_LOCKED') {
+        this.chipContinuity.noteRefusal(userId, res.stayRemainingMs);
+      }
+    }
+  }
+
+  /**
    * CHIP CONTINUITY (OPORD 1.3 section 6.3): the stay clock ticks only while
    * the player is seated, in, and here. Sitting out (or asked to after this
    * hand), disconnected, or away (page hidden, AFK strikes) all freeze it -
@@ -2172,6 +2231,7 @@ export abstract class ServerTableEngineBase {
    * told the countdown. Nothing is torn down.
    */
   protected onLeaveRefusedAtSettlement(userId: string, stayRemainingMs: number): void {
+    this.leaveHeldByClock.add(userId);
     this.chipContinuity.noteRefusal(userId, stayRemainingMs);
     console.log(
       `[ServerTableEngine:${this.tableId}] leave_pending refused at settlement for ${userId} - stay clock ${stayRemainingMs}ms remaining`
@@ -2186,6 +2246,10 @@ export abstract class ServerTableEngineBase {
   }
 
   protected isContinuityActive(userId: string): boolean {
+    // A leave the clock is holding serves the clock: the player asked to go,
+    // and the sit-out that keeps them out of the deal is the engine's, not
+    // their choice.
+    if (this.leaveHeldByClock.has(userId)) return true;
     if (this.pendingSitOut.has(userId)) return false;
     if (this.disconnectEngine.isSittingOut(this.tableId, userId)) return false;
     if (!this.disconnectEngine.isConnected(this.tableId, userId)) return false;
@@ -2223,6 +2287,7 @@ export abstract class ServerTableEngineBase {
           // transitions cross the wire; a quiet table costs nothing.
           void this.chipContinuity
             .sweepPresence(this.seatedPlayers ?? [], (uid) => this.isContinuityActive(uid))
+            .then(() => this.releaseLeavesHeldByClock())
             .catch((err) =>
               reportError(err, 'ServerTableEngine.' + this.tableId + '.continuity_sweep_threw')
             );
@@ -3844,6 +3909,8 @@ export abstract class ServerTableEngineBase {
         this.timeBankEngine.removePlayer(this.tableId, userId);
         this.straddleEngine.removePlayer(this.tableId, userId);
         this.preActionEngine.removePlayer(this.tableId, userId);
+        this.leaveHeldByClock.delete(userId);
+        this.chipContinuity.forget(userId);
       } catch (err) {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.sitout_evict_cashout');
         /* The fallback's own failure is reported too. `seat_left` has already

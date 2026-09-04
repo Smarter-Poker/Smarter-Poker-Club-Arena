@@ -1942,6 +1942,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
            */
           if (atRebuyStopLoss(horse.user_id, currentRebuys)) {
             await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+            this.chipContinuity.forget(horse.user_id);
             // Round 57: clear FSM tracking so the horse doesn't leave a ghost
             // entry in disconnect_states.
             this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
@@ -1989,6 +1990,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             );
           } else {
             await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+            this.chipContinuity.forget(horse.user_id);
             // Round 57: clear FSM tracking on insufficient-funds leave too.
             this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
             // Round 64: same for TimeBankEngine.
@@ -2120,13 +2122,16 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           this.tableId,
           this.tableInfo?.club_id || '',
           (lockedUserId, stayRemainingMs) =>
-            this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs)
+            this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs),
+          this.forcedLeaves
         );
         for (const userId of cashedOutIds) {
           this.disconnectEngine.unregisterPlayer(this.tableId, userId);
           this.timeBankEngine.removePlayer(this.tableId, userId);
           this.straddleEngine.removePlayer(this.tableId, userId);
           this.preActionEngine.removePlayer(this.tableId, userId);
+          this.forcedLeaves.delete(userId);
+          this.leaveHeldByClock.delete(userId);
           this.chipContinuity.forget(userId);
         }
       }

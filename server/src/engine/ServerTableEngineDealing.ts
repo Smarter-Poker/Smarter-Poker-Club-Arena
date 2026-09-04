@@ -286,6 +286,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         } else {
           for (const p of this.seatedPlayers) {
             if (!this.knownPlayerIds.has(p.user_id)) {
+              // CHIP CONTINUITY: a fresh arrival is a fresh session, even if
+              // the mirror wrote this player off a moment ago.
+              this.chipContinuity.welcome(p.user_id);
               if (!this.returningFromSitout.has(p.user_id) && !this.isTournamentTable()) {
                 this.registerWaitForBB(p.user_id);
               } else if (this.isTournamentTable()) {
@@ -540,7 +543,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                 this.tableId,
                 this.tableInfo?.club_id || '',
                 (lockedUserId, stayRemainingMs) =>
-                  this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs)
+                  this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs),
+                this.forcedLeaves
               );
               // Same per-player teardown settlement does, or every leaver
               // strands an FSM entry, a time bank and a pre-action behind them.
@@ -549,6 +553,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                 this.timeBankEngine.removePlayer(this.tableId, leftUserId);
                 this.straddleEngine.removePlayer(this.tableId, leftUserId);
                 this.preActionEngine.removePlayer(this.tableId, leftUserId);
+                this.forcedLeaves.delete(leftUserId);
+                this.leaveHeldByClock.delete(leftUserId);
                 this.chipContinuity.forget(leftUserId);
               }
               if (cashedOutIds.length > 0) {
@@ -2731,6 +2737,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
            the money path anyway is what keeps this seat exit OFF
            fn_unaccounted_seat_exits (CLAUDE.md 11.5). */
         await atomicCashout(player.user_id, this.tableId, player.seat_number);
+        this.chipContinuity.forget(player.user_id);
         this.disconnectEngine.unregisterPlayer(this.tableId, player.user_id);
         this.timeBankEngine.removePlayer(this.tableId, player.user_id);
         this.straddleEngine.removePlayer(this.tableId, player.user_id);
@@ -2798,6 +2805,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           timestamp: Date.now(),
         });
         await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+        this.chipContinuity.forget(horse.user_id);
         this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
         this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
         this.straddleEngine.removePlayer(this.tableId, horse.user_id);
@@ -2838,6 +2846,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         );
       } else {
         await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+        this.chipContinuity.forget(horse.user_id);
         this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
         this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
         this.straddleEngine.removePlayer(this.tableId, horse.user_id);
@@ -2931,6 +2940,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // died between the two.
       if (status === 'eliminated' || status === 'winner') {
         await markSeatAsLeft(this.tableId, player.user_id, player.seat_number);
+        this.chipContinuity.forget(player.user_id);
         this.disconnectEngine.unregisterPlayer(this.tableId, player.user_id);
         this.timeBankEngine.removePlayer(this.tableId, player.user_id);
         this.straddleEngine.removePlayer(this.tableId, player.user_id);
@@ -2948,6 +2958,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // recycled through. Same release, different cause.
       if (status === undefined) {
         await markSeatAsLeft(this.tableId, player.user_id, player.seat_number);
+        this.chipContinuity.forget(player.user_id);
         this.disconnectEngine.unregisterPlayer(this.tableId, player.user_id);
         this.timeBankEngine.removePlayer(this.tableId, player.user_id);
         this.straddleEngine.removePlayer(this.tableId, player.user_id);

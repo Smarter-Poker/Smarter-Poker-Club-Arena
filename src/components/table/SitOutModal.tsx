@@ -22,7 +22,6 @@ import './SitOutModal.css';
 export interface SitOutModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onReturn: () => void;
   onLeaveTable: () => void;
   /**
    * Epoch ms of when sit-out began, or null if that is not known.
@@ -116,7 +115,6 @@ function useSitOutCountdown(
 export function SitOutModal({
   isOpen,
   onClose,
-  onReturn,
   onLeaveTable,
   sitOutSince,
   isTournament = false,
@@ -142,12 +140,6 @@ export function SitOutModal({
    * a closed modal both cost nothing.
    */
   const msRemaining = useSitOutCountdown(isOpen, sitOutSince, isTournament);
-
-  // Handle return
-  const handleReturn = useCallback(() => {
-    onReturn();
-    onClose();
-  }, [onReturn, onClose]);
 
   // Handle leave
   const handleLeave = useCallback(() => {
@@ -215,16 +207,13 @@ export function SitOutModal({
           </span>
         )}
 
-        <button
-          className="sitout-modal__im-back-btn"
-          onClick={() => {
-            haptic.light();
-            handleReturn();
-          }}
-        >
-          I'm Back
-        </button>
-
+        {/* NO "I'M BACK" HERE (Dan 2026-09-04: "there shouldn't be two 'im
+            back' buttons"). This pill floats bottom-right, over the hero's
+            cards, at the same moment the footer bar below it says "You Are
+            Sitting Out" with its own I'm Back - two green buttons a thumb's
+            width apart doing the same thing. The bar is THE way back
+            (TablePage's spectator-footer-bar, `handleSitBackIn`); this pill
+            keeps what the bar does not offer: the way OFF the table. */}
         {/* Dan 2026-08-25: "if you are SITTING OUT but click LEAVE TABLE, it
             doesn't leave the table... LEAVE TABLE IS LIKE THE RESET BUTTON."
             This modal has ALWAYS taken an onLeaveTable prop and built a

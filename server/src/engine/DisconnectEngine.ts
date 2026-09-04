@@ -718,6 +718,42 @@ export class DisconnectEngine {
     return evict;
   }
 
+  /**
+   * ABANDONED SEATS (2026-09-04, the disconnect audit's first finding).
+   *
+   * A player who is gone but never sat out fell through every eviction rule:
+   * the sit-out clock needs `isSittingOut`, the away-blind cap needs blinds to
+   * actually be charged, and the forced sit-out needs three TURNS to time out.
+   * At a table below the deal minimum, or heads-up after the other player
+   * left, none of those ever happen - so a phone that died at a quiet table
+   * held its seat, and its chips, forever. `isAway()` was true the whole
+   * time and nothing consumed it.
+   *
+   * Dan's rule for a sat-out seat is "2 orbits or 5 minutes, whichever comes
+   * first". A seat nobody is behind gets the same 5 minutes, measured from
+   * the moment the engine concluded they were gone (`disconnectedAt`, or the
+   * /away beacon's `pageLeftAt`, whichever is older). A sat-out player is
+   * excluded here because the sit-out rule already owns them, and a player
+   * whose heartbeat lands before the sweep is not away, so presence wins at
+   * the moment of the decision exactly as it does for the blind cap.
+   */
+  collectAbandonedSeatEvictions(tableId: string, playerIds: string[]): string[] {
+    const evict: string[] = [];
+    const now = Date.now();
+    for (const playerId of playerIds) {
+      const state = this.playerStates.get(`${tableId}:${playerId}`);
+      if (!state || state.isSittingOut) continue;
+      if (!this.isAway(tableId, playerId)) continue;
+      const stamps = [state.disconnectedAt, state.pageLeftAt].filter(
+        (t): t is number => typeof t === 'number' && Number.isFinite(t)
+      );
+      if (stamps.length === 0) continue; // AFK-by-timeouts alone: the strike path owns it
+      const goneSince = Math.min(...stamps);
+      if (now - goneSince >= DisconnectEngine.SITOUT_MAX_MS) evict.push(playerId);
+    }
+    return evict;
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // SIT OUT MANAGEMENT
   // ═══════════════════════════════════════════════════════════════════════════

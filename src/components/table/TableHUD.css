@@ -63,9 +63,24 @@
      tile token — which sizes prev-hand, rabbit hunt AND the time-bank tile
      together by design — moves to match. The 44px touch-target pseudos on
      those widgets are now simply coincident with the painted tile.
-     --sp-hero-clear budget: 44 + 8 = 52, still under the 68px reserve. */
-  --sp-hud-tile-radius: 12px;
-  --sp-hud-tile-size: 44px;
+     --sp-hero-clear budget: 44 + 8 = 52, still under the 68px reserve.
+
+     Dan 2026-09-04: "the previous hand, chat, time bank, and rabbit hunt
+     buttons all need to be 50% larger." 44 -> 66px, radius 12 -> 18px so the
+     corner rounding scales with the tile. The chat button (TableChat.css)
+     moves with it: it is not a consumer of this token because it is mounted
+     outside .table-hud, so its 66px is written there and pinned to this one
+     by tests/all-in-cannot-leave-and-the-hud-slot.test.ts.
+
+     The row is now taller than --sp-hero-clear (66 + 8 = 74 against a 60px
+     desktop / 50-68px phone reserve) and that is deliberate: the reserve is
+     the HERO's strip and shrinking the felt to fit a corner tile is exactly
+     the regression Dan has rejected three times. The tiles live at the page's
+     left edge, under the stadium's rounded corner, where the oval leaves
+     that room empty - at 375px the felt's bottom 24px spans x 95..280 and the
+     tiles end at x 148. */
+  --sp-hud-tile-radius: 18px;
+  --sp-hud-tile-size: 66px;
   --sp-hud-tile-fg: rgba(255, 255, 255, 0.86);
   position: fixed;
   inset: 0;

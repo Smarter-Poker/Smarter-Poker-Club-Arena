@@ -1,0 +1,37 @@
+{
+  "_owner": "fix/cluster-controller-slice-2 (Operation Table Stakes, Slice 2 + 6, 2026-09-05). Applied to production as 20260905010000_cluster_columns_slice_2 (three lock-timed transactions) and 20260905010500_cluster_controller_slice_2 (functions). fn_cash_game_create re-created (Main 1 through fn_cash_cluster_open_table, no lifecycle flags); fn_thaw_platform, fn_managed_game_contract_document and fn_capture_managed_game_contract re-created from their deployed bodies plus the marked lines.",
+  "tables": ["cash_seat_moves", "cash_game_waitlist", "cash_cluster_events"],
+  "functions": [
+    "fn_cash_cluster_open_table",
+    "fn_cash_seat_moves_pending",
+    "fn_cash_seat_move_execute",
+    "fn_cash_cluster_tick",
+    "fn_cash_clusters_to_tick"
+  ],
+  "columns": {
+    "tables": [
+      "opened_at",
+      "live_at",
+      "break_started_at",
+      "break_eligible_since",
+      "promote_pending"
+    ],
+    "cash_games": ["opening_hold_since", "last_tick_at", "last_tick_actions"],
+    "cash_seat_moves": [
+      "id",
+      "game_id",
+      "player_id",
+      "from_table_id",
+      "to_table_id",
+      "reason",
+      "state",
+      "created_at",
+      "expires_at",
+      "executed_at",
+      "to_seat_number",
+      "note"
+    ],
+    "cash_game_waitlist": ["id", "game_id", "user_id", "status", "created_at", "updated_at"],
+    "cash_cluster_events": ["id", "game_id", "table_id", "kind", "payload", "at"]
+  }
+}

@@ -1,0 +1,3 @@
+# tests/cash-games-are-created-from-a-template.law.test.tsx
+
+A cash game is created from a template by the database (OPORD 1.3 s7-8, OPORD 1.4 s2.6, R1): the browser calls fn_cash_game_create and never inserts a tables or cash_games row; the six steps render in the OPORD order and each waits on the one before; a Classic Hold'em game offers 9 or 6 and an Omaha game offers 6 alone, locked, with the reason shown; a variant the engine does not deal is offered disabled and never silently saved as NLHE; the stay clock and rejoin window sliders bottom out at the snapshot floor; Save and Start go through the one create

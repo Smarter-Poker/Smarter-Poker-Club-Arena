@@ -394,8 +394,15 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
     // ── ADDITIVE observability (#5): observe action→broadcast latency (cheap, always) ──
     if (this.lastActionAcceptedAtMs > 0) {
       try {
-        EngineMetrics.actToBroadcastLatency.observe(Date.now() - this.lastActionAcceptedAtMs, {
+        const actMs = Date.now() - this.lastActionAcceptedAtMs;
+        EngineMetrics.actToBroadcastLatency.observe(actMs, {
           table_id: this.tableId,
+        });
+        // Phase 1 (2026-09-04): the always-on, low-cardinality twin. The
+        // per-table series above is gated off in production; this one is
+        // what the ActionLatency alerts read.
+        EngineMetrics.actToBroadcastFleet.observe(actMs, {
+          audience: this.humansSeated() > 0 ? 'human' : 'horse',
         });
       } catch {
         /* metrics must never affect gameplay */

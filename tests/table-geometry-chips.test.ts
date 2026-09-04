@@ -35,6 +35,12 @@ import {
   markerGapWidthPct,
   BUTTON_FELT_DAYLIGHT_WIDTH_PCT,
   BUTTON_FELT_MARGIN_WIDTH_PCT,
+  BUTTON_WIDTH_PCT,
+  BUTTON_MIN_PX,
+  BUTTON_MAX_PX,
+  CHIP_WIDTH_PCT,
+  CHIP_MIN_PX,
+  CHIP_MAX_PX,
   CHIP_COLLECT_FRACTION,
   CHIP_RAIL_WIDTH_PCT,
   MARKER_INSET_PX,
@@ -49,6 +55,13 @@ import {
   type Size,
 } from '../src/components/table/tableGeometry';
 import { SEAT_LAYOUTS } from '../src/lib/tableSeatGeometry';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+
+const HOTFIX_CSS = readFileSync(
+  resolve(__dirname, '../src/components/table/TableVisualHotfix.css'),
+  'utf8'
+).replace(/\/\*[\s\S]*?\*\//g, '');
 
 /** The three table sizes the app actually renders, all at 605/1000. */
 const TABLES: Record<string, Size> = {
@@ -210,25 +223,42 @@ describe('item 8 - the button stands clear of the rail, not against it', () => {
     }
   }
 
-  it('the daylight is half the puck at its largest relative size, not a taste call', () => {
+  it('the puck is twice the chip, its margin is its own radius, and the daylight is what ownership leaves', () => {
     /* Without this, the two assertions above are circular: they check that the
        code honours BUTTON_FELT_DAYLIGHT_WIDTH_PCT, so setting that constant to
        zero would satisfy them and put the puck straight back on the rail. This
-       one pins the VALUE, and to the same thing the constant's comment derives
-       it from rather than to a repeat of the number.
+       one pins the VALUES, and to the things the constants' comments derive
+       them from rather than to a repeat of the numbers.
 
-       --dealer-btn-size (TableVisualHotfix.css) is
-       `clamp(17px, var(--table-w) * 0.04, 28px)`, so the puck is at its widest
-       RELATIVE to the table at the phone floor - 17px on a 347px table, 4.90%.
-       Half of that is its radius, which is the margin that keeps the disc from
-       overhanging; another half is the felt Dan asked to see between the disc
-       and the rail. */
-    const widestPuckWidthPct = (17 / 347) * 100;
-    expect(FELT_MARKER_MARGIN_WIDTH_PCT).toBeGreaterThanOrEqual(widestPuckWidthPct / 2);
-    expect(BUTTON_FELT_DAYLIGHT_WIDTH_PCT).toBeGreaterThanOrEqual(widestPuckWidthPct / 2);
+       Dan 2026-09-04: "the button on the table needs to be double the size as
+       the chips in pot." --dealer-btn-size (TableVisualHotfix.css) is
+       `calc(var(--cp-chip-size) * 2)`, so BUTTON_* is CHIP_* doubled: 7.2% of
+       the table, floor 20px, ceiling 52px. The 20px floor binds only below a
+       278px table, so on every real device the puck is 7.2% wide and its
+       radius - the margin that keeps the disc off the painted rail - is 3.6%.
+
+       The daylight used to be "half a puck" too. At 3.6% + 3.6% the puck
+       walked so far in that on an 8-max phone the bottom-right seat's button
+       stood nearer the seat above it (78.5px against 80.8px) - the ownership
+       rule the `pushing the button in` case above pins. 1.9% is the largest
+       daylight that rule admits with 0.1% of headroom (2.0 passes, 2.1 does
+       not): 6.6px of felt on a phone, 13.7px on the desktop. */
+    expect(BUTTON_WIDTH_PCT).toBeCloseTo(CHIP_WIDTH_PCT * 2, 9);
+    expect(BUTTON_MIN_PX).toBe(CHIP_MIN_PX * 2);
+    expect(BUTTON_MAX_PX).toBe(CHIP_MAX_PX * 2);
+    const widestPuckWidthPct = BUTTON_WIDTH_PCT;
+    expect(BUTTON_FELT_MARGIN_WIDTH_PCT - BUTTON_FELT_DAYLIGHT_WIDTH_PCT).toBeGreaterThanOrEqual(
+      widestPuckWidthPct / 2
+    );
+    expect(BUTTON_FELT_DAYLIGHT_WIDTH_PCT).toBe(1.9);
     expect(BUTTON_FELT_MARGIN_WIDTH_PCT).toBeCloseTo(
-      FELT_MARKER_MARGIN_WIDTH_PCT + BUTTON_FELT_DAYLIGHT_WIDTH_PCT,
+      BUTTON_WIDTH_PCT / 2 + BUTTON_FELT_DAYLIGHT_WIDTH_PCT,
       6
+    );
+    // And the CSS agrees with the module.
+    expect(HOTFIX_CSS).toMatch(/--dealer-btn-size:\s*calc\(var\(--cp-chip-size\)\s*\*\s*2\)/);
+    expect(HOTFIX_CSS).toMatch(
+      /--cp-chip-size:\s*clamp\(10px,\s*calc\(var\(--table-w\)\s*\*\s*0\.036\),\s*26px\)/
     );
   });
 

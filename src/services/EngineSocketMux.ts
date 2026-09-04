@@ -41,8 +41,15 @@
  * another table within a minute reuses the warm socket instead of paying a
  * fresh TLS handshake. One idle WS per browsing player is far cheaper for the
  * engine than the reconnect storm of per-join handshakes it replaces.
+ *
+ * 2026-09-04: 60s -> 10 minutes. Until today an idle socket could not have
+ * lived past 60s anyway (see THE SOCKET ANSWERS ITS OWN PINGS below), so the
+ * linger was moot. Now that it can, a player reading the lobby for a few
+ * minutes between tables keeps the warm socket, and every table they open
+ * is a SUBSCRIBE frame, not a handshake. Dan: "it must always stay connected
+ * at all times."
  */
-const LINGER_AFTER_LAST_RELEASE_MS = 60_000;
+const LINGER_AFTER_LAST_RELEASE_MS = 10 * 60_000;
 /** Physical socket stuck in CONNECTING longer than this is torn down. */
 const HANDSHAKE_TIMEOUT_MS = 15_000;
 /** A facade whose SUBSCRIBE gets no SUBSCRIBED within this is failed. */
@@ -279,6 +286,9 @@ class EngineSocketMuxImpl {
     try {
       const msg = JSON.parse(data) as { type?: string };
       if (msg?.type === 'RESYNC') out = JSON.stringify({ type: 'RESYNC', tableId });
+      // The physical socket already answered this PING (see onmessage); a
+      // facade's PONG is a duplicate.
+      if (msg?.type === 'PONG') return;
     } catch {
       /* pass through unparseable frames untouched */
     }
@@ -375,9 +385,35 @@ class EngineSocketMuxImpl {
       if (!msg || typeof msg.type !== 'string') return;
 
       if (msg.type === 'PING') {
-        // Liveness belongs to every table; each client stamps its watchdog.
-        // (Each replies PONG; duplicates are harmless and far under the
-        // server's inbound rate limit.)
+        /* ═══ THE SOCKET ANSWERS ITS OWN PINGS (2026-09-04) ═══════════════
+           The server pings every 25s and closes any connection that has not
+           PONGed in 60s (EngineWebSocketServer.heartbeatSweep, 1001
+           "heartbeat timeout"). Until today the only PONGs on this socket
+           came from the facades' EngineStateClients - so a physical socket
+           with NO facade never answered. That is the pre-warmed lobby socket
+           (ServiceBootstrap.prewarm at boot), and the linger after the last
+           table is released, and the whole reason both existed was to be
+           alive when the next table was opened.
+
+           Measured in production, in Dan's own browser, 2026-09-04: the
+           boot socket opened at t+0, the table was opened at t+42s (facade
+           attached, SUBSCRIBED, felt live), and at t+60s the server closed
+           the socket for the PINGs that went unanswered BEFORE the facade
+           existed. Every facade failed, EngineStateClient went
+           'reconnecting', and the felt showed "Reconnecting To The Table"
+           twenty seconds into a table that had loaded perfectly. Anyone who
+           spent 35-60s in the lobby after boot got the same; anyone who
+           spent longer got a dead pre-warm and a cold handshake on join.
+
+           So the physical socket answers every PING itself, exactly once,
+           facades or not. The frame is still fanned out so each client stamps
+           its own staleness watchdog; their PONGs are dropped in sendFor so
+           four tables do not mean four replies. */
+        try {
+          ws.send(JSON.stringify({ type: 'PONG', ts: (msg as { ts?: number }).ts ?? Date.now() }));
+        } catch {
+          /* physical onclose will fan out */
+        }
         for (const f of this.facades.values()) f._message(raw);
         return;
       }

@@ -138,6 +138,34 @@ is one line in `fn_cash_cluster_open_table` (`big_blind_ante_enabled = v_ante
 <> 'none'`) plus the same on the tables already open; the engine needs no
 change.
 
+## Second commit: "Has Added On For XX.XX" above the player's head
+
+Dan, same day: "IF A PLAYER ADDS ON AFTER A HAND, THEY SHOULD GET A LITTLE POP
+UP ABOVE THEIR HEAD. 'HAS ADDED ON FOR XX.XX'."
+
+**Where the fact is.** Add-on chips are debited at once but only reach the
+stack when the engine's sweep (`processPendingAddOns`) resolves the
+`table_pending_addons` row - end of hand, or an idle tick. Since Chip Standard
+C3 the bust rebuy rides the same ledger. That sweep is the one place chips
+land, so it is the one place the table is told: it now emits `add_on_applied`
+on the table hub with `seat`, `user_id`, `amount` (the APPLIED amount - the RPC
+caps at the max buy-in and refunds the rest, and the bubble says what the
+stack actually gained), `stack`, `kind` (`addon` | `rebuy`) and `timestamp`.
+A row already resolved elsewhere, or one that applied nothing, says nothing.
+
+**How it is shown.** `AddOnBubble.ts` turns the event into a `SeatChatBubble`
+with a new `notice` variant, and `ChatBubble` renders it - the same box that
+already sits over `.seat-wrapper`, flips below the plate on the top arc, pops
+in and never intercepts a tap. Gold, not chat white or voice green, so nobody
+reads it as a line the player typed. Four seconds, one per seat, latest wins;
+it takes the seat slot over a chat line while it is up. It is NOT behind the
+social gate: it is a fact about the stack, so heads-up tables and muted chat
+still show it, and every subscriber sees it, hero included.
+
+Tests: `AddOnAppliedIsAnnounced.test.ts` (engine: applied amount, seat, kind,
+the two silences) and `tests/unit/addOnBubble.test.tsx` (words, seat, expiry,
+replace-not-stack, wiring pins).
+
 ## Still true after this PR
 
 - The eviction is a between-hands database query, as designed

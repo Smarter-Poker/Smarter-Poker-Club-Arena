@@ -164,6 +164,7 @@ import { roomService, type RoomMessage } from '../services/RoomService';
 import { HydraService } from '../services/HydraService';
 import TableChat from '../components/table/TableChat';
 import { ChatBubble, bubbleForSeat, useSeatChatBubbles } from '../components/table/ChatBubble';
+import { useSeatAddOnBubbles } from '../components/table/AddOnBubble';
 import { useTableVoice } from '../hooks/useTableVoice';
 import { holeCardCountFor } from '../lib/holeCardCount';
 import { shouldAnnounceBbjHit } from '../lib/bbjHitOnce';
@@ -7006,6 +7007,13 @@ export default function TablePage({
   const seatChatBubbles = useSeatChatBubbles(chatMessages, seatOwnerIds, {
     enabled: socialFeaturesAllowed && !isChatMuted,
     speakingPlayerIds,
+  });
+  /* Dan 2026-09-04: "HAS ADDED ON FOR XX.XX" above the head of whoever added
+     on. NOT behind the social gate: it is a fact about the stack, not a line
+     from the player, so heads-up tables and muted chat still show it. Fed by
+     the engine's `add_on_applied` event — the moment the sweep lands the chips. */
+  const seatAddOnBubbles = useSeatAddOnBubbles(engineLastEvent, seatOwnerIds, {
+    nameForSeat: (seatNumber) => tableState.players[seatNumber - 1]?.name || '',
   });
   cardsPreSortRef.current = v8Settings.cards_pre_sort;
 
@@ -21076,7 +21084,12 @@ export default function TablePage({
                     positioned, so the bubble follows the seat with no coordinate
                     maths and SeatSlot needs no knowledge of chat at all. */}
                 {(() => {
-                  const bubble = bubbleForSeat(seatChatBubbles, seatNumber);
+                  /* The add-on notice takes the slot over a chat line: it is
+                     the newer fact, it lives 4s, and two boxes over one plate
+                     is how you cover the seat above. */
+                  const bubble =
+                    bubbleForSeat(seatAddOnBubbles, seatNumber) ??
+                    bubbleForSeat(seatChatBubbles, seatNumber);
                   if (!bubble) return null;
                   return (
                     <ChatBubble

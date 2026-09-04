@@ -72,6 +72,21 @@ describe('LAW 1: one allocator', () => {
   });
 });
 
+describe('LAW 1b: the allocator carries its rounding residue', () => {
+  const c = find(/^\d{14}_phase_4_3_the_allocator_carries_its_rounding_residue\.sql$/);
+  it('a per-pool fractional-cent residue makes the long-run split exact, and a replay consumes none of it', () => {
+    expect(c).toMatch(/CREATE TABLE IF NOT EXISTS public\.ca_bbj_alloc_state/);
+    expect(c).toMatch(/v_exact_m := v_amt \* v_rm \+ v_state\.main_residue;/);
+    expect(c).toMatch(/main_residue\s+= round\(v_exact_m - main_portion, 6\)/);
+    expect(c).toMatch(
+      /FROM public\.fn_bbj_allocate\(COALESCE\(p_amount, 0\), v_main_now, p_pool_id\) a;/
+    );
+    expect(c).toMatch(/FROM public\.fn_bbj_allocate\(r\.amt, v_current_main, v_pool_id\) a;/);
+    expect(c).toMatch(/A replayed hand must not consume the residue/);
+    expect(c).toMatch(/RAISE EXCEPTION 'residue carry is not exact/);
+  });
+});
+
 describe('LAW 2: a bank move is declared and recorded', () => {
   it('fn_bbj_move_between_banks declares bbj_pool -> bbj_pool, records the move, refuses what the bank cannot cover', () => {
     expect(a).toMatch(/CREATE TABLE IF NOT EXISTS public\.ca_bbj_bucket_moves/);

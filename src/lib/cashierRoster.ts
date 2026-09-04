@@ -149,3 +149,45 @@ export function cashierRecipientBlock(opts: {
   }
   return null;
 }
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A SEARCH RANKS BY HOW WELL IT MATCHED, NOT BY WHO HAS THE MOST CHIPS
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan 2026-09-04, on being told he was "discoverable": "I AM NOT
+ * DISCOVERABLE... WHY ARE YOU LYING TO ME?!" He was row 21 of 21. His row was
+ * on the list - the previous fix put it there - but the list kept sorting by
+ * chip balance while a search was active, and his Deep Stack balance is 0.00,
+ * so twenty horses whose HANDLES contain "kingsley" sat above the one member
+ * whose NAME is KingFish. Present is not discoverable.
+ *
+ * With a query on, the best match leads. Ties fall back to the chosen sort.
+ * With no query, the chosen sort is the whole order, exactly as before.
+ *
+ * 0 means no match. Higher is better. The bands are wide apart on purpose,
+ * so a name hit always outranks a handle hit, which always outranks an id hit.
+ */
+export function rosterMatchRank(row: DownlineRow, query: string): number {
+  const q = query.trim().toLowerCase();
+  if (!q) return 0;
+  const name = row.name.toLowerCase();
+  const handle = row.username.toLowerCase();
+  const id = (row.playerNumber || '').toLowerCase();
+
+  let rank = 0;
+  if (name === q) rank = 900;
+  else if (name.startsWith(q)) rank = 800;
+  else if (name.includes(q)) rank = 700;
+  else if (handle === q) rank = 600;
+  else if (handle.startsWith(q)) rank = 500;
+  else if (handle.includes(q)) rank = 400;
+  else if (id === q) rank = 300;
+  else if (id.startsWith(q)) rank = 200;
+  if (rank === 0) return 0;
+
+  // The person searching for themselves is the most common search there is,
+  // and their row is never a recipient, so it never gets in the way.
+  if (row.isSelf) rank += 1000;
+  return rank;
+}

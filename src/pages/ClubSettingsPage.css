@@ -464,7 +464,7 @@
      bar's 74px min-height, and on a home-indicator iPhone the nav is ~108px
      tall with z-index 1000 - so the entire Save/Discard row disappeared behind
      it and the owner had no way to save at all. */
-  bottom: calc(var(--bottom-nav-clearance, 74px) + 8px);
+  bottom: calc(var(--bottom-nav-stack-base, 74px) + 8px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 1001;
@@ -596,7 +596,7 @@
   /* 8px (the unsaved bar's own offset) + its single-row height (44px button +
      19.2px padding + 2px border, ~66px) + 8px of air. Derived rather than
      guessed, because the two bars stack. */
-  bottom: calc(var(--bottom-nav-clearance, 74px) + 82px);
+  bottom: calc(var(--bottom-nav-stack-base, 74px) + 82px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 1001;

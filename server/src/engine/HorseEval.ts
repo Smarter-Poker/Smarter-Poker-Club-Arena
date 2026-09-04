@@ -971,6 +971,354 @@ export interface OppPostflopRead {
   /** V16: fired a big (>= 20bb) bet on the newest street — sampled toward
    *  two-pair-plus contact, not just any contact. */
   bigBet?: boolean;
+  /** V40: postflop streets on which this opponent bet or raised (1 = a
+   *  single bet, 3 = a triple barrel). The Omaha sampler's tier is built
+   *  from this and lastFrac, not from the capped aggrW. */
+  streets?: number;
+  /** V40: the newest street's bet or raise as a fraction of the pot it
+   *  went into (1 = a pot-sized bet). */
+  lastFrac?: number;
+  /** V40: this opponent RAISED on the newest street (over a bet). */
+  raised?: boolean;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// V40 OMAHA MADE-HAND CLASS (Dan 2026-09-04)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// "HORSES ARE PLAYING PLO4, PLO5, PLO6 AND PLO8 LIKE IT'S HOLDEM. This horse
+//  check-called a pot sized bet on the flop, turn and river with naked aces."
+//
+// The made-hand category says "two pair". Omaha says WHICH two pair, on WHAT
+// board, and that answer is most of the decision: aces-up on a paired board
+// is one pair against a range that bet three streets; bottom two on an
+// unpaired connected board is a bluff-catcher; top set on a rainbow
+// unconnected board is the nuts. This classifier is cheap (no simulation,
+// no enumeration) and serves both the calling side (the V40 pressure cap in
+// HorseLogic) and the betting side (small ball with non-nut hands).
+export type OmahaMadeClass =
+  | 'air'
+  | 'pair'
+  | 'board2p' // two pair where one pair IS the board's pair: really one pair
+  | 'low2p' // two pair below the board's top rank
+  | 'top2p' // top two pair on an unpaired board
+  | 'weaktrips' // trips via the board's pair (one hole card)
+  | 'set' // pocket pair matched a board card
+  | 'strong'; // straight or better: V15 owns the nut question there
+
+export interface OmahaMadeInfo {
+  cls: OmahaMadeClass;
+  category: number;
+  boardPaired: boolean;
+  /** three board cards fit inside a five-rank window (a straight is live) */
+  straightPossible: boolean;
+  /** three or more board cards of one suit (a flush is live) */
+  flushPossible: boolean;
+  /** hero holds a pocket pair, or two hole ranks pair the board: the class is
+   *  "weak" for this board — a made hand that a pot-sized line beats. */
+  weak: boolean;
+}
+
+const NO_MADE_INFO: OmahaMadeInfo = {
+  cls: 'air',
+  category: 0,
+  boardPaired: false,
+  straightPossible: false,
+  flushPossible: false,
+  weak: true,
+};
+
+/** Board texture flags shared by the classifier and the sampler tier. */
+export function omahaBoardShape(board: Card[]): {
+  paired: boolean;
+  straightPossible: boolean;
+  flushPossible: boolean;
+} {
+  const rankN = new Map<number, number>();
+  const suitN = new Map<string, number>();
+  for (const c of board) {
+    const r = RANK_VALUES[c.rank];
+    rankN.set(r, (rankN.get(r) || 0) + 1);
+    suitN.set(c.suit, (suitN.get(c.suit) || 0) + 1);
+  }
+  let paired = false;
+  for (const n of rankN.values()) if (n >= 2) paired = true;
+  let flushPossible = false;
+  for (const n of suitN.values()) if (n >= 3) flushPossible = true;
+  // Straight: any three distinct board ranks inside a five-rank window,
+  // the ace counting low as well.
+  const ranks = Array.from(rankN.keys());
+  if (ranks.includes(14)) ranks.push(1);
+  ranks.sort((a, b) => a - b);
+  let straightPossible = false;
+  for (let i = 0; i + 2 < ranks.length && !straightPossible; i++) {
+    if (ranks[i + 2] - ranks[i] <= 4) straightPossible = true;
+  }
+  return { paired, straightPossible, flushPossible };
+}
+
+export function omahaMadeClass(hole: Card[], board: Card[], category?: number): OmahaMadeInfo {
+  if (!hole || hole.length < 2 || !board || board.length < 3) return NO_MADE_INFO;
+  try {
+    const cat =
+      category != null && category > 0
+        ? category
+        : Math.floor(scoreOmahaHiPartial(hole, board) / 0x100000);
+    const shape = omahaBoardShape(board);
+    const base = {
+      category: cat,
+      boardPaired: shape.paired,
+      straightPossible: shape.straightPossible,
+      flushPossible: shape.flushPossible,
+    };
+    if (cat >= 5) return { ...base, cls: 'strong', weak: false };
+    if (cat <= 1) return { ...base, cls: 'air', weak: true };
+    if (cat === 2) return { ...base, cls: 'pair', weak: true };
+
+    const boardRankN = new Map<number, number>();
+    for (const c of board) {
+      const r = RANK_VALUES[c.rank];
+      boardRankN.set(r, (boardRankN.get(r) || 0) + 1);
+    }
+    const boardRanks = Array.from(boardRankN.keys()).sort((a, b) => b - a);
+    const holeRankN = new Map<number, number>();
+    for (const c of hole) {
+      const r = RANK_VALUES[c.rank];
+      holeRankN.set(r, (holeRankN.get(r) || 0) + 1);
+    }
+    // Hole ranks that pair the board, highest first.
+    const matched = boardRanks.filter((r) => holeRankN.has(r));
+    const pocketPairs = Array.from(holeRankN.entries())
+      .filter(([, n]) => n >= 2)
+      .map(([r]) => r);
+
+    if (cat === 4) {
+      // A set: a pocket pair whose rank is on the board (once).
+      const set = pocketPairs.some((r) => boardRankN.get(r) === 1);
+      if (set) {
+        return {
+          ...base,
+          cls: 'set',
+          weak: shape.straightPossible || shape.flushPossible,
+        };
+      }
+      return { ...base, cls: 'weaktrips', weak: true };
+    }
+
+    // cat === 3, two pair.
+    if (shape.paired) {
+      // On a paired board, two pair means the board pair plus ONE pair of
+      // hero's own (a pocket pair, or one card that hit) unless two hole
+      // ranks pair two DIFFERENT unpaired board ranks.
+      const unpairedMatches = matched.filter((r) => boardRankN.get(r) === 1);
+      if (unpairedMatches.length < 2) return { ...base, cls: 'board2p', weak: true };
+    }
+    // Unpaired board (or two live matches on a paired one): is it TOP two?
+    const liveBoard = boardRanks.filter((r) => boardRankN.get(r) === 1);
+    const top2 = liveBoard.slice(0, 2);
+    const isTop = top2.length === 2 && top2.every((r) => holeRankN.has(r));
+    if (isTop) {
+      // Top two on a paired board is still two pair against trips and
+      // boats: weak. On an unpaired board it is weak only where a straight
+      // or flush is live.
+      return {
+        ...base,
+        cls: 'top2p',
+        weak: shape.paired || shape.straightPossible || shape.flushPossible,
+      };
+    }
+    return { ...base, cls: 'low2p', weak: true };
+  } catch {
+    return NO_MADE_INFO;
+  }
+}
+
+/**
+ * V40 OMAHA AGGRESSOR TIER. Which made category a sampled opponent hand must
+ * reach for the sampler to accept it, given how hard this opponent has been
+ * betting. Tier 1 is a single ordinary bet, tier 2 a pot-sized bet or a
+ * second barrel, tier 3 a triple barrel, a raise, or a big second barrel.
+ *
+ * Pot-limit Omaha is a game of the nuts. A pot-sized third barrel on a
+ * paired board is a full house or trips, not "something that connects" -
+ * omahaConnectsBoard accepts virtually any six-card hand on any board (a
+ * hole rank pairing the board, any pocket pair, two suited cards, two ranks
+ * near the board) and so an aggressor was still sampled from his preflop
+ * band. That is the single equity lie behind every naked-aces call-down.
+ */
+export function omahaAggressorTier(read: OppPostflopRead): number {
+  const streets = read.streets ?? (read.aggrW > 0 ? 1 : 0);
+  if (streets <= 0 && !read.raised) return 0;
+  const frac = read.lastFrac ?? (read.bigBet ? 1 : 0.5);
+  let tier = 1;
+  if (frac >= 0.7 || read.bigBet) tier++;
+  if (streets >= 2) tier++;
+  if (streets >= 3 || read.raised) tier++;
+  return Math.min(3, tier);
+}
+
+/**
+ * The made category a tiered aggressor's sampled hand must reach on this
+ * board. Before the river a strong draw substitutes for it, but only on top
+ * of a made hand of at least `drawMinCat` (tier 3 wants two pair plus the
+ * draw, not a bare wrap). `pStrong` is the share of the range that is
+ * value at all; the rest is left as bluffs.
+ */
+export function omahaTierRequirement(
+  tier: number,
+  boardLen: number,
+  shape: { paired: boolean; straightPossible: boolean; flushPossible: boolean }
+): { minCat: number; drawMinCat: number; pStrong: number } {
+  const river = boardLen >= 5;
+  const noDraw = 99;
+  if (tier <= 1) return { minCat: 2, drawMinCat: river ? noDraw : 1, pStrong: 0.7 };
+  if (tier === 2) {
+    if (river) return { minCat: shape.paired ? 4 : 3, drawMinCat: noDraw, pStrong: 0.78 };
+    return { minCat: 3, drawMinCat: 2, pStrong: 0.75 };
+  }
+  // tier 3
+  if (river) {
+    const minCat = shape.paired ? 4 : shape.straightPossible || shape.flushPossible ? 5 : 3;
+    return { minCat, drawMinCat: noDraw, pStrong: 0.85 };
+  }
+  return { minCat: shape.paired ? 4 : 3, drawMinCat: 3, pStrong: 0.8 };
+}
+
+/**
+ * V40: a structural Omaha made-category estimate for the sampler - no
+ * scoring. Exactly two hole cards play: pairs, two pair, trips, boats and
+ * quads from rank counts; a flush from suit counts; a straight from a rank
+ * bitmask test over every hole-rank pair. Returns the category number
+ * scoreOmahaHiPartial would (1..8), ignoring straight flushes (rare, and
+ * a category-9 hand passes every threshold this feeds anyway).
+ */
+const qBoardN = new Int32Array(15);
+const qHoleN = new Int32Array(15);
+export function omahaQuickCategory(hole: Card[], board: Card[]): number {
+  qBoardN.fill(0);
+  qHoleN.fill(0);
+  let boardMask = 0;
+  const suitB = new Int32Array(4);
+  const suitH = new Int32Array(4);
+  for (const c of board) {
+    const r = RANK_VALUES[c.rank];
+    qBoardN[r]++;
+    boardMask |= 1 << r;
+    if (r === 14) boardMask |= 1 << 1;
+    suitB[SUIT_INDEX[c.suit]]++;
+  }
+  for (const c of hole) {
+    qHoleN[RANK_VALUES[c.rank]]++;
+    suitH[SUIT_INDEX[c.suit]]++;
+  }
+  let cat = 1;
+  // Board structure.
+  let boardPair = 0;
+  let boardTrips = 0;
+  for (let r = 2; r <= 14; r++) {
+    if (qBoardN[r] >= 3) boardTrips = r;
+    else if (qBoardN[r] === 2) boardPair = r;
+  }
+  // Hole contact.
+  let singleHits = 0; // distinct hole ranks matching a board singleton
+  let pairHits = 0; // distinct hole ranks matching a board pair (trips)
+  let tripsHit = false; // a hole rank matching board trips (quads)
+  let pocketPairs = 0;
+  let pocketOnSingle = false; // pocket pair matching a board singleton (set)
+  let pocketOnPair = false; // pocket pair matching a board pair (quads)
+  for (let r = 2; r <= 14; r++) {
+    const h = qHoleN[r];
+    if (h === 0) continue;
+    const b = qBoardN[r];
+    if (h >= 2) {
+      pocketPairs++;
+      if (b === 1) pocketOnSingle = true;
+      if (b >= 2) pocketOnPair = true;
+    }
+    if (b === 1) singleHits++;
+    else if (b === 2) pairHits++;
+    else if (b >= 3) tripsHit = true;
+  }
+  // Exactly two hole cards play, so a pocket pair spends both of them and a
+  // board rank hero matches is used once from the hand.
+  const pairHit = pairHits >= 1;
+  if (tripsHit || pocketOnPair) cat = 8;
+  else if (
+    pairHits >= 2 ||
+    (pairHit && singleHits >= 1) ||
+    (pocketOnSingle && boardPair > 0) ||
+    (boardTrips > 0 && pocketPairs >= 1)
+  )
+    cat = 7;
+  else if (pairHit || pocketOnSingle || boardTrips > 0) cat = Math.max(cat, 4);
+  else if (singleHits >= 2 || (boardPair > 0 && (singleHits >= 1 || pocketPairs >= 1)))
+    cat = Math.max(cat, 3);
+  else if (singleHits >= 1 || pocketPairs >= 1 || boardPair > 0) cat = Math.max(cat, 2);
+  if (cat >= 7) return cat;
+  // Flush: three or more board cards of a suit hero holds two of.
+  for (let si = 0; si < 4; si++) {
+    if (suitB[si] >= 3 && suitH[si] >= 2) return Math.max(cat, 6);
+  }
+  if (cat >= 6) return cat;
+  // Straight: two distinct hole ranks that, with three board ranks, cover
+  // five consecutive ranks (ace low counts).
+  const holeRanks: number[] = [];
+  for (let r = 2; r <= 14; r++) if (qHoleN[r] > 0) holeRanks.push(r);
+  if (qHoleN[14] > 0) holeRanks.push(1);
+  for (let i = 0; i < holeRanks.length; i++) {
+    for (let j = i + 1; j < holeRanks.length; j++) {
+      const a = holeRanks[i];
+      const b = holeRanks[j];
+      if (a === 1 && b === 14) continue;
+      const mask = boardMask | (1 << a) | (1 << b);
+      const lo = Math.min(a, b);
+      const hi = Math.max(a, b);
+      if (hi - lo > 4) continue;
+      for (let st = Math.max(1, hi - 4); st <= lo && st <= 10; st++) {
+        const window = 31 << st;
+        if ((mask & window) === window) return Math.max(cat, 5);
+      }
+    }
+  }
+  return cat;
+}
+
+/** Cheap structural "strong draw" test for the sampler: a flush draw in a
+ *  two-suited board suit, or three hole ranks inside the board's straight
+ *  window (a wrap-shaped holding). No scoring. */
+export function omahaStrongDrawShape(hole: Card[], board: Card[]): boolean {
+  const suitN = new Map<string, number>();
+  for (const c of board) suitN.set(c.suit, (suitN.get(c.suit) || 0) + 1);
+  for (const [suit, n] of suitN) {
+    if (n === 2 && hole.filter((c) => c.suit === suit).length >= 2) return true;
+  }
+  // A wrap needs a board that can straighten (two ranks within three of
+  // each other) and three distinct hole ranks each within two of one of
+  // those board ranks, none of them already on the board.
+  const boardRanks: number[] = [];
+  for (const c of board) boardRanks.push(RANK_VALUES[c.rank]);
+  let window = false;
+  for (let i = 0; i < boardRanks.length && !window; i++)
+    for (let j = i + 1; j < boardRanks.length; j++)
+      if (boardRanks[i] !== boardRanks[j] && Math.abs(boardRanks[i] - boardRanks[j]) <= 3) {
+        window = true;
+        break;
+      }
+  if (!window) return false;
+  let near = 0;
+  const seen = new Set<number>();
+  for (const c of hole) {
+    const r = RANK_VALUES[c.rank];
+    if (seen.has(r) || boardRanks.includes(r)) continue;
+    seen.add(r);
+    for (const b of boardRanks) {
+      if (Math.abs(r - b) <= 2) {
+        near++;
+        break;
+      }
+    }
+  }
+  return near >= 3;
 }
 
 /** Does this NLH-family hand connect with the CURRENT board — a pair or
@@ -1662,6 +2010,14 @@ export function simulateEquity(
       ].sort((a, b) => a - b)
     : null;
   let done = 0;
+  // V40: the board shape the tiered Omaha sampler keys on, computed once.
+  const omahaTierShape =
+    vi.isOmaha &&
+    boardCards.length >= 3 &&
+    oppReads &&
+    oppReads.some((r) => r && (r.aggrW > 0 || r.raised))
+      ? omahaBoardShape(boardCards)
+      : null;
 
   for (let iter = 0; iter < iterations; iter++) {
     // Partial Fisher-Yates: we only need the first `cardsNeeded` cards.
@@ -1811,22 +2167,45 @@ export function simulateEquity(
       // the Omaha band redraw cannot re-test the band (the V13 NLH collapse),
       // so conditioning there would trade one bias for another — the explicit
       // nut-discipline penalty in HorseLogic covers those pots instead.
-      if (read && vi.isOmaha && boardCards.length >= 3 && read.aggrW > 0) {
+      if (read && vi.isOmaha && boardCards.length >= 3 && (read.aggrW > 0 || read.raised)) {
         const bandWidth = band ? band[1] - band[0] : 1;
-        if (bandWidth >= 0.45) {
+        // ═══ V40 TIERED OMAHA AGGRESSOR SAMPLING (Dan 2026-09-04) ═══
+        // The V15 contact test above accepted almost every Omaha hand, so a
+        // pot-pot-pot line was priced against the preflop band. The
+        // aggressor's sampled hand must now reach a MADE CATEGORY that
+        // scales with the line (see omahaTierRequirement), with a share of
+        // the range left as bluffs and (before the river) strong draws
+        // standing in for made hands. Tight bands (a 3-bet range) keep the
+        // in-band sampler on every redraw so the V13 collapse cannot recur.
+        const tier40 = read.streets != null ? omahaAggressorTier(read) : 0;
+        if (tier40 >= 1 && omahaTierShape != null) {
+          const req = omahaTierRequirement(tier40, boardCards.length, omahaTierShape);
+          const tries = tier40 >= 3 ? 4 : 3;
+          for (let t = 0; t < tries; t++) {
+            const c40 = omahaQuickCategory(oppCards, boardCards);
+            if (c40 >= req.minCat) break;
+            if (c40 >= req.drawMinCat && omahaStrongDrawShape(oppCards, boardCards)) break;
+            if (t === 0 && fastRandom() >= req.pStrong) break; // the bluff share
+            const placed =
+              band != null
+                ? placeOmahaBandCombo(deck, windowStart, n, band, oppHole, vi.isHiLo)
+                : false;
+            if (!placed) {
+              for (let i = 0; i < oppHole; i++) {
+                const slot = windowStart + i;
+                const j = slot + Math.floor(fastRandom() * (n - slot));
+                const tmp = deck[slot];
+                deck[slot] = deck[j];
+                deck[j] = tmp;
+              }
+            }
+            for (let i = 0; i < oppHole; i++) oppCards[i] = deck[windowStart + i];
+          }
+        } else if (bandWidth >= 0.45 && read.aggrW > 0) {
           const pConnect = Math.min(0.85, 0.4 + read.aggrW * 2.0);
           for (let t = 0; t < 2; t++) {
             if (omahaConnectsBoard(oppCards, boardCards)) break;
             if (fastRandom() >= pConnect) break; // some of the range IS air
-            // V28 AUDIT FIX (2026-08-29): this redraw drew UNIFORMLY from the
-            // whole remaining deck and never re-tested the band — the exact
-            // V13 collapse the NLH branch below fixed, still live on the
-            // Omaha side. A [0.4, 1] "open" read redrew into the bottom 40%
-            // of the combo space, so a raiser's range acquired the trash the
-            // read excluded. placeOmahaBandCombo is the in-band sampler the
-            // V16 work built for precisely this; use it, falling back to the
-            // uniform swap only when the band sampler cannot place a combo
-            // (degenerate band / exhausted deck).
             const placed =
               band != null
                 ? placeOmahaBandCombo(deck, windowStart, n, band, oppHole, vi.isHiLo)

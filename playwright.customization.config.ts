@@ -1,4 +1,18 @@
 import { defineConfig, devices } from '@playwright/test';
+import { portFor } from './scripts/ci/e2e-port.mjs';
+
+/**
+ * PER-RUNNER PORT (2026-09-04). This was a hardcoded port and it collided the
+ * moment CI moved onto the estate: three boxes, TWELVE runners each, one
+ * network namespace, so two pull requests reaching this step together both
+ * tried to bind it and the second died with "is already used".
+ *
+ * Note what is NOT the fix: that error suggests `reuseExistingServer: true`,
+ * which here would silently run this pull request's specs against ANOTHER
+ * pull request's build - exactly the failure the baseURL comment below warns
+ * about. Unique port, not a shared one. See scripts/ci/e2e-port.mjs.
+ */
+const PORT = portFor(5188);
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -16,16 +30,15 @@ export default defineConfig({
     // Keep this suite isolated from the repo's many other local Vite servers.
     // Reusing port 5173 can silently test a different worktree and bless the
     // wrong UI/persistence behavior.
-    baseURL: 'http://127.0.0.1:5188',
+    baseURL: `http://127.0.0.1:${PORT}`,
     serviceWorkers: 'block',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
   projects: [{ name: 'mobile-chromium', use: { ...devices['iPhone 13'] } }],
   webServer: {
-    command:
-      'VITE_SUPABASE_URL=https://test.supabase.co VITE_SUPABASE_ANON_KEY=test-anon-key VITE_CUSTOMIZATION_TEST_HARNESS=true npx vite --host 127.0.0.1 --port 5188 --strictPort',
-    url: 'http://127.0.0.1:5188/hub/club-arena/',
+    command: `VITE_SUPABASE_URL=https://test.supabase.co VITE_SUPABASE_ANON_KEY=test-anon-key VITE_CUSTOMIZATION_TEST_HARNESS=true npx vite --host 127.0.0.1 --port ${PORT} --strictPort`,
+    url: `http://127.0.0.1:${PORT}/hub/club-arena/`,
     reuseExistingServer: false,
     timeout: 120_000,
   },

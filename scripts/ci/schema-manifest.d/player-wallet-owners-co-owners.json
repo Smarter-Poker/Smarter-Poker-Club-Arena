@@ -1,0 +1,8 @@
+{
+  "_owner": "fix/union-active-sum-one-ladder",
+  "functions": [
+    "fn_has_player_wallet",
+    "fn_club_owner_has_a_player_wallet",
+    "fn_admin_holds_no_player_wallet"
+  ]
+}

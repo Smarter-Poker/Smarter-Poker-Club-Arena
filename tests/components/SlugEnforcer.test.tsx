@@ -83,7 +83,7 @@ describe('SlugEnforcer', () => {
     });
   });
 
-  it('preserves UUID on /unions/ route and does NOT rewrite to slug', async () => {
+  it('leaves /unions/<uuid> alone when the union has no slug to offer', async () => {
     (useLocation as any).mockReturnValue({
       pathname: '/unions/12345678-1234-1234-1234-123456789012',
       search: '',
@@ -101,6 +101,49 @@ describe('SlugEnforcer', () => {
 
     // Should NOT have navigated because the path shouldn't be altered
     expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it('rewrites /unions/<uuid> to /unions/<slug> (Dan 2026-09-04: the union slug must be present)', async () => {
+    (useLocation as any).mockReturnValue({
+      pathname: '/unions/fade0000-0000-0000-0000-000000000001/table-management',
+      search: '?create=table',
+      hash: '',
+    });
+
+    setupMockQuery(
+      { slug: 'midway-union', union_id: 'fade0000-0000-0000-0000-000000000001', is_union: true },
+      { id: 'fade0000-0000-0000-0000-000000000001', slug: 'midway-union' }
+    );
+
+    render(<SlugEnforcer />);
+
+    await new Promise(process.nextTick);
+
+    expect(navigateMock).toHaveBeenCalledWith(
+      '/unions/midway-union/table-management?create=table',
+      {
+        replace: true,
+      }
+    );
+  });
+
+  it('sends a union house club row straight to /unions/<slug>, in one hop', async () => {
+    (useLocation as any).mockReturnValue({
+      pathname: '/clubs/fade0000-0000-0000-0000-000000000001/financials',
+      search: '',
+      hash: '',
+    });
+
+    setupMockQuery(
+      { slug: 'midway-union', union_id: 'fade0000-0000-0000-0000-000000000001', is_union: true },
+      { id: 'fade0000-0000-0000-0000-000000000001', slug: 'midway-union' }
+    );
+
+    render(<SlugEnforcer />);
+
+    await new Promise(process.nextTick);
+
+    expect(navigateMock).toHaveBeenCalledWith('/unions/midway-union/settlement', { replace: true });
   });
 
   it('rewrites UUID to /unions/ fallback if club lookup fails but union lookup succeeds', async () => {

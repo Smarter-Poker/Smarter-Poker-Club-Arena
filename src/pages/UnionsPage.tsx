@@ -74,7 +74,7 @@ function UnionCard({ union, idx }: { union: Union; idx: number }) {
   return (
     <article className="union-card-shell" style={unionCardAnimationStyle(idx)}>
       <Link
-        to={`/unions/${union.id}`}
+        to={`/unions/${union.slug || union.id}`}
         className="union-card"
         aria-label={`Open ${union.name} Union`}
       >

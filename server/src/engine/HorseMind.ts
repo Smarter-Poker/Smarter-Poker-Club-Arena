@@ -35,6 +35,7 @@
 
 import type { Card, SeatPlayer, ActionRecord } from '../types.js';
 import { RANK_VALUES } from './PokerEngine.js';
+import type { OppPostflopRead } from './HorseEval.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OPPONENT STATS
@@ -775,7 +776,7 @@ export class HorseMind {
     board: Card[] | null = null,
     /** V12 out-param: postflop aggression weight + checked-street count for
      *  board-contact conditioning (see HorseEval.simulateEquity). */
-    readOut?: { aggrW: number; checked: number; bigBet?: boolean }
+    readOut?: OppPostflopRead
   ): [number, number] | null {
     if (!history || history.length === 0) return null;
     const postStagesActed = new Set<string>();
@@ -795,6 +796,11 @@ export class HorseMind {
     // a pot-sized turn barrel narrows far more than a min-bet. Per-street the
     // strongest sizing signal wins.
     const streetWeight = new Map<string, number>();
+    // V40: the newest aggressive street's shape - bet/pot fraction and
+    // whether it was a raise - for the Omaha sampler tier.
+    let lastAggrStage: string | null = null;
+    let lastAggrFrac = 0;
+    let lastAggrRaised = false;
     // Pot replay state: recorded call amounts are increments; bet/raise/all_in
     // amounts are street totals, so increment = amount - actor's street bet.
     let pot = bigBlind > 0 ? bigBlind * 1.5 : 3; // SB+BB approximation
@@ -832,6 +838,15 @@ export class HorseMind {
           if (isAggr) {
             const potBefore = Math.max(bigBlind || 1, pot);
             const frac = increment / potBefore;
+            if (a.stage !== lastAggrStage) {
+              lastAggrStage = a.stage;
+              lastAggrFrac = frac;
+              lastAggrRaised =
+                a.action === 'raise' || (a.action === 'all_in' && streetBets.size > 0);
+            } else {
+              lastAggrFrac = Math.max(lastAggrFrac, frac);
+              lastAggrRaised = true;
+            }
             // Size class -> narrowing weight. RETUNED (duplicate-deal
             // ablation): absolute size is a FALSE signal against texture-led
             // sizers — good players (and this engine) size UP on wet boards
@@ -965,6 +980,12 @@ export class HorseMind {
       let total = 0;
       for (const w of streetWeight.values()) total += w;
       readOut.aggrW = Math.min(0.3, total);
+      // V40: uncapped street count and newest-street shape.
+      readOut.streets = streetWeight.size;
+      if (lastAggrStage != null) {
+        readOut.lastFrac = lastAggrFrac;
+        readOut.raised = lastAggrRaised;
+      }
       let checked = 0;
       for (const st of postStagesActed) if (!streetWeight.has(st)) checked++;
       readOut.checked = checked;
@@ -1330,12 +1351,12 @@ export class HorseMind {
     board: Card[] | null = null,
     /** V12 out-param: parallel per-opponent postflop reads (same order as
      *  the returned bands) for board-contact conditioning. */
-    readsOut?: Array<{ aggrW: number; checked: number; bigBet?: boolean } | null>
+    readsOut?: Array<OppPostflopRead | null>
   ): Array<[number, number] | null> {
     const bands: Array<[number, number] | null> = [];
     for (const p of players) {
       if (p.seat === heroSeat || p.is_folded || p.is_sitting_out) continue;
-      const readOut = readsOut ? { aggrW: 0, checked: 0 } : undefined;
+      const readOut: OppPostflopRead | undefined = readsOut ? { aggrW: 0, checked: 0 } : undefined;
       bands.push(this.bandFor(p.user_id, history, bigBlind, sizedReads, board, readOut));
       if (readsOut)
         readsOut.push(readOut && (readOut.aggrW > 0 || readOut.checked > 0) ? readOut : null);

@@ -106,9 +106,46 @@ describe('WIRING - the module exists and something calls it', () => {
    * the counter and the `return true` are adjacent.
    */
   it('counts the fail-open WITHOUT turning it back into a refusal', () => {
-    expect(FLEET).toMatch(
-      /rollUnknown\+\+;\s*bankrollEvent\('seat_fail_open_roll_unknown'\);\s*return true;/
+    /* PIN MOVED 2026-09-04, and it is STRICTER than it was.
+       The counter split in two - a club the map does not cover (the ordinary
+       case, 261 of 584 horses) versus one it DOES cover whose row would not
+       read (a data fault) - so the literal single-event pin could no longer
+       match. What the pin is FOR is unchanged and is now asserted directly:
+       whichever event fires, the very next statement is `return true`.
+
+       The refusal this guards against is not hypothetical. A change on
+       2026-09-04 turned this same evidence into a refusal and was reverted the
+       same day; the branch it would have re-armed is the one that kept the
+       cash floor up for forty minutes on 2026-08-31. */
+    /* Comments stripped: the branch explains AT LENGTH which function it
+       deliberately does not consult, and naming it there is the point. The ban
+       is on code. */
+    const code = FLEET.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    const branch = code.slice(
+      code.indexOf('if (roll === undefined) {'),
+      code.indexOf('const ref = referenceBuyIn(')
     );
+    expect(branch, 'the fail-open branch was not found').not.toBe('');
+    // it is counted...
+    expect(branch).toMatch(/rollUnknown\+\+;/);
+    expect(branch).toMatch(/'seat_fail_open_roll_unknown'/);
+    expect(branch).toMatch(/'seat_fail_open_roll_faulty'/);
+    // ...and it SEATS. No refusal, and nothing consulted that could produce one.
+    expect(branch).toMatch(/return true;\s*\}/);
+    expect(branch).not.toContain('return false');
+    expect(branch).not.toContain('maySeatWithUnknownRoll');
+    expect(branch).not.toContain('rollUnknownVerdict');
+  });
+
+  it('and the split is telemetry only - nothing seats or refuses on it', () => {
+    // `clubsWithRolls` is the evidence a 2026-09-04 change tried to refuse on.
+    // It may be written by the loader and read by the counter, and nowhere
+    // else: three mentions, no fourth.
+    const code = FLEET.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    const uses = code.match(/clubsWithRolls/g) ?? [];
+    expect(uses.length).toBe(3);
+    expect(code).toMatch(/clubsWithRolls\.add\(String\(r\.club_id\)\);/);
+    expect(code).toMatch(/clubsWithRolls\.has\(seatClub\)/);
   });
 
   it('counts a genuine refusal at the refusal itself', () => {

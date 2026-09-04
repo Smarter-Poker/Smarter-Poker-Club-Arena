@@ -41,6 +41,25 @@ describe('union creation is an allowlist', () => {
     expect(sql).toContain('COMMIT;');
   });
 
+  it('the uuid-taking check is not reachable from a browser', () => {
+    // check-definer-authorization blocked the first cut of this and was right:
+    // a SECURITY DEFINER function that takes the account to test as an
+    // argument, executable by anon, enumerates who holds the privilege.
+    const sql = read(MIGRATION);
+    expect(sql).toContain(
+      'REVOKE ALL ON FUNCTION public.fn_can_create_union(uuid) FROM PUBLIC, anon, authenticated'
+    );
+    expect(sql).toContain(
+      'GRANT EXECUTE ON FUNCTION public.fn_can_create_union(uuid) TO service_role'
+    );
+    // What a browser may ask instead: about itself, with no argument.
+    expect(sql).toContain('CREATE OR REPLACE FUNCTION public.fn_can_i_create_a_union()');
+    expect(sql).toContain('SELECT auth.uid() IS NOT NULL');
+    expect(sql).toContain(
+      'GRANT EXECUTE ON FUNCTION public.fn_can_i_create_a_union() TO authenticated'
+    );
+  });
+
   it('names no person - the seed is whoever already owned a union', () => {
     const sql = read(MIGRATION);
     expect(sql).toContain('FROM public.unions u');
@@ -73,7 +92,9 @@ describe('union creation is an allowlist', () => {
 
   it('the hook fails closed and asks the database, not a local list', () => {
     const hook = read('src/hooks/useCanCreateUnion.ts');
-    expect(hook).toContain("supabase\n      .rpc('fn_can_create_union'");
+    expect(hook).toContain("rpc('fn_can_i_create_a_union')");
+    // A client may never ask about an account other than its own.
+    expect(hook).not.toContain('p_user_id');
     expect(hook).toContain('setState({ allowed: false, checking: false })');
     expect(hook).toContain('allowed: data === true');
   });

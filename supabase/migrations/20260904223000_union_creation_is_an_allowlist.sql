@@ -70,9 +70,34 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION public.fn_can_create_union(uuid) IS
-  'May this account create a union? The UI asks before offering the page; the trigger on public.unions asks again and is the one that decides.';
+  'May this account create a union? INTERNAL - the trigger on public.unions and the union API (service role) ask it. Browsers ask fn_can_i_create_a_union() instead.';
 
-GRANT EXECUTE ON FUNCTION public.fn_can_create_union(uuid) TO authenticated;
+-- NOT reachable from a browser. It takes the account to test AS AN ARGUMENT,
+-- so an anon-executable copy would let anybody enumerate who holds the
+-- permission (check-definer-authorization blocked exactly that, correctly).
+-- PUBLIC is named as well as the roles: anon inherits whatever PUBLIC holds,
+-- so revoking anon alone reads as a fix and does nothing.
+REVOKE ALL ON FUNCTION public.fn_can_create_union(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_can_create_union(uuid) TO service_role;
+
+-- The client's question: about the caller, and nobody else. No argument, so
+-- there is nothing to enumerate with.
+CREATE OR REPLACE FUNCTION public.fn_can_i_create_a_union()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+  SELECT auth.uid() IS NOT NULL
+     AND EXISTS (SELECT 1 FROM public.union_creators c WHERE c.user_id = auth.uid());
+$$;
+
+COMMENT ON FUNCTION public.fn_can_i_create_a_union() IS
+  'May the CALLER create a union? Takes no argument on purpose. The refusal that counts is trg_union_creation_is_allowlisted on public.unions.';
+
+REVOKE ALL ON FUNCTION public.fn_can_i_create_a_union() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_can_i_create_a_union() TO authenticated, service_role;
 
 -- The lock itself. INSERT only: transferring an existing union is a separate
 -- decision and is deliberately untouched.

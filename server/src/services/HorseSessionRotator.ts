@@ -67,7 +67,11 @@ const BREAK_MAX_MS = 5 * 60_000;
 
 /** Minimal engine surface the rotator needs (matches ServerTableEngine). */
 export interface RotatorEngine {
-  leaveTable(userId: string): { success: boolean; error?: string; immediate?: boolean };
+  leaveTable(
+    userId: string
+  ):
+    | { success: boolean; error?: string; immediate?: boolean }
+    | Promise<{ success: boolean; error?: string; immediate?: boolean }>;
   /** V8: hand-boundary-safe top-up (queued mid-hand; wallet-debited). */
   addChips?(
     userId: string,
@@ -394,7 +398,7 @@ export class HorseSessionRotator {
       const horseSeat = tableSeats.find((x) => horseIds.has(x.user_id));
       if (!horseSeat) continue;
       try {
-        const result = engine.leaveTable(horseSeat.user_id);
+        const result = await engine.leaveTable(horseSeat.user_id);
         if (result.success) {
           this.breaks.delete(HorseSessionRotator.breakKey(tableId, horseSeat.user_id));
           console.log(
@@ -613,7 +617,7 @@ export class HorseSessionRotator {
 
       if (best && Math.random() < best.p) {
         try {
-          const result = engine.leaveTable(best.seat.user_id);
+          const result = await engine.leaveTable(best.seat.user_id);
           if (result.success) {
             departures++;
             // Only THIS table's break record — a break at another table is

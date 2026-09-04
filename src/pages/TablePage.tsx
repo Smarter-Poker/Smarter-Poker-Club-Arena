@@ -138,6 +138,12 @@ import {
 import { useEngineTableState } from '../hooks/useEngineTableState';
 import TableConnectionBanner from '../components/table/TableConnectionBanner';
 import { mapEngineSnapshot } from '../utils/mapEngineSnapshot';
+import type { HeroLeaveClock } from '../lib/chipContinuity';
+import {
+  heroLeaveIsLocked,
+  heroLeaveRemainingMs,
+  leaveAvailableLabel,
+} from '../lib/chipContinuity';
 import { useSeatedProfileSync, type SeatedProfileChange } from '../hooks/useSeatedProfileSync';
 import { bettingStructureFor, fixedLimitBetSize } from '../lib/bettingStructure';
 import { isPreActionHonorable, PRE_ACTION_EXEC_GRACE_MS } from '../lib/preActionPanelGate';
@@ -1932,6 +1938,22 @@ export default function TablePage({
     Record<string, import('../utils/mapEngineSnapshot').DisconnectFsmEntry>
   >({});
 
+  /* CHIP CONTINUITY (2026-09-04): the hero's stay clock as the engine last
+     published it. A cash player ahead of their buy-in stays seated until it
+     reaches zero; the leave control shows "Leave Available In M:SS" and the
+     server refuses the leave regardless of what this state says. The 1s tick
+     only re-renders the countdown; nothing here decides anything. */
+  const [heroLeave, setHeroLeave] = useState<HeroLeaveClock | null>(null);
+  const [, setLeaveClockTick] = useState(0);
+  useEffect(() => {
+    if (!heroLeave?.running) return;
+    const id = setInterval(() => setLeaveClockTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [heroLeave?.running]);
+  const heroLeaveMs = heroLeaveRemainingMs(heroLeave, serverNow());
+  // `tableState` is declared further down; the tournament exemption is applied where it is used.
+  const heroLeaveLockedRaw = heroLeaveIsLocked(heroLeave, serverNow());
+
   // Phase 1.3 PR-C+D: server-side action rejection surfaced as a toast.
   // Set whenever submitAction resolves with success === false. Auto-cleared
   // by the toast component after 4s, or by the user (X button / Snap-to hint).
@@ -2005,6 +2027,8 @@ export default function TablePage({
       isBountyTournament: false,
     };
   });
+  /* CHIP CONTINUITY: tournaments have no stay clock. */
+  const heroLeaveLocked = !tableState.isTournament && heroLeaveLockedRaw;
 
   /**
    * Run the section-57 restore once this table is known to be a tournament
@@ -2136,6 +2160,7 @@ export default function TablePage({
     const mapped = mapEngineSnapshot(engineSnapshot, userId, tableState.maxPlayers);
     // Phase 1.2 PR-F: stash disconnect map for the top-level toast
     setDisconnectStates(mapped.disconnectStates);
+    setHeroLeave(mapped.heroLeave);
 
     // Dan 2026-08-24: Total Buy In restoration on refresh/seat-first.
     // totalBuyInRef is only updated by the manual buy-in modal, so it is 0 after a page refresh
@@ -6187,6 +6212,31 @@ export default function TablePage({
   }, []);
   // FIX 136: 2-hour re-entry restriction — minimum buy-in from recent cashout
   const [cashoutMinBuyIn, setCashoutMinBuyIn] = useState(0);
+  /* CHIP CONTINUITY (2026-09-04): the rejoin floor is re-read every time the
+     buy-in sheet opens, and cleared when none applies. It used to be read once
+     at mount and only ever raised, so a floor earned at another table of the
+     same game while this page was open was invisible until the server refused
+     the buy-in, and a floor that had expired kept the slider's minimum high. */
+  useEffect(() => {
+    if (!showBuyInModal || !tableId || !userId || userId === 'guest') return;
+    let live = true;
+    void (async () => {
+      const { data, error } = await supabase.rpc('fn_cash_effective_buyin', {
+        p_table_id: tableId,
+      });
+      if (!live) return;
+      if (error) {
+        reportError(error, 'TablePage.effective_buyin_reread');
+        return;
+      }
+      const d = (data ?? null) as { min?: unknown; floor_applied?: unknown } | null;
+      const floorMin = Number(d?.min ?? 0);
+      setCashoutMinBuyIn(d?.floor_applied === true && floorMin > 0 ? floorMin : 0);
+    })();
+    return () => {
+      live = false;
+    };
+  }, [showBuyInModal, tableId, userId]);
 
   // Handle cashier add chips (deducts from wallet, adds to table stack)
   // Returns TRUE only when the engine actually credited the stack. The cashier
@@ -6285,63 +6335,10 @@ export default function TablePage({
     }
   };
 
-  // Handle cashier withdraw
-  // Returns TRUE only when the engine actually credited the wallet. See
-  // handleAddChips above for why resolving void was not good enough.
-  const handleWithdrawChips = async (amount: number): Promise<boolean> => {
-    if (!userId || userId === 'guest' || !tableId) {
-      reportError(
-        new Error('Cannot withdraw: not authenticated'),
-        'TablePage.Cannot_withdraw_not_authenticated'
-      );
-      if (typeof window !== 'undefined') {
-        toast.error('Sign in to cash out chips from this table.');
-      }
-      return false;
-    }
-    try {
-      // FIX 1 (2026-07-24): server-authoritative partial cash-out. The engine
-      // credits the PLAYER wallet AND reduces the seat stack atomically via
-      // atomic_table_withdraw (only between hands; rejected mid-hand). No direct
-      // table_seats write and no unlockFromTable here \u2014 the engine owns the
-      // authoritative stack, exactly mirroring the addChips path.
-      const res = await GameServerAPI.removeChips(tableId, amount);
-      if (!res.success) {
-        reportError(
-          new Error(res.error || 'removeChips rejected by engine'),
-          'TablePage.removeChips_engine_rejected'
-        );
-        if (typeof window !== 'undefined') {
-          // Same TRANSPORT honesty as handleAddChips (Cashier audit
-          // 2026-08-27): a lost response is not a refusal — the cash-out may
-          // have committed.
-          if (res.code === 'TRANSPORT') {
-            toast.error(
-              'The Connection Dropped Before The Table Answered. Your Cash-Out May Have Gone Through. Check Your Stack And Wallet Before Trying Again.'
-            );
-          } else {
-            toast.error(res.error || 'Unable to cash out chips.');
-          }
-        }
-        return false;
-      }
-      // Engine ack'd \u2014 the wallet was credited; reflect it locally. We do
-      // NOT optimistic-update tableState; the next engine broadcast carries the
-      // authoritative stack.
-      applyBalanceDelta((prev) => (prev === null ? null : prev + amount));
-      const estimatedNewStack = Math.max(
-        0,
-        (tableState.players[tableState.heroSeat - 1]?.stack || 0) - amount
-      );
-      masterBus.emit('CHIPS_WITHDRAWN', { tableId, userId, amount, newStack: estimatedNewStack });
-      return true;
-    } catch (error) {
-      reportError(error, 'TablePage.Failed_to_withdraw_chips');
-      const msg = error instanceof Error ? error.message : 'Failed to withdraw chips';
-      if (typeof window !== 'undefined') toast.error(msg);
-      return false;
-    }
-  };
+  /* CHIP CONTINUITY (2026-09-04): there is no partial cash-out at a cash
+     table. handleWithdrawChips, GameServerAPI.removeChips and the engine's
+     POST /withdrawchips are gone. Chips leave the table only when the player
+     does. */
 
   // Load BBJ pool data — union-aware + LIVE (2026-08-18).
   // Two fixes over the old one-shot load:
@@ -7906,6 +7903,14 @@ export default function TablePage({
     if (!tableId || !userId) return;
     setLeaveNotice(null);
 
+    /* CHIP CONTINUITY: ahead of the buy-in with stay time left. The engine
+       would refuse this anyway (and the database behind it); saying so here
+       saves the round trip. The label is the whole message. */
+    if (heroLeaveLocked) {
+      toast.error(leaveAvailableLabel(heroLeaveMs));
+      return;
+    }
+
     /**
      * ═══════════════════════════════════════════════════════════════════════
      *  A PRE-START SEAT-FIRST SEAT LEAVES THROUGH ITS REFUND (2026-08-28)
@@ -8183,10 +8188,14 @@ export default function TablePage({
       const forced = await tableService.leaveTable(tableId, tableState.heroSeat, userId);
       if (!forced?.success && forced?.error) {
         // Engine explicitly refused a REAL seated leave — chips are live, stay.
-        reportError(
-          new Error(forced.error || 'force leave rejected'),
-          'TablePage.handleForceLeaveTable.refused'
-        );
+        // CHIP CONTINUITY: a stay-clock refusal ("Leave Available In M:SS")
+        // is the rule working, not an error to report.
+        if (!/^Leave Available In /.test(forced.error)) {
+          reportError(
+            new Error(forced.error || 'force leave rejected'),
+            'TablePage.handleForceLeaveTable.refused'
+          );
+        }
         setLeaveNotice(
           forced.error || 'Could not leave the table - your chips are still in your seat.'
         );
@@ -11629,26 +11638,28 @@ export default function TablePage({
           if (!isMounted) return;
           if (rb.balance !== null) setBalanceIfCurrent(balanceRevision, rb.balance);
 
-          /* FIX 136: Check 2-hour re-entry restriction from recent cashout.
-             2026-08-28: the error was discarded, so a failed read looked
-             exactly like "no restriction" and the minimum silently did not
-             apply — the one outcome this rule exists to prevent. Report it;
-             the row is still absent so the buy-in proceeds unrestricted,
-             but the failure is now visible rather than invented. */
-          const { data: cashoutHistory, error: cashoutErr } = await supabase
-            .from('table_cashout_history')
-            .select('cashout_amount, restriction_expires_at')
-            .eq('table_id', table.id)
-            .eq('user_id', userId)
-            .gt('restriction_expires_at', new Date().toISOString())
-            .order('cashed_out_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
+          /* CHIP CONTINUITY (2026-09-04): the rejoin floor. The SERVER says what
+             this player's minimum is right now - keyed on club + variant +
+             blinds, not on this table - already capped at the table maximum.
+             This replaces the per-table `table_cashout_history` read: that
+             was a second floor with a different key, and a client-side floor
+             is not a floor. atomic_table_buyin refuses anything below it
+             regardless of what the slider showed.
+             The error is reported, never discarded: a failed read looking like
+             "no floor" is the one outcome this rule exists to prevent. */
+          const { data: effectiveBuyIn, error: floorErr } = await supabase.rpc(
+            'fn_cash_effective_buyin',
+            { p_table_id: table.id }
+          );
 
           if (!isMounted) return;
-          if (cashoutErr) reportError(cashoutErr, 'TablePage.cashout_restriction_read');
-          if (cashoutHistory) {
-            setCashoutMinBuyIn(cashoutHistory.cashout_amount);
+          if (floorErr) reportError(floorErr, 'TablePage.effective_buyin_read');
+          const floorMin = Number((effectiveBuyIn as { min?: unknown } | null)?.min ?? 0);
+          if (
+            (effectiveBuyIn as { floor_applied?: unknown } | null)?.floor_applied === true &&
+            floorMin > 0
+          ) {
+            setCashoutMinBuyIn(floorMin);
           }
         }
 
@@ -19293,10 +19304,13 @@ export default function TablePage({
                     actions: [
                       {
                         id: 'leave',
-                        label: 'Leave Table',
+                        // CHIP CONTINUITY: the leave control carries the
+                        // countdown while the stay clock has time left.
+                        label: heroLeaveLocked ? leaveAvailableLabel(heroLeaveMs) : 'Leave Table',
                         icon: <LeaveTableIcon />,
                         onClick: () => setShowLeaveConfirm(true),
-                        danger: true,
+                        danger: !heroLeaveLocked,
+                        disabled: heroLeaveLocked,
                       },
                     ],
                   },
@@ -22327,7 +22341,6 @@ export default function TablePage({
         buyInProcessingRef={buyInProcessingRef}
         onCloseCashier={() => setShowCashier(false)}
         onAddChips={handleAddChips}
-        onWithdrawChips={handleWithdrawChips}
         // Bust Rebuy
         bustRebuyOpen={bustRebuyOpen}
         bustWalletBalance={bustWalletBalance}
@@ -22593,6 +22606,7 @@ export default function TablePage({
         showLeaveConfirm={showLeaveConfirm}
         onCloseLeaveConfirm={() => setShowLeaveConfirm(false)}
         onConfirmLeaveTable={handleLeaveTable}
+        leaveLockedLabel={heroLeaveLocked ? leaveAvailableLabel(heroLeaveMs) : null}
         // Session Stats
         showSessionStats={showSessionStats}
         onCloseSessionStats={() => setShowSessionStats(false)}

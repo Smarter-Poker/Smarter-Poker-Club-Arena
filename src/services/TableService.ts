@@ -317,10 +317,15 @@ class TableService {
       // a desynced stack is not.
       const serverLeave = await notifyServerLeave(tableId);
       if (!serverLeave?.success) {
-        reportError(
-          new Error(serverLeave?.error || 'notifyServerLeave rejected'),
-          'TableService.leaveTable.serverRefused'
-        );
+        // CHIP CONTINUITY (2026-09-04): a leave refused by the stay clock is
+        // the house rule working - the label is the whole message and it is
+        // not an error to report.
+        if (serverLeave?.code !== 'LEAVE_LOCKED') {
+          reportError(
+            new Error(serverLeave?.error || 'notifyServerLeave rejected'),
+            'TableService.leaveTable.serverRefused'
+          );
+        }
         return {
           success: false,
           chipsReturned: 0,
@@ -484,10 +489,30 @@ class TableService {
           );
 
           if (cashoutError) {
+            // CHIP CONTINUITY (2026-09-04): the database refuses a browser
+            // cash-out while the stay clock runs. That is a refusal to show,
+            // not "you were never seated" - the caller navigated away on an
+            // error-less failure. Map it to the one label and return it.
+            const locked = /LEAVE_LOCKED:(\d+)/.exec(String(cashoutError.message || ''));
+            if (locked) {
+              // Lazy: TableService is in the entry chunk and the label helper
+              // must not ride into first paint (entry-chunk-delta gate).
+              const { leaveAvailableLabel } = await import('../lib/chipContinuity');
+              return {
+                success: false,
+                chipsReturned: 0,
+                error: leaveAvailableLabel(Number(locked[1])),
+              };
+            }
             // RPC returned an error (e.g. seat not found) - check explicitly
             // since supabase.rpc does NOT throw on SQL errors
             reportError(cashoutError, 'TableService.atomicCashout');
-            return { success: false, chipsReturned: 0 };
+            return {
+              success: false,
+              chipsReturned: 0,
+              error:
+                'Could Not Leave The Table Right Now. Your Chips Are Still In Your Seat. Please Try Again.',
+            };
           }
 
           const cashout = (cashoutRes ?? null) as {
@@ -504,24 +529,10 @@ class TableService {
           masterBus.emit('BALANCE_UPDATED', { source: 'table_leave_cashout', userId });
         }
 
-        // FIX 136: Record cashout for 2-hour re-entry restriction
-        // Player cannot return to THIS table and buy in for less than their cashout for 2 hours
-        if (returnedChips > 0) {
-          await supabase
-            .rpc('record_table_cashout', {
-              p_user_id: userId,
-              p_table_id: tableId,
-              p_cashout_amount: returnedChips,
-            })
-            .then(({ error: cashoutHistErr }) => {
-              if (cashoutHistErr) {
-                console.warn(
-                  '[TableService] Failed to record cashout history:',
-                  cashoutHistErr.message
-                );
-              }
-            });
-        }
+        /* CHIP CONTINUITY (2026-09-04): the per-table `record_table_cashout`
+           write is gone. The rejoin floor is written by the database inside
+           atomic_seat_cashout_locked (cash_rejoin_constraints, keyed on the
+           GAME, not this table); nothing reads table_cashout_history any more. */
       } else {
         // In tournaments, leaving the table NEVER cashes out chips, deletes the seat,
         // or eliminates the player. The player is placed in sit-out mode, chips stay

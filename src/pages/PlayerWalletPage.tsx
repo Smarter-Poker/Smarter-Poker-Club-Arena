@@ -332,13 +332,6 @@ export default function PlayerWalletPage() {
         },
         500
       ),
-      masterBus.subscribeDebounced(
-        'CHIPS_WITHDRAWN',
-        () => {
-          loadBalances(user.id, { force: true });
-        },
-        500
-      ),
       // Refresh when new chip_ledger transactions arrive.
       //
       // THE `as any` IS NOT SLOPPINESS, IT IS A BUG IN MasterBus.ts, and it is

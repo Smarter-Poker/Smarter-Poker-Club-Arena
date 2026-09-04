@@ -1207,6 +1207,45 @@ export default function TournamentDetails({
     watchTable(featuredTableId);
   }, [featuredTableId, isWatchable, search, searchOverride, watchTable, navigate]);
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  "?seat=1" - TAKE THE OPEN SEAT AT A SEAT-FIRST GAME (2026-09-03)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * A Spin or a heads-up is not registered for, it is SAT AT: the buy-in is
+   * taken when the seat is taken, and fn_register_for_tournament refuses the
+   * registration path outright ('seat_first_variant'). The satellite heads-ups
+   * added today appear on a target's Satellites tab, where the card used to
+   * offer a Register button that could never succeed; it now sends the intent
+   * here instead, exactly as the WATCH button above does.
+   *
+   * Deliberately NOT gated on `isWatchable`: the whole point is that the game
+   * is still REGISTERING, which is the one status the watch intent refuses.
+   * It IS gated on the table having resolved, so the effect simply waits for
+   * the tables query rather than dropping the intent.
+   */
+  const seatIntentDoneRef = useRef(false);
+  const isSeatFirstTournament = useMemo(() => {
+    const v = String(tournament?.variant ?? '').toLowerCase();
+    const seats = Number(tournament?.max_players ?? 0);
+    return v === 'spin' || (seats > 0 && seats <= 2);
+  }, [tournament?.variant, tournament?.max_players]);
+
+  useEffect(() => {
+    if (seatIntentDoneRef.current) return;
+    const params = new URLSearchParams(search);
+    if (params.get('seat') !== '1') return;
+    if (!isSeatFirstTournament) return;
+    if (!featuredTableId) return; // still resolving; try again when it lands
+    seatIntentDoneRef.current = true;
+    if (searchOverride === undefined) {
+      params.delete('seat');
+      const qs = params.toString();
+      navigate({ search: qs ? `?${qs}` : '' }, { replace: true });
+    }
+    navigate(`/table/${featuredTableId}`);
+  }, [featuredTableId, isSeatFirstTournament, search, searchOverride, navigate]);
+
   const handleUnregister = async () => {
     if (isProcessing || !tournament) return;
     if (!user) {

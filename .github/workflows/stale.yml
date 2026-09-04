@@ -2,7 +2,10 @@ name: Stale PR Cleanup
 
 on:
   schedule:
-    - cron: '0 9 * * 1' # Every Monday at 9am UTC
+    # Every 6 hours. Weekly could never keep up: Club Arena opens roughly 24
+    # pull requests a day, and on 2026-09-04 the queue had reached 165 open
+    # with 94 untouched for over three days.
+    - cron: '35 */6 * * *'
   workflow_dispatch:
 
 permissions:
@@ -20,11 +23,30 @@ jobs:
           stale-pr-message: |
             This PR has been inactive for 14 days and will be closed in 7 days unless updated.
             If this work is still needed, please push new commits or leave a comment.
-          close-pr-message: 'Closing stale PR — reopen when ready to continue.'
-          days-before-stale: 14
-          days-before-close: 7
+          close-pr-message: |
+            Closing under the estate's staleness rule: nothing unfinished sits longer
+            than 48 hours (Dan, 2026-09-04). This was labelled `stale` a day ago.
+
+            Nothing is lost. Closing a pull request does not delete its branch - the
+            commits are still on the branch and a fresh PR from it will merge in
+            minutes rather than fighting days of drift against `main`.
+
+            To keep one alive, add the `pinned` or `do-not-close` label.
+          # Dan, 2026-09-04: "I WILL NEVER LEAVE ANYTHING UNFINISHED FOR MORE
+          # THAN 48 HOURS. ANYTHING OLDER THEN 48 HOURS IS TRASH."
+          #
+          # Labelled at 24h, closed at 48h - so there is a full day of warning
+          # with the `stale` label visible before anything is closed, and the
+          # close lands exactly on the rule.
+          #
+          # Closing a pull request does NOT delete its branch, so the commits
+          # remain on `refs/heads/<branch>` and can be restored by opening a new
+          # PR from it. Anything that later prunes branches archives them first.
+          days-before-stale: 1
+          days-before-close: 1
           stale-pr-label: 'stale'
           exempt-pr-labels: 'pinned,do-not-close'
+          operations-per-run: 120
           # Don't touch issues
           days-before-issue-stale: -1
           days-before-issue-close: -1

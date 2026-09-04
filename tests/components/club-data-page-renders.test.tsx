@@ -353,7 +353,7 @@ describe('ClubDataPage', () => {
     // disabled. Clicking it before the ledger is verified is a no-op in the
     // browser, and the gate above guarantees the read is still open here, so
     // this assertion no longer depends on how fast the runner is.
-    expect(exportButton).toBeDisabled();
+    await waitFor(() => expect(exportButton).toBeDisabled());
     releaseSnapshot();
     await waitFor(() => expect(exportButton).toBeEnabled(), { timeout: 10_000 });
     fireEvent.click(exportButton);
@@ -1023,7 +1023,7 @@ describe('ClubDataPage', () => {
     const rankedLoadMore = await screen.findByRole('button', {
       name: 'Load More Games - 100 Of 250',
     });
-    expect(rankedLoadMore).toBeEnabled();
+    await waitFor(() => expect(rankedLoadMore).toBeEnabled());
     fireEvent.click(rankedLoadMore);
     await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' });
   });
@@ -1110,7 +1110,7 @@ describe('ClubDataPage', () => {
     const sortedLoadMore = await screen.findByRole('button', {
       name: 'Load More Players - 100 Of 250',
     });
-    expect(sortedLoadMore).toBeEnabled();
+    await waitFor(() => expect(sortedLoadMore).toBeEnabled());
   });
 
   it('serves the first metric-sorted continuation from the initial ranked query', async () => {

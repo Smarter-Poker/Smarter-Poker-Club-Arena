@@ -7,7 +7,7 @@ import {
 
 export const CLUB_MESSAGE_LIMITS = {
   tagline: 72,
-  lobbyMessage: 72,
+  lobbyMessage: 240,
   description: 500,
   announcementTitle: 100,
   announcementContent: 2000,

@@ -10261,11 +10261,28 @@ export default function TablePage({
                 durationSec: durSec,
               });
             }
+            /* THE VARIANT DECIDES A SIT-AND-GO, NOT ONLY THE TYPE (2026-09-03).
+               The spin arm reads BOTH columns; the sng arm read only
+               tournament_type, and every ordinary duel carries 'SNG' there so
+               nothing showed. The satellite heads-up added today carries
+               tournament_type 'SATELLITE' (its finish awards a seat) with
+               variant 'sng' and two seats - and fell through to 'mtt', which
+               is not cosmetic: it picks the player's MTT felt, deck and button
+               art instead of their Heads Up set, prints "Poker Tournament" on
+               the masthead, labels the tab MTT, and arms the FINAL TABLE
+               announcement on a two-handed game.
+
+               Seat count is the last word: a table with two seats is a duel
+               whatever its columns say, which is the same rule buyIn.ts
+               rakeRateFor and the seat-first gates already use. */
+            const maxSeatsForFmt = Number(tournData.max_players ?? 0);
             const fmt =
               String(tournData.variant ?? '').toLowerCase() === 'spin' ||
               String(tournData.tournament_type ?? '').toUpperCase() === 'SPIN'
                 ? ('spin' as const)
-                : String(tournData.tournament_type ?? '').toUpperCase() === 'SNG'
+                : String(tournData.variant ?? '').toLowerCase() === 'sng' ||
+                    String(tournData.tournament_type ?? '').toUpperCase() === 'SNG' ||
+                    (maxSeatsForFmt > 0 && maxSeatsForFmt <= 2)
                   ? ('sng' as const)
                   : ('mtt' as const);
             setTournamentFormat(fmt);

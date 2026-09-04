@@ -88,3 +88,5 @@ export function useScreenShake() {
 }
 
 export default triggerScreenShake;
+
+// stress-test 060524-2: pipeline timing probe, no behaviour change.

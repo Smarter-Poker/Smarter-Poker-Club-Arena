@@ -1503,3 +1503,25 @@
   font-style: italic;
   letter-spacing: 0.02em;
 }
+
+/* PHASE 6 (2026-09-04): the statement's standing - overdue, paid so far,
+   still outstanding - which the RPC has always returned and the card never
+   painted. */
+.invoiceStanding {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: var(--fs-xs, 0.7rem);
+  color: var(--text-secondary, #8a8f98);
+}
+
+.invoiceOverdue {
+  color: #f87171;
+  font-weight: 700;
+}
+
+.invoiceOutstanding {
+  font-weight: 700;
+  color: var(--text-primary, #e8eaed);
+}

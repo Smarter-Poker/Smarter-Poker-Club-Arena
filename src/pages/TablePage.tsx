@@ -7046,7 +7046,7 @@ export default function TablePage({
   // Hand history state — load from localStorage for session continuity
   const [handHistory, setHandHistory] = useState<HandRecord[]>(() => {
     try {
-      const saved = localStorage.getItem(`hand_history_${tableId || 'default'}`);
+      const saved = localStorage.getItem(`hand_history_v2_${tableId || 'default'}`);
       if (!saved) return [];
       /* AUDIT 2026-08-25: this returned `JSON.parse(saved)` straight out. The
          catch only covers a SYNTAX error — valid JSON that is not an array
@@ -7106,7 +7106,9 @@ export default function TablePage({
     let cancelled = false;
     (async () => {
       try {
-        const hands = await handHistoryService.getPlayerHands(userId, 50);
+        // THIS table's hands, in play order (Dan 2026-09-04). See
+        // HandHistoryService.getPlayerHands for what the missing tableId did.
+        const hands = await handHistoryService.getPlayerHands(userId, 50, { tableId });
         if (!cancelled && hands && hands.length > 0) {
           setHandHistory(hands.map((h) => adaptServiceHandToPanel(h, userId)));
         }
@@ -7126,7 +7128,7 @@ export default function TablePage({
     let cancelled = false;
     (async () => {
       try {
-        const hands = await handHistoryService.getPlayerHands(userId, 1);
+        const hands = await handHistoryService.getPlayerHands(userId, 1, { tableId });
         if (!cancelled && hands && hands.length > 0 && hands[0]?.id) {
           setLastHandId(hands[0].id);
         }
@@ -7146,7 +7148,10 @@ export default function TablePage({
       if (localStorageTimerRef.current) clearTimeout(localStorageTimerRef.current);
       localStorageTimerRef.current = setTimeout(() => {
         try {
-          localStorage.setItem(`hand_history_${tableId}`, JSON.stringify(handHistory.slice(0, 50)));
+          localStorage.setItem(
+            `hand_history_v2_${tableId}`,
+            JSON.stringify(handHistory.slice(0, 50))
+          );
         } catch {
           /* localStorage full — ignore */
         }
@@ -7164,7 +7169,14 @@ export default function TablePage({
       const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
-        if (key?.startsWith('hand_history_') && key !== `hand_history_${tableId}`) {
+        /* v2 (2026-09-04): every v1 key held the CROSS-TABLE list under a
+           table's name, so a table opened with another table's hands as its
+           own. v1 keys are all stale by definition and go regardless of age. */
+        if (key?.startsWith('hand_history_') && key !== `hand_history_v2_${tableId}`) {
+          if (!key.startsWith('hand_history_v2_')) {
+            localStorage.removeItem(key);
+            continue;
+          }
           try {
             const data = JSON.parse(localStorage.getItem(key) || '[]');
             const lastTimestamp = data[0]?.timestamp || 0;

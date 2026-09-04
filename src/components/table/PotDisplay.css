@@ -401,17 +401,14 @@
 
 /* .pot-display__pile-chip:first-of-type { margin-top: 0; } */
 
-/* A sub-1 residue that no chip on Dan's ladder can represent (a 0.5 blind).
-   Drawn as a sliver, never as a full white 1 chip — see chipDenominations.ts. */
+/* A sub-1 pot that no chip on Dan's ladder can represent (a lone 0.35 of
+   blinds before anyone calls). Dan 2026-09-04: chips are circles, on every
+   street. This was a 37.5%-height dashed translucent sliver for the same
+   "value honesty" reason the seat chip had in ChipPhysics.css, and it made
+   the pot an oval at micro stakes exactly when the seats were. The amount
+   label carries the value; the disc is a full chip. */
 .pot-display__pile-chip--partial {
-  /* A sliver of a chip, so it has to stay a fraction OF that chip: 0.375 is the
-     9px this used to hardcode against the 24px disc it was written beside. Now
-     that the disc follows the table (TableVisualHotfix.css section 4), a fixed
-     9px would have been two thirds of a chip on a phone and a third on a
-     desktop - the same value reading as two different things. */
-  height: calc(var(--cp-chip-size, 24px) * 0.375);
-  opacity: 0.75;
-  border-style: dashed;
+  height: var(--cp-chip-size, 24px);
 }
 
 /* True count for a stack clamped to fit. The pile is clamped; the value is not. */

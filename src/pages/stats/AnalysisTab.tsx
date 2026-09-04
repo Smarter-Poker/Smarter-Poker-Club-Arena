@@ -139,7 +139,7 @@ export default function AnalysisTab({
         </Suspense>
       </PanelBoundary>
 
-      {/* Notable hands — every stat above used to be a dead end. */}
+      {/* Notable hands - every stat above used to be a dead end. */}
       <PanelBoundary name="Notable Hands" resetKey={panelResetKey}>
         <div>
           <div className="stats-section-header">

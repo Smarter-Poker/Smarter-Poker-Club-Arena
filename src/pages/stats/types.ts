@@ -178,7 +178,7 @@ export interface HandEvidenceFilter {
 }
 
 // Analysis ranges. `null` = no time bound (the most recent hand_cap hands,
-// whenever they were played) — the previous, only behaviour.
+// whenever they were played) - the previous, only behaviour.
 export const RANGES: { key: string; days: number | null; label: string }[] = [
   { key: '7d', days: 7, label: '7 Days' },
   { key: '30d', days: 30, label: '30 Days' },
@@ -188,7 +188,7 @@ export const RANGES: { key: string; days: number | null; label: string }[] = [
 
 // ── RPC payload hardening ──────────────────────────────────────────────────
 // Every number the UI formats goes through `num()`. A spread over defaults only
-// fills in MISSING keys — an explicit null (which Postgres aggregates can
+// fills in MISSING keys - an explicit null (which Postgres aggregates can
 // produce) would survive it and blow up the first .toFixed()/.toLocaleString()
 // in the hero, taking the whole page down rather than one tile.
 export const num = (v: unknown, fallback = 0): number =>

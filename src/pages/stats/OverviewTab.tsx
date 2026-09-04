@@ -160,7 +160,7 @@ export default function OverviewTab({
           rather than presenting fabricated analysis as player evidence. */}
 
       {/* Rivals: the most socially engaging stat on the page, so it sits
-          where a player looks first. Owner only — head-to-head chip flow
+          where a player looks first. Owner only - head-to-head chip flow
           is private, and ca_player_nemesis refuses a cross-user read. */}
       {isOwnProfile && (
         <PanelBoundary name="Rivals" resetKey={panelResetKey}>

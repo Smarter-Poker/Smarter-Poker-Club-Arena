@@ -56,6 +56,11 @@ import {
 } from '../services/supabase.js';
 import { collectNitEvictions } from '../services/supabase/nitGame.js';
 import { evaluateCashSessions, atomicCashoutVoluntary } from '../services/supabase/cashSessions.js';
+import {
+  executePendingSeatMoves,
+  pendingSeatMoves,
+  seatMoveNotice,
+} from '../services/supabase/seatMoves.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { ChipContinuityTracker } from './ChipContinuity.js';
 import { deadlineScheduler } from './DeadlineScheduler.js';
@@ -2252,6 +2257,80 @@ export abstract class ServerTableEngineBase {
       stay_remaining_ms: stayRemainingMs,
       timestamp: Date.now(),
     });
+  }
+
+  /** Moves already announced to their player (once per move id). */
+  protected announcedSeatMoves: Set<string> = new Set();
+
+  /**
+   * MUST-MOVE, the engine's half (OPORD 1.3 s9.5, OPORD 1.4 s18.3). At the
+   * START of a hand every player with a planned move is told, once:
+   * "Seat Open On Main 2. Moving After This Hand." Nothing is asked.
+   */
+  protected async announcePendingSeatMoves(): Promise<void> {
+    if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return;
+    const pending = await pendingSeatMoves(this.tableId);
+    for (const m of pending) {
+      if (this.announcedSeatMoves.has(m.move_id)) continue;
+      this.announcedSeatMoves.add(m.move_id);
+      this.hub?.emitEvent(this.tableId, {
+        type: 'seat_move_pending',
+        table_id: this.tableId,
+        user_id: m.player_id,
+        to_table_id: m.to_table_id,
+        to_role: m.to_role,
+        to_main_index: m.to_main_index,
+        reason: m.reason,
+        message: seatMoveNotice(m),
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  /**
+   * At the END of a hand (and on every idle tick) the planned moves are
+   * executed: chair, chips and session go to the other table in one SQL
+   * transaction; this engine forgets the player the way it forgets a leaver,
+   * except that nothing is cashed out and no clock is closed. The destination
+   * engine sees the new seat on its next deal (loadSeatedPlayers) and the
+   * controller wakes a dealer for a table that has none.
+   */
+  protected async executePendingSeatMoves(): Promise<string[]> {
+    if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return [];
+    const done = await executePendingSeatMoves(this.tableId);
+    const movedIds: string[] = [];
+    for (const m of done) {
+      movedIds.push(m.player_id);
+      this.announcedSeatMoves.delete(m.move_id);
+      const seated = this.seatedPlayers.find((sp) => sp.user_id === m.player_id);
+      this.disconnectEngine.unregisterPlayer(this.tableId, m.player_id);
+      this.timeBankEngine.removePlayer(this.tableId, m.player_id);
+      this.straddleEngine.removePlayer(this.tableId, m.player_id);
+      this.preActionEngine.removePlayer(this.tableId, m.player_id);
+      this.forcedLeaves.delete(m.player_id);
+      this.leaveHeldByClock.delete(m.player_id);
+      // The session row followed the player; only this engine's mirror of
+      // it is dropped. The destination engine rebuilds its mirror from rows.
+      this.chipContinuity.forget(m.player_id);
+      this.hub?.emitEvent(this.tableId, {
+        type: 'seat_moved',
+        table_id: this.tableId,
+        seat: seated?.seat_number ?? null,
+        user_id: m.player_id,
+        to_table_id: m.to_table_id,
+        to_seat: m.to_seat_number,
+        stack: m.stack,
+        timestamp: Date.now(),
+      });
+      console.log(
+        `[ServerTableEngine:${this.tableId}] ${m.player_id} moved to ${m.to_table_id} seat ${m.to_seat_number} with ${m.stack}`
+      );
+    }
+    if (movedIds.length > 0) {
+      this.seatedPlayers = this.seatedPlayers.filter((sp) => !movedIds.includes(sp.user_id));
+      void this.broadcastCurrentState();
+    }
+    return movedIds;
   }
 
   protected isContinuityActive(userId: string): boolean {

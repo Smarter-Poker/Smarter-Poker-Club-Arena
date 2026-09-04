@@ -106,6 +106,7 @@ import {
   type CashierDestination,
   type CashierWalletType,
 } from './cashierModes';
+import { cashierRecipientBlock } from '../../lib/cashierRoster';
 import ChipMintModal from './ChipMintModal';
 import './WalletCashierModal.css';
 
@@ -794,14 +795,29 @@ export default function WalletCashierModal({
    */
   const excludeSelf = cashierRefusesSelfSend(walletType);
 
+  /**
+   * ONE RULE FOR EVERY CASHIER SURFACE (Dan 2026-09-04 round 2, see
+   * lib/cashierRoster). This list used to DELETE the viewer, and delete every
+   * member whose role cannot hold an agent wallet, whenever the send would be
+   * refused - the same "gone, not explained" shape that made the club owner
+   * unsearchable in his own cashier. Everyone stays; the ones who cannot
+   * receive this destination carry the reason and cannot be picked.
+   */
+  const blockFor = useCallback(
+    (m: Member) =>
+      cashierRecipientBlock({
+        isSelf: m.user_id === user?.id,
+        refusesSelfSend: excludeSelf,
+        destinationNeedsAgentWallet: AGENT_ONLY.includes(destination),
+        memberHoldsAgentWallet: canHoldAgentWallet(m.role),
+      }),
+    [user?.id, excludeSelf, destination]
+  );
+
   const eligible = useMemo(() => {
-    const needsAgent = AGENT_ONLY.includes(destination);
     const q = search.trim().toLowerCase();
 
-    const destinationMembers = members.filter(
-      (m) =>
-        (needsAgent ? canHoldAgentWallet(m.role) : true) && !(excludeSelf && m.user_id === user?.id)
-    );
+    const destinationMembers = members;
 
     if (q.length < 2) {
       let recent = destinationMembers
@@ -809,8 +825,10 @@ export default function WalletCashierModal({
         .sort((a, b) => recentIds.indexOf(a.user_id) - recentIds.indexOf(b.user_id));
 
       if (recent.length < 5) {
+        // The short "who might I mean" list before a search leads with people
+        // who can actually receive; the blocked ones are still one search away.
         const fallback = destinationMembers
-          .filter((m) => !recentIds.includes(m.user_id))
+          .filter((m) => !recentIds.includes(m.user_id) && !blockFor(m))
           .sort((a, b) => roleRank(b.role) - roleRank(a.role) || a.name.localeCompare(b.name))
           .slice(0, 5 - recent.length);
         recent = [...recent, ...fallback];
@@ -818,11 +836,27 @@ export default function WalletCashierModal({
       return recent;
     }
 
-    return destinationMembers
-      .filter((m) => fuzzyMatch(q, m.name) || (m.username && fuzzyMatch(q, m.username)))
-      .sort((a, b) => roleRank(b.role) - roleRank(a.role) || a.name.localeCompare(b.name))
-      .slice(0, 60);
-  }, [members, destination, search, user?.id, recentIds, excludeSelf]);
+    return (
+      destinationMembers
+        .filter(
+          (m) =>
+            fuzzyMatch(q, m.name) ||
+            (m.username && fuzzyMatch(q, m.username)) ||
+            // Findable by the id printed on the row, the only handle a member
+            // with no alias and no username has.
+            (m.short_id || '').toLowerCase().includes(q)
+        )
+        // Sendable first, then by role: a blocked row is discoverable, not in
+        // the way of the person you were actually looking for.
+        .sort(
+          (a, b) =>
+            Number(Boolean(blockFor(a))) - Number(Boolean(blockFor(b))) ||
+            roleRank(b.role) - roleRank(a.role) ||
+            a.name.localeCompare(b.name)
+        )
+        .slice(0, 60)
+    );
+  }, [members, destination, search, user?.id, recentIds, excludeSelf, blockFor]);
 
   // Changing destination can strand a recipient who cannot hold the new wallet,
   // and a viewer who picked themselves on a cashier that then narrows to one the
@@ -1321,37 +1355,50 @@ export default function WalletCashierModal({
                     {membersLoading && <div className="cbc-empty">Loading Members...</div>}
                     {!membersLoading && eligible.length === 0 && (
                       <div className="cbc-empty">
-                        {AGENT_ONLY.includes(destination)
-                          ? 'No Agents In This Club Yet. Promote A Member To Agent First.'
+                        {members.length === 0
+                          ? 'No Members In This Club Yet.'
                           : 'No Members Match That Search.'}
                       </div>
                     )}
-                    {eligible.map((m) => (
-                      <button
-                        key={m.user_id}
-                        className={
-                          recipient?.user_id === m.user_id
-                            ? 'cbc-member cbc-member--on'
-                            : 'cbc-member'
-                        }
-                        onClick={() => setRecipient(m)}
-                        aria-pressed={recipient?.user_id === m.user_id}
-                      >
-                        <div
-                          className="cbc-member-avatar"
-                          style={{ backgroundImage: `url(${m.avatar_url || ''})` }}
-                        />
-                        <div className="cbc-member-info">
-                          <span className="cbc-member-name">
-                            {m.name}
-                            {m.user_id === user?.id && ' (You)'}
-                          </span>
-                          <span className="cbc-member-id">#{m.short_id}</span>
-                        </div>
-                        <span className="cbc-member-role">{roleLabel(m.role)}</span>
-                        <span className="cbc-member-bal">{fmt(m.chip_balance)}</span>
-                      </button>
-                    ))}
+                    {eligible.map((m) => {
+                      const block = blockFor(m);
+                      return (
+                        <button
+                          key={m.user_id}
+                          className={
+                            block
+                              ? 'cbc-member cbc-member--blocked'
+                              : recipient?.user_id === m.user_id
+                                ? 'cbc-member cbc-member--on'
+                                : 'cbc-member'
+                          }
+                          onClick={() => {
+                            if (!block) setRecipient(m);
+                          }}
+                          aria-pressed={recipient?.user_id === m.user_id}
+                          aria-disabled={block ? true : undefined}
+                          title={block ? block.reason : undefined}
+                        >
+                          <div
+                            className="cbc-member-avatar"
+                            style={{ backgroundImage: `url(${m.avatar_url || ''})` }}
+                          />
+                          <div className="cbc-member-info">
+                            <span className="cbc-member-name">
+                              {m.name}
+                              {m.user_id === user?.id && ' (You)'}
+                            </span>
+                            <span className="cbc-member-id">#{m.short_id}</span>
+                          </div>
+                          <span className="cbc-member-role">{roleLabel(m.role)}</span>
+                          {block ? (
+                            <span className="cbc-member-block">{block.label}</span>
+                          ) : (
+                            <span className="cbc-member-bal">{fmt(m.chip_balance)}</span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 

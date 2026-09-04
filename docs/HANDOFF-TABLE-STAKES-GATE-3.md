@@ -1,6 +1,6 @@
-# MILITARY GRADE HANDOFF — Operation Table Stakes, Gate 3
+# MILITARY GRADE HANDOFF — Operation Table Stakes, Gate 4 (Gates 0-3 shipped)
 
-**Written 2026-09-04 20:00 UTC by the agent that shipped Gates 0-2. Read this
+**Written 2026-09-04 20:00 UTC by the agent that shipped Gates 0-2; updated 2026-09-05 (Gate 3 shipped, PR #3008). Read this
 file first, then `docs/OPORD-1.4-AMENDMENT.md`, then `CLAUDE.md`. Everything
 below is verified against production or against the repo on the date shown; a
 sentence with no evidence behind it is marked UNVERIFIED.**
@@ -19,9 +19,9 @@ production, and published. You are starting Gate 3.**
 | 0    | Recon                                                  | DONE, recorded in OPORD 1.4 section 0                                           |
 | 1    | Slice 0 — chip continuity                              | **LIVE** (PR #2959, merged 12:37 UTC, engine deployed, verified on real tables) |
 | 2    | Slice 1 — a host creates a GAME                        | **LIVE** (PR #2990, merged 19:17 UTC, published)                                |
-| 2.5  | Slice 1 hardening + R9 + cards                         | **PR #2997 OPEN** (pushed 19:57 UTC; migration already applied to prod)         |
-| 3    | Slice 2 cluster runtime + Slice 6 autonomous lifecycle | **YOURS**                                                                       |
-| 4    | One lobby card per game                                | Component built, not fed                                                        |
+| 2.5  | Slice 1 hardening + R9 + cards                         | **LIVE** (PR #2999, merged 20:40 UTC)                                           |
+| 3    | Slice 2 cluster runtime + Slice 6 autonomous lifecycle | **PR #3008** (pushed 22:35 UTC; both migrations already applied to prod)        |
+| 4    | One lobby card per game + the cluster waitlist client  | **YOURS** (component built, `cash_game_waitlist` table exists, neither is fed)  |
 | 5    | Rules engine                                           | Not started                                                                     |
 | 6    | Chrome                                                 | Not started                                                                     |
 | 7    | Cutover                                                | Not started                                                                     |
@@ -30,7 +30,7 @@ production, and published. You are starting Gate 3.**
 
 ```bash
 curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-  https://api.github.com/repos/Smarter-Poker/Smarter-Poker-Club-Arena/pulls/2997 \
+  https://api.github.com/repos/Smarter-Poker/Smarter-Poker-Club-Arena/pulls/3008 \
   | python3 -c "import sys,json;p=json.load(sys.stdin);print(p['state'],p['merged'])"
 ```
 
@@ -106,6 +106,8 @@ Changelogs: `docs/changelog/2026-09-04-cash-games-slice-1.md` and
 | 20260904140000 | chip_continuity_slice_0_hardening | 12:10 UTC                                    |
 | 20260904160500 | cash_games_slice_1                | 18:45 UTC (see the warning in its changelog) |
 | 20260904230000 | cash_games_slice_1_hardening      | 19:16 UTC                                    |
+| 20260905010000 | cluster_columns_slice_2           | 21:47 UTC (three lock-timed transactions)    |
+| 20260905010500 | cluster_controller_slice_2        | 22:20 UTC                                    |
 
 ---
 
@@ -120,11 +122,10 @@ Gate 2. The ones that will bite you at Gate 3:
   is the Slice 6 cutover, not now.
 - **R2** No straddles on any cash game. `fn_cash_game_create` writes all
   three straddle columns false.
-- **R3** Main 1 is ALWAYS ON for a must-move game. Today that is carried by
-  `auto_extension=true` + `auto_restart=true` on the row. **When your
-  ClusterController owns the lifecycle, take those two flags off Main 1 and
-  make the controller the keep-alive** — two mechanisms fighting is the
-  hamburger war shape (CLAUDE.md 10.7).
+- **R3** Main 1 is ALWAYS ON for a must-move game. Since Gate 3 the
+  controller is the keep-alive (RECONCILE reopens a closed Main 1 every
+  tick); the two row flags are false on every cluster table. Do not put
+  them back.
 - **R4** money is `numeric` chips, never `_cents`.
 - **R5** repo variant names: `plo8`, `short_deck`, `flo8`, never `plo8o`.
 - **R6** a leave refused at settlement is HELD by the clock and released at
@@ -140,44 +141,89 @@ Gate 2. The ones that will bite you at Gate 3:
 
 ---
 
-## 4. GATE 3 — WHAT YOU ARE BUILDING
+## 4. GATE 3 — SHIPPED (PR #3008). READ THE CHANGELOG, THEN THIS
 
-Read OPORD 1.4 section 18 in full. The summary:
+`docs/changelog/2026-09-05-cluster-controller-slice-2.md` is the record.
+The short form: `server/src/cluster/ClusterController.ts` ticks every 5 s
+on the leader; `fn_cash_cluster_tick(game, eligible_horses)` locks the
+`cash_games` row and does RECONCILE / MUST-MOVE / OPEN / PROMOTE / BREAK /
+ROLES / WAKE-SLEEP from rows; `fn_cash_seat_move_execute` moves a chair
+with its chips and its chip-continuity session in one transaction (no
+wallet); the engine announces a move at hand start (`seat_move_pending`,
+"Seat Open On Main 2. Moving After This Hand.") and executes it at hand end
+and on the idle tick (`seat_moved`); `TablePage` follows the hero. Probe:
+`scripts/dev/probe-cluster-controller.sql`, 23/23.
 
-One stateless `ClusterController.tick()` derives every table decision from
-rows, and replaces the table-lifecycle half of `HorseFleetManager` (horse
-SEEDING stays in the fleet). For each enabled `must_move` cash game:
+### Verify it LIVE before Gate 4 (nobody has yet - do this first)
 
-1. **Open** Main 1 if missing; open Main N+1 when every main is at
-   `handedness - 1` seats, up to `cap_mains`.
-2. **Feeder** rules per section 18: one feeder, `allow_second_feeder` for a
-   second.
-3. **Must move**: a seat opening on a main pulls the longest-waiting player
-   off the feeder. This is the feature the game is named for and there is
-   **no implementation of it anywhere today** — `role`, `main_index` and
-   `lifecycle` exist as columns and nothing reads them (verified by grep,
-   2026-09-04).
-4. **Break** a table: `lifecycle='breaking'` stops new seats, the last
-   players are moved, then `closed`.
-5. **Dormant**: zero seated across the cluster → `state='dormant'`, Main 1
-   stays open (R3).
+There were ZERO `cash_games` rows on production when Gate 3 was pushed, so
+the controller has had nothing to tick. After the engine deploys (the :55
+break after #3008 merges):
 
-### Things the audit found that Gate 3 must handle
+1. As the owner, create ONE must-move game through the New Cash Game flow
+   (Midway Union, an unusual key such as NLH 3/6 6-max so it collides with
+   nothing). Or in psql with the owner's JWT claims set, exactly as the
+   probes do.
+2. Within 10 s: `SELECT kind, payload, at FROM cash_cluster_events ORDER BY
+at DESC LIMIT 20` should show `main_opened` and `game_woken` or
+   `game_dormant`; `cash_games.last_tick_at` should be moving.
+3. The fleet seeds Main 1 (horses are buyers). When Main 1 fills and the
+   fleet still has eligible horses: `feeder_opened`, then `feeder_live`.
+4. Cash a horse out of Main 1 (or wait for one to leave): `move_planned`,
+   then `seat_moved` at the next hand boundary, and the felt total across
+   the cluster unchanged. The engine log says `[ClusterController] <game>
+[...]` and `[ServerTableEngine:<from>] <player> moved to <to> seat N`.
+5. If any of that does NOT happen, the most likely causes in order: the
+   engine is not on #3008 yet (`/health` version); the game is
+   `must_move=false`; `fn_cash_clusters_to_tick()` returns nothing (check
+   `enabled`); the controller threw (Sentry `ClusterController.*`).
 
-| Item | What                                                                                                                                                                                               | Where                                                                                                                                                                                     |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| H12  | `src/services/HorseOrchestrator.ts` still inserts fleet cash tables from the BROWSER, outside any cluster, with `straddle_enabled: true` in settings.                                              | Route it through `fn_cash_game_create` or retire it when the fleet moves to clusters. It is a sanctioned writer in `tests/unit/oneTableWriter.test.ts` — move the pin in the same commit. |
-| H13  | A union operator who is not a club member passes `fn_can_create_games` but `authorizeTableViewer` refuses the engine wake, so Start navigates to a felt with no engine until the first seat.       | `server/src/services/TableViewerAccess.ts`. Fixed for free once the controller wakes Main 1 instead of the browser.                                                                       |
-| —    | `cash_tables_needing_engine` requires `HAVING count(*) >= 1` on `table_seats`, so a 0-seat Main 1 is NOT adopted by the discovery loop. Start wakes it via `ensureCashTableEngine`; Save does not. | `supabase/migrations/20260827_horses_are_players_law.sql:296`. Your controller should wake its own tables.                                                                                |
-| —    | `fn_table_lifecycle_pass`'s AUTO CREATE TABLE clones by NAME PREFIX via `fn_clone_table_row`, and the clone does **not** carry `cluster_id`.                                                       | Never set `auto_create_table` on a cluster table. `fn_cash_game_create` never does.                                                                                                       |
+### Gate 3 leftovers (small, named, not blocking Gate 4)
 
-### Acceptance (OPORD 1.4 section 19)
+| Item  | What                                                                                                                                                                                           |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A6.11 | `HorseSessionRotator` still sheds a horse from a cluster table regardless of the balance floor. One rule to add (18.3, last para).                                                             |
+| 18.3  | The break window is 5 minutes only; "2 completed orbits" needs an orbit counter the engine does not persist.                                                                                   |
+| 18.4  | `eligibleHorseCount` is the fleet's last-cycle count (30 s stale at worst).                                                                                                                    |
+| H12   | `src/services/HorseOrchestrator.ts` browser-side table insert is dead code (zero callers); retire at the Gate 7 cutover.                                                                       |
+| H13   | A union operator who is not a club member: Start wakes no engine (`authorizeTableViewer`). The controller now wakes Main 1 at the first seat, so this only delays the dealer to the first sit. |
 
-A slice that is not test-green is not done. Probe every SQL path in a
-transaction you roll back (CLAUDE.md 11.5), and write the law test in the
-same commit as the behaviour.
+## 4b. GATE 4 — WHAT YOU ARE BUILDING
 
----
+OPORD 1.3 section 12 / OPORD 1.4 s2: ONE lobby card per GAME, never per
+table. Everything the card needs exists:
+
+- `CashGameCard` (`src/components/cash/CashGameCard.tsx`) paints Dan's
+  artwork with dynamic stakes, variant, RUNNING/WAITING/DORMANT, MUST
+  MOVE/MANUAL, TYPE/STAKES/PLAYERS/TABLES and the rules strip. It is
+  rendered today only as the preview inside the create flow.
+- Data: `cash_games` (name, template_name, variant, sb, bb, handedness,
+  ruleset_snapshot, state, must_move, enabled) joined to `tables WHERE
+cluster_id = game.id AND lifecycle <> 'closed'` for PLAYERS (sum of live
+  seats) and TABLES (count). `status`: `state='dormant'` -> DORMANT; any
+  table `status='running'` -> RUNNING; else WAITING. `rulesLineFor(snapshot)`
+  gives the strip. Write ONE RPC, `fn_cash_games_board(club_id)`, that
+  returns all of it in one round trip (the lobby already avoids N+1), and
+  subscribe to `cash_cluster_events` (or poll `last_tick_at`) for liveness.
+- Where: `src/pages/ClubHomePage.tsx` builds `lobbyEntries` (~line 3604)
+  and renders `GameLobbyPanel`. A cash-games board goes ABOVE the table
+  list; the cluster's individual `tables` rows must then be HIDDEN from the
+  per-table list (filter `cluster_id IS NOT NULL` out of the cash entries)
+  or the game shows twice.
+- JOIN GAME: seat the player through section 9.4 auto-seat - shortest live
+  Main with an unreserved open seat first, then the feeder; if none, insert
+  a `cash_game_waitlist` row (`status='waiting'`) and show "Next table
+  opens when one more player sits" while `cash_games.opening_hold_since` is
+  set. A waitlist row is a BUYER for the open rule; the controller counts it
+  already. Seating itself stays `atomic_table_buyin` from the browser (the
+  only browser money door) - pick the table and seat, then call it.
+- VIEW GAME: a game page listing its tables (role, main_index, seated) with
+  the same card at the top. Route it under the club.
+- Must-move UX (section 9.5) is already in `TablePage`; nothing to build.
+- Tests: a law test that the lobby renders one card per game and none for
+  a cluster's tables; a render test for the board RPC mapping; the
+  `orphanModuleRatchet` baseline drops by one when `CashGameCard` gets a
+  second importer (leave it, it is a ratchet, not a target).
 
 ## 5. HOW TO WORK HERE (the environment, exactly)
 
@@ -256,7 +302,27 @@ EXECUTE 'SET LOCAL ROLE authenticated';
 - Test accounts I used: owner `47965354-0e56-43ef-931c-ddaab82af765`, club
   `fade0000-0000-0000-0000-000000000001`, a member without create rights
   `2a8c045e-cc0d-404f-896b-7e441a3c495a`. An "outsider" must be picked
-  dynamically — that member IS in the club.
+  dynamically — that member IS in the club. A member's wallet resolves for
+  a Midway Union table only if they also belong to a club IN the union
+  (`clubs.union_id = fade...`); the cluster probe filters for that.
+- **`ALTER TABLE public.tables` can deadlock against realtime** (it wants
+  an exclusive lock on realtime's `subscription` relation while a realtime
+  worker holds it and waits on `tables`). Put table ALTERs in their own
+  small transactions with `SET LOCAL lock_timeout = '3s'`, apply with a
+  retry loop, and NEVER inside a probe's DO block: the probe would hold
+  `ACCESS EXCLUSIVE` on `tables` for its whole run. Functions-only
+  migrations are safe to probe.
+- **Long commands from host_terminal die with the call.** `nohup ... &`
+  is not enough when the call itself times out; use
+  `python3 -c "import subprocess; subprocess.Popen([...], start_new_session=True, ...)"`
+  and poll the log in later calls.
+- **A PL/pgSQL `IF` condition ends at the first `THEN`** - a `CASE WHEN ...
+THEN` inside one is a syntax error "at end of input". Compute it into a
+  variable first.
+- **`fn_capture_managed_game_contract` fires on EVERY `tables` UPDATE** and
+  hashes the whole row minus an exclusion list. If you add a column the
+  controller churns, add it to `fn_managed_game_contract_document`'s
+  exclusion list or every tick mints a contract version.
 
 ### The Silent Revert Guard
 
@@ -296,7 +362,14 @@ src/lib/chipContinuity.ts                          leave label + lock helpers
 server/src/engine/ChipContinuity.ts                the stay-clock mirror
 server/src/services/supabase/cashSessions.ts
 server/src/services/HorseFleetManager.ts           <- Slice 6 replaces its table logic
-server/src/services/HorseOrchestrator.ts           <- H12, still a browser writer
+server/src/services/HorseOrchestrator.ts           <- H12, dead browser writer (zero callers)
+server/src/cluster/ClusterController.ts            the clock (5 s, leader)
+server/src/services/supabase/seatMoves.ts          the engine's half of must-move
+supabase/migrations/20260905010000_cluster_columns_slice_2.sql
+supabase/migrations/20260905010500_cluster_controller_slice_2.sql
+scripts/dev/probe-cluster-controller.sql           23 scenarios, all PASS
+scripts/ci/schema-manifest.d/cluster-controller-slice-2.json
+server/src/cluster/TheTablesOpenAndCloseThemselves.law.test.ts
 
 tests/cash-games-are-created-from-a-template.law.test.tsx
 tests/chip-continuity-is-house-law.law.test.ts
@@ -332,15 +405,17 @@ they are the contract between the picture and the text.**
 
 ## 8. OPEN ITEMS, HONESTLY STATED
 
-1. **PR #2997 must land.** Its migration is already on production.
-2. **Must-move is not implemented.** `role`, `main_index`, `lifecycle` are
-   columns nothing reads. This is the whole of Slice 2.
+1. **PR #3008 must land, and the controller must be SEEN ticking a real game**
+   (section 4, "Verify it LIVE"). Nobody has yet; there were no must-move
+   games on production when it was pushed.
+2. **Must-move is implemented for cluster tables** (Slice 2 + 6). A6.11
+   (rotator floor) and orbit-based hysteresis are the named leftovers.
 3. **H12** `HorseOrchestrator` still inserts cash tables from the browser.
 4. **H13** the union-operator Start path wakes no engine.
 5. **The lobby does not know about `cash_games`.** It lists the `tables` rows,
-   so a Slice 1 game appears as an ordinary table today. Gate 4.
-6. **`cash_games.state`** is written 'live' on create and 'dormant' on close;
-   nothing else moves it. The controller owns it from Gate 3.
+   so a game appears as one ordinary table per cluster table today. Gate 4
+   (section 4b).
+6. **`cash_games.state`** is derived by the controller every tick (18.4).
 7. **The pre-Slice-1 cash fields on `TableConfig`/`DEFAULT_CONFIG`** are kept
    only so an old `table_templates` row restores. They are dead weight and
    can go at the Slice 7 cutover.

@@ -1,0 +1,3 @@
+# server/src/engine/TheFeltKeepsWhatLandedOnIt.law.test.ts
+
+The felt keeps what landed on it: the settlement barrier chains onto postHandTasks (never replaces it) and the dealing loop re-reads it after every wait; every hand write carries stack_before and declared rake/BBJ so the database applies the DIFFERENCE and asserts sum(delta) = inflow - rake - bbj; there is exactly one stack write per hand and no absolute per-seat fallback; the migration honours a declared rake counterparty, tolerates the no-op trigger, records rebases, and restores an erased credit only through a keyed door from issuance_reserve

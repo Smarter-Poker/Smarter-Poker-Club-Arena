@@ -15,6 +15,12 @@ interface LeaveTableConfirmProps {
   currentStack: number;
   tableName: string;
   isTournament?: boolean;
+  /**
+   * CHIP CONTINUITY: "Leave Available In M:SS" while the stay clock has time
+   * left. When set, the confirm button shows it and is disabled - the server
+   * would refuse the leave anyway.
+   */
+  lockedLabel?: string | null;
   onConfirm: () => void | Promise<void>;
   onCancel: () => void;
 }
@@ -24,6 +30,7 @@ export default function LeaveTableConfirm({
   currentStack,
   tableName,
   isTournament = false,
+  lockedLabel = null,
   onConfirm,
   onCancel,
 }: LeaveTableConfirmProps) {
@@ -171,9 +178,10 @@ export default function LeaveTableConfirm({
             type="button"
             className="leave-confirm__btn leave-confirm__btn--confirm"
             onClick={() => void handleConfirm()}
-            disabled={leaving}
+            disabled={leaving || !!lockedLabel}
+            aria-disabled={!!lockedLabel}
           >
-            {leaving ? 'Leaving…' : 'Leave Table'}
+            {lockedLabel ? lockedLabel : leaving ? 'Leaving…' : 'Leave Table'}
           </button>
         </div>
       </div>

@@ -21,7 +21,7 @@ fixtures at 23:41 UTC - an hour after the fleet of fifteen was retired, on the
 build (#2898) that was supposed to have made that impossible. The guard that PR
 added worked perfectly and reported the leak; the cleanup it guarded could not
 finish. `public.clubs` has seventy foreign keys, a DELETE checks every one, and
-seven of them had no index that could answer them - two of the seven *looked*
+seven of them had no index that could answer them - two of the seven _looked_
 indexed but were **partial**, and a partial index cannot answer a foreign key
 check. The whole thing timed out inside the PostgREST request budget. Closed in
 `fix/chip-std-club-fk-indexes` (13 indexes, `fn_ca_fk_index_gaps`,
@@ -74,7 +74,7 @@ structural guarantees replace them, not a destination.
 
 **Current phase.** Phases 1 and 2 are complete. Phase 3 is next. Dan numbers the
 programme **1 through 8** (the epoch reset gate counts as a phase); the roadmap
-document numbers seven phases plus the gate. Same content, different counting - 
+document numbers seven phases plus the gate. Same content, different counting -
 say "Phase 3" and describe it, don't argue the number.
 
 **Major work completed this session** (2026-09-03, ~16:00-00:00 UTC): the whole
@@ -86,7 +86,7 @@ migrations applied to production and mirrored. Details in section 7.
 legacy paths deleted. Nothing of Phase 3 has been started.
 
 **The most important thing to understand.** The single largest accounting hole
-in the estate is *not* in the money paths - those now conserve. It is that
+in the estate is _not_ in the money paths - those now conserve. It is that
 `tournaments.prize_pool` is a **counter, not an escrow balance**, and it is
 never zeroed when an event finishes. Measured tonight: real outstanding
 tournament liability **0.32 chips across 3 rows**, against **5,189,778.80 chips
@@ -145,7 +145,7 @@ Non-negotiable, stated by Dan. Quoted where the exact words matter.
    CHIPS ARE ALREADY INSIDE THE CLUBS AND UNIONS, THEY ARE 'RAKED OUT OF THE
    POTS'… THEY AREN'T BEING 'MANUFACTURED OR PRODUCED'." **This withdrew an
    earlier finding of mine** ("promo becomes cash on send, bypassing
-   playthrough", audit ref F11): that behaviour is *correct*. There is no
+   playthrough", audit ref F11): that behaviour is _correct_. There is no
    playthrough and no expiry to build. Do not re-raise it.
 5. **The splash pot does not exist yet.** "WE'VE NEVER BUILT THE SPLASH POT YET,
    OR DESIGNED RULES FOR IT, ITS SUPPOSED TO BE ADDED LATER, ONCE WE WORK ALL
@@ -173,20 +173,20 @@ Non-negotiable, stated by Dan. Quoted where the exact words matter.
 
 ## 3. Project and repository identity
 
-| Item | Value | Status |
-| --- | --- | --- |
-| Project | Club Arena (Smarter Poker) | confirmed |
-| Repository root | `/Users/smarter.poker/Documents/club-arena` (Dan's Mac) | confirmed |
-| Git remote | `git@github.com:Smarter-Poker/Smarter-Poker-Club-Arena.git` | confirmed |
-| GitHub API path | `Smarter-Poker/Smarter-Poker-Club-Arena` | confirmed - **not** `Smarter-Poker/club-arena`, that 404s |
-| Default branch | `main` | confirmed |
-| Worktrees | `/Users/smarter.poker/Documents/.agent-trees/club-arena/<name>` - 205 of them | confirmed |
-| Framework | React + TypeScript (Vite), Node server for the engine | confirmed |
-| Package manager | npm | confirmed |
-| Database | Supabase Postgres, project `kuklfnapbkmacvwxktbh` | confirmed |
-| Client hosting | Club Arena's own Hetzner origin (Caddy on estate-ci-1) | confirmed |
-| Engine hosting | Hetzner CPX11 ash-dc1, `engine.smarter.poker`, systemd + Docker `club-arena-engine` | confirmed |
-| Test runner | vitest | confirmed |
+| Item            | Value                                                                               | Status                                                    |
+| --------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| Project         | Club Arena (Smarter Poker)                                                          | confirmed                                                 |
+| Repository root | `/Users/smarter.poker/Documents/club-arena` (Dan's Mac)                             | confirmed                                                 |
+| Git remote      | `git@github.com:Smarter-Poker/Smarter-Poker-Club-Arena.git`                         | confirmed                                                 |
+| GitHub API path | `Smarter-Poker/Smarter-Poker-Club-Arena`                                            | confirmed - **not** `Smarter-Poker/club-arena`, that 404s |
+| Default branch  | `main`                                                                              | confirmed                                                 |
+| Worktrees       | `/Users/smarter.poker/Documents/.agent-trees/club-arena/<name>` - 205 of them       | confirmed                                                 |
+| Framework       | React + TypeScript (Vite), Node server for the engine                               | confirmed                                                 |
+| Package manager | npm                                                                                 | confirmed                                                 |
+| Database        | Supabase Postgres, project `kuklfnapbkmacvwxktbh`                                   | confirmed                                                 |
+| Client hosting  | Club Arena's own Hetzner origin (Caddy on estate-ci-1)                              | confirmed                                                 |
+| Engine hosting  | Hetzner CPX11 ash-dc1, `engine.smarter.poker`, systemd + Docker `club-arena-engine` | confirmed                                                 |
+| Test runner     | vitest                                                                              | confirmed                                                 |
 
 **Never develop in the main clone.** Create a worktree per change.
 
@@ -277,31 +277,32 @@ server/src/services/RakebackSettlerService.ts  Calls fn_union_weekly_rakeback_cl
   `ca_ledger_mutation_log`, and raises a warning drift incident naming the
   reason. Used twice this session (certification fixtures). Always clear it.
 - `chip_ledger.category` is constrained by `chip_ledger_category_check`.
-  `fn_ca_declare_ledger` **refuses an unknown category before any chip moves** - 
+  `fn_ca_declare_ledger` **refuses an unknown category before any chip moves** -
   it caught me inventing `promo_disbursement`. Use an existing word or widen the
   constraint deliberately.
 - **Auto-ledger**: `fn_ca_autoledger` triggers on `clubs`, `club_members`,
   `agents`, `union_wallets`, `bbj_pools`. Each trigger maps
   `column=account`:
 
-  | table.column | ledger account |
-  | --- | --- |
-  | `club_members.chip_balance` | `player_wallet` |
-  | `club_members.promo_balance` | `promo_wallet` |
-  | `clubs.chip_treasury`, `clubs.chip_pool` | `club_treasury` |
-  | `clubs.promo_balance` | `promo_wallet` |
-  | `clubs.insurance_balance` | `insurance_bank` |
-  | `union_wallets.chip_balance` | `union_bank` |
-  | `union_wallets.rake_wallet`/`bbj_wallet`/`promo_wallet`/`insurance_wallet`/`spin_reserve_wallet` | `union_wallet` |
-  | `agents.agent_wallet_balance` | `agent_wallet` |
-  | `agents.promo_wallet_balance` | `promo_wallet` |
-  | `bbj_pools.*` | `bbj_pool` |
+  | table.column                                                                                     | ledger account   |
+  | ------------------------------------------------------------------------------------------------ | ---------------- |
+  | `club_members.chip_balance`                                                                      | `player_wallet`  |
+  | `club_members.promo_balance`                                                                     | `promo_wallet`   |
+  | `clubs.chip_treasury`, `clubs.chip_pool`                                                         | `club_treasury`  |
+  | `clubs.promo_balance`                                                                            | `promo_wallet`   |
+  | `clubs.insurance_balance`                                                                        | `insurance_bank` |
+  | `union_wallets.chip_balance`                                                                     | `union_bank`     |
+  | `union_wallets.rake_wallet`/`bbj_wallet`/`promo_wallet`/`insurance_wallet`/`spin_reserve_wallet` | `union_wallet`   |
+  | `agents.agent_wallet_balance`                                                                    | `agent_wallet`   |
+  | `agents.promo_wallet_balance`                                                                    | `promo_wallet`   |
+  | `bbj_pools.*`                                                                                    | `bbj_pool`       |
 
   **Note the many-to-one**: three different balances all journal as
   `promo_wallet`. That mismatch caused a phantom in the trial balance; fixed
   (§7.4).
+
 - **Declaring a move**: `fn_ca_declare_ledger(category, counterparty,
-  counterparty_entity, settlement_id, idempotency_key, autoskip_tables[])`. The
+counterparty_entity, settlement_id, idempotency_key, autoskip_tables[])`. The
   autoskip list suppresses one side's trigger so a single row names both sides.
   **If you do not declare, the leg lands in `settlement_suspense`.**
 - `fn_ca_post_leg(...)` writes an explicit leg where no trigger will.
@@ -310,7 +311,7 @@ server/src/services/RakebackSettlerService.ts  Calls fn_union_weekly_rakeback_cl
 
 - `fn_ca_supply_snapshot()` - hourly at :05, writes `ca_supply_snapshots`.
   Sums every chip store and computes `unexplained = total - prev.total - mint +
-  burn`. Raises a drift incident above thresholds.
+burn`. Raises a drift incident above thresholds.
   **It does not count `wallets`.**
 - `fn_ca_trial_balance(p_since)` - per-account balance delta vs ledger net.
 - Non-circulating stores (issuance/retirement): `system_mint`, `system_burn`,
@@ -320,15 +321,15 @@ server/src/services/RakebackSettlerService.ts  Calls fn_union_weekly_rakeback_cl
 
 ### 6.4 Guards you will meet
 
-| Guard | What it stops | How to pass it legitimately |
-| --- | --- | --- |
-| `fn_ca_journal_append_only` | UPDATE/DELETE on journals | `app.ledger_maintenance` = `'kind:ref'` |
-| `guard_wallet_balance_write` | direct balance writes on `wallets` | `app.bypass_wallet_guard` = `'on'` |
-| `fn_guard_game_management_event` | DELETE on `game_management_events` | `app.game_management_retention` = `'on'` |
-| `fn_refuse_while_frozen` | all writes during the maintenance break | **wait** - breaks run :55 to :00 |
-| `fn_ca_money_path_log` (R3) | tournament credits outside the one payer | route through `fn_settle_tournament_obligation` |
-| `zz_freerolls_are_free_buy` | non-free freeroll entries | n/a |
-| `fn_ca_declare_ledger` vocabulary | unknown ledger categories | use an existing category |
+| Guard                             | What it stops                            | How to pass it legitimately                     |
+| --------------------------------- | ---------------------------------------- | ----------------------------------------------- |
+| `fn_ca_journal_append_only`       | UPDATE/DELETE on journals                | `app.ledger_maintenance` = `'kind:ref'`         |
+| `guard_wallet_balance_write`      | direct balance writes on `wallets`       | `app.bypass_wallet_guard` = `'on'`              |
+| `fn_guard_game_management_event`  | DELETE on `game_management_events`       | `app.game_management_retention` = `'on'`        |
+| `fn_refuse_while_frozen`          | all writes during the maintenance break  | **wait** - breaks run :55 to :00                |
+| `fn_ca_money_path_log` (R3)       | tournament credits outside the one payer | route through `fn_settle_tournament_obligation` |
+| `zz_freerolls_are_free_buy`       | non-free freeroll entries                | n/a                                             |
+| `fn_ca_declare_ledger` vocabulary | unknown ledger categories                | use an existing category                        |
 
 Every one of these fired on me at least once this session. **They were all
 right every time.** Treat a refusal as information, not an obstacle.
@@ -523,7 +524,7 @@ a burn, not a leak. `certify-club-create.mjs` now calls that function and
   source**. They paid nothing (the pool is unspendable), so refusing changes no
   player's position and stops the pretence.
 - **The owner's door got a button**: `WalletService.disbursePromo(clubId,
-  playerId, amount, note?)` resolves who owns the float and calls
+playerId, amount, note?)` resolves who owns the float and calls
   `fn_promo_disburse`. `AgentDashboardPage` and `PlayerSessionsPage` now use it
   and each lost the `agents` PK lookup the retired path needed.
 
@@ -564,26 +565,26 @@ session did not open a browser, take a screenshot, or run any visual regression.
 
 ## 9. Functional and architectural decisions
 
-| Area | State |
-| --- | --- |
-| One payer per tournament obligation (`fn_settle_tournament_obligation`) | **Implemented**, R3 now enforces it |
-| Union weekly close, separate pots, conservation asserted | **Implemented** |
-| Close basis = the club's players' rake at union games | **Implemented** |
-| Per-game-type rakeback rates | **Implemented**, all rates NULL (nobody has set one) |
-| Commission accrues for every agent in the chain | **Implemented** |
-| Mint issues a new club's 100,000, clawback floor protects it | **Implemented** |
-| Mint register baseline for the 4 existing estates | **Not started** - Phase 3 |
-| Promo disbursed by owners, ordinary chips | **Implemented and wired** |
-| Leaderboard = the only automatic promo payout | **Implemented**; first real run 2026-09-13 |
-| Splash pot | **Deliberately closed**, needs rules from Dan |
-| Deposit bonus / referral bonus / achievement rewards | **Closed** - no funded source; needs design |
-| Freerolls free-buy | **Implemented** (trigger) |
-| Tournament escrow as a real balance | **Not started** - Phase 5, the big one |
-| `CHECK (balance >= 0)` on club/agent/union balances | **Not started** - Phase 3.2 |
-| Legacy path deletion (30+ zero-use functions) | **Not started** - Phase 3.3 |
-| R10 (`REVOKE UPDATE` on balance columns) | **Not started** - Phase 3.4, gated on 3.3 |
-| Kill switch automation, four-eyes enforcement | **Report-only** - Phase 6 |
-| Epoch reset | **Specified only**, gate between Phase 4 and 5 |
+| Area                                                                    | State                                                |
+| ----------------------------------------------------------------------- | ---------------------------------------------------- |
+| One payer per tournament obligation (`fn_settle_tournament_obligation`) | **Implemented**, R3 now enforces it                  |
+| Union weekly close, separate pots, conservation asserted                | **Implemented**                                      |
+| Close basis = the club's players' rake at union games                   | **Implemented**                                      |
+| Per-game-type rakeback rates                                            | **Implemented**, all rates NULL (nobody has set one) |
+| Commission accrues for every agent in the chain                         | **Implemented**                                      |
+| Mint issues a new club's 100,000, clawback floor protects it            | **Implemented**                                      |
+| Mint register baseline for the 4 existing estates                       | **Not started** - Phase 3                            |
+| Promo disbursed by owners, ordinary chips                               | **Implemented and wired**                            |
+| Leaderboard = the only automatic promo payout                           | **Implemented**; first real run 2026-09-13           |
+| Splash pot                                                              | **Deliberately closed**, needs rules from Dan        |
+| Deposit bonus / referral bonus / achievement rewards                    | **Closed** - no funded source; needs design          |
+| Freerolls free-buy                                                      | **Implemented** (trigger)                            |
+| Tournament escrow as a real balance                                     | **Not started** - Phase 5, the big one               |
+| `CHECK (balance >= 0)` on club/agent/union balances                     | **Not started** - Phase 3.2                          |
+| Legacy path deletion (30+ zero-use functions)                           | **Not started** - Phase 3.3                          |
+| R10 (`REVOKE UPDATE` on balance columns)                                | **Not started** - Phase 3.4, gated on 3.3            |
+| Kill switch automation, four-eyes enforcement                           | **Report-only** - Phase 6                            |
+| Epoch reset                                                             | **Specified only**, gate between Phase 4 and 5       |
 
 ---
 
@@ -638,30 +639,30 @@ wins).
 
 **Merged to `main` this session** (verified via `git log origin/main`):
 
-| PR | Branch | Content | Merged |
-| --- | --- | --- | --- |
-| #2856 | placeholders + overlay deadlock | 14 BACKFILLED mirrors + Phase 1 fix | yes |
-| #2860 | p2-union-close | close v1→v3, attribution table + cron | yes |
-| #2862 | commission-per-agent | commission for every agent | yes |
-| #2875 | p2-hierarchy | hierarchy sends, `fn_ca_post_leg` | yes |
-| #2882 | p2-doors-closed | orphan doors, drift telemetry | yes |
-| #2883 | p2-payables | `fn_ca_hierarchy_payables` | yes |
-| #2889 | mint-opening-grant | Mint grant + clawback floor | yes |
-| #2890 | promo-meter | supply columns + trial balance | yes |
-| #2895 | rates-and-r3 | per-game-type rates + R3 refuse | yes |
-| #2898 | cert-clubs | 15 fixtures retired + cert fix | yes |
+| PR    | Branch                          | Content                               | Merged |
+| ----- | ------------------------------- | ------------------------------------- | ------ |
+| #2856 | placeholders + overlay deadlock | 14 BACKFILLED mirrors + Phase 1 fix   | yes    |
+| #2860 | p2-union-close                  | close v1→v3, attribution table + cron | yes    |
+| #2862 | commission-per-agent            | commission for every agent            | yes    |
+| #2875 | p2-hierarchy                    | hierarchy sends, `fn_ca_post_leg`     | yes    |
+| #2882 | p2-doors-closed                 | orphan doors, drift telemetry         | yes    |
+| #2883 | p2-payables                     | `fn_ca_hierarchy_payables`            | yes    |
+| #2889 | mint-opening-grant              | Mint grant + clawback floor           | yes    |
+| #2890 | promo-meter                     | supply columns + trial balance        | yes    |
+| #2895 | rates-and-r3                    | per-game-type rates + R3 refuse       | yes    |
+| #2898 | cert-clubs                      | 15 fixtures retired + cert fix        | yes    |
 
 **Open at handoff time**, with their state as measured at 00:10Z:
 
-| PR | Branch | Head | Content | State at 00:10Z |
-| --- | --- | --- | --- | --- |
-| #2896 | `fix/chip-std-promo-model` | `dd791e804` | `fn_promo_disburse`, leaderboard wallet word, union-funded leaderboard declaration | Rollup was FAILURE **not because a test failed** - the `CI - Build & Type Safety` run (33818193992) was **cancelled** mid `Dependency Audit` at 23:55:24Z; every other job on it was green. Full re-run requested at 00:02Z (HTTP 201). **UNVERIFIED** - confirm it went green and auto-merged. |
-| #2900 | `fix/chip-std-promo-rain` | `4339da06e` | promo-rain money-path corrections + the three detector-timeout mirrors (`232357`, `233601`, `233649`) | Was `CONFLICTING` / `DIRTY`. **Fixed**: rebased onto `e2abf1467`, `docs/LAWS.md` conflict resolved by union, the rain law docblock and its LAWS row amended to record that `fn_bbj_promo_rain` was subsequently shut (see below), four repo gates re-run green, force-pushed. **UNVERIFIED** - confirm CI green and auto-merge. |
-| #2903 | `fix/chip-std-promo-wiring` | `c903ee2b9` | splash pot shut, phantom pool retired, four doors closed, `WalletService.disbursePromo` wired into both pages | CI in progress at 00:00Z with every completed job green and only `CSS Beat E2E` still running. **UNVERIFIED** - confirm it finished green. |
+| PR    | Branch                      | Head        | Content                                                                                                       | State at 00:10Z                                                                                                                                                                                                                                                                                                                 |
+| ----- | --------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #2896 | `fix/chip-std-promo-model`  | `dd791e804` | `fn_promo_disburse`, leaderboard wallet word, union-funded leaderboard declaration                            | Rollup was FAILURE **not because a test failed** - the `CI - Build & Type Safety` run (33818193992) was **cancelled** mid `Dependency Audit` at 23:55:24Z; every other job on it was green. Full re-run requested at 00:02Z (HTTP 201). **UNVERIFIED** - confirm it went green and auto-merged.                                 |
+| #2900 | `fix/chip-std-promo-rain`   | `4339da06e` | promo-rain money-path corrections + the three detector-timeout mirrors (`232357`, `233601`, `233649`)         | Was `CONFLICTING` / `DIRTY`. **Fixed**: rebased onto `e2abf1467`, `docs/LAWS.md` conflict resolved by union, the rain law docblock and its LAWS row amended to record that `fn_bbj_promo_rain` was subsequently shut (see below), four repo gates re-run green, force-pushed. **UNVERIFIED** - confirm CI green and auto-merge. |
+| #2903 | `fix/chip-std-promo-wiring` | `c903ee2b9` | splash pot shut, phantom pool retired, four doors closed, `WalletService.disbursePromo` wired into both pages | CI in progress at 00:00Z with every completed job green and only `CSS Beat E2E` still running. **UNVERIFIED** - confirm it finished green.                                                                                                                                                                                      |
 
 **Why #2900 needed a law amendment.** Its law test
-`tests/a-promo-rain-falls-from-the-float.law.test.ts` asserts on the *text of the
-migration files*, so it still passes after `20260903233924` shut
+`tests/a-promo-rain-falls-from-the-float.law.test.ts` asserts on the _text of the
+migration files_, so it still passes after `20260903233924` shut
 `fn_bbj_promo_rain`. But a reader of `docs/LAWS.md` would have concluded the rain
 is live, which it is not. The docblock and the LAWS row now say plainly that the
 owner-facing entry point is shut until the splash pot has rules, and that this
@@ -676,16 +677,16 @@ rather than a failing job, do not rewrite anything - re-run it (§13).
 
 **Source files modified** (all in #2903 unless noted):
 
-| File | Status | What changed | Verified | Committed |
-| --- | --- | --- | --- | --- |
-| `src/services/WalletService.ts` | modified | `disbursePromo` added; `distributePromo` now throws; `bulkDistributePromo` takes `clubId` | tsc + unit tests | yes |
-| `src/pages/AgentDashboardPage.tsx` | modified | calls `disbursePromo`, agent PK lookup removed | tsc + full suite | yes |
-| `src/pages/PlayerSessionsPage.tsx` | modified | same | tsc + full suite | yes |
-| `tests/unit/WalletService.test.ts` | modified | promo tests rewritten for the owner door | passing | yes |
-| `tests/unit/discardedErrorReadRatchet.test.ts` | modified | `PlayerSessionsPage` baseline 3 → 2 | passing | yes |
-| `scripts/ci/certify-club-create.mjs` | modified | calls the retirement RPC, throws on leak | `node --check` only | yes (#2898) |
-| `docs/LAWS.md` | modified | rain row amended (see above) | gates green | yes (#2900) |
-| `tests/a-promo-rain-falls-from-the-float.law.test.ts` | modified | docblock records the shutdown | file-only assertions unaffected | yes (#2900) |
+| File                                                  | Status   | What changed                                                                              | Verified                        | Committed   |
+| ----------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------- | ------------------------------- | ----------- |
+| `src/services/WalletService.ts`                       | modified | `disbursePromo` added; `distributePromo` now throws; `bulkDistributePromo` takes `clubId` | tsc + unit tests                | yes         |
+| `src/pages/AgentDashboardPage.tsx`                    | modified | calls `disbursePromo`, agent PK lookup removed                                            | tsc + full suite                | yes         |
+| `src/pages/PlayerSessionsPage.tsx`                    | modified | same                                                                                      | tsc + full suite                | yes         |
+| `tests/unit/WalletService.test.ts`                    | modified | promo tests rewritten for the owner door                                                  | passing                         | yes         |
+| `tests/unit/discardedErrorReadRatchet.test.ts`        | modified | `PlayerSessionsPage` baseline 3 → 2                                                       | passing                         | yes         |
+| `scripts/ci/certify-club-create.mjs`                  | modified | calls the retirement RPC, throws on leak                                                  | `node --check` only             | yes (#2898) |
+| `docs/LAWS.md`                                        | modified | rain row amended (see above)                                                              | gates green                     | yes (#2900) |
+| `tests/a-promo-rain-falls-from-the-float.law.test.ts` | modified | docblock records the shutdown                                                             | file-only assertions unaffected | yes (#2900) |
 
 **No uncommitted user-owned changes were observed in any worktree used.** The
 main clone `~/Documents/Smarter-Poker-Club-Arena` sits on an unrelated branch
@@ -709,16 +710,16 @@ Run from `/Users/smarter.poker/Documents/club-arena` or a worktree, with
 (node is not on the default PATH for non-interactive shells - **this bites every
 time**).
 
-| Command | Purpose | Rerun? |
-| --- | --- | --- |
-| `npx vitest run` | full suite (~905 files, ~12,500 tests, several minutes) | yes, before any claim |
-| `npx tsc --noEmit` | type check | yes |
-| `node scripts/ci/<gate>.mjs` | the gates; need `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` | yes |
-| `node scripts/ci/gen-schema-manifest.mjs` | regenerate the 3 manifests after any schema change | yes, on every schema PR |
-| `node /tmp/export-one.mjs "$PW" <version>` | export applied SQL from `schema_migrations` → `/tmp/applied_<v>.sql` | as needed |
-| `node /tmp/parity2.mjs "$PW"` | normalised repo↔prod parity over all migrations | yes |
-| `python3 /tmp/union-laws.py docs/LAWS.md` | resolve a LAWS.md conflict by union | as needed |
-| `curl … /repos/Smarter-Poker/Smarter-Poker-Club-Arena/…` | PR/CI state via REST + GraphQL | as needed |
+| Command                                                  | Purpose                                                              | Rerun?                  |
+| -------------------------------------------------------- | -------------------------------------------------------------------- | ----------------------- |
+| `npx vitest run`                                         | full suite (~905 files, ~12,500 tests, several minutes)              | yes, before any claim   |
+| `npx tsc --noEmit`                                       | type check                                                           | yes                     |
+| `node scripts/ci/<gate>.mjs`                             | the gates; need `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`         | yes                     |
+| `node scripts/ci/gen-schema-manifest.mjs`                | regenerate the 3 manifests after any schema change                   | yes, on every schema PR |
+| `node /tmp/export-one.mjs "$PW" <version>`               | export applied SQL from `schema_migrations` → `/tmp/applied_<v>.sql` | as needed               |
+| `node /tmp/parity2.mjs "$PW"`                            | normalised repo↔prod parity over all migrations                      | yes                     |
+| `python3 /tmp/union-laws.py docs/LAWS.md`                | resolve a LAWS.md conflict by union                                  | as needed               |
+| `curl … /repos/Smarter-Poker/Smarter-Poker-Club-Arena/…` | PR/CI state via REST + GraphQL                                       | as needed               |
 
 **The `/tmp/*.mjs` and `/tmp/*.py` helpers are temporary** and will not survive
 a reboot. They are small; recreate from the descriptions above. The important
@@ -782,25 +783,25 @@ Find `<run_id>` with
 
 ## 14. Verification and test results
 
-| Verification | Method | Result | Follow-up |
-| --- | --- | --- | --- |
-| Full unit/integration suite on `main` | `npx vitest run` | **12,499 passed / 905 files** | none |
-| Full suite on the promo-wiring branch | `npx vitest run` | **12,515 passed / 907 files** | none |
-| Type check | `npx tsc --noEmit` | clean (0 output) | none |
-| Repo↔prod migration parity | `/tmp/parity2.mjs` | all 14 merged chip-std migrations **byte-exact**; 7 more pending in open PRs | recheck after merges |
-| `check-new-migration-version-collisions` | node | pass | |
-| `check-definer-authorization` | node | pass | |
-| `check-migrations-applied` | node | pass | |
-| `check-applied-migrations-are-recorded` | node | pass (exit 0) | 32 other agents' migrations unmirrored - advisory |
-| `check-chip-conservation` | node + DB password | pass, incl. 500 fuzzed largest-remainder cases | |
-| `check-telemetry-exposure` | node | pass - no unscoped operator routine reachable from a browser | |
-| `check-cron-health` | node | **1 critical + 2 warns found** → all three fixed (§7.10) | recheck next cycle |
-| Union close, 3 rate scenarios | rolled-back DB probe | conservation asserted in all three | |
-| Promo disbursement, 3 routes + 4 refusals | rolled-back DB probe | conservation 0.00, one declared row each | |
-| Leaderboard, union- and club-funded | rolled-back DB probe | 3 winners paid 175.00, no suspense | |
-| Promo rain | rolled-back DB probe | 413 players, conservation 0.00 - **then deliberately disabled** | |
-| Certification retirement | live migration + assertions | 15 retired, 1.3M burned, 4 clubs remain | |
-| Production regression sweep | SQL | 0 write failures, 0 suspense, 4.5h | |
+| Verification                              | Method                      | Result                                                                       | Follow-up                                         |
+| ----------------------------------------- | --------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------- |
+| Full unit/integration suite on `main`     | `npx vitest run`            | **12,499 passed / 905 files**                                                | none                                              |
+| Full suite on the promo-wiring branch     | `npx vitest run`            | **12,515 passed / 907 files**                                                | none                                              |
+| Type check                                | `npx tsc --noEmit`          | clean (0 output)                                                             | none                                              |
+| Repo↔prod migration parity                | `/tmp/parity2.mjs`          | all 14 merged chip-std migrations **byte-exact**; 7 more pending in open PRs | recheck after merges                              |
+| `check-new-migration-version-collisions`  | node                        | pass                                                                         |                                                   |
+| `check-definer-authorization`             | node                        | pass                                                                         |                                                   |
+| `check-migrations-applied`                | node                        | pass                                                                         |                                                   |
+| `check-applied-migrations-are-recorded`   | node                        | pass (exit 0)                                                                | 32 other agents' migrations unmirrored - advisory |
+| `check-chip-conservation`                 | node + DB password          | pass, incl. 500 fuzzed largest-remainder cases                               |                                                   |
+| `check-telemetry-exposure`                | node                        | pass - no unscoped operator routine reachable from a browser                 |                                                   |
+| `check-cron-health`                       | node                        | **1 critical + 2 warns found** → all three fixed (§7.10)                     | recheck next cycle                                |
+| Union close, 3 rate scenarios             | rolled-back DB probe        | conservation asserted in all three                                           |                                                   |
+| Promo disbursement, 3 routes + 4 refusals | rolled-back DB probe        | conservation 0.00, one declared row each                                     |                                                   |
+| Leaderboard, union- and club-funded       | rolled-back DB probe        | 3 winners paid 175.00, no suspense                                           |                                                   |
+| Promo rain                                | rolled-back DB probe        | 413 players, conservation 0.00 - **then deliberately disabled**              |                                                   |
+| Certification retirement                  | live migration + assertions | 15 retired, 1.3M burned, 4 clubs remain                                      |                                                   |
+| Production regression sweep               | SQL                         | 0 write failures, 0 suspense, 4.5h                                           |                                                   |
 
 **Not tested / not run this session:** any browser or E2E test; visual
 regression; responsive/viewport checks; accessibility; production build
@@ -830,7 +831,7 @@ green next cycle is **UNVERIFIED**.
 6. **A rolled-back probe cannot `CREATE OR REPLACE` a hot function.** Apply,
    then probe the applied function inside a transaction you roll back.
 7. **The maintenance break (:55-:00) will fail your migration** with
-   `PLATFORM_FROZEN`. It failed one of mine at 22:58. Nothing half-applies - 
+   `PLATFORM_FROZEN`. It failed one of mine at 22:58. Nothing half-applies -
    just wait and re-run.
 8. **The MCP `execute_sql` tool has a 60s timeout** and cannot do regex `{n,m}`.
    Long probes go through `node` + `pg` on Dan's Mac with
@@ -839,32 +840,32 @@ green next cycle is **UNVERIFIED**.
 10. **`node` is not on the non-interactive PATH.** Export it every time.
 11. **PRs go "dirty" constantly** because `main` moves and `docs/LAWS.md` and the
     schema manifests conflict. The recipe in §11 works every time.
-12. **I twice reported something as inert that had a live or latent source** - 
+12. **I twice reported something as inert that had a live or latent source** -
     the "January seed" that was really an orphaned signup function, and the
     "13 clubs" that were really a leaking certification job. **Find the writer
     before calling something dormant.**
 13. **I fixed a feature that was never supposed to exist** (the splash pot).
-    Ask what a thing is *for* before making it work.
+    Ask what a thing is _for_ before making it work.
 14. **A red rollup is not always a failing test.** Two PRs read `FAILURE` at
     00:00Z because the `CI - Build & Type Safety` run was **cancelled**
     mid-step (`Dependency Audit` on one, `Run Test Suite` on the other) - every
     other job on both was green. The fix is a re-run, not a commit. Check
-    `/actions/runs/<id>/jobs` and look at the *conclusion of each job* before
+    `/actions/runs/<id>/jobs` and look at the _conclusion of each job_ before
     you touch code; I nearly rewrote a passing branch.
 15. **`git` on this Mac cannot authenticate without help.** The keychain helper
     holds a stale token and shadows `GITHUB_TOKEN`. See §13 for the exact
     incantation. Do not "fix" this by embedding a token in the remote URL - it
     ends up in `.git/config` and in error output.
-17. **A fix is not finished until you re-measure the thing it fixed.** #2898
+16. **A fix is not finished until you re-measure the thing it fixed.** #2898
     made stranded certification fixtures impossible and merged green. Ninety
     minutes later there were two more, because the guard it added could detect
     the leak while the cleanup it guarded could not complete. I found that only
     because I re-read `SELECT count(*) FROM clubs` while writing this document.
     Re-measure after the merge, not before.
-18. **"Is there an index on this column" is the wrong question.** A partial
+17. **"Is there an index on this column" is the wrong question.** A partial
     index leads on the column and cannot answer a foreign key check. Ask for
     valid, non-partial, leading-column - the query is in `fn_ca_fk_index_gaps`.
-20. **A green gate is not a proof of the thing you want proved.**
+18. **A green gate is not a proof of the thing you want proved.**
     `check-applied-migrations-are-recorded` was green while two migrations sat in
     production with no repository file. It checks repo-to-production, not
     production-to-repo. Ask what a gate actually asserts before you rest on it.
@@ -873,8 +874,8 @@ green next cycle is **UNVERIFIED**.
     and call the leak fixed. It does nothing for the statement already running.
     A five-line probe settled it in thirty seconds. Probe first; this is the
     same lesson as the cron command, and it came up twice in one night.
-16. **A law can outlive the behaviour it describes.** The promo-rain law asserts
-    on migration *file text*, so it kept passing after the rain's door was shut,
+20. **A law can outlive the behaviour it describes.** The promo-rain law asserts
+    on migration _file text_, so it kept passing after the rain's door was shut,
     and `docs/LAWS.md` would have told the next reader the rain is live. When
     you shut a door, go read every law row that mentions it.
 
@@ -882,21 +883,21 @@ green next cycle is **UNVERIFIED**.
 
 ## 16. Known defects and architectural holes
 
-| # | Priority | Defect | Evidence | Impact | Recommended fix | Status |
-| --- | --- | --- | --- | --- | --- | --- |
-| 0 | **CRITICAL, AND THE SHARPEST NUMBER IN THIS DOCUMENT** | The felt loses about 2,050 chips an hour that the journal says it should have | `fn_ca_trial_balance('2026-09-03 23:05:00.618832+00')`, a clean hour with no migration in it: **every** account reconciles at 0.00 except `table_stack` (balance_delta 5,245.39 vs ledger_net 7,295.44, **difference -2,050.05**) and `tournament_liability` (8,593.00 vs 9,481.70, **difference -888.70**). Those two are the whole of `total_supply`'s -2,938.75. Writers on `table_stack` that hour: `PostgREST 14.5/postgres:16037, pg_cron/postgres:4` | This is the entire unexplained supply drift. It is not spread across the estate and it is not noise: two accounts, every hour. At -2,050/h the trailing-4h figure crossed `check-chip-conservation`'s 5,000 threshold at about 00:10 UTC on 2026-09-04 (`trailing 4h unexplained chip supply is -5074.74`). That gate is **advisory** on `auto-deploy-hetzner.yml` per Dan's 2026-09-02 ruling, so no train is blocked - but it will warn on every engine deploy until this is closed, and the warning is correct | Roadmap Phase 3 already names the three suspects and they are all felt writers that do not declare: **C1** the unkeyed `HydraService` `atomic_table_cashout` / `atomic_table_withdraw` call, **C3** the bust-rebuy direct write, **C5** cron cash-outs journalled as `adjustment`. Start by re-running the trial balance for the current hour, then list the `table_stack` legs with no matching balance movement. **Do not** widen the gate's threshold - it is measuring something real | open, **root-caused to two accounts, not yet fixed** |
-| 1b | HIGH | The club-create certification leaked two more fixtures at 23:41 UTC, an hour after the fleet was retired | `clubs` read 6, not 4. The certification run on `dcdba5e5` (the merge of #2898) reported `Fixture Cleanup Failed ... canceling statement due to statement timeout` for both, then failed loudly - the guard worked, the cleanup was impossible. Seven of the seventy foreign keys into `clubs` had no index that could answer them; two of the seven looked indexed but were **partial** | 200,000 more chips behind clubs Dan said must not exist | **FIXED 2026-09-04 00:16-00:20**, migrations `20260904001605` (13 indexes, big three built CONCURRENTLY first) and `20260904001715` (`fn_ca_fk_index_gaps`), plus `scripts/ci/check-club-fk-indexes.mjs` wired into `ci.yml` and `tests/a-club-stays-deletable.law.test.ts`. Both fixtures retired through the real PostgREST door in 2.43s and 2.58s; `clubs` = 4 | **closed**, in PR for `fix/chip-std-club-fk-indexes` |
-| 1 | **CRITICAL** | `tournaments.prize_pool` is a counter that is never zeroed at completion | **0.32** chips truly outstanding (3 `tournament_obligations` rows) vs **5,189,778.80** in stale counters across **83,298** completed events; 1,663 of 1,664 events completed in a 3h window still carry a non-zero prize_pool | Five million chips of fictional liability; `tournament_liability` in the trial balance is meaningless after an event ends; source of the `tournament_liability` half of the hourly residual, now measured exactly at **-888.70 in the 23:05-00:05 hour** (defect 0) | **Phase 5**: real `tournament_escrow` balances with `CHECK >= 0`, `prize_pool` demoted to a display figure, close asserts escrow is zero. **Do not** simply zero the counters - the same field is what the UI shows for a finished tournament's prize pool | open |
-| 2 | HIGH | No `CHECK (balance >= 0)` on `clubs.chip_treasury`, agent floats, `union_wallets`, `club_members.chip_balance` | roadmap 3.2 | a bug can drive a balance negative silently | Phase 3.2, `NOT VALID` then `VALIDATE` off-peak | open |
-| 3 | HIGH | 30+ zero-use legacy money functions still executable | roadmap 3.3 lists them | any of them can be called and bypass the standard | Phase 3.3: 7-day zero-use gate, REVOKE for 24h, then DROP | open |
-| 4 | HIGH | Mint register has **no chip rows** for the four real estates | `ca_mint_ledger` holds 364 diamond rows, 0 chip rows; the 13 fixture grants were retired | the Mint cannot prove what it issued historically | Phase 3.1: backfill a register baseline as an explicit, labelled opening entry | open |
-| 5 | MEDIUM | Deposit bonus, referral bonus, achievement rewards have no funded source | their only door (`add_to_promo_wallet`) now refuses | three product features silently do nothing | design + fund them, then route through `fn_promo_disburse` | open, needs Dan |
-| 6 | MEDIUM | Splash pot has no rules | ruling 5 | a designed feature is missing | Dan specifies eligibility/size/frequency/limits; plumbing is ready | open, needs Dan |
-| 7 | MEDIUM | `wallets` table is legacy, outside the supply, still referenced by `chip_escrow_holds` (40 rows, 715,000 chips) | measured | confusion risk; a future reader may treat it as money | Phase 3.3 retirement alongside `chip_escrow_holds` | open |
-| 8 | MEDIUM | Engine sha trails the deploy pipeline | `deploy_truth.engine_behind_target` critical alert; engine at `474b1377` | engine runs older code than main | engine-restart programme's item; a deploy was in flight at handoff | UNVERIFIED |
-| 9 | LOW | `cron-health` workflow red on `main` | red since ≥2026-09-02 | a real cron failure could hide in a permanently red gate | recheck after §7.10 fixes; consider treating weekly-idle as non-critical | partially fixed |
-| 10 | LOW | 32 other agents' migrations applied to prod but unmirrored | `check-applied-migrations-are-recorded` | repo is not a complete record of prod | export and mirror them (the tool prints the list) | open |
-| 11 | LOW | `fn_ca_settle_hand_stacks_absolute` warnings | 22 on 2026-09-03, worst 23,136, clustered in the 19:00 DDL storm | engine-submitted hands that do not conserve | investigate separately; not from this programme's lanes | open |
+| #   | Priority                                               | Defect                                                                                                          | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Impact                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Recommended fix                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Status                                               |
+| --- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| 0   | **CRITICAL, AND THE SHARPEST NUMBER IN THIS DOCUMENT** | The felt loses about 2,050 chips an hour that the journal says it should have                                   | `fn_ca_trial_balance('2026-09-03 23:05:00.618832+00')`, a clean hour with no migration in it: **every** account reconciles at 0.00 except `table_stack` (balance_delta 5,245.39 vs ledger_net 7,295.44, **difference -2,050.05**) and `tournament_liability` (8,593.00 vs 9,481.70, **difference -888.70**). Those two are the whole of `total_supply`'s -2,938.75. Writers on `table_stack` that hour: `PostgREST 14.5/postgres:16037, pg_cron/postgres:4` | This is the entire unexplained supply drift. It is not spread across the estate and it is not noise: two accounts, every hour. At -2,050/h the trailing-4h figure crossed `check-chip-conservation`'s 5,000 threshold at about 00:10 UTC on 2026-09-04 (`trailing 4h unexplained chip supply is -5074.74`). That gate is **advisory** on `auto-deploy-hetzner.yml` per Dan's 2026-09-02 ruling, so no train is blocked - but it will warn on every engine deploy until this is closed, and the warning is correct | Roadmap Phase 3 already names the three suspects and they are all felt writers that do not declare: **C1** the unkeyed `HydraService` `atomic_table_cashout` / `atomic_table_withdraw` call, **C3** the bust-rebuy direct write, **C5** cron cash-outs journalled as `adjustment`. Start by re-running the trial balance for the current hour, then list the `table_stack` legs with no matching balance movement. **Do not** widen the gate's threshold - it is measuring something real | open, **root-caused to two accounts, not yet fixed** |
+| 1b  | HIGH                                                   | The club-create certification leaked two more fixtures at 23:41 UTC, an hour after the fleet was retired        | `clubs` read 6, not 4. The certification run on `dcdba5e5` (the merge of #2898) reported `Fixture Cleanup Failed ... canceling statement due to statement timeout` for both, then failed loudly - the guard worked, the cleanup was impossible. Seven of the seventy foreign keys into `clubs` had no index that could answer them; two of the seven looked indexed but were **partial**                                                                    | 200,000 more chips behind clubs Dan said must not exist                                                                                                                                                                                                                                                                                                                                                                                                                                                           | **FIXED 2026-09-04 00:16-00:20**, migrations `20260904001605` (13 indexes, big three built CONCURRENTLY first) and `20260904001715` (`fn_ca_fk_index_gaps`), plus `scripts/ci/check-club-fk-indexes.mjs` wired into `ci.yml` and `tests/a-club-stays-deletable.law.test.ts`. Both fixtures retired through the real PostgREST door in 2.43s and 2.58s; `clubs` = 4                                                                                                                        | **closed**, in PR for `fix/chip-std-club-fk-indexes` |
+| 1   | **CRITICAL**                                           | `tournaments.prize_pool` is a counter that is never zeroed at completion                                        | **0.32** chips truly outstanding (3 `tournament_obligations` rows) vs **5,189,778.80** in stale counters across **83,298** completed events; 1,663 of 1,664 events completed in a 3h window still carry a non-zero prize_pool                                                                                                                                                                                                                               | Five million chips of fictional liability; `tournament_liability` in the trial balance is meaningless after an event ends; source of the `tournament_liability` half of the hourly residual, now measured exactly at **-888.70 in the 23:05-00:05 hour** (defect 0)                                                                                                                                                                                                                                               | **Phase 5**: real `tournament_escrow` balances with `CHECK >= 0`, `prize_pool` demoted to a display figure, close asserts escrow is zero. **Do not** simply zero the counters - the same field is what the UI shows for a finished tournament's prize pool                                                                                                                                                                                                                                | open                                                 |
+| 2   | HIGH                                                   | No `CHECK (balance >= 0)` on `clubs.chip_treasury`, agent floats, `union_wallets`, `club_members.chip_balance`  | roadmap 3.2                                                                                                                                                                                                                                                                                                                                                                                                                                                 | a bug can drive a balance negative silently                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Phase 3.2, `NOT VALID` then `VALIDATE` off-peak                                                                                                                                                                                                                                                                                                                                                                                                                                           | open                                                 |
+| 3   | HIGH                                                   | 30+ zero-use legacy money functions still executable                                                            | roadmap 3.3 lists them                                                                                                                                                                                                                                                                                                                                                                                                                                      | any of them can be called and bypass the standard                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Phase 3.3: 7-day zero-use gate, REVOKE for 24h, then DROP                                                                                                                                                                                                                                                                                                                                                                                                                                 | open                                                 |
+| 4   | HIGH                                                   | Mint register has **no chip rows** for the four real estates                                                    | `ca_mint_ledger` holds 364 diamond rows, 0 chip rows; the 13 fixture grants were retired                                                                                                                                                                                                                                                                                                                                                                    | the Mint cannot prove what it issued historically                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Phase 3.1: backfill a register baseline as an explicit, labelled opening entry                                                                                                                                                                                                                                                                                                                                                                                                            | open                                                 |
+| 5   | MEDIUM                                                 | Deposit bonus, referral bonus, achievement rewards have no funded source                                        | their only door (`add_to_promo_wallet`) now refuses                                                                                                                                                                                                                                                                                                                                                                                                         | three product features silently do nothing                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | design + fund them, then route through `fn_promo_disburse`                                                                                                                                                                                                                                                                                                                                                                                                                                | open, needs Dan                                      |
+| 6   | MEDIUM                                                 | Splash pot has no rules                                                                                         | ruling 5                                                                                                                                                                                                                                                                                                                                                                                                                                                    | a designed feature is missing                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Dan specifies eligibility/size/frequency/limits; plumbing is ready                                                                                                                                                                                                                                                                                                                                                                                                                        | open, needs Dan                                      |
+| 7   | MEDIUM                                                 | `wallets` table is legacy, outside the supply, still referenced by `chip_escrow_holds` (40 rows, 715,000 chips) | measured                                                                                                                                                                                                                                                                                                                                                                                                                                                    | confusion risk; a future reader may treat it as money                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Phase 3.3 retirement alongside `chip_escrow_holds`                                                                                                                                                                                                                                                                                                                                                                                                                                        | open                                                 |
+| 8   | MEDIUM                                                 | Engine sha trails the deploy pipeline                                                                           | `deploy_truth.engine_behind_target` critical alert; engine at `474b1377`                                                                                                                                                                                                                                                                                                                                                                                    | engine runs older code than main                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | engine-restart programme's item; a deploy was in flight at handoff                                                                                                                                                                                                                                                                                                                                                                                                                        | UNVERIFIED                                           |
+| 9   | LOW                                                    | `cron-health` workflow red on `main`                                                                            | red since ≥2026-09-02                                                                                                                                                                                                                                                                                                                                                                                                                                       | a real cron failure could hide in a permanently red gate                                                                                                                                                                                                                                                                                                                                                                                                                                                          | recheck after §7.10 fixes; consider treating weekly-idle as non-critical                                                                                                                                                                                                                                                                                                                                                                                                                  | partially fixed                                      |
+| 10  | LOW                                                    | 32 other agents' migrations applied to prod but unmirrored                                                      | `check-applied-migrations-are-recorded`                                                                                                                                                                                                                                                                                                                                                                                                                     | repo is not a complete record of prod                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | export and mirror them (the tool prints the list)                                                                                                                                                                                                                                                                                                                                                                                                                                         | open                                                 |
+| 11  | LOW                                                    | `fn_ca_settle_hand_stacks_absolute` warnings                                                                    | 22 on 2026-09-03, worst 23,136, clustered in the 19:00 DDL storm                                                                                                                                                                                                                                                                                                                                                                                            | engine-submitted hands that do not conserve                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | investigate separately; not from this programme's lanes                                                                                                                                                                                                                                                                                                                                                                                                                                   | open                                                 |
 
 ---
 
@@ -904,14 +905,14 @@ green next cycle is **UNVERIFIED**.
 
 All in `/Users/smarter.poker/Documents/club-arena/.env`. **Names only:**
 
-| Name | Used for | Notes |
-| --- | --- | --- |
-| `GITHUB_TOKEN` | GitHub REST/GraphQL via curl | present; **cannot** read check-runs (403) |
-| `VITE_SUPABASE_URL` | Supabase project URL | the gates expect it as `SUPABASE_URL` - export it under that name |
-| `VITE_SUPABASE_ANON_KEY` | browser client | |
-| `SUPABASE_SERVICE_ROLE_KEY` | gates, manifest generation | **never** log it |
-| `SUPABASE_DB_PASSWORD` | direct `pg` connections for long probes | |
-| `CA_ORIGIN_URL`, `CA_ORIGIN_ROOT` | Hetzner publish target | |
+| Name                              | Used for                                | Notes                                                             |
+| --------------------------------- | --------------------------------------- | ----------------------------------------------------------------- |
+| `GITHUB_TOKEN`                    | GitHub REST/GraphQL via curl            | present; **cannot** read check-runs (403)                         |
+| `VITE_SUPABASE_URL`               | Supabase project URL                    | the gates expect it as `SUPABASE_URL` - export it under that name |
+| `VITE_SUPABASE_ANON_KEY`          | browser client                          |                                                                   |
+| `SUPABASE_SERVICE_ROLE_KEY`       | gates, manifest generation              | **never** log it                                                  |
+| `SUPABASE_DB_PASSWORD`            | direct `pg` connections for long probes |                                                                   |
+| `CA_ORIGIN_URL`, `CA_ORIGIN_ROOT` | Hetzner publish target                  |                                                                   |
 
 **Security note, disclosed honestly:** earlier in this programme (before this
 session's work) a Hetzner password was accidentally echoed into a terminal
@@ -957,14 +958,14 @@ been done. Do not reproduce it anywhere.
 
 ## 19. Current blockers and decision points
 
-| Blocked | Why | Type | Options | Recommendation |
-| --- | --- | --- | --- | --- |
-| Three PRs merging | CI queue was busy; all green-pending | technical | wait; or refresh a branch if it goes dirty | wait, then verify |
-| Splash pot | no rules exist | **needs Dan** | leave shut / Dan specifies rules | leave shut until specified |
-| Deposit, referral, achievement bonuses | no funded source | **needs Dan** | fund from club treasury / union promo float / drop the features | ask which pot funds them |
-| Historic write-offs at the epoch reset | 1,109 MTT overpayment, 92 satellite mint, BBJ lifetime gap 73,367.70 | **needs Dan** | clawback / write off | he has previously said no clawback |
-| Short union treasury at close | who absorbs it | **needs Dan** | refuse whole (today) / partial / bank covers | today it refuses whole; that is safe |
-| Four-eyes threshold, kill-switch threshold | numbers not set | **needs Dan** | | propose 1,000 chips/hour as the roadmap suggests |
+| Blocked                                    | Why                                                                  | Type          | Options                                                         | Recommendation                                   |
+| ------------------------------------------ | -------------------------------------------------------------------- | ------------- | --------------------------------------------------------------- | ------------------------------------------------ |
+| Three PRs merging                          | CI queue was busy; all green-pending                                 | technical     | wait; or refresh a branch if it goes dirty                      | wait, then verify                                |
+| Splash pot                                 | no rules exist                                                       | **needs Dan** | leave shut / Dan specifies rules                                | leave shut until specified                       |
+| Deposit, referral, achievement bonuses     | no funded source                                                     | **needs Dan** | fund from club treasury / union promo float / drop the features | ask which pot funds them                         |
+| Historic write-offs at the epoch reset     | 1,109 MTT overpayment, 92 satellite mint, BBJ lifetime gap 73,367.70 | **needs Dan** | clawback / write off                                            | he has previously said no clawback               |
+| Short union treasury at close              | who absorbs it                                                       | **needs Dan** | refuse whole (today) / partial / bank covers                    | today it refuses whole; that is safe             |
+| Four-eyes threshold, kill-switch threshold | numbers not set                                                      | **needs Dan** |                                                                 | propose 1,000 chips/hour as the roadmap suggests |
 
 ---
 
@@ -1006,13 +1007,14 @@ been done. Do not reproduce it anywhere.
 
 **Phase 0 - recover and verify current state** (30 min)
 Objective: know exactly where things stand.
+
 1. `git -C ~/Documents/club-arena fetch origin main && git log --oneline -10 origin/main`
 2. Confirm PRs #2896, #2900, #2903 merged. If open, apply the §11 recipe.
 3. `curl -s https://smarter.poker/hub/club-arena/build-info.json` → `ca_sha` should equal `main`.
 4. `curl -s https://engine.smarter.poker/health`.
 5. Run `/tmp/parity2.mjs` (recreate if missing) - every chip-std migration must be byte-exact.
 6. Run the gates in §4.
-Completion: all green, all merged, parity clean.
+   Completion: all green, all merged, parity clean.
 
 **Phase 1 - protect completed work** (15 min)
 Do **not** revert or "tidy" anything in §7. Read
@@ -1085,7 +1087,7 @@ Defect 1. The largest and most valuable remaining fix.
      `SELECT fn_ca_retire_certification_club(id)` and find out why
      `scripts/ci/check-club-fk-indexes.mjs` did not stop it.
    - `SELECT round(sum(prize_pool),2) FROM tournaments WHERE status IN ('COMPLETED','CANCELLED');`
-     → about 5.19M (defect 1; if it is near zero, someone has done Phase 5 - 
+     → about 5.19M (defect 1; if it is near zero, someone has done Phase 5 -
      re-read the roadmap).
 6. **Do not** re-open: the splash pot, the promo playthrough question (ruling 4
    withdrew it), or the certification fixtures.
@@ -1145,7 +1147,7 @@ estates.
 
 **Locked requirements.** Dan's eight rulings in §2, especially: promo owes
 nobody anything and is ordinary chips; the splash pot does not exist; only four
-estates exist; the close pays on the rake a club's *players* generated; a new
+estates exist; the close pays on the rake a club's _players_ generated; a new
 club's 100,000 comes from the Mint and never leaves the club.
 
 **Greatest technical risk.** `tournaments.prize_pool` as a counter - 5,189,778.80

@@ -458,7 +458,7 @@ export default function ClubDashboard() {
       'TABLE_LEFT',
       'TABLE_CREATED',
       'CHIPS_ADDED',
-      'CHIPS_WITHDRAWN',
+      // CHIPS_WITHDRAWN removed 2026-09-04: no partial cash-out at a cash table.
       'ANNOUNCEMENT_CHANGED',
       'HAND_COMPLETED',
       'SETTLEMENT_CYCLE_COMPLETED',

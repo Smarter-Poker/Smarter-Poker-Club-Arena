@@ -25,6 +25,7 @@ import {
   autoRebuyHorse,
   markSeatAsLeft,
   processLeavePending,
+  atomicCashoutVoluntary,
   logBBJCollection,
   logInsuranceSettlement,
   logHandHistory,
@@ -1976,6 +1977,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
            */
           if (atRebuyStopLoss(horse.user_id, currentRebuys)) {
             await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+            this.chipContinuity.forget(horse.user_id);
             // Round 57: clear FSM tracking so the horse doesn't leave a ghost
             // entry in disconnect_states.
             this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
@@ -2023,6 +2025,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             );
           } else {
             await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+            this.chipContinuity.forget(horse.user_id);
             // Round 57: clear FSM tracking on insufficient-funds leave too.
             this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
             // Round 64: same for TimeBankEngine.
@@ -2039,7 +2042,26 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       }
     });
 
-    // 5.5 Auto-Cashout successful horses (Hit-and-Run Bankroll Management)
+    // 5.7 CHIP CONTINUITY (Operation Table Stakes, Slice 0): the hand is
+    // settled, add-ons and horse rebuys have landed, so every seated player's
+    // stack is final for this boundary. Tell the database, which settles each
+    // stay clock and decides who is ahead of their money (running) and who is
+    // not (paused, remainder kept). Runs BEFORE any departure below so a
+    // horse's profit-target exit and a leave_pending seat are judged against
+    // the post-hand stack, never the pre-hand one.
+    await runStep('chip_continuity', false, async () => {
+      if (!this.isTournamentTable()) {
+        await this.chipContinuity.evaluate(
+          players.map((p) => ({
+            user_id: p.user_id,
+            stack: p.stack,
+            active: this.isContinuityActive(p.user_id),
+          }))
+        );
+      }
+    });
+
+    // 5.5 Auto-Cashout successful horses (bankroll management)
     // Always wait until right before they are the Big Blind to leave.
     await runStep('horse_cashouts', false, async () => {
       if (!this.isTournamentTable() && players.length >= 2) {
@@ -2079,7 +2101,23 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         });
 
         for (const horse of cashedOutHorses) {
-          await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+          // CHIP CONTINUITY / HORSES ARE PLAYERS (CLAUDE.md 10.5): a horse
+          // that has hit its target is a player choosing to leave while
+          // ahead, so it goes through the same door a human does and waits
+          // out the same stay clock. A refusal simply means "not this
+          // orbit" - the target still stands and it tries again when the big
+          // blind comes back around, exactly as a human would.
+          const exit = await atomicCashoutVoluntary(horse.user_id, this.tableId, horse.seat_number);
+          if (!exit.ok) {
+            if (exit.code === 'LEAVE_LOCKED') {
+              this.chipContinuity.noteRefusal(horse.user_id, exit.stayRemainingMs);
+              console.log(
+                `[ServerTableEngine:${this.tableId}] Bankroll Management: Horse ${horse.username} at target but stay clock has ${exit.stayRemainingMs}ms left - stays seated`
+              );
+            }
+            continue;
+          }
+          this.chipContinuity.forget(horse.user_id);
           // Round 57: clear FSM tracking on profit-target cashout too.
           this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
           // Round 64: same for TimeBankEngine.
@@ -2115,12 +2153,21 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // persists in hand_state_snapshots.disconnect_states forever.
         // Round 64: extended to also call timeBankEngine.removePlayer so the
         // playerBanks Map sheds its entry too — same architectural fix.
-        const cashedOutIds = await processLeavePending(this.tableId, this.tableInfo?.club_id || '');
+        const cashedOutIds = await processLeavePending(
+          this.tableId,
+          this.tableInfo?.club_id || '',
+          (lockedUserId, stayRemainingMs) =>
+            this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs),
+          this.forcedLeaves
+        );
         for (const userId of cashedOutIds) {
           this.disconnectEngine.unregisterPlayer(this.tableId, userId);
           this.timeBankEngine.removePlayer(this.tableId, userId);
           this.straddleEngine.removePlayer(this.tableId, userId);
           this.preActionEngine.removePlayer(this.tableId, userId);
+          this.forcedLeaves.delete(userId);
+          this.leaveHeldByClock.delete(userId);
+          this.chipContinuity.forget(userId);
         }
       }
     });

@@ -178,9 +178,9 @@ describe('Arena game-card creation', () => {
         mobileAsset: /nlh\/spade-nlh-premium-v1\/chassis\.png$/,
       },
       plo: {
-        id: 'shark-plo-four-bay-v1',
+        id: 'spade-plo-premium-v1',
         version: 1,
-        mobileAsset: /plo\/shark-four-bay-v1\/chassis\.png$/,
+        mobileAsset: /plo\/spade-plo-premium-v1\/chassis\.png$/,
       },
       spins: {
         id: 'shark-spins-premium-v1',

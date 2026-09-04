@@ -42,24 +42,28 @@ test('Share owns 44px and collapsed wallet controls are not exposed', async ({ p
                  and the pull request went dirty, so a day of card fixes never
                  reached production - over a comment.
 
-                 The fixture mirrors the real card: the club name is its own
-                 full-width band across the top, one line, with the measurable
-                 inner span the component sizes to fit; the alias is its own
-                 line beside the logo; and the playing count sits in its own
-                 measurable span so it can be fitted to its bay. A fixture
-                 nesting these the old way would exercise markup the component
-                 no longer renders, which matters here because this spec proves
-                 the Share button owns its 44px band and that the count shares
-                 that band's line. -->
-            <h2 class="club-identity__name" style="--club-name-size: 7cqw">
-              <span>Shark Club</span>
-            </h2>
-            <p class="club-identity__alias">Player</p>
+                 The fixture mirrors the real card as it is since Dan's
+                 2026-09-04 master (kingfish-v1): a layered chassis where every
+                 live string sits in a zone the component positions with an
+                 INLINE style computed from pixel coordinates on the 1566 x 672
+                 master, so the fixture carries those same percentages. The
+                 club name is spoken only (sr-only), the alias is the headline,
+                 the count is a live number beside the painted PLAYING NOW, and
+                 the Share button is the painted copy frame top right. A
+                 fixture nesting these the old way would exercise markup the
+                 component no longer renders, which matters here because this
+                 spec proves the Share button owns its 44px band. -->
+            <img class="club-identity__shell" alt="" aria-hidden="true" />
+            <h2 class="club-identity__name sr-only">Shark Club</h2>
+            <p class="club-identity__alias" style="left: 15.3257%; top: 30.5060%; width: 36.3985%; height: 21.5774%"><span>Player</span></p>
+            <div class="club-identity__ids">
+              <div class="club-identity__line" style="left: 18.5185%; top: 55.6548%; width: 28.0971%; height: 11.0119%"><span class="club-identity__line-text" style="left: 22.2727%; top: 8.1081%; width: 77.2727%; height: 83.7838%"><strong><span>ID:</span> 11192</strong></span></div>
+              <div class="club-identity__line" style="left: 18.5185%; top: 68.1548%; width: 28.0971%; height: 11.0119%"><span class="club-identity__line-text" style="left: 22.2727%; top: 8.1081%; width: 77.2727%; height: 83.7838%"><strong><span>ID:</span> 1</strong></span></div>
+            </div>
             <div class="club-identity__footer">
-              <span class="club-identity__playing"><span class="club-identity__playing-fit"><strong>7</strong><span>Playing Now</span></span></span>
-              <button class="club-identity__share" type="button" aria-label="Copy referral link">
-                <svg aria-hidden="true" viewBox="0 0 10 10"><path d="M1 5h8" /></svg>
-              </button>
+              <span class="club-identity__playing" style="left: 56.1941%; top: 56.5476%; width: 11.6220%; height: 9.2262%"><strong>7</strong></span>
+              <span class="club-identity__level" style="left: 63.2184%; top: 69.3452%; width: 20.7536%; height: 9.8214%"><span>Level 1</span></span>
+              <button class="club-identity__share" type="button" aria-label="Copy referral link" style="left: 67.9438%; top: 27.9762%; width: 14.4317%; height: 28.8690%"></button>
             </div>
           </section>
           <button class="lobby-bbj" type="button">Bad Beat Jackpot</button>

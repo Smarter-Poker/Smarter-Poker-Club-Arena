@@ -168,6 +168,65 @@ during a full-suite run - which stops the publisher for every agent
 (CLAUDE.md 5.8). The file list and each lookup are memoised now: 1.9s to 0.31s,
 with every assertion unchanged.
 
+## Three corrections, an hour later
+
+The phase shipped, and then measuring it found the rollup 20.63 short of the
+ledger on the live day. Each correction is its own migration, because each was
+written after the previous one had been proved wrong by the database rather
+than by reasoning:
+
+**`20260904234500` - a rebuild that races the ledger checks itself.** The
+attribution was exact (`fn_ca_club_rake_daily_compute` run fresh matched the
+ledger to 0.0000); the STORED rows had drifted. `fn_ca_club_rake_daily_rebuild_range`
+DELETEs a day and re-INSERTs from a snapshot, so a transaction that inserted
+before that snapshot and committed after it had its trigger row deleted and
+was not in the recount. The rebuild was given three passes to close its own
+gap, and a single shared definition of "agrees with the ledger".
+
+**`20260904235500` - a live day is the triggers' to keep.** The three passes
+did not work, and the measurement said why:
+
+```
+20:40:45   ledger 194,648.19   rollup 194,627.07   diff 21.1200
+20:41:17   ledger 194,717.42   rollup 194,696.30   diff 21.1200
+```
+
+The ledger moved 69 chips in 32 seconds and the difference did not move at
+all. The trigger is **exact** under live load; DELETE-then-recount simply
+cannot converge while writes continue, because each ~14-second pass loses a
+fresh slice. So the rebuild now takes complete days only - where nothing
+writes and a recount is exact - and today belongs to the triggers.
+`p_include_today` has to be asked for by name, for the one legitimate case:
+the first build of a day whose triggers arrived mid-way through it, which is
+exactly how today came to be 21.12 short. The reconcile REPORTS `today_drift`
+instead of rewriting today.
+
+Rejected: having the INSERT trigger take the rebuild's per-day advisory lock.
+That serialises correctly and puts a platform-wide lock in the path of every
+rake write on the hottest table on the system, to protect a rollup that is
+repaired anyway. Reporting must never slow the money path (11.5).
+
+**`20260904235900` - one rebuild signature, and a correction still lands.**
+Keeping the two-argument form beside the new three-argument one "so nothing
+breaks" made every two-argument call ambiguous - and the one caller was
+`trg_ca_club_rake_daily_change`, the trigger that repairs the rollup when a
+rake row is corrected. It catches its own errors and warns, so a rake
+correction would have stopped being reflected silently. One signature now, and
+that trigger asks for its day explicitly even when the day is today: a
+deliberate correction must land the same day, and midnight makes it exact.
+
+Verified after all three: a complete day recounts exactly (2026-09-03,
+272,352.0700 rollup against 272,352.0700 ledger, difference 0.0000); today is
+refused by the default path (0 days built); the reconcile answers
+`{"success": true, "today_drift": 21.1200, "rake_daily_rebuilt": []}`; and an
+UPDATE of one of today's rake rows, inside a transaction that was rolled back,
+moved the day's rollup as it should.
+
+Today's 21.12 (0.011% of 194,000) is left alone. It self-heals at 00:00 UTC
+when the day closes and the reconcile recounts it, and writing a difference
+into a rollup while its ledger is moving is the same mistake in the other
+direction.
+
 ## Still open after this phase
 
 - **`member_fee_rollup` is now frozen rather than dead.** The engine loop that

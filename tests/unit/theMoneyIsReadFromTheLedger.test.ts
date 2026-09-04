@@ -69,6 +69,22 @@ const CLUB_DATA = readFileSync('src/pages/club/ClubDataPage.tsx', 'utf8');
 const INSURANCE = readFileSync('src/pages/club/ClubInsuranceReportPage.tsx', 'utf8');
 const BOMB_POT = readFileSync('src/pages/club/ClubBombPotReportPage.tsx', 'utf8');
 const MANIFEST = readFileSync('scripts/ci/schema-manifest.d/cowork-ops-upgrade.json', 'utf8');
+/**
+ * The three corrections shipped the same day, each written because the live
+ * measurement said the previous one was wrong. See their headers.
+ */
+const CORRECTION_1 = readFileSync(
+  'supabase/migrations/20260904234500_a_rebuild_that_races_the_ledger_checks_itself.sql',
+  'utf8'
+);
+const CORRECTION_2 = readFileSync(
+  'supabase/migrations/20260904235500_a_live_day_is_the_triggers_to_keep.sql',
+  'utf8'
+);
+const CORRECTION_3 = readFileSync(
+  'supabase/migrations/20260904235900_one_rebuild_signature_and_a_correction_still_lands.sql',
+  'utf8'
+);
 
 const fn = (name: string) => {
   const start = MIGRATION.indexOf(`FUNCTION public.${name}(`);
@@ -424,5 +440,67 @@ describe('the new objects are declared to the schema gate', () => {
 
   it.each(['ca_club_rake_daily', 'ca_club_commission_daily'])('declares table %s', (name) => {
     expect(manifest.tables).toContain(name);
+  });
+});
+
+describe('a live day belongs to the triggers, and a complete day to the recount', () => {
+  /**
+   * Measured on 2026-09-04, an hour after the phase shipped, on the club that
+   * deals ~1,200 raked hands a minute:
+   *
+   *   20:40:45   ledger 194,648.19   rollup 194,627.07   diff 21.1200
+   *   20:41:17   ledger 194,717.42   rollup 194,696.30   diff 21.1200
+   *
+   * The ledger moved by 69 chips in 32 seconds and the difference did not
+   * move at all. The statement-level trigger is exact under live load;
+   * DELETE-then-recount cannot converge on a day that is still being written,
+   * because whatever commits inside a pass had its trigger row deleted and is
+   * not in that pass's snapshot. Retrying loses a fresh slice every time,
+   * which the first correction assumed would close and it did not.
+   */
+  it('the rebuild takes complete days by default and today only when asked', () => {
+    expect(CORRECTION_2).toContain('p_include_today boolean DEFAULT false');
+    expect(CORRECTION_2).toContain(
+      'v_last date := CASE WHEN coalesce(p_include_today, false) THEN v_today ELSE v_today - 1 END;'
+    );
+  });
+
+  it('the reconcile reports what today is short by, and never rewrites it', () => {
+    expect(CORRECTION_2).toContain('IF d < v_today THEN');
+    expect(CORRECTION_2).toContain("'today_drift', v_today_drift");
+  });
+
+  it('a rake correction still reaches the rollup on the day it was made', () => {
+    expect(CORRECTION_3).toContain('fn_ca_club_rake_daily_rebuild_range(v_lo, v_hi, true)');
+  });
+
+  it('there is exactly one rebuild signature, so a two-argument call is not ambiguous', () => {
+    // The two-argument form kept "so nothing breaks" made every existing call
+    // ambiguous, and the one caller was the trigger that repairs a corrected
+    // rake row - which catches its own errors, so it would have failed quietly.
+    expect(CORRECTION_3).toContain(
+      'DROP FUNCTION IF EXISTS public.fn_ca_club_rake_daily_rebuild_range(date, date);'
+    );
+    expect(CORRECTION_3).toContain('the rebuild still has % signatures');
+  });
+
+  it('the reconcile and the rebuild share one definition of agreement', () => {
+    expect(CORRECTION_1).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_ca_club_rake_daily_ledger_total'
+    );
+    expect(CORRECTION_2).toContain('fn_ca_club_rake_daily_ledger_total(d)');
+    expect(CORRECTION_1).toContain(
+      'REVOKE ALL ON FUNCTION public.fn_ca_club_rake_daily_ledger_total(date) FROM PUBLIC, anon, authenticated;'
+    );
+  });
+
+  it('every correction asserts the shape it replaced is gone', () => {
+    for (const [name, sql] of [
+      ['1', CORRECTION_1],
+      ['2', CORRECTION_2],
+      ['3', CORRECTION_3],
+    ] as const) {
+      expect(sql, name).toMatch(/RAISE EXCEPTION/);
+    }
   });
 });

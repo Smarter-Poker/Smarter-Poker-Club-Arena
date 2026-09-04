@@ -14,7 +14,13 @@
   padding-bottom: env(safe-area-inset-bottom, 0px);
   overflow: hidden;
   color: #f4f4f4;
-  background: #000;
+  /* CLIP THE BACKGROUND AROUND THE FRAME (Dan, 2026-09-04): "YOU NEED TO CLIP
+     THE BACKGROUND AROUND THE EDGES OF THE FOOTER FRAME." The artwork is a
+     rounded frame on a rectangular canvas, so an opaque backdrop here paints
+     black squares into its four corners and a band above its top edge. The
+     canvas margin is transparent in the asset now, and this must stay
+     transparent for that to be visible. */
+  background: transparent;
   transform: none;
   translate: none;
   transition: none;
@@ -33,20 +39,37 @@
   width: 100%;
   height: var(--bottom-nav-height, 44px);
   margin: 0;
-  background: #000;
+  background: transparent;
 }
 
 .artworkImage {
   position: absolute;
-  top: 0;
-  left: 50%;
   display: block;
-  /* The source has a 25px built-in black gutter on each 1916px edge. This
-     exact overscan places its visible chrome at viewport x=0 without moving
-     any of the six full-width semantic hit targets off-screen. */
-  width: 102.68%;
-  height: 100%;
-  transform: translateX(-50%);
+
+  /* THE MEASURED FRAME FILLS THIS BOX EXACTLY, ON BOTH AXES.
+     The 1916x256 source canvas carries a built-in black gutter around the
+     frame: 25px on each side, 14px above and 12px below. The frame itself is
+     therefore the rect x=25 y=14 1866x230, and these four numbers are that
+     rect scaled up until it covers the box, with the gutter pushed off every
+     edge:
+         width  = 1916 / 1866 = 102.6795%      left = -25 / 1866 = -1.3398%
+         height =  256 /  230 = 111.3043%      top  = -14 /  230 = -6.0870%
+     The horizontal pair is the overscan that has always put the frame's
+     chrome at viewport x=0. The vertical pair is new: `height: 100%` left the
+     gutter rows inside the box, which is where the black band above the frame
+     came from. Nothing about the footer's own size changes. */
+  top: -6.087%;
+  left: -1.3398%;
+  width: 102.6795%;
+  height: 111.3043%;
+
+  /* A global `img { max-width: 100% }` reset would clamp the overscan above
+     and silently re-letterbox the frame inside the box. This repo has no such
+     reset today; the World Hub did, and it cost a black strip down the right
+     edge of all fourteen of its footers before anyone traced it. */
+  max-width: none;
+  max-height: none;
+
   pointer-events: none;
   user-select: none;
 }

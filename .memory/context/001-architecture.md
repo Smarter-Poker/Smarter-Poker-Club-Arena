@@ -30,12 +30,18 @@ KEY URLS:
 - Engine: engine.smarter.poker (Hetzner VPS)
 - Supabase: kuklfnapbkmacvwxktbh.supabase.co
 
-DEPLOYMENT PIPELINE:
+DEPLOYMENT PIPELINE (rewritten 2026-09-04; the four steps that were here
+named a sync script deleted on 2026-09-02, and following them would have
+SHADOWED the live bundle rather than published it - Next serves the World
+Hub's public/ BEFORE the rewrite that reaches this app):
 
-1. Make changes in Club Arena repo
-2. npm run build (Vite → dist/)
-3. bash scripts/sync-to-world-hub.sh ~/Documents/Smarter-Poker-World-Hub
-4. Push World Hub to GitHub → Vercel auto-deploys
+1. Make changes on a branch in your own worktree
+2. git push origin HEAD:refs/heads/<branch> <- YOUR JOB ENDS HERE
+3. agent-open-pr.yml opens the PR; agent-autopilot.yml merges it green
+4. publish-club-arena.yml rsyncs dist/ to ca-static.smarter.poker and swaps
+   the `current` symlink; the World Hub's one rewrite serves it
+5. Verify: curl -s https://smarter.poker/hub/club-arena/build-info.json
+   ca_sha must equal the squash commit on main. Nothing else counts.
 
 SERVER DEPLOYMENT:
 

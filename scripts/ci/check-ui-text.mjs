@@ -84,7 +84,43 @@ const HTML_FILES = [
  * untouched.
  */
 const SERVER_SRC = join(ROOT, 'server/src');
-const SKIP_DIRS = new Set(['node_modules', 'dist', '_to_delete', '__tests__', 'test-results']);
+const SKIP_DIRS = new Set([
+  'node_modules',
+  'dist',
+  '_to_delete',
+  '__tests__',
+  'test-results',
+  // `tests/` was missing while `__tests__` was here, and this repo uses
+  // `tests/`. See IS_TEST_FILE below for why that mattered.
+  'tests',
+  'e2e',
+]);
+
+/**
+ * A TEST TITLE IS NOT COPY (2026-09-03).
+ *
+ * This gate exists to keep em dashes out of "anything a player can read", and
+ * it already ignores comments for exactly that reason — they never reach a
+ * player. `it('the pot raise is 4.5bb — not 3.5')` never reaches one either.
+ *
+ * It was flagging them anyway, because the walker skipped `__tests__` while
+ * this repo keeps its suites in `tests/`, and nothing excluded `*.test.ts`.
+ * An agent then hits a pre-push failure on three test TITLES, with a rule
+ * about player-facing copy quoted at them, and the obvious way out is
+ * `--no-verify` — which skips the other eight house checks in the same hook,
+ * including the secret scan. A guard that cries wolf does not just waste a
+ * minute; it teaches people to walk around the guards that are right.
+ *
+ * Nothing is lost by this. A string a player actually reads has to exist in
+ * `src/` or `server/`, both still fully scanned. A test can only ASSERT such a
+ * string, and the assertion is checked at its source.
+ *
+ * It also unblocks the law tests that must contain the banned character as a
+ * FIXTURE in order to pin it — those were previously unwritable without adding
+ * the file to SKIP_FILES by hand.
+ */
+const IS_TEST_FILE = (rel) =>
+  /(^|\/)(tests?|e2e|__tests__)\//.test(rel) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(rel);
 /**
  * A WHOLE-FILE EXEMPTION IS A SWEEP WHERE A GUARD BELONGS (2026-08-31, later).
  *
@@ -191,6 +227,10 @@ for (const file of SOURCE_OVERRIDE
   : [...walk(SRC), ...walk(PUBLIC), ...HTML_FILES.map((f) => join(ROOT, f)), ...walk(SERVER_SRC)]) {
   const rel = file.replace(ROOT, '');
   if (SKIP_FILES.has(rel)) continue;
+  // A test title is not copy — see IS_TEST_FILE. This also covers suites that
+  // live beside their source (foo.test.ts next to foo.ts), which the directory
+  // skip above cannot catch.
+  if (IS_TEST_FILE(rel)) continue;
   const original = readFileSync(file, 'utf8');
   if (!EM_DASHES.test(original)) continue;
 

@@ -301,7 +301,6 @@ export interface TableModalsLayerProps {
   onCloseCashier: () => void;
   /** Must report whether the chips actually moved — see CashierModal.onAddChips. */
   onAddChips: (amount: number) => Promise<boolean>;
-  onWithdrawChips: (amount: number) => Promise<boolean>;
 
   // Bust Rebuy
   bustRebuyOpen: boolean;
@@ -367,6 +366,12 @@ export interface TableModalsLayerProps {
   showLeaveConfirm: boolean;
   onCloseLeaveConfirm: () => void;
   onConfirmLeaveTable: () => void;
+  /**
+   * CHIP CONTINUITY: "Leave Available In M:SS" while the hero's stay clock
+   * has time left; null when leaving is allowed. The confirm dialog shows it
+   * and disables its confirm button.
+   */
+  leaveLockedLabel?: string | null;
 
   // Session Stats (2nd SessionHUD slot at bottom)
   showSessionStats: boolean;
@@ -588,7 +593,6 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     cashoutMinBuyIn,
     onCloseCashier,
     onAddChips,
-    onWithdrawChips,
     // Bust Rebuy
     bustRebuyOpen,
     bustWalletBalance,
@@ -616,6 +620,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     showLeaveConfirm,
     onCloseLeaveConfirm,
     onConfirmLeaveTable,
+    leaveLockedLabel = null,
     // Session stats
     showSessionStats,
     onCloseSessionStats,
@@ -777,6 +782,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         rakeCap={effectiveRake.rakeCap ?? rakeCap}
         isStraddleEnabled={!isTournament && isStraddleEnabled}
         isRunItTwiceEnabled={runItTwice ?? true}
+        isCashTable={!isTournament}
         bombPotRules={bombPotRules}
         canEditBombSettings={canEditBombSettings}
         onEditBombSettings={onEditBombSettings}
@@ -1069,10 +1075,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         // Passed straight through. Wrapping these in `async (a) => { await f(a) }`
         // is what threw the success flag away originally.
         onAddChips={onAddChips}
-        onWithdrawChips={onWithdrawChips}
         currentStack={heroStack}
         accountBalance={accountBalance}
-        minBuyIn={minBuyIn}
         maxBuyIn={maxBuyIn}
         maxStack={maxBuyIn}
       />
@@ -1124,6 +1128,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         currentStack={heroStack}
         tableName={tableName || 'this table'}
         isTournament={isTournament}
+        lockedLabel={leaveLockedLabel}
         onConfirm={() => {
           onCloseLeaveConfirm();
           onConfirmLeaveTable();

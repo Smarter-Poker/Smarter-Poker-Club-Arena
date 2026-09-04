@@ -54,7 +54,10 @@ describe('the balance write fence', () => {
     // A raw relative setAccountBalance would not bump the revision, so a
     // stale absolute read could still undo it.
     expect(src).not.toMatch(/setAccountBalance\(\(prev\)/);
-    expect((src.match(/applyBalanceDelta\(\(prev\)/g) ?? []).length).toBeGreaterThanOrEqual(3);
+    /* Two since 2026-09-04: the partial cash-out (withdraw) delta was deleted
+       with the path itself (chip continuity, no chips leave a seat without
+       the player). The add-chips and rebuy deltas remain. */
+    expect((src.match(/applyBalanceDelta\(\(prev\)/g) ?? []).length).toBeGreaterThanOrEqual(2);
   });
 
   it('captures the revision BEFORE each awaited read, not after', () => {

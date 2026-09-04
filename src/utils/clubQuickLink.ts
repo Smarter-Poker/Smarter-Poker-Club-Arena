@@ -194,7 +194,6 @@ export const CHIP_BALANCE_EVENTS = [
      button kept prefilling the pre-transaction figure for up to the 30s TTL,
      the exact failure the subscription exists to prevent. */
   'CHIPS_ADDED',
-  'CHIPS_WITHDRAWN',
 ] as const;
 
 /**

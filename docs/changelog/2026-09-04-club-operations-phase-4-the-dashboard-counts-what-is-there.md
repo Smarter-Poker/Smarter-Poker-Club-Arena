@@ -146,3 +146,52 @@ Client:
 - `ClubMemberManagement` still loads the whole roster unpaged; it is a second
   copy of the Players page and phase 5 decides its future.
 - No page in phases 1-4 has been opened in a browser yet (handoff D-05).
+
+## Verification walk (2026-09-04, after Dan's per-phase gate)
+
+Every Phase 1-3 page was opened in a browser on production, signed in as the
+owner, at 404 px: `/operations`, `/finance`, `/control`, `/anti-cheat`,
+`/reports`, `/disputes`, `/blacklist`, `/agents` (every tab). No horizontal
+scroll on any page; no failed request but one, below.
+
+**Found: the Payouts tab could not be read, then took 8,870 ms.**
+`fn_ca_agent_payables` (phase 3) summed every unsettled `agent_commissions`
+row on each open. The set had doubled in a day (259,135 to 499,933): the
+estate writes 622,976 commission rows a day and nothing has ever settled
+one. Fixed by migration
+`20260904170000_what_the_club_owes_is_kept_not_recounted`: a
+trigger-maintained `agent_commission_unsettled_rollup` (statement-level,
+transition tables), backfilled and asserted equal to the ledger inside the
+transaction, with `fn_ca_agent_payables` reading it. Probed rolled back:
+insert, settle, unsettle, delete and a notes-only update each moved the
+rollup exactly as the ledger moved. Live after apply: rollup equals ledger
+(970,282.21 across 239 pairs), triggers firing on real inserts, and the same
+tab answered in 107 ms.
+
+Also found in the re-read of phase 4's own diff: a failed stats read held
+the metric-card skeleton forever; a failed tables read held "Loading
+Tables..."; native `window.confirm`; "Holds N Chips" when N included credit;
+"All 100 Players" under a 678-player club; a 25-second row stagger. All
+fixed in the same push.
+
+**Published dashboard walked at 396 px and 1280 px** after PR #2953 shipped
+(`638a22521`): Tables "302 Live, 219 People Seated (430 Seats)" over a
+5,138-table club with "Live Now (302)" listed; Revenue with no insurance card
+for a club with no contracts; Tournaments "3,819 Finished In Last 7D" and
+"Newest 25 Of 3,819"; Hide Horses offered to the owner; the Revenue tab on
+the strip. One failed request, and it was real: `club_chat?club_id=eq.
+deep-stack-society-11192` answered 400. `ClubChat` was mounted with the
+route slug and uses it to read, subscribe and insert against a uuid column,
+so club chat on this page could neither load nor send. It is mounted with
+`resolvedClubId` now. The remaining 401 on `HEAD /rest/v1/` is the
+connection watchdog's own probe, which documents that answer as expected.
+
+**Rollup rebuild race (`20260904171000`).** Re-reading the rollup migration
+found `fn_rebuild_agent_commission_rollup` deleting and re-inserting the
+rollup with no lock on the ledger, so a commission landing mid-rebuild would
+collide on the primary key or be counted twice. It takes `SHARE ROW
+EXCLUSIVE` on `agent_commissions` first now, the lock the backfill already
+ran under. Insert-trigger cost on the commission write path measured at
+1.9 ms per statement, under the pre-existing foreign-key checks (8.5 ms).
+After one hour and 9,514 real inserts the rollup still equals the ledger
+exactly (977,984.55 across 2,472,844 rows).

@@ -25,6 +25,7 @@ import {
   autoRebuyHorse,
   markSeatAsLeft,
   processLeavePending,
+  atomicCashoutVoluntary,
   logBBJCollection,
   logInsuranceSettlement,
   logHandHistory,
@@ -317,9 +318,26 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     players: SeatedPlayer[]
   ): Promise<void> {
     const wholeSettlement = this.settleCompletedHand(event, players);
-    // Barrier only - failures are reported inside; the barrier must resolve
-    // either way or the table stops dealing forever.
-    this.postHandTasksPromise = wholeSettlement.catch(() => undefined);
+    /* CHAIN, NEVER OVERWRITE (chip standard 2026-09-04). settleCompletedHand
+       runs synchronously to completion on the common path - its only awaits
+       are the insurance-shortfall alerts - so by the time it returns it has
+       ALREADY assigned postHandTasksPromise = Promise.all([prior, postTasks])
+       and fired the chain. The line this replaces then overwrote that with
+       wholeSettlement.catch(...), a promise that was already resolved and did
+       not include postHandTasks. The dealing loop saw a settled barrier,
+       reloaded seats before step 8e had credited the pending add-ons, dealt
+       from the stale stacks, and the next hand write erased the credits:
+       64 add-ons / 7,685.70 chips in three hours on 2026-09-04. Whatever the
+       body assigned is kept and this hand's own promise is added to it; on
+       the rare path where the body awaited before firing the chain, the body
+       reads this assignment back as its `priorBarrier` and chains onto it.
+       Barrier only - failures are reported inside; the barrier must resolve
+       either way or the table stops dealing forever. */
+    const guarded = wholeSettlement.catch(() => undefined);
+    const assignedByBody = this.postHandTasksPromise;
+    this.postHandTasksPromise = assignedByBody
+      ? Promise.all([assignedByBody, guarded]).then(() => undefined)
+      : guarded;
     return wholeSettlement;
   }
 
@@ -676,6 +694,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       }
 
       if (insuranceDeltas.size > 0) this.handController?.applyStackDeltas(insuranceDeltas);
+      // Chip standard 2026-09-04: what the bank net moved onto the seats, as
+      // applied. Declared to the stack write as inflow (see postHandTasks).
+      let insuranceNet = 0;
+      for (const d of insuranceDeltas.values()) insuranceNet += d;
+      this.currentHandInsuranceNet = Math.round(insuranceNet * 100) / 100;
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -1151,6 +1174,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       perPotAwards: [...this.currentHandPerPotAwards],
       showdownResults: [...this.currentHandShowdownResults],
       insuranceSettlements: [...this.currentHandInsuranceSettlements],
+      insuranceNet: this.currentHandInsuranceNet,
       cashoutRedirects: new Map(this.currentHandCashoutRedirects),
       returnedUncalled: new Map(this.currentHandReturnedUncalled),
       bbjHit: this.currentHandBBJHit,
@@ -1249,6 +1273,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         players.map((p) => ({
           user_id: p.user_id,
           stack: p.stack,
+          // Chip standard 2026-09-04: the stack this seat was dealt from, so
+          // the database applies the hand's DIFFERENCE to the row instead of
+          // overwriting whatever landed on it meanwhile. A seat not in the
+          // dealt map was not in this hand: delta 0.
+          stack_before: snap.dealtStacks.get(p.user_id) ?? p.stack,
           // VIP time banks 2026-08-18: HandController players never carried
           // time_bank_uses_remaining (always undefined), so this column sat
           // at its insert default (4) on every one of 22,805 seat rows -
@@ -1265,7 +1294,18 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // Read from the snapshot, never the live field (stale-continuation
         // law): dealHand reassigns handCount while a stalled settlement is
         // still writing.
-        snap.handNumber
+        snap.handNumber,
+        // Chip standard 2026-09-04: rake and BBJ drop are DECLARED, so the
+        // database asserts sum(delta) = -rake - bbj on every cash hand. A
+        // tournament hand declares 0 and 0 and the same identity holds.
+        {
+          rake: this.isTournamentTable() ? 0 : snap.rake,
+          bbj: this.isTournamentTable() ? 0 : snap.bbjFee,
+          // Insurance payouts and premiums moved chips between the bank and
+          // these seats before this write; declared, or the identity refuses
+          // every insured hand.
+          inflow: snap.insuranceNet,
+        }
       );
     });
 
@@ -1864,19 +1904,15 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             }
           }
 
-          // Re-sync stacks to database with BBJ payouts included
-          await syncStacks(
-            this.tableId,
-            players.map((p) => ({
-              user_id: p.user_id,
-              stack: p.stack,
-              time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(
-                this.tableId,
-                p.user_id
-              ),
-              time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
-            }))
-          );
+          /* NO SECOND STACK WRITE (chip standard 2026-09-04). bbj_atomic_payout_v2
+             already credited every seated recipient's table_seats.stack
+             durably (bbj_credit_one_recipient), and the shares were mirrored
+             into memory just above. The "re-sync" that used to sit here wrote
+             every seat ABSOLUTELY from memory with no hand number - the
+             unchecked per-seat path - so anything else that had landed on a
+             row meanwhile (a resolved add-on, a horse funding) was erased,
+             and in delta mode it would have credited the shares twice. The
+             database already holds the truth; there is nothing to write. */
 
           // Broadcast updated stacks + BBJ payout details so clients show the celebration
           this.hub?.emitEvent(this.tableId, {
@@ -1941,6 +1977,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
            */
           if (atRebuyStopLoss(horse.user_id, currentRebuys)) {
             await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+            this.chipContinuity.forget(horse.user_id);
             // Round 57: clear FSM tracking so the horse doesn't leave a ghost
             // entry in disconnect_states.
             this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
@@ -1988,6 +2025,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             );
           } else {
             await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+            this.chipContinuity.forget(horse.user_id);
             // Round 57: clear FSM tracking on insufficient-funds leave too.
             this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
             // Round 64: same for TimeBankEngine.
@@ -2004,7 +2042,26 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       }
     });
 
-    // 5.5 Auto-Cashout successful horses (Hit-and-Run Bankroll Management)
+    // 5.7 CHIP CONTINUITY (Operation Table Stakes, Slice 0): the hand is
+    // settled, add-ons and horse rebuys have landed, so every seated player's
+    // stack is final for this boundary. Tell the database, which settles each
+    // stay clock and decides who is ahead of their money (running) and who is
+    // not (paused, remainder kept). Runs BEFORE any departure below so a
+    // horse's profit-target exit and a leave_pending seat are judged against
+    // the post-hand stack, never the pre-hand one.
+    await runStep('chip_continuity', false, async () => {
+      if (!this.isTournamentTable()) {
+        await this.chipContinuity.evaluate(
+          players.map((p) => ({
+            user_id: p.user_id,
+            stack: p.stack,
+            active: this.isContinuityActive(p.user_id),
+          }))
+        );
+      }
+    });
+
+    // 5.5 Auto-Cashout successful horses (bankroll management)
     // Always wait until right before they are the Big Blind to leave.
     await runStep('horse_cashouts', false, async () => {
       if (!this.isTournamentTable() && players.length >= 2) {
@@ -2044,7 +2101,23 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         });
 
         for (const horse of cashedOutHorses) {
-          await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+          // CHIP CONTINUITY / HORSES ARE PLAYERS (CLAUDE.md 10.5): a horse
+          // that has hit its target is a player choosing to leave while
+          // ahead, so it goes through the same door a human does and waits
+          // out the same stay clock. A refusal simply means "not this
+          // orbit" - the target still stands and it tries again when the big
+          // blind comes back around, exactly as a human would.
+          const exit = await atomicCashoutVoluntary(horse.user_id, this.tableId, horse.seat_number);
+          if (!exit.ok) {
+            if (exit.code === 'LEAVE_LOCKED') {
+              this.chipContinuity.noteRefusal(horse.user_id, exit.stayRemainingMs);
+              console.log(
+                `[ServerTableEngine:${this.tableId}] Bankroll Management: Horse ${horse.username} at target but stay clock has ${exit.stayRemainingMs}ms left - stays seated`
+              );
+            }
+            continue;
+          }
+          this.chipContinuity.forget(horse.user_id);
           // Round 57: clear FSM tracking on profit-target cashout too.
           this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
           // Round 64: same for TimeBankEngine.
@@ -2080,12 +2153,21 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // persists in hand_state_snapshots.disconnect_states forever.
         // Round 64: extended to also call timeBankEngine.removePlayer so the
         // playerBanks Map sheds its entry too — same architectural fix.
-        const cashedOutIds = await processLeavePending(this.tableId, this.tableInfo?.club_id || '');
+        const cashedOutIds = await processLeavePending(
+          this.tableId,
+          this.tableInfo?.club_id || '',
+          (lockedUserId, stayRemainingMs) =>
+            this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs),
+          this.forcedLeaves
+        );
         for (const userId of cashedOutIds) {
           this.disconnectEngine.unregisterPlayer(this.tableId, userId);
           this.timeBankEngine.removePlayer(this.tableId, userId);
           this.straddleEngine.removePlayer(this.tableId, userId);
           this.preActionEngine.removePlayer(this.tableId, userId);
+          this.forcedLeaves.delete(userId);
+          this.leaveHeldByClock.delete(userId);
+          this.chipContinuity.forget(userId);
         }
       }
     });

@@ -72,13 +72,13 @@
  * RESPONSIVE (Matches TableHUD/TimebankCounter)
  * ═══════════════════════════════════════════════════════════════════════════════ */
 
-@media (min-width: 1024px) {
-  .prev-hand-card {
-    width: var(--sp-hud-tile-size-lg, 44px);
-    height: var(--sp-hud-tile-size-lg, 44px);
-    border-radius: var(--sp-hud-tile-radius-lg, 12px);
-  }
-}
+/* 2026-09-04: the desktop block that used to live here read
+   `--sp-hud-tile-size-lg` / `--sp-hud-tile-radius-lg`, which are declared
+   NOWHERE, so its 44px/12px fallbacks were the real value - a second size for
+   one tile, hidden behind a token that looked configurable. It became a live
+   divergence the moment the base token moved to 66px (Dan: 50% larger). The
+   base rule above reads --sp-hud-tile-size at every width; there is no
+   desktop override. */
 
 /* Dan 2026-08-26: Strip baked button styles for 3D assets */
 .prev-hand-card {

@@ -3565,31 +3565,9 @@
   display: block;
 }
 
-.floating-im-back {
-  background: linear-gradient(180deg, #3fb950 0%, #2ea043 100%);
-  border: 1px solid #4dc660;
-  color: white;
-  font-weight: 700;
-  border-radius: 8px;
-  padding: 10px 16px;
-  font-size: 14px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-  cursor: pointer;
-  text-transform: uppercase;
-}
-
-.floating-action-br {
-  position: absolute;
-  bottom: 80px;
-  right: 20px;
-  z-index: 100;
-  /* Was an inline style object on the element, rebuilt on every TablePage
-     render. It is four static declarations; they belong here. */
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  align-items: center;
-}
+/* .floating-im-back / .floating-action-br DELETED 2026-09-04 with the third
+   "I'm Back" button they styled (Dan: "there shouldn't be two 'im back'
+   buttons"). The footer bar's spectator-footer-bar__cta is the one. */
 
 /* chat-mail-toggle-btn duplicate override REMOVED */
 

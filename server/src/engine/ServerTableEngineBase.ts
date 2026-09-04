@@ -913,6 +913,15 @@ export abstract class ServerTableEngineBase {
   protected currentHandReturnedUncalled: Map<string, number> = new Map();
   protected currentHandInsuranceSettlements: InsuranceSettlement[] = [];
   /**
+   * Chip standard 2026-09-04: the net the insurance bank moved onto (+) or off
+   * (-) the seats of THIS hand - payouts and EV cash-outs in, premiums and EV
+   * redirects out - as actually applied after clamping. The hand's stack write
+   * declares it as `inflow`, because the database asserts
+   * sum(delta) = inflow - rake - bbj on every hand and an insured hand would
+   * otherwise be refused as a conservation violation.
+   */
+  protected currentHandInsuranceNet: number = 0;
+  /**
    * EV CASHOUT 2026-08-28: pot winnings clawed back to the bank for each
    * cashed-out player this hand (what the bank actually collected, post-
    * clamp). Feeds the insurance ledger's bank-in side.

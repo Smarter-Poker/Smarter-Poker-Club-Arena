@@ -185,6 +185,13 @@ describe('LAW 2: the hand write is a difference, declared, and written once', ()
     );
     expect(step).toMatch(/rake:\s*this\.isTournamentTable\(\)\s*\?\s*0\s*:\s*snap\.rake/);
     expect(step).toMatch(/bbj:\s*this\.isTournamentTable\(\)\s*\?\s*0\s*:\s*snap\.bbjFee/);
+    // Insurance payouts and premiums move chips between the bank and the
+    // seats before the write; the net is declared as inflow or every insured
+    // hand fails the identity.
+    expect(step).toMatch(/inflow:\s*snap\.insuranceNet/);
+    expect(settleCode).toMatch(
+      /this\.currentHandInsuranceNet = Math\.round\(insuranceNet \* 100\) \/ 100;/
+    );
   });
 
   it('there is exactly one stack write per hand - no absolute re-sync after the BBJ payout', () => {

@@ -59,10 +59,7 @@ function read(fragment: string): string {
 }
 const INDEXES = read('a_club_cannot_be_deleted_in_time');
 const GAPS = read('the_repo_can_ask_production_whether_a_club_is_still_deletable');
-const GATE = readFileSync(
-  resolve(__dirname, '..', 'scripts/ci/check-club-fk-indexes.mjs'),
-  'utf8'
-);
+const GATE = readFileSync(resolve(__dirname, '..', 'scripts/ci/check-club-fk-indexes.mjs'), 'utf8');
 
 const CLOSED: Array<[string, string]> = [
   ['idx_game_management_events_club_id', 'public.game_management_events'],

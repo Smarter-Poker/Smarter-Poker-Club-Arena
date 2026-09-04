@@ -83,9 +83,9 @@ on a pull request.
 a `club_id` and no index now turns the branch that introduced it red, instead of
 surfacing as a stranded fixture weeks later.
 
-Dan's standard for this programme is explicit: *"WE SHOULDN'T NEED THOSE DETECTORS
+Dan's standard for this programme is explicit: _"WE SHOULDN'T NEED THOSE DETECTORS
 OR WATCH DOGS ... NOT TO HAVE WATCH DOGS AND CRONS RUNNING ALL OVER THE PLACE. WE
-MUST BE PERFECT!"* This is not a detector. It runs once per pull request, it
+MUST BE PERFECT!"_ This is not a detector. It runs once per pull request, it
 writes nothing, it raises no incidents, and what it protects is a structural
 property - a club can be deleted inside a request - rather than a symptom.
 
@@ -94,10 +94,10 @@ property - a club can be deleted inside a request - rather than a symptom.
 Both fixtures retired through the same PostgREST door, as the same `service_role`
 the certification uses:
 
-| Fixture | HTTP | Time | Chips retired |
-| --- | --- | --- | --- |
-| `89e03439-81e0-4197-b0c7-ec406dc8e3b3` (`Crest Cert 1788478854825-cjxkf`) | 200 | 2.43s | 100,000.00 |
-| `7abc31e6-6ead-4d40-a9ee-627075d254f7` (`Preset Crest Cert 178847885482`) | 200 | 2.58s | 100,000.00 |
+| Fixture                                                                   | HTTP | Time  | Chips retired |
+| ------------------------------------------------------------------------- | ---- | ----- | ------------- |
+| `89e03439-81e0-4197-b0c7-ec406dc8e3b3` (`Crest Cert 1788478854825-cjxkf`) | 200  | 2.43s | 100,000.00    |
+| `7abc31e6-6ead-4d40-a9ee-627075d254f7` (`Preset Crest Cert 178847885482`) | 200  | 2.58s | 100,000.00    |
 
 Before the indexes, the same two calls returned `57014 canceling statement due to
 statement timeout` at 11.36s and 8.75s.

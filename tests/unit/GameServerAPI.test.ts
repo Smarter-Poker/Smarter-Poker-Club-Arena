@@ -156,7 +156,6 @@ describe('GameServerAPI', () => {
           // endpoints".
           'postBBToEnter',
           'previewInsurance',
-          'removeChips',
           'requestRabbitHunt',
           'respondToInsurance',
           'respondToRIT',

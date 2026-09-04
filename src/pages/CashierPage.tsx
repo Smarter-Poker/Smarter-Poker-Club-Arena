@@ -1123,7 +1123,6 @@ export default function CashierPage() {
     [
       'BALANCE_UPDATED',
       'CHIPS_ADDED',
-      'CHIPS_WITHDRAWN',
       'CASHIER_BALANCE_CHANGED',
       'RAKEBACK_CLAIMED',
       'DAILY_REWARD_CLAIMED',
@@ -1572,14 +1571,15 @@ export default function CashierPage() {
           //
           // This now mirrors the 'buyin' branch above exactly, and for the same
           // reason: NO money moves in the Cashier. The player is routed to the
-          // table, where the engine owns the withdrawal end to end —
-          // GameServerAPI.removeChips -> atomic_table_withdraw credits the
-          // wallet and reduces the seat stack atomically, only between hands,
-          // deriving the amount from authoritative state rather than a text box.
+          // table. CHIP CONTINUITY (2026-09-04): there is no partial cash-out
+          // at a cash table any more - chips come off the felt only when the
+          // player leaves, through the engine's leave path (which may hold
+          // them for the stay clock). The only honest copy is "leave to cash
+          // out".
           if (isMounted.current)
             setMessage({
               type: 'info',
-              text: 'Cash out from the table itself - taking you there now.',
+              text: 'Leave The Table To Cash Out - Taking You There Now.',
             });
           navigate(`/table/${tableId}`);
         } else {

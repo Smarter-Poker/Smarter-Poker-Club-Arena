@@ -85,7 +85,7 @@ const BASELINE = new Map<string, number>([
   ['src/pages/HomePage.tsx', 1],
   ['src/pages/BadBeatJackpotPage.tsx', 4],
   ['src/components/social/PlayerActivityFeed.tsx', 4],
-  ['src/components/agent/ChipTransferModal.tsx', 4],
+  ['src/components/agent/ChipTransferModal.tsx', 3],
   ['src/components/agent/AgentScoreCard.tsx', 4],
   ['src/services/VoiceSignalService.ts', 3],
   ['src/services/FinancialCronService.ts', 3],
@@ -191,12 +191,13 @@ const BASELINE = new Map<string, number>([
   ['src/components/agent/AgentAssignmentPanel.tsx', 1],
   ['src/components/admin/StatsExport.tsx', 1],
   ['src/components/admin/PlayerSearch.tsx', 1],
-  ['src/components/admin/ClubMemberManagement.tsx', 1],
   ['src/components/admin/AuditLog.tsx', 1],
 ]);
 
 /** The 2026-08 sweep left these at zero. They stay there. */
 const AUDITED_ZERO = [
+  // 2026-09-04, phase 4: the profiles read now throws on error.
+  'src/components/admin/ClubMemberManagement.tsx',
   'src/services/TournamentService.ts',
   'src/services/TableService.ts',
   'src/pages/TablePage.tsx',

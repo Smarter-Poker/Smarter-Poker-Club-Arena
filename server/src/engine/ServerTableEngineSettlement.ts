@@ -2169,6 +2169,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           this.leaveHeldByClock.delete(userId);
           this.chipContinuity.forget(userId);
         }
+        // MUST-MOVE (Slice 2): planned moves land here, at the hand boundary,
+        // after the leavers. A move is not a leave: no cash-out, no clock.
+        await this.executePendingSeatMoves();
       }
     });
 

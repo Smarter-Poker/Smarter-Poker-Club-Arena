@@ -168,6 +168,123 @@ during a full-suite run - which stops the publisher for every agent
 (CLAUDE.md 5.8). The file list and each lookup are memoised now: 1.9s to 0.31s,
 with every assertion unchanged.
 
+## Three corrections, an hour later
+
+The phase shipped, and then measuring it found the rollup 20.63 short of the
+ledger on the live day. Each correction is its own migration, because each was
+written after the previous one had been proved wrong by the database rather
+than by reasoning:
+
+**`20260904234500` - a rebuild that races the ledger checks itself.** The
+attribution was exact (`fn_ca_club_rake_daily_compute` run fresh matched the
+ledger to 0.0000); the STORED rows had drifted. `fn_ca_club_rake_daily_rebuild_range`
+DELETEs a day and re-INSERTs from a snapshot, so a transaction that inserted
+before that snapshot and committed after it had its trigger row deleted and
+was not in the recount. The rebuild was given three passes to close its own
+gap, and a single shared definition of "agrees with the ledger".
+
+**`20260904235500` - a live day is the triggers' to keep.** The three passes
+did not work, and the measurement said why:
+
+```
+20:40:45   ledger 194,648.19   rollup 194,627.07   diff 21.1200
+20:41:17   ledger 194,717.42   rollup 194,696.30   diff 21.1200
+```
+
+The ledger moved 69 chips in 32 seconds and the difference did not move at
+all: the trigger tracked every one of those chips. DELETE-then-recount simply
+cannot converge while writes continue, because each ~14-second pass loses a
+fresh slice. So the rebuild now takes complete days only - where nothing
+writes and a recount is exact - and today belongs to the triggers.
+`p_include_today` has to be asked for by name, for the one legitimate case:
+the first build of a day whose triggers arrived mid-way through it, which is
+exactly how today came to be 21.12 short. The reconcile REPORTS `today_drift`
+instead of rewriting today.
+
+Rejected: having the INSERT trigger take the rebuild's per-day advisory lock.
+That serialises correctly and puts a platform-wide lock in the path of every
+rake write on the hottest table on the system, to protect a rollup that is
+repaired anyway. Reporting must never slow the money path (11.5).
+
+**`20260904235900` - one rebuild signature, and a correction still lands.**
+Keeping the two-argument form beside the new three-argument one "so nothing
+breaks" made every two-argument call ambiguous - and the one caller was
+`trg_ca_club_rake_daily_change`, the trigger that repairs the rollup when a
+rake row is corrected. It catches its own errors and warns, so a rake
+correction would have stopped being reflected silently. One signature now, and
+that trigger asks for its day explicitly even when the day is today: a
+deliberate correction must land the same day, and midnight makes it exact.
+
+Verified after all three: a complete day recounts exactly (2026-09-03,
+272,352.0700 rollup against 272,352.0700 ledger, difference 0.0000); today is
+refused by the default path (0 days built); the reconcile answers
+`{"success": true, "today_drift": 21.1200, "rake_daily_rebuilt": []}`; and an
+UPDATE of one of today's rake rows, inside a transaction that was rolled back,
+moved the day's rollup as it should.
+
+Today's 21.12 (0.011% of 194,000) is left alone. It self-heals at 00:00 UTC
+when the day closes and the reconcile recounts it, and writing a difference
+into a rollup while its ledger is moving is the same mistake in the other
+direction.
+
+**And the live day does carry a small residual, which is worth stating
+precisely rather than rounding to "exact".** Watched over a further half hour,
+today's gap went 21.12 -> 30.57 and then held at 30.57 across a 50-second
+sample while the ledger kept moving - so the trigger is not losing a steady
+fraction, it is losing the occasional whole statement. The database records
+~2.4 deadlocks a minute platform-wide, and the rollup trigger deliberately
+catches its own errors and warns rather than refusing a rake write (11.5), so
+a deadlocked statement's rake never reaches the rollup. Measured residual:
+**30.57 in 195,000, 0.016%, on the live day only.** Every completed day is
+recounted exactly - 2026-09-03 reconciles to 0.0000 - and the catchup now
+returns `today_drift` so the number is on the record rather than inferred.
+Making the trigger itself deadlock-proof (a deterministic lock order on the
+upsert) is the next thing to measure; it was not changed tonight because it
+touches the hot path and the residual is bounded, reported and repaired daily.
+
+## The gate on this phase found one more, in the place I had just fixed
+
+Checking the phase before moving on, the club dashboard's **Busiest Tables**
+list was still summing `club_member_daily_stats.hands_played` - one row per
+player per hand - and printing it as "Hands". Over seven days on the reference
+club:
+
+```
+Busiest Tables, as shipped   2,113,324  "Hands"
+hands actually dealt            596,730
+hands actually raked            181,766
+```
+
+An 11.6x overstatement, on the same page whose cards this phase had just
+relabelled so that raked hands and hands dealt could not be confused, and
+literally the defect the plan document named ("Hands means two different things
+across two tabs of one page"). It survived because I changed the totals and
+never looked further down the page.
+
+`20260905001500` rebuilds `ca_club_revenue.by_table` on `club_table_daily` -
+the raked hands played AT that table, the same basis as the rake beside it and
+the headline above it - and returns each table's rake with it. The player count
+is still a DISTINCT count of people. Top table now reads 2,144 raked hands
+against 2,113,324 before, and the whole top-20 sums to 38,005.
+
+Three smaller things from the same pass:
+
+- **`ClubActivityChart` is rendered twice from two different series** - the
+  Overview tab passes hands DEALT, the Revenue tab passes RAKED hands - and
+  both drew a legend that said "Hands". The series label is a required prop
+  now, so a caller cannot avoid saying which it has.
+- **The Financials chart could plot a shorter window than its own totals**
+  (`ca_club_financials` caps the daily series at 92 days; the totals are not
+  capped). The heading says so when they differ.
+- **`TransactionLedgerView` in club-scoped mode** would have handed a slug to a
+  uuid argument if a future caller passed one. It refuses and reports instead -
+  that exact mistake cost two pages in this phase already.
+
+Live after all four: the owner's own club answers 200 on every finance read
+and a club he is not a member of 403/42501; the insurance day rows now sum
+exactly to the headline (403 offers = 403); Supabase's security advisor reports
+**zero** anon-executable definer functions among everything this phase shipped.
+
 ## Still open after this phase
 
 - **`member_fee_rollup` is now frozen rather than dead.** The engine loop that

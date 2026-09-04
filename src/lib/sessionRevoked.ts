@@ -24,13 +24,23 @@
  *     so no refresh - the one call that would have said "your session is
  *     gone" - was ever attempted.
  *
+ * WHY THIS MODULE MAKES A NETWORK CALL. The house rule (pre-push check 4)
+ * says: read identity from readLocalSession(), never from the auth API. That
+ * is right for WHO the player is. It is blind to whether the session still
+ * EXISTS: a local read honours expiry and nothing else, and a revoked session
+ * carries a perfectly valid token for seven days. The only party that knows a
+ * session was revoked is GoTrue, and the only way to ask is to ask. This is
+ * the single place in the client that does, through an injected client so it
+ * is unit-tested without a network, and only after the engine has already
+ * refused - never on the hot path.
+ *
  * WHAT THIS DOES. When the engine refuses a socket for AUTH (close 4401 with
  * an `auth:` reason - which the engine sends as of the same fix - or, for any
  * engine that still answers with a bare 401, three handshake failures in a
  * row with no open in between), ask GoTrue directly whether the session is
  * alive:
  *
- *   1. `supabase.auth.getUser()` - a network call that checks the SESSION.
+ *   1. GoTrue's getUser endpoint - a NETWORK call that checks the SESSION row.
  *      A definitive rejection (401/403: session_not_found, bad_jwt,
  *      user_not_found) means the token is dead. A network error means we do
  *      not know, and "we do not know" is NOT a reason to sign anyone out.

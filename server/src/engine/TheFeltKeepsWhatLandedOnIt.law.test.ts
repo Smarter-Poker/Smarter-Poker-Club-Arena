@@ -308,6 +308,23 @@ describe('LAW 4: the database applies the difference and honours the declaration
     );
   });
 
+  it('a seat that left during the hand is settled against its wallet, keyed, never refused whole', () => {
+    const file = readdirSync(migrationsDir).find((f) =>
+      /^\d{14}_a_seat_that_left_mid_hand_is_settled_not_refused\.sql$/.test(f)
+    );
+    expect(file).toBeTruthy();
+    const m = readFileSync(resolve(migrationsDir, file as string), 'utf8');
+    expect(m).toMatch(/'late_seat_settle:' \|\| v_hand::text \|\| ':' \|\| v_dep\.user_id::text/);
+    expect(m).toMatch(
+      /fn_ca_declare_ledger\('settlement', 'table_stack', p_table_id, v_ca_id, v_dep_key, NULL\)/
+    );
+    expect(m).toMatch(/COALESCE\(m\.chip_balance, 0\) \+ v_dep\.delta >= 0/);
+    // Absolute mode (no stack_before) still refuses a missing seat.
+    expect(m).toMatch(
+      /RAISE EXCEPTION 'seat missing or left for % - hand write rejected whole', v_uid;/
+    );
+  });
+
   it('the detector is conservative: same players, felt moved by exactly -rake-bbj, one credit, no other movement', () => {
     const fn = sql.slice(
       sql.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_find_erased_seat_credits(')

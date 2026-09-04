@@ -1474,6 +1474,26 @@ END;
 $function$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- 9b. WHO MAY CALL THE RE-CREATED DEFINERS. Production already holds these
+--     ACLs (postgres + service_role only, read 2026-09-04); CREATE OR REPLACE
+--     keeps them, and the [autorevoke] event trigger strips PUBLIC/anon on
+--     every CREATE FUNCTION. Stated here anyway, because a definer that
+--     writes and never asks who is calling must say so in the file that
+--     declares it (check-definer-authorization).
+-- ─────────────────────────────────────────────────────────────────────────────
+
+REVOKE ALL ON FUNCTION public.fn_cashout_seats_for_closing_table(uuid, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_cashout_seats_for_closing_table(uuid, text) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_horse_fund_from_treasury(uuid, uuid, numeric) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_horse_fund_from_treasury(uuid, uuid, numeric) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_horse_seat_from_treasury(uuid, uuid, integer, numeric) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_horse_seat_from_treasury(uuid, uuid, integer, numeric) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_thaw_platform(timestamptz, numeric, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_thaw_platform(timestamptz, numeric, text) TO service_role;
+REVOKE ALL ON FUNCTION public.player_leave_table(uuid, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.player_leave_table(uuid, uuid) TO service_role;
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- 10. POST-APPLY ASSERTIONS. Abort if the shape is not what this file says.
 -- ─────────────────────────────────────────────────────────────────────────────
 

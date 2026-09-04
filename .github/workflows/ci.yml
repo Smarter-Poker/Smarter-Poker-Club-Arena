@@ -303,8 +303,6 @@ jobs:
       # add-chips/withdraw and silently aborted every cash hand's settlement
       # pipeline for ~4 hours. Zero false positives: comments and strings are
       # stripped before matching, and tests/sim are excluded.
-      - name: ESM Invariant — no CommonJS require() in server runtime code
-        run: node scripts/ci/check-esm-require.mjs
 
       # Data invariant. CLAUDE.md section 5 rule 1 has banned .single() since
       # this repo had rules, and the World Hub enforces it in CHECK 1 of its
@@ -320,8 +318,6 @@ jobs:
       # player in a rebuy tournament lost their window to buy back in while the
       # engine's own try/catch sat there never firing. A rule that only lives
       # in a document gets re-broken; this one now fails the build.
-      - name: Data Invariant — .maybeSingle() never .single()
-        run: node scripts/ci/check-maybe-single.mjs
 
       # The same mechanism, one step worse: a read whose error is discarded and
       # whose RESULT decides whether to insert. "The read failed" becomes "the
@@ -330,8 +326,6 @@ jobs:
       # one new row per page load, with the worst single pair at 13,047.
       # check-maybe-single cannot see this: the call sites are already using
       # .maybeSingle() correctly. It is the destructuring that is wrong.
-      - name: Data Invariant — no discarded read error gating a write
-        run: node scripts/ci/check-discarded-read-then-write.mjs
 
       # Copy invariant. Dan 2026-08-20: "forbid the use of em bars anywhere."
       # "em bars" means EM DASHES, the punctuation mark. A COPY rule about the
@@ -342,8 +336,6 @@ jobs:
       # time it was first run. Comments are exempt (they never reach a player);
       # JSX text, UI string literals and CSS content: values are not.
       # Autofix locally with: node scripts/ci/check-ui-text.mjs --fix
-      - name: UI copy — no em dashes in player-facing text
-        run: node scripts/ci/check-ui-text.mjs
 
       # Copy invariant. Dan 2026-08-21: the first letter of every word is
       # capitalized on every forward-facing page. Until 2026-08-22 this ran
@@ -352,37 +344,27 @@ jobs:
       # that day (#280, #279, #284), and each time the red was discovered by
       # whichever agent next tried to push, not by the agent who caused it.
       # Autofix locally with: node scripts/ci/check-title-case.mjs --fix
-      - name: UI copy — page copy is Title Cased
-        run: node scripts/ci/check-title-case.mjs
 
       # The THIRD surface of the same rule (Dan 2026-08-31). check-title-case
       # reads JsxText and check-nav-title-case reads the nav registry; neither
       # can see text a browser paints from a string ATTRIBUTE or from a string
       # literal inside a JSX EXPRESSION.
       # Autofix locally with: node scripts/ci/check-painted-text-case.mjs --fix
-      - name: UI copy — painted attributes and expressions are Title Cased
-        run: node scripts/ci/check-painted-text-case.mjs
 
       # Focused defense in depth for the same rule (Dan 2026-08-30: "AS WELL AS
       # EVERY CLICKABLE PAGE AND SUBPAGE"). The general gate now covers static
       # JSX, accessible names, conditional/template copy and known copy fields;
       # this gate keeps every canonical navigation registry explicit.
       # Autofix: node scripts/ci/check-nav-title-case.mjs --fix
-      - name: UI copy — navigation labels are Title Cased at source
-        run: node scripts/ci/check-nav-title-case.mjs
 
       # design-guidelines.md rule 1: "NO EMOJIS - EVER". The third copy rule,
       # and until 2026-08-27 the only one nothing enforced. Added after the
       # audit found emoji rendering in gameplay.
-      - name: UI copy — no emoji in player-facing code
-        run: node scripts/ci/check-no-emoji.mjs
 
       # Dan 2026-08-27 (binding, World Hub CLAUDE.md 10.5): horses are players.
       # Every place the horse flag changes behaviour must be justified in the
       # register inside this script. Added after the law's own first fix was
       # found inert - see .agent/audits/2026-08-27-horses-are-players-sweep.md.
-      - name: Horses are players — every exclusion is registered
-        run: node scripts/ci/check-horses-are-players.mjs
 
       # Dan 2026-08-29 (binding): the BBJ drop is COLLECTED on every flop with
       # 3+ players dealt in, whatever the pot size; the 10BB minimum decides
@@ -392,16 +374,12 @@ jobs:
       # paths (one of which had also lost its pot-overage clamp). This gate
       # holds the single pricer and refuses a pot-size condition on any fee
       # path. See server/src/engine/RakeBBJCollection.law.test.ts.
-      - name: Rake + BBJ collection law — one pricer, no pot gate on the fee
-        run: node scripts/ci/check-rake-bbj-collection-law.mjs
 
       # A CSS module key with no matching class resolves to undefined, React
       # drops className={undefined} without a word, and the element ships with
       # no styling at all. Build green, tests green, page visibly broken. It
       # happened on 2026-08-21: a stylesheet was replaced wholesale to swap a
       # font and left 21 live classes undefined, including the page root.
-      - name: CSS modules — every styles.* key has a class
-        run: node scripts/ci/check-css-modules.mjs
 
       # Money invariant. The rake schedule is declared twice — the engine copy
       # decides what is actually taken from the pot, the client copy decides
@@ -411,8 +389,6 @@ jobs:
       # $15, because the props feeding it were never assigned. Now that the
       # modal reads the client schedule, the two copies drifting would silently
       # recreate that misstatement. Fail the build instead.
-      - name: Rake Invariant — client and server rake schedules must match
-        run: node scripts/ci/check-rake-schedule-parity.mjs
 
       # BLOCKING (2026-08-19 incident): the cash seat law (plo6 6, plo5 7,
       # plo4 8, plo8 8) was enforced only in src/services/TableService.ts, which
@@ -421,8 +397,6 @@ jobs:
       # PLO6 7-max, and had been creating illegal tables on every boot. Six were
       # live when it was found. PokerEngine.deal() throws rather than dealing
       # short, so an over-seated PLO table fails mid-hand rather than degrading.
-      - name: Seat Law Invariant — client, server and the fleet configs must agree
-        run: node scripts/ci/check-seat-law-parity.mjs
 
       # BLOCKING. On 2026-08-15 five of seven files in infra/monitoring/ had
       # drifted from the running stack — the repo still held the versions where
@@ -430,8 +404,6 @@ jobs:
       # everything to null-receiver. Rebuilding the host from the repo would
       # have silently restored decorative monitoring. This guards the wiring
       # (loaded / mounted / routed somewhere real), not rule contents.
-      - name: Monitoring Invariant — every alert rule is loaded, mounted, and routed
-        run: node scripts/ci/check-monitoring-drift.mjs
 
       # Dan 2026-08-31. A test that reads source as TEXT and matches a regex
       # cannot tell that the line is reached or that the objects arriving there
@@ -443,9 +415,83 @@ jobs:
       # else's work to migrate; blocking the repo on them would be the cure
       # being worse. The inventory line prints on every run so the number stays
       # visible.
-      - name: Test Quality — no NEW text-only pin on a pure src/utils module
-        run: node scripts/ci/report-source-grep-tests.mjs --ratchet
 
+      # ── EVERY INVARIANT GUARD, AT ONCE ───────────────────────────────────
+      #
+      # These were 16 sequential steps. Two costs, one of them not obvious:
+      #
+      #   - each paid a fresh node startup, serially, for a script that mostly
+      #     greps the tree; and
+      #   - THE JOB STOPPED AT THE FIRST FAILURE. An agent tripping three
+      #     guards learned about one, pushed a fix, waited for a queue, learned
+      #     about the second, pushed again. Three round trips to discover what
+      #     a single run already knew. That is a large part of why CI "fails
+      #     constantly" - it reported one problem at a time.
+      #
+      # They now run eight at a time and EVERY failure is reported together.
+      # No guard was weakened, dropped, reordered or made advisory: the same
+      # command lines run, arguments included, and any one of them still fails
+      # the job.
+      - name: Invariant guards (parallel)
+        run: |
+          set -uo pipefail
+          OUT=$(mktemp -d)
+          cat > "$OUT/list" <<'GUARDS'
+          node scripts/ci/check-esm-require.mjs
+          node scripts/ci/check-maybe-single.mjs
+          node scripts/ci/check-discarded-read-then-write.mjs
+          node scripts/ci/check-ui-text.mjs
+          node scripts/ci/check-title-case.mjs
+          node scripts/ci/check-painted-text-case.mjs
+          node scripts/ci/check-nav-title-case.mjs
+          node scripts/ci/check-no-emoji.mjs
+          node scripts/ci/check-horses-are-players.mjs
+          node scripts/ci/check-rake-bbj-collection-law.mjs
+          node scripts/ci/check-css-modules.mjs
+          node scripts/ci/check-rake-schedule-parity.mjs
+          node scripts/ci/check-seat-law-parity.mjs
+          node scripts/ci/check-monitoring-drift.mjs
+          node scripts/ci/report-source-grep-tests.mjs --ratchet
+          node scripts/ci/check-new-migration-version-collisions.mjs
+          GUARDS
+
+          TOTAL=$(grep -c . "$OUT/list")
+          while IFS= read -r cmd; do
+            [ -z "$cmd" ] && continue
+            n=$(echo "$cmd" | sed 's|.*/||; s|\.mjs.*||')
+            (
+              if $cmd > "$OUT/$n.log" 2>&1; then echo ok > "$OUT/$n.rc"
+              else echo fail > "$OUT/$n.rc"; fi
+            ) &
+          done < "$OUT/list"
+          wait
+
+          # A GUARD STEP THAT CAN PASS WITHOUT RUNNING IS NOT A GUARD.
+          # The first draft of this step used `xargs -d`, which is GNU-only.
+          # On a runner without it, xargs failed, no guard ran, no failure file
+          # was written, and the step printed "All 16 passed" and exited 0 - it
+          # looked identical to a real pass. So the count is now asserted:
+          # every guard must have left a result, or the step fails as loudly as
+          # a real violation would.
+          DONE=$(ls "$OUT"/*.rc 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$DONE" -ne "$TOTAL" ]; then
+            echo "::error::only $DONE of $TOTAL invariant guards produced a result - the runner did not execute them all. Failing rather than reporting a pass nothing earned."
+            exit 1
+          fi
+
+          FAILED=$(grep -l fail "$OUT"/*.rc 2>/dev/null | sed 's|.*/||; s|\.rc$||' || true)
+          if [ -n "$FAILED" ]; then
+            { echo "## Invariant guards"; echo ""; \
+              echo "**$(echo "$FAILED" | wc -l | tr -d ' ') of $TOTAL failed.** All of them are below, so they can be fixed in one pass:"; \
+              echo ""; } >> "$GITHUB_STEP_SUMMARY"
+            for n in $FAILED; do
+              echo "::group::$n"; sed -n '1,60p' "$OUT/$n.log"; echo "::endgroup::"
+              { echo "<details><summary><code>$n</code></summary>"; echo ""; echo '```'; \
+                sed -n '1,60p' "$OUT/$n.log"; echo '```'; echo ""; echo "</details>"; } >> "$GITHUB_STEP_SUMMARY"
+            done
+            exit 1
+          fi
+          echo "All $TOTAL invariant guards passed." >> "$GITHUB_STEP_SUMMARY"
       - name: Report Typecheck Time
         if: always()
         run: |
@@ -495,41 +541,6 @@ jobs:
           fi
 
       # ── Dead Code Detection ─────────────────────────────────────────────
-      - name: Dead Code Detection
-        continue-on-error: true
-        run: |
-          echo "## 🧹 Dead Code Check" >> $GITHUB_STEP_SUMMARY
-          DEAD_FILES=0
-          for f in $(find src -name '*.ts' -o -name '*.tsx' | grep -v 'node_modules\|\.d\.ts\|index\.ts\|vite-env\|main\.tsx\|App\.tsx'); do
-            BASENAME=$(basename "$f" | sed 's/\.\(ts\|tsx\)$//')
-            REFS=$(grep -rl "$BASENAME" src/ --include='*.ts' --include='*.tsx' 2>/dev/null | grep -v "$f" | wc -l | tr -d ' ')
-            if [ "$REFS" -eq 0 ]; then
-              echo "::warning file=$f::File appears unused (not imported anywhere)"
-              DEAD_FILES=$((DEAD_FILES + 1))
-            fi
-          done
-          if [ "$DEAD_FILES" -gt 0 ]; then
-            echo "⚠️ **$DEAD_FILES potentially unused file(s)** found" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "✅ No dead code detected" >> $GITHUB_STEP_SUMMARY
-          fi
-
-      # ── Supabase Invariants (Phase U4 — BLOCKING) ──
-      # Catches the silent-failure class of bugs from the 2026-04-15 audit:
-      #   1. phantom tables: `.from('<name>')` where <name> isn't in migrations
-      #   2. stranded writers: UI reads a table that no server path writes
-      # Cross-orb tables (defined in sibling repos) are in the ALLOWLIST of each
-      # script. Remove an ALLOWLIST entry once CI mounts that orb's migrations.
-      # See docs/U4-INVARIANT-FINDINGS.md for triage history.
-      # BLOCKING (Phase U4 end-state): now checks .from() tables AND .rpc()
-      # functions against a live-schema snapshot (scripts/ci/supabase-schema-manifest.json),
-      # not the stale migrations. Intentional exceptions live in
-      # scripts/ci/supabase-invariants.allowlist.json. Regenerate the manifest with
-      # scripts/ci/gen-schema-manifest.mjs when the schema changes.
-      # Non-blocking: the runner may not have imagemagick/pngquant, and a
-      # missing tool must not fail an unrelated commit. It reports loudly when
-      # somebody adds an asset far bigger than the box it renders in — the
-      # arena's first paint was 6.21 MB of images before this existed.
       - name: Image Budget — critical-path assets fit their render box
         continue-on-error: true
         run: |
@@ -719,8 +730,6 @@ jobs:
 
       # BLOCKING: Supabase identifies migrations by the filename version. A
       # duplicate version makes two different files compete for one ledger row.
-      - name: Supabase Invariants — New Migration Versions Are Unique
-        run: node scripts/ci/check-new-migration-version-collisions.mjs
 
       # BLOCKING: a SECURITY DEFINER function that writes, and that a browser
       # role can execute, must consult auth.uid()/auth.role()/auth.jwt(). On
@@ -1117,12 +1126,45 @@ jobs:
         if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
+      # 2026-09-04: the optimized rasters are content-addressed, so this is
+      # keyed on the media that feeds them plus the script that encodes them.
+      # When no image changed the key HITS and nothing is re-saved, so this
+      # adds no cache churn on the overwhelmingly common PR. When one does,
+      # `restore-keys` still hands over every other image's result and only
+      # the changed file is encoded. See scripts/optimize-dist-media.mjs.
+      - name: Cache optimized dist media
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/dist-media
+          key: >-
+            dist-media-v1-${{ runner.os }}-${{ hashFiles('public/**/*.png',
+            'public/**/*.jpg', 'public/**/*.jpeg', 'public/**/*.webp',
+            'src/assets/**', 'scripts/optimize-dist-media.mjs') }}
+          restore-keys: dist-media-v1-${{ runner.os }}-
+
       - name: Record Build Start
         id: build-timer
         run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
 
+      # `build:ci` is `build` WITHOUT the leading `tsc -b` (package.json keeps
+      # `build` = `tsc -b && npm run build:ci`, so the two can never drift).
+      #
+      # This is not a weakened check, and the proof is structural rather than
+      # empirical: all three tsconfigs set `"noEmit": true`, none declares
+      # `composite` or `references`, and vite.config.ts loads no dts or checker
+      # plugin. `tsc -b` therefore writes nothing that `vite build` reads - two
+      # dists built with and without it hash identically - so on this repo it
+      # is a typecheck wearing a build's clothes, and it was being run three
+      # times per merge (46.7s here, 47.8s in CSS Beat E2E, 10.2s in the
+      # publisher) for one answer.
+      #
+      # The answer is still produced: the `typecheck` job above runs
+      # `tsc --noEmit` over this same commit, is a REQUIRED check, and is
+      # ungated (no `changes` filter can skip it). And the publisher keeps the
+      # full `npm run build` - the tree that actually reaches players is still
+      # typechecked before it ships. What is gone is only the duplication.
       - name: Build
-        run: npm run build
+        run: npm run build:ci
         env:
           NODE_ENV: production
           # Public browser configuration. The previous PR build omitted these,
@@ -1132,18 +1174,16 @@ jobs:
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           VITE_ENGINE_URL: 'https://engine.smarter.poker'
           VITE_APP_ENV: production
-          # Phase U5.1 (task #133): wire Sentry sourcemap upload at build time.
-          # Without these, the sentry-vite-plugin in vite.config.ts skips (the
-          # `!!(NODE_ENV === 'production' && SENTRY_AUTH_TOKEN)` gate is false)
-          # and CA stack traces come back minified from production.
-          # SENTRY_AUTH_TOKEN is a GitHub Actions secret (rotated 2026-04-21 — task #118).
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          # Verified 2026-04-23 via Sentry API: the live org is `smarter-software-inc`
-          # and the CA project is `javascript-react`. `smarter-poker` as an org slug
-          # does not resolve (404), which is why prior uploads were silent no-ops
-          # even though the errorHandler in vite.config.ts warned. (Task #133)
-          SENTRY_ORG: smarter-software-inc
-          SENTRY_PROJECT: javascript-react
+          # SENTRY_AUTH_TOKEN DELIBERATELY ABSENT (moved 2026-09-04 to
+          # publish-club-arena.yml). It used to live here, which meant the
+          # sentry-vite-plugin gate
+          # (`NODE_ENV === 'production' && SENTRY_AUTH_TOKEN`) was true for
+          # THIS build - a pull-request artifact that is inspected and thrown
+          # away - and false for the publisher's, the only bundle a player
+          # ever loads. Sentry was therefore holding maps for code nobody runs
+          # and none for the code everybody runs. Do not put it back: uploading
+          # from here would re-create that, and the upload is pure latency on
+          # the critical path. It belongs to whoever ships the bundle.
 
       - name: Report Build Time
         if: always()
@@ -1571,9 +1611,15 @@ jobs:
       - name: Install Dependencies
         run: npm ci --ignore-scripts
 
-      # See the note on the Live Production E2E install step. This job is still
-      # pinned to ubuntu-latest (it failed on the 4-core box), so this branch
-      # must resolve from the runner it is actually on, not from vars.CI_RUNNER.
+      # Corrected 2026-09-04. This comment used to say the job "is still pinned
+      # to ubuntu-latest (it failed on the 4-core box)" - thirty-seven lines
+      # below the `runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}` that PR
+      # #2937 put there. The code moved and the comment did not, which is how a
+      # reader ends up "fixing" a routing decision that was made deliberately.
+      # The branch below is still right and still necessary: it must resolve
+      # from the runner this job is ACTUALLY on, because the estate boxes
+      # already carry the browser system libraries and `--with-deps` would try
+      # to apt-install them again.
       - name: Install Chromium and WebKit
         run: |
           if [ "${{ runner.environment }}" = "self-hosted" ]; then
@@ -1582,6 +1628,23 @@ jobs:
             npx playwright install chromium webkit --with-deps
           fi
 
+      # Same content-addressed media cache as Production Build, same key, so
+      # whichever of the two runs first warms it for the other.
+      - name: Cache optimized dist media
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/dist-media
+          key: >-
+            dist-media-v1-${{ runner.os }}-${{ hashFiles('public/**/*.png',
+            'public/**/*.jpg', 'public/**/*.jpeg', 'public/**/*.webp',
+            'src/assets/**', 'scripts/optimize-dist-media.mjs') }}
+          restore-keys: dist-media-v1-${{ runner.os }}-
+
+      # `build:ci` - see the long note on the Production Build step for why
+      # dropping `tsc -b` here checks nothing less than before. This job is the
+      # critical path of the whole pipeline, so the 47.8s it was spending on a
+      # typecheck the required `typecheck` job had already performed was 47.8s
+      # added to every push-to-live.
       - name: Build this commit
         env:
           # The app fails closed before React mounts when these Vite values are
@@ -1589,12 +1652,38 @@ jobs:
           # non-secret placeholders are the correct isolated CI configuration.
           VITE_SUPABASE_URL: https://example.supabase.co
           VITE_SUPABASE_ANON_KEY: footer-probe-ci
-        run: npm run build
+        run: npm run build:ci
+
+      # PER-RUNNER PREVIEW PORT (2026-09-04). 4173 was hardcoded, which was
+      # fine while this job ran on a GitHub-hosted VM of its own and stopped
+      # being fine the moment it moved onto the estate: three boxes, TWELVE
+      # runners each, one network namespace. Two pull requests reaching this
+      # step together both bound it, and the second failed with "is already
+      # used" - a red required check caused by nothing in either diff.
+      #
+      # It also frees the port first. `--strictPort` refuses to fall back, so
+      # a preview orphaned by a CANCELLED run on THIS runner would keep failing
+      # every later job on it. Safe to kill precisely because the port is now
+      # this runner's alone; with a shared port it would have killed a
+      # neighbour's server.
+      - name: Reserve this runner's preview port
+        id: preview-port
+        run: |
+          PORT=$(node scripts/ci/e2e-port.mjs 4173)
+          echo "port=$PORT" >> $GITHUB_OUTPUT
+          echo "Preview port for ${RUNNER_NAME:-local}: $PORT"
+          for P in "$PORT" "$(node scripts/ci/e2e-port.mjs 5188)" "$(node scripts/ci/e2e-port.mjs 5189)"; do
+            PIDS=$(lsof -tiTCP:"$P" -sTCP:LISTEN 2>/dev/null || true)
+            if [ -n "$PIDS" ]; then
+              echo "freeing port $P held by orphaned pid(s): $PIDS"
+              kill -9 $PIDS 2>/dev/null || true
+            fi
+          done
 
       - name: Run the beats against this commit's CSS
         env:
-          ARENA_BASE_URL: http://127.0.0.1:4173/hub/club-arena
-          BASE_URL: http://127.0.0.1:4173/hub/club-arena/
+          ARENA_BASE_URL: http://127.0.0.1:${{ steps.preview-port.outputs.port }}/hub/club-arena
+          BASE_URL: http://127.0.0.1:${{ steps.preview-port.outputs.port }}/hub/club-arena/
         # hero-card-row.spec.ts was written to gate bug list item 11 and then
         # ran in NO job at all - 40 pure-geometry assertions that nobody ever
         # executed, which is why PR #178 could sit for 39 commits proposing
@@ -1656,11 +1745,11 @@ jobs:
         # fully clipped controls. It renders this commit's real lobby styles,
         # needs no credentials, and must block the same regression pre-merge.
         run: |
-          npx vite preview --host 127.0.0.1 --port 4173 > /tmp/arena-preview.log 2>&1 &
+          npx vite preview --host 127.0.0.1 --port ${{ steps.preview-port.outputs.port }} --strictPort > /tmp/arena-preview.log 2>&1 &
           preview_pid=$!
           trap 'kill "$preview_pid" 2>/dev/null || true' EXIT
           for i in $(seq 1 20); do
-            curl -sf http://127.0.0.1:4173/hub/club-arena/index.html > /dev/null && break
+            curl -sf http://127.0.0.1:${{ steps.preview-port.outputs.port }}/hub/club-arena/index.html > /dev/null && break
             sleep 0.5
           done
           npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1

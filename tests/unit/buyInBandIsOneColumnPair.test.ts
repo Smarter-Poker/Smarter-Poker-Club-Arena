@@ -74,16 +74,25 @@ describe('the cash buy-in band is one pair of columns', () => {
     ).toEqual([]);
   });
 
-  it('TableConfigPage still authors the canonical pair, in chips', () => {
-    const page = readFileSync(join(ROOT, 'src/pages/TableConfigPage.tsx'), 'utf8');
+  it('the cash create function still authors the canonical pair, in chips', () => {
+    /* 2026-09-04 (Operation Table Stakes, Slice 1): the cash writer is
+       fn_cash_game_create in SQL. The band is authored in big blinds in the
+       snapshot and multiplied out by the blind there. A bare
+       `min_buy_in = v_min_bb` would recreate the unit mismatch this whole
+       change exists to end. */
+    const sql = readFileSync(
+      join(ROOT, 'supabase/migrations/20260904230000_cash_games_slice_1_hardening.sql'),
+      'utf8'
+    );
     for (const col of CANONICAL) {
-      expect(page, `${col} must still be written by the table creator`).toContain(`${col}:`);
+      expect(sql, `${col} must still be written by the table creator`).toMatch(
+        new RegExp(`INSERT INTO public\\.tables \\([\\s\\S]*?\\b${col}\\b[\\s\\S]*?\\) VALUES`)
+      );
     }
-    /* In chips — the band is authored in big blinds and multiplied out here.
-       A bare `min_buy_in: config.minBuyInBB` would recreate the unit mismatch
-       this whole change exists to end. */
-    expect(page).toMatch(/min_buy_in:\s*config\.minBuyInBB\s*\*\s*config\.bigBlind/);
-    expect(page).toMatch(/max_buy_in:\s*config\.maxBuyInBB\s*\*\s*config\.bigBlind/);
+    expect(sql).toMatch(/round\(p_bb \* v_min_bb, 2\), round\(p_bb \* v_max_bb, 2\)/);
+    // And the page no longer writes either spelling of anything.
+    const page = readFileSync(join(ROOT, 'src/pages/TableConfigPage.tsx'), 'utf8');
+    expect(page).not.toMatch(/^\s*min_buy_in:/m);
   });
 
   it('the migration that made the other four derived is still in the tree', () => {

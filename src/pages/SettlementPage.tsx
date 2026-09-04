@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useUnionRouteId } from '../hooks/useUnionRouteId';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { SettlementService } from '../services/SettlementService';
@@ -213,7 +214,8 @@ interface AgentPayout {
 type TabType = 'overview' | 'club-wires' | 'agent-payouts' | 'history';
 
 export default function SettlementPage() {
-  const { unionId, clubId } = useParams<{ unionId?: string; clubId?: string }>();
+  const { clubId } = useParams<{ clubId?: string }>();
+  const { unionId } = useUnionRouteId();
   const navigate = useNavigate();
   const toast = useToast();
   useVisibilityRefresh(() => loadSettlementData());

@@ -92,11 +92,14 @@ describe('the two functions the browser cannot do without', () => {
     expect(body).toContain("'rows_behind', r.rows_behind");
   });
 
-  it('keeps the old estimate beside the truth instead of swapping it silently', () => {
+  it('kept the old estimate beside the truth for one release, then took it down', () => {
+    // The phase 3 migration file is history and still carries the estimate;
+    // the live function and the page dropped it on 2026-09-04
+    // (20260904200000), one release after phase 3 published.
     const body = sliceSqlStatement(MIGRATION, 'FUNCTION public.fn_ca_agent_payables(');
     expect(body).toContain('AS estimate');
-    expect(body).toContain("'total_estimate'");
-    expect(NETWORK).toContain('The Previous Estimate');
+    expect(NETWORK).not.toContain('The Previous Estimate');
+    expect(NETWORK).not.toContain('total_estimate');
   });
 
   it('counts horses like every other player', () => {

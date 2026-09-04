@@ -365,10 +365,15 @@ describe('the cashier never offers a recipient the server will refuse', () => {
     );
   });
 
-  it('the trade grid drops the viewer from its own downline list', () => {
+  it('the trade grid lists the viewer but never lets them pick themselves', () => {
     // fn_club_cashier_members returns the caller for a staff viewer (scope
-    // 'all' is every active member), so an owner could tick their own row.
-    expect(TRADE).toContain('.filter((row) => String(row.user_id) !== viewerId)');
+    // 'all' is every active member). The row used to be deleted on arrival,
+    // which made the owner unsearchable in his own cashier (Dan 2026-09-04).
+    // It is listed now, marked "You", and refused by toggleSelect - see
+    // tests/every-member-is-discoverable-in-the-cashier.law.test.ts.
+    expect(TRADE).not.toContain('String(row.user_id) !== viewerId');
+    expect(TRADE).toContain('if (id === user?.id) return prev;');
+    expect(TRADE).toContain('aria-disabled={r.isSelf || undefined}');
   });
 });
 

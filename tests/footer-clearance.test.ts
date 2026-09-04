@@ -19,7 +19,8 @@ describe('global Club Arena footer mounting and clearance', () => {
     );
 
     expect(app.match(/<ClubBottomNav/g)).toHaveLength(1);
-    expect(app).toContain('shouldShowClubFooter(location.pathname)');
+    // Route OR in-tab lobby (tests/the-lobby-always-has-its-footer.law.test.ts).
+    expect(app).toContain('shouldShowClubFooterFor(location.pathname, inTabLobbyActive)');
     expect(pageMounts).toEqual([]);
   });
 

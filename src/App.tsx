@@ -88,7 +88,8 @@ const UnionDetailPage = lazyWithRetry(() => import('./pages/UnionDetailPage'));
 const UnionStatementsPage = lazyWithRetry(() => import('./pages/UnionStatementsPage'));
 const UnionDataPage = lazyWithRetry(() => import('./pages/UnionDataPage'));
 const CreateUnionPage = lazyWithRetry(() => import('./pages/CreateUnionPage'));
-import UnionCreationGuard from './components/auth/UnionCreationGuard';
+// Lazy like the page it wraps: it is only ever needed on /unions/create.
+const UnionCreationGuard = lazyWithRetry(() => import('./components/auth/UnionCreationGuard'));
 const SettlementPage = lazyWithRetry(() => import('./pages/SettlementPage'));
 
 // New Pages

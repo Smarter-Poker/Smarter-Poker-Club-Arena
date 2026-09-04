@@ -28,14 +28,24 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { globSync } from 'node:fs';
-import { join } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
 
 const ROOT = join(__dirname, '..');
 
 function racyAssertions(): string[] {
-  const files = globSync('tests/**/*.test.ts?(x)', { cwd: ROOT });
+  // Walk it by hand. `fs.globSync` is Node 22+; CI runs Node 20, where it is
+  // undefined - and a developer machine on a newer Node passes the pre-push
+  // hook, so the difference only ever surfaces on a runner.
+  const files: string[] = [];
+  const walk = (dir: string) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (/\.test\.tsx?$/.test(e.name)) files.push(relative(ROOT, full));
+    }
+  };
+  walk(join(ROOT, 'tests'));
   const found: string[] = [];
 
   for (const rel of files) {

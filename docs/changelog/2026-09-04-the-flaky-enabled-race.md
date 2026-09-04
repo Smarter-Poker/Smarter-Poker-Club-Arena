@@ -44,3 +44,17 @@ obtained with `await`.
 distinction so the shape cannot return. It was verified by injecting the racy
 shape into an unrelated test: the law failed, named the exact file and line,
 and went green again when the injection was removed.
+
+## The law's own first run was red, for a reason worth recording
+
+It used `fs.globSync` to find the test files. That is **Node 22+**. CI pins
+**Node 20**, where it is `undefined`, so the law threw on every run — while
+passing locally, because this machine's default node is v24.
+
+The pre-push hook could not catch it either: the hook runs the tests with
+whatever node is on the developer's PATH. A guard that only works on the author's
+machine is worse than no guard, because it reads as enforcement.
+
+Replaced with a plain `readdirSync` walk, and verified under
+`~/.nvm/versions/node/v20.20.2` — the exact version CI runs — where
+`typeof require('node:fs').globSync === 'undefined'` and the law now passes.

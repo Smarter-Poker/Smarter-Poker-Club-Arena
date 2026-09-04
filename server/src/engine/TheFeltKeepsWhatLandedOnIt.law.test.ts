@@ -358,4 +358,23 @@ describe('LAW 4: the database applies the difference and honours the declaration
     expect(fn).toMatch(/exactly one credit in the window/);
     expect(fn).toMatch(/no other seat movement on the table between the hands/);
   });
+
+  it('the detector never reports a boundary settled in delta mode: the delta write preserves what memory missed', () => {
+    // 2026-09-04 15:20-18:20 UTC: the sweep restored 15 credits (3,867.99) that
+    // delta mode had already preserved, because hand_history shows the engine's
+    // memory, not the row. The correction excludes any boundary whose hand has a
+    // delta-mode settlement row, and the sweep is gone: no cron where a
+    // structural guarantee exists.
+    const file = readdirSync(migrationsDir).find((f) =>
+      /^\d{14}_the_erasure_detector_knows_delta_mode_and_the_sweep_retires\.sql$/.test(f)
+    );
+    expect(file).toBeTruthy();
+    const m = readFileSync(resolve(migrationsDir, file as string), 'utf8');
+    expect(m).toMatch(
+      /s\.hand_id = md5\('ca-hand:' \|\| p\.table_id::text \|\| ':' \|\| p\.hand_number::text\)::uuid\s+AND s\.totals->>'mode' = 'delta'/
+    );
+    expect(m).toMatch(/DROP FUNCTION IF EXISTS public\.fn_ca_erased_seat_credit_sweep\(\);/);
+    expect(m).toMatch(/IF v_n <> 15 OR v_sum <> 3867\.99 THEN/);
+    expect(m).toMatch(/10\.9 rule 3/);
+  });
 });

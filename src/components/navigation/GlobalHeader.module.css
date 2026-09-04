@@ -211,7 +211,22 @@
   transform: translate(-50%, -50%) !important;
   overflow: hidden;
   box-sizing: border-box;
-  border: 0;
+  /* THE HAIRLINE IS THE FRAME (Dan, 2026-09-03: "instead of having the .50
+     pixel black invisible circle frame").
+
+     This edge has been 0.5px since #2366 on 2026-08-31, which narrowed it from
+     1px for exactly this job: the baked artwork's aperture and the photo are
+     two separate circles that never agree to the pixel, and without a hairline
+     the seam between them reads as a ragged edge on the portrait. Half a pixel
+     of near-black is invisible as a border and does the whole job as a mask.
+
+     It was dropped to `border: 0` in the mobile pass (#2674) while the desktop
+     override below kept its copy, so the frame survived on a laptop and
+     vanished on a phone - which is why this reads as "regressed and changed"
+     rather than "removed". Restored here so both paths carry the same edge;
+     the desktop rule still restates it because it also changes the slot's size
+     and position. */
+  border: 0.5px solid rgba(0, 0, 0, 0.94);
   border-radius: 50%;
   background: transparent;
   pointer-events: none;

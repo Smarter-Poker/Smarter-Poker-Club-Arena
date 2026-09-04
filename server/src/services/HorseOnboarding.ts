@@ -43,7 +43,7 @@
 
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
-import { styledAlias, usernameFromAlias } from './horseAliasStyles';
+import { styledAlias, usernameFromAlias } from './horseAliasStyles.js';
 
 const SHARK_CLUB_ID = 'a41434bb-0000-0000-0000-000000000001';
 

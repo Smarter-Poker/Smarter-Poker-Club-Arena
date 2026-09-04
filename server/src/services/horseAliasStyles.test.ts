@@ -18,7 +18,7 @@ import {
   styledAlias,
   styleIndexFor,
   usernameFromAlias,
-} from './horseAliasStyles';
+} from './horseAliasStyles.js';
 
 const ids = Array.from({ length: 1000 }, (_, i) => `horse-${i}-${(i * 7919) % 104729}`);
 const sample = ids.map((id) => styledAlias(id));

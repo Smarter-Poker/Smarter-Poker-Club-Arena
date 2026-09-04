@@ -14,7 +14,7 @@
  * aborts rather than half-renames.
  */
 import { createClient } from '@supabase/supabase-js';
-import { styledAlias } from '../src/services/horseAliasStyles';
+import { styledAlias } from '../src/services/horseAliasStyles.js';
 
 const url = process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;

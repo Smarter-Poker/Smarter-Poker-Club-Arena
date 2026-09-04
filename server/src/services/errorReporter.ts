@@ -12,6 +12,7 @@
  */
 
 import * as Sentry from '@sentry/node';
+import { SentryEventBudget, budgetFromEnv, fingerprintOf } from './sentryEventBudget.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SENTRY INITIALIZATION
@@ -37,6 +38,42 @@ const SUPABASE_TRANSIENT = [
   'schema cache',
 ];
 const transientLastSeen = new Map<string, number>();
+
+/**
+ * 2026-09-04: the event budget. Per-fingerprint and global caps on what the
+ * engine may send per minute, with a periodic summary of what was dropped.
+ * The August error loops burned the whole org quota and blinded every other
+ * project for three weeks; Sentry's own key rate limit is not available on
+ * this plan, so this is the guard. See sentryEventBudget.ts for the design.
+ */
+const budget = new SentryEventBudget(budgetFromEnv());
+const BUDGET_SUMMARY_TAG = 'sentry_budget_summary';
+const BUDGET_SUMMARY_INTERVAL_MS = 10 * 60_000;
+let summaryTimer: NodeJS.Timeout | null = null;
+
+/** Send ONE event describing what the budget dropped since the last summary. */
+export function flushBudgetSummary(): boolean {
+  const summary = budget.drainSummary();
+  if (!summary) return false;
+  const top = summary.byKey.slice(0, 15);
+  const lines = top.map((r) => `${r.dropped} x ${r.key}`).join('\n');
+  console.warn(`[Sentry:Server] budget dropped ${summary.total} event(s) since last summary:\n${lines}`);
+  try {
+    Sentry.captureMessage(
+      `[SentryBudget] dropped ${summary.total} engine event(s) in the last ${BUDGET_SUMMARY_INTERVAL_MS / 60_000} min`,
+      {
+        level: 'warning',
+        tags: { [BUDGET_SUMMARY_TAG]: 'true', server: 'game-engine', component: 'SentryBudget' },
+        contexts: { sentryBudget: { total: summary.total, top, distinct: summary.byKey.length } },
+        // One issue per engine, not one per interval: group every summary together.
+        fingerprint: ['sentry-budget-summary'],
+      },
+    );
+  } catch {
+    // Never let the summary crash the engine
+  }
+  return true;
+}
 
 let initialized = false;
 
@@ -85,11 +122,31 @@ export function initSentry(): void {
           if (transientLastSeen.size > 200) transientLastSeen.clear();
           event.level = 'warning';
         }
+
+        // The budget summary is the one event that must always get through:
+        // it is how a throttled engine reports that it was throttled.
+        if (event.tags?.[BUDGET_SUMMARY_TAG] === 'true') return event;
+
+        // Budget: per-fingerprint + global caps. Uncaught exceptions and
+        // unhandled rejections arrive here too (no reportError context), so the
+        // fingerprint falls back to the message head - a crash loop that
+        // re-throws the same error is still one key.
+        const eventMessage = msg || event.message || event.exception?.values?.[0]?.value || '';
+        const source = (event.contexts?.errorContext as { source?: string } | undefined)?.source;
+        const verdict = budget.admit(fingerprintOf(eventMessage, source));
+        if (!verdict.allow) return null;
+        if (verdict.droppedForKey > 0) {
+          event.tags = { ...event.tags, budget_dropped_before_this: String(verdict.droppedForKey) };
+        }
         return event;
       },
     });
 
     initialized = true;
+    if (!summaryTimer) {
+      summaryTimer = setInterval(flushBudgetSummary, BUDGET_SUMMARY_INTERVAL_MS);
+      summaryTimer.unref?.();
+    }
     console.log('[Sentry:Server] ✅ Initialized for game server error tracking');
   } catch (err) {
     console.error('[Sentry:Server] Initialization failed:', err);
@@ -176,6 +233,8 @@ export function reportWarning(message: string, context: string, data?: Record<st
 export async function flushSentry(timeout = 5000): Promise<void> {
   if (!initialized) return;
   try {
+    // A restart must not lose the drop counts: emit the summary first.
+    flushBudgetSummary();
     await Sentry.flush(timeout);
   } catch {
     // Silent

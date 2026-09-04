@@ -211,6 +211,11 @@ export interface TournamentConfig {
   addOnChips?: number;
   addOnCost?: number;
   addOnLevels?: number; // Number of levels add-on window is open after rebuy period
+  /** Scheduled Free Buy event (the 5-a-day board). Distinct from
+   *  isFreeBuyEvent, which is TRUE for any 0-buy-in MTT (Dan 2026-09-02). */
+  freeBuy?: boolean;
+  /** Open the add-on window at sit-down rather than only after late reg. */
+  addOnFromStart?: boolean;
 
   // Guaranteed Prize
   guaranteedPrize?: number;
@@ -638,6 +643,8 @@ class TournamentService {
       addOnCost: config.addOnCost || 0,
       addOnChips: config.addOnChips || 0,
       addOnLevels: config.addOnLevels || 1,
+      freeBuy: config.freeBuy === true,
+      addOnFromStart: config.addOnFromStart === true,
       /**
        * FREEROLLS ARE FREE BUY (Dan 2026-09-02): 0 to enter, rebuys and
        * add-ons on at 1 chip each. Every creation surface funnels through this

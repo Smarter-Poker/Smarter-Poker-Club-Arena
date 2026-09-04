@@ -24,6 +24,8 @@ Dan's rule: before a new phase, prove the previous one is fully built, wired, te
 
 7. **An insured hand would have been refused** (engine, this branch). Insurance payouts, premiums and EV cash-out redirects move chips between the insurance bank and the seats _before_ the stack write, so `sum(delta) = -rake - bbj` would have failed on every insured hand once the delta-mode engine served. Zero insurance transactions in the last 24h, so nothing was refused today; latent, caught by reading the settlement path against the identity. The engine now sums the applied insurance deltas per hand (`currentHandInsuranceNet`) and declares them as `inflow`. Pinned.
 
+8. **The departed-seat settlement debited tournament chips as real chips** (`20260904130701`). Seven minutes after the delta-mode engine began serving, a table balance moved a player off a tournament table mid-hand; the write found the seat gone and debited their 230-chip tournament delta from their SHARK CLUB wallet. Tournament chips are play chips. Found by reading the departed register in the first ten minutes; the function now settles a departed seat only when `tables.tournament_id IS NULL` (a tournament table with a missing seat is refused whole, as before 12:06), and the one debit is reversed, keyed `late_seat_settle_reversal:<hand>:<user>`, journalled `table_stack -> player_wallet` as a correction (wallet 84,924.28 -> 85,154.28). The function's own comment cites the reversal as `20260904131500`; the real version is `20260904130701` - correct it in the next re-creation of the function. Pinned.
+
 ## Verified clean (no change)
 
 - R3 in refuse: 0 violations since the 22:35 flip. 0 ledger write failures and 0 suspense legs in 12h. `pending_fee_distributions` backlog 0.
@@ -33,6 +35,10 @@ Dan's rule: before a new phase, prove the previous one is fully built, wired, te
 - Wiring on main: `WalletService.disbursePromo` used by `AgentDashboardPage` and `PlayerSessionsPage`; `certify-club-create.mjs` calls `fn_ca_retire_certification_club`; `RakebackSettlerService` calls `fn_union_weekly_rakeback_close_all`; the Monday cron calls `fn_union_settlement_cascade_all -> fn_union_settlement_cascade -> fn_union_weekly_rakeback_close` (the v3 close: attribution basis, per-game-type rates, op-keyed credits) and a second call on a closed period returns `already_executed`, so two callers cannot pay twice. Every scheduled cron command resolves to a live function except one already-inactive archival job.
 - Server suite 4,933 green, tsc clean, root law registry green; all repo gates green except the advisory conservation gate, which correctly reports the pre-deploy erasure window.
 
-## Live verification of the engine half
+## Live verification of the engine half (delta mode live)
 
-Filled in below once the :55 cutover has served two hours - see the "delta mode live" addendum.
+The 11:53 deploy of the previous main failed at the image build (the runner's SSH session dropped during `npm prune`; the workflow rolled back correctly and shipped nothing), which pushed the delta-mode engine to the 12:41 catch-up. Engine `55f435af` (main with #2958, #2905, #2960 and #2963) cut over at the 12:55 break and was serving at 12:58.
+
+First twelve minutes of play (12:58-13:09 UTC): **4,753 hand writes, every one `mode: delta`**, 0 conservation refusals, 0 write failures, 0 suspense legs, **0 rows in `ca_seat_stack_rebases`** - with the barrier fixed the engine's memory sees every credit before the deal, so the database never has to preserve one. One refusal: a tournament table whose seat a table balance had moved mid-hand, refused whole by design. One departed cash seat would have been settled by the new path had it been a cash table; it was the tournament case in item 8, now guarded.
+
+The 13:05 supply snapshot still carries the last old-engine hour (-2,343.36 with the sweep's 1,593.24 restoration explained as mint). The 14:05 snapshot is the first full delta-mode hour; the self-retiring sweep unschedules itself the first :20 it finds nothing to restore while the previous two hours hold only delta-mode writes.

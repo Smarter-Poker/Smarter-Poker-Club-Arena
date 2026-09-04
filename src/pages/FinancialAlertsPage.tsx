@@ -117,18 +117,10 @@ export default function FinancialAlertsPage() {
       },
       2000
     );
-    const unsub5 = masterBus.subscribeDebounced(
-      'CHIPS_WITHDRAWN',
-      () => {
-        if (isMounted) loadAlerts(() => isMounted);
-      },
-      2000
-    );
     return () => {
       isMounted = false;
       unsub1();
       unsub4();
-      unsub5();
     };
   }, [loadAlerts]);
 

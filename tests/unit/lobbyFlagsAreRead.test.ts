@@ -132,8 +132,10 @@ describe('a medallion appears only once something enforces it', () => {
     expect(cap?.detail).toBe('20BB');
   });
 
-  it('NO RATHOLE, once atomic_table_buyin refuses the short return', () => {
-    expect(cashRuleMedallions({ no_rathole: true }).some((m) => m.key === 'no_rathole')).toBe(true);
+  it('the rejoin floor has no medallion: it is house law on every cash table (chip continuity, 2026-09-04)', () => {
+    expect(cashRuleMedallions({ no_rathole: true }).some((m) => m.key === 'no_rathole')).toBe(
+      false
+    );
     expect(cashRuleMedallions({ no_rathole: false }).some((m) => m.key === 'no_rathole')).toBe(
       false
     );

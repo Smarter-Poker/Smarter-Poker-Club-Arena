@@ -86,7 +86,18 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // wait at 45s; on timeout the remaining tasks keep running in the
         // background (their .catch already reports) and the loop proceeds —
         // stack sync is idempotent and the next hand's settlement re-syncs.
-        if (this.postHandTasksPromise) {
+        /* THE BARRIER IS RE-READ AFTER EVERY WAIT (chip standard 2026-09-04).
+           handleHandCompleteEvent assigns the barrier and settleCompletedHand
+           later REASSIGNS it to include the postHandTasks chain (sync_stacks,
+           rake, BBJ, pending add-ons, horse rebuys). This loop captured the
+           field once, waited on that one promise, and nulled the field - so
+           when the reassignment landed after the capture, the loop walked on
+           while the chain was still running, reloaded seats from the database
+           before step 8e had credited the pending add-ons, and the next hand
+           dealt from the pre-credit stacks. The hand write then erased the
+           credit. `while` instead of `if`, and the field is only cleared when
+           it still holds the promise that was just awaited. */
+        while (this.postHandTasksPromise) {
           this.setLoopPhase('await_post_hand_tasks');
           const pending = this.postHandTasksPromise;
           /* ═══ WAIT WITH LIVENESS, DO NOT WALK AWAY (2026-08-31) ═══════════
@@ -137,7 +148,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             );
             this.markProgress();
           }
-          this.postHandTasksPromise = null;
+          if (this.postHandTasksPromise === pending) this.postHandTasksPromise = null;
         }
 
         // ═══════════════════════════════════════════════════════════════════
@@ -286,6 +297,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         } else {
           for (const p of this.seatedPlayers) {
             if (!this.knownPlayerIds.has(p.user_id)) {
+              // CHIP CONTINUITY: a fresh arrival is a fresh session, even if
+              // the mirror wrote this player off a moment ago.
+              this.chipContinuity.welcome(p.user_id);
               if (!this.returningFromSitout.has(p.user_id) && !this.isTournamentTable()) {
                 this.registerWaitForBB(p.user_id);
               } else if (this.isTournamentTable()) {
@@ -538,7 +552,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             (async () => {
               const cashedOutIds = await processLeavePending(
                 this.tableId,
-                this.tableInfo?.club_id || ''
+                this.tableInfo?.club_id || '',
+                (lockedUserId, stayRemainingMs) =>
+                  this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs),
+                this.forcedLeaves
               );
               // Same per-player teardown settlement does, or every leaver
               // strands an FSM entry, a time bank and a pre-action behind them.
@@ -547,6 +564,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                 this.timeBankEngine.removePlayer(this.tableId, leftUserId);
                 this.straddleEngine.removePlayer(this.tableId, leftUserId);
                 this.preActionEngine.removePlayer(this.tableId, leftUserId);
+                this.forcedLeaves.delete(leftUserId);
+                this.leaveHeldByClock.delete(leftUserId);
+                this.chipContinuity.forget(leftUserId);
               }
               if (cashedOutIds.length > 0) {
                 this.seatedPlayers = this.seatedPlayers.filter(
@@ -1224,6 +1244,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.currentHandContributions.clear(); // Weighted contributed rake (Dan 2026-08-29): reset per-hand eligible contributions
     this.currentHandReturnedUncalled.clear(); // ... and the returned-uncalled audit map
     this.currentHandInsuranceSettlements = []; // Bible V8 §4.19: Reset insurance settlements
+    this.currentHandInsuranceNet = 0; // chip standard 2026-09-04: declared to the stack write
     this.currentHandCashoutRedirects = new Map(); // EV CASHOUT 2026-08-28: reset per hand
     this.currentHandShowdownResults = []; // BBJ: Reset showdown results for new hand
     this.currentHandTimerLog = []; // Bible V8 §2.15: Reset timer log
@@ -2091,6 +2112,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // chip-std Lane F (2026-09-02): the stacks this hand was dealt from. The
     // tournament persist gate in postHandTasks holds the settled stacks of
     // these exact players to this exact total.
+    // Chip standard 2026-09-04: ALSO what every seat's hand write is measured
+    // against. Settlement sends (stack_before, stack) per seat and the
+    // database applies the difference to the row, so a credit that landed
+    // on the row while the engine's copy was stale (a pending add-on resolved
+    // by step 8e after the loop had reloaded seats, a horse funding, a
+    // between-hands add-on) is preserved instead of overwritten. Measured
+    // 2026-09-04 before this: 64 add-ons / 7,685.70 chips erased in 3 hours.
     this.currentHandDealtStacks = new Map(
       hcPlayers.map((p) => [p.user_id, Number(p.stack) || 0] as [string, number])
     );
@@ -2728,6 +2756,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
            the money path anyway is what keeps this seat exit OFF
            fn_unaccounted_seat_exits (CLAUDE.md 11.5). */
         await atomicCashout(player.user_id, this.tableId, player.seat_number);
+        this.chipContinuity.forget(player.user_id);
         this.disconnectEngine.unregisterPlayer(this.tableId, player.user_id);
         this.timeBankEngine.removePlayer(this.tableId, player.user_id);
         this.straddleEngine.removePlayer(this.tableId, player.user_id);
@@ -2795,6 +2824,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           timestamp: Date.now(),
         });
         await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+        this.chipContinuity.forget(horse.user_id);
         this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
         this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
         this.straddleEngine.removePlayer(this.tableId, horse.user_id);
@@ -2835,6 +2865,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         );
       } else {
         await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
+        this.chipContinuity.forget(horse.user_id);
         this.disconnectEngine.unregisterPlayer(this.tableId, horse.user_id);
         this.timeBankEngine.removePlayer(this.tableId, horse.user_id);
         this.straddleEngine.removePlayer(this.tableId, horse.user_id);
@@ -2928,6 +2959,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // died between the two.
       if (status === 'eliminated' || status === 'winner') {
         await markSeatAsLeft(this.tableId, player.user_id, player.seat_number);
+        this.chipContinuity.forget(player.user_id);
         this.disconnectEngine.unregisterPlayer(this.tableId, player.user_id);
         this.timeBankEngine.removePlayer(this.tableId, player.user_id);
         this.straddleEngine.removePlayer(this.tableId, player.user_id);
@@ -2945,6 +2977,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       // recycled through. Same release, different cause.
       if (status === undefined) {
         await markSeatAsLeft(this.tableId, player.user_id, player.seat_number);
+        this.chipContinuity.forget(player.user_id);
         this.disconnectEngine.unregisterPlayer(this.tableId, player.user_id);
         this.timeBankEngine.removePlayer(this.tableId, player.user_id);
         this.straddleEngine.removePlayer(this.tableId, player.user_id);

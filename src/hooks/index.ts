@@ -228,7 +228,7 @@ export function useWallet() {
     isLoading: isLoadingWallet || isLoadingDiamonds,
     lockForBuyIn,
     // AUDIT M17: unlockFromTable is gone. Table cash-out is engine-owned via
-    // GameServerAPI.removeChips -> atomic_table_withdraw; see WalletService.
+    // (removed 2026-09-04: no partial cash-out at a cash table); see WalletService.
     internalTransfer,
     mintChips,
     // force: this is the EXPLICIT "give me fresh numbers" entry point. A caller

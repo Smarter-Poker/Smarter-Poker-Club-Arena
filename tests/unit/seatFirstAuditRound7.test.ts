@@ -150,10 +150,16 @@ describe('an unknown wallet balance is not printed as zero', () => {
   });
 });
 
-describe('a failed cash-out read cannot silently drop the re-entry minimum', () => {
+describe('a failed floor read cannot silently drop the rejoin minimum', () => {
   it('the error is captured and reported', () => {
-    expect(table).toContain('const { data: cashoutHistory, error: cashoutErr } = await supabase');
-    expect(table).toContain("reportError(cashoutErr, 'TablePage.cashout_restriction_read')");
+    /* CHIP CONTINUITY (2026-09-04): the per-table table_cashout_history read
+       became the server-side fn_cash_effective_buyin call (keyed on club +
+       variant + blinds). The property pinned here is unchanged: a failed read
+       is reported, never mistaken for "no minimum". */
+    expect(table).toContain(
+      'const { data: effectiveBuyIn, error: floorErr } = await supabase.rpc('
+    );
+    expect(table).toContain("reportError(floorErr, 'TablePage.effective_buyin_read')");
   });
 });
 

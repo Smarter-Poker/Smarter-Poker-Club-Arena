@@ -192,196 +192,260 @@ export function timeBankChangedFilter(next: {
   return clauses.join(',');
 }
 
+export interface StackWriteOptions {
+  /** Rake taken off the felt this hand. Declared, so the database asserts the identity. */
+  rake?: number | null;
+  /** Jackpot drop taken off the felt this hand. */
+  bbj?: number | null;
+  /** Distinguishes a second write for the same hand (unused since 2026-09-04; kept for the RPC). */
+  ref?: string | null;
+  /** Chips that arrived on the felt from a declared pool this write (a BBJ payout). */
+  inflow?: number | null;
+}
+
+const STACK_WRITE_ATTEMPTS = 5;
+const STACK_WRITE_BACKOFF_MS = (attempt: number): number => 200 * 2 ** (attempt - 1);
+
 export async function syncStacks(
   tableId: string,
   players: {
     user_id: string;
     stack: number;
+    /**
+     * Chip standard 2026-09-04: the stack this seat was dealt from. When every
+     * player carries it, the database writes row + (stack - stack_before) -
+     * the hand's DIFFERENCE - instead of the absolute figure, so a credit that
+     * landed on the row while the engine's copy was stale (a mid-hand add-on
+     * resolved by settlement step 8e after the dealing loop had reloaded
+     * seats, a horse funding, a between-hands add-on) is preserved rather than
+     * erased. Measured before this: 64 add-ons / 7,685.70 chips destroyed in
+     * three hours, ~15% of all mid-hand add-ons.
+     */
+    stack_before?: number;
     time_bank_uses_remaining?: number;
     time_bank_remaining?: number;
   }[],
-  handNumber?: number
+  handNumber?: number,
+  options: StackWriteOptions = {}
 ): Promise<void> {
-  /* ZERO-DRIFT phase 5 (2026-08-31): when the caller identifies the hand,
-     the stack write goes through fn_ca_settle_hand_stacks_absolute - ONE
-     transaction that locks every named seat and writes all stacks or none,
-     idempotent on (table, hand): a crash-and-resend replays the stored
-     result instead of double-writing, and a partial hand write can no
-     longer persist (remaining risk #1 in the zero-drift audit, doc 05).
-     Rake/BBJ conservation checking arrives when those figures are wired
-     through (the RPC runs lenient with rake=null). Any RPC failure falls
-     back to the legacy per-seat loop below - the write path never narrows.
-     Time banks are not money and keep their own writes either way. */
-  if (handNumber !== undefined && handNumber !== null && players.length > 0) {
+  if (players.length === 0) return;
+  if (handNumber === undefined || handNumber === null) {
+    /* Every hand result names its hand (settlement step 8 reads the snapshot).
+       A write with no hand number used to take the unchecked per-seat loop -
+       absolute values, no lock, no conservation, no idempotency - which was
+       one of the two ways the felt lost chips (chip standard 2026-09-04). It
+       has no caller left; refuse rather than reopen it. */
+    reportError(
+      new Error(`[DB] syncStacks called for table ${tableId} without a hand number - refused`),
+      'DB.sync_stacks_without_hand'
+    );
+    return;
+  }
+
+  /* ZERO-DRIFT phase 5 (2026-08-31) + chip standard (2026-09-04): the stack
+     write is ONE call to fn_ca_settle_hand_stacks_absolute - one transaction
+     that locks every named seat and writes all stacks or none, idempotent on
+     (table, hand): a crash-and-resend replays the stored result instead of
+     double-writing. It runs in DELTA mode whenever every seat carries
+     stack_before, and declares rake and BBJ so the database asserts
+     sum(delta) = inflow - rake - bbj on every hand, cash or tournament.
+
+     THERE IS NO FALLBACK. The per-seat loop this used to fall back to wrote
+     absolute values from engine memory with no lock and no check, and ran on
+     more than a quarter of all cash hands (the no-op trigger made the RPC
+     report "seat write failed" for any hand in which one stack did not move).
+     It is exactly the write that erased credits. A refusal from the database
+     is final; a transport failure is retried, bounded, and then reported with
+     the whole payload so the hand can be re-driven by hand. Time banks are
+     not money and keep their own writes. */
+  const rounded = (n: number): number => Math.round(n * 100) / 100;
+  const deltaMode = players.every(
+    (p) => typeof p.stack_before === 'number' && Number.isFinite(p.stack_before)
+  );
+  if (!deltaMode) {
+    reportError(
+      new Error(
+        `[DB] hand-stack write for table ${tableId} hand ${handNumber} is ABSOLUTE - ` +
+          `${players.filter((p) => typeof p.stack_before !== 'number').length}/${players.length} seat(s) carry no stack_before`
+      ),
+      'DB.settle_hand_stacks_absolute_mode'
+    );
+  }
+  const payload = {
+    p_table_id: tableId,
+    p_hand_number: handNumber,
+    p_stacks: players.map((p) =>
+      deltaMode
+        ? {
+            user_id: p.user_id,
+            stack: rounded(p.stack),
+            stack_before: rounded(p.stack_before as number),
+          }
+        : { user_id: p.user_id, stack: rounded(p.stack) }
+    ),
+    p_rake: options.rake ?? null,
+    p_bbj: options.bbj ?? null,
+    p_ref: options.ref ?? null,
+    p_inflow: options.inflow ?? null,
+  };
+
+  type SettleResult = {
+    success?: boolean;
+    replay?: boolean;
+    reason?: string;
+    error?: unknown;
+    rebased?: Record<string, number>;
+  };
+  let lastError = '';
+  for (let attempt = 1; attempt <= STACK_WRITE_ATTEMPTS; attempt++) {
+    let data: SettleResult | null = null;
+    let error: { message?: string } | null = null;
     try {
-      const { data, error } = await supabase.rpc('fn_ca_settle_hand_stacks_absolute', {
-        p_table_id: tableId,
-        p_hand_number: handNumber,
-        p_stacks: players.map((p) => ({
-          user_id: p.user_id,
-          stack: Math.round(p.stack * 100) / 100,
-        })),
-        p_rake: null,
-        p_bbj: null,
-      });
-      const ok =
-        !error && (data as { success?: boolean; replay?: boolean } | null)?.success === true;
-      if (ok) {
-        // Stacks are settled atomically; persist the non-money seat fields.
-        await Promise.all(
-          players
-            .filter(
-              (p) => p.time_bank_uses_remaining !== undefined || p.time_bank_remaining !== undefined
-            )
-            .map(async (p) => {
-              const payload: Record<string, unknown> = {};
-              if (p.time_bank_uses_remaining !== undefined)
-                payload.time_bank_uses_remaining = p.time_bank_uses_remaining;
-              if (p.time_bank_remaining !== undefined)
-                payload.time_bank_remaining = p.time_bank_remaining;
-              await supabase
-                .from('table_seats')
-                .update(payload)
-                .eq('table_id', tableId)
-                .eq('user_id', p.user_id)
-                .is('left_at', null)
-                // WRITE ONLY WHAT CHANGED (2026-09-02, performance).
-                //
-                // This ran for EVERY seated player after EVERY hand, and a
-                // time bank almost never moves - it only changes on the hands
-                // where somebody actually burns it. So the overwhelming
-                // majority of these were an UPDATE that set a column to the
-                // value it already held.
-                //
-                // Postgres does not care much; Realtime does. `table_seats` is
-                // in the `supabase_realtime` publication, so every one of these
-                // no-op writes produced a WAL record that `realtime.apply_rls`
-                // then decoded and RLS-filtered for every subscriber on the
-                // table. Measured 2026-09-02: 408,121 of these calls, 98.7% of
-                // all table_seats writes, on a table that is 36% of everything
-                // Realtime decodes - and `realtime.list_changes` was the single
-                // largest consumer of the whole database at 17.5% of total time
-                // with a 460 ms mean, which is felt at the table as lag.
-                //
-                // The guard is a FILTER, not a diff we track in memory: if
-                // neither column differs from what is stored, zero rows match,
-                // Postgres writes nothing, and no WAL record is produced. There
-                // is no cache to go stale, it is correct across an engine
-                // restart and against any concurrent writer, and a genuine
-                // change still writes exactly as before.
-                //
-                // `is.null` is in the OR deliberately. PostgREST `neq` uses SQL
-                // three-valued logic, so a NULL column would NOT match `neq`
-                // and the row would be filtered out - silently skipping a write
-                // that IS needed. Both columns are NOT NULL with defaults today
-                // (`20260313_time_bank_*`, pinned by RestartFidelity), and this
-                // clause is what keeps the guard correct if that ever changes.
-                .or(
-                  timeBankChangedFilter({
-                    time_bank_remaining: p.time_bank_remaining,
-                    time_bank_uses_remaining: p.time_bank_uses_remaining,
-                  })
-                );
-            })
+      const res = (await supabase.rpc('fn_ca_settle_hand_stacks_absolute', payload)) as {
+        data: SettleResult | null;
+        error: { message?: string } | null;
+      };
+      data = res.data;
+      error = res.error;
+    } catch (err) {
+      error = { message: err instanceof Error ? err.message : String(err) };
+    }
+
+    if (!error && data?.success === true) {
+      const rebased =
+        data.rebased && typeof data.rebased === 'object' ? Object.keys(data.rebased) : [];
+      if (rebased.length > 0) {
+        // Not an error: the row held a credit the engine never saw and the
+        // database kept it. Logged so the rate is visible; the register is
+        // ca_seat_stack_rebases.
+        console.log(
+          `[DB] hand ${handNumber} at ${tableId}: ${rebased.length} seat(s) rebased onto credits the engine had not seen ` +
+            JSON.stringify(data.rebased)
         );
-        return;
       }
-      /* chip-std Lane F (2026-09-02): a CONSERVATION refusal is not a transport
-         failure. The database has just said that these stacks, written
-         absolutely, would mint or destroy chips on this table (for a
-         tournament table: the named seats would no longer sum to what they
-         summed to before the hand). Falling through to the per-seat loop
-         would persist exactly the total that was refused, seat by seat, with
-         no lock and no check - the fallback exists for a database that could
-         not be reached, not for one that answered "no". Report it and leave
-         the pre-hand stacks standing; the drift incident the RPC filed
-         carries the numbers. */
-      const refusal = String((data as { error?: unknown } | null)?.error ?? '');
-      if (!error && /^conservation violation/i.test(refusal)) {
+      await persistTimeBanks(tableId, players);
+      return;
+    }
+
+    /* chip-std Lane F (2026-09-02) + 2026-09-04: a refusal is not a transport
+       failure. The database has said that this write would mint or destroy
+       chips on this table (a conservation violation, a negative resulting
+       stack), or that a named seat is gone. Writing around it - seat by seat,
+       absolutely - would persist exactly the total that was refused with no
+       lock and no check. Report it and leave the seats as they stand; the
+       drift incident the RPC filed carries the numbers. */
+    const refusal = String(data?.error ?? '');
+    if (!error && data?.success === false && data.reason !== 'in_flight') {
+      if (/^conservation violation/i.test(refusal) || /^negative stack/i.test(refusal)) {
         reportError(
           new Error(
             `[DB] hand-stack settle REFUSED for table ${tableId} hand ${handNumber}: ${refusal} ` +
-              `- not falling back to per-seat writes; pre-hand stacks stand`
+              `- no fallback; pre-hand stacks stand`
           ),
           'DB.settle_hand_stacks_conservation_refused'
         );
-        return;
+      } else {
+        reportError(
+          new Error(
+            `[DB] hand-stack settle declined for table ${tableId} hand ${handNumber} ` +
+              `(${data.reason ?? 'unknown'}: ${refusal || JSON.stringify(data)}) - no fallback; seats stand as written`
+          ),
+          'DB.settle_hand_stacks_declined'
+        );
       }
-      reportError(
-        new Error(
-          `[DB] atomic hand-stack settle declined for table ${tableId} hand ${handNumber} ` +
-            `(${error ? error.message : JSON.stringify(data)}) - falling back to per-seat writes`
-        ),
-        'DB.settle_hand_stacks_fallback'
-      );
-    } catch (err) {
-      reportError(err, 'DB.settle_hand_stacks_transport_fallback');
+      return;
+    }
+
+    lastError = error ? String(error.message ?? error) : `in_flight (${JSON.stringify(data)})`;
+    if (attempt < STACK_WRITE_ATTEMPTS) {
+      await new Promise((r) => setTimeout(r, STACK_WRITE_BACKOFF_MS(attempt)));
     }
   }
-  // Dan 2026-08-25, BINDING: "ALL CHIPS ON ALL TABLES MUST STAY EXACTLY THE
-  // SAME" across an engine restart. This function is the ONLY place a hand's
-  // result reaches durable storage, and it had two ways to lose chips silently.
-  //
-  // 1. IT COULD NOT SEE MOST FAILURES. `Promise.allSettled` only reports
-  //    `rejected`, and the supabase client does not REJECT on a database
-  //    error — it RESOLVES with `{ error }`. So an RLS refusal, a constraint
-  //    violation or a stale-seat mismatch counted as a success, and the
-  //    "n/m stack syncs failed" alarm could only ever fire on a network throw.
-  // 2. THERE WAS NO RETRY. One write per player, best effort. If the winner's
-  //    landed and a loser's did not, the table gained chips; the reverse
-  //    destroyed them. A restart straight after made the in-memory truth —
-  //    the only correct copy — unrecoverable.
-  //
-  // Each seat is now retried independently, and a seat that still will not
-  // write is reported by user id rather than as a count.
-  const writeSeat = async (player: (typeof players)[number]): Promise<string | null> => {
-    // FIX-231d: Round to 2 decimal places to prevent float-point drift (e.g. 5799.700000000001)
-    const updatePayload: Record<string, unknown> = {
-      stack: Math.round(player.stack * 100) / 100,
-    };
-    if (player.time_bank_uses_remaining !== undefined) {
-      updatePayload.time_bank_uses_remaining = player.time_bank_uses_remaining;
-    }
-    if (player.time_bank_remaining !== undefined) {
-      updatePayload.time_bank_remaining = player.time_bank_remaining;
-    }
 
-    let lastError = '';
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const { error } = await supabase
-          .from('table_seats')
-          .update(updatePayload)
-          .eq('table_id', tableId)
-          .eq('user_id', player.user_id)
-          .is('left_at', null);
-        if (!error) return null;
-        lastError = error.message ?? String(error);
-      } catch (err) {
-        lastError = err instanceof Error ? err.message : String(err);
-      }
-      // Short, bounded backoff. Settlement is already past the point where the
-      // hand can be undone, so this must finish rather than run forever.
-      if (attempt < 3) await new Promise((r) => setTimeout(r, 150 * attempt));
-    }
-    return `${player.user_id}: ${lastError}`;
-  };
-
-  const failures = (await Promise.all(players.map(writeSeat))).filter(
-    (f): f is string => f !== null
+  // The database could not be reached for this hand at all. The correct
+  // stacks exist only in this process; say so with the whole payload, so the
+  // write can be re-driven by hand (the RPC is idempotent on table + hand).
+  reportError(
+    new Error(
+      `[DB] hand-stack write UNREACHABLE for table ${tableId} hand ${handNumber} after ${STACK_WRITE_ATTEMPTS} attempts ` +
+        `- ${lastError} - payload ${JSON.stringify(payload)}`
+    ),
+    'DB.settle_hand_stacks_unreachable'
   );
-
-  if (failures.length > 0) {
-    // Chips are now provably wrong for these seats, and the correct value only
-    // exists in a process that may be about to exit. Name the seats.
-    reportError(
-      new Error(
-        `[DB] ${failures.length}/${players.length} stack syncs failed for table ${tableId} ` +
-          `after 3 attempts each - ${failures.join('; ')}`
-      ),
-      'DB.sync_stacks_failed'
+  try {
+    const { raiseFinancialAlert } = await import('../financialAlerts.js');
+    await raiseFinancialAlert(
+      'critical',
+      'DB.settle_hand_stacks_unreachable',
+      `Hand #${handNumber} at table ${tableId}: stack write unreachable after ${STACK_WRITE_ATTEMPTS} attempts; re-drive fn_ca_settle_hand_stacks_absolute with the attached payload`,
+      { table_id: tableId, hand_number: handNumber, last_error: lastError, payload }
     );
+  } catch (err) {
+    reportError(err, 'DB.settle_hand_stacks_unreachable_alert_failed');
   }
+}
+
+async function persistTimeBanks(
+  tableId: string,
+  players: { user_id: string; time_bank_uses_remaining?: number; time_bank_remaining?: number }[]
+): Promise<void> {
+  // Stacks are settled atomically; persist the non-money seat fields.
+  await Promise.all(
+    players
+      .filter(
+        (p) => p.time_bank_uses_remaining !== undefined || p.time_bank_remaining !== undefined
+      )
+      .map(async (p) => {
+        const payload: Record<string, unknown> = {};
+        if (p.time_bank_uses_remaining !== undefined)
+          payload.time_bank_uses_remaining = p.time_bank_uses_remaining;
+        if (p.time_bank_remaining !== undefined)
+          payload.time_bank_remaining = p.time_bank_remaining;
+        await supabase
+          .from('table_seats')
+          .update(payload)
+          .eq('table_id', tableId)
+          .eq('user_id', p.user_id)
+          .is('left_at', null)
+          // WRITE ONLY WHAT CHANGED (2026-09-02, performance).
+          //
+          // This ran for EVERY seated player after EVERY hand, and a
+          // time bank almost never moves - it only changes on the hands
+          // where somebody actually burns it. So the overwhelming
+          // majority of these were an UPDATE that set a column to the
+          // value it already held.
+          //
+          // Postgres does not care much; Realtime does. `table_seats` is
+          // in the `supabase_realtime` publication, so every one of these
+          // no-op writes produced a WAL record that `realtime.apply_rls`
+          // then decoded and RLS-filtered for every subscriber on the
+          // table. Measured 2026-09-02: 408,121 of these calls, 98.7% of
+          // all table_seats writes, on a table that is 36% of everything
+          // Realtime decodes - and `realtime.list_changes` was the single
+          // largest consumer of the whole database at 17.5% of total time
+          // with a 460 ms mean, which is felt at the table as lag.
+          //
+          // The guard is a FILTER, not a diff we track in memory: if
+          // neither column differs from what is stored, zero rows match,
+          // Postgres writes nothing, and no WAL record is produced. There
+          // is no cache to go stale, it is correct across an engine
+          // restart and against any concurrent writer, and a genuine
+          // change still writes exactly as before.
+          //
+          // `is.null` is in the OR deliberately. PostgREST `neq` uses SQL
+          // three-valued logic, so a NULL column would NOT match `neq`
+          // and the row would be filtered out - silently skipping a write
+          // that IS needed. Both columns are NOT NULL with defaults today
+          // (`20260313_time_bank_*`, pinned by RestartFidelity), and this
+          // clause is what keeps the guard correct if that ever changes.
+          .or(
+            timeBankChangedFilter({
+              time_bank_remaining: p.time_bank_remaining,
+              time_bank_uses_remaining: p.time_bank_uses_remaining,
+            })
+          );
+      })
+  );
 }
 
 /**

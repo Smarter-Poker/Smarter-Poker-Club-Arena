@@ -1,0 +1,14 @@
+{
+  "_owner": "fix/stats-phase-1-positions",
+  "tables": ["ca_stats_witness_audit_log", "ca_idx_every_seat_state"],
+  "functions": [
+    "ca_hand_player_facts_range",
+    "ca_hand_player_facts_one",
+    "ca_stats_witness_audit",
+    "ca_stats_health",
+    "ca_index_every_seat"
+  ],
+  "columns": {
+    "ca_stats_witness_audit_log": ["player_hands_without_idx"]
+  }
+}

@@ -85,6 +85,12 @@ const CORRECTION_3 = readFileSync(
   'supabase/migrations/20260904235900_one_rebuild_signature_and_a_correction_still_lands.sql',
   'utf8'
 );
+/** Found by the gate on this phase - see its header. */
+const CORRECTION_4 = readFileSync(
+  'supabase/migrations/20260905001500_the_busiest_tables_count_table_hands.sql',
+  'utf8'
+);
+const ACTIVITY_CHART = readFileSync('src/components/club/ClubActivityChart.tsx', 'utf8');
 
 const fn = (name: string) => {
   const start = MIGRATION.indexOf(`FUNCTION public.${name}(`);
@@ -505,5 +511,60 @@ describe('a live day belongs to the triggers, and a complete day to the recount'
     ] as const) {
       expect(sql, name).toMatch(/RAISE EXCEPTION/);
     }
+  });
+});
+
+describe('the gate on phase 6: hands still meant two things in two places', () => {
+  /**
+   * Measured over seven days on Deep Stack Society while checking the phase:
+   *
+   *   Busiest Tables, as shipped   2,113,324  "Hands"
+   *   hands actually dealt            596,730
+   *   hands actually raked            181,766
+   *
+   * The list summed club_member_daily_stats.hands_played - one row per player
+   * per hand - on the same page whose cards this phase had just relabelled so
+   * raked hands and hands dealt could not be confused. It survived because I
+   * changed the totals and never looked further down the page.
+   */
+  it("by_table counts the table's raked hands, not one per player sitting in it", () => {
+    expect(CORRECTION_4).toContain('FROM club_table_daily c');
+    expect(CORRECTION_4).toContain(
+      'Busiest Tables still counts a hand once per player sitting in it'
+    );
+    expect(CORRECTION_4).toContain("'players', q.players");
+  });
+
+  it('the dashboard says which hands the list is counting', () => {
+    expect(DASHBOARD).toContain('Raked Hands\n                        </span>');
+  });
+
+  it('the activity chart is told which hands it is drawing, by every caller', () => {
+    // One component, two tabs, two different series: the Overview tab passes
+    // hands DEALT and the Revenue tab passes RAKED hands (182,035 against
+    // 596,817 for the same week), and both drew a legend that said "Hands".
+    expect(ACTIVITY_CHART).toContain('handsLabel: string;');
+    expect(ACTIVITY_CHART).toContain('name={handsLabel}');
+    expect(ACTIVITY_CHART).not.toContain('name="Hands"');
+    expect(DASHBOARD).toContain('handsLabel="Hands Dealt"');
+    expect(DASHBOARD).toContain('handsLabel="Raked Hands"');
+  });
+
+  it('the financials chart says so when it plots a shorter window than the totals', () => {
+    // ca_club_financials caps the daily series at 92 days; the totals are not
+    // capped, so on a club with a longer history the picture and the cards
+    // describe different windows.
+    expect(FINANCIALS).toContain('data.range.series_from > data.range.start');
+    expect(FINANCIALS).toContain('Last ${chartDays} Days Of This Window');
+  });
+
+  it('the club-scoped ledger refuses an unresolved club instead of sending a slug to a uuid', () => {
+    expect(LEDGER).toContain('!isUUID(clubId)');
+    expect(LEDGER).toContain('TransactionLedgerView.unresolved_club');
+  });
+
+  it('the ledger-total helper is declared to the schema gate', () => {
+    const manifest = JSON.parse(MANIFEST) as { functions: string[] };
+    expect(manifest.functions).toContain('fn_ca_club_rake_daily_ledger_total');
   });
 });

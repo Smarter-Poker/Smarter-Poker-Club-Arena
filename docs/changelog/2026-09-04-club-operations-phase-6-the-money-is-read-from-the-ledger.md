@@ -242,6 +242,49 @@ Making the trigger itself deadlock-proof (a deterministic lock order on the
 upsert) is the next thing to measure; it was not changed tonight because it
 touches the hot path and the residual is bounded, reported and repaired daily.
 
+## The gate on this phase found one more, in the place I had just fixed
+
+Checking the phase before moving on, the club dashboard's **Busiest Tables**
+list was still summing `club_member_daily_stats.hands_played` - one row per
+player per hand - and printing it as "Hands". Over seven days on the reference
+club:
+
+```
+Busiest Tables, as shipped   2,113,324  "Hands"
+hands actually dealt            596,730
+hands actually raked            181,766
+```
+
+An 11.6x overstatement, on the same page whose cards this phase had just
+relabelled so that raked hands and hands dealt could not be confused, and
+literally the defect the plan document named ("Hands means two different things
+across two tabs of one page"). It survived because I changed the totals and
+never looked further down the page.
+
+`20260905001500` rebuilds `ca_club_revenue.by_table` on `club_table_daily` -
+the raked hands played AT that table, the same basis as the rake beside it and
+the headline above it - and returns each table's rake with it. The player count
+is still a DISTINCT count of people. Top table now reads 2,144 raked hands
+against 2,113,324 before, and the whole top-20 sums to 38,005.
+
+Three smaller things from the same pass:
+
+- **`ClubActivityChart` is rendered twice from two different series** - the
+  Overview tab passes hands DEALT, the Revenue tab passes RAKED hands - and
+  both drew a legend that said "Hands". The series label is a required prop
+  now, so a caller cannot avoid saying which it has.
+- **The Financials chart could plot a shorter window than its own totals**
+  (`ca_club_financials` caps the daily series at 92 days; the totals are not
+  capped). The heading says so when they differ.
+- **`TransactionLedgerView` in club-scoped mode** would have handed a slug to a
+  uuid argument if a future caller passed one. It refuses and reports instead -
+  that exact mistake cost two pages in this phase already.
+
+Live after all four: the owner's own club answers 200 on every finance read
+and a club he is not a member of 403/42501; the insurance day rows now sum
+exactly to the headline (403 offers = 403); Supabase's security advisor reports
+**zero** anon-executable definer functions among everything this phase shipped.
+
 ## Still open after this phase
 
 - **`member_fee_rollup` is now frozen rather than dead.** The engine loop that

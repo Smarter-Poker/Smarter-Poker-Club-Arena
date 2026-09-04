@@ -1604,11 +1604,33 @@ jobs:
       # `.vite` or `.tsbuildinfo` - which is the entire point here. Separate key,
       # so this job restores a tree that has already built once.
       - name: Restore node_modules (vite + tsbuildinfo ride along)
+        id: nm-cache
         uses: actions/cache@v4
         with:
           path: node_modules
           key: nm-beats-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+
+      # THE GUARD BELOW IS THE POINT OF THE CACHE ABOVE (added 2026-09-04).
+      #
+      # This step had no `if:`, alone among the four jobs that install, so
+      # `npm ci` ran on EVERY run - and `npm ci` DELETES node_modules before
+      # installing. The restore above put a ~1GB tree back, complete with the
+      # warm `node_modules/.vite` and `node_modules/.tmp/*.tsbuildinfo` the
+      # comment above brags about carrying, and this step then threw all of it
+      # away and re-installed from scratch. The cache was doing nothing except
+      # cost the time to download and unpack it.
+      #
+      # It cost the CRITICAL PATH twice over: the install itself (45s warm,
+      # minutes on a contended box - 8.6m was measured on 2026-09-04 in the
+      # sibling typecheck job while twelve runners installed at once), and then
+      # a cold Vite transform and a cold `tsc -b` on top, because the two
+      # caches that ride inside node_modules had just been deleted with it.
+      #
+      # The other three installing jobs (`unit`, `build`, `typecheck`, and the
+      # publisher's shards) have carried this `if:` since 2026-09-01. This one
+      # was simply missed.
       - name: Install Dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
 
       # Corrected 2026-09-04. This comment used to say the job "is still pinned

@@ -352,6 +352,14 @@ Never say "should be live in a few minutes" or "deploy triggered."
 - ALL game logic lives here: HandController, ServerTableEngine, all engines
 - HTTP endpoints: POST /action, POST /timebank, GET /actions, GET /health
 - Uses `SUPABASE_SERVICE_ROLE_KEY` (bypasses RLS)
+- Sentry: its OWN project `club-arena-engine` (since 2026-09-04) and an
+  SDK-side event budget (`server/src/services/sentryEventBudget.ts`, 10/min per
+  fingerprint, 60/min overall, dropped counts summarised every 10 min). An
+  engine loop burned the whole org quota in August and blinded every other
+  app for three weeks. Never point `SENTRY_DSN` back at the hub project, never
+  remove the budget from `beforeSend`, and do not raise its limits to make a
+  loop visible: the summary event already names it.
+  `docs/changelog/2026-09-04-engine-sentry-budget.md`.
 
 ### Supabase
 

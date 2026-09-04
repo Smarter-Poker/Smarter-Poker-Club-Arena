@@ -104,10 +104,30 @@ export function tagSplit(n: number): {
  * America/Chicago hour. Values are the OPORD's table verbatim.
  */
 export const OCCUPANCY_CURVE_PCT: Record<number, number> = {
-  0: 35, 1: 28, 2: 16, 3: 10, 4: 8, 5: 7,
-  6: 8, 7: 9, 8: 10, 9: 14, 10: 18, 11: 22,
-  12: 26, 13: 28, 14: 30, 15: 33, 16: 36, 17: 38,
-  18: 40, 19: 40, 20: 40, 21: 39, 22: 38, 23: 36,
+  0: 35,
+  1: 28,
+  2: 16,
+  3: 10,
+  4: 8,
+  5: 7,
+  6: 8,
+  7: 9,
+  8: 10,
+  9: 14,
+  10: 18,
+  11: 22,
+  12: 26,
+  13: 28,
+  14: 30,
+  15: 33,
+  16: 36,
+  17: 38,
+  18: 40,
+  19: 40,
+  20: 40,
+  21: 39,
+  22: 38,
+  23: 36,
 };
 
 /** Night hard cap applies 03:00-08:00 Chicago inclusive of 03, exclusive of 08
@@ -347,6 +367,37 @@ const EXOTIC_ALIASES: Record<string, string> = {
 /** Explicitly NOT exotic - never mass-close these. */
 const NON_EXOTIC = new Set(['nlh', 'nlhe', 'plo', 'plo4', 'plo5', 'plo6']);
 
+/* LIMIT GAMES - Dan 2026-09-04: "OMAHA 8 IS PLO8o. and we should have a
+   handful of limit games open and available."
+
+   Two rulings in one sentence, and they pull in opposite directions unless
+   the cap is read carefully:
+
+   1. `flo8` (Fixed Limit Omaha 8-or-better) IS Omaha 8, so it belongs to the
+      PLO8o exotic family and inherits the exotic ceiling: never above 1/2.
+   2. Limit games must nonetheless stay OPEN AND AVAILABLE, so they cannot be
+      folded into `plo8`'s cap of 2 - the pot-limit tables would consume the
+      whole allowance and the fixed-limit floor would go dark, which is the
+      opposite of what was asked.
+
+   So each limit variant carries its OWN cap of 2 and its own floor of 1.
+   Across two variants and two hosts that is up to 8 limit tables with at
+   least 2 always lit: a handful, open, and available. */
+export const LIMIT_VARIANTS = new Set(['flh', 'flo8']);
+export const LIMIT_MAX_TABLES_PER_VARIANT = 2;
+export const LIMIT_MIN_TABLES_PER_VARIANT = 1;
+
+export function isLimitGame(variant: string): boolean {
+  return LIMIT_VARIANTS.has((variant || '').trim().toLowerCase());
+}
+
+/** `flo8` is Omaha 8 and therefore of the PLO8o family, which is what earns
+ *  it the <= 1/2 ceiling. It is still capped separately - see above. */
+export function isOmahaEightFamily(variant: string): boolean {
+  const v = (variant || '').trim().toLowerCase();
+  return v === 'flo8' || canonicalExotic(variant) === 'plo8';
+}
+
 export function canonicalExotic(variant: string): string | null {
   if (!variant) return null;
   const raw = variant.trim();
@@ -382,10 +433,7 @@ export interface ExoticPlan {
  * Section 6. Per host, per variant. Closes everything above 1/2 outright,
  * then trims to 2, fewest-seated first so the fewest hands are disturbed.
  */
-export function planExoticTrim(
-  tables: ExoticTable[],
-  taggedLegalHorses: number
-): ExoticPlan {
+export function planExoticTrim(tables: ExoticTable[], taggedLegalHorses: number): ExoticPlan {
   const close: string[] = [];
   const doNotAutoReopen: string[] = [];
 
@@ -568,7 +616,8 @@ export function assignTags(
       cashFreeroll: freerollIdx.has(i),
       personaCash: pc,
       personaMtt: pm,
-      maxTables: mode === 'tourney' ? MAX_TABLES_TOURNEY_ONLY : MAX_TABLES_BY_PERSONA[pc ?? 'regular'],
+      maxTables:
+        mode === 'tourney' ? MAX_TABLES_TOURNEY_ONLY : MAX_TABLES_BY_PERSONA[pc ?? 'regular'],
       tagSeed: seed,
     };
   });
@@ -592,7 +641,6 @@ export function sessionJitterMinutes(horseId: string, which: 'start' | 'end'): n
 /* Section 8 - bankroll                                                */
 /* ------------------------------------------------------------------ */
 
-export const SEED_AMOUNT = 10000;
 export const BUYINS_TO_LICENSE = 20;
 export const BUYINS_TO_STEP_UP = 30;
 export const BUYINS_TO_STEP_DOWN = 15;
@@ -603,12 +651,15 @@ export function bi100(bb: number): number {
   return 100 * bb;
 }
 
-/** Section 8.1. A wallet is seeded ONCE, and only if it has never been
- *  funded. Measured 2026-09-04: zero wallets qualify, so this is a no-op
- *  today. It stays as law for wallets created later. */
-export function shouldSeedWallet(hasCreditHistory: boolean, balance: number): boolean {
-  return !hasCreditHistory && balance === 0;
-}
+/* SECTION 8.1 IS RETIRED. Dan 2026-09-04: "YOU CAN IGNORE THE 10,000 SEED,
+   AND USE THEIR CURRENT BALANCES."
+
+   There is deliberately NO seeding function in this module, and that absence
+   is load-bearing. Recon measured every horse wallet already funded (min
+   7,420 on DSS, 25,000 on Midway Union), so a seed would only ever have
+   OVERWRITTEN a real balance. A wallet's bankroll is whatever the wallet
+   currently holds; `availableOf` is the only thing that adjusts it, and it
+   subtracts, never adds. Nothing in Stable Hand creates chips. */
 
 /** Section 8.2. Chips already on the felt out of THIS wallet are not
  *  available to sit again. */
@@ -656,7 +707,8 @@ export function buyInFor(req: BuyInRequest): number | null {
   const maxBb = req.maxBuyInBb ?? 200;
   if (!isLicensed(available, bb)) return null;
 
-  const wants200 = persona === 'grinder' && available >= BUYINS_TO_STEP_UP * bi100(bb) && openSeats <= 2;
+  const wants200 =
+    persona === 'grinder' && available >= BUYINS_TO_STEP_UP * bi100(bb) && openSeats <= 2;
   if (wants200 && maxBb >= 200) return 200 * bb;
 
   if (available >= bi100(bb) && minBb <= 100 && maxBb >= 100) return 100 * bb;
@@ -778,7 +830,8 @@ export function mayBookWin(opts: {
   msAtTable: number;
 }): boolean {
   if (opts.pnlBi <= 0) return false;
-  if (!stayUpSatisfied({ msAtTable: opts.msAtTable, pnl: opts.pnlBi, reason: 'book_win' })) return false;
+  if (!stayUpSatisfied({ msAtTable: opts.msAtTable, pnl: opts.pnlBi, reason: 'book_win' }))
+    return false;
   return opts.pnlBi >= BOOK_LINE_BI[opts.persona];
 }
 
@@ -814,7 +867,8 @@ export function forceLeaveReason(s: {
   shapeAdjust: boolean;
 }): LeaveReason | null {
   if (s.pnlBi <= STOP_LOSS_BI) return 'stop_loss';
-  if (mustColorUp({ persona: s.persona, stack: s.stack, sitInBuyIn: s.sitInBuyIn })) return 'color_up';
+  if (mustColorUp({ persona: s.persona, stack: s.stack, sitInBuyIn: s.sitInBuyIn }))
+    return 'color_up';
   if (s.minutesInSeat >= s.sessionPlanMinutes) return 'session_done';
   if (s.minutesPlayedToday >= s.dailyCapMinutes) return 'daily_cap';
   if (s.windingDown) return 'wind_down';
@@ -1087,4 +1141,179 @@ export function killAllowsAction(action: 'sit' | 'add_seat' | 'yield' | 'finish_
  *  does not change if the tick re-evaluates the same seat. */
 export function sessionPlanMinutes(horseId: string, tableId: string): number {
   return 90 + (shHash(horseId, tableId, 'session-plan') % 151); // 90..240
+}
+
+/* ------------------------------------------------------------------ */
+/* Limit games (Dan 2026-09-04)                                        */
+/* ------------------------------------------------------------------ */
+
+export interface LimitPlan {
+  close: string[];
+  keep: string[];
+  /** Open this many so the limit floor is never dark. */
+  mayOpen: number;
+}
+
+/**
+ * Keeps a handful of limit tables lit. Same <= 1/2 ceiling as the exotics
+ * (flo8 is Omaha 8), same fewest-seated-first trim, but its own cap and a
+ * FLOOR: if a limit variant has no legal table and there are horses to seat,
+ * one is opened. "Available" has to mean a player can actually find one.
+ */
+export function planLimitGames(tables: ExoticTable[], taggedLegalHorses: number): LimitPlan {
+  const close: string[] = [];
+  const legal = tables.filter((t) => {
+    if (t.bb > EXOTIC_MAX_BB) {
+      close.push(t.tableId);
+      return false;
+    }
+    return true;
+  });
+
+  legal.sort((a, b) => a.seated - b.seated || a.tableId.localeCompare(b.tableId));
+  while (legal.length > LIMIT_MAX_TABLES_PER_VARIANT) {
+    const victim = legal.shift();
+    if (victim) close.push(victim.tableId);
+  }
+
+  const keep = legal.map((t) => t.tableId);
+  const mayOpen =
+    taggedLegalHorses < 4
+      ? 0
+      : Math.max(0, Math.max(LIMIT_MIN_TABLES_PER_VARIANT, keep.length) - keep.length);
+
+  return { close, keep, mayOpen };
+}
+
+/* ------------------------------------------------------------------ */
+/* The bankroll-unknown policy (the 2026-08-31 incident, revisited)    */
+/* ------------------------------------------------------------------ */
+
+export type RollUnknownVerdict = 'allow_no_opinion' | 'refuse_not_a_member';
+
+/**
+ * WHAT TO DO WHEN A HORSE'S ROLL CANNOT BE READ.
+ *
+ * On 2026-08-31 this decision was `return false` ("no membership, no seat")
+ * and it emptied the entire cash floor for 40 minutes, because the bankroll
+ * map was keyed on two club ids that own zero cash tables so EVERY lookup
+ * missed. The fix was to fail open, and the reasoning written into
+ * HorseFleetManager is sound: `atomic_table_buyin` still refuses a seat the
+ * balance cannot cover, so that gate decides which games are SENSIBLE, never
+ * which are POSSIBLE.
+ *
+ * That reasoning covers SOLVENCY and nothing else. `atomic_table_buyin` does
+ * not know about the 20-buy-in licence, the 50% session commit cap, the
+ * <= 1/2 phase clamp, the per-key daily sit cap, or one-body-one-club. So an
+ * unknown roll is safe for the wallet and wide open for every Stable Hand
+ * rule, which is why `evaluateSit` has no fail-open branch of its own.
+ *
+ * The one refinement here: distinguish the two unknowns.
+ *
+ *   - The whole map failed to load  -> NO OPINION. Fail open, exactly as
+ *     today. A database hiccup must never empty the floor again.
+ *   - The map loaded, but it holds NO rows at all for the club that funds
+ *     this table -> NO OPINION, fail open. This is the 2026-08-31 shape
+ *     exactly: the load "succeeded" while being keyed on clubs that own no
+ *     cash tables, so every lookup missed and refusing emptied the floor.
+ *     "The load completed" is therefore NOT sufficient evidence on its own,
+ *     and a version of this policy that checked only that flag would have
+ *     re-run the incident.
+ *   - The map loaded AND covers this club AND this horse is still absent ->
+ *     the horse genuinely is not a member of the funding wallet, so
+ *     `atomic_table_buyin` would refuse it anyway. Refuse here, cheaply.
+ *
+ * Only the third case is a real refusal, and club coverage is the fact that
+ * separates it from the outage.
+ */
+export function rollUnknownVerdict(
+  mapLoadedSuccessfully: boolean,
+  clubHasAnyRolls: boolean
+): RollUnknownVerdict {
+  if (!mapLoadedSuccessfully) return 'allow_no_opinion';
+  if (!clubHasAnyRolls) return 'allow_no_opinion';
+  return 'refuse_not_a_member';
+}
+
+/** True when the fleet may seat despite having no bankroll reading. */
+export function maySeatWithUnknownRoll(
+  mapLoadedSuccessfully: boolean,
+  clubHasAnyRolls: boolean
+): boolean {
+  return rollUnknownVerdict(mapLoadedSuccessfully, clubHasAnyRolls) === 'allow_no_opinion';
+}
+
+/* ------------------------------------------------------------------ */
+/* Section 7.2 - variants and preferred stakes                         */
+/* ------------------------------------------------------------------ */
+
+/** Coverage targets. The OPORD states these as ">=" floors and they overlap,
+ *  which is why they sum past 100%: a horse carries 1-3 variants.
+ *
+ *  flh and flo8 are here and are NOT in the OPORD's list. Dan 2026-09-04:
+ *  "we should have a handful of limit games open and available." A table
+ *  nobody is tagged for can never be seated, so keeping the limit floor lit
+ *  requires a tagged population to seat it. 8% of the cash fleet each is
+ *  enough to hold two tables per variant per host without pulling meaningful
+ *  numbers off the no-limit games. */
+export const VARIANT_COVERAGE: Array<[string, number]> = [
+  ['nlh', 0.7],
+  ['plo4', 0.2],
+  ['plo5', 0.18],
+  ['plo6', 0.12],
+  ['pineapple', 0.1],
+  ['short_deck', 0.1],
+  ['plo8', 0.1],
+  ['flh', 0.08],
+  ['flo8', 0.08],
+];
+
+export const MAX_VARIANTS_PER_HORSE = 3;
+
+/**
+ * Deterministic variant assignment. Each variant gets its OWN hash ordering,
+ * so memberships overlap naturally rather than every horse collecting the
+ * same first three. Coverage is then exact rather than probabilistic, which
+ * is what lets the assert in the tagger be a hard check instead of a hope.
+ */
+export function assignVariants(horseIds: string[], seed = STABLE_HAND_SEED): Map<string, string[]> {
+  const out = new Map<string, string[]>(horseIds.map((h) => [h, []]));
+  const n = horseIds.length;
+  if (n === 0) return out;
+
+  for (const [variant, share] of VARIANT_COVERAGE) {
+    const want = Math.ceil(share * n);
+    const ordered = [...horseIds].sort((a, b) =>
+      shDigest(variant, a, seed).localeCompare(shDigest(variant, b, seed))
+    );
+    let taken = 0;
+    for (const h of ordered) {
+      if (taken >= want) break;
+      const cur = out.get(h)!;
+      if (cur.length >= MAX_VARIANTS_PER_HORSE) continue;
+      if (cur.includes(variant)) continue;
+      cur.push(variant);
+      taken++;
+    }
+  }
+
+  // Nobody sits with an empty variant list - NLHE is the fallback floor.
+  out.forEach((v, k) => {
+    if (v.length === 0) out.set(k, ['nlh']);
+  });
+  return out;
+}
+
+/** A horse plays a stake and the one adjacent legal stake (Section 8.7),
+ *  drawn from its band so the 40/35/25 mix holds. */
+export function assignPreferredStakes(horseId: string, seed = STABLE_HAND_SEED): number[] {
+  const h = shHash(horseId, 'stake-band', seed);
+  const roll = h % 100;
+  const band: StakeBand = roll < 40 ? 'micro' : roll < 75 ? 'low' : 'top';
+  const inBand = STAKE_LADDER.filter((s) => stakeBandOf(s.bb) === band).map((s) => s.bb);
+  const anchorIdx = shHash(horseId, 'stake-anchor', seed) % inBand.length;
+  const anchor = inBand[anchorIdx];
+  const ladderIdx = STAKE_LADDER.findIndex((s) => s.bb === anchor);
+  const neighbour = STAKE_LADDER[Math.max(0, ladderIdx - 1)].bb;
+  return Array.from(new Set([neighbour, anchor])).sort((a, b) => a - b);
 }

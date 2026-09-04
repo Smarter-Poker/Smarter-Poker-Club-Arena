@@ -8,33 +8,70 @@
 import { describe, it, expect } from 'vitest';
 import {
   // shape
-  shapeTargets, seatsForBucket, bucketOf,
+  shapeTargets,
+  seatsForBucket,
+  bucketOf,
   // exotics
-  planExoticTrim, isExotic, canonicalExotic, exoticShape,
-  EXOTIC_MAX_TABLES_PER_VARIANT, EXOTIC_MAX_BB,
+  planExoticTrim,
+  isExotic,
+  canonicalExotic,
+  exoticShape,
+  EXOTIC_MAX_TABLES_PER_VARIANT,
+  EXOTIC_MAX_BB,
   // tags
-  assignTags, tagSplit, MAX_TABLES_BY_PERSONA, MAX_TABLES_TOURNEY_ONLY,
-  allocateByMix, CASH_PERSONA_MIX,
+  assignTags,
+  tagSplit,
+  MAX_TABLES_BY_PERSONA,
+  MAX_TABLES_TOURNEY_ONLY,
+  allocateByMix,
+  CASH_PERSONA_MIX,
   // occupancy
-  occupancyTargetForHost, peakCap, nightCap, isNightWindow, curvePctAt,
+  occupancyTargetForHost,
+  peakCap,
+  nightCap,
+  isNightWindow,
+  curvePctAt,
   // bankroll
-  isLicensed, buyInFor, commitAllows, shouldSeedWallet, availableOf,
-  mayRebuyInSeat, isBroke, stakeIsLegalThisPhase, stakeSpreadAllowed,
+  isLicensed,
+  buyInFor,
+  commitAllows,
+  availableOf,
+  mayRebuyInSeat,
+  isBroke,
+  stakeIsLegalThisPhase,
+  stakeSpreadAllowed,
   // booking
-  mayBookWin, mustColorUp, stayUpSatisfied, bookStaggerMs, forceLeaveReason,
+  mayBookWin,
+  mustColorUp,
+  stayUpSatisfied,
+  bookStaggerMs,
+  forceLeaveReason,
   // yield
-  yieldDelayMs, yieldCount, pickYieldVictims, SEAT_HOLD_MS,
+  yieldDelayMs,
+  yieldCount,
+  pickYieldVictims,
+  SEAT_HOLD_MS,
   YIELD_MIN_MS,
   // caps
-  maySitOnKey, mttBulletsAllowed, addOnDecision, gameKey,
+  maySitOnKey,
+  mttBulletsAllowed,
+  addOnDecision,
+  gameKey,
   // mutex
-  evaluateSit, sitIsLegalForHost, pickWallet,
+  evaluateSit,
+  sitIsLegalForHost,
+  pickWallet,
   // freeroll
-  freerollEligible, willJumpToFreeroll, freerollJumpCap,
+  freerollEligible,
+  willJumpToFreeroll,
+  freerollJumpCap,
   // flags
   killAllowsAction,
   // ids
-  MIDWAY_UNION_ID, JAQK_CLUB_ID, SHARK_CLUB_ID, DSS_CLUB_ID,
+  MIDWAY_UNION_ID,
+  JAQK_CLUB_ID,
+  SHARK_CLUB_ID,
+  DSS_CLUB_ID,
   sessionPlanMinutes,
 } from './StableHand';
 
@@ -139,13 +176,15 @@ describe('T5 - one human does not yield four horses', () => {
 });
 
 describe('T6/T7 - exotics are capped at 2 per variant per host and 1/2', () => {
-  const mk = (id: string, bb: number, seated: number) => ({ tableId: id, variant: 'pineapple', bb, seated });
+  const mk = (id: string, bb: number, seated: number) => ({
+    tableId: id,
+    variant: 'pineapple',
+    bb,
+    seated,
+  });
 
   it('T6 closes everything above 1/2 and trims the rest to 2, fewest seated first', () => {
-    const plan = planExoticTrim(
-      [mk('a', 2, 6), mk('b', 2, 5), mk('c', 2, 1), mk('hi', 5, 3)],
-      50
-    );
+    const plan = planExoticTrim([mk('a', 2, 6), mk('b', 2, 5), mk('c', 2, 1), mk('hi', 5, 3)], 50);
     expect(plan.close).toContain('hi');
     expect(plan.close).toContain('c');
     expect(plan.keep.sort()).toEqual(['a', 'b']);
@@ -233,17 +272,34 @@ describe('T8 - the tagger is idempotent, within 1 of target, and matches persona
 
 describe('T9/T10/T31 - one body, one club, one host', () => {
   it('T9 refuses a Shark sit while the horse is active on JAQK', () => {
-    expect(evaluateSit({ ...baseSit, activeClubId: JAQK_CLUB_ID, activeHostId: MIDWAY_UNION_ID, clubId: SHARK_CLUB_ID })).toBe('other_club');
+    expect(
+      evaluateSit({
+        ...baseSit,
+        activeClubId: JAQK_CLUB_ID,
+        activeHostId: MIDWAY_UNION_ID,
+        clubId: SHARK_CLUB_ID,
+      })
+    ).toBe('other_club');
   });
   it('T10 refuses a DSS sit while the horse is active on Midway Union', () => {
-    expect(evaluateSit({ ...baseSit, activeClubId: JAQK_CLUB_ID, activeHostId: MIDWAY_UNION_ID, clubId: DSS_CLUB_ID, tableHostId: DSS_CLUB_ID })).toBe('other_club');
+    expect(
+      evaluateSit({
+        ...baseSit,
+        activeClubId: JAQK_CLUB_ID,
+        activeHostId: MIDWAY_UNION_ID,
+        clubId: DSS_CLUB_ID,
+        tableHostId: DSS_CLUB_ID,
+      })
+    ).toBe('other_club');
   });
   it('T31 refuses a JAQK wallet on a DSS table outright', () => {
     expect(sitIsLegalForHost(JAQK_CLUB_ID, DSS_CLUB_ID)).toBe(false);
     expect(sitIsLegalForHost(DSS_CLUB_ID, MIDWAY_UNION_ID)).toBe(false);
     expect(sitIsLegalForHost(JAQK_CLUB_ID, MIDWAY_UNION_ID)).toBe(true);
     expect(sitIsLegalForHost(SHARK_CLUB_ID, MIDWAY_UNION_ID)).toBe(true);
-    expect(evaluateSit({ ...baseSit, clubId: JAQK_CLUB_ID, tableHostId: DSS_CLUB_ID })).toBe('other_host');
+    expect(evaluateSit({ ...baseSit, clubId: JAQK_CLUB_ID, tableHostId: DSS_CLUB_ID })).toBe(
+      'other_host'
+    );
   });
   it('picks a wallet only when it is licensed for the stake', () => {
     expect(pickWallet([{ clubId: JAQK_CLUB_ID, available: 100, liveSeats: 0 }], 2, 'h')).toBeNull();
@@ -262,15 +318,41 @@ describe('T9/T10/T31 - one body, one club, one host', () => {
 
 describe('T11/T12 - seat cap and the phase clamp', () => {
   it('T11 allows four seats and rejects the fifth', () => {
-    expect(evaluateSit({ ...baseSit, activeSeatCount: 3, activeClubId: JAQK_CLUB_ID, activeHostId: MIDWAY_UNION_ID })).toBe('ok');
-    expect(evaluateSit({ ...baseSit, activeSeatCount: 4, activeClubId: JAQK_CLUB_ID, activeHostId: MIDWAY_UNION_ID })).toBe('seat_cap');
+    expect(
+      evaluateSit({
+        ...baseSit,
+        activeSeatCount: 3,
+        activeClubId: JAQK_CLUB_ID,
+        activeHostId: MIDWAY_UNION_ID,
+      })
+    ).toBe('ok');
+    expect(
+      evaluateSit({
+        ...baseSit,
+        activeSeatCount: 4,
+        activeClubId: JAQK_CLUB_ID,
+        activeHostId: MIDWAY_UNION_ID,
+      })
+    ).toBe('seat_cap');
   });
   it('honours a persona max_tables lower than four', () => {
-    expect(evaluateSit({ ...baseSit, maxTables: 2, activeSeatCount: 2, activeClubId: JAQK_CLUB_ID, activeHostId: MIDWAY_UNION_ID })).toBe('seat_cap');
+    expect(
+      evaluateSit({
+        ...baseSit,
+        maxTables: 2,
+        activeSeatCount: 2,
+        activeClubId: JAQK_CLUB_ID,
+        activeHostId: MIDWAY_UNION_ID,
+      })
+    ).toBe('seat_cap');
   });
   it('T12 rejects 2/5 and 5/10 however rich the wallet', () => {
-    expect(evaluateSit({ ...baseSit, bb: 5, available: 10_000_000, buyIn: 500 })).toBe('stake_above_phase_cap');
-    expect(evaluateSit({ ...baseSit, bb: 10, available: 10_000_000, buyIn: 1000 })).toBe('stake_above_phase_cap');
+    expect(evaluateSit({ ...baseSit, bb: 5, available: 10_000_000, buyIn: 500 })).toBe(
+      'stake_above_phase_cap'
+    );
+    expect(evaluateSit({ ...baseSit, bb: 10, available: 10_000_000, buyIn: 1000 })).toBe(
+      'stake_above_phase_cap'
+    );
     // 10,000 licenses 2/5 on the 20-buy-in rule. The clamp still wins.
     expect(isLicensed(10_000, 5)).toBe(false);
     expect(isLicensed(10_000, 2)).toBe(true);
@@ -287,20 +369,39 @@ describe('T13/T14/T15 - sit counting', () => {
   });
   it('T14 rejects a fourth in-seat rebuy', () => {
     const base = {
-      stackBb: 20, available: 10_000, bb: 2, sessionStartBalance: 10_000,
-      currentCommit: 0, rebuyAmount: 200, inTwoHourWindow: false,
+      stackBb: 20,
+      available: 10_000,
+      bb: 2,
+      sessionStartBalance: 10_000,
+      currentCommit: 0,
+      rebuyAmount: 200,
+      inTwoHourWindow: false,
     };
     expect(mayRebuyInSeat({ ...base, rebuysTaken: 2 })).toBe(true);
     expect(mayRebuyInSeat({ ...base, rebuysTaken: 3 })).toBe(false);
   });
   it('T14 refuses a rebuy that would dodge the two-hour window', () => {
-    expect(mayRebuyInSeat({
-      stackBb: 20, available: 10_000, bb: 2, sessionStartBalance: 10_000,
-      currentCommit: 0, rebuyAmount: 200, inTwoHourWindow: true, rebuysTaken: 0,
-    })).toBe(false);
+    expect(
+      mayRebuyInSeat({
+        stackBb: 20,
+        available: 10_000,
+        bb: 2,
+        sessionStartBalance: 10_000,
+        currentCommit: 0,
+        rebuyAmount: 200,
+        inTwoHourWindow: true,
+        rebuysTaken: 0,
+      })
+    ).toBe(false);
   });
   it('T15 treats a table change as a new sit, and there is no must-move', () => {
-    const key = gameKey({ hostId: MIDWAY_UNION_ID, template: 'classic', variant: 'nlh', sb: 1, bb: 2 });
+    const key = gameKey({
+      hostId: MIDWAY_UNION_ID,
+      template: 'classic',
+      variant: 'nlh',
+      sb: 1,
+      bb: 2,
+    });
     expect(key).toBe(`${MIDWAY_UNION_ID}:classic:nlh:1:2`);
     expect(maySitOnKey('mixer', 2)).toBe(true);
     expect(maySitOnKey('mixer', 3)).toBe(false);
@@ -309,14 +410,48 @@ describe('T13/T14/T15 - sit counting', () => {
 
 describe('T16/T17 - add-ons and bullets', () => {
   it('T16 takes the add-on whenever alive and funded', () => {
-    expect(addOnDecision({ alive: true, hasAddOn: true, fee: 10, available: 100, lateRegWindowOpen: true }))
-      .toEqual({ take: true });
+    expect(
+      addOnDecision({
+        alive: true,
+        hasAddOn: true,
+        fee: 10,
+        available: 100,
+        lateRegWindowOpen: true,
+      })
+    ).toEqual({ take: true });
   });
   it('T16 skips only for the enumerated reasons', () => {
-    expect(addOnDecision({ alive: false, hasAddOn: true, fee: 10, available: 100, lateRegWindowOpen: true }).skip).toBe('busted');
-    expect(addOnDecision({ alive: true, hasAddOn: false, fee: 10, available: 100, lateRegWindowOpen: true }).skip).toBe('no_addon');
-    expect(addOnDecision({ alive: true, hasAddOn: true, fee: 10, available: 1, lateRegWindowOpen: true }).skip).toBe('cannot_pay');
-    expect(addOnDecision({ alive: true, hasAddOn: true, fee: 10, available: 100, lateRegWindowOpen: false }).skip).toBe('late_reg_window_closed');
+    expect(
+      addOnDecision({
+        alive: false,
+        hasAddOn: true,
+        fee: 10,
+        available: 100,
+        lateRegWindowOpen: true,
+      }).skip
+    ).toBe('busted');
+    expect(
+      addOnDecision({
+        alive: true,
+        hasAddOn: false,
+        fee: 10,
+        available: 100,
+        lateRegWindowOpen: true,
+      }).skip
+    ).toBe('no_addon');
+    expect(
+      addOnDecision({ alive: true, hasAddOn: true, fee: 10, available: 1, lateRegWindowOpen: true })
+        .skip
+    ).toBe('cannot_pay');
+    expect(
+      addOnDecision({
+        alive: true,
+        hasAddOn: true,
+        fee: 10,
+        available: 100,
+        lateRegWindowOpen: false,
+      }).skip
+    ).toBe('late_reg_window_closed');
   });
   it('T17 caps paid bullets at three and freerolls at min(event_max, 3)', () => {
     expect(mttBulletsAllowed({ eventMax: 9, isFreeroll: false, allowsReentry: true })).toBe(3);
@@ -389,28 +524,48 @@ describe('T21/T22 - freeroll eligibility', () => {
     // The decision is a pure function of (horse, event): the same body asked
     // twice for the same event gets the same answer, so a JAQK-wallet and a
     // Shark-wallet lookup of one body cannot both register.
-    const a = willJumpToFreeroll({ horseId: 'body-1', eventId: 'evt-9', persona: 'mtt_regular', needsRepair: false });
-    const b = willJumpToFreeroll({ horseId: 'body-1', eventId: 'evt-9', persona: 'mtt_regular', needsRepair: false });
+    const a = willJumpToFreeroll({
+      horseId: 'body-1',
+      eventId: 'evt-9',
+      persona: 'mtt_regular',
+      needsRepair: false,
+    });
+    const b = willJumpToFreeroll({
+      horseId: 'body-1',
+      eventId: 'evt-9',
+      persona: 'mtt_regular',
+      needsRepair: false,
+    });
     expect(a).toBe(b);
   });
   it('always jumps a horse that needs repair, and caps the rest at 20 percent', () => {
-    expect(willJumpToFreeroll({ horseId: 'x', eventId: 'e', persona: 'mtt_late_reg', needsRepair: true })).toBe(true);
+    expect(
+      willJumpToFreeroll({ horseId: 'x', eventId: 'e', persona: 'mtt_late_reg', needsRepair: true })
+    ).toBe(true);
     expect(freerollJumpCap(100)).toBe(20);
   });
 });
 
 describe('T23 - a fourth cash seat blocks an MTT entry', () => {
   it('rejects the MTT slot when four cash seats are held', () => {
-    expect(evaluateSit({ ...baseSit, activeSeatCount: 4, activeClubId: JAQK_CLUB_ID, activeHostId: MIDWAY_UNION_ID })).toBe('seat_cap');
+    expect(
+      evaluateSit({
+        ...baseSit,
+        activeSeatCount: 4,
+        activeClubId: JAQK_CLUB_ID,
+        activeHostId: MIDWAY_UNION_ID,
+      })
+    ).toBe('seat_cap');
   });
 });
 
 describe('T24/T30/T34 - chips are never printed', () => {
-  it('T24 seeds a never-funded wallet once and never touches a funded one', () => {
-    expect(shouldSeedWallet(false, 0)).toBe(true);
-    expect(shouldSeedWallet(true, 0)).toBe(false);
-    expect(shouldSeedWallet(false, 12_674.98)).toBe(false);
-    expect(shouldSeedWallet(true, 10_000)).toBe(false);
+  it('T24 there is no seeding primitive at all - balances are used as they stand', async () => {
+    // Dan 2026-09-04: ignore the 10,000 seed, use their current balances.
+    const mod = await import('./StableHand');
+    expect(Object.keys(mod)).not.toContain('shouldSeedWallet');
+    expect(Object.keys(mod)).not.toContain('SEED_AMOUNT');
+    expect(Object.keys(mod).some((n) => /seed/i.test(n) && n !== 'STABLE_HAND_SEED')).toBe(false);
   });
   it('T30/T34 the module exposes no grant, top-up or reload primitive', async () => {
     const mod = await import('./StableHand');
@@ -449,11 +604,23 @@ describe('T25/T26/T27/T28 - booking', () => {
   });
   it('stop-loss outranks every other force-leave reason', () => {
     const r = forceLeaveReason({
-      persona: 'grinder', pnlBi: -2.5, stack: 0, sitInBuyIn: 100,
-      minutesInSeat: 500, sessionPlanMinutes: 120, minutesPlayedToday: 9999,
-      dailyCapMinutes: 600, windingDown: true, available: 0, bb: 2,
-      isRestDayBoundary: true, rebuysTaken: 3, stackBb: 0,
-      tableClosing: true, humanYieldDue: true, shapeAdjust: true,
+      persona: 'grinder',
+      pnlBi: -2.5,
+      stack: 0,
+      sitInBuyIn: 100,
+      minutesInSeat: 500,
+      sessionPlanMinutes: 120,
+      minutesPlayedToday: 9999,
+      dailyCapMinutes: 600,
+      windingDown: true,
+      available: 0,
+      bb: 2,
+      isRestDayBoundary: true,
+      rebuysTaken: 3,
+      stackBb: 0,
+      tableClosing: true,
+      humanYieldDue: true,
+      shapeAdjust: true,
     });
     expect(r).toBe('stop_loss');
   });
@@ -469,13 +636,34 @@ describe('T25/T26/T27/T28 - booking', () => {
 describe('T29/T32/T33 - rest days, windows, kill switch', () => {
   it('T29 a rest day blocks new cash but never the add-on or the yield', () => {
     expect(evaluateSit({ ...baseSit, isRestDay: true })).toBe('rest_day');
-    expect(addOnDecision({ alive: true, hasAddOn: true, fee: 1, available: 10, lateRegWindowOpen: true }).take).toBe(true);
+    expect(
+      addOnDecision({ alive: true, hasAddOn: true, fee: 1, available: 10, lateRegWindowOpen: true })
+        .take
+    ).toBe(true);
     expect(killAllowsAction('yield')).toBe(true);
   });
   it('T32 the two-hour window runs on the key, so cashing one of four trips it', () => {
-    const key = gameKey({ hostId: MIDWAY_UNION_ID, template: 'classic', variant: 'nlh', sb: 1, bb: 2 });
-    const same = gameKey({ hostId: MIDWAY_UNION_ID, template: 'classic', variant: 'nlh', sb: 1, bb: 2 });
-    const other = gameKey({ hostId: MIDWAY_UNION_ID, template: 'classic', variant: 'plo4', sb: 1, bb: 2 });
+    const key = gameKey({
+      hostId: MIDWAY_UNION_ID,
+      template: 'classic',
+      variant: 'nlh',
+      sb: 1,
+      bb: 2,
+    });
+    const same = gameKey({
+      hostId: MIDWAY_UNION_ID,
+      template: 'classic',
+      variant: 'nlh',
+      sb: 1,
+      bb: 2,
+    });
+    const other = gameKey({
+      hostId: MIDWAY_UNION_ID,
+      template: 'classic',
+      variant: 'plo4',
+      sb: 1,
+      bb: 2,
+    });
     expect(key).toBe(same);
     expect(key).not.toBe(other);
   });
@@ -490,12 +678,12 @@ describe('T29/T32/T33 - rest days, windows, kill switch', () => {
 
 describe('bankroll arithmetic (Sections 8.3 - 8.10)', () => {
   it('licenses exactly the OPORD table on a 10,000 wallet', () => {
-    expect(isLicensed(10_000, 0.02)).toBe(true);   // 20 BI = 40
-    expect(isLicensed(10_000, 0.1)).toBe(true);    // 200
-    expect(isLicensed(10_000, 0.5)).toBe(true);    // 1,000
-    expect(isLicensed(10_000, 2)).toBe(true);      // 4,000
-    expect(isLicensed(10_000, 5)).toBe(false);     // phase clamp, not money
-    expect(isLicensed(3_999, 2)).toBe(false);      // one chip short of 20 BI
+    expect(isLicensed(10_000, 0.02)).toBe(true); // 20 BI = 40
+    expect(isLicensed(10_000, 0.1)).toBe(true); // 200
+    expect(isLicensed(10_000, 0.5)).toBe(true); // 1,000
+    expect(isLicensed(10_000, 2)).toBe(true); // 4,000
+    expect(isLicensed(10_000, 5)).toBe(false); // phase clamp, not money
+    expect(isLicensed(3_999, 2)).toBe(false); // one chip short of 20 BI
   });
   it('allows four 100bb tables at 1/2 inside the 50 percent commit cap', () => {
     // 4 x 200 = 800 committed against a 5,000 cap.
@@ -513,5 +701,137 @@ describe('bankroll arithmetic (Sections 8.3 - 8.10)', () => {
     expect(isBroke(1)).toBe(false);
     expect(stakeSpreadAllowed(2, 1)).toBe(true);
     expect(stakeSpreadAllowed(2, 0.02)).toBe(false);
+  });
+});
+
+describe('Dan 2026-09-04 - Omaha 8 is PLO8o, and limit games stay available', () => {
+  it('treats flo8 as Omaha 8 / PLO8o family', async () => {
+    const { isOmahaEightFamily, isLimitGame } = await import('./StableHand');
+    expect(isOmahaEightFamily('flo8')).toBe(true);
+    expect(isOmahaEightFamily('plo8')).toBe(true);
+    expect(isOmahaEightFamily('PLO8O')).toBe(true);
+    expect(isOmahaEightFamily('nlh')).toBe(false);
+    expect(isLimitGame('flo8')).toBe(true);
+    expect(isLimitGame('flh')).toBe(true);
+    expect(isLimitGame('plo8')).toBe(false);
+  });
+
+  it('caps limit games separately so pot-limit cannot eat the whole allowance', async () => {
+    const { planLimitGames, planExoticTrim } = await import('./StableHand');
+    const plo8Full = planExoticTrim(
+      [
+        { tableId: 'p1', variant: 'plo8', bb: 2, seated: 6 },
+        { tableId: 'p2', variant: 'plo8', bb: 2, seated: 6 },
+      ],
+      100
+    );
+    expect(plo8Full.mayOpen).toBe(0);
+    // flo8 has its own allowance and is unaffected by plo8 being at cap.
+    const limit = planLimitGames([], 100);
+    expect(limit.mayOpen).toBe(1);
+  });
+
+  it('keeps a floor of one and a cap of two per limit variant', async () => {
+    const { planLimitGames } = await import('./StableHand');
+    expect(planLimitGames([], 100).mayOpen).toBe(1);
+    expect(planLimitGames([{ tableId: 'a', variant: 'flh', bb: 2, seated: 4 }], 100).mayOpen).toBe(
+      0
+    );
+    const over = planLimitGames(
+      [
+        { tableId: 'a', variant: 'flh', bb: 2, seated: 9 },
+        { tableId: 'b', variant: 'flh', bb: 2, seated: 5 },
+        { tableId: 'c', variant: 'flh', bb: 2, seated: 1 },
+      ],
+      100
+    );
+    expect(over.close).toEqual(['c']);
+    expect(over.keep.sort()).toEqual(['a', 'b']);
+  });
+
+  it('applies the 1/2 ceiling to limit games too, because flo8 is Omaha 8', async () => {
+    const { planLimitGames } = await import('./StableHand');
+    const p = planLimitGames([{ tableId: 'hi', variant: 'flo8', bb: 5, seated: 3 }], 100);
+    expect(p.close).toEqual(['hi']);
+    expect(p.keep).toEqual([]);
+  });
+
+  it('does not open a limit table for fewer than four horses', async () => {
+    const { planLimitGames } = await import('./StableHand');
+    expect(planLimitGames([], 3).mayOpen).toBe(0);
+  });
+});
+
+describe('the bankroll-unknown policy keeps the 2026-08-31 fix intact', () => {
+  it('fails OPEN when the whole map failed to load - never empty the floor again', async () => {
+    const { maySeatWithUnknownRoll, rollUnknownVerdict } = await import('./StableHand');
+    expect(maySeatWithUnknownRoll(false, false)).toBe(true);
+    expect(maySeatWithUnknownRoll(false, true)).toBe(true);
+    expect(rollUnknownVerdict(false, true)).toBe('allow_no_opinion');
+  });
+  it('REPLAYS 2026-08-31: a map that loaded but covers no rows for the club still fails open', async () => {
+    const { maySeatWithUnknownRoll } = await import('./StableHand');
+    // The incident exactly: allComplete was true, the map was keyed on clubs
+    // owning zero cash tables, every lookup missed. Refusing here emptied the
+    // floor for 40 minutes. Coverage, not the load flag, is the evidence.
+    expect(maySeatWithUnknownRoll(true, false)).toBe(true);
+  });
+  it('refuses only when the map loaded, covers the club, and the horse is still absent', async () => {
+    const { maySeatWithUnknownRoll, rollUnknownVerdict } = await import('./StableHand');
+    expect(maySeatWithUnknownRoll(true, true)).toBe(false);
+    expect(rollUnknownVerdict(true, true)).toBe('refuse_not_a_member');
+  });
+  it('and the Stable Hand gate itself never fails open, because the RPC cannot see its rules', () => {
+    // atomic_table_buyin checks solvency. It does not know the licence, the
+    // commit cap, the phase clamp, the sit cap or the mutex.
+    expect(evaluateSit({ ...baseSit, available: 3_999 })).toBe('brm');
+    expect(evaluateSit({ ...baseSit, bb: 5, available: 10_000_000, buyIn: 500 })).toBe(
+      'stake_above_phase_cap'
+    );
+    expect(evaluateSit({ ...baseSit, sitsOnKeyToday: 99 })).toBe('sit_cap');
+  });
+});
+
+describe('Section 7.2 - variants and stakes', () => {
+  it('meets every coverage floor and never exceeds three variants', async () => {
+    const { assignVariants, VARIANT_COVERAGE, MAX_VARIANTS_PER_HORSE } =
+      await import('./StableHand');
+    const ids = Array.from({ length: 500 }, (_, i) => `h-${i}`);
+    const got = assignVariants(ids);
+    const count = (v: string) => [...got.values()].filter((l) => l.includes(v)).length;
+    VARIANT_COVERAGE.forEach(([variant, share]) => {
+      // Within one horse of the floor; the 3-variant cap can cost at most that.
+      expect(count(variant)).toBeGreaterThanOrEqual(Math.floor(share * 500) - 1);
+    });
+    got.forEach((l) => {
+      expect(l.length).toBeGreaterThanOrEqual(1);
+      expect(l.length).toBeLessThanOrEqual(MAX_VARIANTS_PER_HORSE);
+    });
+  });
+
+  it('tags a population for the limit games so the limit floor can be seated', async () => {
+    const { assignVariants } = await import('./StableHand');
+    const got = assignVariants(Array.from({ length: 500 }, (_, i) => `h-${i}`));
+    const flh = [...got.values()].filter((l) => l.includes('flh')).length;
+    const flo8 = [...got.values()].filter((l) => l.includes('flo8')).length;
+    expect(flh).toBeGreaterThan(20);
+    expect(flo8).toBeGreaterThan(20);
+  });
+
+  it('is deterministic', async () => {
+    const { assignVariants, assignPreferredStakes } = await import('./StableHand');
+    const ids = ['a', 'b', 'c'];
+    expect([...assignVariants(ids)]).toEqual([...assignVariants(ids)]);
+    expect(assignPreferredStakes('a')).toEqual(assignPreferredStakes('a'));
+  });
+
+  it('gives every horse legal, adjacent stakes inside the phase clamp', async () => {
+    const { assignPreferredStakes, stakeSpreadAllowed, stakeIsLegalThisPhase } =
+      await import('./StableHand');
+    for (let i = 0; i < 300; i++) {
+      const st = assignPreferredStakes(`h-${i}`);
+      st.forEach((bb) => expect(stakeIsLegalThisPhase(bb)).toBe(true));
+      if (st.length === 2) expect(stakeSpreadAllowed(st[0], st[1])).toBe(true);
+    }
   });
 });

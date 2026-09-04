@@ -13,7 +13,8 @@
     "sim": "tsx sim/runner.ts",
     "fix:esbuild": "node scripts/fix-vitest-esbuild.mjs",
     "pretest": "node scripts/fix-vitest-esbuild.mjs",
-    "soak": "tsx sim/soak-conservation.ts"
+    "soak": "tsx sim/soak-conservation.ts",
+    "horses:tag": "tsx src/scripts/horsesTag.ts"
   },
   "dependencies": {
     "@sentry/node": "^10.46.0",

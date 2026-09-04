@@ -34,6 +34,15 @@ export type BankrollEvent =
    * until this counter existed that number was only visible by hand.
    */
   | 'seat_fail_open_roll_unknown'
+  /**
+   * Refused a cash seat because the horse IS a member of the funding club,
+   * the bankroll map holds rows for that club, and its balance still could
+   * not be read. Distinct from the fail-open above: there the map had no
+   * opinion, here it had coverage and the row was faulty. Measured 0 on
+   * 2026-09-04 (no horse membership carries a null chip_balance), so any
+   * non-zero reading is a data fault worth looking at.
+   */
+  | 'seat_refused_balance_unreadable'
   /** Seated, with the buy-in capped below the profiled amount by the policy. */
   | 'buyin_capped'
   /** Declined a reload that would otherwise have been paid. */

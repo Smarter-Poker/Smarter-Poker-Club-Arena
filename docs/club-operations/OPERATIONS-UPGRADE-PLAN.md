@@ -405,7 +405,30 @@ Original audit, kept for the record:
 
 ---
 
-## 7. Phase 5 - Players and player records
+## 7. Phase 5 - Players and player records. **DONE**
+
+Shipped 2026-09-04 (migration `20260904180000_a_player_record_says_what_it_measured`,
+changelog `docs/changelog/2026-09-04-club-operations-phase-5-a-player-record-says-what-it-measured.md`).
+The audit below predates a rebuild of these pages, so it was redone against
+`origin/main`. Confirmed and fixed: 3-Bet% divided by the fold-to-3-bet
+denominator (316.7% for one player); three labels on two numbers in Volume
+and two labels on one wallet; the transfer modal defaulting `p_destination`
+to `player_wallet` while the recipient was still loading (fn_club_bank_send
+honours it) and defaulting the sender's role on a failed read;
+`ca_can_view_club` / `ca_can_view_club_finances` admitting a caller with no
+account (the latent item below); dead `!resolved` guards so a bad slug read
+as an outage and "Not Found" was unreachable; the roster resetting a
+deep-linked financial filter when the page RPC beat the summary; unbounded
+realtime recovery; the dead fee-rollup nudge on every open; bus events with
+the slug; upline "None" shown to viewers it is hidden from; the downline cap
+with no way to row 51; notes stuck "Not Saved Yet" after a trim.
+
+Of the original list: the per-page recomputation in `ca_club_members_page`
+measures 520-577 ms per page of 80 for 417 members today and was left as is;
+`fn_can_see_horse_flag` per row and `cm.last_active_at` no longer apply to
+the rebuilt roster; the duplicated-roster item was closed in phase 4.
+
+Original audit, kept for the record:
 
 - **CONFIRMED - `ca_club_members_page` takes 1.05s for 417 members** and does
   it on every page of the infinite scroll: it rebuilds the whole recursive agent

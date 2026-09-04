@@ -21,7 +21,12 @@ export interface AdminDeps {
       | {
           adminPause(reason?: string): unknown;
           adminResume(): unknown;
-          leaveTable(userId: string): { success: boolean; [k: string]: unknown };
+          leaveTable(
+            userId: string,
+            opts?: { forced?: boolean }
+          ):
+            | { success: boolean; [k: string]: unknown }
+            | Promise<{ success: boolean; [k: string]: unknown }>;
         }
       | null
       | undefined;
@@ -222,7 +227,9 @@ export async function handleAdminKick(
       return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
     }
 
-    const result = engine.leaveTable(targetUserId);
+    // CHIP CONTINUITY: a kick is a system exit. The stay clock never blocks it;
+    // the session still closes and the rejoin floor is still written.
+    const result = await engine.leaveTable(targetUserId, { forced: true });
 
     // Round 71: write audit ledger row so forensic review sees who kicked
     // whom, when, why. Fire-and-forget — engine admin actions log to

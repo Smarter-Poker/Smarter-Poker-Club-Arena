@@ -27,6 +27,7 @@ import {
 import { ScheduledTournamentService } from './services/ScheduledTournamentService.js';
 import { TournamentMetrics } from './services/TournamentMetrics.js';
 import { SpinMetrics } from './services/SpinMetrics.js';
+import { ReplicationMetrics } from './services/ReplicationMetrics.js';
 import {
   planTableReopens,
   freshHumanWindowMs,
@@ -82,6 +83,7 @@ import { isMaintenanceFrozen } from './maintenance/freezeState.js';
 import { raiseEngineAlert, resolveEngineAlert } from './services/engineAlerts.js';
 import { MaintenanceBreak } from './maintenance/MaintenanceBreak.js';
 import { createSupabaseMaintenanceBreakStore } from './maintenance/maintenanceBreakStore.js';
+import { StatsHealthMonitor } from './observability/StatsHealthMonitor.js';
 import { runThawInstallments } from './maintenance/thawInstallments.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
 import { isWakeableCashTable } from './services/onDemandTableWake.js';
@@ -367,6 +369,7 @@ export class GameServer {
    */
   private tournamentMetrics = new TournamentMetrics();
   private spinMetrics = new SpinMetrics();
+  private replicationMetrics = new ReplicationMetrics();
   private lifecycle = new HorseLifecycleManager();
 
   /**
@@ -498,6 +501,26 @@ export class GameServer {
         JSON.stringify(summary.last?.shifted ?? null)
       );
     },
+  });
+
+  /**
+   * The stats pipeline's pulse (Stats Page Programme phase 1, 2026-09-04):
+   * one ca_stats_health() read a minute, published on /health as `stats`
+   * and on /metrics as poker_stats_*, raising through the same alert path as
+   * clock skew when the hand index lags 30 minutes, the live stat trigger
+   * misses a hand, or the witness audit finds the engine's recorded button or
+   * showdown roster disagreeing with the action log. Declared after the
+   * maintenance break because it asks it whether a break is on.
+   */
+  private readonly statsHealth = new StatsHealthMonitor({
+    read: async () => {
+      const { data, error } = await supabase.rpc('ca_stats_health');
+      if (error) throw new Error(error.message);
+      return data;
+    },
+    raise: (a) => raiseEngineAlert(a),
+    resolve: (name, component, note) => resolveEngineAlert(name, component, note),
+    paused: () => this.maintenanceBreak.isActive(),
   });
   /**
    * A5: drains `pending_fee_distributions` — rake / BBJ fees that left a pot but
@@ -755,6 +778,14 @@ export class GameServer {
       // ever checked it except a human typing SQL. Same fail-loud contract.
       this.spinMetrics.start();
 
+      // Step 3e: Replication gauges. The realtime slot was 136 MB behind on
+      // 2026-09-04 and nothing on the platform could see it - logical decoding
+      // degrades as a spiral, not a cliff, because a slot that falls behind
+      // must read WAL from disk rather than memory, which is slower. Its own
+      // collector, deliberately: a catalog read must never be able to blind
+      // the spin fairness gauges, or be blinded by them.
+      this.replicationMetrics.start();
+
       // Step 4: Start lifecycle manager (stuck horse detection, cleanup)
       this.lifecycle.start();
 
@@ -791,6 +822,7 @@ export class GameServer {
       this.startFeeReconciler();
       this.startLeaseReaper();
       this.startClockSkewMonitor();
+      this.statsHealth.start();
       this.startBombLedgerRepairSweep();
 
       // Step 8b (2026-08-20): drain the hand_history retry queue. hand_history
@@ -882,6 +914,7 @@ export class GameServer {
      * expiring it if no engine ever comes back.
      */
     this.maintenanceBreak.stop();
+    this.statsHealth.stop();
     if (this.feeReconcileTimer) {
       clearInterval(this.feeReconcileTimer);
       this.feeReconcileTimer = null;
@@ -1276,6 +1309,9 @@ export class GameServer {
        * than a race the workflow observes.
        */
       maintenance: { ...this.maintenanceBreak.snapshot(), dbClockSkewMs: this.lastDbSkewMs },
+      // The stats pipeline: index lag, trigger gaps, the money repair cursor
+      // and the last witness audit. null until the first read completes.
+      stats: this.statsHealth.publish(),
       // ONE RAKE SPEC (R7): both checksums and whether they last agreed.
       // Informational: a drift alerts, it never holds a table.
       rakeSpec: rakeSpecDriftState(),
@@ -1439,7 +1475,16 @@ export class GameServer {
       // EQUALITY the Spin format is sold on, and watch the punctuality of
       // the wheel that sells it. See services/SpinMetrics.ts.
       ...this.spinMetrics.toPrometheus(),
+      // ── REPLICATION OBSERVABILITY (2026-09-04) ───────────────────────
+      // How far behind the realtime replication slot is, in bytes, per slot.
+      // See services/ReplicationMetrics.ts.
+      ...this.replicationMetrics.toPrometheus(),
     ];
+
+    // ── STATS PIPELINE (2026-09-04) ─────────────────────────────────────
+    // Fleet-independent, so it rides with the freeze block: an empty fleet
+    // still has a hand index that can fall behind.
+    freeze.push(...this.statsHealth.prometheusLines());
 
     if (allLines.length === 0) {
       // Still emit freeze metrics: "no engines at all" is itself the loudest

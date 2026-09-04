@@ -32,7 +32,6 @@ import { handleHeartbeat } from './handlers/heartbeat.js';
 import { handleAway } from './handlers/away.js';
 import { handlePreaction } from './handlers/preaction.js';
 import { handleAddchips } from './handlers/addchips.js';
-import { handleWithdrawchips } from './handlers/withdrawchips.js';
 import { handleLeave } from './handlers/leave.js';
 import { handleRejectRebuy } from './handlers/reject_rebuy.js';
 import { handleSitout } from './handlers/sitout.js';
@@ -68,7 +67,6 @@ type AnyGameServer = Parameters<typeof handleAction>[2]['gameServer'] &
   Parameters<typeof handleAway>[2]['gameServer'] &
   Parameters<typeof handlePreaction>[2]['gameServer'] &
   Parameters<typeof handleAddchips>[2]['gameServer'] &
-  Parameters<typeof handleWithdrawchips>[2]['gameServer'] &
   Parameters<typeof handleLeave>[2]['gameServer'] &
   Parameters<typeof handleSitout>[2]['gameServer'] &
   Parameters<typeof handleStraddle>[2]['gameServer'] &
@@ -211,8 +209,6 @@ export function createRouter(
     if (method === 'POST' && url === '/away') return handleAway(req, res, { gameServer });
     if (method === 'POST' && url === '/preaction') return handlePreaction(req, res, { gameServer });
     if (method === 'POST' && url === '/addchips') return handleAddchips(req, res, { gameServer });
-    if (method === 'POST' && url === '/withdrawchips')
-      return handleWithdrawchips(req, res, { gameServer });
     if (method === 'POST' && url === '/leave') return handleLeave(req, res, { gameServer });
     if (method === 'POST' && url === '/sitout') return handleSitout(req, res, { gameServer });
     if (method === 'POST' && url === '/straddle') return handleStraddle(req, res, { gameServer });

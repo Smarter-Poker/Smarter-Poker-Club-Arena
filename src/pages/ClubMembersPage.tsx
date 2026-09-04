@@ -13,6 +13,7 @@ import RosterConnectionStatus from '../components/club/RosterConnectionStatus';
 import { exportToCSV } from '../lib/export';
 import { ClubNotFoundError, resolveClubUUIDStrict } from '../utils/strictClubIdResolver';
 import { reportError } from '../utils/errorReporter';
+import { safeErrorMessage } from '../utils/safeErrorMessage';
 import {
   computeRosterRetryDelay,
   type RosterConnectionState,
@@ -32,11 +33,7 @@ import {
   rosterSearchKey,
   writeRosterCache,
 } from '../lib/rosterCache';
-import {
-  RosterSummaryCoordinator,
-  settleRosterReadsIndependently,
-  shouldTouchFeeRollup,
-} from '../lib/rosterLoadPolicy';
+import { RosterSummaryCoordinator, settleRosterReadsIndependently } from '../lib/rosterLoadPolicy';
 import './ClubMembersPage.css';
 
 const ROSTER_OPERATIONS_ART = `${import.meta.env.BASE_URL}images/club-members/roster-ledger-desk-v2.webp`;
@@ -153,7 +150,6 @@ export default function ClubMembersPage() {
   const membersRef = useRef<RosterMember[]>([]);
   const summaryAvailableRef = useRef(false);
   const summaryCoordinatorRef = useRef(new RosterSummaryCoordinator<RosterSummary | null>());
-  const feeRollupTouchedAtRef = useRef<number | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recoveryAttemptRef = useRef(0);
   const recoveryRequestKeyRef = useRef('');
@@ -187,7 +183,6 @@ export default function ClubMembersPage() {
     setMembers([]);
     summaryCoordinatorRef.current.reset();
     summaryAvailableRef.current = false;
-    feeRollupTouchedAtRef.current = null;
     setSummary(DEFAULT_SUMMARY);
     setSummaryAvailable(false);
     setSummaryFreshness('loading');
@@ -380,11 +375,10 @@ export default function ClubMembersPage() {
           setDataFreshness('fresh');
           setLastSuccessfulSyncAt(Date.now());
           recoveryAttemptRef.current = 0;
-          const now = Date.now();
-          if (shouldTouchFeeRollup(feeRollupTouchedAtRef.current, now)) {
-            feeRollupTouchedAtRef.current = now;
-            ClubRosterService.touchFeeRollup();
-          }
+          // ca_touch_member_fee_rollup used to be nudged here. Nothing reads
+          // member_fee_rollup any more (verified against pg_proc 2026-09-04:
+          // only its own refresh and backfill mention it), so the write was a
+          // roster open spending the database on a table nobody looks at.
         },
         onSummaryError: (error) => {
           if (!isCurrent()) return;
@@ -525,7 +519,11 @@ export default function ClubMembersPage() {
     onSubscriptionError: () => {
       realtimeConnectionRef.current = 'degraded';
       setRealtimeConnection('degraded');
-      scheduleConnectionRecovery();
+      // Bounded: a flapping channel used to schedule a forced summary + page
+      // reload on every error event, for ever, and each successful page reset
+      // the attempt counter so the bound never bit. The SUBSCRIBED handler
+      // above already refreshes once the channel comes back.
+      scheduleConnectionRecovery(2);
     },
     enabled: !!resolvedClubId,
   });
@@ -593,11 +591,17 @@ export default function ClubMembersPage() {
     (value) => canUseFinancialViews || !['activity', 'downlines', 'wallet', 'fees'].includes(value)
   );
 
+  // Reconcile a deep-linked filter or sort against the viewer's capabilities
+  // only once the summary that CARRIES those capabilities has actually
+  // answered. It used to gate on the directory's own loading flag: whenever
+  // the page RPC beat the summary RPC (or a cached paint landed first, which
+  // zeroes capabilities), every financial view was reset to All / Hierarchy,
+  // the URL rewritten, and a second page load fired - for an owner.
   useEffect(() => {
-    if (loading) return;
+    if (summaryFreshness !== 'fresh') return;
     if (!filters.includes(filter)) setFilter('all');
     if (!sorts.includes(sortKey)) setSortKey('hierarchy');
-  }, [filter, filters, loading, sortKey, sorts]);
+  }, [filter, filters, summaryFreshness, sortKey, sorts]);
 
   const toggleSelected = useCallback((id: string) => {
     setSelected((current) => {
@@ -646,7 +650,9 @@ export default function ClubMembersPage() {
       toast.success(`${result.row_count.toLocaleString()} Players Exported`);
     } catch (error) {
       reportError(error, 'ClubMembersPage.export');
-      toast.error('Could Not Export The Roster');
+      // The RPC's own refusal (the 5,000-selection cap, for one) is the
+      // useful part of the message.
+      toast.error(safeErrorMessage(error, 'Could Not Export The Roster'));
     } finally {
       setIsExporting(false);
     }
@@ -743,7 +749,9 @@ export default function ClubMembersPage() {
             <h2 id="members-directory-title">Find A Player</h2>
           </div>
           <span className="members-result-count" aria-live="polite">
-            {filteredTotal.toLocaleString()} Results
+            {loading && !hasPaintedRoster
+              ? 'Loading...'
+              : `${filteredTotal.toLocaleString()} Results`}
           </span>
         </div>
 

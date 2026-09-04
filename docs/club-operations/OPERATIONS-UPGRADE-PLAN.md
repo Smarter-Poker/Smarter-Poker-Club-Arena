@@ -323,7 +323,50 @@ it is projecting; strip the emoji; format the numbers; paginate.
 
 ---
 
-## 6. Phase 4 - The club dashboard
+## 6. Phase 4 - The club dashboard. **DONE**
+
+Shipped 2026-09-04 (migration `20260904100000_the_dashboard_counts_what_is_there`,
+changelog `docs/changelog/2026-09-04-club-operations-phase-4-the-dashboard-counts-what-is-there.md`).
+Re-measured before the fix: 4,954 tables, 319 live, the tab showing 50; 479
+seat rows for 243 people; the "Hands" top ten sharing zero members with the
+true top ten by hands over 678 players; 3,534 tournament rows / 879,696 bytes
+for a request of 25; `ca_club_dashboard_stats` at 132,855 buffers and ~910 ms
+because `club_daily_stats` is a view over the whole rake ledger, referenced
+five times.
+
+What shipped: a new `ca_club_tables` (every live table, seats counted from
+`table_seats`, floor-wide counts, union scope); `seated_now` counts people;
+`ca_club_top_players` takes `p_sort` and orders before the limit;
+`ca_club_tournaments` takes `p_days` and its limit limits (old summary keys
+kept one release); `ca_club_revenue` gated on `ca_can_view_club_finances`;
+the stats read is one rollup pass (31 ms). Client: Tables tab split into Live
+Now / Recently Closed with the header from the floor-wide figures; sort sent
+to the server; Revenue tab offered to finance roles only and a refusal named;
+insurance cards gated on `contracts > 0`; the filter bar says what it reaches;
+`ClubStatsCards` fetches once; `ClubMemberManagement` refuses to delete a
+membership row that holds chips or a seat, confirms, checks row counts, shows
+a failed read, renders the avatar, staggers by id.
+
+The "Humans Only" item below was reconciled rather than removed: the register
+in `scripts/ci/check-horses-are-players.mjs` sanctions the toggle on two
+written conditions (defaults to showing horses; every scoped figure relabels
+itself), and the dashboard now meets both. It is no longer persisted, is
+offered only when the viewer can see the flag, and relabels the CSV, the
+"See All" count and the attribution caption. Dan can remove it outright; it is
+one `useState`.
+
+Verification walk on production (signed in, 404 px) found a phase 3 defect:
+the Payouts tab's `fn_ca_agent_payables` scanned every unsettled commission
+row (499,933, doubling daily) and took 8,870 ms, or failed. Replaced by a
+trigger-maintained rollup (`20260904170000`), 107 ms after. Phase 3's
+D-04 in the handoff is closed by this.
+
+Still open from this list: the Time Range filter still does not reach the six
+metric cards (they are labelled Today / This Week and the bar now says so);
+Tournaments remains member-visible by design (the same information is on the
+public tournament lobby).
+
+Original audit, kept for the record:
 
 - **CONFIRMED - the Tables tab hides every live table.** It fetches 50 tables
   ordered `created_at DESC`. Deep Stack Society has 1,567 tables, 226 live, and
@@ -362,7 +405,30 @@ it is projecting; strip the emoji; format the numbers; paginate.
 
 ---
 
-## 7. Phase 5 - Players and player records
+## 7. Phase 5 - Players and player records. **DONE**
+
+Shipped 2026-09-04 (migration `20260904180000_a_player_record_says_what_it_measured`,
+changelog `docs/changelog/2026-09-04-club-operations-phase-5-a-player-record-says-what-it-measured.md`).
+The audit below predates a rebuild of these pages, so it was redone against
+`origin/main`. Confirmed and fixed: 3-Bet% divided by the fold-to-3-bet
+denominator (316.7% for one player); three labels on two numbers in Volume
+and two labels on one wallet; the transfer modal defaulting `p_destination`
+to `player_wallet` while the recipient was still loading (fn_club_bank_send
+honours it) and defaulting the sender's role on a failed read;
+`ca_can_view_club` / `ca_can_view_club_finances` admitting a caller with no
+account (the latent item below); dead `!resolved` guards so a bad slug read
+as an outage and "Not Found" was unreachable; the roster resetting a
+deep-linked financial filter when the page RPC beat the summary; unbounded
+realtime recovery; the dead fee-rollup nudge on every open; bus events with
+the slug; upline "None" shown to viewers it is hidden from; the downline cap
+with no way to row 51; notes stuck "Not Saved Yet" after a trim.
+
+Of the original list: the per-page recomputation in `ca_club_members_page`
+measures 520-577 ms per page of 80 for 417 members today and was left as is;
+`fn_can_see_horse_flag` per row and `cm.last_active_at` no longer apply to
+the rebuilt roster; the duplicated-roster item was closed in phase 4.
+
+Original audit, kept for the record:
 
 - **CONFIRMED - `ca_club_members_page` takes 1.05s for 417 members** and does
   it on every page of the infinite scroll: it rebuilds the whole recursive agent

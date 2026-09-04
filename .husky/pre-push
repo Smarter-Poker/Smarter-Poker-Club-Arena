@@ -435,6 +435,32 @@ if [ -f scripts/ci/check-ui-text.mjs ]; then
   fi
 fi
 
+# DOCTRINE FRESHNESS (added 2026-09-04). CLAUDE.md 10.8.1 already says laws are
+# read from origin/main and never from your local tree; nothing checked.
+# Measured on this machine that day, AFTER pruning 51 worktrees: 160 Club Arena
+# worktrees, 154 whose CLAUDE.md differs from origin/main, and 102 still
+# carrying `bash scripts/sync-club-arena.sh` or the heading "The Only Deploy
+# Path" - a command deleted on 2026-09-02 whose directory Next serves BEFORE
+# the rewrite, so following it SHADOWS the live bundle rather than duplicating
+# it. Those trees are days old, not months; doctrine simply moved faster than
+# they did, and pruning cannot fix that.
+#
+# It WARNS on an ordinary push and BLOCKS only when the diff touches doctrine
+# itself (CLAUDE.md, LAWS.md, a *.law.test.*, a workflow, .agent/**, .husky/**,
+# docs/HANDOFF*). That is the exact motion of the hamburger revert war - an
+# agent enforcing a rule its own stale copy still carried. Blocking every push
+# from a stale tree would instead stall a hundred branches behind a merge that
+# can conflict, which section 12 exists because of.
+#
+# The script fails OPEN on any internal error. A freshness advisor that can
+# wedge every push in the estate is a worse bug than the staleness it detects.
+if [ -f scripts/ci/check-doctrine-freshness.mjs ]; then
+  if ! node scripts/ci/check-doctrine-freshness.mjs; then
+    echo "[club-arena pre-push] BLOCKED: doctrine changed from a stale worktree"
+    FAIL=1
+  fi
+fi
+
 # ═════════════════════════════════════════════════════════════════════════════
 # 10. THE TEST SUITE — THE ONE GATE THAT WAS MISSING (Dan, 2026-08-21)
 #

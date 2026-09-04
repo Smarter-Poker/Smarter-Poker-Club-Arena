@@ -1,0 +1,186 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE LOBBY — the premium pass Dan asked for on 2026-09-03
+
+   Two surfaces, both phone-only (the unified mobile lobby):
+
+   1. "FIND YOUR GAME + 273 GAMES NEEDS TO BE LAID OUT BETTER. IT NEEDS TO BE
+      LAID OUT (LIKE THE ATTACHED IMAGE) AS ONE LINE, NOT STACKED." The desktop
+      heading row: title then eyebrow on one baseline at the left, the count on
+      the same line at the right.
+
+   2. "'MY WALLETS' NEEDS THE SAME PREMIUM BUTTON LOOK AND FEEL THAT EVERYTHING
+      ELSE HAS, ITS VERY CHEAP FEELING AT THE MOMENT." The trigger sits on the
+      approved wallet-row shell (the steel rail with the octagon icon bay), the
+      title in brushed silver, the balance count lit blue, the chevron in the
+      rail's right-hand bay.
+
+   Its own sheet, loaded after ClubHomePage.css and ClubLobbyCommandTop.css:
+   both of those are pinned by tests in places, and this pass is additive.
+   No :hover anywhere; press feedback is on :active.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 900px) {
+  /* ── 1. Find Your Game, one line ─────────────────────────────────────── */
+
+  .club-home--unified-mobile .club-lobby-command-top .lobby-controls__heading {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 2px 4px 4px;
+  }
+
+  .club-home--unified-mobile .club-lobby-command-top .lobby-controls__heading > div {
+    flex-direction: row-reverse;
+    align-items: baseline;
+    justify-content: flex-end;
+    gap: 7px;
+    min-width: 0;
+  }
+
+  .club-home--unified-mobile .club-lobby-command-top .lobby-controls__title {
+    font-size: clamp(17px, 5vw, 22px);
+    letter-spacing: -0.03em;
+    white-space: nowrap;
+  }
+
+  .club-home--unified-mobile .club-lobby-command-top .lobby-controls__eyebrow {
+    font-size: clamp(8px, 2.4vw, 10px);
+    letter-spacing: 0.14em;
+    white-space: nowrap;
+  }
+
+  .club-home--unified-mobile .club-lobby-command-top .lobby-controls__operator-actions {
+    flex: 0 0 auto;
+    flex-direction: row !important;
+    align-items: baseline;
+  }
+
+  .club-home--unified-mobile .club-lobby-command-top .lobby-controls__total {
+    font-size: clamp(8px, 2.3vw, 10px);
+    letter-spacing: 0.12em;
+    white-space: nowrap;
+  }
+
+  .club-home--unified-mobile .club-lobby-command-top .lobby-controls__total strong {
+    font-size: clamp(15px, 4.2vw, 19px);
+  }
+
+  /* ── 2. My Wallets on the wallet-row shell ───────────────────────────── */
+
+  .club-home--unified-mobile .lobby-wallets-trigger {
+    position: relative;
+    isolation: isolate;
+    width: 100%;
+    min-height: 0;
+    aspect-ratio: 1000 / 214;
+    display: grid;
+    grid-template-columns: 17.4% minmax(0, 1fr) 13.5%;
+    align-items: center;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: 0;
+    background: url('/hub/club-arena/assets/club-buttons/wallet-row-shell.webp') center / 100% 100%
+      no-repeat;
+    box-shadow: none;
+    color: #edf2f6;
+  }
+
+  /* The octagon bay holds the wallet mark: a steel billfold with a lit blue
+     clasp, drawn inline so it scales with the bay and needs no fetch. */
+  .club-home--unified-mobile .lobby-wallets-trigger__icon {
+    position: static;
+    visibility: visible;
+    width: 58%;
+    height: auto;
+    aspect-ratio: 1 / 1;
+    justify-self: center;
+    border: 0;
+    border-radius: 0;
+    background: url('/hub/club-arena/assets/club-buttons/wallets/wallet-mark-v1.svg') center /
+      contain no-repeat;
+    filter: drop-shadow(0 0 4px rgb(21 156 255 / 55%)) drop-shadow(0 2px 3px #000);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__icon::before,
+  .club-home--unified-mobile .lobby-wallets-trigger__icon::after {
+    content: none;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__copy {
+    position: static;
+    min-width: 0;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 3px;
+    padding: 0 2%;
+    text-align: center;
+    pointer-events: none;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__copy strong {
+    max-width: 100%;
+    overflow: hidden;
+    font-family: Cinzel, Georgia, serif;
+    font-size: clamp(17px, 5.2vw, 24px);
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: #e6e9ee;
+    -webkit-text-fill-color: #e6e9ee;
+    text-shadow:
+      0 -1px 0 rgb(255 255 255 / 55%),
+      0 1px 0 #6d747c,
+      0 2px 0 #050607,
+      0 3px 4px rgb(0 0 0 / 85%);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__copy small {
+    color: #5bb8ff;
+    font-family: Inter, system-ui, sans-serif;
+    font-size: clamp(8px, 2.4vw, 11px);
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    text-shadow:
+      0 0 6px rgb(49 168 255 / 55%),
+      0 1px 2px rgb(0 0 0 / 85%);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__chevron {
+    width: 12px;
+    height: 12px;
+    justify-self: start;
+    margin-left: 4px;
+    border-width: 0 2.5px 2.5px 0;
+    border-color: #dbe4ea;
+    filter: drop-shadow(0 0 3px rgb(21 156 255 / 60%));
+    transform: rotate(45deg) translate(-3px, -3px);
+    transition: transform 180ms ease;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__chevron.is-expanded {
+    transform: rotate(225deg) translate(-3px, -3px);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger:active {
+    filter: brightness(1.12);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger:focus-visible {
+    outline: 2px solid #8fd4ff;
+    outline-offset: -4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .club-home--unified-mobile .lobby-wallets-trigger__chevron {
+    transition: none;
+  }
+}

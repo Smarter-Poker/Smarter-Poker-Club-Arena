@@ -2853,7 +2853,7 @@ export class HorseFleetManager {
       // really is a member there, so the database debits the roll the engine
       // reasoned about instead of hashing its own pick. Null when the
       // membership map did not load: then the database decides alone.
-      const { error: rpcErr } = await supabase.rpc('atomic_table_buyin', {
+      let { error: rpcErr } = await supabase.rpc('atomic_table_buyin', {
         p_user_id: horseId,
         p_table_id: tableId,
         p_seat_number: seatNumber,
@@ -2861,6 +2861,29 @@ export class HorseFleetManager {
         p_auto_rebuy: false,
         p_club_id: clubId,
       });
+
+      // CHIP CONTINUITY / HORSES ARE PLAYERS (CLAUDE.md 10.5). A horse that
+      // left this game in this club with chips inside the last two hours
+      // meets the same rejoin floor a human does: the database says what the
+      // minimum is right now, and the horse - like a human reading the
+      // higher number on the buy-in slider - pays it if its roll covers it.
+      // One retry, at exactly the floor; a second refusal is final.
+      const floorMatch = /BUYIN_BELOW_FLOOR:.*?([0-9]+(?:\.[0-9]+)?)\s*$/.exec(
+        rpcErr?.message || ''
+      );
+      if (rpcErr && floorMatch) {
+        const required = Number(floorMatch[1]);
+        if (Number.isFinite(required) && required > buyIn) {
+          ({ error: rpcErr } = await supabase.rpc('atomic_table_buyin', {
+            p_user_id: horseId,
+            p_table_id: tableId,
+            p_seat_number: seatNumber,
+            p_amount: required,
+            p_auto_rebuy: false,
+            p_club_id: clubId,
+          }));
+        }
+      }
 
       if (rpcErr) {
         // 'Insufficient balance' / 'already seated' are silent expected
@@ -2883,7 +2906,11 @@ export class HorseFleetManager {
           // 2026-08-31. The in-memory MAX_TABLES_PER_HORSE filter only counts
           // cash seats this process knows about, while the RPC also counts
           // tournament bookings, so cap rejections here are ordinary.
-          !msg.includes('FOUR TABLE LIMIT')
+          !msg.includes('FOUR TABLE LIMIT') &&
+          // A rejoin floor the roll could not meet is the horse declining a
+          // higher minimum, not a defect.
+          !msg.includes('BUYIN_BELOW_FLOOR') &&
+          !msg.includes('Insufficient club chips')
         ) {
           reportError(rpcErr, 'HorseFleet.atomic_table_buyin_failed_for_horse');
         }

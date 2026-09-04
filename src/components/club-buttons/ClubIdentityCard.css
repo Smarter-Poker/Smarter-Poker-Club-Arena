@@ -202,8 +202,13 @@
   left: 17.05%;
   /* Was 52%, from when the name sat beside the logo. The name is a band across
      the whole card now, so the logo rises to sit directly under it, and the
-     level box below follows it up by the same amount. */
-  top: 45%;
+     level box below follows it up by the same amount.
+
+     Dan 2026-09-03: "THE LOGO IN THE GAME CARD NEEDS TO BE MOVED DOWN, SO THE
+     CLUB NAME NEVER CUTS IT OFF." Centre 45% put the logo's top edge at 26%,
+     inside the name band (9.2% + 18% = 27.2%); a long name at the ceiling
+     drew straight across it. Centre 49.5% starts the logo at 30.6%. */
+  top: 49.5%;
   width: 21.7%;
   aspect-ratio: 1 / 1;
   display: grid;
@@ -244,7 +249,10 @@
      between the alias and the club ID line is deliberate - those two lines
      belong to different things, and the artwork decides where the second pair
      sits. */
-  top: 26%;
+  /* Dan 2026-09-03: "KING FISH NEEDS TO BE MOVED DOWN SO ITS NOT TOUCHING OR
+     SO CLOSE TO THE CLUB NAME." Was 26%; 31.5% leaves a clear gutter under
+     the name band. */
+  top: 31.5%;
   height: 11%;
   display: grid;
   align-items: center;
@@ -261,12 +269,40 @@
   z-index: 1;
   left: 43.6%;
   right: 11.5%;
-  top: 47.06%;
-  height: 21.46%;
+  /* Dan 2026-09-03: "CLUB ID AND PLAYER ID + ICON'S NEED TO BE MOVED UP."
+     Rows centre at 48.5% and 58.5% (were 52.4% / 63.1%). The two icons are no
+     longer painted into the shell (v6); they are the layers below, pinned to
+     these same two centres, so the lines and their labels move together. */
+  top: 43.5%;
+  height: 20%;
   display: grid;
   grid-template-rows: 1fr 1fr;
   align-items: center;
   min-width: 0;
+}
+
+/* The club and profile icons that label the two ID lines. Painted into the
+   shell through v5; lifted into their own layers for v6 so they can sit on
+   the lines' centres wherever those go. Sizes are the icons' own pixel
+   footprints on the 1653 x 951 master. */
+.club-identity__icon {
+  position: absolute;
+  z-index: 1;
+  left: 43.07%;
+  width: 5.2%;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+}
+
+.club-identity__icon--club {
+  top: 43.93%;
+  height: 9.15%;
+}
+
+.club-identity__icon--player {
+  top: 54.08%;
+  height: 8.83%;
 }
 
 .club-identity__line {
@@ -346,7 +382,8 @@ button.club-identity__line {
   /* Was 72.8%. It follows the logo up by the same 7% the logo rose when the
      club name became a band of its own, so it still sits directly beneath the
      logo square rather than drifting away from it. */
-  top: 65.5%;
+  /* Follows the logo down (was 65.5%). */
+  top: 70%;
   width: 21.7%;
   height: 9%;
   display: grid;
@@ -435,7 +472,10 @@ button.club-identity__line {
      fallback for a card rendered without layout. */
   left: 40.8%;
   right: 24.4%;
-  top: 65.19%;
+  /* Dan 2026-09-03: "243 PLAYING NOW NEEDS TO BE CENTERED TO THE COPY ICON."
+     The share button is top 68.35% + height 11.99% = centre 74.35%; this box's
+     centre is now the same (66.41% + 15.88% / 2). Was 65.19%. */
+  top: 66.41%;
   height: 15.88%;
   display: flex;
   align-items: center;

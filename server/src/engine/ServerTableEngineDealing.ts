@@ -215,6 +215,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // who was mid-buy-in at boot, or who joined during the wait, would be
         // dealt in despite the database saying they are sitting out.
         this.restoreSitOutsFromSeats();
+        // MUST-MOVE (Slice 2): a player with a planned move is told now, once,
+        // that they move after this hand. Bounded like every other step.
+        await this.withStepBudget(
+          'announce_seat_moves',
+          ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+          this.announcePendingSeatMoves()
+        );
         await this.withStepBudget(
           'refresh_blinds',
           ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
@@ -573,6 +580,8 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                   (sp) => !cashedOutIds.includes(sp.user_id)
                 );
               }
+              // MUST-MOVE (Slice 2): an idle table is at a hand boundary too.
+              await this.executePendingSeatMoves();
             })()
           );
         } else {

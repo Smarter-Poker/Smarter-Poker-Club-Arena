@@ -817,12 +817,22 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       try {
         const { useUserStore } = await import('../../stores/useUserStore');
         useUserStore.getState().logout();
-      } catch { /* store already gone */ }
+      } catch {
+        /* store already gone */
+      }
     } finally {
       // Everything below runs whether the server round-trip worked or not.
       // This is what makes the sign-out real and visible.
-      try { localStorage.removeItem(AUTH_STORAGE_KEY); } catch { /* private mode */ }
-      try { sessionStorage.removeItem(SPA_AUTH_BREADCRUMB); } catch { /* private mode */ }
+      try {
+        localStorage.removeItem(AUTH_STORAGE_KEY);
+      } catch {
+        /* private mode */
+      }
+      try {
+        sessionStorage.removeItem(SPA_AUTH_BREADCRUMB);
+      } catch {
+        /* private mode */
+      }
       onClose();
       const redirectUrl = '/hub/club-arena' + location.pathname + location.search;
       window.location.href = `/auth/login?redirect=${encodeURIComponent(redirectUrl)}`;

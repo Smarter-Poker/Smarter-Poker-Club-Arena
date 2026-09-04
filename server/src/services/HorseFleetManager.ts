@@ -358,6 +358,15 @@ export class HorseFleetManager {
   private lastBeatCheckAt = 0;
   private lastBeatComplaint: string | null = null;
   private seeding = false; // Prevents concurrent seeding
+  /** Per table, how many horses the last cycle found able to sit there.
+   *  Read by the ClusterController (OPORD 1.4 18.3): a horse is a buyer. */
+  private lastEligibleByTable = new Map<string, number>();
+
+  /** How many horses could sit at this table, as of the last seeding cycle.
+   *  0 when the table was not in the cycle (closed, breaking, surplus). */
+  eligibleHorseCount(tableId: string): number {
+    return this.lastEligibleByTable.get(tableId) ?? 0;
+  }
   private overrunTicks = 0; // 30s ticks dropped because the previous cycle was still running
   private clubIndex = 0;
   /* Last time a failed fleet-state publish was reported. The engine can ship
@@ -868,12 +877,14 @@ export class HorseFleetManager {
         current_players: number | null;
         created_at: string;
         union_id: string | null;
+        cluster_id?: string | null;
+        lifecycle?: string | null;
       }>(
         (cursor, want) => {
           let q = supabase
             .from('tables')
             .select(
-              'id, name, max_players, small_blind, big_blind, game_variant, club_id, union_id, min_buy_in, max_buy_in, current_players, created_at, settings'
+              'id, name, max_players, small_blind, big_blind, game_variant, club_id, union_id, min_buy_in, max_buy_in, current_players, created_at, settings, cluster_id, lifecycle'
             )
             .is('tournament_id', null)
             .in('status', ['waiting', 'running'])
@@ -1280,7 +1291,11 @@ export class HorseFleetManager {
       // KEPT is the same one ensureAllTablesExist() treats as canonical.
       const surplusTableIds = new Set<string>();
       for (const config of DEFAULT_TABLES) {
+        /* A CLUSTER TABLE IS NOT IN ANY NAME FAMILY (Operation Table Stakes,
+           Slice 6): its life belongs to the ClusterController, never to the
+           surplus count, the overflow spawn or the retirement sweep. */
         const family = tables
+          .filter((t) => !t.cluster_id)
           .filter((t) => t.name === config.name || t.name.startsWith(`${config.name} #`))
           .sort((a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')));
         for (const t of family.slice(MAX_TABLES_PER_CONFIG)) surplusTableIds.add(t.id);
@@ -1582,6 +1597,9 @@ export class HorseFleetManager {
           // A draining table gets no new horses. Without this the surplus can
           // never empty, and so can never be retired.
           if (surplusTableIds.has(table.id)) continue;
+          // A cluster table that is breaking (18.3: no new sit-ins) or closed
+          // gets none either; the controller is walking its players out.
+          if (table.lifecycle === 'breaking' || table.lifecycle === 'closed') continue;
 
           // Determine currently occupied seats for THIS table from our in-memory map
           const tableOccupiedSeats = allActiveSeats.filter((s) => s.table_id === table.id);
@@ -1908,6 +1926,10 @@ export class HorseFleetManager {
           // the tell Dan is describing.
           let pool = candidateHorses.filter((h) => isActiveNow(h.id, hourUTC));
           if (pool.length < emptySeats.length && humanNeedsRescue) pool = candidateHorses;
+          /* What the ClusterController asks: how many horses COULD sit here
+             this cycle. A horse is a buyer (Law 10.5); the open rule in
+             OPORD 1.4 18.3 counts them beside the humans on the waitlist. */
+          this.lastEligibleByTable.set(table.id, pool.length);
 
           /* FOUR TABLES IS THE TARGET, NOT THE CEILING (Dan 2026-09-02).
              "THEY SHOULD BE PLAYING 4 TABLES AT ONCE."
@@ -2724,13 +2746,14 @@ export class HorseFleetManager {
   }
 
   private async spawnOverflowTables(
-    tables: Array<{ id: string; name: string; max_players: number }>,
+    tables: Array<{ id: string; name: string; max_players: number; cluster_id?: string | null }>,
     allActiveSeats: Array<{ table_id: string }>
   ): Promise<void> {
     for (const config of DEFAULT_TABLES) {
       try {
+        // A cluster table is the ClusterController's, never a family member.
         const family = tables.filter(
-          (t) => t.name === config.name || t.name.startsWith(`${config.name} #`)
+          (t) => !t.cluster_id && (t.name === config.name || t.name.startsWith(`${config.name} #`))
         );
         if (family.length === 0 || family.length >= MAX_TABLES_PER_CONFIG) continue;
         const allNearFull = family.every((t) => {

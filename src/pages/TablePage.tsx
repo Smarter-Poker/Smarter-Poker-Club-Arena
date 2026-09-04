@@ -12915,6 +12915,31 @@ export default function TablePage({
         break;
       }
 
+      /**
+       * MUST-MOVE (Operation Table Stakes, Slice 2 - OPORD 1.3 s9.5). A player
+       * is never asked anything: they are told once, at the start of the hand
+       * they will move after, and then they are at the new table. The engine
+       * writes the sentence ("Seat Open On Main 2. Moving After This Hand.");
+       * this only shows it to the one player it is about.
+       */
+      case 'SEAT_MOVE_PENDING': {
+        const d = evt.data as { user_id?: string; message?: string };
+        if (d?.user_id !== userId || !d?.message) break;
+        toast.info(d.message);
+        break;
+      }
+      /**
+       * The move landed: the hero's chair, chips and clock are now at the
+       * other table. Follow them. Anyone else just sees the seat empty on the
+       * next state broadcast.
+       */
+      case 'SEAT_MOVED': {
+        const d = evt.data as { user_id?: string; to_table_id?: string };
+        if (d?.user_id !== userId || !d?.to_table_id) break;
+        navigate(`/table/${d.to_table_id}`, { replace: true });
+        break;
+      }
+
       case 'GAME_START': {
         // Fast UI recovery via GameServerAPI.getTableState() full snapshot
         const syncData = evt.data as any;

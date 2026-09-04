@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import { isAuthzError } from '../../utils/clubDashboard';
+import { isUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
 import { formatPopupText } from '../../utils/popupStyle';
 
@@ -98,8 +99,18 @@ export default function TransactionLedgerView({
     setError(null);
     try {
       if (clubScoped) {
-        if (!clubId) {
+        // The RPC takes a uuid. Every club route in this app carries a SLUG,
+        // and handing one to a uuid argument is a 22P02 the page then shows as
+        // an outage - twice over in phase 6 alone. A caller that has not
+        // resolved the club yet gets nothing rather than a false failure.
+        if (!clubId || !isUUID(clubId)) {
           setEntries([]);
+          setError(clubId ? 'The Club Ledger Could Not Be Loaded' : null);
+          if (clubId)
+            reportError(
+              new Error(`club ledger called with "${clubId}"`),
+              'TransactionLedgerView.unresolved_club'
+            );
           setLoading(false);
           return;
         }

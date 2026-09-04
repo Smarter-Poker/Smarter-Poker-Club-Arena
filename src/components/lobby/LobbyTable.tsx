@@ -1299,7 +1299,14 @@ export default function LobbyTable({
     if (!variantMenuOpen) return;
     const onDown = (e: PointerEvent) => {
       const root = variantMenuRef.current;
-      if (root && !root.contains(e.target as Node)) setVariantMenuOpen(false);
+      const target = e.target as Node;
+      /* A tap on the Variant heading itself is the heading's own toggle, not
+         an outside tap: closing here AND toggling on the click that follows
+         re-opened the menu on every press, so it could never be closed from
+         where it was opened. */
+      const onTrigger =
+        target instanceof Element && target.closest('[aria-haspopup="menu"]') !== null;
+      if (root && !onTrigger && !root.contains(target)) setVariantMenuOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setVariantMenuOpen(false);

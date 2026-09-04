@@ -283,6 +283,24 @@ const ploFourBayV1 = skin(
   presentation('plo', 'mobile', 'plo/shark-four-bay-v1/chassis.png', '1 / 1', 280, 'four-bay-v1'),
   'approved'
 );
+/* Dan 2026-09-04: "THE TOPS OF THE PLO FRAMES ARE DISTORTED, USE THIS NEW
+   IMAGE EXACTLY." The spade console master for every Omaha card on a phone
+   (SpadePloCard.tsx). The shark four-bay stays registered as a fallback. */
+const spadePloV1 = skin(
+  'plo',
+  'spade-plo-premium-v1',
+  'Spade PLO Premium V1 - Approved',
+  presentation('plo', 'desktop', 'plo/shell-desktop-v2.webp', '1148 / 1370', 360, 'v2'),
+  presentation(
+    'plo',
+    'mobile',
+    'plo/spade-plo-premium-v1/chassis.png',
+    '1177 / 1337',
+    280,
+    'spade-premium-v1'
+  ),
+  'approved'
+);
 const spinsV1 = skin(
   'spins',
   'shark-spins-v1',
@@ -368,7 +386,7 @@ export const ARENA_GAME_CARD_TEMPLATE_REGISTRY: ArenaGameCardTemplateRegistry = 
   /* Approved by Dan 2026-09-03 (side-by-side review): the layered masters are
      the mobile defaults for Omaha, Spins and Heads-Up; the V2 CSS shells stay
      registered for desktop and as fallbacks. */
-  plo: familyRegistry('plo', ploFourBayV1.id, [ploFourBayV1, ploV2, ploV1]),
+  plo: familyRegistry('plo', spadePloV1.id, [spadePloV1, ploFourBayV1, ploV2, ploV1]),
   spins: familyRegistry('spins', spinsPremiumV1.id, [spinsPremiumV1, spinsV2, spinsV1]),
   'heads-up': familyRegistry('heads-up', headsUpPremiumV1.id, [
     headsUpPremiumV1,

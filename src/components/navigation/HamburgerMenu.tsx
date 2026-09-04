@@ -51,6 +51,7 @@ import {
 import { formatPopupText } from '../../utils/popupStyle';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 import styles from './HamburgerMenu.module.css';
+import { useCanCreateUnion } from '../../hooks/useCanCreateUnion';
 
 /* Dan 2026-08-30: "THE FIRST LETTER OF EVERY WORD INSIDE THE HAMBURGER MENU
    MUST BE CAPITALIZED. AS WELL AS EVERY CLICKABLE PAGE AND SUBPAGE."
@@ -162,6 +163,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
   const location = useLocation();
   const workspace = useClubWorkspace();
+  const { canCreateUnion } = useCanCreateUnion();
   const [clubLevelInfo, setClubLevelInfo] = useState<ClubLevelInfo | null>(null);
   const [clubChoices, setClubChoices] = useState<QuickLinkClub[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -1119,7 +1121,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             >
               Invite Players
             </button>
-          ) : (
+          ) : canCreateUnion ? (
             <button
               type="button"
               className={styles.quickAction}
@@ -1127,7 +1129,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             >
               Create Union
             </button>
-          )}
+          ) : null}
           {clubId && workspace.canViewFinance && (
             <button
               type="button"

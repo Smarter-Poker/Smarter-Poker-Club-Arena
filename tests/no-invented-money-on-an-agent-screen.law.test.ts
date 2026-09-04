@@ -58,9 +58,20 @@ describe('the club commission split is measured, not decided in advance', () => 
   });
 
   it('reads all three shares from the ledgers that record them', () => {
-    expect(CLUB_DASH).toMatch(/from\('rake_records'\)/);
-    expect(CLUB_DASH).toMatch(/fn_club_commission_accrued/);
-    expect(CLUB_DASH).toMatch(/transaction_type', 'rakeback'/);
+    // 2026-09-04, phase 6: still the same three ledgers, now behind ONE gated
+    // read. The browser reads this replaced were worse than slow: up to 10,000
+    // rake_records rows summed client-side, and a chip_transactions select
+    // whose RLS returns the CALLER's own rows - so "Players" was the rakeback
+    // paid to whoever happened to be looking.
+    expect(CLUB_DASH).toMatch(/ca_club_financials/);
+    expect(CLUB_DASH).toMatch(/totals\.agent_commissions/);
+    expect(CLUB_DASH).toMatch(/totals\.rakeback_paid/);
+    expect(CLUB_DASH).not.toMatch(/from\('rake_records'\)/);
+    const migration = read(
+      'supabase/migrations/20260904220000_the_money_is_read_from_the_ledger.sql'
+    );
+    expect(migration).toMatch(/x\.transaction_type = 'rakeback'/);
+    expect(migration).toMatch(/FROM ca_club_rake_daily r/);
   });
 
   it('divides by the rake, because commission books to a different club than rake does', () => {

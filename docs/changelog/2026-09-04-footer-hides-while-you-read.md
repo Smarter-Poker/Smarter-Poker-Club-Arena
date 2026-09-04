@@ -73,3 +73,12 @@ by `ClubBottomNav`, which is in the app shell, so it lands in the entry chunk
 by construction. The guard is right to ask; the answer is that the footer is on
 every page and its behaviour cannot be lazy. Baseline moved by one module and
 about 1kB gzipped.
+
+**No feather on the alpha.** The first transparent cut softened the frame's
+boundary by one pixel, and that ring is the canvas margin's own near-black
+pixels at partial alpha — on any surface not precisely that black it reads as
+a faint second shade hugging the frame. Dan: "I shouldn't be able to see a
+different color black that's clearly background residue." Inside the measured
+frame alpha is 255, outside it is 0, and there is no third kind of pixel. The
+frame's own edge is already anti-aliased in its RGB and the footer is always
+displayed downscaled, which smooths the alpha edge again.

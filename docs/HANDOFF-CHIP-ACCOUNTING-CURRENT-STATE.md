@@ -561,6 +561,10 @@ wins).
 - **Engine**: `engine.smarter.poker/health` was `liveness ok`, version
   `474b1377`, ~350 tables dealing at 23:31Z, with an `auto-deploy-hetzner` run
   for a newer sha in progress. **UNVERIFIED** past that point - re-check.
+- **A fourth and fifth PR opened after this document was first written**:
+  `docs/chip-std-handoff` (#2904, this document) and
+  `fix/chip-std-club-fk-indexes` (defect 1b, the club-delete fix). PR #2903
+  merged as `7e26e92f6` at about 00:10Z.
 - **Three PRs still open** - full state in §11. Two needed intervention at
   00:00Z; see §11 and lesson 14 in §15.
 - **Production health**: 4 clubs (Club JAQK, Shark Club, Deep Stack Society;
@@ -572,12 +576,15 @@ wins).
   `player_wallets` all reconcile at or near **0.00**. `total_supply` explains the
   1,300,000 certification burn exactly. Residual **-1,326.28** sits in
   `tournament_liability` - see §16 defect 1.
-- **Repo gates re-run locally at 00:07Z** on the rebased `promo-rain` worktree,
-  all exit 0: `check-migrations-applied`,
-  `check-applied-migrations-are-recorded`,
-  `check-new-migration-version-collisions`, `check-chip-conservation`. The three
-  schema manifests regenerated to **no diff** against what is committed, which
-  independently confirms the repo's picture of production schema is current.
+- **Repo gates re-run locally at 00:07Z and again at 00:22Z.** Exit 0:
+  `check-migrations-applied`, `check-applied-migrations-are-recorded`,
+  `check-new-migration-version-collisions`, `check-definer-authorization`,
+  `check-cron-health`, and the new `check-club-fk-indexes`. Exit 1 at 00:22:
+  `check-chip-conservation`, `trailing 4h unexplained chip supply is -5074.74` -
+  that is **defect 0**, it is real, and the gate is advisory on the engine
+  deploy rather than blocking. The three schema manifests regenerate to **no
+  diff** against what is committed, which independently confirms the repo's
+  picture of production schema is current.
 - **Worktrees**: ~205 exist. From this session: `promo-meter`, `rates-r3`,
   `promo-model`, `cert-clubs`, `promo-rain`, `promo-wiring`, `verify-main`,
   `handoff-doc`. All safe to remove with `git worktree remove` once their PRs
@@ -799,6 +806,20 @@ green next cycle is **UNVERIFIED**.
     holds a stale token and shadows `GITHUB_TOKEN`. See §13 for the exact
     incantation. Do not "fix" this by embedding a token in the remote URL - it
     ends up in `.git/config` and in error output.
+17. **A fix is not finished until you re-measure the thing it fixed.** #2898
+    made stranded certification fixtures impossible and merged green. Ninety
+    minutes later there were two more, because the guard it added could detect
+    the leak while the cleanup it guarded could not complete. I found that only
+    because I re-read `SELECT count(*) FROM clubs` while writing this document.
+    Re-measure after the merge, not before.
+18. **"Is there an index on this column" is the wrong question.** A partial
+    index leads on the column and cannot answer a foreign key check. Ask for
+    valid, non-partial, leading-column - the query is in `fn_ca_fk_index_gaps`.
+19. **Do not assume a GUC does what it reads like.** I was about to give
+    `fn_ca_retire_certification_club` a function-level `SET statement_timeout`
+    and call the leak fixed. It does nothing for the statement already running.
+    A five-line probe settled it in thirty seconds. Probe first; this is the
+    same lesson as the cron command, and it came up twice in one night.
 16. **A law can outlive the behaviour it describes.** The promo-rain law asserts
     on migration *file text*, so it kept passing after the rain's door was shut,
     and `docs/LAWS.md` would have told the next reader the rain is live. When
@@ -810,7 +831,9 @@ green next cycle is **UNVERIFIED**.
 
 | # | Priority | Defect | Evidence | Impact | Recommended fix | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | **CRITICAL** | `tournaments.prize_pool` is a counter that is never zeroed at completion | **0.32** chips truly outstanding (3 `tournament_obligations` rows) vs **5,189,778.80** in stale counters across **83,298** completed events; 1,663 of 1,664 events completed in a 3h window still carry a non-zero prize_pool | Five million chips of fictional liability; `tournament_liability` in the trial balance is meaningless after an event ends; source of the recurring ~1,300/3h residual | **Phase 5**: real `tournament_escrow` balances with `CHECK >= 0`, `prize_pool` demoted to a display figure, close asserts escrow is zero. **Do not** simply zero the counters - the same field is what the UI shows for a finished tournament's prize pool | open |
+| 0 | **CRITICAL, AND THE SHARPEST NUMBER IN THIS DOCUMENT** | The felt loses about 2,050 chips an hour that the journal says it should have | `fn_ca_trial_balance('2026-09-03 23:05:00.618832+00')`, a clean hour with no migration in it: **every** account reconciles at 0.00 except `table_stack` (balance_delta 5,245.39 vs ledger_net 7,295.44, **difference -2,050.05**) and `tournament_liability` (8,593.00 vs 9,481.70, **difference -888.70**). Those two are the whole of `total_supply`'s -2,938.75. Writers on `table_stack` that hour: `PostgREST 14.5/postgres:16037, pg_cron/postgres:4` | This is the entire unexplained supply drift. It is not spread across the estate and it is not noise: two accounts, every hour. At -2,050/h the trailing-4h figure crossed `check-chip-conservation`'s 5,000 threshold at about 00:10 UTC on 2026-09-04 (`trailing 4h unexplained chip supply is -5074.74`). That gate is **advisory** on `auto-deploy-hetzner.yml` per Dan's 2026-09-02 ruling, so no train is blocked - but it will warn on every engine deploy until this is closed, and the warning is correct | Roadmap Phase 3 already names the three suspects and they are all felt writers that do not declare: **C1** the unkeyed `HydraService` `atomic_table_cashout` / `atomic_table_withdraw` call, **C3** the bust-rebuy direct write, **C5** cron cash-outs journalled as `adjustment`. Start by re-running the trial balance for the current hour, then list the `table_stack` legs with no matching balance movement. **Do not** widen the gate's threshold - it is measuring something real | open, **root-caused to two accounts, not yet fixed** |
+| 1b | HIGH | The club-create certification leaked two more fixtures at 23:41 UTC, an hour after the fleet was retired | `clubs` read 6, not 4. The certification run on `dcdba5e5` (the merge of #2898) reported `Fixture Cleanup Failed ... canceling statement due to statement timeout` for both, then failed loudly - the guard worked, the cleanup was impossible. Seven of the seventy foreign keys into `clubs` had no index that could answer them; two of the seven looked indexed but were **partial** | 200,000 more chips behind clubs Dan said must not exist | **FIXED 2026-09-04 00:16-00:20**, migrations `20260904001605` (13 indexes, big three built CONCURRENTLY first) and `20260904001715` (`fn_ca_fk_index_gaps`), plus `scripts/ci/check-club-fk-indexes.mjs` wired into `ci.yml` and `tests/a-club-stays-deletable.law.test.ts`. Both fixtures retired through the real PostgREST door in 2.43s and 2.58s; `clubs` = 4 | **closed**, in PR for `fix/chip-std-club-fk-indexes` |
+| 1 | **CRITICAL** | `tournaments.prize_pool` is a counter that is never zeroed at completion | **0.32** chips truly outstanding (3 `tournament_obligations` rows) vs **5,189,778.80** in stale counters across **83,298** completed events; 1,663 of 1,664 events completed in a 3h window still carry a non-zero prize_pool | Five million chips of fictional liability; `tournament_liability` in the trial balance is meaningless after an event ends; source of the `tournament_liability` half of the hourly residual, now measured exactly at **-888.70 in the 23:05-00:05 hour** (defect 0) | **Phase 5**: real `tournament_escrow` balances with `CHECK >= 0`, `prize_pool` demoted to a display figure, close asserts escrow is zero. **Do not** simply zero the counters - the same field is what the UI shows for a finished tournament's prize pool | open |
 | 2 | HIGH | No `CHECK (balance >= 0)` on `clubs.chip_treasury`, agent floats, `union_wallets`, `club_members.chip_balance` | roadmap 3.2 | a bug can drive a balance negative silently | Phase 3.2, `NOT VALID` then `VALIDATE` off-peak | open |
 | 3 | HIGH | 30+ zero-use legacy money functions still executable | roadmap 3.3 lists them | any of them can be called and bypass the standard | Phase 3.3: 7-day zero-use gate, REVOKE for 24h, then DROP | open |
 | 4 | HIGH | Mint register has **no chip rows** for the four real estates | `ca_mint_ledger` holds 364 diamond rows, 0 chip rows; the 13 fixture grants were retired | the Mint cannot prove what it issued historically | Phase 3.1: backfill a register baseline as an explicit, labelled opening entry | open |
@@ -998,9 +1021,16 @@ Defect 1. The largest and most valuable remaining fix.
    engine restart) and is not part of this reading list; `HANDOFF-INDEX.md`
    lists every live handoff.
 4. Run the Phase 0 checklist in §21.
-5. Verify these three facts against production before trusting anything here:
+5. Verify these facts against production before trusting anything here:
+   - `SELECT * FROM fn_ca_trial_balance(now() - interval '1 hour');` → every
+     account 0.00 except `table_stack` and `tournament_liability`. **That is
+     defect 0 and it is where the next real work is.** If `table_stack` now
+     reconciles, someone has fixed it - read the changelog before assuming.
    - `SELECT mode FROM ca_money_path_enforcement;` → `refuse`
-   - `SELECT count(*) FROM clubs;` → `4`
+   - `SELECT count(*) FROM clubs;` → `4`. If it reads more, the certification
+     leaked again: retire each extra with
+     `SELECT fn_ca_retire_certification_club(id)` and find out why
+     `scripts/ci/check-club-fk-indexes.mjs` did not stop it.
    - `SELECT round(sum(prize_pool),2) FROM tournaments WHERE status IN ('COMPLETED','CANCELLED');`
      → about 5.19M (defect 1; if it is near zero, someone has done Phase 5 - 
      re-read the roadmap).

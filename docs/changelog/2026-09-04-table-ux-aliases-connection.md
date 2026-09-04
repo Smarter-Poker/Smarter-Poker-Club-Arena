@@ -202,3 +202,14 @@ token (a 401 is refused before it runs, so replay is safe for every endpoint).
 `.seat__cards--folded` (opacity 0.45) sits inside `.seat--folded` (opacity
 0.65): 0.29 on the felt. Now 0.85 inside the same ancestor, ~0.55 effective,
 grayscale 35%. Still a folded hand; readable.
+
+### 12. A closed table said "Reconnecting To The Table" forever
+
+Found while verifying on production: opening a table the fleet had just
+closed showed the banner for as long as the tab was open, with SUBSCRIBE
+answered TABLE_NOT_FOUND every time. `EngineStateClient`'s 4404 handler set
+`idle` and `scheduleReconnect()` overwrote it with `reconnecting` one line
+later, on every retry. A `tableMissing` flag keeps the slow ladder silent
+(`idle`) until the table answers; the "This Table Has Closed" overlay is
+driven by the error count as before. Pinned in
+`tests/engine-state-client-recovery.test.ts`.

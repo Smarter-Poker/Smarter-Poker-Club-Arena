@@ -467,6 +467,12 @@ BEGIN
 END;
 $$;
 
+-- Engine-only, exactly as Slice 0 left it: CREATE OR REPLACE keeps the ACL,
+-- but the definer check reads the file, not the catalogue, so say it again.
+REVOKE ALL ON FUNCTION public.fn_cash_session_open(uuid, uuid, numeric) FROM PUBLIC, anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.fn_cash_session_open(uuid, uuid, numeric) TO service_role;
+
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 5. ASSERTIONS
 -- ─────────────────────────────────────────────────────────────────────────────

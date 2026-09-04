@@ -44,11 +44,14 @@ export async function handleStableHand(res: ServerResponse): Promise<void> {
       wouldStand: plan.stand.length,
       wouldOpen: plan.open,
       wouldClose: plan.close.length,
+      wouldParkForTheNight: plan.park.length,
       yieldsPending: yields.length,
-      /* The one part of the plan that is actually EXECUTED, listed so the
-         dashboard says which orders are live and which are still reports.
-         See StableHandExecutor. */
-      executing: 'human_yield',
+      /* What is actually EXECUTED, listed so the dashboard says which orders
+         are live and which are still reports. `close` and `park` are executed
+         by MARKING the table - the fleet's own drain empties it and its own
+         retirement pass closes it, only once nobody is sitting there. Seat and
+         open are still reports. See StableHandExecutor. */
+      executing: ['human_yield', 'occupancy_wind_down', 'close', 'park'],
       alerts: plan.alerts,
     });
   } catch (err) {

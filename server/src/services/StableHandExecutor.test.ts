@@ -398,3 +398,62 @@ describe('standOrdersFor splits the plan into its two urgencies', () => {
     expect(o.alerts.some((a) => a.startsWith('host_population_unknown'))).toBe(true);
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE TWO TABLE FLAGS
+
+   Dan 2026-09-04: "yes close all those tables. drain first, and never kick
+   anyone." The executor does not close a table itself - it marks it, and the
+   fleet's own drain and retirement pass do the rest, closing it only once it
+   is genuinely empty.
+   ══════════════════════════════════════════════════════════════════════════ */
+describe('SOURCE LAW: closing is marking, and the two flags never swap', () => {
+  const raw = readFileSync(resolve(__dirname, 'StableHandExecutor.ts'), 'utf8');
+  const src = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
+  it('the permanent list gets retire_when_empty and the night list gets night_parked', () => {
+    expect(src).toContain("export const RETIRE_FLAG = 'retire_when_empty';");
+    expect(src).toContain("export const NIGHT_PARK_FLAG = 'night_parked';");
+    expect(src).toContain('this.setTableFlag(plan.close, RETIRE_FLAG');
+    expect(src).toContain('this.setTableFlag(plan.park, NIGHT_PARK_FLAG');
+  });
+
+  it('NEVER writes the permanent flag from the night list, or the reverse', () => {
+    // retire_when_empty is permanent by design - ensureAllTablesExist refuses
+    // to reopen a table carrying it. One quiet night written to that flag
+    // would delete the floor.
+    expect(src).not.toContain('plan.park, RETIRE_FLAG');
+    expect(src).not.toContain('plan.close, NIGHT_PARK_FLAG');
+  });
+
+  it('never closes or deletes a table itself', () => {
+    // The fleet's retirement pass closes a table only once it is EMPTY. If
+    // this module wrote status directly it could close one under a hand.
+    expect(src).not.toMatch(/status:\s*'closed'/);
+    expect(src).not.toContain('.delete()');
+  });
+
+  it('MERGES settings rather than replacing them', () => {
+    // straddle, auto_extension and every other table setting live in the same
+    // column; a bare overwrite would wipe them.
+    expect(src).toContain('{ ...settings, [flag]: true }');
+  });
+
+  it('waits for a clean read before writing a flag', () => {
+    // A partial read is not "none of them are flagged" - writing on one would
+    // re-flag rows every cycle forever.
+    expect(src).toContain('if (!rows.complete) return 0;');
+  });
+
+  it('lifts the park on every cycle outside the night, and reopens what closed', () => {
+    expect(src).toContain('await this.unparkTables();');
+    expect(src).toContain("if (String(row.status) === 'closed') patch.status = 'waiting';");
+    // and it deletes the flag rather than setting it false, so the row reads
+    // exactly as it did before the park
+    expect(src).toContain('delete settings[NIGHT_PARK_FLAG];');
+  });
+
+  it('only ever touches the two Stable Hand hosts', () => {
+    expect(src).toContain("in('club_id', [MIDWAY_UNION_ID, DSS_CLUB_ID])");
+  });
+});

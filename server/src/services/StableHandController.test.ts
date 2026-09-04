@@ -8,7 +8,13 @@ import {
   type FloorSnapshot,
   type TableSnapshot,
 } from './StableHandController.js';
-import { MIDWAY_UNION_ID, DSS_CLUB_ID, SEAT_HOLD_MS } from './StableHand.js';
+import {
+  MIDWAY_UNION_ID,
+  DSS_CLUB_ID,
+  SEAT_HOLD_MS,
+  nightCap,
+  nightTablesNeeded,
+} from './StableHand.js';
 
 const horse = (
   id: string,
@@ -169,8 +175,8 @@ describe('planFloor - occupancy', () => {
         ],
       })
     );
-    expect(p.metrics[0]).toMatchObject({ peakCap: 233, nightCap: 58 });
-    expect(p.metrics[1]).toMatchObject({ peakCap: 166, nightCap: 41 });
+    expect(p.metrics[0]).toMatchObject({ peakCap: 233, nightCap: 29 });
+    expect(p.metrics[1]).toMatchObject({ peakCap: 166, nightCap: 20 });
   });
 
   it('holds the night cap at 04:00 and does not ramp past it', () => {
@@ -180,7 +186,7 @@ describe('planFloor - occupancy', () => {
         hosts: [{ hostId: MIDWAY_UNION_ID, n: 584, uniqueLive: 100, tables: [] }],
       })
     );
-    expect(p.metrics[0].max).toBeLessThanOrEqual(58);
+    expect(p.metrics[0].max).toBeLessThanOrEqual(29);
     expect(p.alerts).toContain('over_night_cap host=' + MIDWAY_UNION_ID);
   });
 });
@@ -356,8 +362,8 @@ describe('the per-host seat cap', () => {
       ]),
       { hour: 3, minute: 0 }
     );
-    // 03:00 is the night window: 10% of the population, plus the band.
-    expect(caps.get(MIDWAY_UNION_ID)!).toBeLessThan(100);
+    // 03:00 is the night window: 5% of the population (Dan 2026-09-04).
+    expect(caps.get(MIDWAY_UNION_ID)!).toBe(29);
     expect(caps.get(DSS_CLUB_ID)!).toBeLessThan(caps.get(MIDWAY_UNION_ID)!);
   });
 
@@ -518,5 +524,141 @@ describe('planFloor - shape reads seats, not tables.status', () => {
       snap({ hosts: [{ hostId: MIDWAY_UNION_ID, n: 584, uniqueLive: 180, tables: [t] }] })
     );
     expect(p.stand.filter((s) => s.reason === 'human_yield').length).toBeGreaterThan(0);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LATE NIGHT: FEWER TABLES, MORE PLAYERS AT EACH
+
+   Dan 2026-09-04: "fewer tables, more players at each table. late night
+   shouldn't have any 2-3 handed games." At 5% of the population there are
+   about sixty seats to place on Midway Union overnight; spread over eighty
+   tables that is one player each, so the thin ones are parked and the seats
+   concentrate.
+   ══════════════════════════════════════════════════════════════════════════ */
+describe('planFloor - the night park', () => {
+  const nightSnap = (tables: TableSnapshot[], over: Partial<FloorSnapshot> = {}) =>
+    planFloor({
+      chicagoHour: 4,
+      chicagoMinute: 0,
+      killed: false,
+      hosts: [{ hostId: MIDWAY_UNION_ID, n: 584, uniqueLive: 40, tables }],
+      ...over,
+    });
+
+  /**
+   * Enough full tables to satisfy the keep-open floor on their own, so a thin
+   * table added beside them is parked on its own merits.
+   *
+   * SEVEN, not six: nightTablesNeeded derives the floor from the cap rather
+   * than fixing it, and Midway Union's 5% cap of 29 bodies at up to 1.3 seats
+   * each is 38 seats - seven full rings.
+   */
+  const KEEP_OPEN = nightTablesNeeded(nightCap(584), 4);
+  const keepFull = () =>
+    Array.from({ length: KEEP_OPEN }, (_, i) => table({ tableId: `full${i}`, occupied: 6 }));
+
+  it('parks a 2-handed table', () => {
+    const p = nightSnap([
+      ...keepFull(),
+      table({ tableId: 'thin', occupied: 2, seatedHorses: [horse('a'), horse('b')] }),
+    ]);
+    expect(p.park).toContain('thin');
+  });
+
+  it('parks an empty table', () => {
+    const p = nightSnap([
+      ...keepFull(),
+      table({ tableId: 'empty', occupied: 0, seatedHorses: [] }),
+    ]);
+    expect(p.park).toContain('empty');
+  });
+
+  it('leaves a 4-handed table alone - four is not 2-3 handed', () => {
+    const p = nightSnap([
+      ...keepFull(),
+      table({
+        tableId: 'four',
+        occupied: 4,
+        seatedHorses: [horse('a'), horse('b'), horse('c'), horse('d')],
+      }),
+    ]);
+    expect(p.park).not.toContain('four');
+  });
+
+  it('NEVER parks a table with a human seated', () => {
+    // Parking stops the seeder refilling it, which is how a person ends up
+    // alone at a table nobody can join.
+    const p = nightSnap([
+      ...keepFull(),
+      table({ tableId: 'human', occupied: 2, humansSeated: 1, seatedHorses: [horse('a')] }),
+    ]);
+    expect(p.park).not.toContain('human');
+  });
+
+  it('NEVER parks a table a human is waiting for', () => {
+    const p = nightSnap([
+      ...keepFull(),
+      table({
+        tableId: 'queued',
+        occupied: 2,
+        humansWaiting: 1,
+        seatedHorses: [horse('a'), horse('b')],
+      }),
+    ]);
+    expect(p.park).not.toContain('queued');
+  });
+
+  it('KEEPS THE FULLEST tables it still needs open, however thin - the cascade guard', () => {
+    // Without a floor the wind-down thins every table under the minimum, every
+    // table is parked, and the host has nowhere left to seat anybody.
+    const thin = Array.from({ length: 20 }, (_, i) =>
+      table({ tableId: `t${i}`, occupied: 1, seatedHorses: [horse(`h${i}`)] })
+    );
+    const p = nightSnap(thin);
+    expect(KEEP_OPEN).toBe(7);
+    expect(p.park).toHaveLength(20 - KEEP_OPEN);
+  });
+
+  it('parks nothing in the daytime', () => {
+    const thin = Array.from({ length: 20 }, (_, i) =>
+      table({ tableId: `t${i}`, occupied: 1, seatedHorses: [horse(`h${i}`)] })
+    );
+    const p = planFloor({
+      chicagoHour: 14,
+      chicagoMinute: 0,
+      killed: false,
+      hosts: [{ hostId: MIDWAY_UNION_ID, n: 584, uniqueLive: 150, tables: thin }],
+    });
+    expect(p.park).toHaveLength(0);
+  });
+
+  it('a table being closed for good is never ALSO parked', () => {
+    // The two flags have opposite lifetimes. Writing both to one row is how a
+    // permanent retirement gets lifted by the morning unpark.
+    const tables = [
+      ...keepFull(),
+      // eight short-deck tables: the exotic cap closes most of them
+      ...Array.from({ length: 8 }, (_, i) =>
+        table({
+          tableId: `sd${i}`,
+          variant: 'short_deck',
+          occupied: 1,
+          seatedHorses: [horse(`s${i}`)],
+        })
+      ),
+    ];
+    const p = nightSnap(tables);
+    expect(p.close.length).toBeGreaterThan(0);
+    const both = p.park.filter((id) => p.close.includes(id));
+    expect(both).toHaveLength(0);
+  });
+
+  it('says how much it is parking, per host', () => {
+    const p = nightSnap([
+      ...keepFull(),
+      table({ tableId: 'thin', occupied: 1, seatedHorses: [horse('a')] }),
+    ]);
+    expect(p.alerts.some((a) => a.startsWith(`night_parking host=${MIDWAY_UNION_ID}`))).toBe(true);
   });
 });

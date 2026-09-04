@@ -29,6 +29,10 @@ import {
   occupancyTargetForHost,
   peakCap,
   nightCap,
+  NIGHT_CAP_PCT,
+  NIGHT_MIN_PLAYERS,
+  NIGHT_MIN_OPEN_TABLES,
+  nightTablesNeeded,
   isNightWindow,
   curvePctAt,
   // bankroll
@@ -504,9 +508,26 @@ describe('T20 - a 24 hour simulation respects every cap', () => {
   });
   it('caps Midway Union at 233 and Deep Stack Society at 166 (measured N)', () => {
     expect(peakCap(584)).toBe(233);
-    expect(nightCap(584)).toBe(58);
     expect(peakCap(416)).toBe(166);
-    expect(nightCap(416)).toBe(41);
+  });
+
+  /* Dan 2026-09-04, on reading the first night the curve was enforced:
+     "there should not be 89 people playing in the middle of the night, cut
+     that from 10% to 5%." These were 58 and 41. */
+  it('holds the night at FIVE percent: Midway Union 29, Deep Stack Society 20', () => {
+    expect(NIGHT_CAP_PCT).toBe(0.05);
+    expect(nightCap(584)).toBe(29);
+    expect(nightCap(416)).toBe(20);
+  });
+
+  it('the 5% ceiling binds every hour of the night window, so the whole window is 5%', () => {
+    // The curve itself reads 10, 8, 7, 8, 9 across 03:00-08:00. Every one of
+    // those is above 5, so the cap - not the curve - decides the night.
+    for (let h = 3; h < 8; h++) {
+      expect(curvePctAt(h)).toBeGreaterThan(NIGHT_CAP_PCT * 100);
+      expect(occupancyTargetForHost(584, h).target).toBe(nightCap(584));
+      expect(occupancyTargetForHost(584, h).clampedBy).toBe('night');
+    }
   });
   it('peaks at 40 percent between 18:00 and 20:00', () => {
     [18, 19, 20].forEach((h) => expect(occupancyTargetForHost(N, h).target).toBe(peakCap(N)));
@@ -833,5 +854,28 @@ describe('Section 7.2 - variants and stakes', () => {
       st.forEach((bb) => expect(stakeIsLegalThisPhase(bb)).toBe(true));
       if (st.length === 2) expect(stakeSpreadAllowed(st[0], st[1])).toBe(true);
     }
+  });
+});
+
+describe('the night keeps open the tables it still needs', () => {
+  it('derives the floor from the cap, not from a fixed number', () => {
+    // Midway Union: 29 bodies at up to 1.3 seats each is 38 seats, which is
+    // seven full rings. Parking down to six would leave the seeder unable to
+    // place everyone the curve allows.
+    expect(nightTablesNeeded(nightCap(584), 4)).toBe(7);
+  });
+
+  it('never goes below the hard floor for a small host', () => {
+    expect(nightTablesNeeded(nightCap(416), 4)).toBe(NIGHT_MIN_OPEN_TABLES);
+    expect(nightTablesNeeded(0, 4)).toBe(NIGHT_MIN_OPEN_TABLES);
+  });
+
+  it('rounds UP - one extra open table is cheaper than nowhere to seat', () => {
+    // 1 body at 1.3 seats is a fraction of a table and still needs a table.
+    expect(nightTablesNeeded(1, 4)).toBeGreaterThanOrEqual(1);
+  });
+
+  it('four is the smallest table that is not 2-3 handed', () => {
+    expect(NIGHT_MIN_PLAYERS).toBe(4);
   });
 });

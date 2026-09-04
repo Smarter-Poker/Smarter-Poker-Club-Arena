@@ -52,8 +52,16 @@
 
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
-import { controllerEnabled } from './StableHand.js';
-import { planFloor, type FloorSnapshot, type StandOrder } from './StableHandController.js';
+import { supabase } from './supabase.js';
+import { selectInChunks } from './supabase/chunkedIn.js';
+import { controllerEnabled, isNightWindow, MIDWAY_UNION_ID, DSS_CLUB_ID } from './StableHand.js';
+import {
+  chicagoNow,
+  planFloor,
+  type FloorPlan,
+  type FloorSnapshot,
+  type StandOrder,
+} from './StableHandController.js';
 import { buildFloorSnapshot } from './StableHandSnapshot.js';
 
 /** The engine surface a yield needs. Matches ServerTableEngine. */
@@ -97,6 +105,40 @@ export const MAX_YIELDS_PER_CYCLE = 12;
  * in about sixteen minutes.
  */
 export const MAX_WIND_DOWN_PER_HOST_PER_CYCLE = 4;
+
+/**
+ * Table flag writes per cycle.
+ *
+ * The first cycle after this ships has ~89 tables to mark for retirement and,
+ * overnight, a hundred or so to park. Every cycle after that has none, because
+ * a table already carrying its flag is skipped. The cap keeps that first tick
+ * short rather than rationing anything: what is not written now is written
+ * thirty seconds later.
+ */
+export const MAX_TABLE_FLAG_WRITES_PER_CYCLE = 25;
+
+/**
+ * THE TWO FLAGS, AND WHY THEY MUST NEVER BE THE SAME ONE.
+ *
+ * `retire_when_empty` is the estate's existing, proven retirement mechanism
+ * (Dan 2026-09-03, "close any tables over 2/5"): HorseFleetManager stops
+ * seeding the table, HorseSessionRotator walks its horses out, and
+ * retireSurplusTables closes it once it is GENUINELY EMPTY - a table with
+ * anybody at it is left alone and retired on a later cycle. That is exactly
+ * "drain first, never kick anyone", and it is what the permanent exotic and
+ * limit trim uses.
+ *
+ * It is also PERMANENT BY DESIGN. ensureAllTablesExist reopens a closed table
+ * unless it carries this flag, specifically so a deliberate retirement is not
+ * undone on the next boot. Using it for a nightly consolidation would delete
+ * the floor: one quiet night and eighty tables never come back, and for Deep
+ * Stack Society - whose tables the fleet does not create at all - nothing
+ * would ever recreate them.
+ *
+ * So the night uses its own flag, with its own lifetime, lifted every morning.
+ */
+export const RETIRE_FLAG = 'retire_when_empty';
+export const NIGHT_PARK_FLAG = 'night_parked';
 
 export interface YieldRequest {
   order: StandOrder;
@@ -168,6 +210,8 @@ export interface FloorStandOrders {
   yields: YieldRequest[];
   windDowns: WindDownRequest[];
   alerts: string[];
+  /** The whole plan, so a caller does not run the planner twice. */
+  plan: FloorPlan;
 }
 
 /** PURE. Both kinds of stand order, from ONE pass of the planner. */
@@ -191,6 +235,7 @@ export function standOrdersFor(snap: FloorSnapshot): FloorStandOrders {
       .filter((o) => o.reason === 'occupancy_wind_down')
       .map((order) => ({ order, hostId: hostOfTable.get(order.tableId) ?? '' })),
     alerts: plan.alerts,
+    plan,
   };
 }
 
@@ -240,6 +285,120 @@ export class StableHandExecutor {
   private readonly lastOrderedAt = new Map<string, number>();
   /** Stands skipped this cycle because the table had no live engine. */
   private noEngine = 0;
+
+  /**
+   * Write one settings flag onto the tables that do not already carry it.
+   *
+   * Reads first and skips the ones already flagged, so the steady state is
+   * zero writes: this is loud on the first cycle and silent forever after.
+   * `settings` is MERGED, never replaced - a table's straddle, auto-extension
+   * and every other setting live in the same column.
+   */
+  private async setTableFlag(ids: string[], flag: string, budget: number): Promise<number> {
+    if (ids.length === 0 || budget <= 0) return 0;
+    const rows = await selectInChunks<{ id: string; settings: unknown }>(
+      ids,
+      (batch) => supabase.from('tables').select('id, settings').in('id', batch),
+      `StableHand.readSettings.${flag}`
+    );
+    // A partial read is not "none of them are flagged": writing on a failed
+    // read would re-flag rows every cycle forever. Wait for a clean read.
+    if (!rows.complete) return 0;
+
+    let written = 0;
+    for (const row of rows.rows) {
+      if (written >= budget) break;
+      const settings =
+        row.settings && typeof row.settings === 'object'
+          ? (row.settings as Record<string, unknown>)
+          : {};
+      if (settings[flag] === true) continue;
+      const { error } = await supabase
+        .from('tables')
+        .update({ settings: { ...settings, [flag]: true } })
+        .eq('id', row.id);
+      if (error) {
+        reportError(error, `StableHandExecutor.setTableFlag.${flag}`);
+        continue;
+      }
+      written++;
+    }
+    return written;
+  }
+
+  /**
+   * Morning. Lift every night park: clear the flag, and reopen the table if
+   * the drain closed it while it was parked.
+   *
+   * Runs on EVERY cycle outside the night window, not once at 08:00, because
+   * a park that is only ever lifted by a single scheduled moment is a park
+   * that survives an engine restart at 07:59. It is idempotent and costs one
+   * indexed read when there is nothing to lift.
+   */
+  private async unparkTables(): Promise<number> {
+    const { data, error } = await supabase
+      .from('tables')
+      .select('id, status, settings')
+      .in('club_id', [MIDWAY_UNION_ID, DSS_CLUB_ID])
+      .is('tournament_id', null)
+      .eq(`settings->>${NIGHT_PARK_FLAG}`, 'true');
+    if (error) {
+      reportError(error, 'StableHandExecutor.unparkTables_read');
+      return 0;
+    }
+    let lifted = 0;
+    for (const row of (data ?? []) as Array<{ id: string; status: string; settings: unknown }>) {
+      const settings =
+        row.settings && typeof row.settings === 'object'
+          ? { ...(row.settings as Record<string, unknown>) }
+          : {};
+      delete settings[NIGHT_PARK_FLAG];
+      const patch: Record<string, unknown> = { settings };
+      // Reopen it. A parked table that emptied was closed by the fleet's
+      // retirement pass; nothing else will bring it back, and for Deep Stack
+      // Society nothing else could.
+      if (String(row.status) === 'closed') patch.status = 'waiting';
+      const { error: updErr } = await supabase.from('tables').update(patch).eq('id', row.id);
+      if (updErr) {
+        reportError(updErr, 'StableHandExecutor.unparkTables_write');
+        continue;
+      }
+      lifted++;
+    }
+    if (lifted > 0) console.log(`[StableHand] morning: unparked ${lifted} table(s)`);
+    return lifted;
+  }
+
+  /** Both table-flag passes for one cycle. */
+  private async applyTableFlags(plan: FloorPlan, night: boolean): Promise<void> {
+    let budget = MAX_TABLE_FLAG_WRITES_PER_CYCLE;
+
+    /* THE PERMANENT TRIM FIRST. Dan 2026-09-04: "yes close all those tables.
+       drain first, and never kick anyone." Marking the flag IS the drain: the
+       fleet stops seeding it, the rotator walks its horses out, and the
+       retirement pass closes it only once it is genuinely empty. Nothing here
+       cashes a seat out. */
+    const retired = await this.setTableFlag(plan.close, RETIRE_FLAG, budget);
+    budget -= retired;
+    if (retired > 0) {
+      console.log(
+        `[StableHand] marked ${retired} table(s) to retire when empty ` +
+          `(${plan.close.length} on the plan; they drain first and nobody is moved)`
+      );
+    }
+
+    if (night) {
+      const parked = await this.setTableFlag(plan.park, NIGHT_PARK_FLAG, budget);
+      if (parked > 0) {
+        console.log(
+          `[StableHand] parked ${parked} thin table(s) for the night ` +
+            `(${plan.park.length} on the plan; lifted again in the morning)`
+        );
+      }
+      return;
+    }
+    await this.unparkTables();
+  }
 
   /**
    * Stand ONE horse up, through the same door a human's Leave Table button
@@ -346,6 +505,12 @@ export class StableHandExecutor {
           stood++;
         }
       }
+
+      /* The table flags. Not stands and not money: this marks a table so the
+         fleet's own drain stops seeding it and its own retirement pass closes
+         it once EMPTY. Run after the stands so the plan the flags come from is
+         the same one that was just acted on. */
+      await this.applyTableFlags(orders.plan, isNightWindow(chicagoNow().hour));
 
       if (this.noEngine > 0) {
         console.warn(

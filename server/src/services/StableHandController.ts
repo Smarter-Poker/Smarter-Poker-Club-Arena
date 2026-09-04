@@ -33,6 +33,8 @@ import {
   peakCap,
   nightCap,
   isNightWindow,
+  NIGHT_MIN_PLAYERS,
+  nightTablesNeeded,
   MIDWAY_UNION_ID,
   DSS_CLUB_ID,
   type ShapeBucket,
@@ -117,7 +119,25 @@ export interface FloorPlan {
   seat: SeatOrder[];
   stand: StandOrder[];
   open: OpenOrder[];
+  /**
+   * Tables to close PERMANENTLY: the exotic and limit excess, which is a
+   * standing rule about how many of each game the fleet can support and not a
+   * time-of-day one. Executed by marking `settings.retire_when_empty`, which
+   * drains the table and closes it once genuinely empty - and which the fleet
+   * deliberately never reopens.
+   */
   close: string[];
+  /**
+   * Tables to park for the NIGHT and reopen in the morning. Dan 2026-09-04:
+   * "fewer tables, more players at each table. late night shouldn't have any
+   * 2-3 handed games."
+   *
+   * A separate list from `close` because the two have opposite lifetimes, and
+   * confusing them is how one quiet night would permanently delete a floor:
+   * `retire_when_empty` is checked by ensureAllTablesExist specifically SO
+   * THAT a retired table is never reopened. A park must come back at 08:00.
+   */
+  park: string[];
   alerts: string[];
   metrics: HostMetrics[];
 }
@@ -177,7 +197,15 @@ function shapedTables(h: HostSnapshot): TableSnapshot[] {
 }
 
 export function planFloor(snap: FloorSnapshot): FloorPlan {
-  const plan: FloorPlan = { seat: [], stand: [], open: [], close: [], alerts: [], metrics: [] };
+  const plan: FloorPlan = {
+    seat: [],
+    stand: [],
+    open: [],
+    close: [],
+    park: [],
+    alerts: [],
+    metrics: [],
+  };
 
   for (const hostId of snap.unreadableHosts ?? []) {
     plan.alerts.push(`host_unreadable host=${hostId}`);
@@ -406,6 +434,50 @@ export function planFloor(snap: FloorSnapshot): FloorPlan {
       );
     }
 
+    /* ── LATE NIGHT: FEWER TABLES, MORE PLAYERS AT EACH ────────────────
+       Dan 2026-09-04: "fewer tables, more players at each table. late night
+       shouldn't have any 2-3 handed games."
+
+       At 5% of the population there are about sixty seats to place on Midway
+       Union overnight. Spread across eighty open tables that is one player a
+       table; the head count would be right and the room would look dead. So
+       the thin tables are PARKED - drained of horses and closed once empty -
+       and the seats concentrate onto the ones that stay.
+
+       PARKED IS NOT CLOSED. It is written to a different settings flag with a
+       different lifetime, it is lifted every morning, and nothing here can
+       reach `retire_when_empty`. See FloorPlan.park.
+
+       THREE THINGS ARE NEVER PARKED, and each is a way this could go wrong:
+         - a table with a HUMAN seated. Parking it stops the seeder refilling
+           it, which is how a person ends up alone at a table nobody can join.
+         - a table with a human WAITING. They are queuing for that game.
+         - the fullest tables the host still NEEDS, whatever their count. The
+           wind-down thins tables as it runs, so without a floor the parking
+           cascades: every table drops under the minimum, every table is
+           parked, and the host has nowhere to seat anybody. The number is
+           derived from the cap rather than fixed - 29 bodies at up to 1.3
+           seats each is 38 seats and needs seven full rings, not six. */
+    if (isNightWindow(snap.chicagoHour)) {
+      const parkable = running
+        .filter((t) => t.humansSeated === 0 && t.humansWaiting === 0)
+        .sort((a, b) => b.occupied - a.occupied);
+      const keepOpen = nightTablesNeeded(occ.max, snap.chicagoHour);
+      const keep = new Set(parkable.slice(0, keepOpen).map((t) => t.tableId));
+      let parkedHere = 0;
+      for (const t of parkable) {
+        if (keep.has(t.tableId)) continue;
+        if (t.occupied >= NIGHT_MIN_PLAYERS) continue;
+        plan.park.push(t.tableId);
+        parkedHere++;
+      }
+      if (parkedHere > 0) {
+        plan.alerts.push(
+          `night_parking host=${host.hostId} parking=${parkedHere} of=${running.length}`
+        );
+      }
+    }
+
     if (populationKnown) {
       if (host.uniqueLive > peakCap(host.n)) plan.alerts.push(`over_peak_cap host=${host.hostId}`);
       if (isNightWindow(snap.chicagoHour) && host.uniqueLive > nightCap(host.n)) {
@@ -443,6 +515,14 @@ export function planFloor(snap: FloorSnapshot): FloorPlan {
       humansWaiting,
       onePlayerTablesListed: onePlayer,
     });
+  }
+
+  /* A table already being closed for good is never also parked. The two
+     flags have opposite lifetimes and writing both to one row is how a
+     permanent retirement gets lifted by the morning unpark. */
+  if (plan.park.length > 0 && plan.close.length > 0) {
+    const closing = new Set(plan.close);
+    plan.park = plan.park.filter((id) => !closing.has(id));
   }
 
   return plan;

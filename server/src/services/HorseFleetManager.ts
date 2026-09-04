@@ -21,7 +21,7 @@ import {
   hostAllowsNewBody,
   stableHandHostCaps,
 } from './StableHandController.js';
-import { WALLETS_FOR_HOST, controllerEnabled } from './StableHand.js';
+import { WALLETS_FOR_HOST, controllerEnabled, isNightWindow } from './StableHand.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
 import { clampSeatsForVariant, maxSeatsForVariant } from '../config/tableSeating.js';
@@ -38,6 +38,7 @@ import {
   gameLaneFor,
   horseHash,
   isActiveNow,
+  isNightParkedTable,
   isRetiringTable,
   occupancyTargetFor,
   stakeBandAllows,
@@ -633,7 +634,22 @@ export class HorseFleetManager {
              wrong for one a club deliberately retired (2026-09-03, "close any
              tables over 2/5"), which would otherwise be reopened on the next
              boot and re-seeded. */
-          if (existing.status === 'closed' && !isRetiringTable(existing as { settings?: unknown }))
+          /* A RETIRED TABLE STAYS RETIRED; A PARKED ONE COMES BACK IN THE
+             MORNING. The night park drains and closes a thin table exactly as
+             a retirement does, but it is meant to be lifted - so boot reopens
+             it, unless we are still inside the night window, in which case
+             reopening would simply undo the parking every hour when the
+             engine restarts. This is the second, independent way a parked
+             table gets its life back: the executor lifts the flag every cycle
+             after 08:00, and this catches the case where the executor is
+             switched off entirely. */
+          const parkedForNight = isNightParkedTable(existing as { settings?: unknown });
+          const stillNight = isNightWindow(chicagoNow().hour);
+          if (
+            existing.status === 'closed' &&
+            !isRetiringTable(existing as { settings?: unknown }) &&
+            !(parkedForNight && stillNight)
+          )
             updates.status = 'waiting';
           if (existing.union_id !== MIDWAY_UNION_ID) updates.union_id = MIDWAY_UNION_ID;
           // V3: legacy rows can drift from the config (e.g. an old
@@ -1222,16 +1238,26 @@ export class HorseFleetManager {
          club's stake cap is closed without cashing seats out under a hand.
          See isRetiringTable. */
       let retiring = 0;
+      let parked = 0;
       for (const t of tables) {
         if (isRetiringTable(t as { settings?: unknown })) {
           surplusTableIds.add(t.id);
           retiring++;
+        } else if (isNightParkedTable(t as { settings?: unknown })) {
+          /* PARKED FOR THE NIGHT (Dan 2026-09-04). Same drain, same "closed
+             only once genuinely empty", opposite lifetime: the Stable Hand
+             executor lifts the flag and reopens the table every cycle outside
+             the night window. Never the retirement flag - that one is
+             permanent by design and a night using it would delete the floor. */
+          surplusTableIds.add(t.id);
+          parked++;
         }
       }
       if (surplusTableIds.size > 0) {
         console.log(
           `[HorseFleet] ${surplusTableIds.size} surplus table(s) draining - not seeding them` +
-            (retiring > 0 ? ` (${retiring} marked retire_when_empty)` : '')
+            (retiring > 0 ? ` (${retiring} marked retire_when_empty)` : '') +
+            (parked > 0 ? ` (${parked} parked for the night)` : '')
         );
       }
 
@@ -2143,7 +2169,10 @@ export class HorseFleetManager {
            invisible to every sweep. The 2026-09-03 batch all carry
            auto_extension = false, so this is the trap closing before anyone
            falls into it. */
-        .or('auto_extension.is.null,auto_extension.eq.false,settings->>retire_when_empty.eq.true')
+        .or(
+          'auto_extension.is.null,auto_extension.eq.false,' +
+            'settings->>retire_when_empty.eq.true,settings->>night_parked.eq.true'
+        )
         .in('status', ['waiting', 'running']);
       if (error) {
         reportError(error, 'HorseFleet.retireSurplusTables_failed');

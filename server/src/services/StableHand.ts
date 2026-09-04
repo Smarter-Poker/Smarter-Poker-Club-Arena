@@ -81,8 +81,23 @@ export interface HostPopulation {
 export function peakCap(n: number): number {
   return Math.floor(0.4 * n);
 }
+/**
+ * The overnight hard ceiling, 03:00-08:00 Chicago.
+ *
+ * FIVE PERCENT, NOT TEN (Dan, 2026-09-04). The OPORD wrote 10%, and the first
+ * night the curve was actually enforced Dan read the numbers it produced -
+ * 58 bodies on Midway Union and 41 on Deep Stack Society - and said:
+ * "there should not be 89 people playing in the middle of the night, cut that
+ * from 10% to 5%. thats a more reasonable and accurate number we should see."
+ *
+ * It is the only night knob that needs to move: the curve reaches 10, 8, 7, 8
+ * and 9 percent across those five hours, so a 5% ceiling binds every one of
+ * them and the whole window lands on 5%. Midway Union 29, Deep Stack 20.
+ */
+export const NIGHT_CAP_PCT = 0.05;
+
 export function nightCap(n: number): number {
-  return Math.floor(0.1 * n);
+  return Math.floor(NIGHT_CAP_PCT * n);
 }
 
 /** Section 7.2 tag split, recomputed from live N as the OPORD instructs. */
@@ -129,6 +144,48 @@ export const OCCUPANCY_CURVE_PCT: Record<number, number> = {
   22: 38,
   23: 36,
 };
+
+/**
+ * LATE NIGHT HAS NO SHORT-HANDED GAMES (Dan, 2026-09-04).
+ *
+ * "fewer tables, more players at each table. late night shouldn't have any
+ * 2-3 handed games."
+ *
+ * Four is the smallest table that is not 2-3 handed. A shaped table below it
+ * inside the night window is parked - drained of horses and closed until
+ * morning - so the night's seats concentrate rather than spread.
+ */
+export const NIGHT_MIN_PLAYERS = 4;
+
+/**
+ * The floor under how many tables a host keeps open overnight.
+ *
+ * Without a floor the parking cascades: the wind-down thins tables as it runs,
+ * every table falls under NIGHT_MIN_PLAYERS, every table is parked, and the
+ * host has nowhere left to seat anybody.
+ */
+export const NIGHT_MIN_OPEN_TABLES = 6;
+
+/** A full ring. What one kept-open table is assumed to hold. */
+export const NIGHT_SEATS_PER_TABLE = 6;
+
+/**
+ * How many tables this host must keep open tonight to seat the people it is
+ * allowed to have.
+ *
+ * A FIXED floor was not enough on its own: Midway Union's 5% cap is 29 bodies
+ * holding up to 1.3 seats each, which is 38 seats and needs seven full rings,
+ * not six. Parking down to six would have left the seeder unable to place
+ * everyone the curve asks for - the head count would then sit under target for
+ * no reason a player could see.
+ *
+ * Rounded UP and against the WIDEST end of the seats-per-horse band, because
+ * one extra open table is a far cheaper mistake than having nowhere to seat.
+ */
+export function nightTablesNeeded(maxBodies: number, chicagoHour: number): number {
+  const seats = Math.max(0, maxBodies) * seatsPerHorseBand(chicagoHour).max;
+  return Math.max(NIGHT_MIN_OPEN_TABLES, Math.ceil(seats / NIGHT_SEATS_PER_TABLE));
+}
 
 /** Night hard cap applies 03:00-08:00 Chicago inclusive of 03, exclusive of 08
  *  per the OPORD ("night hard cap starts" at 03:00, "ends" at 08:00). */

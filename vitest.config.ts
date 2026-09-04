@@ -39,33 +39,42 @@ export default defineConfig({
     // SECONDS on an unloaded 28-core machine and was reported by CI as a
     // 12.4-MINUTE job. That gap was never the tests; it was thrash.
     //
-    // The cap is close to free. Measured on this machine, same 911-file suite,
-    // all passing:
+    // WHAT THE CAP ACTUALLY COSTS. The first version of this comment recorded
+    // 33.2s uncapped against 37s at maxThreads=2, and concluded the suite was
+    // dominated by fixed per-file cost rather than parallel width. That was
+    // wrong, and it was wrong because THE CAP WAS NEVER APPLIED: it was set as
+    // `poolOptions.threads.maxThreads`, which Vitest 4 removed, so both columns
+    // were the same uncapped run and the four-second delta was noise. vitest
+    // had been printing a DEPRECATED notice about it on every run.
     //
-    //     uncapped (28 threads)  33.2s
-    //     maxThreads=4           36s
-    //     maxThreads=2           37s
+    // Re-measured with the option vitest actually reads (tests/components,
+    // 28-core machine, CI=1):
     //
-    // Four seconds. The suite is dominated by fixed per-file environment
-    // construction, not by parallel width, so handing it 28 threads buys
-    // almost nothing while guaranteeing it stampedes any box it shares. Two
-    // threads per job means three jobs fit inside eight cores with headroom.
+    //     maxWorkers=2    16s
+    //     maxWorkers=4    10s
+    //     maxWorkers=28   11s
+    //
+    // So width DOES matter up to about four, and buys nothing past it. Two is
+    // 60 percent slower than four, not 10 percent - worth knowing before
+    // anyone "tightens" this again to relieve contention.
     //
     // Local runs stay uncapped anyway, so `npm test` on a laptop is unchanged.
-    poolOptions: {
-      threads: {
-        // Sized from the BOX, not from a constant. This was a hard 2 while the
-        // CI boxes had 8 cores; they were rescaled to 16 on 2026-09-04 and the
-        // 2 immediately became the bottleneck it had been introduced to remove.
-        // cores/4 leaves room for roughly four heavy jobs sharing a box, which
-        // is what a pull request actually puts there.
-        maxThreads: process.env.VITEST_MAX_THREADS
-          ? Number(process.env.VITEST_MAX_THREADS)
-          : process.env.CI
-            ? Math.max(2, Math.floor(cpus().length / 4))
-            : undefined,
-      },
-    },
+    // Vitest 4 REMOVED `poolOptions`; the equivalent is top-level `maxWorkers`.
+    // This was written as `poolOptions.threads.maxThreads`, so it was ignored
+    // from the day it landed - vitest printed a DEPRECATED notice and ran the
+    // suite at full width anyway. The measurement recorded above (33.2s
+    // uncapped vs 37s "capped") was uncapped in BOTH columns, which is exactly
+    // why the two numbers were nearly identical; the conclusion drawn from it,
+    // that the suite is dominated by fixed per-file cost rather than parallel
+    // width, was never actually tested.
+    //
+    // Sized from the box: cores/4 leaves room for roughly four heavy jobs
+    // sharing a runner, which is what one pull request puts there.
+    maxWorkers: process.env.VITEST_MAX_THREADS
+      ? Number(process.env.VITEST_MAX_THREADS)
+      : process.env.CI
+        ? Math.max(2, Math.floor(cpus().length / 4))
+        : undefined,
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
     exclude: ['node_modules', 'dist', 'e2e', 'tests/_archive/**'],
     setupFiles: ['tests/setup.ts'],

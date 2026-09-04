@@ -98,6 +98,17 @@ const REGISTER = {
     kind: 'IDENTIFICATION',
     why: 'A player-controlled "hide horses" toggle on the club leaderboard. It defaults to SHOWING horses (ClubDashboard reads ca_dashboard_hide_horses with a false default), which is what the law requires of anything opt-in, and the leaderboard itself is fed by ca_club_top_players, which counts horses in full (286,589 horse rows in club_member_daily_stats against 60 human ones).',
   },
+  'server/src/services/StableHandController.ts': {
+    allowed: 1,
+    kind: 'IDENTIFICATION',
+    why: [
+      "bodiesOnHostFrom counts the FLEET's own bodies per host, and it is the law's first sanctioned exemption - the plumbing that creates, seats, funds and steers the fleet, alongside fn_seed_horses_to_floor and autoRebuyHorse. It answers one question: how many horses has the SEEDER already put on this host, so it can stop putting more.",
+      '',
+      'A human is neither counted nor affected, and that is the point rather than an oversight. The fleet does not seat humans, so a human in the count would be a number the cap could never act on; and the cap is consulted in exactly one place, hostAllowsNewBody, which is bypassed OUTRIGHT when a human at that table needs the game rescued. A person waiting outranks the shape of the floor every time.',
+      '',
+      'No horse is worse off for it either. The cap limits how many horses the fleet CHOOSES to seat against Dan\'s occupancy curve (40% of the population at peak, 5% overnight); it never removes a seated horse, never refuses one already on the host a second table, and never touches a horse a human is playing beside. Counting humans into it would not make a horse better treated - it would make the curve unmeasurable, which is the outcome the whole controller exists to prevent.',
+    ].join('\n'),
+  },
   'server/src/engine/ServerTableEngineBase.ts': {
     allowed: 1,
     kind: 'EQUAL OUTCOME',

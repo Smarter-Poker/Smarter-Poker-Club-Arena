@@ -317,3 +317,21 @@ describe('SOURCE LAW: the snapshot never turns a failed read into a zero', () =>
     expect(src).not.toContain('profiles!inner');
   });
 });
+
+describe('SOURCE LAW: a partial tagging run is not a finished one', () => {
+  it('the no-op guard compares against the intended count, and the write is read back', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const raw = readFileSync(resolve(__dirname, '../scripts/horsesTag.ts'), 'utf8');
+    const src = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    /* The first real run died on `fetch failed` partway through the first
+       chunk. Nothing landed, so nothing was harmed - but `count > 0` would
+       have read a half-written table as a finished one, leaving horses
+       untagged forever with every log line green. */
+    expect(src).not.toMatch(
+      /if \(\(count \?\? 0\) > 0\) \{\s*console\.log\(\s*`\[stable-hand:tag\] \$\{count\} tags already/
+    );
+    expect(src).toContain('if ((count ?? 0) >= tagRows.length) {');
+    expect(src).toContain('tagging incomplete:');
+  });
+});

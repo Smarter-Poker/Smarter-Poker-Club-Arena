@@ -112,6 +112,28 @@ Also standing, and also only reported: 89 close orders from the exotic and
 limit caps, 11 one-player tables listed as joinable at Deep Stack Society, and
 four exotic tables running above $1/$2.
 
+## The fleet is tagged, and the tagger stopped being able to lie about it
+
+`horses:tag --club=all` had only ever been run with `--dry-run`. It has now run
+for real: **1,580 tags over 1,000 distinct bodies, and 1,000 state rows**, with
+coverage identical to the recorded dry run (nlh 905, plo4 223, plo5 201, plo6
+135, pineapple 112, short_deck 112, plo8 112, flh 90, flo8 90 of 1,107 cash
+tags). Verified in the table afterwards: 473 cash / 473 tourney / 634 both,
+70 cash-freeroll, zero cash tags without a persona, and zero tourney-only tags
+carrying cash variants.
+
+The FIRST attempt died on `TypeError: fetch failed` partway through the first
+500-row upsert. Nothing had landed, so nothing was harmed - and that is the
+only reason it was harmless. The idempotency guard read "any tags at all" as
+"the fleet is tagged", so had chunk three of four failed instead, the next run
+would have found 1,500 rows, announced an idempotent no-op, and left 80 horses
+untagged forever with every log line green.
+
+It now compares against the number of tags the run intends to write, so a short
+table is COMPLETED rather than mistaken for finished, and it reads the count
+back after writing and throws if the fleet is not whole. Re-running against the
+full table correctly reports `1580 tags already present for 1580 memberships`.
+
 ## Verified
 
 Server typecheck clean, 5,075 tests across 357 files. Client typecheck clean,

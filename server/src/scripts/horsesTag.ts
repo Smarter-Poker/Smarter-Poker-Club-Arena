@@ -176,15 +176,37 @@ export async function runTagger(opts: { force: boolean; dryRun: boolean; clubs: 
     return { tags: tagRows.length, states: stateRows.length, wrote: false };
   }
 
+  /**
+   * A PARTIAL RUN IS NOT A FINISHED ONE (2026-09-04).
+   *
+   * The first real run of this script died on `fetch failed` partway through
+   * the first 500-row upsert. Nothing had landed, so nothing was harmed - but
+   * the guard here read "any tags at all" as "the fleet is tagged". Had chunk
+   * three of four failed instead, the next run would have found 1,500 rows,
+   * announced an idempotent no-op, and left 80 horses untagged forever with
+   * every log line green.
+   *
+   * It compares against the number of tags this run intends to write, so a
+   * short table is COMPLETED rather than mistaken for a finished one. A table
+   * that is longer (a horse left a club, so there are fewer memberships now
+   * than rows) is still a no-op - retagging a smaller fleet is what --force is
+   * for.
+   */
   if (!opts.force) {
     const { count } = await supabase
       .from('stable_hand_membership_tags')
       .select('horse_id', { count: 'exact', head: true });
-    if ((count ?? 0) > 0) {
+    if ((count ?? 0) >= tagRows.length) {
       console.log(
-        `[stable-hand:tag] ${count} tags already present - idempotent no-op. Use --force to retag.`
+        `[stable-hand:tag] ${count} tags already present for ${tagRows.length} memberships - ` +
+          `idempotent no-op. Use --force to retag.`
       );
       return { tags: count ?? 0, states: 0, wrote: false };
+    }
+    if ((count ?? 0) > 0) {
+      console.log(
+        `[stable-hand:tag] ${count} of ${tagRows.length} tags present - completing a partial run`
+      );
     }
   }
 
@@ -205,6 +227,18 @@ export async function runTagger(opts: { force: boolean; dryRun: boolean; clubs: 
       .from('stable_hand_horse_state')
       .upsert(chunk, { onConflict: 'horse_id', ignoreDuplicates: !opts.force });
     if (error) throw new Error(`state upsert failed: ${error.message}`);
+  }
+
+  /* SAY SO IF IT DID NOT ALL LAND. Every write above throws on an error it
+     can see, but a count read back from the table is the only thing that
+     proves the fleet is whole. */
+  const { count: after } = await supabase
+    .from('stable_hand_membership_tags')
+    .select('horse_id', { count: 'exact', head: true });
+  if ((after ?? 0) < tagRows.length) {
+    throw new Error(
+      `tagging incomplete: ${after} of ${tagRows.length} tags present after writing - re-run to finish`
+    );
   }
 
   console.log(`[stable-hand:tag] wrote ${tagRows.length} tags, ${stateRows.length} state rows`);

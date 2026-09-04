@@ -60,6 +60,19 @@ export interface StatsHealthSnapshot {
     cursorAt: string | null;
     rowsAdded: number | null;
   } | null;
+  /**
+   * Phase 3: all-in equity coverage over the last 7 days, from the last audit.
+   * A seat that was all-in before the river, reached showdown, and saw no
+   * further betting after the hand's last all-in was in an all-in RUNOUT and
+   * owes an equity figure (the EV line on the stats page is built from it).
+   * River all-ins have nothing left to run out; a side pot that kept betting
+   * was never a runout. Neither is counted.
+   */
+  evCoverage7d: {
+    allInShowdowns: number | null;
+    withoutEquity: number | null;
+    ratio: number | null;
+  } | null;
   lastAudit: {
     ranAt: string | null;
     hands: number | null;
@@ -105,10 +118,23 @@ export const STATS_HEALTH_COMPONENT = 'club-arena-stats';
 export const STATS_INDEX_LAG_ALERT = 'ClubArenaStatsIndexLag';
 export const STATS_TRIGGER_GAP_ALERT = 'ClubArenaStatsTriggerGap';
 export const STATS_WITNESS_ALERT = 'ClubArenaStatsWitnessDisagree';
+export const STATS_EV_COVERAGE_ALERT = 'ClubArenaStatsEvCoverage';
 
 /** 30 minutes: six maintenance breaks, two Open Claw ticks. */
 export const STATS_INDEX_LAG_THRESHOLD_S = 30 * 60;
 export const STATS_HEALTH_PERIOD_MS = 60 * 1000;
+/**
+ * EV coverage: raise when fewer than 99% of the week's all-in RUNOUTS carry
+ * an equity figure, once there are enough of them to mean anything. The
+ * audit counts a seat as owed equity only when it was all-in before the
+ * river, reached showdown, and no check, bet or raise followed the hand's
+ * last all-in (a side pot that keeps betting is not a runout and the engine
+ * correctly prices nothing). Measured 2026-09-04: 715 owed, 1 missing,
+ * 0.9986. The 99% bar is the programme's (item 1.4); fifty is the sample
+ * floor so a quiet week cannot page on one hand.
+ */
+export const STATS_EV_COVERAGE_MIN_RATIO = 0.99;
+export const STATS_EV_COVERAGE_MIN_SAMPLE = 50;
 
 const num = (v: unknown): number | null =>
   typeof v === 'number' && Number.isFinite(v)
@@ -126,6 +152,7 @@ export function parseStatsHealth(raw: unknown, fallbackCheckedAt: string): Stats
   const r = obj(raw) ?? {};
   const repair = obj(r.repair);
   const seatfill = obj(r.seatBackfill);
+  const ev = obj(r.evCoverage7d);
   const audit = obj(r.lastAudit);
   return {
     checkedAt: str(r.checkedAt) ?? fallbackCheckedAt,
@@ -150,6 +177,13 @@ export function parseStatsHealth(raw: unknown, fallbackCheckedAt: string): Stats
           done: bool(seatfill.done),
           cursorAt: str(seatfill.cursorAt),
           rowsAdded: num(seatfill.rowsAdded),
+        }
+      : null,
+    evCoverage7d: ev
+      ? {
+          allInShowdowns: num(ev.allInShowdowns),
+          withoutEquity: num(ev.withoutEquity),
+          ratio: num(ev.ratio),
         }
       : null,
     lastAudit: audit
@@ -271,6 +305,16 @@ export class StatsHealthMonitor {
         s?.repair ? (s.repair.done ? 1 : 0) : null
       ),
       ...g(
+        'poker_stats_ev_coverage_7d',
+        'Share of all-in runout seats (pre-river all-in, reached showdown, no betting after the last all-in) in the last 7 days that carry an all-in equity figure; NaN when there were none',
+        s?.evCoverage7d?.ratio ?? null
+      ),
+      ...g(
+        'poker_stats_allin_showdowns_7d',
+        'All-in runout seats in the last 7 days that owe an equity figure, from the last witness audit',
+        s?.evCoverage7d?.allInShowdowns ?? null
+      ),
+      ...g(
         'poker_stats_health_age_seconds',
         'Seconds since the engine last read ca_stats_health() successfully',
         this.snapshot ? Math.round((this.now() - this.snapshotAt) / 1000) : null
@@ -362,6 +406,49 @@ export class StatsHealthMonitor {
         });
       } else {
         await this.deps.resolve(STATS_WITNESS_ALERT, STATS_HEALTH_COMPONENT, 'Witness audit clean');
+      }
+    }
+
+    // 4. All-in equity coverage. The EV line on the stats page is only as
+    //    honest as this ratio; a week with enough all-ins and a coverage
+    //    below the bar means the settlement writer is dropping equity again.
+    const ev = s.evCoverage7d;
+    if (ev && ev.allInShowdowns !== null && ev.ratio !== null) {
+      if (
+        ev.allInShowdowns >= STATS_EV_COVERAGE_MIN_SAMPLE &&
+        ev.ratio < STATS_EV_COVERAGE_MIN_RATIO
+      ) {
+        await this.deps.raise({
+          alertname: STATS_EV_COVERAGE_ALERT,
+          severity: 'warning',
+          component: STATS_HEALTH_COMPONENT,
+          summary:
+            `All-in equity coverage is ${(ev.ratio * 100).toFixed(1)}% over 7 days ` +
+            `(${ev.withoutEquity ?? 0} of ${ev.allInShowdowns} all-in runout seats without equity)`,
+          description:
+            'ca_hand_facts.all_in_equity is captured from the all_in_equity broadcast of every ' +
+            'all-in runout and written at settlement. The EV line, "EV Adjusted" and the luck ' +
+            'readouts on the stats page are computed from it, so a missing figure understates or ' +
+            'overstates a player. Find the hands with ' +
+            'SELECT hand_id FROM ca_hand_facts WHERE was_all_in AND went_to_showdown AND ' +
+            "coalesce(all_in_street,'') <> 'river' AND all_in_equity IS NULL AND played_at >= now() - interval '7 days' " +
+            '(then discard the ones whose action log shows betting after the last all-in: those ' +
+            'were side pots, not runouts, and owe nothing).',
+          labels: {
+            allin_showdowns_7d: String(ev.allInShowdowns),
+            without_equity_7d: String(ev.withoutEquity ?? 0),
+            ratio: ev.ratio.toFixed(4),
+          },
+        });
+      } else if (
+        ev.ratio >= STATS_EV_COVERAGE_MIN_RATIO ||
+        ev.allInShowdowns < STATS_EV_COVERAGE_MIN_SAMPLE
+      ) {
+        await this.deps.resolve(
+          STATS_EV_COVERAGE_ALERT,
+          STATS_HEALTH_COMPONENT,
+          'All-in equity coverage is back above the bar'
+        );
       }
     }
   }

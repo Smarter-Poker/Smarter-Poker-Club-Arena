@@ -423,29 +423,110 @@ describe('hostAllowsNewBody', () => {
 });
 
 describe('bodiesOnHostFrom counts bodies, not seats', () => {
+  const hostOf = new Map([
+    ['t1', MIDWAY_UNION_ID],
+    ['t2', MIDWAY_UNION_ID],
+    ['t3', MIDWAY_UNION_ID],
+    ['t4', DSS_CLUB_ID],
+  ]);
+  const seats = [
+    { user_id: 'h1', table_id: 't1' },
+    { user_id: 'h1', table_id: 't2' },
+    { user_id: 'h1', table_id: 't3' },
+    { user_id: 'h2', table_id: 't1' },
+    { user_id: 'human', table_id: 't1' },
+    { user_id: 'h1', table_id: 't4' },
+  ];
+
   it('a horse at four tables on one host is one body', () => {
-    const hostOf = new Map([
-      ['t1', MIDWAY_UNION_ID],
-      ['t2', MIDWAY_UNION_ID],
-      ['t3', MIDWAY_UNION_ID],
-      ['t4', DSS_CLUB_ID],
-    ]);
-    const seats = [
-      { user_id: 'h1', table_id: 't1' },
-      { user_id: 'h1', table_id: 't2' },
-      { user_id: 'h1', table_id: 't3' },
-      { user_id: 'h2', table_id: 't1' },
-      { user_id: 'human', table_id: 't1' },
-      { user_id: 'h1', table_id: 't4' },
-    ];
-    const out = bodiesOnHostFrom(seats, hostOf, (id) => id !== 'human');
-    expect(out.get(MIDWAY_UNION_ID)!.size).toBe(2);
+    const out = bodiesOnHostFrom(seats, hostOf);
+    expect(out.get(MIDWAY_UNION_ID)!.has('h1')).toBe(true);
     expect(out.get(DSS_CLUB_ID)!.size).toBe(1);
   });
 
+  it('COUNTS THE HUMAN TOO (Dan 2026-09-04)', () => {
+    /* The curve is a target for how busy the FLOOR is - "there should not be
+       89 PEOPLE playing in the middle of the night". Counting horses alone
+       overshot it by exactly the number of real players in the room. */
+    const out = bodiesOnHostFrom(seats, hostOf);
+    expect(out.get(MIDWAY_UNION_ID)!.has('human')).toBe(true);
+    expect(out.get(MIDWAY_UNION_ID)!.size).toBe(3); // h1, h2, human
+  });
+
   it('a seat on a table it does not know the host of is skipped, not guessed', () => {
-    const out = bodiesOnHostFrom([{ user_id: 'h1', table_id: 'unknown' }], new Map(), () => true);
+    const out = bodiesOnHostFrom([{ user_id: 'h1', table_id: 'unknown' }], new Map());
     expect(out.size).toBe(0);
+  });
+});
+
+describe('the fleet recedes as humans arrive', () => {
+  it('a host at its cap on humans alone takes no new horse', async () => {
+    const { hostAllowsNewBody } = await import('./StableHandController.js');
+    // 29 people are already playing at 03:00; the night cap is 29.
+    const humans = new Set(Array.from({ length: 29 }, (_, i) => `human${i}`));
+    expect(
+      hostAllowsNewBody({
+        hostId: MIDWAY_UNION_ID,
+        horseId: 'newcomer',
+        caps: new Map([[MIDWAY_UNION_ID, 29]]),
+        bodiesOnHost: new Map([[MIDWAY_UNION_ID, humans]]),
+        humanNeedsRescue: false,
+      })
+    ).toBe(false);
+  });
+
+  it('but a person waiting for a game still outranks the curve', () => {
+    const humans = new Set(Array.from({ length: 99 }, (_, i) => `human${i}`));
+    expect(
+      hostAllowsNewBody({
+        hostId: MIDWAY_UNION_ID,
+        horseId: 'newcomer',
+        caps: new Map([[MIDWAY_UNION_ID, 29]]),
+        bodiesOnHost: new Map([[MIDWAY_UNION_ID, humans]]),
+        humanNeedsRescue: true,
+      })
+    ).toBe(true);
+  });
+});
+
+describe('the wind-down never strands a person short-handed', () => {
+  it('leaves a thin table alone while a human is sitting at it', () => {
+    // Now that humans count toward occupancy, the tables humans sit at are the
+    // ones most likely to be thin - and thinning them further is how a person
+    // ends up heads-up against one horse at 3am.
+    const withHuman = table({
+      tableId: 'has-a-person',
+      occupied: 3,
+      humansSeated: 1,
+      seatedHorses: [horse('a'), horse('b')],
+    });
+    const others = Array.from({ length: 12 }, (_, i) => table({ tableId: `t${i}`, occupied: 6 }));
+    const p = planFloor({
+      chicagoHour: 3,
+      chicagoMinute: 0,
+      killed: false,
+      hosts: [{ hostId: MIDWAY_UNION_ID, n: 584, uniqueLive: 178, tables: [withHuman, ...others] }],
+    });
+    const victims = p.stand.filter((s) => s.reason === 'occupancy_wind_down');
+    expect(victims.length).toBeGreaterThan(0);
+    expect(victims.some((v) => v.tableId === 'has-a-person')).toBe(false);
+  });
+
+  it('but winds one down when it stays a real game afterwards', () => {
+    const withHuman = table({
+      tableId: 'busy-with-a-person',
+      occupied: 6,
+      humansSeated: 1,
+      seatedHorses: Array.from({ length: 5 }, (_, i) => horse(`h${i}`)),
+    });
+    const p = planFloor({
+      chicagoHour: 3,
+      chicagoMinute: 0,
+      killed: false,
+      hosts: [{ hostId: MIDWAY_UNION_ID, n: 584, uniqueLive: 178, tables: [withHuman] }],
+    });
+    const victims = p.stand.filter((s) => s.reason === 'occupancy_wind_down');
+    expect(victims.some((v) => v.tableId === 'busy-with-a-person')).toBe(true);
   });
 });
 

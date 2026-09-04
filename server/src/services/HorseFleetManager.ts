@@ -1395,9 +1395,7 @@ export class HorseFleetManager {
         }
       }
       const stableHandCaps = stableHandHostCaps(eligibleByHost, chicagoNow());
-      const bodiesOnHost = bodiesOnHostFrom(allActiveSeats, hostOfTable, (id) =>
-        horseIdSet.has(id)
-      );
+      const bodiesOnHost = bodiesOnHostFrom(allActiveSeats, hostOfTable);
       /* WHERE EACH HORSE ALREADY IS. One body plays one club and one host at a
          time (section 11), and both are read from the live seat map rather
          than from stable_hand_horse_state: the seat rows are what actually

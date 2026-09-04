@@ -396,6 +396,12 @@ export function planFloor(snap: FloorSnapshot): FloorPlan {
         );
         running
           .slice()
+          /* NEVER LEAVE A PERSON SHORT-HANDED TO MEET A NUMBER. The wind-down
+             takes from the thinnest tables first, and now that humans count
+             toward occupancy it is the tables humans are sitting at that are
+             most likely to be thin. A table with a human on it is only
+             wound down while it would still be a real game afterwards. */
+          .filter((t) => t.humansSeated === 0 || t.occupied - 1 >= NIGHT_MIN_PLAYERS)
           .sort((a, b) => a.occupied - b.occupied)
           .slice(0, over)
           .forEach((t) => {
@@ -625,19 +631,41 @@ export function hostAllowsNewBody(opts: {
 }
 
 /**
- * Bodies currently seated on each host, from the seat map the seeding cycle
- * already holds. Keyed by host so it can be updated in place as seats are
- * taken during the cycle - a cap read from the position the cycle STARTED
- * with would let one pass seat the whole floor.
+ * EVERY body currently seated on each host - human and horse alike.
+ *
+ * ── IT COUNTED ONLY HORSES, AND THAT WAS WRONG (Dan, 2026-09-04) ───────────
+ *
+ * The first version filtered to horses, on the reasoning that the fleet only
+ * ever seats horses so a human in the count is a number the cap could never
+ * act on. Dan read that back and answered: correct, the fleet never seats
+ * humans - so fix the code, not the wording.
+ *
+ * He is right, and it is a correctness bug rather than a style point. The
+ * occupancy curve is a target for HOW BUSY THE FLOOR IS, and his instruction
+ * that produced it was "there should not be 89 PEOPLE playing in the middle of
+ * the night". A human at a table is a person on that floor. Counting only
+ * horses meant the floor overshot the curve by exactly the number of real
+ * players on it: a 29-body night cap with twenty humans in the room delivered
+ * forty-nine.
+ *
+ * It is also the better behaviour and the one the fleet exists for. When real
+ * people turn up, the room needs FEWER horses, not the same number. Counting
+ * every body makes the fleet recede as humans arrive, automatically.
+ *
+ * The POPULATION the curve is a percentage of (`n`) is still the horse fleet -
+ * that is fleet sizing, a different question. Target = 40% of 584 horses at
+ * peak; measured against = everyone sitting down.
+ *
+ * Keyed by host so it can be updated in place as seats are taken during the
+ * cycle - a cap read from the position the cycle STARTED with would let one
+ * pass seat the whole floor past it.
  */
 export function bodiesOnHostFrom(
   seats: ReadonlyArray<{ user_id: string; table_id: string }>,
-  hostOfTable: ReadonlyMap<string, string>,
-  isHorse: (id: string) => boolean
+  hostOfTable: ReadonlyMap<string, string>
 ): Map<string, Set<string>> {
   const out = new Map<string, Set<string>>();
   for (const s of seats) {
-    if (!isHorse(s.user_id)) continue;
     const host = hostOfTable.get(s.table_id);
     if (!host) continue;
     if (!out.has(host)) out.set(host, new Set());

@@ -549,6 +549,16 @@ BEGIN
 END;
 $function$;
 
+-- Fleet-only, exactly as it already is in production: CREATE OR REPLACE keeps
+-- the ACL, but check-definer-authorization reads the FILE, so say it again.
+REVOKE ALL ON FUNCTION public.fn_table_lifecycle_pass() FROM PUBLIC, anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.fn_table_lifecycle_pass() TO service_role;
+
+-- Management-only: reached through fn_execute_managed_game_command, which is
+-- the authenticated door and does its own fn_can_create_games check.
+REVOKE ALL ON FUNCTION public.fn_close_managed_game(text, uuid) FROM PUBLIC, anon, authenticated;
+GRANT  EXECUTE ON FUNCTION public.fn_close_managed_game(text, uuid) TO service_role;
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 7. Assertions
 -- ─────────────────────────────────────────────────────────────────────────────

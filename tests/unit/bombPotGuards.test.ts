@@ -680,7 +680,7 @@ describe('ROUND 8 (2026-08-29) — the last of the open items', () => {
     // 2026-09-04 (Operation Table Stakes, Slice 1): the cash writer is
     // fn_cash_game_create in SQL; the page builds no tables row any more.
     expect(blankNonCode(CONFIG)).not.toMatch(/^\s*double_board:/m);
-    const CREATE_SQL = read('supabase/migrations/20260904160500_cash_games_slice_1.sql');
+    const CREATE_SQL = read('supabase/migrations/20260904230000_cash_games_slice_1_hardening.sql');
     const insert = CREATE_SQL.slice(
       CREATE_SQL.indexOf('INSERT INTO public.tables ('),
       CREATE_SQL.indexOf('RETURNING id INTO v_table_id')

@@ -129,6 +129,7 @@ describe('A1.4 - handedness follows the family (R1)', () => {
     mount();
     fireEvent.click(screen.getByRole('button', { name: /Classic/ }));
     fireEvent.click(screen.getByRole('button', { name: 'NLH' }));
+    fireEvent.click(screen.getByRole('button', { name: /Automated Must Move/ }));
     await waitFor(() => expect(seatButtons()).toEqual([9, 6]));
     expect(screen.queryByText('6-Max Is Locked For Omaha Games')).toBeNull();
   });
@@ -137,6 +138,7 @@ describe('A1.4 - handedness follows the family (R1)', () => {
     mount();
     fireEvent.click(screen.getByRole('button', { name: /Classic/ }));
     fireEvent.click(screen.getByRole('button', { name: 'PLO4' }));
+    fireEvent.click(screen.getByRole('button', { name: /Automated Must Move/ }));
     await waitFor(() => expect(seatButtons()).toEqual([6]));
     expect(screen.getByText('6-Max Is Locked For Omaha Games')).toBeTruthy();
     const only = document.querySelector('[data-step="handedness"] button[aria-pressed]');
@@ -189,10 +191,37 @@ describe('A1.6 - the two clocks can only be raised', () => {
   });
 });
 
+describe('the flow shows the card the lobby will paint', () => {
+  it('renders a CashGameCard preview once the choices are made', async () => {
+    mount();
+    fireEvent.click(screen.getByRole('button', { name: /Madness/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'PLO6' }));
+    fireEvent.click(screen.getByRole('button', { name: /Automated Must Move/ }));
+    await waitFor(() => expect(seatButtons()).toEqual([6]));
+    fireEvent.click(screen.getByRole('button', { name: 'Use The Usual Stakes' }));
+    await waitFor(() => expect(document.querySelector('.cgc')).not.toBeNull());
+    const card = document.querySelector('.cgc') as HTMLElement;
+    expect(card.className).toContain('cgc--madness');
+    expect(card.querySelector('.cgc__mode')?.textContent).toBe('MUST MOVE');
+    // Nothing exists yet, so the card says so rather than inventing a count.
+    expect(card.querySelector('.cgc__row--players')?.textContent).toBe('0');
+    expect((card.querySelector('.cgc__hit--join') as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
 describe('the six steps render in the OPORD order and wait on each other', () => {
   it('template, variant, stakes, handedness, rules, confirm', () => {
     const order = [...FLOW.matchAll(/data-step="([a-z]+)"/g)].map((m) => m[1]);
-    expect(order).toEqual(['template', 'variant', 'stakes', 'handedness', 'overrides']);
+    // 'preview' is the live card, not a choice: the numbered steps are the
+    // ones a host answers, and they are in the OPORD's order.
+    expect(order.filter((s) => s !== 'preview')).toEqual([
+      'template',
+      'variant',
+      'mode',
+      'stakes',
+      'handedness',
+      'overrides',
+    ]);
     expect(FLOW).toMatch(/className="config-footer cash-create__footer"/);
   });
 
@@ -211,6 +240,11 @@ describe('the six steps render in the OPORD order and wait on each other', () =>
     expect(save().disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: /Classic/ }));
     fireEvent.click(screen.getByRole('button', { name: 'NLH' }));
+    // Stakes wait on the table mode (R9), and the mode waits on the variant.
+    for (const b of document.querySelectorAll('[data-step="stakes"] button')) {
+      expect((b as HTMLButtonElement).disabled).toBe(true);
+    }
+    fireEvent.click(screen.getByRole('button', { name: /Automated Must Move/ }));
     await waitFor(() => expect(seatButtons().length).toBeGreaterThan(0));
     expect(save().disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Use The Usual Stakes' }));
@@ -221,6 +255,7 @@ describe('the six steps render in the OPORD order and wait on each other', () =>
     mount();
     fireEvent.click(screen.getByRole('button', { name: /Madness/ }));
     fireEvent.click(screen.getByRole('button', { name: 'PLO6' }));
+    fireEvent.click(screen.getByRole('button', { name: /Manual Individual Table/ }));
     await waitFor(() => expect(seatButtons()).toEqual([6]));
     fireEvent.click(screen.getByRole('button', { name: 'Use The Usual Stakes' }));
     const save = screen.getByRole('button', { name: /^Save$/ }) as HTMLButtonElement;
@@ -236,6 +271,7 @@ describe('the six steps render in the OPORD order and wait on each other', () =>
     expect(args.p_handedness).toBe(6);
     expect(args.p_sb).toBeGreaterThan(0);
     expect(args.p_bb).toBeGreaterThan(args.p_sb);
+    expect(args.p_must_move).toBe(false);
     expect(args.p_overrides.stay_clock_min).toBe(10);
     expect(args.p_overrides.rejoin_window_min).toBe(120);
     await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/clubs/club-1'));

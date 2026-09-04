@@ -78,7 +78,10 @@ describe('exactly one writer per kind of table', () => {
     expect(flow.match(/supabase\.rpc\('fn_cash_game_create'/g)?.length).toBe(1);
     expect(flow).not.toMatch(/\.from\(\s*'tables'\s*\)/);
     const sql = fs.readFileSync(
-      path.join(process.cwd(), 'supabase/migrations/20260904160500_cash_games_slice_1.sql'),
+      path.join(
+        process.cwd(),
+        'supabase/migrations/20260904230000_cash_games_slice_1_hardening.sql'
+      ),
       'utf8'
     );
     expect(sql.match(/INSERT INTO public\.tables \(/g)?.length).toBe(1);
@@ -108,7 +111,7 @@ describe('Save and Start both create tables the engine can adopt', () => {
   const page = fs.readFileSync(path.join(SRC, 'pages/TableConfigPage.tsx'), 'utf8');
   const flow = fs.readFileSync(path.join(SRC, 'components/cash/CashGameCreateFlow.tsx'), 'utf8');
   const sql = fs.readFileSync(
-    path.join(process.cwd(), 'supabase/migrations/20260904160500_cash_games_slice_1.sql'),
+    path.join(process.cwd(), 'supabase/migrations/20260904230000_cash_games_slice_1_hardening.sql'),
     'utf8'
   );
 

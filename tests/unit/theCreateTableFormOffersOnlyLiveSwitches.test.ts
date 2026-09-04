@@ -31,7 +31,7 @@ import fs from 'fs';
 import path from 'path';
 
 const read = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), 'utf8');
-const SQL = read('supabase/migrations/20260904160500_cash_games_slice_1.sql');
+const SQL = read('supabase/migrations/20260904230000_cash_games_slice_1_hardening.sql');
 const FLOW = read('src/components/cash/CashGameCreateFlow.tsx');
 const VOCAB = read('src/config/cashGames.ts');
 
@@ -119,7 +119,8 @@ describe('5a — the three lifecycle switches are read in SQL and stay written',
     // reopens it; auto_create_table stays off because the pass's clone
     // would not carry cluster_id.
     expect(SQL).toMatch(/auto_extension, auto_restart, auto_create_table,/);
-    expect(SQL).toMatch(/^\s*true, true, false,\s*$/m);
+    // R9: a must-move game keeps Main 1 alive; a manual table does not.
+    expect(SQL).toMatch(/^\s*v_must_move, v_must_move, false,\s*$/m);
   });
 });
 
@@ -184,7 +185,7 @@ describe('5d — the 7-2 amount is gated exactly like the 7-2 switch', () => {
     // Now: the snapshot forces the flag false off NLH, and the amount is a
     // CASE on that same flag.
     expect(SQL).toMatch(
-      /'seven_deuce_enabled', coalesce\(\(v_o->'options'->>'seven_deuce_enabled'\)::boolean, false\) AND v_v = 'nlh'/
+      /'seven_deuce_enabled', public\.fn_cash_override_bool\(v_oo, 'seven_deuce_enabled', false\) AND v_v = 'nlh'/
     );
     expect(SQL).toMatch(/CASE WHEN \(v_opts->>'seven_deuce_enabled'\)::boolean THEN 2 ELSE 0 END/);
     // And the form only offers the switch on NLH.

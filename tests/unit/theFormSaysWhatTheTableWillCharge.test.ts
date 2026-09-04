@@ -46,7 +46,10 @@ describe('the panel resolves the price rather than restating a default', () => {
     expect(FORM).toMatch(/rakePercent: RAKE_INHERIT/);
     expect(FORM).toMatch(/rakeCapBB: RAKE_INHERIT/);
     const sql = fs.readFileSync(
-      path.join(process.cwd(), 'supabase/migrations/20260904160500_cash_games_slice_1.sql'),
+      path.join(
+        process.cwd(),
+        'supabase/migrations/20260904230000_cash_games_slice_1_hardening.sql'
+      ),
       'utf8'
     );
     expect(sql).toMatch(/rake_percent, rake_cap_bb,/);

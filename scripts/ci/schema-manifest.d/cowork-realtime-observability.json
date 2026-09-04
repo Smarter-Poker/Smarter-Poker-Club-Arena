@@ -1,6 +1,7 @@
 {
   "_owner": "docs/sentry-realtime-programme",
   "functions": [
+    "fn_cron_fleet_health",
     "fn_financial_alert_health",
     "fn_replication_slot_metrics",
     "fn_resolve_settled_prize_alerts",

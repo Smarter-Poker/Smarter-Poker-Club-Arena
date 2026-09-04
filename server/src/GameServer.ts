@@ -30,6 +30,7 @@ import { SpinMetrics } from './services/SpinMetrics.js';
 import { ReplicationMetrics } from './services/ReplicationMetrics.js';
 import { SettlementMetrics } from './services/SettlementMetrics.js';
 import { MoneyHealthMetrics } from './services/MoneyHealthMetrics.js';
+import { CronFleetMetrics } from './services/CronFleetMetrics.js';
 import {
   planTableReopens,
   freshHumanWindowMs,
@@ -373,6 +374,7 @@ export class GameServer {
   private replicationMetrics = new ReplicationMetrics();
   private settlementMetrics = new SettlementMetrics();
   private moneyHealthMetrics = new MoneyHealthMetrics();
+  private cronFleetMetrics = new CronFleetMetrics();
   private lifecycle = new HorseLifecycleManager();
 
   /**
@@ -781,6 +783,12 @@ export class GameServer {
       // check: aaa_skip_noop_update was attached to table_seats with no
       // migration and broke 139,153 hand settlements before anyone noticed.
       this.moneyHealthMetrics.start();
+
+      // Step 3h: Cron fleet. alert-rules.yml carried a group called
+      // cron-health containing NO RULES, while four Open Claw jobs sat stale -
+      // the worst silent for 18.3 days - and v_openclaw_job_staleness had been
+      // computing exactly that with nothing reading it.
+      this.cronFleetMetrics.start();
 
       // Step 4: Start lifecycle manager (stuck horse detection, cleanup)
       this.lifecycle.start();
@@ -1478,6 +1486,11 @@ export class GameServer {
       // The money-alert backlog, aged, and any trigger live on a money table
       // that nobody declared. See services/MoneyHealthMetrics.ts.
       ...this.moneyHealthMetrics.toPrometheus(),
+      // ── CRON FLEET (2026-09-04) ──────────────────────────────────────
+      // pg_cron failures and Open Claw silence. Silence is the observable: a
+      // rotated secret 401s every job and the log STOPS rather than filling
+      // with errors. See services/CronFleetMetrics.ts.
+      ...this.cronFleetMetrics.toPrometheus(),
     ];
 
     if (allLines.length === 0) {

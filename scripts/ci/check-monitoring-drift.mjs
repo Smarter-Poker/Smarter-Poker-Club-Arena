@@ -145,6 +145,47 @@ for (const p of explicit) {
   }
 }
 
+// ── 4b. and every GROUP inside them must contain rules ──────────────────────
+//
+// Check 4 validates whole FILES. alert-rules.yml passed it for months while
+// three of its eight groups - cron-health, postgres-health, vercel-health -
+// contained no rules at all, because the file as a whole had plenty. An empty
+// group is worse than a missing one: it reads as coverage, and the estate had
+// been treating "there is a cron-health group" as meaning cron was watched.
+// Found 2026-09-04, the same day four Open Claw jobs turned out to have been
+// silent for up to eighteen days.
+for (const p of explicit) {
+  const f = basename(p);
+  if (!existsSync(resolve(DIR, f))) continue;
+  const body = read(f);
+  if (/DISABLED|INTENTIONALLY EMPTY/i.test(body.split('\n').slice(0, 12).join('\n'))) continue;
+
+  const lines = body.split('\n');
+  let current = null;
+  let sawRule = false;
+  const empty = [];
+  const finish = () => {
+    if (current && !sawRule) empty.push(current);
+  };
+  for (const line of lines) {
+    const g = line.match(/^\s*-\s*name:\s*(\S+)/);
+    if (g) {
+      finish();
+      current = g[1];
+      sawRule = false;
+      continue;
+    }
+    if (/^\s*-\s*(alert|record):\s*\S/.test(line)) sawRule = true;
+  }
+  finish();
+
+  for (const g of empty) {
+    errors.push(
+      `${f} declares group "${g}" with no alert: or record: rules in it. A named group that alerts on nothing reads as coverage - delete the heading, or give it rules. (alert-rules.yml carried three of these until 2026-09-04.)`
+    );
+  }
+}
+
 // ── 5. alerts must reach somewhere real ──────────────────────────────────────
 if (existsSync(resolve(DIR, 'alertmanager.yml'))) {
   const am = read('alertmanager.yml');

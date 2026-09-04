@@ -374,151 +374,6 @@ class AgentServiceClass {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Promote a player to agent status.
-   *
-   * Agents handle player chip buy-ins and cash-outs. They collect payments from
-   * players IRL and manage their chip accounts.
-   *
-   * REQUIRED at promotion time:
-   * - commissionRate: Rake back percentage the agent receives (40-70% in 5% steps)
-   *   Valid values: 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70
-   * - isPrepaid: Whether the agent is pre-paid or on credit
-   * - creditLimit: If on credit (isPrepaid=false), the credit line amount (manually entered)
-   *   If pre-paid, creditLimit should be 0
-   *
-   * When a player becomes an agent they receive:
-   * - Agent record in the agents table with commission rates and credit settings
-   * - BUSINESS wallet (commission/rake back earnings)
-   * - PROMO wallet (for distributing bonuses to their players)
-   * - Their PLAYER wallet stays intact for gameplay
-   * - Their club_members role is upgraded to 'agent'
-   * - A player_number is assigned (if not already set) — used as referral code
-   *
-   * Players join under an agent by entering the agent's player_number
-   * when signing up for a club or with smarter.poker.
-   */
-  async promoteToAgent(input: {
-    userId: string;
-    clubId: string;
-    role?: AgentRole;
-    parentAgentId?: string;
-    commissionRate: number; // REQUIRED: rake back % (0.40 - 0.70, 5% steps)
-    playerRakebackRate: number; // REQUIRED: rakeback % agent gives to their players
-    creditLimit: number; // REQUIRED: credit line amount (0 if pre-paid)
-    isPrepaid: boolean; // REQUIRED: pre-paid or credit
-  }): Promise<Agent> {
-    const user = await getAuthUser();
-    if (!user) throw new Error('[AgentService] Authentication required');
-
-    const {
-      userId,
-      clubId,
-      role = 'agent',
-      commissionRate,
-      playerRakebackRate,
-      creditLimit,
-    } = input;
-
-    // Validate commission rate: must be 40%, 45%, 50%, 55%, 60%, 65%, or 70%
-    const validRates = [0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7];
-    if (!validRates.includes(commissionRate)) {
-      throw new Error(
-        `Commission rate must be one of: ${validRates.map((r) => `${r * 100}%`).join(', ')}`
-      );
-    }
-
-    // Validate credit setup
-    if (!input.isPrepaid && creditLimit <= 0) {
-      throw new Error('Credit agents must have a credit limit greater than 0');
-    }
-    if (input.isPrepaid && creditLimit > 0) {
-      // Pre-paid agents don't get credit lines — force to 0
-      reportError(
-        'Pre-paid agent has credit limit, setting to 0',
-        'AgentService.updateCreditLimit'
-      );
-    }
-
-    // 1. Validate the user exists
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id, username, player_number')
-      .eq('id', userId)
-      .maybeSingle();
-
-    if (!profile) throw new Error(`User ${userId} not found`);
-
-    // 2. Ensure player_number is assigned (serves as referral code)
-    if (!profile.player_number) {
-      // Generate unique player_number: random 4-6 digit number
-      let playerNumber: number;
-      let attempts = 0;
-      do {
-        playerNumber = 1000 + Math.floor(Math.random() * 899000); // 1000-899999
-        const { data: existing } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('player_number', playerNumber)
-          .maybeSingle();
-        if (!existing) break;
-        attempts++;
-      } while (attempts < 50);
-
-      const { error: numErr } = await supabase
-        .from('profiles')
-        .update({ player_number: playerNumber })
-        .eq('id', userId);
-      if (numErr) reportError(numErr, 'AgentService.assignPlayerNumber');
-
-      console.debug(`[AgentService] Assigned player_number ${playerNumber} to ${profile.username}`);
-    }
-
-    // 3. Ensure BUSINESS and PROMO wallets exist (on top of their PLAYER wallet)
-    await WalletService.ensureWalletsExist(userId, ['BUSINESS', 'PROMO']);
-
-    // 4. Check if already an agent in this club
-    const { data: existingAgent } = await supabase
-      .from('agents')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('club_id', await resolveClubUUID(clubId))
-      .maybeSingle();
-
-    if (existingAgent) {
-      console.debug(`[AgentService] ${profile.username} is already an agent in club ${clubId}`);
-      return this.getAgent(existingAgent.id) as Promise<Agent>;
-    }
-
-    // 5. Create agent record using the existing createAgent method
-    const agent = await this.createAgent({
-      userId,
-      clubId,
-      role,
-      parentAgentId: input.parentAgentId,
-      commissionRate,
-      playerRakebackRate,
-      creditLimit,
-      isPrepaid: input.isPrepaid,
-    });
-
-    // 6. Log the promotion as a wallet transaction (audit trail)
-    await WalletService.logTransaction(
-      userId,
-      'BUSINESS',
-      0,
-      'credit',
-      'settlement',
-      `Promoted to ${role} in club ${clubId}`,
-      undefined,
-      undefined,
-      clubId
-    );
-
-    console.debug(`[AgentService] Promoted ${profile.username} to ${role} in club ${clubId}`);
-    return agent;
-  }
-
-  /**
    * Link a player under an agent using the agent's player_number as referral code.
    *
    * When a player signs up for a club or with smarter.poker and enters a referral code
@@ -652,87 +507,6 @@ class AgentServiceClass {
 
     masterBus.emit('CLUB_UPDATED', { clubId: resolvedClubId });
     return { success: true };
-  }
-
-  /**
-   * Assign a player directly under an agent by user IDs.
-   * Used for bulk assignment or admin-level linking without referral codes.
-   */
-  async assignPlayerToAgent(
-    playerId: string,
-    agentUserId: string,
-    clubId: string
-  ): Promise<boolean> {
-    // Verify agent exists in this club
-    const resolvedClubId = await resolveClubUUID(clubId);
-    const { data: agentRecord } = await supabase
-      .from('agents')
-      .select('id, total_players, active_player_count')
-      .eq('user_id', agentUserId)
-      .eq('club_id', resolvedClubId)
-      .maybeSingle();
-
-    if (!agentRecord) {
-      reportError(
-        `Agent ${agentUserId} not found in club ${clubId}`,
-        'AgentService.assignPlayerToAgent'
-      );
-      return false;
-    }
-
-    // Update player's club_members record — use agent's user_id (FK references auth.users)
-    const { error } = await supabase
-      .from('club_members')
-      .update({ agent_id: agentUserId })
-      .eq('user_id', playerId)
-      .eq('club_id', resolvedClubId);
-
-    if (error) {
-      reportError(error, 'AgentService.assignPlayerToAgent');
-      return false;
-    }
-
-    // Update agent player count
-    const { error: countErr } = await supabase
-      .from('agents')
-      .update({
-        total_players: (agentRecord.total_players || 0) + 1,
-        active_player_count: (agentRecord.active_player_count || 0) + 1,
-      })
-      .eq('id', agentRecord.id);
-    if (countErr) reportError(countErr, 'AgentService.updatePlayerCount');
-
-    // Audit log — record who assigned the player
-    const currentUser = await import('../lib/authUtils').then((m) => m.readLocalSession());
-    const assignedBy = currentUser?.userId || 'system';
-    await supabase
-      .from('audit_trail')
-      // The columns are actor_id / target_type / target_id / after_state, and
-      // actor_role and target_type are NOT NULL with no default. This insert
-      // named three columns that do not exist and omitted two that are
-      // required, so the agent audit trail has never recorded a single
-      // assignment: every write was rejected into the catch below.
-      .insert({
-        action: 'ASSIGN_PLAYER_TO_AGENT',
-        actor_id: assignedBy,
-        actor_role: 'club_admin',
-        target_type: 'user',
-        target_id: playerId,
-        club_id: resolvedClubId,
-        agent_id: agentRecord.id,
-        after_state: {
-          agent_user_id: agentUserId,
-          agent_record_id: agentRecord.id,
-          club_id: resolvedClubId,
-        },
-      })
-      .then(({ error: logErr }) => {
-        if (logErr) reportError(logErr, 'AgentService.Audit_log_failed');
-      });
-
-    masterBus.emit('CLUB_UPDATED', { clubId });
-
-    return true;
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -890,71 +664,18 @@ class AgentServiceClass {
     }));
   }
 
-  /**
-   * Assign a player to an agent
-   */
-  // assignPlayer() was removed on 2026-08-21. It took an `agentMembershipId`
-  // and wrote it into club_members.agent_id, which holds the agent's USER id
-  // and carries a foreign key to users - so the write could only ever fail the
-  // constraint or, worse, land an id that getAgentPlayers() would never match,
-  // making an assignment that appeared to succeed and then did not exist.
-  //
-  // It had no callers. The two correct paths are assignPlayerToAgent() below,
-  // and UnionOpsService.assignPlayerToAgent(), which goes through
-  // fn_assign_player_to_agent - the RPC that also checks the agent is active in
-  // that club, refuses an agent as their own player, and writes an audit row.
-  // Prefer the RPC. Verified against production: all 1,160 assigned rows are
-  // user-id shaped, so nothing was ever corrupted by this - it simply never
-  // worked.
+  // Assigning a player to an agent lives in UnionOpsService.assignPlayerToAgent(),
+  // which goes through fn_assign_player_to_agent: it checks the agent is
+  // active in that club, refuses an agent as their own player, and writes an
+  // audit row. Two earlier copies here were removed: assignPlayer() on
+  // 2026-08-21 (wrote a membership id into a user-id column), and
+  // assignPlayerToAgent() / promoteToAgent() / selfTransfer() on 2026-09-04 -
+  // all three had zero callers, and the first UPDATEd `agents`, a table with
+  // no UPDATE policy for authenticated, then returned true regardless.
 
   // ─────────────────────────────────────────────────────────────────────────────
   // WALLET OPERATIONS
   // ─────────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Self-transfer between agent wallets
-   */
-  async selfTransfer(
-    agentId: string,
-    amount: number,
-    fromWallet: 'business' | 'player' | 'promo',
-    toWallet: 'business' | 'player' | 'promo'
-  ): Promise<boolean> {
-    if (amount <= 0) throw new Error('Transfer amount must be positive');
-    if (fromWallet === toWallet) throw new Error('Cannot transfer to the same wallet');
-
-    const desc = `Agent self-transfer ${fromWallet} → ${toWallet}`;
-
-    // Atomic wallet-TYPE transfer for a single user via SECURITY DEFINER RPC.
-    // fn_wallet_type_transfer moves chips between wallet types (BUSINESS/PLAYER/PROMO)
-    // in ONE transaction, honoring the real from/to wallets — this replaces the old
-    // atomic_deduct + atomic_credit pair which was hardcoded to PLAYER (cross-wallet
-    // no-op, plus a deduct-then-credit chip-loss edge if the credit leg failed).
-    // Wallet types are stored uppercase; the method's args are lowercase.
-    const { data: transferRes, error } = await retryAsync(
-      () =>
-        supabase.rpc('fn_wallet_type_transfer', {
-          p_user_id: agentId,
-          p_from_wallet: fromWallet.toUpperCase(),
-          p_to_wallet: toWallet.toUpperCase(),
-          p_amount: amount,
-          p_note: desc,
-        }),
-      3
-    );
-
-    if (error || !transferRes?.success) {
-      reportError(
-        error || new Error(transferRes?.error || 'self-transfer failed'),
-        'AgentService.selfTransfer'
-      );
-      throw new Error(
-        error?.message || transferRes?.error || 'Insufficient balance for self-transfer'
-      );
-    }
-
-    return true;
-  }
 
   /**
    * Send chips from the caller's AGENT WALLET to a player in their downline.

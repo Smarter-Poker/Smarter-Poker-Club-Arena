@@ -87,14 +87,14 @@ describe('every dead write now names a column that exists', () => {
     expect(src).not.toMatch(/activity_type:\s*'leave'/);
   });
 
-  it('the agent audit trail supplies the NOT NULL columns as well as the right ones', () => {
-    // actor_role and target_type are NOT NULL with no default, so repointing
-    // the three phantom names alone would have left the insert still failing.
+  it('the agent audit trail no longer has a phantom writer at all', () => {
+    // The insert this pinned lived in AgentService.assignPlayerToAgent(),
+    // which had zero callers and UPDATEd `agents` (no UPDATE policy for
+    // authenticated) before returning true regardless. It was deleted on
+    // 2026-09-04; the one assignment path is UnionOpsService.assignPlayerToAgent
+    // through fn_assign_player_to_agent, which writes its own audit row.
     const src = read('src/services/AgentService.ts');
-    expect(src).toContain('actor_id: assignedBy');
-    expect(src).toContain("actor_role: 'club_admin'");
-    expect(src).toContain("target_type: 'user'");
-    expect(src).toContain('target_id: playerId');
+    expect(src).not.toMatch(/async assignPlayerToAgent\(/);
     expect(src).not.toContain('performed_by:');
     expect(src).not.toContain('target_user_id:');
   });

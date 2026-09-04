@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useUnionRouteId } from '../hooks/useUnionRouteId';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import GameCreationActions, {
   type GameCreationTarget,
@@ -30,7 +31,8 @@ import { unionService } from '../services/UnionService';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { mergeById } from '../utils/mergeById';
 import { reportError } from '../utils/errorReporter';
-import CreateTablePage from './CreateTablePage';
+import CreateTablePage, { isCreateTableGameType } from './CreateTablePage';
+import TableConfigPage from './TableConfigPage';
 import styles from './GameManagementPage.module.css';
 
 type Scope = 'club' | 'union';
@@ -577,7 +579,8 @@ export function ContractHistoryDialog({
 }
 
 export default function GameManagementPage({ scope }: { scope: Scope }) {
-  const { clubId, unionId } = useParams<{ clubId: string; unionId: string }>();
+  const { clubId } = useParams<{ clubId: string }>();
+  const { unionId, unionRef } = useUnionRouteId();
   const { user } = useAuthUser();
   const navigate = useNavigate();
   const toast = useToast();
@@ -586,6 +589,12 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const requestedCreate = CREATE_TARGETS.has(createParam as GameCreationTarget)
     ? (createParam as GameCreationTarget)
     : null;
+  /* ?create=table&game=<variant>: the config form, still on THIS page. The
+     selector used to navigate to /clubs/<host>/create-table/<variant>, which
+     from a union console meant leaving the union for a member club's URL. */
+  const gameParam = searchParams.get('game');
+  const requestedGameType =
+    requestedCreate === 'table' && isCreateTableGameType(gameParam) ? gameParam : null;
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [scopeId, setScopeId] = useState<string | null>(null);
   const [scopeName, setScopeName] = useState(scope === 'union' ? 'Union' : 'Club');
@@ -650,9 +659,14 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const loadRef = useRef<(silent?: boolean) => void>(() => {});
 
   const managementPath =
-    scope === 'union' ? `/unions/${unionId}/table-management` : `/clubs/${clubId}/table-management`;
+    scope === 'union'
+      ? `/unions/${unionRef}/table-management`
+      : `/clubs/${clubId}/table-management`;
 
   const clearCreate = () => setSearchParams({}, { replace: true });
+  const openTableSelector = () => setSearchParams({ create: 'table' }, { replace: true });
+  const openTableConfig = (gameTypeId: string) =>
+    setSearchParams({ create: 'table', game: gameTypeId }, { replace: true });
 
   /**
    * @param silent A background refresh - realtime, the master bus, or a command
@@ -662,6 +676,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const load = useCallback(
     async (silent = false) => {
       if (!user?.id) return;
+      // A slug in the URL is still being resolved; the resolved id re-arms load.
+      if (scope === 'union' && !unionId) return;
       // Coalesce instead of stacking. Every management event for this scope
       // arrives here as a refresh, and the feed is not quiet: Deep Stack Society
       // alone wrote ~19,900 game_management_events in one hour (5.5 a second),
@@ -723,6 +739,10 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         let resolvedScopeId: string;
         let resolvedScopeName: string;
         let nextHosts: HostClub[];
+        /* Labels only: a union board lists games hosted by its member clubs
+           too (fn_list_managed_games folds them in), and each row should name
+           the club it runs under. Naming is not hosting. */
+        let nextMemberNames: Record<string, string> = {};
         if (scope === 'club') {
           resolvedScopeId = await resolveClubUUID(clubId || '');
           const [access, clubResult] = await Promise.all([
@@ -763,27 +783,46 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
             setLoading(false);
             return;
           }
-          const [unionResult, hostResult] = await Promise.all([
+          const [unionResult, houseResult, memberResult] = await Promise.all([
             supabase.from('unions').select('id,name').eq('id', unionId).maybeSingle(),
+            /* THE UNION HOSTS ITS OWN GAMES (Dan 2026-09-04). A union has a
+               club row of its own - same id, is_union = true - and that row is
+               what its cash games and tournaments are written against
+               (Midway Union: 87k tables, every live one). The member clubs
+               are NOT hosts here: a club inside a union cannot build its own
+               games (fn_can_create_games), and the union console must never
+               let an operator hop from club to club. */
+            supabase
+              .from('clubs')
+              .select('id,name')
+              .eq('id', unionId)
+              .eq('is_union', true)
+              .maybeSingle(),
             supabase.from('union_clubs').select('club_id, clubs(name)').eq('union_id', unionId),
           ]);
           if (!isCurrent()) return;
           if (unionResult.error || !unionResult.data)
             throw unionResult.error || new Error('Union not found');
-          if (hostResult.error) throw hostResult.error;
+          if (houseResult.error) throw houseResult.error;
+          if (memberResult.error) throw memberResult.error;
           resolvedScopeName = unionResult.data.name;
           setScopeName(resolvedScopeName);
-          nextHosts = (hostResult.data || []).map((row: any) => ({
-            id: row.club_id,
-            name: row.clubs?.name || 'Union Club',
-          }));
+          nextHosts = houseResult.data
+            ? [{ id: houseResult.data.id, name: houseResult.data.name || resolvedScopeName }]
+            : [];
+          nextMemberNames = Object.fromEntries(
+            (memberResult.data || []).map((row: any) => [
+              row.club_id,
+              row.clubs?.name || 'Union Club',
+            ])
+          );
         }
 
         setScopeId(resolvedScopeId);
         setHosts(nextHosts);
-        setHostClubId((current) =>
-          nextHosts.some((host) => host.id === current) ? current : nextHosts[0]?.id || ''
-        );
+        /* One host per page: the club you opened, or the union you opened.
+           Never carried over from a previous route and never a member club. */
+        setHostClubId(nextHosts[0]?.id || '');
 
         // ONE wave. The board row now arrives whole - fn_list_managed_games
         // folds in each game's published contract and latest command receipt -
@@ -802,7 +841,10 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         if (!isCurrent()) return;
         const tableRows = page.items.filter((row: any) => row.kind === 'table');
         const tournamentRows = page.items.filter((row: any) => row.kind === 'tournament');
-        const hostNames = Object.fromEntries(nextHosts.map((host) => [host.id, host.name]));
+        const hostNames: Record<string, string> = {
+          ...nextMemberNames,
+          ...Object.fromEntries(nextHosts.map((host) => [host.id, host.name])),
+        };
         const rows: ManagedGame[] = [
           ...tableRows.map((row: any) => ({
             id: row.id,
@@ -1202,20 +1244,6 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     setSurface(nextSurface);
   };
 
-  const changeHostClub = async (nextClubId: string) => {
-    if (nextClubId === hostClubId) return;
-    if (
-      surfaceDirty &&
-      !(await confirmDialog({
-        message: 'Discard the unsaved club-message changes before changing host clubs?',
-        variant: 'danger',
-      }))
-    )
-      return;
-    setSurfaceDirty(false);
-    setHostClubId(nextClubId);
-  };
-
   const closeGame = async (game: ManagedGame) => {
     if (game.players > 0 || game.contract?.contractLocked) {
       toast.error(
@@ -1392,26 +1420,50 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         ))}
       </nav>
 
-      {scope === 'union' && hosts.length > 0 && (
-        <label className={styles.hostPicker}>
-          Host Club
-          <select value={hostClubId} onChange={(e) => void changeHostClub(e.target.value)}>
-            {hosts.map((host) => (
-              <option key={host.id} value={host.id}>
-                {host.name}
-              </option>
-            ))}
-          </select>
-        </label>
+      {scope === 'union' && hostClubId && (
+        /* NO HOST SWITCHING (Dan 2026-09-04): "when you are on this page, it
+           must be only for the page you opened it in, you can't jump from club
+           to club." The host is the union itself, stated, not selectable. */
+        <p className={styles.hostPicker} aria-label="Host">
+          Host
+          <strong>{hosts.find((host) => host.id === hostClubId)?.name || scopeName}</strong>
+        </p>
       )}
 
-      {surface === 'games' && requestedCreate === 'table' && hostClubId && (
+      {surface === 'games' && requestedCreate === 'table' && hostClubId && !requestedGameType && (
         <section className={styles.creatorDeck} aria-label="Create Table">
-          <CreateTablePage clubIdOverride={hostClubId} onBack={clearCreate} />
+          <CreateTablePage
+            clubIdOverride={hostClubId}
+            onBack={clearCreate}
+            onSelectGameType={openTableConfig}
+          />
         </section>
       )}
-      {scope === 'union' && hosts.length === 0 && !loading && (
-        <section className={styles.empty}>Add A Club To This Union Before Creating Games.</section>
+      {surface === 'games' && requestedGameType && hostClubId && (
+        <section className={styles.creatorDeck} aria-label="Table Config">
+          <button
+            type="button"
+            className={styles.creatorBack}
+            onClick={openTableSelector}
+            aria-label="Back To Game Types"
+          >
+            ‹‹
+          </button>
+          <TableConfigPage
+            key={`${hostClubId}:${requestedGameType}`}
+            clubIdOverride={hostClubId}
+            gameTypeOverride={requestedGameType}
+            onExit={(exit) => {
+              clearCreate();
+              if (exit !== 'denied') void load();
+            }}
+          />
+        </section>
+      )}
+      {scope === 'union' && hosts.length === 0 && !loading && allowed && (
+        <section className={styles.empty}>
+          This Union Has No House Club Row Yet, So It Cannot Host Games Of Its Own.
+        </section>
       )}
 
       {surface === 'games' && (

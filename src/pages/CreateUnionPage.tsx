@@ -173,11 +173,11 @@ export default function CreateUnionPage() {
           grace_period_days: form.gracePeriodDays,
         }
       );
-      const data = result.union as { id: string } | undefined;
+      const data = result.union as { id: string; slug?: string } | undefined;
       if (!data) throw new Error('Union creation returned no data');
 
       masterBus.emit('UNION_UPDATED', { unionId: data.id });
-      navigate(`/unions/${data.id}`);
+      navigate(`/unions/${data.slug || data.id}`);
     } catch (err: any) {
       reportError(err, 'CreateUnionPage.Failed_to_create_union');
       setError(safeErrorMessage(err, 'Failed to create union'));

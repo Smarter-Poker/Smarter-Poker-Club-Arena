@@ -268,13 +268,16 @@
   font-weight: 700;
   text-transform: uppercase;
 }
-.hostPicker select {
+.hostPicker strong {
+  /* The host is stated, never selected: one page, one host (Dan 2026-09-04). */
   min-width: 220px;
   padding: 10px;
   border: 1px solid #355366;
   border-radius: 5px;
   color: #fff;
   background: #0b151c;
+  font-size: 14px;
+  letter-spacing: 0.02em;
 }
 .creatorDeck {
   margin-top: 16px;
@@ -285,6 +288,28 @@
 }
 .creatorDeck h2 {
   font-size: 25px;
+}
+/* The selector and the config form are full pages when routed to; embedded
+   in the deck they are sections, and must not each claim a viewport. */
+.creatorDeck :global(.create-table-page),
+.creatorDeck :global(.table-config-page) {
+  min-height: 0;
+}
+.creatorBack {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid #355366;
+  border-radius: 5px;
+  color: #cfe3f0;
+  background: #0b151c;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.creatorBack:focus-visible {
+  outline: 2px solid #79c5ff;
+  outline-offset: 2px;
 }
 .variantGrid {
   display: grid;

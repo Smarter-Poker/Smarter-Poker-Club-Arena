@@ -81,5 +81,7 @@ carries a slug.
 - `manage-union.js` (World Hub) still does not create a house club row for a
   new union, so a new union cannot host games until that exists. That is a
   money-bearing row (wallets, rake) and a separate change.
-- `HomePage` / `NotificationService` still build `/unions/<union_id>` from
-  club rows; those resolve through one `SlugEnforcer` redirect.
+- `HomePage` / `NotificationService` build their union links from club rows
+  that carry only `union_id`; `unionRouteRef(id)` writes the slug when any
+  union row has already passed through `UnionService`, and the id otherwise
+  (one `SlugEnforcer` redirect on arrival).

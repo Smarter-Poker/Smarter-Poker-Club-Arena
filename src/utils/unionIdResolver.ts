@@ -20,6 +20,8 @@ import { isUUID } from './clubIdResolver';
 import { reportError } from './errorReporter';
 
 const cache = new Map<string, string>();
+/** id -> slug, learned from any union row that passed through mapUnion. */
+const slugById = new Map<string, string>();
 
 export function resolveUnionUUIDSync(param: string): string | null {
   if (isUUID(param)) return param;
@@ -28,6 +30,16 @@ export function resolveUnionUUIDSync(param: string): string | null {
 
 export function clearUnionUUIDCache(): void {
   cache.clear();
+  slugById.clear();
+}
+
+/**
+ * The identifier to write into a /unions/... link for this union: the slug
+ * when it is already known, otherwise the id (SlugEnforcer then rewrites it
+ * once on arrival). For links built from rows that carry only `union_id`.
+ */
+export function unionRouteRef(id: string): string {
+  return slugById.get(id) || id;
 }
 
 export async function resolveUnionUUID(param: string): Promise<string> {
@@ -49,5 +61,8 @@ export async function resolveUnionUUID(param: string): Promise<string> {
 
 /** Remember a slug -> id pair learned from a row already in hand. */
 export function rememberUnionSlug(slug: string | null | undefined, id: string): void {
-  if (slug && isUUID(id)) cache.set(slug, id);
+  if (slug && isUUID(id)) {
+    cache.set(slug, id);
+    slugById.set(id, slug);
+  }
 }

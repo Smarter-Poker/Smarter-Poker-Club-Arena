@@ -716,6 +716,33 @@ jobs:
       - name: Supabase Invariants — New Migration Versions Are Unique
         run: node scripts/ci/check-new-migration-version-collisions.mjs
 
+      # BLOCKING: a club must stay deletable. public.clubs has seventy foreign
+      # keys pointing at it; a DELETE checks every one, and a check with no
+      # usable index is a sequential scan of the child table. On 2026-09-03 at
+      # 23:33 UTC seven of the seventy had none, the club-create certification
+      # could not remove its two fixtures inside a PostgREST request, and 200,000
+      # chips were stranded in Club Arena behind clubs that Dan had said must not
+      # exist. Two of the seven LOOKED indexed: their only candidate index led on
+      # club_id but was PARTIAL, and a partial index cannot answer a foreign key
+      # check because the check must find the rows the predicate hides.
+      #
+      # This asks production, not a manifest, because the catalogue is the only
+      # thing that knows. A new table with a club_id and no index turns THIS
+      # branch red rather than a certification run weeks from now.
+      - name: Supabase Invariants — A Club Stays Deletable
+        run: |
+          set -o pipefail
+          echo "## Club Foreign-Key Index Check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if node scripts/ci/check-club-fk-indexes.mjs 2>&1 | tee /tmp/clubfk.log; then
+            echo "OK — every foreign key into clubs has an index that can answer it." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "A foreign key into clubs would force a sequential scan, so deleting a club" >> $GITHUB_STEP_SUMMARY
+            echo "can time out and strand a certification fixture and its chips. Add the index" >> $GITHUB_STEP_SUMMARY
+            echo "in a migration — the log prints the exact statement." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
       # BLOCKING: a SECURITY DEFINER function that writes, and that a browser
       # role can execute, must consult auth.uid()/auth.role()/auth.jwt(). On
       # 2026-08-27 nineteen did not. One of them let an ordinary member rewrite

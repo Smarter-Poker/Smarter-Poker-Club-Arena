@@ -41,6 +41,7 @@ import { sweepIncompleteHorses } from './services/HorseOnboarding.js';
 import { startHorseLeague } from './benchmark/HorseLeague.js';
 import { startHorseDailyAudit } from './services/HorseDailyAudit.js';
 import { startBrainTelemetryFlush } from './services/BrainTelemetryFlush.js';
+import { startHorseDataLedgerSync } from './services/HorseDataLedgerSync.js';
 import { startHorseLaneLoader } from './services/HorseLaneLoader.js';
 import { startGtoChartLoader } from './services/GtoChartLoader.js';
 import { startGtoPostflopLoader } from './services/GtoPostflopLoader.js';
@@ -156,6 +157,11 @@ httpServer.listen(PORT, () => {
   // Proof of receipt (Dan 2026-08-26): live layer-fire counters, flushed to
   // horse_brain_telemetry every minute for the daily audit + admin panel.
   startBrainTelemetryFlush();
+  // Phase 1 of the real-time build plan (Dan 2026-09-04): the Horse Data
+  // Ledger - every input the brain consumes, with its source, cadence,
+  // consumer and receipt - carried into horse_data_ledger so the daily
+  // audit can judge yesterday's fires against the contract that shipped.
+  startHorseDataLedgerSync();
   // Game lanes (Dan 2026-08-27): the exact 33/33/34 split lives in the
   // database; this hydrates it and re-balances when the fleet grows.
   startHorseLaneLoader();

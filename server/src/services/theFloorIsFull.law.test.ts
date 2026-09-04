@@ -94,7 +94,18 @@ describe('LAW: four tables is the target, not the ceiling', () => {
   });
 
   it('and four is still the hard ceiling', () => {
-    expect(FLEET).toMatch(/tablesForHorse\.size >= MAX_TABLES_PER_HORSE/);
+    /* PIN MOVED 2026-09-04, and the law is STRICTER for it. The ceiling used
+       to be the literal MAX_TABLES_PER_HORSE for every horse; it is now that
+       constant handed to tagMaxTables, which clamps the horse's OWN tagged
+       limit into it - a grinder carries four, a mixer one, and nothing carries
+       more than four. `tagMaxTables` is pinned separately in
+       StableHandTags.test.ts to never return above what it is given, and to
+       return the ceiling untouched for a horse with no tag. */
+    expect(FLEET).toMatch(/tablesForHorse\.size >= tagMaxTables\(tag, MAX_TABLES_PER_HORSE\)/);
+    // the constant is still the ceiling that gets handed in
+    expect(FLEET).toContain('const MAX_TABLES_PER_HORSE = 4');
+    // and nothing raises it anywhere
+    expect(FLEET).not.toMatch(/MAX_TABLES_PER_HORSE\s*\+/);
   });
 });
 

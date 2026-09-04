@@ -389,3 +389,20 @@ export function isRetiringTable(row: { settings?: unknown } | null | undefined):
   if (!settings || typeof settings !== 'object') return false;
   return (settings as { retire_when_empty?: unknown }).retire_when_empty === true;
 }
+
+/**
+ * PARKED FOR THE NIGHT, not retired (Dan 2026-09-04: "fewer tables, more
+ * players at each table. late night shouldn't have any 2-3 handed games").
+ *
+ * A parked table drains and closes exactly like a retiring one - no new
+ * horses, nobody moved, closed only once genuinely empty - and differs in one
+ * way that matters: it COMES BACK. The Stable Hand executor lifts the flag and
+ * reopens it every cycle outside the night window, and the fleet reopens it at
+ * boot for the same reason. Retirement is permanent by design; a night that
+ * used the retirement flag would delete the floor.
+ */
+export function isNightParkedTable(row: { settings?: unknown } | null | undefined): boolean {
+  const settings = row?.settings;
+  if (!settings || typeof settings !== 'object') return false;
+  return (settings as { night_parked?: unknown }).night_parked === true;
+}

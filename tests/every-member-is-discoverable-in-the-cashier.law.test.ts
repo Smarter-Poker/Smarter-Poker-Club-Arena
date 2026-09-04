@@ -14,7 +14,11 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { mapCashierRoster, rosterRowMatches } from '../src/lib/cashierRoster';
+import {
+  cashierRecipientBlock,
+  mapCashierRoster,
+  rosterRowMatches,
+} from '../src/lib/cashierRoster';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 const ME = '47965354-0e56-43ef-931c-ddaab82af765';
@@ -104,5 +108,67 @@ describe('every member is discoverable in the cashier', () => {
     expect(page).toContain(
       'const recipients = useMemo(() => downline.filter((r) => !r.isSelf), [downline]);'
     );
+  });
+
+  it('a cashier says why a member cannot receive, instead of removing them', () => {
+    // The two refusals a cashier can know before the tap. Anything else is
+    // the server's to say on submit.
+    expect(
+      cashierRecipientBlock({
+        isSelf: true,
+        refusesSelfSend: true,
+        destinationNeedsAgentWallet: false,
+        memberHoldsAgentWallet: true,
+      })?.label
+    ).toBe('You');
+    expect(
+      cashierRecipientBlock({
+        isSelf: false,
+        refusesSelfSend: true,
+        destinationNeedsAgentWallet: true,
+        memberHoldsAgentWallet: false,
+      })?.label
+    ).toBe('No Wallet');
+    // The club bank deliberately allows a self-send: an owner funding their
+    // own float is the route the whole hierarchy hangs off.
+    expect(
+      cashierRecipientBlock({
+        isSelf: true,
+        refusesSelfSend: false,
+        destinationNeedsAgentWallet: false,
+        memberHoldsAgentWallet: true,
+      })
+    ).toBeNull();
+    // Nothing to say: an ordinary sendable member.
+    expect(
+      cashierRecipientBlock({
+        isSelf: false,
+        refusesSelfSend: true,
+        destinationNeedsAgentWallet: true,
+        memberHoldsAgentWallet: true,
+      })
+    ).toBeNull();
+  });
+
+  it('no cashier surface filters a member out of its list to avoid a refusal', () => {
+    // Both surfaces, one rule. These two literals are the exact filters that
+    // made a member vanish; neither may come back.
+    const modal = read('src/components/wallet/WalletCashierModal.tsx');
+    expect(modal).toContain('cashierRecipientBlock({');
+    expect(modal).toContain('const destinationMembers = members;');
+    expect(modal).not.toContain('!(excludeSelf && m.user_id === user?.id)');
+    expect(modal).not.toContain('needsAgent ? canHoldAgentWallet(m.role) : true');
+    // Listed, and refused at the one place a recipient is chosen.
+    expect(modal).toContain('if (!block) setRecipient(m);');
+    expect(modal).toContain('aria-disabled={block ? true : undefined}');
+
+    const trade = read('src/pages/CashierTradePage.tsx');
+    expect(trade).not.toMatch(/user_id\)\s*!==\s*(viewerId|user\.id)/);
+  });
+
+  it('the modal finds a member by the id printed on their row', () => {
+    // Same gap the trade page had: #short_id is on screen and was not searched.
+    const modal = read('src/components/wallet/WalletCashierModal.tsx');
+    expect(modal).toContain("(m.short_id || '').toLowerCase().includes(q)");
   });
 });

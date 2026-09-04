@@ -75,7 +75,13 @@ vi.mock('../../src/utils/lazyWithRetry', () => ({
 vi.mock('../../src/components/club/ClubActivityFeed', () => ({
   default: () => <div data-testid="activity-feed" />,
 }));
-vi.mock('../../src/components/club/ClubChat', () => ({ default: () => null }));
+const chatProps = vi.hoisted(() => ({ last: null as { clubId: string } | null }));
+vi.mock('../../src/components/club/ClubChat', () => ({
+  default: (props: { clubId: string }) => {
+    chatProps.last = props;
+    return null;
+  },
+}));
 vi.mock('../../src/components/admin/ClubMemberManagement', () => ({
   default: () => <div data-testid="member-management" />,
 }));
@@ -367,6 +373,14 @@ describe('the tournaments tab', () => {
     });
     await waitFor(() => expect(screen.getByText(/3,534 Finished In Last 7D/)).toBeTruthy());
     expect(screen.getByText('Recently Finished (Newest 1 Of 3,534)')).toBeTruthy();
+  });
+});
+
+describe('the club chat', () => {
+  it('is handed the resolved uuid, not the route slug', async () => {
+    await mountAndOpen();
+    await waitFor(() => expect(chatProps.last).not.toBeNull());
+    expect(chatProps.last!.clubId).toBe(CLUB_UUID);
   });
 });
 

@@ -3,7 +3,6 @@ import {
   ROSTER_SUMMARY_REUSE_MS,
   RosterSummaryCoordinator,
   settleRosterReadsIndependently,
-  shouldTouchFeeRollup,
 } from '../../src/lib/rosterLoadPolicy';
 
 describe('Player Command summary read policy', () => {
@@ -124,14 +123,6 @@ describe('Player Command summary read policy', () => {
     await expect(coordinator.read('viewer:new-club', newReader)).resolves.toBe('new club');
 
     expect(newReader).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('Player Command fee rollup touch policy', () => {
-  it('touches once immediately and then mirrors the server cooldown', () => {
-    expect(shouldTouchFeeRollup(null, 10_000)).toBe(true);
-    expect(shouldTouchFeeRollup(10_000, 39_999)).toBe(false);
-    expect(shouldTouchFeeRollup(10_000, 40_000)).toBe(true);
   });
 });
 

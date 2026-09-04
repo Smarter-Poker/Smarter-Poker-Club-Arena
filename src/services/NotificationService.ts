@@ -10,6 +10,7 @@ import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/
 import { masterBus } from '../core/MasterBus';
 import { STORAGE_KEYS } from '../lib/storage';
 import { reportError } from '../utils/errorReporter';
+import { unionRouteRef } from '../utils/unionIdResolver';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -378,7 +379,8 @@ class NotificationServiceClass {
       case 'bonus':
         return '/bonus';
       case 'settlement':
-        if (metadata.unionId) return `/unions/${metadata.unionId}/settlement`;
+        if (metadata.unionId)
+          return `/unions/${unionRouteRef(String(metadata.unionId))}/settlement`;
         return metadata.clubSlug
           ? `/clubs/${metadata.clubSlug}/financials`
           : metadata.clubId

@@ -105,8 +105,10 @@ describe('the statistics read', () => {
 
 describe('the service reads the new keys and falls back to the old', () => {
   it('maps hands / hands_won / win_rate / fold_to_three_bet / reason', () => {
-    expect(SERVICE).toContain('hands: num(d.hands ?? d.total_hands)');
-    expect(SERVICE).toContain('hands_won: num(d.hands_won ?? d.wins)');
+    // The `?? d.total_hands` / `?? d.wins` fallbacks rode for one release
+    // and came down with the keys (20260904200000).
+    expect(SERVICE).toContain('hands: num(d.hands),');
+    expect(SERVICE).toContain('hands_won: num(d.hands_won),');
     expect(SERVICE).toContain('fold_to_three_bet: num(d.fold_to_three_bet)');
     expect(SERVICE).toContain(
       "reason: d.reason === 'not_member' || d.reason === 'restricted' ? d.reason : null"

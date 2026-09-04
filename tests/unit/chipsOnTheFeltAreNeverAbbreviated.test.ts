@@ -29,7 +29,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 
-import { formatTableChips, fmtChips } from '../../src/utils/format';
+import { formatStackChips, formatTableChips, fmtChips } from '../../src/utils/format';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 
@@ -76,6 +76,34 @@ describe('formatTableChips - the one chip formatter for the table', () => {
 
   it('keeps the sign on a negative rather than dropping it', () => {
     expect(formatTableChips(-1500)).toBe('-1,500');
+  });
+});
+
+describe('formatStackChips - a stack under 100 reads to the penny (Dan 2026-09-04)', () => {
+  it('shows two places under 100, "99.99 down to .01"', () => {
+    // A 0.02/0.05 stack of 5.37 rendered as "5" on the seat.
+    expect(formatStackChips(5.37)).toBe('5.37');
+    expect(formatStackChips(5)).toBe('5.00');
+    expect(formatStackChips(99.99)).toBe('99.99');
+    expect(formatStackChips(0.01)).toBe('0.01');
+    expect(formatStackChips(0)).toBe('0.00');
+    // Engine float noise is squared off at the cent, never at the chip.
+    expect(formatStackChips(23.0000001)).toBe('23.00');
+    expect(formatStackChips(-5.5)).toBe('-5.50');
+  });
+
+  it('is whole chips from 100 up, never abbreviated', () => {
+    expect(formatStackChips(100)).toBe('100');
+    expect(formatStackChips(113.37)).toBe('113');
+    expect(formatStackChips(1518)).toBe('1,518');
+    expect(formatStackChips(117000)).toBe('117,000');
+    expect(formatStackChips(NaN)).toBe('0');
+  });
+
+  it('is what the seat badge uses, and the seat never rounds a stack itself', () => {
+    const seat = read('src/components/table/SeatSlot.tsx');
+    expect(seat).toContain('return formatStackChips(amount);');
+    expect(seat).not.toContain('amount >= 1 ? Math.round(amount) : amount');
   });
 
   it('leaves fmtChips alone - the lobby may still abbreviate', () => {

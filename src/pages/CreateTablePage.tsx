@@ -118,12 +118,30 @@ const GAME_TYPES: GameType[] = [
   },
 ];
 
+/** Every variant this selector can hand to the config form, by route id. */
+export const CREATE_TABLE_GAME_TYPE_IDS: readonly string[] = GAME_TYPES.map((g) => g.id);
+
+export function isCreateTableGameType(value: string | null | undefined): value is string {
+  return !!value && CREATE_TABLE_GAME_TYPE_IDS.includes(value);
+}
+
 export default function CreateTablePage({
   clubIdOverride,
   onBack,
+  onSelectGameType,
 }: {
   clubIdOverride?: string;
   onBack?: () => void;
+  /**
+   * EMBEDDED MODE (2026-09-04). Table Management renders this selector inside
+   * its own page, for a club or for a union. Before this, picking a variant
+   * navigated to /clubs/<host>/create-table/<variant> - which, from the union
+   * console, threw the operator out of the union entirely and onto a member
+   * club's page (Dan hit exactly that: Midway Union -> Club JAQK). When the
+   * host supplies this callback the selection stays on the host's page and
+   * the host decides what to render next.
+   */
+  onSelectGameType?: (gameTypeId: string) => void;
 } = {}) {
   const { clubId: routeClubId } = useParams<{ clubId: string }>();
   const clubId = clubIdOverride || routeClubId;
@@ -136,6 +154,10 @@ export default function CreateTablePage({
   const handleSelectGameType = (gameType: GameType) => {
     if (userLevel < gameType.unlockLevel) {
       // Show unlock message
+      return;
+    }
+    if (onSelectGameType) {
+      onSelectGameType(gameType.id);
       return;
     }
     // Navigate to table configuration with selected game type

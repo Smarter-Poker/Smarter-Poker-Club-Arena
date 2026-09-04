@@ -52,6 +52,10 @@ if [ "$FAST" = false ]; then
   echo '── Build ───────────────────────────────────────────────────'
   step 'vite build' npx vite build
   step 'bundle-size' node scripts/ci/bundle-size.mjs
+  # Who just started paying for first paint. Missed here on 2026-09-03: a
+  # staff-only hook reached the entry chunk, every gate above stayed green,
+  # and CI caught it after the push. It runs where the build it reads is.
+  step 'entry-chunk-delta' node scripts/ci/entry-chunk-delta.mjs dist
 fi
 
 echo

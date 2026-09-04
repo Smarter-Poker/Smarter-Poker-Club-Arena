@@ -25,6 +25,7 @@ import './AdminDashboardPage.css';
 import AgentScoreCard from '../components/agent/AgentScoreCard';
 
 import { useIsMounted } from '../hooks/useIsMounted';
+import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { retryFetch } from '../utils/retryFetch';
 import { fmt, fmtChips, timeAgo } from '../utils/format';
@@ -113,8 +114,16 @@ export default function AgentDashboardPage() {
 
   // Search / Filter
   const [playerSearch, setPlayerSearch] = useState('');
-  const [txPage, setTxPage] = useState(1);
-  const TX_PER_PAGE = 20;
+  /* Both lists page from the SERVER. They used to fetch 100 transactions
+     and 50 commissions once and page the 100 in the browser, so "Load More"
+     could never reach row 101 and the commission list simply stopped at 50
+     with no notice. */
+  const TX_PAGE = 100;
+  const COMMISSION_PAGE = 50;
+  const [txHasMore, setTxHasMore] = useState(false);
+  const [txLoadingMore, setTxLoadingMore] = useState(false);
+  const [commissionsHasMore, setCommissionsHasMore] = useState(false);
+  const [commissionsLoadingMore, setCommissionsLoadingMore] = useState(false);
 
   // Transfer modal
   const [showTransfer, setShowTransfer] = useState(false);
@@ -132,6 +141,7 @@ export default function AgentDashboardPage() {
   const [agents, setAgents] = useState<DownlineMember[]>([]);
 
   const mountedRef = useIsMounted();
+  const toast = useToast();
   const SWR_TTL_MS = 5 * 60 * 1000; // 5-minute cache TTL
   const resolvedClubIdRef = useRef<string | null>(null);
 
@@ -274,7 +284,7 @@ export default function AgentDashboardPage() {
               .eq('club_id', uuid)
               .eq('user_id', user.id)
               .order('created_at', { ascending: false })
-              .limit(50)
+              .limit(COMMISSION_PAGE)
               .then((r) => r),
           { maxRetries: 2, isMountedRef: mountedRef }
         );
@@ -289,7 +299,7 @@ export default function AgentDashboardPage() {
               )
               .eq('club_id', uuid)
               .order('created_at', { ascending: false })
-              .limit(100)
+              .limit(TX_PAGE)
               .then((r) => r),
           { maxRetries: 2, isMountedRef: mountedRef }
         );
@@ -306,7 +316,9 @@ export default function AgentDashboardPage() {
         setPlayers(enrichedPlayers);
         setPendingCashouts(cashouts || []);
         setCommissions(comms || []);
+        setCommissionsHasMore((comms || []).length >= COMMISSION_PAGE);
         setRecentTx((txns || []) as ChipTransaction[]);
+        setTxHasMore((txns || []).length >= TX_PAGE);
         setAgents(agentList);
 
         // SWR: cache successful load for instant display on revisit
@@ -314,12 +326,16 @@ export default function AgentDashboardPage() {
           const cacheKey = `agent_dashboard_swr_${user?.id}_${targetClubId}`;
           sessionStorage.setItem(
             cacheKey,
+            // The stat cards sum these arrays. A cache that truncated them
+            // to 30 / 20 / 30 / 20 rows painted "Total Players 30" and a
+            // 30-player chip total on every revisit until the live read
+            // landed. Whole arrays, so a cache hit and a fresh load agree.
             JSON.stringify({
-              players: enrichedPlayers.slice(0, 30),
+              players: enrichedPlayers,
               pendingCashouts: cashouts || [],
-              commissions: (comms || []).slice(0, 20),
-              recentTx: (txns || []).slice(0, 30),
-              agents: agentList.slice(0, 20),
+              commissions: comms || [],
+              recentTx: txns || [],
+              agents: agentList,
               role: membership?.role || 'agent',
               cachedAt: Date.now(),
             })
@@ -388,8 +404,14 @@ export default function AgentDashboardPage() {
         if (age < SWR_TTL_MS && parsed.players) {
           setPlayers(parsed.players);
           if (parsed.pendingCashouts) setPendingCashouts(parsed.pendingCashouts);
-          if (parsed.commissions) setCommissions(parsed.commissions);
-          if (parsed.recentTx) setRecentTx(parsed.recentTx);
+          if (parsed.commissions) {
+            setCommissions(parsed.commissions);
+            setCommissionsHasMore(parsed.commissions.length >= COMMISSION_PAGE);
+          }
+          if (parsed.recentTx) {
+            setRecentTx(parsed.recentTx);
+            setTxHasMore(parsed.recentTx.length >= TX_PAGE);
+          }
           if (parsed.agents) setAgents(parsed.agents);
           if (parsed.role) setRole(parsed.role);
           setLoading(false);
@@ -414,6 +436,59 @@ export default function AgentDashboardPage() {
     },
     [loadDashboard]
   );
+
+  const loadMoreTransactions = useCallback(async () => {
+    if (txLoadingMore || !txHasMore || !clubId) return;
+    setTxLoadingMore(true);
+    try {
+      const uuid = resolvedClubIdRef.current || (await resolveClubUUID(clubId));
+      const { data, error } = await supabase
+        .from('chip_transactions')
+        .select(
+          'id, from_user_id, to_user_id, club_id, amount, type:transaction_type, transaction_type, notes, created_at'
+        )
+        .eq('club_id', uuid)
+        .order('created_at', { ascending: false })
+        .range(recentTx.length, recentTx.length + TX_PAGE - 1);
+      if (error) throw error;
+      const more = (data || []) as ChipTransaction[];
+      if (!mountedRef.current) return;
+      setRecentTx((prev) => [...prev, ...more]);
+      setTxHasMore(more.length >= TX_PAGE);
+    } catch (e) {
+      reportError(e, 'AgentDashboardPage.loadMoreTransactions');
+      toast.error('Could Not Load More Transactions');
+    } finally {
+      if (mountedRef.current) setTxLoadingMore(false);
+    }
+  }, [clubId, recentTx.length, txHasMore, txLoadingMore, toast]);
+
+  const loadMoreCommissions = useCallback(async () => {
+    if (commissionsLoadingMore || !commissionsHasMore || !clubId || !user?.id) return;
+    setCommissionsLoadingMore(true);
+    try {
+      const uuid = resolvedClubIdRef.current || (await resolveClubUUID(clubId));
+      const { data, error } = await supabase
+        .from('agent_commissions')
+        .select(
+          'id, user_id, club_id, amount, source_type, source_id, notes, created_at, settled_at'
+        )
+        .eq('club_id', uuid)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .range(commissions.length, commissions.length + COMMISSION_PAGE - 1);
+      if (error) throw error;
+      const more = (data || []) as AgentCommission[];
+      if (!mountedRef.current) return;
+      setCommissions((prev) => [...prev, ...more]);
+      setCommissionsHasMore(more.length >= COMMISSION_PAGE);
+    } catch (e) {
+      reportError(e, 'AgentDashboardPage.loadMoreCommissions');
+      toast.error('Could Not Load More Commissions');
+    } finally {
+      if (mountedRef.current) setCommissionsLoadingMore(false);
+    }
+  }, [clubId, user?.id, commissions.length, commissionsHasMore, commissionsLoadingMore, toast]);
 
   useEffect(() => {
     if (!clubId) return;
@@ -590,7 +665,6 @@ export default function AgentDashboardPage() {
     });
   }, [players, playerSearch]);
 
-  const paginatedTx = recentTx.slice(0, txPage * TX_PER_PAGE);
   const totalPlayerChips = players.reduce((sum, p) => sum + (p.chip_balance || 0), 0);
   const onlinePlayers = players.filter((p) => {
     const lastSeen = p.profile?.last_seen;
@@ -731,6 +805,14 @@ export default function AgentDashboardPage() {
             <span className="admin-badge" style={{ marginLeft: '12px' }}>
               {role.toUpperCase()}
             </span>
+            {/* Bus-driven reloads were invisible: isRefreshing was set and
+                never read, so a balance that changed under the operator
+                changed with no sign the page had moved. */}
+            {isRefreshing && (
+              <span className="admin-badge" style={{ marginLeft: '8px' }} aria-live="polite">
+                Refreshing...
+              </span>
+            )}
           </div>
           <div className="admin-header-actions">
             <button onClick={() => navigate('/')} className="admin-btn admin-btn-ghost">
@@ -923,7 +1005,7 @@ export default function AgentDashboardPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {paginatedTx.map((tx, i: number) => (
+                      {recentTx.map((tx, i: number) => (
                         <tr key={tx.id || i}>
                           <td>
                             <span className="admin-badge">{tx.transaction_type || 'Transfer'}</span>
@@ -941,14 +1023,17 @@ export default function AgentDashboardPage() {
                     </tbody>
                   </table>
                 </div>
-                {paginatedTx.length < recentTx.length && (
+                {txHasMore ? (
                   <button
-                    onClick={() => setTxPage((p) => p + 1)}
+                    onClick={() => void loadMoreTransactions()}
+                    disabled={txLoadingMore}
                     className="admin-btn admin-btn-ghost"
                     style={{ width: '100%', marginTop: '12px' }}
                   >
-                    Load More
+                    {txLoadingMore ? 'Loading...' : `Load ${fmt(TX_PAGE)} More`}
                   </button>
+                ) : (
+                  <p className="admin-list-end">All {fmt(recentTx.length)} Transactions Loaded</p>
                 )}
               </>
             )}
@@ -1219,6 +1304,21 @@ export default function AgentDashboardPage() {
                 </table>
               </div>
             )}
+            {commissions.length > 0 &&
+              (commissionsHasMore ? (
+                <button
+                  onClick={() => void loadMoreCommissions()}
+                  disabled={commissionsLoadingMore}
+                  className="admin-btn admin-btn-ghost"
+                  style={{ width: '100%', marginTop: '12px' }}
+                >
+                  {commissionsLoadingMore ? 'Loading...' : `Load ${fmt(COMMISSION_PAGE)} More`}
+                </button>
+              ) : (
+                <p className="admin-list-end">
+                  All {fmt(commissions.length)} Commission Rows Loaded
+                </p>
+              ))}
           </div>
         )}
 

@@ -554,7 +554,7 @@ export default function ClubsPage() {
                           className={styles.btnPrimary}
                           onClick={() => {
                             haptic.success();
-                            navigate(`/unions/${union.id}`);
+                            navigate(`/unions/${union.slug || union.id}`);
                           }}
                         >
                           MANAGE UNION

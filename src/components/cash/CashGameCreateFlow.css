@@ -1,0 +1,128 @@
+/* NEW CASH GAME - the locked six-step flow. Mobile first (375px), the
+   controls themselves reuse TableConfigPage.css (config-toggle, config-slider,
+   config-preset-chip, config-footer). */
+
+.cash-create {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.5rem 0 5rem;
+}
+
+.cash-create__step {
+  padding: 0.75rem 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  transition: opacity 0.2s ease;
+}
+
+.cash-create__step[aria-disabled='true'] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.cash-create__title {
+  margin: 0 0 0.5rem;
+  color: #ffcf7d;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.cash-create__cards {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+}
+
+@media (min-width: 640px) {
+  .cash-create__cards {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.cash-create__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  text-align: left;
+  padding: 0.75rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 158, 44, 0.35);
+  background: rgba(38, 24, 8, 0.6);
+  color: #fff;
+  cursor: pointer;
+}
+
+.cash-create__card.is-selected {
+  border-color: #ff9e2c;
+  background: rgba(255, 158, 44, 0.18);
+  box-shadow: 0 0 0 1px rgba(255, 158, 44, 0.6) inset;
+}
+
+.cash-create__card-title {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.cash-create__card-blurb {
+  font-size: 0.8rem;
+  color: #d9c9a8;
+}
+
+.cash-create__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.cash-create__chip.is-selected {
+  background: rgba(255, 158, 44, 0.3);
+  border-color: #ff9e2c;
+  color: #fff;
+}
+
+.cash-create__chip:disabled,
+.cash-create__chip.is-unavailable {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cash-create__note {
+  margin: 0.4rem 0 0;
+  color: #b8a888;
+  font-size: 0.8rem;
+}
+
+.cash-create__link {
+  margin-top: 0.5rem;
+  background: none;
+  border: none;
+  color: #ffcf7d;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.cash-create__options {
+  padding: 0;
+}
+
+/* The footer is .config-footer's sticky one: it already clears the club
+   bottom nav (--bottom-nav-clearance). A fixed bottom:0 here sat UNDER that
+   nav on every viewport (2026-09-04 audit, H-footer). */
+
+.cash-create__cards--two {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 640px) {
+  .cash-create__cards--two {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.cash-create__preview-card {
+  max-width: 360px;
+  margin: 0 auto;
+}

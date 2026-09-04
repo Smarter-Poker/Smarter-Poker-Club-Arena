@@ -92,7 +92,10 @@ an alert path; the engine does, so the engine now looks.
 Four Prometheus rules in `infra/monitoring/engine-freeze-rules.yml`
 (`stats-pipeline` group) are the second, independent path: a broken alert
 receiver cannot hide a lagging index. The clock-driven two carry the break
-guard.
+guard. Monitoring config reaches cron-01 through `infra/monitoring/deploy.sh`
+(re-run on the host, idempotent; `infra/monitoring/README.md`), not through
+a workflow, so these rules load at the next deploy.sh run; the engine-side
+alerts above deploy with the engine and need nothing.
 
 ### 4. The retention law
 
@@ -114,10 +117,18 @@ tightens it below the page's window or ages it out.
   maintenance break, as designed), `recentHandsWithoutStat` 0, repair cursor
   advancing.
 - Money repair: cursor at 2026-08-30 02:54, 584,000 hands seen, 263 rows
-  changed, not done. It is walking a window that is almost entirely
-  horse-only hands already pruned from `hand_history` (nothing to recompute),
-  and will reach the ceiling of 2026-09-03 19:28 in about two days at its
-  throttled cadence. It now uses the fast range form.
+  changed, not done. Its pg_cron runs took 85 to 150 s each before the facts
+  split and 4 to 17 s after it (09:00 to 09:15 UTC, same 4,000-hand batch),
+  so the throttle that protected the hand write is no longer needed: moved
+  to every 2 minutes, 6,000 hands, 100 s timeout (`cron.alter_job` on job
+  260). It reaches its ceiling of 2026-09-03 19:28 in about six hours.
+- The three stats migrations applied by psql (20260903190000 and both phase 1
+  files) are now recorded in `supabase_migrations.schema_migrations` with
+  their statements, the same way an MCP apply records them, so the
+  every-applied-migration-has-a-file check can see them.
+- Verified 24 hours of human hands (18, `has_human` populated): every human
+  seat has its `ca_hand_facts` row and its stat row, so the audit's
+  `human_without_facts` is zero for a reason and not for want of humans.
 
 ## Tests
 

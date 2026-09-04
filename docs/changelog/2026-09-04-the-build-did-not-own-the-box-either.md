@@ -40,6 +40,15 @@ Local builds keep the default: `process.env.CI ? 4 : 20`.
 ## The pattern, now stated twice
 
 Every tool that defaults its concurrency to the core count is wrong on a shared
-runner. `vitest` was the first. Rollup was the second. **Playwright is the
-third and is not yet capped** - it is the remaining candidate if a box is still
-thrashing after this.
+runner. `vitest` was the first. Rollup was the second.
+
+**Playwright was checked and is already capped** - `workers: isCI ? 4 :
+undefined` in `playwright.config.ts`, with the reasoning recorded there: 149
+specs at one worker is about twenty minutes of everybody's pipeline, four
+brings it under three. Nothing to do. An earlier draft of this note claimed it
+was uncapped; that was wrong, and left standing it would have sent the next
+agent to fix something already fixed.
+
+So the audit is complete for the three tools that matter. If a box still
+thrashes after this, the cause is the RUNNER COUNT, not a tool default - the
+arithmetic in `docs/ci-runner-topology.md` is the thing to revisit.

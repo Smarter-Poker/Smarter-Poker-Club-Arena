@@ -1633,6 +1633,7 @@
     "fn_ca_execute_epoch3_reset",
     "fn_ca_financial_alert_to_incident",
     "fn_ca_finding_key",
+    "fn_ca_fk_index_gaps",
     "fn_ca_fleet_isolation_report",
     "fn_ca_fleet_overview",
     "fn_ca_fleet_pnl",

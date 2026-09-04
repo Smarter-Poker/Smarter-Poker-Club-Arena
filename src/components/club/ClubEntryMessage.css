@@ -1,115 +1,89 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
- *  CLUB ENTRY MESSAGE — the full-screen greeting (Dan, 2026-09-03)
+ *  CLUB ENTRY MESSAGE — a card at the door, not a curtain (Dan, 2026-09-03)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Dan asked for padding around all edges, top and bottom included. `.modal-
- * fullscreen` already insets by 20px, and on a desktop that is the whole job.
- * On a phone it is not: 20px of margin still leaves the panel underneath the
- * notch and behind the home indicator, so the eyebrow is clipped at the top
- * and the "Do Not Show Me This Message Again" button sits under the gesture
- * bar, where the OS eats the tap. The safe-area insets below are the
- * difference between padding that looks right in a simulator and padding that
- * works in a hand.
+ * HISTORY, because this rule reversed itself in a day and the next reader
+ * deserves to know why rather than "fixing" it back.
+ *
+ * The first ask was a full screen pop up: "Club Message should appear as a
+ * 'full screen pop up' when you enter the club, not anywhere 'baked into the
+ * screen'." That got built, and in use it did the thing a full screen panel
+ * always does - it stopped being a greeting and became a door.
+ *
+ * Dan, later the same day: "THERE IS A POP UP THATS BLOCKING YOU FROM ENTERING
+ * THE CLUBS [...] YOU NEED TO RE SIZE IT SO ITS A SMALL POP UP ON THE PAGE AND
+ * NOT COVERING THE ENTIRE PAGE."
+ *
+ * So: a card. Sized to its message, centred, with the lobby visible around it.
+ * Three things had to change together, because any one alone leaves the panel
+ * tall:
+ *
+ *   1. the modal size    `fullscreen` -> `medium`, and the override below caps
+ *                        width and lets HEIGHT follow content
+ *   2. the stretch chain `flex: 1` on the panel and the body existed only to
+ *                        fill a viewport-height parent. With `height: auto`
+ *                        they would stretch the card to its own max-height and
+ *                        put the buttons at the bottom of a mostly empty box.
+ *   3. the backdrop      `closeOnOverlay` is now true (in the .tsx). Tapping
+ *                        beside a small card is the obvious way past it.
+ *
+ * The safe-area insets stay. They are still the difference between padding
+ * that looks right in a simulator and padding that works in a hand: on a
+ * phone the card is nearly the full width, so the left and right insets are
+ * what keep it clear of a curved edge, and the top and bottom ones are what
+ * keep a long message from running under the notch or the home indicator.
  */
 
-.club-entry-message-modal.modal-fullscreen {
-  /* A CONTAINED POPUP WITH A 20px GUTTER (Dan, 2026-09-04: "IT NEEDS TO BE
-     INSIDE THE SCREEN, AND HAVE 20 PIXEL MARGIN ON ALL SIDES, NOT COVER THE
-     ENTIRE FUCKING SCREEN").
-
-     It shipped as a viewport-sized panel. Measured on the live Deep Stack
-     lobby before this rule: 526 x 1195 in a 566 x 1235 window - 20px of inset
-     on paper, and in practice an opaque sheet with three lines of greeting on
-     it. That is what "the page goes black" was, and why the X at the top right
-     read as part of the black rather than as a way out.
-
-     The card is sized by its CONTENT now, not by the window:
-       - width  capped at 480px, and never wider than the viewport less 40px
-         (the 20px gutter, both sides);
-       - height auto, capped at the viewport less the same 40px, so a long
-         message scrolls inside the card instead of growing past the screen;
-       - `margin: 20px` guarantees the gutter even when the overlay's centring
-         would otherwise let an edge touch.
-     Measured with this rule on the same lobby: 480 x 342, 23% of the screen,
-     the lobby visible behind it and the close control inside the card. */
+.club-entry-message-modal.modal-medium {
+  /* Wide enough for 240 characters at a comfortable measure, and never wider.
+     min() rather than a plain width so a phone narrows it instead of letting
+     it overflow, and the inset arithmetic keeps it off a curved edge. */
   width: min(
-    480px,
-    calc(100vw - max(40px, env(safe-area-inset-left) + env(safe-area-inset-right) + 40px))
+    440px,
+    calc(100vw - max(32px, env(safe-area-inset-left) + env(safe-area-inset-right) + 24px))
   );
-  max-width: min(
-    480px,
-    calc(100vw - max(40px, env(safe-area-inset-left) + env(safe-area-inset-right) + 40px))
-  );
+  max-width: 100%;
+
+  /* THE FIX. Height follows the message. max-height is the only ceiling, so a
+     long message scrolls inside the card rather than growing it into a wall.
+     A short one gets a short card - which is the whole point of the change. */
   height: auto;
-  /* dvh, not vh: a phone's collapsing address bar must not make this taller
-     than the screen it is measured against. */
-  max-height: calc(
-    100dvh - max(40px, env(safe-area-inset-top) + env(safe-area-inset-bottom) + 40px)
+  max-height: min(
+    70dvh,
+    calc(100dvh - max(48px, env(safe-area-inset-top) + env(safe-area-inset-bottom) + 32px))
   );
-  /* 20px is the FLOOR on every edge; where a device reserves more (a
-     notch, a home indicator) the inset wins, so the card never hides
-     under either. */
-  margin: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
-    max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
-  display: flex;
   overflow: hidden;
 }
 
-/* The card still has to fill whatever height it ends up with, and the shared
-   Modal wraps its children in `.modal-content`, so `flex: 1` on
-   `.club-entry-message` has no flex parent without this (#2899). `min-height:
-   0` lets it shrink beside the wrapper's `overflow-y: auto`, which is what
-   makes a long message scroll rather than push the card off screen. */
-.club-entry-message-modal.modal-fullscreen > .modal-content {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-}
-
 /*
- * THE PANEL IS FULL-SCREEN; THE GREETING WAS NOT (2026-09-03).
- *
- * Dan: "YOU CLICK ON ANY CLUB LOBBY AND THE PAGE GOES BLACK AFTER LOADING FOR
- * A SPLIT SECOND."
- *
- * It was not a crash and it was not a blank render - it was this panel. The
- * rule above makes the modal fill the viewport and `display: flex` is there so
- * `.club-entry-message` (`flex: 1`) fills it back. But the shared Modal wraps
- * whatever it is given in `.modal-content`, so that flex parent is NOT the
- * greeting's parent, and the chain broke at the wrapper: measured live on the
- * Midway Union lobby, the panel was 1,195px tall, `.modal-content` 1,192, and
- * `.club-entry-message` collapsed to its own content at 338. The greeting sat
- * in the top quarter and the other ~850px was empty dark panel over the whole
- * lobby - which is exactly what "the page goes black" looks like.
- *
- * `.club-entry-message__body` already asks for `justify-content: center`; it
- * simply never had the height to centre anything in. Handing `.modal-content`
- * the same column stretch fixes it at the one link that was missing: measured
- * again with this rule, the wrapper fills 1,144px, the body 952, and the club
- * name lands at y=535 instead of y=132 - centred, as the body always intended.
+ * The shared wrapper pads by 24px on every side. The greeting draws its own
+ * padding and puts the X in the card's corner, so the wrapper's padding here
+ * would only push everything inward twice and steal room from the message.
  *
  * `min-height: 0` is load-bearing next to the wrapper's `overflow-y: auto`: a
  * flex child defaults to `min-height: auto`, which refuses to shrink below its
- * content and would let a long message push the panel past the viewport it was
- * just told to fit inside.
+ * content and would let a long message push the card past the max-height it
+ * was just given.
+ *
+ * Note what is NOT here any more: `flex: 1`. It belonged to the full-screen
+ * layout, where the panel had a fixed viewport height that something had to
+ * fill. With `height: auto` above, growing to fill is exactly the bug.
  */
-.club-entry-message-modal.modal-fullscreen > .modal-content {
+.club-entry-message-modal.modal-medium > .modal-content {
   display: flex;
-  flex: 1;
   flex-direction: column;
   min-height: 0;
+  padding: 0;
 }
 
 .club-entry-message {
   position: relative;
   display: flex;
-  flex: 1;
   flex-direction: column;
-  gap: 24px;
-  /* The inner breathing room, distinct from the panel's margin. Extra on top
-     so the copy never runs under the close control. */
-  padding: 44px 24px 24px;
+  gap: 18px;
+  /* The inner breathing room. Extra on top so the copy never runs under the
+     close control, which is absolutely positioned in this box. */
+  padding: 48px 22px 22px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -118,8 +92,8 @@
 
 .club-entry-message__close {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: 8px;
+  right: 8px;
   z-index: 2;
   display: flex;
   align-items: center;
@@ -159,12 +133,8 @@
 
 .club-entry-message__body {
   display: flex;
-  flex: 1;
   flex-direction: column;
-  gap: 12px;
-  /* The message is the reason the screen was taken. Centre it rather than
-     leaving it stranded at the top of a tall empty panel. */
-  justify-content: center;
+  gap: 10px;
   min-height: 0;
   text-align: center;
 }
@@ -180,18 +150,20 @@
 .club-entry-message__club {
   margin: 0;
   color: #c8a65a;
-  font-size: clamp(20px, 5vw, 28px);
+  /* Sized against the card now, not the viewport. 5vw was set when the panel
+     was the screen; in a 440px card it reads as a headline shouting. */
+  font-size: clamp(18px, 4.4vw, 22px);
   font-weight: 800;
   letter-spacing: 0.02em;
 }
 
 .club-entry-message__copy {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   color: #eef3f6;
-  font-size: clamp(16px, 4.2vw, 21px);
+  font-size: clamp(15px, 3.8vw, 17px);
   line-height: 1.5;
-  /* 240 characters is the server cap. Long words in a narrow phone panel still
-     need somewhere to break or they push the panel sideways. */
+  /* 240 characters is the server cap. Long words in a narrow card still need
+     somewhere to break or they push the card sideways. */
   overflow-wrap: anywhere;
 }
 
@@ -257,12 +229,12 @@
 }
 
 .club-entry-message__btn {
-  padding: 11px 16px;
+  padding: 10px 14px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.05);
   color: #e8eef2;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -300,8 +272,8 @@
 
 @media (max-width: 480px) {
   .club-entry-message {
-    padding: 52px 18px 18px;
-    gap: 18px;
+    padding: 46px 16px 16px;
+    gap: 14px;
   }
 
   .club-entry-message__foot {

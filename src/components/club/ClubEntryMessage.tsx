@@ -10,6 +10,26 @@
  * will be displayed is if the club owner, co owner or admin creates a new
  * message."
  *
+ * REVISED THE SAME DAY, and the reversal is the important part of this file's
+ * history. Dan, after living with the full screen version: "THERE IS A POP UP
+ * THATS BLOCKING YOU FROM ENTERING THE CLUBS [...] YOU NEED TO RE SIZE IT SO
+ * ITS A SMALL POP UP ON THE PAGE AND NOT COVERING THE ENTIRE PAGE."
+ *
+ * A full screen greeting reads as a gate rather than a greeting. There is no
+ * lobby visible behind it to make it feel like a card laid on top of the club,
+ * so arriving at a club looked like arriving at a wall. It is now a small
+ * centred card. Three changes together, and none of them work alone:
+ *
+ *   size="medium"    was "fullscreen". The class this produces is what
+ *                    ClubEntryMessage.css sizes.
+ *   closeOnOverlay   was false. Tapping beside a small card is the obvious way
+ *                    past it, and it makes the same promise the X does: close
+ *                    now, write nothing.
+ *   the CSS          `flex: 1` removed from the stretch chain so the card is
+ *                    as tall as its message. See ClubEntryMessage.css.
+ *
+ * Everything below this line is unchanged and still holds.
+ *
  * WHAT THIS REPLACES. The club message was baked into the lobby in THREE
  * places, and they disagreed with each other:
  *
@@ -34,7 +54,8 @@
  *
  *   X            close it now. Nothing is written. The message is still the
  *                club's current message, so it greets them again next visit -
- *                that is what a day's message is for.
+ *                that is what a day's message is for. Tapping the backdrop is
+ *                the same promise by a different gesture.
  *   Do Not Show  writes the dismissal. Silent until staff write a NEW message,
  *                at which point the club has something else to say and says it.
  *
@@ -198,9 +219,15 @@ export default function ClubEntryMessage({
     <Modal
       isOpen={open}
       onClose={close}
-      size="fullscreen"
+      /* A card on the lobby, not a screen over it. The width, and the height
+         that follows the message rather than the viewport, live in
+         ClubEntryMessage.css keyed to the `modal-medium` class. */
+      size="medium"
       showCloseButton={false}
-      closeOnOverlay={false}
+      /* Tapping beside the card closes it and writes nothing - the same
+         promise the X makes. A backdrop that swallows taps is part of what
+         made the full-screen version feel like a locked door. */
+      closeOnOverlay
       className="club-entry-message-modal"
       ariaLabel={`Club Message From ${clubName}`}
     >

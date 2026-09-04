@@ -19,7 +19,8 @@
  */
 
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { useUnionRouteId } from '../hooks/useUnionRouteId';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { reportError } from '../utils/errorReporter';
@@ -28,7 +29,7 @@ import RakeSnapshotPanel from '../components/club/RakeSnapshotPanel';
 import styles from './UnionDataPage.module.css';
 
 export default function UnionDataPage() {
-  const { unionId } = useParams<{ unionId: string }>();
+  const { unionId, unionRef } = useUnionRouteId();
   const navigate = useNavigate();
   const { user } = useAuthUser();
 
@@ -103,14 +104,14 @@ export default function UnionDataPage() {
             <button
               type="button"
               className={styles.headerBtn}
-              onClick={() => navigate(`/unions/${unionId}`)}
+              onClick={() => navigate(`/unions/${unionRef}`)}
             >
               Union
             </button>
             <button
               type="button"
               className={styles.headerBtn}
-              onClick={() => navigate(`/unions/${unionId}/statements`)}
+              onClick={() => navigate(`/unions/${unionRef}/statements`)}
             >
               Statements
             </button>

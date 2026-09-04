@@ -106,7 +106,11 @@ describe('a union lead needs no club', () => {
       .filter((f) => f.endsWith('.tsx'))
       .map((f) => readFileSync(resolve(ROOT, 'src/pages', f), 'utf8'))
       .join('\n');
-    expect(src, 'the union data page has no way in').toMatch(/unions\/\$\{unionId\}\/data/);
+    // `unionRef` is the identifier as written in the URL (the slug, since
+    // 2026-09-04); `unionId` is the resolved UUID. Either one is a way in.
+    expect(src, 'the union data page has no way in').toMatch(
+      /unions\/\$\{(unionId|unionRef)\}\/data/
+    );
   });
 
   it('a union overseer may open a club in their own union', () => {

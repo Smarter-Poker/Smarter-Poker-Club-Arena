@@ -70,9 +70,10 @@ describe('club lobby creation controls', () => {
     expect(creationActions).toContain("{ target: 'spin', label: 'Spins' }");
     expect(creationActions).toContain("{ target: 'sng', label: 'Sit N Go' }");
     expect(creationActions).toContain('`${managementPath}?create=${action.target}`');
-    expect(management).toContain(
-      '<CreateTablePage clubIdOverride={hostClubId} onBack={clearCreate} />'
-    );
+    // Embedded, and it stays embedded: picking a variant opens the config
+    // form on the same page (2026-09-04) instead of a /clubs/<host> route.
+    expect(management).toContain('clubIdOverride={hostClubId}');
+    expect(management).toContain('onSelectGameType={openTableConfig}');
     expect(management).toContain('<CreateTournamentModal');
   });
 

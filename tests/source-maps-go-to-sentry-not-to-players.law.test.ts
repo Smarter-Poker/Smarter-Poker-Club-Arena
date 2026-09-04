@@ -63,6 +63,29 @@ describe('source maps go to Sentry, not to players', () => {
     );
   });
 
+  it('the additive pool is swept of maps too, or the old ones serve for 30 days', () => {
+    const publisher = read('.github/workflows/publish-club-arena.yml');
+    // /assets/* is served from a pool the publisher never --deletes, pruned by
+    // AGE at 30 days. So stripping dist/ stops NEW maps reaching players and
+    // does nothing about the ones already there - 267 files, 27MB, per deploy,
+    // going back weeks. Deleting maps from the pool is safe in a way deleting
+    // anything else from it is not: a player mid-hand asks for a hashed CHUNK,
+    // never for its map, and a .map is fetched only by open devtools.
+    expect(publisher).toMatch(/find pool -type f -name '\*\.map' -delete/);
+  });
+
+  it('the runtime reports a broken build as broken, not as version one', () => {
+    // A build with no VITE_APP_VERSION has no maps uploaded for it and never
+    // will. Reporting `club-arena@1.0.0` made that indistinguishable from a
+    // real release in Sentry, so the one symptom of a misconfigured publish
+    // looked like ordinary traffic.
+    const init = read('src/core/SentryInit.ts');
+    expect(init).toMatch(/VITE_APP_VERSION \|\| 'unknown'/);
+    expect(init).not.toMatch(
+      /release: `club-arena@\$\{import\.meta\.env\.VITE_APP_VERSION \|\| '1\.0\.0'\}`/
+    );
+  });
+
   it('the publisher sets VITE_APP_VERSION to the sha it is shipping', () => {
     const publisher = read('.github/workflows/publish-club-arena.yml');
     expect(publisher).toMatch(

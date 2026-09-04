@@ -91,7 +91,9 @@ describe('the lobby flags reach the card', () => {
     expect(tsx).toContain('lt-flag--new');
     // The sink partitions into pinned / open / gone.
     expect(tsx).toContain('const pinned: LobbyEntry[] = [];');
-    expect(tsx).toContain('return pinned.concat(open, gone);');
+    /* Dan 2026-09-03: empty cash tables sink below the tables with a game on
+       (and above the ones nobody can enter), still under the featured pin. */
+    expect(tsx).toContain('return pinned.concat(open, empty, gone);');
   });
 });
 

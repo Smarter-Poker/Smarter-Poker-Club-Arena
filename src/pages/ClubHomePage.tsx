@@ -65,6 +65,7 @@ import ConfirmModal from '../components/common/ConfirmModal';
 import { retryFetch } from '../utils/retryFetch';
 import './ClubHomePage.css';
 import '../components/lobby/ClubLobbyCommandTop.css';
+import './ClubHomeMobilePremium.css';
 import { isFixedLimitVariant } from '../lib/bettingStructure';
 
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -4948,6 +4949,29 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               onActivate={openEntry}
               loading={loading}
               ctx={lobbyCtx}
+              /* THE VARIANT SELECTOR (Dan 2026-09-03): the Variant heading
+                 opens the tab's games - No Limit / Pineapple / Short Deck,
+                 PLO / PLO5 / PLO6 / PLO8o - with an All option. It reads and
+                 writes the SAME saved `games` filter the Advanced Filters
+                 sheet does, so the two can never disagree. */
+              {...(() => {
+                const vSpec =
+                  gameType === 'HOLDEM' || gameType === 'OMAHA'
+                    ? FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>]
+                    : null;
+                if (!vSpec) return {};
+                const vVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(vSpec);
+                return {
+                  variantChoices: vSpec.games,
+                  selectedVariants: vVal.games,
+                  onVariantsChange: (games: string[]) => {
+                    haptic.selection();
+                    const next: FilterStore = { ...advFilters, [gameType]: { ...vVal, games } };
+                    setAdvFilters(next);
+                    if (resolvedClubId) saveFilters(resolvedClubId, next);
+                  },
+                };
+              })()}
             />
           )}
 

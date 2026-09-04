@@ -57,9 +57,7 @@ export function flushBudgetSummary(): boolean {
   if (!summary) return false;
   const top = summary.byKey.slice(0, 15);
   const lines = top.map((r) => `${r.dropped} x ${r.key}`).join('\n');
-  console.warn(
-    `[Sentry:Server] budget dropped ${summary.total} event(s) since last summary:\n${lines}`
-  );
+  console.warn(`[Sentry:Server] budget dropped ${summary.total} event(s) since last summary:\n${lines}`);
   try {
     Sentry.captureMessage(
       `[SentryBudget] dropped ${summary.total} engine event(s) in the last ${BUDGET_SUMMARY_INTERVAL_MS / 60_000} min`,
@@ -69,7 +67,7 @@ export function flushBudgetSummary(): boolean {
         contexts: { sentryBudget: { total: summary.total, top, distinct: summary.byKey.length } },
         // One issue per engine, not one per interval: group every summary together.
         fingerprint: ['sentry-budget-summary'],
-      }
+      },
     );
   } catch {
     // Never let the summary crash the engine

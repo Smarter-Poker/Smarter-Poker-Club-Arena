@@ -8,13 +8,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const captured: { messages: any[]; initOptions: any } = { messages: [], initOptions: null };
 
 vi.mock('@sentry/node', () => ({
-  init: (opts: any) => {
-    captured.initOptions = opts;
-  },
+  init: (opts: any) => { captured.initOptions = opts; },
   captureException: vi.fn(),
-  captureMessage: (msg: string, ctx: any) => {
-    captured.messages.push({ msg, ctx });
-  },
+  captureMessage: (msg: string, ctx: any) => { captured.messages.push({ msg, ctx }); },
   addBreadcrumb: vi.fn(),
   setContext: vi.fn(),
   flush: vi.fn(async () => true),
@@ -49,7 +45,7 @@ describe('errorReporter budget wiring', () => {
   it('throttles a loop at the per-key limit inside beforeSend', async () => {
     const { beforeSend } = await boot();
     const passed = Array.from({ length: 50 }, (_, i) =>
-      beforeSend(ev(`[Loop.site] iteration ${i}`), hint(`[Loop.site] iteration ${i}`))
+      beforeSend(ev(`[Loop.site] iteration ${i}`), hint(`[Loop.site] iteration ${i}`)),
     ).filter(Boolean);
     expect(passed).toHaveLength(3);
   });
@@ -57,7 +53,7 @@ describe('errorReporter budget wiring', () => {
   it('caps everything at the global limit even with distinct contexts', async () => {
     const { beforeSend } = await boot();
     const passed = Array.from({ length: 50 }, (_, i) =>
-      beforeSend(ev(`[Site.${i}] boom`, `Site.${i}`), hint(`[Site.${i}] boom`))
+      beforeSend(ev(`[Site.${i}] boom`, `Site.${i}`), hint(`[Site.${i}] boom`)),
     ).filter(Boolean);
     expect(passed).toHaveLength(5);
   });

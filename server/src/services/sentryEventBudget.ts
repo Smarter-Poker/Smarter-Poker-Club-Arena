@@ -182,10 +182,7 @@ export class SentryEventBudget {
     while (m.size > this.opts.maxKeys) {
       let victim: string | undefined;
       for (const k of m.keys()) {
-        if (k !== OTHER_KEY) {
-          victim = k;
-          break;
-        }
+        if (k !== OTHER_KEY) { victim = k; break; }
       }
       if (victim === undefined) break;
       const n = m.get(victim) ?? 0;
@@ -202,8 +199,7 @@ export class SentryEventBudget {
     // Still over: drop the oldest windows first.
     if (this.perKey.size > this.opts.maxKeys) {
       const sorted = [...this.perKey.entries()].sort((a, b) => a[1].windowStart - b[1].windowStart);
-      for (const [k] of sorted.slice(0, this.perKey.size - this.opts.maxKeys))
-        this.perKey.delete(k);
+      for (const [k] of sorted.slice(0, this.perKey.size - this.opts.maxKeys)) this.perKey.delete(k);
     }
   }
 }

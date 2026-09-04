@@ -146,3 +146,30 @@ Client:
 - `ClubMemberManagement` still loads the whole roster unpaged; it is a second
   copy of the Players page and phase 5 decides its future.
 - No page in phases 1-4 has been opened in a browser yet (handoff D-05).
+
+## Verification walk (2026-09-04, after Dan's per-phase gate)
+
+Every Phase 1-3 page was opened in a browser on production, signed in as the
+owner, at 404 px: `/operations`, `/finance`, `/control`, `/anti-cheat`,
+`/reports`, `/disputes`, `/blacklist`, `/agents` (every tab). No horizontal
+scroll on any page; no failed request but one, below.
+
+**Found: the Payouts tab could not be read, then took 8,870 ms.**
+`fn_ca_agent_payables` (phase 3) summed every unsettled `agent_commissions`
+row on each open. The set had doubled in a day (259,135 to 499,933): the
+estate writes 622,976 commission rows a day and nothing has ever settled
+one. Fixed by migration
+`20260904170000_what_the_club_owes_is_kept_not_recounted`: a
+trigger-maintained `agent_commission_unsettled_rollup` (statement-level,
+transition tables), backfilled and asserted equal to the ledger inside the
+transaction, with `fn_ca_agent_payables` reading it. Probed rolled back:
+insert, settle, unsettle, delete and a notes-only update each moved the
+rollup exactly as the ledger moved. Live after apply: rollup equals ledger
+(970,282.21 across 239 pairs), triggers firing on real inserts, and the same
+tab answered in 107 ms.
+
+Also found in the re-read of phase 4's own diff: a failed stats read held
+the metric-card skeleton forever; a failed tables read held "Loading
+Tables..."; native `window.confirm`; "Holds N Chips" when N included credit;
+"All 100 Players" under a 678-player club; a 25-second row stagger. All
+fixed in the same push.

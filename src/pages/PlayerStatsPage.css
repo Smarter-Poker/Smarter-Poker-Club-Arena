@@ -248,6 +248,10 @@
   font-family: 'Rajdhani', monospace;
   margin: 0;
   font-weight: 600;
+  /* One colour for every section title (phase 2). The inline per-section
+     hues (purple, amber, green, blue) were outside the page's language and
+     have gone; the section header bar in phase 6 replaces this element. */
+  color: #e9eef3;
 }
 
 /* Stats Grid */

@@ -22,6 +22,16 @@ import { reportError } from '../utils/errorReporter';
 
 export const AUTH_STORAGE_KEY = 'smarter-poker-auth';
 
+/**
+ * SPA navigation breadcrumb — records that this browser session was
+ * authenticated, so AuthGuard can tell a transient store reset from a real
+ * sign-out. Lives here, not in AuthGuard, because the sign-out path has to
+ * clear it and a component must not import a component for a string.
+ * Written by AuthGuard.markAuthenticated, cleared by the sign-out path and by
+ * IdentityDNA's SIGNED_OUT branch.
+ */
+export const SPA_AUTH_BREADCRUMB = 'club-arena-auth-breadcrumb';
+
 /** Buffer for JWT expiry checks (60s to handle clock skew) */
 const EXPIRY_BUFFER_MS = 60_000;
 

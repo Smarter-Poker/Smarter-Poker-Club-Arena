@@ -422,8 +422,36 @@ const DEFAULT_CONFIG: TableConfig = {
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
-export default function TableConfigPage() {
-  const { clubId, gameType } = useParams<{ clubId: string; gameType: string }>();
+/**
+ * Where the operator goes when this form is finished with. In route mode the
+ * page navigates to the host club; embedded inside Table Management (a club's
+ * or a union's) the host page owns the URL and decides instead.
+ */
+export type TableConfigExit = 'denied' | 'saved' | 'tournament_created';
+
+export interface TableConfigPageProps {
+  /**
+   * EMBEDDED MODE (2026-09-04). Table Management mounts this form on its own
+   * page with the host club fixed by the page, not the URL. From the union
+   * console the host is the union's own club row, so `clubIdOverride` is a
+   * UUID and the URL stays at /unions/<union>/table-management. Before this,
+   * the only way to reach the form was /clubs/<host>/create-table/<variant>,
+   * which threw a union operator out of the union and onto a member club.
+   */
+  clubIdOverride?: string;
+  gameTypeOverride?: string;
+  /** Embedded hosts receive every exit instead of a club navigation. */
+  onExit?: (exit: TableConfigExit) => void;
+}
+
+export default function TableConfigPage({
+  clubIdOverride,
+  gameTypeOverride,
+  onExit,
+}: TableConfigPageProps = {}) {
+  const params = useParams<{ clubId: string; gameType: string }>();
+  const clubId = clubIdOverride || params.clubId;
+  const gameType = gameTypeOverride || params.gameType;
   const navigate = useNavigate();
   const toast = useToast();
 
@@ -486,7 +514,8 @@ export default function TableConfigPage() {
       setAccess(result);
       if (!result.allowed) {
         toast.error(gameCreationDeniedMessage(result));
-        navigate(`/clubs/${clubId}`);
+        if (onExit) onExit('denied');
+        else navigate(`/clubs/${clubId}`);
       }
     })();
     return () => {
@@ -953,7 +982,8 @@ export default function TableConfigPage() {
           masterBus.emit('TOURNAMENT_UPDATED', { tournamentId: createdId, status: 'REGISTERING' });
         }
       }
-      navigate(`/clubs/${clubId}/tournaments`);
+      if (onExit) onExit('tournament_created');
+      else navigate(`/clubs/${clubId}/tournaments`);
     } catch (error) {
       reportError(error, 'TableConfigPage.Failed_to_create_tournament');
       toast.error(error instanceof Error ? error.message : 'Failed to create tournament');
@@ -1098,6 +1128,7 @@ export default function TableConfigPage() {
             initialVariant={gameType}
             canBuildHere={canBuildHere}
             deniedMessage={access ? gameCreationDeniedMessage(access) : null}
+            onSaved={onExit ? () => onExit('saved') : undefined}
           />
         )}
 

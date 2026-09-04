@@ -500,7 +500,9 @@
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   position: sticky;
   z-index: 20;
-  bottom: var(--bottom-nav-clearance, 74px);
+  /* Stacks on the footer's LIVE height, so it lands on the bottom edge the
+     frame the footer scrolls away (Dan 2026-09-04). */
+  bottom: var(--bottom-nav-stack-base, 74px);
   flex: 0 0 auto;
   box-shadow: 0 -12px 24px rgba(0, 0, 0, 0.42);
 }

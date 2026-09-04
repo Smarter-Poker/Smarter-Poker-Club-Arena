@@ -141,11 +141,24 @@ type TabId = 'overview' | 'activity' | 'players' | 'tables' | 'revenue' | 'tourn
 const VALID_TABS: TabId[] = ['overview', 'activity', 'players', 'tables', 'revenue', 'tournaments'];
 
 interface RevenueData {
+  /**
+   * PHASE 6 (2026-09-04): `hands`, `rake`, `bbj` and `pot_total` come from
+   * ca_club_rake_daily, the per-day rollup of rake_records, so they are the
+   * club's money ledger and agree with the Financials page to the cent.
+   * `hands` is RAKED hands - the denominator that belongs under "rake per
+   * hand" and "average pot" - and `hands_dealt` is every hand the engine
+   * finished, tournament hands included. The old shape read club_hand_daily,
+   * whose pot_total adds tournament chips to cash pots: 118,254,757 against
+   * 5,239,484 of real cash on 2026-09-03, so "Average Pot" was wrong by
+   * twenty times.
+   */
   totals: {
     hands: number;
+    hands_dealt?: number;
     rake: number;
     bbj: number;
     pot_total: number;
+    tournament_fees?: number;
     avg_pot: number;
     rake_per_hand: number;
   };
@@ -165,9 +178,11 @@ interface RevenueData {
   daily: Array<{
     d: string;
     hands: number;
+    hands_dealt?: number;
     rake: number;
     bbj: number;
     pot_total: number;
+    tournament_fees?: number;
     ins_net?: number;
   }>;
   by_table: Array<{
@@ -1779,10 +1794,21 @@ export default function ClubDashboard() {
                   {[
                     { label: 'Rake Collected', value: formatChips(revenue.totals.rake) },
                     { label: 'Bad Beat Drop', value: formatChips(revenue.totals.bbj) },
-                    { label: 'Hands Dealt', value: formatInt(revenue.totals.hands) },
-                    { label: 'Rake Per Hand', value: formatChips(revenue.totals.rake_per_hand) },
-                    { label: 'Average Pot', value: formatChips(revenue.totals.avg_pot) },
-                    { label: 'Total Pots', value: formatChips(revenue.totals.pot_total) },
+                    {
+                      label: 'Tournament Fees',
+                      value: formatChips(revenue.totals.tournament_fees ?? 0),
+                    },
+                    { label: 'Raked Hands', value: formatInt(revenue.totals.hands) },
+                    {
+                      label: 'Hands Dealt',
+                      value: formatInt(revenue.totals.hands_dealt ?? revenue.totals.hands),
+                    },
+                    {
+                      label: 'Rake Per Raked Hand',
+                      value: formatChips(revenue.totals.rake_per_hand),
+                    },
+                    { label: 'Average Raked Pot', value: formatChips(revenue.totals.avg_pot) },
+                    { label: 'Raked Pot Volume', value: formatChips(revenue.totals.pot_total) },
                     // INSURANCE P&L 2026-08-27 (Dan): net = premiums - payouts
                     // over the window. The bank suffix says whose profit it is
                     // - a union-affiliated club's insurance settles to the

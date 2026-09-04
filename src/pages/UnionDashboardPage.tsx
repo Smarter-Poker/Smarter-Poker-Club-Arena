@@ -8,7 +8,8 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useUnionRouteId } from '../hooks/useUnionRouteId';
 import { supabase } from '../lib/supabase';
 import { unionApi } from '../services/UnionApiService';
 import { masterBus } from '../core/MasterBus';
@@ -155,7 +156,7 @@ interface SettlementPeriod {
 export default function UnionDashboardPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { unionId: routeUnionId } = useParams<{ unionId?: string }>();
+  const { unionId: routeUnionId, unionRef } = useUnionRouteId();
   const { user } = useAuthUser();
 
   const [tab, setTabState] = useState<UnionTab>(() => requestedUnionTab(searchParams.get('tab')));
@@ -1099,7 +1100,7 @@ export default function UnionDashboardPage() {
           </div>
           <div className="admin-header-actions">
             <button
-              onClick={() => unionId && navigate(`/unions/${unionId}/games`)}
+              onClick={() => unionId && navigate(`/unions/${unionRef || unionId}/games`)}
               className="admin-btn admin-btn-primary"
               disabled={!unionId}
             >

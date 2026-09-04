@@ -189,6 +189,46 @@ jobs:
           #
           # NEVER bring the branch push back. A new reader of this log gets the
           # summary or a pull request comment, not a ref.
+      # ── ARM AUTO-MERGE HERE, NOT IN A SWEEP ──────────────────────────────
+      #
+      # Measured 2026-09-04: pull requests sat 9.6, 3.6, 1.8 and 1.9 minutes
+      # AFTER every check had already gone green. That is dead time - nothing
+      # is running, nothing is being decided.
+      #
+      # The cause is above, and this file already admits it: "opened with
+      # GITHUB_TOKEN (sweep must rescue events)". **A pull request created with
+      # GITHUB_TOKEN does not fire `pull_request` workflows** - GitHub blocks
+      # that to prevent a workflow triggering itself. So agent-autopilot's
+      # `pull_request: opened` job never runs for these, and the PR waits for
+      # the next `*/30` sweep: an average of fifteen minutes.
+      #
+      # Arming it here removes the dependency on the event entirely. GitHub
+      # then merges the instant the required checks pass, which is what
+      # auto-merge is for. The sweep stays as the net for anything this misses.
+      #
+      # This does NOT weaken a gate: auto-merge still waits for every required
+      # check, and a red check never merges.
+      - name: Arm squash auto-merge immediately
+        if: always()
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -uo pipefail
+          NUM=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+          if [ -z "$NUM" ] || [ "$NUM" = "null" ]; then
+            echo "no open PR for $BRANCH - nothing to arm."; exit 0
+          fi
+          if gh pr merge "$NUM" --repo "$REPO" --squash --auto 2>/tmp/am.log; then
+            echo "auto-merge armed on #$NUM - it will land the moment the required checks pass."
+          else
+            # Not fatal. A draft PR, a clean-status repo, or a token without the
+            # scope all land here, and the */30 sweep still catches it.
+            echo "could not arm auto-merge on #$NUM (the sweep remains the net):"
+            cat /tmp/am.log || true
+          fi
+
           {
             echo '### Agent Open PR'
             echo

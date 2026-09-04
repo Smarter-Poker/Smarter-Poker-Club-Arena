@@ -426,6 +426,39 @@ jobs:
         if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
+      # 2026-09-04: content-addressed cache for scripts/optimize-dist-media.mjs,
+      # which was 85.7s of this job's 120s build. Same key shape as ci.yml, but
+      # a different cache namespace: this job runs Node 22 and CI runs Node 20,
+      # and sharp's version is part of every entry key anyway, so nothing is
+      # shared across the two by accident.
+      - name: Cache optimized dist media
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/dist-media
+          key: >-
+            dist-media-publish-v1-${{ runner.os }}-${{ hashFiles('public/**/*.png',
+            'public/**/*.jpg', 'public/**/*.jpeg', 'public/**/*.webp',
+            'src/assets/**', 'scripts/optimize-dist-media.mjs') }}
+          restore-keys: dist-media-publish-v1-${{ runner.os }}-
+
+      # This job runs the FULL `npm run build`, `tsc -b` included, while
+      # ci.yml's two build jobs run `build:ci` without it. That asymmetry is
+      # deliberate: the tree that actually reaches players is typechecked
+      # before it ships, and the throwaway PR-head builds are not, because the
+      # required `TypeScript Check` job has already checked that same tree.
+      #
+      # SENTRY_AUTH_TOKEN lives HERE now, and only here (moved 2026-09-04).
+      # The sentry-vite-plugin activates on
+      # `NODE_ENV === 'production' && SENTRY_AUTH_TOKEN`, which was true in
+      # ci.yml's build - the bundle that is thrown away - and false in this
+      # one, the bundle that ships. So maps were uploaded for an artifact no
+      # player ever loads, no map was ever uploaded for the shipped sha, and
+      # `filesToDeleteAfterUpload` never ran on this path, which is why 267
+      # `.map` files (27MB) went out to players on every deploy. The release
+      # name is now `club-arena@<sha>` on both sides - the plugin used to tag
+      # `club-arena@1.0.1` from npm_package_version while SentryInit.ts
+      # reported `club-arena@${VITE_APP_VERSION}`, so even a successful upload
+      # could not have symbolicated anything.
       - name: Build Club Arena
         env:
           NODE_ENV: production
@@ -437,7 +470,29 @@ jobs:
           VITE_SENTRY_DSN: 'https://842977a65e398b038728a05e8d892089@o4510810580779008.ingest.us.sentry.io/4510816835600384'
           VITE_APP_VERSION: ${{ needs.publish-needed.outputs.target_sha }}
           VITE_ONESIGNAL_APP_ID: '2fde0e83-cd01-4f93-a9a0-9be6cfe36e8c'
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          # Verified 2026-04-23 via the Sentry API: the live org is
+          # `smarter-software-inc`, the CA project is `javascript-react`.
+          SENTRY_ORG: smarter-software-inc
+          SENTRY_PROJECT: javascript-react
         run: npm run build
+
+      # Belt to the plugin's braces. `filesToDeleteAfterUpload` only runs when
+      # the upload SUCCEEDS, and the plugin is configured with an errorHandler
+      # that warns rather than failing the build - correct, because a Sentry
+      # outage must not stop a deploy, but it means a failed upload would ship
+      # every source map to players. Maps are for Sentry's server side; nothing
+      # in the browser needs them. This step is unconditional and idempotent.
+      - name: Source maps go to Sentry, never to players
+        run: |
+          BEFORE=$(find dist -name '*.map' | wc -l | tr -d ' ')
+          find dist -name '*.map' -delete
+          AFTER=$(find dist -name '*.map' | wc -l | tr -d ' ')
+          echo "source maps stripped from dist: $BEFORE removed, $AFTER remaining"
+          if [ "$AFTER" != "0" ]; then
+            echo "::error::source maps survived the strip - refusing to publish them"
+            exit 1
+          fi
 
       # Build provenance: record the commit this dist was actually built from,
       # inside the bundle. Three syncs on 2026-08-19 published a bundle built
@@ -614,6 +669,24 @@ jobs:
           rsync -az -e "ssh $SSHOPTS" dist/assets/ "$ORIGIN_USER@$ORIGIN_HOST:$ORIGIN_ROOT/pool/assets/"
           rsync -az -e "ssh $SSHOPTS" dist/fonts/  "$ORIGIN_USER@$ORIGIN_HOST:$ORIGIN_ROOT/pool/fonts/"
           $SSH "set -e; cd $ORIGIN_ROOT && ln -sfn $ORIGIN_ROOT/releases/$SHA current.tmp && mv -Tf current.tmp current && ls -1dt releases/*/ | tail -n +$((KEEP_RELEASES+1)) | xargs -r rm -rf && find pool -type f -mtime +30 -delete && readlink current"
+          # THE POOL STILL HOLDS OLD SOURCE MAPS (added 2026-09-04).
+          #
+          # The build step above strips every .map from dist/ now, so no new
+          # one can reach the origin. But the pool is ADDITIVE by design and
+          # age-pruned at 30 days, so every map published before that fix keeps
+          # being served for up to a month - 267 files, 27MB, of readable
+          # source, per deploy, going back weeks.
+          #
+          # Deleting them from the pool is safe in a way that deleting anything
+          # else from it is NOT, and the distinction is the whole reason this is
+          # a separate line rather than a --delete on the rsync above: a player
+          # mid-hand asks for a hashed CHUNK, never for its map. A .map is
+          # fetched only by devtools, and only when a human opens them. Nothing
+          # a running app loads can 404 because of this.
+          #
+          # Idempotent and self-limiting: once the pool is clean it matches
+          # nothing and costs one find per publish.
+          $SSH "set -e; cd $ORIGIN_ROOT && N=\$(find pool -type f -name '*.map' | wc -l) && find pool -type f -name '*.map' -delete && echo \"source maps removed from the additive pool: \$N\""
 
       - name: Verify the origin serves this bundle
         if: steps.verdict.outputs.verdict == 'publish'

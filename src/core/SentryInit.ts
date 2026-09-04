@@ -96,7 +96,18 @@ async function loadAndInitSentry(): Promise<SentrySurface | null> {
     Sentry.init({
       dsn,
       environment,
-      release: `club-arena@${import.meta.env.VITE_APP_VERSION || '1.0.0'}`,
+      // The release name MUST equal the one sentry-vite-plugin uploads maps
+      // under, or no event can be symbolicated. Both are
+      // `club-arena@${VITE_APP_VERSION}` now, and the publisher sets that to
+      // the sha it is shipping.
+      //
+      // The fallback says `unknown`, not `1.0.0` (changed 2026-09-04). A build
+      // with no VITE_APP_VERSION has no maps uploaded for it and never will -
+      // that is a broken build, not version one. Reporting `1.0.0` made it
+      // indistinguishable from a real release in the Sentry UI, so the one
+      // symptom of a misconfigured publish looked like ordinary traffic. This
+      // way the release list says so.
+      release: `club-arena@${import.meta.env.VITE_APP_VERSION || 'unknown'}`,
 
       integrations: [
         Sentry.reactRouterV6BrowserTracingIntegration({

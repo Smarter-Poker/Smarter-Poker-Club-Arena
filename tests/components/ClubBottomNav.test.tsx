@@ -167,7 +167,7 @@ describe('ClubBottomNav approved footer contract', () => {
     await renderAt('/', CLUB);
 
     const artwork = screen.getByRole('presentation');
-    expect(artwork).toHaveAttribute('src', '/images/club-footer/club-arena-footer.webp');
+    expect(artwork).toHaveAttribute('src', '/images/club-footer/club-arena-footer-v2.webp');
     expect(artwork).toHaveAttribute('width', '1916');
     expect(artwork).toHaveAttribute('height', '256');
   });

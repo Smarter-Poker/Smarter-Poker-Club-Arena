@@ -56,3 +56,20 @@ footer does once it exists.
 Three new cases in `tests/components/ClubBottomNav.test.tsx`: it starts visible
 and drops travelling down and returns travelling up; it is always present at
 the top of the page; and it ignores the jitter inside a momentum scroll.
+
+## Two things CI and the cache taught this branch
+
+**`club-arena-footer-v2.webp`.** `public/sw-bus.js` keeps `MEDIA_CACHE`
+deliberately unversioned across deploys and serves images
+stale-while-revalidate, only really revalidating after six hours; the origin
+also sends `max-age=2592000`. The transparent frame therefore shipped to a URL
+every returning player already had cached opaque, and Dan kept seeing black
+corners against a build that had replaced them. The stylesheet's own comment
+names the pattern (`btn-hamburger-v4.png`): a new filename is the one thing the
+cache cannot answer for.
+
+**`scripts/ci/entry-chunk-baseline.json`.** `useHideFooterOnScroll` is imported
+by `ClubBottomNav`, which is in the app shell, so it lands in the entry chunk
+by construction. The guard is right to ask; the answer is that the footer is on
+every page and its behaviour cannot be lazy. Baseline moved by one module and
+about 1kB gzipped.

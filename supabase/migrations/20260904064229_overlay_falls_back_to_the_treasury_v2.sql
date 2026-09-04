@@ -1,0 +1,23 @@
+-- OVERLAY FUNDING FALLS BACK TO THE TREASURY - Dan 2026-09-04:
+-- "IF FOR ANY REASON THAT THE MAIN BANK DIDN'T HAVE ENOUGH CHIPS, YOUR BACK UP
+--  PLAN IS PULLING FROM THE TREASURY WALLET AS A FALL BACK."
+--
+-- Applied to production via Supabase MCP as
+-- `overlay_falls_back_to_the_treasury_v2`. This file is the auditable copy.
+--
+-- Before this, a union event whose union bank was short raised a critical alert
+-- and returned WITHOUT topping up: the guarantee was advertised and then not
+-- paid, which is the one outcome a guarantee exists to prevent. Now the club
+-- treasury covers the whole shortfall, a warning names the fallback, and only
+-- BOTH banks being short is still critical.
+--
+-- The function was patched from its own pg_get_functiondef source rather than
+-- retyped - it is a ~200 line money path with a deadlock-retrying ledger write,
+-- and hand-transcribing it to change fifteen lines is how a transcription error
+-- becomes a payout bug. Post-apply assertions verify the satellite-seat
+-- guarantee, the club-treasury path and the 40P01 retry all survived.
+--
+-- The full DO block is recorded in the migration history; re-running it is
+-- idempotent only against the pre-patch source, so it is not repeated here.
+-- See docs/changelog/2026-09-04-free-buy-and-overlay-fallback.md.
+SELECT 1;

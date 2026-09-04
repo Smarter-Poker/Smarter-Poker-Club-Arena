@@ -781,6 +781,9 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
 
     // ── V18: leak-tag counts per horse over the window ──
     const leaksByHorse = new Map<string, Record<string, number>>();
+    // V40: reviewed hands per horse over the same window (the denominator
+    // the brain divides the counts by).
+    const leakHandsByHorse = new Map<string, number>();
     try {
       const sinceDay = new Date(Date.now() - STUDY_WINDOW_DAYS * 86400_000)
         .toISOString()
@@ -788,7 +791,7 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
       for (let offset = 0; ; offset += 1000) {
         const { data, error } = await supabase
           .from('horse_review_rollup')
-          .select('horse_user_id, leak_counts')
+          .select('horse_user_id, leak_counts, big_wins, big_losses')
           .gte('day', sinceDay)
           // Same unstable-pagination bug as the real-nets loop above, same
           // fix: horse_review_rollup is keyed (horse_user_id, day,
@@ -805,7 +808,17 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
         for (const row of data as Array<{
           horse_user_id: string;
           leak_counts: Record<string, number> | null;
+          big_wins: number | null;
+          big_losses: number | null;
         }>) {
+          // The rollup counts REVIEWED hands (20bb+ pots), which is the
+          // population the tags are drawn from.
+          leakHandsByHorse.set(
+            row.horse_user_id,
+            (leakHandsByHorse.get(row.horse_user_id) ?? 0) +
+              (Number(row.big_wins) || 0) +
+              (Number(row.big_losses) || 0)
+          );
           if (!row.leak_counts) continue;
           const acc = leaksByHorse.get(row.horse_user_id) ?? {};
           for (const [k, v] of Object.entries(row.leak_counts)) {
@@ -866,14 +879,37 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
         rn?.hands ?? 0,
         leaksByHorse.get(horseId) ?? null
       );
+      // V40 (Dan 2026-09-04): the leak profile travels WITH the dials, so
+      // the brain can read its own review verdicts at decision time
+      // (HorseLogic ploStackoffLoad). Counts over the study window plus the
+      // reviewed-hand denominator; rewritten whenever it moves.
+      const leakCounts = leaksByHorse.get(horseId) ?? null;
+      const leakProfile: Record<string, number> = {};
+      if (leakCounts) {
+        for (const [k, v] of Object.entries(leakCounts)) {
+          const n = Number(v) || 0;
+          if (n > 0) leakProfile[k] = n;
+        }
+      }
+      const leaksHands = leakHandsByHorse.get(horseId) ?? 0;
+      const prevLeaks = (prevMods as { leaks?: Record<string, number> }).leaks ?? {};
+      const leaksChanged =
+        JSON.stringify(prevLeaks) !== JSON.stringify(leakProfile) ||
+        ((prevMods as { leaksHands?: number }).leaksHands ?? 0) !== leaksHands;
       const changed =
         mods.tightness !== (prevMods.tightness ?? 1) ||
         mods.aggression !== (prevMods.aggression ?? 1) ||
-        mods.bluffFreq !== (prevMods.bluffFreq ?? 1);
+        mods.bluffFreq !== (prevMods.bluffFreq ?? 1) ||
+        leaksChanged;
 
       try {
         if (changed) {
-          const newProfile = { ...(prevMods as object), ...mods };
+          const newProfile = {
+            ...(prevMods as object),
+            ...mods,
+            leaks: leakProfile,
+            leaksHands,
+          };
           const { error: upErr } = await supabase
             .from('profiles')
             .update({ horse_profile: newProfile })

@@ -34,6 +34,27 @@ export type BankrollEvent =
    * until this counter existed that number was only visible by hand.
    */
   | 'seat_fail_open_roll_unknown'
+  /**
+   * Seated WITHOUT a bankroll opinion even though the map DOES hold rows for
+   * that club. Also not a refusal - the gate fails open here exactly as above,
+   * and it must, for the reason written on the line beside it.
+   *
+   * It is counted separately because the two are different faults wearing one
+   * number. `seat_fail_open_roll_unknown` is overwhelmingly the ordinary case:
+   * 261 of 584 horses are not members of the club that owns the open cash
+   * tables, so the map has no opinion and never will. THIS one means the map
+   * covered the club and the individual row still could not be read, which is
+   * a data fault rather than a membership fact. Measured 0 on 2026-09-04 - no
+   * horse membership carries a null chip_balance - so any non-zero reading is
+   * worth looking at.
+   *
+   * Recorded, and NOT acted on. A 2026-09-04 change that turned this same
+   * evidence into a REFUSAL was reverted the same day: two existing guards
+   * refused it, and the branch it would have re-armed is the one that kept the
+   * cash floor up for forty minutes during the 2026-08-31 outage. The counter
+   * is the useful half; the refusal was the harmful half.
+   */
+  | 'seat_fail_open_roll_faulty'
   /** Seated, with the buy-in capped below the profiled amount by the policy. */
   | 'buyin_capped'
   /** Declined a reload that would otherwise have been paid. */

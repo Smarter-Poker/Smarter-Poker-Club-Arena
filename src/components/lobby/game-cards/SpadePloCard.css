@@ -1,0 +1,39 @@
+/* PLO spade console (spade-plo-premium-v1). Positions come from
+   SpadePloCard.tsx's coordinate map; typography only. The master is set in
+   the same condensed face as the NLH spade card. */
+
+.agc-spade-plo__title {
+  align-items: center;
+}
+
+.agc-spade-plo__title .agc-layered__text--title {
+  --size: 7.6cqw;
+  letter-spacing: -0.03em;
+}
+
+.agc-spade-plo .agc-layered__text--subtitle {
+  --size: 3.1cqw;
+  letter-spacing: 0.1em;
+}
+
+.agc-spade-plo__value {
+  place-items: center;
+}
+
+.agc-spade-plo__value .agc-layered__text--value {
+  --size: 7cqw;
+}
+
+.agc-spade-plo__value .agc-layered__text--value-sm {
+  --size: 5.4cqw;
+}
+
+.agc-spade-plo .agc-layered__status-text {
+  --size: 4.4cqw;
+  letter-spacing: 0.06em;
+}
+
+.agc-spade-plo .agc-layered__action-text {
+  --size: 5.2cqw;
+  letter-spacing: 0.03em;
+}

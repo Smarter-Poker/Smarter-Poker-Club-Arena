@@ -11,6 +11,11 @@
     "fn_ca_can_manage_agents",
     "fn_ca_agent_payables",
     "fn_ca_ban_club_player",
-    "ca_club_tables"
-  ]
+    "ca_club_tables",
+    "trg_agent_commission_rollup_insert",
+    "trg_agent_commission_rollup_change",
+    "fn_agent_commission_rollup_recompute",
+    "fn_rebuild_agent_commission_rollup"
+  ],
+  "tables": ["agent_commission_unsettled_rollup"]
 }

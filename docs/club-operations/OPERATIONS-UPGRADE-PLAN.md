@@ -355,6 +355,12 @@ offered only when the viewer can see the flag, and relabels the CSV, the
 "See All" count and the attribution caption. Dan can remove it outright; it is
 one `useState`.
 
+Verification walk on production (signed in, 404 px) found a phase 3 defect:
+the Payouts tab's `fn_ca_agent_payables` scanned every unsettled commission
+row (499,933, doubling daily) and took 8,870 ms, or failed. Replaced by a
+trigger-maintained rollup (`20260904170000`), 107 ms after. Phase 3's
+D-04 in the handoff is closed by this.
+
 Still open from this list: the Time Range filter still does not reach the six
 metric cards (they are labelled Today / This Week and the bar now says so);
 Tournaments remains member-visible by design (the same information is on the

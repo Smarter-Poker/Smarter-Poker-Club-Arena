@@ -605,9 +605,20 @@
 .hdm-run {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 6px 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+/* Who won this board, with what (winners_by_board, 2026-09-04). */
+.hdm-run__winner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.78);
 }
 
 .hdm-run__badge {

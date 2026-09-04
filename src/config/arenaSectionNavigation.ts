@@ -68,7 +68,16 @@ function isWithin(pathname: string, roots: readonly string[]): boolean {
  * Club routes already own a fixed, club-aware rail; immersive table routes
  * bypass AppLayout; Notifications deliberately remains flush to the header.
  */
-export function getArenaSectionNavigation(pathname: string): ArenaSectionNavigation | null {
+/** What the caller knows that a path alone cannot say. */
+export interface ArenaSectionOptions {
+  /** fn_can_create_union said yes for this account (see useCanCreateUnion). */
+  canCreateUnion?: boolean;
+}
+
+export function getArenaSectionNavigation(
+  pathname: string,
+  opts?: ArenaSectionOptions
+): ArenaSectionNavigation | null {
   const current = cleanPath(pathname);
 
   if (
@@ -123,7 +132,10 @@ export function getArenaSectionNavigation(pathname: string): ArenaSectionNavigat
       label: 'Union Network',
       items: [
         { label: 'Directory', path: '/unions' },
-        { label: 'Create Union', path: '/unions/create' },
+        /* Create Union is an allowlisted door (Dan 2026-09-04). The rail is a
+           pure function of the path, so the caller passes what it knows;
+           absent an explicit yes, the entry is not offered. */
+        ...(opts?.canCreateUnion ? [{ label: 'Create Union', path: '/unions/create' }] : []),
       ],
     };
   }

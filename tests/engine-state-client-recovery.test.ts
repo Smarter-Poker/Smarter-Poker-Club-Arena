@@ -169,6 +169,40 @@ describe('EngineStateClient — close codes that are not all the same', () => {
     expect(FakeWebSocket.instances.length).toBeGreaterThan(before);
     c.disconnect();
   });
+
+  it('and says IDLE, not RECONNECTING, the whole time the table is missing (2026-09-04)', async () => {
+    // Measured on production: a table the engine had closed sat under
+    // "Reconnecting To The Table" for as long as the tab was open. The 4404
+    // handler set 'idle' and scheduleReconnect() overwrote it one line later
+    // with 'reconnecting', on every retry, forever.
+    const { c, statuses } = client();
+    c.connect();
+    await flush();
+    live()._open();
+    await flush();
+    statuses.length = 0;
+
+    live()._serverClose(4404);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(statuses).toContain('idle');
+    expect(statuses).not.toContain('reconnecting');
+    expect(statuses).not.toContain('failed');
+
+    // The table comes back: the flag clears and a normal connection reports.
+    // Walk forward to the next attempt's fresh CONNECTING socket (the ladder
+    // is on 30s+jitter steps and each attempt's handshake times out at 15s).
+    for (let i = 0; i < 60 && live().readyState !== 0; i++) {
+      await vi.advanceTimersByTimeAsync(1_000);
+    }
+    expect(live().readyState).toBe(0);
+    live()._open();
+    await flush();
+    // Through the mux, the facade opens on the server's SUBSCRIBED.
+    live()._frame({ type: 'SUBSCRIBED', tableId: TABLE });
+    await flush();
+    expect(statuses[statuses.length - 1]).toBe('connected');
+    c.disconnect();
+  });
 });
 
 describe('EngineStateClient — a token that will not load', () => {

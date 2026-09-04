@@ -363,7 +363,11 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
         # touched the changelog. Docs and data cannot call anything.
         *.md|*.markdown|*.txt|*.json|*.sql|*.lock) continue ;;
       esac
-      if grep -qE 'supabase\.auth\.getUser\(\)' "$f" 2>/dev/null; then
+      # 2026-09-04: match CODE, not prose. This grep blocked a push whose
+      # only hit was a docblock QUOTING the pattern to explain why one module
+      # legitimately asks GoTrue (src/lib/sessionRevoked.ts). Strip // and
+      # /* */ comments before looking; a comment cannot call anything.
+      if sed -E 's://.*$::' "$f" 2>/dev/null | perl -0pe 's{/\*.*?\*/}{}gs' | grep -qE 'supabase\.auth\.getUser\(\)'; then
         echo "[club-arena pre-push] BLOCKED: $f calls supabase.auth.getUser()"
         echo "                      use readLocalSession() from src/lib/authUtils instead."
         FAIL=1

@@ -1244,6 +1244,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.currentHandContributions.clear(); // Weighted contributed rake (Dan 2026-08-29): reset per-hand eligible contributions
     this.currentHandReturnedUncalled.clear(); // ... and the returned-uncalled audit map
     this.currentHandInsuranceSettlements = []; // Bible V8 §4.19: Reset insurance settlements
+    this.currentHandInsuranceNet = 0; // chip standard 2026-09-04: declared to the stack write
     this.currentHandCashoutRedirects = new Map(); // EV CASHOUT 2026-08-28: reset per hand
     this.currentHandShowdownResults = []; // BBJ: Reset showdown results for new hand
     this.currentHandTimerLog = []; // Bible V8 §2.15: Reset timer log

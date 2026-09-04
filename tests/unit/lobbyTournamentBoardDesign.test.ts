@@ -51,7 +51,7 @@ describe('Club Arena Tournament Board lobby design', () => {
        2026-09-03: "THERE IS A BLACK BARCKGROUND BENIND THE SHARK CLUB LOGO
        THAT NEEDS TO BE REMOVED". Masking a painted box on a textured ground
        only ever swaps one visible rectangle for another. */
-    expect(identityCard).toContain('club-identity-template-no-level-v5.png');
+    expect(identityCard).toContain('club-identity-template-no-level-v6.png');
     expect(identityCard).not.toMatch(/className="club-identity__logo-mask"/);
     expect(identityCardCss).not.toMatch(/^\.club-identity__logo-mask\s*\{/m);
     /* Dan 2026-09-01, verbatim: "ANYTIME A NEW CLUB IS CREATED, IT NEEDS TO
@@ -99,7 +99,8 @@ describe('Club Arena Tournament Board lobby design', () => {
        overflow, which is why it kept reading low. */
     expect(identityCardCss).toContain('top: 9.2%');
     expect(identityCardCss).toContain('height: 18%');
-    expect(identityCardCss).toContain('top: 26%');
+    /* Dan 2026-09-03: the alias sits lower, clear of the name band. */
+    expect(identityCardCss).toContain('top: 31.5%');
 
     expect(identityCard).toContain('Copy Referral Link');
     expect(identityCardCss).toContain('aspect-ratio: 1650 / 953');
@@ -159,7 +160,10 @@ describe('Club Arena Tournament Board lobby design', () => {
        anchored `bottom: 15%` and the share to the painted frame at 65.19%, so
        they were never actually on the same line. */
     expect(identityDeclarations).toMatch(
-      /\.club-identity__playing\s*\{[^}]*top:\s*65\.19%[^}]*height:\s*15\.88%/s
+      /* Dan 2026-09-03: "243 PLAYING NOW NEEDS TO BE CENTERED TO THE COPY
+         ICON" - the share box's centre is 74.35%, so this box now starts at
+         66.41% (was 65.19%) and shares that centre. */
+      /\.club-identity__playing\s*\{[^}]*top:\s*66\.41%[^}]*height:\s*15\.88%/s
     );
     expect(identityDeclarations).not.toMatch(/\.club-identity__playing\s*\{[^}]*bottom:\s*15%/s);
 
@@ -191,7 +195,11 @@ describe('Club Arena Tournament Board lobby design', () => {
        percentages, and the 44px thumb target is an invisible `::after` band
        that paints nothing and so cannot move anything. */
     expect(identityCardCss).toMatch(
-      /\.club-identity__ids\s*\{[^}]*top:\s*47\.06%[^}]*height:\s*21\.46%/s
+      /* Dan 2026-09-03: "CLUB ID AND PLAYER ID + ICON'S NEED TO BE MOVED UP."
+         The bay rides at 43.5% / 20% now (rows centred 48.5% and 58.5%), and
+         the icons are layers pinned to those same centres rather than pixels
+         in the shell, so the pin is on the bay, not the artwork. */
+      /\.club-identity__ids\s*\{[^}]*top:\s*43\.5%[^}]*height:\s*20%/s
     );
     /* The share box moved on 2026-09-03, and this pin moves with it rather
        than being weakened. 75.92/65.19/9.68/15.88 was the frame PLUS its blue

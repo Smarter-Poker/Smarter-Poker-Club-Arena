@@ -158,6 +158,17 @@ export interface HandRecord {
      on every hand with a side pot — and it was presented to the recipient of a
      shared hand as fact. The row has always carried the true figure. */
   winners: HandWinner[];
+  /**
+   * WHO WON EACH RUN (2026-09-04, column hand_history.winners_by_board). One
+   * entry per (board, winner): the board index (1-based), the pre-rake share
+   * and the hand name ON THAT BOARD. Empty on single-board hands and on rows
+   * that predate the column, in which case the surfaces fall back to the
+   * aggregate `winners` and say so.
+   */
+  winners_by_board: { board: number; user_id: string; amount: number; hand_name?: string }[];
+  /** Rake taken from the pot, and the jackpot drop. Shown, not hidden. */
+  rake: number;
+  bbj_fee: number;
   game_type: string;
   stakes: string;
 }
@@ -210,19 +221,40 @@ class HandHistoryServiceClass {
    * (5.1M rows in prod) with JSONB columns `players`, `actions`, `winners`. Rewrote to filter
    * by players JSONB containing the requested userId, then map JSONB → HandRecord inline.
    */
-  async getPlayerHands(userId: string, limit = 50): Promise<HandRecord[]> {
+  async getPlayerHands(
+    userId: string,
+    limit = 50,
+    opts: {
+      /**
+       * THE TABLE YOU ARE SITTING AT (Dan 2026-09-04: "doesn't display the
+       * correct hands"). Without this, the live table's Previous Hand and
+       * Hand History showed the player's last 50 hands ANYWHERE - other
+       * stakes, other clubs, tournaments - interleaved by insert time. The
+       * standalone Hand History page is the cross-table view and passes
+       * nothing; a live table always passes its own id.
+       */
+      tableId?: string | null;
+    } = {}
+  ): Promise<HandRecord[]> {
     // BUG 021 Layer D (2026-04-16): Supabase JS `.contains('column', [{key: val}])` serializes
     // the object literal with unquoted keys, producing invalid JSON in PostgREST. Symptom:
     //   {"code":"22P02","details":"Expected string or '}', but found '['","message":"invalid input syntax for type json"}
     // Fix: pass a pre-stringified JSON string, which Supabase JS URL-encodes verbatim.
     const containmentJson = JSON.stringify([{ userId }]);
-    const { data, error } = await supabase
+    let query = supabase
       .from('hand_history')
       .select(
-        'id, created_at, started_at, table_id, hand_number, pot_size, community_cards, rit_boards, players, actions, winners, game_variant, small_blind, big_blind, rake_amount, bbj_amount, button_seat, hole_cards, showdown, pots'
+        'id, created_at, started_at, table_id, hand_number, pot_size, community_cards, community_cards2, community_cards3, rit_boards, players, actions, winners, winners_by_board, game_variant, small_blind, big_blind, rake_amount, bbj_amount, button_seat, hole_cards, showdown, pots'
       )
-      .contains('players', containmentJson)
-      .order('created_at', { ascending: false })
+      .contains('players', containmentJson);
+    if (opts.tableId) query = query.eq('table_id', opts.tableId);
+    const { data, error } = await query
+      /* PLAY ORDER, NOT INSERT ORDER (Dan 2026-09-04: "un organized"). This
+         sorted by created_at, which is when the ROW landed: the writer's retry
+         queue drains failed inserts minutes later, so during any database
+         blip hands landed out of order and stayed that way. hand_number is
+         globally monotonic (GLOBAL_HAND_NUMBER_FLOOR) and is the play order. */
+      .order('hand_number', { ascending: false })
       .limit(limit);
 
     if (error || !data) {
@@ -558,7 +590,8 @@ class HandHistoryServiceClass {
       serial_number: row.id,
       table_id: row.table_id,
       table_name: 'Table',
-      played_at: row.created_at,
+      // Play time, not insert time: a retry-queued row lands minutes later.
+      played_at: (row as any).started_at || row.created_at,
       hand_number: Number(row.hand_number) || 1,
       total_hands: 1,
       main_pot: Number(row.pot_size) || 0,
@@ -578,6 +611,18 @@ class HandHistoryServiceClass {
       players,
       actions,
       winners,
+      winners_by_board: Array.isArray((row as any).winners_by_board)
+        ? ((row as any).winners_by_board as any[])
+            .filter((w) => w && typeof w === 'object' && w.userId)
+            .map((w) => ({
+              board: Number(w.board) || 1,
+              user_id: String(w.userId),
+              amount: Number(w.amount) || 0,
+              hand_name: typeof w.handName === 'string' ? w.handName : undefined,
+            }))
+        : [],
+      rake: Number(row.rake_amount) || 0,
+      bbj_fee: Number((row as any).bbj_amount) || 0,
       game_type: (row.game_variant || 'nlh').toUpperCase(),
       stakes,
     };

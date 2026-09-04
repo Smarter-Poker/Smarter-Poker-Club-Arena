@@ -1,0 +1,3 @@
+# tests/one-mint-no-negatives-doors-closed.law.test.ts
+
+Chip standard Phase 3: the register follows the journal (a deferred constraint trigger on chip_ledger registers every mint and burn leg at commit, doors that write their own row are adopted not doubled, the opening baseline per estate is labelled as a baseline and sized so the register's net equals the meter's total, the diamond mint declares the Mint); every balance column the meter counts carries a validated CHECK (col >= 0); the seventeen legacy money doors with zero use and no caller are revoked from every client role and registered as closed, and the doors left open are named with their callers

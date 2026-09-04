@@ -10,6 +10,7 @@
     "fn_dispute_escalate",
     "fn_ca_can_manage_agents",
     "fn_ca_agent_payables",
-    "fn_ca_ban_club_player"
+    "fn_ca_ban_club_player",
+    "ca_club_tables"
   ]
 }

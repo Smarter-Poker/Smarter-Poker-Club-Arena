@@ -2,11 +2,12 @@ import type { ArenaGameCardActions, ArenaGameCardData } from './arenaGameCardTyp
 import { zoneText } from './arenaGameCardTypes';
 import {
   LayeredActionButton,
-  LayeredArt,
+  LayeredBuyIn,
   LayeredChassis,
   LayeredFitText,
   LayeredStatus,
   LayeredZoneBox,
+  splitBuyInRange,
   type LayeredCanvas,
   type LayeredZone,
 } from './layeredCard';
@@ -114,24 +115,17 @@ export function PloFourBayCard({
   data: ArenaGameCardData;
   actions: ArenaGameCardActions;
 }) {
-  const running = data.status === 'running';
   const buyIn = zoneText('buyIn', data.buyIn);
 
   return (
     <div className="agc-layered agc-plo-four-bay">
       <LayeredChassis src={PLO_FOUR_BAY_ASSETS.chassis} />
 
-      {running && (
-        <LayeredArt
-          canvas={C}
-          zone={PLO_FOUR_BAY_ZONES.liveDot}
-          src={PLO_FOUR_BAY_ASSETS.liveDot}
-        />
-      )}
-
+      {/* No live dot beside the title (Dan 2026-09-03: "remove the green dots
+          to the left of the titles"); the status pill carries the state. */}
       <LayeredZoneBox
         canvas={C}
-        zone={running ? PLO_FOUR_BAY_ZONES.title : PLO_FOUR_BAY_ZONES.titleNoDot}
+        zone={PLO_FOUR_BAY_ZONES.titleNoDot}
         name="title"
         className="agc-plo-four-bay__title"
       >
@@ -175,14 +169,25 @@ export function PloFourBayCard({
         value={zoneText('players', data.players)}
         tone="silver"
       />
-      <Bay
-        zone={PLO_FOUR_BAY_ZONES.buyIn}
+      <LayeredZoneBox canvas={C} zone={PLO_FOUR_BAY_ZONES.buyIn.label} name="buyInLabel">
+        <LayeredFitText
+          as="span"
+          text="Buy-In"
+          className="agc-layered__text--label agc-layered__text--blue"
+        />
+      </LayeredZoneBox>
+      <LayeredZoneBox
+        canvas={C}
+        zone={PLO_FOUR_BAY_ZONES.buyIn.value}
         name="buyIn"
-        label="Buy-In"
-        value={buyIn.includes('-') ? buyIn.replace(/\s*-\s*/, ' -\n') : buyIn}
-        tone="silver"
-        small={buyIn.length > 6}
-      />
+        className="agc-plo-four-bay__value"
+      >
+        <LayeredBuyIn
+          value={buyIn}
+          className={`agc-layered__text--silver${splitBuyInRange(buyIn) ? '' : ' agc-layered__text--value'}`}
+          lineClassName="agc-layered__text--value-sm"
+        />
+      </LayeredZoneBox>
 
       {actions.secondaryLabel && (
         <LayeredActionButton

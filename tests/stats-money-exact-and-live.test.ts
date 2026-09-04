@@ -22,6 +22,9 @@ const MIG = readFileSync(
   'utf8'
 );
 const PAGE = readFileSync(resolve(ROOT, 'src/pages/PlayerStatsPage.tsx'), 'utf8');
+// Phase 2 (2026-09-04) moved each tab's markup into its own lazy chunk.
+const TROPHIES_TAB = readFileSync(resolve(ROOT, 'src/pages/stats/TrophiesTab.tsx'), 'utf8');
+const OVERVIEW_TAB = readFileSync(resolve(ROOT, 'src/pages/stats/OverviewTab.tsx'), 'utf8');
 const FACTS = readFileSync(resolve(ROOT, 'src/services/StatsFactsService.ts'), 'utf8');
 
 const fn = (name: string): string => {
@@ -194,13 +197,18 @@ describe('one range, the page range', () => {
   }
 
   it('feeds the Trophy Room the all-time payload, never the windowed one', () => {
-    expect(PAGE).toMatch(/overall=\{allTimeStats\.overall\}/);
-    expect(PAGE).toMatch(/lifetimeHands=\{allTimeStats\.lifetime\.hands\}/);
-    expect(PAGE).not.toMatch(/<TrophyRoom overall=\{full\?\.overall\}/);
+    expect(TROPHIES_TAB).toMatch(/overall=\{allTimeStats\.overall\}/);
+    expect(TROPHIES_TAB).toMatch(/lifetimeHands=\{allTimeStats\.lifetime\.hands\}/);
+    expect(TROPHIES_TAB).not.toMatch(/<TrophyRoom overall=\{full\?\.overall\}/);
+    // The page hands the tab the all-time payload, not the windowed one.
+    expect(PAGE).toMatch(/allTimeStats=\{allTimeStats\}/);
+    expect(PAGE).toMatch(
+      /const allTimeStats: FullStats \| null = rangeKey === 'all' \? full : allTimeFetched/
+    );
   });
 
   it('captions the share card with the window it covers', () => {
-    expect(PAGE).toMatch(
+    expect(OVERVIEW_TAB).toMatch(
       /rangeLabel=\{rangeLabel === 'All' \? 'All Time' : `Last \$\{rangeLabel\}`\}/
     );
   });

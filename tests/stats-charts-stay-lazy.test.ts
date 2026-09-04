@@ -32,8 +32,33 @@ import { resolve } from 'node:path';
 const PAGE_PATH = resolve(__dirname, '../src/pages/PlayerStatsPage.tsx');
 const PAGE = readFileSync(PAGE_PATH, 'utf8');
 
-/** Source with block and line comments stripped, so prose cannot satisfy a match. */
-const CODE = PAGE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+/**
+ * ONE LAZY CHUNK PER TAB (Stats Page Programme phase 2, 2026-09-04). The tab
+ * markup moved out of the page into src/pages/stats/<Tab>Tab.tsx, each loaded
+ * with lazy(); the per-panel lazies live inside the tab that draws them. So
+ * the pins below read the page for what the page owns (the tab lazies, the
+ * print preload, no static chart imports) and the WHOLE graph, page plus
+ * tabs, for what used to be pinned on the page alone.
+ */
+const TAB_NAMES = [
+  'RakeTab',
+  'OverviewTab',
+  'PerformanceTab',
+  'PositionsTab',
+  'HandsTab',
+  'TrophiesTab',
+  'TournamentsTab',
+  'AnalysisTab',
+] as const;
+const TABS = TAB_NAMES.map((t) =>
+  readFileSync(resolve(__dirname, `../src/pages/stats/${t}.tsx`), 'utf8')
+);
+const strip = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+/** Page source with block and line comments stripped, so prose cannot satisfy a match. */
+const PAGE_CODE = strip(PAGE);
+/** The page and every tab chunk, comments stripped. */
+const CODE = [PAGE_CODE, ...TABS.map(strip)].join('\n');
 
 describe('PlayerStatsPage does not import recharts', () => {
   it('has no recharts import statement at all', () => {
@@ -44,6 +69,30 @@ describe('PlayerStatsPage does not import recharts', () => {
   it('does not statically import any recharts consumer', () => {
     for (const c of ['StatsCharts', 'EVLuckChart', 'BankrollTracker']) {
       expect(CODE).not.toMatch(new RegExp(`^import\\s+${c}\\s+from`, 'm'));
+    }
+  });
+});
+
+describe('every tab is its own lazy chunk', () => {
+  it.each(TAB_NAMES.map((t) => [t]))(
+    '%s is loaded with lazy(() => import(...)) by the page',
+    (tab) => {
+      expect(PAGE_CODE).toMatch(
+        new RegExp(`const ${tab}\\s*=\\s*lazy\\(\\(\\)\\s*=>\\s*import\\('./stats/${tab}'\\)`)
+      );
+      expect(PAGE_CODE).not.toMatch(new RegExp(`^import\\s+${tab}\\s+from`, 'm'));
+    }
+  );
+
+  it('the page no longer carries any tab markup', () => {
+    for (const marker of [
+      '<StatRow',
+      '<NemesisPanel',
+      '<StatsCharts',
+      '<TrophyRoom',
+      '<HoleCardHeatmap',
+    ]) {
+      expect(PAGE_CODE).not.toContain(marker);
     }
   });
 });
@@ -127,10 +176,17 @@ describe('the print dossier survives the lazy split', () => {
      * pass, not a network round trip, so without this the PDF captured the
      * Suspense fallbacks: a "Charts" heading followed by "Loading Charts...".
      */
-    expect(CODE).toMatch(
-      /await Promise\.all\(\[[\s\S]{0,320}StatsCharts[\s\S]{0,200}EVLuckChart[\s\S]{0,200}BankrollTracker/
+    expect(PAGE_CODE).toMatch(
+      /await Promise\.all\(\[[\s\S]{0,700}StatsCharts[\s\S]{0,200}EVLuckChart[\s\S]{0,200}BankrollTracker/
     );
-    expect(CODE).toMatch(/const printDossier = useCallback\(async \(\) =>/);
+    // ... and, since phase 2, the tab chunks themselves, or the dossier prints
+    // "Loading Section..." where a tab should be.
+    for (const tab of TAB_NAMES) {
+      expect(PAGE_CODE).toMatch(
+        new RegExp(`await Promise\\.all\\(\\[[\\s\\S]{0,700}import\\('./stats/${tab}'\\)`)
+      );
+    }
+    expect(PAGE_CODE).toMatch(/const printDossier = useCallback\(async \(\) =>/);
   });
 
   it('hands the charts `still` so recharts is not caught mid-draw', () => {

@@ -1,11 +1,12 @@
 {
-  "_owner": "fix/chip-std-phase-4 (chip standard Phase 4, the jackpot, 2026-09-04). Applied as 20260904210917 (4.3), 20260904211714 (4.2), 20260904211800 (ACLs). Second cut 20260904212347 (rounding residue).",
+  "_owner": "fix/chip-std-phase-4 (chip standard Phase 4, the jackpot, 2026-09-04). Applied as 20260904210917 (4.3), 20260904211714 (4.2), 20260904211800 (ACLs). Second cut 20260904212347 (rounding residue). Third cut 20260904213506 (auto-opened baselines).",
   "tables": ["ca_bbj_policy", "ca_bbj_bucket_moves", "ca_bbj_pool_snapshots", "ca_bbj_alloc_state"],
   "functions": [
     "fn_bbj_allocate",
     "fn_bbj_move_between_banks",
     "fn_bbj_reconcile",
-    "fn_bbj_reconcile_all"
+    "fn_bbj_reconcile_all",
+    "fn_bbj_open_pool_baseline"
   ],
   "columns": {
     "ca_bbj_policy": [

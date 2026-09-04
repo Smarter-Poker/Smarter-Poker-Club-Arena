@@ -181,6 +181,21 @@ describe('LAW 4: the jackpot has an opening balance', () => {
   });
 });
 
+describe('LAW 4b: a pool the meter has never seen opens its own balance', () => {
+  const d = find(/^\d{14}_phase_4_2_a_pool_the_meter_has_never_seen_opens_its_own_balance\.sql$/);
+  it('the opening balance is reconstructed from the banks and the journal, and every active pool is metered', () => {
+    expect(d).toMatch(
+      /CREATE OR REPLACE FUNCTION public\.fn_bbj_open_pool_baseline\(p_pool_id uuid\)/
+    );
+    expect(d).toMatch(/v_at := GREATEST\(v_created, COALESCE\(v_epoch, v_created\)\);/);
+    expect(d).toMatch(/round\(v_m - jm, 2\), round\(v_b - jb, 2\), round\(v_p - jp, 2\)/);
+    expect(d).toMatch(/PERFORM public\.fn_bbj_open_pool_baseline\(p\.id\);/);
+    expect(d).not.toMatch(
+      /AND EXISTS \(SELECT 1 FROM public\.ca_bbj_pool_snapshots x WHERE x\.pool_id = b\.id\)/
+    );
+  });
+});
+
 describe('LAW 5: Deep Stack Society is an estate', () => {
   it('the incident scope admits Deep Stack', () => {
     expect(a).toMatch(

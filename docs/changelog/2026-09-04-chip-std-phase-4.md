@@ -27,6 +27,16 @@ From that instant the identity is the journal's. `fn_bbj_reconcile(pool)` reads 
 
 After apply: `fn_bbj_conservation_check` -> `healthy true`, `lifetime_healthy false`, gap 73,367.70 (unchanged by every move above: conserved). First scheduled meter run 21:38 UTC.
 
+## The gate before Phase 5 - 21:35 UTC, everything re-verified
+
+Run 21:27-21:45 UTC over the whole phase. Every Phase 4 function exists once with the ACL it should (service only; the two stubs closed to every role), every table has RLS on and no browser grant, the registry has every door and drift is 0 except another agent's `fn_cash_seat_move_execute`; `check-definer-authorization`, `check-migrations-applied`, `check-chip-conservation`, `check-club-fk-indexes`, `check-horses-are-players` and the four law files (173 tests) green on the branch. Live: drops split 24.97 / 24.97 / 50.05 at the union pool and 50.05 / 24.98 / 24.98 at the club pool with the residue inside half a cent; 0 suspense legs and 0 ledger write failures since 21:09; the 15-minute repair ran at 21:30 with the residue-carrying allocator; the promo sweep carried the pivot correction to the union wallet; `fn_bbj_selftest_payout_conservation` passes with the new payout and reseed (full hit reseeds through a recorded move, partial hit leaves the reserve). The guard-drift watcher filed `guard-def-drift:fn_ca_is_midway_scope` for the deliberate scope change; resolved with the migration as correction.
+
+**Found in the review, fixed** (`20260904213506`): `fn_bbj_reconcile_all` only ran for pools that already had a snapshot, so a pool created after the epoch (the engine auto-creates one per new club or union) would have been skipped in silence. A pool the meter has never seen now opens its own baseline on first sight, reconstructed as the banks minus the journal since the later of its creation and the epoch, labelled auto-opened. Probed: a new pool with 8.00 of drops opened at 0/0/0 and its first snapshot reconciled.
+
+**The first scheduled meter run (21:38 UTC)** read the union pool to the cent (drops 149.50, sweeps 67.59, journal main +37.87 = 25.3%, unexplained 0.00 on every bank) and Deep Stack's pool at -0.13 / -0.06 / -0.06: exactly one 0.25 drop. A baseline artifact, not a leak: the opening rows carried the migration transaction's start as `taken_at` while their bank figures were read a few hundred milliseconds later, and one drop that began after the start and committed before the read was in both the opening figure and the first interval's journal. Corrected in the open (`20260904213928`): the opening balance moved by that drop with the reason on the row, the first snapshot re-derived to 0, the incident resolved with the migration as correction; later baselines are read in one statement, so it cannot recur. Epoch after: `unexplained_since_opening 0`.
+
+**Named, not fixed:** the World Hub's `pages/api/club-arena/bbj.js` reads `pool_amount` as the pool figure (a dead counter since the triple-bank split, never written by drops); the Club Arena client does not call that route.
+
 ## Left as is, with the reason
 
 - The engine still computes its own split and sends it (`bbj.ts`); the database ignores it. Harmless and inert; removing it is an engine deploy for no money effect, and the comment in `bbj_record_contribution` says which one decides.

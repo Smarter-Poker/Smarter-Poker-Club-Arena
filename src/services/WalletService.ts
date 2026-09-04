@@ -502,34 +502,58 @@ export const WalletService = {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Distribute promo chips to a player.
+   * Disburse promo chips to a player, through the one owner door.
    *
-   * ── SAME GRANT PROBLEM AS transferToUser (verified 2026-08-25) ────────────
-   * `distribute_promo_chips` is granted EXECUTE to `postgres` and
-   * `service_role` only, so this returns 42501 from any browser. Live call
-   * sites: AgentDashboardPage's promo control and PlayerSessionsPage's win-back
-   * button. `bulkDistributePromo` below loops over this one, so a bulk
-   * leaderboard payout reports every single row as failed.
+   * Dan, 2026-09-03: "PROMO FUNDS ARE PAID DIRECTLY TO CLUBS, OR PLAYERS
+   * DIRECTLY FROM THE UNION OWNER (OR CLUB OWNERS WITHOUT ANY UNION
+   * AFFILIATION)." So the promo float belongs to the union when the club is in
+   * one, and to the club itself when it is not; the database enforces that only
+   * that owner may spend it. The chips land as ORDINARY cashable chips, because
+   * promo chips are ordinary chips - they were raked out of the pots.
+   *
+   * This replaced `distribute_promo_chips`, which debited `agents.promo_balance`
+   * - a column no sweep has maintained since the promo sweep was written, and
+   * which is 0.00 estate-wide - and was granted to `service_role` only, so it
+   * returned 42501 from any browser. It never moved a chip.
    */
-  async distributePromo(agentId: string, playerId: string, amount: number): Promise<boolean> {
+  async disbursePromo(
+    clubId: string,
+    playerId: string,
+    amount: number,
+    note?: string
+  ): Promise<boolean> {
     if (amount <= 0) throw new Error('Amount must be positive');
 
-    const { data: promoData, error } = await retryAsync(
+    // The union holds the promo float for its member clubs; an unaffiliated
+    // club holds its own.
+    const { data: club, error: clubErr } = await supabase
+      .from('clubs')
+      .select('id, union_id')
+      .eq('id', clubId)
+      .maybeSingle();
+    if (clubErr) throw clubErr;
+    if (!club) throw new Error('Club not found');
+
+    const { data, error } = await retryAsync(
       () =>
-        supabase.rpc('distribute_promo_chips', {
-          p_agent_id: agentId,
-          p_player_id: playerId,
+        supabase.rpc('fn_promo_disburse', {
+          p_source_kind: club.union_id ? 'union' : 'club',
+          p_source_id: club.union_id ?? clubId,
+          p_target_kind: 'player',
+          p_target_id: playerId,
           p_amount: amount,
+          p_note: note ?? null,
+          p_club_id: clubId,
+          p_op_id: crypto.randomUUID(),
         }),
       3
     );
 
     if (error) throw error;
-    // Same refusal check as transferToUser (Cashier audit 2026-08-27, P1-7):
-    // a { success: false } body must not report as a paid distribution.
-    const promoParsed = promoData as { success?: boolean; error?: string } | null;
-    if (promoParsed && promoParsed.success === false) {
-      throw new Error(promoParsed.error || 'Promo distribution refused by the server');
+    // A { success: false } body must never report as a paid disbursement.
+    const parsed = data as { success?: boolean; error?: string } | null;
+    if (parsed && parsed.success === false) {
+      throw new Error(parsed.error || 'Promo disbursement refused by the server');
     }
 
     masterBus.emit('BALANCE_UPDATED', { source: 'promo', userId: playerId });
@@ -538,10 +562,21 @@ export const WalletService = {
   },
 
   /**
+   * @deprecated Kept so nothing calls the retired agent path by accident.
+   * Use `disbursePromo(clubId, playerId, amount)`.
+   */
+  async distributePromo(_agentId: string, _playerId: string, _amount: number): Promise<boolean> {
+    throw new Error(
+      'distributePromo is retired: promo is disbursed by the union owner, or by an unaffiliated ' +
+        'club owner, through WalletService.disbursePromo(clubId, playerId, amount).'
+    );
+  },
+
+  /**
    * Bulk promo distribution (leaderboard rewards, etc.)
    */
   async bulkDistributePromo(
-    agentId: string,
+    clubId: string,
     distributions: Array<{ playerId: string; amount: number }>
   ): Promise<{ success: number; failed: number }> {
     let success = 0;
@@ -549,7 +584,7 @@ export const WalletService = {
 
     for (const dist of distributions) {
       try {
-        await this.distributePromo(agentId, dist.playerId, dist.amount);
+        await this.disbursePromo(clubId, dist.playerId, dist.amount);
         success++;
       } catch (err) {
         reportError(err, 'WalletService.bulkDistributePromo', { playerId: dist.playerId });

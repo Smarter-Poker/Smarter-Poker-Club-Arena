@@ -23,6 +23,40 @@
   overflow: hidden;
 }
 
+/*
+ * THE PANEL IS FULL-SCREEN; THE GREETING WAS NOT (2026-09-03).
+ *
+ * Dan: "YOU CLICK ON ANY CLUB LOBBY AND THE PAGE GOES BLACK AFTER LOADING FOR
+ * A SPLIT SECOND."
+ *
+ * It was not a crash and it was not a blank render - it was this panel. The
+ * rule above makes the modal fill the viewport and `display: flex` is there so
+ * `.club-entry-message` (`flex: 1`) fills it back. But the shared Modal wraps
+ * whatever it is given in `.modal-content`, so that flex parent is NOT the
+ * greeting's parent, and the chain broke at the wrapper: measured live on the
+ * Midway Union lobby, the panel was 1,195px tall, `.modal-content` 1,192, and
+ * `.club-entry-message` collapsed to its own content at 338. The greeting sat
+ * in the top quarter and the other ~850px was empty dark panel over the whole
+ * lobby - which is exactly what "the page goes black" looks like.
+ *
+ * `.club-entry-message__body` already asks for `justify-content: center`; it
+ * simply never had the height to centre anything in. Handing `.modal-content`
+ * the same column stretch fixes it at the one link that was missing: measured
+ * again with this rule, the wrapper fills 1,144px, the body 952, and the club
+ * name lands at y=535 instead of y=132 - centred, as the body always intended.
+ *
+ * `min-height: 0` is load-bearing next to the wrapper's `overflow-y: auto`: a
+ * flex child defaults to `min-height: auto`, which refuses to shrink below its
+ * content and would let a long message push the panel past the viewport it was
+ * just told to fit inside.
+ */
+.club-entry-message-modal.modal-fullscreen > .modal-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .club-entry-message {
   position: relative;
   display: flex;

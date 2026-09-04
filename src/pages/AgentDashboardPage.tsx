@@ -1373,25 +1373,17 @@ export default function AgentDashboardPage() {
                         setProcessing(false);
                         return;
                       }
-                      // Resolve agent PK — distributePromo expects agents.id, NOT auth.users.id
+                      // Promo is disbursed by the owner of the float: the union
+                      // when this club is in one, the club itself when it is not.
+                      // WalletService.disbursePromo resolves that and the database
+                      // refuses anyone who is not that owner.
                       const resolvedClub = await resolveClubUUID(clubId || '');
-                      const { data: agentRow } = await retryFetch(
-                        () =>
-                          supabase
-                            .from('agents')
-                            .select('id')
-                            .eq('user_id', creditTarget)
-                            .eq('club_id', resolvedClub)
-                            .maybeSingle()
-                            .then((r) => r),
-                        { maxRetries: 2, isMountedRef: mountedRef }
+                      await WalletService.disbursePromo(
+                        resolvedClub,
+                        creditTarget,
+                        promoAmt,
+                        'Promo granted from the club dashboard'
                       );
-                      if (!agentRow?.id) {
-                        setError('Agent record not found for this club');
-                        setProcessing(false);
-                        return;
-                      }
-                      await WalletService.distributePromo(agentRow.id, creditTarget, promoAmt);
                       setSuccess(`Granted ${fmtChips(promoAmt)} promo chips!`);
                       setCreditTarget('');
                       setCreditAmount('');

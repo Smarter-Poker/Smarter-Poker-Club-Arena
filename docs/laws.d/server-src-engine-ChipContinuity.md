@@ -1,0 +1,3 @@
+# server/src/engine/ChipContinuity.law.test.ts
+
+Chip continuity, engine half: the stay-clock mirror derives remaining time exactly as the database does and locks iff ahead of the baseline with time left; leaveTable refuses with LEAVE_LOCKED after the tournament branch; a voluntary leave goes through atomic_seat_cashout_locked(p_leave_mode='voluntary') with no markSeatAsLeft fallback; settlement reports every stack after add-ons and rebuys and before any departure; a horse at its profit target leaves through the same door; all three state payloads carry the same fields; the migration keys the floor on club+variant+sb+bb, drops atomic_table_withdraw and thaws both deadlines

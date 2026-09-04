@@ -1,0 +1,3 @@
+# tests/a-promo-rain-falls-from-the-float.law.test.ts
+
+A promo rain falls from the float the sweep fills and lands as chips: the owner's splash pot draws on the union promo_wallet or a standalone club's promo_balance rather than the swept-empty pool, credits every seated player ordinary cashable chips, declares the debit and skips its own table so one row names both sides, refuses a short float whole, and lets the EXECUTE grant be the gate instead of the caller's JWT (the owner-facing entry point fn_bbj_promo_rain is shut by migration 20260903233924 until the splash pot is designed; this law pins the money path it must reopen on)

@@ -2059,3 +2059,15 @@ abbr.lt-variant[title] {
     margin-inline: 0;
   }
 }
+
+/* R10: a must-move game counts its players like a tournament. */
+.lt-seats--game {
+  gap: 0.15rem;
+  align-items: baseline;
+}
+.lt-seats__tables {
+  font-size: 0.68rem;
+  color: #9aa4b2;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}

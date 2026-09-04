@@ -1172,6 +1172,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       holeCards: new Map(this.currentHandHoleCards),
       dealerSeat: this.currentHandDealerSeat,
       perPotAwards: [...this.currentHandPerPotAwards],
+      // WHO WON EACH RUN (2026-09-04): the per-board record the felt already
+      // reads off pot_win. It was built, broadcast, and then dropped at the
+      // write, so a run-it-3-times scoop was recorded as one board's hand name.
+      winnersByBoard: [...this.currentHandWinnersByBoard],
       showdownResults: [...this.currentHandShowdownResults],
       insuranceSettlements: [...this.currentHandInsuranceSettlements],
       insuranceNet: this.currentHandInsuranceNet,
@@ -1464,6 +1468,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           startedAt: snap.startedAt || Date.now(),
           endedAt: Date.now(),
           winners: snap.winners,
+          // Per-board winners for any multi-board hand; NULL otherwise (see
+          // handHistory.ts). This is the record that says which run went to
+          // whom, with what - `winners` is only the paid totals.
+          winnersByBoard: snap.winnersByBoard,
           // POT-LEVEL SETTLEMENT (Dan section 29). Captured at WINNERS, when
           // the breakdown still exists. `winners` already carry `potIndex`;
           // this is the other half of that pair, and without it the number is
@@ -1471,13 +1479,48 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // elimination sweep credit a knockout to the winner(s) of the pot
           // that held the busted player's last chips.
           pots: snap.pots,
-          players: players.map((p) => ({
-            userId: p.user_id,
-            username: p.username,
-            seat: p.seat_number,
-            stack: p.stack,
-            cards: [],
-          })),
+          /* THE ROSTER IS THE RLS KEY (2026-09-04). hand_history is readable by
+             `players @> [{userId}]`, so a hand whose roster is missing a
+             participant is a hand that participant can never open, and one
+             with an empty roster is invisible to everyone in it. The roster
+             here is the dealing loop's array; if it disagrees with who was
+             dealt cards or who was paid, the hand was still played - write
+             the union, and say so loudly, rather than lose it. */
+          players: (() => {
+            const roster = players.map((p) => ({
+              userId: p.user_id,
+              username: p.username,
+              seat: p.seat_number,
+              stack: p.stack,
+              cards: [] as string[],
+            }));
+            const seen = new Set(roster.map((r) => r.userId));
+            const seatOf = (uid: string): number => {
+              const sd = snap.showdownResults.find((r) => r.userId === uid);
+              if (sd && typeof sd.seat === 'number') return sd.seat;
+              const act = snap.actions.find((a) => a.userId === uid && typeof a.seat === 'number');
+              return act ? act.seat : 0;
+            };
+            const missing = [...snap.holeCards.keys(), ...snap.winners.map((w) => w.userId)].filter(
+              (uid, i, arr) => uid && !seen.has(uid) && arr.indexOf(uid) === i
+            );
+            for (const uid of missing) {
+              seen.add(uid);
+              roster.push({
+                userId: uid,
+                username: 'Player',
+                seat: seatOf(uid),
+                stack: 0,
+                cards: [],
+              });
+            }
+            if (missing.length > 0 || roster.length === 0) {
+              console.error(
+                `[hand_history] roster disagreed with the hand: hand=${snap.handNumber} table=${this.tableId} rosterLen=${players.length} added=${missing.length}`
+              );
+            }
+            return roster;
+          })(),
           actions: snap.actions,
           // STATS FACT LAYER 2026-08-21: engine-memory values the write used to
           // discard. Rationale in services/supabase/handFacts.ts.
@@ -2169,6 +2212,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           this.leaveHeldByClock.delete(userId);
           this.chipContinuity.forget(userId);
         }
+        // MUST-MOVE (Slice 2): planned moves land here, at the hand boundary,
+        // after the leavers. A move is not a leave: no cash-out, no clock.
+        await this.executePendingSeatMoves();
       }
     });
 

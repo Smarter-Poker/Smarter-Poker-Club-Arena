@@ -1,0 +1,3 @@
+# tests/run-it-multiple-times-tells-the-truth.law.test.ts
+
+Run it multiple times tells the truth (Dan 2026-09-04, hand #6145364): consent completing closes the offer deadline, the tab-strip clock and the waiting strip, and so do `rit_mandatory` and `rit_result`; the hand-boundary reset clears the tab clock and the strip refuses to show an expired one; the scoop banner and the losers' muck wait for the last run's ribbon; an unknown bust-rebuy balance is `null` with a Retry - never `0`, never "Insufficient" - and is read twice; `hand_history.winners_by_board` records who won each run, with what.

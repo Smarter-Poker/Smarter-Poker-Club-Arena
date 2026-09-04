@@ -56,7 +56,6 @@ import { handleTimebank } from './timebank.js';
 import { handleHeartbeat } from './heartbeat.js';
 import { handlePreaction } from './preaction.js';
 import { handleAddchips } from './addchips.js';
-import { handleWithdrawchips } from './withdrawchips.js';
 import { handleLeave } from './leave.js';
 import { handleSitout } from './sitout.js';
 import { handleStraddle } from './straddle.js';
@@ -111,12 +110,6 @@ const POST_CASES: HandlerCase[] = [
     body: { tableId: 't1', amount: 100 },
     invoke: (req, res, gs) => handleAddchips(req, res, { gameServer: gs }),
     engineMethod: 'addChips',
-  },
-  {
-    name: 'withdrawchips',
-    body: { tableId: 't1', amount: 100 },
-    invoke: (req, res, gs) => handleWithdrawchips(req, res, { gameServer: gs }),
-    engineMethod: 'withdrawChips',
   },
   {
     name: 'sitout',

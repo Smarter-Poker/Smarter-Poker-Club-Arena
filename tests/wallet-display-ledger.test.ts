@@ -263,7 +263,9 @@ describe('the transaction history pages on the server', () => {
     // and the list below it did not, so a top-up moved the balance while the
     // history under it still showed the movement missing.
     expect(SRC).toContain("'CHIPS_ADDED'");
-    expect(SRC).toContain("'CHIPS_WITHDRAWN'");
+    /* CHIPS_WITHDRAWN is gone from every subscriber since 2026-09-04: chip
+       continuity removed the partial cash-out, so nothing emits it. */
+    expect(SRC).not.toContain("'CHIPS_WITHDRAWN'");
   });
 });
 

@@ -1159,6 +1159,16 @@ export abstract class TournamentManagerBase {
       }
 
       this.tournamentCache = tournament;
+
+      /* FREE BUY: open the add-on window NOW. Dan 2026-09-04, "players can add
+         on as soon as they sit down" - so the window cannot wait for the first
+         level transition, which on a TURBO structure is still minutes away and
+         on a stalled table may never arrive at all. triggerAddOnPeriod is
+         latched by addOnPeriodTriggered, so calling it here simply means the
+         level-based path finds the work already done. */
+      if (tournament.addon_from_start && tournament.add_on_available) {
+        await this.triggerAddOnPeriod();
+      }
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
       // Adopt whatever the row says the mystery phase is. A redeploy
       // mid-tournament must not re-seed an inventory that already exists.
@@ -4693,7 +4703,15 @@ export abstract class TournamentManagerBase {
            * depend on the edge: addOnPeriodTriggered guards the outer `if`,
            * and triggerAddOnPeriod re-checks and persists it.
            */
-          if (this.currentLevel >= rebuyLevelCap) {
+          /* A Free Buy opens its add-on window immediately - see
+             triggerAddOnPeriod. Waiting for the level cap would mean a player
+             who sat down at the start could not add on for an hour, which is
+             the opposite of what was asked. */
+          const addonFromStart = !!(this.tournamentCache as { addon_from_start?: boolean } | null)
+            ?.addon_from_start;
+          if (addonFromStart) {
+            await this.triggerAddOnPeriod();
+          } else if (this.currentLevel >= rebuyLevelCap) {
             // Broadcast late_reg_closed first
             await this.broadcast('late_reg_closed', {});
             // If currently on break, defer the add-on trigger until break resumes
@@ -4708,10 +4726,18 @@ export abstract class TournamentManagerBase {
         // ── ADD-ON PERIOD END (level-based) ──
         // Add-on window closes after addon_levels levels past the rebuy cutoff
         if (this.addOnPeriodTriggered && !this.prizePoolFinalized) {
+          /* A Free Buy's window is measured in MINUTES, not levels, and its
+             blinds are TURBO - so the level cap arrives long before the hour
+             is up. Closing on levels here would shut the add-on window while
+             late registration was still open, and every horse that had not
+             yet taken its add-on would silently lose it. scheduleAddOnPeriodEnd
+             already holds the timer for these; let it do the closing. */
+          const addonFromStart2 = !!(this.tournamentCache as { addon_from_start?: boolean } | null)
+            ?.addon_from_start;
           const rebuyLevelCap2 =
             this.tournamentCache?.late_reg_levels ?? this.tournamentCache?.rebuy_levels ?? 8;
           const addonWindow = this.tournamentCache?.addon_levels ?? 1;
-          if (this.currentLevel >= rebuyLevelCap2 + addonWindow) {
+          if (!addonFromStart2 && this.currentLevel >= rebuyLevelCap2 + addonWindow) {
             await this.finalizeAfterAddOn();
           }
         }
@@ -4837,8 +4863,23 @@ export abstract class TournamentManagerBase {
     // TOURNEY-AUDIT 2026-07-24: persist the flag so a restart mid-add-on
     // restores it (resume() reads addon_period_triggered) instead of
     // re-broadcasting ADDON_PERIOD_START and losing finalizeAfterAddOn.
+    /* FREE BUY (Dan 2026-09-04): "PLAYERS CAN ADD ON AS SOON AS THEY SIT
+       DOWN, AND ALSO AT THE BREAK." Read with "ONE HOUR FOR LATE REG, THEN
+       THE ADD ON PERIOD", that is not two windows - it is ONE window that
+       opens when the event starts and shuts after the break. Two windows
+       would need a second add-on per player, and `tournament_players.add_on`
+       is a boolean: one add-on each, taken whenever the player likes inside
+       the window.
+
+       A normal event keeps the 60-second window it has always had. */
     const addonPeriodStartedAt = new Date().toISOString();
-    const addonPeriodEndsAt = new Date(Date.now() + 60_000).toISOString();
+    const fromStart = !!(this.tournamentCache as { addon_from_start?: boolean } | null)
+      ?.addon_from_start;
+    const lateRegMs =
+      (((this.tournamentCache as { late_reg_mins?: number } | null)?.late_reg_mins ??
+        60) as number) * 60_000;
+    const addonWindowMs = fromStart ? lateRegMs + 60_000 : 60_000;
+    const addonPeriodEndsAt = new Date(Date.now() + addonWindowMs).toISOString();
     if (this.tournamentCache) {
       this.tournamentCache.addon_period_started_at = addonPeriodStartedAt;
       this.tournamentCache.addon_period_ends_at = addonPeriodEndsAt;

@@ -90,9 +90,22 @@ export default function ChipTransferModal({
   /* null means UNKNOWN, not zero. senderBalance gates the send below, and a
      failed read that collapses to 0 blocks a send the server would allow. */
   const [senderBalance, setSenderBalance] = useState<number | null>(null);
-  const [senderRole, setSenderRole] = useState<string>('member');
+  /* null means UNKNOWN. The sender's role decides which RPC runs and which
+     account is debited (club bank or agent wallet), so it is never guessed:
+     a failed read used to default to 'member', which routed an owner through
+     fn_agent_wallet_send. Confirm stays disabled until the role is read. */
+  const [senderRole, setSenderRole] = useState<string | null>(null);
+  const [senderRoleFailed, setSenderRoleFailed] = useState(false);
   const [clubName, setClubName] = useState<string>('');
   const [mounted, setMounted] = useState(false);
+  /* The recipient handed in by the caller is read directly, so the send never
+     waits on (or guesses past) the full recipient list. 'missing' means the
+     row was read and there is no such member of this club. */
+  const [pinnedRecipient, setPinnedRecipient] = useState<Recipient | 'missing' | null>(null);
+  /* The balance of the wallet the chips will actually LAND in, for the
+     preview: chip_balance for a player, agents.agent_wallet_balance for an
+     agent-capable recipient. null while unknown. */
+  const [destinationBalance, setDestinationBalance] = useState<number | null>(null);
 
   /* A PER-INTENT idempotency key, the same shape CashierPage uses. A key minted
      inside the call protects nothing: the dangerous shape is commit, lost
@@ -105,8 +118,9 @@ export default function ChipTransferModal({
   /* The four bank roles spend the club treasury; everyone else spends their own
      agent wallet. walletRows is the one place this rule lives, and
      fn_can_use_club_bank enforces the same four roles server-side. */
-  const viaClubBank = CLUB_BANK_ROLES.includes(normaliseRole(senderRole));
-  const sourceLabel = viaClubBank ? 'Club Bank' : 'Agent Wallet';
+  const senderKnown = senderRole !== null;
+  const viaClubBank = senderKnown && CLUB_BANK_ROLES.includes(normaliseRole(senderRole));
+  const sourceLabel = !senderKnown ? 'Wallet' : viaClubBank ? 'Club Bank' : 'Agent Wallet';
 
   useEffect(() => {
     if (isOpen) {
@@ -124,12 +138,16 @@ export default function ChipTransferModal({
     loadSenderInfo();
   }, [isOpen, user?.id, clubId]);
 
-  // Load recipients when modal opens
+  // Load recipients when modal opens. The Agent Team console reuses ONE
+  // modal instance for every agent it funds, so everything learned about the
+  // previous recipient is forgotten here: a stale 'missing' verdict or a
+  // stale pinned role would otherwise decide the next send.
   useEffect(() => {
     if (!isOpen || !user?.id) return;
-    if (recipientId) {
-      setSelectedRecipient(recipientId);
-    }
+    setPinnedRecipient(null);
+    setDestinationBalance(null);
+    setError(null);
+    setSelectedRecipient(recipientId || '');
     loadRecipients();
   }, [isOpen, user?.id, clubId, recipientId]);
 
@@ -148,14 +166,38 @@ export default function ChipTransferModal({
          guard below refuses only on a number it actually has, so a network blip
          can never block a send the server would have allowed. */
       const resolvedId = await resolveClubUUID(clubId);
-      const { data: member } = await supabase
+      const { data: member, error: memberErr } = await supabase
         .from('club_members')
         .select('role')
         .eq('club_id', resolvedId)
         .eq('user_id', user.id)
         .maybeSingle();
-      const role = member?.role || 'member';
+      if (memberErr) {
+        // Unknown, not 'member': the role picks the account that is debited.
+        setSenderRole(null);
+        setSenderRoleFailed(true);
+        reportError(memberErr, 'ChipTransferModal.sender_role_read');
+        return;
+      }
+      let role = member?.role || null;
+      if (!role) {
+        // The club's owner need not hold a club_members row; fn_club_bank_role
+        // and fn_can_use_club_bank both treat clubs.owner_id as 'owner'.
+        const { data: ownedClub, error: ownedErr } = await supabase
+          .from('clubs')
+          .select('owner_id')
+          .eq('id', resolvedId)
+          .maybeSingle();
+        if (ownedErr) {
+          setSenderRole(null);
+          setSenderRoleFailed(true);
+          reportError(ownedErr, 'ChipTransferModal.sender_owner_read');
+          return;
+        }
+        role = ownedClub?.owner_id === user.id ? 'owner' : 'player';
+      }
       setSenderRole(role);
+      setSenderRoleFailed(false);
 
       if (CLUB_BANK_ROLES.includes(normaliseRole(role))) {
         const { data: bank, error: bankErr } = await supabase
@@ -193,14 +235,56 @@ export default function ChipTransferModal({
     setIsLoadingRecipients(true);
     try {
       // Get the sender's role to determine who they can send to
-      const { data: senderMember } = await supabase
+      const resolvedClub = await resolveClubUUID(clubId);
+      /* THE RECIPIENT THE CALLER NAMED IS READ ON ITS OWN. Member Management
+         opens this modal with recipientId set and Confirm was enabled the
+         moment an amount was typed, while the recipient's role was still
+         being looked up in the list below (three to four sequential reads).
+         With the role unknown, p_destination fell to 'player_wallet' - and
+         fn_club_bank_send honours p_destination - so funding a freshly
+         promoted agent could land the chips in their player wallet. One
+         indexed read, and Confirm waits for it. */
+      if (recipientId) {
+        const { data: pinned, error: pinnedErr } = await supabase
+          .from('club_members')
+          .select('user_id, role, chip_balance, status, users:user_id(id, username)')
+          .eq('club_id', resolvedClub)
+          .eq('user_id', recipientId)
+          .maybeSingle();
+        if (pinnedErr) throw pinnedErr;
+        if (!pinned) {
+          setPinnedRecipient('missing');
+        } else {
+          const u = pinned.users as { id?: string; username?: string } | null;
+          setPinnedRecipient({
+            id: String(pinned.user_id),
+            username: String(u?.username || 'Unknown'),
+            avatar_url: '',
+            role: String(pinned.role || 'player'),
+            balance: Number(pinned.chip_balance ?? 0) || 0,
+          });
+        }
+      }
+
+      const { data: senderMember, error: senderErr } = await supabase
         .from('club_members')
         .select('role')
-        .eq('club_id', await resolveClubUUID(clubId))
+        .eq('club_id', resolvedClub)
         .eq('user_id', user.id)
         .maybeSingle();
-
-      const role = senderMember?.role || 'member';
+      // A failed read used to fall to 'player' and hand an owner the
+      // downline-scoped list; the toast below is the honest outcome.
+      if (senderErr) throw senderErr;
+      let role = senderMember?.role || null;
+      if (!role) {
+        const { data: ownedClub, error: ownedErr } = await supabase
+          .from('clubs')
+          .select('owner_id')
+          .eq('id', resolvedClub)
+          .maybeSingle();
+        if (ownedErr) throw ownedErr;
+        role = ownedClub?.owner_id === user.id ? 'owner' : 'player';
+      }
 
       /* WHO THIS MODAL MAY SEND TO (Dan 2026-08-25, binding):
          "Super Agents, Agents, and Sub Agents should ONLY EVER SEE their
@@ -218,7 +302,7 @@ export default function ChipTransferModal({
          by construction rather than by four hand-rolled attempts. */
       if (['super_agent', 'agent', 'sub_agent'].includes(normaliseRole(role))) {
         const { data: scoped, error: scopedErr } = await supabase.rpc('fn_club_cashier_members', {
-          p_club_id: await resolveClubUUID(clubId),
+          p_club_id: resolvedClub,
         });
         if (scopedErr) throw scopedErr;
         const scopedList: Recipient[] = ((scoped || []) as Array<Record<string, unknown>>)
@@ -237,7 +321,7 @@ export default function ChipTransferModal({
         return;
       }
 
-      let query = supabase
+      const query = supabase
         .from('club_members')
         .select(
           `
@@ -250,38 +334,13 @@ export default function ChipTransferModal({
                     )
                 `
         )
-        .eq('club_id', await resolveClubUUID(clubId));
+        .eq('club_id', resolvedClub)
+        // fn_club_bank_send refuses a banned, suspended or pending member, so
+        // offering one is offering a refusal.
+        .or('status.is.null,status.in.(active,approved)');
 
-      // Filter recipients based on sender's role in the hierarchy
-      if (role === 'owner' || role === 'co_owner' || role === 'admin') {
-        // Owner/Admin can send to all roles (including staff, agents, and players)
-        query = query.in('role', [
-          'owner',
-          'co_owner',
-          'admin',
-          'super_agent',
-          'agent',
-          'sub_agent',
-          'member',
-          'player',
-        ]);
-      } else if (role === 'agent' || role === 'super_agent') {
-        // Agents can send to staff, agents, sub-agents, and players
-        query = query.in('role', [
-          'owner',
-          'co_owner',
-          'admin',
-          'super_agent',
-          'agent',
-          'sub_agent',
-          'member',
-          'player',
-        ]);
-      } else if (role === 'sub_agent') {
-        // Sub-agents can send to their players and sub-agents
-        query = query.in('role', ['sub_agent', 'member', 'player']);
-      }
-
+      // Only the bank roles reach this branch: the three agent roles returned
+      // above with their downline. The bank may send to anyone in the club.
       const { data, error: queryError } = await query;
       if (queryError) throw queryError;
 
@@ -298,7 +357,7 @@ export default function ChipTransferModal({
         .from('club_members')
         .select('user_id, chip_balance')
         .in('user_id', recipientIds)
-        .eq('club_id', await resolveClubUUID(clubId));
+        .eq('club_id', resolvedClub);
 
       const walletMap: Record<string, number> = {};
       (wallets || []).forEach((w: any) => {
@@ -332,7 +391,7 @@ export default function ChipTransferModal({
       setRecipients(recipientList);
     } catch (err) {
       reportError(err, 'ChipTransferModal.Error_loading_recipients');
-      if (isMounted.current) toast.error('Failed to load recipients');
+      if (isMounted.current) toast.error('Failed To Load Recipients');
     }
     setIsLoadingRecipients(false);
   };
@@ -349,8 +408,47 @@ export default function ChipTransferModal({
   }, [recipients, searchQuery, user?.id]);
 
   const selectedRecipientData = useMemo(() => {
+    if (
+      pinnedRecipient &&
+      pinnedRecipient !== 'missing' &&
+      pinnedRecipient.id === selectedRecipient
+    ) {
+      return pinnedRecipient;
+    }
     return recipients.find((r) => r.id === selectedRecipient);
-  }, [recipients, selectedRecipient]);
+  }, [pinnedRecipient, recipients, selectedRecipient]);
+
+  /* The destination follows the recipient's role, and the preview must show
+     the wallet the chips land in. An agent-capable recipient is credited to
+     agents.agent_wallet_balance, not club_members.chip_balance. */
+  const destinationIsAgentWallet =
+    !!selectedRecipientData && canHoldAgentWallet(selectedRecipientData.role);
+  useEffect(() => {
+    let cancelled = false;
+    setDestinationBalance(null);
+    if (!selectedRecipientData) return;
+    if (!destinationIsAgentWallet) {
+      setDestinationBalance(selectedRecipientData.balance);
+      return;
+    }
+    (async () => {
+      const resolvedClub = await resolveClubUUID(clubId);
+      const { data, error: floatErr } = await supabase
+        .from('agents')
+        .select('agent_wallet_balance')
+        .eq('club_id', resolvedClub)
+        .eq('user_id', selectedRecipientData.id)
+        .maybeSingle();
+      if (cancelled) return;
+      // No agents row yet is a float of zero (fn_ensure_agent_row creates it
+      // on the send); a row that could not be read stays unknown.
+      if (!floatErr) setDestinationBalance(Number(data?.agent_wallet_balance ?? 0) || 0);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRecipientData?.id, destinationIsAgentWallet, clubId]);
 
   const getTransferDescription = () => {
     const recipientData = selectedRecipientData;
@@ -380,14 +478,33 @@ export default function ChipTransferModal({
     const transferAmount = parseFloat(amount);
 
     if (!selectedRecipient) {
-      setError('Please select a recipient');
+      setError('Please Select A Recipient');
+      return;
+    }
+    if (!senderKnown) {
+      setError(
+        'Your Club Role Could Not Be Read, So The Source Wallet Is Unknown. Close And Try Again.'
+      );
+      return;
+    }
+    // The destination wallet is decided by the recipient's role and is never
+    // defaulted: an unknown recipient is a refusal, not a player-wallet send.
+    if (!selectedRecipientData) {
+      setError(
+        pinnedRecipient === 'missing'
+          ? 'That Person Is Not A Member Of This Club'
+          : 'The Recipient Is Still Loading'
+      );
       return;
     }
     if (isNaN(transferAmount) || transferAmount <= 0) {
-      setError('Please enter a valid amount');
+      setError('Please Enter A Valid Amount');
       return;
     }
-    if (senderBalance !== null && transferAmount > senderBalance) {
+    // Only the club bank is a hard ceiling. An agent wallet can draw on a
+    // credit line the server knows about and this browser does not, so the
+    // server is the one to refuse an agent send.
+    if (viaClubBank && senderBalance !== null && transferAmount > senderBalance) {
       setError(`Your ${sourceLabel} Only Holds ${senderBalance.toLocaleString()} Chips.`);
       return;
     }
@@ -403,8 +520,10 @@ export default function ChipTransferModal({
       const description = note || getTransferDescription();
 
       /* ONE MONEY PATH. The route follows the CALLER's role and the
-         destination follows the RECIPIENT's, which is what the database does
-         with both regardless of what is sent here. */
+         destination follows the RECIPIENT's. fn_club_bank_send HONOURS
+         p_destination (it credits chip_balance for 'player_wallet' and the
+         agent wallet otherwise), so the recipient's role is read before this
+         runs and never defaulted. */
       const resolvedForSend = (await resolveClubUUID(clubId)) || clubId;
 
       // Rotate the key only when the intent changes, so a retry of the SAME
@@ -421,7 +540,7 @@ export default function ChipTransferModal({
           p_club_id: resolvedForSend,
           p_to_user_id: selectedRecipient,
           p_amount: transferAmount,
-          p_destination: canHoldAgentWallet(recipientData?.role) ? 'agent_wallet' : 'player_wallet',
+          p_destination: canHoldAgentWallet(recipientData.role) ? 'agent_wallet' : 'player_wallet',
           p_reason: description,
           p_op_id: sendOpIdRef.current,
         }
@@ -487,9 +606,18 @@ export default function ChipTransferModal({
   const quickAmounts = [100, 500, 1000, 5000];
 
   return (
-    <div className="chip-transfer-overlay" onClick={handleClose}>
+    <div
+      className="chip-transfer-overlay"
+      onClick={handleClose}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') handleClose();
+      }}
+    >
       <div
         className="chip-transfer-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="chip-transfer-title"
         onClick={(e) => e.stopPropagation()}
         style={{
           opacity: mounted ? 1 : 0,
@@ -498,8 +626,8 @@ export default function ChipTransferModal({
         }}
       >
         <div className="chip-transfer-header">
-          <h2>Cashier Transfer</h2>
-          <button className="close-btn" onClick={handleClose}>
+          <h2 id="chip-transfer-title">Cashier Transfer</h2>
+          <button type="button" className="close-btn" onClick={handleClose} aria-label="Close">
             X
           </button>
         </div>
@@ -512,13 +640,32 @@ export default function ChipTransferModal({
             {senderBalance === null ? 'Unknown' : senderBalance.toLocaleString()}
           </span>
         </div>
+        {senderRoleFailed && (
+          <div className="message error" role="alert">
+            Your Club Role Could Not Be Read. Nothing Can Be Sent Until It Is.
+          </div>
+        )}
+        {recipientId && pinnedRecipient === 'missing' && (
+          <div className="message error" role="alert">
+            That Person Is Not A Member Of This Club
+          </div>
+        )}
+        {recipientId && selectedRecipientData && (
+          <div className="agent-balance">
+            <span>To {selectedRecipientData.username}:</span>
+            <span className="balance-amount">
+              {destinationIsAgentWallet ? 'Agent Wallet' : 'Player Wallet'}
+            </span>
+          </div>
+        )}
 
         <div className="chip-transfer-form">
           {/* Recipient Selection */}
           {!recipientId && (
             <div className="form-group">
-              <label>Send To</label>
+              <label htmlFor="chip-transfer-search">Send To</label>
               <input
+                id="chip-transfer-search"
                 type="text"
                 placeholder="Search Member, Role Or (You)..."
                 value={searchQuery}
@@ -541,6 +688,7 @@ export default function ChipTransferModal({
                   value={selectedRecipient}
                   onChange={(e) => setSelectedRecipient(e.target.value)}
                   className="player-select"
+                  aria-label="Recipient"
                 >
                   <option value="">Select Recipient</option>
                   {filteredRecipients.map((r) => {
@@ -574,10 +722,13 @@ export default function ChipTransferModal({
 
           {/* Amount Input */}
           <div className="form-group">
-            <label>Amount</label>
+            <label htmlFor="chip-transfer-amount">Amount</label>
             <div className="amount-input-wrapper">
-              <span className="currency-symbol">◉</span>
+              <span className="currency-symbol" aria-hidden="true">
+                ◉
+              </span>
               <input
+                id="chip-transfer-amount"
                 type="number"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
@@ -614,10 +765,14 @@ export default function ChipTransferModal({
                 </span>
               </div>
               <div className="preview-row">
-                <span>{selectedRecipientData.username}:</span>
                 <span>
-                  {selectedRecipientData.balance.toLocaleString()} →{' '}
-                  {(selectedRecipientData.balance + parseFloat(amount)).toLocaleString()}
+                  {selectedRecipientData.username} (
+                  {destinationIsAgentWallet ? 'Agent Wallet' : 'Player Wallet'}):
+                </span>
+                <span>
+                  {destinationBalance === null
+                    ? 'Unknown'
+                    : `${destinationBalance.toLocaleString()} → ${(destinationBalance + parseFloat(amount)).toLocaleString()}`}
                 </span>
               </div>
             </div>
@@ -625,8 +780,9 @@ export default function ChipTransferModal({
 
           {/* Note Input */}
           <div className="form-group">
-            <label>Note (Optional)</label>
+            <label htmlFor="chip-transfer-note">Note (Optional)</label>
             <input
+              id="chip-transfer-note"
               type="text"
               value={note}
               onChange={(e) => setNote(e.target.value)}
@@ -642,7 +798,9 @@ export default function ChipTransferModal({
           <button
             className="transfer-btn"
             onClick={handleTransfer}
-            disabled={isLoading || !selectedRecipient || !amount}
+            disabled={
+              isLoading || !selectedRecipient || !amount || !senderKnown || !selectedRecipientData
+            }
           >
             {isLoading ? 'Processing...' : 'Confirm Transfer'}
           </button>

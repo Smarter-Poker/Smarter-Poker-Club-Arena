@@ -357,3 +357,8 @@
     transition: none;
   }
 }
+
+/* A new range or variant is loading: the figures belong to the previous one. */
+.ps-cards--busy .ps-stat__value {
+  opacity: 0.45;
+}

@@ -98,7 +98,9 @@ const SLOT_WIDGETS: Array<[string, string, string]> = [
 describe('an all-in player cannot leave the table', () => {
   it('leaveTable refuses before it does anything else', () => {
     const body = strip(SEATING);
-    const at = body.indexOf('public leaveTable');
+    // `public async leaveTable(` since chip continuity (2026-09-04): the
+    // between-hands answer is awaited from the database.
+    const at = body.indexOf('public async leaveTable');
     expect(at).toBeGreaterThan(-1);
 
     const guard = body.indexOf('liveSelf?.is_all_in', at);

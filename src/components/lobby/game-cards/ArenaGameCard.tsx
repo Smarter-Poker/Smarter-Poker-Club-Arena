@@ -9,6 +9,7 @@ import { zoneText } from './arenaGameCardTypes';
 import { ArenaGameRuleBadge } from './ArenaGameRuleIcon';
 import { NlhPremiumCard } from './NlhPremiumCard';
 import { PloFourBayCard } from './PloFourBayCard';
+import { SpadePloCard } from './SpadePloCard';
 import { SpinsPremiumCard } from './SpinsPremiumCard';
 import { HeadsUpPremiumCard } from './HeadsUpPremiumCard';
 import './ArenaGameCard.css';
@@ -25,6 +26,7 @@ type LayeredRenderer = (props: {
 const LAYERED_RENDERERS: Record<string, LayeredRenderer> = {
   'spade-nlh-premium-v1': NlhPremiumCard,
   'shark-plo-four-bay-v1': PloFourBayCard,
+  'spade-plo-premium-v1': SpadePloCard,
   'shark-spins-premium-v1': SpinsPremiumCard,
   'shark-headsup-premium-v1': HeadsUpPremiumCard,
 };

@@ -599,20 +599,11 @@ export default function PlayerSessionsPage() {
     setError(null);
     try {
       const amt = parseInt(wbAmount, 10) || 500;
-      // Resolve agent PK — distributePromo expects agents.id, NOT auth.users.id
+      // Promo is disbursed by the owner of the float: the union when this club
+      // is in one, the club itself when it is not. The database refuses anyone
+      // who is not that owner.
       const resolvedClub = await resolveClubUUID(clubId);
-      const { data: agentRow } = await supabase
-        .from('agents')
-        .select('id')
-        .eq('user_id', user?.id || '')
-        .eq('club_id', resolvedClub)
-        .maybeSingle();
-      if (!agentRow?.id) {
-        setError('Agent record not found for this club');
-        setProcessing(false);
-        return;
-      }
-      await WalletService.distributePromo(agentRow.id, wbTarget.userId, amt);
+      await WalletService.disbursePromo(resolvedClub, wbTarget.userId, amt, 'Welcome back promo');
       masterBus.emit('CHIPS_DISTRIBUTED', {
         clubId: resolvedClub,
         userId: wbTarget.userId,

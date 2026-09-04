@@ -293,7 +293,10 @@ export default function ClubStatsCards({
       color: '#fbbf24',
     },
     {
-      label: 'Hands Today',
+      // Every hand the engine finished today, tournament hands included
+      // (club_hand_daily). The rake beside it is the ledger's cash rake
+      // (ca_club_rake_daily), which is why the two are labelled apart.
+      label: 'Hands Dealt Today',
       value: formatInt(stats.handsToday),
       sub: stats.handsWeek > 0 ? `${formatInt(stats.handsWeek)} this week` : undefined,
       spark: stats.dailySeries.map((p) => p.hands),
@@ -318,7 +321,7 @@ export default function ClubStatsCards({
       color: '#a855f7',
     },
     {
-      label: 'Rake Today',
+      label: 'Cash Rake Today',
       value: formatChips(stats.rakeToday),
       sub: stats.rakeWeek > 0 ? `${formatChips(stats.rakeWeek)} this week` : undefined,
       spark: stats.dailySeries.map((p) => p.rake),

@@ -28,6 +28,7 @@ import { ScheduledTournamentService } from './services/ScheduledTournamentServic
 import { TournamentMetrics } from './services/TournamentMetrics.js';
 import { SpinMetrics } from './services/SpinMetrics.js';
 import { ReplicationMetrics } from './services/ReplicationMetrics.js';
+import { SettlementMetrics } from './services/SettlementMetrics.js';
 import {
   planTableReopens,
   freshHumanWindowMs,
@@ -369,6 +370,7 @@ export class GameServer {
   private tournamentMetrics = new TournamentMetrics();
   private spinMetrics = new SpinMetrics();
   private replicationMetrics = new ReplicationMetrics();
+  private settlementMetrics = new SettlementMetrics();
   private lifecycle = new HorseLifecycleManager();
 
   /**
@@ -764,6 +766,12 @@ export class GameServer {
       // collector, deliberately: a catalog read must never be able to blind
       // the spin fairness gauges, or be blinded by them.
       this.replicationMetrics.start();
+
+      // Step 3f: Settlement health. On 2026-09-04, 139,153 hands failed to
+      // settle over thirteen hours - 25% to 44% of every hand dealt - and
+      // NOTHING raised an alert. The database wrote the failure down 139,153
+      // times and had no way to say it out loud. See services/SettlementMetrics.ts.
+      this.settlementMetrics.start();
 
       // Step 4: Start lifecycle manager (stuck horse detection, cleanup)
       this.lifecycle.start();
@@ -1453,6 +1461,10 @@ export class GameServer {
       // How far behind the realtime replication slot is, in bytes, per slot.
       // See services/ReplicationMetrics.ts.
       ...this.replicationMetrics.toPrometheus(),
+      // ── SETTLEMENT HEALTH (2026-09-04) ───────────────────────────────
+      // Whether hands are settling at all, over a five-minute window. A
+      // lifetime ratio read 7.7% while the live rate was 44%.
+      ...this.settlementMetrics.toPrometheus(),
     ];
 
     if (allLines.length === 0) {

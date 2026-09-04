@@ -205,3 +205,86 @@ groups:
           summary: "No replication slots visible"
           description: "The collector is fresh but reports zero slots. Either the slots were dropped - realtime is then entirely dead - or the function lost its catalog access."
           runbook: "docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3"
+
+  # ── SETTLEMENT (2026-09-04) ─────────────────────────────────────────────
+  # On 2026-09-04, 139,153 hands failed to settle over thirteen hours -
+  # between 25% and 44% of every hand dealt - and nothing raised an alert.
+  # The state was written to ca_settlements.state = 'failed' with a full
+  # error_detail on every row; the database knew 139,153 times and had no way
+  # to say it out loud. It was found by someone querying that table for an
+  # unrelated reason.
+  #
+  # Gauges from server/src/services/SettlementMetrics.ts via
+  # public.fn_settlement_health(). The rate is a FIVE-MINUTE WINDOW: the
+  # lifetime ratio read 0.077 while the live rate was 0.44.
+  - name: settlement
+    interval: 30s
+    rules:
+      - alert: HandsAreFailingToSettle
+        expr: |
+          poker_settlement_failure_rate > 0.02
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 5m
+        labels:
+          severity: critical
+          component: money
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of hands are failing to settle"
+          description: "fn_ca_settle_hand_stacks_absolute is refusing hands whole. Read ca_settlements.error_detail for the reason before changing anything. The 2026-09-04 cause was a BEFORE UPDATE trigger on table_seats that cancelled no-op writes, making a correct seat write look like a failed one."
+          runbook: "docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md"
+
+      # Baseline before the incident was 0.0-0.2%. A rate that merely doubles
+      # is worth knowing about long before it reaches a quarter of all hands.
+      - alert: SettlementFailuresAboveBaseline
+        expr: |
+          poker_settlement_failure_rate > 0.005
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 30m
+        labels:
+          severity: warning
+          component: money
+        annotations:
+          summary: "Settlement failure rate {{ $value | humanizePercentage }}, above the 0.2% baseline"
+          runbook: "docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md"
+
+      # No hands settling at all is not a quiet table - this platform settles
+      # ~500 hands a minute. The failure-rate gauge is ABSENT in this state, so
+      # it must be alerted on separately or the silence reads as health.
+      - alert: NoHandsAreSettling
+        expr: |
+          poker_settlement_window_hands == 0
+          and poker_settlement_metrics_stale_seconds < 300
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: critical
+          component: money
+        annotations:
+          summary: "No hand has settled in five minutes"
+          description: "The collector is fresh and reports zero terminal settlements. Either the engine has stopped dealing or settlement is failing before it reaches a terminal state."
+          runbook: "docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md"
+
+      - alert: SettlementsStuckMidStateMachine
+        expr: |
+          poker_settlement_stuck > 50
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 15m
+        labels:
+          severity: warning
+          component: money
+        annotations:
+          summary: "{{ $value }} settlements are neither final nor failed"
+          runbook: "docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md"
+
+      - alert: SettlementMetricsBlind
+        expr: |
+          poker_settlement_metrics_stale_seconds > 600
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: warning
+          component: money
+        annotations:
+          summary: "Settlement gauges are stale ({{ $value }}s)"
+          description: "fn_settlement_health has not returned in over ten minutes. Whether hands are settling is currently unknown, and unknown is what thirteen hours of this looked like."
+          runbook: "docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md"

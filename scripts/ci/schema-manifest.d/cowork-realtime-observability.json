@@ -1,4 +1,4 @@
 {
   "_owner": "docs/sentry-realtime-programme",
-  "functions": ["fn_replication_slot_metrics", "sp_prune_ca_settlements"]
+  "functions": ["fn_replication_slot_metrics", "sp_prune_ca_settlements", "fn_settlement_health"]
 }

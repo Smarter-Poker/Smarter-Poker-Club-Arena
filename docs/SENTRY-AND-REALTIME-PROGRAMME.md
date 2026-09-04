@@ -13,6 +13,52 @@ hundred API routes.
 
 ---
 
+## 0. STATUS — 2026-09-04, end of day
+
+This section is the first thing to read and the first thing to update. A
+programme document that describes work already done is how the next agent ends
+up re-doing it, or worse, undoing it.
+
+### Shipped
+
+| ID     | What                                                                                                                                                                                                                                                                                                                                                                                  | Where                                                                                         |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| —      | **A settlement outage found and stopped.** 139,153 hands, 25-44% of every hand dealt, failed to settle for thirteen hours with no alert. Cause: an unversioned `BEFORE UPDATE` trigger on `table_seats` that cancelled no-op writes, so a correct seat write looked like a failed one. Reverted; rate went 23.5% -> 0.0% within a minute. **No chips, rake or VIP points were lost.** | `20260904110252`, `docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md` |
+| **R0** | Slot lag on a gauge: `fn_replication_slot_metrics`, `ReplicationMetrics.ts`, 5 alert rules                                                                                                                                                                                                                                                                                            | `20260904103652`                                                                              |
+| **R1** | `ca_hand_player_idx` unpublished - 3.9 GB, 4.5M inserts, zero subscribers ever                                                                                                                                                                                                                                                                                                        | `20260904101140`                                                                              |
+| new    | **Settlement health on a gauge**, 5 alert rules. A five-minute window, never a lifetime total - the lifetime ratio read 7.7% while the live rate was 44%                                                                                                                                                                                                                              | `20260904110620`                                                                              |
+| new    | The hand snapshot is written once, not twice - removes ~1.2M row versions/window                                                                                                                                                                                                                                                                                                      | `20260904104350`                                                                              |
+| new    | `ca_settlements` has a retention prune. It had none, and was growing ~430 MB/day forever                                                                                                                                                                                                                                                                                              | `20260904104540`                                                                              |
+
+### Struck from the programme
+
+**R2 (partitioning) is declined for every table**, on evidence, not caution.
+`hand_state_snapshots` carries a partial unique index Postgres cannot enforce
+across partitions and that index is the invariant preventing a stale hand being
+resurrected; `ca_hand_player_stat` would break the `ON CONFLICT` keeping the
+stats roll idempotent; `table_hole_cards` is 20 MB behind four RLS policies and
+a publication. The one table where it is safe is 156 MB, so it would be
+cosmetic. Reasons in full in
+`docs/changelog/2026-09-04-realtime-write-amplification.md`.
+
+**A1 remains struck** - see section 2.1. It has now been proposed twice.
+
+### Next
+
+1. The **`clubs` / `agents` hot accumulators** - 900k updates between 149 rows,
+   both published with live subscribers. Largest remaining reduction in
+   _decoding_ work. Needs a read of the settlement and commission functions
+   first; the writes are not visible as top-level statements.
+2. **`settlement_idempotency_keys` has 0% HOT updates** - one partial index makes
+   HOT structurally impossible across 1.2M updates.
+3. **Sentry phases D, C, X and O are untouched.** D1 (does anything arrive at
+   all?) and D2 (the `/src/` gate) are hours of work between them and unblock
+   the rest.
+4. The **164 unresolved `financial_alerts`**, including criticals unrelated to
+   the settlement outage. The alerting table works; nobody is told.
+
+---
+
 ## 1. THE SHAPE OF IT
 
 Six phases. Only the first is player-facing and compounding; do it first.

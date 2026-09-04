@@ -37,12 +37,7 @@ describe('CashierModal reports what actually happened', () => {
   it('stays open and explains itself when the engine refuses the top-up', async () => {
     const onClose = vi.fn();
     render(
-      <CashierModal
-        {...base}
-        onClose={onClose}
-        onAddChips={vi.fn().mockResolvedValue(false)}
-        onWithdrawChips={vi.fn().mockResolvedValue(true)}
-      />
+      <CashierModal {...base} onClose={onClose} onAddChips={vi.fn().mockResolvedValue(false)} />
     );
 
     fireEvent.click(screen.getByText('50%'));
@@ -66,12 +61,7 @@ describe('CashierModal reports what actually happened', () => {
   it('closes when the top-up succeeds', async () => {
     const onClose = vi.fn();
     render(
-      <CashierModal
-        {...base}
-        onClose={onClose}
-        onAddChips={vi.fn().mockResolvedValue(true)}
-        onWithdrawChips={vi.fn().mockResolvedValue(true)}
-      />
+      <CashierModal {...base} onClose={onClose} onAddChips={vi.fn().mockResolvedValue(true)} />
     );
 
     fireEvent.click(screen.getByText('50%'));
@@ -93,7 +83,6 @@ describe('CashierModal reports what actually happened', () => {
         {...base}
         onClose={onClose}
         onAddChips={vi.fn().mockResolvedValue(undefined as unknown as boolean)}
-        onWithdrawChips={vi.fn().mockResolvedValue(undefined as unknown as boolean)}
       />
     );
 
@@ -107,9 +96,7 @@ describe('CashierModal reports what actually happened', () => {
   it('charges once when Confirm is double-tapped', async () => {
     const gate = deferred<boolean>();
     const onAddChips = vi.fn().mockReturnValue(gate.promise);
-    render(
-      <CashierModal {...base} onClose={vi.fn()} onAddChips={onAddChips} onWithdrawChips={vi.fn()} />
-    );
+    render(<CashierModal {...base} onClose={vi.fn()} onAddChips={onAddChips} />);
 
     fireEvent.click(screen.getByText('50%'));
     const confirm = screen.getByRole('button', { name: /^Add / });
@@ -131,7 +118,6 @@ describe('CashierModal reports what actually happened', () => {
         {...base}
         onClose={onClose}
         onAddChips={vi.fn().mockRejectedValue(new Error('wallet locked'))}
-        onWithdrawChips={vi.fn()}
       />
     );
 
@@ -145,9 +131,7 @@ describe('CashierModal reports what actually happened', () => {
 
 describe('CashierModal quick amounts are visible on first open', () => {
   it('does not render the quick buttons at opacity 0 before a tab is clicked', () => {
-    render(
-      <CashierModal {...base} onClose={vi.fn()} onAddChips={vi.fn()} onWithdrawChips={vi.fn()} />
-    );
+    render(<CashierModal {...base} onClose={vi.fn()} onAddChips={vi.fn()} />);
     // `visibleQuick` started as [], so every button read visibleQuick[i] ===
     // undefined and rendered fully transparent — invisible, but clickable.
     for (const label of ['25%', '50%', '75%', 'MAX']) {
@@ -159,9 +143,7 @@ describe('CashierModal quick amounts are visible on first open', () => {
 
 describe('CashierModal amount input keeps cents', () => {
   it('does not truncate a fractional amount to an integer', () => {
-    render(
-      <CashierModal {...base} onClose={vi.fn()} onAddChips={vi.fn()} onWithdrawChips={vi.fn()} />
-    );
+    render(<CashierModal {...base} onClose={vi.fn()} onAddChips={vi.fn()} />);
     const input = screen.getByLabelText('Amount To Add') as HTMLInputElement;
     fireEvent.change(input, { target: { value: '12.34' } });
     // parseInt('12.34') === 12 — the old code silently dropped the cents that
@@ -170,9 +152,7 @@ describe('CashierModal amount input keeps cents', () => {
   });
 
   it('clamps an over-max amount rather than accepting it', () => {
-    render(
-      <CashierModal {...base} onClose={vi.fn()} onAddChips={vi.fn()} onWithdrawChips={vi.fn()} />
-    );
+    render(<CashierModal {...base} onClose={vi.fn()} onAddChips={vi.fn()} />);
     const input = screen.getByLabelText('Amount To Add') as HTMLInputElement;
     // canAddAmount = min(maxStack - currentStack, accountBalance, maxBuyIn)
     //             = min(300, 1000, 200) = 200

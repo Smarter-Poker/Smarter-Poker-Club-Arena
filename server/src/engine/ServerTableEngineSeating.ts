@@ -8,17 +8,12 @@
  * declarations for the hooks each layer calls on the layer below.
  */
 
-import {
-  syncStacks,
-  markSeatAsLeft,
-  atomicCashout,
-  processLeavePending,
-  supabase,
-} from '../services/supabase.js';
+import { supabase, atomicCashoutVoluntary } from '../services/supabase.js';
 import type { SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import { randomUUID } from 'node:crypto';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
+import { leaveLabel } from './ChipContinuity.js';
 
 export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   /**
@@ -144,66 +139,25 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
 
     // Between hands — wallet debited AND table_seats bumped by the RPC.
     player.stack += applied;
+    // CHIP CONTINUITY (I3): the database raised the baseline with the chips;
+    // refresh the mirror so the countdown and the leave lock agree with it.
+    void this.chipContinuity
+      .evaluate([{ user_id: userId, stack: player.stack, active: this.isContinuityActive(userId) }])
+      .then(() => this.broadcastCurrentState())
+      .catch((err) =>
+        reportError(err, `ServerTableEngine.${this.tableId}.continuity_addon_failed`)
+      );
     this.broadcastCurrentState();
     return { success: true, applied };
   }
 
-  /**
-   * Server-authoritative partial cash-out (withdraw) — the mirror of `addChips`.
-   *
-   *  - Between hands: `atomic_table_withdraw` CREDITS the player's PLAYER wallet
-   *    by `amount` and REDUCES `table_seats.stack` by the same amount
-   *    (apply_to_seat=true); we reduce the in-memory stack immediately and
-   *    broadcast. The RPC guards `amount > 0` and `amount <= seated stack`, so
-   *    an over-withdraw is rejected atomically and no chips are minted.
-   *  - Mid-hand: rejected outright — a player may not cash out chips that are
-   *    live in a hand. Unlike an add-on, this is NOT queued.
+  /*
+   * CHIP CONTINUITY (Operation Table Stakes, Slice 0, 2026-09-04): there is
+   * no partial cash-out. `withdrawChips`, `POST /withdrawchips` and the SQL
+   * function `atomic_table_withdraw` are gone. Chips on a cash table stay on
+   * the table until the player leaves (OPORD 1.3 invariant I1). A tournament
+   * stack was never withdrawable. Do not add a path back under another name.
    */
-  public async withdrawChips(
-    userId: string,
-    amount: number
-  ): Promise<{ success: boolean; error?: string }> {
-    const player = this.seatedPlayers.find((p) => p.user_id === userId);
-    if (!player) return { success: false, error: 'Player not seated' };
-    if (!(amount > 0)) return { success: false, error: 'Invalid amount' };
-
-    const midHand = !!this.handController;
-
-    // Mid-hand cash-out is not allowed (do NOT queue).
-    if (midHand) {
-      return { success: false, error: 'Cannot cash out during a hand' };
-    }
-
-    // Guard client-side too so we can surface a clean message; the RPC also
-    // rejects over-withdraw atomically as the authoritative check.
-    if (amount > player.stack) {
-      return { success: false, error: 'Cannot withdraw more than your table stack' };
-    }
-
-    // Credit the wallet AND reduce table_seats.stack atomically (between hands).
-    const { error } = await supabase.rpc('atomic_table_withdraw', {
-      p_user_id: userId,
-      p_table_id: this.tableId,
-      p_amount: amount,
-      p_apply_to_seat: true,
-    });
-    if (error) {
-      const msg = String(error.message || '');
-      const clean = /exceeds seated stack/i.test(msg)
-        ? 'Cannot withdraw more than your table stack'
-        : 'Cash-out failed';
-      reportError(error, `ServerTableEngine.${this.tableId}.withdrawChips_credit_failed`, {
-        userId,
-        amount,
-      });
-      return { success: false, error: clean };
-    }
-
-    // Between hands — wallet credited AND table_seats reduced by the RPC.
-    player.stack -= amount;
-    this.broadcastCurrentState();
-    return { success: true };
-  }
 
   /**
    * A2 FIX (2026-08-08): deliver pending add-ons from the DURABLE ledger.
@@ -440,6 +394,20 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     // FIX 143: willFoldNextHand is informational — player finishes current hand normally
     const willFoldNextHand = sitOut && this.handController !== null;
 
+    // CHIP CONTINUITY: a sit-out freezes the stay clock, sitting back in
+    // resumes it (remainder kept). Reported now rather than waiting for the
+    // 10-second presence sweep so the countdown the player sees stops the
+    // moment they stop. A pending (mid-hand) sit-out also counts as inactive:
+    // isContinuityActive reads pendingSitOut.
+    if (!this.isTournamentTable()) {
+      void this.chipContinuity
+        .evaluate([{ user_id: userId, active: this.isContinuityActive(userId) }])
+        .then(() => this.broadcastCurrentState())
+        .catch((err) =>
+          reportError(err, `ServerTableEngine.${this.tableId}.continuity_sitout_failed`)
+        );
+    }
+
     return { success: true, willFoldNextHand };
   }
 
@@ -459,6 +427,13 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
      * that with its own cash-out of the stale pre-hand stack.
      */
     clientCashout?: boolean;
+    /**
+     * CHIP CONTINUITY (2026-09-04): 'LEAVE_LOCKED' when the player is ahead
+     * of their buy-in with stay clock remaining. `stay_remaining_ms` says how
+     * long; `error` is the label the leave control shows. Nothing else.
+     */
+    code?: 'LEAVE_LOCKED';
+    stay_remaining_ms?: number;
   } {
     // ═══════════════════════════════════════════════════════════════════════
     // NOBODY LEAVES WHILE THEY ARE ALL-IN. CASH OR TOURNAMENT.
@@ -562,6 +537,47 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       return { success: true, immediate: true };
     }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // CHIP CONTINUITY (Operation Table Stakes, Slice 0 - OPORD 1.3 s6.4, I5).
+    //
+    // A cash player ahead of the money they put in stays seated until the
+    // stay clock reaches zero. This is the synchronous answer from the
+    // engine's mirror of cash_player_session; the database asks the same
+    // question again under the seat lock inside atomic_seat_cashout_locked
+    // (p_leave_mode = 'voluntary'), so a stale mirror cannot let anyone out
+    // and a forged cash-out cannot get past the door either (A0.16).
+    //
+    // Mid-hand the mirror holds the state as of the last settlement - the
+    // roster stack is the pre-hand stack - which is the only honest number
+    // before the pot is awarded. The settlement re-check covers the rest.
+    //
+    // The label is the ONLY copy: "Leave Available In M:SS". No reason, no
+    // essay, no forbidden words (section 6.1).
+    // ═══════════════════════════════════════════════════════════════════════
+    {
+      const lock = this.chipContinuity.leaveLock(userId, player.stack);
+      if (lock.locked) {
+        const label = leaveLabel(lock.remainingMs);
+        console.log(
+          `[ServerTableEngine:${this.tableId}] leave refused for ${userId} - stay clock ${lock.remainingMs}ms remaining`
+        );
+        this.hub?.emitEvent(this.tableId, {
+          type: 'leave_blocked',
+          table_id: this.tableId,
+          user_id: userId,
+          stay_remaining_ms: lock.remainingMs,
+          timestamp: Date.now(),
+        });
+        return {
+          success: false,
+          error: label,
+          immediate: false,
+          code: 'LEAVE_LOCKED',
+          stay_remaining_ms: lock.remainingMs,
+        };
+      }
+    }
+
     // Phase X5 (2026-04-29) — Bible V8 §1.16 seat_left discrete event so
     // every connected client (including spectators) can re-render the
     // empty seat without diffing the next state snapshot.
@@ -652,32 +668,58 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       // in that window would take this branch and cash out the STALE pre-hand
       // seat stack — the pot won vanishes (or a bust is refunded). Wait for any
       // in-flight settlement to persist the final stack first.
+      // CHIP CONTINUITY: this is the player's OWN leave, so it goes through
+      // the door the stay clock guards (p_leave_mode = 'voluntary'). A
+      // refusal comes back as a value with the seat untouched; there is NO
+      // markSeatAsLeft fallback on that path - it is the same RPC and would be
+      // refused for the same reason, and the old fallback then tore down the
+      // player's engine registrations while they were still in the chair.
+      const teardown = () => {
+        this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+        this.timeBankEngine.removePlayer(this.tableId, userId);
+        this.straddleEngine.removePlayer(this.tableId, userId);
+        this.preActionEngine.removePlayer(this.tableId, userId);
+        this.chipContinuity.forget(userId);
+      };
       const finishCashout = () =>
-        atomicCashout(userId, this.tableId, player.seat_number)
-          .then(() => {
-            console.log(
-              `[ServerTableEngine:${this.tableId}] Player ${userId} left table immediately (between hands)`
+        atomicCashoutVoluntary(userId, this.tableId, player.seat_number)
+          .then((res) => {
+            if (res.ok) {
+              console.log(
+                `[ServerTableEngine:${this.tableId}] Player ${userId} left table immediately (between hands)`
+              );
+              teardown();
+              return;
+            }
+            if (res.code === 'LEAVE_LOCKED') {
+              // The mirror was behind the database (a settlement landed
+              // between the check above and the cash-out). The player is
+              // still seated and still in; sit them back in from the
+              // 'voluntary' sit-out the seat_left path may have set, tell
+              // them the clock, and refresh the mirror.
+              console.log(
+                `[ServerTableEngine:${this.tableId}] leave refused at the door for ${userId} - stay clock ${res.stayRemainingMs}ms remaining`
+              );
+              this.chipContinuity.noteRefusal(userId, res.stayRemainingMs);
+              this.hub?.emitEvent(this.tableId, {
+                type: 'leave_blocked',
+                table_id: this.tableId,
+                user_id: userId,
+                stay_remaining_ms: res.stayRemainingMs,
+                timestamp: Date.now(),
+              });
+              this.broadcastCurrentState();
+              return;
+            }
+            // Transport or database failure: the seat is untouched (one
+            // transaction) and the player can try again. Nothing to tear
+            // down, because nothing left.
+            console.warn(
+              `[ServerTableEngine:${this.tableId}] voluntary cash-out failed for ${userId} - seat preserved: ${res.message}`
             );
-            this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-            this.timeBankEngine.removePlayer(this.tableId, userId);
-            this.straddleEngine.removePlayer(this.tableId, userId);
-            this.preActionEngine.removePlayer(this.tableId, userId);
           })
           .catch((err) => {
-            console.warn(`[ServerTableEngine:${this.tableId}] atomicCashout on leave failed:`, err);
-            // markSeatAsLeft is async. Called bare, a rejection on this path -
-            // the last-resort fallback that only runs because the cash-out
-            // ALREADY failed - was an unhandled promise rejection nobody saw.
-            void markSeatAsLeft(this.tableId, userId, player.seat_number).catch((mErr) => {
-              console.error(
-                `[ServerTableEngine:${this.tableId}] markSeatAsLeft fallback ALSO failed for ${userId} - seat may still be occupied:`,
-                mErr
-              );
-            });
-            this.disconnectEngine.unregisterPlayer(this.tableId, userId);
-            this.timeBankEngine.removePlayer(this.tableId, userId);
-            this.straddleEngine.removePlayer(this.tableId, userId);
-            this.preActionEngine.removePlayer(this.tableId, userId);
+            console.warn(`[ServerTableEngine:${this.tableId}] atomicCashout on leave threw:`, err);
           });
 
       if (this.postHandTasksPromise) {

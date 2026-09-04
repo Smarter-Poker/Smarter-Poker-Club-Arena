@@ -349,6 +349,8 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
             position: positionLabels.get(p.seat) ?? '',
             is_horse: p.is_horse ?? false, // Bible V8 §2.3
+            // CHIP CONTINUITY: the stay clock, identical in all three payloads.
+            ...this.chipContinuity.seatFields(p.user_id, p.stack),
           };
         });
       })(),
@@ -607,6 +609,8 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
             time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id), // Bible V8 §2.3
             position: positionLabels.get(p.seat) ?? '', // Bible V8 §2.3, Appendix B
             is_horse: p.is_horse ?? false, // Bible V8 §2.3
+            // CHIP CONTINUITY: the stay clock, identical in all three payloads.
+            ...this.chipContinuity.seatFields(p.user_id, p.stack),
             // Bible V8 §4.2 — Wait-for-BB flag exposed to clients so the
             // post-BB UI button can render. Walkthrough Step 4 fix
             // 2026-04-29: previously the engine tracked this internally but
@@ -718,6 +722,9 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
         is_horse: p.is_horse ?? false,
         is_waiting_for_bb: this.waitingForBB.has(p.user_id),
         hand_name: '',
+        // CHIP CONTINUITY: the stay clock keeps counting between hands, so the
+        // idle payload carries it too - the third of the three that must agree.
+        ...this.chipContinuity.seatFields(p.user_id, p.stack),
       })),
     };
     this.hub.publish(this.tableId, payload);

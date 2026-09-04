@@ -1,13 +1,17 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CASHIER MODAL — Add/Withdraw Chips at Table
+ *  CASHIER MODAL — Add Chips at Table
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Premium cashier modal for:
- * - Adding chips during play
- * - Withdrawing excess chips
+ * - Adding chips during play (up to the table maximum)
  * - Balance display
  * - Transaction history
+ *
+ * CHIP CONTINUITY (Operation Table Stakes, Slice 0, 2026-09-04): the second
+ * tab is gone. Chips on a cash table stay on the table until the player leaves
+ * (OPORD 1.3 invariant I1). There is no partial cash-out anywhere in the
+ * client, the engine or the database, and this modal must not grow one back.
  */
 
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
@@ -20,8 +24,6 @@ import { safeErrorMessage } from '../../utils/safeErrorMessage';
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
-
-export type CashierTab = 'add' | 'withdraw';
 
 export interface CashierTransaction {
   id: string;
@@ -48,7 +50,6 @@ export interface CashierModalProps {
    */
   /** `opId` is the modal's per-attempt idempotency id (see opIdRef). */
   onAddChips: (amount: number, opId?: string) => Promise<boolean>;
-  onWithdrawChips: (amount: number) => Promise<boolean>;
   currentStack: number;
   accountBalance: number;
   minBuyIn: number;
@@ -99,7 +100,6 @@ export function CashierModal({
   isOpen,
   onClose,
   onAddChips,
-  onWithdrawChips,
   currentStack,
   accountBalance,
   minBuyIn,
@@ -109,14 +109,13 @@ export function CashierModal({
   currency = '',
   isProcessing = false,
 }: CashierModalProps) {
-  const [activeTab, setActiveTab] = useState<CashierTab>('add');
   const [amount, setAmount] = useState(0);
   // The quick-amount buttons animate in. They used to start as [] — which
   // renders every one of them at opacity: 0 — and only got seeded inside
   // handleTabChange, so on first open 25/50/75/MAX were invisible (but still
   // clickable) until you tapped a tab. Seed them true; the open effect replays
   // the stagger.
-  const [visibleQuick, setVisibleQuick] = useState<boolean[]>([true, true, true, true]);
+  const [visibleQuick] = useState<boolean[]>([true, true, true, true]);
   // In-flight guard. `isProcessing` is an optional prop no caller passes, so it
   // was never able to stop a double tap on Confirm from firing two top-ups.
   const [busy, setBusy] = useState(false);
@@ -148,55 +147,29 @@ export function CashierModal({
     return Math.min(spaceInStack, accountBalance, maxBuyIn);
   }, [currentStack, maxStack, accountBalance, maxBuyIn]);
 
-  const canWithdrawAmount = useMemo(() => {
-    // Can only withdraw down to min buy-in
-    return Math.max(0, currentStack - minBuyIn);
-  }, [currentStack, minBuyIn]);
+  // The table minimum is still a prop because the parent computes the seat's
+  // buy-in band from it; the add path only needs the ceiling.
+  void minBuyIn;
 
-  const activeMax = activeTab === 'add' ? canAddAmount : canWithdrawAmount;
+  const activeMax = canAddAmount;
 
   // Quick amount options
   const quickAmounts = useMemo(() => {
-    const max = activeTab === 'add' ? canAddAmount : canWithdrawAmount;
+    const max = canAddAmount;
     return [
       { label: '25%', value: Math.trunc(max * 0.25 * 100) / 100 },
       { label: '50%', value: Math.trunc(max * 0.5 * 100) / 100 },
       { label: '75%', value: Math.trunc(max * 0.75 * 100) / 100 },
       { label: 'MAX', value: max },
     ];
-  }, [activeTab, canAddAmount, canWithdrawAmount]);
+  }, [canAddAmount]);
 
-  // A changed amount or tab is a DIFFERENT attempt — it gets its own
-  // idempotency id. (After a failed attempt both are unchanged, so the held
-  // id survives for the retry, which is the point.)
+  // A changed amount is a DIFFERENT attempt — it gets its own idempotency
+  // id. (After a failed attempt it is unchanged, so the held id survives for
+  // the retry, which is the point.)
   useEffect(() => {
     opIdRef.current = null;
-  }, [amount, activeTab]);
-
-  // Reset amount when switching tabs
-  const animTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
-
-  useEffect(() => {
-    return () => {
-      animTimers.current.forEach(clearTimeout);
-    };
-  }, []);
-
-  const handleTabChange = useCallback((tab: CashierTab) => {
-    if (busyRef.current) return;
-    setActiveTab(tab);
-    setAmount(0);
-    setSubmitError(null);
-    setVisibleQuick([]);
-    animTimers.current.forEach(clearTimeout);
-    animTimers.current = [];
-    [0, 1, 2, 3].forEach((i) => {
-      const t = setTimeout(() => {
-        setVisibleQuick((prev) => [...prev, true]);
-      }, i * 50);
-      animTimers.current.push(t);
-    });
-  }, []);
+  }, [amount]);
 
   // Handle confirm
   const handleConfirm = useCallback(async () => {
@@ -210,10 +183,7 @@ export function CashierModal({
 
     try {
       if (!opIdRef.current) opIdRef.current = uuid();
-      const ok =
-        activeTab === 'add'
-          ? await onAddChips(amount, opIdRef.current)
-          : await onWithdrawChips(amount);
+      const ok = await onAddChips(amount, opIdRef.current);
       if (!ok) {
         /* Cashier audit 2026-08-27 (P0-1): this banner used to assert "your
            wallet was not charged" / "your stack is unchanged" for EVERY
@@ -224,9 +194,7 @@ export function CashierModal({
            vs unknown-outcome), and this banner points at the number that
            settles it. */
         setSubmitError(
-          activeTab === 'add'
-            ? 'That Top-Up Did Not Complete. Check Your Stack And Balance Before Trying Again.'
-            : 'That Cash-Out Did Not Complete. Check Your Stack And Balance Before Trying Again.'
+          'That Top-Up Did Not Complete. Check Your Stack And Balance Before Trying Again.'
         );
         return;
       }
@@ -242,16 +210,13 @@ export function CashierModal({
       busyRef.current = false;
       setBusy(false);
     }
-  }, [amount, activeTab, isProcessing, onAddChips, onWithdrawChips, onClose]);
+  }, [amount, isProcessing, onAddChips, onClose]);
 
   // Validate amount
   const isValidAmount = useMemo(() => {
     if (amount <= 0) return false;
-    if (activeTab === 'add') {
-      return amount <= canAddAmount;
-    }
-    return amount <= canWithdrawAmount;
-  }, [amount, activeTab, canAddAmount, canWithdrawAmount]);
+    return amount <= canAddAmount;
+  }, [amount, canAddAmount]);
 
   // ── Focus Trap: trap focus inside modal when open ──
   const handleFocusTrap = useCallback((e: KeyboardEvent) => {
@@ -291,7 +256,6 @@ export function CashierModal({
     if (!isOpen) return;
     setAmount(0);
     setSubmitError(null);
-    setActiveTab('add');
     busyRef.current = false;
     setBusy(false);
   }, [isOpen]);
@@ -313,27 +277,6 @@ export function CashierModal({
       };
     }
   }, [isOpen, handleFocusTrap]);
-
-  // ── Keyboard navigation for tabs (Arrow Left/Right) ──
-  const cashierTabs: CashierTab[] = ['add', 'withdraw'];
-  const handleTabKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-        e.preventDefault();
-        const idx = cashierTabs.indexOf(activeTab);
-        const next =
-          e.key === 'ArrowRight'
-            ? cashierTabs[(idx + 1) % cashierTabs.length]
-            : cashierTabs[(idx - 1 + cashierTabs.length) % cashierTabs.length];
-        handleTabChange(next);
-        const btn = document.querySelector(
-          `[aria-controls="table-cashier-panel-${next}"]`
-        ) as HTMLElement;
-        btn?.focus();
-      }
-    },
-    [activeTab, handleTabChange]
-  );
 
   if (!isOpen) return null;
 
@@ -379,43 +322,22 @@ export function CashierModal({
           </div>
         </div>
 
-        {/* Tabs */}
-        <div
-          className="cashier-modal__tabs"
-          role="tablist"
-          aria-label="Cashier Actions"
-          onKeyDown={handleTabKeyDown}
-        >
-          <button
-            role="tab"
-            tabIndex={activeTab === 'add' ? 0 : -1}
-            aria-selected={activeTab === 'add'}
-            aria-controls="table-cashier-panel-add"
+        {/* One action: Add Chips. */}
+        <div className="cashier-modal__tabs" aria-hidden="true">
+          <span
             id="table-cashier-tab-add"
-            className={`cashier-modal__tab ${activeTab === 'add' ? 'cashier-modal__tab--active' : ''}`}
-            onClick={() => handleTabChange('add')}
+            className="cashier-modal__tab cashier-modal__tab--active"
           >
             Add Chips
-          </button>
-          <button
-            role="tab"
-            tabIndex={activeTab === 'withdraw' ? 0 : -1}
-            aria-selected={activeTab === 'withdraw'}
-            aria-controls="table-cashier-panel-withdraw"
-            id="table-cashier-tab-withdraw"
-            className={`cashier-modal__tab ${activeTab === 'withdraw' ? 'cashier-modal__tab--active' : ''}`}
-            onClick={() => handleTabChange('withdraw')}
-          >
-            Withdraw
-          </button>
+          </span>
         </div>
 
         {/* Amount Input */}
         <div
           className="cashier-modal__input-section"
-          id={`table-cashier-panel-${activeTab}`}
-          role="tabpanel"
-          aria-labelledby={`table-cashier-tab-${activeTab}`}
+          id="table-cashier-panel-add"
+          role="group"
+          aria-labelledby="table-cashier-tab-add"
         >
           <div className="cashier-modal__input-wrapper">
             <span className="cashier-modal__currency">{currency}</span>
@@ -433,16 +355,12 @@ export function CashierModal({
               step={0.01}
               max={activeMax}
               disabled={busy}
-              aria-label={activeTab === 'add' ? 'Amount To Add' : 'Amount To Withdraw'}
+              aria-label="Amount To Add"
               aria-invalid={amount > 0 && !isValidAmount}
             />
           </div>
           <div className="cashier-modal__limit">
-            {activeTab === 'add' ? (
-              <span>Available To Add: {formatAmount(canAddAmount, currency)}</span>
-            ) : (
-              <span>Available To Withdraw: {formatAmount(canWithdrawAmount, currency)}</span>
-            )}
+            <span>Available To Add: {formatAmount(canAddAmount, currency)}</span>
           </div>
         </div>
 
@@ -473,13 +391,8 @@ export function CashierModal({
         {/* New Stack Preview */}
         <div className="cashier-modal__preview">
           <span className="cashier-modal__preview-label">New Stack:</span>
-          <span
-            className={`cashier-modal__preview-value ${activeTab === 'add' ? 'cashier-modal__preview-value--add' : 'cashier-modal__preview-value--withdraw'}`}
-          >
-            {formatAmount(
-              activeTab === 'add' ? currentStack + amount : currentStack - amount,
-              currency
-            )}
+          <span className="cashier-modal__preview-value cashier-modal__preview-value--add">
+            {formatAmount(currentStack + amount, currency)}
           </span>
         </div>
 
@@ -503,10 +416,8 @@ export function CashierModal({
                 <span className="cashier-modal__spinner" />
                 Processing...
               </>
-            ) : activeTab === 'add' ? (
-              `Add ${formatAmount(amount, currency)}`
             ) : (
-              `Withdraw ${formatAmount(amount, currency)}`
+              `Add ${formatAmount(amount, currency)}`
             )}
           </button>
         </div>

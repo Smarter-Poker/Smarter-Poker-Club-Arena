@@ -538,7 +538,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             (async () => {
               const cashedOutIds = await processLeavePending(
                 this.tableId,
-                this.tableInfo?.club_id || ''
+                this.tableInfo?.club_id || '',
+                (lockedUserId, stayRemainingMs) =>
+                  this.onLeaveRefusedAtSettlement(lockedUserId, stayRemainingMs)
               );
               // Same per-player teardown settlement does, or every leaver
               // strands an FSM entry, a time bank and a pre-action behind them.
@@ -547,6 +549,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                 this.timeBankEngine.removePlayer(this.tableId, leftUserId);
                 this.straddleEngine.removePlayer(this.tableId, leftUserId);
                 this.preActionEngine.removePlayer(this.tableId, leftUserId);
+                this.chipContinuity.forget(leftUserId);
               }
               if (cashedOutIds.length > 0) {
                 this.seatedPlayers = this.seatedPlayers.filter(

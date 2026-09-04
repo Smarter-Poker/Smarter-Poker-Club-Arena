@@ -111,10 +111,30 @@ export async function markSeatAsLeft(
  * FIX 208: Avoids PostgREST RPC "text = uuid" errors
  * Returns the cashed-out stack amount, or 0 if seat not found
  */
+/**
+ * CHIP CONTINUITY (2026-09-04). `leaveMode` is what the database enforces the
+ * stay clock on: `'voluntary'` is the player's own choice to leave (POST
+ * /leave, a horse departure, a leave_pending seat at settlement) and may be
+ * REFUSED while they are ahead of their buy-in with clock remaining; omitted
+ * (NULL) or `'forced'` is a system exit - eviction, table close, bust, sweep -
+ * which the clock never blocks. A refusal is reported through `onLocked` with
+ * the remaining milliseconds and the function returns 0 with the seat exactly
+ * as it was; any other failure goes to `onFailed`. Callbacks rather than a
+ * richer return type so every existing caller keeps its `number` contract.
+ */
+export interface CashoutOptions {
+  leaveMode?: 'voluntary' | 'forced';
+  onLocked?: (stayRemainingMs: number) => void;
+  onFailed?: (message: string) => void;
+}
+
+const LEAVE_LOCKED_RE = /LEAVE_LOCKED:(\d+)/;
+
 export async function atomicCashout(
   userId: string,
   tableId: string,
-  seatNumber?: number
+  seatNumber?: number,
+  opts?: CashoutOptions
 ): Promise<number> {
   // 2026-08-27: read + credit + vacate now happen in ONE transaction, with the
   // seat row held under FOR UPDATE. See the block comment at the top of this
@@ -129,9 +149,17 @@ export async function atomicCashout(
       p_user_id: userId,
       p_table_id: tableId,
       p_seat_number: seatNumber ?? null,
+      p_leave_mode: opts?.leaveMode ?? null,
     });
 
     if (error) {
+      const locked = LEAVE_LOCKED_RE.exec(String(error.message || ''));
+      if (locked) {
+        // Refused by the stay clock. Not a failure: the player is still in
+        // their chair and the caller shows them the countdown.
+        opts?.onLocked?.(Number(locked[1]));
+        return 0;
+      }
       // The seat is untouched: the whole thing was one transaction, so a
       // failure here rolled back the credit AND the vacate together. The stack
       // is still on the seat and the next pass retries it. This is the property
@@ -140,6 +168,7 @@ export async function atomicCashout(
         `[atomicCashout] Locked cash-out failed for ${userId} at ${tableId} - seat preserved for retry:`,
         error.message
       );
+      opts?.onFailed?.(String(error.message || 'cash-out failed'));
       return 0;
     }
 
@@ -154,6 +183,7 @@ export async function atomicCashout(
       `[atomicCashout] Transport failure for ${userId} at ${tableId} - seat preserved for retry:`,
       err?.message
     );
+    opts?.onFailed?.(String(err?.message || 'transport failure'));
     return 0;
   }
 }
@@ -235,7 +265,19 @@ export async function notifyWaitlistSeatOpen(tableId: string): Promise<void> {
 /**
  * Process leave-pending players after hand completion
  */
-export async function processLeavePending(tableId: string, clubId: string): Promise<string[]> {
+export async function processLeavePending(
+  tableId: string,
+  clubId: string,
+  /**
+   * CHIP CONTINUITY (2026-09-04): a leave_pending seat is the player's OWN
+   * request, so it goes through the door the stay clock guards. When the
+   * database refuses it (they won the hand they asked to leave during, and
+   * are now ahead with clock remaining) the seat stays, `leave_pending` is
+   * cleared so this sweep does not re-ask every tick, and the caller is told
+   * so it can show the player the countdown instead of an empty seat.
+   */
+  onLocked?: (userId: string, stayRemainingMs: number) => void
+): Promise<string[]> {
   /* Deliberately does NOT select `stack`. This query only ENUMERATES which
      seats asked to leave; the amount comes from the locked read inside
      atomic_seat_cashout_locked. `stack` was selected here and never used, which
@@ -253,8 +295,29 @@ export async function processLeavePending(tableId: string, clubId: string): Prom
 
   const cashedOut: string[] = [];
   for (const seat of pendingSeats) {
-    // FIX 208: Use direct atomicCashout instead of RPC
-    await atomicCashout(seat.user_id, tableId, seat.seat_number);
+    const out: { lockedMs: number | null; failed: boolean } = { lockedMs: null, failed: false };
+    await atomicCashout(seat.user_id, tableId, seat.seat_number, {
+      leaveMode: 'voluntary',
+      onLocked: (ms) => {
+        out.lockedMs = ms;
+      },
+      onFailed: () => {
+        out.failed = true;
+      },
+    });
+    if (out.lockedMs !== null) {
+      await supabase
+        .from('table_seats')
+        .update({ leave_pending: false })
+        .eq('table_id', tableId)
+        .eq('user_id', seat.user_id)
+        .is('left_at', null);
+      onLocked?.(seat.user_id, out.lockedMs);
+      continue;
+    }
+    // Any other failure: the seat is untouched (one transaction) and the next
+    // sweep retries it. Only a seat that actually left is reported as gone.
+    if (out.failed) continue;
     cashedOut.push(seat.user_id);
   }
 

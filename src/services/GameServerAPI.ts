@@ -577,37 +577,10 @@ export async function addChips(
   }
 }
 
-/**
- * Withdraw chips from the table stack back to the player's wallet (partial
- * cash-out). Server-authoritative: the engine credits the PLAYER wallet and
- * reduces the seat stack atomically, only between hands (rejected mid-hand).
- * Mirror of `addChips`.
- * @param tableId Table ID
- * @param amount Amount of chips to withdraw
+/*
+ * CHIP CONTINUITY (2026-09-04): the partial cash-out call (POST /withdrawchips)
+ * is gone. Chips on a cash table stay on the table until the player leaves.
  */
-export async function removeChips(tableId: string, amount: number): Promise<ActionResult> {
-  try {
-    const headers = await getAuthHeaders();
-    const res = await fetch(`${GAME_SERVER_URL}/withdrawchips`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ tableId, amount }),
-    });
-
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      throw new Error(errorData.error || 'Failed to withdraw chips via GameServerAPI');
-    }
-
-    const data = await res.json();
-    return { success: data.success, error: data.error };
-  } catch (err: any) {
-    console.error(`[GameServerAPI] removeChips error:`, err);
-    // Same TRANSPORT contract as addChips: outcome unknown, never claim
-    // "nothing moved" on this path.
-    return { success: false, error: err.message || 'Network error', code: 'TRANSPORT' };
-  }
-}
 
 /**
  * Bible V8 §7.12: Player sit out or sit back in.
@@ -969,7 +942,6 @@ export default {
   setSitOut,
   toggleStraddle,
   addChips,
-  removeChips,
   getTableState,
   respondToRIT,
   respondToInsurance,

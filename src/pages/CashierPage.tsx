@@ -1123,7 +1123,6 @@ export default function CashierPage() {
     [
       'BALANCE_UPDATED',
       'CHIPS_ADDED',
-      'CHIPS_WITHDRAWN',
       'CASHIER_BALANCE_CHANGED',
       'RAKEBACK_CLAIMED',
       'DAILY_REWARD_CLAIMED',
@@ -1573,7 +1572,7 @@ export default function CashierPage() {
           // This now mirrors the 'buyin' branch above exactly, and for the same
           // reason: NO money moves in the Cashier. The player is routed to the
           // table, where the engine owns the withdrawal end to end —
-          // GameServerAPI.removeChips -> atomic_table_withdraw credits the
+          // (removed 2026-09-04: no partial cash-out at a cash table) credits the
           // wallet and reduces the seat stack atomically, only between hands,
           // deriving the amount from authoritative state rather than a text box.
           if (isMounted.current)

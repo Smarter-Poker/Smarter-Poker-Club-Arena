@@ -55,6 +55,9 @@ import {
   markSeatAsLeft,
 } from '../services/supabase.js';
 import { collectNitEvictions } from '../services/supabase/nitGame.js';
+import { evaluateCashSessions } from '../services/supabase/cashSessions.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { ChipContinuityTracker } from './ChipContinuity.js';
 import { deadlineScheduler } from './DeadlineScheduler.js';
 import type {
   SeatPlayer,
@@ -1246,6 +1249,13 @@ export abstract class ServerTableEngineBase {
    * getting two WHOLE extensions rather than one and a stub.
    */
   protected readonly timeBankBaseSeconds = 40;
+  /**
+   * CHIP CONTINUITY (Operation Table Stakes, Slice 0). The engine-side mirror
+   * of cash_player_session: the stay clock a player ahead of their buy-in
+   * serves before they can leave. The database owns it; this reports
+   * transitions and renders the answer. See ChipContinuity.ts.
+   */
+  protected chipContinuity: ChipContinuityTracker;
   protected disconnectEngine: DisconnectEngine;
   protected preActionEngine: PreActionEngine;
   protected atomicStackService: AtomicStackService;
@@ -1267,6 +1277,14 @@ export abstract class ServerTableEngineBase {
     // authoritative one. Any older instance still mid-stop() sees itself
     // superseded and keeps its hands off the shared scheduler.
     ServerTableEngineBase.liveEngines.set(tableId, this);
+
+    this.chipContinuity = new ChipContinuityTracker({
+      tableId,
+      isCash: () => !!this.tableInfo && !this.isTournamentTable(),
+      isFrozen: () => isMaintenanceFrozen(),
+      evaluate: evaluateCashSessions,
+      report: reportError,
+    });
 
     // Initialize ported core modules
     this.preciseTimer = new PreciseActionTimer((event) => {
@@ -2141,6 +2159,40 @@ export abstract class ServerTableEngineBase {
    * at the table to time out every 10s and fold their hand. (Dan flagged
    * this explicitly during the PR-G-real refactor.)
    */
+  /**
+   * CHIP CONTINUITY (OPORD 1.3 section 6.3): the stay clock ticks only while
+   * the player is seated, in, and here. Sitting out (or asked to after this
+   * hand), disconnected, or away (page hidden, AFK strikes) all freeze it -
+   * the remainder is kept, never reset.
+   */
+  /**
+   * CHIP CONTINUITY: a leave_pending seat was refused at the door (the player
+   * won the hand they asked to leave during and is now ahead with clock
+   * left). They are still seated - sat out by their own request - and are
+   * told the countdown. Nothing is torn down.
+   */
+  protected onLeaveRefusedAtSettlement(userId: string, stayRemainingMs: number): void {
+    this.chipContinuity.noteRefusal(userId, stayRemainingMs);
+    console.log(
+      `[ServerTableEngine:${this.tableId}] leave_pending refused at settlement for ${userId} - stay clock ${stayRemainingMs}ms remaining`
+    );
+    this.hub?.emitEvent(this.tableId, {
+      type: 'leave_blocked',
+      table_id: this.tableId,
+      user_id: userId,
+      stay_remaining_ms: stayRemainingMs,
+      timestamp: Date.now(),
+    });
+  }
+
+  protected isContinuityActive(userId: string): boolean {
+    if (this.pendingSitOut.has(userId)) return false;
+    if (this.disconnectEngine.isSittingOut(this.tableId, userId)) return false;
+    if (!this.disconnectEngine.isConnected(this.tableId, userId)) return false;
+    if (this.disconnectEngine.isAway(this.tableId, userId)) return false;
+    return true;
+  }
+
   protected scheduleHeartbeatCheck(): void {
     deadlineScheduler.schedule({
       tableId: this.tableId,
@@ -2165,6 +2217,15 @@ export abstract class ServerTableEngineBase {
           }
           this.disconnectEngine.checkStaleHeartbeats(this.tableId);
           this.runTableWatchdog();
+          // CHIP CONTINUITY: presence just got re-evaluated above (stale
+          // heartbeats -> disconnected), so this is the moment to tell the
+          // database which stay clocks pause and which resume. Only
+          // transitions cross the wire; a quiet table costs nothing.
+          void this.chipContinuity
+            .sweepPresence(this.seatedPlayers ?? [], (uid) => this.isContinuityActive(uid))
+            .catch((err) =>
+              reportError(err, 'ServerTableEngine.' + this.tableId + '.continuity_sweep_threw')
+            );
         } catch (err) {
           reportError(err, 'ServerTableEngine.' + this.tableId + '.heartbeat_tick_threw');
         } finally {

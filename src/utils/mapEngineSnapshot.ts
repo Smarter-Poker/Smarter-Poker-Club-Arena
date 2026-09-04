@@ -50,6 +50,16 @@ export interface EnginePublicPlayer {
    * MUCKED label instead of cards. Never inferred client-side.
    */
   is_mucked?: boolean;
+  /**
+   * CHIP CONTINUITY (2026-09-04): the stay clock. Money put onto this
+   * session, the remaining stay time as of this snapshot, whether it is
+   * counting down, and whether leaving is refused right now. All three
+   * engine payloads carry them; the client renders and never decides.
+   */
+  session_baseline?: number;
+  stay_remaining_ms?: number;
+  stay_running?: boolean;
+  leave_locked?: boolean;
 }
 
 export interface EngineActionRecord {
@@ -259,6 +269,13 @@ export interface MappedTableStatePatch {
    * others is the shape of the seat-7 incident.
    */
   maxSeats: number;
+  /**
+   * CHIP CONTINUITY: the hero's own leave lock, as the engine published it.
+   * `remainingMs` is as of `at` (engine clock, ms); the leave control counts
+   * down from there while `running`. Null when the hero is not seated or the
+   * engine build predates the field.
+   */
+  heroLeave: { locked: boolean; remainingMs: number; running: boolean; at: number } | null;
 }
 
 // ─── Mapping ──────────────────────────────────────────────────────────────────
@@ -457,6 +474,21 @@ export function mapEngineSnapshot(
   // running fast made a 15-second turn visibly run short.
   recordServerTime(s.server_time_ms);
 
+  // CHIP CONTINUITY: lift the hero's stay clock out of the seat payload.
+  const heroRaw = s.players.find((p) => p.user_id === heroUserId);
+  const heroLeave: MappedTableStatePatch['heroLeave'] =
+    heroRaw && typeof heroRaw.stay_remaining_ms === 'number'
+      ? {
+          locked: heroRaw.leave_locked === true,
+          remainingMs: Math.max(0, heroRaw.stay_remaining_ms),
+          running: heroRaw.stay_running === true,
+          at:
+            typeof s.server_time_ms === 'number' && s.server_time_ms > 0
+              ? s.server_time_ms
+              : Date.now(),
+        }
+      : null;
+
   // Action timer deadline.
   // Phase 1.2 PR-F: prefer the authoritative turn_deadline_ms from the
   // engine. Fall back to start+duration for backward compat with older
@@ -528,6 +560,7 @@ export function mapEngineSnapshot(
     actionTimerPlayerId: s.current_player ?? undefined,
     isTimeBankActive: s.time_bank_active ?? false,
     handNumber: s.hand_number ?? 0,
+    heroLeave,
     sidePots,
     disconnectStates: s.disconnect_states ?? {},
     // Phase 2 T1-01: winners with net amount. Server emits winners[] with

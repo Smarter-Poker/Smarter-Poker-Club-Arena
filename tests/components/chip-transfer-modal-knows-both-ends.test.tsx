@@ -45,6 +45,7 @@ const db = vi.hoisted(() => ({
     error: null,
   } as { data: unknown; error: unknown },
   pinnedDelayMs: 0,
+  clubOwner: '47965354-0e56-43ef-931c-ddaab82af765' as string | null,
 }));
 
 vi.mock('../../src/hooks/useAuthUser', () => ({
@@ -92,6 +93,8 @@ function chainFor(table: string) {
     }
     if (table === 'clubs' && selectArg.includes('chip_treasury'))
       return { data: { chip_treasury: 1000000 }, error: null };
+    if (table === 'clubs' && selectArg.includes('owner_id'))
+      return { data: { owner_id: db.clubOwner }, error: null };
     if (table === 'clubs') return { data: { name: 'Deep Stack Society' }, error: null };
     if (table === 'agents') return { data: { agent_wallet_balance: 500 }, error: null };
     return { data: null, error: null };
@@ -122,6 +125,7 @@ beforeEach(() => {
     error: null,
   };
   db.pinnedDelayMs = 0;
+  db.clubOwner = SENDER;
 });
 
 const confirmButton = () => screen.getByRole('button', { name: /Confirm Transfer|Processing/ });
@@ -207,6 +211,54 @@ describe('the sender role', () => {
     await waitFor(() =>
       expect(rpcMock.mock.calls.some((c) => c[0] === 'fn_agent_wallet_send')).toBe(true)
     );
+  });
+});
+
+describe('the verification pass (2026-09-04, same day)', () => {
+  it('routes the club owner through the club bank even with no membership row', async () => {
+    // fn_club_bank_role treats clubs.owner_id as 'owner'; the modal used to
+    // read club_members alone and fall to 'player', the agent-wallet RPC.
+    db.senderRole = { data: null, error: null };
+    db.clubOwner = SENDER;
+    render(<ChipTransferModal isOpen onClose={() => {}} clubId={CLUB} recipientId={AGENT} />);
+    await waitFor(() => expect(screen.getByText('Your Club Bank:')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Agent Wallet')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '10' } });
+    await waitFor(() => expect((confirmButton() as HTMLButtonElement).disabled).toBe(false));
+    await act(async () => {
+      fireEvent.click(confirmButton());
+    });
+    await waitFor(() =>
+      expect(rpcMock.mock.calls.some((c) => c[0] === 'fn_club_bank_send')).toBe(true)
+    );
+  });
+
+  it('forgets the previous recipient when reopened for another one', async () => {
+    // The Agent Team console reuses one modal for every agent it funds.
+    db.pinned = { data: null, error: null };
+    const view = render(
+      <ChipTransferModal isOpen onClose={() => {}} clubId={CLUB} recipientId={AGENT} />
+    );
+    await waitFor(() =>
+      expect(screen.getByText('That Person Is Not A Member Of This Club')).toBeTruthy()
+    );
+    // Close, then reopen for a recipient who IS a member.
+    view.rerender(<ChipTransferModal isOpen={false} onClose={() => {}} clubId={CLUB} />);
+    db.pinned = {
+      data: {
+        user_id: AGENT,
+        role: 'agent',
+        chip_balance: 12,
+        status: 'active',
+        users: { id: AGENT, username: 'Rook' },
+      },
+      error: null,
+    };
+    view.rerender(
+      <ChipTransferModal isOpen onClose={() => {}} clubId={CLUB} recipientId={AGENT} />
+    );
+    await waitFor(() => expect(screen.getByText('Agent Wallet')).toBeTruthy());
+    expect(screen.queryByText('That Person Is Not A Member Of This Club')).toBeNull();
   });
 });
 

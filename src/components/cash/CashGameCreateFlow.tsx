@@ -60,6 +60,13 @@ interface Props {
   /** fn_game_creation_access said this person may build here. */
   canBuildHere: boolean;
   deniedMessage?: string | null;
+  /**
+   * Embedded hosts (Table Management, for a club or a union) own the URL.
+   * When set, a saved game hands control back here instead of navigating to
+   * /clubs/<id> - which, from a union console, is a page the operator did not
+   * come from. Start still goes to the felt: that is the point of Start.
+   */
+  onSaved?: () => void;
 }
 
 export default function CashGameCreateFlow({
@@ -67,6 +74,7 @@ export default function CashGameCreateFlow({
   initialVariant,
   canBuildHere,
   deniedMessage,
+  onSaved,
 }: Props) {
   const navigate = useNavigate();
   const toast = useToast();
@@ -188,7 +196,8 @@ export default function CashGameCreateFlow({
           navigate(`/table/${res.table_id}`);
         } else {
           toast.success('Game Created');
-          navigate(`/clubs/${clubId}`);
+          if (onSaved) onSaved();
+          else navigate(`/clubs/${clubId}`);
         }
       } catch (err) {
         // A refusal the function raised on purpose gets its house wording;

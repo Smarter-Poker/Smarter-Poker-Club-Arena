@@ -60,6 +60,7 @@ import { resolveLobbyClubId } from '../utils/clubQuickLink';
 import { useUserStore } from '../stores/useUserStore';
 import { TableErrorBoundary } from '../components/common/TableErrorBoundary';
 import { betSliderStep, sliderUnitFor } from '../components/table/ActionPanel';
+import { publishInTabLobbyActive } from '../components/club/inTabLobbySurface';
 
 // Lazy-load TablePage for code splitting
 const TablePage = lazyWithRetry(() => import('./TablePage'));
@@ -1429,7 +1430,14 @@ export default function MultiTablePage() {
             // A non-turn decision (discard / insurance / RIT) and a burning
             // time bank each get their own countdown, computed from the same
             // 1s clock as the turn timer so all tables tick together.
-            const d = parseTimed(t.decision);
+            const raw = parseTimed(t.decision);
+            // A DECISION THAT HAS EXPIRED IS NOT A DECISION (Dan 2026-09-04):
+            // a leaked RIT deadline read as "RUN IT / 0s Left", red, on that
+            // tab for the rest of the session. The clamp below turned a past
+            // instant into a permanent zero. Past is gone; the tab shows
+            // nothing. (The leak itself is closed in TablePage; this is the
+            // strip refusing to display a clock that has already run out.)
+            const d = raw && raw.at > nowMs ? raw : null;
             const tb = parseTimed(t.timeBank);
             const secs = (at: number) => Math.max(0, Math.ceil((at - nowMs) / 1000));
             return {
@@ -3207,6 +3215,17 @@ export default function MultiTablePage() {
     else body.removeAttribute('data-ca-pinned-bar');
     return () => body.removeAttribute('data-ca-pinned-bar');
   }, [pinnedBarVisible]);
+
+  // THE FOOTER FOLLOWS THE LOBBY (Dan 2026-09-04). The "+" lobby is a tab on
+  // /table/<id>, a route the global footer is (rightly) denied on. Tell the
+  // app root when the tab on screen is a lobby, so the footer shows there and
+  // ONLY there - never over a live felt, never for a lobby tab parked behind
+  // one, and never after this container unmounts. See inTabLobbySurface.ts.
+  useEffect(() => {
+    const cur = tables[activeIndex];
+    publishInTabLobbyActive(!hidden && !!cur && isLobbyTab(cur));
+  }, [hidden, tables, activeIndex]);
+  useEffect(() => () => publishInTabLobbyActive(false), []);
 
   // Remember the last REAL table the player had on screen, so the dock can
   // send them back to it rather than to whichever tab happens to be oldest.

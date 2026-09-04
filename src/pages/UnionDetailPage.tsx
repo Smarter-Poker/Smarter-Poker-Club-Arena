@@ -6,7 +6,8 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useUnionRouteId } from '../hooks/useUnionRouteId';
 import { getLocalStorage, setLocalStorage } from '../lib/storage';
 import { unionService, type Union, type UnionClub } from '../services/UnionService';
 import { unionApi } from '../services/UnionApiService';
@@ -68,7 +69,8 @@ interface FinancialSummary {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function UnionDetailPage() {
-  const { unionId } = useParams<{ unionId: string }>();
+  /* /unions/<slug> in the URL, a UUID in every query (useUnionRouteId). */
+  const { unionId, unionRef } = useUnionRouteId();
   const { user } = useAuthUser();
   const toast = useToast();
   useVisibilityRefresh(async () => {
@@ -740,10 +742,13 @@ export default function UnionDetailPage() {
         <div className={styles.headerActions}>
           {union.ownerId === user?.id ? (
             <>
-              <Link className={styles.managementButton} to={`/unions/${unionId}/table-management`}>
+              <Link className={styles.managementButton} to={`/unions/${unionRef}/table-management`}>
                 Table Management
               </Link>
-              <GameCreationActions managementPath={`/unions/${unionId}/table-management`} compact />
+              <GameCreationActions
+                managementPath={`/unions/${unionRef}/table-management`}
+                compact
+              />
             </>
           ) : (
             <button className={styles.applyButton} onClick={handleApplyClick} disabled={applying}>
@@ -1448,7 +1453,7 @@ export default function UnionDetailPage() {
             <button
               type="button"
               className={styles.statementsLink}
-              onClick={() => navigate(`/unions/${unionId}/statements`)}
+              onClick={() => navigate(`/unions/${unionRef}/statements`)}
             >
               Weekly Statements And Square-Up
             </button>
@@ -1464,7 +1469,7 @@ export default function UnionDetailPage() {
             <button
               type="button"
               className={styles.statementsLink}
-              onClick={() => navigate(`/unions/${unionId}/data`)}
+              onClick={() => navigate(`/unions/${unionRef}/data`)}
             >
               Union Rake And Production Data
             </button>
@@ -1524,7 +1529,7 @@ export default function UnionDetailPage() {
               <p style={{ margin: '0 0 12px', fontSize: 13, opacity: 0.75 }}>
                 Weekly Player Win/Loss Settlement, Wallet And Treasury Live On The{' '}
                 <Link
-                  to={`/unions/${unionId}/operations`}
+                  to={`/unions/${unionRef}/operations`}
                   style={{ color: '#1877F2', fontWeight: 600 }}
                 >
                   Union Dashboard

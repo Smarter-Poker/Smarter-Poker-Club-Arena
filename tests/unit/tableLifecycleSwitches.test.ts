@@ -52,9 +52,15 @@ describe('auto extension vetoes retirement, in the query that does the closing',
        surplusTableIds, and then skipped by this very filter: permanently
        empty, permanently open, invisible to every sweep.
 
+       A table PARKED FOR THE NIGHT (2026-09-04) outranks auto_extension for
+       exactly the same reason: it is drained, refused a re-seat while the park
+       stands, and would otherwise sit permanently empty and permanently open
+       until morning. The difference from a retirement is only what happens
+       next - a park is lifted and the table reopened after 08:00.
+
        Still one expression on the UPDATE, for the same race reason as above. */
     expect(fleet).toMatch(
-      /\.update\(\{ status: 'closed' \}\)[\s\S]{0,2400}?\.or\(\s*'auto_extension\.is\.null,auto_extension\.eq\.false,settings->>retire_when_empty\.eq\.true'\s*\)/
+      /\.update\(\{ status: 'closed' \}\)[\s\S]{0,2400}?\.or\([\s\S]{0,200}?'auto_extension\.is\.null,auto_extension\.eq\.false,'[\s\S]{0,120}?'settings->>retire_when_empty\.eq\.true,settings->>night_parked\.eq\.true'/
     );
   });
 });
@@ -85,12 +91,22 @@ describe('the lifecycle pass runs, and knows more than DEFAULT_TABLES', () => {
 describe('auto_restart reaches the column from the live creation path', () => {
   // 2026-08-27: this block used to pin the CreateTableModal path
   // (settings-blob mirror in TableService.createTable). That entire path was
-  // unreachable dead code — the modal had zero imports — and was deleted in
-  // the create-flow audit. The live writer is TableConfigPage.buildTableData,
-  // which writes the column directly.
-  it('TableConfigPage writes the column the lifecycle pass reads', () => {
-    const page = src('src/pages/TableConfigPage.tsx');
-    expect(page).toContain('auto_restart: config.autoRestart');
+  // unreachable dead code and was deleted in the create-flow audit.
+  //
+  // 2026-09-04 (Operation Table Stakes, Slice 1): the live cash writer is now
+  // fn_cash_game_create in SQL, and the three switches are no longer a host's
+  // choice at all - OPORD 1.4 section 18 makes the cluster lifecycle
+  // autonomous. Ruling R3 (Main 1 is always on) is carried by the same two
+  // mechanisms until the ClusterController lands: auto_extension = true
+  // (retireSurplusTables skips it) and auto_restart = true
+  // (fn_table_lifecycle_pass reopens it). auto_create_table stays false
+  // because the lifecycle pass's clone would not carry cluster_id.
+  const sql = src('supabase/migrations/20260904230000_cash_games_slice_1_hardening.sql');
+
+  it('the cash create function writes the columns the lifecycle pass reads', () => {
+    expect(sql).toMatch(/auto_extension, auto_restart, auto_create_table,/);
+    // R9: a must-move game keeps Main 1 alive; a manual table does not.
+    expect(sql).toMatch(/^\s*v_must_move, v_must_move, false,\s*$/m);
   });
 
   it('the dead modal path stayed deleted', () => {
@@ -100,20 +116,24 @@ describe('auto_restart reaches the column from the live creation path', () => {
   });
 });
 
-describe('the tooltips say what the switches actually do', () => {
-  const page = src('src/pages/TableConfigPage.tsx');
+describe('the cash flow does not offer lifecycle switches, because the cluster owns its lifecycle', () => {
+  // The three tooltips ("Reopen This Table If It Closes", "Keep This Table
+  // Open When It Empties", "Create New Table When Full") described a host
+  // running a table by hand. Under OPORD 1.4 nobody runs a table by hand:
+  // Main 1 never closes and feeders open and close themselves. A switch for
+  // any of it would be a switch that lies.
+  const flow = src('src/components/cash/CashGameCreateFlow.tsx');
 
-  it('Auto Restart has one at all now', () => {
-    expect(page).toContain('Reopen This Table If It Closes');
-  });
+  it.each(['Auto Restart', 'Auto Extension', 'Auto Create Table'])(
+    'offers no "%s" toggle',
+    (label) => {
+      expect(flow).not.toContain(`label="${label}"`);
+    }
+  );
 
-  it('Auto Extension says what it extends', () => {
-    // "Extend table automatically" left a host guessing what was extended.
-    expect(page).toContain('Keep This Table Open When It Empties');
+  it('and the tournament tabs never had them', () => {
+    const page = src('src/pages/TableConfigPage.tsx');
+    expect(page).not.toContain('label="Auto Restart"');
     expect(page).not.toContain('Extend table automatically');
-  });
-
-  it('Auto Create Table was already clear and is unchanged', () => {
-    expect(page).toContain('Create New Table When Full');
   });
 });

@@ -28,6 +28,7 @@ import { ThemeSettingsModal } from '../table/ThemeSettingsModal';
 import { getClubLevel, ClubLevelInfo } from '../../utils/clubLevels';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
+import { AUTH_STORAGE_KEY, SPA_AUTH_BREADCRUMB } from '../../lib/authUtils';
 import { fetchGameCreationAccess } from '../../services/GameAccessService';
 import { soundService } from '../../services/SoundService';
 import { isSoundAllowed } from '../../utils/soundGate';
@@ -50,6 +51,7 @@ import {
 import { formatPopupText } from '../../utils/popupStyle';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 import styles from './HamburgerMenu.module.css';
+import { useCanCreateUnion } from '../../hooks/useCanCreateUnion';
 
 /* Dan 2026-08-30: "THE FIRST LETTER OF EVERY WORD INSIDE THE HAMBURGER MENU
    MUST BE CAPITALIZED. AS WELL AS EVERY CLICKABLE PAGE AND SUBPAGE."
@@ -161,6 +163,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
   const location = useLocation();
   const workspace = useClubWorkspace();
+  const { canCreateUnion } = useCanCreateUnion();
   const [clubLevelInfo, setClubLevelInfo] = useState<ClubLevelInfo | null>(null);
   const [clubChoices, setClubChoices] = useState<QuickLinkClub[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -777,21 +780,64 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     }
   };
 
+  /**
+   * LOG OUT — leaves nothing to chance and nothing to another component.
+   *
+   * 2026-09-04: "click the hamburger, click Log Out, it silently fails."
+   * Three ways this click could produce no visible effect, all closed here:
+   *
+   * 1. signOut FAILING SILENTLY. GoTrue resolves with { error } rather than
+   *    throwing for anything that is not 401/403/404 (offline, 5xx, a 429), and
+   *    on that path it returns BEFORE _removeSession() — so `smarter-poker-auth`
+   *    survives in localStorage and no SIGNED_OUT event is ever emitted. The old
+   *    catch block never fired. Worse, AuthGuard reads exactly that key and, on
+   *    finding it, logs "re-hydrating instead of redirecting" and deliberately
+   *    stays put. The user was signed back in by the safety net. We now clear
+   *    the key ourselves, unconditionally, on every path.
+   *
+   * 2. NO AuthGuard MOUNTED. The redirect was delegated to AuthGuard, but the
+   *    legal routes this very drawer links to (/legal, /legal/tos,
+   *    /legal/privacy, /legal/fair-gaming, /legal/promotions) are declared
+   *    without one. Signing out there succeeded and nothing moved. The redirect
+   *    is now issued here, so it does not depend on who is mounted.
+   *
+   * 3. THE STALE BREADCRUMB. AuthGuard delays every real sign-out by 800ms
+   *    because the sessionStorage breadcrumb still says "recently authenticated"
+   *    — it was written on login and never cleared. We clear it before leaving.
+   */
+  const signingOutRef = useRef(false);
   const handleLogOut = async () => {
+    if (signingOutRef.current) return; // second tap while the first is in flight
+    signingOutRef.current = true;
     try {
-      // CRITICAL: Use identityDNA.logout() — NOT supabase.auth.signOut() directly.
-      // IdentityDNA owns the signOut lifecycle: it triggers the auth state listener
-      // which clears the Zustand store, destroys PostgresSyncHooks, and emits
-      // AUTH_STATE_CHANGED. AuthGuard then detects the sign-out and redirects to /auth.
+      // identityDNA.logout() still owns the happy path: it triggers the auth
+      // listener, which clears the Zustand store, destroys PostgresSyncHooks,
+      // purges the per-user caches and emits AUTH_STATE_CHANGED.
       await identityDNA.logout();
-      onClose();
-      // AuthGuard handles the redirect to /auth — no manual navigate needed
     } catch (error) {
       reportError(error, 'HamburgerMenu.Error_logging_out');
-      // Clear store as fallback — AuthGuard will detect and redirect to /auth
-      const { useUserStore } = await import('../../stores/useUserStore');
-      useUserStore.getState().logout();
+      try {
+        const { useUserStore } = await import('../../stores/useUserStore');
+        useUserStore.getState().logout();
+      } catch {
+        /* store already gone */
+      }
+    } finally {
+      // Everything below runs whether the server round-trip worked or not.
+      // This is what makes the sign-out real and visible.
+      try {
+        localStorage.removeItem(AUTH_STORAGE_KEY);
+      } catch {
+        /* private mode */
+      }
+      try {
+        sessionStorage.removeItem(SPA_AUTH_BREADCRUMB);
+      } catch {
+        /* private mode */
+      }
       onClose();
+      const redirectUrl = '/hub/club-arena' + location.pathname + location.search;
+      window.location.href = `/auth/login?redirect=${encodeURIComponent(redirectUrl)}`;
     }
   };
 
@@ -1075,7 +1121,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             >
               Invite Players
             </button>
-          ) : (
+          ) : canCreateUnion ? (
             <button
               type="button"
               className={styles.quickAction}
@@ -1083,7 +1129,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             >
               Create Union
             </button>
-          )}
+          ) : null}
           {clubId && workspace.canViewFinance && (
             <button
               type="button"

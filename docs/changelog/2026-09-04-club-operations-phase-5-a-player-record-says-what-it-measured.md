@@ -133,3 +133,22 @@ Client:
 - The `postgres` role on Supabase cannot impersonate `authenticator`, so the
   no-account branch of the two gates is proven by shape and by PostgREST's
   refusal of anon, not by a psql probe.
+
+## Verification pass (same day, after Dan's per-phase gate)
+
+PR #2962 merged as `18fc9a062`; production `6f6aaa749` contains it. Re-reading
+the diff found three more defects in the transfer modal, all fixed and pinned
+in `chip-transfer-modal-knows-both-ends.test.tsx`:
+
+- **A reused modal remembered the previous recipient.** The Agent Team console
+  opens one modal instance for every agent it funds; a stale `'missing'`
+  verdict or a stale pinned role from the last open would have decided the
+  next send. Every per-recipient fact is reset when the modal opens.
+- **The club owner with no `club_members` row fell to `'player'**, and
+  therefore to `fn_agent_wallet_send`, the wrong debit for an owner.
+  `fn_club_bank_role` treats `clubs.owner_id` as owner; the modal now does
+  too, in both role reads.
+- **The recipient-list role read still ignored its error** and handed an
+  owner the downline-scoped list on a blip. It throws into the existing
+  "Failed To Load Recipients" toast, and the pinned recipient is read before
+  it so a sender-role failure still shows who the chips were for.

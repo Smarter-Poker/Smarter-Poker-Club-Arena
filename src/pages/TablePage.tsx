@@ -4987,6 +4987,14 @@ export default function TablePage({
     }
     setRitFeltBanner(null);
     setPotShipRemaining(null);
+    /* THE TAB PILL (Dan 2026-09-04): "RUN IT / 0s Left" stayed red in the
+       multi-table strip for the rest of the session. The deadline was set on
+       rit_offer and cleared by ONE effect keyed on showRIT changing - but the
+       panel opens on a 1500ms timer, and when consent completed inside that
+       window setShowRIT(false) was a no-op on already-false state, the effect
+       never ran, and the deadline outlived the hand, the bust, everything.
+       A hand-boundary reset that leaves a clock running is not a reset. */
+    setDecisionDeadline((prev) => (prev?.kind === 'rit' ? null : prev));
   }, []);
   // One shared countdown, ticking against the engine's wall-clock deadline.
   useEffect(() => {
@@ -7103,7 +7111,7 @@ export default function TablePage({
   // Hand history state — load from localStorage for session continuity
   const [handHistory, setHandHistory] = useState<HandRecord[]>(() => {
     try {
-      const saved = localStorage.getItem(`hand_history_${tableId || 'default'}`);
+      const saved = localStorage.getItem(`hand_history_v2_${tableId || 'default'}`);
       if (!saved) return [];
       /* AUDIT 2026-08-25: this returned `JSON.parse(saved)` straight out. The
          catch only covers a SYNTAX error — valid JSON that is not an array
@@ -7163,7 +7171,9 @@ export default function TablePage({
     let cancelled = false;
     (async () => {
       try {
-        const hands = await handHistoryService.getPlayerHands(userId, 50);
+        // THIS table's hands, in play order (Dan 2026-09-04). See
+        // HandHistoryService.getPlayerHands for what the missing tableId did.
+        const hands = await handHistoryService.getPlayerHands(userId, 50, { tableId });
         if (!cancelled && hands && hands.length > 0) {
           setHandHistory(hands.map((h) => adaptServiceHandToPanel(h, userId)));
         }
@@ -7183,7 +7193,7 @@ export default function TablePage({
     let cancelled = false;
     (async () => {
       try {
-        const hands = await handHistoryService.getPlayerHands(userId, 1);
+        const hands = await handHistoryService.getPlayerHands(userId, 1, { tableId });
         if (!cancelled && hands && hands.length > 0 && hands[0]?.id) {
           setLastHandId(hands[0].id);
         }
@@ -7203,7 +7213,10 @@ export default function TablePage({
       if (localStorageTimerRef.current) clearTimeout(localStorageTimerRef.current);
       localStorageTimerRef.current = setTimeout(() => {
         try {
-          localStorage.setItem(`hand_history_${tableId}`, JSON.stringify(handHistory.slice(0, 50)));
+          localStorage.setItem(
+            `hand_history_v2_${tableId}`,
+            JSON.stringify(handHistory.slice(0, 50))
+          );
         } catch {
           /* localStorage full — ignore */
         }
@@ -7221,7 +7234,14 @@ export default function TablePage({
       const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
-        if (key?.startsWith('hand_history_') && key !== `hand_history_${tableId}`) {
+        /* v2 (2026-09-04): every v1 key held the CROSS-TABLE list under a
+           table's name, so a table opened with another table's hands as its
+           own. v1 keys are all stale by definition and go regardless of age. */
+        if (key?.startsWith('hand_history_') && key !== `hand_history_v2_${tableId}`) {
+          if (!key.startsWith('hand_history_v2_')) {
+            localStorage.removeItem(key);
+            continue;
+          }
           try {
             const data = JSON.parse(localStorage.getItem(key) || '[]');
             const lastTimestamp = data[0]?.timestamp || 0;
@@ -7351,6 +7371,26 @@ export default function TablePage({
   // to check if the player has enough chips in his wallet to rebuy. I was
   // straight booted from the table when I lost all my chips."
   //
+  /** The spendable club balance for the bust rebuy, or null when it truly
+   *  cannot be read - after one automatic retry. Never 0 for "unknown". */
+  const readBustBalance = useCallback(async (uid: string, tid: string) => {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const r = await WalletService.readPlayerBalance(uid, { tableId: tid });
+        if (r.balance !== null && r.balance !== undefined) return r.balance;
+      } catch {
+        /* fall through to the retry */
+      }
+      if (attempt === 0) await new Promise((res) => setTimeout(res, 700));
+    }
+    return null;
+  }, []);
+  /** The dialog's Retry: read again, in place, without closing anything. */
+  const retryBustBalance = useCallback(() => {
+    if (!userId || !tableId) return;
+    void readBustBalance(userId, tableId).then((b) => setBustWalletBalance(b));
+  }, [userId, tableId, readBustBalance]);
+
   // Watch for the hero's stack to drop to 0 AND the hand to complete; at
   // that moment, look up the wallet balance and pop the BuyInModal (reused
   // in rebuy mode). The existing `atomic_table_rebuy` RPC tops up the seat.
@@ -7377,20 +7417,14 @@ export default function TablePage({
          The prompt gated affordability on money the RPC never spends — the
          normal buy-in path already reads through fn_player_spendable_balance
          for exactly this reason. Same rule here, same table context. */
-      try {
-        const r = await WalletService.readPlayerBalance(userId, { tableId });
-        /* NULL STAYS NULL (2026-08-27). This was `r.balance ?? 0`, which
-           collapsed "we could not find out" back into "you have no chips" —
-           the exact defect the 2026-08-25 audit removed from the tournament
-           sign-up gate, surviving here. The state is already typed
-           `number | null` so the dialog can say "unknown"; the ?? 0 was the
-           only thing stopping it. It matters more now that readPlayerBalance
-           no longer falls back to a frozen table: an unreachable RPC used to
-           answer with a stale number, and now honestly answers null. */
-        setBustWalletBalance(r.balance);
-      } catch {
-        setBustWalletBalance(null);
-      }
+      /* NULL STAYS NULL (2026-08-27), AND NOW IT IS ALSO RETRIED (2026-09-04).
+         Dan busted, the read failed once, the dialog opened on "unknown" -
+         which TableModalsLayer then rendered as 0 and the modal as
+         INSUFFICIENT BALANCE - and ten seconds later the engine stood him up.
+         One transient read failure cost the seat. Read twice before giving
+         up, and hand the dialog a Retry so the player is never stuck on a
+         number nobody actually knows. */
+      setBustWalletBalance(await readBustBalance(userId, tableId));
       setBustRebuyOpen(true);
     })();
   }, [
@@ -9262,6 +9296,19 @@ export default function TablePage({
         setShowRIT(false);
         setRitHeroAccepted(false);
         const runs = (handState.runs as number) || 2;
+        /* THE OFFER IS OVER (Dan 2026-09-04, hand #6145364). Two readers still
+           believed it was open:
+             - the per-accept banner's revert timer restores "Waiting For
+               Players To Run It Multiple Times." while ritDeadlineRef is in
+               the future - and the 25s window always outlives a fast consent,
+               so the WAITING strip came back with no expiry and sat over all
+               three boards and the result;
+             - the tab-strip clock (decisionDeadline) kept counting to 0 and
+               stayed there for the session.
+           Consent completed: the deadline is gone, and so is the clock. */
+        ritDeadlineRef.current = 0;
+        setDecisionDeadline((prev) => (prev?.kind === 'rit' ? null : prev));
+        setRitFeltBanner((prev) => (prev === RIT_WAITING_BANNER ? null : prev));
         // The table has AGREED to N boards. Record it now: pot_win can beat
         // rit_result onto the wire, and without this it would ship the pot
         // over a runout the client has not drawn yet (see POT_WIN's ritHold).
@@ -9286,6 +9333,10 @@ export default function TablePage({
       if (eventType === 'rit_mandatory') {
         const runs = (handState.runs as number) || 2;
         ritExpectedRunsRef.current = runs;
+        // No offer was ever open, but a stale one from this hand's arming
+        // must not keep a clock or a waiting strip alive (see rit_all_accepted).
+        ritDeadlineRef.current = 0;
+        setDecisionDeadline((prev) => (prev?.kind === 'rit' ? null : prev));
         showRitFeltBanner(
           runs === 3 ? 'Mandatory Run It 3 Times This Hand.' : 'Mandatory Run It Twice This Hand.',
           4500
@@ -9339,6 +9390,11 @@ export default function TablePage({
       // gets going; tap/OK dismisses sooner.
       if (eventType === 'rit_result') {
         setShowRIT(false);
+        // Boards on the wire means consent is history. Whatever path got us
+        // here (accepted, mandatory, a missed event), nothing is waiting now.
+        ritDeadlineRef.current = 0;
+        setDecisionDeadline((prev) => (prev?.kind === 'rit' ? null : prev));
+        setRitFeltBanner((prev) => (prev === RIT_WAITING_BANNER ? null : prev));
         /**
          * ── RIT REVEAL FIX 2026-08-27, part 1: DEFEND THE SHAPE ──
          *
@@ -13070,6 +13126,31 @@ export default function TablePage({
         break;
       }
 
+      /**
+       * MUST-MOVE (Operation Table Stakes, Slice 2 - OPORD 1.3 s9.5). A player
+       * is never asked anything: they are told once, at the start of the hand
+       * they will move after, and then they are at the new table. The engine
+       * writes the sentence ("Seat Open On Main 2. Moving After This Hand.");
+       * this only shows it to the one player it is about.
+       */
+      case 'SEAT_MOVE_PENDING': {
+        const d = evt.data as { user_id?: string; message?: string };
+        if (d?.user_id !== userId || !d?.message) break;
+        toast.info(d.message);
+        break;
+      }
+      /**
+       * The move landed: the hero's chair, chips and clock are now at the
+       * other table. Follow them. Anyone else just sees the seat empty on the
+       * next state broadcast.
+       */
+      case 'SEAT_MOVED': {
+        const d = evt.data as { user_id?: string; to_table_id?: string };
+        if (d?.user_id !== userId || !d?.to_table_id) break;
+        navigate(`/table/${d.to_table_id}`, { replace: true });
+        break;
+      }
+
       case 'GAME_START': {
         // Fast UI recovery via GameServerAPI.getTableState() full snapshot
         const syncData = evt.data as any;
@@ -14288,6 +14369,18 @@ export default function TablePage({
             // Scaled like the cardFoldOut keyframe it triggers. The showdown
             // result window is 2.6-6.9s server-side, so 2400ms leaves the muck
             // fully visible before the 3s client reset.
+            /* NOT DURING A RUNOUT (Dan 2026-09-04, hand #6145364): "it mucked
+               the other person's hand." The server had said mucked:false and
+               sent the cards; this timer flew them to the muck 2.4s after
+               HAND_COMPLETE - which on a run-it-3-times hand is while run 1's
+               flop is still landing, ~18s before the last ribbon. A player
+               cannot judge three boards against a hand that has left the
+               felt. The muck waits for the reveal to finish, like the reset
+               hold two blocks down already does. */
+            const muckBase = 2400 * getAnimationSpeed();
+            const revealEnd = ritRevealEndsAtRef.current;
+            const muckDelay =
+              revealEnd > Date.now() ? Math.max(muckBase, revealEnd - Date.now() + 200) : muckBase;
             muckTimerRef.current = setTimeout(() => {
               muckTimerRef.current = null;
               setMuckingSeats(loserMask);
@@ -14296,7 +14389,7 @@ export default function TablePage({
               // a sound since the Show/Muck modal was wired; the table's did
               // not. Same card-slide cue.
               if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playFold();
-            }, 2400 * getAnimationSpeed());
+            }, muckDelay);
           }
         }
         /**
@@ -14772,37 +14865,72 @@ export default function TablePage({
               const scooper = tableStateRef.current.players.find((p) => p?.id === scoopUserId);
               const scoopHand = tableStateRef.current.handNumber ?? 0;
               if (scoopBannerTimerRef.current) clearTimeout(scoopBannerTimerRef.current);
-              scoopBannerTimerRef.current = setTimeout(() => {
-                scoopBannerTimerRef.current = null;
-                // A late label must never land on a newer hand's felt.
-                if ((tableStateRef.current.handNumber ?? 0) !== scoopHand) return;
-                setScoopBanner({
-                  // 2026-08-29: through formatPopupText like every other felt
-                  // banner (the RIT one already does this). These two strings
-                  // are all-caps with no dashes, so the transform is a no-op on
-                  // them today — which is the point of doing it here rather
-                  // than trusting it. Dan's popup rule (CLAUDE.md §5.7) is
-                  // enforced in the render path precisely because a style that
-                  // depends on the next author remembering it does not hold,
-                  // and this was the one felt banner outside that path.
-                  text: formatPopupText(label!),
-                  name: scooper?.name || '',
-                  handNumber: scoopHand,
-                });
-                /* A sweep is the biggest moment a bomb pot has, and the
+              /* AFTER THE LAST RUN, NOT AFTER THE FIRST FLOP (Dan 2026-09-04,
+                 hand #6145364). "TRIPLE SCOOP!" landed at 2.2s, while run 1's
+                 flop was still on the felt and run 3 had no cards at all - the
+                 comment above promised "after the final award" and the timer
+                 below did not know a runout was in progress. The POT_WIN ship
+                 hold (ritHoldMs, further down) already waits for the reveal;
+                 the label does too. rit_result records the instant the last
+                 ribbon lands in ritRevealEndsAtRef; when pot_win beats
+                 rit_result onto the wire that ref is still 0, so we wait for
+                 it (bounded) rather than guess. */
+              const speed = getAnimationSpeed();
+              const scoopBeat = 600 * speed;
+              const scoopDelay = () => {
+                const end = ritRevealEndsAtRef.current;
+                const base = 2200 * speed;
+                return end > Date.now() ? Math.max(base, end - Date.now() + scoopBeat) : base;
+              };
+              const ritExpected = ritExpectedRunsRef.current >= 2 || boardsSeen.length >= 2;
+              const armScoop = (delay: number) => {
+                scoopBannerTimerRef.current = setTimeout(() => {
+                  scoopBannerTimerRef.current = null;
+                  // A late label must never land on a newer hand's felt.
+                  if ((tableStateRef.current.handNumber ?? 0) !== scoopHand) return;
+                  setScoopBanner({
+                    // 2026-08-29: through formatPopupText like every other felt
+                    // banner (the RIT one already does this). These two strings
+                    // are all-caps with no dashes, so the transform is a no-op on
+                    // them today — which is the point of doing it here rather
+                    // than trusting it. Dan's popup rule (CLAUDE.md §5.7) is
+                    // enforced in the render path precisely because a style that
+                    // depends on the next author remembering it does not hold,
+                    // and this was the one felt banner outside that path.
+                    text: formatPopupText(label!),
+                    name: scooper?.name || '',
+                    handNumber: scoopHand,
+                  });
+                  /* A sweep is the biggest moment a bomb pot has, and the
                    banner was landing in SILENCE — the pot-award fanfare has
                    already finished by the time it appears. Reuse the big-win
                    cue, gated for a muted player and for background
                    multi-table tabs (#175). */
-                if (soundService.isEnabled() && ambientSoundsAllowedRef.current) {
-                  soundService.playBigWin();
-                }
-                // Self-clears with the celebration.
-                scoopBannerTimerRef.current = setTimeout(() => {
-                  scoopBannerTimerRef.current = null;
-                  setScoopBanner(null);
-                }, 5000 * getAnimationSpeed());
-              }, 2200 * getAnimationSpeed());
+                  if (soundService.isEnabled() && ambientSoundsAllowedRef.current) {
+                    soundService.playBigWin();
+                  }
+                  // Self-clears with the celebration.
+                  scoopBannerTimerRef.current = setTimeout(() => {
+                    scoopBannerTimerRef.current = null;
+                    setScoopBanner(null);
+                  }, 5000 * getAnimationSpeed());
+                }, delay);
+              };
+              if (ritExpected && ritRevealEndsAtRef.current === 0) {
+                // rit_result has not arrived yet: poll for its timeline for up
+                // to 8s, then fall back to the reveal-aware delay either way.
+                const waitStarted = Date.now();
+                const waitForTimeline = () => {
+                  if (ritRevealEndsAtRef.current > 0 || Date.now() - waitStarted > 8000) {
+                    armScoop(scoopDelay());
+                    return;
+                  }
+                  scoopBannerTimerRef.current = setTimeout(waitForTimeline, 250);
+                };
+                scoopBannerTimerRef.current = setTimeout(waitForTimeline, 250);
+              } else {
+                armScoop(scoopDelay());
+              }
             }
           }
         }
@@ -22439,6 +22567,7 @@ export default function TablePage({
         bustWalletBalance={bustWalletBalance}
         bustRebuyProcessing={bustRebuyProcessing}
         onCancelBustRebuy={cancelBustRebuy}
+        onRetryBustBalance={retryBustBalance}
         onConfirmBustRebuy={confirmBustRebuy}
         showProfileModal={showProfileModal}
         onCloseProfileModal={() => setShowProfileModal(false)}

@@ -50,7 +50,8 @@ import { SignUpHost } from './components/tournament/signUpDialog';
 import MilestoneToast from './components/common/MilestoneToast';
 import { GlobalBalanceSync } from './core/useGlobalBalanceSync';
 import ClubBottomNav from './components/club/ClubBottomNav';
-import { shouldShowClubFooter } from './components/club/clubFooterVisibility';
+import { shouldShowClubFooterFor } from './components/club/clubFooterVisibility';
+import { useInTabLobbyActive } from './components/club/inTabLobbySurface';
 
 // Auth Guards
 import { AuthGuard, GuestGuard } from './components/auth/AuthGuard';
@@ -87,6 +88,8 @@ const UnionDetailPage = lazyWithRetry(() => import('./pages/UnionDetailPage'));
 const UnionStatementsPage = lazyWithRetry(() => import('./pages/UnionStatementsPage'));
 const UnionDataPage = lazyWithRetry(() => import('./pages/UnionDataPage'));
 const CreateUnionPage = lazyWithRetry(() => import('./pages/CreateUnionPage'));
+// Lazy like the page it wraps: it is only ever needed on /unions/create.
+const UnionCreationGuard = lazyWithRetry(() => import('./components/auth/UnionCreationGuard'));
 const SettlementPage = lazyWithRetry(() => import('./pages/SettlementPage'));
 
 // New Pages
@@ -264,6 +267,7 @@ function ClubFooterProbe() {
 
 function FullApp() {
   const location = useLocation();
+  const inTabLobbyActive = useInTabLobbyActive();
   /* The listener the service worker has always been posting SHELL_UPDATED to
      and never had. Without it a cache-first shell — and the exact hashed
      chunks it names — is served for the life of the session, so a player can
@@ -914,9 +918,11 @@ function FullApp() {
                   path="unions/create"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Create Union">
-                        <CreateUnionPage />
-                      </PageErrorBoundary>
+                      <UnionCreationGuard>
+                        <PageErrorBoundary pageName="Create Union">
+                          <CreateUnionPage />
+                        </PageErrorBoundary>
+                      </UnionCreationGuard>
                     </AuthGuard>
                   }
                 />
@@ -1988,7 +1994,9 @@ function FullApp() {
               </Route>
             </Routes>
           </Suspense>
-          {shouldShowClubFooter(location.pathname) && <ClubFooterMount />}
+          {/* Route OR in-tab lobby: the "+" lobby lives on /table/<id>, and the
+              footer is owed to the lobby, not to the URL (inTabLobbySurface). */}
+          {shouldShowClubFooterFor(location.pathname, inTabLobbyActive) && <ClubFooterMount />}
           {/* Persistent multi-table layer — mounted BESIDE <Routes>, it never
               unmounts on navigation: engine sockets for seated tables survive
               every route. Off /table/* it collapses to display:none and

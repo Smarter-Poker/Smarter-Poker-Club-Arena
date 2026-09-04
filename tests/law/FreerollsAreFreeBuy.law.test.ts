@@ -58,6 +58,15 @@ import {
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 
 const MIGRATION = read('supabase/migrations/20260902183602_freerolls_are_free_buy.sql');
+/* THE PIN MOVED HERE (Dan 2026-09-04). The pricing half of the 2026-09-02 law
+   is superseded by this migration: $1 is still forced on every freeroll, but a
+   SCHEDULED Free Buy that set its own price keeps it, because the $500 tier
+   charges $2. Both laws survive - see the migration header. CLAUDE.md 10.8
+   requires the pin to move to the new mechanism in the same commit, so the
+   tier-aware assertions below read this file, not the older one. */
+const PRICING = read(
+  'supabase/migrations/20260904065106_free_buy_tiers_may_set_their_own_price.sql'
+);
 const RECURRING = read('server/src/services/TournamentRecurringService.ts');
 const SCHEDULED = read('server/src/services/ScheduledTournamentService.ts');
 const SERVICE = read('src/services/TournamentService.ts');
@@ -331,5 +340,49 @@ describe('the three copies of the rule agree', () => {
         `client ${buyIn}/${variant}`
       ).toBe(expected);
     }
+  });
+});
+
+describe('7. a scheduled Free Buy prices itself, and nothing else does', () => {
+  const body = functionBody(PRICING, 'fn_freerolls_are_free_buy');
+
+  it('still forces 1.00 on an ordinary freeroll - the 2026-09-02 law survives', () => {
+    expect(body).toMatch(/NEW\.rebuy_cost\s*:=\s*1\.00;/);
+    expect(body).toMatch(/NEW\.addon_cost\s*:=\s*1\.00;/);
+    expect(body).toMatch(/NEW\.buy_in_fee\s*:=\s*0;/);
+    expect(body).toMatch(/NEW\.is_rebuy\s*:=\s*true;/);
+    expect(body).toMatch(/NEW\.add_on_available\s*:=\s*true;/);
+  });
+
+  it('gates BOTH price overwrites on the event not having priced itself', () => {
+    expect(body).toMatch(
+      /v_priced\s*:=\s*COALESCE\(NEW\.free_buy,\s*false\)\s*AND\s*COALESCE\(NEW\.rebuy_cost,\s*0\)\s*>\s*0;/
+    );
+    expect(body).toMatch(/IF NOT v_priced AND NEW\.rebuy_cost IS DISTINCT FROM 1\.00 THEN/);
+    expect(body).toMatch(/IF NOT v_priced AND NEW\.addon_cost IS DISTINCT FROM 1\.00 THEN/);
+  });
+
+  it('treats a missing price as missing, not as a decision', () => {
+    // COALESCE(NEW.rebuy_cost, 0) > 0 - a NULL or 0 falls through to the default.
+    expect(body).toMatch(/COALESCE\(NEW\.rebuy_cost,\s*0\)\s*>\s*0/);
+  });
+
+  it('never leaves a priced event with a 1.00 add-on under a 2.00 rebuy', () => {
+    expect(body).toMatch(/IF v_priced AND COALESCE\(NEW\.addon_cost,\s*0\)\s*<=\s*0 THEN/);
+    expect(body).toMatch(/NEW\.addon_cost\s*:=\s*NEW\.rebuy_cost;/);
+  });
+
+  it('leaves the chip and level defaults exactly as they were', () => {
+    expect(body).toMatch(/NEW\.rebuy_chips\s*:=\s*v_stack;/);
+    expect(body).toMatch(/NEW\.addon_chips\s*:=\s*v_stack;/);
+    expect(body).toMatch(/NEW\.rebuy_levels\s*:=\s*4;/);
+    expect(body).toMatch(/NEW\.addon_levels\s*:=\s*1;/);
+    expect(body).toMatch(/NEW\.max_rebuys\s*:=\s*NULL;/);
+  });
+
+  it('still refuses to raise, and still never rewrites a live event', () => {
+    expect(body).not.toMatch(/RAISE\s+EXCEPTION/i);
+    expect(body).toMatch(/RAISE\s+WARNING/i);
+    expect(body).toMatch(/TG_OP\s*=\s*'UPDATE'/);
   });
 });

@@ -276,7 +276,25 @@ function StartsCell({ entry }: { entry: LobbyEntry }) {
   );
 }
 
+/**
+ * R10 (Dan 2026-09-04): a must-move game's players are counted like a
+ * tournament's - the number inside the whole game, no denominator, no bar -
+ * with how many tables are open beside it.
+ */
+function GameCounter({ entry }: { entry: LobbyEntry }) {
+  const tables = entry.game?.tables ?? 1;
+  return (
+    <span className="lt-seats lt-seats--game">
+      <span className="lt-seats__num">{entry.players.toLocaleString()}</span>
+      <span className="lt-seats__tables">
+        {tables} {tables === 1 ? 'Table' : 'Tables'}
+      </span>
+    </span>
+  );
+}
+
 function SeatsMeter({ entry }: { entry: LobbyEntry }) {
+  if (entry.game) return <GameCounter entry={entry} />;
   const pct =
     entry.capacity > 0 ? Math.min(100, Math.round((entry.players / entry.capacity) * 100)) : 0;
   const full = entry.capacity > 0 && entry.players >= entry.capacity;
@@ -1299,7 +1317,14 @@ export default function LobbyTable({
     if (!variantMenuOpen) return;
     const onDown = (e: PointerEvent) => {
       const root = variantMenuRef.current;
-      if (root && !root.contains(e.target as Node)) setVariantMenuOpen(false);
+      const target = e.target as Node;
+      /* A tap on the Variant heading itself is the heading's own toggle, not
+         an outside tap: closing here AND toggling on the click that follows
+         re-opened the menu on every press, so it could never be closed from
+         where it was opened. */
+      const onTrigger =
+        target instanceof Element && target.closest('[aria-haspopup="menu"]') !== null;
+      if (root && !onTrigger && !root.contains(target)) setVariantMenuOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setVariantMenuOpen(false);

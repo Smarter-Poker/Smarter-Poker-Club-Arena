@@ -79,14 +79,33 @@ export default function ClubBombPotReportPage() {
   const [rows, setRows] = useState<ReportRow[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
+  const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!clubId) return;
     setLoading(true);
     setError(null);
+    // The route carries the club's SLUG (clubs/deep-stack-society-11192/...)
+    // and this handed it to a uuid argument, so on every slug URL the RPC
+    // answered 22P02 and the page said "Could Not Load". Resolve first, and
+    // name a club that does not exist as one.
+    let resolved: string;
+    try {
+      const { resolveClubUUIDStrict } = await import('../../utils/strictClubIdResolver');
+      resolved = await resolveClubUUIDStrict(clubId);
+    } catch (e) {
+      if ((e as { name?: string } | null)?.name === 'ClubNotFoundError') {
+        setNotFound(true);
+      } else {
+        reportError(e, 'ClubBombPotReportPage.Resolve_failed');
+        setError('The Club Could Not Be Resolved');
+      }
+      setLoading(false);
+      return;
+    }
     const { data, error: rpcError } = await supabase.rpc('fn_club_bomb_pot_report', {
-      p_club_id: clubId,
+      p_club_id: resolved,
       p_days: days,
     });
     if (rpcError) {
@@ -162,6 +181,20 @@ export default function ClubBombPotReportPage() {
     );
     downloadCsv(`bomb-pot-report-${clubId}-${days}d.csv`, [header, ...body].join('\n'));
   }, [rows, clubId, days]);
+
+  if (notFound) {
+    return (
+      <div className={styles.page}>
+        <div className={styles.deniedCard}>
+          <h1>Club Not Found</h1>
+          <p>No Club Answers To That Address.</p>
+          <button className={styles.backBtn} onClick={() => navigate('/clubs')}>
+            Back To Clubs
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (denied) {
     return (

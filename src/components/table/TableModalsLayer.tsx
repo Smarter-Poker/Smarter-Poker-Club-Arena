@@ -317,6 +317,7 @@ export interface TableModalsLayerProps {
    */
   bustRebuyProcessing: boolean;
   onCancelBustRebuy: () => void;
+  onRetryBustBalance: () => void;
   onConfirmBustRebuy: (amount: number) => Promise<void>;
 
   showProfileModal: boolean;
@@ -595,6 +596,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     bustRebuyOpen,
     bustWalletBalance,
     onCancelBustRebuy,
+    onRetryBustBalance,
     onConfirmBustRebuy,
     showProfileModal,
     onCloseProfileModal,
@@ -1074,7 +1076,12 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         tableName={tableName}
         minBuyIn={minBuyIn}
         maxBuyIn={maxBuyIn}
-        accountBalance={bustWalletBalance ?? 0}
+        /* NULL STAYS NULL, here too (Dan 2026-09-04). The 2026-08-27 fix
+           made TablePage keep "unknown" as null; this `?? 0` turned it back
+           into "you have nothing" one file later, and the bust rebuy read as
+           INSUFFICIENT BALANCE for a player holding 495k. */
+        accountBalance={bustWalletBalance}
+        onRetryBalance={onRetryBustBalance}
         bigBlind={safeBB(blinds)}
         countdown={undefined}
         onTopUp={onTopUpAccount}

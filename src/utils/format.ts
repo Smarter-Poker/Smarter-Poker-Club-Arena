@@ -50,6 +50,33 @@ export const fmtChips = (n: number | null | undefined): string => {
  * @example formatTableChips(13.37)   → "13.37"
  * @example formatTableChips(0.5)     → "0.50"
  */
+/**
+ * A STACK under 100 reads to the penny. Dan 2026-09-04, verbatim: "WHEN YOUR
+ * ACCOUNT BALANCE ON CASH GAME TABLES IS UNDER 100 CHIPS IT SHOULD DISPLAY IT
+ * AS 99.99 DOWN TO .01. IT NEEDS TO BE ACCURATE TO THE PENNY WHEN USERS HAVE
+ * LESS THAN 100." A 0.02/0.05 stack of 5.37 was rendering as "5", because the
+ * seat squared off every stack from 1 chip up. Under a hundred every chip is
+ * pennies: two places, always, so 5 reads "5.00" beside 5.37 and the seats
+ * line up. From 100 up a stack is whole chips (engine sub-chip noise is rake
+ * and split artifacts, not chips anyone can bet) through formatTableChips.
+ *
+ * This is the STACK rule. Bets, pots and typed raises keep formatTableChips'
+ * own contract (integers clean, real fractions kept).
+ *
+ * @example formatStackChips(5.37)   -> "5.37"
+ * @example formatStackChips(5)      -> "5.00"
+ * @example formatStackChips(99.99)  -> "99.99"
+ * @example formatStackChips(117000) -> "117,000"
+ */
+export const PENNY_PRECISION_BELOW = 100;
+export const formatStackChips = (n: number | null | undefined): string => {
+  const v = Number(n ?? 0);
+  if (!Number.isFinite(v)) return '0';
+  const abs = Math.abs(v);
+  if (abs < PENNY_PRECISION_BELOW) return `${v < 0 ? '-' : ''}${abs.toFixed(2)}`;
+  return formatTableChips(Math.round(v));
+};
+
 export const formatTableChips = (n: number | null | undefined): string => {
   const v = Number(n ?? 0);
   if (!Number.isFinite(v)) return '0';

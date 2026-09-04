@@ -330,6 +330,22 @@
   color: #f85149;
 }
 
+/* An unknown balance offers a way to find out (Dan 2026-09-04). */
+.buy-in-modal__balance-retry {
+  margin-left: 8px;
+  min-height: 28px;
+  padding: 2px 10px;
+  border: 1px solid #4a5f72;
+  border-radius: 4px;
+  background: #0b151c;
+  color: #cfe3f0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    AUTO REBUY
    ═══════════════════════════════════════════════════════════════════════════════ */

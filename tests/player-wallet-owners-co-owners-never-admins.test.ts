@@ -19,7 +19,7 @@ const root = resolve(__dirname, '..');
 const sql = readFileSync(
   resolve(
     root,
-    'supabase/migrations/20260903200000_owners_and_co_owners_hold_a_player_wallet_admins_never.sql'
+    'supabase/migrations/20260904081210_owners_and_co_owners_hold_a_player_wallet_admins_never.sql'
   ),
   'utf8'
 );

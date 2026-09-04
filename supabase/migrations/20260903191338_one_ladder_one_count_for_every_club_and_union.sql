@@ -1,4 +1,4 @@
--- 20260903190000_one_ladder_one_count_for_every_club_and_union.sql
+-- 20260903191338_one_ladder_one_count_for_every_club_and_union.sql
 -- Dan 2026-09-03: "HARDEN THIS FOR ALL CLUBS AND UNIONS GLOBALLY (AND NEW
 -- ACCOUNTS AS WELL THAT HAVEN'T BEEN STARTED YET)."
 --

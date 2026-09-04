@@ -1,4 +1,4 @@
--- 20260903200000_owners_and_co_owners_hold_a_player_wallet_admins_never.sql
+-- 20260904081210_owners_and_co_owners_hold_a_player_wallet_admins_never.sql
 -- Dan 2026-09-03: "All club owners and co owners should have a player wallet.
 -- add player wallets now to all those roles for clubs only, not for unions.
 -- admin's should never have a player wallet. add this in for all current

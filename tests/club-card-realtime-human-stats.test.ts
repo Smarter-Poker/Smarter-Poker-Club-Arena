@@ -13,7 +13,7 @@ const sql = readFileSync(
 const unionSql = readFileSync(
   resolve(
     root,
-    'supabase/migrations/20260903180000_union_active_players_is_the_sum_of_its_clubs.sql'
+    'supabase/migrations/20260903184634_union_active_players_is_the_sum_of_its_clubs.sql'
   ),
   'utf8'
 );
@@ -77,7 +77,7 @@ describe('Club Arena card statistics', () => {
     const ladder = readFileSync(
       resolve(
         root,
-        'supabase/migrations/20260903190000_one_ladder_one_count_for_every_club_and_union.sql'
+        'supabase/migrations/20260903191338_one_ladder_one_count_for_every_club_and_union.sql'
       ),
       'utf8'
     );

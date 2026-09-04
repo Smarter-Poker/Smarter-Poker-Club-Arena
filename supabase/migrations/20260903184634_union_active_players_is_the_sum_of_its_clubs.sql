@@ -1,4 +1,4 @@
--- 20260903180000_union_active_players_is_the_sum_of_its_clubs.sql
+-- 20260903184634_union_active_players_is_the_sum_of_its_clubs.sql
 -- Dan 2026-09-03: "if shark club has 530 active and club jaqk has 526 active,
 -- why is midway union showing 530 active? midway union 'active players' is a
 -- combination of all active players inside all of the clubs."

@@ -32,7 +32,7 @@ The rule lived in one TS file and one RPC, not in the data:
   `chip_balance`, where no surface would ever show it — the stranded-chips
   class of bug that `fn_club_bank_send` alone was guarding against.
 
-## `20260903200000_owners_and_co_owners_hold_a_player_wallet_admins_never.sql` (applied)
+## `20260904081210_owners_and_co_owners_hold_a_player_wallet_admins_never.sql` (applied)
 
 1. `fn_has_player_wallet(club, user)` — the one predicate: active membership,
    role <> 'admin', club is not a union house row.

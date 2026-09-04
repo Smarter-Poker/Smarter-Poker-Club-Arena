@@ -27,7 +27,7 @@ and unions globally (and new accounts as well that haven't been started yet)."
 
 ## What changed
 
-### `20260903180000_union_active_players_is_the_sum_of_its_clubs.sql` (applied)
+### `20260903184634_union_active_players_is_the_sum_of_its_clubs.sql` (applied)
 
 `fn_batch_union_realtime_active_counts` = SUM over `union_clubs` of
 `fn_batch_club_realtime_active_counts` (the exact function the club cards
@@ -39,7 +39,7 @@ active, not in `union_clubs`) is NOT in the sum, matching how the union's
 Members figure (1177 = 593 + 584) is already computed. Dan's words were
 "all of the clubs".
 
-### `20260903190000_one_ladder_one_count_for_every_club_and_union.sql` (applied)
+### `20260903191338_one_ladder_one_count_for_every_club_and_union.sql` (applied)
 
 - `club_level_thresholds` (55 rungs) and `fn_club_level_for_members` declared
   in the repo (they had only ever been applied by hand). New

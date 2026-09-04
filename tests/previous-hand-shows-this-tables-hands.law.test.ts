@@ -159,8 +159,9 @@ describe('the correct data', () => {
   });
 
   it('rake is on the panel, beside the pot it came out of', () => {
-    expect(read('src/components/table/HandHistoryPanel.tsx')).toContain(
-      '{hand.rake > 0 && <span className="hh-entry__rake"> · Rake {formatAmount(hand.rake)}</span>}'
+    // Format-tolerant: Prettier decides the line breaks, the pin decides the truth.
+    expect(read('src/components/table/HandHistoryPanel.tsx')).toMatch(
+      /hand\.rake > 0 &&[\s(]*<span className="hh-entry__rake">[^<]*Rake \{formatAmount\(hand\.rake\)\}<\/span>/
     );
   });
 });
@@ -168,8 +169,9 @@ describe('the correct data', () => {
 describe('the record is readable by everyone who played it', () => {
   it('the writer never files a hand under a roster missing a participant', () => {
     const settlement = read('server/src/engine/ServerTableEngineSettlement.ts');
-    expect(settlement).toContain('...snap.holeCards.keys(),');
-    expect(settlement).toContain('...snap.winners.map((w) => w.userId),');
+    expect(settlement).toMatch(
+      /\.\.\.snap\.holeCards\.keys\(\),\s*\.\.\.snap\.winners\.map\(\(w\) => w\.userId\)/
+    );
     expect(settlement).toContain('[hand_history] roster disagreed with the hand');
   });
 });

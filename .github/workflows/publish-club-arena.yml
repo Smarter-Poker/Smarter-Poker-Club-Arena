@@ -139,6 +139,7 @@ jobs:
     outputs:
       skip: ${{ steps.dedupe.outputs.skip }}
       target_sha: ${{ steps.target.outputs.sha }}
+      tests_proven: ${{ steps.proven.outputs.tests_proven }}
     steps:
       # ═══════════════════════════════════════════════════════════════════════
       # NO COMMIT LEFT BEHIND — publish the TIP OF MAIN, not the commit that
@@ -253,9 +254,61 @@ jobs:
   # EVERY shard, so one red shard still stops the bundle. fail-fast cancels the
   # siblings the moment one fails, which is what a gate wants. The self-hosted
   # runner (CI_RUNNER) will make even this near-instant; until then, shard.
+      # ── HAS THIS EXACT TREE ALREADY PASSED THE CLIENT SUITE? ──────────────
+      #
+      # The publisher re-runs the whole client suite in four shards on every
+      # merge. On a squash merge the resulting commit usually has the SAME TREE
+      # as the pull request head that CI just proved green - identical bytes,
+      # tested twice, ~2 minutes of shards plus their queue wait on the critical
+      # path between a merge and a player seeing the change.
+      #
+      # "Usually" is not "always", which is why this compares TREE HASHES rather
+      # than trusting the merge. If main moved between the PR's last CI run and
+      # the squash, the trees differ and the shards run exactly as before. This
+      # can only skip when the content is bit-identical to something that
+      # already passed.
+      #
+      # Fails closed: any doubt - no PR found, no green check, an API error -
+      # and tests_proven stays false and the shards run.
+      - name: Has this exact tree already passed the client suite?
+        id: proven
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          SHA="${{ steps.target.outputs.sha }}"
+          echo "tests_proven=false" >> "$GITHUB_OUTPUT"
+
+          TREE=$(gh api "repos/${{ github.repository }}/commits/$SHA" --jq .commit.tree.sha 2>/dev/null || echo "")
+          [ -z "$TREE" ] && { echo "::notice::could not read the target tree - running the shards."; exit 0; }
+
+          PR=$(gh api "repos/${{ github.repository }}/commits/$SHA/pulls" --jq '.[0].number' 2>/dev/null || echo "")
+          [ -z "$PR" ] || [ "$PR" = "null" ] && { echo "::notice::no source pull request for ${SHA:0:7} - running the shards."; exit 0; }
+
+          HEAD=$(gh api "repos/${{ github.repository }}/pulls/$PR" --jq .head.sha 2>/dev/null || echo "")
+          [ -z "$HEAD" ] && { echo "::notice::could not read PR #$PR head - running the shards."; exit 0; }
+
+          HEAD_TREE=$(gh api "repos/${{ github.repository }}/commits/$HEAD" --jq .commit.tree.sha 2>/dev/null || echo "")
+          if [ "$TREE" != "$HEAD_TREE" ]; then
+            echo "::notice::tree ${TREE:0:7} differs from PR #$PR head tree ${HEAD_TREE:0:7} - main moved, running the shards."
+            exit 0
+          fi
+
+          OK=$(gh api "repos/${{ github.repository }}/commits/$HEAD/check-runs?per_page=100" \
+                 --jq '[.check_runs[] | select(.name=="Client Unit Tests (vitest)" and .conclusion=="success")] | length' 2>/dev/null || echo 0)
+          if [ "${OK:-0}" -ge 1 ]; then
+            echo "tests_proven=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::tree $TREE already passed Client Unit Tests on PR #$PR head ${HEAD:0:7} - skipping the shards."
+          else
+            echo "::notice::no green Client Unit Tests on PR #$PR head - running the shards."
+          fi
+
   client-tests:
     needs: publish-needed
-    if: needs.publish-needed.outputs.skip != 'true'
+    # Runs unless this exact TREE already passed the same suite on the pull
+    # request head. See "Has this exact tree already passed" above - it compares
+    # tree hashes, not merge lineage, and fails closed.
+    if: needs.publish-needed.outputs.skip != 'true' && needs.publish-needed.outputs.tests_proven != 'true'
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     permissions:
       contents: read
@@ -339,7 +392,38 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      # ── THE PUBLISHER WAS BUILDING COLD, EVERY TIME ──────────────────────
+      #
+      # CI's `Production Build` job caches both `node_modules` and
+      # `node_modules/.vite`. This job cached neither, so every publish paid a
+      # full `npm ci` and a full cold Vite build - measured at 3.4 minutes of
+      # run time on top of its queue wait, on the critical path between a merge
+      # and a player seeing the change.
+      #
+      # Same keys as CI on purpose: both are keyed on the lockfile, so a
+      # dependency change invalidates both together and neither can serve a
+      # stale tree. A cache MISS simply builds exactly as before - there is no
+      # new failure mode here, only a faster hit.
+      # NOTE THE NODE VERSION IN THE KEY. This job runs Node 22; CI's
+      # `Production Build` runs Node 20 and keys its cache `node20`. Sharing one
+      # key across two major versions would restore a `node_modules` whose
+      # native modules were compiled for the other runtime - a real breakage,
+      # and a silent one. Separate keys; each warms after its first run.
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-publish-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+
+      - name: Cache Vite Build
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.vite
+          key: vite-publish-${{ runner.os }}-node22-${{ hashFiles('**/package-lock.json') }}
+
       - name: Install dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Build Club Arena
@@ -441,6 +525,24 @@ jobs:
     # The gate is unchanged: this job needs BOTH the build and every test
     # shard, so a red test still ships nothing.
     needs: [publish-needed, build-and-store, client-tests]
+    # MUST be always() with explicit results.
+    #
+    # `client-tests` is now skipped when the target TREE already passed the same
+    # suite on the pull request head. GitHub skips the DEPENDENTS of a skipped
+    # job by default, so without this the publisher would quietly publish
+    # NOTHING on exactly the fast path this change exists to create - the same
+    # shape as the 2026-08-23 incident where a skipped `changes` job took every
+    # required check down with it.
+    #
+    # Run when the build succeeded AND the tests either passed or were provably
+    # unnecessary. A client-tests FAILURE still stops the publish.
+    if: >-
+      always() &&
+      needs.publish-needed.outputs.skip != 'true' &&
+      needs.build-and-store.result == 'success' &&
+      (needs.client-tests.result == 'success' ||
+       (needs.client-tests.result == 'skipped' &&
+        needs.publish-needed.outputs.tests_proven == 'true'))
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     permissions:
       contents: read

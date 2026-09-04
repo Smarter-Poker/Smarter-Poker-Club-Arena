@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import { cpus } from 'node:os';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
@@ -53,10 +54,15 @@ export default defineConfig({
     // Local runs stay uncapped anyway, so `npm test` on a laptop is unchanged.
     poolOptions: {
       threads: {
+        // Sized from the BOX, not from a constant. This was a hard 2 while the
+        // CI boxes had 8 cores; they were rescaled to 16 on 2026-09-04 and the
+        // 2 immediately became the bottleneck it had been introduced to remove.
+        // cores/4 leaves room for roughly four heavy jobs sharing a box, which
+        // is what a pull request actually puts there.
         maxThreads: process.env.VITEST_MAX_THREADS
           ? Number(process.env.VITEST_MAX_THREADS)
           : process.env.CI
-            ? 2
+            ? Math.max(2, Math.floor(cpus().length / 4))
             : undefined,
       },
     },

@@ -705,6 +705,59 @@ be pruned (pushed branches lose nothing — the commits live on origin).
 
 ---
 
+## 10.85 NEVER SCHEDULE ANYTHING ON THE CLAUDE SCHEDULER (Dan, 2026-09-04, BINDING)
+
+**Dan, verbatim: "IF YOU ARE SCHEDULING ANYTHING TO 'RUN ON CLAUDE SCHEDULER' IT
+WON'T WORK OR SAVE, BECAUSE IM NEVER ON THE SAME ACCOUNT LONG ENOUGH" and "MAKE
+IT A HARD LAW THAT NO OTHER AGENT SCHEDULES ANY CRITICAL TASK, WATCH DOG OR
+ANYTHING ELSE THERE ... ALWAYS CREATE A REAL CRON USING OPEN CLAW".**
+
+An agent MUST NOT create a scheduled task with the Claude scheduled-tasks tool
+(`mcp__scheduled-tasks__create_scheduled_task`, the "Scheduled" panel). Not for
+a watchdog, not for a verification timer, not for a follow-up check, not for
+"I will look at this again in an hour". Not ever.
+
+### Why it silently fails
+
+Those tasks are bound to ONE Claude account. Dan works across several, so a
+task installed from this session is invisible and unreachable from the next
+one. It does not error. It does not warn. It reports itself as `enabled: true`
+and simply never fires again.
+
+That is not hypothetical. `smarter-poker-cron-health` was scheduled every six
+hours, sat there reading `enabled: true`, and its `lastRunAt` was
+**2026-06-17** - dead for two and a half months while looking healthy. It was
+also a duplicate of `.github/workflows/cron-health.yml`, which had been doing
+the job correctly the whole time. Deleted 2026-09-04.
+
+A scheduler that lies about running is worse than no scheduler, because
+somebody stops watching the thing it claimed to watch.
+
+### Where scheduled work actually goes
+
+| kind of work                                  | where                                                                                                                                         |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Application logic on a schedule               | **Open Claw on Hetzner** - `scripts/openclaw-cron-dispatcher.py`, deployed with `scripts/deploy-openclaw.sh` (World Hub CLAUDE.md section 11) |
+| CI-side work needing GitHub's own environment | a `.github/workflows` `schedule:` trigger, and ONLY if it is on the allowlist                                                                 |
+| A follow-up you personally want to make       | do it now, or open an issue. Never a timer                                                                                                    |
+
+If you catch yourself wanting a timer to "come back and check whether the PR
+merged", stop: Playbook 7b already forbids that. Push, open the PR, report the
+number, end the session. Autopilot merges it and the watchdogs verify it, all
+server-side, on infrastructure that does not care which account you were.
+
+### The one thing this does NOT forbid
+
+**Dan installs tasks there himself, deliberately, on every account at once.**
+`horse-daily-audit-analysis` is his, it is intentionally present on multiple
+accounts for redundancy, and it claims a row in `horse_job_runs` so exactly one
+account runs it per day. That is his design and it works. Leave it alone.
+
+The ban is on AGENTS putting platform-critical work somewhere it will quietly
+disappear. It is not a ban on Dan's own tooling.
+
+---
+
 ## 10.9 YOU DECIDE THE MONEY (Dan, 2026-09-02, BINDING)
 
 **Dan, verbatim: "YOU HAVE FULL CONTROL TO MAKE ANY AND ALL DECISIONS ON WHAT

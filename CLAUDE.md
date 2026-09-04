@@ -186,16 +186,21 @@ unconditionally and refuses to publish a survivor.
 Full reasoning and every measurement:
 `docs/changelog/2026-09-04-push-to-live-under-six-minutes.md`.
 
-### 1.1.7 THE RUNNERS (rescaled 2026-09-04)
+### 1.1.7 THE RUNNERS (rescaled 2026-09-04; World Hub given twelve more the same day)
 
-| Box              | Type  | Cores | Runners | Serves                         |
-| ---------------- | ----- | ----- | ------- | ------------------------------ |
-| `estate-ci-eu-1` | cpx62 | 16    | 12      | Club Arena                     |
-| `estate-ci-eu-2` | cpx62 | 16    | 12      | World Hub (6) + Club Arena (6) |
-| `estate-ci-eu-3` | cpx62 | 16    | 12      | Club Arena                     |
-| `estate-ci-1`    | cpx31 | 4     | 3       | World Hub + Club Arena         |
+| Box              | Type  | Cores | Runners | Serves                          |
+| ---------------- | ----- | ----- | ------- | ------------------------------- |
+| `estate-ci-eu-1` | cpx62 | 16    | 18      | Club Arena (12) + World Hub (6) |
+| `estate-ci-eu-2` | cpx62 | 16    | 12      | Club Arena (6) + World Hub (6)  |
+| `estate-ci-eu-3` | cpx62 | 16    | 18      | Club Arena (12) + World Hub (6) |
+| `estate-ci-1`    | cpx31 | 4     | 3       | Club Arena                      |
 
-52 cores, 33 Club Arena runners. The three EU boxes were 8-core (cpx42) until
+52 cores; 33 Club Arena runners, 18 World Hub runners. The World Hub had six,
+all on eu-2, all busy, while eu-1 and eu-3 sat at load 1 with twelve idle Club
+Arena runners each - measured 2026-09-04, when every World Hub job waited 8-14
+minutes for a runner. The twelve extra (`estate-wh-eu1-*`, `estate-wh-eu3-*`,
+registered with `scripts/ci/setup-selfhosted-runner.sh`) took that queue to a
+0.6-minute maximum the same hour. The three EU boxes were 8-core (cpx42) until
 2026-09-04; loads of 40.9 were the reason. `cx53` and `cax41` are NOT orderable
 on this account - both were tried and refused.
 
@@ -360,6 +365,11 @@ Never say "should be live in a few minutes" or "deploy triggered."
   remove the budget from `beforeSend`, and do not raise its limits to make a
   loop visible: the summary event already names it.
   `docs/changelog/2026-09-04-engine-sentry-budget.md`.
+- The engine is ONE core and horse Monte Carlo was 90% of it (profiled
+  2026-09-04). `server/src/engine/EquityLoadGovernor.ts` scales the sample
+  when the event loop saturates; `/health.equityGovernor.scale < 1` means the
+  core is hot. If a timer, refresh or sweep "times out" while Postgres is
+  fast, look at the loop first. `docs/changelog/2026-09-04-equity-load-governor.md`.
 
 ### Supabase
 

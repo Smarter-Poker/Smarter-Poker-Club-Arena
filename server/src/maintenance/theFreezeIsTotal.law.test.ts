@@ -132,6 +132,10 @@ describe('every horse buy-in RPC call is gated on the freeze', () => {
       'private async checkAndLaunchSNGs(): Promise<void> {',
       'private async checkAndLaunchSpins(): Promise<void> {',
       'private async checkAndLaunchXMTTs(): Promise<void> {',
+      // Added 2026-09-04 with the Free Buy board. It does not seat anyone
+      // itself, but the pre-start ramp registers horses into whatever it
+      // publishes within 45 seconds, and start() runs it once immediately.
+      'private async checkAndCreateFreeBuys(): Promise<void> {',
     ]) {
       const body = sliceMethod(src, m);
       const gate = body.search(GATE_RETURN);
@@ -155,6 +159,42 @@ describe('every horse buy-in RPC call is gated on the freeze', () => {
     const seatGate = seat.search(/isMaintenanceFrozen\(\)\)\s*return false;/);
     expect(seatGate, 'seatHorse does not gate itself').toBeGreaterThan(-1);
     expect(seatGate).toBeLessThan(at(seat, "rpc('atomic_table_buyin'", 'atomic_table_buyin'));
+  });
+
+  it('StableHandExecutor: the yield cycle gates itself, and again inside the loop', () => {
+    // Dan 2026-09-01: "HORSES SHOULD NOT STAND UP OR ROTATE." A yield stands a
+    // horse up, so it is a seat movement and the break stops it. The human
+    // keeps their place - the wait clock is the waitlist's own created_at,
+    // which a break cannot move - and the yield fires on the first cycle after
+    // the thaw.
+    const src = read('services/StableHandExecutor.ts');
+    const cycle = sliceMethod(src, 'async cycle(): Promise<number> {');
+    const gate = cycle.search(/isMaintenanceFrozen\(\)\)\s*return 0;/);
+    expect(gate, 'StableHandExecutor.cycle does not gate itself').toBeGreaterThan(-1);
+    expect(gate, 'the gate comes after the first I/O').toBeLessThan(firstIo(cycle));
+    /* And re-checked PER SEAT: a break can begin between the snapshot and the
+       last order in it. The pin moved here on 2026-09-04 when the wind-down
+       arrived and both order types were routed through one `stand` helper -
+       every path to leaveTable now passes this single gate, which is why the
+       loop-level check it replaces is gone rather than missing. */
+    const stand = sliceMethod(
+      src,
+      'private async stand(order: StandOrder, nowMs: number, why: string): Promise<boolean> {'
+    );
+    const seatGate = stand.search(/isMaintenanceFrozen\(\)\)\s*return false;/);
+    /* And the stand is AWAITED. leaveTable became async on 2026-09-04 with
+       chip continuity; an un-awaited call would return a pending promise,
+       which is truthy, and every refused stand would have been counted as a
+       success. */
+    expect(src, 'the stand must be awaited').toMatch(/await this\.stand\(/);
+    expect(seatGate, 'stand() does not re-check the freeze').toBeGreaterThan(-1);
+    expect(seatGate).toBeLessThan(at(stand, 'engine.leaveTable(', 'the stand itself'));
+    // and there is exactly ONE door to leaveTable, so the gate cannot be
+    // bypassed. Comments stripped: the header names the call on purpose.
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    expect(code.split('engine.leaveTable(').length - 1, 'more than one leaveTable call site').toBe(
+      1
+    );
   });
 
   it('ScheduledTournamentService: the poll gates itself', () => {

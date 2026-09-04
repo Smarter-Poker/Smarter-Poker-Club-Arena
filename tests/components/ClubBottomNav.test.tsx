@@ -171,4 +171,89 @@ describe('ClubBottomNav approved footer contract', () => {
     expect(artwork).toHaveAttribute('width', '1916');
     expect(artwork).toHaveAttribute('height', '256');
   });
+
+  /**
+   * THE FOOTER GETS OUT OF THE WAY WHILE YOU READ (Dan, 2026-09-04).
+   *
+   * "any other pages that you can 'scroll up to see more' need this same
+   * disappearing footer functionality... check all the pages and sub pages
+   * globally inside the world hub and for the club arena and implement this
+   * everywhere its needed."
+   *
+   * jsdom has no layout, so `scrollHeight` and `innerHeight` are stubbed to
+   * describe a page with somewhere to go. What is being tested is the state
+   * machine and the transform it produces, which is the part that can regress.
+   */
+  describe('hides while you read and comes back on the way up', () => {
+    const frames: FrameRequestCallback[] = [];
+
+    async function scrollTo(y: number) {
+      Object.defineProperty(window, 'scrollY', { value: y, configurable: true });
+      document.documentElement.scrollTop = y;
+      await act(async () => {
+        document.dispatchEvent(new Event('scroll'));
+        // The hook coalesces onto the next animation frame, so run it.
+        frames.splice(0).forEach((callback) => callback(0));
+      });
+    }
+
+    beforeEach(() => {
+      frames.length = 0;
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+      vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
+      Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+      Object.defineProperty(document.documentElement, 'scrollHeight', {
+        value: 6000,
+        configurable: true,
+      });
+    });
+
+    it('starts visible, drops travelling down, and returns travelling up', async () => {
+      await renderAt('/marketplace', CLUB);
+      const nav = screen.getByRole('navigation', { name: 'Club Arena' });
+
+      expect(nav).toHaveAttribute('data-footer-hidden', 'false');
+      expect(nav.style.transform).toBe('none');
+
+      await scrollTo(120);
+      await scrollTo(520);
+      expect(nav).toHaveAttribute('data-footer-hidden', 'true');
+      // One axis, exactly its own height, and no transition anywhere near it.
+      expect(nav.style.transform).toBe('translateY(100%)');
+      expect(nav.style.transition).toBe('');
+
+      await scrollTo(300);
+      expect(nav).toHaveAttribute('data-footer-hidden', 'false');
+      expect(nav.style.transform).toBe('none');
+    });
+
+    it('is always present at the top of the page', async () => {
+      await renderAt('/marketplace', CLUB);
+      const nav = screen.getByRole('navigation', { name: 'Club Arena' });
+
+      await scrollTo(120);
+      await scrollTo(520);
+      expect(nav).toHaveAttribute('data-footer-hidden', 'true');
+
+      await scrollTo(0);
+      expect(nav).toHaveAttribute('data-footer-hidden', 'false');
+    });
+
+    it('ignores the jitter inside a momentum scroll', async () => {
+      await renderAt('/marketplace', CLUB);
+      const nav = screen.getByRole('navigation', { name: 'Club Arena' });
+
+      await scrollTo(400);
+      await scrollTo(900);
+      expect(nav).toHaveAttribute('data-footer-hidden', 'true');
+
+      // A couple of pixels of bounce is not a reader changing their mind.
+      await scrollTo(898);
+      await scrollTo(899);
+      expect(nav).toHaveAttribute('data-footer-hidden', 'true');
+    });
+  });
 });

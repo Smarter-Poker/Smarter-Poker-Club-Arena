@@ -16,6 +16,7 @@ import {
 } from '../../utils/clubQuickLink';
 import { clubIdFromPath } from './clubIdFromPath';
 import { activeTabForPath, type TabKey } from './clubBottomNavTabs';
+import { useHideFooterOnScroll } from './useHideFooterOnScroll';
 import styles from './ClubBottomNav.module.css';
 
 interface ClubBottomNavProps {
@@ -63,6 +64,7 @@ export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
   const routeClubId = useMemo(() => clubIdFromPath(location.pathname), [location.pathname]);
   const resolvedClubId = useResolvedClubId(clubId, routeClubId);
   const activeTab = useMemo(() => activeTabForPath(location.pathname), [location.pathname]);
+  const { hidden, reveal } = useHideFooterOnScroll(location.pathname);
 
   const destinations = useMemo<FooterDestination[]>(() => {
     const clubRoot = resolvedClubId ? `/clubs/${resolvedClubId}` : null;
@@ -77,7 +79,21 @@ export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
   }, [resolvedClubId]);
 
   return (
-    <nav className={styles.bottomNav} aria-label="Club Arena">
+    <nav
+      className={styles.bottomNav}
+      aria-label="Club Arena"
+      data-footer-hidden={hidden ? 'true' : 'false'}
+      /* Keyboard focus has no scroll direction to read, so tabbing into a
+         footer that scroll has parked off-screen would move focus somewhere
+         invisible. Reaching it brings it back. */
+      onFocusCapture={reveal}
+      style={{
+        /* Its own height, straight down, and nothing else. No transition:
+           "real time instant change" is the requirement, not a detail.
+           See useHideFooterOnScroll. */
+        transform: hidden ? 'translateY(100%)' : 'none',
+      }}
+    >
       <div className={styles.viewport}>
         <div className={styles.artwork}>
           <img

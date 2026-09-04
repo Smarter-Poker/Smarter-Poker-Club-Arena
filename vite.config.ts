@@ -70,9 +70,18 @@ export default defineConfig({
           filesToDeleteAfterUpload: ['./dist/**/*.js.map', './dist/**/*.css.map'],
         },
 
-        // Release management
+        // Release management.
+        //
+        // THIS NAME MUST EQUAL THE ONE THE RUNTIME REPORTS or symbolication
+        // cannot work, and until 2026-09-04 it did not: this read
+        // npm_package_version and tagged every upload `club-arena@1.0.1`,
+        // while src/core/SentryInit.ts tags every event
+        // `club-arena@${VITE_APP_VERSION}` - the publishing commit's sha. Two
+        // different releases, so no event could ever find its maps. The
+        // publisher sets VITE_APP_VERSION to the sha it is shipping; the
+        // fallbacks below keep a local production build from throwing.
         release: {
-          name: `club-arena@${process.env.npm_package_version || '1.0.0'}`,
+          name: `club-arena@${process.env.VITE_APP_VERSION || process.env.npm_package_version || '1.0.0'}`,
           setCommits: {
             auto: true, // Automatically associate commits
           },

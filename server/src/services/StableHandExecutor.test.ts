@@ -261,3 +261,140 @@ describe('SOURCE LAW: the executor cannot reach a seat row', () => {
     expect(src).not.toMatch(/\bkilled\(\)/);
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE WIND-DOWN: the floor walks onto the curve, it does not drop onto it
+   ══════════════════════════════════════════════════════════════════════════ */
+
+import {
+  ripeWindDowns,
+  standOrdersFor,
+  MAX_WIND_DOWN_PER_HOST_PER_CYCLE,
+  type WindDownRequest,
+} from './StableHandExecutor.js';
+import { DSS_CLUB_ID } from './StableHand.js';
+
+const wind = (hostId: string, i: number): WindDownRequest => ({
+  order: order({
+    tableId: `${hostId}-t${i}`,
+    horseId: `${hostId}-h${i}`,
+    reason: 'occupancy_wind_down',
+    delayMs: 0,
+  }),
+  hostId,
+});
+
+/** A host far above its curve at 03:00 Chicago, with nobody waiting. */
+const overCapSnapshot = (over: Partial<FloorSnapshot> = {}): FloorSnapshot => ({
+  chicagoHour: 3,
+  chicagoMinute: 0,
+  killed: false,
+  hosts: [
+    {
+      hostId: MIDWAY_UNION_ID,
+      n: 584,
+      uniqueLive: 187,
+      tables: Array.from({ length: 20 }, (_, i) => ({
+        tableId: `t${i}`,
+        hostId: MIDWAY_UNION_ID,
+        variant: 'nlh',
+        sb: 1,
+        bb: 2,
+        maxPlayers: 6,
+        occupied: 6,
+        humansSeated: 0,
+        humansWaiting: 0,
+        status: 'running',
+        seatedHorses: Array.from({ length: 6 }, (_, k) => ({
+          horseId: `t${i}-h${k}`,
+          sittingOut: false,
+          minutesAtTable: 30,
+          isRed: false,
+          stack: 200,
+        })),
+      })),
+    },
+  ],
+  ...over,
+});
+
+describe('the per-host wind-down ceiling', () => {
+  it('stands at most the ceiling per host per cycle', () => {
+    const many = Array.from({ length: 20 }, (_, i) => wind(MIDWAY_UNION_ID, i));
+    const r = ripeWindDowns(many, NOW, new Map());
+    expect(r.execute).toHaveLength(MAX_WIND_DOWN_PER_HOST_PER_CYCLE);
+    expect(r.heldByCap).toBe(20 - MAX_WIND_DOWN_PER_HOST_PER_CYCLE);
+  });
+
+  it('counts each host separately - one busy host does not starve the other', () => {
+    const both = [
+      ...Array.from({ length: 10 }, (_, i) => wind(MIDWAY_UNION_ID, i)),
+      ...Array.from({ length: 10 }, (_, i) => wind(DSS_CLUB_ID, i)),
+    ];
+    const r = ripeWindDowns(both, NOW, new Map());
+    expect(r.execute.filter((x) => x.hostId === MIDWAY_UNION_ID)).toHaveLength(
+      MAX_WIND_DOWN_PER_HOST_PER_CYCLE
+    );
+    expect(r.execute.filter((x) => x.hostId === DSS_CLUB_ID)).toHaveLength(
+      MAX_WIND_DOWN_PER_HOST_PER_CYCLE
+    );
+  });
+
+  it('defers rather than drops - what is held is planned again next cycle', () => {
+    // The plan is recomputed from the floor every cycle, so a held order is
+    // not a lost one. This pins the SHAPE of the return: held, not discarded.
+    const many = Array.from({ length: 9 }, (_, i) => wind(MIDWAY_UNION_ID, i));
+    const r = ripeWindDowns(many, NOW, new Map());
+    expect(r.execute.length + r.heldByCap).toBe(9);
+  });
+
+  it('respects the settling cooldown, keyed by seat', () => {
+    const w = wind(MIDWAY_UNION_ID, 0);
+    const last = new Map([[yieldKey(w.order), NOW - 1000]]);
+    const r = ripeWindDowns([w], NOW, last);
+    expect(r.execute).toHaveLength(0);
+    expect(r.heldByCooldown).toBe(1);
+  });
+
+  it('ignores a human_yield order - that pass has its own rules', () => {
+    const y: WindDownRequest = { order: order(), hostId: MIDWAY_UNION_ID };
+    expect(ripeWindDowns([y], NOW, new Map()).execute).toHaveLength(0);
+  });
+
+  it('one table never loses more than one seat per cycle', () => {
+    // The planner picks a single victim per table; this pins that the executor
+    // does not undo it by batching two orders for one table.
+    const orders = standOrdersFor(overCapSnapshot()).windDowns;
+    const perTable = new Map<string, number>();
+    orders.forEach((o) => perTable.set(o.order.tableId, (perTable.get(o.order.tableId) ?? 0) + 1));
+    expect(Math.max(...perTable.values())).toBe(1);
+  });
+});
+
+describe('standOrdersFor splits the plan into its two urgencies', () => {
+  it('a host above its curve at 3am produces wind-downs and no yields', () => {
+    const o = standOrdersFor(overCapSnapshot());
+    expect(o.windDowns.length).toBeGreaterThan(0);
+    expect(o.yields).toHaveLength(0);
+    expect(o.windDowns.every((w) => w.hostId === MIDWAY_UNION_ID)).toBe(true);
+  });
+
+  it('THE KILL SWITCH STOPS A WIND-DOWN AND NOT A YIELD', () => {
+    const killed = standOrdersFor(overCapSnapshot({ killed: true }));
+    expect(killed.windDowns).toHaveLength(0);
+
+    // The same killed floor, with one human waiting, still yields.
+    const withHuman = overCapSnapshot({ killed: true });
+    withHuman.hosts[0].tables[0].humansWaiting = 1;
+    withHuman.hosts[0].tables[0].waitlistOldestJoinedAtMs = NOW - 10 * 60_000;
+    expect(standOrdersFor(withHuman).yields.length).toBeGreaterThan(0);
+  });
+
+  it('a host whose population could not be read produces neither', () => {
+    const unknown = overCapSnapshot();
+    unknown.hosts[0].n = 0;
+    const o = standOrdersFor(unknown);
+    expect(o.windDowns).toHaveLength(0);
+    expect(o.alerts.some((a) => a.startsWith('host_population_unknown'))).toBe(true);
+  });
+});

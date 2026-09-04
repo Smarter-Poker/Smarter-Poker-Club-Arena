@@ -15,6 +15,13 @@
 
 import { supabase } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import {
+  bodiesOnHostFrom,
+  chicagoNow,
+  hostAllowsNewBody,
+  stableHandHostCaps,
+} from './StableHandController.js';
+import { WALLETS_FOR_HOST, controllerEnabled } from './StableHand.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
 import { clampSeatsForVariant, maxSeatsForVariant } from '../config/tableSeating.js';
@@ -1273,6 +1280,53 @@ export class HorseFleetManager {
         globalPolicy.maxHorses === null
           ? Number.POSITIVE_INFINITY
           : Math.max(0, globalPolicy.maxHorses - seatedHorseCount);
+
+      /* ── OPERATION STABLE HAND: THE PER-HOST UNIQUE-OCCUPANCY CAP ────────
+         The floor is capped per HOST, not per club and not per table, because
+         one body holding four seats is one body. Without this the planner's
+         wind-down is pointless: it stands a horse up and this cycle seats
+         another thirty seconds later, which is a cash-out and a buy-in per
+         horse per cycle and the loudest tell a floor can have.
+
+         IT ONLY EVER REFUSES A NEW BODY. Nothing here stands anybody up, and
+         a horse already seated on the host may still open another table - the
+         cap is on bodies, so multi-tabling is untouched. Every failure path
+         lands on NO CAP, which is exactly today's behaviour:
+
+           - the controller switched off              -> no cap
+           - the membership map did not load          -> no cap (it is cleared
+             when the read is incomplete, so the count is 0 and is skipped)
+           - a host whose population reads as zero    -> no cap
+           - a human short-handed at the table        -> bypassed outright
+
+         A cap already exceeded refuses NEW bodies and waits; the floor walks
+         down through the paths that already exist (session ends, bust-outs,
+         the planner's wind-down) rather than being emptied by this file. */
+      const hostOfTable = new Map<string, string>();
+      for (const t of tables) hostOfTable.set(String(t.id), String((t as any).club_id ?? ''));
+      const eligibleByHost = new Map<string, number>();
+      if (controllerEnabled()) {
+        for (const [hostId, wallets] of Object.entries(WALLETS_FOR_HOST)) {
+          let bodies = 0;
+          for (const clubs of memberships.values()) {
+            if (wallets.some((w) => clubs.has(w))) bodies++;
+          }
+          if (bodies > 0) eligibleByHost.set(hostId, bodies);
+        }
+      }
+      const stableHandCaps = stableHandHostCaps(eligibleByHost, chicagoNow());
+      const bodiesOnHost = bodiesOnHostFrom(allActiveSeats, hostOfTable, (id) =>
+        horseIdSet.has(id)
+      );
+      let hostCapRefused = 0;
+      if (stableHandCaps.size > 0) {
+        console.log(
+          `[HorseFleet] Stable Hand caps this cycle: ` +
+            [...stableHandCaps]
+              .map(([h, c]) => `${h.slice(0, 8)}=${bodiesOnHost.get(h)?.size ?? 0}/${c}`)
+              .join(' ')
+        );
+      }
       if (cycleWithheld) {
         console.log(
           `[HorseFleet] Seating withheld this cycle (${cycleWithheld}) - the cycle still ` +
@@ -1594,6 +1648,24 @@ export class HorseFleetManager {
                 return false;
               }
             }
+            /* THE PER-HOST CAP (Operation Stable Hand). Last of the
+               candidate gates, and the only one that reasons about the FLOOR
+               rather than about this horse: a body already seated on this host
+               is already counted and may open another table, a new body may
+               not once the host is at its curve. Bypassed entirely when a
+               human at this table needs the game rescued. */
+            if (
+              !hostAllowsNewBody({
+                hostId: String((table as any).club_id ?? ''),
+                horseId: h.id,
+                caps: stableHandCaps,
+                bodiesOnHost,
+                humanNeedsRescue,
+              })
+            ) {
+              hostCapRefused++;
+              return false;
+            }
             const tablesForHorse = horseTables.get(h.id);
             if (!tablesForHorse) return true;
             if (tablesForHorse.size >= MAX_TABLES_PER_HORSE) return false;
@@ -1720,6 +1792,14 @@ export class HorseFleetManager {
               // Update our in-memory map so we don't assign them to another table if they hit 4
               if (!horseTables.has(horse.id)) horseTables.set(horse.id, new Set());
               horseTables.get(horse.id)!.add(table.id);
+              /* And the host's body count, in the same breath. A cap read from
+                 the position the cycle STARTED with would let one pass seat the
+                 whole floor past it. */
+              const seatedHost = String((table as any).club_id ?? '');
+              if (seatedHost) {
+                if (!bodiesOnHost.has(seatedHost)) bodiesOnHost.set(seatedHost, new Set());
+                bodiesOnHost.get(seatedHost)!.add(horse.id);
+              }
               // The seat we just bought is exposure NOW, not next cycle: without
               // this the aggregate ceiling only ever sees the position the cycle
               // STARTED with, and a single pass could seat a horse at four
@@ -1777,6 +1857,13 @@ export class HorseFleetManager {
         console.log(
           `[HorseFleet] ${clubDropped} horse/table pairs excluded - the horse holds no ` +
             `membership that can pay for that table (a horse plays inside its own club).`
+        );
+      }
+      if (hostCapRefused > 0) {
+        console.log(
+          `[HorseFleet] ${hostCapRefused} horse/table pairs held back by the Stable Hand ` +
+            `per-host cap - the host is at its occupancy curve, so no NEW body took a seat ` +
+            `there. Nobody was stood up by this.`
         );
       }
 

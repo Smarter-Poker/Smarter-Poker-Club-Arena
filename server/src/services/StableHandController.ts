@@ -143,11 +143,37 @@ export interface HostMetrics {
   onePlayerTablesListed: number;
 }
 
-/** Tables that count toward shape: running cash tables inside the phase clamp. */
+/**
+ * Tables that count toward shape: LIVE cash tables inside the phase clamp.
+ *
+ * ── WHY THIS IS NOT `status === 'running'` (2026-09-04) ────────────────────
+ *
+ * It was, and the first live reading of the floor found the consequence.
+ * Measured at 03:58, minutes after an hourly engine restart:
+ *
+ *   Midway Union       80 open tables, 74 of them with players, 362 seats
+ *   Deep Stack Society 167 open tables, 128 with players, 350 seats
+ *   tables with status 'running'                                          0
+ *
+ * Every live cash table on the platform read `waiting`. `status` is not a
+ * statement about whether a game is being played - HorseFleetManager sets it
+ * to 'running' as a SIDE EFFECT once a second player sits, and the hourly
+ * maintenance restart leaves the whole floor back at 'waiting'. So for part of
+ * every hour the entire shape half of the planner - the buckets, the seat
+ * orders, the joinable guarantee, the occupancy wind-down - was reasoning
+ * about an EMPTY list and confidently reporting a floor of nothing.
+ *
+ * CLAUDE.md section 13 rule 3 says the same thing about the other status
+ * string: never gate a table on `tables.status`. Occupancy is a fact about
+ * SEATS, and seats are what this reads. The snapshot has already excluded
+ * closed and tournament tables, so anything reaching here is a real, open,
+ * playable cash table whether or not a hand happens to be in progress.
+ *
+ * Human yield never depended on this - it loops every table on the host - so
+ * a waiting player was always served. Everything else was blind.
+ */
 function shapedTables(h: HostSnapshot): TableSnapshot[] {
-  return h.tables.filter(
-    (t) => (t.status === 'running' || t.status === 'active') && stakeIsLegalThisPhase(t.bb)
-  );
+  return h.tables.filter((t) => t.status !== 'closed' && stakeIsLegalThisPhase(t.bb));
 }
 
 export function planFloor(snap: FloorSnapshot): FloorPlan {
@@ -446,3 +472,82 @@ export function chicagoNow(d: Date = new Date()): {
 
 export const STABLE_HAND_HOSTS = [MIDWAY_UNION_ID, DSS_CLUB_ID];
 export type { ShapeBucket };
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE SEEDING SIDE OF THE CURVE
+
+   The planner can stand horses up all it likes; if the fleet manager refills
+   the seat thirty seconds later, all that happens is churn - a cash-out and a
+   buy-in per horse per cycle, which is both expensive and the single loudest
+   tell a floor can have. So the curve has to be visible to the seeder too, and
+   this is the whole of what it needs to know.
+
+   IT ONLY EVER REFUSES A NEW BODY. It cannot stand anybody up, it cannot
+   shorten a session, and a horse already seated on the host may still open
+   another table - that is what makes it a UNIQUE-OCCUPANCY cap rather than a
+   seat cap, and it is why multi-tabling is unaffected. Nothing here can empty
+   a floor: an unreadable population yields no cap at all, which is exactly
+   today's behaviour.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * The most unique BODIES each host may carry right now, from the 24-hour
+ * curve. A host with no readable population gets no entry, and a caller with
+ * no entry applies no cap.
+ */
+export function stableHandHostCaps(
+  eligibleByHost: ReadonlyMap<string, number>,
+  now: { hour: number; minute: number }
+): Map<string, number> {
+  const caps = new Map<string, number>();
+  for (const [hostId, n] of eligibleByHost) {
+    if (!Number.isFinite(n) || n <= 0) continue;
+    caps.set(hostId, occupancyTargetForHost(n, now.hour, now.minute).max);
+  }
+  return caps;
+}
+
+/**
+ * May this horse take a NEW seat on this host?
+ *
+ * Yes when the host has no cap, when the horse is already seated somewhere on
+ * that host (it is already counted, so a second table costs nothing), when the
+ * host is under its cap, or when a human at that table needs the game rescued.
+ * A waiting person outranks the shape of the floor, every time.
+ */
+export function hostAllowsNewBody(opts: {
+  hostId: string;
+  horseId: string;
+  caps: ReadonlyMap<string, number>;
+  bodiesOnHost: ReadonlyMap<string, ReadonlySet<string>>;
+  humanNeedsRescue: boolean;
+}): boolean {
+  if (opts.humanNeedsRescue) return true;
+  const cap = opts.caps.get(opts.hostId);
+  if (cap === undefined) return true;
+  const live = opts.bodiesOnHost.get(opts.hostId);
+  if (live?.has(opts.horseId)) return true;
+  return (live?.size ?? 0) < cap;
+}
+
+/**
+ * Bodies currently seated on each host, from the seat map the seeding cycle
+ * already holds. Keyed by host so it can be updated in place as seats are
+ * taken during the cycle - a cap read from the position the cycle STARTED
+ * with would let one pass seat the whole floor.
+ */
+export function bodiesOnHostFrom(
+  seats: ReadonlyArray<{ user_id: string; table_id: string }>,
+  hostOfTable: ReadonlyMap<string, string>,
+  isHorse: (id: string) => boolean
+): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const s of seats) {
+    if (!isHorse(s.user_id)) continue;
+    const host = hostOfTable.get(s.table_id);
+    if (!host) continue;
+    if (!out.has(host)) out.set(host, new Set());
+    out.get(host)!.add(s.user_id);
+  }
+  return out;
+}

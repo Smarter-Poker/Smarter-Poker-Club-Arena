@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   planFloor,
   chicagoNow,
+  stableHandHostCaps,
+  hostAllowsNewBody,
+  bodiesOnHostFrom,
   type FloorSnapshot,
   type TableSnapshot,
 } from './StableHandController.js';
@@ -333,5 +336,187 @@ describe('SOURCE LAW: a partial tagging run is not a finished one', () => {
     );
     expect(src).toContain('if ((count ?? 0) >= tagRows.length) {');
     expect(src).toContain('tagging incomplete:');
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE SEEDING SIDE OF THE CURVE
+
+   Standing a horse up is pointless if the fleet manager reseats the seat
+   thirty seconds later: that is a cash-out and a buy-in per horse per cycle,
+   and the loudest tell a floor can have. These are the pieces the seeding
+   cycle uses so a freed seat stays freed.
+   ══════════════════════════════════════════════════════════════════════════ */
+describe('the per-host seat cap', () => {
+  it('caps each host from its own population and the hour', () => {
+    const caps = stableHandHostCaps(
+      new Map([
+        [MIDWAY_UNION_ID, 584],
+        [DSS_CLUB_ID, 416],
+      ]),
+      { hour: 3, minute: 0 }
+    );
+    // 03:00 is the night window: 10% of the population, plus the band.
+    expect(caps.get(MIDWAY_UNION_ID)!).toBeLessThan(100);
+    expect(caps.get(DSS_CLUB_ID)!).toBeLessThan(caps.get(MIDWAY_UNION_ID)!);
+  });
+
+  it('is far higher at peak than at night, so the cap only binds overnight', () => {
+    const night = stableHandHostCaps(new Map([[MIDWAY_UNION_ID, 584]]), { hour: 3, minute: 0 });
+    const peak = stableHandHostCaps(new Map([[MIDWAY_UNION_ID, 584]]), { hour: 20, minute: 0 });
+    expect(peak.get(MIDWAY_UNION_ID)!).toBeGreaterThan(night.get(MIDWAY_UNION_ID)! * 2);
+  });
+
+  it('GIVES NO CAP AT ALL for a population it could not read', () => {
+    const caps = stableHandHostCaps(
+      new Map([
+        [MIDWAY_UNION_ID, 0],
+        [DSS_CLUB_ID, Number.NaN],
+      ]),
+      { hour: 3, minute: 0 }
+    );
+    // No entry means no cap, which is exactly the seeder's behaviour today.
+    expect(caps.size).toBe(0);
+  });
+});
+
+describe('hostAllowsNewBody', () => {
+  const bodies = new Map([[MIDWAY_UNION_ID, new Set(['a', 'b', 'c'])]]);
+  const caps = new Map([[MIDWAY_UNION_ID, 3]]);
+  const ask = (horseId: string, over: Record<string, unknown> = {}) =>
+    hostAllowsNewBody({
+      hostId: MIDWAY_UNION_ID,
+      horseId,
+      caps,
+      bodiesOnHost: bodies,
+      humanNeedsRescue: false,
+      ...over,
+    } as Parameters<typeof hostAllowsNewBody>[0]);
+
+  it('refuses a NEW body once the host is at its cap', () => {
+    expect(ask('newcomer')).toBe(false);
+  });
+
+  it('still lets a horse ALREADY on the host open another table', () => {
+    // The cap is on BODIES. One horse holding four seats is one body, so
+    // multi-tabling is untouched by it.
+    expect(ask('a')).toBe(true);
+  });
+
+  it('is bypassed outright when a human at the table needs the game rescued', () => {
+    expect(ask('newcomer', { humanNeedsRescue: true })).toBe(true);
+  });
+
+  it('allows everything when the host has no cap', () => {
+    expect(ask('newcomer', { caps: new Map() })).toBe(true);
+  });
+
+  it('allows the first body onto an empty host', () => {
+    expect(ask('newcomer', { bodiesOnHost: new Map() })).toBe(true);
+  });
+});
+
+describe('bodiesOnHostFrom counts bodies, not seats', () => {
+  it('a horse at four tables on one host is one body', () => {
+    const hostOf = new Map([
+      ['t1', MIDWAY_UNION_ID],
+      ['t2', MIDWAY_UNION_ID],
+      ['t3', MIDWAY_UNION_ID],
+      ['t4', DSS_CLUB_ID],
+    ]);
+    const seats = [
+      { user_id: 'h1', table_id: 't1' },
+      { user_id: 'h1', table_id: 't2' },
+      { user_id: 'h1', table_id: 't3' },
+      { user_id: 'h2', table_id: 't1' },
+      { user_id: 'human', table_id: 't1' },
+      { user_id: 'h1', table_id: 't4' },
+    ];
+    const out = bodiesOnHostFrom(seats, hostOf, (id) => id !== 'human');
+    expect(out.get(MIDWAY_UNION_ID)!.size).toBe(2);
+    expect(out.get(DSS_CLUB_ID)!.size).toBe(1);
+  });
+
+  it('a seat on a table it does not know the host of is skipped, not guessed', () => {
+    const out = bodiesOnHostFrom([{ user_id: 'h1', table_id: 'unknown' }], new Map(), () => true);
+    expect(out.size).toBe(0);
+  });
+});
+
+describe('SOURCE LAW: the seeding cap can only ever refuse a NEW seat', () => {
+  it('HorseFleetManager consults the cap and never stands anybody up for it', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const raw = readFileSync(resolve(__dirname, 'HorseFleetManager.ts'), 'utf8');
+    const src = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    // It is wired in.
+    expect(src).toContain('stableHandHostCaps(');
+    expect(src).toContain('hostAllowsNewBody({');
+    // The body count is updated as seats are taken, or one pass could seat the
+    // whole floor past a cap read from the position the cycle started with.
+    expect(src).toContain('bodiesOnHost.get(seatedHost)!.add(horse.id)');
+    // And nothing in this file removes a seated horse on account of the cap.
+    expect(src).not.toContain('leaveTable');
+    expect(src).not.toContain('atomicCashout');
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   A LIVE TABLE IS ONE WITH PLAYERS AT IT, NOT ONE WITH A STATUS STRING
+
+   Measured on production 2026-09-04 at 03:58, minutes after an hourly engine
+   restart: Midway Union had 80 open tables, 74 of them with players and 362
+   seats filled, and ZERO tables whose status read 'running'. The whole shape
+   half of the planner was reasoning about an empty list.
+   ══════════════════════════════════════════════════════════════════════════ */
+describe('planFloor - shape reads seats, not tables.status', () => {
+  const waitingButFull = (id: string) =>
+    table({ tableId: id, status: 'waiting', occupied: 6, maxPlayers: 6 });
+
+  it('counts a WAITING table that has six players at it', () => {
+    const tables = Array.from({ length: 10 }, (_, i) => waitingButFull(`w${i}`));
+    const p = planFloor(
+      snap({ hosts: [{ hostId: MIDWAY_UNION_ID, n: 584, uniqueLive: 180, tables }] })
+    );
+    expect(p.metrics[0].full).toBe(10);
+  });
+
+  it('a floor of waiting tables above the curve produces wind-down orders', () => {
+    // The exact shape of the 03:58 reading: every table waiting, the host far
+    // above its night cap. Before the fix this planned nothing at all.
+    const tables = Array.from({ length: 20 }, (_, i) => waitingButFull(`w${i}`));
+    const p = planFloor({
+      chicagoHour: 3,
+      chicagoMinute: 0,
+      killed: false,
+      hosts: [{ hostId: MIDWAY_UNION_ID, n: 584, uniqueLive: 178, tables }],
+    });
+    expect(p.stand.filter((s) => s.reason === 'occupancy_wind_down').length).toBeGreaterThan(0);
+  });
+
+  it('still excludes a CLOSED table', () => {
+    const tables = [waitingButFull('live'), table({ tableId: 'dead', status: 'closed' })];
+    const p = planFloor(
+      snap({ hosts: [{ hostId: MIDWAY_UNION_ID, n: 584, uniqueLive: 180, tables }] })
+    );
+    expect(p.metrics[0].full).toBe(1);
+  });
+
+  it('still excludes a table above the phase clamp', () => {
+    const tables = [waitingButFull('ok'), table({ tableId: 'big', status: 'waiting', bb: 50 })];
+    const p = planFloor(
+      snap({ hosts: [{ hostId: MIDWAY_UNION_ID, n: 584, uniqueLive: 180, tables }] })
+    );
+    expect(p.metrics[0].full).toBe(1);
+  });
+
+  it('human yield never depended on this and still does not', () => {
+    // It loops every table on the host, so a waiting player was always served
+    // even while the shape half was blind.
+    const t = table({ tableId: 'busy', status: 'waiting', humansWaiting: 1 });
+    const p = planFloor(
+      snap({ hosts: [{ hostId: MIDWAY_UNION_ID, n: 584, uniqueLive: 180, tables: [t] }] })
+    );
+    expect(p.stand.filter((s) => s.reason === 'human_yield').length).toBeGreaterThan(0);
   });
 });

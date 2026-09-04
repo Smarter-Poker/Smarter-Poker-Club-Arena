@@ -172,11 +172,24 @@ describe('every horse buy-in RPC call is gated on the freeze', () => {
     const gate = cycle.search(/isMaintenanceFrozen\(\)\)\s*return 0;/);
     expect(gate, 'StableHandExecutor.cycle does not gate itself').toBeGreaterThan(-1);
     expect(gate, 'the gate comes after the first I/O').toBeLessThan(firstIo(cycle));
-    // and re-checked inside the loop: a break can begin between the snapshot
-    // and the last seat in it.
-    const loopGate = cycle.search(/isMaintenanceFrozen\(\)\)\s*break;/);
-    expect(loopGate, 'the seat loop does not re-check the freeze').toBeGreaterThan(-1);
-    expect(loopGate).toBeLessThan(at(cycle, 'engine.leaveTable(', 'the stand itself'));
+    /* And re-checked PER SEAT: a break can begin between the snapshot and the
+       last order in it. The pin moved here on 2026-09-04 when the wind-down
+       arrived and both order types were routed through one `stand` helper -
+       every path to leaveTable now passes this single gate, which is why the
+       loop-level check it replaces is gone rather than missing. */
+    const stand = sliceMethod(
+      src,
+      'private stand(order: StandOrder, nowMs: number, why: string): boolean {'
+    );
+    const seatGate = stand.search(/isMaintenanceFrozen\(\)\)\s*return false;/);
+    expect(seatGate, 'stand() does not re-check the freeze').toBeGreaterThan(-1);
+    expect(seatGate).toBeLessThan(at(stand, 'engine.leaveTable(', 'the stand itself'));
+    // and there is exactly ONE door to leaveTable, so the gate cannot be
+    // bypassed. Comments stripped: the header names the call on purpose.
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    expect(code.split('engine.leaveTable(').length - 1, 'more than one leaveTable call site').toBe(
+      1
+    );
   });
 
   it('ScheduledTournamentService: the poll gates itself', () => {

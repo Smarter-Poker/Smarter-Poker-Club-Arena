@@ -173,3 +173,15 @@ the metric-card skeleton forever; a failed tables read held "Loading
 Tables..."; native `window.confirm`; "Holds N Chips" when N included credit;
 "All 100 Players" under a 678-player club; a 25-second row stagger. All
 fixed in the same push.
+
+**Published dashboard walked at 396 px and 1280 px** after PR #2953 shipped
+(`638a22521`): Tables "302 Live, 219 People Seated (430 Seats)" over a
+5,138-table club with "Live Now (302)" listed; Revenue with no insurance card
+for a club with no contracts; Tournaments "3,819 Finished In Last 7D" and
+"Newest 25 Of 3,819"; Hide Horses offered to the owner; the Revenue tab on
+the strip. One failed request, and it was real: `club_chat?club_id=eq.
+deep-stack-society-11192` answered 400. `ClubChat` was mounted with the
+route slug and uses it to read, subscribe and insert against a uuid column,
+so club chat on this page could neither load nor send. It is mounted with
+`resolvedClubId` now. The remaining 401 on `HEAD /rest/v1/` is the
+connection watchdog's own probe, which documents that answer as expected.

@@ -160,34 +160,39 @@ describe('WalletService', () => {
   // PROMO DISTRIBUTION
   // ─────────────────────────────────────────────────────────────────────────
 
-  describe('distributePromo', () => {
-    it('should reject amount <= 0', async () => {
-      await expect(WalletService.distributePromo('agent1', 'player1', 0)).rejects.toThrow(
+  describe('disbursePromo', () => {
+    // Dan, 2026-09-03: promo is disbursed by the union owner, or by an
+    // unaffiliated club owner, and lands as ordinary chips. The old
+    // agent-keyed distributePromo is retired and throws.
+    it('rejects zero amounts', async () => {
+      await expect(WalletService.disbursePromo('club1', 'player1', 0)).rejects.toThrow(
         'Amount must be positive'
       );
     });
 
-    it('should reject negative amounts', async () => {
-      await expect(WalletService.distributePromo('agent1', 'player1', -50)).rejects.toThrow(
+    it('rejects negative amounts', async () => {
+      await expect(WalletService.disbursePromo('club1', 'player1', -50)).rejects.toThrow(
         'Amount must be positive'
       );
     });
 
-    it('should emit BALANCE_UPDATED for the player on success', async () => {
-      mockRpc.mockResolvedValueOnce({ error: null }); // distribute_promo_chips
+    it('refuses to report a server refusal as a paid disbursement', async () => {
+      // the club lookup resolves the promo float's owner, then the RPC refuses
+      mockFromChain.mockResolvedValueOnce({ data: { id: 'club1', union_id: null }, error: null });
+      mockRpc.mockResolvedValueOnce({
+        data: { success: false, error: 'Insufficient Promo Balance' },
+        error: null,
+      });
 
-      await WalletService.distributePromo('agent1', 'player1', 500);
-
-      expect(mockBusEmit).toHaveBeenCalledWith(
-        'BALANCE_UPDATED',
-        expect.objectContaining({ source: 'promo', userId: 'player1' })
+      await expect(WalletService.disbursePromo('club1', 'player1', 500)).rejects.toThrow(
+        'Insufficient Promo Balance'
       );
     });
 
-    it('should throw on RPC failure', async () => {
-      mockRpc.mockResolvedValueOnce({ error: { message: 'insufficient promo balance' } });
-
-      await expect(WalletService.distributePromo('agent1', 'player1', 500)).rejects.toBeDefined();
+    it('is retired under its old agent-keyed name', async () => {
+      await expect(WalletService.distributePromo('agent1', 'player1', 500)).rejects.toThrow(
+        /retired/i
+      );
     });
   });
 
@@ -198,12 +203,14 @@ describe('WalletService', () => {
   describe('bulkDistributePromo', () => {
     it('should count successes and failures separately', async () => {
       // First two succeed, third fails
+      // each disbursement resolves the club first, then calls the RPC
+      mockFromChain.mockResolvedValue({ data: { id: 'club1', union_id: null }, error: null });
       mockRpc
-        .mockResolvedValueOnce({ error: null })
-        .mockResolvedValueOnce({ error: null })
+        .mockResolvedValueOnce({ data: { success: true }, error: null })
+        .mockResolvedValueOnce({ data: { success: true }, error: null })
         .mockResolvedValueOnce({ error: { message: 'failed' } });
 
-      const result = await WalletService.bulkDistributePromo('agent1', [
+      const result = await WalletService.bulkDistributePromo('club1', [
         { playerId: 'p1', amount: 100 },
         { playerId: 'p2', amount: 200 },
         { playerId: 'p3', amount: 300 },

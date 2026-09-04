@@ -38,12 +38,15 @@ describe('cashBuyInRefusalText', () => {
     );
   });
 
-  it('quotes the stack a no-rathole table demands back', () => {
+  it('quotes the rejoin floor as a number and nothing else (chip continuity, 2026-09-04)', () => {
+    expect(
+      cashBuyInRefusalText('BUYIN_BELOW_FLOOR: minimum buy-in for this game right now is 2,500')
+    ).toBe('The Minimum Buy In For This Game Right Now Is 2,500');
     expect(
       cashBuyInRefusalText(
-        'NO_RATHOLE: this table requires you to return with the 2,500 you left with'
+        'BUYIN_ABOVE_MAX: add-on of 200 would take the stack above the table maximum (400.00)'
       )
-    ).toBe('This Table Requires You To Return With The 2,500 You Left With');
+    ).toBe('Your Stack Cannot Go Above The Table Maximum Of 400.00');
   });
 
   it('quotes the table minimum and maximum', () => {

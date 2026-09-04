@@ -84,8 +84,9 @@ export function BuyInModal({
   // 60-second kicker visual countdown
   const [timeLeft, setTimeLeft] = useState(60);
 
-  // The backend caps the rathole floor at max_buy_in. If we don't mirror that cap,
-  // the user's cashoutRestriction might exceed maxBuyIn, breaking the HTML slider logic entirely.
+  // CHIP CONTINUITY: the server already caps the rejoin floor at max_buy_in
+  // (fn_cash_effective_buyin). Mirror the cap anyway so a stale prop can never
+  // push the slider's minimum above its maximum.
   const cappedCashoutRestriction = cashoutRestriction ? Math.min(cashoutRestriction, maxBuyIn) : 0;
   const effectiveMinBuyIn =
     cappedCashoutRestriction > minBuyIn ? cappedCashoutRestriction : minBuyIn;
@@ -261,25 +262,8 @@ export function BuyInModal({
           </button>
         </div>
 
-        {/* FIX 136: 2-hour re-entry restriction notice */}
-        {cappedCashoutRestriction > 0 && cappedCashoutRestriction > minBuyIn && (
-          <div
-            className="buy-in-modal__restriction-notice"
-            style={{
-              background: 'rgba(255, 165, 0, 0.15)',
-              border: '1px solid rgba(255, 165, 0, 0.4)',
-              borderRadius: '8px',
-              padding: '8px 12px',
-              margin: '0 0 12px 0',
-              fontSize: '12px',
-              color: '#ffaa33',
-              textAlign: 'center',
-            }}
-          >
-            You Cashed Out From This Table. Min Buy-In Is {formatAmount(cappedCashoutRestriction)}{' '}
-            For 2 Hours.
-          </div>
-        )}
+        {/* CHIP CONTINUITY (OPORD 1.3 section 6.1): when a rejoin floor applies
+            the minimum is simply higher. No notice, no paragraph about why. */}
 
         {/* Amount Display */}
         <div className="buy-in-modal__amount-display">

@@ -608,15 +608,9 @@ export function cashRuleMedallions(row: CashFeatureSource): RuleMedallion[] {
     });
   }
 
-  /* atomic_table_buyin: a returning player must bring back what they left
-     with, capped at the table maximum. */
-  if (col(row.no_rathole) === true) {
-    rules.push({
-      key: 'no_rathole',
-      label: 'NO RATHOLE',
-      tip: 'Leave and come back and you must return with the stack you left with',
-    });
-  }
+  /* CHIP CONTINUITY (2026-09-04): there is no medallion for the rejoin
+     floor any more, because it is no longer a per-table feature. Every cash
+     table carries it (OPORD 1.3 section 6.1: no badge, no lobby tag). */
 
   /* ServerTableEngineBase.dealtGameVariant maps a Hold'em table with this
      column on to a three-card Pineapple deal. */

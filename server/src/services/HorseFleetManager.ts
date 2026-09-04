@@ -21,7 +21,33 @@ import {
   hostAllowsNewBody,
   stableHandHostCaps,
 } from './StableHandController.js';
-import { WALLETS_FOR_HOST, controllerEnabled, isNightWindow } from './StableHand.js';
+import {
+  WALLETS_FOR_HOST,
+  controllerEnabled,
+  isNightWindow,
+  evaluateSit,
+  gameKey,
+  killed as stableHandKilled,
+  type SitRejection,
+} from './StableHand.js';
+import {
+  tagBook,
+  tagKey,
+  sitsOnKeyToday,
+  chicagoCounterDay,
+  tagAllowsCash,
+  tagAllowsVariant,
+  tagAllowsStake,
+  tagMaxTables,
+  isRestDayFor,
+  dailyCapReached,
+} from './StableHandTags.js';
+import {
+  foldMutations,
+  writeStateRows,
+  MINUTES_ACCRUAL_MS,
+  type StateMutation,
+} from './StableHandState.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
 import { clampSeatsForVariant, maxSeatsForVariant } from '../config/tableSeating.js';
@@ -312,6 +338,18 @@ const MAX_TABLES_PER_CONFIG = 3;
 export class HorseFleetManager {
   private isRunning = false;
   private seedInterval: ReturnType<typeof setInterval> | null = null;
+  /**
+   * The game keys each horse held at the END of the previous cycle.
+   *
+   * A key that was there and is not now is a seat GIVEN UP, and that is what
+   * opens the two-hour window on it. Diffed here rather than hooked onto a
+   * leave path because every exit lands in this map - a stand, a session end,
+   * a bust, a table closing - and only the ones that hooked a code path would
+   * land on a listener.
+   */
+  private previousSeatKeys = new Map<string, Set<string>>();
+  /** When minutes-played was last accrued. See MINUTES_ACCRUAL_MS. */
+  private lastMinutesAccrualAt = 0;
   private seeding = false; // Prevents concurrent seeding
   private overrunTicks = 0; // 30s ticks dropped because the previous cycle was still running
   private clubIndex = 0;
@@ -1344,6 +1382,20 @@ export class HorseFleetManager {
       const bodiesOnHost = bodiesOnHostFrom(allActiveSeats, hostOfTable, (id) =>
         horseIdSet.has(id)
       );
+      /* WHERE EACH HORSE ALREADY IS. One body plays one club and one host at a
+         time (section 11), and both are read from the live seat map rather
+         than from stable_hand_horse_state: the seat rows are what actually
+         happened, and the state table's mirror of them is written by this
+         cycle rather than trusted by it. */
+      const activeClubOf = new Map<string, string>();
+      const activeHostOf = new Map<string, string>();
+      for (const seat of allActiveSeats) {
+        if (!horseIdSet.has(seat.user_id)) continue;
+        const club = (seat as { club_id?: string | null }).club_id;
+        if (club && !activeClubOf.has(seat.user_id)) activeClubOf.set(seat.user_id, String(club));
+        const host = hostOfTable.get(String(seat.table_id));
+        if (host && !activeHostOf.has(seat.user_id)) activeHostOf.set(seat.user_id, host);
+      }
       let hostCapRefused = 0;
       if (stableHandCaps.size > 0) {
         console.log(
@@ -1448,6 +1500,36 @@ export class HorseFleetManager {
       // can pay for that table. Loud, like rollUnknown: the silent version of
       // this number is what hid the Midway floor for a day.
       let clubDropped = 0;
+      /* Horse/table pairs refused by the horse's OWN tag - wrong game, wrong
+         stake, or a horse that does not play cash at all. Reported like
+         clubDropped, because the silent version of this number is what hid the
+         Midway floor for a day. */
+      let tagDropped = 0;
+      /* Refusals from the Stable Hand mutex, by reason, for the cycle log.
+         A gate whose refusals are invisible is a gate nobody can tune. */
+      const mutexRefused = new Map<SitRejection, number>();
+      /* `${horseId}:${tableId}` -> the game key that seat was taken on, so the
+         daily counter is written against the key the mutex actually judged. */
+      const sitKeyOf = new Map<string, string>();
+      /* Counter writes for this cycle, flushed ONCE at the end. */
+      const stateMutations: StateMutation[] = [];
+      const todayKey = chicagoCounterDay();
+      let restDayDropped = 0;
+      let dailyCapDropped = 0;
+      /* THE TAG BOOK. Null when it could not be read WHOLE, and every gate
+         that consults it is written so that null means "today's behaviour,
+         unchanged". */
+      const book = controllerEnabled() ? await tagBook.load() : null;
+      const chicagoWeekday = chicagoNow().weekday;
+      if (book) {
+        console.log(
+          `[HorseFleet] Tag book: ${book.tags.size} membership tag(s), ${book.states.size} horse state(s)`
+        );
+      } else if (controllerEnabled()) {
+        console.warn(
+          '[HorseFleet] Tag book unread this cycle - seating from the hash rules, unchanged.'
+        );
+      }
 
       /* A seat call is still a NEW seating, so it obeys the switch and the
          budget with everything else. The offer itself is left untouched: the
@@ -1608,23 +1690,86 @@ export class HorseFleetManager {
           // 2. Not exceeding 4 max tables
           const MAX_TABLES_PER_HORSE = 4;
           const candidateHorses = validHorses.filter((h) => {
-            // Dan 2026-08-26 game lanes: a third of the stable plays events
-            // only (tournaments / spins / heads-up) and never sits at cash.
-            if (gameLaneFor(h.id) === 'events') return false;
-            // Dan 2026-08-29 stake bands: a horse plays ONE stake level. This
-            // is the only place blinds have ever influenced WHICH horse is
-            // picked - before it, they were read solely to size a buy-in, and
-            // 64 of 210 horses were sitting across multiple stakes in 48
-            // hours, one of them at 0.10/0.20 and 25.00/50.00 both.
-            if (!stakeBandAllows(h.id, table.big_blind)) return false;
             /* A HORSE PLAYS INSIDE ITS OWN CLUB (Dan 2026-09-02): only a horse
                whose membership can pay for this table is a candidate for it.
                `null` is "no such membership" and excludes; `undefined` is
                "the map did not load" and lets the database decide, exactly as
-               the bankroll gate fails open below. See resolveSeatClub. */
+               the bankroll gate fails open below. See resolveSeatClub.
+
+               ASKED FIRST NOW (2026-09-04), because the tag is per MEMBERSHIP:
+               a horse holds a JAQK tag and a Shark tag independently, and
+               which one applies is decided by which wallet pays for this
+               seat. */
             const seatClub = this.resolveSeatClub(membership, table, h.id);
             if (seatClub === null) {
               clubDropped++;
+              return false;
+            }
+
+            /* ── THE TAG DECIDES, AND WHERE THERE IS NO TAG THE OLD HASH DOES
+               ────────────────────────────────────────────────────────────────
+               `horses:tag` wrote 1,580 of these on 2026-09-04 and nothing read
+               one until today: mode, variants, preferred stakes and the table
+               ceiling were all still being derived from a hash of the horse's
+               id, which is why every horse played every variant.
+
+               EVERY GATE BELOW IS THREE-VALUED. `false` refuses, `true`
+               allows, and `undefined` means "no tag was read" - in which case
+               the rule that was here before decides, unchanged. That is the
+               same fail-open contract as the bankroll gate two blocks down,
+               and for the same reason: a tag we could not read is not a horse
+               with no tag. See StableHandTags. */
+            /* `undefined` seatClub is the membership map failing to load. No
+               scope means no tag, which every gate below reads as "no
+               opinion" - the same fail-open answer the club gate itself
+               gives on that branch. */
+            const tag = seatClub ? book?.tags.get(tagKey(h.id, seatClub)) : undefined;
+
+            // Dan 2026-08-26 game lanes: a third of the stable plays events
+            // only (tournaments / spins / heads-up) and never sits at cash.
+            const cashOk = tagAllowsCash(tag);
+            if (cashOk === false) {
+              tagDropped++;
+              return false;
+            }
+            if (cashOk === undefined && gameLaneFor(h.id) === 'events') return false;
+
+            /* THE VARIANT. Nothing before this restricted it at all, so one
+               horse played Omaha-8, short deck and pineapple interchangeably.
+               Measured supply before switching it on, so the floor cannot
+               starve: Midway Union carries 438 NLH horses, 110 PLO4 and 45 of
+               the thinnest limit variant, against 20 NLH tables and a limit
+               board trimmed to two. */
+            const variantOk = tagAllowsVariant(tag, String(table.game_variant ?? ''));
+            if (variantOk === false && !humanNeedsRescue) {
+              tagDropped++;
+              return false;
+            }
+
+            /* THE STAKE. Dan 2026-08-29: a horse plays ONE stake level. The
+               tag names the exact blinds rather than a band - before any of
+               this, blinds were read solely to size a buy-in, and 64 of 210
+               horses sat across multiple stakes in 48 hours, one at 0.10/0.20
+               and 25.00/50.00 both. */
+            const stakeOk = tagAllowsStake(tag, Number(table.big_blind));
+            if (stakeOk === false && !humanNeedsRescue) {
+              tagDropped++;
+              return false;
+            }
+            if (stakeOk === undefined && !stakeBandAllows(h.id, table.big_blind)) return false;
+
+            /* ── THE HORSE'S OWN DAY ────────────────────────────────────────
+               A rest day and a daily cap are what stop a thousand horses
+               playing identical 24-hour shifts, and both were written by the
+               tagger and read by nobody. A human short-handed at this table
+               outranks both: a rest day is a texture, a person waiting is not. */
+            const st = book?.states.get(h.id);
+            if (!humanNeedsRescue && isRestDayFor(st, chicagoWeekday)) {
+              restDayDropped++;
+              return false;
+            }
+            if (!humanNeedsRescue && dailyCapReached(st, todayKey)) {
+              dailyCapDropped++;
               return false;
             }
             /**
@@ -1694,7 +1839,10 @@ export class HorseFleetManager {
             }
             const tablesForHorse = horseTables.get(h.id);
             if (!tablesForHorse) return true;
-            if (tablesForHorse.size >= MAX_TABLES_PER_HORSE) return false;
+            /* THE HORSE'S OWN CEILING, never above the platform's four. A
+               grinder carries four, a mixer one; before the tag was read every
+               horse carried four. */
+            if (tablesForHorse.size >= tagMaxTables(tag, MAX_TABLES_PER_HORSE)) return false;
             if (tablesForHorse.has(table.id)) return false;
             return true;
           });
@@ -1803,6 +1951,65 @@ export class HorseFleetManager {
               }
             }
 
+            /* ══ THE MUTEX (Operation Stable Hand section 11) ══════════════
+               `evaluateSit` is the single gate every Stable Hand seat is
+               supposed to pass, and until today NOTHING CALLED IT. It was
+               written, covered by 75 tests, and unreachable - so the 20
+               buy-in licence, the 50% session-commit cap, the per-key daily
+               sit cap and one-body-one-club were all unenforced on the live
+               floor. `atomic_table_buyin` checks that the wallet can COVER
+               the buy-in and knows none of the rest (recon section 6.4).
+
+               ONLY WHEN THE HORSE IS FULLY KNOWN. It needs a persona and the
+               day's counters to answer, and `maySitOnKey(null, n)` is FALSE by
+               design - a tourney-only horse takes no cash sits. Calling it on
+               an untagged horse would therefore refuse every one of them,
+               which is fail-CLOSED and the exact shape of the bug that emptied
+               the cash floor on 2026-08-31. No tag or no state: this block
+               does not run and the gates above are the whole rule. */
+            const sitTag = seatClub ? book?.tags.get(tagKey(horse.id, seatClub)) : undefined;
+            const sitState = book?.states.get(horse.id);
+            /* `seatClub` is named in the condition rather than assumed: it is
+               undefined when the membership map did not load, and that branch
+               is the one the whole file fails open on. */
+            if (seatClub && sitTag && sitState && sitTag.personaCash) {
+              const key = gameKey({
+                hostId: String((table as any).club_id ?? ''),
+                template: String(table.name ?? ''),
+                variant: String(table.game_variant ?? ''),
+                sb: Number(table.small_blind) || 0,
+                bb: Number(table.big_blind) || 0,
+              });
+              const balance = bankrolls.get(`${seatClub}:${horse.id}`) ?? 0;
+              const verdict = evaluateSit({
+                activeClubId: activeClubOf.get(horse.id) ?? null,
+                activeHostId: activeHostOf.get(horse.id) ?? null,
+                activeSeatCount: horseTables.get(horse.id)?.size ?? 0,
+                maxTables: tagMaxTables(sitTag, MAX_TABLES_PER_HORSE),
+                clubId: seatClub,
+                tableHostId: String((table as any).club_id ?? ''),
+                bb: Number(table.big_blind) || 0,
+                available: balance,
+                /* The session-start balance is what the 50% cap is measured
+                   against, so that winning mid-session does not raise it and
+                   losing does not retroactively void a table that already
+                   passed. An unknown one falls back to the balance now, which
+                   is the same number on the first sit of a session. */
+                sessionStartBalance: sitState.sessionStartBalance ?? balance,
+                currentCommit: horseExposure.get(horse.id) ?? 0,
+                buyIn,
+                persona: sitTag.personaCash,
+                sitsOnKeyToday: sitsOnKeyToday(sitState, key, todayKey),
+                isRestDay: isRestDayFor(sitState, chicagoWeekday),
+                killed: stableHandKilled(),
+              });
+              if (verdict !== 'ok') {
+                mutexRefused.set(verdict, (mutexRefused.get(verdict) ?? 0) + 1);
+                continue;
+              }
+              sitKeyOf.set(`${horse.id}:${table.id}`, key);
+            }
+
             const success = await this.seatHorse(
               table.id,
               horse.id,
@@ -1821,6 +2028,22 @@ export class HorseFleetManager {
               /* And the host's body count, in the same breath. A cap read from
                  the position the cycle STARTED with would let one pass seat the
                  whole floor past it. */
+              /* THE COUNTER THE MUTEX READS. Recorded against the SAME key
+                 the mutex judged, so "three sits on this game today" counts
+                 the sits it actually refused a fourth of. */
+              const takenKey = sitKeyOf.get(`${horse.id}:${table.id}`);
+              if (takenKey) {
+                stateMutations.push({
+                  horseId: horse.id,
+                  sitOnKey: takenKey,
+                  /* A SESSION STARTS when a horse with nothing open sits down.
+                     The 50% commit cap is measured against the balance at that
+                     moment, so winning later does not raise it. */
+                  ...((horseTables.get(horse.id)?.size ?? 0) === 0 && seatClub
+                    ? { sessionStartBalance: bankrolls.get(`${seatClub}:${horse.id}`) ?? undefined }
+                    : {}),
+                });
+              }
               const seatedHost = String((table as any).club_id ?? '');
               if (seatedHost) {
                 if (!bodiesOnHost.has(seatedHost)) bodiesOnHost.set(seatedHost, new Set());
@@ -1885,6 +2108,19 @@ export class HorseFleetManager {
             `membership that can pay for that table (a horse plays inside its own club).`
         );
       }
+      if (tagDropped > 0 || restDayDropped > 0 || dailyCapDropped > 0) {
+        console.log(
+          `[HorseFleet] tags: ${tagDropped} horse/table pair(s) excluded by the horse's own ` +
+            `game, stake or lane; ${restDayDropped} on a rest day; ${dailyCapDropped} at their ` +
+            `daily cap. A human short-handed at the table bypasses all three.`
+        );
+      }
+      if (mutexRefused.size > 0) {
+        console.log(
+          '[HorseFleet] Stable Hand mutex refused: ' +
+            [...mutexRefused].map(([r, n]) => `${r}=${n}`).join(' ')
+        );
+      }
       if (hostCapRefused > 0) {
         console.log(
           `[HorseFleet] ${hostCapRefused} horse/table pairs held back by the Stable Hand ` +
@@ -1946,6 +2182,74 @@ export class HorseFleetManager {
       // ...and the other direction, which never existed until 2026-08-19.
       // Note it now skips any table carrying `auto_extension` — see there.
       await this.retireSurplusTables(tables, surplusTableIds, allActiveSeats || []);
+
+      /* ══ THE DAY'S COUNTERS, WRITTEN ONCE PER CYCLE ═══════════════════════
+         Everything the Stable Hand mutex reads about a horse's day is written
+         here: the sits it has taken on each game, the minutes it has played,
+         and the two-hour window that opens when it gives a seat up. Before
+         today every one of those columns held its default forever, so the
+         per-key sit cap compared 0 against 3-5 and always said yes.
+
+         THE EXITS ARE DIFFED, NOT HOOKED. A seat is given up by a stand, a
+         session end, a bust, or a table closing under it, and only the paths
+         somebody remembered to hook would fire a listener. The key set each
+         horse held last cycle minus the set it holds now IS the exit list,
+         whatever caused it. */
+      const currentSeatKeys = new Map<string, Set<string>>();
+      for (const seat of allActiveSeats) {
+        if (!horseIdSet.has(seat.user_id)) continue;
+        // Reuses the lookup built for the seat-club scope above.
+        const t = tableById.get(seat.table_id) as any;
+        if (!t) continue;
+        const key = gameKey({
+          hostId: String(t.club_id ?? ''),
+          template: String(t.name ?? ''),
+          variant: String(t.game_variant ?? ''),
+          sb: Number(t.small_blind) || 0,
+          bb: Number(t.big_blind) || 0,
+        });
+        if (!currentSeatKeys.has(seat.user_id)) currentSeatKeys.set(seat.user_id, new Set());
+        currentSeatKeys.get(seat.user_id)!.add(key);
+      }
+      for (const [horseId, was] of this.previousSeatKeys) {
+        const nowKeys = currentSeatKeys.get(horseId);
+        for (const key of was) {
+          if (!nowKeys?.has(key)) stateMutations.push({ horseId, closedKey: key });
+        }
+      }
+      this.previousSeatKeys = currentSeatKeys;
+
+      /* MINUTES PLAYED, accrued on its own clock rather than every cycle: a
+         thousand rows twice a minute to move a counter by 0.5 is not a
+         measurement, it is a write storm. The elapsed time is CAPPED so an
+         engine that was down for two hours does not credit every seated horse
+         with two hours it did not play. */
+      const nowMs = Date.now();
+      if (this.lastMinutesAccrualAt === 0) {
+        this.lastMinutesAccrualAt = nowMs;
+      } else if (nowMs - this.lastMinutesAccrualAt >= MINUTES_ACCRUAL_MS) {
+        const minutes = Math.min(30, (nowMs - this.lastMinutesAccrualAt) / 60_000);
+        for (const horseId of currentSeatKeys.keys()) {
+          stateMutations.push({ horseId, addMinutes: minutes });
+        }
+        this.lastMinutesAccrualAt = nowMs;
+      }
+
+      if (book && stateMutations.length > 0) {
+        const folded = foldMutations(book.states, stateMutations, todayKey, nowMs);
+        const written = await writeStateRows(folded.rows);
+        // Fold back into the cached book so the NEXT cycle reads the counter
+        // this one wrote, rather than waiting for the cache to expire.
+        for (const [id, st] of folded.next) book.states.set(id, st);
+        if (written > 0) {
+          console.log(
+            `[HorseFleet] Stable Hand state: ${written} horse row(s) updated ` +
+              `(${stateMutations.filter((m) => m.sitOnKey).length} sit(s), ` +
+              `${stateMutations.filter((m) => m.closedKey).length} seat(s) given up, ` +
+              `${stateMutations.filter((m) => m.addMinutes).length} minute accrual(s))`
+          );
+        }
+      }
 
       // The same two directions for a HOST's own table, from the switches on
       // the table creation page: Auto Restart reopens a closed one, Auto

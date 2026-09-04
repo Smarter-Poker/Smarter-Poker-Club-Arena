@@ -231,9 +231,23 @@ describe('the bottom-left HUD slot', () => {
  */
 describe('every widget in the bottom-left HUD corner is the same tile', () => {
   it('the size is declared once, on .table-hud, as a token', () => {
-    // 44px since 2026-08-28 (Dan: same size as the chat button, which is
-    // 44px at every breakpoint in TableChat.css).
-    expect(strip(HUD_CSS)).toMatch(/--sp-hud-tile-size:\s*44px/);
+    // 44px since 2026-08-28 (Dan: same size as the chat button); 66px since
+    // 2026-09-04 (Dan: "PREVIOUS HANDS, CHAT, LOBBY BUTTON (FOR TOURNAMENTS)
+    // AND RABBIT HUNT BUTTONS ALL NEED TO BE 50% LARGER"). The chat button
+    // in TableChat.css is the same 66px, so the two corners still match.
+    expect(strip(HUD_CSS)).toMatch(/--sp-hud-tile-size:\s*66px/);
+    expect(strip(HUD_CSS)).toMatch(/--sp-hud-tile-radius:\s*18px/);
+    const chat = ruleBody(read('src/components/table/TableChat.css'), '.chat-collapsed');
+    expect(chat).toMatch(/width:\s*66px/);
+    expect(chat).toMatch(/height:\s*66px/);
+  });
+
+  it('the previous-hand tile has no desktop-only size of its own', () => {
+    // A `min-width: 1024px` block used to re-size .prev-hand-card from a
+    // `--sp-hud-tile-size-lg` token that nothing declares, so the 44px
+    // fallback would have held the desktop tile at 44 while the real token
+    // moved to 66. One token, every width.
+    expect(strip(PREV_CSS)).not.toMatch(/--sp-hud-tile-size-lg/);
   });
 
   it('all three read that token for width and height', () => {
@@ -276,22 +290,24 @@ describe('every widget in the bottom-left HUD corner is the same tile', () => {
     }
   });
 
-  it("the corner's height budget still matches what --sp-hero-clear reserves", () => {
-    // The corner is a row (.hud-bl-row), so it is as tall as its tallest child:
-    // one 36px tile, resting on a line 8px above the action bar. Anything that
-    // reserves the strip for a hero must clear that 44px. The spectator
-    // collapse is deliberately far below it — no hero plate, no tile, no row.
-    const declared = [...TABLE_CSS.matchAll(/--sp-hero-clear:\s*(\d+)px/g)].map((m) =>
-      Number(m[1])
+  it('the corner is a row, so two tiles side by side is the whole of its footprint', () => {
+    // Until 2026-09-04 this test held `--sp-hero-clear >= tile + line`, on the
+    // reasoning that the corner had to fit under the felt's bottom edge. That
+    // reserve is for the HERO, who hangs off the CENTRE of the oval; the
+    // tiles stand in the CORNERS. Measured in the felt harness with the real
+    // stylesheets (see the note on --sp-hud-tile-size in TableHUD.css), the
+    // felt's bottom edge is 98-117px above the action bar on every device,
+    // so a 74px row never reaches it. What the row must NOT do is grow DOWN
+    // into a column again - a column of 66px tiles would be 140px tall and
+    // would reach the hero's plate. The row is what makes two 66px tiles
+    // cost the hero nothing: the rabbit tile ends at x=142 and the hero
+    // avatar starts at x=152 (375) / 154 (390) / 170 (430).
+    const row = ruleBody(TABLE_CSS, '.hud-bl-row');
+    expect(row).toMatch(/flex-direction:\s*row/);
+    expect(row).toMatch(/align-items:\s*flex-end/);
+    // And the previous-hand tile stays at the anchor, the shared slot beside it.
+    expect(strip(TABLE_CSS)).toMatch(
+      /\.hud-bl-row \.prev-hand-card-wrapper,\s*\.hud-bl-row \.prev-hand-card \{\s*order:\s*0/
     );
-    expect(declared.length, '--sp-hero-clear is never declared').toBeGreaterThan(0);
-    const TILE = 44; // 2026-08-28: chat-button parity (was 36)
-    const LINE = 8;
-    for (const px of declared) {
-      if (px <= LINE) continue; // the data-hero='false' collapse
-      expect(px, `a --sp-hero-clear of ${px}px does not clear the HUD row`).toBeGreaterThanOrEqual(
-        TILE + LINE
-      );
-    }
   });
 });

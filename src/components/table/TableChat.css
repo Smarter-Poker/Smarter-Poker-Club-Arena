@@ -193,8 +193,17 @@
   /* Phase 4 (2026-08-22): 99 for the same reason as .table-chat above — the
      open raise panel (z-100) must cover this button, not sit under it. */
   z-index: 99;
-  width: 44px;
-  height: 44px;
+  /* Dan 2026-09-04: "THE PREVIOUS HANDS, CHAT, LOBBY BUTTON (FOR
+     TOURNAMENTS) AND RABBIT HUNT BUTTONS ALL NEED TO BE 50% LARGER."
+     44 -> 66, radius 12 -> 18, in step with --sp-hud-tile-size in
+     TableHUD.css (the 2026-08-28 rule that the corner tiles match this
+     button still holds; both moved together). The size is repeated here
+     rather than read from the token because this button is `position:
+     fixed` OUTSIDE `.table-hud`, where the token is declared, and a var()
+     that cannot resolve on a fixed element is how the bubble ended up at the
+     top of the screen once already (see the note on `bottom` above). */
+  width: 66px;
+  height: 66px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -202,7 +211,7 @@
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(24, 119, 242, 0.35);
-  border-radius: 12px;
+  border-radius: 18px;
   cursor: pointer;
   transition: all 0.2s var(--ease-spring, ease);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
@@ -225,10 +234,10 @@
 
 /* Custom chat icon image — fills the button */
 .chat-collapsed__icon-img {
-  width: 44px;
-  height: 44px;
+  width: 66px;
+  height: 66px;
   object-fit: contain;
-  border-radius: 12px;
+  border-radius: 18px;
   display: block;
 }
 

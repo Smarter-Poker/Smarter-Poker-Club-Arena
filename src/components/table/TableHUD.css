@@ -63,9 +63,34 @@
      tile token — which sizes prev-hand, rabbit hunt AND the time-bank tile
      together by design — moves to match. The 44px touch-target pseudos on
      those widgets are now simply coincident with the painted tile.
-     --sp-hero-clear budget: 44 + 8 = 52, still under the 68px reserve. */
-  --sp-hud-tile-radius: 12px;
-  --sp-hud-tile-size: 44px;
+
+     Dan 2026-09-04: "THE PREVIOUS HANDS, CHAT, LOBBY BUTTON (FOR TOURNAMENTS)
+     AND RABBIT HUNT BUTTONS ALL NEED TO BE 50% LARGER." 44 -> 66, 12 -> 18,
+     and the chat button (TableChat.css) makes the same move so the two
+     corners still match. The time-bank tile follows because it stands in the
+     SAME SLOT as Rabbit Hunt: a 44px clock replaced by a 66px rabbit is the
+     corner changing shape at the end of every hand, which is the 2026-08-27
+     bug all over again.
+
+     THE ROW (66 + 8 = 74px above the action bar) IS NOW NOMINALLY TALLER
+     THAN --sp-hero-clear (50-68px), and that is fine, because the reserve
+     exists for the HERO, who hangs off the CENTRE of the felt's bottom edge,
+     while these tiles stand in the CORNERS. Measured with the real
+     stylesheets in the felt harness (tests/e2e/support/feltHarness.mjs) with
+     a 2-card hero: the felt's bottom edge sits 98px (375), 99px (390),
+     106px (430), 117px (768) and 109px (1280) above the action bar - the
+     phone felt is width-bound and floats above the reserve line - so the
+     tiles are entirely below the felt everywhere. What the row actually
+     has to clear is the hero block BESIDE it, and it does: the rabbit tile
+     ends at x=142 and the hero avatar starts at x=152 (375), 154 (390) and
+     170 (430); on a phone the chat tile is top-right (x >= 318 at 390) and
+     nowhere near the hero's cards (which end at 344). On desktop the chat
+     is back on the bottom line at right: 8px, and the hero's cards end
+     hundreds of pixels short of it. tests/all-in-cannot-leave-and-the-hud-
+     slot.test.ts pins the ROW layout (two tiles sideways, never a column),
+     which is what keeps the corner out of the hero's way. */
+  --sp-hud-tile-radius: 18px;
+  --sp-hud-tile-size: 66px;
   --sp-hud-tile-fg: rgba(255, 255, 255, 0.86);
   position: fixed;
   inset: 0;
@@ -225,9 +250,52 @@
 
 /* TournamentHUD is a single unbreakable row of segments; scaling from the
    top-right keeps it hugging the corner instead of pushing the felt. The
-   origin lives with the transform it belongs to (see the breakpoints below). */
+   origin lives with the transform it belongs to (see the breakpoints below).
+
+   ── THE BAR IS THE TOURNAMENT'S LOBBY BUTTON, AND IT IS 50% LARGER WHERE
+      IT HAS ROOM TO BE ──────────────────────────────────────────────────
+   Dan 2026-09-04: "THE PREVIOUS HANDS, CHAT, LOBBY BUTTON (FOR TOURNAMENTS)
+   AND RABBIT HUNT BUTTONS ALL NEED TO BE 50% LARGER." On a tournament this
+   bar is the only lobby control there is (Dan 2026-08-30: "IF YOU CLICK THE
+   LEVEL TAB BUTTON IT WILL OPEN TO THE TOURNAMENT LOBBY INSTANTLY"; the
+   separate MiniStatsCard lobby icon was removed the same day), and it stands
+   in the corner the chat button occupies on a cash table.
+
+   It is scaled 1.5x from 1200px up. Below that it is left exactly as it was,
+   and this is the one place the instruction is not applied literally, so
+   here is the measurement, taken on the live DSS Bounty Hunter table, so Dan
+   can overrule it with the cost in front of him:
+
+     - The bar is 318x54 natural, anchored `top: 54px; right: 6px`. The top
+       seats' wrappers begin at y=112 on every width. A 1.5x bar is 80px tall
+       and ends at y=134, so wherever it horizontally reaches the top-right
+       seat it paints the level clock over that player's avatar.
+     - 1024x768: top-right seat spans x 535-631; a 1.5x bar starts at x=523.
+       Covered. Same at every width up to ~1200, where the bar's left edge
+       (vw - 483) finally passes the seat.
+     - 1280x800 and 1366x1024: bar starts at 779 / 865, top seats end at 762
+       / 836. Clear. 1.5x is safe from 1200 up.
+     - 390x844 (Dan's phone): the bar is drawn at 0.74 = 236x40 with its
+       LEFT EDGE AT x=148, and the top-left seat's wrapper ends at x=146.
+       Two pixels. 0.74 was never a taste decision; it is the largest scale
+       at which the bar does not sit on the top-left player's face, and a
+       phone felt is edge-to-edge so there is nowhere else to put the bar.
+
+   So the bar cannot grow by 50% on anything narrower than 1200px without
+   covering a seated player, and a level clock over a player is a worse
+   table than a small clock. If Dan wants it bigger on the phone or the
+   tablet anyway, the honest options are (a) accept the covered seat, or
+   (b) a two-row / compact redesign of TournamentHUD, which is a component
+   change rather than a scale. Neither is taken here on my own authority.
+   See docs/changelog/2026-09-04-round-chips-and-bigger-corner-buttons.md. */
 .hud-ur-column > .tournament-hud-bar {
   transform-origin: top right;
+}
+
+@media (min-width: 1200px) {
+  .hud-ur-column > .tournament-hud-bar {
+    transform: scale(1.5);
+  }
 }
 
 /* SCALE THE BAR, NOT THE COLUMN (fixed 2026-08-26).

@@ -70,15 +70,15 @@
 
 /* ═══════════════════════════════════════════════════════════════════════════════
  * RESPONSIVE (Matches TableHUD/TimebankCounter)
- * ═══════════════════════════════════════════════════════════════════════════════ */
-
-@media (min-width: 1024px) {
-  .prev-hand-card {
-    width: var(--sp-hud-tile-size-lg, 44px);
-    height: var(--sp-hud-tile-size-lg, 44px);
-    border-radius: var(--sp-hud-tile-radius-lg, 12px);
-  }
-}
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * There used to be a `min-width: 1024px` block here reading
+ * `--sp-hud-tile-size-lg` / `--sp-hud-tile-radius-lg` with 44px / 12px
+ * fallbacks. Nothing anywhere declares those tokens, so on a desktop the
+ * fallback always won - which was invisible while the real tile was 44px and
+ * would have pinned THIS tile at 44px the moment the real one moved to 66
+ * (Dan 2026-09-04, "50% larger"). One token, one size, every width: the
+ * base rule above already reads --sp-hud-tile-size. */
 
 /* Dan 2026-08-26: Strip baked button styles for 3D assets */
 .prev-hand-card {

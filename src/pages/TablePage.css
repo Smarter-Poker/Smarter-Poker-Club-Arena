@@ -1604,10 +1604,11 @@
   flex-shrink: 0;
 }
 
-/* ── Bomb pot countdown pill (round 3, 2026-08-20) ───────────────────────
+/* ── Bomb pot pill (round 3, 2026-08-20) ─────────────────────────────────
    Small dark pill above the board: "BOMB POT IN 3" / "BOMB POT NEXT HAND".
-   Server-truth countdown from the snapshot; hidden during the bomb
-   sequence itself. Turns hot when the bomb is one hand away. */
+   Server-truth countdown from the snapshot. Turns hot when the bomb is one
+   hand away, and (since 2026-09-04) stays up THROUGH the bomb hand reading
+   "BOMB POT" in the live colour - see .bomb-pot-eta--live below. */
 .bomb-pot-eta {
   position: absolute;
   top: 27%;
@@ -1663,6 +1664,28 @@
   50% {
     box-shadow: 0 0 12px rgba(255, 140, 20, 0.45);
   }
+}
+
+/* THE HAND ITSELF (Dan 2026-09-04): "THERE SHOULDN'T BE 'BOMB POT PILL
+   BUTTONS' UNDER THE PLAYERS. THERE SHOULD JUST BE SOMETHING ON THE TABLE
+   THAT SAYS 'BOMB POT'." The per-seat magenta "BOMB" pills are deleted
+   (SeatSlot.css); their colour moves here, onto the one pill on the felt,
+   so the hand still reads as the bomb pot at a glance. No pulse: the bomb
+   has arrived, there is nothing left to warn about. */
+.bomb-pot-eta--live {
+  background: linear-gradient(135deg, #e935c1 0%, #c026d3 50%, #9d1a9d 100%);
+  border-color: rgba(255, 120, 235, 0.45);
+  color: #fff;
+  box-shadow:
+    0 2px 8px rgba(217, 38, 200, 0.5),
+    0 0 20px rgba(217, 38, 200, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.bomb-pot-eta--live .bomb-pot-eta__dot {
+  background: radial-gradient(circle at 35% 35%, #ffd6f7 0%, #f472d0 75%);
+  border-color: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 0 8px rgba(255, 150, 240, 0.8);
 }
 
 /* ── Double-board bomb pot (2026-08-20) ──────────────────────────────────

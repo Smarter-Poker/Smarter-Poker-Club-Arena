@@ -22,7 +22,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { useUnionRouteId } from '../hooks/useUnionRouteId';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { isAuthzError } from '../utils/clubDashboard';
@@ -148,7 +149,7 @@ function boardToCsv(rows: BoardClub[]): string {
 
 export default function UnionStatementsPage() {
   const navigate = useNavigate();
-  const { unionId } = useParams<{ unionId: string }>();
+  const { unionId } = useUnionRouteId();
   const { user, isHydrating } = useAuthUser();
   const toast = useToast();
 

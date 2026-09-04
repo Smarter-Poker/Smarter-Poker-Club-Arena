@@ -18,3 +18,14 @@ const FOOTERLESS_ROUTE_PATTERNS: readonly RegExp[] = [
 export function shouldShowClubFooter(pathname: string): boolean {
   return !FOOTERLESS_ROUTE_PATTERNS.some((pattern) => pattern.test(pathname));
 }
+
+/**
+ * The footer belongs to the LOBBY, not to a URL (Dan 2026-09-04: "it needs to
+ * be there anytime you are in the lobby, regardless of how you got there or
+ * which route you took"). The in-table "+" opens the club lobby as a tab while
+ * the URL stays /table/<id>, so the route gate alone hid it. The second input
+ * is the multi-table container saying "the tab on screen is a lobby".
+ */
+export function shouldShowClubFooterFor(pathname: string, inTabLobbyActive: boolean): boolean {
+  return inTabLobbyActive || shouldShowClubFooter(pathname);
+}

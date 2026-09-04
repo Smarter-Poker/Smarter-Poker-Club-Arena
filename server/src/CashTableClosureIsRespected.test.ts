@@ -63,15 +63,21 @@ describe('cleanupStaleData normal-mode reset', () => {
 
   it('the fleet can still reopen the table it owns', () => {
     const fleet = readFileSync(join(process.cwd(), 'src/services/HorseFleetManager.ts'), 'utf8');
-    /* Two qualifications joined this line on 2026-09-03 and neither weakens it:
-       the lookup above it is now scoped to the fleet's own union (it matched on
-       NAME alone, platform-wide, and would reopen and annex another club's
-       table), and a table the club RETIRED is not reopened - "close any tables
-       over 2/5" would otherwise be undone on the next boot. What the fleet
-       owns, the fleet still reopens. */
+    /* Qualifications have joined this line and none of them weakens it.
+       2026-09-03: the lookup above it is scoped to the fleet's own union (it
+       matched on NAME alone, platform-wide, and would reopen and annex another
+       club's table), and a table the club RETIRED is not reopened - "close any
+       tables over 2/5" would otherwise be undone on the next boot.
+       2026-09-04: a table PARKED for the night is not reopened while it is
+       still night, or the hourly engine restart would undo the parking every
+       hour. Outside the night window it is reopened like any other, which is
+       the whole difference between a park and a retirement.
+       What the fleet owns, the fleet still reopens. */
     expect(fleet).toMatch(
-      /if \(existing\.status === 'closed' && !isRetiringTable\(existing as \{ settings\?: unknown \}\)\)\s*updates\.status = 'waiting';/
+      /existing\.status === 'closed' &&\s*!isRetiringTable\(existing as \{ settings\?: unknown \}\) &&\s*!\(parkedForNight && stillNight\)\s*\)\s*updates\.status = 'waiting';/
     );
+    // and the park is time-boxed: the guard reads the clock, not just a flag.
+    expect(fleet).toContain('const stillNight = isNightWindow(chicagoNow().hour);');
     expect(fleet).toMatch(
       /\.eq\('name', config\.name\)[\s\S]{0,1400}?\.eq\('union_id', MIDWAY_UNION_ID\)/
     );

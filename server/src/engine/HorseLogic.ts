@@ -106,6 +106,9 @@ import {
   type OmahaDrawInfo,
   omahaNutStatus,
   type OmahaNutStatus,
+  omahaMadeClass,
+  type OmahaMadeInfo,
+  type OppPostflopRead,
   nlhNutStatus,
   type NlhNutStatus,
   preflopEquity,
@@ -209,6 +212,10 @@ interface StyleParams {
   /** V35: variant call-down adjustment added to `respect` (fixed limit calls
    *  lighter — the pot always lays the price). 0 = none. */
   callRespect?: number;
+  /** V40: this horse's Omaha stack-off tag rate per reviewed hand (0 = none
+   *  or no profile). Tightens the V40 pressure cap and the third-barrel
+   *  restraint for a horse the review system keeps tagging. */
+  ploStackoffLoad?: number;
 }
 
 const STYLE_PARAMS: Record<HorseStyle, StyleParams> = {
@@ -265,6 +272,37 @@ export interface HorseProfileMods {
   tightness?: number;
   bluffFreq?: number;
   sizingMultiplier?: number;
+  /** V40 (Dan 2026-09-04): THIS horse's own leak-tag counts over the
+   *  self-tuner's study window, written nightly from horse_review_rollup.
+   *  The brain reads them at decision time (see leakLoad40 in decide), so
+   *  a tag the review system keeps putting on a horse changes what that
+   *  horse does in the same spot tomorrow - not just a dial. */
+  leaks?: Record<string, number>;
+  /** V40: reviewed hands the leak counts were taken over (the denominator). */
+  leaksHands?: number;
+}
+
+/**
+ * V40: the Omaha stack-off tags, read as a rate per reviewed hand. The
+ * review system's verdict on this horse's own Omaha discipline: every tag
+ * here is "stacked off with a hand the line beat". 0 with no profile.
+ */
+export const PLO_STACKOFF_TAGS = [
+  'plo_naked_trips_stackoff',
+  'plo_toppair_no_redraw_stackoff',
+  'coldcall_stackoff',
+  'dominated_straight_stackoff',
+  'nonnut_flush_stackoff',
+  'second_nut_flush_stackoff',
+] as const;
+
+export function ploStackoffLoad(mods: HorseProfileMods | undefined): number {
+  if (!mods || !mods.leaks) return 0;
+  const hands = mods.leaksHands ?? 0;
+  if (hands < 40) return 0;
+  let n = 0;
+  for (const t of PLO_STACKOFF_TAGS) n += Number(mods.leaks[t] ?? 0) || 0;
+  return n / hands;
 }
 
 /**
@@ -314,6 +352,19 @@ export function resolveHorseStyle(
       bluffFreq: num(obj.bluffFreq ?? obj.bluff_freq),
       sizingMultiplier: num(obj.sizingMultiplier ?? obj.sizing_multiplier),
     };
+    // V40: the horse's own leak profile, counts only (anything else is
+    // dropped at the boundary the same way an absurd dial is).
+    if (obj.leaks && typeof obj.leaks === 'object') {
+      const leaks: Record<string, number> = {};
+      for (const [k, v] of Object.entries(obj.leaks as Record<string, unknown>)) {
+        if (typeof v === 'number' && isFinite(v) && v >= 0) leaks[k] = v;
+      }
+      if (Object.keys(leaks).length > 0) {
+        mods.leaks = leaks;
+        const lh = obj.leaksHands ?? obj.leaks_hands;
+        mods.leaksHands = typeof lh === 'number' && isFinite(lh) && lh > 0 ? lh : undefined;
+      }
+    }
   }
 
   let style = styleName ? legacyMap[styleName] : undefined;
@@ -1311,6 +1362,13 @@ export interface HorseDecideOpts {
    *  short deck, pineapple, fixed limit) and the MDF river line for every
    *  game. Disable to ablate (default: enabled). */
   v38Ev?: boolean;
+  /** V40 (Dan 2026-09-04): Omaha is not hold'em. Aggressors are sampled
+   *  toward a made category that scales with their line (a pot-sized third
+   *  barrel is a boat, not "something that connects"), pair/two-pair/trips
+   *  hands facing that line are equity-capped by WHICH two pair on WHAT
+   *  board, and non-nut made hands stop firing pot on the turn and river.
+   *  Disable to ablate (default: enabled). */
+  v40Omaha?: boolean;
 }
 
 /**
@@ -1439,6 +1497,8 @@ export class HorseLogic {
       aggression: base.aggression * (mods.aggression ?? 1),
       sizingMultiplier: base.sizingMultiplier * (mods.sizingMultiplier ?? 1),
     };
+    // V40: the review system's verdict on this horse, read every decision.
+    params.ploStackoffLoad = ploStackoffLoad(mods);
 
     const vi = variantInfo(gs.gameVariant);
     const toCall = Math.max(0, gs.currentBet - player.bet);
@@ -2425,7 +2485,7 @@ export class HorseLogic {
     // Range reads from each live opponent's preflop line this hand, exploit
     // profile from their accumulated tendencies, board texture, blockers.
     let bands: Array<[number, number] | null> | undefined;
-    let oppReads: Array<{ aggrW: number; checked: number; bigBet?: boolean } | null> | undefined;
+    let oppReads: Array<OppPostflopRead | null> | undefined;
     let exploit = { bluffMod: 1, callDownMod: 1, valueThinMod: 1 };
     let wetness = 0.35;
     let blocker = false;
@@ -2455,6 +2515,17 @@ export class HorseLogic {
         // stripping the flag the mind attached, so HorseEval needs no opts.
         if ((opts.v16SizeCond ?? true) === false && oppReads) {
           for (const r of oppReads) if (r) r.bigBet = false;
+        }
+        // V40 is a sampler behaviour too: without the flag the reads carry
+        // no street count, no newest-bet size and no raise mark, so the
+        // sampler takes the V15 board-contact branch exactly as before.
+        if ((opts.v40Omaha ?? true) === false && oppReads) {
+          for (const r of oppReads) {
+            if (!r) continue;
+            delete r.streets;
+            delete r.lastFrac;
+            delete r.raised;
+          }
         }
         if (tele15) {
           if (bands && bands.some((b) => b !== null)) {
@@ -2562,6 +2633,13 @@ export class HorseLogic {
     } else {
       const boards = [gs.communityCards, ...extraBoards];
       const perBoardIters = Math.max(150, Math.ceil(vi.iterations / boards.length));
+      // V40: a bet into a multi-board pot says the bettor is strong on SOME
+      // board, not on each of them. The tiered Omaha sampler would read a
+      // single pot bet as "two pair or better on THIS board" three times
+      // over, so per-board pricing keeps only the legacy contact read.
+      const oppReadsPerBoard = oppReads
+        ? oppReads.map((r) => (r ? { aggrW: r.aggrW, checked: r.checked, bigBet: r.bigBet } : null))
+        : undefined;
       let sum = 0;
       const loAcc: HiLoSplit | undefined = hiLoSplit
         ? { hi: 0, lo: 0, scoop: 0, quarter: 0 }
@@ -2582,7 +2660,7 @@ export class HorseLogic {
           bands,
           useAdaptiveMC,
           perBoardSplit,
-          oppReads
+          oppReadsPerBoard
         );
         boardEq36.push(eb);
         sum += eb;
@@ -2814,6 +2892,24 @@ export class HorseLogic {
         ((cat === 6 && nuts15.higherFlushRanks === 0 && !boardPaired15) ||
           (cat === 5 && nuts15.straightIsNut && !boardMono15)));
 
+    // ═══ V40 OMAHA MADE-HAND CLASS (Dan 2026-09-04) ═══
+    // "HORSES ARE PLAYING PLO4, PLO5, PLO6 AND PLO8 LIKE IT'S HOLDEM."
+    // V15 knew which flush and which straight. Below that it knew only the
+    // category number, and "two pair" covered aces-up on a paired board
+    // (one pair, in Omaha) as well as top two on a rainbow brick. This is
+    // the classifier for pair / two pair / trips: which two pair, on what
+    // board, and whether a pot-sized line beats it.
+    const useV40 = (opts.v40Omaha ?? true) !== false;
+    let made40: OmahaMadeInfo | null = null;
+    if (useV40 && vi.isOmaha && cat >= 1 && cat <= 4) {
+      try {
+        made40 = omahaMadeClass(player.cards, board, cat);
+        if (tele15 && made40) noteFire(`v40_made_${made40.cls}`);
+      } catch {
+        made40 = null;
+      }
+    }
+
     // ═══ V21 NLH NUT DISCIPLINE (Dan 2026-08-27, Phase 2) ═══
     // The NLH mirror of nuts15: which straight, which flush, WHOSE boat.
     // Fed by the review table's worst hands: a T7 straight four-bet into a
@@ -2909,6 +3005,48 @@ export class HorseLogic {
           Math.max(0, oppAggr20 - 1) + (raisedAfterAggr ? 1 : 0) + (seriousAllIns20 >= 2 ? 1 : 0)
         );
     if (tele15 && pressure20 >= 1) noteFire('v20_pressure_read');
+    // ═══ V40 BARREL COUNT ═══ pressure20 reads ONE street. The line Dan
+    // watched (pot, pot, pot: one bet per street) never registers on it.
+    // How many EARLIER postflop streets did the player whose bet hero is
+    // facing also bet or raise on? A third barrel is the strongest "they
+    // have it" signal in pot-limit Omaha, and it needs its own count.
+    let barrels40 = 0;
+    if (useV40 && facingBet && gs.actionHistory) {
+      let bettor40: string | null = null;
+      for (const a of gs.actionHistory) {
+        if (a.stage !== street || a.userId === player.user_id) continue;
+        if (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
+          bettor40 = a.userId;
+      }
+      if (bettor40) {
+        const seen40 = new Set<string>();
+        for (const a of gs.actionHistory) {
+          if (a.stage === 'preflop' || a.stage === street || a.userId !== bettor40) continue;
+          if (a.action === 'bet' || a.action === 'raise') seen40.add(a.stage);
+          else if (a.action === 'all_in' && a.isFullRaise === true) seen40.add(a.stage);
+        }
+        barrels40 = seen40.size;
+      }
+    }
+    // ═══ V40 CALLED BARRELS ═══ the betting-side mirror. On how many
+    // earlier postflop streets did hero bet and get CALLED? In Omaha a
+    // player who calls a pot-sized bet has a hand (V28 already stopped
+    // reading a call as a capped line); two called barrels and a non-nut
+    // made hand has no third one - the range that is still there beats it.
+    let calledBarrels40 = 0;
+    if (useV40 && vi.isOmaha && !facingBet && gs.actionHistory) {
+      const heroBet40 = new Set<string>();
+      const called40 = new Set<string>();
+      for (const a of gs.actionHistory) {
+        if (a.stage === 'preflop' || a.stage === street) continue;
+        if (a.userId === player.user_id) {
+          if (a.action === 'bet' || a.action === 'raise') heroBet40.add(a.stage);
+        } else if (heroBet40.has(a.stage) && (a.action === 'call' || a.action === 'all_in')) {
+          called40.add(a.stage);
+        }
+      }
+      calledBarrels40 = called40.size;
+    }
 
     // V15 SMALL BALL (plo5/plo6): more hole cards squeeze equities together,
     // so the value edge per bet shrinks — sizing shrinks with it. Nut-class
@@ -2950,6 +3088,13 @@ export class HorseLogic {
     let bluffScale =
       exploit.bluffMod * blockerMod * posMod * Math.max(0.5, 1 - 2 * risk) * (quartered ? 0.6 : 1);
     if (huOn) bluffScale *= 1.12;
+    // V40: an Omaha river bluff into a player who called two barrels is a
+    // third barrel with air. The range that called pot twice is not
+    // folding; the bluff ladder below all but closes here.
+    if (useV40 && vi.isOmaha && isRiver && calledBarrels40 >= 2) {
+      bluffScale *= 0.15;
+      if (tele15) noteFire('v40_no_third_barrel');
+    }
     // V37: the covering stack near the bubble bluffs a notch more — the
     // covered field is folding hands it would call with anywhere else.
     if (!sat37.active) {
@@ -3072,6 +3217,14 @@ export class HorseLogic {
       if (d.nutty) return 1.15;
       if (d.dominatedFlushDraw && d.straightOuts < 6) return 0.35;
       return 0.7;
+    };
+    // V40: the same lazy read, exposed for the pressure cap and the
+    // betting-side small-ball gate (both fire rarely; the cost stays
+    // inside the branches that need it).
+    const drawInfo40 = (): OmahaDrawInfo | null => {
+      if (!vi.isOmaha || !drawsLive) return null;
+      if (!drawInfoCache) drawInfoCache = omahaDrawQuality(player.cards, board, vi.isHiLo);
+      return drawInfoCache;
     };
 
     // ═══ V7: barrel planning — multi-street bluffs tell a coherent story ═══
@@ -3596,6 +3749,22 @@ export class HorseLogic {
         // flush multiway reads over 0.8 more often than it should) sizes
         // down in plo5/plo6 — small ball until the hand really is the nuts.
         if (!nutClass15 && vi.isOmaha) monsterFrac *= ploDamp;
+        // V40: a pair / two pair / trips hand that reads as a "monster" by
+        // MC is reading against the wrong range once its bets get called.
+        // Small ball: never pot it on the turn or river, and with two
+        // barrels already called the river is a check (the hands still in
+        // are the ones that beat it). Sets and top two on a brick keep
+        // their sizing (made40.weak is false there).
+        if (useV40 && made40 != null && made40.weak) {
+          if (isRiver && calledBarrels40 >= 2 && fastRandom() < 0.8) {
+            if (tele15) noteFire('v40_no_third_barrel');
+            return { action: 'check', thinkTime: 0 };
+          }
+          if (street !== 'flop' && monsterFrac > 0.5) {
+            monsterFrac = 0.5;
+            if (tele15) noteFire('v40_small_ball');
+          }
+        }
         // V28: the NLH mirror. A board-dominated hand (V21) that still reads
         // as a monster by MC sizes down instead of bombing — the calling side
         // already knew this; the betting side did not.
@@ -3623,10 +3792,21 @@ export class HorseLogic {
         ) {
           return { action: 'check', thinkTime: 0 };
         }
+        // V40: the same small-ball law one tier down. A weak-class Omaha
+        // made hand does not fire a third barrel into a range that called
+        // two, and sizes its turn/river value at half pot or less.
+        let cap40Frac = Infinity;
+        if (useV40 && made40 != null && made40.weak) {
+          if (isRiver && calledBarrels40 >= 2 && fastRandom() < 0.85) {
+            if (tele15) noteFire('v40_no_third_barrel');
+            return { action: 'check', thinkTime: 0 };
+          }
+          if (street !== 'flop') cap40Frac = 0.5;
+        }
         const protection = vulnerable ? 0.1 : 0;
         return this.betSize(
           pot,
-          (sizeBase + 0.12 + protection + fastRandom() * 0.15) * ploDamp,
+          Math.min(cap40Frac, (sizeBase + 0.12 + protection + fastRandom() * 0.15) * ploDamp),
           player,
           gs,
           vi,
@@ -4099,6 +4279,75 @@ export class HorseLogic {
         if (oppCount >= 2) cap -= 0.05; // a raise INTO A FIELD is more nutted
         eq15 = Math.min(equity, Math.max(0.05, cap));
         if (tele15 && eq15 < equity) noteFire('v15_eq_capped');
+      }
+    }
+
+    // ═══ V40 OMAHA PRESSURE CAP (Dan 2026-09-04) ═══
+    // The V15 cap stopped at straights and flushes; V20's pressure cap was
+    // NLH-only. So an Omaha pair, two pair or trips facing a pot-sized line
+    // was priced by the Monte Carlo alone, and the Monte Carlo (before the
+    // V40 sampler) priced that line against the preflop band. Aces-up read
+    // 41% on 4-5-7-5-J against a pot-pot-pot bettor; a pot bet needs 33%;
+    // the horse called three streets. The cap is the class's ceiling
+    // against a range that bets like this, lowered by every extra signal
+    // (an earlier barrel, a pot-sized bet, a raise, a field) and lifted a
+    // little before the river for the redraws. Sets on dry boards and top
+    // two on a brick are not capped: folding range-tops to pressure is the
+    // worse leak.
+    if (useV40 && vi.isOmaha && made40 != null && made40.weak) {
+      // The horse's OWN review verdicts: a horse the tagger keeps catching
+      // stacking off in Omaha reads the same line as one notch hotter and
+      // its class ceiling a few points lower. This is the tag table reaching
+      // a live decision - the loop Dan asked to see closed.
+      const load40 = params.ploStackoffLoad ?? 0;
+      const tagged40 = load40 >= 0.08;
+      if (tele15 && tagged40) noteFire('v40_leak_profile_read');
+      const heat40 =
+        barrels40 +
+        (potFrac >= 0.85 ? 1 : 0) +
+        pressure20 +
+        (raisedAfterAggr ? 1 : 0) +
+        (oppCount >= 2 ? 1 : 0) +
+        (tagged40 ? 1 : 0);
+      if (heat40 >= 1 || potFrac >= 0.6) {
+        let cap40: number;
+        switch (made40.cls) {
+          case 'air':
+          case 'pair':
+            cap40 = 0.28;
+            break;
+          case 'board2p':
+            cap40 = 0.3;
+            break;
+          case 'low2p':
+            cap40 = made40.boardPaired ? 0.32 : 0.36;
+            break;
+          case 'top2p':
+            // Top two on a paired board is two pair against trips and
+            // boats; on an unpaired board it is the class that stacks off
+            // only into straights and flushes.
+            cap40 = made40.boardPaired ? 0.34 : 0.5;
+            break;
+          case 'weaktrips':
+            cap40 = 0.5;
+            break;
+          case 'set':
+            cap40 = 0.62;
+            break;
+          default:
+            cap40 = Infinity;
+        }
+        if (cap40 !== Infinity) {
+          cap40 -= 0.05 * Math.max(0, Math.min(4, heat40) - 1);
+          if (tagged40) cap40 -= Math.min(0.06, load40 * 0.3);
+          if (!isRiver) cap40 += street === 'flop' ? 0.1 : 0.04;
+          // A nut draw alongside the made hand is real equity the cap
+          // must not erase (top two with the nut flush draw stacks off).
+          if (!isRiver && drawInfo40()?.nutty === true) cap40 += 0.12;
+          const before40 = eq15;
+          eq15 = Math.min(eq15, Math.max(0.08, cap40));
+          if (tele15 && eq15 < before40) noteFire('v40_omaha_pressure_cap');
+        }
       }
     }
 

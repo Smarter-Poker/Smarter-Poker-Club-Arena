@@ -79,7 +79,15 @@ function readSort(
  */
 function defaultSortFor(category: string): { key: string; dir: SortDir } | null {
   if (category === 'SPIN' || category === 'SNG') return { key: 'buyin', dir: 'asc' };
+  /* Dan 2026-09-03: "STAKES SHOULD ALWAYS BE ORGANIZED LOW TO HIGH." */
+  if (category === 'HOLDEM' || category === 'OMAHA' || category === 'LIMIT')
+    return { key: 'stakes', dir: 'asc' };
   return null;
+}
+
+/** The tabs whose lists are kept in variant groups (see `sorted`). */
+function groupsByVariant(category: string): boolean {
+  return category === 'HOLDEM' || category === 'OMAHA' || category === 'LIMIT';
 }
 
 function writeSort(
@@ -476,12 +484,47 @@ const COL_STAKES: ColumnDef = {
   sortValue: (e) => e.stakesValue,
   render: (e) => (e.stakesLabel ? <span className="lt-mono">{e.stakesLabel}</span> : null),
 };
+/**
+ * THE ORDER OF THE GAMES (Dan 2026-09-03): "NLH SHOULD BE NO LIMIT, PINEAPPLE
+ * AND SHORT DECK, PLO SHOULD BE PLO, PLO5, PLO6, PLO8o ... game variations are
+ * never to be mixed together." This is the canonical rank by the lobby's
+ * short game label; anything unlisted sorts after the known ones, by name.
+ */
+export const VARIANT_RANK: Readonly<Record<string, number>> = {
+  NLH: 0,
+  PNPL: 1,
+  '6+': 2,
+  PLO: 10,
+  PLO5: 11,
+  PLO6: 12,
+  PLO8: 13,
+  FLH: 20,
+  FLO: 21,
+  FLO8: 22,
+};
+
+export function variantRank(e: Pick<LobbyEntry, 'gameLabel'>): number {
+  return VARIANT_RANK[String(e.gameLabel || '').toUpperCase()] ?? 40;
+}
+
+/** The menu wording for a variant chip: "No Limit", "Pineapple", "Short Deck",
+    "PLO", "PLO5", "PLO6", "PLO8o". */
+export const VARIANT_MENU_LABELS: Readonly<Record<string, string>> = {
+  nlh: 'No Limit',
+  pineapple: 'Pineapple',
+  short_deck: 'Short Deck',
+  plo4: 'PLO',
+  plo5: 'PLO5',
+  plo6: 'PLO6',
+  plo8: 'PLO8o',
+};
+
 const COL_VARIANT: ColumnDef = {
   key: 'variant',
   label: 'Variant',
   className: 'lt-col-variant',
   sortable: true,
-  sortValue: (e) => e.gameLabel,
+  sortValue: (e) => variantRank(e),
   render: (e) => (
     /* <abbr title> is a hover affordance and half this traffic has no hover,
        so "PLO5" had no expansion at all on a phone or from a keyboard. The
@@ -1146,6 +1189,72 @@ export function columnsFor(category: LobbyCategory): ColumnDef[] {
 }
 
 // ─── The table ─────────────────────────────────────────────────────────────
+/**
+ * The variant menu: All, then each of the tab's games in canonical order.
+ * Rendered under the Variant heading on both the phone bar and the desktop
+ * table; the caller owns the open state and the selection.
+ */
+function VariantMenu({
+  choices,
+  selected,
+  onToggle,
+  onSortByVariant,
+  sortedByVariant,
+  onClose,
+}: {
+  choices: readonly { key: string; label: string }[];
+  selected: readonly string[];
+  onToggle: (key: string | null) => void;
+  onSortByVariant: () => void;
+  sortedByVariant: boolean;
+  onClose: () => void;
+}) {
+  const allOn = selected.length === 0;
+  return (
+    <div className="lt-variant-menu" role="group" aria-label="Game Variant">
+      <button
+        type="button"
+        className={`lt-variant-menu__item${allOn ? ' is-on' : ''}`}
+        aria-pressed={allOn}
+        onClick={() => {
+          onToggle(null);
+          onClose();
+        }}
+      >
+        <span className="lt-variant-menu__check" aria-hidden="true" />
+        All
+      </button>
+      {choices.map((c) => {
+        const on = selected.includes(c.key);
+        return (
+          <button
+            key={c.key}
+            type="button"
+            className={`lt-variant-menu__item${on ? ' is-on' : ''}`}
+            aria-pressed={on}
+            onClick={() => onToggle(c.key)}
+          >
+            <span className="lt-variant-menu__check" aria-hidden="true" />
+            {VARIANT_MENU_LABELS[c.key] ?? c.label}
+          </button>
+        );
+      })}
+      <button
+        type="button"
+        className={`lt-variant-menu__item lt-variant-menu__item--sort${sortedByVariant ? ' is-on' : ''}`}
+        aria-pressed={sortedByVariant}
+        onClick={() => {
+          onSortByVariant();
+          onClose();
+        }}
+      >
+        <span className="lt-variant-menu__check" aria-hidden="true" />
+        Sort By Variant
+      </button>
+    </div>
+  );
+}
+
 interface LobbyTableProps {
   entries: LobbyEntry[];
   category: LobbyCategory;
@@ -1157,6 +1266,16 @@ interface LobbyTableProps {
   loading?: boolean;
   /** Scopes the remembered sort; omit and it is remembered globally. */
   clubId?: string;
+  /**
+   * THE VARIANT SELECTOR (Dan 2026-09-03). The Variant heading - on the phone
+   * bar and on the desktop table alike - opens a menu of this tab's games, in
+   * canonical order, with an All option. Keys are the filter spec's `games`
+   * keys; the selection is the saved filter's `games`, so the sheet and this
+   * menu can never disagree. Omit on tabs with nothing to choose.
+   */
+  variantChoices?: readonly { key: string; label: string }[];
+  selectedVariants?: readonly string[];
+  onVariantsChange?: (keys: string[]) => void;
 }
 
 export default function LobbyTable({
@@ -1168,7 +1287,39 @@ export default function LobbyTable({
   ctx,
   loading,
   clubId,
+  variantChoices,
+  selectedVariants,
+  onVariantsChange,
 }: LobbyTableProps) {
+  const [variantMenuOpen, setVariantMenuOpen] = useState(false);
+  const variantMenuRef = useRef<HTMLDivElement>(null);
+  const hasVariantMenu = Boolean(variantChoices && variantChoices.length > 0 && onVariantsChange);
+  /* Close on outside tap / Escape, the way any menu should. */
+  useEffect(() => {
+    if (!variantMenuOpen) return;
+    const onDown = (e: PointerEvent) => {
+      const root = variantMenuRef.current;
+      if (root && !root.contains(e.target as Node)) setVariantMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setVariantMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [variantMenuOpen]);
+  const toggleVariant = (key: string | null) => {
+    if (!onVariantsChange) return;
+    const current = selectedVariants ?? [];
+    if (key === null) {
+      onVariantsChange([]);
+      return;
+    }
+    onVariantsChange(current.includes(key) ? current.filter((k) => k !== key) : [...current, key]);
+  };
   const columns = useMemo(() => columnsFor(category), [category]);
 
   /* One fetch per lobby, shared by every Spin row (the hook is module-cached
@@ -1231,6 +1382,11 @@ export default function LobbyTable({
        the memo below still sees no change. */
     const pinned: LobbyEntry[] = [];
     const open: LobbyEntry[] = [];
+    /* Dan 2026-09-03: "EMPTY TABLES SHOULD ALWAYS APPEAR AT THE BOTTOM." A
+       cash table with nobody seated sinks below every table with a game on,
+       whatever the chosen sort - and, because the sink runs per variant group
+       (see `sorted`), below the tables of ITS OWN game, never into another's. */
+    const empty: LobbyEntry[] = [];
     const gone: LobbyEntry[] = [];
     for (const r of rows) {
       /* FEATURED floats and a dead seat-first game sinks, in one pass.
@@ -1247,37 +1403,75 @@ export default function LobbyTable({
         r.status !== 'completed';
       if (!seatFirstJoinable(r)) gone.push(r);
       else if (r.featured && enterable) pinned.push(r);
+      else if (r.kind === 'cash' && (r.players || 0) === 0) empty.push(r);
       else open.push(r);
     }
-    if (pinned.length === 0 && gone.length === 0) return rows;
-    return pinned.concat(open, gone);
+    if (pinned.length === 0 && gone.length === 0 && empty.length === 0) return rows;
+    return pinned.concat(open, empty, gone);
   }, []);
 
   const sorted = useMemo(() => {
-    if (!sort) return sink(entries);
-    const col = columns.find((c) => c.key === sort.key);
-    if (!col?.sortValue) return sink(entries);
-    const sv = col.sortValue;
-    const dir = sort.dir === 'asc' ? 1 : -1;
-    return sink(
-      [...entries].sort((a, b) => {
-        const va = sv(a);
-        const vb = sv(b);
-        if (typeof va === 'number' && typeof vb === 'number') {
-          /* Rows with no value (cash games under a Starts sort carry Infinity)
+    /* GAMES ARE NEVER MIXED (Dan 2026-09-03). On the cash tabs every ordering
+       - the default, or whichever heading the player chose - runs INSIDE the
+       canonical variant groups: all the No Limit tables in stake order, then
+       all the Pineapple, then Short Deck; PLO, then PLO5, PLO6, PLO8o. The
+       group order is fixed; the player's sort and its direction decide the
+       order within each group, and the empty-table sink runs per group. */
+    const grouped = groupsByVariant(category);
+    const col = sort ? columns.find((c) => c.key === sort.key) : undefined;
+    const sv = col?.sortValue;
+    const dir = sort?.dir === 'desc' ? -1 : 1;
+    const compare = (a: LobbyEntry, b: LobbyEntry): number => {
+      if (grouped) {
+        const ra = variantRank(a);
+        const rb = variantRank(b);
+        if (ra !== rb) return ra - rb;
+        if (ra === 40) {
+          const byName = String(a.gameLabel).localeCompare(String(b.gameLabel));
+          if (byName !== 0) return byName;
+        }
+      }
+      if (!sv) return 0;
+      const va = sv(a);
+      const vb = sv(b);
+      if (typeof va === 'number' && typeof vb === 'number') {
+        /* Rows with no value (cash games under a Starts sort carry Infinity)
            sort LAST in both directions - and two of them compare equal.
            The old (na - nb) * dir produced Infinity - Infinity = NaN, which
            is comparator poison: Array.sort's order becomes implementation-
            defined the moment a comparator returns NaN. */
-          const aBad = !Number.isFinite(va);
-          const bBad = !Number.isFinite(vb);
-          if (aBad || bBad) return aBad && bBad ? 0 : aBad ? 1 : -1;
-          return (va - vb) * dir;
-        }
-        return String(va).localeCompare(String(vb)) * dir;
-      })
-    );
-  }, [entries, sort, columns, sink]);
+        const aBad = !Number.isFinite(va);
+        const bBad = !Number.isFinite(vb);
+        if (aBad || bBad) return aBad && bBad ? 0 : aBad ? 1 : -1;
+        return (va - vb) * dir;
+      }
+      return String(va).localeCompare(String(vb)) * dir;
+    };
+    if (!grouped) {
+      if (!sv) return sink(entries);
+      return sink([...entries].sort(compare));
+    }
+    /* Sort the whole list, then sink within each variant run so an empty
+       No Limit table never drops below a running Pineapple one. */
+    const ordered = [...entries].sort(compare);
+    const out: LobbyEntry[] = [];
+    let run: LobbyEntry[] = [];
+    let runRank: number | null = null;
+    let runLabel = '';
+    for (const e of ordered) {
+      const rank = variantRank(e);
+      const label = String(e.gameLabel);
+      if (runRank !== null && (rank !== runRank || (rank === 40 && label !== runLabel))) {
+        out.push(...sink(run));
+        run = [];
+      }
+      runRank = rank;
+      runLabel = label;
+      run.push(e);
+    }
+    if (run.length) out.push(...sink(run));
+    return out;
+  }, [entries, sort, columns, sink, category]);
 
   const handleHeaderClick = (col: ColumnDef) => {
     if (!col.sortable) return;
@@ -1473,16 +1667,49 @@ export default function LobbyTable({
                      it. */
                   tabIndex={index === Math.min(sortFocus, sortableColumns.length - 1) ? 0 : -1}
                   onFocus={() => setSortFocus(index)}
-                  onClick={() => handleHeaderClick(col)}
+                  aria-haspopup={col.key === 'variant' && hasVariantMenu ? 'menu' : undefined}
+                  aria-expanded={
+                    col.key === 'variant' && hasVariantMenu ? variantMenuOpen : undefined
+                  }
+                  onClick={() => {
+                    /* The Variant heading is the game selector (Dan 2026-09-03):
+                       it opens the menu; sorting by variant is an item in it. */
+                    if (col.key === 'variant' && hasVariantMenu) {
+                      setVariantMenuOpen((open) => !open);
+                      return;
+                    }
+                    handleHeaderClick(col);
+                  }}
                 >
                   <span className="lobby-sortbar__label">{col.label}</span>
                   <span className="lobby-sortbar__mark" aria-hidden="true">
-                    {active ? (sort!.dir === 'asc' ? '▴' : '▾') : '▴▾'}
+                    {col.key === 'variant' && hasVariantMenu
+                      ? '▾'
+                      : active
+                        ? sort!.dir === 'asc'
+                          ? '▴'
+                          : '▾'
+                        : '▴▾'}
                   </span>
                 </button>
               );
             })}
           </div>
+          {hasVariantMenu && variantMenuOpen && (
+            <div
+              className="lt-variant-menu-anchor lt-variant-menu-anchor--bar"
+              ref={variantMenuRef}
+            >
+              <VariantMenu
+                choices={variantChoices!}
+                selected={selectedVariants ?? []}
+                onToggle={toggleVariant}
+                sortedByVariant={sort?.key === 'variant'}
+                onSortByVariant={() => handleHeaderClick(COL_VARIANT)}
+                onClose={() => setVariantMenuOpen(false)}
+              />
+            </div>
+          )}
           {/* The scroller below announces the sort, but it is display:none on a
               phone and a hidden element announces nothing - so on the one
               surface that has just gained a sort control, sorting was silent. */}
@@ -1576,11 +1803,25 @@ export default function LobbyTable({
                      screen-reader users could not sort the lobby at all. */
                     role={col.sortable ? 'columnheader' : undefined}
                     tabIndex={col.sortable ? 0 : undefined}
-                    onClick={() => handleHeaderClick(col)}
+                    aria-haspopup={col.key === 'variant' && hasVariantMenu ? 'menu' : undefined}
+                    aria-expanded={
+                      col.key === 'variant' && hasVariantMenu ? variantMenuOpen : undefined
+                    }
+                    onClick={() => {
+                      if (col.key === 'variant' && hasVariantMenu) {
+                        setVariantMenuOpen((open) => !open);
+                        return;
+                      }
+                      handleHeaderClick(col);
+                    }}
                     onKeyDown={(e) => {
                       if (!col.sortable) return;
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
+                        if (col.key === 'variant' && hasVariantMenu) {
+                          setVariantMenuOpen((open) => !open);
+                          return;
+                        }
                         handleHeaderClick(col);
                       }
                     }}
@@ -1589,10 +1830,35 @@ export default function LobbyTable({
                       {col.label}
                       {col.sortable && (
                         <span className="lt-sortmark" aria-hidden="true">
-                          {active ? (sort!.dir === 'asc' ? '▴' : '▾') : '▴▾'}
+                          {col.key === 'variant' && hasVariantMenu
+                            ? selectedVariants?.length
+                              ? `${selectedVariants.length} ▾`
+                              : '▾'
+                            : active
+                              ? sort!.dir === 'asc'
+                                ? '▴'
+                                : '▾'
+                              : '▴▾'}
                         </span>
                       )}
                     </span>
+                    {col.key === 'variant' && hasVariantMenu && variantMenuOpen && (
+                      <div
+                        className="lt-variant-menu-anchor lt-variant-menu-anchor--th"
+                        ref={variantMenuRef}
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        <VariantMenu
+                          choices={variantChoices!}
+                          selected={selectedVariants ?? []}
+                          onToggle={toggleVariant}
+                          sortedByVariant={sort?.key === 'variant'}
+                          onSortByVariant={() => handleHeaderClick(COL_VARIANT)}
+                          onClose={() => setVariantMenuOpen(false)}
+                        />
+                      </div>
+                    )}
                   </th>
                 );
               })}

@@ -1528,7 +1528,14 @@ jobs:
       always() && github.event_name == 'pull_request' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: CSS Beat E2E (multi-table + animations)
-    runs-on: ubuntu-latest
+    # The longest job in the pipeline was the only one still pinned to a
+    # GitHub-hosted 2-core runner while the estate's 16-core boxes sat idle:
+    # 11.13m on 2026-09-04, against 5.35m for Production Build and 1.38m for
+    # the unit suite, all of which ran on the estate. It was also the last job
+    # billing GitHub minutes. Chromium and WebKit are already cached on the
+    # boxes and the install step below already branches on runner.environment,
+    # so this was prepared for and simply never routed.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 20
 
     steps:
@@ -1541,6 +1548,26 @@ jobs:
           node-version: 20
           cache: npm
 
+      # This job had NO cache of any kind, alone among the jobs that build.
+      # It therefore paid a cold `npm ci` (45s) and a fully cold build (235s on
+      # 2026-09-04) on every run. node_modules carries `node_modules/.vite` and
+      # `node_modules/.tmp/*.tsbuildinfo` with it, so restoring it warms the vite
+      # transform cache and lets `tsc -b` run incrementally rather than from
+      # scratch.
+      #
+      # Its own key, deliberately, and it is worth saying why so nobody merges
+      # it later to "tidy up". `nm-full` belongs to `unit` and `build`, which
+      # install with a plain `npm ci`; this job uses `--ignore-scripts`, so that
+      # tree is NOT interchangeable - the same class of mistake as reusing a
+      # Node 20 cache in a Node 22 job. `nm-lite` (typecheck) DOES install
+      # identically, but typecheck never builds, so its tree carries no warm
+      # `.vite` or `.tsbuildinfo` - which is the entire point here. Separate key,
+      # so this job restores a tree that has already built once.
+      - name: Restore node_modules (vite + tsbuildinfo ride along)
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-beats-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
       - name: Install Dependencies
         run: npm ci --ignore-scripts
 

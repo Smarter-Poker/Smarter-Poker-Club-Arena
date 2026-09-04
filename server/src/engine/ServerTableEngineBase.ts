@@ -3871,9 +3871,20 @@ export abstract class ServerTableEngineBase {
       }
     }
 
+    // 2026-09-04: a seat nobody is behind for five minutes, never sat out and
+    // never charged a blind (a quiet table), is released on the same clock
+    // as a sit-out. See DisconnectEngine.collectAbandonedSeatEvictions.
+    const abandonedEvictable = this.disconnectEngine.collectAbandonedSeatEvictions(
+      this.tableId,
+      seatedIds
+    );
+
     const blindEvictSet = new Set(blindEvictable);
     const nitEvictSet = new Set(nitEvictable);
-    const evictable = Array.from(new Set([...sitOutEvictable, ...blindEvictable, ...nitEvictable]));
+    const abandonedEvictSet = new Set(abandonedEvictable);
+    const evictable = Array.from(
+      new Set([...sitOutEvictable, ...blindEvictable, ...nitEvictable, ...abandonedEvictable])
+    );
     if (evictable.length === 0) return;
 
     // Dan 2026-08-26, binding: "a player can never leave the table while they
@@ -3896,12 +3907,19 @@ export abstract class ServerTableEngineBase {
       }
       const awayBlindEvict = blindEvictSet.has(userId);
       const nitEvict = !awayBlindEvict && nitEvictSet.has(userId);
+      const abandonedEvict =
+        !awayBlindEvict &&
+        !nitEvict &&
+        !sitOutEvictable.includes(userId) &&
+        abandonedEvictSet.has(userId);
       console.log(
         awayBlindEvict
           ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - away, already charged one SB and one BB`
           : nitEvict
             ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - below this nit game's VPIP floor`
-            : `[ServerTableEngine:${this.tableId}] evicting ${userId} - sat out past the 2-orbit / 5-minute limit`
+            : abandonedEvict
+              ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - gone for 5 minutes with nobody behind the seat`
+              : `[ServerTableEngine:${this.tableId}] evicting ${userId} - sat out past the 2-orbit / 5-minute limit`
       );
       this.hub?.emitEvent(this.tableId, {
         type: 'seat_left',
@@ -3909,7 +3927,13 @@ export abstract class ServerTableEngineBase {
         seat: seated.seat_number,
         user_id: userId,
         mid_hand: false,
-        reason: awayBlindEvict ? 'away_blind_cap' : nitEvict ? 'nit_game_vpip' : 'sit_out_timeout',
+        reason: awayBlindEvict
+          ? 'away_blind_cap'
+          : nitEvict
+            ? 'nit_game_vpip'
+            : abandonedEvict
+              ? 'abandoned_seat'
+              : 'sit_out_timeout',
         timestamp: Date.now(),
       });
       try {

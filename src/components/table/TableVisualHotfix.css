@@ -236,14 +236,15 @@
   --cp-inner-ring-size: calc(var(--cp-chip-size) * 0.54);
   --cp-notch-width: calc(var(--cp-chip-size) * 0.25);
 
-  /* 4% of the table's width: desktop lands on 28.8px, capped at today's 28px,
-     so desktop does not move at all, and a 375px phone would land on 13.9px.
-     It does not, because of the floor - the puck carries a letter, and a "D"
-     has an absolute legibility floor that a proportion does not respect. 17px
-     is where that letter stops being readable at arm's length, and it is still
-     a 29% cut from today's 24px. Above a 425px-wide table the proportion takes
-     over and the floor never applies again. */
-  --dealer-btn-size: clamp(17px, calc(var(--table-w) * 0.04), 28px);
+  /* Dan 2026-09-04: "the button on the table needs to be double the size as
+     the chips in pot." Derived from the chip, not restated beside it: twice
+     --cp-chip-size at every width, so 7.2% of the table with a 20px floor and
+     a 52px ceiling - 25px on a 375px phone, 52px on the desktop felt. The old
+     clamp(17px, 4%, 28px) and its legibility-floor argument are superseded;
+     twice the chip floor is already above the floor a "D" needs.
+     tableGeometry.ts (BUTTON_WIDTH_PCT/MIN/MAX) mirrors this as CHIP_* x 2 and
+     tests/table-geometry-chips.test.ts pins the two against each other. */
+  --dealer-btn-size: calc(var(--cp-chip-size) * 2);
 }
 
 /* The two sizes the scaler's own max-width ladder takes above the phone band

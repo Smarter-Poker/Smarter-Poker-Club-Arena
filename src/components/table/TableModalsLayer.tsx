@@ -187,7 +187,6 @@ export interface TableModalsLayerProps {
    *  no longer a countdown. */
   sitOutSince: number | null;
   onCloseSitOut: () => void;
-  onReturnFromSitOut: () => void;
 
   // Wait List Modal
   showWaitList: boolean;
@@ -518,7 +517,6 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     showSitOut,
     sitOutSince,
     onCloseSitOut,
-    onReturnFromSitOut,
     // Wait List
     showWaitList,
     waitListPlayers,
@@ -797,21 +795,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
       <SitOutModal
         isOpen={showSitOut}
         onClose={onCloseSitOut}
-        /**
-         * 2026-08-20: this closed the modal FIRST and then fired a
-         * `.catch()`-guarded sit-in. `GameServerAPI.setSitOut` never throws —
-         * it resolves `{ success: false, error }` — so a refused sit-in was
-         * completely silent and the player was returned to a felt they were
-         * still sitting out of. Close only after the server agrees.
-         */
-        /* REPORTS THE INTENT; TablePage owns the request.
-           This used to issue its own `setSitOut(tableId, false)`, which made two
-           implementations of "sit back in" — and only the other one was behind
-           the in-flight guard, so the out -> in -> out race was still reachable
-           by alternating THIS button with the table menu's Sit Out. It also let
-           the two buttons' local cleanup and failure toasts drift apart, which
-           they had. `handleSitBackIn` is now the single path. */
-        onReturn={onReturnFromSitOut}
+        /* The modal no longer offers "I'm Back" (Dan 2026-09-04: one button,
+           on the footer bar - TablePage's `handleSitBackIn`). */
         /**
          * 2026-08-20: was `() => navigate('/')`. "Leave Table" navigated away
          * without ever leaving the table — no cash-out, no seat release. The

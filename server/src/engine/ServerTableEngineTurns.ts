@@ -1061,6 +1061,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * it is spent. Coming back (any heartbeat) clears it at no cost.
    */
   public notifyPageLeft(userId: string): void {
+    /* 2026-09-04: register on demand, as sitOut() does (DisconnectEngine.ts,
+       "chicken-and-egg deadlock"). markPageLeft() silently returned for a
+       player the FSM had never met - a seat taken since boot at a table that
+       has not dealt (registerPlayer runs at the deal), which is exactly the
+       quiet table where an abandoned seat matters most. The beacon was
+       answered {tracked: true} and nothing was tracked. Only a SEATED player
+       is registered; a spectator's beacon is still a no-op. */
+    if (this.seatedPlayers.some((p) => p.user_id === userId)) {
+      this.disconnectEngine.registerPlayer(this.tableId, userId);
+    }
     this.disconnectEngine.markPageLeft(this.tableId, userId);
   }
 

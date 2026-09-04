@@ -13,6 +13,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { getFreshAccessToken } from '../lib/authToken';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -34,13 +35,26 @@ const GAME_SERVER_URL =
  */
 async function getAuthHeaders(): Promise<Record<string, string>> {
   try {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (session?.access_token) {
+    /* 2026-09-04: THE TOKEN CACHE FIRST. This used to call
+       supabase.auth.getSession() and fall straight through to a request with
+       NO Authorization header when that came back empty - which it does for
+       the whole of a token refresh, and for the first moments after a page
+       reload while auth-js is still restoring the session from storage. The
+       engine answered 401 "Authentication required", and Dan read that toast
+       on "I'm Back" thirty seconds after reloading a table he was plainly
+       logged in to. getFreshAccessToken() is the path every socket already
+       uses: in-memory cache, then getSession() (which refreshes), then the
+       raw localStorage session. A refreshSession() is the last resort before
+       going out unauthenticated. */
+    let token = await getFreshAccessToken();
+    if (!token) {
+      const refreshed = await supabase.auth.refreshSession();
+      token = refreshed.data.session?.access_token ?? null;
+    }
+    if (token) {
       return {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${session.access_token}`,
+        Authorization: `Bearer ${token}`,
       };
     }
   } catch (e) {
@@ -48,6 +62,32 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
     // Silent — fall through to no-auth headers
   }
   return { 'Content-Type': 'application/json' };
+}
+
+/**
+ * fetch() against the engine with ONE retry on 401 (2026-09-04).
+ *
+ * A 401 from the engine means the request was refused before it ran, so
+ * replaying it is safe for every endpoint here, including /action. The retry
+ * asks auth-js for a refreshed session and re-sends with the new token; if
+ * there is no session to refresh, the original 401 is returned and the caller
+ * surfaces it as before. Every engine call in this file goes through it.
+ */
+async function engineFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const resp = await fetch(url, init);
+  if (resp.status !== 401) return resp;
+  try {
+    const refreshed = await supabase.auth.refreshSession();
+    const token = refreshed.data.session?.access_token ?? null;
+    if (!token) return resp;
+    const headers = {
+      ...((init.headers as Record<string, string> | undefined) ?? {}),
+      Authorization: `Bearer ${token}`,
+    };
+    return await fetch(url, { ...init, headers });
+  } catch {
+    return resp;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -114,6 +154,17 @@ const circuitBreaker = {
 // back so heartbeats/actions are not refused by our own client (see reset()).
 if (typeof window !== 'undefined') {
   window.addEventListener('online', () => circuitBreaker.reset());
+}
+
+/**
+ * 2026-09-04: the engine socket coming back is the other signal the network
+ * is back - a laptop that never lost `navigator.onLine` but lost the route to
+ * the engine for 40s has a tripped breaker and no 'online' event to clear it.
+ * TablePage calls this on the socket's reconnect edge before its first
+ * heartbeat.
+ */
+export function resetEngineCircuitBreaker(): void {
+  circuitBreaker.reset();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -258,7 +309,7 @@ export async function submitAction(
     const BACKOFFS_MS = [300, 450, 700]; // 3 retries after the first attempt
     for (let attempt = 0; attempt <= BACKOFFS_MS.length; attempt++) {
       lastActionSentAt.set(tableId, Date.now());
-      const response = await fetch(`${GAME_SERVER_URL}/action`, {
+      const response = await engineFetch(`${GAME_SERVER_URL}/action`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ tableId, action, amount }),
@@ -306,7 +357,7 @@ export function __resetActionSpacingForTests(): void {
 export async function activateTimeBank(tableId: string, _userId?: string): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
-    const response = await fetch(`${GAME_SERVER_URL}/timebank`, {
+    const response = await engineFetch(`${GAME_SERVER_URL}/timebank`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId }),
@@ -340,7 +391,7 @@ export async function getAvailableActions(
   try {
     const headers = await getAuthHeaders();
     // Server ignores the userId URL param and uses JWT — pass 'me' as placeholder
-    const response = await fetch(`${GAME_SERVER_URL}/actions/${tableId}/me`, { headers });
+    const response = await engineFetch(`${GAME_SERVER_URL}/actions/${tableId}/me`, { headers });
 
     if (!response.ok) {
       return {
@@ -375,7 +426,7 @@ export async function getAvailableActions(
  */
 export async function getServerStatus(): Promise<ServerStatus | null> {
   try {
-    const response = await fetch(`${GAME_SERVER_URL}/health`);
+    const response = await engineFetch(`${GAME_SERVER_URL}/health`);
     if (!response.ok) return null;
     return (await response.json()) as ServerStatus;
   } catch (err) {
@@ -418,7 +469,7 @@ export async function sendHeartbeat(
   }
   try {
     const headers = await getAuthHeaders();
-    const response = await fetch(`${GAME_SERVER_URL}/heartbeat`, {
+    const response = await engineFetch(`${GAME_SERVER_URL}/heartbeat`, {
       method: 'POST',
       headers,
       body: JSON.stringify(opts?.turnRendered ? { tableId, turnRendered: true } : { tableId }),
@@ -500,7 +551,7 @@ export async function setPreAction(
   }
   try {
     const headers = await getAuthHeaders();
-    const response = await fetch(`${GAME_SERVER_URL}/preaction`, {
+    const response = await engineFetch(`${GAME_SERVER_URL}/preaction`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId, action, maxCallAmount }),
@@ -545,7 +596,7 @@ export async function addChips(
 ): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch(`${GAME_SERVER_URL}/addchips`, {
+    const res = await engineFetch(`${GAME_SERVER_URL}/addchips`, {
       method: 'POST',
       headers,
       body: JSON.stringify(opId ? { tableId, amount, opId } : { tableId, amount }),
@@ -592,7 +643,7 @@ export async function setSitOut(
 ): Promise<ActionResult & { willFoldNextHand?: boolean }> {
   try {
     const headers = await getAuthHeaders();
-    const response = await fetch(`${GAME_SERVER_URL}/sitout`, {
+    const response = await engineFetch(`${GAME_SERVER_URL}/sitout`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId, sitOut }),
@@ -628,7 +679,7 @@ export async function setSitOut(
 export async function toggleStraddle(tableId: string, enabled: boolean): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
-    const response = await fetch(`${GAME_SERVER_URL}/straddle`, {
+    const response = await engineFetch(`${GAME_SERVER_URL}/straddle`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId, enabled }),
@@ -647,7 +698,7 @@ export async function toggleStraddle(tableId: string, enabled: boolean): Promise
 export async function getTableState(tableId: string): Promise<Record<string, unknown> | null> {
   try {
     const headers = await getAuthHeaders();
-    const response = await fetch(`${GAME_SERVER_URL}/state/${tableId}`, { headers });
+    const response = await engineFetch(`${GAME_SERVER_URL}/state/${tableId}`, { headers });
     if (!response.ok) return null;
     return await response.json();
   } catch (err: unknown) {
@@ -680,7 +731,7 @@ export async function respondToRIT(
     if (options.runs !== undefined) body.runs = options.runs;
     if (options.response !== undefined) body.response = options.response;
 
-    const resp = await fetch(`${GAME_SERVER_URL}/rit`, {
+    const resp = await engineFetch(`${GAME_SERVER_URL}/rit`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
@@ -709,7 +760,7 @@ export async function respondToInsurance(
 ): Promise<ActionResult & { status?: string; premium?: number; insuredAmount?: number }> {
   try {
     const headers = await getAuthHeaders();
-    const resp = await fetch(`${GAME_SERVER_URL}/insurance`, {
+    const resp = await engineFetch(`${GAME_SERVER_URL}/insurance`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId, response, coveragePercent, declineForHand }),
@@ -732,7 +783,7 @@ export async function previewInsurance(
 ): Promise<ActionResult & { premium?: number; insuredAmount?: number; coveragePercent?: number }> {
   try {
     const headers = await getAuthHeaders();
-    const resp = await fetch(
+    const resp = await engineFetch(
       `${GAME_SERVER_URL}/insurance-preview?tableId=${encodeURIComponent(tableId)}&coveragePercent=${coveragePercent}`,
       { method: 'GET', headers }
     );
@@ -750,7 +801,7 @@ export async function previewInsurance(
 export async function showHand(tableId: string): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
-    const resp = await fetch(`${GAME_SERVER_URL}/showhand`, {
+    const resp = await engineFetch(`${GAME_SERVER_URL}/showhand`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId }),
@@ -771,7 +822,7 @@ export async function showHand(tableId: string): Promise<ActionResult> {
 export async function submitDiscard(tableId: string, cardIndex: number): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
-    const resp = await fetch(`${GAME_SERVER_URL}/discard`, {
+    const resp = await engineFetch(`${GAME_SERVER_URL}/discard`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId, cardIndex }),
@@ -791,7 +842,7 @@ export async function submitDiscard(tableId: string, cardIndex: number): Promise
 export async function notifyServerLeave(tableId: string): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
-    const resp = await fetch(`${GAME_SERVER_URL}/leave`, {
+    const resp = await engineFetch(`${GAME_SERVER_URL}/leave`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId }),
@@ -826,7 +877,7 @@ export async function notifyServerLeave(tableId: string): Promise<ActionResult> 
 export async function notifyServerRejectRebuy(tableId: string): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
-    const resp = await fetch(`${GAME_SERVER_URL}/reject_rebuy`, {
+    const resp = await engineFetch(`${GAME_SERVER_URL}/reject_rebuy`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId }),
@@ -860,7 +911,7 @@ export async function notifyServerRejectRebuy(tableId: string): Promise<ActionRe
 export async function postBBToEnter(tableId: string): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
-    const resp = await fetch(`${GAME_SERVER_URL}/post-bb`, {
+    const resp = await engineFetch(`${GAME_SERVER_URL}/post-bb`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId }),
@@ -905,7 +956,7 @@ export async function requestRabbitHunt(
 ): Promise<RabbitHuntResult> {
   try {
     const headers = await getAuthHeaders();
-    const resp = await fetch(`${GAME_SERVER_URL}/rabbit-hunt`, {
+    const resp = await engineFetch(`${GAME_SERVER_URL}/rabbit-hunt`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId, handNumber }),

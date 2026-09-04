@@ -368,6 +368,12 @@ export class EngineStateClient {
       // the live connection's state.
       if (this.ws !== ws) return;
       this.clearHandshakeTimer();
+      // 2026-09-04: read BEFORE resetInbox(), which zeroes `seq`. Read after
+      // it, the `seq > 0` test below was always false and the RESYNC on
+      // reconnect had been dead code since 2026-08-25 - harmless only
+      // because the hub sends a SNAPSHOT on subscribe, and a hub that ever
+      // stopped would have frozen every reconnected table silently.
+      const hadState = this.seq > 0;
       // Review fix 2026-08-25: a fresh connection starts with an empty
       // inbound queue and a fresh event-seq epoch — the dead socket's
       // frames must not precede (or dedupe against) this connection's.
@@ -379,7 +385,7 @@ export class EngineStateClient {
       this.startWatchdog();
       // Server sends SNAPSHOT on subscribe — no explicit RESYNC needed on
       // first connect. On reconnect after a gap, we explicitly request one.
-      if (this.seq > 0) {
+      if (hadState) {
         try {
           ws.send(JSON.stringify({ type: 'RESYNC' }));
         } catch {

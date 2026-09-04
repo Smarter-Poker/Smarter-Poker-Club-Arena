@@ -365,22 +365,6 @@ export const ClubRosterService = {
     return (data ?? []).map((row: Record<string, unknown>) => mapRosterRow(row));
   },
 
-  /**
-   * Nudge the fee rollup forward. Fire and forget: the roster is perfectly
-   * usable with fees a minute stale, and the RPC self-throttles to one advance
-   * every thirty seconds however many members have the tab open. A failure here
-   * must never surface to the user or block the render, so it is swallowed
-   * after being reported.
-   */
-  touchFeeRollup(): void {
-    void supabase
-      .rpc('ca_touch_member_fee_rollup')
-      .then(({ error }) => {
-        if (error) reportError(error.message, 'ClubRosterService.touchFeeRollup');
-      })
-      .then(undefined, (err: unknown) => reportError(err, 'ClubRosterService.touchFeeRollup'));
-  },
-
   async getMemberDetail(
     clubId: string,
     userId: string,
@@ -482,8 +466,8 @@ export const ClubRosterService = {
       reason: d.reason === 'not_member' || d.reason === 'restricted' ? d.reason : null,
       variant: d.variant ?? 'all',
       variants: Array.isArray(d.variants) ? d.variants.filter(Boolean) : [],
-      hands: num(d.hands ?? d.total_hands),
-      hands_won: num(d.hands_won ?? d.wins),
+      hands: num(d.hands),
+      hands_won: num(d.hands_won),
       win_rate: num(d.win_rate),
       vpip: num(d.vpip),
       pfr: num(d.pfr),

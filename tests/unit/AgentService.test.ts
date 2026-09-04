@@ -174,7 +174,7 @@ describe('AgentService', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // VALID COMMISSION RATE STEPS (promoteToAgent)
+  // VALID COMMISSION RATE STEPS (createAgent)
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('valid commission rate steps', () => {
@@ -213,29 +213,9 @@ describe('AgentService', () => {
     });
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // SELF-TRANSFER GUARDS
-  // ─────────────────────────────────────────────────────────────────────────
-
-  describe('selfTransfer', () => {
-    it('should reject zero amount', async () => {
-      await expect(AgentService.selfTransfer('agent-1', 0, 'business', 'player')).rejects.toThrow(
-        /positive/i
-      );
-    });
-
-    it('should reject negative amount', async () => {
-      await expect(
-        AgentService.selfTransfer('agent-1', -100, 'business', 'player')
-      ).rejects.toThrow(/positive/i);
-    });
-
-    it('should reject same-wallet transfer', async () => {
-      await expect(
-        AgentService.selfTransfer('agent-1', 100, 'business', 'business')
-      ).rejects.toThrow(/same wallet/i);
-    });
-  });
+  // selfTransfer() was deleted on 2026-09-04: no caller anywhere in src/, and
+  // it passed an agents-table id into a user-id parameter, so it could not
+  // have worked for the first caller to try it. Its guards left with it.
 
   // ─────────────────────────────────────────────────────────────────────────
   // CREDIT LIMIT GUARD

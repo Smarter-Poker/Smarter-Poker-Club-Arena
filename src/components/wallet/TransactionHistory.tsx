@@ -395,7 +395,6 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
       'WALLET_REFRESHED',
       'CHIPS_DISTRIBUTED',
       'CHIPS_ADDED',
-      'CHIPS_WITHDRAWN',
       'SETTLEMENT_COMPLETED',
     ],
     refresh,

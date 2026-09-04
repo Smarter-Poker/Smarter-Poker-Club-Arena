@@ -88,7 +88,7 @@ export function cashBuyInLabel(row: CashBuyInSource): string {
  *
  * 2026-08-28. `atomic_table_buyin` refuses a seat for SIXTEEN distinct reasons,
  * and six of them are already tagged for a machine to read: IS_TEMPLATE,
- * VIP_ONLY, NIT_GAME, TABLE_SIZE, NO_RATHOLE, TABLE_CAP_REACHED. Nothing ever
+ * VIP_ONLY, NIT_GAME, TABLE_SIZE, BUYIN_BELOW_FLOOR, TABLE_CAP_REACHED. Nothing ever
  * read them. Every one of those refusals — banned from the club, VIP-only
  * table, career VPIP below the table's floor, table full, buy-in under the
  * minimum or over the maximum, club treasury short — arrived at the player as
@@ -129,11 +129,19 @@ export function cashBuyInRefusalText(raw: unknown): string | null {
       ? `This Table Requires A Career VPIP Of At Least ${vpip[1]} Percent`
       : 'This Table Has A Minimum Career VPIP You Do Not Meet Yet';
   }
-  if (/NO_RATHOLE/.test(m)) {
-    const amt = m.match(/return with the ([\d,.]+)/);
+  /* CHIP CONTINUITY: the rejoin floor. The number is the whole message
+     (OPORD 1.3 section 6.1: the minimum is just higher, no paragraph why). */
+  if (/BUYIN_BELOW_FLOOR/.test(m)) {
+    const amt = m.match(/right now is ([\d,.]+)/);
     return amt
-      ? `This Table Requires You To Return With The ${amt[1]} You Left With`
-      : 'This Table Requires You To Return With The Stack You Left With';
+      ? `The Minimum Buy In For This Game Right Now Is ${amt[1]}`
+      : 'The Minimum Buy In For This Game Is Higher Right Now';
+  }
+  if (/BUYIN_ABOVE_MAX/.test(m)) {
+    const max = m.match(/maximum \(([\d,.]+)\)/);
+    return max
+      ? `Your Stack Cannot Go Above The Table Maximum Of ${max[1]}`
+      : 'Your Stack Cannot Go Above The Table Maximum';
   }
   if (/VIP_ONLY/.test(m)) return 'This Table Is Open To VIP Members Only';
   if (/IS_TEMPLATE/.test(m)) return 'This Is A Saved Table Template, Not A Live Game';

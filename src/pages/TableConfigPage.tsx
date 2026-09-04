@@ -214,7 +214,6 @@ interface TableConfig {
   nitGame: boolean;
   capEnabled: boolean;
   capBB: number;
-  noRathole: boolean;
 
   // Table Parameters (sliders)
   maxPlayers: number;
@@ -384,7 +383,6 @@ const DEFAULT_CONFIG: TableConfig = {
   // ServerTableEngineTurns), and until 2026-08-27 this page never wrote it, so
   // the switch was decorative.
   capBB: 50,
-  noRathole: false,
 
   // Table Parameters
   maxPlayers: 9,
@@ -1214,7 +1212,6 @@ export default function TableConfigPage() {
        wager the validator refuses. See isFixedLimitGame. */
     cap_enabled: !limitGame && config.capEnabled && config.capBB > 0,
     cap_bb: !limitGame && config.capEnabled ? config.capBB : 0,
-    no_rathole: config.noRathole,
 
     // Table parameters
     // Clamped to the variant's seat law even if UI state slipped past the
@@ -2141,12 +2138,11 @@ export default function TableConfigPage() {
               onChange={(v) => updateConfig('isFeatured', v)}
               tooltip="Feature At Top Of List"
             />
-            <Toggle
-              label="No Rathole"
-              value={config.noRathole}
-              onChange={(v) => updateConfig('noRathole', v)}
-              tooltip="Prevent Leaving With Winnings"
-            />
+            {/* CHIP CONTINUITY (2026-09-04): the return-with-what-you-left
+                toggle is gone. Every cash table has the same house law now -
+                chips stay on the table, a winner stays seated ten minutes, and
+                a return inside two hours brings back the stack that left. It
+                is not a per-table option. */}
 
             {/* SECTION: Table Parameters */}
             <Slider

@@ -458,7 +458,7 @@ export default function ClubDashboard() {
       'TABLE_LEFT',
       'TABLE_CREATED',
       'CHIPS_ADDED',
-      'CHIPS_WITHDRAWN',
+      // CHIPS_WITHDRAWN removed 2026-09-04: no partial cash-out at a cash table.
       'ANNOUNCEMENT_CHANGED',
       'HAND_COMPLETED',
       'SETTLEMENT_CYCLE_COMPLETED',
@@ -2008,9 +2008,14 @@ export default function ClubDashboard() {
         )}
       </div>
 
-      {clubId && user?.id && (
+      {/* ClubChat reads, subscribes and SENDS with whatever id it is given,
+          straight into the uuid column club_chat.club_id. It was given the
+          route param, which on every club URL is a slug, so the read was a
+          22P02 (seen live as a 400 on 2026-09-04) and a message could never
+          be sent from this page. It gets the resolved uuid. */}
+      {resolvedClubId && user?.id && (
         <div style={{ padding: '0 16px 80px', maxWidth: '100%' }}>
-          <ClubChat clubId={clubId} userId={user.id} userName={playerDisplayName(user)} />
+          <ClubChat clubId={resolvedClubId} userId={user.id} userName={playerDisplayName(user)} />
         </div>
       )}
     </div>

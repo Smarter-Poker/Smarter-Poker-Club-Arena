@@ -175,32 +175,49 @@ describe('a restart does not deal cards to someone who sat out', () => {
 });
 
 describe('chips survive the write, or somebody is told', () => {
+  // 2026-09-04 (chip standard, felt erasure): the per-seat write loop these
+  // pins used to describe is GONE. It wrote absolute values from engine
+  // memory with no lock and no check, ran on more than a quarter of cash
+  // hands, and was the write that erased seat credits. The hand's stacks
+  // now reach the database through ONE call to
+  // fn_ca_settle_hand_stacks_absolute, in delta mode, and the same three
+  // guarantees are pinned on that call instead: a database error is a
+  // failure, the write is retried and then named, and the retry is bounded.
   it('a database error counts as a failure', () => {
     // THE BUG: supabase does not REJECT on a database error, it RESOLVES with
-    // { error }. Promise.allSettled only reports `rejected`, so an RLS refusal
-    // or a constraint violation counted as a successful chip write and the
-    // alarm could only ever fire on a network throw.
+    // { error }. Success is the RPC saying success, not the absence of a throw.
     const at = TABLES.indexOf('export async function syncStacks');
     const body = sliceMethod(TABLES, 'export async function syncStacks');
-    expect(body).toMatch(/const \{ error \}\s*=\s*await supabase/);
-    expect(body).toMatch(/if \(!error\) return null;/);
+    expect(body).toMatch(/error = res\.error/);
+    expect(body).toMatch(/if \(!error && data\?\.success === true\)/);
     expect(body).not.toMatch(/r\.status === 'rejected'/);
+    expect(body).not.toMatch(/Promise\.allSettled/);
   });
 
-  it('a failed seat is retried, and named if it still fails', () => {
+  it('a failed hand write is retried, and named if it still fails', () => {
     const at = TABLES.indexOf('export async function syncStacks');
     const body = sliceMethod(TABLES, 'export async function syncStacks');
-    expect(body).toMatch(/attempt <= 3/);
-    // Named, not counted: "2/6 failed" cannot be reconciled after the fact.
-    expect(body).toMatch(/\$\{player\.user_id\}/);
-    expect(body).toMatch(/failures\.join/);
+    expect(body).toMatch(/attempt <= STACK_WRITE_ATTEMPTS/);
+    // Named, not counted: the table, the hand, and the whole payload, so the
+    // idempotent RPC can be re-driven by hand.
+    expect(body).toMatch(/\$\{tableId\} hand \$\{handNumber\}/);
+    expect(body).toMatch(/JSON\.stringify\(payload\)/);
+    expect(body).toMatch(/'DB\.settle_hand_stacks_unreachable'/);
   });
 
   it('the retry is bounded, because settlement cannot wait forever', () => {
     const at = TABLES.indexOf('export async function syncStacks');
     const body = sliceMethod(TABLES, 'export async function syncStacks');
-    expect(body).toMatch(/attempt < 3/);
+    expect(body).toMatch(/attempt < STACK_WRITE_ATTEMPTS/);
     expect(body).toMatch(/setTimeout/);
+    expect(TABLES).toMatch(/const STACK_WRITE_ATTEMPTS = 5;/);
+  });
+
+  it('there is no per-seat absolute fallback left to erase a credit', () => {
+    const body = sliceMethod(TABLES, 'export async function syncStacks');
+    expect(body).not.toMatch(/'DB\.settle_hand_stacks_fallback'/);
+    expect(body).not.toMatch(/\.update\(\s*\{\s*stack/);
+    expect(body).not.toMatch(/updatePayload/);
   });
 });
 

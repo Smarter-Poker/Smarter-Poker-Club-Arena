@@ -9,7 +9,7 @@
     "fn_undeclared_money_triggers",
     "sp_prune_ca_settlements"
   ],
-  "tables": ["ca_declared_money_triggers"],
+  "tables": ["ca_declared_money_triggers", "ca_retired_cron_jobs"],
   "columns": {
     "financial_alerts": ["resolution"]
   }

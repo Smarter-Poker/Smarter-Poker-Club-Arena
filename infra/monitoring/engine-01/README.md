@@ -1,3 +1,25 @@
+> **SUPERSEDED 2026-09-04. The config files that sat beside this README have
+> been deleted; this page is kept as history.**
+>
+> Every engine-01-specific change described below was folded into the parent
+> `infra/monitoring/` configs and IS the live stack: `deploy.sh` symlinks
+> `$SRC_DIR/infra/monitoring/$f`, never this directory, and the parent
+> `prometheus.yml` already targets `host.docker.internal`. So these copies were
+> deployed by nothing while quietly drifting: they had fallen four rule files
+> behind the parent (missing all 10 supervisor, 6 tournament and 10 spin
+> rules) and were missing the `turn_relay` scrape job, and
+> `check-monitoring-drift.mjs` only ever read the parent pair.
+>
+> A second, unreferenced copy of a config, sitting where an agent will find it,
+> is the documented failure mode from `CLAUDE.md` 10.7 - the next reader
+> believes it is live and "fixes" the real one to match. The drift check now
+> fails if a second `prometheus.yml` appears anywhere under
+> `infra/monitoring/`.
+>
+> The `slo-rules.yml` / `slo-alerts.yml` note below is also out of date: both
+> were rewritten on 2026-09-04 against metrics the engine already emits,
+> rather than waiting on a blackbox-exporter that is still not deployed.
+
 # Monitoring stack — engine-01 co-located variant
 
 Phase 5.1.3a alternate deploy path. When the originally-planned cron-01

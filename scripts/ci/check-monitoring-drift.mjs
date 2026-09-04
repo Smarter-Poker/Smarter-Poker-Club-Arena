@@ -186,6 +186,49 @@ for (const p of explicit) {
   }
 }
 
+// ── 4c. exactly one monitoring config tree ──────────────────────────────────
+//
+// infra/monitoring/engine-01/ held a second prometheus.yml, docker-compose.yml,
+// alertmanager.yml, Caddyfile and slo-*.yml. deploy.sh symlinks only the
+// top-level files, so that copy was deployed by nothing - and it had drifted
+// four rule files behind the parent (missing all 10 supervisor, 6 tournament
+// and 10 spin rules) while this very check read only the top-level pair.
+//
+// An unreferenced second copy of a config is the CLAUDE.md 10.7 failure mode:
+// the next agent finds it, believes it is live, and "fixes" the real one to
+// match. Deleted 2026-09-04; this stops it coming back.
+{
+  const stray = [];
+  const walk = (dir, depth = 0) => {
+    if (depth > 3) return;
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
+      const full = resolve(dir, e.name);
+      if (e.isDirectory()) walk(full, depth + 1);
+      else if (/\.ya?ml$/.test(e.name) && dir !== DIR) {
+        // Detect by CONTENT, not by name. grafana-provisioning/datasources/
+        // legitimately contains a prometheus.yml - it is a Grafana datasource
+        // definition, is deployed by deploy.sh, and is not a second server
+        // config. Only a file that actually configures Prometheus,
+        // Alertmanager or the compose stack counts.
+        const body = readFileSync(full, 'utf8');
+        const isServerConfig =
+          /^\s*scrape_configs:/m.test(body) ||
+          /^\s*rule_files:/m.test(body) ||
+          /^\s*route:\s*$/m.test(body) && /^\s*receivers:/m.test(body) ||
+          /^\s*services:\s*$/m.test(body) && /prometheus|alertmanager|grafana/.test(body);
+        if (isServerConfig) stray.push(full.slice(full.indexOf('infra/monitoring')));
+      }
+    }
+  };
+  walk(DIR);
+  for (const f of stray) {
+    errors.push(
+      `${f} is a second copy of a monitoring config. deploy.sh only ever deploys the files directly in infra/monitoring/, so a nested copy is deployed by nothing and drifts silently - which is exactly what infra/monitoring/engine-01/ did until 2026-09-04. Fold it into the parent and delete it.`
+    );
+  }
+}
+
 // ── 5. alerts must reach somewhere real ──────────────────────────────────────
 if (existsSync(resolve(DIR, 'alertmanager.yml'))) {
   const am = read('alertmanager.yml');

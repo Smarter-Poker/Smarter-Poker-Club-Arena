@@ -43,14 +43,30 @@ describe('the engine select list is the whole contract', () => {
   });
 });
 
-describe('the Ante slider now reaches the engine', () => {
+/**
+ * 2026-09-04 (Operation Table Stakes, Slice 1): the cash create path moved
+ * out of TableConfigPage.buildTableData and into SQL - fn_cash_game_create
+ * projects the resolved ruleset snapshot onto the SAME engine columns. The
+ * pin moves with it: the ante is still written as ante_enabled + ante (what
+ * the engine selects) AND ante_bb (the authored unit), from one figure.
+ */
+const CREATE_SQL = read('supabase/migrations/20260904230000_cash_games_slice_1_hardening.sql');
+
+describe('the Ante reaches the engine from the cash create function', () => {
   it('writes ante and ante_enabled, not just the authored big-blind figure', () => {
-    expect(CONFIG_PAGE).toContain('ante_enabled: Number(config.anteBB) > 0');
-    expect(CONFIG_PAGE).toMatch(/ante:\s*Number\(config\.anteBB\) > 0/);
+    expect(CREATE_SQL).toMatch(/ante_enabled, ante, ante_bb,/);
+    expect(CREATE_SQL).toMatch(/v_ante_chips > 0, v_ante_chips,/);
   });
 
   it('keeps ante_bb as well, so the authored unit survives a blind change', () => {
-    expect(CONFIG_PAGE).toContain('ante_bb: config.anteBB');
+    expect(CREATE_SQL).toMatch(
+      /CASE WHEN v_ante_chips > 0 THEN round\(v_ante_chips \/ p_bb, 4\) ELSE 0 END/
+    );
+  });
+
+  it('the page no longer builds a tables row at all', () => {
+    expect(CONFIG_PAGE).not.toContain('buildTableData(');
+    expect(CONFIG_PAGE).not.toMatch(/\.from\(\s*'tables'\s*\)[\s\S]{0,160}?\.insert\(/);
   });
 });
 

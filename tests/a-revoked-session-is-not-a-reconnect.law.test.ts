@@ -42,8 +42,15 @@ import {
   isDefinitiveAuthRejection,
   isEngineAuthClose,
   loginRedirectUrl,
+  announceSessionEnded,
+  SESSION_ENDED_TITLE,
+  SESSION_ENDED_BODY,
+  SESSION_ENDED_BUTTON,
+  SESSION_ENDED_PROMPT_MS,
   _resetSessionRevokedStateForTests,
 } from '../src/lib/sessionRevoked';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 // ─── Pin 3 + 4: the verdict logic, no network ────────────────────────────────
 
@@ -152,6 +159,73 @@ describe('LAW 1/5 - the wire signals', () => {
       '/auth/login?authError=no_session&redirect=' + encodeURIComponent('/hub/club-arena/table/abc')
     );
     expect(fromWindow).not.toContain('club-arena%2Fhub');
+  });
+});
+
+// ─── Pin 6: THE PLAYER IS TOLD (Dan 2026-09-04: "NOT JUST SILENTLY FAIL") ──
+
+describe('LAW 6 - a dead session is announced to the player, never a silent bounce', () => {
+  afterEach(() => {
+    document.getElementById('ca-session-ended')?.remove();
+    vi.useRealTimers();
+  });
+
+  it('renders a prompt that says why, with a button, before leaving', () => {
+    vi.useFakeTimers();
+    const go = vi.fn();
+    announceSessionEnded(go);
+    const el = document.getElementById('ca-session-ended');
+    expect(el).not.toBeNull();
+    expect(el!.getAttribute('role')).toBe('alertdialog');
+    expect(el!.textContent).toContain(SESSION_ENDED_TITLE);
+    expect(el!.textContent).toContain(SESSION_ENDED_BODY);
+    expect(go).not.toHaveBeenCalled();
+    // The button goes now; the timer goes on its own; never twice.
+    (el!.querySelector('button') as HTMLButtonElement).click();
+    expect(go).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(SESSION_ENDED_PROMPT_MS + 100);
+    expect(go).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves on its own if the player does nothing', () => {
+    vi.useFakeTimers();
+    const go = vi.fn();
+    announceSessionEnded(go);
+    vi.advanceTimersByTime(SESSION_ENDED_PROMPT_MS + 100);
+    expect(go).toHaveBeenCalledTimes(1);
+  });
+
+  it('the copy obeys the popup rule: Title Case, no em dashes, and it names the cause', () => {
+    for (const text of [SESSION_ENDED_TITLE, SESSION_ENDED_BODY, SESSION_ENDED_BUTTON]) {
+      expect(text).not.toContain('\u2014');
+      for (const word of text.split(/\s+/)) {
+        const first = word.replace(/^[^A-Za-z]+/, '')[0];
+        if (first) expect(first, `"${word}" in "${text}"`).toBe(first.toUpperCase());
+      }
+    }
+    expect(SESSION_ENDED_BODY).toMatch(/Signed Out/);
+    expect(SESSION_ENDED_BODY).toMatch(/Sign In/);
+  });
+
+  it('the revoked path calls the prompt, and the banner no longer claims to be signing in', () => {
+    const src = readFileSync(join(__dirname, '..', 'src', 'lib', 'sessionRevoked.ts'), 'utf8');
+    const revokedAt = src.indexOf("if (verdict === 'revoked')");
+    expect(revokedAt).toBeGreaterThan(0);
+    // The block has inner try/catches (sessionStorage, signOut); bound it by
+    // the finally that ends the probe, not by the first catch it contains.
+    const revokedBlock = src.slice(revokedAt, src.indexOf('inFlight = null', revokedAt));
+    expect(revokedBlock).toContain('announceSessionEnded(');
+    // The redirect must live INSIDE the prompt's callback: no assign may
+    // appear before announceSessionEnded( is called, and there is only one.
+    const announceAt = revokedBlock.indexOf('announceSessionEnded(');
+    const assignAt = revokedBlock.indexOf('window.location.assign(');
+    expect(assignAt).toBeGreaterThan(announceAt);
+    expect(revokedBlock.split('window.location.assign(').length - 1).toBe(1);
+    const banner = readFileSync(
+      join(__dirname, '..', 'src', 'components', 'table', 'TableConnectionBanner.tsx'),
+      'utf8'
+    );
+    expect(banner).not.toMatch(/return 'Signing You In Again'/);
   });
 });
 

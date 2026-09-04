@@ -139,6 +139,68 @@ export async function probeSessionAlive(auth: SupabaseAuthLike): Promise<Session
   return 'unknown';
 }
 
+/** How long the prompt stays before the redirect fires on its own. */
+export const SESSION_ENDED_PROMPT_MS = 4_000;
+export const SESSION_ENDED_TITLE = 'Your Session Has Ended';
+export const SESSION_ENDED_BODY =
+  'You Were Signed Out On This Device, So The Table Cannot Reconnect. Taking You To Sign In Again.';
+export const SESSION_ENDED_BUTTON = 'Sign In Now';
+
+/**
+ * Dan, 2026-09-04: "YOU NEED TO GIVE A PROMPT TO LET THE USER KNOW WHAT THE
+ * ISSUE IS... NOT JUST SILENTLY FAIL."
+ *
+ * A dead session is announced in plain DOM on purpose. The React tree may be
+ * mid-reconnect, the toast provider is a context this module cannot reach,
+ * and the page is about to leave anyway; the one thing the player needs is
+ * a sentence saying WHY, and a button. Title Case, no em dashes (5.7).
+ */
+export function announceSessionEnded(onGo: () => void): void {
+  if (typeof document === 'undefined') {
+    onGo();
+    return;
+  }
+  try {
+    const id = 'ca-session-ended';
+    if (document.getElementById(id)) return;
+    const wrap = document.createElement('div');
+    wrap.id = id;
+    wrap.setAttribute('role', 'alertdialog');
+    wrap.setAttribute('aria-live', 'assertive');
+    wrap.style.cssText =
+      'position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;' +
+      'background:rgba(0,0,0,.82);padding:24px;font-family:system-ui,-apple-system,sans-serif;';
+    const card = document.createElement('div');
+    card.style.cssText =
+      'max-width:360px;width:100%;background:#15181d;border:1px solid #d33;border-radius:14px;padding:22px 20px;' +
+      'color:#fff;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.6);';
+    const h = document.createElement('div');
+    h.textContent = SESSION_ENDED_TITLE;
+    h.style.cssText = 'font-size:19px;font-weight:700;margin-bottom:10px;';
+    const b = document.createElement('div');
+    b.textContent = SESSION_ENDED_BODY;
+    b.style.cssText = 'font-size:14px;line-height:1.45;opacity:.9;margin-bottom:18px;';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = SESSION_ENDED_BUTTON;
+    btn.style.cssText =
+      'width:100%;padding:13px;border:0;border-radius:10px;background:#e0322d;color:#fff;font-size:16px;font-weight:700;';
+    let went = false;
+    const go = () => {
+      if (went) return;
+      went = true;
+      onGo();
+    };
+    btn.addEventListener('click', go);
+    card.append(h, b, btn);
+    wrap.append(card);
+    document.body.append(wrap);
+    window.setTimeout(go, SESSION_ENDED_PROMPT_MS);
+  } catch {
+    onGo();
+  }
+}
+
 let inFlight: Promise<SessionVerdict> | null = null;
 let lastProbeAt = 0;
 let lastVerdict: SessionVerdict = 'unknown';
@@ -206,8 +268,13 @@ export async function handleEngineAuthRejection(source: string): Promise<Session
           }
         }
         if (typeof window !== 'undefined') {
-          window.location.assign(
-            loginRedirectUrl(window.location.pathname, window.location.search)
+          // Say why BEFORE leaving. The login page also renders
+          // "No active session was found" via authError=no_session, so the
+          // player is told twice, not zero times.
+          announceSessionEnded(() =>
+            window.location.assign(
+              loginRedirectUrl(window.location.pathname, window.location.search)
+            )
           );
         }
       }

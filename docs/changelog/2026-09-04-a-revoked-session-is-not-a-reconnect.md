@@ -189,6 +189,33 @@ would have fired within 15 minutes. `tests/...aRevokedSessionIsRefusedOutLoud`
 pins the absence of a `poker_humans_seated == 0` rule so a later pass has to
 re-measure before adding one.
 
+## The player is TOLD (Dan, 20:45 UTC: "NOT JUST SILENTLY FAIL")
+
+Dan's tab was still holding the token revoked before 19:00. The lobby looked
+signed in, the table said "Reconnecting To The Table", and the only way out
+was a manual log out / log in - because this PR had not deployed yet (it
+went conflict-dirty three times on `docs/LAWS.md` while main moved), so the
+client on his screen was the old one.
+
+Two changes so the next person is told, not stranded:
+
+- `announceSessionEnded()` in `lib/sessionRevoked.ts`: a full-screen prompt
+  in **plain DOM** (the React tree may be mid-reconnect and the toast
+  provider is a context this module cannot reach): "Your Session Has Ended /
+  You Were Signed Out On This Device, So The Table Cannot Reconnect. Taking
+  You To Sign In Again." with a **Sign In Now** button. Button goes now; it
+  goes on its own after 4 s; never twice. The login page then also renders
+  "No active session was found" via `authError=no_session`. Told twice, not
+  zero times.
+- The banner's `auth_failed` label said **"Signing You In Again"** through a
+  22-hour outage in which nobody was being signed in. It now says
+  **"Checking Your Sign-In"**, which is what is actually happening.
+
+Law 6 in `a-revoked-session-is-not-a-reconnect` renders the prompt under
+happy-dom and pins: role=alertdialog, the copy, button-once, auto-leave,
+Title Case / no em dash (5.7), the redirect living inside the prompt's
+callback, and the old banner string being gone.
+
 ## What I did not change, and why
 
 - **The seven-day access token.** That is a Supabase Auth setting (JWT

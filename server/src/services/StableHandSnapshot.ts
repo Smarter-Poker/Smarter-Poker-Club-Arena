@@ -267,9 +267,12 @@ export async function buildFloorSnapshot(): Promise<FloorSnapshot> {
       if (prev === undefined || at < prev) oldestWaitByTable.set(k, at);
     });
 
-    const uniqueLive = new Set(
-      seats.filter((s) => horseIds.has(String(s.user_id))).map((s) => String(s.user_id))
-    ).size;
+    /* EVERY body on this host, human and horse. The occupancy curve is a
+       target for how busy the FLOOR is - Dan's words were "there should not be
+       89 PEOPLE playing in the middle of the night" - so a human sitting down
+       counts, and the fleet recedes to make room for them. Counting horses
+       alone overshot the curve by exactly the number of real players. */
+    const uniqueLive = new Set(seats.map((s) => String(s.user_id))).size;
 
     hosts.push({
       hostId,

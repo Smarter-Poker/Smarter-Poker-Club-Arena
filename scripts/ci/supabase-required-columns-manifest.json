@@ -12,6 +12,21 @@
       "street",
       "action"
     ],
+    "ad_advertiser": [
+      "kind",
+      "name"
+    ],
+    "ad_campaign": [
+      "advertiser_id",
+      "name",
+      "slot",
+      "starts_at",
+      "ends_at",
+      "days",
+      "image_url",
+      "target_url",
+      "headline"
+    ],
     "ad_catalog": [
       "ad_key",
       "category",
@@ -24,6 +39,13 @@
     "ad_placement": [
       "ad_id",
       "slot"
+    ],
+    "ad_rate_card": [
+      "slot",
+      "diamonds_per_day",
+      "creative_width",
+      "creative_height",
+      "label"
     ],
     "admin_audit_log": [
       "action"
@@ -38,10 +60,6 @@
       "role",
       "commission_rate",
       "player_rakeback_rate"
-    ],
-    "agg_model": [
-      "model_version",
-      "last_training_date"
     ],
     "ai_horses": [
       "horse_number",
@@ -125,15 +143,6 @@
     ],
     "avatar_unlocks": [
       "avatar_id"
-    ],
-    "backtest_accuracy": [
-      "backtest_date"
-    ],
-    "backtest_market_output": [
-      "game_pk",
-      "as_of_ts",
-      "market",
-      "selection"
     ],
     "bad_beat_jackpots": [
       "club_id"
@@ -290,12 +299,20 @@
       "pass",
       "results"
     ],
+    "ca_break_scorecards": [
+      "break_ended_at",
+      "break_started_at"
+    ],
     "ca_browser_definer_allowlist": [
       "proname",
       "reason"
     ],
     "ca_cert_accounts": [
       "user_id",
+      "reason"
+    ],
+    "ca_check_sweep_exemptions": [
+      "proname",
       "reason"
     ],
     "ca_chip_baseline": [
@@ -345,6 +362,25 @@
     "ca_ddl_events": [
       "command_tag"
     ],
+    "ca_deploy_dispatch_log": [
+      "window_hour",
+      "action"
+    ],
+    "ca_diamond_balance_audit": [
+      "user_id"
+    ],
+    "ca_diamond_house_ledger": [
+      "delta",
+      "balance_after",
+      "reason",
+      "reference"
+    ],
+    "ca_diamond_incidents": [
+      "rule"
+    ],
+    "ca_diamond_journal_archive": [
+      "id"
+    ],
     "ca_diamond_snapshots": [
       "profile_diamonds",
       "wallet_diamonds",
@@ -368,12 +404,38 @@
       "target_sha",
       "shipped"
     ],
+    "ca_engine_deploy_runs_started": [
+      "run_id",
+      "target_sha"
+    ],
+    "ca_escrow_shadow_results": [
+      "tournament_id"
+    ],
+    "ca_escrow_shadow_runs": [
+      "hours",
+      "summary"
+    ],
     "ca_financial_epochs": [
       "name"
+    ],
+    "ca_freeroll_free_buy_log": [
+      "tournament_id",
+      "op",
+      "changed"
+    ],
+    "ca_freeze_circulation_marks": [
+      "window_hour",
+      "kind",
+      "member_wallets",
+      "on_the_felt",
+      "total"
     ],
     "ca_frozen_pool_baseline": [
       "pool",
       "frozen_total"
+    ],
+    "ca_frozen_pool_deletions": [
+      "deleted_balance"
     ],
     "ca_gate_runs": [
       "pass",
@@ -447,12 +509,25 @@
       "hand_secs",
       "profit"
     ],
+    "ca_hand_player_stat_repair_state": [
+      "cursor_at",
+      "ceiling_at"
+    ],
     "ca_hand_transfers": [
       "hand_id",
       "winner_id",
       "loser_id",
       "amount",
       "played_at"
+    ],
+    "ca_horse_fleet_policy": [
+      "scope"
+    ],
+    "ca_horse_fleet_register": [
+      "horse_id"
+    ],
+    "ca_horse_fleet_state": [
+      "horse_id"
     ],
     "ca_incident_events": [
       "incident_id",
@@ -484,12 +559,55 @@
       "reason",
       "old_row"
     ],
+    "ca_manual_adjustments": [
+      "actor",
+      "reason",
+      "amount",
+      "target_kind"
+    ],
+    "ca_mint_ledger": [
+      "op_id",
+      "action",
+      "asset",
+      "holder_type",
+      "holder_id",
+      "amount",
+      "balance_before",
+      "balance_after",
+      "supply_after",
+      "reason"
+    ],
+    "ca_money_path_violations": [
+      "table_name"
+    ],
     "ca_money_rpc_registry": [
       "proname"
+    ],
+    "ca_noop_update_stats": [
+      "tbl"
     ],
     "ca_op_claims": [
       "op_id",
       "fn_name"
+    ],
+    "ca_operator_approvals": [
+      "kind"
+    ],
+    "ca_operator_grants": [
+      "user_id",
+      "role_key"
+    ],
+    "ca_operator_role_permissions": [
+      "role_key",
+      "permission"
+    ],
+    "ca_operator_roles": [
+      "key",
+      "label"
+    ],
+    "ca_payout_freeze": [
+      "scope",
+      "reason"
     ],
     "ca_pending_promo_accruals": [
       "club_id",
@@ -500,12 +618,23 @@
       "ddl_events",
       "reason"
     ],
+    "ca_profile_deletions": [
+      "profile_id"
+    ],
+    "ca_rake_rules": [
+      "id"
+    ],
     "ca_rake_schedule": [
       "sb",
       "bb",
       "rake_percent",
       "rake_cap",
       "bbj_fee_bb"
+    ],
+    "ca_rake_schedule_caps": [
+      "bb",
+      "players_dealt",
+      "rake_cap"
     ],
     "ca_rake_tier": [
       "label",
@@ -517,6 +646,9 @@
     "ca_ratchet_baselines": [
       "ratchet",
       "baseline"
+    ],
+    "ca_seat_guard_dryrun": [
+      "op"
     ],
     "ca_seat_stack_exits": [
       "table_id",
@@ -567,6 +699,12 @@
       "opening_balance",
       "ledger_at_baseline",
       "unledgered_gap"
+    ],
+    "ca_union_rake_attribution": [
+      "rake_record_id",
+      "user_id",
+      "union_id",
+      "played_at"
     ],
     "cashier_operations": [
       "user_id",
@@ -759,6 +897,11 @@
     "club_members": [
       "club_id",
       "user_id"
+    ],
+    "club_message_dismissals": [
+      "user_id",
+      "club_id",
+      "dismissed_revision"
     ],
     "club_opening_setup_funding": [
       "club_id",
@@ -1335,6 +1478,9 @@
       "name",
       "description"
     ],
+    "daily_challenge_catalog_history": [
+      "op"
+    ],
     "daily_challenge_claim_batches": [
       "user_id",
       "request_id"
@@ -1416,20 +1562,52 @@
       "user_id",
       "event_type"
     ],
+    "diamond_debts": [
+      "user_id",
+      "amount",
+      "reason"
+    ],
+    "diamond_engine_daily_caps": [
+      "engine"
+    ],
     "diamond_ledger": [
       "delta"
+    ],
+    "diamond_packages": [
+      "package_key",
+      "display_name",
+      "diamonds",
+      "price_usd"
     ],
     "diamond_platform_budget": [
       "period",
       "budget_diamonds"
     ],
+    "diamond_purchase_disputes": [
+      "dispute_id",
+      "event",
+      "purchase_id"
+    ],
+    "diamond_purchase_lots": [
+      "user_id",
+      "purchase_id",
+      "issued"
+    ],
     "diamond_purchases": [
       "user_id",
       "package_name"
     ],
+    "diamond_reward_budgets": [
+      "period",
+      "engine",
+      "budget_diamonds"
+    ],
     "diamond_reward_catalog": [
       "action_key",
       "diamonds"
+    ],
+    "diamond_reward_catalog_history": [
+      "op"
     ],
     "diamond_reward_claims": [
       "user_id",
@@ -1440,12 +1618,13 @@
       "type",
       "amount"
     ],
+    "diamond_user_daily_awards": [
+      "user_id",
+      "engine",
+      "day"
+    ],
     "diamond_wallets": [
       "user_id"
-    ],
-    "dim_teams": [
-      "team_id",
-      "name"
     ],
     "direct_messages": [
       "sender_id",
@@ -1471,6 +1650,13 @@
     ],
     "engine_maintenance_break": [
       "phase"
+    ],
+    "engine_maintenance_break_log": [
+      "break_started_at",
+      "break_ended_at",
+      "unparked_at_countdown",
+      "peak_unparked",
+      "tables_resumed"
     ],
     "engine_maintenance_thaws": [
       "freeze_started_at",
@@ -2214,6 +2400,10 @@
       "user_id",
       "theme_value"
     ],
+    "money_check_heartbeat": [
+      "check_name",
+      "expected_interval_minutes"
+    ],
     "money_flow_checkpoint": [
       "metric_key",
       "as_of"
@@ -2490,13 +2680,6 @@
     "poy_leaderboard": [
       "player_name"
     ],
-    "pred_best_bets": [
-      "official_date"
-    ],
-    "pred_market_output": [
-      "game_pk",
-      "market"
-    ],
     "premium_feature_access": [
       "user_id",
       "feature_key",
@@ -2654,16 +2837,6 @@
     "rate_limits": [
       "user_id",
       "action"
-    ],
-    "raw_games": [
-      "game_pk",
-      "official_date",
-      "away_team",
-      "home_team"
-    ],
-    "raw_odds": [
-      "game_pk",
-      "market"
     ],
     "referral_codes": [
       "user_id",
@@ -2862,15 +3035,6 @@
       "trigger_name",
       "occurred_at"
     ],
-    "sim_bet_grade_summary": [
-      "bet_tier"
-    ],
-    "sim_equity_daily": [
-      "day"
-    ],
-    "sim_market_summary": [
-      "market"
-    ],
     "slug_history": [
       "old_slug"
     ],
@@ -2978,6 +3142,10 @@
     "spin_bonus_pools": [
       "club_id"
     ],
+    "spin_payout_ladder": [
+      "multiplier",
+      "structure"
+    ],
     "spin_reserve_ledger": [
       "club_id",
       "kind",
@@ -2987,10 +3155,6 @@
     "spin_tier_spec": [
       "multiplier",
       "freq"
-    ],
-    "spin_tournaments": [
-      "club_id",
-      "buy_in"
     ],
     "spin_unpaid_backpay_log": [
       "tournament_id",
@@ -3253,6 +3417,10 @@
       "pool_before",
       "pool_after"
     ],
+    "tournament_obligations": [
+      "tournament_id",
+      "kind"
+    ],
     "tournament_payout_backfill_log": [
       "tournament_id",
       "top_up"
@@ -3511,6 +3679,9 @@
       "award_type",
       "max_amount"
     ],
+    "trivia_diamond_award_limits_history": [
+      "op"
+    ],
     "trivia_economy_audit_runs": [
       "status"
     ],
@@ -3676,6 +3847,11 @@
       "period_start",
       "period_end"
     ],
+    "union_settlement_floor": [
+      "union_id",
+      "earliest_period_start",
+      "reason"
+    ],
     "union_settlement_rounds": [
       "union_id",
       "period_start",
@@ -3837,9 +4013,6 @@
     ],
     "v_backtest_summary": [
       "date"
-    ],
-    "v_team_profile": [
-      "team_id"
     ],
     "venue_aliases": [
       "bravo_name",

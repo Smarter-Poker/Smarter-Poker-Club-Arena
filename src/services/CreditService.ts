@@ -197,7 +197,8 @@ export const CreditService = {
     userId: string,
     clubId: string,
     limit: number,
-    isPrepaid: boolean
+    isPrepaid: boolean,
+    reason?: string
   ): Promise<boolean> {
     // Resolve the agent row for this (user, club). Club owners/admins can read their
     // club's agents under the consolidated agents SELECT policy.
@@ -217,7 +218,10 @@ export const CreditService = {
       p_agent_id: agentRow.id,
       p_credit_limit: limit,
       p_is_prepaid: isPrepaid,
-      p_credit_reason: isPrepaid ? 'Prepaid balance set' : 'Credit line issued',
+      /* The reason an operator typed, rather than a constant. Both callers
+         collected a note and neither passed it, so credit_assignments has been
+         recording "Credit line issued" for every change ever made. */
+      p_credit_reason: reason || (isPrepaid ? 'Prepaid balance set' : 'Credit line issued'),
     });
     if (error || !res?.success) {
       throw new Error(error?.message || res?.error || 'credit update failed');
@@ -226,6 +230,64 @@ export const CreditService = {
       masterBus.emit('CREDIT_UPDATED', { clubId: res.club_id, amount: limit });
     }
     return true;
+  },
+
+  /**
+   * Take some of an agent's credit line back.
+   *
+   * "Revoke Credit" on the agent dashboard used to call a player-wallet
+   * transfer, which moved chips between two people and left credit_limit and
+   * credit_used exactly where they were. Revoking credit is lowering the line.
+   *
+   * fn_admin_update_agent owns every rule that applies: it refuses a new limit
+   * below what the agent has already drawn, and it refuses to leave an agent
+   * on credit with a limit of zero, naming the amount in both cases. When the
+   * reduction takes the line to nothing and nothing is owed, the agent moves
+   * to prepaid, which is the only way that function will accept a zero limit.
+   */
+  async lowerCreditLine(
+    userId: string,
+    clubId: string,
+    amount: number,
+    reason?: string
+  ): Promise<{ newLimit: number; movedToPrepaid: boolean }> {
+    /* The error is bound and thrown, not dropped. This read decides the new
+       limit, so a refused or failed read must not be indistinguishable from
+       "this agent has no line" - that difference is the difference between
+       leaving a limit alone and taking it to zero. */
+    const { data: agentRow, error: readError } = await supabase
+      .from('agents')
+      .select('id, credit_limit, credit_used')
+      .eq('user_id', userId)
+      .eq('club_id', clubId)
+      .maybeSingle();
+    if (readError) throw new Error(`Could not read this agent's credit line: ${readError.message}`);
+    if (!agentRow?.id) throw new Error('No agent found for this club');
+
+    const current = Number(agentRow.credit_limit) || 0;
+    const drawn = Number(agentRow.credit_used) || 0;
+    const target = Math.max(current - amount, 0);
+    const toPrepaid = target === 0;
+
+    if (toPrepaid && drawn > 0) {
+      throw new Error(
+        `This agent still owes ${drawn.toLocaleString()} chips on their credit line. Take a payment before closing it.`
+      );
+    }
+
+    const { data: res, error } = await supabase.rpc('fn_admin_update_agent', {
+      p_agent_id: agentRow.id,
+      p_credit_limit: target,
+      p_is_prepaid: toPrepaid ? true : null,
+      p_credit_reason: reason || 'Credit line reduced',
+    });
+    if (error || !res?.success) {
+      throw new Error(error?.message || res?.error || 'credit update failed');
+    }
+    if (res.club_id) {
+      masterBus.emit('CREDIT_UPDATED', { clubId: res.club_id, amount: target });
+    }
+    return { newLimit: target, movedToPrepaid: toPrepaid };
   },
 
   /**

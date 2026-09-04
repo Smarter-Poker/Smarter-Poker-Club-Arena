@@ -20,6 +20,19 @@ describe('database migration publication safety', () => {
     }
 
     const collisions = [...owners.entries()].filter(([, names]) => names.length > 1);
-    expect(collisions).toEqual([]);
+    expect(
+      collisions,
+      'Two migrations share a version. Neither branch was wrong on its own - the\n' +
+        'collision appears when the second one takes main, because agents pick the\n' +
+        'version by hand and reach for round numbers.\n\n' +
+        'This is not only a red build: Supabase keys schema_migrations on the version,\n' +
+        'so of two files sharing one, the SECOND IS SILENTLY NEVER APPLIED.\n\n' +
+        'Do not hand-pick a version. Run:\n\n' +
+        '    node scripts/new-migration.mjs "what it does"\n\n' +
+        'It reserves a version against origin/main AND every remote branch, so it\n' +
+        'cannot collide with work that has not merged yet.\n\n' +
+        'Colliding versions:\n' +
+        collisions.map(([v, names]) => `  ${v}: ${names.join(', ')}`).join('\n')
+    ).toEqual([]);
   });
 });

@@ -19,6 +19,18 @@ zero means the opposite of success.
 
 ---
 
+## ↗ RESUMING THE CLUB OPERATIONS UPGRADE? READ `docs/HANDOFF-2026-09-03-club-operations-upgrade.md`
+
+A DIFFERENT programme from the one above, and a different handoff file. If you
+are picking up Dan's 8-phase upgrade of the club operator workspace
+(`/hub/club-arena/clubs/:club/operations` and its 26 sub pages), the current
+state, every live measurement, the defect register and the exact next actions
+are in
+[`docs/HANDOFF-2026-09-03-club-operations-upgrade.md`](./docs/HANDOFF-2026-09-03-club-operations-upgrade.md).
+Phases 1-3 of 8 are merged (squash `c22a3bb00`) and live; phase 4 is the club
+dashboard, and it starts on a fresh branch off `main`. The plan is
+[`docs/club-operations/OPERATIONS-UPGRADE-PLAN.md`](./docs/club-operations/OPERATIONS-UPGRADE-PLAN.md).
+
 ## ↗ START HERE: `AGENT-PLAYBOOK.md`
 
 **Before this file, before anything: read [`AGENT-PLAYBOOK.md`](./AGENT-PLAYBOOK.md).**
@@ -184,13 +196,14 @@ So: a direct push to main is refused, a red check cannot be merged, and
 `ci.yml`'s `if: github.event_name == 'pull_request'` gating is SAFE precisely
 because the ruleset makes the pull-request path the only path.
 
-Two documents disagree with the API and are wrong. Believe the API.
+Two documents used to disagree with the API; both were corrected on
+2026-08-28 / 2026-09-03 and now say the same thing this section says:
 
-- Section 1.1.5 above is titled "prepared, not yet active". It is active.
-- `.husky/pre-push` check 0 says "making the repos private ... silently
-  disabled required status checks and rulesets ... nothing enforces it
-  server-side any more". That was true when it was written and is not true
-  now.
+- Section 1.1.5 is titled "APPLIED - this section is history". It is active.
+- `.husky/pre-push` check 0 was corrected 2026-08-28 and its check 5 comment on
+  2026-09-03; neither claims any more that "nothing enforces it server-side".
+  If you find text anywhere in this repo saying the ruleset is not enforced,
+  that text is the stale one - the API is the authority.
 
 THE SKIPPED-CHECK GAP: CLOSED, and this paragraph is the correction (verified
 against ci.yml and the live API 2026-08-31). `ci.yml` gates `unit`, `server`
@@ -352,6 +365,48 @@ Do NOT audit 10 items and then ask "what should I fix?" -- fix them as you go.
 
 ---
 
+## 4.5 NEVER HAND-PICK A MIGRATION VERSION (2026-09-04, BINDING)
+
+**Always run:**
+
+```bash
+node scripts/new-migration.mjs "what it does"
+```
+
+Never type a `20260904...` version yourself, and never copy one from another
+file and edit the digits.
+
+### Why, measured
+
+Over 24 hours this was the single biggest source of red CI in the repo:
+**21 of ~62 real check failures** were one collision - 15 in `TypeScript Check`
+(`Supabase Invariants - New Migration`) and 6 in `Client Unit Tests`
+(`migrationVersionUniqueness`).
+
+Agents pick the 14-digit version by hand, reach for a round number, and two of
+them land on the same one. **Neither branch is wrong on its own** - each holds
+one file, so both go green. The collision appears the moment the second branch
+takes `main`, and then CI fails for work that was correct when it was written.
+That is what "CI keeps failing for no reason" has been.
+
+### It is not only a red build
+
+Supabase keys `schema_migrations` on the version. Of two files sharing one,
+**the second is SILENTLY NEVER APPLIED**. A migration that never ran is worse
+than a failing test, because nothing tells you.
+
+### What the script does that a timestamp cannot
+
+It asks what is already taken - this tree, `origin/main`, **and every remote
+branch** - and steps forward a second at a time until it finds a free version.
+Checking the branches is the whole point: the version you collide with usually
+lives on work nobody has merged yet, which no clock can see.
+
+It writes the file from the correct skeleton too, including the single-
+transaction requirement from the production DDL policy in section 2.
+
+---
+
 ## 5. CODE SAFETY RULES
 
 1. Use `.maybeSingle()` never `.single()` for Supabase queries
@@ -421,7 +476,7 @@ API routes: `Smarter-Poker-World-Hub/pages/api/club-arena/`
 
 Club Arena is a Vite + React SPA inside the smarter.poker Next.js app:
 
-- Production: `smarter.poker/hub/club-arena/*` served from World Hub's `public/` directory
+- Production: `smarter.poker/hub/club-arena/*` is a World Hub REWRITE to `https://ca-static.smarter.poker` (Club Arena's own static origin, see 1.1). Nothing lives in the World Hub `public/` tree - that directory was deleted 2026-09-02 and must not come back.
 - Build: Vite produces `dist/`, which `publish-club-arena.yml` rsyncs to the
   origin. The World Hub carries ONE rewrite, `/hub/club-arena/:path*` ->
   `https://ca-static.smarter.poker/:path*`, so the browser never sees the
@@ -689,6 +744,59 @@ why something is BLOCKED is fine. Sitting in a loop is not.
 any worktree that is clean, pushed, and idle for 72 hours. Do not keep state
 you care about only in a worktree: commit and push it, or it will eventually
 be pruned (pushed branches lose nothing — the commits live on origin).
+
+---
+
+## 10.85 NEVER SCHEDULE ANYTHING ON THE CLAUDE SCHEDULER (Dan, 2026-09-04, BINDING)
+
+**Dan, verbatim: "IF YOU ARE SCHEDULING ANYTHING TO 'RUN ON CLAUDE SCHEDULER' IT
+WON'T WORK OR SAVE, BECAUSE IM NEVER ON THE SAME ACCOUNT LONG ENOUGH" and "MAKE
+IT A HARD LAW THAT NO OTHER AGENT SCHEDULES ANY CRITICAL TASK, WATCH DOG OR
+ANYTHING ELSE THERE ... ALWAYS CREATE A REAL CRON USING OPEN CLAW".**
+
+An agent MUST NOT create a scheduled task with the Claude scheduled-tasks tool
+(`mcp__scheduled-tasks__create_scheduled_task`, the "Scheduled" panel). Not for
+a watchdog, not for a verification timer, not for a follow-up check, not for
+"I will look at this again in an hour". Not ever.
+
+### Why it silently fails
+
+Those tasks are bound to ONE Claude account. Dan works across several, so a
+task installed from this session is invisible and unreachable from the next
+one. It does not error. It does not warn. It reports itself as `enabled: true`
+and simply never fires again.
+
+That is not hypothetical. `smarter-poker-cron-health` was scheduled every six
+hours, sat there reading `enabled: true`, and its `lastRunAt` was
+**2026-06-17** - dead for two and a half months while looking healthy. It was
+also a duplicate of `.github/workflows/cron-health.yml`, which had been doing
+the job correctly the whole time. Deleted 2026-09-04.
+
+A scheduler that lies about running is worse than no scheduler, because
+somebody stops watching the thing it claimed to watch.
+
+### Where scheduled work actually goes
+
+| kind of work                                  | where                                                                                                                                         |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Application logic on a schedule               | **Open Claw on Hetzner** - `scripts/openclaw-cron-dispatcher.py`, deployed with `scripts/deploy-openclaw.sh` (World Hub CLAUDE.md section 11) |
+| CI-side work needing GitHub's own environment | a `.github/workflows` `schedule:` trigger, and ONLY if it is on the allowlist                                                                 |
+| A follow-up you personally want to make       | do it now, or open an issue. Never a timer                                                                                                    |
+
+If you catch yourself wanting a timer to "come back and check whether the PR
+merged", stop: Playbook 7b already forbids that. Push, open the PR, report the
+number, end the session. Autopilot merges it and the watchdogs verify it, all
+server-side, on infrastructure that does not care which account you were.
+
+### The one thing this does NOT forbid
+
+**Dan installs tasks there himself, deliberately, on every account at once.**
+`horse-daily-audit-analysis` is his, it is intentionally present on multiple
+accounts for redundancy, and it claims a row in `horse_job_runs` so exactly one
+account runs it per day. That is his design and it works. Leave it alone.
+
+The ban is on AGENTS putting platform-critical work somewhere it will quietly
+disappear. It is not a ban on Dan's own tooling.
 
 ---
 

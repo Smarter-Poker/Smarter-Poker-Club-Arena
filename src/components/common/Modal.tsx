@@ -20,6 +20,14 @@ interface ModalProps {
   closeOnEscape?: boolean;
   showCloseButton?: boolean;
   className?: string;
+  /**
+   * An accessible name for a dialog that renders no `title` header.
+   * A full-screen panel that draws its own heading and its own close control
+   * still has to announce itself to a screen reader, and `aria-labelledby`
+   * only points at the header this modal did not render. Optional and
+   * additive: a modal with a `title` is named by it exactly as before.
+   */
+  ariaLabel?: string;
 }
 
 const overlayVariants = {
@@ -67,6 +75,7 @@ export function Modal({
   closeOnEscape = true,
   showCloseButton = true,
   className = '',
+  ariaLabel,
 }: ModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
@@ -158,6 +167,7 @@ export function Modal({
             role="dialog"
             aria-modal="true"
             aria-labelledby={title ? 'modal-title' : undefined}
+            aria-label={!title && ariaLabel ? ariaLabel : undefined}
           >
             {(title || showCloseButton) && (
               <div className="modal-header">

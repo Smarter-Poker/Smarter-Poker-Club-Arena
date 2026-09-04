@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import { cpus } from 'node:os';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
@@ -26,6 +27,54 @@ export default defineConfig({
     // files, because the SOURCE they import touches `window` transitively. That
     // is a fix in src/, not in the tests, and it is not worth it now.
     environment: 'happy-dom',
+    // WORKER CAP. Added 2026-09-04 after measuring, not guessing.
+    //
+    // vitest defaults its thread pool to the machine's core count, which is
+    // correct for a laptop that owns its CPU and catastrophic on a CI box that
+    // does not. estate-ci-2 is 8 cores hosting 8 runners, so eight jobs each
+    // claimed eight threads. Measured on the box: ONE default run spawned 11
+    // processes and drove load to 12.05; FOUR concurrent runs spawned 41
+    // processes, drove load to 41.2, pushed it into swap and made the machine
+    // refuse ssh until it was hard-reset. The same 910-file suite takes 31.9
+    // SECONDS on an unloaded 28-core machine and was reported by CI as a
+    // 12.4-MINUTE job. That gap was never the tests; it was thrash.
+    //
+    // WHAT THE CAP ACTUALLY COSTS. The first version of this comment recorded
+    // 33.2s uncapped against 37s at maxThreads=2, and concluded the suite was
+    // dominated by fixed per-file cost rather than parallel width. That was
+    // wrong, and it was wrong because THE CAP WAS NEVER APPLIED: it was set as
+    // `poolOptions.threads.maxThreads`, which Vitest 4 removed, so both columns
+    // were the same uncapped run and the four-second delta was noise. vitest
+    // had been printing a DEPRECATED notice about it on every run.
+    //
+    // Re-measured with the option vitest actually reads (tests/components,
+    // 28-core machine, CI=1):
+    //
+    //     maxWorkers=2    16s
+    //     maxWorkers=4    10s
+    //     maxWorkers=28   11s
+    //
+    // So width DOES matter up to about four, and buys nothing past it. Two is
+    // 60 percent slower than four, not 10 percent - worth knowing before
+    // anyone "tightens" this again to relieve contention.
+    //
+    // Local runs stay uncapped anyway, so `npm test` on a laptop is unchanged.
+    // Vitest 4 REMOVED `poolOptions`; the equivalent is top-level `maxWorkers`.
+    // This was written as `poolOptions.threads.maxThreads`, so it was ignored
+    // from the day it landed - vitest printed a DEPRECATED notice and ran the
+    // suite at full width anyway. The measurement recorded above (33.2s
+    // uncapped vs 37s "capped") was uncapped in BOTH columns, which is exactly
+    // why the two numbers were nearly identical; the conclusion drawn from it,
+    // that the suite is dominated by fixed per-file cost rather than parallel
+    // width, was never actually tested.
+    //
+    // Sized from the box: cores/4 leaves room for roughly four heavy jobs
+    // sharing a runner, which is what one pull request puts there.
+    maxWorkers: process.env.VITEST_MAX_THREADS
+      ? Number(process.env.VITEST_MAX_THREADS)
+      : process.env.CI
+        ? Math.max(2, Math.floor(cpus().length / 4))
+        : undefined,
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
     exclude: ['node_modules', 'dist', 'e2e', 'tests/_archive/**'],
     setupFiles: ['tests/setup.ts'],

@@ -72,6 +72,9 @@ export default function StatsCharts({
   onExportSessions,
   onExportOverview,
 }: StatsChartsProps) {
+  // Axis lines are an inline SVG stroke no print stylesheet can reach; near
+  // white vanishes on paper. `still` is only true while the dossier renders.
+  const axisStroke = still ? '#374151' : 'rgba(255,255,255,0.4)';
   return (
     <div className="charts-section">
       <div className="stats-section-header">
@@ -98,6 +101,9 @@ export default function StatsCharts({
             (the RPC's daily CTE filters is_cash), which the title
             never said either. */}
           <h3>{`Cash Profit Over Time (${rangeLabel})`}</h3>
+          {dailySeries.length === 0 && (
+            <p className="hand-empty">No Cash Results In This Window.</p>
+          )}
           {/* Three recharts SVGs carried no role, no aria-label and
               no adjacent summary, so the entire Charts section was
               empty to a screen reader - a whole workflow (reading
@@ -115,8 +121,8 @@ export default function StatsCharts({
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" fontSize={11} />
-              <YAxis stroke="rgba(255,255,255,0.4)" fontSize={11} />
+              <XAxis dataKey="date" stroke={axisStroke} fontSize={11} />
+              <YAxis stroke={axisStroke} fontSize={11} />
               <Tooltip
                 contentStyle={{
                   background: 'rgba(14, 14, 28, 0.95)',
@@ -143,15 +149,16 @@ export default function StatsCharts({
       {/* Session Results Bar Chart */}
       <div className="chart-card">
         <div className="chart-card-header">
-          <h3>Daily Results</h3>
+          <h3>{`Daily Cash Results (${rangeLabel})`}</h3>
           <p className="sr-only">{dailyChartSummary}</p>
         </div>
+        {dailySeries.length === 0 && <p className="hand-empty">No Cash Results In This Window.</p>}
         <div className="chart-container">
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={dailySeries}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" fontSize={11} />
-              <YAxis stroke="rgba(255,255,255,0.4)" fontSize={11} />
+              <XAxis dataKey="date" stroke={axisStroke} fontSize={11} />
+              <YAxis stroke={axisStroke} fontSize={11} />
               <Tooltip
                 contentStyle={{
                   background: 'rgba(14, 14, 28, 0.95)',
@@ -175,7 +182,7 @@ export default function StatsCharts({
       {positionPie.length > 0 && (
         <div className="chart-card">
           <div className="chart-card-header">
-            <h3>Hands Won By Position</h3>
+            <h3>Hands Won By Position (Count)</h3>
             <p className="sr-only">{positionChartSummary}</p>
           </div>
           <div className="chart-container pie-chart">

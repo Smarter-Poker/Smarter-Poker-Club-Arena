@@ -375,3 +375,17 @@ export function wantsTableChange(
   const restless = 0.5 + ((horseHash(horseId) >>> 9) % 1000) / 1000;
   return roll < base * restless;
 }
+
+/**
+ * `tables.settings.retire_when_empty` - the row is being wound down: nobody is
+ * seated there any more and every horse on it is walked out. Set by the
+ * 2026-09-03 "close any tables over 2/5" migration on the running tables it
+ * could not close outright; read here and in HorseFleetManager. Anything but
+ * a literal true is false: a missing or malformed settings blob is an ordinary
+ * table, never a retiring one.
+ */
+export function isRetiringTable(row: { settings?: unknown } | null | undefined): boolean {
+  const settings = row?.settings;
+  if (!settings || typeof settings !== 'object') return false;
+  return (settings as { retire_when_empty?: unknown }).retire_when_empty === true;
+}

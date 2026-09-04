@@ -13,6 +13,14 @@
  * ClosedTableHuskCannotAbsorbTheBoard: the call site is where the regression
  * would come back. Each pin was run against the pre-change source and
  * observed red before the change shipped.
+ *
+ * 2026-09-03: the budget pins changed with the rule. The house used to open
+ * FIRST on one shared BURST "so owner boards cannot starve it", and being
+ * thirty-odd games short every tick it spent all twelve and starved every
+ * owner board instead (Deep Stack Society's spin board sat empty from 11:32).
+ * Every board now gets its own share of BURST up front (boardBudgetShares),
+ * so neither side can starve the other and the order no longer carries the
+ * guarantee. See theClubProgrammeMirrorsTheHouse.test.ts.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -34,23 +42,28 @@ function sngPassSource(): string {
 
 describe('the SNG board opens for activated club owners', () => {
   it('the SNG pass loops activatedSpinOwners, like the Spin pass', () => {
-    expect(sngPassSource()).toMatch(/for\s*\(const owner of await this\.activatedSpinOwners\(\)\)/);
+    const src = sngPassSource();
+    expect(src).toMatch(/const owners = await this\.activatedSpinOwners\(\);/);
+    expect(src).toMatch(/for \(const owner of owners\) \{/);
   });
 
   it("an owner board only offers buy-ins the owner's stake covers", () => {
     expect(sngPassSource()).toMatch(/SNG_CONFIGS\.filter\(\(c\) => c\.buyIn <= owner\.maxStake\)/);
   });
 
-  it('the house board still opens FIRST, so owner boards cannot starve it', () => {
+  it('the house board and every owner board each get their own share of BURST', () => {
     const src = sngPassSource();
-    const house = src.indexOf('this.houseOwner');
-    const ownerLoop = src.indexOf('activatedSpinOwners');
-    expect(house).toBeGreaterThan(-1);
-    expect(ownerLoop).toBeGreaterThan(-1);
-    expect(house).toBeLessThan(ownerLoop);
+    expect(src).toMatch(/const share = boardBudgetShares\(owners\.length \+ 1\);/);
+    // Both ensureBoardOpen calls on the SNG board hand in `{ left: share }`.
+    const sngCalls = src.split(/this\.ensureBoardOpen\(\s*'sng',/).slice(1);
+    expect(sngCalls.length).toBeGreaterThanOrEqual(2);
+    for (const call of sngCalls) {
+      expect(call.slice(0, call.indexOf(');'))).toMatch(/\{ left: share \}/);
+    }
   });
 
-  it('the owner loop respects the shared budget, like the Spin pass', () => {
-    expect(sngPassSource()).toMatch(/if \(budget\.left <= 0\) break;/);
+  it('nobody breaks out of the owner loop on a spent shared budget any more', () => {
+    expect(sngPassSource()).not.toMatch(/if \(budget\.left <= 0\) break;/);
+    expect(sngPassSource()).not.toMatch(/const budget = \{ left: BURST \};/);
   });
 });

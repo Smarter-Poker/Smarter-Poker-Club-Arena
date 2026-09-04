@@ -1142,8 +1142,36 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     Live and scheduled are never withheld by age, so only the closed leg is
     horizon-bound.
   */
-  const reachableTotal = counts.live + counts.scheduled + counts.closedWithinHorizon;
-  const archivedBeyondHorizon = Math.max(0, counts.closed - counts.closedWithinHorizon);
+  /*
+    A count that is not a number counts as nothing.
+
+    The service normalises every field through numberValue(), so production
+    cannot reach here with a hole - but this arithmetic is the only place on
+    the page that ADDS three of them together, and a single undefined turns the
+    Total into "NaN" on an operator console. Three tests whose fixtures predate
+    closedWithinHorizon were already rendering exactly that, which is the
+    warning worth listening to: the sum is one field away from lying, and the
+    field can go missing for reasons this component will never see.
+  */
+  const tally = (value: number) => (Number.isFinite(value) ? value : 0);
+  const reachableTotal =
+    tally(counts.live) + tally(counts.scheduled) + tally(counts.closedWithinHorizon);
+  const archivedBeyondHorizon = Math.max(
+    0,
+    tally(counts.closed) - tally(counts.closedWithinHorizon)
+  );
+  /*
+    `counts` starts as a zero-filled object, and this rail renders as soon as
+    access resolves - before the first list has come back. So for the length of
+    the first load every figure here is a placeholder, and the ONLY one that
+    makes a claim is the tooltip: "Every Game In This Scope Is On The Board"
+    asserted about a scope nothing has read yet. Same failure as the health
+    rail's `?? 0`, introduced in the same breath as the fix for it.
+
+    A zero next to the word Live is read as "counting"; a sentence is read as
+    an answer. The sentence waits for the read.
+  */
+  const countsAreKnown = !loading;
   /* The tab decides what "of" means: paging the Closed tab reaches the closed
      games within the horizon, not the whole board. */
   const viewTotal =
@@ -1294,7 +1322,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
               title={
                 archivedBeyondHorizon
                   ? `${archivedBeyondHorizon} More Closed Games Are Older Than The ${counts.closedHorizonDays}-Day Board Horizon And Are Not Listed`
-                  : 'Every Game In This Scope Is On The Board'
+                  : countsAreKnown
+                    ? 'Every Game In This Scope Is On The Board'
+                    : undefined
               }
             >
               <strong>{reachableTotal}</strong> Total

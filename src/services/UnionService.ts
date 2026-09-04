@@ -12,7 +12,6 @@ import { unionApi } from './UnionApiService';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
-import { rememberUnionSlug } from '../utils/unionIdResolver';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -800,7 +799,11 @@ class UnionServiceClass {
   // ─────────────────────────────────────────────────────────────────────────────
 
   private mapUnion(u: any): Union {
-    if (u.slug) rememberUnionSlug(u.slug, u.id);
+    if (u.slug) {
+      // Lazy: UnionService is in the entry chunk, the resolver is not.
+      const { id, slug } = u;
+      void import('../utils/unionIdResolver').then((m) => m.rememberUnionSlug(slug, id));
+    }
     return {
       id: u.id,
       slug: u.slug || u.id,

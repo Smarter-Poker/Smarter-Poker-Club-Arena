@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
-import { rememberUnionSlug } from '../../utils/unionIdResolver';
 
 /**
  * Canonical URLs. A club is /clubs/<slug>, a union is /unions/<slug>; any
@@ -32,7 +31,11 @@ export default function SlugEnforcer() {
       let newPath = location.pathname;
       let redirected = false;
       const onUnionRoute = type === 'unions';
-      if (unionRes.data?.slug) rememberUnionSlug(unionRes.data.slug, unionRes.data.id);
+      if (unionRes.data?.slug) {
+        // Lazy: this component is in the entry chunk, the resolver is not.
+        const { id, slug } = unionRes.data;
+        void import('../../utils/unionIdResolver').then((m) => m.rememberUnionSlug(slug, id));
+      }
 
       if (onUnionRoute) {
         // /unions/<uuid> -> /unions/<slug>

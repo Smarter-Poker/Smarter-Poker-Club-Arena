@@ -8,7 +8,7 @@
  * conditions that gate the tab (`showTab`, `hasData`, `isOwnProfile`) stay in
  * the page, where `printing` can override them for the dossier.
  */
-import { Suspense, lazy } from 'react';
+import { lazy } from 'react';
 import PanelBoundary from '../../components/stats/PanelBoundary';
 import { playerDisplayName } from '../../utils/playerDisplayName';
 import type { playerStyleFromStats } from '../../components/stats/playerStyleFromStats';

@@ -14,7 +14,7 @@
  * aborts rather than half-renames.
  */
 import { createClient } from '@supabase/supabase-js';
-import { styledAlias } from '../src/services/horseAliasStyles.js';
+import { ALIAS_STYLES, styledAlias, styleIndexFor } from '../src/services/horseAliasStyles.js';
 
 const url = process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -43,12 +43,17 @@ async function main(): Promise<void> {
   horses.sort((a, b) => a.id.localeCompare(b.id));
 
   const rows: Array<[string, string]> = [];
+  // Which of the fifty styles each horse landed on: the spread is the whole
+  // point of the exercise, so it is reported on stderr with the count.
+  const histogram = new Array<number>(ALIAS_STYLES.length).fill(0);
   for (const h of horses) {
     let alias = '';
     for (let attempt = 0; attempt < 50; attempt++) {
       const cand = styledAlias(h.id, attempt);
       if (!taken.has(cand.toLowerCase())) {
         alias = cand;
+        const idx = styleIndexFor(h.id, attempt);
+        if (idx >= 0) histogram[idx]++;
         break;
       }
     }
@@ -152,6 +157,11 @@ COMMIT;
 `;
   process.stdout.write(out);
   console.error(`generated ${rows.length} aliases`);
+  console.error(
+    'style spread: ' +
+      histogram.map((n, i) => `${i + 1}:${n}`).join(' ') +
+      ` (unused styles: ${histogram.filter((n) => n === 0).length})`
+  );
 }
 
 main().catch((err) => {

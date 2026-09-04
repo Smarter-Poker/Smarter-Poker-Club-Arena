@@ -373,6 +373,66 @@ jobs:
       # the repo that is indistinguishable from the feature regressing.
       # PepNationLab was carrying six of them - the oldest 68 days old - and
       # nothing anywhere said so.
+      # ── REAP WORKFLOW RUNS THAT CAN NEVER FINISH ─────────────────────────
+      #
+      # Two kinds of run sit in `queued` forever and neither clears itself:
+      #
+      #   1. ORPHANS. A workflow file is deleted while runs of it are queued.
+      #      GitHub can no longer resolve the definition, so the run cannot
+      #      start, cannot be cancelled (409) and cannot be deleted (403). On
+      #      2026-09-04 there were EIGHT of these from `Build for World Hub
+      #      Sync` - the retired Club Arena sync path - aged 37 to 58 hours.
+      #      They consume no runner, but every human and agent reading the
+      #      queue counts them, and capacity looks worse than it is. One of
+      #      those readers was an agent that then drew the wrong conclusion.
+      #
+      #   2. GENUINELY STUCK runs, queued far longer than any real job takes,
+      #      usually because their runner died mid-assignment.
+      #
+      # This cancels what can be cancelled and NAMES what cannot, so nobody has
+      # to go hunting by hand. Nothing here can cancel healthy work: the
+      # threshold is deliberately well past the slowest real job.
+      - name: Reap workflow runs that can never finish
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          STUCK_MINUTES: '45'
+        run: |
+          set -uo pipefail
+          NOW=$(date -u +%s)
+          STUCK=0; KILLED=0; ORPHANED=""
+          RUNS=$(gh api "repos/$REPO/actions/runs?status=queued&per_page=100" \
+                   --jq '.workflow_runs[] | [.id, .created_at, .name, .head_branch] | @tsv' 2>/dev/null) || {
+            echo "could not list queued runs - skipping the sweep rather than guessing."; exit 0; }
+          while IFS=$'\t' read -r id created name branch; do
+            [ -z "${id:-}" ] && continue
+            AGE=$(( (NOW - $(date -u -d "$created" +%s 2>/dev/null || echo "$NOW")) / 60 ))
+            [ "$AGE" -lt "$STUCK_MINUTES" ] && continue
+            STUCK=$((STUCK+1))
+            if gh api -X POST "repos/$REPO/actions/runs/$id/cancel" >/dev/null 2>&1; then
+              KILLED=$((KILLED+1)); echo "cancelled #$id ($name, ${AGE}m, $branch)"
+            else
+              ORPHANED="$ORPHANED\n  - \`$name\` run $id, ${AGE}m old, branch \`$branch\`"
+              echo "ORPHAN #$id ($name, ${AGE}m) - cannot cancel; its workflow file is gone"
+            fi
+          done <<< "$RUNS"
+
+          {
+            echo "### Stuck-run sweep"
+            echo
+            echo "- queued longer than ${STUCK_MINUTES}m: **$STUCK**"
+            echo "- cancelled: **$KILLED**"
+            if [ -n "$ORPHANED" ]; then
+              echo "- **permanently orphaned (workflow file deleted while queued):**"
+              echo -e "$ORPHANED"
+              echo
+              echo "  These consume no runner. They cannot be cancelled or deleted through the API."
+              echo "  To clear them, restore a stub workflow file at the same path so GitHub can"
+              echo "  resolve and fail them, then delete it again. Otherwise they age out on their own."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Name the pull requests that cannot merge on their own
         if: always()
         env:

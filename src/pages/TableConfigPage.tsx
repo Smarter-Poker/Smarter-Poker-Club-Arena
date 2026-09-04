@@ -1,15 +1,17 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * TABLE CONFIGURATION PAGE — Full Premium-Style Form
+ * TABLE CONFIGURATION PAGE
  * ═══════════════════════════════════════════════════════════════════════════════
- * Comprehensive table configuration with 40+ options:
- * - Game mode tabs (Regular/SNG/MTT)
- * - Toggle options (Private, VIP, Bomb Pot, etc.)
- * - Sliders (Blinds, Buy-in, Action Time, etc.)
- * - Run It Multi-Times selection
- * - Rake settings (default 10%, cap 3BB)
- * - Security restrictions
- * - Save & Start buttons
+ * Three tabs. Regular renders the New Cash Game flow
+ * (components/cash/CashGameCreateFlow, Operation Table Stakes Slice 1,
+ * 2026-09-04): the database resolves the ruleset and writes the game, this
+ * page writes nothing for cash. SNG and MTT are the tournament form: name,
+ * template load/save, the tournament controls, and Save / Start, both of which
+ * create the tournament through TournamentService (the engine starts it).
+ *
+ * The cash fields still present in TableConfig / DEFAULT_CONFIG exist so a
+ * saved table_templates row from before Slice 1 still restores without a
+ * type error; nothing on this page writes them anywhere.
  */
 
 import { useState, useEffect, useMemo, useRef } from 'react';
@@ -21,8 +23,6 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import './TableConfigPage.css';
 import { reportError } from '../utils/errorReporter';
 import { RAKE_INHERIT } from '../config/RakeConfig';
-import { isFixedLimitVariant } from '../lib/bettingStructure';
-import { presetsFor, blindsIndexFor, nearestBlindsIndex } from '../config/blindsPresets';
 import {
   restoreTemplateConfig,
   defaultTableName,
@@ -57,31 +57,6 @@ import {
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 type GameMode = 'regular' | 'sng' | 'mtt';
-
-/**
- * Fixed-limit tables (FLH, FLO8) cannot honour three of this form's controls,
- * and the engine is the reason for each (2026-08-31 audit):
- *
- *  • STRADDLE. `HandController` posts a straddle by assigning
- *    `state.currentBet = straddleAmount` with no structure branch, while a
- *    legal fixed-limit wager for the same street is exactly
- *    `fixedLimitBetSize(bigBlind, stage)`. A straddle is also none of
- *    bet/raise/full-raise all-in, so `fixedLimitWagerCount` does not count it
- *    against the four-wager cap — the street silently gains a betting round.
- *  • CAP. `ServerTableEngineTurns` assigns the mandatory fixed size and THEN
- *    clamps it with `Math.min(amount, capRemaining)`, so a capped limit table
- *    can emit a bet that is not the legal size, which the validator refuses.
- *  • BOMB-POT VARIANT OVERRIDE. The bomb hand's variant is what
- *    `bettingStructureFor` reads, so a `plo4` bomb on an FLH table plays a
- *    POT-LIMIT hand at a table the player sat down at for fixed limit.
- *    (`resolveBombPotVariant` refuses this server-side as well, for the writers
- *    that are not this form.)
- *
- * Hidden rather than disabled, and forced false on the write, so a template
- * saved on a no-limit table cannot carry a stale `true` onto a limit one.
- */
-const isFixedLimitGame = (gameType: string | undefined): boolean =>
-  isFixedLimitVariant(String(gameType || 'nlh').toLowerCase());
 
 type RunItMode = 'none' | 'player_choice' | 'mandatory_twice' | 'mandatory_three';
 type BlindStructure = 'slow' | 'standard' | 'turbo' | 'hyper_turbo';
@@ -537,31 +512,6 @@ export default function TableConfigPage() {
 
   // Declared beside the seat caps because loadTemplate needs all three.
   const canRunAsTournament = gameTypeCanRunAsTournament(gameType);
-
-  /* Three controls the engine cannot honour under fixed-limit betting; see
-     isFixedLimitGame for what each one does wrong. */
-  const limitGame = isFixedLimitGame(gameType);
-
-  /* The blind ladder THIS variant may be built on. A limit game's bet sizes
-     are derived from the big blind alone, so a preset where bb is not twice
-     sb produces a table whose posted small blind appears in no label anywhere
-     (see config/blindsPresets). Declared here because loadTemplate needs it. */
-  const offeredPresets = useMemo(() => presetsFor(limitGame), [limitGame]);
-
-  /* Keep the slider ON the ladder this variant offers. Navigating an already
-     mounted form from an nlh route to an flh one narrows the ladder, and the
-     blinds in state may no longer be on it; this also derives the initial
-     index from the config rather than trusting two pieces of state to have
-     been initialised in agreement. */
-  useEffect(() => {
-    const exact = blindsIndexFor(config.smallBlind, config.bigBlind, offeredPresets);
-    if (exact !== null) return;
-    const snapped = nearestBlindsIndex(config.bigBlind, offeredPresets);
-    const preset = offeredPresets[snapped];
-    if (!preset) return;
-    setConfig((prev) => ({ ...prev, smallBlind: preset.sb, bigBlind: preset.bb }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [offeredPresets]);
 
   // If the route's variant changes under the mounted form (or a template
   // loaded an over-cap value), snap the seat counts down to the new caps.

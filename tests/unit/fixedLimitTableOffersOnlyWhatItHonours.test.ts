@@ -43,7 +43,7 @@ const page = readFileSync(join(process.cwd(), 'src/pages/TableConfigPage.tsx'), 
  * because nobody can. The pins move to where that is written.
  */
 const sql = readFileSync(
-  join(process.cwd(), 'supabase/migrations/20260904160500_cash_games_slice_1.sql'),
+  join(process.cwd(), 'supabase/migrations/20260904230000_cash_games_slice_1_hardening.sql'),
   'utf8'
 );
 const flow = readFileSync(
@@ -85,8 +85,8 @@ describe('the three controls a limit table cannot honour', () => {
 
   it('computes the limit gate once, from the chosen variant', () => {
     expect(flow).toMatch(/const limitGame = isFixedLimitVariant\(variant\)/);
-    // The tournament tabs keep theirs.
-    expect(page).toMatch(/const limitGame = isFixedLimitGame\(gameType\)/);
+    // The tournament tabs have no limit-only control left to gate.
+    expect(page).not.toContain('limitGame');
   });
 
   it('forces straddle off in the written row, not only in the UI', () => {

@@ -49,7 +49,7 @@ const FLOW = readFileSync(
  * one INSERT INTO public.tables that function makes.
  */
 const SQL = readFileSync(
-  resolve(__dirname, '..', 'supabase/migrations/20260904160500_cash_games_slice_1.sql'),
+  resolve(__dirname, '..', 'supabase/migrations/20260904230000_cash_games_slice_1_hardening.sql'),
   'utf8'
 );
 const tablesInsert = () => {
@@ -127,7 +127,7 @@ describe('a slider may not offer a value the database refuses', () => {
     }
     // And the function clamps it again on the way in, whatever a client sends.
     expect(SQL).toMatch(
-      /LEAST\(120, GREATEST\(10, coalesce\(\(v_o->'options'->>'action_time_seconds'\)::integer, 15\)\)\)/
+      /LEAST\(120, GREATEST\(10, public\.fn_cash_override_int\(v_oo, 'action_time_seconds', 15\)\)\)/
     );
   });
 

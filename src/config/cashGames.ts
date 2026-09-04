@@ -54,6 +54,19 @@ export const CASH_VARIANTS: ReadonlyArray<{
 
 export const CASH_VARIANT_IDS: readonly string[] = CASH_VARIANTS.map((v) => v.id);
 
+/** The long name a player reads on a game card. */
+export const CASH_VARIANT_LONG: Readonly<Record<string, string>> = {
+  nlh: "No Limit Hold'em",
+  plo4: 'Pot Limit Omaha',
+  plo5: 'Pot Limit Omaha 5',
+  plo6: 'Pot Limit Omaha 6',
+  plo8: 'Omaha Hi-Lo',
+  flo8: 'Fixed Limit Omaha Hi-Lo',
+  flh: "Fixed Limit Hold'em",
+  short_deck: 'Short Deck',
+  pineapple: "Pineapple Hold'em",
+};
+
 export function isDealtVariant(id: string | null | undefined): boolean {
   return !!id && CASH_VARIANT_IDS.includes(id);
 }
@@ -157,5 +170,17 @@ export function cashGameCreateRefusalText(raw: unknown): string | null {
   if (/BOMB_/.test(m)) return 'The Bomb Pot Settings Are Not Valid';
   if (/STAKES_INVALID/.test(m)) return 'Those Stakes Are Not Valid';
   if (/SESSION_REVOKED/.test(m)) return 'Your Session Is Signed Out. Sign In Again.';
+  if (/TEMPLATE_UNKNOWN/.test(m)) return 'Pick A Template First';
+  if (/ANTE_INVALID/.test(m)) return 'The Ante Setting Is Not Valid';
+  if (/VPIP_WINDOW_INVALID/.test(m)) return 'The VPIP Window Must Be Between 10 And 200 Hands';
+  if (/VPIP_INVALID/.test(m)) return 'The VPIP Floor Must Be Between 0 And 100 Percent';
+  if (/CLOCK_TOO_LONG/.test(m)) return 'The Stay Clock Or Rejoin Window Is Too Long';
+  if (/CLUB_REQUIRED/.test(m)) return 'This Screen Needs A Club';
+  if (/OVERRIDE_INVALID/.test(m)) {
+    const which = m.match(/OVERRIDE_INVALID: ([a-z_]+)/);
+    return which
+      ? `The ${which[1].replace(/_/g, ' ')} Setting Is Not Valid`
+      : 'A Setting Is Not Valid';
+  }
   return null;
 }

@@ -116,7 +116,7 @@ describe('the columns the Ante bug taught us about', () => {
     // 2026-09-04 (Operation Table Stakes, Slice 1): the cash writer is
     // fn_cash_game_create in SQL, which derives ante_enabled and ante from
     // the same chips figure it stores as ante_bb.
-    const sql = read('supabase/migrations/20260904160500_cash_games_slice_1.sql');
+    const sql = read('supabase/migrations/20260904230000_cash_games_slice_1_hardening.sql');
     expect(sql).toMatch(/ante_enabled, ante, ante_bb,/);
     expect(sql).toMatch(/v_ante_chips > 0, v_ante_chips,/);
   });

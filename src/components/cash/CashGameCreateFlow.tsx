@@ -9,13 +9,16 @@
  *   1. Template   classic | action | madness  (defaults load from the server)
  *   2. Variant    only what the engine deals; anything else is offered
  *                 disabled with "This Variant Is Not Available Yet"
- *   3. Stakes     from the existing preset ladder
- *   4. Handedness classic NLH 9 or 6; action / madness NLH 6 (host may
+ *   3. Table Mode R9 (Dan 2026-09-04): Automated Must Move (the cluster of
+ *                 OPORD 1.4) or Manual Individual Table (one table the host
+ *                 runs by hand)
+ *   4. Stakes     from the existing preset ladder
+ *   5. Handedness classic NLH 9 or 6; action / madness NLH 6 (host may
  *                 change); PLO family 6, locked; short deck / pineapple 6,
  *                 host 2-8
- *   5. Overrides  every field of section 8; stay clock and rejoin window
+ *   6. Overrides  every field of section 8; stay clock and rejoin window
  *                 can only be raised
- *   6. Confirm    one RPC, fn_cash_game_create, which persists the game and
+ *   7. Confirm    one RPC, fn_cash_game_create, which persists the game and
  *                 its resolved ruleset snapshot and opens Main 1
  *
  * Nothing here writes `tables`. The database resolves the snapshot and
@@ -35,9 +38,11 @@ import { presetsFor, DEFAULT_BLINDS_INDEX } from '../../config/blindsPresets';
 import { isFixedLimitVariant, stakesLabel } from '../../lib/bettingStructure';
 import { getRakeConfig, RAKE_INHERIT } from '../../config/RakeConfig';
 import { formatCurrency } from '../../lib/utils';
+import CashGameCard, { rulesLineFor } from './CashGameCard';
 import {
   CASH_TEMPLATES,
   CASH_VARIANTS,
+  CASH_VARIANT_LONG,
   cashGameCreateRefusalText,
   isDealtVariant,
   overridesFromSnapshot,
@@ -72,6 +77,7 @@ export default function CashGameCreateFlow({
   );
   const [blindsIndex, setBlindsIndex] = useState<number | null>(null);
   const [handedness, setHandedness] = useState<number | null>(null);
+  const [tableMode, setTableMode] = useState<'must_move' | 'manual' | null>(null);
   const [snapshot, setSnapshot] = useState<CashRulesetSnapshot | null>(null);
   const [overrides, setOverrides] = useState<CashGameOverrides | null>(null);
   const [name, setName] = useState('');
@@ -125,7 +131,8 @@ export default function CashGameCreateFlow({
   const stakes = blindsIndex !== null ? presets[blindsIndex] : null;
   const stepTemplateDone = template !== null;
   const stepVariantDone = stepTemplateDone && variant !== null;
-  const stepStakesDone = stepVariantDone && stakes !== null;
+  const stepModeDone = stepVariantDone && tableMode !== null;
+  const stepStakesDone = stepModeDone && stakes !== null;
   const stepHandednessDone = stepStakesDone && handedness !== null && snapshot !== null;
   const canConfirm =
     canBuildHere && stepHandednessDone && overrides !== null && busy === null && !loadingDefaults;
@@ -156,6 +163,7 @@ export default function CashGameCreateFlow({
           p_handedness: handedness,
           p_overrides: overrides,
           p_name: name.trim() || null,
+          p_must_move: tableMode === 'must_move',
         });
         if (error) throw error;
         const res = (data ?? {}) as {
@@ -205,6 +213,7 @@ export default function CashGameCreateFlow({
       clubId,
       handedness,
       name,
+      tableMode,
       navigate,
       toast,
     ]
@@ -271,21 +280,58 @@ export default function CashGameCreateFlow({
         </div>
       </section>
 
-      {/* ── 3. Stakes ───────────────────────────────────────────────────── */}
+      {/* ── 3. Table Mode (R9) ─────────────────────────────────────────── */}
+      <section
+        className="cash-create__step"
+        data-step="mode"
+        data-done={stepModeDone}
+        aria-disabled={!stepVariantDone}
+      >
+        <h2 className="cash-create__title">3. Table Mode</h2>
+        <div className="cash-create__cards cash-create__cards--two">
+          <button
+            type="button"
+            className={`cash-create__card${tableMode === 'must_move' ? ' is-selected' : ''}`}
+            disabled={!stepVariantDone}
+            onClick={() => setTableMode('must_move')}
+            aria-pressed={tableMode === 'must_move'}
+          >
+            <span className="cash-create__card-title">Automated Must Move</span>
+            <span className="cash-create__card-blurb">
+              One Game, Many Tables. Main 1 Is Always On; Feeders Open And Close Themselves. One Per
+              Stakes Per Club.
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`cash-create__card${tableMode === 'manual' ? ' is-selected' : ''}`}
+            disabled={!stepVariantDone}
+            onClick={() => setTableMode('manual')}
+            aria-pressed={tableMode === 'manual'}
+          >
+            <span className="cash-create__card-title">Manual Individual Table</span>
+            <span className="cash-create__card-blurb">
+              One Table You Run By Hand. It Closes When It Empties. Create As Many As You Like.
+            </span>
+          </button>
+        </div>
+      </section>
+
+      {/* ── 4. Stakes ───────────────────────────────────────────────────── */}
       <section
         className="cash-create__step"
         data-step="stakes"
         data-done={stepStakesDone}
-        aria-disabled={!stepVariantDone}
+        aria-disabled={!stepModeDone}
       >
-        <h2 className="cash-create__title">3. Stakes</h2>
+        <h2 className="cash-create__title">4. Stakes</h2>
         <div className="cash-create__chips">
           {presets.map((p, i) => (
             <button
               key={p.label}
               type="button"
               className={`config-preset-chip cash-create__chip${blindsIndex === i ? ' is-selected' : ''}`}
-              disabled={!stepVariantDone}
+              disabled={!stepModeDone}
               onClick={() => setBlindsIndex(i)}
               aria-pressed={blindsIndex === i}
             >
@@ -293,7 +339,7 @@ export default function CashGameCreateFlow({
             </button>
           ))}
         </div>
-        {stepVariantDone && blindsIndex === null && (
+        {stepModeDone && blindsIndex === null && (
           <button
             type="button"
             className="cash-create__link"
@@ -304,14 +350,44 @@ export default function CashGameCreateFlow({
         )}
       </section>
 
-      {/* ── 4. Handedness ───────────────────────────────────────────────── */}
+      {/* The card the lobby will paint, from the choices made so far. The
+          same component the board uses at Gate 4 - a host sees the real thing
+          before they commit, not a description of it. */}
+      {template && variant && stakes && snapshot && overrides && (
+        <section className="cash-create__step cash-create__preview" data-step="preview">
+          <h2 className="cash-create__title">Preview</h2>
+          <div className="cash-create__preview-card">
+            <CashGameCard
+              template={template}
+              stakesLabel={stakesLabel(stakes.sb, stakes.bb, variant)}
+              variantLabel={CASH_VARIANT_LONG[variant] ?? variant.toUpperCase()}
+              status="waiting"
+              mustMove={tableMode === 'must_move'}
+              players={0}
+              tables={1}
+              rulesLine={rulesLineFor({
+                ...snapshot,
+                seats: handedness ?? snapshot.seats,
+                min_buyin_bb: overrides.min_buyin_bb,
+                max_buyin_bb: overrides.max_buyin_bb,
+                regular_ante: overrides.regular_ante,
+                vpip_floor: overrides.vpip_floor,
+                bombs: overrides.bombs,
+              })}
+              joinDisabled
+            />
+          </div>
+        </section>
+      )}
+
+      {/* ── 5. Handedness ───────────────────────────────────────────────── */}
       <section
         className="cash-create__step"
         data-step="handedness"
         data-done={stepHandednessDone}
         aria-disabled={!stepStakesDone}
       >
-        <h2 className="cash-create__title">4. Table Size</h2>
+        <h2 className="cash-create__title">5. Table Size</h2>
         {loadingDefaults && <p className="cash-create__note">Loading Defaults</p>}
         {snapshot && (
           <div className="cash-create__chips">
@@ -334,14 +410,14 @@ export default function CashGameCreateFlow({
         )}
       </section>
 
-      {/* ── 5. Overrides (every field of section 8) ─────────────────────── */}
+      {/* ── 6. Overrides (every field of section 8) ─────────────────────── */}
       <section
         className="cash-create__step"
         data-step="overrides"
         data-done={stepHandednessDone}
         aria-disabled={!stepHandednessDone}
       >
-        <h2 className="cash-create__title">5. Rules</h2>
+        <h2 className="cash-create__title">6. Rules</h2>
         {snapshot && overrides && stakes && (
           <div className="config-options cash-create__options">
             <div className="config-name">
@@ -601,7 +677,7 @@ export default function CashGameCreateFlow({
         )}
       </section>
 
-      {/* ── 6. Confirm ──────────────────────────────────────────────────── */}
+      {/* ── 7. Confirm ──────────────────────────────────────────────────── */}
       <footer className="config-footer cash-create__footer">
         <button
           type="button"

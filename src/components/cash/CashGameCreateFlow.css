@@ -108,9 +108,21 @@
   padding: 0;
 }
 
-.cash-create__footer {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+/* The footer is .config-footer's sticky one: it already clears the club
+   bottom nav (--bottom-nav-clearance). A fixed bottom:0 here sat UNDER that
+   nav on every viewport (2026-09-04 audit, H-footer). */
+
+.cash-create__cards--two {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 640px) {
+  .cash-create__cards--two {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.cash-create__preview-card {
+  max-width: 360px;
+  margin: 0 auto;
 }

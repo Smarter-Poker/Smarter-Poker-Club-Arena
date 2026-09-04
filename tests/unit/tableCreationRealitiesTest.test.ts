@@ -50,7 +50,7 @@ describe('the engine select list is the whole contract', () => {
  * pin moves with it: the ante is still written as ante_enabled + ante (what
  * the engine selects) AND ante_bb (the authored unit), from one figure.
  */
-const CREATE_SQL = read('supabase/migrations/20260904160500_cash_games_slice_1.sql');
+const CREATE_SQL = read('supabase/migrations/20260904230000_cash_games_slice_1_hardening.sql');
 
 describe('the Ante reaches the engine from the cash create function', () => {
   it('writes ante and ante_enabled, not just the authored big-blind figure', () => {

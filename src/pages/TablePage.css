@@ -1317,6 +1317,24 @@
   white-space: nowrap;
 }
 
+/* THE REGULAR ANTE (Dan 2026-09-04): beside the blinds, same weight. */
+.table-brand__ante {
+  white-space: nowrap;
+}
+
+/* THE GAME STYLE (Dan 2026-09-04): Classic / Action / Madness under the
+   blinds - the one word that says what kind of game this is. Gold like the
+   club name, spaced wider so it reads as a badge and not a fourth fact. */
+.table-brand__line--style {
+  margin-top: 1px;
+  letter-spacing: 0.22em;
+}
+
+.table-brand__style {
+  color: rgba(255, 215, 0, 0.6);
+  font-weight: 700;
+}
+
 .table-brand__clock {
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
   font-variant-numeric: tabular-nums;

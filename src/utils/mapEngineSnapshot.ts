@@ -98,6 +98,13 @@ export interface EnginePublishedState {
    * Null when nothing is waiting. Absent on older engines.
    */
   bomb_pot_waiting_for?: number | null;
+  /**
+   * THE REGULAR ANTE (Dan 2026-09-04). Per-posting amount in chips, 0 or
+   * absent when the table runs none; `ante_mode` says who posts it - every
+   * seat, or the big blind once for the table. Absent on older engines.
+   */
+  ante?: number;
+  ante_mode?: 'per_player' | 'big_blind' | null;
   /** VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant THIS hand is played as. */
   hand_variant?: string;
   current_bet: number;
@@ -159,6 +166,9 @@ export interface MappedTableStatePatch {
   bombPotIn: number | null;
   /** BOMB POT STANDARDIZATION 2026-08-27: timed mode — epoch ms of the next due bomb. */
   bombPotNextAt: number | null;
+  /** THE REGULAR ANTE (Dan 2026-09-04): chips per posting, 0 when none; and who posts it. */
+  ante: number;
+  anteMode: 'per_player' | 'big_blind' | null;
   /**
    * 2026-08-29: seats a due-but-held bomb is waiting for, or null when nothing
    * is waiting. The felt used to promise BOMB POT NEXT HAND and then deal
@@ -533,6 +543,9 @@ export function mapEngineSnapshot(
     // announce BOMB POT NEXT HAND and then deal ordinary hands indefinitely
     // with no explanation available anywhere.
     bombPotWaitingFor: typeof s.bomb_pot_waiting_for === 'number' ? s.bomb_pot_waiting_for : null,
+    // THE REGULAR ANTE (Dan 2026-09-04): the felt prints it beside the blinds.
+    ante: typeof s.ante === 'number' && s.ante > 0 ? s.ante : 0,
+    anteMode: s.ante_mode === 'per_player' || s.ante_mode === 'big_blind' ? s.ante_mode : null,
     // VARIANT OVERRIDE 2026-08-28: the hand's own variant (null on old engines).
     handVariant: typeof s.hand_variant === 'string' && s.hand_variant ? s.hand_variant : null,
     boardStage: s.stage ?? 'preflop',

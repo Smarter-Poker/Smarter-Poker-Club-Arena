@@ -314,6 +314,8 @@ import { TableHUD } from '../components/table/TableHUD';
 import { TournamentLobbyModal } from '../components/table/TournamentLobbyModal';
 import TournamentInfoPanel from '../components/tournament/TournamentInfoPanel';
 import HeroHubPanel from '../components/table/HeroHubPanel';
+import { CASH_TEMPLATES } from '../config/cashGames';
+import HeroVpipTracker from '../components/table/HeroVpipTracker';
 import { TournamentHUD } from '../components/tournament/TournamentHUD';
 import { PreviousHandCard } from '../components/table/PreviousHandCard';
 import { HandDetailModal } from '../components/table/HandDetailModal';
@@ -551,6 +553,18 @@ interface TableState {
   bombPotNextAt: number | null;
   /** 2026-08-29: seats a due-but-held bomb is waiting for. Null = not waiting. */
   bombPotWaitingFor: number | null;
+  /**
+   * THE REGULAR ANTE (Dan 2026-09-04): chips per posting, 0 when the table
+   * runs none, and who posts it. Printed on the felt beside the blinds.
+   */
+  ante: number;
+  anteMode: 'per_player' | 'big_blind' | null;
+  /**
+   * THE GAME STYLE (Dan 2026-09-04): Classic / Action / Madness for a table
+   * that belongs to a templated cash game, printed under the blinds. Null for
+   * a hand-made table, a fleet table and every tournament.
+   */
+  gameStyle: string | null;
   /**
    * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant THIS hand is played
    * as — differs from gameType on a variant-override bomb pot (e.g. a PLO4
@@ -1052,11 +1066,13 @@ const ASK_TO_SHOW_ON_UNCONTESTED_WIN = false;
  * is cosmetic, "NaN/NaN" reads as a broken table.
  */
 function formatBlindPair(small: unknown, big: unknown): string {
-  const one = (v: unknown): string => {
-    const n = Number(v);
-    return Number.isFinite(n) ? String(n) : String(v ?? '?');
-  };
-  return `${one(small)}/${one(big)}`;
+  return `${formatChipFigure(small)}/${formatChipFigure(big)}`;
+}
+
+/** One blind-sized figure, printed the way the blinds are (see formatBlindPair). */
+function formatChipFigure(v: unknown): string {
+  const n = Number(v);
+  return Number.isFinite(n) ? String(n) : String(v ?? '?');
 }
 
 /**
@@ -2011,6 +2027,9 @@ export default function TablePage({
       bombPotIn: null,
       bombPotNextAt: null,
       bombPotWaitingFor: null,
+      ante: 0,
+      anteMode: null,
+      gameStyle: null,
       handVariant: null,
       boardStage: 'preflop',
       engineStage: 'preflop',
@@ -2384,6 +2403,8 @@ export default function TablePage({
         bombPotIn: mapped.bombPotIn,
         bombPotNextAt: mapped.bombPotNextAt,
         bombPotWaitingFor: mapped.bombPotWaitingFor,
+        ante: mapped.ante,
+        anteMode: mapped.anteMode,
         handVariant: mapped.handVariant,
         boardStage: nextStage,
         engineStage: mapped.boardStage,
@@ -10077,6 +10098,8 @@ export default function TablePage({
         bomb_pot_ante_fixed: number | null;
         bomb_pot_min_players: number | null;
         bomb_pot_button_policy: string | null;
+        /** The must-move game this table belongs to (Operation Table Stakes), or null. */
+        cluster_id: string | null;
       };
       let table: TableBootstrapRow | null = null;
       let error: unknown = null;
@@ -10088,7 +10111,7 @@ export default function TablePage({
         const res = await supabase
           .from('tables')
           .select(
-            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_announce_seconds, bomb_pot_ante_fixed, bomb_pot_min_players, bomb_pot_button_policy'
+            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_announce_seconds, bomb_pot_ante_fixed, bomb_pot_min_players, bomb_pot_button_policy, cluster_id'
           )
           .eq('id', tableId)
           .maybeSingle();
@@ -10298,6 +10321,36 @@ export default function TablePage({
         setActionTimeSeconds(settings.time_bank_seconds || settings.action_time_seconds || 15);
 
         // Fetch club name (and the union it belongs to) for the felt masthead.
+        // THE GAME STYLE (Dan 2026-09-04): "IF THE GAME IS CLASSIC, ACTION OR
+        // MADNESS, IT MUST SAY IT ON THE TABLE UNDER THE BLINDS." A table of a
+        // templated game carries the game's id; the game carries the template.
+        // One small read, fire-and-forget: the masthead prints it when it
+        // lands and nothing waits on it.
+        if (table.cluster_id) {
+          void (async () => {
+            try {
+              const { data: game, error: gameError } = await supabase
+                .from('cash_games')
+                .select('template_name')
+                .eq('id', table.cluster_id)
+                .maybeSingle();
+              if (!isMounted) return;
+              if (gameError) {
+                reportError(gameError, 'TablePage.gameStyleLookup', { tableId });
+                return;
+              }
+              const template = String(game?.template_name ?? '').toLowerCase();
+              const label = CASH_TEMPLATES.find((t) => t.id === template)?.label ?? null;
+              if (!label) return;
+              setTableState((prev) =>
+                prev.gameStyle === label ? prev : { ...prev, gameStyle: label }
+              );
+            } catch {
+              /* a missing style prints nothing; it never blocks the felt */
+            }
+          })();
+        }
+
         // Dan 2026-08-18: the union name must sit next to the club name when
         // the club is attached to one. Joined in the same query rather than a
         // follow-up round trip.
@@ -19957,6 +20010,14 @@ export default function TablePage({
                           <span className="table-brand__line table-brand__line--level">
                             <span className="table-brand__game">
                               {gameShort} {tableState.blinds || '1/2'}
+                              {/* THE REGULAR ANTE (Dan 2026-09-04: "ANTES ...
+                                  ARE NOT DISPLAYING"). Beside the blinds, in
+                                  chips, the way a card room prints it. */}
+                              {tableState.ante > 0 && (
+                                <span className="table-brand__ante">
+                                  {'\u00B7 '}Ante {formatChipFigure(tableState.ante)}
+                                </span>
+                              )}
                             </span>
                             {(tableState.handNumber ?? 0) > 0 && (
                               <span className="table-brand__hand">
@@ -19964,6 +20025,14 @@ export default function TablePage({
                               </span>
                             )}
                           </span>
+                          {/* THE GAME STYLE (Dan 2026-09-04): "IF THE GAME IS
+                              CLASSIC, ACTION OR MADNESS, IT MUST SAY IT ON THE
+                              TABLE UNDER THE BLINDS." */}
+                          {tableState.gameStyle && (
+                            <span className="table-brand__line table-brand__line--style">
+                              <span className="table-brand__style">{tableState.gameStyle}</span>
+                            </span>
+                          )}
                         </>
                       );
                     })()}
@@ -21116,6 +21185,19 @@ export default function TablePage({
               </div>
             );
           })}
+          {/* THE HERO'S VPIP TRACKER (Dan 2026-09-04): to the left of the
+              hero, hero only, the judged figure. A sibling of the seats at
+              the hero seat's own point; HeroVpipTracker.css pushes it left of
+              the pod. Nothing renders for a spectator or on a tournament. */}
+          <HeroVpipTracker
+            tableId={tableId}
+            heroSeated={tableState.heroSeat > 0}
+            isTournament={tableState.isTournament}
+            handNumber={tableState.handNumber ?? 0}
+            heroPos={
+              tableState.heroSeat > 0 ? (seatPositions[tableState.heroSeat - 1] ?? null) : null
+            }
+          />
         </div>
 
         {/* AUDIT FIX 2026-07-19: mount the chip-flight layer. Every wager

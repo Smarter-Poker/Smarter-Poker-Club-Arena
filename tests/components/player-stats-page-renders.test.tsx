@@ -388,8 +388,11 @@ describe('PlayerStatsPage mounts', () => {
       },
     };
     render(<PlayerStatsPage />);
-    await screen.findByRole('heading', { name: /Player Intelligence/i });
-    fireEvent.click(screen.getByRole('tab', { name: 'Analysis' }));
+    // The tab strip mounts with the payload, not with the heading; on a loaded
+    // runner the two are visibly apart (the awaited-element law, 2026-09-04).
+    const analysisTab = await screen.findByRole('tab', { name: 'Analysis' }, { timeout: 6_000 });
+    await screen.findByText('2,000');
+    fireEvent.click(analysisTab);
     expect(
       await screen.findByText('What To Work On', undefined, { timeout: 6_000 })
     ).toBeInTheDocument();

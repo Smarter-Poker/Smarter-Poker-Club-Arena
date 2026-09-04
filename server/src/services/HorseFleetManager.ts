@@ -1309,6 +1309,10 @@ export class HorseFleetManager {
       let retiring = 0;
       let parked = 0;
       for (const t of tables) {
+        /* A cluster table is never surplus, whatever flag it carries: its
+           ClusterController opens and closes it (R3 keeps Main 1 open), so
+           draining it here is a fight the fleet would lose every tick. */
+        if (t.cluster_id) continue;
         if (isRetiringTable(t as { settings?: unknown })) {
           surplusTableIds.add(t.id);
           retiring++;

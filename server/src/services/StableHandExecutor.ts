@@ -336,9 +336,9 @@ export class StableHandExecutor {
    */
   private async setTableFlag(ids: string[], flag: string, budget: number): Promise<number> {
     if (ids.length === 0 || budget <= 0) return 0;
-    const rows = await selectInChunks<{ id: string; settings: unknown }>(
+    const rows = await selectInChunks<{ id: string; settings: unknown; cluster_id: string | null }>(
       ids,
-      (batch) => supabase.from('tables').select('id, settings').in('id', batch),
+      (batch) => supabase.from('tables').select('id, settings, cluster_id').in('id', batch),
       `StableHand.readSettings.${flag}`
     );
     // A partial read is not "none of them are flagged": writing on a failed
@@ -353,6 +353,11 @@ export class StableHandExecutor {
           ? (row.settings as Record<string, unknown>)
           : {};
       if (settings[flag] === true) continue;
+      /* A CLUSTER TABLE IS NEVER FLAGGED (Operation Table Stakes, R9). The
+         planner already leaves them out; this is the door itself refusing,
+         because a flag on a must-move Main 1 is a fight with the
+         ClusterController that neither side can win (2026-09-05). */
+      if (row.cluster_id) continue;
       const { error } = await supabase
         .from('tables')
         .update({ settings: { ...settings, [flag]: true } })

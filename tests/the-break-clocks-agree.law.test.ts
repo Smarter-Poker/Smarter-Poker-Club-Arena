@@ -16,7 +16,7 @@
  * production incident.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { resolve } from 'path';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
@@ -96,5 +96,130 @@ describe('the break duration is five minutes, once', () => {
     expect(ENGINE).toMatch(/BREAK_DURATION_MS = 5 \* 60 \* 1000/);
     const GS = read('server/src/GameServer.ts');
     expect(GS).toMatch(/BREAK_DURATION_MS = 5 \* 60 \* 1000/);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE SCORECARD GRADES WHAT THE BREAK CONTROLS (2026-09-04)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan was paged at 00:00 with "Maintenance Break At 00:00 Did Not Pass. Hands
+ * In Window 0, Thaw Ran, Recovery ?s, Shipped No". Hands zero. Thaw ran. Both
+ * of the things the break exists to do had passed, and it was graded a failure
+ * anyway - fifteen times in twenty-four hours, none of them a real failure.
+ *
+ * Two criteria caused all of it, and both are the same mistake this programme
+ * keeps making: a guard turning "I could not measure that" into "that failed".
+ *
+ *   COALESCE(v_rec, 999) <= 180    - a NULL recovery became the worst case.
+ *   abs(v_delta) < 0.005           - conservation on a ~175,000,000 chip pool,
+ *                                    graded even though the engine is exempt
+ *                                    from the freeze by design and therefore
+ *                                    moves chips inside every window.
+ *
+ * These pins read the LAST migration that defines the recorder, not a fixed
+ * filename, because migrations are append-only: a future migration that
+ * reintroduces the sentinel would otherwise slip past a test pinned to today's
+ * file. Whatever governs the database is what gets checked.
+ */
+describe('the break scorecard grades only what the break controls', () => {
+  const MIGRATIONS_DIR = resolve(__dirname, '..', 'supabase/migrations');
+
+  /** Every migration defining the recorder, oldest first. */
+  const recorderMigrations = (): string[] =>
+    readdirSync(MIGRATIONS_DIR)
+      .filter((f) => f.endsWith('.sql'))
+      .sort()
+      .filter((f) =>
+        readFileSync(resolve(MIGRATIONS_DIR, f), 'utf8').includes(
+          'FUNCTION public.fn_ca_record_break_scorecard'
+        )
+      );
+
+  /** The one Postgres ends up with: the newest definition wins. */
+  const governingRecorder = (): string => {
+    const all = recorderMigrations();
+    expect(all.length, 'no migration defines fn_ca_record_break_scorecard').toBeGreaterThan(0);
+    return readFileSync(resolve(MIGRATIONS_DIR, all[all.length - 1]), 'utf8');
+  };
+
+  /** The verdict expression only - not the whole file. */
+  const verdictBlock = (sql: string): string => {
+    const i = sql.indexOf('v_verdict := CASE');
+    expect(i, 'the recorder must still compute a verdict').toBeGreaterThan(0);
+    return sql.slice(i, sql.indexOf('END;', i) + 4);
+  };
+
+  it('never turns an unmeasured signal into a failing sentinel', () => {
+    // The exact shape of the 2026-09-04 defect: COALESCE(<unmeasured>, <big>)
+    // compared against a ceiling, so NULL loses.
+    const verdict = verdictBlock(governingRecorder());
+    expect(
+      /COALESCE\s*\(\s*v_rec\s*,\s*\d+\s*\)/i.test(verdict),
+      'the verdict coerces a NULL recovery to a numeric sentinel. Unmeasured is not failed - ' +
+        'this is what paged Dan fifteen times for breaks that worked.'
+    ).toBe(false);
+  });
+
+  it('does not grade freeze conservation, which it cannot interpret', () => {
+    // The engine holds a service_role claim and is exempt from the freeze by
+    // design, so circulation legitimately moves inside every window. A delta
+    // is evidence, not a verdict.
+    const verdict = verdictBlock(governingRecorder());
+    expect(
+      /v_conserved/.test(verdict),
+      'the verdict grades freeze conservation. The engine is exempt from the freeze by design, ' +
+        'so a non-zero delta means the engine did its job, not that the freeze leaked.'
+    ).toBe(false);
+  });
+
+  it('still fails a break that dealt hands inside itself', () => {
+    // The teeth. On 2026-09-02 a break dealt 3110 hands; that must always fail.
+    const verdict = verdictBlock(governingRecorder());
+    expect(verdict).toMatch(/v_hands\s*<=\s*(c_max_hands|\d+)/);
+  });
+
+  it('still fails a break that did not give the clocks back', () => {
+    const verdict = verdictBlock(governingRecorder());
+    expect(verdict).toMatch(/v_thaw\.frozen_seconds/);
+  });
+
+  it('reports an unmeasurable break as unknown rather than failed', () => {
+    const verdict = verdictBlock(governingRecorder());
+    expect(verdict).toMatch(/v_hands\s+IS\s+NULL\s+THEN\s+'unknown'/i);
+  });
+
+  it('the detector would have caught the original defect', () => {
+    // Both directions. A guard that only ever passes proves nothing, so assert
+    // the same patterns DO match the migrations that carried the bug.
+    const olds = recorderMigrations()
+      .map((f) => readFileSync(resolve(MIGRATIONS_DIR, f), 'utf8'))
+      .map(verdictBlock)
+      .filter((v) => /COALESCE\s*\(\s*v_rec\s*,\s*\d+\s*\)/i.test(v) || /v_conserved/.test(v));
+    expect(
+      olds.length,
+      'no historical migration contains the sentinel or the conservation grade, so these ' +
+        'assertions are not actually detecting anything and must be re-derived.'
+    ).toBeGreaterThan(0);
+  });
+
+  it('never shows a bare question mark where a measurement is missing', () => {
+    // "Recovery ?s" reads as a broken template. Say what is missing.
+    const all = readdirSync(MIGRATIONS_DIR)
+      .filter((f) => f.endsWith('.sql'))
+      .sort()
+      .filter((f) =>
+        readFileSync(resolve(MIGRATIONS_DIR, f), 'utf8').includes(
+          'FUNCTION public.fn_ca_break_scorecard_push'
+        )
+      );
+    expect(all.length).toBeGreaterThan(0);
+    const push = readFileSync(resolve(MIGRATIONS_DIR, all[all.length - 1]), 'utf8');
+    expect(
+      /COALESCE\([^)]*,\s*'\?'\s*\)/.test(push),
+      "the push renders a missing measurement as '?', which reads as a bug rather than as " +
+        'an absent number.'
+    ).toBe(false);
   });
 });

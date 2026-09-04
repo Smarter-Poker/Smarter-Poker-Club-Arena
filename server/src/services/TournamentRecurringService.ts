@@ -429,26 +429,6 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
     hours: [0, 1, 2],
     tournaments: [
       {
-        /* OPERATION STABLE HAND Section 12: a freeroll every four hours.
-           Before this the board carried exactly two a day (03-05 and
-           15-17), which is a twelve-hour gap a broke horse cannot cross -
-           and a freeroll is the ONLY repair path now that the 10,000 seed
-           is retired (Dan 2026-09-04: use current balances). Rakeback and
-           awards are the other, and both are slower than a stuck fleet. */
-        name: 'Midnight Freeroll (NLH)',
-        type: 'mtt',
-        gameVariant: 'nlh',
-        buyIn: 0,
-        rake: 0,
-        guarantee: 75,
-        startingStack: 2500,
-        maxPlayers: 100,
-        minPlayers: 10,
-        horsesToRegister: 20,
-        blindStructure: BLIND_STRUCTURES.HYPER_TURBO,
-        payoutStructure: PAYOUT_STRUCTURES.FIVE,
-      },
-      {
         name: 'Midnight Bounty (NLH)',
         type: 'bounty',
         gameVariant: 'nlh',
@@ -516,26 +496,6 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
   {
     hours: [6, 7, 8],
     tournaments: [
-      {
-        /* OPERATION STABLE HAND Section 12: a freeroll every four hours.
-           Before this the board carried exactly two a day (03-05 and
-           15-17), which is a twelve-hour gap a broke horse cannot cross -
-           and a freeroll is the ONLY repair path now that the 10,000 seed
-           is retired (Dan 2026-09-04: use current balances). Rakeback and
-           awards are the other, and both are slower than a stuck fleet. */
-        name: 'Sunrise Freeroll (PLO4)',
-        type: 'mtt',
-        gameVariant: 'plo4',
-        buyIn: 0,
-        rake: 0,
-        guarantee: 75,
-        startingStack: 2500,
-        maxPlayers: 100,
-        minPlayers: 10,
-        horsesToRegister: 20,
-        blindStructure: BLIND_STRUCTURES.HYPER_TURBO,
-        payoutStructure: PAYOUT_STRUCTURES.FIVE,
-      },
       {
         name: 'Morning Grinder (PLO)',
         type: 'mtt',
@@ -609,26 +569,6 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
     hours: [12, 13, 14],
     tournaments: [
       {
-        /* OPERATION STABLE HAND Section 12: a freeroll every four hours.
-           Before this the board carried exactly two a day (03-05 and
-           15-17), which is a twelve-hour gap a broke horse cannot cross -
-           and a freeroll is the ONLY repair path now that the 10,000 seed
-           is retired (Dan 2026-09-04: use current balances). Rakeback and
-           awards are the other, and both are slower than a stuck fleet. */
-        name: 'Midday Freeroll (NLH)',
-        type: 'mtt',
-        gameVariant: 'nlh',
-        buyIn: 0,
-        rake: 0,
-        guarantee: 75,
-        startingStack: 2500,
-        maxPlayers: 100,
-        minPlayers: 10,
-        horsesToRegister: 20,
-        blindStructure: BLIND_STRUCTURES.HYPER_TURBO,
-        payoutStructure: PAYOUT_STRUCTURES.FIVE,
-      },
-      {
         name: 'Lunch Rush (NLH Deep)',
         type: 'mtt',
         gameVariant: 'nlh',
@@ -683,26 +623,6 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
   {
     hours: [18, 19, 20],
     tournaments: [
-      {
-        /* OPERATION STABLE HAND Section 12: a freeroll every four hours.
-           Before this the board carried exactly two a day (03-05 and
-           15-17), which is a twelve-hour gap a broke horse cannot cross -
-           and a freeroll is the ONLY repair path now that the 10,000 seed
-           is retired (Dan 2026-09-04: use current balances). Rakeback and
-           awards are the other, and both are slower than a stuck fleet. */
-        name: 'Prime Time Freeroll (PLO5)',
-        type: 'mtt',
-        gameVariant: 'plo5',
-        buyIn: 0,
-        rake: 0,
-        guarantee: 75,
-        startingStack: 2500,
-        maxPlayers: 100,
-        minPlayers: 10,
-        horsesToRegister: 20,
-        blindStructure: BLIND_STRUCTURES.HYPER_TURBO,
-        payoutStructure: PAYOUT_STRUCTURES.FIVE,
-      },
       {
         name: 'Prime Time Main Event (NLH)',
         type: 'mtt',

@@ -1528,7 +1528,7 @@ jobs:
       always() && github.event_name == 'pull_request' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: CSS Beat E2E (multi-table + animations)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 20
 
     steps:
@@ -1544,9 +1544,16 @@ jobs:
       - name: Install Dependencies
         run: npm ci --ignore-scripts
 
-      # See the note on the Live Production E2E install step. This job is still
-      # pinned to ubuntu-latest (it failed on the 4-core box), so this branch
-      # must resolve from the runner it is actually on, not from vars.CI_RUNNER.
+      # Routed to the estate boxes on 2026-09-04. It had been pinned to
+      # ubuntu-latest because it failed on "the 4-core box" - that box is gone.
+      # The fleet it runs on now is 8 cores / 16 GB with six runners, vitest
+      # capped at two threads (see vitest.config.ts), and Chromium and WebKit
+      # plus their system libraries pre-installed, so the install step below
+      # is a cache hit rather than a download.
+      #
+      # The branch still resolves from `runner.environment`, not from
+      # vars.CI_RUNNER: --with-deps needs root and the estate boxes already
+      # carry the libraries, so asking for them again would fail as `ci`.
       - name: Install Chromium and WebKit
         run: |
           if [ "${{ runner.environment }}" = "self-hosted" ]; then

@@ -278,3 +278,5 @@ export function preloadClubLobby(): void {
     /* A failed preload must never surface: the real navigation will retry. */
   });
 }
+
+// stress-test 060524-1: pipeline timing probe, no behaviour change.

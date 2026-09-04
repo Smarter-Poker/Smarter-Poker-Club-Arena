@@ -392,7 +392,38 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      # ── THE PUBLISHER WAS BUILDING COLD, EVERY TIME ──────────────────────
+      #
+      # CI's `Production Build` job caches both `node_modules` and
+      # `node_modules/.vite`. This job cached neither, so every publish paid a
+      # full `npm ci` and a full cold Vite build - measured at 3.4 minutes of
+      # run time on top of its queue wait, on the critical path between a merge
+      # and a player seeing the change.
+      #
+      # Same keys as CI on purpose: both are keyed on the lockfile, so a
+      # dependency change invalidates both together and neither can serve a
+      # stale tree. A cache MISS simply builds exactly as before - there is no
+      # new failure mode here, only a faster hit.
+      # NOTE THE NODE VERSION IN THE KEY. This job runs Node 22; CI's
+      # `Production Build` runs Node 20 and keys its cache `node20`. Sharing one
+      # key across two major versions would restore a `node_modules` whose
+      # native modules were compiled for the other runtime - a real breakage,
+      # and a silent one. Separate keys; each warms after its first run.
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-publish-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+
+      - name: Cache Vite Build
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.vite
+          key: vite-publish-${{ runner.os }}-node22-${{ hashFiles('**/package-lock.json') }}
+
       - name: Install dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Build Club Arena

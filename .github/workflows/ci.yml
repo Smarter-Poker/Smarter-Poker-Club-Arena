@@ -745,6 +745,13 @@ jobs:
       # thing that knows. A new table with a club_id and no index turns THIS
       # branch red rather than a certification run weeks from now.
       - name: Supabase Invariants — A Club Stays Deletable
+        # The gate asks production's catalogue, so it needs the same two
+        # secrets every other Supabase gate in this job carries. Without them
+        # it exited 2 on every run of this branch (2026-09-04), red for a
+        # reason that had nothing to do with clubs.
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -o pipefail
           echo "## Club Foreign-Key Index Check" >> $GITHUB_STEP_SUMMARY

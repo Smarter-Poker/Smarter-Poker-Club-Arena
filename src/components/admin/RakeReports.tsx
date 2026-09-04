@@ -8,7 +8,8 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { useStaggerAnimation } from '../../hooks/useStaggerAnimation';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
-import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { isAuthzError } from '../../utils/clubDashboard';
+import { downloadCsv, toCsv } from '../../utils/downloadCsv';
 import './RakeReports.css';
 import { reportError } from '../../utils/errorReporter';
 
@@ -19,6 +20,34 @@ interface RakeData {
   avgRakePerHand: number;
   topGames: { game: string; rake: number; hands: number }[];
   dailyBreakdown: { date: string; rake: number; hands: number }[];
+}
+
+/** One day of ca_club_financials. */
+interface DailyRow {
+  d: string;
+  raked_hands: number;
+  gross_rake: number;
+  bbj_drop: number;
+  pot_volume: number;
+  tournament_fees: number;
+}
+
+interface TableRow {
+  name: string;
+  stakes: string | null;
+  rake: number;
+  raked_hands: number;
+}
+
+/** "Sep 3", from a UTC date string, without letting the local zone shift it. */
+function dayLabel(iso: string): string {
+  const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return String(iso);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
 }
 
 interface RakeReportsProps {
@@ -61,9 +90,11 @@ interface HandBreakdown {
 export const RakeReports: React.FC<RakeReportsProps> = ({ clubId }) => {
   const toast = useToast();
   const [data, setData] = useState<RakeData | null>(null);
-  const [rawRecords, setRawRecords] = useState<any[]>([]);
+  const [rawRecords, setRawRecords] = useState<DailyRow[]>([]);
   const [period, setPeriod] = useState<'today' | 'week' | 'month' | 'year'>('week');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [denied, setDenied] = useState(false);
   const [lookupInput, setLookupInput] = useState('');
   const [lookupBusy, setLookupBusy] = useState(false);
   const [breakdown, setBreakdown] = useState<HandBreakdown | null>(null);
@@ -76,70 +107,74 @@ export const RakeReports: React.FC<RakeReportsProps> = ({ clubId }) => {
 
   const loadRakeData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
-      // Calculate date ranges based on period
-      const now = new Date();
-      const startDate = new Date();
+      // PHASE 6 (2026-09-04): this pulled EVERY rake_records row in the window
+      // into the browser with no limit and summed them there - 93,465 rows for
+      // one day of one club, and "Year" would have asked for 1.9 million. The
+      // per-day rollup answers the same question in one row per day, and the
+      // RPC is gated on ca_can_view_club_finances rather than on nothing.
+      const { resolveClubUUIDStrict } = await import('../../utils/strictClubIdResolver');
+      const resolvedId = await resolveClubUUIDStrict(clubId);
+      const today = new Date();
+      const end = today.toISOString().slice(0, 10);
+      const from = new Date(today);
+      if (period === 'week') from.setUTCDate(from.getUTCDate() - 6);
+      else if (period === 'month') from.setUTCDate(from.getUTCDate() - 29);
+      else if (period === 'year') from.setUTCDate(from.getUTCDate() - 364);
+      const start = period === 'today' ? end : from.toISOString().slice(0, 10);
 
-      if (period === 'today') {
-        startDate.setHours(0, 0, 0, 0);
-      } else if (period === 'week') {
-        startDate.setDate(now.getDate() - 7);
-      } else if (period === 'month') {
-        startDate.setMonth(now.getMonth() - 1);
-      } else if (period === 'year') {
-        startDate.setFullYear(now.getFullYear() - 1);
-      }
-
-      const resolvedId = await resolveClubUUID(clubId);
-      const { data: records, error } = await supabase
-        .from('rake_records')
-        .select('rake_amount, created_at')
-        .eq('club_id', resolvedId)
-        .gte('created_at', startDate.toISOString());
-
-      if (error) throw error;
-
-      setRawRecords(records || []);
-
-      let totalRake = 0;
-      const dailyData: Record<string, { rake: number; hands: number }> = {};
-
-      (records || []).forEach((record: any) => {
-        totalRake += Number(record.rake_amount || 0);
-
-        // Group by day for the chart
-        const dateKey = new Date(record.created_at).toLocaleDateString();
-        if (!dailyData[dateKey]) {
-          dailyData[dateKey] = { rake: 0, hands: 0 };
-        }
-        dailyData[dateKey].rake += Number(record.rake_amount || 0);
-        dailyData[dateKey].hands += 1;
+      const { data: payload, error } = await supabase.rpc('ca_club_financials', {
+        p_club_id: resolvedId,
+        p_start: start,
+        p_end: end,
       });
+      if (error) {
+        if (isAuthzError(error)) {
+          setDenied(true);
+          setData(null);
+          return;
+        }
+        throw error;
+      }
+      setDenied(false);
 
-      // Map dailyData to array
-      const dailyBreakdown = Object.keys(dailyData)
-        .map((date) => ({
-          date,
-          rake: Math.round(dailyData[date].rake * 100) / 100,
-          hands: dailyData[date].hands,
-        }))
-        .slice(-7); // Keep last 7 days for the chart
+      const days = ((payload as any)?.daily || []) as DailyRow[];
+      const totals = (payload as any)?.totals || {};
+      setRawRecords(days);
 
-      const totalHands = records?.length || 0;
+      const totalRake = Number(totals.gross_rake) || 0;
+      const totalHands = Number(totals.raked_hands) || 0;
+      const dailyBreakdown = days.slice(-7).map((d) => ({
+        date: dayLabel(d.d),
+        rake: Math.round((Number(d.gross_rake) || 0) * 100) / 100,
+        hands: Number(d.raked_hands) || 0,
+      }));
 
-      const liveData: RakeData = {
-        period: `Past ${period}`,
+      setData({
+        period: period === 'today' ? 'Today' : `Past ${period}`,
         totalRake: Math.round(totalRake * 100) / 100,
         totalHands,
         avgRakePerHand: totalHands > 0 ? totalRake / totalHands : 0,
-        topGames: [], // Need table joins for this, empty for now
+        // The rake by table, which this panel drew an empty list for since it
+        // was written ("Need table joins for this, empty for now").
+        topGames: (((payload as any)?.by_table || []) as TableRow[]).map((t) => ({
+          game: [t.name, t.stakes].filter(Boolean).join(' - '),
+          rake: Number(t.rake) || 0,
+          hands: Number(t.raked_hands) || 0,
+        })),
         dailyBreakdown:
           dailyBreakdown.length > 0 ? dailyBreakdown : [{ date: 'Today', rake: 0, hands: 0 }],
-      };
-      setData(liveData);
+      });
     } catch (error) {
+      if ((error as { name?: string } | null)?.name === 'ClubNotFoundError') {
+        setLoadError('That Club Could Not Be Found.');
+        setData(null);
+        return;
+      }
       reportError(error, 'RakeReports.Failed_to_load_rake_data');
+      setLoadError('The Rake Report Could Not Be Loaded');
+      setData(null);
     } finally {
       if (isMounted.current) setLoading(false);
     }
@@ -147,31 +182,24 @@ export const RakeReports: React.FC<RakeReportsProps> = ({ clubId }) => {
 
   const exportCSV = () => {
     if (rawRecords.length === 0) {
-      toast.info('No rake records found for this period.');
+      toast.info('No Rake Records Found For This Period.');
       return;
     }
-
-    const headers = ['Date', 'Time', 'Rake Amount'];
-    const rows = rawRecords.map((record) => {
-      const dateObj = new Date(record.created_at);
-      const date = dateObj.toLocaleDateString();
-      const time = dateObj.toLocaleTimeString();
-      const amount = record.rake_amount || 0;
-      return [date, time, amount].join(',');
-    });
-
-    const csvContent = [headers.join(','), ...rows].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute(
-      'download',
-      `rake_report_${clubId}_${period}_${new Date().toISOString().split('T')[0]}.csv`
+    const ok = downloadCsv(
+      `rake-report-${clubId}-${period}-${new Date().toISOString().slice(0, 10)}.csv`,
+      toCsv(
+        ['Day', 'Raked Hands', 'Gross Rake', 'Bad Beat Drop', 'Pot Volume', 'Tournament Fees'],
+        rawRecords.map((d) => [
+          d.d,
+          d.raked_hands,
+          d.gross_rake,
+          d.bbj_drop,
+          d.pot_volume,
+          d.tournament_fees,
+        ])
+      )
     );
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    if (!ok) toast.error('This Browser Could Not Start The Download');
   };
 
   const lookupHand = async () => {
@@ -191,7 +219,8 @@ export const RakeReports: React.FC<RakeReportsProps> = ({ clubId }) => {
       } else if (/^\d+$/.test(raw)) {
         // A hand NUMBER: resolve it to the hand id through this club's
         // rake_records (RLS keeps the lookup club-scoped).
-        const resolvedId = await resolveClubUUID(clubId);
+        const { resolveClubUUIDStrict } = await import('../../utils/strictClubIdResolver');
+        const resolvedId = await resolveClubUUIDStrict(clubId);
         const { data: rec, error: lookupErr } = await supabase
           .from('rake_records')
           .select('hand_id')
@@ -229,6 +258,35 @@ export const RakeReports: React.FC<RakeReportsProps> = ({ clubId }) => {
     }
   };
 
+  if (denied) {
+    return (
+      <div className="rake-reports">
+        <div className="reports-header">
+          <h2>Rake Reports</h2>
+        </div>
+        <p className="rake-reports-note">
+          Rake Reports Are Available To Club Owners, Admins And Super Agents.
+        </p>
+      </div>
+    );
+  }
+
+  if (loadError && !data) {
+    return (
+      <div className="rake-reports">
+        <div className="reports-header">
+          <h2>Rake Reports</h2>
+        </div>
+        <p className="rake-reports-note" role="alert">
+          {loadError}
+        </p>
+        <button className="export-btn" onClick={() => void loadRakeData()}>
+          Try Again
+        </button>
+      </div>
+    );
+  }
+
   if (loading || !data) {
     return (
       <div className="rake-reports loading">
@@ -237,7 +295,8 @@ export const RakeReports: React.FC<RakeReportsProps> = ({ clubId }) => {
     );
   }
 
-  const maxRake = Math.max(...data.dailyBreakdown.map((d) => d.rake));
+  // Math.max of an empty list is -Infinity, and every bar height became NaN%.
+  const maxRake = Math.max(0, ...data.dailyBreakdown.map((d) => d.rake));
 
   return (
     <div className="rake-reports">
@@ -260,7 +319,10 @@ export const RakeReports: React.FC<RakeReportsProps> = ({ clubId }) => {
         </div>
         <div className="summary-card">
           <span className="card-value">{data.totalHands.toLocaleString()}</span>
-          <span className="card-label">Hands Played</span>
+          {/* RAKED hands, which is the denominator under "Avg Per Hand" beside
+              it. "Hands Played" counted rake_records ROWS, and a tournament
+              entry fee is a row with no hand behind it. */}
+          <span className="card-label">Raked Hands</span>
         </div>
         <div className="summary-card">
           <span className="card-value">{Math.trunc(data.avgRakePerHand * 100) / 100}</span>
@@ -275,7 +337,10 @@ export const RakeReports: React.FC<RakeReportsProps> = ({ clubId }) => {
           {data.dailyBreakdown.map((day, i) => (
             <div key={day.date} className="bar-group" style={barStyle(i)}>
               <div className="bar-container">
-                <div className="bar-fill" style={{ height: `${(day.rake / maxRake) * 100}%` }} />
+                <div
+                  className="bar-fill"
+                  style={{ height: `${maxRake > 0 ? (day.rake / maxRake) * 100 : 0}%` }}
+                />
               </div>
               <span className="bar-label">{day.date}</span>
               <span className="bar-value">{day.rake}</span>

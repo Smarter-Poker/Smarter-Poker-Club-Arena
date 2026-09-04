@@ -32,6 +32,26 @@ import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 
 export const CLUSTER_TICK_MS = 5000;
 
+/**
+ * Games ticked at once. Measured live 2026-09-05 00:08 UTC: one tick RPC is
+ * ~0.85 s from Hetzner (PostgREST round trip plus the census), so 78 games
+ * one after another was a 66 s pass - a "5-second" controller that noticed a
+ * seat opening a minute late. Every game's tick locks only its own row and
+ * touches only its own tables, so eight in flight share nothing. Eight keeps
+ * a pass at ~10 s and the connection pool untroubled.
+ */
+export const CLUSTER_TICK_CONCURRENCY = 8;
+
+/**
+ * A pass still open after this long is reported and the latch released. A real
+ * pass is ~10 s (78 games, eight in flight). The only honest way past two
+ * minutes is a database outage where every RPC hits the client's 15 s
+ * deadline (ceil(games / concurrency) x 2 x 15 s) - and that is worth a
+ * `tick_stalled` report too; the overlapping pass it allows is safe because
+ * every game's tick locks its own row.
+ */
+export const CLUSTER_TICK_STALL_MS = 120_000;
+
 export interface ClusterRow {
   game_id: string;
   club_id: string;
@@ -72,6 +92,8 @@ export interface ClusterTickSummary {
   woken: number;
   errors: number;
   skippedFrozen: boolean;
+  /** Wall time of the pass, ms. Logged when it exceeds the cadence. */
+  elapsedMs: number;
   actions: Array<{ game_id: string; actions: unknown[] }>;
 }
 
@@ -79,6 +101,7 @@ export class ClusterController {
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
   private inTick = false;
+  private tickStartedAt = 0;
   private lastSummary: ClusterTickSummary | null = null;
 
   constructor(private readonly deps: ClusterControllerDeps) {}
@@ -114,8 +137,10 @@ export class ClusterController {
       woken: 0,
       errors: 0,
       skippedFrozen: false,
+      elapsedMs: 0,
       actions: [],
     };
+    const startedAt = Date.now();
     // THE FREEZE (CLAUDE.md 13): a tick moves seats and opens tables; not
     // during the break. Emitted as a summary so the log says it was skipped
     // rather than merely silent.
@@ -124,9 +149,23 @@ export class ClusterController {
       this.lastSummary = summary;
       return summary;
     }
-    // A slow tick never overlaps the next one (the same guard the fleet uses).
-    if (this.inTick) return this.lastSummary ?? summary;
+    // A slow tick never overlaps the next one (the same guard the fleet uses)
+    // - but a STUCK one is released, loudly. Every await inside a pass is
+    // bounded (the Supabase client times out at 15 s and the wake is not
+    // awaited), so a pass that is still open past the stall ceiling is a
+    // defect, and the right response to a defect is to keep ticking and say
+    // so, not to go silent forever. Each game's tick locks its own row, so an
+    // overlapping pass is safe.
+    if (this.inTick) {
+      const heldMs = Date.now() - this.tickStartedAt;
+      if (heldMs < CLUSTER_TICK_STALL_MS) return this.lastSummary ?? summary;
+      reportError(
+        new Error(`ClusterController pass still open after ${heldMs}ms; releasing the latch`),
+        'ClusterController.tick_stalled'
+      );
+    }
     this.inTick = true;
+    this.tickStartedAt = startedAt;
     try {
       const rpc = this.deps.rpc ?? supabase.rpc.bind(supabase);
       const { data, error } = await rpc('fn_cash_clusters_to_tick');
@@ -138,7 +177,7 @@ export class ClusterController {
       const games = (data ?? []) as ClusterRow[];
       summary.games = games.length;
 
-      for (const g of games) {
+      const tickOne = async (g: ClusterRow): Promise<void> => {
         try {
           // A horse is a buyer. The fleet counted, this cycle, how many could
           // sit at Main 1; that is the game's horse demand.
@@ -150,7 +189,7 @@ export class ClusterController {
           if (tickErr) {
             reportError(tickErr, 'ClusterController.tick_rpc_failed', { game_id: g.game_id });
             summary.errors++;
-            continue;
+            return;
           }
           const result = (res ?? {}) as ClusterTickResult;
           summary.ticked++;
@@ -165,18 +204,68 @@ export class ClusterController {
           // discovery loop only adopts a table with a seat row, and only every
           // 5 s; the Start button wakes it from the browser. The controller
           // wakes it from here so a game that filled from the lobby never
-          // sits engine-less.
-          if (g.enabled && g.main1_table_id && !this.deps.hasEngine(g.main1_table_id)) {
+          // sits engine-less. The tick already said whether anyone is seated
+          // in the game at all, so an empty game costs no second query.
+          if (
+            g.enabled &&
+            g.main1_table_id &&
+            Number(result.seated_total ?? 0) > 0 &&
+            !this.deps.hasEngine(g.main1_table_id)
+          ) {
             const seated = await this.deps.seatedCount(g.main1_table_id);
             if (seated > 0) {
-              const ok = await this.deps.ensureEngine(g.main1_table_id);
-              if (ok) summary.woken++;
+              // NEVER AWAITED. ensureEngine resolves when engine.start()
+              // resolves, and start() returns only once the table has enough
+              // players to deal - a Main 1 with one player seated keeps that
+              // promise open until a second one sits. Live 2026-09-04 22:10
+              // UTC: one such wake parked a worker, the pass never ended, and
+              // the inTick latch silenced every tick after it for 11 minutes
+              // with no error and no log line. The engine is in the map from
+              // the moment it is constructed, so hasEngine() is true on the
+              // next pass and nothing is started twice.
+              const tableId = g.main1_table_id;
+              summary.woken++;
+              void this.deps
+                .ensureEngine(tableId)
+                .then((ok) => {
+                  if (!ok)
+                    console.warn(
+                      `[ClusterController] ${g.game_id.slice(0, 8)} wake refused for ${tableId.slice(0, 8)}`
+                    );
+                })
+                .catch((err) =>
+                  reportError(err, 'ClusterController.wake_failed', {
+                    game_id: g.game_id,
+                    table_id: tableId,
+                  })
+                );
             }
           }
         } catch (err) {
           reportError(err, 'ClusterController.game_tick_error', { game_id: g.game_id });
           summary.errors++;
         }
+      };
+
+      // A bounded pool: CLUSTER_TICK_CONCURRENCY games in flight, the rest
+      // queued, every game ticked exactly once per pass.
+      let next = 0;
+      const workers = Array.from(
+        { length: Math.min(CLUSTER_TICK_CONCURRENCY, games.length) },
+        async () => {
+          while (next < games.length) {
+            const g = games[next++];
+            await tickOne(g);
+          }
+        }
+      );
+      await Promise.all(workers);
+
+      summary.elapsedMs = Date.now() - startedAt;
+      if (summary.elapsedMs > CLUSTER_TICK_MS) {
+        console.warn(
+          `[ClusterController] pass over ${summary.games} games took ${summary.elapsedMs}ms (cadence ${CLUSTER_TICK_MS}ms)`
+        );
       }
       this.lastSummary = summary;
       return summary;

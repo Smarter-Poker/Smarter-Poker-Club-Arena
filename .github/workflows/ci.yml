@@ -1654,10 +1654,36 @@ jobs:
           VITE_SUPABASE_ANON_KEY: footer-probe-ci
         run: npm run build:ci
 
+      # PER-RUNNER PREVIEW PORT (2026-09-04). 4173 was hardcoded, which was
+      # fine while this job ran on a GitHub-hosted VM of its own and stopped
+      # being fine the moment it moved onto the estate: three boxes, TWELVE
+      # runners each, one network namespace. Two pull requests reaching this
+      # step together both bound it, and the second failed with "is already
+      # used" - a red required check caused by nothing in either diff.
+      #
+      # It also frees the port first. `--strictPort` refuses to fall back, so
+      # a preview orphaned by a CANCELLED run on THIS runner would keep failing
+      # every later job on it. Safe to kill precisely because the port is now
+      # this runner's alone; with a shared port it would have killed a
+      # neighbour's server.
+      - name: Reserve this runner's preview port
+        id: preview-port
+        run: |
+          PORT=$(node scripts/ci/e2e-port.mjs 4173)
+          echo "port=$PORT" >> $GITHUB_OUTPUT
+          echo "Preview port for ${RUNNER_NAME:-local}: $PORT"
+          for P in "$PORT" "$(node scripts/ci/e2e-port.mjs 5188)" "$(node scripts/ci/e2e-port.mjs 5189)"; do
+            PIDS=$(lsof -tiTCP:"$P" -sTCP:LISTEN 2>/dev/null || true)
+            if [ -n "$PIDS" ]; then
+              echo "freeing port $P held by orphaned pid(s): $PIDS"
+              kill -9 $PIDS 2>/dev/null || true
+            fi
+          done
+
       - name: Run the beats against this commit's CSS
         env:
-          ARENA_BASE_URL: http://127.0.0.1:4173/hub/club-arena
-          BASE_URL: http://127.0.0.1:4173/hub/club-arena/
+          ARENA_BASE_URL: http://127.0.0.1:${{ steps.preview-port.outputs.port }}/hub/club-arena
+          BASE_URL: http://127.0.0.1:${{ steps.preview-port.outputs.port }}/hub/club-arena/
         # hero-card-row.spec.ts was written to gate bug list item 11 and then
         # ran in NO job at all - 40 pure-geometry assertions that nobody ever
         # executed, which is why PR #178 could sit for 39 commits proposing
@@ -1719,11 +1745,11 @@ jobs:
         # fully clipped controls. It renders this commit's real lobby styles,
         # needs no credentials, and must block the same regression pre-merge.
         run: |
-          npx vite preview --host 127.0.0.1 --port 4173 > /tmp/arena-preview.log 2>&1 &
+          npx vite preview --host 127.0.0.1 --port ${{ steps.preview-port.outputs.port }} --strictPort > /tmp/arena-preview.log 2>&1 &
           preview_pid=$!
           trap 'kill "$preview_pid" 2>/dev/null || true' EXIT
           for i in $(seq 1 20); do
-            curl -sf http://127.0.0.1:4173/hub/club-arena/index.html > /dev/null && break
+            curl -sf http://127.0.0.1:${{ steps.preview-port.outputs.port }}/hub/club-arena/index.html > /dev/null && break
             sleep 0.5
           done
           npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1

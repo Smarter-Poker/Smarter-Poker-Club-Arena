@@ -215,3 +215,66 @@ pending run; 5 of the last 20 publish runs were cancelled that way, and one
 waited 1.8m between merge and publish start. No build optimisation touches
 that. Fixing it means a different queueing discipline, and it is a separate
 decision.
+
+---
+
+## Addendum: the first run of this branch went red, and the cause was a port
+
+`CSS Beat E2E` failed on PR #2942 with a message that has nothing to do with
+the diff:
+
+```
+Error: http://127.0.0.1:5188/hub/club-arena/ is already used, make sure that
+nothing is running on the port/url or set reuseExistingServer:true
+```
+
+Three Playwright surfaces bound FIXED ports: **4173** (the CSS Beat preview),
+**5188** (Table Studio) and **5189** (financial decisions). That was safe while
+those jobs ran on GitHub-hosted runners, where every job gets a private VM. It
+stopped being safe the hour CI moved onto the estate: three 16-core boxes with
+**twelve runners each**, sharing one network namespace. At this push rate two
+pull requests reaching the same step together is the normal case, not a race -
+and CSS Beat E2E is the critical path, so each collision costs a full re-run of
+the slowest job in the pipeline.
+
+**The fix the error message suggests is the dangerous one.**
+`reuseExistingServer: true` would make one pull request's specs run against
+another pull request's build - silently, and green. The customization config
+already carried a comment warning about exactly that outcome.
+
+So: `scripts/ci/e2e-port.mjs` derives a port from `RUNNER_NAME`, which is
+unique per runner process and stable for the life of a job. Offsets are
+multiples of ten, so 5188 and 5189 stay one apart on every runner and can never
+be mapped onto each other. With no `RUNNER_NAME` - a developer's machine, a
+GitHub-hosted VM - the base port comes back unchanged, so nothing about a local
+`npx playwright test` changes.
+
+The workflow also frees those three ports before starting. `--strictPort`
+refuses to fall back, so a preview orphaned by a CANCELLED run on the same
+runner would keep failing every later job on it. That is safe to do **only**
+because the port is now this runner's alone; with a shared port it would have
+killed a neighbour's server.
+
+`tests/no-two-runners-share-a-port.law.test.ts` pins all of it, and encodes the
+distinction rather than hardcoding an exemption: `playwright.config.ts` keeps
+`reuseExistingServer: true` on 5173 because its `webServer` is wrapped in
+`...(isCI ? {} : {...})` and only ever starts on a developer's machine. Reusing
+a server is fine when the only other candidate is your own dev server, and
+never fine when eleven other runners on the box could have started one.
+
+**The general shape, because this estate keeps meeting it:** a number tuned to
+one machine outlives that machine. The 8-core concurrency caps became the
+bottleneck the hour the boxes became 16-core; these ports became a flake the
+hour twelve runners started sharing a host. Derive from the environment; do not
+write the number down.
+
+## What the first CI run measured, before the flake
+
+The numbers below are from run 33853273088 on `estate-ci-eu3-3`, on a COLD
+media cache (the lockfile changed, so every node_modules cache missed too):
+
+- **Production Build: 3.52m**, from 5.03m.
+- `optimize-dist-media`: **43s** cold, from 88.0s - `optimized=463 skipped=33
+failed=0 cache=71hit/419miss pool=12`. On a warm cache it is about a second.
+- **No `[sharp-loader] sharp not installed` line anywhere.** sharp resolved
+  from `node_modules`; the 97-second network install is gone.

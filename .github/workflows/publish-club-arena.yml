@@ -669,6 +669,24 @@ jobs:
           rsync -az -e "ssh $SSHOPTS" dist/assets/ "$ORIGIN_USER@$ORIGIN_HOST:$ORIGIN_ROOT/pool/assets/"
           rsync -az -e "ssh $SSHOPTS" dist/fonts/  "$ORIGIN_USER@$ORIGIN_HOST:$ORIGIN_ROOT/pool/fonts/"
           $SSH "set -e; cd $ORIGIN_ROOT && ln -sfn $ORIGIN_ROOT/releases/$SHA current.tmp && mv -Tf current.tmp current && ls -1dt releases/*/ | tail -n +$((KEEP_RELEASES+1)) | xargs -r rm -rf && find pool -type f -mtime +30 -delete && readlink current"
+          # THE POOL STILL HOLDS OLD SOURCE MAPS (added 2026-09-04).
+          #
+          # The build step above strips every .map from dist/ now, so no new
+          # one can reach the origin. But the pool is ADDITIVE by design and
+          # age-pruned at 30 days, so every map published before that fix keeps
+          # being served for up to a month - 267 files, 27MB, of readable
+          # source, per deploy, going back weeks.
+          #
+          # Deleting them from the pool is safe in a way that deleting anything
+          # else from it is NOT, and the distinction is the whole reason this is
+          # a separate line rather than a --delete on the rsync above: a player
+          # mid-hand asks for a hashed CHUNK, never for its map. A .map is
+          # fetched only by devtools, and only when a human opens them. Nothing
+          # a running app loads can 404 because of this.
+          #
+          # Idempotent and self-limiting: once the pool is clean it matches
+          # nothing and costs one find per publish.
+          $SSH "set -e; cd $ORIGIN_ROOT && N=\$(find pool -type f -name '*.map' | wc -l) && find pool -type f -name '*.map' -delete && echo \"source maps removed from the additive pool: \$N\""
 
       - name: Verify the origin serves this bundle
         if: steps.verdict.outputs.verdict == 'publish'

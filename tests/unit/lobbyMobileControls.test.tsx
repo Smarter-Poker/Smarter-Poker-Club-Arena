@@ -66,9 +66,9 @@ describe('the mobile sort bar', () => {
      * differently.
      */
     expect(TABLE).toContain('const sortableColumns = columns.filter((col) => col.sortable)');
-    expect(TABLE).toMatch(
-      /lobby-sortbar__chip[\s\S]{0,600}onClick=\{\(\) => handleHeaderClick\(col\)\}/
-    );
+    /* Dan 2026-09-03: the Variant heading is the game selector and opens a
+       menu instead; every other chip still goes straight to the one handler. */
+    expect(TABLE).toMatch(/lobby-sortbar__chip[\s\S]{0,1800}handleHeaderClick\(col\);/);
   });
 
   it('renders BEFORE the card list, never between it and the desktop table', () => {

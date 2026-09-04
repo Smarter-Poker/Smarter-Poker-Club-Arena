@@ -1126,12 +1126,45 @@ jobs:
         if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
+      # 2026-09-04: the optimized rasters are content-addressed, so this is
+      # keyed on the media that feeds them plus the script that encodes them.
+      # When no image changed the key HITS and nothing is re-saved, so this
+      # adds no cache churn on the overwhelmingly common PR. When one does,
+      # `restore-keys` still hands over every other image's result and only
+      # the changed file is encoded. See scripts/optimize-dist-media.mjs.
+      - name: Cache optimized dist media
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/dist-media
+          key: >-
+            dist-media-v1-${{ runner.os }}-${{ hashFiles('public/**/*.png',
+            'public/**/*.jpg', 'public/**/*.jpeg', 'public/**/*.webp',
+            'src/assets/**', 'scripts/optimize-dist-media.mjs') }}
+          restore-keys: dist-media-v1-${{ runner.os }}-
+
       - name: Record Build Start
         id: build-timer
         run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
 
+      # `build:ci` is `build` WITHOUT the leading `tsc -b` (package.json keeps
+      # `build` = `tsc -b && npm run build:ci`, so the two can never drift).
+      #
+      # This is not a weakened check, and the proof is structural rather than
+      # empirical: all three tsconfigs set `"noEmit": true`, none declares
+      # `composite` or `references`, and vite.config.ts loads no dts or checker
+      # plugin. `tsc -b` therefore writes nothing that `vite build` reads - two
+      # dists built with and without it hash identically - so on this repo it
+      # is a typecheck wearing a build's clothes, and it was being run three
+      # times per merge (46.7s here, 47.8s in CSS Beat E2E, 10.2s in the
+      # publisher) for one answer.
+      #
+      # The answer is still produced: the `typecheck` job above runs
+      # `tsc --noEmit` over this same commit, is a REQUIRED check, and is
+      # ungated (no `changes` filter can skip it). And the publisher keeps the
+      # full `npm run build` - the tree that actually reaches players is still
+      # typechecked before it ships. What is gone is only the duplication.
       - name: Build
-        run: npm run build
+        run: npm run build:ci
         env:
           NODE_ENV: production
           # Public browser configuration. The previous PR build omitted these,
@@ -1141,18 +1174,16 @@ jobs:
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           VITE_ENGINE_URL: 'https://engine.smarter.poker'
           VITE_APP_ENV: production
-          # Phase U5.1 (task #133): wire Sentry sourcemap upload at build time.
-          # Without these, the sentry-vite-plugin in vite.config.ts skips (the
-          # `!!(NODE_ENV === 'production' && SENTRY_AUTH_TOKEN)` gate is false)
-          # and CA stack traces come back minified from production.
-          # SENTRY_AUTH_TOKEN is a GitHub Actions secret (rotated 2026-04-21 — task #118).
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          # Verified 2026-04-23 via Sentry API: the live org is `smarter-software-inc`
-          # and the CA project is `javascript-react`. `smarter-poker` as an org slug
-          # does not resolve (404), which is why prior uploads were silent no-ops
-          # even though the errorHandler in vite.config.ts warned. (Task #133)
-          SENTRY_ORG: smarter-software-inc
-          SENTRY_PROJECT: javascript-react
+          # SENTRY_AUTH_TOKEN DELIBERATELY ABSENT (moved 2026-09-04 to
+          # publish-club-arena.yml). It used to live here, which meant the
+          # sentry-vite-plugin gate
+          # (`NODE_ENV === 'production' && SENTRY_AUTH_TOKEN`) was true for
+          # THIS build - a pull-request artifact that is inspected and thrown
+          # away - and false for the publisher's, the only bundle a player
+          # ever loads. Sentry was therefore holding maps for code nobody runs
+          # and none for the code everybody runs. Do not put it back: uploading
+          # from here would re-create that, and the upload is pure latency on
+          # the critical path. It belongs to whoever ships the bundle.
 
       - name: Report Build Time
         if: always()
@@ -1580,9 +1611,15 @@ jobs:
       - name: Install Dependencies
         run: npm ci --ignore-scripts
 
-      # See the note on the Live Production E2E install step. This job is still
-      # pinned to ubuntu-latest (it failed on the 4-core box), so this branch
-      # must resolve from the runner it is actually on, not from vars.CI_RUNNER.
+      # Corrected 2026-09-04. This comment used to say the job "is still pinned
+      # to ubuntu-latest (it failed on the 4-core box)" - thirty-seven lines
+      # below the `runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}` that PR
+      # #2937 put there. The code moved and the comment did not, which is how a
+      # reader ends up "fixing" a routing decision that was made deliberately.
+      # The branch below is still right and still necessary: it must resolve
+      # from the runner this job is ACTUALLY on, because the estate boxes
+      # already carry the browser system libraries and `--with-deps` would try
+      # to apt-install them again.
       - name: Install Chromium and WebKit
         run: |
           if [ "${{ runner.environment }}" = "self-hosted" ]; then
@@ -1591,6 +1628,23 @@ jobs:
             npx playwright install chromium webkit --with-deps
           fi
 
+      # Same content-addressed media cache as Production Build, same key, so
+      # whichever of the two runs first warms it for the other.
+      - name: Cache optimized dist media
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/dist-media
+          key: >-
+            dist-media-v1-${{ runner.os }}-${{ hashFiles('public/**/*.png',
+            'public/**/*.jpg', 'public/**/*.jpeg', 'public/**/*.webp',
+            'src/assets/**', 'scripts/optimize-dist-media.mjs') }}
+          restore-keys: dist-media-v1-${{ runner.os }}-
+
+      # `build:ci` - see the long note on the Production Build step for why
+      # dropping `tsc -b` here checks nothing less than before. This job is the
+      # critical path of the whole pipeline, so the 47.8s it was spending on a
+      # typecheck the required `typecheck` job had already performed was 47.8s
+      # added to every push-to-live.
       - name: Build this commit
         env:
           # The app fails closed before React mounts when these Vite values are
@@ -1598,7 +1652,7 @@ jobs:
           # non-secret placeholders are the correct isolated CI configuration.
           VITE_SUPABASE_URL: https://example.supabase.co
           VITE_SUPABASE_ANON_KEY: footer-probe-ci
-        run: npm run build
+        run: npm run build:ci
 
       - name: Run the beats against this commit's CSS
         env:

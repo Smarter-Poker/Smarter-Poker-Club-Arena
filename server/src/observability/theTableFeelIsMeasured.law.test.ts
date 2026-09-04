@@ -23,6 +23,7 @@ import {
   actionsFleetTotal,
   alwaysOnPrometheusLines,
 } from './engineInstruments.js';
+import { sliceYamlEntry } from '../testHelpers/sourceWindow.js';
 
 const ROOT = join(__dirname, '..', '..', '..');
 
@@ -60,11 +61,10 @@ describe('LAW 3 - the alert reads the human series and respects the break', () =
   it('two rules, human audience, break-guarded', () => {
     const rules = readFileSync(join(ROOT, 'infra', 'monitoring', 'alert-rules.yml'), 'utf8');
     for (const name of ['ActionLatencyDegraded', 'ActionLatencyCritical']) {
-      const at = rules.indexOf(`alert: ${name}`);
-      expect(at, name).toBeGreaterThan(0);
-      const block = rules.slice(at, at + 900);
-      expect(block).toContain('poker_act_to_broadcast_ms_bucket{audience="human"}');
-      expect(block).toContain('poker_maintenance_break_active');
+      // Bounded by the rule's own YAML entry, never by a byte count.
+      const block = sliceYamlEntry(rules, `alert: ${name}`);
+      expect(block, name).toContain('poker_act_to_broadcast_ms_bucket{audience="human"}');
+      expect(block, name).toContain('poker_maintenance_break_active');
     }
   });
 });

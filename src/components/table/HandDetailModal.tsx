@@ -60,6 +60,8 @@ export interface HandDetailModalProps {
   onClose: () => void;
   /** Newest-first list of recorded hands (same array HandHistoryPanel gets). */
   hands: HandRecord[];
+  /** True when the fetch threw. An empty list is then unknown, not zero. */
+  loadFailed?: boolean;
   heroId: string;
   /**
    * The viewer's display name, the fallback when `heroId` is empty.
@@ -253,6 +255,7 @@ export function HandDetailModal({
   onClose,
   hands,
   heroId,
+  loadFailed = false,
   currentUserName,
   onReplay,
   onShare,
@@ -501,7 +504,9 @@ export function HandDetailModal({
             </div>
           </div>
           <div className="hdm-empty">
-            No Completed Hands Yet At This Table. Play A Hand To The End And It Will Appear Here.
+            {loadFailed
+              ? 'Could Not Load Your Hands. Check Your Connection And Try Again.'
+              : 'No Completed Hands Yet. Play A Hand To The End And It Will Appear Here.'}
           </div>
         </div>
       </div>

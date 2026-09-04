@@ -8,6 +8,7 @@
  */
 
 import React, { Component, type ErrorInfo, type ReactNode } from 'react';
+import { reportError } from '../../utils/errorReporter';
 
 interface Props {
   children: ReactNode;
@@ -33,6 +34,13 @@ export class TableErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, info: ErrorInfo) {
     const componentName = this.props.componentName || 'Component';
     console.error(`[TableErrorBoundary] ${componentName} crashed:`, error, info.componentStack);
+
+    // 2026-09-04: this wraps the live table surfaces, including both multi-table
+    // mounts - the highest-value crash site in the product - and reported to a
+    // console and an in-memory bus, neither of which survives the tab.
+    reportError(error, `TableErrorBoundary.${componentName}`, {
+      componentStack: info.componentStack?.slice(0, 2000) || '',
+    });
 
     // Enhancement #6: Emit crash event for admin monitoring
     try {

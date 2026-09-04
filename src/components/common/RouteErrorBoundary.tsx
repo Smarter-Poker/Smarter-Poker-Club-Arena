@@ -9,6 +9,7 @@
 
 import { Component, ReactNode } from 'react';
 import { EmptyState } from './EmptyState';
+import { reportError } from '../../utils/errorReporter';
 
 interface Props {
   children: ReactNode;
@@ -31,6 +32,11 @@ export default class RouteErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error) {
     console.error('[RouteErrorBoundary] Caught:', error.message);
+
+    // 2026-09-04: this boundary reported nowhere. Chunk errors are reported too:
+    // a stale-bundle storm after a deploy is exactly the thing worth seeing, and
+    // suppressing it is how a bad publish stays invisible.
+    reportError(error, 'RouteErrorBoundary');
 
     // Auto-reload on stale chunk errors (after deploys)
     if (

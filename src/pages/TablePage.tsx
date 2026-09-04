@@ -7047,6 +7047,8 @@ export default function TablePage({
      was simply not true while it existed. */
 
   // Hand history state — load from localStorage for session continuity
+  // 2026-09-04: distinguishes 'the load failed' from 'you have no hands'.
+  const [handHistoryLoadFailed, setHandHistoryLoadFailed] = useState(false);
   const [handHistory, setHandHistory] = useState<HandRecord[]>(() => {
     try {
       const saved = localStorage.getItem(`hand_history_${tableId || 'default'}`);
@@ -7110,11 +7112,20 @@ export default function TablePage({
     (async () => {
       try {
         const hands = await handHistoryService.getPlayerHands(userId, 50);
-        if (!cancelled && hands && hands.length > 0) {
+        if (!cancelled) {
+          // 2026-09-04: this used to be `hands.length > 0`, so an empty answer was a
+          // silent no-op - no state change, no flag - and a FAILED load rendered
+          // byte-identically to a player who had genuinely never played. The
+          // standalone /hand-history page has carried a loadFailed state since
+          // August for exactly this reason; the table never got it.
+          setHandHistoryLoadFailed(false);
           setHandHistory(hands.map((h) => adaptServiceHandToPanel(h, userId)));
         }
       } catch (e) {
-        if (!cancelled) reportError(e, 'TablePage.loadHandHistoryPanel');
+        if (!cancelled) {
+          setHandHistoryLoadFailed(true);
+          reportError(e, 'TablePage.loadHandHistoryPanel');
+        }
       }
     })();
     return () => {
@@ -22119,6 +22130,7 @@ export default function TablePage({
         isOpen={showHandDetail}
         onClose={() => setShowHandDetail(false)}
         hands={handHistory}
+        loadFailed={handHistoryLoadFailed}
         heroId={userId || ''}
         /* Take the hand you are LOOKING AT. This was `onReplay={() => {...}}`
            — no parameter — and the replay modal resolves its own subject from
@@ -22797,6 +22809,7 @@ export default function TablePage({
         // Hand History
         showHandHistory={showHandHistory}
         handHistory={handHistory}
+        handHistoryLoadFailed={handHistoryLoadFailed}
         onCloseHandHistory={handleCloseHandHistory}
         onReplay={(hand) => {
           setLastHandId(hand.id);

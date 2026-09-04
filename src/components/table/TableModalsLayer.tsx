@@ -443,6 +443,7 @@ export interface TableModalsLayerProps {
   // Hand History Panel
   showHandHistory: boolean;
   handHistory: HandRecord[];
+  handHistoryLoadFailed?: boolean;
   onCloseHandHistory: () => void;
   onReplay?: (hand: HandRecord) => void;
 
@@ -648,6 +649,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     // Hand History
     showHandHistory,
     handHistory,
+    handHistoryLoadFailed,
     onCloseHandHistory,
     onReplay,
     // Session HUD
@@ -1281,6 +1283,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         isOpen={showHandHistory}
         onClose={onCloseHandHistory}
         hands={handHistory}
+        loadFailed={handHistoryLoadFailed}
         heroId={userId || ''}
         onReplay={onReplay}
       />

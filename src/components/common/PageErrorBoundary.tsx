@@ -13,6 +13,7 @@
 
 import React from 'react';
 import { EmptyState } from './EmptyState';
+import { reportError } from '../../utils/errorReporter';
 
 interface PageErrorBoundaryProps {
   children: React.ReactNode;
@@ -53,6 +54,16 @@ export class PageErrorBoundary extends React.Component<
     //
     // Fire-and-forget, never awaited, and every failure path is swallowed:
     // crash reporting must not be able to cause a crash.
+    // 2026-09-04: the Supabase insert below was only half the fix. The comment
+    // above says the crash was recorded 'not in client_crash_log, not in Sentry'
+    // and then only client_crash_log was added. Because this boundary is INNER,
+    // it stops propagation, so the root boundary never sees these and Sentry
+    // heard nothing from 115 of 133 routes. Both destinations now, and the
+    // Sentry one first because report() can fail silently on an RLS denial.
+    reportError(error, `PageErrorBoundary.${this.props.pageName || 'Page'}`, {
+      componentStack: errorInfo.componentStack?.slice(0, 2000) || '',
+    });
+
     void this.report(error, errorInfo);
   }
 

@@ -227,7 +227,9 @@ class HandHistoryServiceClass {
 
     if (error || !data) {
       if (error) reportError(error, 'HandHistoryService.getPlayerHands_hand_history_query');
-      return [];
+      // 2026-09-04: returning [] made a failed query indistinguishable from a player
+      // with no hands. Throw so callers can tell the difference and say so.
+      throw new Error(`hand_history query failed: ${error?.message || 'no data returned'}`);
     }
 
     // Collect all user ids across all hands, including winners — needed to resolve display names
@@ -242,8 +244,19 @@ class HandHistoryServiceClass {
        hands are on screen, not by how many players were in them. */
     const discardsByHand = await this.fetchOwnDiscards(data as any[]);
 
+    // 2026-09-04: mapHandHistoryRow calls buildReplay unguarded, so ONE malformed
+    // row threw and rejected the whole promise - all 50 hands vanished into the
+    // caller's catch and the player was told "No Hands Played Yet". Guard per row:
+    // a hand we cannot render is one missing hand, not an empty history.
     return data
-      .map((d: any) => this.mapHandHistoryRow(d, profileMap, discardsByHand))
+      .map((d: any) => {
+        try {
+          return this.mapHandHistoryRow(d, profileMap, discardsByHand);
+        } catch (err) {
+          reportError(err, 'HandHistoryService.mapHandHistoryRow', { handId: d?.id });
+          return null;
+        }
+      })
       .filter((h: HandRecord | null): h is HandRecord => h !== null);
   }
 

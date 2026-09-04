@@ -152,6 +152,8 @@ export interface HandHistoryPanelProps {
   onClose: () => void;
   hands: HandRecord[];
   heroId: string;
+  /** True when the fetch threw. An empty list is then unknown, not zero. */
+  loadFailed?: boolean;
   onReplay?: (hand: HandRecord) => void;
 }
 
@@ -491,6 +493,7 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
   onClose,
   hands,
   heroId,
+  loadFailed = false,
 }: HandHistoryPanelProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [visibleHands, setVisibleHands] = useState<boolean[]>([]);
@@ -637,7 +640,11 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
         {/* Hand list */}
         <div className="hh-panel__list">
           {hands.length === 0 ? (
-            <div className="hh-panel__empty">No Hands Played Yet</div>
+            <div className="hh-panel__empty">
+              {loadFailed
+                ? 'Could Not Load Your Hands. Check Your Connection And Try Again.'
+                : 'No Hands Played Yet'}
+            </div>
           ) : (
             hands.map((hand, idx) => (
               <div

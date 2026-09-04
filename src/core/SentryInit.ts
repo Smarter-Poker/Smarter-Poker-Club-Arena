@@ -114,7 +114,9 @@ async function loadAndInitSentry(): Promise<SentrySurface | null> {
             'https://kuklfnapbkmacvwxktbh.supabase.co',
             'https://smarter.poker/api',
           ],
-          networkCaptureBodies: true,
+          // Response bodies from Supabase and /api carry emails, balances and ledger
+          // rows. maskAllText above masks the PAGE, not captured network payloads.
+          networkCaptureBodies: false,
           networkRequestHeaders: ['User-Agent', 'X-Request-ID'],
           networkResponseHeaders: ['X-Response-Time'],
         }),
@@ -152,15 +154,13 @@ async function loadAndInitSentry(): Promise<SentrySurface | null> {
 
           if ('message' in error) {
             const message = String(error.message);
-            if (message.includes('Failed to fetch') || message.includes('NetworkError'))
-              return null;
             if (message.includes('ResizeObserver')) return null;
-            if (message.includes('signal is aborted') || message.includes('aborted')) return null;
-            if (message.includes('Internal error')) return null;
-            if (message.includes('Cannot read properties of null')) {
-              const stack = 'stack' in error ? String(error.stack) : '';
-              if (!stack.includes('/src/')) return null;
-            }
+            if (
+              message.includes('signal is aborted') ||
+              message.includes('The operation was aborted') ||
+              message.includes('The user aborted a request')
+            )
+              return null;
           }
 
           if ('stack' in error) {
@@ -188,8 +188,6 @@ async function loadAndInitSentry(): Promise<SentrySurface | null> {
         "Can't find variable: ZiteReader",
         'jigsaw is not defined',
         'ComboSearch is not defined',
-        'NetworkError',
-        'Network request failed',
         'ResizeObserver loop limit exceeded',
         'ResizeObserver loop completed with undelivered notifications',
         'AbortError',
@@ -198,7 +196,6 @@ async function loadAndInitSentry(): Promise<SentrySurface | null> {
         'The operation was aborted',
         'The user aborted a request',
         'UnknownError: Internal error',
-        'Internal error',
       ],
     });
 

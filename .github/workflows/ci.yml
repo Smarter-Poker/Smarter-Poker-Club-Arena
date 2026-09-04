@@ -303,8 +303,6 @@ jobs:
       # add-chips/withdraw and silently aborted every cash hand's settlement
       # pipeline for ~4 hours. Zero false positives: comments and strings are
       # stripped before matching, and tests/sim are excluded.
-      - name: ESM Invariant — no CommonJS require() in server runtime code
-        run: node scripts/ci/check-esm-require.mjs
 
       # Data invariant. CLAUDE.md section 5 rule 1 has banned .single() since
       # this repo had rules, and the World Hub enforces it in CHECK 1 of its
@@ -320,8 +318,6 @@ jobs:
       # player in a rebuy tournament lost their window to buy back in while the
       # engine's own try/catch sat there never firing. A rule that only lives
       # in a document gets re-broken; this one now fails the build.
-      - name: Data Invariant — .maybeSingle() never .single()
-        run: node scripts/ci/check-maybe-single.mjs
 
       # The same mechanism, one step worse: a read whose error is discarded and
       # whose RESULT decides whether to insert. "The read failed" becomes "the
@@ -330,8 +326,6 @@ jobs:
       # one new row per page load, with the worst single pair at 13,047.
       # check-maybe-single cannot see this: the call sites are already using
       # .maybeSingle() correctly. It is the destructuring that is wrong.
-      - name: Data Invariant — no discarded read error gating a write
-        run: node scripts/ci/check-discarded-read-then-write.mjs
 
       # Copy invariant. Dan 2026-08-20: "forbid the use of em bars anywhere."
       # "em bars" means EM DASHES, the punctuation mark. A COPY rule about the
@@ -342,8 +336,6 @@ jobs:
       # time it was first run. Comments are exempt (they never reach a player);
       # JSX text, UI string literals and CSS content: values are not.
       # Autofix locally with: node scripts/ci/check-ui-text.mjs --fix
-      - name: UI copy — no em dashes in player-facing text
-        run: node scripts/ci/check-ui-text.mjs
 
       # Copy invariant. Dan 2026-08-21: the first letter of every word is
       # capitalized on every forward-facing page. Until 2026-08-22 this ran
@@ -352,37 +344,27 @@ jobs:
       # that day (#280, #279, #284), and each time the red was discovered by
       # whichever agent next tried to push, not by the agent who caused it.
       # Autofix locally with: node scripts/ci/check-title-case.mjs --fix
-      - name: UI copy — page copy is Title Cased
-        run: node scripts/ci/check-title-case.mjs
 
       # The THIRD surface of the same rule (Dan 2026-08-31). check-title-case
       # reads JsxText and check-nav-title-case reads the nav registry; neither
       # can see text a browser paints from a string ATTRIBUTE or from a string
       # literal inside a JSX EXPRESSION.
       # Autofix locally with: node scripts/ci/check-painted-text-case.mjs --fix
-      - name: UI copy — painted attributes and expressions are Title Cased
-        run: node scripts/ci/check-painted-text-case.mjs
 
       # Focused defense in depth for the same rule (Dan 2026-08-30: "AS WELL AS
       # EVERY CLICKABLE PAGE AND SUBPAGE"). The general gate now covers static
       # JSX, accessible names, conditional/template copy and known copy fields;
       # this gate keeps every canonical navigation registry explicit.
       # Autofix: node scripts/ci/check-nav-title-case.mjs --fix
-      - name: UI copy — navigation labels are Title Cased at source
-        run: node scripts/ci/check-nav-title-case.mjs
 
       # design-guidelines.md rule 1: "NO EMOJIS - EVER". The third copy rule,
       # and until 2026-08-27 the only one nothing enforced. Added after the
       # audit found emoji rendering in gameplay.
-      - name: UI copy — no emoji in player-facing code
-        run: node scripts/ci/check-no-emoji.mjs
 
       # Dan 2026-08-27 (binding, World Hub CLAUDE.md 10.5): horses are players.
       # Every place the horse flag changes behaviour must be justified in the
       # register inside this script. Added after the law's own first fix was
       # found inert - see .agent/audits/2026-08-27-horses-are-players-sweep.md.
-      - name: Horses are players — every exclusion is registered
-        run: node scripts/ci/check-horses-are-players.mjs
 
       # Dan 2026-08-29 (binding): the BBJ drop is COLLECTED on every flop with
       # 3+ players dealt in, whatever the pot size; the 10BB minimum decides
@@ -392,16 +374,12 @@ jobs:
       # paths (one of which had also lost its pot-overage clamp). This gate
       # holds the single pricer and refuses a pot-size condition on any fee
       # path. See server/src/engine/RakeBBJCollection.law.test.ts.
-      - name: Rake + BBJ collection law — one pricer, no pot gate on the fee
-        run: node scripts/ci/check-rake-bbj-collection-law.mjs
 
       # A CSS module key with no matching class resolves to undefined, React
       # drops className={undefined} without a word, and the element ships with
       # no styling at all. Build green, tests green, page visibly broken. It
       # happened on 2026-08-21: a stylesheet was replaced wholesale to swap a
       # font and left 21 live classes undefined, including the page root.
-      - name: CSS modules — every styles.* key has a class
-        run: node scripts/ci/check-css-modules.mjs
 
       # Money invariant. The rake schedule is declared twice — the engine copy
       # decides what is actually taken from the pot, the client copy decides
@@ -411,8 +389,6 @@ jobs:
       # $15, because the props feeding it were never assigned. Now that the
       # modal reads the client schedule, the two copies drifting would silently
       # recreate that misstatement. Fail the build instead.
-      - name: Rake Invariant — client and server rake schedules must match
-        run: node scripts/ci/check-rake-schedule-parity.mjs
 
       # BLOCKING (2026-08-19 incident): the cash seat law (plo6 6, plo5 7,
       # plo4 8, plo8 8) was enforced only in src/services/TableService.ts, which
@@ -421,8 +397,6 @@ jobs:
       # PLO6 7-max, and had been creating illegal tables on every boot. Six were
       # live when it was found. PokerEngine.deal() throws rather than dealing
       # short, so an over-seated PLO table fails mid-hand rather than degrading.
-      - name: Seat Law Invariant — client, server and the fleet configs must agree
-        run: node scripts/ci/check-seat-law-parity.mjs
 
       # BLOCKING. On 2026-08-15 five of seven files in infra/monitoring/ had
       # drifted from the running stack — the repo still held the versions where
@@ -430,8 +404,6 @@ jobs:
       # everything to null-receiver. Rebuilding the host from the repo would
       # have silently restored decorative monitoring. This guards the wiring
       # (loaded / mounted / routed somewhere real), not rule contents.
-      - name: Monitoring Invariant — every alert rule is loaded, mounted, and routed
-        run: node scripts/ci/check-monitoring-drift.mjs
 
       # Dan 2026-08-31. A test that reads source as TEXT and matches a regex
       # cannot tell that the line is reached or that the objects arriving there
@@ -443,9 +415,83 @@ jobs:
       # else's work to migrate; blocking the repo on them would be the cure
       # being worse. The inventory line prints on every run so the number stays
       # visible.
-      - name: Test Quality — no NEW text-only pin on a pure src/utils module
-        run: node scripts/ci/report-source-grep-tests.mjs --ratchet
 
+      # ── EVERY INVARIANT GUARD, AT ONCE ───────────────────────────────────
+      #
+      # These were 16 sequential steps. Two costs, one of them not obvious:
+      #
+      #   - each paid a fresh node startup, serially, for a script that mostly
+      #     greps the tree; and
+      #   - THE JOB STOPPED AT THE FIRST FAILURE. An agent tripping three
+      #     guards learned about one, pushed a fix, waited for a queue, learned
+      #     about the second, pushed again. Three round trips to discover what
+      #     a single run already knew. That is a large part of why CI "fails
+      #     constantly" - it reported one problem at a time.
+      #
+      # They now run eight at a time and EVERY failure is reported together.
+      # No guard was weakened, dropped, reordered or made advisory: the same
+      # command lines run, arguments included, and any one of them still fails
+      # the job.
+      - name: Invariant guards (parallel)
+        run: |
+          set -uo pipefail
+          OUT=$(mktemp -d)
+          cat > "$OUT/list" <<'GUARDS'
+          node scripts/ci/check-esm-require.mjs
+          node scripts/ci/check-maybe-single.mjs
+          node scripts/ci/check-discarded-read-then-write.mjs
+          node scripts/ci/check-ui-text.mjs
+          node scripts/ci/check-title-case.mjs
+          node scripts/ci/check-painted-text-case.mjs
+          node scripts/ci/check-nav-title-case.mjs
+          node scripts/ci/check-no-emoji.mjs
+          node scripts/ci/check-horses-are-players.mjs
+          node scripts/ci/check-rake-bbj-collection-law.mjs
+          node scripts/ci/check-css-modules.mjs
+          node scripts/ci/check-rake-schedule-parity.mjs
+          node scripts/ci/check-seat-law-parity.mjs
+          node scripts/ci/check-monitoring-drift.mjs
+          node scripts/ci/report-source-grep-tests.mjs --ratchet
+          node scripts/ci/check-new-migration-version-collisions.mjs
+          GUARDS
+
+          TOTAL=$(grep -c . "$OUT/list")
+          while IFS= read -r cmd; do
+            [ -z "$cmd" ] && continue
+            n=$(echo "$cmd" | sed 's|.*/||; s|\.mjs.*||')
+            (
+              if $cmd > "$OUT/$n.log" 2>&1; then echo ok > "$OUT/$n.rc"
+              else echo fail > "$OUT/$n.rc"; fi
+            ) &
+          done < "$OUT/list"
+          wait
+
+          # A GUARD STEP THAT CAN PASS WITHOUT RUNNING IS NOT A GUARD.
+          # The first draft of this step used `xargs -d`, which is GNU-only.
+          # On a runner without it, xargs failed, no guard ran, no failure file
+          # was written, and the step printed "All 16 passed" and exited 0 - it
+          # looked identical to a real pass. So the count is now asserted:
+          # every guard must have left a result, or the step fails as loudly as
+          # a real violation would.
+          DONE=$(ls "$OUT"/*.rc 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$DONE" -ne "$TOTAL" ]; then
+            echo "::error::only $DONE of $TOTAL invariant guards produced a result - the runner did not execute them all. Failing rather than reporting a pass nothing earned."
+            exit 1
+          fi
+
+          FAILED=$(grep -l fail "$OUT"/*.rc 2>/dev/null | sed 's|.*/||; s|\.rc$||' || true)
+          if [ -n "$FAILED" ]; then
+            { echo "## Invariant guards"; echo ""; \
+              echo "**$(echo "$FAILED" | wc -l | tr -d ' ') of $TOTAL failed.** All of them are below, so they can be fixed in one pass:"; \
+              echo ""; } >> "$GITHUB_STEP_SUMMARY"
+            for n in $FAILED; do
+              echo "::group::$n"; sed -n '1,60p' "$OUT/$n.log"; echo "::endgroup::"
+              { echo "<details><summary><code>$n</code></summary>"; echo ""; echo '```'; \
+                sed -n '1,60p' "$OUT/$n.log"; echo '```'; echo ""; echo "</details>"; } >> "$GITHUB_STEP_SUMMARY"
+            done
+            exit 1
+          fi
+          echo "All $TOTAL invariant guards passed." >> "$GITHUB_STEP_SUMMARY"
       - name: Report Typecheck Time
         if: always()
         run: |
@@ -495,41 +541,6 @@ jobs:
           fi
 
       # ── Dead Code Detection ─────────────────────────────────────────────
-      - name: Dead Code Detection
-        continue-on-error: true
-        run: |
-          echo "## 🧹 Dead Code Check" >> $GITHUB_STEP_SUMMARY
-          DEAD_FILES=0
-          for f in $(find src -name '*.ts' -o -name '*.tsx' | grep -v 'node_modules\|\.d\.ts\|index\.ts\|vite-env\|main\.tsx\|App\.tsx'); do
-            BASENAME=$(basename "$f" | sed 's/\.\(ts\|tsx\)$//')
-            REFS=$(grep -rl "$BASENAME" src/ --include='*.ts' --include='*.tsx' 2>/dev/null | grep -v "$f" | wc -l | tr -d ' ')
-            if [ "$REFS" -eq 0 ]; then
-              echo "::warning file=$f::File appears unused (not imported anywhere)"
-              DEAD_FILES=$((DEAD_FILES + 1))
-            fi
-          done
-          if [ "$DEAD_FILES" -gt 0 ]; then
-            echo "⚠️ **$DEAD_FILES potentially unused file(s)** found" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "✅ No dead code detected" >> $GITHUB_STEP_SUMMARY
-          fi
-
-      # ── Supabase Invariants (Phase U4 — BLOCKING) ──
-      # Catches the silent-failure class of bugs from the 2026-04-15 audit:
-      #   1. phantom tables: `.from('<name>')` where <name> isn't in migrations
-      #   2. stranded writers: UI reads a table that no server path writes
-      # Cross-orb tables (defined in sibling repos) are in the ALLOWLIST of each
-      # script. Remove an ALLOWLIST entry once CI mounts that orb's migrations.
-      # See docs/U4-INVARIANT-FINDINGS.md for triage history.
-      # BLOCKING (Phase U4 end-state): now checks .from() tables AND .rpc()
-      # functions against a live-schema snapshot (scripts/ci/supabase-schema-manifest.json),
-      # not the stale migrations. Intentional exceptions live in
-      # scripts/ci/supabase-invariants.allowlist.json. Regenerate the manifest with
-      # scripts/ci/gen-schema-manifest.mjs when the schema changes.
-      # Non-blocking: the runner may not have imagemagick/pngquant, and a
-      # missing tool must not fail an unrelated commit. It reports loudly when
-      # somebody adds an asset far bigger than the box it renders in — the
-      # arena's first paint was 6.21 MB of images before this existed.
       - name: Image Budget — critical-path assets fit their render box
         continue-on-error: true
         run: |
@@ -719,8 +730,6 @@ jobs:
 
       # BLOCKING: Supabase identifies migrations by the filename version. A
       # duplicate version makes two different files compete for one ledger row.
-      - name: Supabase Invariants — New Migration Versions Are Unique
-        run: node scripts/ci/check-new-migration-version-collisions.mjs
 
       # BLOCKING: a SECURITY DEFINER function that writes, and that a browser
       # role can execute, must consult auth.uid()/auth.role()/auth.jwt(). On

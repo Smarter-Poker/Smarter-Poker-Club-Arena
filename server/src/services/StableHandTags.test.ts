@@ -173,7 +173,17 @@ describe('SOURCE LAW: the book is read whole or not at all', () => {
     // Null reads as "no book", which is not.
     expect(src).toContain('if (tags) {');
     expect(src).toContain('if (states) {');
-    expect(src).toContain('if (!this.tags || !this.states) return null;');
+  });
+
+  it('THE TAGS ARE THE BOOK; a failed state read does not throw the tags away', () => {
+    /* This cost four hours of live running on 2026-09-04. Returning null
+       unless BOTH reads succeeded meant one slow state read switched off the
+       whole tag layer - variants, stakes, lanes, table ceilings - and wrote no
+       counter, silently. Every state reader already fails open on a missing
+       row, so tags-without-states is the smaller and honest degradation. */
+    expect(src).toContain('if (!this.tags) return null;');
+    expect(src).toContain('states: this.states ?? new Map()');
+    expect(src).not.toContain('if (!this.tags || !this.states)');
   });
 
   it('holds one read at a time', () => {
@@ -182,9 +192,13 @@ describe('SOURCE LAW: the book is read whole or not at all', () => {
 
   it('caches tags longer than state, because only state moves', () => {
     expect(TAG_TTL_MS).toBeGreaterThan(STATE_TTL_MS);
-    // and the state cache is shorter than one seeding cycle, so a counter
-    // written this cycle is visible to the next one
-    expect(STATE_TTL_MS).toBeLessThan(30_000);
+  });
+
+  it('does not re-read the whole state table on every seeding cycle', () => {
+    /* It was 25 seconds against a 30-second cycle, so a 1,000-row read ran on
+       every pass for no gain: this cycle folds its own writes back into the
+       cached map before the next one reads it, and there is no other writer. */
+    expect(STATE_TTL_MS).toBeGreaterThan(30_000);
   });
 
   it('never writes', () => {

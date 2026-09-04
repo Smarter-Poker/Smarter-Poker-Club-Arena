@@ -62,8 +62,12 @@ import {
   verifySupabaseToken,
   authRejectionReason,
   tokenDenial,
+  wsAuthRefusalPrometheusLines,
+  _resetWsAuthRefusalsForTests,
   type TokenVerdict,
 } from './wsHelpers.js';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const TABLE = '11111111-1111-4111-8111-111111111111';
 // Three base64url segments: passes extractBearerToken's shape check.
@@ -225,6 +229,45 @@ describe('LAW 2 - an auth outage is a retryable 503, never a sign-out', () => {
       expect(out).toEqual({ kind: 'http', status: 503 });
     });
   }
+});
+
+describe('LAW 4 - a refusal is a number somebody can alert on', () => {
+  it('poker_ws_auth_refused_total counts every refusal by path and verdict, and is present at zero', async () => {
+    _resetWsAuthRefusalsForTests();
+    const zero = wsAuthRefusalPrometheusLines();
+    expect(zero.some((l) => l.startsWith('# TYPE poker_ws_auth_refused_total counter'))).toBe(true);
+    expect(zero).toContain('poker_ws_auth_refused_total{path="table",denied="invalid"} 0');
+    expect(zero).toContain('poker_ws_auth_refused_total{path="channel",denied="unavailable"} 0');
+
+    verdict = { denied: 'invalid', code: 'session_not_found' };
+    await connect(`/ws/table/${TABLE}`);
+    await connect(`/ws/table/${TABLE}`);
+    verdict = { denied: 'unavailable', code: 'unreachable' };
+    await connect('/ws/multi');
+
+    const after = wsAuthRefusalPrometheusLines();
+    expect(after).toContain('poker_ws_auth_refused_total{path="table",denied="invalid"} 2');
+    expect(after).toContain('poker_ws_auth_refused_total{path="multi",denied="unavailable"} 1');
+    expect(after).toContain('poker_ws_auth_refused_total{path="multi",denied="invalid"} 0');
+  });
+
+  it('the always-on exposition renders it (not the ENGINE_METRICS-gated registry, which is off in production)', () => {
+    const gameServer = readFileSync(join(__dirname, '..', 'GameServer.ts'), 'utf8');
+    expect(gameServer).toContain('...wsAuthRefusalPrometheusLines()');
+  });
+
+  it('the alert rules watch it, invalid as a warning and unavailable as critical', () => {
+    const rules = readFileSync(
+      join(__dirname, '..', '..', '..', 'infra', 'monitoring', 'alert-rules.yml'),
+      'utf8'
+    );
+    expect(rules).toMatch(
+      /alert: EngineRefusingSessions[\s\S]*?poker_ws_auth_refused_total\{denied="invalid"\}[\s\S]*?severity: warning/
+    );
+    expect(rules).toMatch(
+      /alert: EngineCannotReachAuth[\s\S]*?poker_ws_auth_refused_total\{denied="unavailable"\}[\s\S]*?severity: critical/
+    );
+  });
 });
 
 describe('a good token still opens (the fix did not break the door)', () => {

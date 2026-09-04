@@ -205,3 +205,57 @@ groups:
           summary: "No replication slots visible"
           description: "The collector is fresh but reports zero slots. Either the slots were dropped - realtime is then entirely dead - or the function lost its catalog access."
           runbook: "docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3"
+
+  # ── Session refusals (2026-09-04) ────────────────────────────────────────
+  # Dan's every table socket was refused with 401 for 22 hours - a World Hub
+  # cron was signing his account out globally every 15 minutes - and nothing
+  # here fired, because a refused upgrade was not a number anywhere. It is
+  # now: poker_ws_auth_refused_total{path, denied}, rendered by the engine's
+  # always-on /metrics (GameServer.getPrometheusMetrics). See
+  # docs/changelog/2026-09-04-a-revoked-session-is-not-a-reconnect.md.
+  - name: session-refusals
+    interval: 30s
+    rules:
+      # `invalid` = GoTrue looked at the session and said no. A handful a day
+      # is normal (a player signing out on one device while another tab is
+      # still open). A steady stream is a revocation loop, a retired signing
+      # key, or an auth misconfiguration - and every one of those is a player
+      # who cannot sit down. The client now retries a dead session at most
+      # once (it is sent to sign in), so this is a count of PEOPLE, not
+      # of retries.
+      - alert: EngineRefusingSessions
+        expr: |
+          sum(increase(poker_ws_auth_refused_total{denied="invalid"}[15m])) >= 6
+        for: 15m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: "Engine refused {{ $value }} sockets as invalid sessions in 15 min"
+          description: |
+            GoTrue is rejecting sessions the client believes are live. If
+            these are real players, something is revoking sessions behind
+            them: check Supabase auth_audit_logs for `logout` events with
+            user_agent "node" (a cron or script calling a global signOut),
+            a signing-key rotation, or a password change. The 2026-09-03
+            outage looked exactly like this and ran for 22 hours unseen.
+          runbook: "docs/changelog/2026-09-04-a-revoked-session-is-not-a-reconnect.md"
+
+      # `unavailable` = the engine could not ASK GoTrue. Nobody is refused
+      # as invalid on this path (they get a 503 and keep retrying), but
+      # nobody can join either. Five minutes of it is an auth outage.
+      - alert: EngineCannotReachAuth
+        expr: |
+          sum(increase(poker_ws_auth_refused_total{denied="unavailable"}[5m])) >= 3
+        for: 5m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: "Engine cannot verify sessions with Supabase Auth"
+          description: |
+            auth.getUser() is failing with a network error, 429 or 5xx from
+            the engine. Every new table socket is being answered 503 and
+            retried; no player can join until GoTrue answers again. Check
+            Supabase status and the engine's outbound connectivity.
+          runbook: "docs/changelog/2026-09-04-a-revoked-session-is-not-a-reconnect.md"

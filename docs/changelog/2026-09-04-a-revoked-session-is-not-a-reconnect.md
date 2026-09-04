@@ -111,13 +111,53 @@ Two facts, both worth remembering next time a table "silently fails":
   count resets on every successful open. The escalation sits below the
   coded branches (4404 / 4901 / 4429) so each keeps its own meaning.
 
-### Laws (both registered in docs/LAWS.md)
+### Club Arena, the rest of the sweep (this PR)
+
+Dan: "MAKE SURE YOU FULLY CHECK THIS AND IMPROVE IT IN EVERY POSSIBLE WAY
+SHAPE AND FORM." Four more things the first pass had not covered:
+
+- **The HTTP path.** The engine verifies `/action`, `/heartbeat`,
+  `/timebank`, `/preaction`, `/sitout`, `/straddle`, `/addchips`,
+  `/actions/:id/me` and `/state/:id` with the same `auth.getUser()`, so a
+  revoked session 401s there too - on every heartbeat, and the instant a
+  player presses Call. That used to surface as "Server error (401)" and
+  nothing else. `GameServerAPI.noteEngineResponse` now routes any 401 into
+  the same session check (throttled inside the handler, so a heartbeat
+  storm is one question). A dead session is caught even before a table
+  socket is opened.
+- **A refusal is a number.** `poker_ws_auth_refused_total{path, denied}` is
+  rendered by `GameServer.getPrometheusMetrics()` - the always-on
+  exposition, NOT the `ENGINE_METRICS`-gated registry, which is off in
+  production (`ENGINE_METRICS` is unset in the container; checked). Two
+  rules in `infra/monitoring/alert-rules.yml`, validated with `promtool`
+  against the live Prometheus: `EngineRefusingSessions` (warning, six
+  invalid refusals in 15 min) and `EngineCannotReachAuth` (critical,
+  three unavailable in 5 min). Twenty-two hours of 401s paged nobody; now
+  they would, inside half an hour.
+- **This repo had the same habit.** Four scripts defaulted to Dan's
+  personal address (`scripts/e2e-avatar-audit.mjs`,
+  `scripts/e2e-mobile-overflow-audit.mjs`,
+  `e2e-live/tournament-lobby-audit.mjs`, and `reset_test_user.ts` - which
+  sets that account's display name to "New Player"), and `.env.example`
+  taught every fresh clone to do the same. All five now read the account
+  from `SP_EMAIL` / `TEST_USER_EMAIL` in `.env.local` and refuse to guess.
+  `tests/e2e/support/temporaryCustomizationAccount.ts` signs its throwaway
+  account out with scope local, same as everything else.
+- **CLAUDE.md 10.10** records the rules so the next agent reads them
+  before reintroducing any of this.
+
+### Laws (all registered in docs/LAWS.md)
 
 - `tests/a-revoked-session-is-not-a-reconnect.law.test.ts` - 16 pins, red
   against the pre-fix client (5 failures), green after.
-- `server/src/transport/aRevokedSessionIsRefusedOutLoud.law.test.ts` - 12
+- `server/src/transport/aRevokedSessionIsRefusedOutLoud.law.test.ts` - 15
   pins over a real socket: 4401 + reason on `/ws/table` and `/ws/multi` for
-  an invalid token, 503 for an unreachable GoTrue, a good token still opens.
+  an invalid token, 503 for an unreachable GoTrue, a good token still
+  opens, the counter counts and the alert rules watch it.
+- `tests/a-script-never-wears-a-persons-face.law.test.ts` - no bare
+  `signOut()` in headless code, Dan's personal address in no source file,
+  the four scripts refuse to run without an account. Red against the old
+  tree (3 failures), green after.
 
 ## What I did not change, and why
 

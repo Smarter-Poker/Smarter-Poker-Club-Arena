@@ -14,6 +14,23 @@
 
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
+import { handleEngineAuthRejection } from '../lib/sessionRevoked';
+
+/**
+ * 2026-09-04 - A REVOKED SESSION IS NOT A RECONNECT (see lib/sessionRevoked).
+ *
+ * The engine verifies every HTTP call with auth.getUser(), so a revoked
+ * session answers 401 here too - on /heartbeat every few seconds, and on
+ * /action the moment the player presses a button. Before this, that 401
+ * became "Server error (401)" in a toast and nothing else; the player kept
+ * pressing Call at a table that had already forgotten who they were. Now a
+ * 401 asks GoTrue whether the session is alive (throttled inside the
+ * handler, so a heartbeat storm is one question, not one per beat), and a
+ * dead one ends in a sign-in prompt instead of a spinner.
+ */
+function noteEngineResponse(response: { status: number }, source: string): void {
+  if (response.status === 401) void handleEngineAuthRejection(`http:${source}`);
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -263,6 +280,7 @@ export async function submitAction(
         headers,
         body: JSON.stringify({ tableId, action, amount }),
       });
+      noteEngineResponse(response, 'action');
 
       if (response.ok) {
         const result = await response.json();
@@ -311,6 +329,7 @@ export async function activateTimeBank(tableId: string, _userId?: string): Promi
       headers,
       body: JSON.stringify({ tableId }),
     });
+    noteEngineResponse(response, 'timebank');
 
     if (!response.ok) {
       return { success: false, error: `Server error (${response.status})` };
@@ -341,6 +360,7 @@ export async function getAvailableActions(
     const headers = await getAuthHeaders();
     // Server ignores the userId URL param and uses JWT — pass 'me' as placeholder
     const response = await fetch(`${GAME_SERVER_URL}/actions/${tableId}/me`, { headers });
+    noteEngineResponse(response, 'actions');
 
     if (!response.ok) {
       return {
@@ -423,6 +443,7 @@ export async function sendHeartbeat(
       headers,
       body: JSON.stringify(opts?.turnRendered ? { tableId, turnRendered: true } : { tableId }),
     });
+    noteEngineResponse(response, 'heartbeat');
     if (!response.ok) {
       circuitBreaker.recordFailure(new Error(`HTTP ${response.status}`), 'GameServerAPI.heartbeat');
       return { success: false, error: `Server error (${response.status})` };
@@ -505,6 +526,7 @@ export async function setPreAction(
       headers,
       body: JSON.stringify({ tableId, action, maxCallAmount }),
     });
+    noteEngineResponse(response, 'preaction');
     if (!response.ok) {
       // HTTP 400 = invalid pre-action (not player's turn, not in hand) —
       // this is an expected user-state mismatch, NOT a server bug. Do not
@@ -550,6 +572,7 @@ export async function addChips(
       headers,
       body: JSON.stringify(opId ? { tableId, amount, opId } : { tableId, amount }),
     });
+    noteEngineResponse(res, 'addchips');
 
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
@@ -597,6 +620,7 @@ export async function setSitOut(
       headers,
       body: JSON.stringify({ tableId, sitOut }),
     });
+    noteEngineResponse(response, 'sitout');
     /* READ THE BODY BEFORE JUDGING THE STATUS (2026-08-28).
      *
      * `handlers/sitout.ts` answers a refusal with HTTP 400 and the REASON in
@@ -633,6 +657,7 @@ export async function toggleStraddle(tableId: string, enabled: boolean): Promise
       headers,
       body: JSON.stringify({ tableId, enabled }),
     });
+    noteEngineResponse(response, 'straddle');
     if (!response.ok) return { success: false, error: `Server error (${response.status})` };
     return (await response.json()) as ActionResult;
   } catch (err: unknown) {
@@ -648,6 +673,7 @@ export async function getTableState(tableId: string): Promise<Record<string, unk
   try {
     const headers = await getAuthHeaders();
     const response = await fetch(`${GAME_SERVER_URL}/state/${tableId}`, { headers });
+    noteEngineResponse(response, 'state');
     if (!response.ok) return null;
     return await response.json();
   } catch (err: unknown) {

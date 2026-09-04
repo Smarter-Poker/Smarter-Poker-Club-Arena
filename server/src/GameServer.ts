@@ -29,6 +29,7 @@ import { ScheduledTournamentService } from './services/ScheduledTournamentServic
 import { TournamentMetrics } from './services/TournamentMetrics.js';
 import { SpinMetrics } from './services/SpinMetrics.js';
 import { ReplicationMetrics } from './services/ReplicationMetrics.js';
+import { wsAuthRefusalPrometheusLines } from './transport/wsHelpers.js';
 import {
   planTableReopens,
   freshHumanWindowMs,
@@ -1483,6 +1484,12 @@ export class GameServer {
       // How far behind the realtime replication slot is, in bytes, per slot.
       // See services/ReplicationMetrics.ts.
       ...this.replicationMetrics.toPrometheus(),
+      // ── AUTH REFUSALS (2026-09-04) ───────────────────────────────────
+      // Every socket Dan opened was refused for 22 hours and nothing paged,
+      // because a refused upgrade was not a number anywhere. Now it is.
+      // See transport/wsHelpers.ts and EngineRefusingSessions in
+      // infra/monitoring/alert-rules.yml.
+      ...wsAuthRefusalPrometheusLines(),
     ];
 
     // ── STATS PIPELINE (2026-09-04) ─────────────────────────────────────

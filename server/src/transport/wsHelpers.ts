@@ -145,3 +145,46 @@ export async function verifySupabaseToken(
     return classifyGetUserError(err as { status?: number; code?: string });
   }
 }
+
+// ─── The refusal counter: 22 hours of 401s and nothing paged ────────────────
+//
+// Every socket Dan opened was refused, four times an hour for a day, and no
+// alert fired, because a refused upgrade was not a number anywhere. This
+// counter is rendered by GameServer.getPrometheusMetrics() (the always-on
+// exposition, not the ENGINE_METRICS-gated registry) and watched by
+// EngineRefusingSessions in infra/monitoring/alert-rules.yml.
+//
+// Labels: path (table | multi | channel), denied (invalid | unavailable). The
+// GoTrue code is deliberately NOT a label - it is bounded but it is noise for
+// an alert; the close reason carries it to the one client that needs it.
+
+const wsAuthRefusals = new Map<string, number>();
+
+export function recordWsAuthRefusal(
+  path: 'table' | 'multi' | 'channel',
+  denied: 'invalid' | 'unavailable'
+): void {
+  const key = `${path}|${denied}`;
+  wsAuthRefusals.set(key, (wsAuthRefusals.get(key) ?? 0) + 1);
+}
+
+/** Prometheus exposition lines for the refusal counter (always present, even at zero). */
+export function wsAuthRefusalPrometheusLines(): string[] {
+  const lines = [
+    '# HELP poker_ws_auth_refused_total WebSocket upgrades refused for auth (label: path, denied). invalid = GoTrue rejected the session; unavailable = GoTrue could not be asked',
+    '# TYPE poker_ws_auth_refused_total counter',
+  ];
+  for (const path of ['table', 'multi', 'channel'] as const) {
+    for (const denied of ['invalid', 'unavailable'] as const) {
+      lines.push(
+        `poker_ws_auth_refused_total{path="${path}",denied="${denied}"} ${wsAuthRefusals.get(`${path}|${denied}`) ?? 0}`
+      );
+    }
+  }
+  return lines;
+}
+
+/** Test seam. */
+export function _resetWsAuthRefusalsForTests(): void {
+  wsAuthRefusals.clear();
+}

@@ -46,6 +46,7 @@ import {
   verifySupabaseToken,
   authRejectionReason,
   tokenDenial,
+  recordWsAuthRefusal,
   type TokenVerdict,
 } from './wsHelpers.js';
 import { channelHub } from '../hub/ChannelHub.js';
@@ -145,6 +146,7 @@ export class ChannelWebSocketServer {
         .then((auth) => {
           const denial = tokenDenial(auth);
           if (denial || !auth.userId) {
+            recordWsAuthRefusal('channel', denial?.denied ?? 'invalid');
             // 2026-09-04: same rule as EngineWebSocketServer. A pre-handshake
             // 401 reaches the browser as 1006 and was retried as a network
             // blip for 22 hours; an invalid token is now closed with 4401 and

@@ -44,6 +44,7 @@ import {
   verifySupabaseToken,
   authRejectionReason,
   tokenDenial,
+  recordWsAuthRefusal,
   type TokenVerdict,
   type TokenDenial,
 } from './wsHelpers.js';
@@ -241,8 +242,10 @@ function refuseUpgrade(
   req: IncomingMessage,
   socket: import('stream').Duplex,
   head: Buffer,
-  verdict: TokenDenial
+  verdict: TokenDenial,
+  path: 'table' | 'multi'
 ): void {
+  recordWsAuthRefusal(path, verdict.denied);
   if (verdict.denied === 'unavailable') {
     socket.write(
       'HTTP/1.1 503 Service Unavailable\r\nRetry-After: 5\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
@@ -329,7 +332,8 @@ export class EngineWebSocketServer {
                 req,
                 socket,
                 head,
-                muxDenial ?? { denied: 'invalid', code: 'invalid' }
+                muxDenial ?? { denied: 'invalid', code: 'invalid' },
+                'multi'
               );
               return;
             }
@@ -384,7 +388,8 @@ export class EngineWebSocketServer {
               req,
               socket,
               head,
-              denial ?? { denied: 'invalid', code: 'invalid' }
+              denial ?? { denied: 'invalid', code: 'invalid' },
+              'table'
             );
             return;
           }

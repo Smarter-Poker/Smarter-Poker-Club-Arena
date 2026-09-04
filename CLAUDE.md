@@ -962,6 +962,52 @@ with no explanation attached is the next agent's mystery.
 
 ---
 
+## 10.10 A REVOKED SESSION IS NOT A RECONNECT, AND A SCRIPT NEVER WEARS A PERSON'S FACE (Dan 2026-09-04, BINDING)
+
+**What happened.** Every table Dan opened sat on "Reconnecting To The Table"
+for 22 hours while the engine dealt 5,700 hands per ten minutes. A World Hub
+cron (`/api/cron/login-probe`) had been pointed at his personal account and
+called a bare `signOut()` - scope GLOBAL - every 15 minutes, revoking every
+session he had. The engine's `auth.getUser()` got `session_not_found`, wrote
+a pre-handshake 401, the browser reported that as close 1006 (a dropped
+link), and the client reconnected with the same dead token forever. The
+lobby kept working because PostgREST checks JWT signatures, not sessions.
+Full timeline: `docs/changelog/2026-09-04-a-revoked-session-is-not-a-reconnect.md`.
+
+**The rules, each with a law behind it:**
+
+1. **A synthetic probe, cron or script signs out with `{ scope: 'local' }`.**
+   Only the session it made. Never a bare `signOut()` outside the UI's own
+   Log Out. (`tests/a-script-never-wears-a-persons-face.law.test.ts`; World
+   Hub: `__tests__/synthetic-probes-never-sign-out-a-person.law.test.mjs`.)
+2. **A script never uses Dan's personal account.** Dan: "DON'T USE MY
+   ACCOUNT FOR THE CRON, USE THE OTHER 'GOD MODE ADMIN ACCOUNT' ... KEEP MY
+   ACCOUNT CLEAN." The platform service identity is `daniel@smarter.poker`
+   (role `god`, "Smarter.Poker Official"); its credentials live in
+   `.env.local` (`SP_EMAIL` / `TEST_USER_EMAIL`, and the World Hub's
+   `PROBE_LOGIN_EMAIL`) and in Vercel, never in a file. A script with no
+   account in its environment refuses to guess.
+3. **The engine refuses a dead session out loud.** An invalid token (GoTrue
+   401/403/404) completes the handshake and is closed with **4401 +
+   `auth:<code>`**; a token that could not be checked (GoTrue down, 5xx, 429) is a pre-handshake **503** the client keeps retrying. Never a bare
+   401 again, and never a 4401 for an auth outage - that would sign every
+   player out on a Supabase blip.
+   (`server/src/transport/aRevokedSessionIsRefusedOutLoud.law.test.ts`)
+4. **The client asks before it spins.** An auth close, three failed
+   handshakes in a row, or a 401 from any engine HTTP call asks GoTrue
+   whether the session is alive (`src/lib/sessionRevoked.ts`). "Could not
+   ask" keeps the reconnect ladder running forever - "the games can never
+   freeze or die" still holds for a live session on a bad link. A session
+   GoTrue rejects twice (getUser, then refresh) clears the local session
+   (scope local) and sends the player to `/auth/login?authError=no_session`
+   with a return path. (`tests/a-revoked-session-is-not-a-reconnect.law.test.ts`)
+5. **A refusal is a number.** `poker_ws_auth_refused_total{path,denied}` on
+   the always-on `/metrics`; `EngineRefusingSessions` (warning) and
+   `EngineCannotReachAuth` (critical) in `infra/monitoring/alert-rules.yml`.
+   Twenty-two hours of 401s paged nobody. Now it does.
+
+---
+
 ## 11. AGENT NETWORK + DEPLOY PLAYBOOK
 
 ### 11.0 FIRST: WHICH ENVIRONMENT ARE YOU IN? (added 2026-09-01, binding)

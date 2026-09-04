@@ -4,8 +4,7 @@
   "functions": [
     "fn_ca_restore_erased_seat_credit",
     "fn_ca_find_erased_seat_credits",
-    "fn_ca_restore_erased_seat_credits",
-    "fn_ca_erased_seat_credit_sweep"
+    "fn_ca_restore_erased_seat_credits"
   ],
   "columns": {
     "ca_seat_stack_rebases": [

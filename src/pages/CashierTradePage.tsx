@@ -81,6 +81,12 @@ import { canSeeClubBank, canHoldAgentWallet } from '../components/wallet/walletR
 import { describeChipTransaction, walletRoute } from '../components/wallet/describeChipTransaction';
 import styles from './CashierTradePage.module.css';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
+import {
+  mapCashierRoster,
+  rosterRowMatches,
+  type CashierRosterRpcRow,
+  type DownlineRow,
+} from '../lib/cashierRoster';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -92,49 +98,6 @@ interface Membership {
   role: string;
   chipBalance: number;
 }
-
-interface DownlineRow {
-  userId: string;
-  name: string;
-  username: string;
-  avatarUrl: string | null;
-  role: string;
-  chipBalance: number;
-  isHorse: boolean;
-  /**
-   * How many club_members.agent_id hops below the viewer this member sits, as
-   * computed by fn_club_cashier_members. 1 is a direct assignee; 0 means the
-   * recursion never reached them, which only happens for staff (scope 'all').
-   */
-  depth: number;
-  /** true when this player is assigned DIRECTLY to the person looking. */
-  isMine: boolean;
-  playerNumber: string | null;
-}
-
-interface CashierRosterRpcRow extends Record<string, unknown> {
-  user_id: string;
-  role_rank: number;
-}
-
-const mapCashierRoster = (rows: CashierRosterRpcRow[], viewerId: string): DownlineRow[] =>
-  rows
-    .filter((row) => String(row.user_id) !== viewerId)
-    .map((row) => {
-      const depth = Number(row.depth) || 0;
-      return {
-        userId: String(row.user_id),
-        name: (row.name as string) || 'Player',
-        username: (row.username as string) || '',
-        avatarUrl: (row.avatar_url as string) || null,
-        role: (row.role as string) || 'player',
-        chipBalance: Number(row.chip_balance) || 0,
-        isHorse: row.is_horse === true,
-        depth,
-        isMine: depth === 1,
-        playerNumber: (row.player_number as string) || null,
-      };
-    });
 
 /**
  * One agent wallet send still inside its ten minute window, straight off
@@ -1363,6 +1326,8 @@ export default function CashierTradePage() {
   }, [tab, loadInvoices, invoicesReload]);
 
   // ── Derived list ───────────────────────────────────────────────────────────
+  /* Everyone the viewer can SEND to: the roster minus the viewer's own row. */
+  const recipients = useMemo(() => downline.filter((r) => !r.isSelf), [downline]);
   const mineCount = useMemo(() => downline.filter((r) => r.isMine).length, [downline]);
   /** What the reader's own assigned players are holding, for the strip. */
   const mineTotal = useMemo(
@@ -1371,10 +1336,7 @@ export default function CashierTradePage() {
   );
 
   const list = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    let rows = downline.filter(
-      (r) => !q || r.name.toLowerCase().includes(q) || r.username.toLowerCase().includes(q)
-    );
+    let rows = downline.filter((r) => rosterRowMatches(r, search));
     // "the players assigned to me" - the question an agent actually asks, and
     // one an owner could not ask at all before, because an owner sees the whole
     // club and nothing on the row said which of them were theirs.
@@ -1394,7 +1356,10 @@ export default function CashierTradePage() {
     return rows;
   }, [downline, search, sortKey, groupByRole, mineOnly]);
 
-  const agencyBalance = useMemo(() => downline.reduce((s, r) => s + r.chipBalance, 0), [downline]);
+  const agencyBalance = useMemo(
+    () => recipients.reduce((s, r) => s + r.chipBalance, 0),
+    [recipients]
+  );
 
   /** Fast client-side ledger controls over the bounded, newest-first page. */
   const filteredRecords = useMemo(() => {
@@ -1507,6 +1472,9 @@ export default function CashierTradePage() {
 
   const toggleSelect = (id: string) =>
     setSelected((prev) => {
+      // Listed, searchable, never a recipient: the server refuses a send to
+      // yourself, so the row does not pretend to offer one.
+      if (id === user?.id) return prev;
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -2367,7 +2335,7 @@ export default function CashierTradePage() {
               </h2>
             </div>
             <span className={styles.sectionMeta}>
-              {downline.length.toLocaleString()} Available · {selected.size.toLocaleString()}{' '}
+              {recipients.length.toLocaleString()} Available · {selected.size.toLocaleString()}{' '}
               Selected
             </span>
           </div>
@@ -2513,7 +2481,7 @@ export default function CashierTradePage() {
               list.slice(0, visibleCount).map((r) => (
                 <div
                   key={r.userId}
-                  className={`${styles.row} ${styles.selectableRow} ${selected.has(r.userId) ? styles.rowSelected : ''}`}
+                  className={`${styles.row} ${r.isSelf ? styles.rowSelf : styles.selectableRow} ${selected.has(r.userId) ? styles.rowSelected : ''}`}
                   onClick={() => toggleSelect(r.userId)}
                   onKeyDown={(e) => {
                     // role="checkbox" + tabIndex advertises a control. Without
@@ -2526,6 +2494,8 @@ export default function CashierTradePage() {
                   }}
                   role="checkbox"
                   aria-checked={selected.has(r.userId)}
+                  aria-disabled={r.isSelf || undefined}
+                  title={r.isSelf ? 'This Is You. Chips Cannot Be Sent To Yourself.' : undefined}
                   tabIndex={0}
                 >
                   {r.avatarUrl ? (
@@ -2534,7 +2504,10 @@ export default function CashierTradePage() {
                     <span className={styles.avatarFallback}>{initial(r.name)}</span>
                   )}
                   <div className={styles.rowInfo}>
-                    <span className={styles.rowName}>{r.name}</span>
+                    <span className={styles.rowName}>
+                      {r.name}
+                      {r.isSelf ? <span className={styles.rowYou}>You</span> : null}
+                    </span>
                     <span className={styles.rowSub}>
                       {r.playerNumber ? `ID: ${r.playerNumber} · ` : ''}
                       <span style={{ textTransform: 'capitalize' }}>
@@ -2545,10 +2518,14 @@ export default function CashierTradePage() {
                     </span>
                   </div>
                   <span className={styles.rowBalance}>{fmt(r.chipBalance)}</span>
-                  <span
-                    className={`${styles.checkbox} ${selected.has(r.userId) ? styles.checkboxOn : ''}`}
-                    aria-hidden="true"
-                  />
+                  {r.isSelf ? (
+                    <span className={styles.checkboxNone} aria-hidden="true" />
+                  ) : (
+                    <span
+                      className={`${styles.checkbox} ${selected.has(r.userId) ? styles.checkboxOn : ''}`}
+                      aria-hidden="true"
+                    />
+                  )}
                 </div>
               ))}
             {!loading && !loadError && visibleCount < list.length && (

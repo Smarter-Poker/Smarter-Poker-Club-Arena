@@ -63,32 +63,22 @@
      tile token — which sizes prev-hand, rabbit hunt AND the time-bank tile
      together by design — moves to match. The 44px touch-target pseudos on
      those widgets are now simply coincident with the painted tile.
+     --sp-hero-clear budget: 44 + 8 = 52, still under the 68px reserve.
 
-     Dan 2026-09-04: "THE PREVIOUS HANDS, CHAT, LOBBY BUTTON (FOR TOURNAMENTS)
-     AND RABBIT HUNT BUTTONS ALL NEED TO BE 50% LARGER." 44 -> 66, 12 -> 18,
-     and the chat button (TableChat.css) makes the same move so the two
-     corners still match. The time-bank tile follows because it stands in the
-     SAME SLOT as Rabbit Hunt: a 44px clock replaced by a 66px rabbit is the
-     corner changing shape at the end of every hand, which is the 2026-08-27
-     bug all over again.
+     Dan 2026-09-04: "the previous hand, chat, time bank, and rabbit hunt
+     buttons all need to be 50% larger." 44 -> 66px, radius 12 -> 18px so the
+     corner rounding scales with the tile. The chat button (TableChat.css)
+     moves with it: it is not a consumer of this token because it is mounted
+     outside .table-hud, so its 66px is written there and pinned to this one
+     by tests/all-in-cannot-leave-and-the-hud-slot.test.ts.
 
-     THE ROW (66 + 8 = 74px above the action bar) IS NOW NOMINALLY TALLER
-     THAN --sp-hero-clear (50-68px), and that is fine, because the reserve
-     exists for the HERO, who hangs off the CENTRE of the felt's bottom edge,
-     while these tiles stand in the CORNERS. Measured with the real
-     stylesheets in the felt harness (tests/e2e/support/feltHarness.mjs) with
-     a 2-card hero: the felt's bottom edge sits 98px (375), 99px (390),
-     106px (430), 117px (768) and 109px (1280) above the action bar - the
-     phone felt is width-bound and floats above the reserve line - so the
-     tiles are entirely below the felt everywhere. What the row actually
-     has to clear is the hero block BESIDE it, and it does: the rabbit tile
-     ends at x=142 and the hero avatar starts at x=152 (375), 154 (390) and
-     170 (430); on a phone the chat tile is top-right (x >= 318 at 390) and
-     nowhere near the hero's cards (which end at 344). On desktop the chat
-     is back on the bottom line at right: 8px, and the hero's cards end
-     hundreds of pixels short of it. tests/all-in-cannot-leave-and-the-hud-
-     slot.test.ts pins the ROW layout (two tiles sideways, never a column),
-     which is what keeps the corner out of the hero's way. */
+     The row is now taller than --sp-hero-clear (66 + 8 = 74 against a 60px
+     desktop / 50-68px phone reserve) and that is deliberate: the reserve is
+     the HERO's strip and shrinking the felt to fit a corner tile is exactly
+     the regression Dan has rejected three times. The tiles live at the page's
+     left edge, under the stadium's rounded corner, where the oval leaves
+     that room empty - at 375px the felt's bottom 24px spans x 95..280 and the
+     tiles end at x 148. */
   --sp-hud-tile-radius: 18px;
   --sp-hud-tile-size: 66px;
   --sp-hud-tile-fg: rgba(255, 255, 255, 0.86);

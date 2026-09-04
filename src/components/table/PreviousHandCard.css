@@ -70,15 +70,15 @@
 
 /* ═══════════════════════════════════════════════════════════════════════════════
  * RESPONSIVE (Matches TableHUD/TimebankCounter)
- * ═══════════════════════════════════════════════════════════════════════════════
- *
- * There used to be a `min-width: 1024px` block here reading
- * `--sp-hud-tile-size-lg` / `--sp-hud-tile-radius-lg` with 44px / 12px
- * fallbacks. Nothing anywhere declares those tokens, so on a desktop the
- * fallback always won - which was invisible while the real tile was 44px and
- * would have pinned THIS tile at 44px the moment the real one moved to 66
- * (Dan 2026-09-04, "50% larger"). One token, one size, every width: the
- * base rule above already reads --sp-hud-tile-size. */
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* 2026-09-04: the desktop block that used to live here read
+   `--sp-hud-tile-size-lg` / `--sp-hud-tile-radius-lg`, which are declared
+   NOWHERE, so its 44px/12px fallbacks were the real value - a second size for
+   one tile, hidden behind a token that looked configurable. It became a live
+   divergence the moment the base token moved to 66px (Dan: 50% larger). The
+   base rule above reads --sp-hud-tile-size at every width; there is no
+   desktop override. */
 
 /* Dan 2026-08-26: Strip baked button styles for 3D assets */
 .prev-hand-card {

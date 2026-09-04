@@ -73,7 +73,14 @@ const RABBIT_CSS = read('src/components/table/RabbitHunt.css');
 const TBC_CSS = read('src/components/table/TimebankCounter.css');
 const PREV_CSS = read('src/components/table/PreviousHandCard.css');
 const HUD_CSS = read('src/components/table/TableHUD.css');
+const CHAT_CSS = read('src/components/table/TableChat.css');
 const TABLE_CSS = read('src/pages/TablePage.css');
+
+/** The one tile size. 44px from 2026-08-28; 66px since 2026-09-04 (Dan: "the
+ *  previous hand, chat, time bank, and rabbit hunt buttons all need to be 50%
+ *  larger"). Change it here and in TableHUD.css together. */
+const TILE = 66;
+const TILE_RADIUS = 18;
 
 /** The declaration block of the first rule whose selector is exactly `sel`. */
 const ruleBody = (css: string, sel: string) => {
@@ -231,23 +238,33 @@ describe('the bottom-left HUD slot', () => {
  */
 describe('every widget in the bottom-left HUD corner is the same tile', () => {
   it('the size is declared once, on .table-hud, as a token', () => {
-    // 44px since 2026-08-28 (Dan: same size as the chat button); 66px since
-    // 2026-09-04 (Dan: "PREVIOUS HANDS, CHAT, LOBBY BUTTON (FOR TOURNAMENTS)
-    // AND RABBIT HUNT BUTTONS ALL NEED TO BE 50% LARGER"). The chat button
-    // in TableChat.css is the same 66px, so the two corners still match.
-    expect(strip(HUD_CSS)).toMatch(/--sp-hud-tile-size:\s*66px/);
-    expect(strip(HUD_CSS)).toMatch(/--sp-hud-tile-radius:\s*18px/);
-    const chat = ruleBody(read('src/components/table/TableChat.css'), '.chat-collapsed');
-    expect(chat).toMatch(/width:\s*66px/);
-    expect(chat).toMatch(/height:\s*66px/);
+    expect(strip(HUD_CSS)).toMatch(new RegExp(`--sp-hud-tile-size:\\s*${TILE}px`));
+    expect(strip(HUD_CSS)).toMatch(new RegExp(`--sp-hud-tile-radius:\\s*${TILE_RADIUS}px`));
   });
 
-  it('the previous-hand tile has no desktop-only size of its own', () => {
-    // A `min-width: 1024px` block used to re-size .prev-hand-card from a
-    // `--sp-hud-tile-size-lg` token that nothing declares, so the 44px
-    // fallback would have held the desktop tile at 44 while the real token
-    // moved to 66. One token, every width.
-    expect(strip(PREV_CSS)).not.toMatch(/--sp-hud-tile-size-lg/);
+  it('the chat button is the same tile, written in its own stylesheet', () => {
+    // .chat-collapsed is mounted outside .table-hud (TablePage.tsx renders it
+    // beside the HUD, not inside it), so it cannot read the token and carries
+    // the literal. Dan 2026-08-28 asked for the four to be one size; this is
+    // what keeps a token change from leaving the chat bubble behind.
+    const btn = ruleBody(CHAT_CSS, '.chat-collapsed');
+    expect(btn).toMatch(new RegExp(`width:\\s*${TILE}px`));
+    expect(btn).toMatch(new RegExp(`height:\\s*${TILE}px`));
+    expect(btn).toMatch(new RegExp(`border-radius:\\s*${TILE_RADIUS}px`));
+    const img = ruleBody(CHAT_CSS, '.chat-collapsed__icon-img');
+    expect(img).toMatch(new RegExp(`width:\\s*${TILE}px`));
+    expect(img).toMatch(new RegExp(`height:\\s*${TILE}px`));
+  });
+
+  it('no breakpoint re-sizes a tile through a phantom token', () => {
+    // PreviousHandCard.css carried a `@media (min-width: 1024px)` block that
+    // read `--sp-hud-tile-size-lg`, declared nowhere, so its 44px fallback
+    // silently became the desktop size the moment the base token moved.
+    for (const [name, css] of SLOT_WIDGETS) {
+      expect(strip(css), `${name} reads an undeclared -lg tile token`).not.toMatch(
+        /--sp-hud-tile-(?:size|radius)-lg/
+      );
+    }
   });
 
   it('all three read that token for width and height', () => {
@@ -290,24 +307,30 @@ describe('every widget in the bottom-left HUD corner is the same tile', () => {
     }
   });
 
-  it('the corner is a row, so two tiles side by side is the whole of its footprint', () => {
-    // Until 2026-09-04 this test held `--sp-hero-clear >= tile + line`, on the
-    // reasoning that the corner had to fit under the felt's bottom edge. That
-    // reserve is for the HERO, who hangs off the CENTRE of the oval; the
-    // tiles stand in the CORNERS. Measured in the felt harness with the real
-    // stylesheets (see the note on --sp-hud-tile-size in TableHUD.css), the
-    // felt's bottom edge is 98-117px above the action bar on every device,
-    // so a 74px row never reaches it. What the row must NOT do is grow DOWN
-    // into a column again - a column of 66px tiles would be 140px tall and
-    // would reach the hero's plate. The row is what makes two 66px tiles
-    // cost the hero nothing: the rabbit tile ends at x=142 and the hero
-    // avatar starts at x=152 (375) / 154 (390) / 170 (430).
-    const row = ruleBody(TABLE_CSS, '.hud-bl-row');
-    expect(row).toMatch(/flex-direction:\s*row/);
-    expect(row).toMatch(/align-items:\s*flex-end/);
-    // And the previous-hand tile stays at the anchor, the shared slot beside it.
-    expect(strip(TABLE_CSS)).toMatch(
-      /\.hud-bl-row \.prev-hand-card-wrapper,\s*\.hud-bl-row \.prev-hand-card \{\s*order:\s*0/
+  it('--sp-hero-clear is still the half-seat floor and was not grown to fit the tiles', () => {
+    // Until 2026-09-04 this asserted hero-clear >= TILE + LINE: the corner row
+    // had to fit inside the hero's strip. At 66px the row (74px with the line)
+    // is taller than the strip on purpose - the reserve is the HERO's (half a
+    // seat, 50px floor) and every time an agent grew it to fit chrome the felt
+    // shrank, which Dan has rejected three times (TablePage.css, the
+    // --sp-hero-clear derivation). The tiles sit at the page's left edge under
+    // the stadium's rounded corner, where the oval leaves that room empty.
+    // So the pin inverts: the desktop reserve stays the measured half-seat
+    // number, and nobody may quietly raise it to chase the tile.
+    const declared = [...TABLE_CSS.matchAll(/--sp-hero-clear:\s*(\d+)px/g)].map((m) =>
+      Number(m[1])
     );
+    expect(declared.length, '--sp-hero-clear is never declared').toBeGreaterThan(0);
+    const LINE = 8;
+    const HALF_SEAT_DESKTOP = 60;
+    for (const px of declared) {
+      if (px <= LINE) continue; // the data-hero='false' collapse
+      expect(px, `--sp-hero-clear of ${px}px was grown past the half-seat floor`).toBe(
+        HALF_SEAT_DESKTOP
+      );
+    }
+    // And the phone reserve is still the proportional clamp, not a flat number
+    // sized to the tile.
+    expect(TABLE_CSS).toMatch(/--sp-hero-clear:\s*clamp\(50px,\s*14\.6vw,\s*68px\)/);
   });
 });

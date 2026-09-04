@@ -43,22 +43,18 @@ chips rather than four - but it no longer changes how the disc is drawn.
 
 ## 2. The corner buttons
 
-All four of the controls Dan named are the same 44px tile language:
-`--sp-hud-tile-size` (TableHUD.css) sizes the previous-hand card, the Rabbit
-Hunt button and the time-bank tile; `.chat-collapsed` (TableChat.css) is the
-same 44px by the 2026-08-28 parity rule. 44 -> 66, radius 12 -> 18, in both
-files. The time-bank tile moves with them because it shares Rabbit Hunt's
-slot: a 44px clock replaced by a 66px rabbit is the corner changing shape at
-the end of every hand, the 2026-08-27 bug again.
-
-`PreviousHandCard.css` carried a `min-width: 1024px` block reading
-`--sp-hud-tile-size-lg` with a 44px fallback. Nothing declares that token, so
-the fallback would have held the desktop tile at 44 while the real token
-moved. Removed; one token, every width.
+The tile change itself - `--sp-hud-tile-size` 44 -> 66, radius 12 -> 18,
+`.chat-collapsed` to match, the phantom `--sp-hud-tile-size-lg` block in
+`PreviousHandCard.css` removed - landed in PR #3022 (see
+`2026-09-04-table-ux-aliases-connection.md`, section 4) while this branch
+was being built from the same instruction. On merge this branch takes
+#3022's versions of those three files and its test verbatim; nothing about
+the tiles is changed twice. What this branch adds on top is the measurement
+below and the tournament lobby button.
 
 ### Geometry, measured rather than assumed
 
-`tests/all-in-cannot-leave-and-the-hud-slot.test.ts` pinned
+`tests/all-in-cannot-leave-and-the-hud-slot.test.ts` used to pin
 `--sp-hero-clear >= tile + 8`, i.e. that the corner row fits under the felt's
 bottom edge. A 66px row (74px above the bar) is nominally taller than the
 50-68px reserve. Rendered in the felt harness with the real stylesheets and a
@@ -76,8 +72,9 @@ The tiles are below the felt everywhere (the phone felt is width-bound and
 floats above the reserve line), and the row stays clear of the hero block
 beside it. The chat tile is top-right on phones (x >= 318 at 390) and on the
 bottom line at `right: 8px` on desktop, nowhere near the hero's cards either
-way. The test now pins what actually protects the hero: the corner is a ROW
-(two tiles sideways, never a column of them), and the token is 66.
+way. #3022's version of the test pins the same conclusion from the other
+side: `--sp-hero-clear` stays the half-seat number and is never grown to
+chase the tile.
 
 ### The tournament lobby button
 

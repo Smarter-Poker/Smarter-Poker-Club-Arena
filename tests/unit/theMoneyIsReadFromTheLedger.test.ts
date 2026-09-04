@@ -536,7 +536,10 @@ describe('the gate on phase 6: hands still meant two things in two places', () =
   });
 
   it('the dashboard says which hands the list is counting', () => {
-    expect(DASHBOARD).toContain('Raked Hands\n                        </span>');
+    // Whitespace-independent: prettier reformats this JSX, and a pin that
+    // matches indentation fails on the formatter rather than on behaviour.
+    // (It did, in the pre-push hook, the first time it was written.)
+    expect(DASHBOARD.replace(/\s+/g, ' ')).toContain('{formatInt(t.hands)} Raked Hands');
   });
 
   it('the activity chart is told which hands it is drawing, by every caller', () => {

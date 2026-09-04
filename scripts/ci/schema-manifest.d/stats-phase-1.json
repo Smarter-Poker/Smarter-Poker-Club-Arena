@@ -1,0 +1,10 @@
+{
+  "_owner": "fix/stats-phase-1-positions",
+  "tables": ["ca_stats_witness_audit_log"],
+  "functions": [
+    "ca_hand_player_facts_range",
+    "ca_hand_player_facts_one",
+    "ca_stats_witness_audit",
+    "ca_stats_health"
+  ]
+}

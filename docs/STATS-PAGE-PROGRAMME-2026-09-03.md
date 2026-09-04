@@ -73,7 +73,8 @@ lifetime totals).
 
 `hand_history` (7-day prune for horse-only hands, Dan's ruling in CLAUDE.md
 10.5) -> `trg_ca_stats_live_from_hand` -> `ca_hand_player_facts()` ->
-`ca_hand_player_stat` (durable per player per hand, survives the prune) ->
+`ca_hand_player_stat` (per player per hand, the most recent 1,000 per player,
+pruned by count and never by the hand pruner, so it survives day 8) ->
 `ca_player_stats_overview_v2(p_user, p_days)` (asserts `auth.uid() = p_user`
 via `ca_assert_self`) -> page. `ca_hand_player_idx` is the per-player hand
 index the "Hands Played" count and the notable-hands list read.
@@ -86,23 +87,23 @@ Ordered by player impact. Each item names the evidence, the fix, and the pin.
 Every fix that touches money goes through CLAUDE.md 11.5 (probe in a rolled
 back transaction first) and 10.9 (you decide it, you write the paragraph).
 
-### 1.1 Position labels are wrong on ~3% of hands (OPEN, highest)
+### 1.1 Position labels: CLOSED 2026-09-04, the button is right
 
-`ca_hand_player_facts` trusts `hand_history.button_seat`. Measured: about 3%
-of hands carry a button that disagrees with the recorded action order (the
-first preflop actor is not the seat after the big blind). On those hands the
-seat label (BTN / CO / HJ / ... / SB / BB), the position-implied blind, and
-therefore the Positions tab and the positional radar are wrong. Money is
-unaffected (exact settlement).
+The 2026-09-03 changelog claimed ~3% of hands carried a `button_seat` that
+disagreed with the action order. Measured properly in phase 1 against 48,362
+hands: 47,871 carry blind-post rows and on every one the stored button is the
+seat before the small-blind poster (the poster itself heads-up). Zero
+disagreements. The "3%" was a first-to-act heuristic that did not know about
+straddles (533 of 551 flagged hands) or an all-in small blind who never gets
+a turn (the other 18). The derived `showdown` flag was checked against the
+engine's `hand_history.showdown` roster the same way: 27,418 player-hands,
+zero disagreements.
 
-Fix: derive the button from the action order when the two disagree (the
-witness that was there is the action log, CLAUDE.md 10.9), record which
-source won in a `position_source` column, backfill through the existing
-repair cron, and pin with a test that feeds a hand whose stored button is
-wrong and asserts the derived labels. Then find why the engine writes the
-wrong button on those hands (`server/src/engine/ServerTableEngine*.ts`,
-button advance after a seat vacates mid-hand is the first suspect `[verify]`)
-and fix the source.
+What shipped instead is the tripwire: `ca_stats_witness_audit()` re-runs
+both comparisons every 15 minutes and the engine pages on any non-zero
+count (`docs/changelog/2026-09-04-stats-phase-1-witness-audit.md`). If a
+real recording defect ever appears, it is found within 15 minutes, with the
+hands in its window named in `ca_stats_witness_audit_log`.
 
 ### 1.2 Finish the money repair and re-measure the hand write
 
@@ -117,7 +118,12 @@ and fix the source.
 - Add the hand-write mean to the Grafana engine board with the maintenance
   break guard (CLAUDE.md 13.6).
 
-### 1.3 Index lag must page, not surprise
+### 1.3 Index lag must page, not surprise: DONE 2026-09-04 (phase 1)
+
+`StatsHealthMonitor` reads `ca_stats_health()` every minute, publishes
+`/health.stats` and `poker_stats_*`, raises `ClubArenaStatsIndexLag` at 30
+minutes (break-suppressed) and the `stats-pipeline` Prometheus group is the
+second path. The original ask, for reference:
 
 The hand index fell 17 hours behind and nothing said so. Add
 `ca_hand_player_idx_state.idx_ceil` lag to `/health` (`statsIndexLagSeconds`)
@@ -206,12 +212,16 @@ legitimate uses are identification (a badge) and the horse's input device.
 Any `p_include_horses` parameter defaults to true. Leaderboard and benchmark
 populations include horses.
 
-### 1.14 Retention law
+### 1.14 Retention law: DONE 2026-09-04 (phase 1)
 
-Pin that `ca_hand_player_stat` and `ca_hand_player_idx` are NOT touched by
-`sp_prune_hand_history` (the durable fact layer is the whole reason the stats
-survive day 8). A law test that reads the prune function body and fails if
-it names either table.
+`tests/the-stats-a-player-reads-survive-the-hand-prune.law.test.ts`, in
+`docs/LAWS.md`: `sp_prune_hand_history` never names `ca_hand_player_stat`,
+`ca_hand_facts` or `ca_hand_transfers` (it MAY prune `ca_hand_player_idx`,
+the pointer table, and does); `ca_prune_hand_player_stat` keeps at least the
+page's 750-hand window; the forward roll prunes by per-player count, never by
+age. Note the correction to what this section first said: the idx table is
+pruned with its hands by design, it is the stat, facts and transfers tables
+that must never be.
 
 ### 1.15 Time zone on ranges
 
@@ -611,26 +621,30 @@ players in every number shown (10.5). Popups only through the Toast layer.
 
 ---
 
-## 8. Sequencing (one pull request per line, each independently shippable)
+## 8. Phases (Dan, 2026-09-04: build them out one at a time, fully, before the next)
 
-| PR  | Scope                                                                                                 | Depends on |
-| --- | ----------------------------------------------------------------------------------------------------- | ---------- |
-| A   | 1.1 button derivation + repair + engine source fix                                                    |            |
-| B   | 1.2 repair completion readout, 1.3 index lag on /health + alert, 1.14 retention law                   |            |
-| C   | Section 3: dead code, page split per tab, inline colours removed                                      |            |
-| D   | 1.4 EV coverage check, 1.5 tournament live, 1.6 session rule in the RPC                               | C          |
-| E   | 1.7 field percentiles rollup, 1.8 nemesis source, 1.13 horses sweep, 6 conservation + horses laws     |            |
-| F   | 1.9 trophy persistence + toast                                                                        | C          |
-| G   | 7.3 artwork #1, #15 + 7.4 tokens + 7.5 type + 7.6 nav rail + hero + section header bar + 6 visual law | C          |
-| H   | 7.6 Overview, Performance, Positions tiles and charts + plates #2-#4                                  | G          |
-| I   | 7.6 Hands, Tournaments, Analysis + plates #5-#7                                                       | G          |
-| J   | 7.6 Trophies medallions #9-#13, Rake plate #8, share card #14                                         | G, F       |
-| K   | 1.12 club-staff member view on the shared components, 1.11 privacy matrix                             | H, I       |
-| L   | 7.8 mobile pass, 7.9 print dossier, 4 deep links + a11y, 5 performance measurements                   | H, I, J    |
-| M   | 1.10 rake pagination, 1.15 time zone, 1.16 PLO grid                                                   |            |
+One phase is one pull request. A phase is not finished until everything in
+it is built, wired, tested locally (vitest, tsc, build), proven against
+production data where it touches the database, written up in its own
+`docs/changelog/` file, and pushed. Then stop (CLAUDE.md 1.1, 10.8.3) and
+report; the next phase starts on a fresh branch off `main`.
 
-Each PR: its own `docs/changelog/YYYY-MM-DD-<slug>.md`, tests green locally,
-push the branch and stop (CLAUDE.md 1.1 and 10.8.3).
+| Phase | Scope                                                                                                                                                           | Status                                         |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| 1     | Data foundation: 1.1 measured and closed, facts function split (10x on ranges), witness audit + `ca_stats_health()`, engine monitor + alerts + rules, 1.3, 1.14 | DONE 2026-09-04, `fix/stats-phase-1-positions` |
+| 2     | Section 3: dead code out, `PlayerStatsPage.tsx` split into one lazy chunk per tab, inline colours out; 1.2 repair readout + hand-write re-measure               | next                                           |
+| 3     | 1.4 EV coverage, 1.5 tournament finishes live, 1.6 session rule into the RPC, 1.15 time zone                                                                    |                                                |
+| 4     | 1.7 field percentiles rollup, 1.8 transfers-equal-settlement pin, 1.13 horses sweep, section 6 conservation + horses laws                                       |                                                |
+| 5     | 1.9 trophy persistence + unlock toast, 1.10 rake pagination, 1.16 PLO grid                                                                                      |                                                |
+| 6     | Visual foundation: 7.3 renders #1 + #15, 7.4 tokens, 7.5 type, 7.6 nav rail + hero + section header bar, 6 visual law                                           |                                                |
+| 7     | Visual: Overview, Performance, Positions tiles + charts, plates #2-#4                                                                                           |                                                |
+| 8     | Visual: Hands, Tournaments, Analysis, plates #5-#7                                                                                                              |                                                |
+| 9     | Visual: Trophies medallions #9-#13, Rake plate #8, share card #14                                                                                               |                                                |
+| 10    | 1.12 club-staff member view on the shared components, 1.11 privacy matrix                                                                                       |                                                |
+| 11    | 7.8 mobile pass, 7.9 print dossier, section 4 deep links + a11y, section 5 measurements, 9 definition of done                                                   |                                                |
+
+Phases 6 to 9 read the `smarter-casino-realism` skill in full first and hand
+it to every subagent.
 
 ---
 

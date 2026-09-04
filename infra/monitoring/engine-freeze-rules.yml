@@ -140,3 +140,86 @@ groups:
             Self-healing is firing repeatedly. It is doing its job, but a
             restart loop means an underlying defect is still present. Check
             Sentry for watchdog_* and dealingLoop_died events.
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # STATS PIPELINE (Stats Page Programme phase 1, 2026-09-04)
+  #
+  # The engine raises these itself through raiseEngineAlert (Sentry + the
+  # alert receiver) within a minute of the read that saw them. These rules are
+  # the second, independent path: Prometheus reading the poker_stats_* gauges
+  # the engine exposes, so a broken alert receiver cannot hide a lagging index.
+  # Every gauge is emitted by server/src/observability/StatsHealthMonitor.ts
+  # and is NaN until the first ca_stats_health() read completes; NaN compares
+  # false, so an unread engine fires nothing here.
+  # ═══════════════════════════════════════════════════════════════════════════
+  - name: stats-pipeline
+    interval: 60s
+    rules:
+      # The player -> hand index is advanced by the Open Claw route every 15
+      # minutes; 30 minutes behind means two ticks missed. During the :55 break
+      # no hands are written, so the ceiling cannot move and the lag climbs to
+      # ~600 s by design; the break guard and the 30-minute bar both cover it.
+      - alert: StatsHandIndexLagging
+        expr: |
+          poker_stats_index_lag_seconds > 1800
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 5m
+        labels:
+          severity: warning
+          component: club-arena-stats
+        annotations:
+          summary: "Stats hand index is {{ $value | humanizeDuration }} behind"
+          description: |
+            ca_hand_player_idx has not been advanced for two or more Open Claw
+            ticks; "Hands Played" on every stats page is stale by this much.
+            Check the Open Claw dispatcher on the Hetzner host and the errors
+            array from /api/cron/club-stats-maintenance. Found 17 hours behind
+            on 2026-09-03 with nothing watching.
+
+      # A hand with no ca_hand_player_stat row 90 s after it was written means
+      # trg_ca_stats_live_from_hand raised and swallowed it. The page is no
+      # longer live until this returns to 0.
+      - alert: StatsLiveTriggerMissingHands
+        expr: poker_stats_recent_hands_without_stat > 0
+        for: 3m
+        labels:
+          severity: warning
+          component: club-arena-stats
+        annotations:
+          summary: "{{ $value }} recent hand(s) have no stat row"
+          description: |
+            The live stats trigger is failing inside the hand insert (it WARNs
+            and lets the hand land). Read the Postgres log for
+            "trg_ca_stats_live_from_hand:".
+
+      # Zero is the only healthy number. A disagreement is a recording defect
+      # in the engine (button_seat or the showdown roster) or a failed writer.
+      - alert: StatsWitnessAuditDisagrees
+        expr: poker_stats_witness_disagreements > 0 or poker_stats_human_hands_without_facts > 0
+        for: 1m
+        labels:
+          severity: warning
+          component: club-arena-stats
+        annotations:
+          summary: "The witness audit found {{ $value }} disagreement(s)"
+          description: |
+            ca_stats_witness_audit() checks button_seat against the blind
+            posts and the derived showdown flag against the engine's showdown
+            roster, and counts human seats with no settlement row. Read the
+            latest ca_stats_witness_audit_log row and the hands in its window.
+
+      # The engine could not read ca_stats_health() for ten minutes: the
+      # gauges above are frozen at their last value and mean nothing.
+      - alert: StatsHealthReadStale
+        expr: |
+          poker_stats_health_age_seconds > 600
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 2m
+        labels:
+          severity: warning
+          component: club-arena-stats
+        annotations:
+          summary: "Engine has not read ca_stats_health() for {{ $value | humanizeDuration }}"
+          description: |
+            Every poker_stats_* gauge is stale. Usually a PostgREST or RPC
+            grant problem; the engine logs "[StatsHealthMonitor] read failed".

@@ -9,7 +9,6 @@
  * - Realtime channel bridge for live updates
  * - Service layer coordination
  * - Supabase channel deduplication registry
- * - Sentry breadcrumb logging for observability
  * - Debounced subscription helpers for performance
  *
  * NO DEMO DATA - All operations are real.
@@ -1499,7 +1498,6 @@ class MasterBusCore {
 
   /**
    * Emit an event to all subscribers — type-safe version
-   * Also logs a Sentry breadcrumb for observability (#8)
    */
   emit<K extends BusEventType>(
     type: K,
@@ -1564,29 +1562,6 @@ class MasterBusCore {
         /* */
       }
     });
-
-    // #8: Log Sentry breadcrumb for every event
-    try {
-      if (typeof window !== 'undefined' && (window as any).__SENTRY__) {
-        import('./sentryBundle')
-          .then((Sentry) => {
-            Sentry.addBreadcrumb({
-              category: 'masterBus',
-              message: type,
-              level: 'info',
-              data:
-                typeof payload === 'object'
-                  ? (payload as Record<string, unknown>)
-                  : { value: payload },
-            });
-          })
-          .catch(() => {
-            /* Sentry not available */
-          });
-      }
-    } catch {
-      /* silent */
-    }
 
     // #9b: Forward critical events to Service Worker for background notifications
     if (CRITICAL_EVENTS.includes(type)) {

@@ -62,7 +62,12 @@ Object.defineProperty(window, 'localStorage', {
 
 // Mock Sentry
 vi.mock('@sentry/react', () => ({
+  init: vi.fn(),
   captureException: vi.fn(),
+  captureMessage: vi.fn(),
+  addBreadcrumb: vi.fn(),
+  setUser: vi.fn(),
+  globalHandlersIntegration: vi.fn(() => ({ name: 'GlobalHandlers' })),
   withErrorBoundary: (component: any) => component,
   withScope: vi.fn((callback) => callback({ setContext: vi.fn() })),
   showReportDialog: vi.fn(),
@@ -99,10 +104,35 @@ vi.mock('../src/lib/supabase', () => ({
       const builder: Record<string, unknown> = {};
       const chain = () => builder;
       for (const method of [
-        'select', 'insert', 'update', 'upsert', 'delete', 'eq', 'neq', 'gt',
-        'gte', 'lt', 'lte', 'like', 'ilike', 'is', 'in', 'contains',
-        'containedBy', 'rangeGt', 'rangeLt', 'overlaps', 'match', 'not', 'or',
-        'filter', 'order', 'limit', 'range', 'abortSignal', 'returns',
+        'select',
+        'insert',
+        'update',
+        'upsert',
+        'delete',
+        'eq',
+        'neq',
+        'gt',
+        'gte',
+        'lt',
+        'lte',
+        'like',
+        'ilike',
+        'is',
+        'in',
+        'contains',
+        'containedBy',
+        'rangeGt',
+        'rangeLt',
+        'overlaps',
+        'match',
+        'not',
+        'or',
+        'filter',
+        'order',
+        'limit',
+        'range',
+        'abortSignal',
+        'returns',
       ]) {
         builder[method] = vi.fn(chain);
       }

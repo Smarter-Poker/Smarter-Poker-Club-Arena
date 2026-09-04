@@ -1,47 +1,54 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  SENTRY EVENT BUDGET - the engine can never burn the org quota again
- * ═══════════════════════════════════════════════════════════════════════════════
+ * ===============================================================================
+ *  SENTRY EVENT BUDGET - the engine's share of a free plan, as code
+ * ===============================================================================
  *
- * Why this exists (2026-09-04). The Sentry org error quota was exhausted on
- * 2026-08-24 by engine error loops - one defect firing thousands of identical
- * events per minute - and stayed exhausted until the renewal on 2026-09-16.
- * Every OTHER project in the org (World Hub, Club Commander) was blind for
- * three weeks: their events were accepted with HTTP 429 `error_usage_exceeded`
- * and dropped. The Commander login outage on 2026-09-03 raised zero alerts
- * because of it.
+ * Why this exists. The Sentry org error quota was exhausted on 2026-08-24 by
+ * engine error loops - one defect firing thousands of identical events per
+ * minute - and stayed exhausted until the renewal. Every OTHER project in the
+ * org (World Hub, Club Commander) was blind for three weeks: their events were
+ * accepted with HTTP 429 `error_usage_exceeded` and dropped. The Commander
+ * login outage on 2026-09-03 raised zero alerts because of it.
  *
- * Sentry's own per-key rate limit is NOT available on this plan: the API
- * accepts the PUT and returns `rateLimit: null` (verified 2026-09-04). So the
- * limit has to live here, in the SDK's beforeSend, where it cannot be turned
- * off by a plan change.
+ * Then, on 2026-09-04, Dan cancelled the Team plan. The Developer plan gives
+ * the WHOLE organisation 5,000 errors a month (~166 a day), shared by the
+ * World Hub, the Arena client and this engine. docs/SENTRY-FREE-TIER-POLICY.md
+ * section 3 gives the engine 60 a day. Sentry's own per-key rate limit is not
+ * available on this plan (the API accepts the PUT and returns
+ * `rateLimit: null`, verified 2026-09-04), so the limit lives here, in the
+ * SDK's beforeSend, where no plan change can turn it off.
  *
- * The budget is two-tier and PURE (no Sentry import) so it is unit-testable:
+ * The previous version of this file was a per-MINUTE budget (10 per key, 60
+ * global): the right shape, built for a plan that no longer exists - fully on
+ * fire it could send 86,400 a day, seventeen months of the new allowance. It is
+ * REPLACED, not tuned, with a per-UTC-DAY budget:
  *
- *   - per fingerprint: N events per window. A fingerprint is the report's
- *     context (the `[HandController.dealFlop]` prefix reportError() writes) plus
- *     the first 80 chars of the message. A loop is by definition one
- *     fingerprint repeating, so this is what actually stops a loop.
- *   - global: M events per window across everything. A defect that mutates its
- *     message every time (a table id in the text) still cannot exceed M.
+ *   - global: 60 events per UTC day, across everything. A defect that mutates
+ *     its message every time (a table id in the text) still cannot exceed it.
+ *   - per fingerprint: 3 per UTC day. A fingerprint is the report's context
+ *     (the `[HandController.dealFlop]` prefix reportError() writes) plus the
+ *     first 80 chars of the message with identifiers normalised away. Sentry
+ *     groups identical errors anyway; the fourth copy buys nothing.
  *
- * Dropped events are COUNTED, never lost silently: `drainSummary()` returns the
- * drop counts per fingerprint since the last drain, and errorReporter emits ONE
- * summary event per period carrying them. A quiet Sentry must not be mistaken
- * for a healthy engine (Commander law 3.2), so the summary exists precisely to
- * say "the engine was loud and we throttled it".
+ * Both reset at 00:00 UTC. Dropped events are COUNTED, never lost silently:
+ * `dropped` and `sentToday` are read by GameServer.getPrometheusMetrics() and
+ * published as `poker_sentry_events_dropped_total` and
+ * `poker_sentry_events_sent_today`, so a quiet Sentry is never mistaken for a
+ * healthy engine. (The old design sent a "budget summary" EVENT every ten
+ * minutes to say what it dropped - 144 a day, more than twice the whole
+ * budget. Prometheus does that job for free now.)
  *
- * Defaults: 10 per fingerprint per minute, 60 per minute globally, summary every
- * 10 minutes. Worst case the engine sends ~60/min + 1 summary = 86,400/day when
- * fully on fire, versus the 4-5 million/day a loop produced in August. Tunable
- * through env (SENTRY_BUDGET_PER_KEY, SENTRY_BUDGET_GLOBAL, SENTRY_BUDGET_WINDOW_MS).
+ * PURE (no Sentry import) so it is unit-testable. Tunable through env
+ * (SENTRY_BUDGET_PER_KEY, SENTRY_BUDGET_GLOBAL) for an incident, never above
+ * the policy's figure without a line in the policy naming the cost.
  */
 
 export interface BudgetOptions {
+  /** Events allowed per fingerprint per UTC day. */
   perKeyLimit: number;
+  /** Events allowed across all fingerprints per UTC day. */
   globalLimit: number;
-  windowMs: number;
-  /** Bound on tracked fingerprints; oldest windows are evicted past this. */
+  /** Bound on tracked fingerprints per day; oldest are evicted past this. */
   maxKeys?: number;
   now?: () => number;
 }
@@ -49,20 +56,15 @@ export interface BudgetOptions {
 export interface Verdict {
   allow: boolean;
   reason?: 'per_key' | 'global';
-  /** Events of this fingerprint dropped so far in the current window. */
+  /** Events of this fingerprint dropped so far today. */
   droppedForKey: number;
-}
-
-interface Bucket {
-  windowStart: number;
-  count: number;
-  dropped: number;
+  /** Events sent so far today, including this one when allowed. */
+  sentToday: number;
 }
 
 export const DEFAULT_BUDGET: Omit<BudgetOptions, 'now'> = {
-  perKeyLimit: 10,
+  perKeyLimit: 3,
   globalLimit: 60,
-  windowMs: 60_000,
   maxKeys: 500,
 };
 
@@ -75,9 +77,13 @@ export function budgetFromEnv(env: NodeJS.ProcessEnv = process.env): Omit<Budget
   return {
     perKeyLimit: num(env.SENTRY_BUDGET_PER_KEY, DEFAULT_BUDGET.perKeyLimit),
     globalLimit: num(env.SENTRY_BUDGET_GLOBAL, DEFAULT_BUDGET.globalLimit),
-    windowMs: num(env.SENTRY_BUDGET_WINDOW_MS, DEFAULT_BUDGET.windowMs),
     maxKeys: DEFAULT_BUDGET.maxKeys,
   };
+}
+
+/** UTC calendar day, e.g. `2026-09-04`. The reset boundary. */
+export function utcDayOf(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10);
 }
 
 /**
@@ -104,14 +110,22 @@ function normalizeTail(text: string): string {
     .replace(/\s+/g, ' ');
 }
 
-const OTHER_KEY = '(other)';
+interface KeyRecord {
+  sent: number;
+  dropped: number;
+  /** Insertion tick, for eviction order. */
+  seq: number;
+}
 
 export class SentryEventBudget {
-  private readonly perKey = new Map<string, Bucket>();
-  private globalBucket: Bucket = { windowStart: 0, count: 0, dropped: 0 };
-  /** Drops accumulated since the last drainSummary(), by fingerprint. */
-  private readonly droppedSinceDrain = new Map<string, number>();
   private readonly opts: Required<BudgetOptions>;
+  private day = '';
+  private sentTodayCount = 0;
+  private droppedTodayCount = 0;
+  /** Lifetime drops for this process; what Prometheus scrapes as a counter. */
+  private droppedTotalCount = 0;
+  private seq = 0;
+  private readonly perKey = new Map<string, KeyRecord>();
 
   constructor(options: Partial<BudgetOptions> = {}) {
     this.opts = {
@@ -124,49 +138,63 @@ export class SentryEventBudget {
 
   /** Decide whether an event with this fingerprint may be sent right now. */
   admit(key: string): Verdict {
-    const now = this.opts.now();
-    const { windowMs, perKeyLimit, globalLimit } = this.opts;
+    this.rollDay();
+    const { perKeyLimit, globalLimit } = this.opts;
 
-    if (now - this.globalBucket.windowStart >= windowMs) {
-      this.globalBucket = { windowStart: now, count: 0, dropped: 0 };
+    let rec = this.perKey.get(key);
+    if (!rec) {
+      rec = { sent: 0, dropped: 0, seq: ++this.seq };
+      this.perKey.set(key, rec);
+      this.evictIfNeeded();
     }
 
-    let bucket = this.perKey.get(key);
-    if (!bucket || now - bucket.windowStart >= windowMs) {
-      bucket = { windowStart: now, count: 0, dropped: 0 };
-      this.perKey.set(key, bucket);
-      this.evictIfNeeded(now);
+    if (rec.sent >= perKeyLimit) {
+      rec.dropped += 1;
+      this.countDrop();
+      return {
+        allow: false,
+        reason: 'per_key',
+        droppedForKey: rec.dropped,
+        sentToday: this.sentTodayCount,
+      };
+    }
+    if (this.sentTodayCount >= globalLimit) {
+      rec.dropped += 1;
+      this.countDrop();
+      return {
+        allow: false,
+        reason: 'global',
+        droppedForKey: rec.dropped,
+        sentToday: this.sentTodayCount,
+      };
     }
 
-    if (bucket.count >= perKeyLimit) {
-      bucket.dropped += 1;
-      this.recordDrop(key);
-      return { allow: false, reason: 'per_key', droppedForKey: bucket.dropped };
-    }
-    if (this.globalBucket.count >= globalLimit) {
-      bucket.dropped += 1;
-      this.globalBucket.dropped += 1;
-      this.recordDrop(key);
-      return { allow: false, reason: 'global', droppedForKey: bucket.dropped };
-    }
-
-    bucket.count += 1;
-    this.globalBucket.count += 1;
-    return { allow: true, droppedForKey: bucket.dropped };
+    rec.sent += 1;
+    this.sentTodayCount += 1;
+    return { allow: true, droppedForKey: rec.dropped, sentToday: this.sentTodayCount };
   }
 
-  /**
-   * Return and reset the drop counts accumulated since the previous drain.
-   * Returns null when nothing was dropped, so the caller can skip the summary.
-   */
-  drainSummary(): { total: number; byKey: Array<{ key: string; dropped: number }> } | null {
-    if (this.droppedSinceDrain.size === 0) return null;
-    const byKey = [...this.droppedSinceDrain.entries()]
-      .map(([key, dropped]) => ({ key, dropped }))
-      .sort((a, b) => b.dropped - a.dropped);
-    const total = byKey.reduce((s, r) => s + r.dropped, 0);
-    this.droppedSinceDrain.clear();
-    return { total, byKey };
+  /** Events sent so far in the current UTC day. */
+  get sentToday(): number {
+    this.rollDay();
+    return this.sentTodayCount;
+  }
+
+  /** Events dropped so far in the current UTC day. */
+  get droppedToday(): number {
+    this.rollDay();
+    return this.droppedTodayCount;
+  }
+
+  /** Events dropped since this process started. Monotonic: a counter. */
+  get dropped(): number {
+    return this.droppedTotalCount;
+  }
+
+  /** The UTC day the counters belong to. */
+  get currentDay(): string {
+    this.rollDay();
+    return this.day;
   }
 
   /** Number of fingerprints currently tracked (for tests / health). */
@@ -174,32 +202,38 @@ export class SentryEventBudget {
     return this.perKey.size;
   }
 
-  private recordDrop(key: string): void {
-    const m = this.droppedSinceDrain;
-    m.set(key, (m.get(key) ?? 0) + 1);
-    // Bound the summary map too: a message-mutating loop must not grow it
-    // forever. Overflow is folded into one "(other)" row so no drop is lost.
-    while (m.size > this.opts.maxKeys) {
-      let victim: string | undefined;
-      for (const k of m.keys()) {
-        if (k !== OTHER_KEY) { victim = k; break; }
-      }
-      if (victim === undefined) break;
-      const n = m.get(victim) ?? 0;
-      m.delete(victim);
-      m.set(OTHER_KEY, (m.get(OTHER_KEY) ?? 0) + n);
-    }
+  /** The day's worst offenders, most-dropped first (for logs / tests). */
+  topDropped(limit = 10): Array<{ key: string; sent: number; dropped: number }> {
+    return [...this.perKey.entries()]
+      .filter(([, r]) => r.dropped > 0)
+      .map(([key, r]) => ({ key, sent: r.sent, dropped: r.dropped }))
+      .sort((a, b) => b.dropped - a.dropped)
+      .slice(0, limit);
   }
 
-  private evictIfNeeded(now: number): void {
-    if (this.perKey.size <= this.opts.maxKeys) return;
-    for (const [k, b] of this.perKey) {
-      if (now - b.windowStart >= this.opts.windowMs) this.perKey.delete(k);
-    }
-    // Still over: drop the oldest windows first.
-    if (this.perKey.size > this.opts.maxKeys) {
-      const sorted = [...this.perKey.entries()].sort((a, b) => a[1].windowStart - b[1].windowStart);
-      for (const [k] of sorted.slice(0, this.perKey.size - this.opts.maxKeys)) this.perKey.delete(k);
+  private countDrop(): void {
+    this.droppedTodayCount += 1;
+    this.droppedTotalCount += 1;
+  }
+
+  private rollDay(): void {
+    const today = utcDayOf(this.opts.now());
+    if (today === this.day) return;
+    this.day = today;
+    this.sentTodayCount = 0;
+    this.droppedTodayCount = 0;
+    this.perKey.clear();
+  }
+
+  private evictIfNeeded(): void {
+    const max = this.opts.maxKeys;
+    if (this.perKey.size <= max) return;
+    // Map iteration is insertion order: the first entries are the oldest.
+    const excess = this.perKey.size - max;
+    let n = 0;
+    for (const k of this.perKey.keys()) {
+      if (n++ >= excess) break;
+      this.perKey.delete(k);
     }
   }
 }

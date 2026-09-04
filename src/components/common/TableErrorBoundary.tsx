@@ -8,6 +8,7 @@
  */
 
 import React, { Component, type ErrorInfo, type ReactNode } from 'react';
+import { reportError } from '../../utils/errorReporter';
 
 interface Props {
   children: ReactNode;
@@ -33,6 +34,14 @@ export class TableErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, info: ErrorInfo) {
     const componentName = this.props.componentName || 'Component';
     console.error(`[TableErrorBoundary] ${componentName} crashed:`, error, info.componentStack);
+
+    // Sentry, budgeted. `TableErrorBoundary.crash` is on the client allowlist
+    // (src/utils/errorReporter.ts): a crash in a table component is a crash a
+    // player is looking at. The wrapper never throws.
+    reportError(error, 'TableErrorBoundary.crash', {
+      componentName,
+      componentStack: info.componentStack?.slice(0, 500) || '',
+    });
 
     // Enhancement #6: Emit crash event for admin monitoring
     try {

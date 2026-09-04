@@ -98,6 +98,7 @@
  */
 
 import { setMaintenanceFrozen } from './freezeState.js';
+import { reportError } from '../services/errorReporter.js';
 
 /**
  * The parking primitive, as this module needs it.
@@ -716,6 +717,10 @@ export class MaintenanceBreak {
         n++;
       } catch (err) {
         console.warn(`[MaintenanceBreak] could not park table ${tableId}`, err);
+        // The break will restart the engine under this table with a hand
+        // possibly in flight. `MaintenanceBreak.park_failed` is on the Sentry
+        // allowlist (services/errorReporter.ts) for exactly that reason.
+        reportError(err, 'MaintenanceBreak.park_failed', { tableId });
       }
     }
     return n;

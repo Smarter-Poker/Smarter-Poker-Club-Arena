@@ -13,6 +13,7 @@
 
 import React from 'react';
 import { EmptyState } from './EmptyState';
+import { reportError } from '../../utils/errorReporter';
 
 interface PageErrorBoundaryProps {
   children: React.ReactNode;
@@ -54,6 +55,14 @@ export class PageErrorBoundary extends React.Component<
     // Fire-and-forget, never awaited, and every failure path is swallowed:
     // crash reporting must not be able to cause a crash.
     void this.report(error, errorInfo);
+
+    // Sentry, budgeted. `PageErrorBoundary.crash` is on the client allowlist
+    // (src/utils/errorReporter.ts): a player saw a crash, which is one of the
+    // few things the free tier is kept for. The wrapper never throws.
+    reportError(error, 'PageErrorBoundary.crash', {
+      pageName: this.props.pageName || 'Page',
+      componentStack: errorInfo.componentStack?.slice(0, 500) || '',
+    });
   }
 
   private async report(error: Error, errorInfo: React.ErrorInfo): Promise<void> {

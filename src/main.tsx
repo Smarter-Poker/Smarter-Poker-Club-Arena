@@ -51,7 +51,6 @@ import { initAntiGravity } from './core/AntiGravityBoot';
 import { initMasterBus } from './core/MasterBus';
 import { initIdentityDNA } from './core/IdentityDNA';
 import { initSentry } from './core/SentryInit';
-import { initWebVitals } from './core/WebVitals';
 import SystemOffline from './core/SystemOffline';
 import { ErrorBoundary } from './components/common';
 import { reportError, reportWarning } from './utils/errorReporter';
@@ -95,9 +94,8 @@ window.addEventListener('unhandledrejection', (event) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 //  INSTANT RENDER — Boot runs in background, React paints IMMEDIATELY
 // ═══════════════════════════════════════════════════════════════════════════════
-// PHASE 0: Sentry + WebVitals (synchronous, fast)
+// PHASE 0: Sentry (synchronous, fast; the SDK itself lazy-loads at idle)
 initSentry();
-initWebVitals();
 
 // PHASE 1: AntiGravity env-var check (synchronous — no network calls)
 const bootStatus = initAntiGravity();

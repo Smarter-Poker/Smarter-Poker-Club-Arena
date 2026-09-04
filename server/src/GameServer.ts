@@ -69,7 +69,12 @@ import {
   requeueUnbankedCashRake,
   auditGuaranteesKept,
 } from './services/FeeReconciler.js';
-import { reportError, initSentry, flushSentry } from './services/errorReporter.js';
+import {
+  reportError,
+  initSentry,
+  flushSentry,
+  sentryBudgetSnapshot,
+} from './services/errorReporter.js';
 import { startRakeSpecGuard } from './services/rakeSpecGuard.js';
 import { rakeSpecDriftState } from './config/rakeSpec.js';
 import { fetchAllRows } from './services/supabase/pagination.js';
@@ -1511,6 +1516,25 @@ export class GameServer {
       // observability/engineInstruments.ts and ActionLatency* in
       // infra/monitoring/alert-rules.yml.
       ...alwaysOnPrometheusLines(),
+      // ── SENTRY BUDGET (free tier, 2026-09-04) ────────────────────────
+      // The engine may send 60 errors a day. A quiet Sentry must never be
+      // mistaken for a healthy engine, so what the budget refused and what
+      // the allowlist kept local are numbers here, not a summary event that
+      // would itself cost quota. See docs/SENTRY-FREE-TIER-POLICY.md.
+      ...(() => {
+        const s = sentryBudgetSnapshot();
+        return [
+          '# HELP poker_sentry_events_dropped_total Sentry events refused by the engine daily budget since boot',
+          '# TYPE poker_sentry_events_dropped_total counter',
+          `poker_sentry_events_dropped_total ${s.droppedTotal}`,
+          '# HELP poker_sentry_events_sent_today Sentry events sent so far this UTC day (budget 60)',
+          '# TYPE poker_sentry_events_sent_today gauge',
+          `poker_sentry_events_sent_today ${s.sentToday}`,
+          '# HELP poker_sentry_events_suppressed_total reportError calls kept local by the context allowlist since boot',
+          '# TYPE poker_sentry_events_suppressed_total counter',
+          `poker_sentry_events_suppressed_total ${s.suppressedTotal}`,
+        ];
+      })(),
     ];
 
     // ── STATS PIPELINE (2026-09-04) ─────────────────────────────────────
@@ -1593,6 +1617,18 @@ export class GameServer {
       `[GameServer] Drain: ${drained}/${total} table(s) parked at a hand boundary` +
         (timedOut ? ' - budget expired, stopping anyway' : '')
     );
+    if (timedOut) {
+      // A hand in flight is about to be voided by the restart. One of the few
+      // things Sentry is still kept for (docs/SENTRY-FREE-TIER-POLICY.md
+      // section 3); `GameServer.drain_timed_out` is on the engine allowlist.
+      reportError(
+        new Error(
+          `[GameServer] drain timed out: ${total - drained} of ${total} table(s) still mid-hand after ${maxWaitMs}ms - stopping anyway`
+        ),
+        'GameServer.drain_timed_out',
+        { drained, total, maxWaitMs }
+      );
+    }
     return { drained, total, timedOut };
   }
 

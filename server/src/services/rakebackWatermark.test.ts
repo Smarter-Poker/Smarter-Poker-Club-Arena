@@ -107,7 +107,6 @@ vi.mock('./supabase.js', () => ({
 
 vi.mock('./errorReporter.js', () => ({
   reportError: (...args: unknown[]) => mockReportError(...args),
-  reportWarning: vi.fn(),
 }));
 
 import {

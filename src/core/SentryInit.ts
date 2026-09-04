@@ -1,30 +1,47 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  SENTRY INITIALIZATION — Lazy-Loaded Error Tracking & Performance Monitoring
- * ═══════════════════════════════════════════════════════════════════════════════
- * Initializes Sentry.io for comprehensive error tracking, performance monitoring,
- * and session replay across the Club Arena application.
+ * ===============================================================================
+ *  SENTRY INITIALIZATION - lazy-loaded, budgeted, errors only
+ * ===============================================================================
  *
- * LAZY-LOADING: the Sentry surface (src/core/sentryBundle.ts) is loaded dynamically after
- * first render via requestIdleCallback, keeping it out of the critical path.
- * All public wrapper functions safely queue or no-op until Sentry is ready.
+ * Sentry is on the free Developer plan (2026-09-04, docs/SENTRY-FREE-TIER-POLICY.md):
+ * 5,000 errors a month for the whole organisation, 50 session replays, 5M
+ * spans. So this client sends ERRORS ONLY, and few of them:
  *
- * Features:
- * - Automatic error capture with stack traces
- * - Performance monitoring with distributed tracing
- * - Session replay for debugging user issues
- * - User identification and context
- * - Supabase integration for database monitoring
- * ═══════════════════════════════════════════════════════════════════════════════
+ *   - tracing is OFF (`tracesSampleRate: 0`, no BrowserTracing integration);
+ *   - Session Replay is OFF (both replay rates 0, the integration is not
+ *     loaded at all - it was 50 replays a month, which is not a feature);
+ *   - `sampleRate: 0.25` - three in four errors never leave the browser;
+ *   - beforeSend enforces the client budget (src/core/sentryClientBudget.ts):
+ *     2 events per session, 3 per fingerprint per day, 40 per day.
+ *
+ * What is WORTH an event is decided upstream, by the context allowlist in
+ * src/utils/errorReporter.ts: error boundaries, the unhandled-rejection net,
+ * and a money action the server refused. Everything else is a console line.
+ *
+ * LAZY-LOADING: the Sentry surface (src/core/sentryBundle.ts) is loaded
+ * dynamically after first render via requestIdleCallback, keeping it out of
+ * the critical path. The public wrappers queue until it is ready.
+ *
+ * Nothing in beforeSend filters by error CLASS. The August audit found a
+ * `/src/`-gated "Cannot read properties of null" drop that threw away every
+ * real production null-deref once source maps stopped shipping, and a blanket
+ * ReferenceError drop elsewhere. Known noise is named (AbortError, extension
+ * frames, ResizeObserver, the fetch-failed family); a type is never a reason.
  */
 
-import React from 'react';
 import { reportError } from '../utils/errorReporter';
 import type { SentrySurface } from './sentryBundle';
+import { SentryClientBudget, clientFingerprintOf } from './sentryClientBudget';
 
-// ── Module-level state ──
+// -- Module-level state --
 let SentryModule: SentrySurface | null = null;
 let initPromise: Promise<SentrySurface | null> | null = null;
+
+/**
+ * The client budget. One per page load; the daily counter lives in
+ * localStorage so a reload does not reset it. Exported for tests only.
+ */
+export const clientBudget = new SentryClientBudget();
 
 // Queue of actions to replay once Sentry loads
 type QueuedAction = () => void;
@@ -33,7 +50,7 @@ const MAX_QUEUE = 50; // Cap to prevent memory leaks if Sentry never loads
 
 function enqueue(action: QueuedAction) {
   if (SentryModule) {
-    // Sentry already loaded — execute immediately
+    // Sentry already loaded - execute immediately
     try {
       action();
     } catch {
@@ -75,6 +92,64 @@ export async function getSentryAsync(): Promise<SentrySurface | null> {
   return loadAndInitSentry();
 }
 
+type BeforeSendEvent = {
+  message?: string;
+  exception?: { values?: Array<{ type?: string; value?: string }> };
+  contexts?: Record<string, unknown>;
+  tags?: Record<string, unknown>;
+};
+
+/**
+ * The beforeSend Sentry is initialised with. Exported so a test can drive it
+ * without a network or a real SDK: everything that decides whether an event
+ * leaves the browser is in here.
+ */
+export function clientBeforeSend<E extends BeforeSendEvent>(
+  event: E,
+  hint: { originalException?: unknown }
+): E | null {
+  const error = hint.originalException as Error | undefined;
+
+  if (error && typeof error === 'object') {
+    if ('name' in error) {
+      const name = String(error.name);
+      if (name === 'AbortError') return null;
+    }
+
+    if ('message' in error) {
+      const message = String(error.message);
+      if (message.includes('Failed to fetch') || message.includes('NetworkError')) return null;
+      if (message.includes('ResizeObserver')) return null;
+      if (message.includes('signal is aborted') || message.includes('aborted')) return null;
+      if (message.includes('Internal error')) return null;
+    }
+
+    if ('stack' in error) {
+      const stack = String(error.stack);
+      if (stack.includes('chrome-extension://') || stack.includes('moz-extension://')) return null;
+    }
+  }
+
+  // The budget. Uncaught exceptions arrive here with no reportError context,
+  // so the fingerprint falls back to the message head.
+  const message =
+    (error && typeof error === 'object' && 'message' in error && String(error.message)) ||
+    event.message ||
+    event.exception?.values?.[0]?.value ||
+    '';
+  const source = (event.contexts?.errorContext as { source?: string } | undefined)?.source;
+  const verdict = clientBudget.admit(clientFingerprintOf(message, source));
+  if (!verdict.allow) {
+    console.warn(
+      `[Sentry] event dropped by the client budget (${verdict.reason}); ` +
+        `${verdict.sentToday} sent today, ${verdict.droppedThisSession} dropped this session`
+    );
+    return null;
+  }
+  event.tags = { ...(event.tags ?? {}), sentry_budget_sent_today: String(verdict.sentToday) };
+  return event;
+}
+
 /**
  * Internal: load and initialize Sentry
  */
@@ -89,9 +164,7 @@ async function loadAndInitSentry(): Promise<SentrySurface | null> {
   }
 
   try {
-    // Dynamic imports — react-router-dom hooks are needed for route tracking
-    const [Sentry, { createRoutesFromChildren, matchRoutes, useLocation, useNavigationType }] =
-      await Promise.all([import('./sentryBundle'), import('react-router-dom')]);
+    const Sentry = await import('./sentryBundle');
 
     Sentry.init({
       dsn,
@@ -109,38 +182,24 @@ async function loadAndInitSentry(): Promise<SentrySurface | null> {
       // way the release list says so.
       release: `club-arena@${import.meta.env.VITE_APP_VERSION || 'unknown'}`,
 
+      // Errors only. No Replay, no BrowserTracing: neither integration is
+      // loaded, so a rate above 0 here would have nothing to sample anyway.
+      // The rates are pinned to 0 as well so the intent survives a future
+      // "helpful" integration import.
       integrations: [
-        Sentry.reactRouterV6BrowserTracingIntegration({
-          useEffect: React.useEffect,
-          useLocation,
-          useNavigationType,
-          createRoutesFromChildren,
-          matchRoutes,
-        }),
-        Sentry.replayIntegration({
-          maskAllText: true,
-          blockAllMedia: true,
-          maskAllInputs: true,
-          networkDetailAllowUrls: [
-            'https://kuklfnapbkmacvwxktbh.supabase.co',
-            'https://smarter.poker/api',
-          ],
-          networkCaptureBodies: true,
-          networkRequestHeaders: ['User-Agent', 'X-Request-ID'],
-          networkResponseHeaders: ['X-Response-Time'],
-        }),
+        // Sentry's own window.onerror hook stays (an uncaught exception is on
+        // the allowlist). Its onunhandledrejection hook is turned off because
+        // main.tsx already reports every unhandled rejection through
+        // reportError as `main.Unhandled_promise_rejection_caught`; with both
+        // on, one rejection cost two of the session's two events.
+        Sentry.globalHandlersIntegration({ onerror: true, onunhandledrejection: false }),
       ],
-
-      tracesSampleRate: environment === 'production' ? 0.1 : 1.0,
-      replaysSessionSampleRate: 0.1,
-      replaysOnErrorSampleRate: 1.0,
-
-      // Only inject sentry-trace headers to our own domains (avoids CORS issues with third parties)
-      tracePropagationTargets: [
-        'localhost',
-        /^https:\/\/kuklfnapbkmacvwxktbh\.supabase\.co/,
-        /^https:\/\/smarter\.poker/,
-      ],
+      tracesSampleRate: 0,
+      replaysSessionSampleRate: 0,
+      replaysOnErrorSampleRate: 0,
+      // A quarter of errors leave the browser; applied by the SDK before
+      // beforeSend, so the budget below sees a quarter of any wave.
+      sampleRate: 0.25,
 
       // Filter out noise from browser extensions and third-party scripts
       denyUrls: [
@@ -152,45 +211,7 @@ async function loadAndInitSentry(): Promise<SentrySurface | null> {
         /graph\.facebook\.com/i,
       ],
 
-      beforeSend(event, hint) {
-        const error = hint.originalException as Error | undefined;
-
-        if (error && typeof error === 'object') {
-          if ('name' in error) {
-            const name = String(error.name);
-            if (name === 'AbortError') return null;
-          }
-
-          if ('message' in error) {
-            const message = String(error.message);
-            if (message.includes('Failed to fetch') || message.includes('NetworkError'))
-              return null;
-            if (message.includes('ResizeObserver')) return null;
-            if (message.includes('signal is aborted') || message.includes('aborted')) return null;
-            if (message.includes('Internal error')) return null;
-            if (message.includes('Cannot read properties of null')) {
-              const stack = 'stack' in error ? String(error.stack) : '';
-              if (!stack.includes('/src/')) return null;
-            }
-          }
-
-          if ('stack' in error) {
-            const stack = String(error.stack);
-            if (stack.includes('chrome-extension://') || stack.includes('moz-extension://'))
-              return null;
-          }
-        }
-
-        return event;
-      },
-
-      beforeSendTransaction(event) {
-        if (event.start_timestamp && event.timestamp) {
-          const duration = (event.timestamp - event.start_timestamp) * 1000;
-          if (duration < 100) return null;
-        }
-        return event;
-      },
+      beforeSend: clientBeforeSend,
 
       ignoreErrors: [
         'top.GLOBALS',
@@ -224,9 +245,9 @@ async function loadAndInitSentry(): Promise<SentrySurface | null> {
 }
 
 /**
- * Initialize Sentry error tracking and performance monitoring.
- * Now lazy-loads the Sentry surface dynamically after first render.
- * Safe to call synchronously — the actual load happens in the background.
+ * Initialize Sentry error tracking.
+ * Lazy-loads the Sentry surface dynamically after first render.
+ * Safe to call synchronously - the actual load happens in the background.
  */
 export function initSentry() {
   const environment = import.meta.env.VITE_APP_ENV || 'production';
@@ -244,7 +265,7 @@ export function initSentry() {
   }
 }
 
-// ── Public wrapper functions (queue calls until Sentry loads) ──
+// -- Public wrapper functions (queue calls until Sentry loads) --
 
 /**
  * Set user context in Sentry
@@ -275,24 +296,6 @@ export function clearSentryUser() {
 }
 
 /**
- * Add custom context to Sentry events
- */
-export function setSentryContext(key: string, context: Record<string, any>) {
-  enqueue(() => {
-    SentryModule?.setContext(key, context);
-  });
-}
-
-/**
- * Add custom tags to Sentry events
- */
-export function setSentryTags(tags: Record<string, string>) {
-  enqueue(() => {
-    SentryModule?.setTags(tags);
-  });
-}
-
-/**
  * Manually capture an exception
  */
 export function captureException(error: Error, context?: Record<string, any>) {
@@ -313,7 +316,8 @@ export function captureMessage(message: string, level: 'info' | 'warning' | 'err
 }
 
 /**
- * Add a breadcrumb for debugging context
+ * Add a breadcrumb for debugging context. Breadcrumbs are free: they ride
+ * inside the next event and are never an event of their own.
  */
 export function addBreadcrumb(breadcrumb: {
   message: string;
@@ -329,15 +333,4 @@ export function addBreadcrumb(breadcrumb: {
       data: breadcrumb.data,
     });
   });
-}
-
-/**
- * Start a performance span
- */
-export function startTransaction(name: string, op: string = 'custom') {
-  // Spans only make sense if Sentry is already loaded
-  if (SentryModule) {
-    return SentryModule.startSpan({ name, op }, (span) => span);
-  }
-  return undefined;
 }

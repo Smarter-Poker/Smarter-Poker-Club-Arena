@@ -9,6 +9,7 @@
 
 import { Component, ReactNode } from 'react';
 import { EmptyState } from './EmptyState';
+import { reportError } from '../../utils/errorReporter';
 
 interface Props {
   children: ReactNode;
@@ -70,7 +71,14 @@ export default class RouteErrorBoundary extends Component<Props, State> {
       } catch {
         window.location.reload();
       }
+      return;
     }
+
+    // Sentry, budgeted. `RouteErrorBoundary.crash` is on the client allowlist
+    // (src/utils/errorReporter.ts): a player saw a route fail to render. A
+    // stale chunk after a publish is handled by the reload above and is not
+    // reported - it is a deploy artefact, not a defect. The wrapper never throws.
+    reportError(error, 'RouteErrorBoundary.crash');
   }
 
   handleReload = () => {

@@ -111,7 +111,6 @@
     "src/core/MasterBus.ts",
     "src/core/SentryInit.ts",
     "src/core/SystemOffline.tsx",
-    "src/core/WebVitals.ts",
     "src/core/useGlobalBalanceSync.ts",
     "src/cosmetics/avatarCosmetics.ts",
     "src/hooks/useAuthUser.ts",

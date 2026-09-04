@@ -531,9 +531,6 @@ export async function fetchVoiceIceConfig(): Promise<VoiceIceConfig> {
       if (window > 0) iceCache = { config: parsed, until: Date.now() + window };
       return parsed;
     } catch (e) {
-      // Deliberately quiet about the shape of the failure: this runs on every
-      // join, and an engine mid-deploy would otherwise fill Sentry with noise
-      // describing a case that is fully handled.
       reportError(e, 'VoiceSignalService.fetchVoiceIceConfig');
       return VOICE_ICE_FALLBACK;
     } finally {

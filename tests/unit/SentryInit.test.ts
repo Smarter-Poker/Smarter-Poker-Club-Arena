@@ -9,20 +9,18 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('@sentry/react', () => ({
   init: vi.fn(),
   setUser: vi.fn(),
-  setContext: vi.fn(),
-  setTags: vi.fn(),
   captureException: vi.fn(),
   captureMessage: vi.fn(),
   addBreadcrumb: vi.fn(),
-  BrowserTracing: vi.fn(),
+  showReportDialog: vi.fn(),
+  withScope: vi.fn(),
+  globalHandlersIntegration: vi.fn(),
 }));
 
 import {
   initSentry,
   setSentryUser,
   clearSentryUser,
-  setSentryContext,
-  setSentryTags,
   captureException,
   captureMessage,
   addBreadcrumb,
@@ -47,14 +45,6 @@ describe('SentryInit', () => {
 
   it('should not throw when clearing user', () => {
     clearSentryUser();
-  });
-
-  it('should not throw when setting context', () => {
-    setSentryContext('test', { key: 'value' });
-  });
-
-  it('should not throw when setting tags', () => {
-    setSentryTags({ env: 'test' });
   });
 
   it('should not throw when capturing exception', () => {

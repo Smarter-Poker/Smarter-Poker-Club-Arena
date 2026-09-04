@@ -44,7 +44,11 @@ export const NLH_PREMIUM_ZONES = {
   status: { x: 441, y: 112, width: 227, height: 93 },
   /* The lit interior of the same pill, for the DOM-text states (Empty, Full,
      Waitlist N). Inset from the chrome rim so the glow never paints over it. */
-  statusText: { x: 463, y: 134, width: 183, height: 50, align: 'center', maxLines: 1 },
+  /* Measured on running.png: the word RUNNING sits at x 499-611, y 145-164
+     of the master (centre 555, 154.5). The DOM states share that centre so
+     Empty / Full / Waitlist sit exactly where Running does (Dan 2026-09-03:
+     "make sure all the pills are lined up right"). */
+  statusText: { x: 462, y: 128, width: 186, height: 53, align: 'center', maxLines: 1 },
   gameType: { x: 83, y: 250, width: 214, height: 174 },
   stakes: { x: 331, y: 305, width: 275, height: 82, align: 'center', maxLines: 1 },
   players: { x: 112, y: 477, width: 151, height: 84, align: 'center', maxLines: 1 },

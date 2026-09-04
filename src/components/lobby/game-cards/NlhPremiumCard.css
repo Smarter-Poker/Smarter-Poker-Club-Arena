@@ -53,12 +53,17 @@
    definition it was doing comes from the drop shadows alone. */
 .arena-premium-text--title,
 .arena-premium-text--value {
-  color: #ececec;
-  background: linear-gradient(180deg, #fff 0%, #f4f4f4 40%, #d2d2d4 100%);
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 0.3cqw 0 #050607) drop-shadow(0 0.5cqw 0.75cqw rgb(0 0 0 / 94%));
+  /* SOLID silver with a bevel - never a clipped gradient. On Dan's phone the
+     clipped fill did not paint and the transparent glyphs showed as black
+     (2026-09-03: "all letters in the title ... need to be white or silver").
+     A real colour cannot fail that way. */
+  color: #e6e9ee;
+  -webkit-text-fill-color: #e6e9ee;
+  text-shadow:
+    0 -0.18cqw 0 rgb(255 255 255 / 60%),
+    0 0.25cqw 0 #6d747c,
+    0 0.45cqw 0 #050607,
+    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
 }
 
 .arena-premium-text--title {
@@ -81,23 +86,32 @@
 
 .arena-premium-text--blue {
   color: #63b9f5;
-  background: linear-gradient(180deg, #c9edff 0%, #55b9ff 38%, #177ec4 100%);
-  background-clip: text;
-  -webkit-background-clip: text;
+  -webkit-text-fill-color: #63b9f5;
+  text-shadow:
+    0 -0.18cqw 0 #c9edff,
+    0 0.25cqw 0 #177ec4,
+    0 0.45cqw 0 #050607,
+    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
 }
 
 .arena-premium-text--green {
   color: #58d874;
-  background: linear-gradient(180deg, #b8ffc3 0%, #45d565 42%, #167d2e 100%);
-  background-clip: text;
-  -webkit-background-clip: text;
+  -webkit-text-fill-color: #58d874;
+  text-shadow:
+    0 -0.18cqw 0 #b8ffc3,
+    0 0.25cqw 0 #167d2e,
+    0 0.45cqw 0 #050607,
+    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
 }
 
 .arena-premium-text--gold {
   color: #e2bd54;
-  background: linear-gradient(180deg, #fff0a9 0%, #ddb23e 48%, #76500d 100%);
-  background-clip: text;
-  -webkit-background-clip: text;
+  -webkit-text-fill-color: #e2bd54;
+  text-shadow:
+    0 -0.18cqw 0 #fff0a9,
+    0 0.25cqw 0 #76500d,
+    0 0.45cqw 0 #050607,
+    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
 }
 
 .agc-nlh-premium__title {
@@ -145,6 +159,22 @@
   transform: scaleX(1.04);
 }
 
+/* A range stacks: minimum over maximum, both centred, no dash. */
+.agc-nlh-premium__buy-in-stack {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  row-gap: 0.2cqw;
+  max-width: 100%;
+}
+
+.agc-nlh-premium__buy-in-stack .arena-premium-text {
+  font-size: 5.4cqw;
+  line-height: 0.95;
+  text-align: center;
+  transform: none;
+}
+
 /* Status pill, DOM-text states. Mirrors the approved RUNNING bitmap: a soft
    inner glow filling the pill and lit condensed capitals over it. */
 .agc-nlh-premium__status {
@@ -179,10 +209,10 @@
   padding: 0 0.6cqw;
   font-family: 'Roboto Condensed', 'Arial Narrow', Impact, sans-serif;
   font-stretch: condensed;
-  font-size: 4.9cqw;
+  font-size: 3.9cqw;
   font-weight: 800;
   line-height: 1;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   white-space: nowrap;
   color: var(--status-ink);

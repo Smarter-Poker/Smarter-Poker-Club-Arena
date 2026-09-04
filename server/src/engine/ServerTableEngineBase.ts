@@ -56,6 +56,11 @@ import {
 } from '../services/supabase.js';
 import { collectNitEvictions } from '../services/supabase/nitGame.js';
 import { evaluateCashSessions, atomicCashoutVoluntary } from '../services/supabase/cashSessions.js';
+import {
+  executePendingSeatMoves,
+  pendingSeatMoves,
+  seatMoveNotice,
+} from '../services/supabase/seatMoves.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { ChipContinuityTracker } from './ChipContinuity.js';
 import { deadlineScheduler } from './DeadlineScheduler.js';
@@ -2254,6 +2259,80 @@ export abstract class ServerTableEngineBase {
     });
   }
 
+  /** Moves already announced to their player (once per move id). */
+  protected announcedSeatMoves: Set<string> = new Set();
+
+  /**
+   * MUST-MOVE, the engine's half (OPORD 1.3 s9.5, OPORD 1.4 s18.3). At the
+   * START of a hand every player with a planned move is told, once:
+   * "Seat Open On Main 2. Moving After This Hand." Nothing is asked.
+   */
+  protected async announcePendingSeatMoves(): Promise<void> {
+    if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return;
+    const pending = await pendingSeatMoves(this.tableId);
+    for (const m of pending) {
+      if (this.announcedSeatMoves.has(m.move_id)) continue;
+      this.announcedSeatMoves.add(m.move_id);
+      this.hub?.emitEvent(this.tableId, {
+        type: 'seat_move_pending',
+        table_id: this.tableId,
+        user_id: m.player_id,
+        to_table_id: m.to_table_id,
+        to_role: m.to_role,
+        to_main_index: m.to_main_index,
+        reason: m.reason,
+        message: seatMoveNotice(m),
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  /**
+   * At the END of a hand (and on every idle tick) the planned moves are
+   * executed: chair, chips and session go to the other table in one SQL
+   * transaction; this engine forgets the player the way it forgets a leaver,
+   * except that nothing is cashed out and no clock is closed. The destination
+   * engine sees the new seat on its next deal (loadSeatedPlayers) and the
+   * controller wakes a dealer for a table that has none.
+   */
+  protected async executePendingSeatMoves(): Promise<string[]> {
+    if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return [];
+    const done = await executePendingSeatMoves(this.tableId);
+    const movedIds: string[] = [];
+    for (const m of done) {
+      movedIds.push(m.player_id);
+      this.announcedSeatMoves.delete(m.move_id);
+      const seated = this.seatedPlayers.find((sp) => sp.user_id === m.player_id);
+      this.disconnectEngine.unregisterPlayer(this.tableId, m.player_id);
+      this.timeBankEngine.removePlayer(this.tableId, m.player_id);
+      this.straddleEngine.removePlayer(this.tableId, m.player_id);
+      this.preActionEngine.removePlayer(this.tableId, m.player_id);
+      this.forcedLeaves.delete(m.player_id);
+      this.leaveHeldByClock.delete(m.player_id);
+      // The session row followed the player; only this engine's mirror of
+      // it is dropped. The destination engine rebuilds its mirror from rows.
+      this.chipContinuity.forget(m.player_id);
+      this.hub?.emitEvent(this.tableId, {
+        type: 'seat_moved',
+        table_id: this.tableId,
+        seat: seated?.seat_number ?? null,
+        user_id: m.player_id,
+        to_table_id: m.to_table_id,
+        to_seat: m.to_seat_number,
+        stack: m.stack,
+        timestamp: Date.now(),
+      });
+      console.log(
+        `[ServerTableEngine:${this.tableId}] ${m.player_id} moved to ${m.to_table_id} seat ${m.to_seat_number} with ${m.stack}`
+      );
+    }
+    if (movedIds.length > 0) {
+      this.seatedPlayers = this.seatedPlayers.filter((sp) => !movedIds.includes(sp.user_id));
+      void this.broadcastCurrentState();
+    }
+    return movedIds;
+  }
+
   protected isContinuityActive(userId: string): boolean {
     // A leave the clock is holding serves the clock: the player asked to go,
     // and the sit-out that keeps them out of the deal is the engine's, not
@@ -3871,9 +3950,20 @@ export abstract class ServerTableEngineBase {
       }
     }
 
+    // 2026-09-04: a seat nobody is behind for five minutes, never sat out and
+    // never charged a blind (a quiet table), is released on the same clock
+    // as a sit-out. See DisconnectEngine.collectAbandonedSeatEvictions.
+    const abandonedEvictable = this.disconnectEngine.collectAbandonedSeatEvictions(
+      this.tableId,
+      seatedIds
+    );
+
     const blindEvictSet = new Set(blindEvictable);
     const nitEvictSet = new Set(nitEvictable);
-    const evictable = Array.from(new Set([...sitOutEvictable, ...blindEvictable, ...nitEvictable]));
+    const abandonedEvictSet = new Set(abandonedEvictable);
+    const evictable = Array.from(
+      new Set([...sitOutEvictable, ...blindEvictable, ...nitEvictable, ...abandonedEvictable])
+    );
     if (evictable.length === 0) return;
 
     // Dan 2026-08-26, binding: "a player can never leave the table while they
@@ -3896,12 +3986,19 @@ export abstract class ServerTableEngineBase {
       }
       const awayBlindEvict = blindEvictSet.has(userId);
       const nitEvict = !awayBlindEvict && nitEvictSet.has(userId);
+      const abandonedEvict =
+        !awayBlindEvict &&
+        !nitEvict &&
+        !sitOutEvictable.includes(userId) &&
+        abandonedEvictSet.has(userId);
       console.log(
         awayBlindEvict
           ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - away, already charged one SB and one BB`
           : nitEvict
             ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - below this nit game's VPIP floor`
-            : `[ServerTableEngine:${this.tableId}] evicting ${userId} - sat out past the 2-orbit / 5-minute limit`
+            : abandonedEvict
+              ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - gone for 5 minutes with nobody behind the seat`
+              : `[ServerTableEngine:${this.tableId}] evicting ${userId} - sat out past the 2-orbit / 5-minute limit`
       );
       this.hub?.emitEvent(this.tableId, {
         type: 'seat_left',
@@ -3909,7 +4006,13 @@ export abstract class ServerTableEngineBase {
         seat: seated.seat_number,
         user_id: userId,
         mid_hand: false,
-        reason: awayBlindEvict ? 'away_blind_cap' : nitEvict ? 'nit_game_vpip' : 'sit_out_timeout',
+        reason: awayBlindEvict
+          ? 'away_blind_cap'
+          : nitEvict
+            ? 'nit_game_vpip'
+            : abandonedEvict
+              ? 'abandoned_seat'
+              : 'sit_out_timeout',
         timestamp: Date.now(),
       });
       try {

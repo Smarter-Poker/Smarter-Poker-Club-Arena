@@ -175,6 +175,10 @@ function record(over: Partial<HandRecord> = {}): HandRecord {
     heroId: HERO,
     heroResult: 971.27,
     potTotal: 1470,
+    wentToShowdown: true,
+    muckedIds: [],
+    rake: 0,
+    bbjFee: 0,
     ...over,
   };
 }

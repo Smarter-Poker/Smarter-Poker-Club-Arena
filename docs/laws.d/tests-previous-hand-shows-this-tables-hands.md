@@ -1,0 +1,3 @@
+# tests/previous-hand-shows-this-tables-hands.law.test.ts
+
+Previous Hand shows this table's hands (Dan 2026-09-04): a live table asks for its own `table_id` in `hand_number` order; the localStorage key is v2 and v1 keys (cross-table lists filed under a table's name) are thrown away; a fold-around is never filed under "Showdown" and showdown rows are only the players who showed or mucked; who won each board comes from `winners_by_board` on every surface (the "covers every run" note survives only for older rows); bomb-pot boards reach the panel; a returned uncalled bet leaves the pot and the forced posts read as words; rake is shown beside the pot; the writer never files a hand under a roster missing a participant, because the roster is the RLS key.

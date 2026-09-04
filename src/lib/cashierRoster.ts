@@ -98,6 +98,60 @@ export const rosterRowMatches = (row: DownlineRow, query: string): boolean => {
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
+ *  ONE RULE FOR EVERY CASHIER SURFACE (Dan 2026-09-04, round 2)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * "IF THEY DON'T HAVE A WALLET, LIKE (ADMINS) YOU CAN'T SEND THEM ANYTHING,
+ * BUT ALL USERS SHOULD STILL BE SEARCHABLE AND DISCOVERABLE."
+ *
+ * So a cashier NEVER removes a member from a list because the send would be
+ * refused. It lists them, says why they cannot receive this particular thing,
+ * and refuses the selection. A removed row is indistinguishable from a member
+ * who is not in the club at all, which is the bug this rule exists to stop.
+ *
+ * The two refusals a cashier can know about before the tap:
+ *   - the viewer themselves (fn_agent_wallet_send / fn_promo_wallet_send both
+ *     refuse `p_to_user_id = auth.uid()`; fn_club_bank_send deliberately does
+ *     NOT, because an owner funding their own float is the normal route);
+ *   - a member whose role cannot hold the destination wallet
+ *     (fn_agent_wallet_send: "Only Staff Or Agents Hold An Agent Wallet").
+ *
+ * Anything else the server refuses is the server's to say on submit; this
+ * never guesses.
+ */
+export interface CashierRecipientBlock {
+  /** Short label rendered on the row itself. Title Case (popup law). */
+  label: string;
+  /** The sentence shown on hover / to assistive tech. */
+  reason: string;
+}
+
+export function cashierRecipientBlock(opts: {
+  isSelf: boolean;
+  /** The destination refuses a self-send (false for the club bank). */
+  refusesSelfSend: boolean;
+  /** The destination is a wallet only staff and agents hold. */
+  destinationNeedsAgentWallet: boolean;
+  /** This member's role can hold that wallet. */
+  memberHoldsAgentWallet: boolean;
+}): CashierRecipientBlock | null {
+  if (opts.isSelf && opts.refusesSelfSend) {
+    return {
+      label: 'You',
+      reason: 'This Is You. Chips Cannot Be Sent To Yourself.',
+    };
+  }
+  if (opts.destinationNeedsAgentWallet && !opts.memberHoldsAgentWallet) {
+    return {
+      label: 'No Wallet',
+      reason: 'Only Staff Or Agents Hold This Wallet, So Nothing Can Be Sent Here.',
+    };
+  }
+  return null;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
  *  A SEARCH RANKS BY HOW WELL IT MATCHED, NOT BY WHO HAS THE MOST CHIPS
  * ═══════════════════════════════════════════════════════════════════════════
  *

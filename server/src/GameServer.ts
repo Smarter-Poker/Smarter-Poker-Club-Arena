@@ -18,6 +18,7 @@ import {
   handHistoryQueueDepth,
 } from './services/supabase.js';
 import { HorseFleetManager } from './services/HorseFleetManager.js';
+import { ClusterController } from './cluster/ClusterController.js';
 import {
   TournamentRecurringService,
   mttPrestartHorseTarget,
@@ -29,6 +30,7 @@ import { ScheduledTournamentService } from './services/ScheduledTournamentServic
 import { TournamentMetrics } from './services/TournamentMetrics.js';
 import { SpinMetrics } from './services/SpinMetrics.js';
 import { ReplicationMetrics } from './services/ReplicationMetrics.js';
+import { alwaysOnPrometheusLines } from './observability/engineInstruments.js';
 import {
   planTableReopens,
   freshHumanWindowMs,
@@ -358,6 +360,22 @@ export class GameServer {
 
   // Server-side services (replaces browser-based DealerPage services)
   private horseFleet = new HorseFleetManager();
+  /** Operation Table Stakes, Slice 6: the tables of a must-move game open,
+   *  feed, break and sleep on their own. Leader-only, like the fleet. */
+  private clusterController = new ClusterController({
+    eligibleHorseCount: (tableId) => this.horseFleet.eligibleHorseCount(tableId),
+    ensureEngine: (tableId) => this.ensureCashTableEngine(tableId),
+    hasEngine: (tableId) => this.tableEngines.has(tableId),
+    seatedCount: async (tableId) => {
+      const { count, error } = await supabase
+        .from('table_seats')
+        .select('id', { count: 'exact', head: true })
+        .eq('table_id', tableId)
+        .is('left_at', null);
+      if (error) throw error;
+      return count ?? 0;
+    },
+  });
   private tournamentRecurring = new TournamentRecurringService();
   // Data-driven recurring schedules (tournament_schedules) — runs alongside the
   // hardcoded recurring blocks, acting only on rows written into the database.
@@ -760,6 +778,9 @@ export class GameServer {
         .start()
         .catch((err) => reportError(err, 'GameServer.horse_fleet_start_failed'));
 
+      // Slice 6: the cluster lifecycle, beside the fleet, on the leader only.
+      this.clusterController.start();
+
       // Step 3: Start tournament recurring service (creates MTTs, SNGs, Spins)
       this.tournamentRecurring.start();
 
@@ -894,6 +915,7 @@ export class GameServer {
 
     // Stop services
     this.horseFleet.stop();
+    this.clusterController.stop();
     this.tournamentRecurring.stop();
     this.scheduledTournaments.stop();
     this.lifecycle.stop();
@@ -1483,6 +1505,12 @@ export class GameServer {
       // How far behind the realtime replication slot is, in bytes, per slot.
       // See services/ReplicationMetrics.ts.
       ...this.replicationMetrics.toPrometheus(),
+      // ── ACTION LATENCY, ALWAYS ON (Realtime programme Phase 1, 2026-09-04)
+      // The number that defines how a table feels, scraped for the first
+      // time. Two series (audience=human|horse), never per table. See
+      // observability/engineInstruments.ts and ActionLatency* in
+      // infra/monitoring/alert-rules.yml.
+      ...alwaysOnPrometheusLines(),
     ];
 
     // ── STATS PIPELINE (2026-09-04) ─────────────────────────────────────

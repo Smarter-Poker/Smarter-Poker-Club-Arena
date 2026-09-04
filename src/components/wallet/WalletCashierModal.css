@@ -284,6 +284,26 @@
   background: rgba(0, 180, 230, 0.12);
 }
 
+/* Listed, findable, not a recipient (Dan 2026-09-04): a member the server
+   would refuse for THIS destination stays on the list wearing the reason,
+   because a removed row reads as "not in this club". */
+.cbc-member--blocked {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.cbc-member-block {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid #4a5f72;
+  border-radius: 3px;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #a9bccb;
+}
+
 .cbc-member-role {
   flex-shrink: 0;
   font-size: 0.62rem;

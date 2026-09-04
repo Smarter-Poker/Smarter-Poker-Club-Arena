@@ -119,8 +119,9 @@
   bottom: 1px;
   right: 2px;
   /* Dan 2026-08-26 mobile pass, item 6: smaller numeral so it no longer
-     covers the stopwatch artwork. */
-  font-size: 8px;
+     covers the stopwatch artwork. 8px on a 44px tile; 12px on the 66px tile
+     (Dan 2026-09-04, 50% larger) - same proportion of the artwork. */
+  font-size: 12px;
   font-weight: 800;
   color: #ffffff;
   line-height: 1;

@@ -248,16 +248,23 @@ export interface MemberDetail {
 
 export interface MemberStatistics {
   authorized: boolean;
+  /** Why not, when not: a member asking about a non-member vs. a role that may not look. */
+  reason: 'not_member' | 'restricted' | null;
   variant: string;
   variants: string[];
-  total_games: number;
-  total_hands: number;
-  wins: number;
-  winner: number;
+  hands: number;
+  hands_won: number;
+  win_rate: number;
   vpip: number;
   pfr: number;
+  /** 3-bets per hand dealt. The facts table has no 3-bet-opportunity flag. */
   three_bet: number;
+  three_bets: number;
+  /** Folds per open that was 3-bet: the two flags measure exactly this. */
+  fold_to_three_bet: number;
+  faced_three_bets: number;
   cbet: number;
+  cbet_opportunities: number;
   net: number;
   fees: number;
   from: string | null;
@@ -472,16 +479,20 @@ export const ClubRosterService = {
     const d = (data ?? {}) as Record<string, any>;
     return {
       authorized: d.authorized !== false,
+      reason: d.reason === 'not_member' || d.reason === 'restricted' ? d.reason : null,
       variant: d.variant ?? 'all',
       variants: Array.isArray(d.variants) ? d.variants.filter(Boolean) : [],
-      total_games: num(d.total_games),
-      total_hands: num(d.total_hands),
-      wins: num(d.wins),
-      winner: num(d.winner),
+      hands: num(d.hands ?? d.total_hands),
+      hands_won: num(d.hands_won ?? d.wins),
+      win_rate: num(d.win_rate),
       vpip: num(d.vpip),
       pfr: num(d.pfr),
       three_bet: num(d.three_bet),
+      three_bets: num(d.three_bets),
+      fold_to_three_bet: num(d.fold_to_three_bet),
+      faced_three_bets: num(d.faced_three_bets),
       cbet: num(d.cbet),
+      cbet_opportunities: num(d.cbet_opportunities),
       net: num(d.net),
       fees: num(d.fees),
       from: d.from ?? null,

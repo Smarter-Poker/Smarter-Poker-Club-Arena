@@ -966,3 +966,20 @@
   line-height: 1.45;
   color: #c8b98a;
 }
+
+/* A range is loading: the figures on screen belong to the previous one. */
+.mm-stats--busy .mm-stat__value {
+  opacity: 0.45;
+}
+
+.mm-downline__show-more {
+  margin-left: 10px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}

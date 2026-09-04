@@ -318,9 +318,26 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     players: SeatedPlayer[]
   ): Promise<void> {
     const wholeSettlement = this.settleCompletedHand(event, players);
-    // Barrier only - failures are reported inside; the barrier must resolve
-    // either way or the table stops dealing forever.
-    this.postHandTasksPromise = wholeSettlement.catch(() => undefined);
+    /* CHAIN, NEVER OVERWRITE (chip standard 2026-09-04). settleCompletedHand
+       runs synchronously to completion on the common path - its only awaits
+       are the insurance-shortfall alerts - so by the time it returns it has
+       ALREADY assigned postHandTasksPromise = Promise.all([prior, postTasks])
+       and fired the chain. The line this replaces then overwrote that with
+       wholeSettlement.catch(...), a promise that was already resolved and did
+       not include postHandTasks. The dealing loop saw a settled barrier,
+       reloaded seats before step 8e had credited the pending add-ons, dealt
+       from the stale stacks, and the next hand write erased the credits:
+       64 add-ons / 7,685.70 chips in three hours on 2026-09-04. Whatever the
+       body assigned is kept and this hand's own promise is added to it; on
+       the rare path where the body awaited before firing the chain, the body
+       reads this assignment back as its `priorBarrier` and chains onto it.
+       Barrier only - failures are reported inside; the barrier must resolve
+       either way or the table stops dealing forever. */
+    const guarded = wholeSettlement.catch(() => undefined);
+    const assignedByBody = this.postHandTasksPromise;
+    this.postHandTasksPromise = assignedByBody
+      ? Promise.all([assignedByBody, guarded]).then(() => undefined)
+      : guarded;
     return wholeSettlement;
   }
 
@@ -1250,6 +1267,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         players.map((p) => ({
           user_id: p.user_id,
           stack: p.stack,
+          // Chip standard 2026-09-04: the stack this seat was dealt from, so
+          // the database applies the hand's DIFFERENCE to the row instead of
+          // overwriting whatever landed on it meanwhile. A seat not in the
+          // dealt map was not in this hand: delta 0.
+          stack_before: snap.dealtStacks.get(p.user_id) ?? p.stack,
           // VIP time banks 2026-08-18: HandController players never carried
           // time_bank_uses_remaining (always undefined), so this column sat
           // at its insert default (4) on every one of 22,805 seat rows -
@@ -1266,7 +1288,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // Read from the snapshot, never the live field (stale-continuation
         // law): dealHand reassigns handCount while a stalled settlement is
         // still writing.
-        snap.handNumber
+        snap.handNumber,
+        // Chip standard 2026-09-04: rake and BBJ drop are DECLARED, so the
+        // database asserts sum(delta) = -rake - bbj on every cash hand. A
+        // tournament hand declares 0 and 0 and the same identity holds.
+        {
+          rake: this.isTournamentTable() ? 0 : snap.rake,
+          bbj: this.isTournamentTable() ? 0 : snap.bbjFee,
+        }
       );
     });
 
@@ -1865,19 +1894,15 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             }
           }
 
-          // Re-sync stacks to database with BBJ payouts included
-          await syncStacks(
-            this.tableId,
-            players.map((p) => ({
-              user_id: p.user_id,
-              stack: p.stack,
-              time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(
-                this.tableId,
-                p.user_id
-              ),
-              time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
-            }))
-          );
+          /* NO SECOND STACK WRITE (chip standard 2026-09-04). bbj_atomic_payout_v2
+             already credited every seated recipient's table_seats.stack
+             durably (bbj_credit_one_recipient), and the shares were mirrored
+             into memory just above. The "re-sync" that used to sit here wrote
+             every seat ABSOLUTELY from memory with no hand number - the
+             unchecked per-seat path - so anything else that had landed on a
+             row meanwhile (a resolved add-on, a horse funding) was erased,
+             and in delta mode it would have credited the shares twice. The
+             database already holds the truth; there is nothing to write. */
 
           // Broadcast updated stacks + BBJ payout details so clients show the celebration
           this.hub?.emitEvent(this.tableId, {

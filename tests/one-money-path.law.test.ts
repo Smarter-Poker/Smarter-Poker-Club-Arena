@@ -74,9 +74,16 @@ describe('the modal is no longer a fourth money path', () => {
   });
 
   it('derives the destination from the recipient, not from the caller', () => {
+    // Phase 5 (2026-09-04): the recipient is REQUIRED to be known before the
+    // send runs. `recipientData?.role` used to fall through to
+    // 'player_wallet' while the recipient list was still loading, and
+    // fn_club_bank_send honours p_destination, so funding a freshly promoted
+    // agent could land in their player wallet.
     expect(MODAL_CODE).toMatch(
-      /p_destination: canHoldAgentWallet\(recipientData\?\.role\) \? 'agent_wallet' : 'player_wallet'/
+      /p_destination: canHoldAgentWallet\(recipientData\.role\) \? 'agent_wallet' : 'player_wallet'/
     );
+    expect(MODAL_CODE).not.toMatch(/canHoldAgentWallet\(recipientData\?\.role\)/);
+    expect(MODAL_CODE).toMatch(/if \(!selectedRecipientData\) \{/);
   });
 });
 
@@ -131,11 +138,20 @@ describe('the number on screen is the account that gets debited', () => {
    */
   it('treats an unreadable balance as unknown rather than as empty', () => {
     expect(MODAL_CODE).toMatch(/useState<number \| null>\(null\)/);
-    expect(MODAL_CODE).toMatch(/senderBalance !== null && transferAmount > senderBalance/);
+    // The client float guard applies to the club bank only: an agent wallet
+    // can draw on a credit line this browser cannot see.
+    expect(MODAL_CODE).toMatch(
+      /viaClubBank && senderBalance !== null && transferAmount > senderBalance/
+    );
   });
 
   it('names the account on screen', () => {
-    expect(MODAL_CODE).toMatch(/const sourceLabel = viaClubBank \? 'Club Bank' : 'Agent Wallet'/);
+    // Three states since phase 5: the role is UNKNOWN until read, and an
+    // unknown role names neither account (and cannot send).
+    expect(MODAL_CODE).toMatch(
+      /const sourceLabel = !senderKnown \? 'Wallet' : viaClubBank \? 'Club Bank' : 'Agent Wallet'/
+    );
+    expect(MODAL_CODE).toMatch(/const senderKnown = senderRole !== null;/);
   });
 });
 

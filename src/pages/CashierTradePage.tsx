@@ -83,6 +83,7 @@ import styles from './CashierTradePage.module.css';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import {
   mapCashierRoster,
+  rosterMatchRank,
   rosterRowMatches,
   type CashierRosterRpcRow,
   type DownlineRow,
@@ -1341,10 +1342,16 @@ export default function CashierTradePage() {
     // one an owner could not ask at all before, because an owner sees the whole
     // club and nothing on the row said which of them were theirs.
     if (mineOnly) rows = rows.filter((r) => r.isMine);
-    rows =
-      sortKey === 'balance'
-        ? [...rows].sort((a, b) => b.chipBalance - a.chipBalance)
-        : [...rows].sort((a, b) => a.name.localeCompare(b.name));
+    const bySort = (a: DownlineRow, b: DownlineRow) =>
+      sortKey === 'balance' ? b.chipBalance - a.chipBalance : a.name.localeCompare(b.name);
+    // A search is a question about a NAME. Answer it by match quality first
+    // (rosterMatchRank), and only then by the chosen sort - a balance sort on
+    // a search put the owner, at 0.00, twenty-first behind twenty horses
+    // whose handles happened to contain the same four letters.
+    const q = search.trim();
+    rows = q
+      ? [...rows].sort((a, b) => rosterMatchRank(b, q) - rosterMatchRank(a, q) || bySort(a, b))
+      : [...rows].sort(bySort);
     if (groupByRole) {
       // ROLE_RANK from types/clubRoles, not a local map. The local one listed
       // super_agent/agent/sub_agent/admin/player and OMITTED owner and

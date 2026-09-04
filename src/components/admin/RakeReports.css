@@ -221,3 +221,10 @@
   font-size: var(--fs-sm);
   cursor: pointer;
 }
+
+.rake-reports-note {
+  padding: var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  text-align: center;
+}

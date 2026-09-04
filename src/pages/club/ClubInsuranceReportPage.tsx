@@ -42,6 +42,9 @@ interface ReportDay {
 
 interface Report {
   window_days: number;
+  /** The UTC days the whole report covers, headline and rows alike. */
+  window_start: string;
+  window_end: string;
   bank: 'union' | 'club' | null;
   totals: {
     offers: number;
@@ -49,6 +52,8 @@ interface Report {
     declined: number;
     timeouts: number;
     cashouts: number;
+    /** Server-computed: (accepted + cashed out) / offers. */
+    take_rate_pct: number | null;
     avg_offer_equity: number | null;
     avg_offer_pot: number | null;
   };
@@ -74,14 +79,33 @@ export default function ClubInsuranceReportPage() {
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
+  const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!clubId) return;
     setLoading(true);
     setError(null);
+    // The route carries the club's SLUG (clubs/deep-stack-society-11192/...)
+    // and this handed it to a uuid argument, so on every slug URL the RPC
+    // answered 22P02 and the page said "Could Not Load". Resolve first, and
+    // name a club that does not exist as one.
+    let resolved: string;
+    try {
+      const { resolveClubUUIDStrict } = await import('../../utils/strictClubIdResolver');
+      resolved = await resolveClubUUIDStrict(clubId);
+    } catch (e) {
+      if ((e as { name?: string } | null)?.name === 'ClubNotFoundError') {
+        setNotFound(true);
+      } else {
+        reportError(e, 'ClubInsuranceReportPage.Resolve_failed');
+        setError('The Club Could Not Be Resolved');
+      }
+      setLoading(false);
+      return;
+    }
     const { data, error: rpcError } = await supabase.rpc('ca_club_insurance_report', {
-      p_club_id: clubId,
+      p_club_id: resolved,
       p_days: days,
     });
     if (rpcError) {
@@ -128,6 +152,20 @@ export default function ClubInsuranceReportPage() {
     );
   }, [report, clubId]);
 
+  if (notFound) {
+    return (
+      <div className={styles.page}>
+        <div className={styles.deniedCard}>
+          <h1>Club Not Found</h1>
+          <p>No Club Answers To That Address.</p>
+          <button className={styles.backBtn} onClick={() => navigate('/clubs')}>
+            Back To Clubs
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (denied) {
     return (
       <div className={styles.page}>
@@ -144,8 +182,13 @@ export default function ClubInsuranceReportPage() {
 
   const t = report?.totals;
   const m = report?.money;
-  const acceptRate =
-    t && t.offers > 0 ? Math.round(((t.accepted + t.cashouts) / t.offers) * 100) : null;
+  // PHASE 6 (2026-09-04): the take rate is the server's now, computed over
+  // OFFERS. This divided event counts by event counts - an offer accepted and
+  // then cashed out counted twice in the numerator and once in the
+  // denominator, so the rate could pass 100% - and the funnel and the money
+  // used different windows (a rolling timestamp against UTC day buckets), so
+  // the day rows below could never sum to the headline above them.
+  const acceptRate = t?.take_rate_pct ?? null;
 
   return (
     <div className={styles.page}>
@@ -241,7 +284,10 @@ export default function ClubInsuranceReportPage() {
 
           <section className={styles.tableSection}>
             <div className={styles.tableHeader}>
-              <h2>Per Day</h2>
+              <h2>
+                Per Day
+                {report.window_start ? ` - ${report.window_start} To ${report.window_end}` : ''}
+              </h2>
               <button className={styles.exportBtn} onClick={exportCsv}>
                 Export CSV
               </button>

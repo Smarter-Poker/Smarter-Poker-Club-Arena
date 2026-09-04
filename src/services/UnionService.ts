@@ -19,6 +19,8 @@ import { reportError } from '../utils/errorReporter';
 
 export interface Union {
   id: string;
+  /** Route identity: /unions/<slug> (unions.slug, filled by trigger). */
+  slug: string;
   name: string;
   description?: string;
   ownerId: string;
@@ -112,7 +114,7 @@ class UnionServiceClass {
     const { data, error } = await supabase
       .from('unions')
       .select(
-        'id, name, description, owner_id, avatar_url, is_public, member_count, club_count, total_rake, settings, created_at, updated_at, level, player_level, hierarchy_level, total_players, hierarchy_units, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+        'id, slug, name, description, owner_id, avatar_url, is_public, member_count, club_count, total_rake, settings, created_at, updated_at, level, player_level, hierarchy_level, total_players, hierarchy_units, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
       )
       .order('created_at', { ascending: false })
       .limit(100);
@@ -132,7 +134,7 @@ class UnionServiceClass {
       supabase
         .from('unions')
         .select(
-          'id, name, description, owner_id, avatar_url, is_public, member_count, club_count, total_rake, settings, created_at, updated_at, level, player_level, hierarchy_level, total_players, hierarchy_units, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+          'id, slug, name, description, owner_id, avatar_url, is_public, member_count, club_count, total_rake, settings, created_at, updated_at, level, player_level, hierarchy_level, total_players, hierarchy_units, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
         )
         .eq('owner_id', userId),
       // Path 2: unions where user is admin
@@ -192,7 +194,7 @@ class UnionServiceClass {
       const { data: batchUnions } = await supabase
         .from('unions')
         .select(
-          'id, name, description, owner_id, avatar_url, is_public, member_count, club_count, total_rake, settings, created_at, updated_at, level, player_level, hierarchy_level, total_players, hierarchy_units, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+          'id, slug, name, description, owner_id, avatar_url, is_public, member_count, club_count, total_rake, settings, created_at, updated_at, level, player_level, hierarchy_level, total_players, hierarchy_units, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
         )
         .in('id', idsToFetch);
       if (batchUnions) {
@@ -271,7 +273,7 @@ class UnionServiceClass {
     const { data, error } = await supabase
       .from('unions')
       .select(
-        'id, name, description, owner_id, avatar_url, is_public, member_count, club_count, total_rake, settings, created_at, updated_at, level, player_level, hierarchy_level, total_players, hierarchy_units, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+        'id, slug, name, description, owner_id, avatar_url, is_public, member_count, club_count, total_rake, settings, created_at, updated_at, level, player_level, hierarchy_level, total_players, hierarchy_units, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
       )
       .eq('id', unionId)
       .maybeSingle();
@@ -793,8 +795,14 @@ class UnionServiceClass {
   // ─────────────────────────────────────────────────────────────────────────────
 
   private mapUnion(u: any): Union {
+    if (u.slug) {
+      // Lazy: UnionService is in the entry chunk, the resolver is not.
+      const { id, slug } = u;
+      void import('../utils/unionIdResolver').then((m) => m.rememberUnionSlug(slug, id));
+    }
     return {
       id: u.id,
+      slug: u.slug || u.id,
       name: u.name,
       description: u.description,
       ownerId: u.owner_id,

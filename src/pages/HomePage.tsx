@@ -21,6 +21,7 @@ import {
   type ErrorInfo,
 } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { unionRouteRef } from '../utils/unionIdResolver';
 /* Dan 2026-08-28: HomePage is the in-tab lobby's fallback branch when no home
    club is resolved, so it inherits the same rule. See InTabLobbyContext.tsx. */
 import { useAppNavigate } from '../context/InTabLobbyContext';
@@ -642,7 +643,7 @@ function HomePageInner() {
             rememberLastClub(target.id);
             navigate(
               isUnionEntity(target)
-                ? `/unions/${String(target.union_id || target.id)}/operations?tab=wallet`
+                ? `/unions/${unionRouteRef(String(target.union_id || target.id))}/operations?tab=wallet`
                 : `/clubs/${target.slug || target.id}/cashier`
             );
           } else toast.info('Join a club first to access the cashier');
@@ -1065,7 +1066,7 @@ function HomePageInner() {
       playPremiumSfx('navigate');
       navigate(
         isUnionEntity(club)
-          ? `/unions/${String(club.union_id || club.id)}/operations?tab=wallet`
+          ? `/unions/${unionRouteRef(String(club.union_id || club.id))}/operations?tab=wallet`
           : `/clubs/${club.slug || club.id}/cashier`
       );
     },

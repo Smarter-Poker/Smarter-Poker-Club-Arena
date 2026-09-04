@@ -113,6 +113,24 @@ describe('the backfill and the assertion', () => {
     expect(block).toContain("IF n <> 3 THEN RAISE EXCEPTION 'expected 3 rollup triggers");
   });
 
+  it('the rebuild holds the ledger still while it counts (20260904171000)', () => {
+    // Found in the verification pass: DELETE-then-INSERT with no lock races a
+    // commission landing mid-rebuild on the primary key.
+    const later = readFileSync(
+      'supabase/migrations/20260904171000_the_rollup_rebuild_holds_the_ledger_still.sql',
+      'utf8'
+    );
+    const body = sliceDollarQuoted(
+      later.slice(later.indexOf('FUNCTION public.fn_rebuild_agent_commission_rollup(')),
+      '$function$'
+    );
+    expect(body).toContain('LOCK TABLE public.agent_commissions IN SHARE ROW EXCLUSIVE MODE;');
+    expect(body.indexOf('LOCK TABLE')).toBeLessThan(body.indexOf('DELETE FROM'));
+    expect(later).toContain(
+      'REVOKE ALL ON FUNCTION public.fn_rebuild_agent_commission_rollup() FROM PUBLIC, anon, authenticated;'
+    );
+  });
+
   it('provides a rebuild for the one path triggers cannot see, gated to operators', () => {
     const body = fn('fn_rebuild_agent_commission_rollup');
     expect(body).toContain("coalesce(auth.role(), '') = 'service_role'");

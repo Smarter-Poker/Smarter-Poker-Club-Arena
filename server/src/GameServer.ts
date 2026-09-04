@@ -8,6 +8,7 @@
  */
 
 import { ServerTableEngine } from './engine/ServerTableEngine.js';
+import { equityGovernor } from './engine/EquityLoadGovernor.js';
 import {
   supabase,
   startHandHistoryRetry,
@@ -1285,6 +1286,9 @@ export class GameServer {
       tournamentLease: tournamentLeaseDiagnostics(),
       leadership: leadershipDiagnostics(),
       stalledTableCount: stalledTables.length,
+      // 2026-09-04: is horse Monte Carlo being throttled to protect the loop?
+      // scale < 1 means the core is saturated; see EquityLoadGovernor.ts.
+      equityGovernor: equityGovernor.snapshot(),
       // Deploy drain gate reads this. A restart voids in-flight hands, so a
       // routine server/ push waits (or is explicitly forced) while real people
       // are seated. Horses are excluded — they do not care.

@@ -80,8 +80,28 @@ itself.
   the page now read the tab that owns the markup, with the same intent.
 - tsc clean, 929 test files, production build ok.
 
-## Phase 1 engine cutover, confirmed here
+## Verified live, 2026-09-04 17:34 to 17:57 UTC
 
-Phase 1's engine half (`StatsHealthMonitor`) merged as `6ed5576cf` at 16:56
-UTC, one minute after the 16:55 gate, so it rides the 17:55 gate. Verified in
-the phase 2 verification pass (see the end of this file).
+- PR #2971 merged as `5e8f2516d`; `build-info.json` reported `ca_sha
+5e8f2516d` built 17:34:51 UTC. The published `PlayerStatsPage` chunk
+  references all eight tab chunks and every one serves 200 from the origin
+  (RakeTab 3.0 KB to AnalysisTab 14.4 KB); the AnalysisTab chunk carries "What
+  To Work On" and the `leak-card` styles; no `.map` survives (404).
+- Phase 1's engine half cut over at the 17:55 gate: `/health` reports
+  `version 5e8f2516`, and `stats` is populated from the first read
+  (`indexLagSeconds` 612.2 during the break, `recentHandsWithoutStat` 0,
+  `seatBackfill.done` true with 481,141 rows added, the repair cursor
+  advancing, the last audit all zeros). `/metrics` exposes all seven
+  `poker_stats_*` gauges. No `ClubArenaStats*` alert was raised: the
+  break-time lag is under the 30-minute bar and the break guard held.
+- Every tab module was checked against the block it replaced on `main`:
+  identical modulo whitespace, comments and the two intentional additions
+  (the coach on Analysis, a Suspense boundary around the downline panel).
+- The seam test raced a loaded CI runner once (the tab strip mounts with the
+  payload, not with the heading); it awaits the tab now, per the
+  awaited-element law.
+
+Not verified in a signed-in browser: the built-in browser holds no session
+for smarter.poker, and credentials are not something an agent enters. The
+rendered behaviour is covered by the component test that clicks Analysis and
+reads the coach through the lazy seam.

@@ -46,187 +46,96 @@ describe('Club Arena Tournament Board lobby design', () => {
     expect(code(page)).not.toMatch(/currentUser\?\.display_name/);
     expect(page).toContain('playerId={currentUser?.player_number}');
     expect(page).toContain('playersPlaying={playersPlaying}');
-    /* v5, not v3. The silver logo frame is gone from the ARTWORK now, and the
-       black `__logo-mask` div that used to cover it went with it - Dan
-       2026-09-03: "THERE IS A BLACK BARCKGROUND BENIND THE SHARK CLUB LOGO
-       THAT NEEDS TO BE REMOVED". Masking a painted box on a textured ground
-       only ever swaps one visible rectangle for another. */
-    expect(identityCard).toContain('club-identity-template-no-level-v6.png');
-    expect(identityCard).not.toMatch(/className="club-identity__logo-mask"/);
-    expect(identityCardCss).not.toMatch(/^\.club-identity__logo-mask\s*\{/m);
-    /* Dan 2026-09-01, verbatim: "ANYTIME A NEW CLUB IS CREATED, IT NEEDS TO
-       START AT LEVEL 1, THAT NEEDS TO BE BELOW THE LOGO INSIDE A BLUE BOX,
-       NOT OVERLAPPING THE LOGO." #2509 cured the old overlap by deleting the
-       level and pinned the deletion here; the order was the other cure. The
-       pin now guards the ordered state: the level RENDERS, in its own blue
-       box, in the logo's column, starting beneath the logo square. */
-    expect(identityCard).toContain('club-identity__level');
-    expect(identityCardCss).toContain('.club-identity__level');
-    expect(identityCardCss).toContain('linear-gradient(180deg, #1c4fd8 0%, #0f2f8c 100%)');
-    /* ── THE COPY BUTTON IS THE PAINTED FRAME (Dan 2026-09-03) ─────────────
-       "THE COPY LINK NEEDS TO BE INSIDE THE FRAME AND CENTERED."
+    /* ── DAN'S 2026-09-04 MASTER (kingfish-v1) ─────────────────────────────
+       "YOU NEED TO MAKE THE CLUB CARD LOOK EXACTLY LIKE THIS." The card is
+       now a layered chassis like every game card: the master with its dynamic
+       words lifted out is the paint, and every live string is printed into a
+       zone measured in pixels on that 1566 x 672 master. There is no club
+       name band and no logo on the master - the name is spoken (sr-only) and
+       the alias is the headline. Everything the old pins recorded (the v6
+       shell, the name band, the logo column, the glow-box share button)
+       belongs to the retired master and moved out with it in this commit. */
+    expect(identityCard).toContain('kingfish-v1');
+    expect(identityCard).toContain('CLUB_IDENTITY_CANVAS = { width: 1566, height: 672 }');
+    expect(code(identityCard)).not.toContain('club-identity-template-no-level-v6.png');
+    expect(code(identityCard)).not.toMatch(/className="club-identity__logo-mask"/);
+    expect(identityCardCss).toContain('aspect-ratio: 1566 / 672');
+    expect(identityCardCss).toContain('container-type: inline-size');
 
-       The old box (75.92-85.59% x 65.19-81.07%) came from the file header's
-       ARTWORK ANCHORS, which measured the frame PLUS its blue outer glow. The
-       glow is not symmetric about the silver, so a box fitted to it cannot
-       centre on it - the icon sat 1.33 points left and 1.22 points high, about
-       5px and 2px on a 383px card, and Dan reported it twice.
-
-       These four are the silver stroke itself, thresholded at luminance > 150
-       in club-identity-template-no-level-v5.png (1653x951): x 1299-1414,
-       y 650-763. Do not "tidy" them toward the glow box again. */
-    expect(identityCardCss).toContain('left: 78.58%');
-    expect(identityCardCss).toContain('top: 68.35%');
-    expect(identityCardCss).toContain('width: 7.02%');
-    expect(identityCardCss).toContain('height: 11.99%');
-
-    /* ── THE COUNT LINE IS MEASURED, NOT GUESSED (Dan 2026-09-03) ──────────
-       "THE W IN PLAYING NOW IS CUT OFF." The bay had already been widened
-       twice for this same complaint and cannot be widened again - its right
-       edge now stops at the copy frame above. A fixed `cqw` cannot fit a
-       string that changes with the player count, so the size is measured from
-       the text the browser laid out, exactly as the club name already was. */
-    expect(identityCard).toContain('fittedPlayingSizeCqw');
-    expect(identityCard).toContain('club-identity__playing-fit');
-    expect(identityCardCss).toContain('font-size: var(--playing-size, 3.15cqw)');
-
-    /* ── BOTH TOP LINES SIT HIGHER (Dan 2026-09-03) ────────────────────────
-       "SHARK CLUB NEEDS TO BE UP HIGHER" and "DAN BEKAVAC NEEDS TO BE UP
-       HIGHER". The name's band is also TALLER than its own line box now: at
-       `height: 11%` on a 2.4/1 card the 26.8px text did not fit the 17.6px
-       band, grid centring fell back to start alignment, and the name hung
-       below the box it was supposedly centred in. Nudging `top` was moving an
-       overflow, which is why it kept reading low. */
-    expect(identityCardCss).toContain('top: 9.2%');
-    expect(identityCardCss).toContain('height: 18%');
-    /* Dan 2026-09-03: the alias sits lower, clear of the name band. */
-    expect(identityCardCss).toContain('top: 31.5%');
-
-    expect(identityCard).toContain('Copy Referral Link');
-    expect(identityCardCss).toContain('aspect-ratio: 1650 / 953');
-    expect(identityCardCss).toContain('line-height: 1.18');
-
-    /* ── THE STACK (Dan 2026-09-02) ────────────────────────────────────────
-       "the club name should be across the very top of the card, all the way
-       left to right, with the logo under it ... UNDER THAT SHOULD BE DAN
-       BEKAVAC, NEXT LINE CLUB ID, NEXT LINE PLAYER ID LAST LIKE 192 PLAYING
-       AND THE COPY LINK."
-
-       This block replaces two bare pins - `top: 52%` (the logo) and
-       `top: 72.8%` (the level) - which recorded where those boxes sat while
-       the club name was a column BESIDE the logo. Both rose when the name
-       became a band of its own, so the pins move with them in the same commit,
-       and are stated as the ORDER Dan asked for rather than as two loose
-       numbers that say nothing about why they are what they are. */
-    /* Declarations only. This stylesheet explains every position in a comment
-       beside it, so a NEGATIVE pin that greps raw text matches the note about
-       the value that was removed and reports it as still present. That has now
-       cost three separate red runs in two days - a CSS function name, the
-       phrase "Game Unavailable", and `bottom: 15%` below. */
-    const identityDeclarations = identityCardCss.replace(/\/\*[\s\S]*?\*\//g, '');
-
-    const topOf = (selector: string) => {
-      const rule = identityDeclarations.match(
-        new RegExp(`\\${selector}\\s*\\{[^}]*?top:\\s*([\\d.]+)%`, 's')
+    /* The zones are pixels on the master, and every one of them is a real
+       control or a real line, never a decoration. Declared once, in the
+       component, so the CSS carries typography only. */
+    const zoneOf = (name: string) => {
+      const m = identityCard.match(
+        new RegExp(`${name}: \\{ x: (\\d+), y: (\\d+), width: (\\d+), height: (\\d+) \\}`)
       );
-      expect(rule, `no top declared for ${selector}`).toBeTruthy();
-      return Number(rule![1]);
+      expect(m, `no zone declared for ${name}`).toBeTruthy();
+      return { x: +m![1], y: +m![2], width: +m![3], height: +m![4] };
     };
+    const alias = zoneOf('alias');
+    const clubId = zoneOf('clubId');
+    const playerId = zoneOf('playerId');
+    const playing = zoneOf('playing');
+    const level = zoneOf('level');
+    const share = zoneOf('share');
 
-    /* Row 1 spans the card edge to edge. The exact `top` is deliberately not
-       pinned to a literal - it was nudged once already, after the rendered
-       card showed the caps grazing the painted top rail on the squat 2.4/1
-       lobby variant - so what is pinned is the span, and the ORDER below. */
-    expect(identityDeclarations).toMatch(
-      /\.club-identity__name\s*\{[^}]*left:\s*7\.5%[^}]*right:\s*7\.5%[^}]*top:\s*[\d.]+%/s
-    );
-    // One line, and never an ellipsis: the club name is the one string Dan has
-    // said twice must always be shown in full.
-    expect(identityDeclarations).toMatch(
-      /\.club-identity__name\s*\{[^}]*white-space:\s*nowrap[^}]*text-overflow:\s*clip/s
-    );
-    expect(identityDeclarations).not.toMatch(
-      /\.club-identity__name\s*\{[^}]*text-overflow:\s*ellipsis/s
-    );
+    // Top to bottom on the left: alias, club ID, player ID (Dan's order).
+    expect(alias.y).toBeLessThan(clubId.y);
+    expect(clubId.y).toBeLessThan(playerId.y);
+    // The two ID lines share one column and one width past the painted icons.
+    expect(clubId.x).toBe(playerId.x);
+    expect(clubId.width).toBe(playerId.width);
+    // Right column: the copy frame top right, the count and the level beneath.
+    expect(share.y).toBeLessThan(playing.y);
+    expect(playing.y).toBeLessThan(level.y);
+    expect(share.x + share.width).toBeLessThanOrEqual(1566);
+    // Nothing is printed outside the master.
+    for (const z of [alias, clubId, playerId, playing, level, share]) {
+      expect(z.x + z.width).toBeLessThanOrEqual(1566);
+      expect(z.y + z.height).toBeLessThanOrEqual(672);
+    }
 
-    // Top to bottom: name, then logo, then level; and name, alias, the IDs.
-    expect(topOf('.club-identity__name')).toBeLessThan(topOf('.club-identity__logo'));
-    expect(topOf('.club-identity__logo')).toBeLessThan(topOf('.club-identity__level'));
-    expect(topOf('.club-identity__name')).toBeLessThan(topOf('.club-identity__alias'));
-    expect(topOf('.club-identity__alias')).toBeLessThan(topOf('.club-identity__ids'));
+    /* Dan 2026-09-01: a new club starts at Level 1 in its blue box. The box
+       is painted on the master now; the words are live in the plate. */
+    expect(identityCard).toContain('club-identity__level');
+    expect(identityCard).toContain('Level {level}');
+    expect(identityCardCss).toContain('.club-identity__level');
+    expect(identityCardCss).not.toContain('linear-gradient');
 
-    /* The count and the copy link are the LAST line, so they share one band.
-       They were already the last two things on the card, but the count was
-       anchored `bottom: 15%` and the share to the painted frame at 65.19%, so
-       they were never actually on the same line. */
-    expect(identityDeclarations).toMatch(
-      /* Dan 2026-09-03: "243 PLAYING NOW NEEDS TO BE CENTERED TO THE COPY
-         ICON" - the share box's centre is 74.35%, so this box now starts at
-         66.41% (was 65.19%) and shares that centre. */
-      /\.club-identity__playing\s*\{[^}]*top:\s*66\.41%[^}]*height:\s*15\.88%/s
-    );
-    expect(identityDeclarations).not.toMatch(/\.club-identity__playing\s*\{[^}]*bottom:\s*15%/s);
-
-    /* The alias carries the same 7.2cqw gutter as the two ID lines below it,
-       so those three read as one column past the painted icons.
-
-       The playing line deliberately does NOT. It was given the gutter for a
-       straight edge and the copy was cut off - it holds the longest string on
-       the card ("1,204 PLAYING NOW") in the narrowest bay, and Dan has already
-       reported that symptom once: "NEVER CUTTING OFF THE 446 PLAYING NOW
-       FONT". A tidier left edge is not worth re-shipping it. */
-    expect(identityDeclarations).toMatch(
-      /\.club-identity__alias\s*\{[^}]*padding-left:\s*7\.2cqw/s
-    );
-    expect(identityDeclarations).not.toMatch(/\.club-identity__playing\s*\{[^}]*padding-left/s);
-
-    /* ── THE CARD ONLY SHRINKS (Dan, 2026-09-01) ───────────────────────────
-       These four pins replace `translateY(1.65cqw)`, `margin-top: 1.4cqw`,
-       and the `@media (pointer: coarse)` block that sized the share BUTTON to
-       44x44px. Each of those was a width-derived nudge or a pixel size applied
-       to a card whose height comes from its aspect ratio, so the card laid
-       itself out differently at 375px than at 1024px - measured live before
-       this pass: the club ID line sat 3.37% below its icon on desktop and
-       8.09% below it on mobile, and the share button was 61% of the card's
-       height with its icon 3.7% outside the painted copy frame.
-
-       What is pinned now is the cure: the ID lines have their own bay pinned
-       to the artwork icons, the share button occupies the painted frame in
-       percentages, and the 44px thumb target is an invisible `::after` band
-       that paints nothing and so cannot move anything. */
+    /* Dan 2026-09-02: the real name is never printed; the alias is the
+       headline and is fitted by MEASUREMENT (useFitText writes --fit), the
+       way every card title is, so a long alias shrinks rather than clips. */
+    expect(identityCard).toContain('useFitText<HTMLElement>(pokerAlias, 1, 0.3)');
     expect(identityCardCss).toMatch(
-      /* Dan 2026-09-03: "CLUB ID AND PLAYER ID + ICON'S NEED TO BE MOVED UP."
-         The bay rides at 43.5% / 20% now (rows centred 48.5% and 58.5%), and
-         the icons are layers pinned to those same centres rather than pixels
-         in the shell, so the pin is on the bay, not the artwork. */
-      /\.club-identity__ids\s*\{[^}]*top:\s*43\.5%[^}]*height:\s*20%/s
+      /\.club-identity__alias > span\s*\{[^}]*font-size:\s*calc\(8\.1cqw \* var\(--fit, 1\)\)[^}]*white-space:\s*nowrap/s
     );
-    /* The share box moved on 2026-09-03, and this pin moves with it rather
-       than being weakened. 75.92/65.19/9.68/15.88 was the frame PLUS its blue
-       glow; the numbers below are the silver stroke. The rule being guarded is
-       unchanged - the button occupies the painted frame in percentages - only
-       the measurement of "the painted frame" is corrected. Full reasoning at
-       the assertions further down and in ClubIdentityCard.css. */
-    expect(identityCardCss).toMatch(
-      /\.club-identity__share\s*\{[^}]*left:\s*78\.58%[^}]*top:\s*68\.35%[^}]*width:\s*7\.02%[^}]*height:\s*11\.99%/s
-    );
+
+    /* The count is a live number beside the painted PLAYING NOW, lit blue
+       like the master's "321", and announced with its words. */
+    expect(identityCard).toContain('aria-label={`${count} Playing Now`}');
+    expect(identityCardCss).toMatch(/\.club-identity__playing strong\s*\{[^}]*color:\s*#5b83e8/s);
+
+    /* The copy button IS the painted frame (Dan 2026-09-03: "THE COPY LINK
+       NEEDS TO BE INSIDE THE FRAME AND CENTERED"). It occupies the frame in
+       percentages and the 44px thumb target is an invisible ::after. */
+    expect(identityCard).toContain('Copy Referral Link');
     expect(identityCardCss).toMatch(
       /\.club-identity__share::after\s*\{[^}]*width:\s*max\(100%, 44px\)[^}]*height:\s*max\(100%, 44px\)/s
     );
-    /* 3.7cqw, trimmed from 4 on 2026-09-03. The button is the frame's own
-       rectangle now rather than the glow's, so the opening the icon sits in is
-       19.1px tall at 383px; 4cqw was 15.3px of that and read as filling it. */
-    expect(identityCardCss).toMatch(
-      /\.club-identity__share svg\s*\{[^}]*width:\s*3\.7cqw[^}]*height:\s*3\.7cqw/s
-    );
-    /* No breakpoint may rearrange this card, and no painted size may stop
-       scaling. A `clamp()` with a rem or px bound is a rearrangement waiting
-       for a narrow enough card - that is exactly what shipped the bug. */
+
+    /* Silver is a solid colour with a bevel. A clipped gradient rendered the
+       alias BLACK on Dan's phone (2026-09-03); it may not come back. */
     const identityRules = identityCardCss.replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(identityRules).not.toContain('background-clip: text');
+    expect(identityRules).not.toContain('-webkit-text-fill-color: transparent');
+
+    /* No breakpoint may rearrange this card, and no painted size may stop
+       scaling: every size is cqw against the card, so a 320px phone and a
+       430px one get the same picture. No :hover (house law). */
     expect(identityRules).not.toContain('@media (max-width');
     expect(identityRules).not.toContain('@media (pointer: coarse)');
     expect(identityRules).not.toContain('rem)');
-    expect(identityCardCss).not.toContain('translateY(1.44cqw)');
+    expect(identityRules).not.toContain(':hover');
   });
 
   it('spells out Bad Beat Jackpot and opens the existing detail modal', () => {
@@ -281,7 +190,8 @@ describe('Club Arena Tournament Board lobby design', () => {
     const mobileConsole = pageCss.slice(pageCss.lastIndexOf('MOBILE LOBBY FINAL CONTRACT'));
     expect(pageCss).toContain('@media (max-width: 480px)');
     expect(pageCss).toContain('grid-template-columns: minmax(0, 1fr)');
-    expect(identityCardCss).toContain('@media (max-width: 360px)');
+    // The identity card has no breakpoint of its own; it scales in cqw.
+    expect(identityCardCss.replace(/\/\*[\s\S]*?\*\//g, '')).not.toContain('@media');
     expect(mobileConsole).toContain('-webkit-line-clamp: 2');
   });
 

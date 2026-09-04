@@ -147,7 +147,8 @@
      main.tsx, so shared layout components resolve these values in production. */
   --bottom-nav-height: clamp(44px, 13.72vw, 132px);
   --bottom-nav-clearance: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
-  --bottom-nav-stack-base: var(--bottom-nav-clearance);
+  /* Live occupied height (see globals.css); clearance is the designed reserve. */
+  --bottom-nav-stack-base: var(--ca-bottom-chrome-h, var(--bottom-nav-clearance));
 
   /* ─────────────── Z-Layers ─────────────── */
   --z-base: 0;

@@ -16,7 +16,11 @@ export interface LeaveDeps {
   gameServer: {
     getTableEngine(tableId: string):
       | {
-          leaveTable(userId: string): { success: boolean; [k: string]: unknown };
+          leaveTable(
+            userId: string
+          ):
+            | { success: boolean; [k: string]: unknown }
+            | Promise<{ success: boolean; [k: string]: unknown }>;
         }
       | null
       | undefined;
@@ -64,8 +68,12 @@ export async function handleLeave(
       });
     }
 
-    const result = engine.leaveTable(userId);
-    return sendJSON(res, result.success ? 200 : 400, result);
+    const result = await engine.leaveTable(userId);
+    // CHIP CONTINUITY: a leave refused by the stay clock is the house rule
+    // working, not a server failure. 200 with success:false and the code, so
+    // the client shows the label without filing an error for it.
+    const status = result.success || result.code === 'LEAVE_LOCKED' ? 200 : 400;
+    return sendJSON(res, status, result);
   } catch (err: unknown) {
     reportError(err, 'HTTP.leave_error');
     return sendJSON(res, 500, { success: false, error: 'Failed to leave table' });

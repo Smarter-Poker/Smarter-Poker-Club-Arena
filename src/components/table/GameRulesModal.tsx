@@ -33,6 +33,11 @@ export interface GameRulesModalProps {
   ante?: number;
   currency?: string;
   customRules?: TableRule[];
+  /**
+   * CHIP CONTINUITY (2026-09-04): cash tables carry three house-law sentences
+   * (OPORD 1.3 section 6.1). A tournament table shows none of them.
+   */
+  isCashTable?: boolean;
   bombPotRules?: {
     enabled: boolean;
     frequency: number;
@@ -321,6 +326,7 @@ export function GameRulesModal({
   ante = 0,
   currency = '',
   customRules = [],
+  isCashTable = false,
   bombPotRules = null,
   canManualBombPot = false,
   onManualBombPot,
@@ -614,6 +620,24 @@ export function GameRulesModal({
                       Edit Bomb Pot Settings
                     </button>
                   )}
+                </div>
+              )}
+
+              {/* CHIP CONTINUITY - the only three sentences allowed (s6.1) */}
+              {isCashTable && (
+                <div className="rules-modal__section">
+                  <h3 className="rules-modal__section-title">House Rules</h3>
+                  <ul className="rules-modal__bullet-list">
+                    <li>Chips On The Table Stay On The Table Until You Leave.</li>
+                    <li>
+                      If You Are Ahead Of The Money You Put In, You Remain Seated For 10 Minutes
+                      Before You Can Leave.
+                    </li>
+                    <li>
+                      If You Return To The Same Game In This Club Within 2 Hours, You Buy In For At
+                      Least The Stack You Left With.
+                    </li>
+                  </ul>
                 </div>
               )}
 

@@ -181,16 +181,23 @@ describe('LAW 2: the engine refuses to persist a tournament hand that does not c
 });
 
 describe('LAW 3: a conservation refusal from the database is never written around', () => {
-  it('syncStacks returns on a conservation refusal before the per-seat fallback', () => {
+  it('syncStacks returns on a conservation refusal, and there is no per-seat fallback at all', () => {
+    // 2026-09-04 (chip standard, felt erasure): the per-seat fallback this
+    // pin used to bound is gone - it was the absolute write that erased
+    // credits. The refusal is still recognised and still returns; what
+    // follows it is the bounded retry of the SAME atomic call, never a loop
+    // of absolute seat writes.
     const src = code(read('../services/supabase/tables.ts'));
     const fn = src.slice(src.indexOf('export async function syncStacks('));
     const refusal = fn.indexOf('/^conservation violation/i');
-    const fallback = fn.indexOf("'DB.settle_hand_stacks_fallback'");
     expect(refusal).toBeGreaterThan(-1);
-    expect(fallback).toBeGreaterThan(refusal);
-    const between = fn.slice(refusal, fallback);
-    expect(between).toMatch(/'DB\.settle_hand_stacks_conservation_refused'/);
-    expect(between).toMatch(/return;/);
+    const after = fn.slice(refusal);
+    expect(after).toMatch(/'DB\.settle_hand_stacks_conservation_refused'/);
+    expect(
+      after.slice(0, after.indexOf("'DB.settle_hand_stacks_conservation_refused'") + 900)
+    ).toMatch(/return;/);
+    expect(fn).not.toMatch(/'DB\.settle_hand_stacks_fallback'/);
+    expect(fn).not.toMatch(/\.update\(\s*\{\s*stack/);
   });
 });
 

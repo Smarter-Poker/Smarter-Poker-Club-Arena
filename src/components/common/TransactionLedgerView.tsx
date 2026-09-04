@@ -10,6 +10,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
+import { isAuthzError } from '../../utils/clubDashboard';
 import { reportError } from '../../utils/errorReporter';
 import { formatPopupText } from '../../utils/popupStyle';
 
@@ -34,6 +35,17 @@ interface Props {
   userId?: string;
   limit?: number;
   title?: string;
+  /**
+   * CLUB-SCOPED (2026-09-04, phase 6). chip_ledger's RLS policy is
+   * `performed_by = auth.uid() OR from_entity_id = auth.uid() OR
+   * to_entity_id = auth.uid()` - the caller's OWN movements. A `.eq('club_id',
+   * ...)` filter on top of that does not widen it, so this panel under the
+   * heading "Club Chip Audit Trail" showed a club owner what THEY had moved
+   * and called it the club's. With this flag the rows come from
+   * ca_club_chip_ledger, which is gated on ca_can_view_club_finances and
+   * returns the club's ledger. Requires clubId to be a uuid.
+   */
+  clubScoped?: boolean;
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -74,13 +86,43 @@ export default function TransactionLedgerView({
   userId,
   limit = 25,
   title = 'Transaction History',
+  clubScoped = false,
 }: Props) {
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [denied, setDenied] = useState(false);
 
   const loadLedger = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
+      if (clubScoped) {
+        if (!clubId) {
+          setEntries([]);
+          setLoading(false);
+          return;
+        }
+        const { data, error: rpcError } = await supabase.rpc('ca_club_chip_ledger', {
+          p_club_id: clubId,
+          p_limit: limit,
+        });
+        if (rpcError) {
+          if (isAuthzError(rpcError)) {
+            setDenied(true);
+            setEntries([]);
+          } else {
+            reportError(rpcError, 'TransactionLedgerView.club_rpc');
+            setError('The Club Ledger Could Not Be Loaded');
+          }
+        } else {
+          setDenied(false);
+          setEntries(((data as { rows?: LedgerEntry[] } | null)?.rows || []) as LedgerEntry[]);
+        }
+        setLoading(false);
+        return;
+      }
+
       let query = supabase
         .from('chip_ledger')
         .select('*')
@@ -91,16 +133,21 @@ export default function TransactionLedgerView({
       if (clubId) query = query.eq('club_id', clubId);
       if (userId) query = query.or(`performed_by.eq.${userId},to_entity_id.eq.${userId}`);
 
-      const { data, error } = await query;
-      if (!error && data) {
+      const { data, error: readError } = await query;
+      // A discarded error read as "no transactions", which on a ledger is the
+      // one answer that must never be guessed.
+      if (readError) {
+        reportError(readError, 'TransactionLedgerView.read');
+        setError('The Ledger Could Not Be Loaded');
+      } else if (data) {
         setEntries(data as LedgerEntry[]);
       }
     } catch (e) {
       reportError(e, 'TransactionLedgerView.useCallback');
-      /* silent */
+      setError('The Ledger Could Not Be Loaded');
     }
     setLoading(false);
-  }, [unionId, clubId, userId, limit]);
+  }, [unionId, clubId, userId, limit, clubScoped]);
 
   useEffect(() => {
     loadLedger();
@@ -115,6 +162,36 @@ export default function TransactionLedgerView({
     return (
       <div style={{ padding: '16px', textAlign: 'center', color: '#666' }}>
         Loading Transactions...
+      </div>
+    );
+  }
+
+  if (denied) {
+    return (
+      <div style={{ padding: '24px', textAlign: 'center', color: '#888' }}>
+        This Ledger Is Available To Club Owners, Admins And Super Agents.
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ padding: '24px', textAlign: 'center', color: '#f87171' }} role="alert">
+        <div>{error}</div>
+        <button
+          type="button"
+          onClick={() => loadLedger()}
+          style={{
+            marginTop: 10,
+            padding: '6px 14px',
+            borderRadius: 8,
+            border: '1px solid rgba(255,255,255,0.2)',
+            background: 'transparent',
+            color: 'inherit',
+          }}
+        >
+          Try Again
+        </button>
       </div>
     );
   }

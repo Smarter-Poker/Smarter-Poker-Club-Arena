@@ -360,6 +360,18 @@ describe('the metric cards fetch once', () => {
     expect(CARDS).toContain('if (!selfLoading) return;');
     expect(CARDS).not.toContain('}, [clubId, !!statsProp]);');
   });
+
+  it('say so when the parent read failed, instead of holding the skeleton', () => {
+    // Found in the phase 4 verification pass: a failed
+    // ca_club_dashboard_stats left six skeleton tiles up for ever, and a
+    // failed ca_club_tables left the tab on "Loading Tables...".
+    expect(CARDS).toContain('if (failed && !statsProp) {');
+    expect(CARDS).toContain('The Club Metrics Could Not Be Loaded');
+    expect(PAGE).toContain('failed={statsFailed}');
+    expect(PAGE).toContain('setStatsFailed(!!statsResult.error);');
+    expect(PAGE).toContain('setTablesFailed(!!tablesResult.error);');
+    expect(PAGE).toContain('The Table List Could Not Be Loaded');
+  });
 });
 
 describe('the member panel cannot destroy a wallet by deleting its row', () => {
@@ -380,10 +392,11 @@ describe('the member panel cannot destroy a wallet by deleting its row', () => {
     const kick = sliceMethod(PANEL, 'const kickMember = async');
     expect(kick).toContain('if (member.chipsAtRisk > 0) {');
     expect(kick).toContain('await liveSeatTableIds(resolvedId, member.id)');
-    expect(kick).toContain('window.confirm(');
+    expect(kick).toContain('await confirmDialog({');
+    expect(kick).not.toContain('window.confirm(');
     // The order matters: no confirm dialog is shown for a removal that will
     // be refused anyway.
-    expect(kick.indexOf('chipsAtRisk > 0')).toBeLessThan(kick.indexOf('window.confirm('));
+    expect(kick.indexOf('chipsAtRisk > 0')).toBeLessThan(kick.indexOf('confirmDialog({'));
   });
 
   it('checks the row count on every write, so a 204 is not reported as success', () => {

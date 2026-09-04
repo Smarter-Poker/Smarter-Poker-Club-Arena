@@ -242,6 +242,11 @@ export default function ClubDashboard() {
   const [liveTables, setLiveTables] = useState<ClubTable[]>([]);
   const [recentTables, setRecentTables] = useState<ClubTable[]>([]);
   const [tablesMeta, setTablesMeta] = useState<TablesMeta | null>(null);
+  // A read that failed is not a read that is still loading. Without these,
+  // a failed ca_club_dashboard_stats left the metric cards as a skeleton for
+  // ever and a failed ca_club_tables left the tab saying "Loading Tables...".
+  const [statsFailed, setStatsFailed] = useState(false);
+  const [tablesFailed, setTablesFailed] = useState(false);
   const [dashStats, setDashStats] = useState<DashboardStats | null>(null);
   const [attribution, setAttribution] = useState<{ played: number; attributed: number } | null>(
     null
@@ -572,6 +577,8 @@ export default function ClubDashboard() {
       setNotAMember(false);
 
       if (statsResult.error) reportError(statsResult.error, 'ClubDashboard.stats_rpc_error');
+      setStatsFailed(!!statsResult.error);
+      setTablesFailed(!!tablesResult.error);
       if (playersResult.error)
         reportError(playersResult.error, 'ClubDashboard.top_players_rpc_error');
       // These two were previously swallowed: a failed clubs read rendered the
@@ -1185,7 +1192,7 @@ export default function ClubDashboard() {
           <div className={styles.overviewGrid}>
             <section className={styles.statsSection}>
               <h2>Club Metrics</h2>
-              {clubId && <ClubStatsCards clubId={clubId} stats={dashStats} />}
+              {clubId && <ClubStatsCards clubId={clubId} stats={dashStats} failed={statsFailed} />}
               {dashStats && dashStats.dailySeries.length > 0 && (
                 <div style={{ marginTop: 16 }}>
                   <h2 style={{ fontSize: '0.95rem', marginBottom: 4 }}>Last 14 Days</h2>
@@ -1282,7 +1289,7 @@ export default function ClubDashboard() {
                 {rankedPlayers.length === 0 ? (
                   <p className={styles.empty}>
                     {hideHorses && topPlayers.length > 0
-                      ? `All ${formatInt(topPlayers.length)} Players With Hands ${rangeLabel} Are Horses`
+                      ? `Every Player With Hands ${rangeLabel} Is A Horse`
                       : `No Hands Played ${rangeLabel}`}
                   </p>
                 ) : (
@@ -1663,7 +1670,9 @@ export default function ClubDashboard() {
                 + Create Table
               </Link>
             </div>
-            {!tablesMeta ? (
+            {tablesFailed && !tablesMeta ? (
+              <p className={styles.empty}>The Table List Could Not Be Loaded</p>
+            ) : !tablesMeta ? (
               <p className={styles.empty}>Loading Tables...</p>
             ) : tablesMeta.totalCount === 0 ? (
               <p className={styles.empty}>No Tables Yet. Create One To Get The Club Playing.</p>

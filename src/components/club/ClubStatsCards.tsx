@@ -49,6 +49,8 @@ interface ClubStatsCardsProps {
    * each at the time) that the parent's answer then overwrote.
    */
   stats?: DashboardStats | null;
+  /** The parent's read failed: say so instead of holding the skeleton. */
+  failed?: boolean;
 }
 
 const EMPTY_STATS: DashboardStats = {
@@ -97,7 +99,11 @@ function Sparkline({ points, color }: { points: number[]; color: string }) {
   );
 }
 
-export default function ClubStatsCards({ clubId, stats: statsProp }: ClubStatsCardsProps) {
+export default function ClubStatsCards({
+  clubId,
+  stats: statsProp,
+  failed = false,
+}: ClubStatsCardsProps) {
   const selfLoading = statsProp === undefined;
   const [stats, setStats] = useState<DashboardStats>(statsProp || EMPTY_STATS);
   const [loading, setLoading] = useState(!statsProp);
@@ -369,6 +375,10 @@ export default function ClubStatsCards({ clubId, stats: statsProp }: ClubStatsCa
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading]);
+
+  if (failed && !statsProp) {
+    return <p className={styles.unavailable}>The Club Metrics Could Not Be Loaded</p>;
+  }
 
   if (loading) {
     return (

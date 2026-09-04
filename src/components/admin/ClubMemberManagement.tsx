@@ -14,6 +14,7 @@ import { MembershipService } from '../../services/MembershipService';
 import { useToast } from '../common/Toast';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { liveSeatTableIds } from '../../services/IntegrityActionService';
+import { confirmDialog } from '../common/confirmDialog';
 import './ClubMemberManagement.css';
 import { reportError } from '../../utils/errorReporter';
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
@@ -69,6 +70,9 @@ export function chipsHeldByMembership(row: {
 // commission and a rakeback percentage chosen at the same moment (the server
 // refuses one without them), and Member Management is the screen that asks.
 const ASSIGNABLE_HERE: ClubRole[] = ['co_owner', 'admin', 'player'];
+
+/** Rows past this index appear together rather than one every 60 ms. */
+const STAGGER_CAP = 12;
 
 export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementProps) {
   const toast = useToast();
@@ -216,7 +220,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
     if (busyId) return;
     if (member.chipsAtRisk > 0) {
       toast.error(
-        `${member.username} Holds ${member.chipsAtRisk.toLocaleString()} Chips In This Club. Cash Them Out Before Removing The Membership.`
+        `${member.username} Holds Or Owes ${member.chipsAtRisk.toLocaleString()} Chips In This Club. Settle Them Before Removing The Membership.`
       );
       return;
     }
@@ -230,7 +234,13 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
         );
         return;
       }
-      if (!window.confirm(`Remove ${member.username} From The Club?`)) return;
+      const confirmed = await confirmDialog({
+        title: 'Remove Member',
+        message: `Remove ${member.username} From The Club? They Hold No Chips And Are Not Seated.`,
+        confirmText: 'Remove',
+        variant: 'danger',
+      });
+      if (!confirmed) return;
 
       const { data, error } = await supabase
         .from('club_members')
@@ -277,7 +287,9 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
   });
 
   // Stagger only the rows actually rendered, by id, whenever the rendered
-  // set changes. Rows already shown stay shown.
+  // set changes. Rows already shown stay shown. The delay is capped: with
+  // 417 members, an uncapped i * 60 left the last row invisible for 25
+  // seconds.
   const renderedSignature = filteredMembers.map((m) => m.id).join('|');
   useEffect(() => {
     staggerTimersRef.current.forEach((t) => clearTimeout(t));
@@ -285,9 +297,12 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
     staggerTimersRef.current = ids
       .filter((id) => !visibleIds.has(id))
       .map((id, i) =>
-        setTimeout(() => {
-          if (isMounted.current) setVisibleIds((prev) => new Set(prev).add(id));
-        }, i * 60)
+        setTimeout(
+          () => {
+            if (isMounted.current) setVisibleIds((prev) => new Set(prev).add(id));
+          },
+          Math.min(i, STAGGER_CAP) * 60
+        )
       );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [renderedSignature]);
@@ -408,7 +423,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
                   aria-label={`Remove ${member.username} From The Club`}
                   title={
                     member.chipsAtRisk > 0
-                      ? 'Holds Chips In This Club. Cash Out Before Removing.'
+                      ? 'Holds Or Owes Chips In This Club. Settle Before Removing.'
                       : 'Remove From Club'
                   }
                   onClick={() => kickMember(member)}

@@ -375,4 +375,25 @@ describe('the metric cards', () => {
     await mountAndOpen();
     expect(rpcArgs('ca_club_dashboard_stats')).toHaveLength(1);
   });
+
+  it('say the read failed rather than holding a skeleton for ever', async () => {
+    stubRpc({
+      ca_club_dashboard_stats: { data: null, error: { code: 'PGRST301', message: 'boom' } },
+    });
+    await mountAndOpen();
+    await waitFor(() =>
+      expect(screen.getByText('The Club Metrics Could Not Be Loaded')).toBeTruthy()
+    );
+  });
+});
+
+describe('a failed tables read', () => {
+  it('is named on the tab, not shown as loading', async () => {
+    stubRpc({ ca_club_tables: { data: null, error: { code: 'PGRST301', message: 'boom' } } });
+    await mountAndOpen('Tables');
+    await waitFor(() =>
+      expect(screen.getByText('The Table List Could Not Be Loaded')).toBeTruthy()
+    );
+    expect(screen.queryByText('Loading Tables...')).toBeNull();
+  });
 });

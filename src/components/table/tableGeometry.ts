@@ -374,10 +374,16 @@ export const CHIP_WIDTH_PCT = 3.6;
 export const CHIP_MIN_PX = 10;
 export const CHIP_MAX_PX = 26;
 
-/** `--dealer-btn-size: clamp(17px, calc(var(--table-w) * 0.04), 28px)`. */
-export const BUTTON_WIDTH_PCT = 4;
-export const BUTTON_MIN_PX = 17;
-export const BUTTON_MAX_PX = 28;
+/** `--dealer-btn-size: calc(var(--cp-chip-size) * 2)` (TableVisualHotfix.css).
+ *
+ * Dan 2026-09-04: "the button on the table needs to be double the size as the
+ * chips in pot." So the puck is DERIVED from the chip - 7.2% of the table with
+ * a 20px floor and a 52px ceiling, exactly twice CHIP_* at every width - and
+ * cannot drift from it. The old 17px legibility floor is moot: twice the chip
+ * floor is already above it. */
+export const BUTTON_WIDTH_PCT = CHIP_WIDTH_PCT * 2;
+export const BUTTON_MIN_PX = CHIP_MIN_PX * 2;
+export const BUTTON_MAX_PX = CHIP_MAX_PX * 2;
 
 const clampPx = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -563,9 +569,20 @@ export const MARKER_MIN_GAP_WIDTH_PCT = 6;
  * of the table's width.
  *
  * A marker is a disc, and "on the felt" has to mean the whole disc, not its
- * centre. 2.5% is half of the larger of the two markers at its largest relative
- * size (the button at its 17px mobile floor on a 347px table is 4.9% wide), so
- * neither disc can overhang the painted rail at any table size.
+ * centre. 2.5% is more than half a bet chip at its largest relative size (the
+ * chip at its 10px floor on a 278px table is 3.6% wide, 1.8% at radius), so no
+ * chip can overhang the painted rail at any table size.
+ *
+ * Until 2026-09-04 this was ALSO the button's radius margin - "the larger of
+ * the two markers", a 4.9% puck. The puck is twice the chip now (Dan: "double
+ * the size as the chips in pot"), 7.2% wide, and 2.5% no longer covers its
+ * radius. It was tried as 3.6% for both markers and rejected in the same
+ * sitting: the board's width ceiling and every chip keep-out are derived from
+ * this number, so growing it for the puck narrowed the board by two chip
+ * widths and walked every seat's bets inward for a marker that had not
+ * changed. The button carries its own radius in BUTTON_FELT_MARGIN_WIDTH_PCT
+ * below; this constant is the CHIPS' margin, and the board keep-out for the
+ * puck reads buttonRadiusWidthPct() directly.
  */
 export const FELT_MARKER_MARGIN_WIDTH_PCT = 2.5;
 
@@ -688,7 +705,7 @@ export function isHeroSeat(seat: Pos): boolean {
  * this number grew, and tests/table-geometry-chips.test.ts asserts it rather
  * than assuming it.
  */
-export const BUTTON_FELT_DAYLIGHT_WIDTH_PCT = 2.5;
+export const BUTTON_FELT_DAYLIGHT_WIDTH_PCT = 1.9;
 
 /**
  * The margin the BUTTON's on-felt projection uses: its own radius, so no part
@@ -699,8 +716,7 @@ export const BUTTON_FELT_DAYLIGHT_WIDTH_PCT = 2.5;
  * out of step with it - and so `feltEdgeClearanceWidthPct(button) >= this` is
  * exactly the statement the code makes and the tests check.
  */
-export const BUTTON_FELT_MARGIN_WIDTH_PCT =
-  FELT_MARKER_MARGIN_WIDTH_PCT + BUTTON_FELT_DAYLIGHT_WIDTH_PCT;
+export const BUTTON_FELT_MARGIN_WIDTH_PCT = BUTTON_WIDTH_PCT / 2 + BUTTON_FELT_DAYLIGHT_WIDTH_PCT;
 
 /* ═══════════════════════════════════════════════════════════════════════════
    THE TOP SEATS' BOX IS AN OBSTACLE (Dan 2026-08-26 mobile pass, item 2)
@@ -732,6 +748,41 @@ export const TOP_CAP_SEAT_Y_MAX = 20;
 export const SEAT_BOX_HALF_WIDTH_PCT = 13;
 export const SEAT_BOX_DROP_WIDTH_PCT = 22;
 export const SEAT_BOX_RISE_WIDTH_PCT = 4;
+
+/**
+ * True when the puck's disc intersects the community board.
+ *
+ * The same rectangle tests/table-seat-ring-integrity.test.ts measures the puck
+ * against - the middle 95% of the felt's width, five cards at 64:92 with 2px
+ * gaps, hung at 42.5% of the felt's height. Restated rather than imported
+ * because that file deliberately owns its own copy; the numbers must be kept
+ * in step, and tests/unit/seatCardsAndPlate.test.tsx re-runs the assertion
+ * against THIS function so a drift is caught rather than assumed away.
+ *
+ * Lived in DealerButton.tsx (the wrapper's refinement) until 2026-09-04. It is
+ * part of `dealerButtonPosition`'s own predicate now: when the puck became
+ * twice the chip, the module's raw answer for the 6-max side seat {8,25}
+ * landed a 3.6%-radius disc on the cards and only the wrapper's second swing
+ * rescued it. A module that hands out a position on the board and relies on
+ * its caller to notice is the "second opinion" the wrapper's header warns
+ * about. Uses the puck's real radius, not the chips' margin constant.
+ */
+export function overlapsBoard(cand: Pos, size: Size = NOMINAL_SCALER): boolean {
+  const BOARD_FELT_FRACTION = 0.95;
+  const BOARD_GAP_PX = 2;
+  const BOARD_TOP_FELT_PCT = 42.5;
+  const centreX = FELT_WINDOW.left + FELT_WINDOW.width / 2;
+  const centreY = FELT_WINDOW.top + (BOARD_TOP_FELT_PCT / 100) * FELT_WINDOW.height;
+  const halfW = (BOARD_FELT_FRACTION * FELT_WINDOW.width) / 2;
+  const gapPct = (BOARD_GAP_PX / size.w) * 100;
+  const cardW = (BOARD_FELT_FRACTION * FELT_WINDOW.width - 4 * gapPct) / 5;
+  const halfH = (cardW * (92 / 64) * (size.w / size.h)) / 2;
+  const puckHalf = buttonRadiusWidthPct(size);
+  return (
+    Math.abs(cand.x - centreX) < halfW + puckHalf &&
+    Math.abs(cand.y - centreY) < halfH + puckHalf * (size.w / size.h)
+  );
+}
 
 /** True when a candidate button position sits inside a TOP-CAP seat's box. */
 export function overlapsTopSeatBox(cand: Pos, seat: Pos, size: Size = NOMINAL_SCALER): boolean {
@@ -1335,7 +1386,8 @@ export function dealerButtonPosition(seat: Pos, size: Size = NOMINAL_SCALER, pod
   const clear = (p: Pos) =>
     markerGapWidthPct(p, chips, size) >= MARKER_MIN_GAP_WIDTH_PCT &&
     !isOnFeltText(p, size, puck) &&
-    !overlapsTopSeatBox(p, seat, size);
+    !overlapsTopSeatBox(p, seat, size) &&
+    !overlapsBoard(p, size);
   if (clear(placed)) return placed;
 
   // Swing it around the middle of the felt, 1.5 degrees at a time, out to a

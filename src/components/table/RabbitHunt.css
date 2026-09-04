@@ -167,7 +167,8 @@
   position: absolute;
   bottom: 1px;
   right: 2px;
-  font-size: 8px;
+  /* 8px on a 44px tile; 12px on the 66px tile (Dan 2026-09-04). */
+  font-size: 12px;
   font-weight: 800;
   line-height: 1;
   color: #ffffff;
@@ -185,9 +186,9 @@
   position: absolute;
   top: -5px;
   right: -5px;
-  min-width: 14px;
-  padding: 1px 4px;
-  font-size: 0.5rem;
+  min-width: 21px;
+  padding: 1px 6px;
+  font-size: 0.75rem;
   font-weight: 700;
   line-height: 1.4;
   text-align: center;

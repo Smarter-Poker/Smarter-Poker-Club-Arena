@@ -452,7 +452,10 @@ describe('a live day belongs to the triggers, and a complete day to the recount'
    *   20:41:17   ledger 194,717.42   rollup 194,696.30   diff 21.1200
    *
    * The ledger moved by 69 chips in 32 seconds and the difference did not
-   * move at all. The statement-level trigger is exact under live load;
+   * move at all: the trigger tracked every one of them. (It is not perfect -
+   * it catches its own errors and warns rather than refusing a rake write, so
+   * a statement lost to a deadlock is lost from the rollup; measured residual
+   * 0.016% on the live day, recounted exactly when the day closes.)
    * DELETE-then-recount cannot converge on a day that is still being written,
    * because whatever commits inside a pass had its trigger row deleted and is
    * not in that pass's snapshot. Retrying loses a fresh slice every time,

@@ -192,7 +192,7 @@ did not work, and the measurement said why:
 ```
 
 The ledger moved 69 chips in 32 seconds and the difference did not move at
-all. The trigger is **exact** under live load; DELETE-then-recount simply
+all: the trigger tracked every one of those chips. DELETE-then-recount simply
 cannot converge while writes continue, because each ~14-second pass loses a
 fresh slice. So the rebuild now takes complete days only - where nothing
 writes and a recount is exact - and today belongs to the triggers.
@@ -226,6 +226,21 @@ Today's 21.12 (0.011% of 194,000) is left alone. It self-heals at 00:00 UTC
 when the day closes and the reconcile recounts it, and writing a difference
 into a rollup while its ledger is moving is the same mistake in the other
 direction.
+
+**And the live day does carry a small residual, which is worth stating
+precisely rather than rounding to "exact".** Watched over a further half hour,
+today's gap went 21.12 -> 30.57 and then held at 30.57 across a 50-second
+sample while the ledger kept moving - so the trigger is not losing a steady
+fraction, it is losing the occasional whole statement. The database records
+~2.4 deadlocks a minute platform-wide, and the rollup trigger deliberately
+catches its own errors and warns rather than refusing a rake write (11.5), so
+a deadlocked statement's rake never reaches the rollup. Measured residual:
+**30.57 in 195,000, 0.016%, on the live day only.** Every completed day is
+recounted exactly - 2026-09-03 reconciles to 0.0000 - and the catchup now
+returns `today_drift` so the number is on the record rather than inferred.
+Making the trigger itself deadlock-proof (a deterministic lock order on the
+upsert) is the next thing to measure; it was not changed tonight because it
+touches the hot path and the residual is bounded, reported and repaired daily.
 
 ## Still open after this phase
 

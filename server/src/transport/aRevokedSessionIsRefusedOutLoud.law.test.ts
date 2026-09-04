@@ -270,6 +270,29 @@ describe('LAW 4 - a refusal is a number somebody can alert on', () => {
   });
 });
 
+describe('LAW 5 - the dashboard can answer "is anyone actually playing?"', () => {
+  it('the always-on exposition carries human-occupancy gauges', () => {
+    const gameServer = readFileSync(join(__dirname, '..', 'GameServer.ts'), 'utf8');
+    expect(gameServer).toContain('poker_humans_seated');
+    expect(gameServer).toContain('poker_tables_with_humans');
+  });
+
+  it('they are gauges, NOT an alert - measured, not guessed', () => {
+    // 14 days of production: only 15 distinct hours saw a human take a seat,
+    // and multi-day gaps are ordinary. "Zero humans seated" is this
+    // platform's normal state, so an alert on it would page continuously and
+    // be muted within a day. The alertable signal for this class counts
+    // FAILED ATTEMPTS (poker_ws_auth_refused_total), which does not depend on
+    // how many people are online. If someone later adds a human-drought
+    // alert, they must re-measure first and change this test deliberately.
+    const rules = readFileSync(
+      join(__dirname, '..', '..', '..', 'infra', 'monitoring', 'alert-rules.yml'),
+      'utf8'
+    );
+    expect(rules).not.toMatch(/poker_humans_seated\s*==\s*0/);
+  });
+});
+
 describe('a good token still opens (the fix did not break the door)', () => {
   it('/ws/multi opens with a valid verdict', async () => {
     verdict = { userId: 'u1' };

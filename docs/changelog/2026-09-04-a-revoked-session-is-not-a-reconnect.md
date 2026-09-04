@@ -159,6 +159,36 @@ SHAPE AND FORM." Four more things the first pass had not covered:
   the four scripts refuse to run without an account. Red against the old
   tree (3 failures), green after.
 
+## "Is anyone actually playing?" - two gauges, deliberately not an alert
+
+Every one of the 46 alert rules on this platform stayed green for 22 hours,
+and every one was telling the truth: the engine dealt 5,700 hands per ten
+minutes, liveness was 1, no table stalled. The fleet is horse-heavy, so
+`poker_active_players` read 6-8 throughout, its normal value. Nothing
+anywhere distinguished "the fleet is busy" from "the fleet is busy and not
+one human is in it" - which is why the outage was found by reading `/health`
+by hand.
+
+`poker_humans_seated` and `poker_tables_with_humans` now ride on the
+always-on `/metrics`, so that question is one glance on a dashboard.
+
+**They are gauges, not an alert, and that was measured rather than assumed.**
+The first draft of this work was a `NoHumanCanPlay` alert on zero humans
+seated. Before writing the rule I checked 14 days of `table_seats`: only 15
+distinct hours saw a human take a seat at all, and multi-DAY gaps are
+ordinary. "Zero humans seated" is this platform's normal state. That alert
+would have paged almost continuously and been muted inside a day - which is
+worse than no alert, because a muted alert is one nobody reads during the
+next real incident.
+
+The signal that IS alertable for this class counts **failed attempts**, not
+occupancy, because one player retrying produces it regardless of how many
+people are online: `poker_ws_auth_refused_total` and `EngineRefusingSessions`
+above. During the outage Dan's client was retrying constantly, so that rule
+would have fired within 15 minutes. `tests/...aRevokedSessionIsRefusedOutLoud`
+pins the absence of a `poker_humans_seated == 0` rule so a later pass has to
+re-measure before adding one.
+
 ## What I did not change, and why
 
 - **The seven-day access token.** That is a Supabase Auth setting (JWT

@@ -78,7 +78,7 @@ async function loadHorseMemberships(clubIds: string[]): Promise<MemberRow[]> {
         if (cursor) q = q.gt('user_id', cursor);
         return q;
       },
-      { label: `horsesTag.members.${clubId}`, maxRows: 50_000, idKey: 'user_id' }
+      { label: 'horsesTag.members', maxRows: 50_000, idKey: 'user_id' }
     );
     if (!page.complete)
       throw new Error(`membership read incomplete for ${clubId} - refusing to tag a partial fleet`);

@@ -1225,6 +1225,25 @@ export type RollUnknownVerdict = 'allow_no_opinion' | 'refuse_not_a_member';
  *
  * Only the third case is a real refusal, and club coverage is the fact that
  * separates it from the outage.
+ *
+ * DELIBERATELY NOT WIRED INTO HorseFleetManager. I wired it there first and
+ * two existing guards stopped me, correctly:
+ * HorseBankrollGateClubs.test.ts ("a missing membership row never refuses a
+ * seat") and HorseBankrollTelemetry.test.ts, which pins the literal source
+ * shape of that branch so nobody can turn the fail-open back into a refusal.
+ * They are right and the change was wrong: `resolveSeatClub` already refuses
+ * a horse belonging to none of a table's eligible clubs, and zero of 1,903
+ * horse memberships carry a null chip_balance, so the branch is UNREACHABLE.
+ * Weakening a guard that exists because of a 40-minute outage, to harden a
+ * path that cannot currently execute, is a bad trade. The live gate is left
+ * exactly as it is.
+ *
+ * This policy is kept because Stable Hand's OWN seat path needs it: that path
+ * enforces the licence, the commit cap, the phase clamp and the sit caps -
+ * none of which `atomic_table_buyin` can see - so it cannot inherit the
+ * fleet's "the RPC will catch it" reasoning. `evaluateSit` has no fail-open
+ * branch for exactly that reason, and this function is how the Stable Hand
+ * controller decides whether it is even entitled to an opinion.
  */
 export function rollUnknownVerdict(
   mapLoadedSuccessfully: boolean,

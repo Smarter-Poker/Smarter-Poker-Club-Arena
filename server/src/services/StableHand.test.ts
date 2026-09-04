@@ -73,7 +73,7 @@ import {
   SHARK_CLUB_ID,
   DSS_CLUB_ID,
   sessionPlanMinutes,
-} from './StableHand';
+} from './StableHand.js';
 
 const baseSit = {
   activeClubId: null as string | null,
@@ -562,13 +562,13 @@ describe('T23 - a fourth cash seat blocks an MTT entry', () => {
 describe('T24/T30/T34 - chips are never printed', () => {
   it('T24 there is no seeding primitive at all - balances are used as they stand', async () => {
     // Dan 2026-09-04: ignore the 10,000 seed, use their current balances.
-    const mod = await import('./StableHand');
+    const mod = await import('./StableHand.js');
     expect(Object.keys(mod)).not.toContain('shouldSeedWallet');
     expect(Object.keys(mod)).not.toContain('SEED_AMOUNT');
     expect(Object.keys(mod).some((n) => /seed/i.test(n) && n !== 'STABLE_HAND_SEED')).toBe(false);
   });
   it('T30/T34 the module exposes no grant, top-up or reload primitive', async () => {
-    const mod = await import('./StableHand');
+    const mod = await import('./StableHand.js');
     const names = Object.keys(mod);
     ['grantChips', 'topUp', 'adminReload', 'mint', 'reset'].forEach((bad) => {
       expect(names.some((n) => n.toLowerCase().includes(bad.toLowerCase()))).toBe(false);
@@ -706,7 +706,7 @@ describe('bankroll arithmetic (Sections 8.3 - 8.10)', () => {
 
 describe('Dan 2026-09-04 - Omaha 8 is PLO8o, and limit games stay available', () => {
   it('treats flo8 as Omaha 8 / PLO8o family', async () => {
-    const { isOmahaEightFamily, isLimitGame } = await import('./StableHand');
+    const { isOmahaEightFamily, isLimitGame } = await import('./StableHand.js');
     expect(isOmahaEightFamily('flo8')).toBe(true);
     expect(isOmahaEightFamily('plo8')).toBe(true);
     expect(isOmahaEightFamily('PLO8O')).toBe(true);
@@ -717,7 +717,7 @@ describe('Dan 2026-09-04 - Omaha 8 is PLO8o, and limit games stay available', ()
   });
 
   it('caps limit games separately so pot-limit cannot eat the whole allowance', async () => {
-    const { planLimitGames, planExoticTrim } = await import('./StableHand');
+    const { planLimitGames, planExoticTrim } = await import('./StableHand.js');
     const plo8Full = planExoticTrim(
       [
         { tableId: 'p1', variant: 'plo8', bb: 2, seated: 6 },
@@ -732,7 +732,7 @@ describe('Dan 2026-09-04 - Omaha 8 is PLO8o, and limit games stay available', ()
   });
 
   it('keeps a floor of one and a cap of two per limit variant', async () => {
-    const { planLimitGames } = await import('./StableHand');
+    const { planLimitGames } = await import('./StableHand.js');
     expect(planLimitGames([], 100).mayOpen).toBe(1);
     expect(planLimitGames([{ tableId: 'a', variant: 'flh', bb: 2, seated: 4 }], 100).mayOpen).toBe(
       0
@@ -750,34 +750,34 @@ describe('Dan 2026-09-04 - Omaha 8 is PLO8o, and limit games stay available', ()
   });
 
   it('applies the 1/2 ceiling to limit games too, because flo8 is Omaha 8', async () => {
-    const { planLimitGames } = await import('./StableHand');
+    const { planLimitGames } = await import('./StableHand.js');
     const p = planLimitGames([{ tableId: 'hi', variant: 'flo8', bb: 5, seated: 3 }], 100);
     expect(p.close).toEqual(['hi']);
     expect(p.keep).toEqual([]);
   });
 
   it('does not open a limit table for fewer than four horses', async () => {
-    const { planLimitGames } = await import('./StableHand');
+    const { planLimitGames } = await import('./StableHand.js');
     expect(planLimitGames([], 3).mayOpen).toBe(0);
   });
 });
 
 describe('the bankroll-unknown policy keeps the 2026-08-31 fix intact', () => {
   it('fails OPEN when the whole map failed to load - never empty the floor again', async () => {
-    const { maySeatWithUnknownRoll, rollUnknownVerdict } = await import('./StableHand');
+    const { maySeatWithUnknownRoll, rollUnknownVerdict } = await import('./StableHand.js');
     expect(maySeatWithUnknownRoll(false, false)).toBe(true);
     expect(maySeatWithUnknownRoll(false, true)).toBe(true);
     expect(rollUnknownVerdict(false, true)).toBe('allow_no_opinion');
   });
   it('REPLAYS 2026-08-31: a map that loaded but covers no rows for the club still fails open', async () => {
-    const { maySeatWithUnknownRoll } = await import('./StableHand');
+    const { maySeatWithUnknownRoll } = await import('./StableHand.js');
     // The incident exactly: allComplete was true, the map was keyed on clubs
     // owning zero cash tables, every lookup missed. Refusing here emptied the
     // floor for 40 minutes. Coverage, not the load flag, is the evidence.
     expect(maySeatWithUnknownRoll(true, false)).toBe(true);
   });
   it('refuses only when the map loaded, covers the club, and the horse is still absent', async () => {
-    const { maySeatWithUnknownRoll, rollUnknownVerdict } = await import('./StableHand');
+    const { maySeatWithUnknownRoll, rollUnknownVerdict } = await import('./StableHand.js');
     expect(maySeatWithUnknownRoll(true, true)).toBe(false);
     expect(rollUnknownVerdict(true, true)).toBe('refuse_not_a_member');
   });
@@ -795,7 +795,7 @@ describe('the bankroll-unknown policy keeps the 2026-08-31 fix intact', () => {
 describe('Section 7.2 - variants and stakes', () => {
   it('meets every coverage floor and never exceeds three variants', async () => {
     const { assignVariants, VARIANT_COVERAGE, MAX_VARIANTS_PER_HORSE } =
-      await import('./StableHand');
+      await import('./StableHand.js');
     const ids = Array.from({ length: 500 }, (_, i) => `h-${i}`);
     const got = assignVariants(ids);
     const count = (v: string) => [...got.values()].filter((l) => l.includes(v)).length;
@@ -810,7 +810,7 @@ describe('Section 7.2 - variants and stakes', () => {
   });
 
   it('tags a population for the limit games so the limit floor can be seated', async () => {
-    const { assignVariants } = await import('./StableHand');
+    const { assignVariants } = await import('./StableHand.js');
     const got = assignVariants(Array.from({ length: 500 }, (_, i) => `h-${i}`));
     const flh = [...got.values()].filter((l) => l.includes('flh')).length;
     const flo8 = [...got.values()].filter((l) => l.includes('flo8')).length;
@@ -819,7 +819,7 @@ describe('Section 7.2 - variants and stakes', () => {
   });
 
   it('is deterministic', async () => {
-    const { assignVariants, assignPreferredStakes } = await import('./StableHand');
+    const { assignVariants, assignPreferredStakes } = await import('./StableHand.js');
     const ids = ['a', 'b', 'c'];
     expect([...assignVariants(ids)]).toEqual([...assignVariants(ids)]);
     expect(assignPreferredStakes('a')).toEqual(assignPreferredStakes('a'));
@@ -827,7 +827,7 @@ describe('Section 7.2 - variants and stakes', () => {
 
   it('gives every horse legal, adjacent stakes inside the phase clamp', async () => {
     const { assignPreferredStakes, stakeSpreadAllowed, stakeIsLegalThisPhase } =
-      await import('./StableHand');
+      await import('./StableHand.js');
     for (let i = 0; i < 300; i++) {
       const st = assignPreferredStakes(`h-${i}`);
       st.forEach((bb) => expect(stakeIsLegalThisPhase(bb)).toBe(true));

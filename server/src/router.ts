@@ -24,6 +24,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { sendJSON, CORS_HEADERS } from './http/respond.js';
 import { handleHealth, handleWsMetrics, handleMetrics } from './handlers/health.js';
+import { handleStableHand } from './handlers/stableHand.js';
 import { handleAction } from './handlers/action.js';
 import { handleTimebank } from './handlers/timebank.js';
 import { handleRabbitHunt } from './handlers/rabbithunt.js';
@@ -173,6 +174,9 @@ export function createRouter(
     // Telemetry routes — handlers/health.ts (Phase U3.1).
     // ─────────────────────────────────────────────────────────────────────────
     if (url === '/health' || url === '/') return handleHealth(res, { gameServer });
+    // Operation Stable Hand Section 15. Read-only: it plans and reports, and
+    // deliberately never executes what it plans.
+    if (url === '/stable-hand') return handleStableHand(res);
     if (url === '/ws-metrics' && method === 'GET')
       // 2026-08-24: channelHub added — the wallet/tournament/club/lobby
       // transport had zero metrics visibility before this.

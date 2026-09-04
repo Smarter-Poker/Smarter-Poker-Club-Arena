@@ -26,7 +26,6 @@ import {
   referenceBuyIn,
 } from './HorseBankroll.js';
 import { bankrollEvent, bankrollSummaryLine } from './HorseBankrollTelemetry.js';
-import { maySeatWithUnknownRoll } from './StableHand.js';
 import {
   buyInBBFor,
   gameLaneFor,
@@ -1035,12 +1034,6 @@ export class HorseFleetManager {
          table at all - see resolveSeatClub. */
       const memberships = new Map<string, Set<string>>();
       let bankrollsLoaded = false;
-      /* Which clubs the bankroll map actually holds rows FOR. On 2026-08-31
-         the map loaded "completely" while keyed on clubs that own zero cash
-         tables, so every lookup missed and refusing emptied the floor. The
-         load flag alone cannot tell that apart from a real non-member; this
-         set can, and it is the evidence maySeatWithUnknownRoll asks for. */
-      const clubsWithRolls = new Set<string>();
       // Horses the gate could not price this cycle. LOUD, because the silent
       // version of this number is what cost the floor 40 minutes.
       let rollUnknown = 0;
@@ -1122,11 +1115,7 @@ export class HorseFleetManager {
           }
           for (const r of brPage.rows) {
             const v = Number(r.chip_balance);
-            if (Number.isFinite(v)) {
-              bankrolls.set(`${r.club_id}:${r.user_id}`, v);
-              // COVERAGE, not just completion. See maySeatWithUnknownRoll.
-              clubsWithRolls.add(String(r.club_id));
-            }
+            if (Number.isFinite(v)) bankrolls.set(`${r.club_id}:${r.user_id}`, v);
             if (!memberships.has(r.user_id)) memberships.set(r.user_id, new Set());
             memberships.get(r.user_id)!.add(r.club_id);
           }
@@ -1136,7 +1125,6 @@ export class HorseFleetManager {
         } else {
           bankrolls.clear();
           memberships.clear();
-          clubsWithRolls.clear();
           console.warn(
             '[HorseFleet] bankroll read incomplete - seating this cycle without the bankroll gate.'
           );
@@ -1593,29 +1581,8 @@ export class HorseFleetManager {
               const roll = seatClub ? bankrolls.get(`${seatClub}:${h.id}`) : undefined;
               if (roll === undefined) {
                 rollUnknown++;
-                /* OPERATION STABLE HAND, 2026-09-04 - HARDENING, NOT A FIX.
-                   Measured before touching this: there is no live fail-open
-                   bug here. resolveSeatClub already returns null for a horse
-                   that belongs to none of the table's eligible clubs (that is
-                   the 261 the counter below was written about, and they are
-                   refused earlier), and zero of the 1,903 horse memberships
-                   carry a null chip_balance. So reaching this line at all
-                   means a member whose balance could not be read - a data
-                   fault that does not currently exist.
-
-                   The fail-open therefore STAYS, because it is what saved the
-                   floor on 2026-08-31. All that changes is that it now
-                   requires evidence: if the map holds rows for this club and
-                   this member's balance is still unreadable, the buy-in RPC
-                   would refuse the seat anyway, so refuse cheaply. If the map
-                   holds nothing for the club, that is the 2026-08-31 shape
-                   exactly and we fail open as before. */
-                if (maySeatWithUnknownRoll(bankrollsLoaded, clubsWithRolls.has(String(seatClub)))) {
-                  bankrollEvent('seat_fail_open_roll_unknown');
-                  return true;
-                }
-                bankrollEvent('seat_refused_balance_unreadable');
-                return false;
+                bankrollEvent('seat_fail_open_roll_unknown');
+                return true;
               }
               const ref = referenceBuyIn(
                 table.big_blind,

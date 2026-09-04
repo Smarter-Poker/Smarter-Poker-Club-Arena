@@ -126,8 +126,9 @@
 
 .filterBar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 1rem;
+  gap: 0.5rem 1rem;
   padding: 1rem 1.5rem;
   background: rgba(26, 26, 46, 0.5);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
@@ -136,6 +137,39 @@
 .filterLabel {
   color: #9ca3af;
   font-size: 0.875rem;
+}
+
+/* What the Time Range reaches. Wraps to its own line on a phone. */
+.filterScope {
+  flex-basis: 100%;
+  color: #8a8f98;
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+/* "Showing The Fullest 500" beside a live-table heading. */
+.capNote {
+  color: #8a8f98;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.statusPill {
+  padding: 4px 10px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.statusLive {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.statusClosed {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
 }
 
 .filterButtons {

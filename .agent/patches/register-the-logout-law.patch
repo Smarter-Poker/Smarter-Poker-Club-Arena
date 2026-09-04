@@ -1,0 +1,5 @@
+diff --git a/docs/LAWS.md b/docs/LAWS.md
+--- a/docs/LAWS.md
++++ b/docs/LAWS.md
+@@ -97,0 +98 @@
++| tests/unit/logOutActuallyLogsOut.law.test.ts | Log Out actually logs out (Dan 2026-09-04): the handler clears the session key and the SPA breadcrumb itself in a finally and issues its own redirect, because signOut() reports failure by return value rather than throwing and AuthGuard is not mounted on the five /legal routes this same drawer links to |

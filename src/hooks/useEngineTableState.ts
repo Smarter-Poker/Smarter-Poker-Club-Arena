@@ -33,6 +33,12 @@ export interface UseEngineTableStateResult {
   lastError: { code?: number; reason?: string } | null;
   /** Last transient EVENT payload from the engine (insurance, RIT, timebank, BBJ, etc). */
   lastEvent: Record<string, unknown> | null;
+  /**
+   * 2026-09-04: last PRIVATE frame for this player (hole cards, the engine's
+   * copy of the armed pre-action). A fresh object per frame, so an effect
+   * keyed on it runs once per delivery.
+   */
+  lastUserEvent: Record<string, unknown> | null;
 }
 
 export function useEngineTableState(
@@ -45,6 +51,7 @@ export function useEngineTableState(
   const [status, setStatus] = useState<EngineConnectionStatus>('idle');
   const [lastError, setLastError] = useState<{ code?: number; reason?: string } | null>(null);
   const [lastEvent, setLastEvent] = useState<Record<string, unknown> | null>(null);
+  const [lastUserEvent, setLastUserEvent] = useState<Record<string, unknown> | null>(null);
 
   // Keep the client in a ref so effect cleanup can close it without re-render.
   const clientRef = useRef<EngineStateClient | null>(null);
@@ -66,6 +73,7 @@ export function useEngineTableState(
       onStatus: (s) => setStatus(s),
       onError: (e) => setLastError(e),
       onEvent: (payload) => setLastEvent(payload),
+      onUserEvent: (payload) => setLastUserEvent(payload),
     });
 
     clientRef.current = client;
@@ -79,10 +87,11 @@ export function useEngineTableState(
       setStatus('idle');
       setLastError(null);
       setLastEvent(null);
+      setLastUserEvent(null);
     };
   }, [tableId, enabled]);
 
-  return { snapshot, seq, status, lastError, lastEvent };
+  return { snapshot, seq, status, lastError, lastEvent, lastUserEvent };
 }
 
 export default useEngineTableState;

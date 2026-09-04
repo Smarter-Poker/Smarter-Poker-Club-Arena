@@ -1877,6 +1877,7 @@ export default function TablePage({
     status: engineWsStatus,
     lastEvent: rawEngineLastEvent,
     lastError: engineLastError,
+    lastUserEvent: engineLastUserEvent,
   } = useEngineTableState(tableId || undefined, { enabled: USE_ENGINE_WS });
 
   // RABBIT HUNT FREEZE 2026-08-25
@@ -8634,6 +8635,53 @@ export default function TablePage({
     },
     [userId, tableId, ambientSoundsAllowed]
   );
+
+  /* ═══ THE ENGINE SOCKET CARRIES THE PLAYER'S OWN FACTS (2026-09-04) ═════════
+     Disconnect audit items 11 and 12. Two things a seat cannot play without
+     used to reach it by a SECOND transport: hole cards by a Supabase Realtime
+     subscription on table_hole_cards (with the bounded poll behind it), and
+     the pre-action by nothing at all - the client pushed it and never read the
+     engine's copy back, so a reconnect could leave the bar dark while the
+     engine was armed, or lit while the engine had invalidated it.
+
+     Both now arrive as private USER_EVENT frames on the socket the felt is
+     already drawn from, and the engine re-sends both on RESYNC. The Realtime
+     row and the poll stay as the belt; this is the braces.
+
+     Hole cards go through handleHoleCardPayload in the row shape it already
+     accepts, so every guard on that path (heroHoleCardsAreForThisHand, the
+     board-collision refusal, the recovery re-arm) applies unchanged. The
+     pre-action reconciles the bar to the engine's copy: setting the same
+     value is a no-op, a different one re-arms through the normal effect and
+     converges on the next frame, and an engine "nothing armed" clears the bar
+     without a round trip (hadPreActionRef is dropped first so the clear
+     effect does not send a clear for something the engine never held). */
+  useEffect(() => {
+    const ev = engineLastUserEvent;
+    if (!ev) return;
+    if (ev.kind === 'hole_cards' && ev.row && typeof ev.row === 'object') {
+      handleHoleCardPayload({ new: ev.row });
+      return;
+    }
+    if (ev.kind === 'pre_action') {
+      const a = typeof ev.action === 'string' ? ev.action : null;
+      const mapped =
+        a === 'auto_fold' || a === 'auto_check_fold'
+          ? 'fold'
+          : a === 'auto_check'
+            ? 'check'
+            : a === 'auto_call'
+              ? 'call'
+              : a === 'auto_call_any'
+                ? 'callAny'
+                : null;
+      if (typeof ev.to_call_at_set === 'number' && Number.isFinite(ev.to_call_at_set)) {
+        preActionCallAmountRef.current = ev.to_call_at_set;
+      }
+      if (mapped === null) hadPreActionRef.current = false;
+      setPreAction((cur) => (cur === mapped ? cur : mapped));
+    }
+  }, [engineLastUserEvent, handleHoleCardPayload]);
 
   /* ═══ 'INSERT' MISSED EVERY PINEAPPLE DISCARD (2026-08-31) ═════════════
      `insert_hole_cards` is an upsert - `ON CONFLICT (table_id, hand_number,
@@ -21541,7 +21589,12 @@ export default function TablePage({
                   isTournament: tableState.isTournament,
                   now: sitOutTick,
                 }),
-                'You Are Sitting Out'
+                /* 2026-09-04 (audit item 3): the engine says whether this
+                   sit-out was forced (three timeouts) or chosen, and the bar
+                   says so too. Same I'm Back either way. */
+                disconnectStates[userId ?? '']?.sitOutReason === 'forced'
+                  ? 'You Timed Out Three Times, So You Are Sitting Out'
+                  : 'You Are Sitting Out'
               )}
             </span>
             <button
@@ -21761,6 +21814,9 @@ export default function TablePage({
                            printed chips. Same setting the seats and pot read. */
                         showStackInBB={v8Settings.show_stack_in_bb}
                         isMyTurn={true}
+                        /* 2026-09-04 (audit item 6): the row is marked while
+                           the socket is down. See ActionPanel.connectionStale. */
+                        connectionStale={engineWsStatus !== 'connected'}
                         isPreflop={tableState.boardStage === 'preflop'}
                         /* Dan 2026-08-26: cash sliders step by whole dollars,
                            tournament sliders by the level's chip unit. */

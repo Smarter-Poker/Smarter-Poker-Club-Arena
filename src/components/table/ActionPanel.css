@@ -645,6 +645,31 @@
   z-index: 1;
 }
 
+/* 2026-09-04 (disconnect audit item 6): the socket is down, the row is drawn
+   from the last snapshot. Marked, not disabled - the HTTP action path is a
+   second transport and the server refuses an out-of-turn action itself - so a
+   player who can still reach the engine is not locked out by their own
+   client, but nobody mistakes a stale row for a live one. */
+.action-panel--stale .action-btn {
+  opacity: 0.6;
+  filter: grayscale(0.4);
+}
+.action-panel__stale-note {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  transform: translate(-50%, -6px);
+  white-space: nowrap;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(14, 18, 28, 0.92);
+  border: 1px solid rgba(249, 115, 22, 0.55);
+  pointer-events: none;
+}
+
 .action-panel .action-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;

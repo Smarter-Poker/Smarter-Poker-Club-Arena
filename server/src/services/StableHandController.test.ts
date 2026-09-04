@@ -245,3 +245,75 @@ describe('chicagoNow', () => {
     expect(chicagoNow(new Date('2026-09-04T18:30:00Z')).hour).toBe(13);
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   A ZERO POPULATION IS NOT A SMALL FLEET
+
+   Written after the FIRST live run of GET /stable-hand, 2026-09-04, which
+   returned n = 0 for both hosts against a fleet of 1,000 because
+   `profiles!inner(is_horse)` is an ambiguous embed on club_members. n is the
+   denominator of every cap, so 188 live horses read as 188 over a cap of 0 and
+   the plan asked for 170 stands. Nothing executed them - the executor ships
+   human yield only - but that was the phased rollout catching it, not the code
+   being safe.
+   ══════════════════════════════════════════════════════════════════════════ */
+describe('planFloor - an unreadable population is never managed', () => {
+  const zeroPopHost = (tables: TableSnapshot[]) => ({
+    hostId: MIDWAY_UNION_ID,
+    n: 0,
+    uniqueLive: 188,
+    tables,
+  });
+
+  it('says so out loud instead of pretending the host is empty', () => {
+    const p = planFloor(snap({ hosts: [zeroPopHost([table({ tableId: 't0' })])] }));
+    expect(p.alerts.some((a) => a.startsWith('host_population_unknown'))).toBe(true);
+  });
+
+  it('orders NO wind-down stands, which is the 170-stand plan that started this', () => {
+    const tables = Array.from({ length: 20 }, (_, i) => table({ tableId: `t${i}` }));
+    const p = planFloor(snap({ hosts: [zeroPopHost(tables)] }));
+    expect(p.stand.filter((s) => s.reason === 'occupancy_wind_down')).toHaveLength(0);
+    expect(p.stand.filter((s) => s.reason === 'shape_adjust')).toHaveLength(0);
+    expect(p.seat).toHaveLength(0);
+  });
+
+  it('raises no cap alerts it cannot actually evaluate', () => {
+    const p = planFloor(snap({ hosts: [zeroPopHost([table({ tableId: 't0' })])] }));
+    expect(p.alerts.some((a) => a.startsWith('over_peak_cap'))).toBe(false);
+    expect(p.alerts.some((a) => a.startsWith('over_night_cap'))).toBe(false);
+  });
+
+  it('STILL yields to a waiting human - a failed read is not their problem', () => {
+    const t = table({ tableId: 'busy', humansWaiting: 1 });
+    const p = planFloor(snap({ hosts: [zeroPopHost([t])] }));
+    expect(p.stand.filter((s) => s.reason === 'human_yield').length).toBeGreaterThan(0);
+  });
+
+  it('a host left out of the snapshot entirely is reported, not silently absent', () => {
+    const p = planFloor(snap({ hosts: [], unreadableHosts: [MIDWAY_UNION_ID, DSS_CLUB_ID] }));
+    expect(p.alerts).toContain(`host_unreadable host=${MIDWAY_UNION_ID}`);
+    expect(p.alerts).toContain(`host_unreadable host=${DSS_CLUB_ID}`);
+    expect(p.seat).toHaveLength(0);
+    expect(p.stand).toHaveLength(0);
+    expect(p.metrics).toHaveLength(0);
+  });
+});
+
+describe('SOURCE LAW: the snapshot never turns a failed read into a zero', () => {
+  it('eligibleBodies returns null on an incomplete read, and the builder skips that host', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const raw = readFileSync(resolve(__dirname, 'StableHandSnapshot.ts'), 'utf8');
+    // The ban is on CODE. The header explains at length which embed broke and
+    // has to name it to be worth reading.
+    const src = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    // Every read is paged or chunked, and every completeness flag is checked.
+    expect(src).toContain('fetchAllRows');
+    expect(src).toContain('selectInChunks');
+    expect(src).toContain('if (!page.complete) return null;');
+    expect(src).toContain('unreadableHosts.push(hostId)');
+    // And the ambiguous embed that caused it never comes back.
+    expect(src).not.toContain('profiles!inner');
+  });
+});

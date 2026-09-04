@@ -161,6 +161,24 @@ describe('every horse buy-in RPC call is gated on the freeze', () => {
     expect(seatGate).toBeLessThan(at(seat, "rpc('atomic_table_buyin'", 'atomic_table_buyin'));
   });
 
+  it('StableHandExecutor: the yield cycle gates itself, and again inside the loop', () => {
+    // Dan 2026-09-01: "HORSES SHOULD NOT STAND UP OR ROTATE." A yield stands a
+    // horse up, so it is a seat movement and the break stops it. The human
+    // keeps their place - the wait clock is the waitlist's own created_at,
+    // which a break cannot move - and the yield fires on the first cycle after
+    // the thaw.
+    const src = read('services/StableHandExecutor.ts');
+    const cycle = sliceMethod(src, 'async cycle(): Promise<number> {');
+    const gate = cycle.search(/isMaintenanceFrozen\(\)\)\s*return 0;/);
+    expect(gate, 'StableHandExecutor.cycle does not gate itself').toBeGreaterThan(-1);
+    expect(gate, 'the gate comes after the first I/O').toBeLessThan(firstIo(cycle));
+    // and re-checked inside the loop: a break can begin between the snapshot
+    // and the last seat in it.
+    const loopGate = cycle.search(/isMaintenanceFrozen\(\)\)\s*break;/);
+    expect(loopGate, 'the seat loop does not re-check the freeze').toBeGreaterThan(-1);
+    expect(loopGate).toBeLessThan(at(cycle, 'engine.leaveTable(', 'the stand itself'));
+  });
+
   it('ScheduledTournamentService: the poll gates itself', () => {
     const src = read('services/ScheduledTournamentService.ts');
     const poll = sliceMethod(src, 'private async poll(): Promise<void> {');

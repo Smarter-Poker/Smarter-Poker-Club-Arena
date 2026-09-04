@@ -902,7 +902,7 @@ export function bookStaggerMs(horseId: string, tableId: string): number {
 /* ------------------------------------------------------------------ */
 
 export const YIELD_MIN_MS = 120_000;
-export const YIELD_SPAN_MS = 180_001; // inclusive 2:00 - 4:59
+export const YIELD_SPAN_MS = 180_001; // the MODULUS: delays run 2:00 - 5:00 inclusive
 export const SEAT_HOLD_MS = 90_000;
 
 export function yieldDelayMs(horseId: string, tableId: string, waitlistId: string): number {

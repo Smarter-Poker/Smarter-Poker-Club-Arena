@@ -51,6 +51,15 @@ export interface TableSnapshot {
   occupied: number;
   humansSeated: number;
   humansWaiting: number;
+  /**
+   * When the LONGEST-WAITING human at this table joined the list, in ms.
+   *
+   * The planner does not read it - a plan is a decision, not a schedule. The
+   * executor does: a yield's 2-5 minute delay is measured from the moment the
+   * human joined, never from the moment a 30-second cycle first noticed them,
+   * or the window Dan specified quietly becomes 2 to 5-and-a-half.
+   */
+  waitlistOldestJoinedAtMs?: number;
   /** Horses currently in the seats, for yield selection. */
   seatedHorses: YieldCandidate[];
   status: string;
@@ -71,6 +80,17 @@ export interface FloorSnapshot {
   chicagoMinute: number;
   hosts: HostSnapshot[];
   killed: boolean;
+  /**
+   * Hosts whose floor could not be read COMPLETELY, and which are therefore
+   * absent from `hosts` rather than present with short numbers.
+   *
+   * A host that cannot be measured must not be managed. See
+   * StableHandSnapshot: on 2026-09-04 the population read returned 0 for both
+   * hosts because of an ambiguous PostgREST embed, and n is the denominator of
+   * every cap, so a floor of 188 live horses read as 188 over the cap and the
+   * plan asked for 170 stands.
+   */
+  unreadableHosts?: string[];
 }
 
 export interface SeatOrder {
@@ -133,6 +153,10 @@ function shapedTables(h: HostSnapshot): TableSnapshot[] {
 export function planFloor(snap: FloorSnapshot): FloorPlan {
   const plan: FloorPlan = { seat: [], stand: [], open: [], close: [], alerts: [], metrics: [] };
 
+  for (const hostId of snap.unreadableHosts ?? []) {
+    plan.alerts.push(`host_unreadable host=${hostId}`);
+  }
+
   for (const host of snap.hosts) {
     const running = shapedTables(host);
     const targets = shapeTargets(running.length);
@@ -149,6 +173,25 @@ export function planFloor(snap: FloorSnapshot): FloorPlan {
 
     const liveSeats = host.tables.reduce((s, t) => s + t.occupied, 0);
     const humansWaiting = host.tables.reduce((s, t) => s + t.humansWaiting, 0);
+
+    /* ── A ZERO POPULATION IS NOT A SMALL FLEET (2026-09-04) ───────────────
+       `n` is the denominator of peakCap, nightCap and the whole occupancy
+       curve. At n = 0 every cap is 0, so ANY live horse reads as over the cap
+       and the wind-down branch below asks for a stand at every table on the
+       host. That is not hypothetical: the first live run of the dashboard
+       reported n = 0 for both hosts against a fleet of 1,000, and the plan
+       asked for 170 stands.
+
+       The snapshot now leaves an unreadable host out entirely, so this should
+       be unreachable. It is here anyway, because the cost of the two being
+       wrong at once is the cash floor, and because a caller building its own
+       snapshot deserves the same protection. Human yield is deliberately NOT
+       gated on it - a yield does not depend on the population and a waiting
+       human is not made to wait for a failed read. */
+    const populationKnown = host.n > 0;
+    if (!populationKnown) {
+      plan.alerts.push(`host_population_unknown host=${host.hostId} live=${host.uniqueLive}`);
+    }
 
     /* ── HUMAN YIELD RUNS FIRST, AND RUNS EVEN WHEN KILLED ─────────────
        Section 5.5 and the kill-switch contract both. A kill switch that
@@ -179,7 +222,7 @@ export function planFloor(snap: FloorSnapshot): FloorPlan {
     if (onePlayer > 0)
       plan.alerts.push(`one_player_table_listed host=${host.hostId} count=${onePlayer}`);
 
-    if (!snap.killed) {
+    if (!snap.killed && populationKnown) {
       const roomForMore = host.uniqueLive < occ.max;
 
       // 1. Fill the FULL bucket to target.
@@ -337,9 +380,11 @@ export function planFloor(snap: FloorSnapshot): FloorPlan {
       );
     }
 
-    if (host.uniqueLive > peakCap(host.n)) plan.alerts.push(`over_peak_cap host=${host.hostId}`);
-    if (isNightWindow(snap.chicagoHour) && host.uniqueLive > nightCap(host.n)) {
-      plan.alerts.push(`over_night_cap host=${host.hostId}`);
+    if (populationKnown) {
+      if (host.uniqueLive > peakCap(host.n)) plan.alerts.push(`over_peak_cap host=${host.hostId}`);
+      if (isNightWindow(snap.chicagoHour) && host.uniqueLive > nightCap(host.n)) {
+        plan.alerts.push(`over_night_cap host=${host.hostId}`);
+      }
     }
     const band = seatsPerHorseBand(snap.chicagoHour);
     const avg = host.uniqueLive > 0 ? liveSeats / host.uniqueLive : 0;

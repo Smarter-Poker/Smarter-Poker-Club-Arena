@@ -2782,8 +2782,11 @@ export default function TablePage({
   const [isSeatDealing, setIsSeatDealing] = useState(false);
 
   // BOMB POT 2026-08-20: true from BOMB_POT_TRIGGERED until the next
-  // HAND_STARTED. Drives the magenta "BOMB" pill on every live seat
-  // (SeatSlot bombPotAnte) for the duration of the bomb-pot hand.
+  // HAND_STARTED. It used to drive a magenta "BOMB" pill on every live seat
+  // (SeatSlot bombPotAnte). Dan 2026-09-04: "THERE SHOULDN'T BE 'BOMB POT
+  // PILL BUTTONS' UNDER THE PLAYERS. THERE SHOULD JUST BE SOMETHING ON THE
+  // TABLE THAT SAYS 'BOMB POT'." So it now drives the ONE on-felt pill
+  // (.bomb-pot-eta--live below), which reads "BOMB POT" for the hand.
   const [bombPotActive, setBombPotActive] = useState(false);
   // IMPROVEMENT PASS 2026-08-20: in the reference capture the flop is dealt
   // only AFTER the bomb's explosion finishes — the engine, which skips
@@ -20183,46 +20186,57 @@ export default function TablePage({
 
                 {/* ROUND 3 (2026-08-20): bomb pot countdown — players see the
                     forced ante coming instead of being ambushed by it. Server
-                    truth (tableState.bombPotIn from the snapshot), hidden
-                    while the bomb sequence itself is playing. */}
+                    truth (tableState.bombPotIn from the snapshot).
+
+                    AND THE HAND ITSELF (Dan 2026-09-04): "THERE SHOULDN'T BE
+                    'BOMB POT PILL BUTTONS' UNDER THE PLAYERS. THERE SHOULD
+                    JUST BE SOMETHING ON THE TABLE THAT SAYS 'BOMB POT'." This
+                    pill used to hide while the bomb hand played and every seat
+                    grew a magenta "BOMB" pill instead. Those are gone; this
+                    ONE pill stays up through the hand and reads "BOMB POT"
+                    (with its board count), in the live colour. */}
                 {/* Gate on the SNAPSHOT value only — it is server truth and
                     goes non-null the moment an owner enables bomb pots, while
                     bombPotRules is a one-shot fetch that would hold the pill
                     hostage until a page reload. */}
-                {(tableState.bombPotIn != null ||
+                {(bombPotActive ||
+                  tableState.bombPotIn != null ||
                   bombClockLabel != null ||
-                  tableState.bombPotWaitingFor != null) &&
-                  !bombPotActive && (
-                    <div
-                      className={`bomb-pot-eta ${
-                        // URGENCY IS NOT A STEADY STATE (2026-08-29). The pulse
-                        // marks "the next hand is the bomb". On a bomb_pot_only
-                        // table the scheduler reports 1 forever, because every
-                        // hand is a bomb — so this pill pulsed for the entire
-                        // session on the one table where the fact is ordinary
-                        // rather than urgent, and the animation stopped meaning
-                        // anything on every other table by association.
-                        bombPotRules?.triggerMode !== 'bomb_pot_only' &&
-                        tableState.bombPotWaitingFor == null &&
-                        (tableState.bombPotIn === 1 || bombClockLabel === 'NEXT HAND')
+                  tableState.bombPotWaitingFor != null) && (
+                  <div
+                    className={`bomb-pot-eta ${
+                      bombPotActive
+                        ? 'bomb-pot-eta--live'
+                        : // URGENCY IS NOT A STEADY STATE (2026-08-29). The pulse
+                          // marks "the next hand is the bomb". On a bomb_pot_only
+                          // table the scheduler reports 1 forever, because every
+                          // hand is a bomb — so this pill pulsed for the entire
+                          // session on the one table where the fact is ordinary
+                          // rather than urgent, and the animation stopped meaning
+                          // anything on every other table by association.
+                          bombPotRules?.triggerMode !== 'bomb_pot_only' &&
+                            tableState.bombPotWaitingFor == null &&
+                            (tableState.bombPotIn === 1 || bombClockLabel === 'NEXT HAND')
                           ? 'bomb-pot-eta--next'
                           : ''
-                      }`}
-                    >
-                      <span className="bomb-pot-eta__dot" />
-                      {/* BOMB POT STANDARDIZATION 2026-08-27: badge names the
+                    }`}
+                  >
+                    <span className="bomb-pot-eta__dot" />
+                    {/* BOMB POT STANDARDIZATION 2026-08-27: badge names the
                         board count (spec §15.2); bomb-only tables show a
                         permanent identity pill rather than a countdown.
                         TIMED CLOCK 2026-08-28: timed tables count down in
                         m:ss to the engine's bomb_pot_next_at. */}
-                      {/* WHY THE BOMB HAS NOT COME (2026-08-29). A due bomb waits
+                    {/* WHY THE BOMB HAS NOT COME (2026-08-29). A due bomb waits
                         for bomb_pot_min_players, and the engine held it in
                         silence — the pill said BOMB POT NEXT HAND and then the
                         table dealt ordinary hands, indefinitely, with no
                         explanation available anywhere in the product. This
                         branch is first because it is the truest thing the pill
                         can say when it applies. */}
-                      {tableState.bombPotWaitingFor != null
+                    {bombPotActive
+                      ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT`
+                      : tableState.bombPotWaitingFor != null
                         ? `BOMB POT WAITING FOR ${tableState.bombPotWaitingFor} PLAYERS`
                         : bombPotRules?.triggerMode === 'bomb_pot_only'
                           ? `${bombPotRules.boardCount >= 3 ? 'TRIPLE BOARD ' : bombPotRules.boardCount === 2 ? 'DOUBLE BOARD ' : ''}BOMB POT ONLY`
@@ -20233,8 +20247,8 @@ export default function TablePage({
                             : tableState.bombPotIn === 1
                               ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
                               : `BOMB POT IN ${tableState.bombPotIn}`}
-                    </div>
-                  )}
+                  </div>
+                )}
 
                 {/* Dan 2026-08-15: the "Game Info Strip" that lived here is
                     gone. It printed the stakes a second and third time
@@ -20816,7 +20830,6 @@ export default function TablePage({
                       ? tableState.bountyMap[player.id]
                       : undefined
                   }
-                  bombPotAnte={bombPotActive}
                   isWinner={player ? winnerInfo.playerIds.includes(player.id) : false}
                   /* POKERBROS PARITY 2026-08-26: table-wide dim flag — while
                      any winner is on display, every face-up card outside the

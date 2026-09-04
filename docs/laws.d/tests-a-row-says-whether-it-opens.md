@@ -1,0 +1,3 @@
+# tests/a-row-says-whether-it-opens.law.test.ts
+
+A club admin may open an agent in their own club - the downline gate previously refused the owner the composition of a number their own page had just shown them - and the widening is club-scoped and excludes `ca_can_view_club_finances`, so peer agents still cannot read each other's players; `can_drill` is built from the SAME conditions the gate enforces, so a row that says it opens opens; synthetic rows never claim to; and the panel offers a button only where the server says so, does not bounce a drill out of a scope the viewer was never offered, returns to the list it came from, and drops an agent-name search on the way into a list of player names

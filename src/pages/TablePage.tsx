@@ -183,7 +183,6 @@ import DisconnectToast from '../components/table/DisconnectToast';
 // Phase 1.3 PR-C+D: server-rejection toast + auto-snap hint imported below
 // at the existing ActionErrorToast import line — do not duplicate here.
 // Phase 2 T2-01 (spec §5.6): Fold Protection Dialog.
-import FoldProtectionDialog from '../components/table/FoldProtectionDialog';
 // Phase 2 T2-02 (spec §5.7): Always-visible timebank counter (bottom-left).
 import TimebankCounter from '../components/table/TimebankCounter';
 // Dan 2026-08-21, item 3: buy more time banks with diamonds (1/10/25/100/500).
@@ -278,6 +277,7 @@ import GameServerAPI, {
   respondToRIT,
   respondToInsurance,
   sendHeartbeat,
+  resetEngineCircuitBreaker,
   sendAwayBeacon,
   setPreAction as serverSetPreAction,
   setSitOut,
@@ -1190,6 +1190,8 @@ const BOOT_EXPLANATIONS: Record<string, string> = {
   away_blind_cap:
     'You Were Away, So We Cashed You Out After One Small Blind And One Big Blind. Your Chips Are Back In Your Wallet.',
   sit_out_timeout: 'You Sat Out Too Long And Were Cashed Out. Your Chips Are Back In Your Wallet.',
+  abandoned_seat:
+    'You Were Disconnected For Five Minutes, So Your Seat Was Cashed Out. Your Chips Are Back In Your Wallet.',
   busted_no_rebuy: 'You Ran Out Of Chips And Did Not Rebuy, So Your Seat Was Released.',
   nit_game_vpip:
     'This Table Has A Minimum VPIP And You Were Below It, So You Were Cashed Out. Your Chips Are Back In Your Wallet.',
@@ -1963,7 +1965,6 @@ export default function TablePage({
   // Fold while Check is free, we defer the fold and show a confirmation. This
   // state is ONLY the dialog's open flag — the fold itself is committed inside
   // the modal's onFold callback so we don't race two submitActions.
-  const [foldProtectOpen, setFoldProtectOpen] = useState(false);
 
   // State - initialize with empty data (no demo data!)
   const [tableState, setTableState] = useState<TableState>(() => {
@@ -3386,6 +3387,61 @@ export default function TablePage({
     }
   }, [engineWsStatus]);
 
+  /* ═══ RECONNECT IS AN EVENT, NOT A COINCIDENCE (Dan 2026-09-04) ═══════════
+     "I should never have to 'refresh' after I disconnected and auto
+     reconnected. The page should 'auto refresh for me'."
+
+     Until today the socket coming back did NOTHING here beyond resetting two
+     counters. Recovery was incidental: the next snapshot happened to repaint
+     the felt, the 5s heartbeat happened to clear the engine's away flag, the
+     10s seat poll happened to re-read the seat. Three things made that fail
+     often enough for Dan to reach for the refresh button:
+
+       1. GameServerAPI's circuit breaker trips after 3 failed calls and stays
+          open for 30s - so for the first 30s after the network RETURNS, the
+          heartbeats that would tell the engine "I'm here" were refused by
+          our own client, and the seat stayed AWAY / the auto-fold clock kept
+          running against a player who was back.
+       2. The hole-card recovery poll re-arms only on HAND_STARTED. A socket
+          that died and returned mid-hand, after the poll's budget was spent,
+          left the hero blind for the rest of the hand.
+       3. Nothing asked for the seat's truth; a sit-out or eviction that
+          happened while the socket was down waited on the poll.
+
+     So the edge from any not-connected status to 'connected' now: resets the
+     breaker, sends one heartbeat immediately (the engine's heartbeat() is the
+     un-away and the auto-action cancel, DisconnectEngine.ts), re-arms the
+     hole-card read if the hero is in a live hand with no cards on screen,
+     and lets the snapshot the server sends on subscribe do the rest. */
+  const wasOffTheSocketRef = useRef(false);
+  useEffect(() => {
+    if (engineWsStatus !== 'connected') {
+      if (
+        engineWsStatus === 'reconnecting' ||
+        engineWsStatus === 'failed' ||
+        engineWsStatus === 'auth_failed'
+      ) {
+        wasOffTheSocketRef.current = true;
+      }
+      return;
+    }
+    if (!wasOffTheSocketRef.current) return;
+    wasOffTheSocketRef.current = false;
+    resetEngineCircuitBreaker();
+    if (!tableId) return;
+    const live = tableStateRef.current;
+    if (live.heroSeat > 0 || heroSeatRef.current > 0) {
+      void sendHeartbeat(tableId, { turnRendered: heroActionRenderedRef.current });
+      const hero = live.players[live.heroSeat - 1];
+      const blind =
+        !!hero &&
+        hero.status !== 'sitting_out' &&
+        hero.status !== 'away' &&
+        !(hero.holeCards && hero.holeCards.length > 0);
+      if (live.isHandInProgress && blind) heroCardFetchRef.current?.();
+    }
+  }, [engineWsStatus, tableId]);
+
   useEffect(() => {
     if (engineWsStatus !== 'failed') return;
     const t = window.setTimeout(() => {
@@ -3939,7 +3995,8 @@ export default function TablePage({
   /**
    * EVERYTHING LOCAL THAT "I'M BACK" HAS TO UNDO — in one place.
    *
-   * There are two I'm Back buttons (the footer bar and SitOutModal) and until
+   * There were two I'm Back buttons (the footer bar and SitOutModal; the modal's
+   * is gone since 2026-09-04, the bar's is the one) and until
    * 2026-08-29 they undid DIFFERENT amounts. The footer cleared the ref, the
    * next-hand flag and the seat status; the modal cleared only `showSitOut` and
    * the next-hand flag. And NEITHER cleared `heroSitsOutPerRow`, which is
@@ -4930,6 +4987,14 @@ export default function TablePage({
     }
     setRitFeltBanner(null);
     setPotShipRemaining(null);
+    /* THE TAB PILL (Dan 2026-09-04): "RUN IT / 0s Left" stayed red in the
+       multi-table strip for the rest of the session. The deadline was set on
+       rit_offer and cleared by ONE effect keyed on showRIT changing - but the
+       panel opens on a 1500ms timer, and when consent completed inside that
+       window setShowRIT(false) was a no-op on already-false state, the effect
+       never ran, and the deadline outlived the hand, the bust, everything.
+       A hand-boundary reset that leaves a clock running is not a reset. */
+    setDecisionDeadline((prev) => (prev?.kind === 'rit' ? null : prev));
   }, []);
   // One shared countdown, ticking against the engine's wall-clock deadline.
   useEffect(() => {
@@ -7046,7 +7111,7 @@ export default function TablePage({
   // Hand history state — load from localStorage for session continuity
   const [handHistory, setHandHistory] = useState<HandRecord[]>(() => {
     try {
-      const saved = localStorage.getItem(`hand_history_${tableId || 'default'}`);
+      const saved = localStorage.getItem(`hand_history_v2_${tableId || 'default'}`);
       if (!saved) return [];
       /* AUDIT 2026-08-25: this returned `JSON.parse(saved)` straight out. The
          catch only covers a SYNTAX error — valid JSON that is not an array
@@ -7106,7 +7171,9 @@ export default function TablePage({
     let cancelled = false;
     (async () => {
       try {
-        const hands = await handHistoryService.getPlayerHands(userId, 50);
+        // THIS table's hands, in play order (Dan 2026-09-04). See
+        // HandHistoryService.getPlayerHands for what the missing tableId did.
+        const hands = await handHistoryService.getPlayerHands(userId, 50, { tableId });
         if (!cancelled && hands && hands.length > 0) {
           setHandHistory(hands.map((h) => adaptServiceHandToPanel(h, userId)));
         }
@@ -7126,7 +7193,7 @@ export default function TablePage({
     let cancelled = false;
     (async () => {
       try {
-        const hands = await handHistoryService.getPlayerHands(userId, 1);
+        const hands = await handHistoryService.getPlayerHands(userId, 1, { tableId });
         if (!cancelled && hands && hands.length > 0 && hands[0]?.id) {
           setLastHandId(hands[0].id);
         }
@@ -7146,7 +7213,10 @@ export default function TablePage({
       if (localStorageTimerRef.current) clearTimeout(localStorageTimerRef.current);
       localStorageTimerRef.current = setTimeout(() => {
         try {
-          localStorage.setItem(`hand_history_${tableId}`, JSON.stringify(handHistory.slice(0, 50)));
+          localStorage.setItem(
+            `hand_history_v2_${tableId}`,
+            JSON.stringify(handHistory.slice(0, 50))
+          );
         } catch {
           /* localStorage full — ignore */
         }
@@ -7164,7 +7234,14 @@ export default function TablePage({
       const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
-        if (key?.startsWith('hand_history_') && key !== `hand_history_${tableId}`) {
+        /* v2 (2026-09-04): every v1 key held the CROSS-TABLE list under a
+           table's name, so a table opened with another table's hands as its
+           own. v1 keys are all stale by definition and go regardless of age. */
+        if (key?.startsWith('hand_history_') && key !== `hand_history_v2_${tableId}`) {
+          if (!key.startsWith('hand_history_v2_')) {
+            localStorage.removeItem(key);
+            continue;
+          }
           try {
             const data = JSON.parse(localStorage.getItem(key) || '[]');
             const lastTimestamp = data[0]?.timestamp || 0;
@@ -7294,6 +7371,26 @@ export default function TablePage({
   // to check if the player has enough chips in his wallet to rebuy. I was
   // straight booted from the table when I lost all my chips."
   //
+  /** The spendable club balance for the bust rebuy, or null when it truly
+   *  cannot be read - after one automatic retry. Never 0 for "unknown". */
+  const readBustBalance = useCallback(async (uid: string, tid: string) => {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const r = await WalletService.readPlayerBalance(uid, { tableId: tid });
+        if (r.balance !== null && r.balance !== undefined) return r.balance;
+      } catch {
+        /* fall through to the retry */
+      }
+      if (attempt === 0) await new Promise((res) => setTimeout(res, 700));
+    }
+    return null;
+  }, []);
+  /** The dialog's Retry: read again, in place, without closing anything. */
+  const retryBustBalance = useCallback(() => {
+    if (!userId || !tableId) return;
+    void readBustBalance(userId, tableId).then((b) => setBustWalletBalance(b));
+  }, [userId, tableId, readBustBalance]);
+
   // Watch for the hero's stack to drop to 0 AND the hand to complete; at
   // that moment, look up the wallet balance and pop the BuyInModal (reused
   // in rebuy mode). The existing `atomic_table_rebuy` RPC tops up the seat.
@@ -7320,20 +7417,14 @@ export default function TablePage({
          The prompt gated affordability on money the RPC never spends — the
          normal buy-in path already reads through fn_player_spendable_balance
          for exactly this reason. Same rule here, same table context. */
-      try {
-        const r = await WalletService.readPlayerBalance(userId, { tableId });
-        /* NULL STAYS NULL (2026-08-27). This was `r.balance ?? 0`, which
-           collapsed "we could not find out" back into "you have no chips" —
-           the exact defect the 2026-08-25 audit removed from the tournament
-           sign-up gate, surviving here. The state is already typed
-           `number | null` so the dialog can say "unknown"; the ?? 0 was the
-           only thing stopping it. It matters more now that readPlayerBalance
-           no longer falls back to a frozen table: an unreachable RPC used to
-           answer with a stale number, and now honestly answers null. */
-        setBustWalletBalance(r.balance);
-      } catch {
-        setBustWalletBalance(null);
-      }
+      /* NULL STAYS NULL (2026-08-27), AND NOW IT IS ALSO RETRIED (2026-09-04).
+         Dan busted, the read failed once, the dialog opened on "unknown" -
+         which TableModalsLayer then rendered as 0 and the modal as
+         INSUFFICIENT BALANCE - and ten seconds later the engine stood him up.
+         One transient read failure cost the seat. Read twice before giving
+         up, and hand the dialog a Retry so the player is never stuck on a
+         number nobody actually knows. */
+      setBustWalletBalance(await readBustBalance(userId, tableId));
       setBustRebuyOpen(true);
     })();
   }, [
@@ -7899,15 +7990,84 @@ export default function TablePage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showBuyInModal, seatFirstConfirm, tableId, seatFirstPending, tableState.heroSeat]);
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  THE DOOR IS NEVER LOCKED (Dan 2026-09-04, binding)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Dan: "YOU SHOULD NEVER BE 'DENIED' THE ABILITY TO LEAVE A TABLE, EVEN IF
+   * YOU 'AREN'T LOGGED IN'. THE LEAVE TABLE ACTS LIKE THE BACK BUTTON OR TAKES
+   * YOU BACK TO THE LOBBY, THAT'S THE DEFAULT."
+   *
+   * What he saw: spectating a PLO6 table with 0 chips, pressing Leave Table,
+   * and getting an "Authentication Required" toast while the table stayed on
+   * screen. Three things produced that, all fixed here:
+   *
+   *   1. `if (!userId) return;` - a player whose session had not hydrated got
+   *      NOTHING from the button. Not a toast, not a navigation. Silence.
+   *   2. A spectator (heroSeat 0) was sent through `tableService.leaveTable`,
+   *      which asks the ENGINE to release a seat that does not exist. The
+   *      engine's 401/400 came back verbatim as the reason they could not
+   *      leave a table they were only watching.
+   *   3. A seated player whose cash-out the engine refused (token refresh in
+   *      flight, engine restarting at :55, stay clock) was held on the felt
+   *      until it succeeded.
+   *
+   * The rule that replaces all three: LEAVING THE PAGE IS ALWAYS ALLOWED.
+   * Cashing out is the engine's to grant; leaving the view is not. So:
+   *
+   *   - no seat (spectator, guest, session not ready): close the tab, go to
+   *     the lobby. There are no chips to move.
+   *   - seat, engine agrees: cash out, results card, close the tab, lobby -
+   *     unchanged.
+   *   - seat, engine refuses: the chips are safe ON THE SERVER (that is the
+   *     whole reason TableService refuses to move them without an engine
+   *     ack). Say so, go to the lobby, and LEAVE THE TAB OPEN - the seat is
+   *     still live, the table keeps playing in the background exactly as it
+   *     does for any multi-tabling player, and the tab is the way back to
+   *     cash out when the engine answers. Nothing about the money changed;
+   *     only the question of whether the player is allowed to look at the
+   *     lobby, and the answer to that is always yes.
+   */
+  const goToLobbyKeepingSeat = (why: string) => {
+    heartbeatToastRef.current?.info?.(why);
+    navigate(exitDestination());
+  };
+  const leaveWithoutCashout = (seatAtLeave: number) => {
+    heroSeatRef.current = 0;
+    pendingSeatStackRef.current = 0;
+    setTableState((prev) => ({ ...prev, heroSeat: 0 }));
+    if (userId) {
+      playerStatusService.clearPlayingAt(userId);
+      masterBus.emit('SESSION_ENDED', { tableId: tableId ?? '', userId });
+    }
+    masterBus.emit('TABLE_LEFT', { tableId: tableId ?? '', seat: seatAtLeave });
+    masterBus.emit('TABLE_MENU_ACTION', {
+      tableId: tableId ?? '',
+      action: 'CLOSE_TABLE_TAB',
+    });
+    navigate(exitDestination());
+  };
+
   const handleLeaveTable = async () => {
-    if (!tableId || !userId) return;
     setLeaveNotice(null);
+
+    // Nothing to cash out: a spectator, a guest, or a session that has not
+    // hydrated yet. The door opens (Dan 2026-09-04, above).
+    const liveSeat = Math.max(tableState.heroSeat, heroSeatRef.current);
+    if (!tableId || !userId || liveSeat <= 0) {
+      leaveWithoutCashout(liveSeat);
+      return;
+    }
 
     /* CHIP CONTINUITY: ahead of the buy-in with stay time left. The engine
        would refuse this anyway (and the database behind it); saying so here
-       saves the round trip. The label is the whole message. */
+       saves the round trip. The label is the whole message - and the player
+       still goes to the lobby, seat and chips staying on the table, tab open. */
     if (heroLeaveLocked) {
-      toast.error(leaveAvailableLabel(heroLeaveMs));
+      goToLobbyKeepingSeat(
+        `${leaveAvailableLabel(heroLeaveMs)}. Your Seat And Chips Stay On The Table, Tap Its Tab To Return.`
+      );
       return;
     }
 
@@ -7948,10 +8108,10 @@ export default function TablePage({
               { tableId, tournamentId: tableState.tournamentId, reason }
             );
           }
-          setLeaveNotice(
+          goToLobbyKeepingSeat(
             /already_started/.test(reason)
-              ? 'The Game Has Started, Your Seat Is In Play'
-              : 'Could Not Release That Seat, Please Try Again'
+              ? 'The Game Has Started, Your Seat Is In Play. Tap The Table Tab To Return.'
+              : 'Could Not Release That Seat Yet. It Is Still Yours, Tap The Table Tab To Try Again.'
           );
           return;
         }
@@ -7968,7 +8128,9 @@ export default function TablePage({
         if (backTo) navigate(`/clubs/${backTo}`);
       } catch (err) {
         reportError(err as Error, 'TablePage.leave_table_seat_first');
-        setLeaveNotice('Could Not Release That Seat, Please Try Again');
+        goToLobbyKeepingSeat(
+          'Could Not Release That Seat Yet. It Is Still Yours, Tap The Table Tab To Try Again.'
+        );
       }
       return;
     }
@@ -8108,9 +8270,16 @@ export default function TablePage({
           heroSeat: tableState.heroSeat,
         });
         if (result.error) {
-          // Engine explicitly refused (unreachable / cashout blocked) — the
-          // seat is still live with chips in it, so the player must stay.
-          setLeaveNotice(result.error);
+          // Engine explicitly refused (unreachable / cashout blocked / auth
+          // not ready). The seat is still live with chips in it - on the
+          // SERVER, where they are safe - so the tab stays open and the
+          // player goes to the lobby (Dan 2026-09-04: the door is never
+          // locked). The engine's reason leads, so "Authentication Required"
+          // or "Leave Available In 2:30" is still said, followed by what it
+          // means for the chips.
+          goToLobbyKeepingSeat(
+            `${result.error}. Your Seat And Chips Stay On The Table, Tap Its Tab To Return And Cash Out.`
+          );
         } else {
           // Dan 2026-08-20 (leave-stuck fix): no error means the player
           // genuinely holds no active seat row (already left / never fully
@@ -8135,13 +8304,30 @@ export default function TablePage({
       }
     } catch (error) {
       reportError(error, 'TablePage.Exception');
-      setLeaveNotice('Error leaving table. Please try again.');
+      goToLobbyKeepingSeat(
+        'Could Not Cash Out Yet. Your Seat And Chips Stay On The Table, Tap Its Tab To Return.'
+      );
     }
   };
 
   // Handle force leave (triggered by closing tab 'X' button or when already cashed out)
   const handleForceLeaveTable = async () => {
-    if (!tableId || !userId) return;
+    /* Dan 2026-09-04 (the door is never locked): a tab with no seat behind it
+       closes without asking the engine anything. That covers the spectator,
+       the guest and the not-yet-hydrated session - before this, all three
+       were routed through `tableService.leaveTable`, whose engine call could
+       only fail for a seat that did not exist, and the failure's text
+       ("Authentication Required") was shown as the reason the tab could not
+       be closed. */
+    const forceLiveSeat = Math.max(tableState.heroSeat, heroSeatRef.current);
+    if (!tableId || !userId || forceLiveSeat <= 0) {
+      heroSeatRef.current = 0;
+      pendingSeatStackRef.current = 0;
+      if (userId) playerStatusService.clearPlayingAt(userId);
+      masterBus.emit('TABLE_LEFT', { tableId: tableId ?? '', seat: forceLiveSeat });
+      if (userId) masterBus.emit('SESSION_ENDED', { tableId: tableId ?? '', userId });
+      return;
+    }
     try {
       /**
        * ═══════════════════════════════════════════════════════════════════
@@ -8196,10 +8382,13 @@ export default function TablePage({
             'TablePage.handleForceLeaveTable.refused'
           );
         }
-        setLeaveNotice(
-          forced.error || 'Could not leave the table - your chips are still in your seat.'
+        /* The tab stays (the seat is live and the tab is the way back to
+           it), but the player is not held on the felt: same rule as the menu
+           door, the view is always allowed to leave. */
+        goToLobbyKeepingSeat(
+          `${forced.error}. Your Seat And Chips Stay On The Table, Tap Its Tab To Return And Cash Out.`
         );
-        return; // stay on the table; the seat is still live
+        return;
       }
       // Dan 2026-08-20: success:false WITHOUT an error means the player holds
       // no active seat — they are a SPECTATOR (or already cashed out). There
@@ -9107,6 +9296,19 @@ export default function TablePage({
         setShowRIT(false);
         setRitHeroAccepted(false);
         const runs = (handState.runs as number) || 2;
+        /* THE OFFER IS OVER (Dan 2026-09-04, hand #6145364). Two readers still
+           believed it was open:
+             - the per-accept banner's revert timer restores "Waiting For
+               Players To Run It Multiple Times." while ritDeadlineRef is in
+               the future - and the 25s window always outlives a fast consent,
+               so the WAITING strip came back with no expiry and sat over all
+               three boards and the result;
+             - the tab-strip clock (decisionDeadline) kept counting to 0 and
+               stayed there for the session.
+           Consent completed: the deadline is gone, and so is the clock. */
+        ritDeadlineRef.current = 0;
+        setDecisionDeadline((prev) => (prev?.kind === 'rit' ? null : prev));
+        setRitFeltBanner((prev) => (prev === RIT_WAITING_BANNER ? null : prev));
         // The table has AGREED to N boards. Record it now: pot_win can beat
         // rit_result onto the wire, and without this it would ship the pot
         // over a runout the client has not drawn yet (see POT_WIN's ritHold).
@@ -9131,6 +9333,10 @@ export default function TablePage({
       if (eventType === 'rit_mandatory') {
         const runs = (handState.runs as number) || 2;
         ritExpectedRunsRef.current = runs;
+        // No offer was ever open, but a stale one from this hand's arming
+        // must not keep a clock or a waiting strip alive (see rit_all_accepted).
+        ritDeadlineRef.current = 0;
+        setDecisionDeadline((prev) => (prev?.kind === 'rit' ? null : prev));
         showRitFeltBanner(
           runs === 3 ? 'Mandatory Run It 3 Times This Hand.' : 'Mandatory Run It Twice This Hand.',
           4500
@@ -9184,6 +9390,11 @@ export default function TablePage({
       // gets going; tap/OK dismisses sooner.
       if (eventType === 'rit_result') {
         setShowRIT(false);
+        // Boards on the wire means consent is history. Whatever path got us
+        // here (accepted, mandatory, a missed event), nothing is waiting now.
+        ritDeadlineRef.current = 0;
+        setDecisionDeadline((prev) => (prev?.kind === 'rit' ? null : prev));
+        setRitFeltBanner((prev) => (prev === RIT_WAITING_BANNER ? null : prev));
         /**
          * ── RIT REVEAL FIX 2026-08-27, part 1: DEFEND THE SHAPE ──
          *
@@ -12915,6 +13126,31 @@ export default function TablePage({
         break;
       }
 
+      /**
+       * MUST-MOVE (Operation Table Stakes, Slice 2 - OPORD 1.3 s9.5). A player
+       * is never asked anything: they are told once, at the start of the hand
+       * they will move after, and then they are at the new table. The engine
+       * writes the sentence ("Seat Open On Main 2. Moving After This Hand.");
+       * this only shows it to the one player it is about.
+       */
+      case 'SEAT_MOVE_PENDING': {
+        const d = evt.data as { user_id?: string; message?: string };
+        if (d?.user_id !== userId || !d?.message) break;
+        toast.info(d.message);
+        break;
+      }
+      /**
+       * The move landed: the hero's chair, chips and clock are now at the
+       * other table. Follow them. Anyone else just sees the seat empty on the
+       * next state broadcast.
+       */
+      case 'SEAT_MOVED': {
+        const d = evt.data as { user_id?: string; to_table_id?: string };
+        if (d?.user_id !== userId || !d?.to_table_id) break;
+        navigate(`/table/${d.to_table_id}`, { replace: true });
+        break;
+      }
+
       case 'GAME_START': {
         // Fast UI recovery via GameServerAPI.getTableState() full snapshot
         const syncData = evt.data as any;
@@ -14133,6 +14369,18 @@ export default function TablePage({
             // Scaled like the cardFoldOut keyframe it triggers. The showdown
             // result window is 2.6-6.9s server-side, so 2400ms leaves the muck
             // fully visible before the 3s client reset.
+            /* NOT DURING A RUNOUT (Dan 2026-09-04, hand #6145364): "it mucked
+               the other person's hand." The server had said mucked:false and
+               sent the cards; this timer flew them to the muck 2.4s after
+               HAND_COMPLETE - which on a run-it-3-times hand is while run 1's
+               flop is still landing, ~18s before the last ribbon. A player
+               cannot judge three boards against a hand that has left the
+               felt. The muck waits for the reveal to finish, like the reset
+               hold two blocks down already does. */
+            const muckBase = 2400 * getAnimationSpeed();
+            const revealEnd = ritRevealEndsAtRef.current;
+            const muckDelay =
+              revealEnd > Date.now() ? Math.max(muckBase, revealEnd - Date.now() + 200) : muckBase;
             muckTimerRef.current = setTimeout(() => {
               muckTimerRef.current = null;
               setMuckingSeats(loserMask);
@@ -14141,7 +14389,7 @@ export default function TablePage({
               // a sound since the Show/Muck modal was wired; the table's did
               // not. Same card-slide cue.
               if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playFold();
-            }, 2400 * getAnimationSpeed());
+            }, muckDelay);
           }
         }
         /**
@@ -14617,37 +14865,72 @@ export default function TablePage({
               const scooper = tableStateRef.current.players.find((p) => p?.id === scoopUserId);
               const scoopHand = tableStateRef.current.handNumber ?? 0;
               if (scoopBannerTimerRef.current) clearTimeout(scoopBannerTimerRef.current);
-              scoopBannerTimerRef.current = setTimeout(() => {
-                scoopBannerTimerRef.current = null;
-                // A late label must never land on a newer hand's felt.
-                if ((tableStateRef.current.handNumber ?? 0) !== scoopHand) return;
-                setScoopBanner({
-                  // 2026-08-29: through formatPopupText like every other felt
-                  // banner (the RIT one already does this). These two strings
-                  // are all-caps with no dashes, so the transform is a no-op on
-                  // them today — which is the point of doing it here rather
-                  // than trusting it. Dan's popup rule (CLAUDE.md §5.7) is
-                  // enforced in the render path precisely because a style that
-                  // depends on the next author remembering it does not hold,
-                  // and this was the one felt banner outside that path.
-                  text: formatPopupText(label!),
-                  name: scooper?.name || '',
-                  handNumber: scoopHand,
-                });
-                /* A sweep is the biggest moment a bomb pot has, and the
+              /* AFTER THE LAST RUN, NOT AFTER THE FIRST FLOP (Dan 2026-09-04,
+                 hand #6145364). "TRIPLE SCOOP!" landed at 2.2s, while run 1's
+                 flop was still on the felt and run 3 had no cards at all - the
+                 comment above promised "after the final award" and the timer
+                 below did not know a runout was in progress. The POT_WIN ship
+                 hold (ritHoldMs, further down) already waits for the reveal;
+                 the label does too. rit_result records the instant the last
+                 ribbon lands in ritRevealEndsAtRef; when pot_win beats
+                 rit_result onto the wire that ref is still 0, so we wait for
+                 it (bounded) rather than guess. */
+              const speed = getAnimationSpeed();
+              const scoopBeat = 600 * speed;
+              const scoopDelay = () => {
+                const end = ritRevealEndsAtRef.current;
+                const base = 2200 * speed;
+                return end > Date.now() ? Math.max(base, end - Date.now() + scoopBeat) : base;
+              };
+              const ritExpected = ritExpectedRunsRef.current >= 2 || boardsSeen.length >= 2;
+              const armScoop = (delay: number) => {
+                scoopBannerTimerRef.current = setTimeout(() => {
+                  scoopBannerTimerRef.current = null;
+                  // A late label must never land on a newer hand's felt.
+                  if ((tableStateRef.current.handNumber ?? 0) !== scoopHand) return;
+                  setScoopBanner({
+                    // 2026-08-29: through formatPopupText like every other felt
+                    // banner (the RIT one already does this). These two strings
+                    // are all-caps with no dashes, so the transform is a no-op on
+                    // them today — which is the point of doing it here rather
+                    // than trusting it. Dan's popup rule (CLAUDE.md §5.7) is
+                    // enforced in the render path precisely because a style that
+                    // depends on the next author remembering it does not hold,
+                    // and this was the one felt banner outside that path.
+                    text: formatPopupText(label!),
+                    name: scooper?.name || '',
+                    handNumber: scoopHand,
+                  });
+                  /* A sweep is the biggest moment a bomb pot has, and the
                    banner was landing in SILENCE — the pot-award fanfare has
                    already finished by the time it appears. Reuse the big-win
                    cue, gated for a muted player and for background
                    multi-table tabs (#175). */
-                if (soundService.isEnabled() && ambientSoundsAllowedRef.current) {
-                  soundService.playBigWin();
-                }
-                // Self-clears with the celebration.
-                scoopBannerTimerRef.current = setTimeout(() => {
-                  scoopBannerTimerRef.current = null;
-                  setScoopBanner(null);
-                }, 5000 * getAnimationSpeed());
-              }, 2200 * getAnimationSpeed());
+                  if (soundService.isEnabled() && ambientSoundsAllowedRef.current) {
+                    soundService.playBigWin();
+                  }
+                  // Self-clears with the celebration.
+                  scoopBannerTimerRef.current = setTimeout(() => {
+                    scoopBannerTimerRef.current = null;
+                    setScoopBanner(null);
+                  }, 5000 * getAnimationSpeed());
+                }, delay);
+              };
+              if (ritExpected && ritRevealEndsAtRef.current === 0) {
+                // rit_result has not arrived yet: poll for its timeline for up
+                // to 8s, then fall back to the reveal-aware delay either way.
+                const waitStarted = Date.now();
+                const waitForTimeline = () => {
+                  if (ritRevealEndsAtRef.current > 0 || Date.now() - waitStarted > 8000) {
+                    armScoop(scoopDelay());
+                    return;
+                  }
+                  scoopBannerTimerRef.current = setTimeout(waitForTimeline, 250);
+                };
+                scoopBannerTimerRef.current = setTimeout(waitForTimeline, 250);
+              } else {
+                armScoop(scoopDelay());
+              }
             }
           }
         }
@@ -18106,10 +18389,26 @@ export default function TablePage({
   };
 
   /**
-   * Phase 2 T2-01 (spec §5.6): "Check or Fold?" protection.
-   * Returns true when checking is legal for hero right now. When true and the
-   * player taps Fold, we defer and show FoldProtectionDialog instead of
-   * executing the fold. The keyboard shortcut ('F') also routes through here.
+   * True when checking is legal for hero right now. The keyboard's
+   * Call/Check key reads it to pick the action; nothing else does.
+   *
+   * ─── FOLD PROTECTION IS GONE (Dan 2026-09-04) ─────────────────────────────
+   * Until today a fold with a free check did not fold. It opened a modal
+   * ("Check Or Fold?") that ignored every input for 350ms, could not be
+   * dismissed by its backdrop, and was never closed by the game - so when the
+   * clock ran out under it the server checked for the player and the modal
+   * stayed on screen over a hand that had moved on. Dan: "when you 'fold when
+   * you can check' it freezes the game, and glitches... it needs to be smooth
+   * and just accept the action and move on."
+   *
+   * So a fold is a fold. The server has always accepted it
+   * (ServerActionValidator.validateFold: "player may fold even when they can
+   * check"); the client now sends it straight through the same path as every
+   * other action, with the same optimistic paint. FoldProtectionDialog.tsx,
+   * its CSS, `commitFold` and the dialog-only `handleCheck` are deleted with
+   * it - they existed only to serve the modal. Pre-actions are unaffected:
+   * an armed "fold" still maps to auto_check_fold when the check is free,
+   * because that is what a pre-selected check/fold means.
    */
   const canCheckRightNow = useCallback(() => {
     return (
@@ -18117,38 +18416,7 @@ export default function TablePage({
     );
   }, [tableState.currentBet, tableState.lastBetAmounts, tableState.heroSeat]);
 
-  /** Commit a fold that has already cleared any dialog / confirmation gates. */
-  const commitFold = useCallback(async () => {
-    /* Dan 2026-08-23: "folding when you can check doesn't work, it just acts
-       like a check."
-
-       This is the last hop of the confirm flow, so it must not bail on the
-       debounce lock. handleActionPanelAction takes that lock on the way IN -
-       before it decides to open the dialog - and any later tap (the dialog's
-       own Fold button included) re-takes it. Returning here on a held lock
-       silently dropped the confirmed fold, the hand sat idle, and the clock
-       ran out into the server's auto-check-when-free. That is exactly the
-       reported symptom: a fold that behaves like a check.
-
-       The confirmation IS the deliberate second action, so clear the lock and
-       proceed rather than treating this as a double-tap. */
-    actionLockRef.current = false;
-    if (!validateAndExecuteAction('fold')) return;
-    actionLockRef.current = true;
-    setTimeout(() => {
-      actionLockRef.current = false;
-    }, 300);
-    closeRaisePanel();
-    soundService.playFold(); // Bible V8 §5.4 — fold = light haptic
-    // BUG 026: optimistic update for instant visual feedback
-    const revert = applyOptimisticHeroAction('fold');
-    if (tableId) {
-      const ok = await submitActionWithToast(tableId, userId, 'fold', undefined, 'commitFold');
-      if (!ok) revert();
-    }
-  }, [tableId, userId, submitActionWithToast, applyOptimisticHeroAction]);
-
-  /* `handleFold` and `handleCall` used to live here, beside handleCheck, and
+  /* `handleFold` and `handleCall` used to live here, beside a `handleCheck`, and
      NOTHING but the keyboard ever called them. That is why they are gone
      (2026-08-28): F/Q and C/W now go through `handleActionPanelAction`, the same
      function the on-screen buttons call.
@@ -18157,11 +18425,10 @@ export default function TablePage({
      it had drifted: `handleActionPanelAction` counts VPIP and PFR (see the
      hero-stats block inside it) and this pair did not, so a player who acted by
      keyboard had their own HUD stats quietly under-count every hand they played
-     that way. It also takes the debounce lock on the way IN rather than after
-     the decision, which is the ordering the fold-protection dialog depends on.
+     that way.
 
-     `handleCheck` stays: FoldProtectionDialog's "check instead" button calls it
-     directly, and that path must not re-enter the dialog it is dismissing.
+     `handleCheck` followed them on 2026-09-04: its only caller was the fold
+     protection dialog's "check instead" button, and that dialog is gone.
 
      `handleAllIn` (further down) ALSO stays, and that is a KNOWN, DELIBERATE
      inconsistency rather than an oversight — it is the one remaining pair of
@@ -18172,23 +18439,6 @@ export default function TablePage({
          `workerTimeout` after the shove. Does NOT count VPIP/PFR.
      Whichever is merged into the other changes behaviour for the other half of
      the players, so it is not being done inside a sweep. */
-  const handleCheck = async () => {
-    if (actionLockRef.current) return;
-    if (!validateAndExecuteAction('check')) return;
-    actionLockRef.current = true;
-    setTimeout(() => {
-      actionLockRef.current = false;
-    }, 300);
-    closeRaisePanel();
-    //Local engine call removed — server is authoritative
-    soundService.playCheck(); // SoundService handles haptic (light) per Bible V8 §5.4
-    // BUG 026: optimistic update for instant visual feedback
-    const revert = applyOptimisticHeroAction('check');
-    if (tableId) {
-      const ok = await submitActionWithToast(tableId, userId, 'check', undefined, 'handleCheck');
-      if (!ok) revert();
-    }
-  };
 
   const handleRaise = () => {
     openRaisePanel();
@@ -18284,13 +18534,9 @@ export default function TablePage({
       // If the server rejects, revert() restores the prior snapshot.
       switch (action) {
         case 'fold':
-          // Spec §5.6: when Check is free, route through the protection dialog
-          // instead of folding immediately. commitFold runs validate +
-          // submitAction; the dialog calls commitFold on user confirmation.
-          if (canCheckRightNow()) {
-            setFoldProtectOpen(true);
-            break;
-          }
+          // A fold is a fold, whether or not a check was free (Dan
+          // 2026-09-04). The "Check Or Fold?" gate that used to sit here is
+          // gone - see the note above canCheckRightNow.
           if (!validateAndExecuteAction('fold')) return;
           soundService.playFold(); // SoundService handles haptic per Bible V8 §5.4
           {
@@ -18387,7 +18633,7 @@ export default function TablePage({
           break;
       }
     },
-    [tableState.heroSeat, tableId, userId, submitActionWithToast, canCheckRightNow]
+    [tableState.heroSeat, tableId, userId, submitActionWithToast]
   );
 
   // handleConfirmRaise was removed on 2026-08-20. It was the confirm handler for
@@ -18458,9 +18704,8 @@ export default function TablePage({
     /* Every action key runs the SAME function the on-screen button runs.
        2026-08-28: these pointed at `handleFold` / `handleCall`, a parallel pair
        that skipped the VPIP/PFR counting inside handleActionPanelAction — so a
-       keyboard player's own HUD stats under-counted every hand. Fold protection
-       is unchanged: the panel path opens FoldProtectionDialog on a free check,
-       exactly as handleFold did. */
+       keyboard player's own HUD stats under-counted every hand. A fold folds,
+       with or without a free check (Dan 2026-09-04). */
     onFold: () => void handleActionPanelAction('fold'),
     onCallCheck: () => {
       // Bible V8: Check is legal when currentBet <= hero's current bet.
@@ -19033,17 +19278,11 @@ export default function TablePage({
         playSounds={ambientSoundsAllowed}
       />
 
-      <DisconnectToast heroUserId={userId} disconnectStates={disconnectStates} />
-
       {/* Dan 2026-08-19, bug list item 2: "no winner banner at showdown - just
           ship the pot." The centre banner that used to live here (YOU WIN /
           <Name> wins, hand name, amount, ~2s) is gone. `winnerInfo` is still
           populated - the seat glow, the hand-name float and the pot ship all
           read it - only the banner is removed. Do not reintroduce it. */}
-      {/* Phase 2 T2-01 (spec §5.6): Fold Protection Dialog.
-          handleFold / panel-fold defer to this when canCheckRightNow() is
-          true. onCheck dismisses + executes the free check; onFold dismisses
-          + commits the fold the player already intended. */}
       {/* Dan 2026-08-21, item 3: buy more time banks with diamonds. Opens from
           the alarm-clock counter when the player is out, and from the TimeBank
           panel's extension button. */}
@@ -19054,18 +19293,6 @@ export default function TablePage({
         banksRemaining={timeBanksRemaining ?? 0}
         diamondBalance={diamondBalance}
         onPurchase={handleBuyTimeBanks}
-      />
-      <FoldProtectionDialog
-        open={foldProtectOpen}
-        onDismiss={() => setFoldProtectOpen(false)}
-        onCheck={() => {
-          setFoldProtectOpen(false);
-          handleCheck();
-        }}
-        onFold={() => {
-          setFoldProtectOpen(false);
-          void commitFold();
-        }}
       />
       {/* Phase 2 T2-02 (spec §5.7): always-visible timebank counter in the
           bottom-left. Only renders during an active hand so it doesn't clutter
@@ -19592,6 +19819,16 @@ export default function TablePage({
                     paints over everything on the surface. See the note in
                     .table-container above for why it moved off the top rail. */}
                 <TableConnectionBanner status={engineWsStatus} isActive={isActive} />
+                {/* The engine's verdict on THIS seat's presence, on the same
+                    line. Defers to the socket banner whenever the socket is
+                    down (Dan 2026-09-04: every connection message lives on
+                    the felt, and none of them says "refresh"). */}
+                <DisconnectToast
+                  heroUserId={userId}
+                  disconnectStates={disconnectStates}
+                  socketStatus={engineWsStatus}
+                  isActive={isActive}
+                />
 
                 <div className="table-brand" aria-hidden="true">
                   <img
@@ -22024,29 +22261,14 @@ export default function TablePage({
 
       {/* Observing / Join indicators REMOVED — empty seats already show "+ SIT" */}
 
-      {/* Floating Chat/Mail Toggle Button (Bottom-Right) & I'm Back */}
-      <div className="floating-action-br">
-        {tableState.players[tableState.heroSeat - 1]?.status === 'sitting_out' && (
-          <button
-            className="floating-im-back"
-            onClick={() => {
-              soundService.playButtonClick();
-              if (!tableId) return;
-              // `.catch` was dead code — setSitOut resolves { success: false }
-              // rather than throwing, so a refused sit-in was silent and the
-              // player thought they were back in the game.
-              void setSitOut(tableId, false).then((res) => {
-                if (!res?.success) {
-                  toast?.error?.(res?.error || 'Could not sit back in - try again');
-                }
-              });
-            }}
-          >
-            I'm Back
-          </button>
-        )}
-        {/* Duplicate chat toggle REMOVED — TableChat renders its own collapsed icon */}
-      </div>
+      {/* THE FLOATING "I'M BACK" IS GONE (Dan 2026-09-04: "there shouldn't be
+          two 'im back' buttons"). It hung bottom-right over the hero's cards
+          while the footer bar directly under it said "You Are Sitting Out"
+          with its own I'm Back - his screenshot, two green buttons a thumb
+          apart. Worse, this one called setSitOut() directly, skipping
+          `sitOutRequestInFlightRef` and `clearLocalSitOutState`, so it
+          re-opened the out -> in -> out race the footer's handleSitBackIn
+          was built to close. One button, one implementation: the bar. */}
 
       {/*
         Bible V8 §11.1: text_message toggle — hide chat entirely when off.
@@ -22252,7 +22474,6 @@ export default function TablePage({
         /* The SAME cleanup the footer's I'm Back does. This used to clear two
            of the six things and leave the footer insisting, with a live clock,
            that the player was still sitting out. */
-        onReturnFromSitOut={() => void handleSitBackIn()}
         // Wait List
         showWaitList={showWaitList}
         waitListPlayers={waitListPlayers}
@@ -22346,6 +22567,7 @@ export default function TablePage({
         bustWalletBalance={bustWalletBalance}
         bustRebuyProcessing={bustRebuyProcessing}
         onCancelBustRebuy={cancelBustRebuy}
+        onRetryBustBalance={retryBustBalance}
         onConfirmBustRebuy={confirmBustRebuy}
         showProfileModal={showProfileModal}
         onCloseProfileModal={() => setShowProfileModal(false)}

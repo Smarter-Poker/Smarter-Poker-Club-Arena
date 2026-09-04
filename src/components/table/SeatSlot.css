@@ -1313,10 +1313,21 @@
  * Hero hole cards after fold. Keep them visible — the player still wants
  * to see what they mucked — but desaturate + dim to match the avatar.
  * Dan's UX rule, 2026-04-14.
+ *
+ * Dan 2026-09-04: "when a hero folds, and the cards dim, they are dimming
+ * too much. Human users are saying they can't see them after they fold.
+ * They should still be dimmed, maybe just not so much."
+ *
+ * They were dimmed TWICE. This row sits inside `.seat--folded`, which is
+ * already opacity 0.65 + grayscale 75%, and opacity compounds: 0.45 here
+ * times 0.65 above is 0.29 on the felt - the "can't see them" figure. 0.85
+ * here lands the cards at ~0.55 effective with a light grey cast, which is
+ * still unmistakably a folded hand and still readable. Do not raise this
+ * back toward 1.0 without reading the ancestor rule first.
  */
 .seat__cards--folded {
-  opacity: 0.45;
-  filter: grayscale(55%) brightness(0.85);
+  opacity: 0.85;
+  filter: grayscale(35%) brightness(0.92);
   pointer-events: none;
   transition:
     opacity 250ms ease,

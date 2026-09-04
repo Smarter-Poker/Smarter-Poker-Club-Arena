@@ -69,6 +69,28 @@ const CLUB_DATA = readFileSync('src/pages/club/ClubDataPage.tsx', 'utf8');
 const INSURANCE = readFileSync('src/pages/club/ClubInsuranceReportPage.tsx', 'utf8');
 const BOMB_POT = readFileSync('src/pages/club/ClubBombPotReportPage.tsx', 'utf8');
 const MANIFEST = readFileSync('scripts/ci/schema-manifest.d/cowork-ops-upgrade.json', 'utf8');
+/**
+ * The three corrections shipped the same day, each written because the live
+ * measurement said the previous one was wrong. See their headers.
+ */
+const CORRECTION_1 = readFileSync(
+  'supabase/migrations/20260904234500_a_rebuild_that_races_the_ledger_checks_itself.sql',
+  'utf8'
+);
+const CORRECTION_2 = readFileSync(
+  'supabase/migrations/20260904235500_a_live_day_is_the_triggers_to_keep.sql',
+  'utf8'
+);
+const CORRECTION_3 = readFileSync(
+  'supabase/migrations/20260904235900_one_rebuild_signature_and_a_correction_still_lands.sql',
+  'utf8'
+);
+/** Found by the gate on this phase - see its header. */
+const CORRECTION_4 = readFileSync(
+  'supabase/migrations/20260905001500_the_busiest_tables_count_table_hands.sql',
+  'utf8'
+);
+const ACTIVITY_CHART = readFileSync('src/components/club/ClubActivityChart.tsx', 'utf8');
 
 const fn = (name: string) => {
   const start = MIGRATION.indexOf(`FUNCTION public.${name}(`);
@@ -424,5 +446,128 @@ describe('the new objects are declared to the schema gate', () => {
 
   it.each(['ca_club_rake_daily', 'ca_club_commission_daily'])('declares table %s', (name) => {
     expect(manifest.tables).toContain(name);
+  });
+});
+
+describe('a live day belongs to the triggers, and a complete day to the recount', () => {
+  /**
+   * Measured on 2026-09-04, an hour after the phase shipped, on the club that
+   * deals ~1,200 raked hands a minute:
+   *
+   *   20:40:45   ledger 194,648.19   rollup 194,627.07   diff 21.1200
+   *   20:41:17   ledger 194,717.42   rollup 194,696.30   diff 21.1200
+   *
+   * The ledger moved by 69 chips in 32 seconds and the difference did not
+   * move at all: the trigger tracked every one of them. (It is not perfect -
+   * it catches its own errors and warns rather than refusing a rake write, so
+   * a statement lost to a deadlock is lost from the rollup; measured residual
+   * 0.016% on the live day, recounted exactly when the day closes.)
+   * DELETE-then-recount cannot converge on a day that is still being written,
+   * because whatever commits inside a pass had its trigger row deleted and is
+   * not in that pass's snapshot. Retrying loses a fresh slice every time,
+   * which the first correction assumed would close and it did not.
+   */
+  it('the rebuild takes complete days by default and today only when asked', () => {
+    expect(CORRECTION_2).toContain('p_include_today boolean DEFAULT false');
+    expect(CORRECTION_2).toContain(
+      'v_last date := CASE WHEN coalesce(p_include_today, false) THEN v_today ELSE v_today - 1 END;'
+    );
+  });
+
+  it('the reconcile reports what today is short by, and never rewrites it', () => {
+    expect(CORRECTION_2).toContain('IF d < v_today THEN');
+    expect(CORRECTION_2).toContain("'today_drift', v_today_drift");
+  });
+
+  it('a rake correction still reaches the rollup on the day it was made', () => {
+    expect(CORRECTION_3).toContain('fn_ca_club_rake_daily_rebuild_range(v_lo, v_hi, true)');
+  });
+
+  it('there is exactly one rebuild signature, so a two-argument call is not ambiguous', () => {
+    // The two-argument form kept "so nothing breaks" made every existing call
+    // ambiguous, and the one caller was the trigger that repairs a corrected
+    // rake row - which catches its own errors, so it would have failed quietly.
+    expect(CORRECTION_3).toContain(
+      'DROP FUNCTION IF EXISTS public.fn_ca_club_rake_daily_rebuild_range(date, date);'
+    );
+    expect(CORRECTION_3).toContain('the rebuild still has % signatures');
+  });
+
+  it('the reconcile and the rebuild share one definition of agreement', () => {
+    expect(CORRECTION_1).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_ca_club_rake_daily_ledger_total'
+    );
+    expect(CORRECTION_2).toContain('fn_ca_club_rake_daily_ledger_total(d)');
+    expect(CORRECTION_1).toContain(
+      'REVOKE ALL ON FUNCTION public.fn_ca_club_rake_daily_ledger_total(date) FROM PUBLIC, anon, authenticated;'
+    );
+  });
+
+  it('every correction asserts the shape it replaced is gone', () => {
+    for (const [name, sql] of [
+      ['1', CORRECTION_1],
+      ['2', CORRECTION_2],
+      ['3', CORRECTION_3],
+    ] as const) {
+      expect(sql, name).toMatch(/RAISE EXCEPTION/);
+    }
+  });
+});
+
+describe('the gate on phase 6: hands still meant two things in two places', () => {
+  /**
+   * Measured over seven days on Deep Stack Society while checking the phase:
+   *
+   *   Busiest Tables, as shipped   2,113,324  "Hands"
+   *   hands actually dealt            596,730
+   *   hands actually raked            181,766
+   *
+   * The list summed club_member_daily_stats.hands_played - one row per player
+   * per hand - on the same page whose cards this phase had just relabelled so
+   * raked hands and hands dealt could not be confused. It survived because I
+   * changed the totals and never looked further down the page.
+   */
+  it("by_table counts the table's raked hands, not one per player sitting in it", () => {
+    expect(CORRECTION_4).toContain('FROM club_table_daily c');
+    expect(CORRECTION_4).toContain(
+      'Busiest Tables still counts a hand once per player sitting in it'
+    );
+    expect(CORRECTION_4).toContain("'players', q.players");
+  });
+
+  it('the dashboard says which hands the list is counting', () => {
+    // Whitespace-independent: prettier reformats this JSX, and a pin that
+    // matches indentation fails on the formatter rather than on behaviour.
+    // (It did, in the pre-push hook, the first time it was written.)
+    expect(DASHBOARD.replace(/\s+/g, ' ')).toContain('{formatInt(t.hands)} Raked Hands');
+  });
+
+  it('the activity chart is told which hands it is drawing, by every caller', () => {
+    // One component, two tabs, two different series: the Overview tab passes
+    // hands DEALT and the Revenue tab passes RAKED hands (182,035 against
+    // 596,817 for the same week), and both drew a legend that said "Hands".
+    expect(ACTIVITY_CHART).toContain('handsLabel: string;');
+    expect(ACTIVITY_CHART).toContain('name={handsLabel}');
+    expect(ACTIVITY_CHART).not.toContain('name="Hands"');
+    expect(DASHBOARD).toContain('handsLabel="Hands Dealt"');
+    expect(DASHBOARD).toContain('handsLabel="Raked Hands"');
+  });
+
+  it('the financials chart says so when it plots a shorter window than the totals', () => {
+    // ca_club_financials caps the daily series at 92 days; the totals are not
+    // capped, so on a club with a longer history the picture and the cards
+    // describe different windows.
+    expect(FINANCIALS).toContain('data.range.series_from > data.range.start');
+    expect(FINANCIALS).toContain('Last ${chartDays} Days Of This Window');
+  });
+
+  it('the club-scoped ledger refuses an unresolved club instead of sending a slug to a uuid', () => {
+    expect(LEDGER).toContain('!isUUID(clubId)');
+    expect(LEDGER).toContain('TransactionLedgerView.unresolved_club');
+  });
+
+  it('the ledger-total helper is declared to the schema gate', () => {
+    const manifest = JSON.parse(MANIFEST) as { functions: string[] };
+    expect(manifest.functions).toContain('fn_ca_club_rake_daily_ledger_total');
   });
 });

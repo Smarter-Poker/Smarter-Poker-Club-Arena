@@ -246,7 +246,11 @@ class IdentityDNACore {
             // The SPA breadcrumb outlives the store the same way storage does.
             // Left behind, AuthGuard treats every sign-out as "recently
             // authenticated" and delays the redirect by 800ms.
-            try { sessionStorage.removeItem(SPA_AUTH_BREADCRUMB); } catch { /* private mode */ }
+            try {
+              sessionStorage.removeItem(SPA_AUTH_BREADCRUMB);
+            } catch {
+              /* private mode */
+            }
             // Storage outlives the store. Until 2026-08-23 nothing here
             // touched it, so the next person to use the device was served
             // the previous account's cached clubs, hand history and lobby.

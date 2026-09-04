@@ -38,7 +38,7 @@ import { resolve } from 'node:path';
 import { SEAT_LAYOUTS, seatLayoutFor } from '../src/lib/tableSeatGeometry';
 import {
   FELT_WINDOW,
-  FELT_MARKER_MARGIN_WIDTH_PCT,
+  buttonRadiusWidthPct,
   dealerButtonPosition,
 } from '../src/components/table/tableGeometry';
 
@@ -211,11 +211,12 @@ describe('the dealer button is never on the community board', () => {
   const boardCentreX = FELT_WINDOW.left + FELT_WINDOW.width / 2;
   const boardCentreY = FELT_WINDOW.top + (BOARD_TOP_FELT_PCT / 100) * FELT_WINDOW.height;
   const boardHalfW = (BOARD_FELT_FRACTION * FELT_WINDOW.width) / 2;
-  // The puck's own radius, in percent of the table's width. Its centre being
-  // off the board is not enough - the disc must be.
-  const puckHalf = FELT_MARKER_MARGIN_WIDTH_PCT;
-
   for (const [label, table] of Object.entries(TABLES)) {
+    // The puck's own radius, in percent of the table's width. Its centre being
+    // off the board is not enough - the disc must be. Read from the module
+    // (twice the chip since 2026-09-04) rather than from the chips' margin
+    // constant, which stopped covering the puck when the puck doubled.
+    const puckHalf = buttonRadiusWidthPct(table);
     const gapPct = (BOARD_GAP_PX / table.w) * 100;
     const cardW = (BOARD_FELT_FRACTION * FELT_WINDOW.width - 4 * gapPct) / 5;
     const boardHalfH = (cardW * (92 / 64) * (table.w / table.h)) / 2;

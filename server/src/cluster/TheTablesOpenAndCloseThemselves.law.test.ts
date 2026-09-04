@@ -35,6 +35,10 @@ const SETTLEMENT = read('server/src/engine/ServerTableEngineSettlement.ts');
 const DEALING = read('server/src/engine/ServerTableEngineDealing.ts');
 const CONTROLLER = read('server/src/cluster/ClusterController.ts');
 const MOVES = read('server/src/services/supabase/seatMoves.ts');
+const STABLE_HAND = read('server/src/services/StableHandController.ts');
+const STABLE_HAND_EXECUTOR = read('server/src/services/StableHandExecutor.ts');
+const STABLE_HAND_SNAPSHOT = read('server/src/services/StableHandSnapshot.ts');
+const TICK_FIX = read('supabase/migrations/20260905030000_cluster_tick_survives_safeupdate.sql');
 
 describe('the controller is wired on the leader, beside the fleet', () => {
   it('is constructed with the fleet census, the engine door and the engine map', () => {
@@ -244,6 +248,87 @@ describe('the fleet keeps its hands off cluster tables', () => {
   it('reports how many horses could sit, per table, for the open rule', () => {
     expect(FLEET).toMatch(/this\.lastEligibleByTable\.set\(table\.id, pool\.length\);/);
     expect(FLEET).toMatch(/eligibleHorseCount\(tableId: string\): number/);
+  });
+});
+
+describe('a cluster table is never retired, parked or duplicated by the Stable Hand', () => {
+  /* Live, 2026-09-05 00:10 UTC: the exotic/limit trim flagged 25 enabled
+     Main 1s retire_when_empty; fleet refused to seed, rotator drained,
+     retireSurplusTables closed, the tick reopened (R3). Every 30 s. */
+  it('the snapshot carries cluster_id and the planner reads it', () => {
+    expect(STABLE_HAND_SNAPSHOT).toMatch(/current_players, cluster_id'/);
+    expect(STABLE_HAND_SNAPSHOT).toMatch(
+      /clusterId: t\.cluster_id \? String\(t\.cluster_id\) : null/
+    );
+    expect(STABLE_HAND).toMatch(/clusterId\?: string \| null;/);
+  });
+
+  it('the per-variant trim skips cluster tables and opens nothing beside a cluster', () => {
+    expect(STABLE_HAND).toMatch(
+      /if \(t\.clusterId\) \{\s*clusteredVariants\.add\(key\);\s*return;\s*\}/
+    );
+    expect(STABLE_HAND).toMatch(/!clusteredVariants\.has\(variant\)/);
+  });
+
+  it('the night park never takes a cluster table', () => {
+    expect(STABLE_HAND).toMatch(/t\.humansSeated === 0 && t\.humansWaiting === 0 && !t\.clusterId/);
+  });
+
+  it('the flag writer itself refuses a cluster row', () => {
+    expect(STABLE_HAND_EXECUTOR).toMatch(/select\('id, settings, cluster_id'\)/);
+    expect(STABLE_HAND_EXECUTOR).toMatch(/if \(row\.cluster_id\) continue;/);
+  });
+
+  it('the fleet never counts a cluster table as retiring or parked', () => {
+    expect(FLEET).toMatch(/if \(t\.cluster_id\) continue;\s*if \(isRetiringTable\(t/);
+  });
+});
+
+describe('the tick survives the PostgREST session (safeupdate)', () => {
+  /* authenticator preloads safeupdate: no UPDATE or DELETE without WHERE,
+     inside SECURITY DEFINER functions included. The temp-table census had
+     four; every production tick failed for 13 minutes on 2026-09-05. */
+  it('the census is an array of a composite type, not a temp table', () => {
+    expect(TICK_FIX).toMatch(/CREATE TYPE public\.cash_cluster_census_row AS \(/);
+    expect(TICK_FIX).toMatch(/RETURNS public\.cash_cluster_census_row\[\]/);
+    const tick = TICK_FIX.slice(
+      TICK_FIX.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_cluster_tick'),
+      TICK_FIX.indexOf('REVOKE ALL ON FUNCTION public.fn_cash_cluster_tick')
+    );
+    expect(tick).not.toMatch(/CREATE TEMP TABLE|pg_temp\.cluster_census|DELETE FROM/);
+    expect(tick).toMatch(/FROM unnest\(v_census\) c/);
+  });
+
+  it('the migration asserts it and the probe checks every fn_cash_* body', () => {
+    expect(TICK_FIX).toMatch(/still uses the temp-table census/);
+    expect(TICK_FIX).toMatch(/has a DELETE; safeupdate would refuse/);
+    const probe = read('scripts/dev/probe-cluster-controller.sql');
+    expect(probe).toMatch(/SAFEUPDATE statements without WHERE in fn_cash_\*/);
+  });
+
+  it('ticks games in a bounded pool, not one after another', () => {
+    expect(CONTROLLER).toMatch(/export const CLUSTER_TICK_CONCURRENCY = 8;/);
+    expect(CONTROLLER).toMatch(/await Promise\.all\(workers\);/);
+  });
+});
+
+describe('the controller cannot go silent', () => {
+  /* Live 2026-09-04 22:10 UTC: `await ensureEngine()` on a Main 1 with one
+     player seated waits for the second player (engine.start() returns only
+     when the table can deal). The pass never ended, the inTick latch held,
+     and every tick after it returned early - eleven minutes with no error
+     and no log line, found only from cash_games.last_tick_at. */
+  it('the wake is never awaited - the engine map is the proof of the wake', () => {
+    expect(CONTROLLER).toMatch(/void this\.deps\s*\.ensureEngine\(tableId\)/);
+    expect(CONTROLLER).not.toMatch(/await this\.deps\.ensureEngine\(/);
+  });
+
+  it('a stuck pass is reported and the latch released, not honoured forever', () => {
+    expect(CONTROLLER).toMatch(/export const CLUSTER_TICK_STALL_MS = 120_000;/);
+    expect(CONTROLLER).toMatch(
+      /if \(heldMs < CLUSTER_TICK_STALL_MS\) return this\.lastSummary \?\? summary;/
+    );
+    expect(CONTROLLER).toMatch(/'ClusterController\.tick_stalled'/);
   });
 });
 

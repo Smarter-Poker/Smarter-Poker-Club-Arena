@@ -159,8 +159,12 @@ describe('buildReplay — a real production hand', () => {
     const boardOne = m.showdown.filter((r) => r.boardIndex === 0);
     expect(boardOne[0].name).toBe('HighRoller');
     expect(boardOne[1].name).toBe('Bmorecharles');
-    // The two who folded never showed, so they draw backs, not a guess.
-    expect(boardOne.find((r) => r.name === 'Ethan Ray')!.hole).toBeNull();
+    /* The two who folded never reached showdown, so they are NOT showdown
+       rows (2026-09-04, Dan: "doesn't display the correct hands" - a six-way
+       fold-around listed six seats of card backs under "Showdown"). They stay
+       in the action log, where their fold is. */
+    expect(boardOne.find((r) => r.name === 'Ethan Ray')).toBeUndefined();
+    expect(boardOne.every((r) => r.hole !== null)).toBe(true);
   });
 
   it('nets each player against what they actually put in', () => {

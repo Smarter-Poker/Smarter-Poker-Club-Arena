@@ -1,0 +1,3 @@
+# tests/promo-is-disbursed-by-the-owner.law.test.ts
+
+Promo is disbursed by the owner and lands as ordinary chips: fn_promo_disburse is the one door (union owner to a member club or to a player in one; an unaffiliated club owner to a player in that club), a club inside a union cannot disburse, the credit is always chip_treasury or chip_balance and never a promo balance or playthrough lock, every leg declares its counterparty, and an op key replays instead of paying twice; the union-funded leaderboard declares its counterparty like the club-funded one, and wallet_transactions knows the word leaderboard_payout without which every leaderboard round with a winner aborted

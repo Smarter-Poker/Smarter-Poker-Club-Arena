@@ -173,26 +173,54 @@ function MiniCard({ card, shared = false }: { card: string; shared?: boolean }) 
  * covering every run. Splitting them across the boards would be a guess
  * presented as a result.
  */
-function RunBoardsBlock({ runs }: { runs: RunBoards }) {
+function RunBoardsBlock({ runs, hand }: { runs: RunBoards; hand: HandRecord }) {
+  const isBomb = !hand.ritBoards?.length && !!hand.bombBoards?.length;
+  const byBoard = new Map<number, NonNullable<HandRecord['winnersByBoard']>>();
+  for (const w of hand.winnersByBoard || []) {
+    if (!byBoard.has(w.board)) byBoard.set(w.board, []);
+    byBoard.get(w.board)!.push(w);
+  }
   return (
     <div className="hdm-street hdm-runs">
       <div className="hdm-street__head">
-        <span className="hdm-street__name">Run It Twice</span>
+        <span className="hdm-street__name">
+          {isBomb ? 'Bomb Pot Boards' : runs.boards.length >= 3 ? 'Run It 3 Times' : 'Run It Twice'}
+        </span>
         <span className="hdm-runs__count">{runs.boards.length} Boards</span>
       </div>
-      {runs.boards.map((board, bi) => (
-        <div className="hdm-run" key={bi}>
-          <span className="hdm-run__badge">RUN {bi + 1}</span>
-          <span className="hdm-cards">
-            {board.map((c, ci) => (
-              <MiniCard key={ci} card={c} shared={ci < runs.sharedCount} />
-            ))}
-          </span>
+      {runs.boards.map((board, bi) => {
+        const winners = byBoard.get(bi + 1) || [];
+        return (
+          <div className="hdm-run" key={bi}>
+            <span className="hdm-run__badge">
+              {isBomb ? 'BOARD' : 'RUN'} {bi + 1}
+            </span>
+            <span className="hdm-cards">
+              {board.map((c, ci) => (
+                <MiniCard key={ci} card={c} shared={ci < runs.sharedCount} />
+              ))}
+            </span>
+            {/* Who won THIS board, with what (winners_by_board, 2026-09-04). */}
+            {winners.length > 0 && (
+              <span className="hdm-run__winner">
+                {winners.map((w, wi) => (
+                  <span key={wi} className="hdm-run__winner-item">
+                    <strong>{w.playerName}</strong>
+                    {w.hand ? ` ${w.hand}` : ''} {fmt(w.amount)}
+                  </span>
+                ))}
+              </span>
+            )}
+          </div>
+        );
+      })}
+      {byBoard.size === 0 && (
+        /* Rows written before winners_by_board carry one aggregate per player
+           for the whole hand; say so rather than invent a split. */
+        <div className="hdm-runs__note">
+          Boards Share The Cards Dealt Before The All In. Collected Totals Cover Every Run.
         </div>
-      ))}
-      <div className="hdm-runs__note">
-        Boards Share The Cards Dealt Before The All In. Collected Totals Cover Every Run.
-      </div>
+      )}
     </div>
   );
 }
@@ -405,6 +433,11 @@ export function HandDetailModal({
     if (!hand) return m;
     for (const s of hand.streets) {
       for (const a of s.actions) {
+        // `return` is an uncalled bet handed BACK: it comes out, not in.
+        if (a.action === 'return') {
+          if (a.amount && a.amount > 0) m.set(a.playerId, (m.get(a.playerId) || 0) + a.amount);
+          continue;
+        }
         if (a.amount && a.amount > 0) m.set(a.playerId, (m.get(a.playerId) || 0) - a.amount);
       }
     }
@@ -629,7 +662,7 @@ export function HandDetailModal({
                   report this block was written for. `HandDetailView` draws
                   them per street once `replay` resolves, so this renders only
                   while it has not. */}
-              {runs && <RunBoardsBlock runs={runs} />}
+              {runs && <RunBoardsBlock runs={runs} hand={hand} />}
               <div className="hdm-skeletons">
                 {[0, 1, 2, 3, 4, 5].map((i) => (
                   <div key={i} className="hdm-skeleton" />
@@ -653,7 +686,11 @@ export function HandDetailModal({
                 let acc = 0;
                 const streetPots = hand.streets.map((street) => {
                   const start = acc;
-                  for (const a of street.actions) if (a.amount && a.amount > 0) acc += a.amount;
+                  for (const a of street.actions) {
+                    if (!(a.amount && a.amount > 0)) continue;
+                    // A returned uncalled bet leaves the pot (Dan 2026-09-04).
+                    acc += a.action === 'return' ? -a.amount : a.amount;
+                  }
                   return { start, end: acc };
                 });
                 return hand.streets.map((street, si) => {
@@ -675,7 +712,8 @@ export function HandDetailModal({
                         <span className="hdm-street__pot">{fmt(streetStartPot)}</span>
                       </div>
                       {street.actions.map((a, i) => {
-                        if (a.amount && a.amount > 0) rowPot += a.amount;
+                        if (a.amount && a.amount > 0)
+                          rowPot += a.action === 'return' ? -a.amount : a.amount;
                         return (
                           <div
                             key={i}
@@ -711,7 +749,7 @@ export function HandDetailModal({
                   and this modal showed one. Kept here, after the street list
                   and inside the same fallback, exactly where it sat before the
                   street walk was replaced. */}
-              {runs && <RunBoardsBlock runs={runs} />}
+              {runs && <RunBoardsBlock runs={runs} hand={hand} />}
               <div className="hdm-potline">
                 <span>Pot</span>
                 <span>Main({fmt(hand.potTotal)})</span>
@@ -734,7 +772,7 @@ export function HandDetailModal({
               </div>
               {/* Hand Summary is the tab Dan had open when he reported the
                   run-it-twice glitch, so the boards lead it. */}
-              {runs && <RunBoardsBlock runs={runs} />}
+              {runs && <RunBoardsBlock runs={runs} hand={hand} />}
               {summaryRows.length === 0 && (
                 <div className="hdm-empty">No Showdown - The Pot Was Taken Without A Reveal.</div>
               )}

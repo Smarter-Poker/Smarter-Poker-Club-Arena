@@ -116,6 +116,12 @@ export class EngineStateClient {
   private ws: WebSocket | null = null;
   private status: EngineConnectionStatus = 'idle';
   private retryCount = 0;
+  /**
+   * 2026-09-04: the engine said 4404 for this table and we are on the slow
+   * ladder. While this is true the ladder announces 'idle', not
+   * 'reconnecting' - see scheduleReconnect and openOnceInner. Cleared on open.
+   */
+  private tableMissing = false;
   private reconnectTimer: number | null = null;
   private intentionalClose = false;
 
@@ -291,7 +297,9 @@ export class EngineStateClient {
   }
 
   private async openOnceInner(): Promise<void> {
-    this.setStatus(this.retryCount === 0 ? 'connecting' : 'reconnecting');
+    if (!this.tableMissing) {
+      this.setStatus(this.retryCount === 0 ? 'connecting' : 'reconnecting');
+    }
     // 2026-08-22: getToken (supabase.auth.getSession) can REJECT — network
     // error, storage error, auth-js internal throw. This await used to be
     // unguarded, and because scheduleReconnect nulls its timer before calling
@@ -368,6 +376,13 @@ export class EngineStateClient {
       // the live connection's state.
       if (this.ws !== ws) return;
       this.clearHandshakeTimer();
+      this.tableMissing = false;
+      // 2026-09-04: read BEFORE resetInbox(), which zeroes `seq`. Read after
+      // it, the `seq > 0` test below was always false and the RESYNC on
+      // reconnect had been dead code since 2026-08-25 - harmless only
+      // because the hub sends a SNAPSHOT on subscribe, and a hub that ever
+      // stopped would have frozen every reconnected table silently.
+      const hadState = this.seq > 0;
       // Review fix 2026-08-25: a fresh connection starts with an empty
       // inbound queue and a fresh event-seq epoch — the dead socket's
       // frames must not precede (or dedupe against) this connection's.
@@ -379,7 +394,7 @@ export class EngineStateClient {
       this.startWatchdog();
       // Server sends SNAPSHOT on subscribe — no explicit RESYNC needed on
       // first connect. On reconnect after a gap, we explicitly request one.
-      if (this.seq > 0) {
+      if (hadState) {
         try {
           ws.send(JSON.stringify({ type: 'RESYNC' }));
         } catch {
@@ -433,6 +448,14 @@ export class EngineStateClient {
       // Announce 'idle' instead so the UI stays usable (e.g. for empty tables
       // or during engine restarts) while we keep retrying on the slow ladder.
       if (e.code === CLOSE_TABLE_NOT_FOUND) {
+        /* 2026-09-04: the 'idle' below was stomped one line later - every
+           scheduleReconnect() sets 'reconnecting', so a table the engine had
+           closed sat under "Reconnecting To The Table" for as long as the tab
+           was open (measured on production: a closed NLH Straddle table, the
+           banner for the whole 40s it was watched, SUBSCRIBE answered
+           TABLE_NOT_FOUND every time). The flag keeps the ladder honest:
+           it is polling for a table that may come back, and says nothing. */
+        this.tableMissing = true;
         this.setStatus('idle');
         this.opts.onError({ code: e.code, reason: e.reason });
         this.retryCount = Math.max(this.retryCount, 5); // start at ~16s+ delays
@@ -790,7 +813,12 @@ export class EngineStateClient {
     // e.g. auto-refresh) — the backoff ladder keeps running at maxDelay
     // cadence forever underneath. A laptop waking from sleep or a phone
     // regaining signal reconnects on its own, however long it was gone.
-    if (this.retryCount >= this.opts.maxRetries) {
+    if (this.tableMissing) {
+      // A closed table is not a lost connection. The overlay for a table that
+      // stays 4404 (TableLoadFailureOverlay, "This Table Has Closed") is
+      // driven by the error count, not by this status.
+      this.setStatus('idle');
+    } else if (this.retryCount >= this.opts.maxRetries) {
       this.setStatus('failed');
       if (this.retryCount === this.opts.maxRetries) {
         this.opts.onError({ reason: 'max retries reached - still retrying in background' });

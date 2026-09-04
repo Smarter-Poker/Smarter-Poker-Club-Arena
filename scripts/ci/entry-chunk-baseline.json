@@ -115,6 +115,7 @@
     "src/core/useGlobalBalanceSync.ts",
     "src/cosmetics/avatarCosmetics.ts",
     "src/hooks/useAuthUser.ts",
+    "src/hooks/useCanCreateUnion.ts",
     "src/hooks/useClubNavigationAccess.ts",
     "src/hooks/useDeckStyle.ts",
     "src/hooks/useIsMounted.ts",

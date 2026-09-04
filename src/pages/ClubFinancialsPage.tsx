@@ -327,6 +327,9 @@ export default function ClubFinancialsPage() {
     return () => unsubs.forEach((off) => off());
   }, [clubId]);
 
+  /** Days actually plotted, for the heading when it is fewer than the window. */
+  const chartDays = data?.daily?.length ?? 0;
+
   const chartData = useMemo(
     () =>
       (data?.daily || []).map((d) => ({
@@ -494,9 +497,18 @@ export default function ClubFinancialsPage() {
         </p>
       )}
 
-      {/* Revenue Chart */}
+      {/* Revenue Chart. ca_club_financials caps the daily series at the
+          last 92 days of the window while the totals cover all of it, so on a
+          club with a longer history the chart is a SHORTER window than the
+          cards below it. Say which, rather than letting the picture imply the
+          numbers. */}
       <section className="chart-section">
-        <h3>Revenue Trend</h3>
+        <h3>
+          Revenue Trend
+          {data && data.range.series_from > data.range.start
+            ? ` - Last ${chartDays} Days Of This Window`
+            : ''}
+        </h3>
         <FinancialChart data={chartData} height={180} showRakeback={true} showCommissions={true} />
       </section>
 

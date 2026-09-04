@@ -133,7 +133,7 @@ describe('the break scorecard grades only what the break controls', () => {
       .sort()
       .filter((f) =>
         readFileSync(resolve(MIGRATIONS_DIR, f), 'utf8').includes(
-          'FUNCTION public.fn_ca_record_break_scorecard'
+          'CREATE OR REPLACE FUNCTION public.fn_ca_record_break_scorecard'
         )
       );
 
@@ -211,7 +211,7 @@ describe('the break scorecard grades only what the break controls', () => {
       .sort()
       .filter((f) =>
         readFileSync(resolve(MIGRATIONS_DIR, f), 'utf8').includes(
-          'FUNCTION public.fn_ca_break_scorecard_push'
+          'CREATE OR REPLACE FUNCTION public.fn_ca_break_scorecard_push'
         )
       );
     expect(all.length).toBeGreaterThan(0);

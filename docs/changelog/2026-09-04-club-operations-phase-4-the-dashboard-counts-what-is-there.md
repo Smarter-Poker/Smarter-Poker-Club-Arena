@@ -185,3 +185,13 @@ route slug and uses it to read, subscribe and insert against a uuid column,
 so club chat on this page could neither load nor send. It is mounted with
 `resolvedClubId` now. The remaining 401 on `HEAD /rest/v1/` is the
 connection watchdog's own probe, which documents that answer as expected.
+
+**Rollup rebuild race (`20260904171000`).** Re-reading the rollup migration
+found `fn_rebuild_agent_commission_rollup` deleting and re-inserting the
+rollup with no lock on the ledger, so a commission landing mid-rebuild would
+collide on the primary key or be counted twice. It takes `SHARE ROW
+EXCLUSIVE` on `agent_commissions` first now, the lock the backfill already
+ran under. Insert-trigger cost on the commission write path measured at
+1.9 ms per statement, under the pre-existing foreign-key checks (8.5 ms).
+After one hour and 9,514 real inserts the rollup still equals the ledger
+exactly (977,984.55 across 2,472,844 rows).

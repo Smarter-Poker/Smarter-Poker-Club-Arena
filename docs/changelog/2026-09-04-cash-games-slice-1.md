@@ -105,8 +105,8 @@ already runs Madness PLO5 1/2`. RLS: authenticated read.
 - `fn_cash_game_create(club, template, variant, sb, bb, handedness, overrides,
 name)` SECURITY DEFINER for authenticated: needs `auth.uid()`, a live
   session, and `fn_can_create_games` or `is_club_admin`. Refusals:
-  TEMPLATE*UNKNOWN, VARIANT_UNAVAILABLE, STAKES_INVALID, HANDEDNESS_INVALID,
-  BUYIN_BAND_INVALID, ANTE_INVALID, VPIP_INVALID, BOMB*\*,
+  `TEMPLATE_UNKNOWN`, `VARIANT_UNAVAILABLE`, `STAKES_INVALID`, `HANDEDNESS_INVALID`,
+  `BUYIN_BAND_INVALID`, `ANTE_INVALID`, `VPIP_INVALID`, `BOMB_*`,
   STAY_CLOCK_BELOW_FLOOR, REJOIN_WINDOW_BELOW_FLOOR, CLOCK_TOO_LONG,
   NOT_AUTHORIZED, GAME_EXISTS. Writes the game, then Main 1 projected onto
   the existing engine columns: ante via `ante_enabled/ante/ante_bb`, VPIP via

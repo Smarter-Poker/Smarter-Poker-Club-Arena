@@ -32,7 +32,7 @@ export function compactCashBuyInLabel(label: string): string {
    2026-09-03: "PINEAPPLE 1 SHOULD JUST BE CALLED PINEAPPLE." Only a short
    standalone index after a space, dash or hash is stripped - "NLH 25/50" ends
    in a stake, not an index, and is left alone. */
-const TRAILING_INDEX = /(?:\s+|\s*[-–—#]\s*)#?\d{1,2}\s*$/;
+const TRAILING_INDEX = /(?:\s+|\s*[-\u2013\u2014#]\s*)#?\d{1,2}\s*$/;
 
 function stripTableIndex(name: string): string {
   const stripped = name.replace(TRAILING_INDEX, '').trim();

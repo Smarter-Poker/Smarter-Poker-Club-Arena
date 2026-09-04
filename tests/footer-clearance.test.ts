@@ -58,8 +58,20 @@ describe('global Club Arena footer mounting and clearance', () => {
     expect(css).toMatch(/\.viewport\s*\{[\s\S]*?overflow:\s*hidden/);
     expect(css).toMatch(/\.artwork\s*\{[\s\S]*?width:\s*100%/);
     expect(css).toMatch(/\.artwork\s*\{[\s\S]*?height:\s*var\(--bottom-nav-height/);
-    expect(css).toMatch(/\.artworkImage\s*\{[\s\S]*?width:\s*102\.68%/);
-    expect(css).toMatch(/\.artworkImage\s*\{[\s\S]*?transform:\s*translateX\(-50%\)/);
+    // The measured frame (x=25 y=14 1866x230 of a 1916x256 canvas) is scaled
+    // until it covers the footer box on BOTH axes, pushing the canvas's black
+    // gutter off every edge. The horizontal pair has always been here as
+    // `width: 102.68%` + `translateX(-50%)`; the vertical pair replaced
+    // `height: 100%` on 2026-09-04, which was leaving the gutter's 14 top rows
+    // inside the box as a black band above the frame (Dan: "YOU NEED TO CLIP
+    // THE BACKGROUND AROUND THE EDGES OF THE FOOTER FRAME").
+    expect(css).toMatch(/\.artworkImage\s*\{[\s\S]*?width:\s*102\.6795%/);
+    expect(css).toMatch(/\.artworkImage\s*\{[\s\S]*?left:\s*-1\.3398%/);
+    expect(css).toMatch(/\.artworkImage\s*\{[\s\S]*?height:\s*111\.3043%/);
+    expect(css).toMatch(/\.artworkImage\s*\{[\s\S]*?top:\s*-6\.087%/);
+    // A global `img { max-width: 100% }` reset would clamp that overscan and
+    // letterbox the frame back inside the box. This is the immunisation.
+    expect(css).toMatch(/\.artworkImage\s*\{[\s\S]*?max-width:\s*none/);
     expect(css).not.toContain('overflow-x: auto');
     expect(css).not.toContain('width: 640px');
     expect(css).not.toContain('min-width: 640px');
@@ -80,5 +92,33 @@ describe('global Club Arena footer mounting and clearance', () => {
   it('keeps the approved production artwork lossless after the dist optimizer', () => {
     const optimizer = readFileSync(join(ROOT, 'scripts/optimize-dist-media.mjs'), 'utf8');
     expect(optimizer).toContain("{ prefix: 'images/club-footer/', maxDim: 0 }");
+  });
+
+  /**
+   * THE ARTWORK CARRIES ITS OWN TRANSPARENCY (Dan, 2026-09-04).
+   *
+   * The frame is a rounded rectangle drawn on a rectangular canvas. While that
+   * canvas was opaque, the four corners outside the curve were solid black
+   * squares sitting on the page, and no amount of CSS could clip them. Both
+   * halves of the fix have to hold together: the asset must have an alpha
+   * channel, and nothing behind it may paint a colour back in.
+   */
+  it('ships an alpha channel and paints nothing opaque behind it', () => {
+    const art = readFileSync(join(ROOT, 'public/images/club-footer/club-arena-footer-v2.webp'));
+    expect(art.subarray(0, 4).toString('ascii')).toBe('RIFF');
+    expect(art.subarray(8, 12).toString('ascii')).toBe('WEBP');
+    // Lossless WebP: 'VP8L', a 0x2f signature byte, then 14 bits of width-1,
+    // 14 of height-1, and one alpha_is_used bit.
+    expect(art.subarray(12, 16).toString('ascii')).toBe('VP8L');
+    expect(art[20]).toBe(0x2f);
+    const header = art.readUInt32LE(21);
+    expect((header & 0x3fff) + 1).toBe(1916);
+    expect(((header >>> 14) & 0x3fff) + 1).toBe(256);
+    expect((header >>> 28) & 1).toBe(1);
+
+    const css = readFileSync(join(ROOT, 'src/components/club/ClubBottomNav.module.css'), 'utf8');
+    expect(css).toMatch(/\.bottomNav\s*\{[\s\S]*?background:\s*transparent/);
+    expect(css).toMatch(/\.artwork\s*\{[\s\S]*?background:\s*transparent/);
+    expect(css).not.toContain('background: #000');
   });
 });

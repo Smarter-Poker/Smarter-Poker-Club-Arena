@@ -16,8 +16,17 @@ import './ClubIdentityCard.css';
    The frame is gone from the pixels now, healed over with quilt sampled from
    the clean stretch of the same image, so the logo floats on the real texture
    and there is nothing left to mask. Same naming rule as v3: caches hold the
-   old bytes, so a change of pixels is a change of filename. */
-const CLUB_IDENTITY_SHELL = `${import.meta.env.BASE_URL}assets/club-buttons/club/club-identity-template-no-level-v5.png`;
+   old bytes, so a change of pixels is a change of filename.
+
+   v6 LIFTS THE TWO ID ICONS OUT OF THE ARTWORK (Dan 2026-09-03: "CLUB ID AND
+   PLAYER ID + ICON'S NEED TO BE MOVED UP"). They were pixels in the shell, so
+   the lines could move and their labels could not. The icons are their own
+   layers now (`club-identity-icon-*-v1.png`), placed by the stylesheet on the
+   same two centres as the lines they label; the shell has quilt where they
+   were. */
+const CLUB_IDENTITY_SHELL = `${import.meta.env.BASE_URL}assets/club-buttons/club/club-identity-template-no-level-v6.png`;
+const CLUB_ICON = `${import.meta.env.BASE_URL}assets/club-buttons/club/club-identity-icon-club-v1.png`;
+const PLAYER_ICON = `${import.meta.env.BASE_URL}assets/club-buttons/club/club-identity-icon-player-v1.png`;
 
 export interface ClubIdentityCardProps {
   clubName: string;
@@ -291,6 +300,20 @@ export function ClubIdentityCard({
           They used to be rows three and four of the details grid, which meant
           their vertical position was a by-product of the club name's row
           height and drifted away from the icons on every narrower card. */}
+      <img
+        className="club-identity__icon club-identity__icon--club"
+        src={CLUB_ICON}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+      />
+      <img
+        className="club-identity__icon club-identity__icon--player"
+        src={PLAYER_ICON}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+      />
       <div className="club-identity__ids">
         <IdentityLine label="ID" accessibleLabel="Club ID" value={clubId} onCopy={onCopyClubId} />
         <IdentityLine

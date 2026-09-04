@@ -56,14 +56,21 @@
   font-size: calc(var(--size, 6cqw) * var(--fit, 1));
 }
 
-/* Brushed silver: one smooth ramp (no mid-glyph band - see NlhPremiumCard.css). */
+/* Brushed silver - as a SOLID colour with a bevel, not a clipped gradient.
+   Dan 2026-09-03 (live screenshot): "ANY BLACK FONT YOU'VE ADDED TO THE
+   TITLES NEEDS TO BE CHANGED TO SILVER METALLIC, YOU CAN'T SEE THE BLACK."
+   The first cut used background-clip:text with a transparent fill; on his
+   browser the gradient did not paint and the transparent glyphs showed only
+   their drop shadow - black lettering. A real colour cannot fail that way:
+   the highlight above and the steel shade below give the metal read. */
 .agc-layered__text--silver {
-  color: #ececec;
-  background: linear-gradient(180deg, #fff 0%, #f4f4f4 40%, #d2d2d4 100%);
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 0.3cqw 0 #050607) drop-shadow(0 0.5cqw 0.75cqw rgb(0 0 0 / 94%));
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  text-shadow:
+    0 -0.18cqw 0 rgb(255 255 255 / 55%),
+    0 0.25cqw 0 #6d747c,
+    0 0.45cqw 0 #050607,
+    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
 }
 
 .agc-layered__text--white {
@@ -81,12 +88,13 @@
 }
 
 .agc-layered__text--gold {
-  color: #f2cf6a;
-  background: linear-gradient(180deg, #fff2b8 0%, #f1c64c 45%, #a8781a 100%);
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 0.25cqw 0 #2a1d05) drop-shadow(0 0 1.2cqw rgb(255 196 64 / 45%));
+  color: #f3cf6b;
+  -webkit-text-fill-color: #f3cf6b;
+  text-shadow:
+    0 -0.18cqw 0 rgb(255 245 200 / 70%),
+    0 0.25cqw 0 #8a6414,
+    0 0.45cqw 0 #2a1d05,
+    0 0 1.2cqw rgb(255 196 64 / 45%);
 }
 
 .agc-layered__text--muted {
@@ -133,6 +141,20 @@
   white-space: pre-line;
   text-align: center;
   line-height: 1.02;
+}
+
+/* Two centred lines, minimum over maximum (LayeredBuyIn). */
+.agc-layered__stack {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  row-gap: 0.4cqw;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.agc-layered__stack > .agc-layered__text {
+  text-align: center;
 }
 
 /* ── Status pill ────────────────────────────────────────────────────────── */
@@ -242,13 +264,13 @@
 }
 
 .agc-layered__action--silver .agc-layered__action-text {
-  color: #ececec;
-  background: linear-gradient(180deg, #fff 0%, #f4f4f4 40%, #d2d2d4 100%);
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  text-shadow: none;
-  filter: drop-shadow(0 0.3cqw 0 #050607) drop-shadow(0 0.5cqw 0.75cqw rgb(0 0 0 / 94%));
+  color: #e4e7ec;
+  -webkit-text-fill-color: #e4e7ec;
+  text-shadow:
+    0 -0.18cqw 0 rgb(255 255 255 / 55%),
+    0 0.25cqw 0 #6d747c,
+    0 0.45cqw 0 #050607,
+    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
 }
 
 .agc-layered__action--green .agc-layered__action-text {

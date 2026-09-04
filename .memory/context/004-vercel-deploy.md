@@ -23,22 +23,31 @@
 
 ## Project Details
 
-| Field           | Value                                                          |
-| --------------- | -------------------------------------------------------------- |
-| Vercel Project  | `hub-vanguard`                                                 |
-| Project ID      | `prj_op66GkZyZcygXQKm76iyycfVFAQx`                             |
-| Domain          | `smarter.poker`                                                |
-| Token           | `<REDACTED:VERCEL_TOKEN — read from .env.local, never commit>` |
-| GitHub Repo     | `Smarter-Poker/Smarter-Poker-World-Hub`                        |
-| Club Arena Path | `public/hub/club-arena/`                                       |
-| Production URL  | `https://smarter.poker/hub/club-arena/`                        |
+| Field           | Value                                                                                                                              |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Vercel Project  | `hub-vanguard`                                                                                                                     |
+| Project ID      | `prj_op66GkZyZcygXQKm76iyycfVFAQx`                                                                                                 |
+| Domain          | `smarter.poker`                                                                                                                    |
+| Token           | `<REDACTED:VERCEL_TOKEN — read from .env.local, never commit>`                                                                     |
+| GitHub Repo     | `Smarter-Poker/Smarter-Poker-World-Hub`                                                                                            |
+| Club Arena Path | **GONE.** `public/hub/club-arena/` was deleted 2026-09-02; the bundle is served from `ca-static.smarter.poker` through one rewrite |
+| Production URL  | `https://smarter.poker/hub/club-arena/`                                                                                            |
 
 ## Deploy Pipeline
 
-1. Build Club Arena: `cd ~/Documents/club-arena && npm run build`
-2. Sync to World Hub: `bash scripts/sync-to-world-hub.sh ~/Documents/Smarter-Poker-World-Hub`
-3. Commit World Hub: `cd ~/Documents/Smarter-Poker-World-Hub && git add public/hub/club-arena/ && git commit && git push`
-4. Vercel auto-deploys from GitHub push (or manual via API)
+REWRITTEN 2026-09-04. **This file is about the World Hub's Vercel project. It
+is not how Club Arena deploys, and the four steps that used to be here were a
+live instruction to re-vendor the bundle** - which would not duplicate the live
+copy, it would SHADOW it, because Next serves `public/` before a rewrite.
+
+Club Arena: push a branch, and stop. `agent-open-pr.yml` opens the PR,
+`agent-autopilot.yml` merges it, `publish-club-arena.yml` rsyncs `dist/` to
+`ca-static.smarter.poker`. Verify with
+`curl -s https://smarter.poker/hub/club-arena/build-info.json`.
+
+The World Hub itself still deploys on a push to its `main` via the
+`hub-vanguard` Vercel git integration, and a Club Arena merge does not rebuild
+it at all.
 
 ## Manual API Deploy
 

@@ -21,7 +21,7 @@ import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
-import { getLocalStorage, setLocalStorage } from '../../lib/storage';
+import { getLocalStorage, setLocalStorage, removeLocalStorage } from '../../lib/storage';
 import ClubStatsCards, { DashboardStats } from '../../components/club/ClubStatsCards';
 import ClubActivityFeed from '../../components/club/ClubActivityFeed';
 import PageSkeleton from '../../components/common/PageSkeleton';
@@ -39,7 +39,6 @@ import {
   leaderboardToCsv,
   formatAgo,
   isAuthzError,
-  isLiveTableStatus,
   sortClubTables,
   tableStatusLabel,
   type RangeId,
@@ -49,7 +48,6 @@ import { getClubLevel } from '../../utils/clubLevels';
 import ClubChat from '../../components/club/ClubChat';
 import styles from './ClubDashboard.module.css';
 import { reportError } from '../../utils/errorReporter';
-import { clubGamesOrFilter } from '../../utils/unionScope';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
 import { playerDisplayName } from '../../utils/playerDisplayName';
 
@@ -107,6 +105,32 @@ interface ClubTable {
   maxPlayers: number;
   createdAt: string;
 }
+
+/**
+ * What ca_club_tables says about the whole floor, as opposed to the rows it
+ * returned. `liveCount` is every live table the club has; `live` is capped at
+ * TABLES_LIVE_CAP and `liveTruncated` says when the cap bit.
+ */
+interface TablesMeta {
+  liveCount: number;
+  liveTruncated: boolean;
+  totalCount: number;
+  seatedPeople: number;
+  seatRows: number;
+}
+
+/** Finance roles, mirroring ca_can_view_club_finances. */
+const FINANCE_ROLES: ReadonlySet<string> = new Set(['owner', 'co_owner', 'admin', 'super_agent']);
+
+export function canViewClubFinance(role: string | null | undefined): boolean {
+  return !!role && FINANCE_ROLES.has(role);
+}
+
+/**
+ * The most live tables one dashboard load will list. The server caps at the
+ * same number; a club above it still sees the true count in the header.
+ */
+export const TABLES_LIVE_CAP = 500;
 
 // Recharts is ~390KB; keep it out of the dashboard's initial chunk and pull it
 // in only when a tab that actually plots something is opened.
@@ -178,7 +202,12 @@ interface TournamentData {
     players: number;
     ended_at: string;
   }>;
-  summary: { live_count: number; completed_30d: number; prize_pool_30d: number };
+  summary: {
+    live_count: number;
+    window_days: number;
+    completed_in_window: number;
+    prize_pool_in_window: number;
+  };
 }
 const MEMBER_PAGE_SIZE = 25;
 const LEADERBOARD_VISIBLE = 10;
@@ -210,7 +239,14 @@ export default function ClubDashboard() {
 
   const [club, setClub] = useState<ClubInfo | null>(null);
   const [topPlayers, setTopPlayers] = useState<TopPlayer[]>([]);
-  const [clubTables, setClubTables] = useState<ClubTable[]>([]);
+  const [liveTables, setLiveTables] = useState<ClubTable[]>([]);
+  const [recentTables, setRecentTables] = useState<ClubTable[]>([]);
+  const [tablesMeta, setTablesMeta] = useState<TablesMeta | null>(null);
+  // A read that failed is not a read that is still loading. Without these,
+  // a failed ca_club_dashboard_stats left the metric cards as a skeleton for
+  // ever and a failed ca_club_tables left the tab saying "Loading Tables...".
+  const [statsFailed, setStatsFailed] = useState(false);
+  const [tablesFailed, setTablesFailed] = useState(false);
   const [dashStats, setDashStats] = useState<DashboardStats | null>(null);
   const [attribution, setAttribution] = useState<{ played: number; attributed: number } | null>(
     null
@@ -233,13 +269,24 @@ export default function ClubDashboard() {
   const [sortBy, setSortBy] = useState<SortId>(() =>
     getLocalStorage('ca_dashboard_sort', 'profit')
   );
-  const [hideHorses, setHideHorses] = useState<boolean>(() =>
-    getLocalStorage('ca_dashboard_hide_horses', false)
-  );
+  // A viewing filter, never a persisted one. The register in
+  // scripts/ci/check-horses-are-players.mjs sanctions this toggle on the
+  // condition that it DEFAULTS to showing horses; remembering an operator's
+  // tick across sessions made the horse-less leaderboard the default for
+  // them from then on, without the box being visible on the page they landed
+  // on. Same shape as ClubDataPage's chip now: useState(false), per visit.
+  const [hideHorses, setHideHorses] = useState<boolean>(false);
+  useEffect(() => {
+    // Tombstone: ca_dashboard_hide_horses was persisted until 2026-09-04.
+    removeLocalStorage('ca_dashboard_hide_horses');
+  }, []);
 
   const [visiblePlayers, setVisiblePlayers] = useState<Set<string>>(new Set());
   const [isRecalculating, setIsRecalculating] = useState(false);
-  const [userRole, setUserRole] = useState<ClubRole>('player');
+  // null until the membership read answers. 'player' was the placeholder
+  // before, which is also a real role, so "not known yet" and "a plain
+  // member" were the same value.
+  const [userRole, setUserRole] = useState<ClubRole | null>(null);
 
   // Members tab
   const [members, setMembers] = useState<ClubMemberRow[]>([]);
@@ -280,9 +327,6 @@ export default function ClubDashboard() {
     setLocalStorage('ca_dashboard_sort', sortBy);
   }, [sortBy]);
   useEffect(() => {
-    setLocalStorage('ca_dashboard_hide_horses', hideHorses);
-  }, [hideHorses]);
-  useEffect(() => {
     setLocalStorage('ca_dashboard_member_sort', memberSort);
   }, [memberSort]);
 
@@ -305,12 +349,16 @@ export default function ClubDashboard() {
     [searchParams, setSearchParams]
   );
 
+  // sortBy is a server argument now: ca_club_top_players orders by the chosen
+  // key BEFORE its limit, so changing the sort must re-read. Re-sorting the
+  // 100 most profitable players in the browser was showing, under "Hands",
+  // ten players none of whom were in the club's true top ten by hands.
   useEffect(() => {
     if (clubId) {
       loadDashboardData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clubId, dateRange]);
+  }, [clubId, dateRange, sortBy]);
 
   // Leaderboard stagger animation.
   //
@@ -484,18 +532,27 @@ export default function ClubDashboard() {
       // viewed club before this club's own authorization result comes back.
       setNotAMember(false);
 
-      // P2-1: union games carry the union container as club_id
-      const gamesScope = await clubGamesOrFilter(uuid);
+      // Tables come from ca_club_tables, which applies the union scope
+      // (P2-1: union games carry the union container as club_id) server-side
+      // and returns every LIVE table. The raw select this replaced fetched
+      // the 50 newest tables by created_at, whatever their status, and the
+      // "N Live, M Seated" header was computed over those 50: on 2026-09-03
+      // none of the club's 226 live tables were among them.
       const [clubResult, statsResult, playersResult, roleResult, tablesResult] = await Promise.all([
         supabase
           .from('clubs')
           .select(
-            'id, name, avatar_url, created_at, level, member_count, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+            'id, name, avatar_url, owner_id, created_at, level, member_count, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
           )
           .eq('id', uuid)
           .maybeSingle(),
         supabase.rpc('ca_club_dashboard_stats', { p_club_id: uuid }),
-        supabase.rpc('ca_club_top_players', { p_club_id: uuid, p_since: since, p_limit: 100 }),
+        supabase.rpc('ca_club_top_players', {
+          p_club_id: uuid,
+          p_since: since,
+          p_limit: 100,
+          p_sort: sortBy,
+        }),
         user
           ? supabase
               .from('club_members')
@@ -504,14 +561,7 @@ export default function ClubDashboard() {
               .eq('user_id', user.id)
               .maybeSingle()
           : Promise.resolve({ data: null, error: null } as any),
-        supabase
-          .from('tables')
-          .select(
-            'id, name, game_type, game_variant, stakes, small_blind, big_blind, status, current_players, max_players, created_at, is_deleted'
-          )
-          .or(gamesScope)
-          .order('created_at', { ascending: false })
-          .limit(50),
+        supabase.rpc('ca_club_tables', { p_club_id: uuid, p_limit: TABLES_LIVE_CAP }),
       ]);
 
       // A stale response must never clobber newer state.
@@ -527,6 +577,8 @@ export default function ClubDashboard() {
       setNotAMember(false);
 
       if (statsResult.error) reportError(statsResult.error, 'ClubDashboard.stats_rpc_error');
+      setStatsFailed(!!statsResult.error);
+      setTablesFailed(!!tablesResult.error);
       if (playersResult.error)
         reportError(playersResult.error, 'ClubDashboard.top_players_rpc_error');
       // These two were previously swallowed: a failed clubs read rendered the
@@ -565,26 +617,47 @@ export default function ClubDashboard() {
         : null;
       setDashStats(stats);
 
-      if (roleResult.data) setUserRole(roleResult.data.role || 'member');
+      // The club's owner_id outranks the membership row, as it does in
+      // fn_club_bank_role and ca_can_view_club_finances: an owner need not
+      // hold a club_members row at all.
+      const clubRow: any = clubResult.data;
+      if (clubRow?.owner_id && user?.id && clubRow.owner_id === user.id) {
+        setUserRole('owner');
+      } else if (roleResult.data) {
+        setUserRole((roleResult.data.role as ClubRole) || 'player');
+      } else if (!roleResult?.error) {
+        setUserRole('player');
+      }
 
-      const visibleTables: ClubTable[] = (tablesResult.data || [])
-        // A table can be status='running' while is_deleted=true — the engine
-        // keeps dealing on it, so it must stay visible.
-        .filter((t: any) => !t.is_deleted || isLiveTableStatus(t.status))
-        .map((t: any) => ({
-          id: t.id,
-          name: t.name || 'Unnamed Table',
-          gameType: t.game_type,
-          gameVariant: t.game_variant,
-          stakes: t.stakes,
-          smallBlind: Number(t.small_blind) || 0,
-          bigBlind: Number(t.big_blind) || 0,
-          status: t.status || 'unknown',
-          currentPlayers: t.current_players || 0,
-          maxPlayers: t.max_players || 9,
-          createdAt: t.created_at,
-        }));
-      setClubTables(visibleTables);
+      const toTable = (t: any): ClubTable => ({
+        id: t.id,
+        name: t.name || 'Unnamed Table',
+        gameType: t.game_type,
+        gameVariant: t.game_variant,
+        stakes: t.stakes,
+        smallBlind: Number(t.small_blind) || 0,
+        bigBlind: Number(t.big_blind) || 0,
+        status: t.status || 'unknown',
+        // Counted from table_seats by the server; tables.current_players
+        // disagreed with the seat rows on 28 of 319 live tables.
+        currentPlayers: Number(t.current_players) || 0,
+        maxPlayers: t.max_players || 9,
+        createdAt: t.created_at,
+      });
+      const tablesPayload: any = tablesResult.data;
+      let nextMeta: TablesMeta | null = null;
+      if (tablesPayload) {
+        setLiveTables((tablesPayload.live || []).map(toTable));
+        setRecentTables((tablesPayload.recent || []).map(toTable));
+        nextMeta = {
+          liveCount: Number(tablesPayload.live_count) || 0,
+          liveTruncated: !!tablesPayload.live_truncated,
+          totalCount: Number(tablesPayload.total_count) || 0,
+          seatedPeople: Number(tablesPayload.seated_people) || 0,
+          seatRows: Number(tablesPayload.seat_rows) || 0,
+        };
+        setTablesMeta(nextMeta);
+      }
 
       const clubData: any = clubResult.data;
       if (clubData) {
@@ -593,7 +666,7 @@ export default function ClubDashboard() {
           name: clubData.name,
           avatarUrl: clubData.avatar_url,
           memberCount: stats?.totalMembers ?? clubData.member_count ?? 0,
-          tableCount: stats?.activeTables ?? visibleTables.length,
+          tableCount: stats?.activeTables ?? nextMeta?.liveCount ?? 0,
           createdAt: clubData.created_at,
           levelInfo: getClubLevel({
             level: clubData.level || 1,
@@ -711,25 +784,39 @@ export default function ClubDashboard() {
     [topPlayers, hideHorses, sortBy]
   );
 
-  // Tables tab: live tables first, then fullest, then newest. The raw query is
-  // ordered by created_at alone, which buries a running table under dead ones.
-  const sortedTables = useMemo(() => sortClubTables(clubTables), [clubTables]);
-  const liveTableCount = useMemo(
-    () => clubTables.filter((t) => isLiveTableStatus(t.status)).length,
-    [clubTables]
-  );
-  const seatedAcrossTables = useMemo(
-    () => clubTables.reduce((s, t) => (isLiveTableStatus(t.status) ? s + t.currentPlayers : s), 0),
-    [clubTables]
-  );
+  // Tables tab: the server returns live tables fullest-first; sortClubTables
+  // keeps that order stable across a background refresh that may reorder
+  // ties. The header reads the floor-wide figures from tablesMeta, never a
+  // count over the rows on screen.
+  const sortedLiveTables = useMemo(() => sortClubTables(liveTables), [liveTables]);
+  const liveTableCount = tablesMeta?.liveCount ?? 0;
+  const seatedAcrossTables = tablesMeta?.seatedPeople ?? 0;
+
+  // Finance gate for the Revenue tab. Mirrors ca_can_view_club_finances,
+  // which ca_club_revenue enforces server-side since 2026-09-04; this only
+  // keeps a tab off the screen that would refuse when opened.
+  const canSeeRevenue = canViewClubFinance(userRole);
+  useEffect(() => {
+    if (activeTab === 'revenue' && userRole !== null && !canSeeRevenue) {
+      // The role is known and it is not a finance role: leave the tab rather
+      // than sit on a refusal.
+      setActiveTab('overview');
+    }
+  }, [activeTab, canSeeRevenue, userRole]);
 
   // ── Revenue + tournaments: loaded only when their tab is opened ──────────
   const [revenue, setRevenue] = useState<RevenueData | null>(null);
   const [revenueLoading, setRevenueLoading] = useState(false);
+  // 'restricted' is the server's 42501; 'failed' is anything else. The tab
+  // used to show "No Revenue Data Available" for both, and for a real zero.
+  const [revenueError, setRevenueError] = useState<'restricted' | 'failed' | null>(null);
   const [tournaments, setTournaments] = useState<TournamentData | null>(null);
   const [tournamentsLoading, setTournamentsLoading] = useState(false);
+  const [tournamentsError, setTournamentsError] = useState<'restricted' | 'failed' | null>(null);
 
-  const revenueDays = useMemo(
+  // The day window the Revenue and Tournaments tabs read. ca_club_revenue
+  // caps at 90 days, so "All" is 90 there and the heading says so.
+  const windowDays = useMemo(
     () => (dateRange === 'today' ? 1 : dateRange === 'week' ? 7 : dateRange === 'month' ? 30 : 90),
     [dateRange]
   );
@@ -738,12 +825,18 @@ export default function ClubDashboard() {
     if (activeTab !== 'revenue' || !resolvedClubId) return;
     let cancelled = false;
     setRevenueLoading(true);
+    setRevenueError(null);
     supabase
-      .rpc('ca_club_revenue', { p_club_id: resolvedClubId, p_days: revenueDays })
+      .rpc('ca_club_revenue', { p_club_id: resolvedClubId, p_days: windowDays })
       .then(({ data, error }) => {
         if (cancelled) return;
         if (error) {
-          if (!isAuthzError(error)) reportError(error, 'ClubDashboard.revenue_rpc_error');
+          if (isAuthzError(error)) {
+            setRevenueError('restricted');
+          } else {
+            reportError(error, 'ClubDashboard.revenue_rpc_error');
+            setRevenueError('failed');
+          }
           setRevenue(null);
         } else {
           setRevenue(data as RevenueData);
@@ -753,18 +846,24 @@ export default function ClubDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [activeTab, resolvedClubId, revenueDays]);
+  }, [activeTab, resolvedClubId, windowDays]);
 
   useEffect(() => {
     if (activeTab !== 'tournaments' || !resolvedClubId) return;
     let cancelled = false;
     setTournamentsLoading(true);
+    setTournamentsError(null);
     supabase
-      .rpc('ca_club_tournaments', { p_club_id: resolvedClubId, p_limit: 25 })
+      .rpc('ca_club_tournaments', { p_club_id: resolvedClubId, p_limit: 25, p_days: windowDays })
       .then(({ data, error }) => {
         if (cancelled) return;
         if (error) {
-          if (!isAuthzError(error)) reportError(error, 'ClubDashboard.tournaments_rpc_error');
+          if (isAuthzError(error)) {
+            setTournamentsError('restricted');
+          } else {
+            reportError(error, 'ClubDashboard.tournaments_rpc_error');
+            setTournamentsError('failed');
+          }
           setTournaments(null);
         } else {
           setTournaments(data as TournamentData);
@@ -774,7 +873,7 @@ export default function ClubDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [activeTab, resolvedClubId]);
+  }, [activeTab, resolvedClubId, windowDays]);
 
   // True once the roster RPC has answered at least once, so the heading can
   // tell "not loaded yet" apart from a genuine zero.
@@ -834,7 +933,14 @@ export default function ClubDashboard() {
     downloadCsv([header.join(','), ...rows].join('\n'), `members-page${memberPage + 1}`);
   };
 
-  const exportLeaderboardCsv = () => downloadCsv(leaderboardToCsv(rankedPlayers), 'leaderboard');
+  // The file says what it holds: a horse-filtered export is named as one.
+  const exportLeaderboardCsv = () =>
+    downloadCsv(leaderboardToCsv(rankedPlayers), hideHorses ? 'leaderboard-people' : 'leaderboard');
+
+  // The toggle is only offered when it can do something. The server masks
+  // is_horse for everyone below owner / co_owner / admin, so for them every
+  // row reads false and the box was a control wired to nothing.
+  const horseFlagVisible = topPlayers.some((p) => p.isHorse);
 
   if (loading && !club) {
     return (
@@ -891,6 +997,7 @@ export default function ClubDashboard() {
   }
 
   const rangeLabel = rangeLabelFor(dateRange);
+  const hasInsurance = !!revenue?.insurance && revenue.insurance.contracts > 0;
 
   return (
     <div className={styles.dashboard}>
@@ -989,6 +1096,13 @@ export default function ClubDashboard() {
             </button>
           ))}
         </div>
+        {/* The filter sat above six metric cards it does not drive. Say
+            what it reaches, so "Today" over "Hands This Week" is not read
+            as a bug. */}
+        <span className={styles.filterScope}>
+          Applies To Top Players, Players, Revenue And Tournaments. The Metric Cards Always Read
+          Today And This Week.
+        </span>
       </div>
 
       {/* Tab Navigation — real tablist semantics so screen readers announce
@@ -1000,7 +1114,9 @@ export default function ClubDashboard() {
             { id: 'activity', label: 'Activity' },
             { id: 'players', label: 'Players' },
             { id: 'tables', label: 'Tables' },
-            { id: 'revenue', label: 'Revenue' },
+            // Revenue is the club's money. Offered to the finance roles only;
+            // the server refuses everyone else regardless.
+            ...(canSeeRevenue ? ([{ id: 'revenue', label: 'Revenue' }] as const) : []),
             { id: 'tournaments', label: 'Tournaments' },
           ] as const
         ).map((tab, i, arr) => (
@@ -1076,7 +1192,7 @@ export default function ClubDashboard() {
           <div className={styles.overviewGrid}>
             <section className={styles.statsSection}>
               <h2>Club Metrics</h2>
-              {clubId && <ClubStatsCards clubId={clubId} stats={dashStats} />}
+              {clubId && <ClubStatsCards clubId={clubId} stats={dashStats} failed={statsFailed} />}
               {dashStats && dashStats.dailySeries.length > 0 && (
                 <div style={{ marginTop: 16 }}>
                   <h2 style={{ fontSize: '0.95rem', marginBottom: 4 }}>Last 14 Days</h2>
@@ -1132,22 +1248,24 @@ export default function ClubDashboard() {
                     <option value="winrate">Win Rate</option>
                     <option value="biggest">Biggest Pot</option>
                   </select>
-                  <label
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      fontSize: '0.78rem',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={hideHorses}
-                      onChange={(e) => setHideHorses(e.target.checked)}
-                    />
-                    Humans Only
-                  </label>
+                  {horseFlagVisible && (
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        fontSize: '0.78rem',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={hideHorses}
+                        onChange={(e) => setHideHorses(e.target.checked)}
+                      />
+                      Hide Horses
+                    </label>
+                  )}
                   {rankedPlayers.length > 0 && (
                     <button
                       onClick={exportLeaderboardCsv}
@@ -1171,7 +1289,7 @@ export default function ClubDashboard() {
                 {rankedPlayers.length === 0 ? (
                   <p className={styles.empty}>
                     {hideHorses && topPlayers.length > 0
-                      ? `No Human Players With Hands ${rangeLabel}`
+                      ? `Every Player With Hands ${rangeLabel} Is A Horse`
                       : `No Hands Played ${rangeLabel}`}
                   </p>
                 ) : (
@@ -1268,7 +1386,8 @@ export default function ClubDashboard() {
                       marginTop: 4,
                     }}
                   >
-                    See All {formatInt(rankedPlayers.length)} Ranked Players {'→'}
+                    See All {formatInt(rankedPlayers.length)} Ranked{' '}
+                    {hideHorses ? 'People (Horses Hidden)' : 'Players'} {'→'}
                   </button>
                 )}
               </div>
@@ -1282,7 +1401,7 @@ export default function ClubDashboard() {
                 >
                   Profit Measured From Post-Hand Stack Movement On{' '}
                   {formatInt(attribution.attributed)} Of {formatInt(attribution.played)}{' '}
-                  Player-Hands {rangeLabel}
+                  {hideHorses ? 'Person-Hands (Horses Hidden)' : 'Player-Hands'} {rangeLabel}
                   {attribution.played > 0 && (
                     <> ({Math.round((attribution.attributed / attribution.played) * 100)}%)</>
                   )}
@@ -1529,7 +1648,7 @@ export default function ClubDashboard() {
           <div className={styles.tablesSection}>
             <div className={styles.sectionHeader}>
               <h2>
-                Club Tables ({sortedTables.length})
+                Club Tables ({formatInt(tablesMeta?.totalCount ?? 0)})
                 {liveTableCount > 0 && (
                   <span
                     style={{
@@ -1539,7 +1658,11 @@ export default function ClubDashboard() {
                       color: '#10b981',
                     }}
                   >
-                    {liveTableCount} Live {'•'} {seatedAcrossTables} Seated
+                    {formatInt(liveTableCount)} Live {'•'} {formatInt(seatedAcrossTables)} People
+                    Seated
+                    {tablesMeta && tablesMeta.seatRows > tablesMeta.seatedPeople && (
+                      <> ({formatInt(tablesMeta.seatRows)} Seats)</>
+                    )}
                   </span>
                 )}
               </h2>
@@ -1547,45 +1670,80 @@ export default function ClubDashboard() {
                 + Create Table
               </Link>
             </div>
-            {clubTables.length === 0 ? (
+            {tablesFailed && !tablesMeta ? (
+              <p className={styles.empty}>The Table List Could Not Be Loaded</p>
+            ) : !tablesMeta ? (
+              <p className={styles.empty}>Loading Tables...</p>
+            ) : tablesMeta.totalCount === 0 ? (
               <p className={styles.empty}>No Tables Yet. Create One To Get The Club Playing.</p>
             ) : (
-              <div className={styles.playersList}>
-                {sortedTables.map((t) => {
-                  const isLive = isLiveTableStatus(t.status);
-                  return (
-                    <Link
-                      key={t.id}
-                      to={`/table/${t.id}`}
-                      className={styles.playerCard}
-                      style={{ textDecoration: 'none' }}
-                    >
-                      <div className={styles.playerInfo}>
-                        <span className={styles.playerName}>{t.name}</span>
-                        <span className={styles.playerStats}>
-                          {(t.gameVariant || t.gameType || 'NLH').toUpperCase()} {'•'}{' '}
-                          {t.stakes || `${formatChips(t.smallBlind)}/${formatChips(t.bigBlind)}`}{' '}
-                          {'•'} {t.currentPlayers}/{t.maxPlayers} Seated
-                        </span>
-                      </div>
-                      <span
-                        style={{
-                          padding: '4px 10px',
-                          borderRadius: '10px',
-                          fontSize: '0.75rem',
-                          fontWeight: 700,
-                          background: isLive
-                            ? 'rgba(16, 185, 129, 0.15)'
-                            : 'rgba(148, 163, 184, 0.15)',
-                          color: isLive ? '#10b981' : '#94a3b8',
-                        }}
+              <>
+                <h2 style={{ fontSize: '0.95rem', margin: '4px 0 8px' }}>
+                  Live Now ({formatInt(liveTableCount)})
+                  {tablesMeta.liveTruncated && (
+                    <span className={styles.capNote}>
+                      {' '}
+                      Showing The Fullest {formatInt(sortedLiveTables.length)}
+                    </span>
+                  )}
+                </h2>
+                <div className={styles.playersList}>
+                  {sortedLiveTables.length === 0 ? (
+                    <p className={styles.empty}>No Table Is Running Right Now</p>
+                  ) : (
+                    sortedLiveTables.map((t) => (
+                      <Link
+                        key={t.id}
+                        to={`/table/${t.id}`}
+                        className={styles.playerCard}
+                        style={{ textDecoration: 'none' }}
                       >
-                        {tableStatusLabel(t.status)}
-                      </span>
-                    </Link>
-                  );
-                })}
-              </div>
+                        <div className={styles.playerInfo}>
+                          <span className={styles.playerName}>{t.name}</span>
+                          <span className={styles.playerStats}>
+                            {(t.gameVariant || t.gameType || 'NLH').toUpperCase()} {'•'}{' '}
+                            {t.stakes || `${formatChips(t.smallBlind)}/${formatChips(t.bigBlind)}`}{' '}
+                            {'•'} {t.currentPlayers}/{t.maxPlayers} Seated
+                          </span>
+                        </div>
+                        <span className={`${styles.statusPill} ${styles.statusLive}`}>
+                          {tableStatusLabel(t.status)}
+                        </span>
+                      </Link>
+                    ))
+                  )}
+                </div>
+
+                <h2 style={{ fontSize: '0.95rem', margin: '18px 0 8px' }}>
+                  Recently Closed ({formatInt(recentTables.length)})
+                </h2>
+                <div className={styles.playersList}>
+                  {recentTables.length === 0 ? (
+                    <p className={styles.empty}>No Closed Tables Yet</p>
+                  ) : (
+                    recentTables.map((t) => (
+                      <Link
+                        key={t.id}
+                        to={`/table/${t.id}`}
+                        className={styles.playerCard}
+                        style={{ textDecoration: 'none' }}
+                      >
+                        <div className={styles.playerInfo}>
+                          <span className={styles.playerName}>{t.name}</span>
+                          <span className={styles.playerStats}>
+                            {(t.gameVariant || t.gameType || 'NLH').toUpperCase()} {'•'}{' '}
+                            {t.stakes || `${formatChips(t.smallBlind)}/${formatChips(t.bigBlind)}`}{' '}
+                            {'•'} Opened {formatAgo(new Date(t.createdAt).getTime(), nowTick)}
+                          </span>
+                        </div>
+                        <span className={`${styles.statusPill} ${styles.statusClosed}`}>
+                          {tableStatusLabel(t.status)}
+                        </span>
+                      </Link>
+                    ))
+                  )}
+                </div>
+              </>
             )}
             <Link to={`/clubs/${clubId}/lobby`} className={styles.lobbyLink}>
               View Table Lobby {'→'}
@@ -1596,12 +1754,18 @@ export default function ClubDashboard() {
         {activeTab === 'revenue' && (
           <div className={styles.tablesSection}>
             <div className={styles.sectionHeader}>
-              <h2>Revenue ({rangeLabel})</h2>
+              {/* ca_club_revenue caps at 90 days, so "All" is not all time
+                  here and the heading must not say it is. */}
+              <h2>Revenue ({dateRange === 'all' ? 'Last 90 Days' : rangeLabel})</h2>
             </div>
             {revenueLoading && !revenue ? (
               <p className={styles.empty}>Loading Revenue...</p>
-            ) : !revenue ? (
-              <p className={styles.empty}>No Revenue Data Available</p>
+            ) : revenueError === 'restricted' ? (
+              <p className={styles.empty}>
+                Revenue Is Restricted To Club Owners, Admins And Super Agents
+              </p>
+            ) : revenueError === 'failed' || !revenue ? (
+              <p className={styles.empty}>The Revenue Figures Could Not Be Loaded</p>
             ) : (
               <>
                 <div
@@ -1623,18 +1787,23 @@ export default function ClubDashboard() {
                     // over the window. The bank suffix says whose profit it is
                     // - a union-affiliated club's insurance settles to the
                     // union bank, a standalone club keeps it.
-                    ...(revenue.insurance
+                    //
+                    // Gated on CONTRACTS, not on the object: ca_club_revenue
+                    // always returns an insurance object, so `insurance ?`
+                    // was always true and a club that has never sold a policy
+                    // got two zero cards and a report link.
+                    ...(hasInsurance
                       ? [
                           {
                             label:
-                              revenue.insurance.bank === 'union'
+                              revenue.insurance!.bank === 'union'
                                 ? 'Insurance Net (To Union)'
                                 : 'Insurance Net (Club Bank)',
-                            value: formatChips(revenue.insurance.net),
+                            value: formatChips(revenue.insurance!.net),
                           },
                           {
                             label: 'Insurance Premiums / Payouts',
-                            value: `${formatChips(revenue.insurance.premiums)} / ${formatChips(revenue.insurance.payouts)}`,
+                            value: `${formatChips(revenue.insurance!.premiums)} / ${formatChips(revenue.insurance!.payouts)}`,
                           },
                         ]
                       : []),
@@ -1659,7 +1828,7 @@ export default function ClubDashboard() {
                 {/* INSURANCE REPORT 2026-08-28: the headline net above raises
                     questions only the funnel can answer — take rate, timeouts,
                     cashouts, per-day money. That lives on its own page. */}
-                {revenue.insurance && (
+                {hasInsurance && (
                   <Link
                     to={`/clubs/${clubId}/insurance-report`}
                     style={{
@@ -1686,7 +1855,7 @@ export default function ClubDashboard() {
                   style={{
                     display: 'inline-block',
                     marginBottom: 14,
-                    marginLeft: revenue.insurance ? 14 : 0,
+                    marginLeft: hasInsurance ? 14 : 0,
                     fontSize: '0.78rem',
                     fontWeight: 700,
                     color: '#1877f2',
@@ -1745,16 +1914,19 @@ export default function ClubDashboard() {
                       color: 'var(--text-secondary, #8a8f98)',
                     }}
                   >
-                    {formatInt(tournaments.summary.completed_30d)} Finished In 30D {'•'}{' '}
-                    {formatChips(tournaments.summary.prize_pool_30d)} In Prizes
+                    {formatInt(tournaments.summary.completed_in_window)} Finished In Last{' '}
+                    {formatInt(tournaments.summary.window_days)}D {'•'}{' '}
+                    {formatChips(tournaments.summary.prize_pool_in_window)} In Prizes
                   </span>
                 )}
               </h2>
             </div>
             {tournamentsLoading && !tournaments ? (
               <p className={styles.empty}>Loading Tournaments...</p>
-            ) : !tournaments ? (
-              <p className={styles.empty}>No Tournament Data Available</p>
+            ) : tournamentsError === 'restricted' ? (
+              <p className={styles.empty}>Tournament Data Is Visible To Members Of This Club</p>
+            ) : tournamentsError === 'failed' || !tournaments ? (
+              <p className={styles.empty}>The Tournament List Could Not Be Loaded</p>
             ) : (
               <>
                 <h2 style={{ fontSize: '0.95rem', margin: '4px 0 8px' }}>
@@ -1796,12 +1968,20 @@ export default function ClubDashboard() {
                   )}
                 </div>
 
+                {/* The list is capped at 25; the summary above carries the
+                    true count for the window, so both are stated. */}
                 <h2 style={{ fontSize: '0.95rem', margin: '18px 0 8px' }}>
-                  Recently Finished ({tournaments.recent.length})
+                  Recently Finished
+                  {tournaments.summary.completed_in_window > tournaments.recent.length
+                    ? ` (Newest ${formatInt(tournaments.recent.length)} Of ${formatInt(tournaments.summary.completed_in_window)})`
+                    : ` (${formatInt(tournaments.recent.length)})`}
                 </h2>
                 <div className={styles.playersList}>
                   {tournaments.recent.length === 0 ? (
-                    <p className={styles.empty}>No Tournaments Finished In The Last 30 Days</p>
+                    <p className={styles.empty}>
+                      No Tournaments Finished In The Last{' '}
+                      {formatInt(tournaments.summary.window_days)} Days
+                    </p>
                   ) : (
                     tournaments.recent.map((t) => (
                       <Link
@@ -1828,9 +2008,14 @@ export default function ClubDashboard() {
         )}
       </div>
 
-      {clubId && user?.id && (
+      {/* ClubChat reads, subscribes and SENDS with whatever id it is given,
+          straight into the uuid column club_chat.club_id. It was given the
+          route param, which on every club URL is a slug, so the read was a
+          22P02 (seen live as a 400 on 2026-09-04) and a message could never
+          be sent from this page. It gets the resolved uuid. */}
+      {resolvedClubId && user?.id && (
         <div style={{ padding: '0 16px 80px', maxWidth: '100%' }}>
-          <ClubChat clubId={clubId} userId={user.id} userName={playerDisplayName(user)} />
+          <ClubChat clubId={resolvedClubId} userId={user.id} userName={playerDisplayName(user)} />
         </div>
       )}
     </div>

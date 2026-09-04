@@ -120,3 +120,88 @@ groups:
           component: infra
         annotations:
           summary: "Available memory <10% on {{ $labels.host }}"
+
+  # ── REPLICATION (2026-09-04) ────────────────────────────────────────────
+  # The realtime replication slot was 136 MB behind and climbing, and nothing
+  # on the platform could see it: the only way anyone had ever learned the
+  # number was by opening a SQL editor and asking. Logical decoding degrades
+  # as a SPIRAL rather than a cliff - a slot that falls behind must read WAL
+  # from disk instead of memory, which is slower, so being behind makes it
+  # fall further behind. There is no step change to catch, which is exactly
+  # why it needs an alert rather than a dashboard.
+  #
+  # Gauges from server/src/services/ReplicationMetrics.ts via
+  # public.fn_replication_slot_metrics().
+  - name: replication
+    interval: 30s
+    rules:
+      - alert: ReplicationSlotFallingBehind
+        expr: |
+          max by (slot) (poker_pg_replication_slot_flush_lag_bytes) > 268435456
+        for: 15m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Realtime slot {{ $labels.slot }} is >256MB behind"
+          description: "Logical decoding is not keeping up with WAL. This compounds: a lagging slot reads WAL from disk rather than memory. Players see it as stale lobbies and late seat updates."
+          runbook: "docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3"
+
+      - alert: ReplicationSlotCriticallyBehind
+        expr: |
+          max by (slot) (poker_pg_replication_slot_flush_lag_bytes) > 1073741824
+        for: 10m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Realtime slot {{ $labels.slot }} is >1GB behind"
+          description: "At this point the slot is pinning WAL on disk and the instance is at risk of filling it. Do not restart the consumer blind - read the runbook."
+          runbook: "docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3"
+
+      # An inactive slot advances not at all and pins every WAL segment behind
+      # it. Guarded, because the engine's own restart inside the :55 break can
+      # briefly drop a consumer.
+      - alert: ReplicationSlotInactive
+        expr: |
+          min by (slot) (poker_pg_replication_slot_active) == 0
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Replication slot {{ $labels.slot }} has no consumer"
+          description: "A slot with no consumer never advances and holds every WAL segment after it on disk."
+          runbook: "docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3"
+
+      # The collector itself. A gauge that stopped being collected reads as a
+      # perfectly healthy slot, which is the failure this whole family exists
+      # to prevent, so the staleness is alertable in its own right.
+      - alert: ReplicationMetricsBlind
+        expr: |
+          poker_pg_replication_metrics_stale_seconds > 600
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Replication gauges are stale ({{ $value }}s)"
+          description: "fn_replication_slot_metrics has not returned successfully in over 10 minutes. The lag numbers on the dashboard are last-known-good, not current."
+          runbook: "docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3"
+
+      # Zero slots is not a quiet database - this database has two logical
+      # slots. Zero means the collector cannot see pg_replication_slots.
+      - alert: ReplicationSlotsDisappeared
+        expr: |
+          poker_pg_replication_slots == 0
+          and poker_pg_replication_metrics_stale_seconds < 600
+        for: 10m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "No replication slots visible"
+          description: "The collector is fresh but reports zero slots. Either the slots were dropped - realtime is then entirely dead - or the function lost its catalog access."
+          runbook: "docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3"

@@ -29,6 +29,7 @@ import { TournamentMetrics } from './services/TournamentMetrics.js';
 import { SpinMetrics } from './services/SpinMetrics.js';
 import { ReplicationMetrics } from './services/ReplicationMetrics.js';
 import { SettlementMetrics } from './services/SettlementMetrics.js';
+import { MoneyHealthMetrics } from './services/MoneyHealthMetrics.js';
 import {
   planTableReopens,
   freshHumanWindowMs,
@@ -371,6 +372,7 @@ export class GameServer {
   private spinMetrics = new SpinMetrics();
   private replicationMetrics = new ReplicationMetrics();
   private settlementMetrics = new SettlementMetrics();
+  private moneyHealthMetrics = new MoneyHealthMetrics();
   private lifecycle = new HorseLifecycleManager();
 
   /**
@@ -772,6 +774,13 @@ export class GameServer {
       // NOTHING raised an alert. The database wrote the failure down 139,153
       // times and had no way to say it out loud. See services/SettlementMetrics.ts.
       this.settlementMetrics.start();
+
+      // Step 3g: Money health. financial_alerts held 1,345 unresolved rows on
+      // 2026-09-04, the oldest fifteen days old, and nothing had ever reported
+      // the table has contents. Same collector carries the undeclared-trigger
+      // check: aaa_skip_noop_update was attached to table_seats with no
+      // migration and broke 139,153 hand settlements before anyone noticed.
+      this.moneyHealthMetrics.start();
 
       // Step 4: Start lifecycle manager (stuck horse detection, cleanup)
       this.lifecycle.start();
@@ -1465,6 +1474,10 @@ export class GameServer {
       // Whether hands are settling at all, over a five-minute window. A
       // lifetime ratio read 7.7% while the live rate was 44%.
       ...this.settlementMetrics.toPrometheus(),
+      // ── MONEY HEALTH (2026-09-04) ────────────────────────────────────
+      // The money-alert backlog, aged, and any trigger live on a money table
+      // that nobody declared. See services/MoneyHealthMetrics.ts.
+      ...this.moneyHealthMetrics.toPrometheus(),
     ];
 
     if (allLines.length === 0) {

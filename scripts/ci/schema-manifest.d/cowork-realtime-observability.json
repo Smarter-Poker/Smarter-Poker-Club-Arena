@@ -1,4 +1,15 @@
 {
   "_owner": "docs/sentry-realtime-programme",
-  "functions": ["fn_replication_slot_metrics", "sp_prune_ca_settlements", "fn_settlement_health"]
+  "functions": [
+    "fn_financial_alert_health",
+    "fn_replication_slot_metrics",
+    "fn_resolve_settled_prize_alerts",
+    "fn_settlement_health",
+    "fn_undeclared_money_triggers",
+    "sp_prune_ca_settlements"
+  ],
+  "tables": ["ca_declared_money_triggers"],
+  "columns": {
+    "financial_alerts": ["resolution"]
+  }
 }

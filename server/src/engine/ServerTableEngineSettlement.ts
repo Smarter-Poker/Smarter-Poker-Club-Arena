@@ -1172,6 +1172,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       holeCards: new Map(this.currentHandHoleCards),
       dealerSeat: this.currentHandDealerSeat,
       perPotAwards: [...this.currentHandPerPotAwards],
+      // WHO WON EACH RUN (2026-09-04): the per-board record the felt already
+      // reads off pot_win. It was built, broadcast, and then dropped at the
+      // write, so a run-it-3-times scoop was recorded as one board's hand name.
+      winnersByBoard: [...this.currentHandWinnersByBoard],
       showdownResults: [...this.currentHandShowdownResults],
       insuranceSettlements: [...this.currentHandInsuranceSettlements],
       insuranceNet: this.currentHandInsuranceNet,
@@ -1464,6 +1468,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           startedAt: snap.startedAt || Date.now(),
           endedAt: Date.now(),
           winners: snap.winners,
+          // Per-board winners for any multi-board hand; NULL otherwise (see
+          // handHistory.ts). This is the record that says which run went to
+          // whom, with what - `winners` is only the paid totals.
+          winnersByBoard: snap.winnersByBoard,
           // POT-LEVEL SETTLEMENT (Dan section 29). Captured at WINNERS, when
           // the breakdown still exists. `winners` already carry `potIndex`;
           // this is the other half of that pair, and without it the number is

@@ -1430,7 +1430,14 @@ export default function MultiTablePage() {
             // A non-turn decision (discard / insurance / RIT) and a burning
             // time bank each get their own countdown, computed from the same
             // 1s clock as the turn timer so all tables tick together.
-            const d = parseTimed(t.decision);
+            const raw = parseTimed(t.decision);
+            // A DECISION THAT HAS EXPIRED IS NOT A DECISION (Dan 2026-09-04):
+            // a leaked RIT deadline read as "RUN IT / 0s Left", red, on that
+            // tab for the rest of the session. The clamp below turned a past
+            // instant into a permanent zero. Past is gone; the tab shows
+            // nothing. (The leak itself is closed in TablePage; this is the
+            // strip refusing to display a clock that has already run out.)
+            const d = raw && raw.at > nowMs ? raw : null;
             const tb = parseTimed(t.timeBank);
             const secs = (at: number) => Math.max(0, Math.ceil((at - nowMs) / 1000));
             return {

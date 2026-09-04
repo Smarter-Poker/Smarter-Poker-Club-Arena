@@ -50,6 +50,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { QUERY_LIMITS } from '../lib/constants';
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -57,10 +58,9 @@ import { safeErrorMessage } from '../utils/safeErrorMessage';
 type TabType = 'agents' | 'players' | 'hierarchy' | 'credit-limits' | 'commissions' | 'payouts';
 
 /**
- * What fn_ca_agent_payables returns. `estimate` and `total_estimate` are the
- * arithmetic this page used to print in place of the ledger, carried along so
- * the two can be shown together for one release rather than the number
- * changing under an operator without explanation.
+ * What fn_ca_agent_payables returns, read from the commission rollup. The
+ * superseded arithmetic this page printed before phase 3 (weekly rake times
+ * commission rate) rode alongside for one release and came down 2026-09-04.
  */
 interface AgentPayableRow {
   agent_id: string;
@@ -76,7 +76,6 @@ interface AgentPayableRow {
   owed: number;
   rows_behind: number;
   oldest_unsettled: string | null;
-  estimate: number;
 }
 
 interface AgentPayables {
@@ -84,7 +83,6 @@ interface AgentPayables {
   cap: number;
   total_owed: number;
   total_rows: number;
-  total_estimate: number;
   oldest_unsettled: string | null;
   rows: AgentPayableRow[];
   generated_at: string;
@@ -132,13 +130,20 @@ export default function AgentManagementPage() {
 
   // Confirm modal state for destructive actions
   const [confirmAction, setConfirmAction] = useState<{
-    type: 'promote' | 'ban';
+    type: 'promote';
     title: string;
     message: string;
     agentId?: string;
     newRole?: string;
-    playerId?: string;
   } | null>(null);
+  /* The exclusion dialog collects what fn_ca_ban_club_player records: the
+     reason an operator gives, and whether the exclusion ends. Until
+     2026-09-04 the reason was a hardcoded sentence and the expiry was always
+     never. */
+  const [banTarget, setBanTarget] = useState<string | null>(null);
+  const [banReason, setBanReason] = useState('');
+  const [banDays, setBanDays] = useState<'' | '7' | '30' | '90'>('');
+  const [banBusy, setBanBusy] = useState(false);
 
   // Create Agent Form State
   const [availableMembers, setAvailableMembers] = useState<ClubMembership[]>([]);
@@ -561,7 +566,7 @@ export default function AgentManagementPage() {
 
   const executeConfirmAction = async () => {
     if (!confirmAction) return;
-    const { type, agentId, newRole, playerId } = confirmAction;
+    const { type, agentId, newRole } = confirmAction;
     setConfirmAction(null);
 
     if (type === 'promote' && agentId && newRole) {
@@ -586,76 +591,94 @@ export default function AgentManagementPage() {
       } else {
         toast.error('Failed to update agent role');
       }
-    } else if (type === 'ban') {
-      /* THIS BRANCH USED TO BE A SUCCESS TOAST AND NOTHING ELSE. The dialog
-         collected the player id and dropped it; no operator who pressed this
-         button has ever banned anybody.
+    }
+  };
 
-         fn_ca_ban_club_player writes the blacklists row - which is not a
-         label: atomic_table_buyin, atomic_table_rebuy and
-         atomic_tournament_register all read that table, so the exclusion stops
-         them buying in, rebuying and registering - and files the
-         player_banned audit event. It deliberately does NOT delete the
-         club_members row, because that row carries the player's chips, and it
-         does not close a seat (CLAUDE.md 11.5). Both of those are reported
-         back so the operator can act on them here. */
-      if (!playerId || !clubId) return;
-      try {
-        const resolved = await resolveClubUUID(clubId);
-        const { data, error } = await supabase.rpc('fn_ca_ban_club_player', {
-          p_club_id: resolved,
-          p_user_id: playerId,
-          p_reason: 'Banned from the agent network console',
-          p_expires_at: null,
-        });
-        if (error) throw error;
-        const outcome = (data || {}) as {
-          ok?: boolean;
-          reason?: string;
-          was_already_excluded?: boolean;
-          chips_held?: number;
-          credit_used?: number;
-          live_seats?: number;
-        };
-        if (!outcome.ok) {
-          toast.error(BAN_REFUSALS[outcome.reason || ''] || 'That Player Could Not Be Excluded.');
-          return;
-        }
-        toast.success(
-          outcome.was_already_excluded
-            ? 'That Player Was Already Excluded. The Exclusion Is Renewed.'
-            : 'Player Excluded From This Club.'
-        );
-        if (outcome.live_seats) {
-          const tableIds = await liveSeatTableIds(resolved, playerId);
-          const removal = await adminRemovePlayerFromClubTables(
-            tableIds,
-            playerId,
-            'Excluded from the club by an administrator'
-          );
-          toast.info(
-            removal.removed > 0
-              ? `Removed Them From ${fmt(removal.removed)} Live ${removal.removed === 1 ? 'Table' : 'Tables'}.`
-              : removal.firstError || 'They Are Still Seated. Remove Them From The Table Manually.'
-          );
-        }
-        if (Number(outcome.chips_held) > 0 || Number(outcome.credit_used) > 0) {
-          toast.warning(
-            `They Still Hold ${fmtChips(Number(outcome.chips_held) || 0)} Chips` +
-              (Number(outcome.credit_used) > 0
-                ? ` And Owe ${fmtChips(Number(outcome.credit_used))} On Credit`
-                : '') +
-              '. Settle That Before Removing Their Membership.'
-          );
-        }
-        masterBus.emit('ADMIN_ACTION', {
-          action: 'player_banned',
-          target: playerId,
-          userId: user?.id,
-        });
-      } catch (err: unknown) {
-        toast.error(err instanceof Error ? err.message : 'That Player Could Not Be Excluded.');
+  /* THIS USED TO BE A SUCCESS TOAST AND NOTHING ELSE. The dialog collected
+     the player id and dropped it; no operator who pressed this button had
+     ever banned anybody.
+
+     fn_ca_ban_club_player writes the blacklists row - which is not a label:
+     atomic_table_buyin, atomic_table_rebuy and atomic_tournament_register all
+     read that table, so the exclusion stops them buying in, rebuying and
+     registering - and files the player_banned audit event. It deliberately
+     does NOT delete the club_members row, because that row carries the
+     player's chips, and it does not close a seat (CLAUDE.md 11.5). Both of
+     those are reported back so the operator can act on them here. */
+  const executeBan = async () => {
+    const playerId = banTarget;
+    if (!playerId || !clubId || banBusy) return;
+    const reason = banReason.trim();
+    if (reason.length < 3) {
+      toast.error('Say Why. The Reason Is Written To The Exclusion Record.');
+      return;
+    }
+    setBanBusy(true);
+    try {
+      const resolved = await resolveClubUUID(clubId);
+      const expiresAt = banDays
+        ? new Date(Date.now() + Number(banDays) * 86_400_000).toISOString()
+        : null;
+      const { data, error } = await supabase.rpc('fn_ca_ban_club_player', {
+        p_club_id: resolved,
+        p_user_id: playerId,
+        p_reason: reason,
+        p_expires_at: expiresAt,
+      });
+      if (error) throw error;
+      const outcome = (data || {}) as {
+        ok?: boolean;
+        reason?: string;
+        was_already_excluded?: boolean;
+        chips_held?: number;
+        credit_used?: number;
+        live_seats?: number;
+      };
+      if (!outcome.ok) {
+        toast.error(BAN_REFUSALS[outcome.reason || ''] || 'That Player Could Not Be Excluded.');
+        return;
       }
+      setBanTarget(null);
+      setBanReason('');
+      setBanDays('');
+      toast.success(
+        outcome.was_already_excluded
+          ? 'That Player Was Already Excluded. The Exclusion Is Renewed.'
+          : banDays
+            ? `Player Excluded From This Club For ${banDays} Days.`
+            : 'Player Excluded From This Club.'
+      );
+      if (outcome.live_seats) {
+        const tableIds = await liveSeatTableIds(resolved, playerId);
+        const removal = await adminRemovePlayerFromClubTables(
+          tableIds,
+          playerId,
+          'Excluded from the club by an administrator'
+        );
+        toast.info(
+          removal.removed > 0
+            ? `Removed Them From ${fmt(removal.removed)} Live ${removal.removed === 1 ? 'Table' : 'Tables'}.`
+            : removal.firstError || 'They Are Still Seated. Remove Them From The Table Manually.'
+        );
+      }
+      if (Number(outcome.chips_held) > 0 || Number(outcome.credit_used) > 0) {
+        toast.warning(
+          `They Still Hold ${fmtChips(Number(outcome.chips_held) || 0)} Chips` +
+            (Number(outcome.credit_used) > 0
+              ? ` And Owe ${fmtChips(Number(outcome.credit_used))} On Credit`
+              : '') +
+            '. Settle That Before Removing Their Membership.'
+        );
+      }
+      masterBus.emit('ADMIN_ACTION', {
+        action: 'player_banned',
+        target: playerId,
+        userId: user?.id,
+      });
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'That Player Could Not Be Excluded.');
+    } finally {
+      setBanBusy(false);
     }
   };
 
@@ -817,10 +840,19 @@ export default function AgentManagementPage() {
         )}
       </div>
 
+      {/* AgentService.getAgents reads at most QUERY_LIMITS.MODERATE rows. A
+          club at the cap sees exactly the cap, which used to look like the
+          whole roster. */}
+      {agents.length >= QUERY_LIMITS.MODERATE && (
+        <p className={styles.capNotice} role="status">
+          Showing The First {fmt(QUERY_LIMITS.MODERATE)} Agents. The Club Has More; The Summary
+          Cards Count Only These.
+        </p>
+      )}
+
       {/* Summary Cards */}
       <div className={styles.summaryGrid}>
         <div className={styles.summaryCard}>
-          <span className={styles.summaryIcon}></span>
           <div>
             <span className={styles.summaryValue}>
               {fmt(activeAgents)}/{fmt(totalAgents)}
@@ -829,21 +861,18 @@ export default function AgentManagementPage() {
           </div>
         </div>
         <div className={styles.summaryCard}>
-          <span className={styles.summaryIcon}></span>
           <div>
             <span className={styles.summaryValue}>{fmt(totalPlayers)}</span>
             <span className={styles.summaryLabel}>Total Players</span>
           </div>
         </div>
         <div className={styles.summaryCard}>
-          <span className={styles.summaryIcon}></span>
           <div>
             <span className={styles.summaryValue}>{formatMoney(weeklyRake)}</span>
             <span className={styles.summaryLabel}>Weekly Rake</span>
           </div>
         </div>
         <div className={styles.summaryCard}>
-          <span className={styles.summaryIcon}></span>
           <div>
             <span className={styles.summaryValue}>{formatMoney(totalCreditExtended)}</span>
             <span className={styles.summaryLabel}>Credit Extended</span>
@@ -1002,15 +1031,17 @@ export default function AgentManagementPage() {
 
                 <div className={styles.walletRow}>
                   <div className={styles.walletItem}>
-                    <span className={styles.walletIcon}>◈</span>
+                    {/* Three balances used to sit beside one glyph and two
+                        empty spans, so two of the three had no name. */}
+                    <span className={styles.walletLabel}>Agent</span>
                     <span>{formatMoney(agent.businessBalance)}</span>
                   </div>
                   <div className={styles.walletItem}>
-                    <span className={styles.walletIcon}></span>
+                    <span className={styles.walletLabel}>Player</span>
                     <span>{formatMoney(agent.playerBalance)}</span>
                   </div>
                   <div className={styles.walletItem}>
-                    <span className={styles.walletIcon}></span>
+                    <span className={styles.walletLabel}>Promo</span>
                     <span>{formatMoney(agent.promoBalance)}</span>
                   </div>
                 </div>
@@ -1056,13 +1087,9 @@ export default function AgentManagementPage() {
                 toast.info(`Selected: ${player.username}`);
               }}
               onBanPlayer={(playerId) => {
-                setConfirmAction({
-                  type: 'ban',
-                  title: 'Ban Player',
-                  message:
-                    'Ban this player from the club? They will no longer be able to join or play.',
-                  playerId,
-                });
+                setBanReason('');
+                setBanDays('');
+                setBanTarget(playerId);
               }}
               onViewProfile={(playerId) => {
                 navigate(`/profile/${playerId}`);
@@ -1353,22 +1380,6 @@ export default function AgentManagementPage() {
                       </div>
                     </div>
                   </div>
-                  {/*
-                    THE OLD NUMBER, KEPT VISIBLE FOR ONE RELEASE. Until this
-                    change the Commission column was
-                    weekly_rake_generated * commission_rate with a hardcoded
-                    "Pending" beside it, and no payout, settlement or commission
-                    table was read anywhere in this file. Measured against this
-                    club on the day it was replaced, that arithmetic reported
-                    36,657 against 65,790 genuinely owed. An operator who has
-                    been reconciling against the old figure should see the two
-                    together rather than find the number silently changed.
-                  */}
-                  <p className={styles.payoutNote}>
-                    The Previous Estimate, Weekly Rake Times Commission Rate, Came To{' '}
-                    {fmtChips(payables.total_estimate)}. It Read A Rate Against A Weekly Total, Not
-                    The Commission Ledger.
-                  </p>
                   <div className={styles.tableScroll}>
                     <table className={styles.payoutTable}>
                       <thead>
@@ -1466,7 +1477,6 @@ export default function AgentManagementPage() {
                       setNewAgentForm({ ...newAgentForm, role: 'super_agent', parentAgentId: '' })
                     }
                   >
-                    <span className={styles.roleIcon}></span>
                     <span className={styles.roleLabel}>Super Agent</span>
                     <span className={styles.roleDesc}>Can Have Agents Under Them</span>
                   </button>
@@ -1475,7 +1485,6 @@ export default function AgentManagementPage() {
                     className={`${styles.roleOption} ${newAgentForm.role === 'agent' ? styles.selected : ''}`}
                     onClick={() => setNewAgentForm({ ...newAgentForm, role: 'agent' })}
                   >
-                    <span className={styles.roleIcon}></span>
                     <span className={styles.roleLabel}>Agent</span>
                     <span className={styles.roleDesc}>Standard Agent Role</span>
                   </button>
@@ -1484,7 +1493,6 @@ export default function AgentManagementPage() {
                     className={`${styles.roleOption} ${newAgentForm.role === 'sub_agent' ? styles.selected : ''}`}
                     onClick={() => setNewAgentForm({ ...newAgentForm, role: 'sub_agent' })}
                   >
-                    <span className={styles.roleIcon}></span>
                     <span className={styles.roleLabel}>Sub-Agent</span>
                     <span className={styles.roleDesc}>Under Another Agent</span>
                   </button>
@@ -1694,6 +1702,71 @@ export default function AgentManagementPage() {
           }
         }}
       />
+
+      {/* Exclusion dialog: reason and expiry go to the record. */}
+      {banTarget && (
+        <div
+          className={styles.banOverlay}
+          onClick={() => !banBusy && setBanTarget(null)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' && !banBusy) setBanTarget(null);
+          }}
+        >
+          <div
+            className={styles.banDialog}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ban-dialog-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="ban-dialog-title">Exclude Player From This Club</h3>
+            <p className={styles.banHelp}>
+              They Will Not Be Able To Buy In, Rebuy Or Register Here. Their Chips Stay In Their
+              Wallet And Their Seat Is Not Closed.
+            </p>
+            <label className={styles.banField}>
+              <span>Reason</span>
+              <textarea
+                value={banReason}
+                onChange={(e) => setBanReason(e.target.value)}
+                rows={3}
+                maxLength={500}
+                placeholder="What Happened"
+              />
+            </label>
+            <label className={styles.banField}>
+              <span>Expires</span>
+              <select
+                value={banDays}
+                onChange={(e) => setBanDays(e.target.value as typeof banDays)}
+              >
+                <option value="">Never</option>
+                <option value="7">In 7 Days</option>
+                <option value="30">In 30 Days</option>
+                <option value="90">In 90 Days</option>
+              </select>
+            </label>
+            <div className={styles.banActions}>
+              <button
+                type="button"
+                className={styles.banCancel}
+                onClick={() => setBanTarget(null)}
+                disabled={banBusy}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={styles.banConfirm}
+                onClick={() => void executeBan()}
+                disabled={banBusy || banReason.trim().length < 3}
+              >
+                {banBusy ? 'Excluding...' : 'Exclude Player'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirm Modal */}
       <ConfirmModal

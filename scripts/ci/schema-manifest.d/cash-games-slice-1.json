@@ -1,0 +1,37 @@
+{
+  "_owner": "fix/cash-games-slice-1 (Operation Table Stakes, Slice 1, 2026-09-04). Applied to production as 20260904160500_cash_games_slice_1. cash_games is the cluster row; tables gained cluster_id / role / main_index / lifecycle; fn_cash_session_open was re-created to inherit the two clocks from the game's ruleset_snapshot. Hardening 20260904230000_cash_games_slice_1_hardening (same branch): must_move/closed_at/closed_by, fn_cash_money_text, fn_cash_override_int/bool, fn_cash_game_create re-created with p_must_move (9 args), fn_cash_stakes_label re-created with p_variant (3 args), fn_close_managed_game and fn_table_lifecycle_pass re-created (bodies as deployed plus the H1 clause).",
+  "tables": ["cash_games"],
+  "functions": [
+    "fn_cash_stakes_label",
+    "fn_cash_template_defaults",
+    "fn_cash_game_create",
+    "fn_cash_money_text",
+    "fn_cash_override_int",
+    "fn_cash_override_bool"
+  ],
+  "columns": {
+    "cash_games": [
+      "id",
+      "club_id",
+      "union_id",
+      "name",
+      "template_name",
+      "variant",
+      "sb",
+      "bb",
+      "handedness",
+      "ruleset_snapshot",
+      "enabled",
+      "state",
+      "cap_mains",
+      "allow_second_feeder",
+      "created_by",
+      "created_at",
+      "updated_at",
+      "must_move",
+      "closed_at",
+      "closed_by"
+    ],
+    "tables": ["cluster_id", "role", "main_index", "lifecycle"]
+  }
+}

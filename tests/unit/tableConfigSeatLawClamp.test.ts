@@ -24,10 +24,7 @@ import {
   maxSeatsTheDeckAllows,
 } from '../../src/config/tableSeating';
 
-const PAGE = fs.readFileSync(
-  path.join(__dirname, '../../src/pages/TableConfigPage.tsx'),
-  'utf8'
-);
+const PAGE = fs.readFileSync(path.join(__dirname, '../../src/pages/TableConfigPage.tsx'), 'utf8');
 
 // What buildTableData writes for max_players, given the route's gameType and
 // the slider value. Kept byte-for-byte in sync with the page by the source
@@ -65,28 +62,74 @@ describe('buildTableData clamps max_players to the seat law', () => {
   });
 });
 
-describe('TableConfigPage source pins', () => {
+/**
+ * 2026-09-04 (Operation Table Stakes, Slice 1): the cash create path is
+ * fn_cash_game_create in SQL, and handedness is not a slider any more - it is
+ * a picker over the seat choices fn_cash_template_defaults publishes per
+ * family (OPORD 1.4 R1: Omaha is locked at 6, Hold'em picks 9 or 6). The
+ * function refuses anything outside that list (HANDEDNESS_INVALID), so the
+ * clamp below is now a ceiling the SQL choices must sit under, and the page
+ * pins move to the tournament slider that still exists.
+ */
+const SQL = fs.readFileSync(
+  path.join(__dirname, '../../supabase/migrations/20260904160500_cash_games_slice_1.sql'),
+  'utf8'
+);
+const FLOW = fs.readFileSync(
+  path.join(__dirname, '../../src/components/cash/CashGameCreateFlow.tsx'),
+  'utf8'
+);
+
+describe('the seat choices the create function offers fit the deck', () => {
+  const choices = (family: string): number[] => {
+    const m = SQL.match(
+      new RegExp(`${family}[\\s\\S]{0,400}?v_seat_choices := ARRAY\\[([0-9, ]+)\\]`)
+    );
+    if (!m) throw new Error(`no seat choices for ${family}`);
+    return m[1].split(',').map((n) => Number(n.trim()));
+  };
+
+  it('Omaha is locked at six, under every PLO cap', () => {
+    expect(choices("v_family = 'plo'")).toEqual([6]);
+    for (const v of ['plo4', 'plo5', 'plo6', 'plo8', 'flo8']) {
+      expect(6).toBeLessThanOrEqual(maxSeatsForVariant(v));
+    }
+  });
+
+  it("Hold'em offers nothing above the deck", () => {
+    const sqlMax = Math.max(
+      ...SQL.match(/ARRAY\[[0-9, ]+\]/g)!.flatMap((a) =>
+        a
+          .replace(/ARRAY\[|\]/g, '')
+          .split(',')
+          .map((n) => Number(n.trim()))
+      )
+    );
+    expect(sqlMax).toBeLessThanOrEqual(maxSeatsForVariant('nlh'));
+    for (const v of ['nlh', 'flh', 'short_deck', 'pineapple']) {
+      expect(sqlMax).toBeLessThanOrEqual(maxSeatsTheDeckAllows(v));
+    }
+  });
+
+  it('the function refuses a handedness outside the published choices', () => {
+    expect(SQL).toMatch(/HANDEDNESS_INVALID/);
+  });
+
+  it('the picker renders the published choices and nothing else', () => {
+    expect(FLOW).toMatch(/seatChoices\.map\(/);
+    expect(FLOW).not.toMatch(/label="Table Size"/);
+  });
+});
+
+describe('TableConfigPage source pins (tournament tabs)', () => {
   it('imports the seat law from tableSeating', () => {
-    expect(PAGE).toMatch(
-      /import \{[\s\S]{0,200}?clampSeatsForVariant,[\s\S]{0,200}?\} from '\.\.\/config\/tableSeating'/
-    );
-    expect(PAGE).toContain('maxSeatsForVariant');
-    expect(PAGE).toContain('maxSeatsTheDeckAllows');
-  });
-
-  it('buildTableData writes max_players through clampSeatsForVariant', () => {
-    expect(PAGE).toMatch(
-      /max_players: clampSeatsForVariant\(String\(gameType \|\| 'nlh'\)\.toLowerCase\(\), config\.maxPlayers\)/
+    expect(PAGE).toContain(
+      "import { maxSeatsForVariant, maxSeatsTheDeckAllows } from '../config/tableSeating'"
     );
   });
 
-  it('the Table Size slider max is the variant cap, not a flat 10', () => {
+  it('the SNG Table Size slider max is the deck cap, not a flat 10', () => {
     expect(PAGE).toContain('const seatCap = maxSeatsForVariant(gameType || ');
-    expect(PAGE).toContain('max={seatCap}');
-    // The bug: the Table Size slider hardcoded max={10} for every variant.
-    // Other sliders legitimately use 10 (rake cap, bomb pot), so pin the
-    // Table Size block specifically.
-    expect(PAGE).toMatch(/label="Table Size"[\s\S]{0,200}max=\{seatCap\}/);
     // The SNG tab has its own Table Size slider: exempt from the cash law,
     // but still bounded by what the deck can physically deal.
     expect(PAGE).toMatch(/label="Table Size"[\s\S]{0,200}max=\{sngSeatCap\}/);

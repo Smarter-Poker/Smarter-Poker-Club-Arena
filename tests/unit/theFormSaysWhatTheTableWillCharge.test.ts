@@ -24,26 +24,43 @@ import path from 'path';
 import { getRakeConfig, RAKE_INHERIT, MAX_RAKE_CAP_BB } from '../../src/config/RakeConfig';
 import { BLINDS_PRESETS } from '../../src/config/blindsPresets';
 
+/**
+ * 2026-09-04 (Operation Table Stakes, Slice 1): the cash form is
+ * CashGameCreateFlow. It has no rake sliders at all - OPORD 1.3 section 8
+ * says "rake: existing", the club schedule - which makes the panel MORE
+ * important, not less: it is now the only place the price is said.
+ */
 const FORM = fs.readFileSync(
-  path.join(process.cwd(), 'src', 'pages', 'TableConfigPage.tsx'),
+  path.join(process.cwd(), 'src', 'components', 'cash', 'CashGameCreateFlow.tsx'),
   'utf8'
 );
 
 describe('the panel resolves the price rather than restating a default', () => {
   it('calls getRakeConfig, the function the engine mirrors', () => {
-    expect(FORM).toContain('getRakeConfig(config.bigBlind');
+    expect(FORM).toContain('getRakeConfig(stakes.bb');
   });
 
-  it('passes the owner overrides in, so the panel reflects the sliders', () => {
-    expect(FORM).toMatch(/rakePercent: config\.rakePercent/);
-    expect(FORM).toMatch(/rakeCapBB: config\.rakeCapBB/);
+  it('asks for the published schedule, which is what the row is created with', () => {
+    // fn_cash_game_create writes rake_percent -1 / rake_cap_bb -1 (inherit),
+    // so RAKE_INHERIT here is the same precedence the engine will apply.
+    expect(FORM).toMatch(/rakePercent: RAKE_INHERIT/);
+    expect(FORM).toMatch(/rakeCapBB: RAKE_INHERIT/);
+    const sql = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        'supabase/migrations/20260904230000_cash_games_slice_1_hardening.sql'
+      ),
+      'utf8'
+    );
+    expect(sql).toMatch(/rake_percent, rake_cap_bb,/);
+    expect(sql).toMatch(/^\s*-1, -1,\s*$/m);
   });
 
   it('hard-codes no percentage or cash cap of its own', () => {
     // The Game Rules regression was a hard-coded "5%" / "$3" placeholder.
     const panel = FORM.slice(
       FORM.indexOf('WHAT THIS TABLE WILL ACTUALLY CHARGE'),
-      FORM.indexOf('SECTION: Security')
+      FORM.indexOf('Run It Multiple Times Is Opt In Per Hand')
     );
     expect(panel.length).toBeGreaterThan(0);
     expect(panel).not.toMatch(/\d+%\s*<\//);

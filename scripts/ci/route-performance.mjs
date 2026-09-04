@@ -1,8 +1,12 @@
 import { spawn } from 'node:child_process';
 import { chromium } from '@playwright/test';
+import { portFor } from './e2e-port.mjs';
 
 const HOST = '127.0.0.1';
-const PORT = 4173;
+// Per-runner port. A hardcoded 4173 collided as soon as CI moved onto the
+// estate's boxes - twelve runners each, one network namespace. See
+// scripts/ci/e2e-port.mjs.
+const PORT = portFor(4173);
 const ORIGIN = `http://${HOST}:${PORT}`;
 // AuthGuard correctly hands signed-out users to the World Hub's /auth/login,
 // which is outside Vite preview. Exercise two public in-SPA routes here so the

@@ -85,3 +85,72 @@ replaced, `scripts/hooks/pre-commit-core.sh` CHECK A rewritten with no escape
 hatch, `.agent/AGENT-OPERATIONS-GUIDE.md` resynced from this repo's (correct)
 copy, and CLAUDE.md corrected where it promised a daily deploy-hook safety net
 that was retired on 2026-09-03. Same law, ported.
+
+---
+
+## Addendum: 102 worktrees are still reading the old rule, and pruning cannot fix it
+
+`scripts/prune-stale-worktrees.sh` was run to completion: **211 Club Arena
+worktrees down to 160**, 51 removed, every one of them clean, pushed and idle
+for more than 72 hours. Nothing was lost by construction - those are the
+script's own preconditions, and `git worktree remove` without `--force` refuses
+a dirty tree even if they were wrong.
+
+Then the population was measured, and the number that matters did not move
+nearly as much:
+
+|                                                                                            | count   |
+| ------------------------------------------------------------------------------------------ | ------- |
+| Club Arena worktrees on disk                                                               | 160     |
+| whose `CLAUDE.md` differs from `origin/main`                                               | 154     |
+| **still carrying `bash scripts/sync-club-arena.sh` or the heading "The Only Deploy Path"** | **102** |
+| clean, pushed, and 500+ commits behind                                                     | 0       |
+| dirty (nothing may touch these)                                                            | 24      |
+| whose HEAD is on no remote branch                                                          | 74      |
+
+**Pruning harder is the wrong instrument, and the last two rows say why.** These
+trees are days old, not months - none is even 500 commits behind. Doctrine
+simply moved faster than they did: the sync script was deleted on 2026-09-02,
+which at this repo's merge rate is a few dozen commits ago. Twenty-four have
+uncommitted work and seventy-four sit on a HEAD no remote branch contains
+(squash-merged under a different sha, or a branch since deleted). Removing
+those is exactly the destruction the pruner's three preconditions exist to
+prevent.
+
+So the fix is at the moment the staleness can do harm, not at the directory.
+
+### `scripts/ci/check-doctrine-freshness.mjs`, wired into `.husky/pre-push`
+
+CLAUDE.md 10.8.1 already says laws are read from `origin/main` and never from
+your local tree. Nothing checked. This does, and it **warns on an ordinary push
+and blocks only when the diff touches doctrine** - CLAUDE.md, `docs/LAWS.md`, a
+`*.law.test.*`, a workflow, `.agent/**`, `.husky/**`, `docs/HANDOFF*`.
+
+That split is the whole design, not a hedge:
+
+- **Blocking every push from a stale tree** would stall a hundred in-flight
+  branches behind a `git merge origin/main` that can conflict. Merge surgery in
+  a stale tree is what CLAUDE.md section 12 exists because of; the cure would
+  be worse than the disease.
+- **The harm is specific.** A stale CLAUDE.md only bites when the agent acts on
+  doctrine - writes a law, edits CLAUDE.md, reverts someone's guard. That is
+  the exact motion of the hamburger revert war (#2321 -> #2401 -> #2429 ->
+  #2432), where each agent reverted the last one back to the rule its own copy
+  still carried. Ordinary feature work in a stale tree is not that failure.
+
+Three properties make it safe to put in every agent's hook, and
+`tests/unit/doctrineIsReadFromMain.test.ts` pins all three:
+
+1. **It is wired.** A guard nobody calls is a shape this estate has shipped
+   before - sixteen invariants once printed "all passed" and ran none.
+2. **It fails open.** Any internal error, or an unreadable `origin/main`
+   (offline, fresh clone), exits 0 with a note. A freshness advisor that can
+   wedge every push in the estate is a worse bug than the staleness it detects.
+3. **It calls nothing retired unless `origin/main` agrees.** Each pattern is
+   tested against the canonical file first. Without that, the guard becomes its
+   own stale law the day doctrine changes back - which is precisely how the
+   revert war sustained itself.
+
+It reports four retirements today: the sync script, "The Only Deploy Path",
+`build-for-world-hub` as the publisher's name, and the 7am/7pm engine restart
+that section 13 replaced with the hourly `:55` break.

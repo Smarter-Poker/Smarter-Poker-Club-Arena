@@ -1,7 +1,7 @@
 {
   "_owner": "feat/stable-hand",
-  "_comment": "Operation Stable Hand + Free Buy. Fleet metadata only: no chip balances are stored and no money path reads the stable_hand_* tables. session_start_balance is a read-only snapshot for the Section 8.4 commit cap.",
-  "tables": ["stable_hand_membership_tags", "stable_hand_horse_state"],
+  "_comment": "Operation Stable Hand + Free Buy. Fleet metadata and controller telemetry only: no chip balances are stored and no money path reads the stable_hand_* tables. session_start_balance is a read-only snapshot for the Section 8.4 commit cap; stable_hand_beats is a heartbeat, pruned to 7 days by its own writer.",
+  "tables": ["stable_hand_membership_tags", "stable_hand_horse_state", "stable_hand_beats"],
   "functions": [],
   "columns": { "tournaments": ["free_buy", "addon_from_start"] }
 }

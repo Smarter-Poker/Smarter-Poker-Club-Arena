@@ -55,6 +55,64 @@ import { MIDWAY_UNION_ID, DSS_CLUB_ID, WALLETS_FOR_HOST, killed } from './Stable
 const MEMBER_STATUSES = ['active', 'approved'];
 
 /**
+ * ── THE POPULATION IS CACHED; THE FLOOR IS NOT ─────────────────────────────
+ *
+ * `buildFloorSnapshot` runs every 30 seconds in the executor and again on
+ * every dashboard request, and it was doing about thirteen round trips each
+ * time - roughly 1,500 an hour. Six of those were `eligibleBodies`, which
+ * pages two clubs' memberships and then asks which of those ids are horses,
+ * to answer a number that changes when somebody joins a club. Once every five
+ * minutes is far more often than that number moves.
+ *
+ * The tables, seats and waiting lists are NOT cached and must not be: they are
+ * what the plan is computed from, and a stale one is a plan for a floor that
+ * no longer exists.
+ *
+ * A refresh that fails keeps the LAST GOOD value rather than dropping to null.
+ * Before the cache, a single unreadable membership page took the whole host
+ * out of the snapshot for that cycle; now it costs nothing until the value is
+ * genuinely old.
+ */
+export const POPULATION_TTL_MS = 5 * 60_000;
+/** Beyond this the cached value is not served at all: a number this old is a
+ *  guess, and a host measured by a guess should not be managed. */
+export const POPULATION_MAX_AGE_MS = 60 * 60_000;
+
+interface CachedPopulation {
+  n: number;
+  readAt: number;
+}
+const populationCache = new Map<string, CachedPopulation>();
+
+/** For tests and for a deliberate re-read. */
+export function clearPopulationCache(): void {
+  populationCache.clear();
+}
+
+/**
+ * The cached population for a host, refreshed when stale.
+ *
+ * Returns null only when there is nothing usable at all - never read, or the
+ * last read is older than an hour and the refresh is still failing.
+ */
+export async function cachedEligibleBodies(
+  hostId: string,
+  nowMs: number = Date.now()
+): Promise<number | null> {
+  const hit = populationCache.get(hostId);
+  if (hit && nowMs - hit.readAt < POPULATION_TTL_MS) return hit.n;
+
+  const fresh = await eligibleBodies(hostId);
+  if (fresh !== null && fresh > 0) {
+    populationCache.set(hostId, { n: fresh, readAt: nowMs });
+    return fresh;
+  }
+  // The read failed. Serve the last good value while it is still meaningful.
+  if (hit && nowMs - hit.readAt < POPULATION_MAX_AGE_MS) return hit.n;
+  return null;
+}
+
+/**
  * Eligible BODIES per host, or NULL when the membership could not be read
  * completely.
  *
@@ -110,7 +168,7 @@ export async function buildFloorSnapshot(): Promise<FloorSnapshot> {
   const unreadableHosts: string[] = [];
 
   for (const hostId of [MIDWAY_UNION_ID, DSS_CLUB_ID]) {
-    const n = await eligibleBodies(hostId);
+    const n = await cachedEligibleBodies(hostId);
     if (n === null || n <= 0) {
       unreadableHosts.push(hostId);
       continue;

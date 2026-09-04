@@ -21,10 +21,21 @@ import {
   peakCap,
   nightCap,
 } from '../services/StableHand.js';
+import {
+  readRecentBeats,
+  lastBeatAt,
+  beatVerdict,
+  BEAT_STALE_MS,
+} from '../services/StableHandBeats.js';
 
 export async function handleStableHand(res: ServerResponse): Promise<void> {
   try {
     const snapshot = await buildFloorSnapshot();
+    /* THE HISTORY, and whether the controller is still writing one. A snapshot
+       says what the floor is; only a series says whether the curve is being
+       HELD, and only the absence of one says the controller has stopped. */
+    const [beats, beatAt] = await Promise.all([readRecentBeats(240), lastBeatAt()]);
+    const nowMs = Date.now();
 
     // PLANNED, NOT EXECUTED. Nothing below this line acts on the plan.
     const plan = planFloor(snapshot);
@@ -53,6 +64,37 @@ export async function handleStableHand(res: ServerResponse): Promise<void> {
          open are still reports. See StableHandExecutor. */
       executing: ['human_yield', 'occupancy_wind_down', 'close', 'park'],
       alerts: plan.alerts,
+
+      /* ── IS THE CONTROLLER RUNNING, AND IS THE CURVE BEING HELD ────────
+         `heartbeat` answers the first question and `history` the second.
+         Both were unanswerable from a snapshot endpoint, and the first is the
+         one that matters most: a controller that stops does not fill a log
+         with errors, it stops filling one. */
+      heartbeat: {
+        lastBeatAt: beatAt === null ? null : new Date(beatAt).toISOString(),
+        secondsSince: beatAt === null ? null : Math.round((nowMs - beatAt) / 1000),
+        staleAfterSeconds: BEAT_STALE_MS / 1000,
+        verdict: beatVerdict({
+          lastBeatAtMs: beatAt,
+          nowMs,
+          enabled: controllerEnabled(),
+        }),
+      },
+      history: beats.map((b: any) => ({
+        at: b.beat_at,
+        host: b.host_id,
+        hour: b.chicago_hour,
+        live: b.unique_live,
+        seats: b.live_seats,
+        target: b.target,
+        max: b.cap_max,
+        tables: b.tables_open,
+        shape: [b.full_tables, b.one_open_tables, b.joinable_tables],
+        waiting: b.humans_waiting,
+        yields: [b.yields_executed, b.yields_planned],
+        windDowns: [b.winddowns_executed, b.winddowns_planned],
+        pending: { close: b.close_pending, park: b.park_pending },
+      })),
     });
   } catch (err) {
     sendJSON(res, 500, { error: 'stable_hand_dashboard_failed', detail: String(err) });

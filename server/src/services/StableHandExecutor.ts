@@ -63,6 +63,8 @@ import {
   type StandOrder,
 } from './StableHandController.js';
 import { buildFloorSnapshot } from './StableHandSnapshot.js';
+import { buildBeats, writeBeats, bankVerdict, type BankVerdict } from './StableHandBeats.js';
+import { dailyGuaranteePerHost } from './FreeBuy.js';
 
 /** The engine surface a yield needs. Matches ServerTableEngine. */
 export interface YieldEngine {
@@ -285,6 +287,14 @@ export class StableHandExecutor {
   private readonly lastOrderedAt = new Map<string, number>();
   /** Stands skipped this cycle because the table had no live engine. */
   private noEngine = 0;
+  /** Stands that actually LANDED this cycle, per host, for the heartbeat. The
+   *  gap between planned and executed is the only way to see a controller that
+   *  decides correctly and cannot act. */
+  private readonly executedYields = new Map<string, number>();
+  private readonly executedWindDowns = new Map<string, number>();
+  /** When the guarantee banks were last read, and what they last said. */
+  private lastBankCheckAt = 0;
+  private readonly lastBankVerdict = new Map<string, BankVerdict>();
 
   /**
    * Write one settings flag onto the tables that do not already carry it.
@@ -491,6 +501,9 @@ export class StableHandExecutor {
       }
       const winds = ripeWindDowns(orders.windDowns, now, this.lastOrderedAt);
 
+      const hostOfTable = new Map<string, string>();
+      for (const h of snap.hosts) for (const t of h.tables) hostOfTable.set(t.tableId, h.hostId);
+
       let stood = 0;
       for (const r of yields.execute) {
         const waited = Math.round((now - r.waitingSinceMs) / 1000);
@@ -498,11 +511,14 @@ export class StableHandExecutor {
           this.stand(r.order, now, `after ${Number.isFinite(waited) ? waited : 0}s of human wait`)
         ) {
           stood++;
+          const host = hostOfTable.get(r.order.tableId);
+          if (host) this.executedYields.set(host, (this.executedYields.get(host) ?? 0) + 1);
         }
       }
       for (const r of winds.execute) {
         if (this.stand(r.order, now, `host ${r.hostId.slice(0, 8)} is above its occupancy curve`)) {
           stood++;
+          this.executedWindDowns.set(r.hostId, (this.executedWindDowns.get(r.hostId) ?? 0) + 1);
         }
       }
 

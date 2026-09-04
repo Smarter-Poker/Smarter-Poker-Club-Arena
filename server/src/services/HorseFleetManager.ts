@@ -48,6 +48,7 @@ import {
   MINUTES_ACCRUAL_MS,
   type StateMutation,
 } from './StableHandState.js';
+import { beatVerdict, lastBeatAt } from './StableHandBeats.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
 import { clampSeatsForVariant, maxSeatsForVariant } from '../config/tableSeating.js';
@@ -350,6 +351,9 @@ export class HorseFleetManager {
   private previousSeatKeys = new Map<string, Set<string>>();
   /** When minutes-played was last accrued. See MINUTES_ACCRUAL_MS. */
   private lastMinutesAccrualAt = 0;
+  /** When the Stable Hand controller's heartbeat was last checked. */
+  private lastBeatCheckAt = 0;
+  private lastBeatComplaint: string | null = null;
   private seeding = false; // Prevents concurrent seeding
   private overrunTicks = 0; // 30s ticks dropped because the previous cycle was still running
   private clubIndex = 0;
@@ -2233,6 +2237,49 @@ export class HorseFleetManager {
           stateMutations.push({ horseId, addMinutes: minutes });
         }
         this.lastMinutesAccrualAt = nowMs;
+      }
+
+      /* ══ IS THE CONTROLLER STILL RUNNING? ═════════════════════════════
+         Read here, in the SEEDING cycle, rather than in the controller that
+         writes it: a watcher inside the thing it watches reports nothing when
+         the thing stops. This catches an executor throwing every cycle, or one
+         left switched off - the two failures that leave the engine healthy and
+         the floor unmanaged.
+
+         It does NOT catch a dead engine, and is not meant to: engine-watchdog
+         and the deploy watchdogs own that from outside the box. Said plainly,
+         because a watchdog whose limits are not written down gets trusted for
+         things it never covered. */
+      if (nowMs - this.lastBeatCheckAt >= 10 * 60_000) {
+        this.lastBeatCheckAt = nowMs;
+        try {
+          const verdict = beatVerdict({
+            lastBeatAtMs: await lastBeatAt(),
+            nowMs,
+            enabled: controllerEnabled(),
+          });
+          if (verdict === 'ok') {
+            this.lastBeatComplaint = null;
+          } else if (this.lastBeatComplaint !== verdict) {
+            // Complain ON CHANGE. A warning re-filed every ten minutes is a
+            // warning somebody mutes.
+            this.lastBeatComplaint = verdict;
+            const why =
+              verdict === 'never_beat'
+                ? 'has never written a heartbeat - the controller looks installed but is not running'
+                : 'has not written a heartbeat in over ten minutes - it was running and stopped';
+            await supabase.rpc('fn_raise_server_financial_alert', {
+              p_severity: 'warning',
+              p_source: 'HorseFleet.stableHandHeartbeat',
+              p_message: `The Stable Hand controller ${why}. The floor is being seeded but nobody is holding it to its curve.`,
+              p_context: { kind: 'stable_hand_controller_silent', verdict },
+              p_entity_id: 'stable_hand',
+            });
+            console.warn(`[HorseFleet] Stable Hand controller ${verdict}`);
+          }
+        } catch (err) {
+          reportError(err, 'HorseFleet.stableHandHeartbeat');
+        }
       }
 
       if (book && stateMutations.length > 0) {

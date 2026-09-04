@@ -662,3 +662,38 @@ describe('planFloor - the night park', () => {
     expect(p.alerts.some((a) => a.startsWith(`night_parking host=${MIDWAY_UNION_ID}`))).toBe(true);
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE POPULATION IS CACHED; THE FLOOR IS NOT
+   ══════════════════════════════════════════════════════════════════════════ */
+describe('SOURCE LAW: the snapshot caches only the slow number', () => {
+  it('caches the population and never the tables, seats or waiting lists', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const raw = readFileSync(resolve(__dirname, 'StableHandSnapshot.ts'), 'utf8');
+    const src = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    // The population goes through the cache...
+    expect(src).toContain('const n = await cachedEligibleBodies(hostId);');
+    // ...and nothing else does. A stale seat map is a plan for a floor that no
+    // longer exists.
+    expect(src).toContain("'StableHand.seats'");
+    expect(src).toContain("'StableHand.waitlist'");
+    expect(src).not.toMatch(/cached(Seats|Tables|Waitlist)/);
+  });
+
+  it('keeps the last good population rather than dropping a host on one bad read', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const src = readFileSync(resolve(__dirname, 'StableHandSnapshot.ts'), 'utf8');
+    expect(src).toContain('if (hit && nowMs - hit.readAt < POPULATION_MAX_AGE_MS) return hit.n;');
+  });
+
+  it('refreshes far more often than the number moves, and expires eventually', async () => {
+    const { POPULATION_TTL_MS, POPULATION_MAX_AGE_MS } = await import('./StableHandSnapshot.js');
+    expect(POPULATION_TTL_MS).toBeLessThan(POPULATION_MAX_AGE_MS);
+    // more often than a horse's club membership realistically changes...
+    expect(POPULATION_TTL_MS).toBeLessThanOrEqual(5 * 60_000);
+    // ...and a value older than an hour is a guess, not a measurement
+    expect(POPULATION_MAX_AGE_MS).toBeLessThanOrEqual(60 * 60_000);
+  });
+});

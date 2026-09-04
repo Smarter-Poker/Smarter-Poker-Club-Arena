@@ -310,6 +310,7 @@ use it and not the `actions` JSON), per-street action history, button seat, seat
 order, pot structure and eligibility.
 
 Compute in the engine, not in SQL:
+
 - `position` from `button_seat` and seat order (same offset math
   `ca_player_stats_full` already uses, so the two agree).
 - `hand_class` for NLH/short-deck: rank pair sorted high-low, plus `s`/`o`
@@ -317,7 +318,7 @@ Compute in the engine, not in SQL:
   meaningless for 4-6 card hands - see 3.4).
 - the flow booleans, from action history rather than re-parsed JSON.
 - `ev_returned`: when the player was all-in, `equity * (pot they were eligible
-  for, after rake)`. When not all-in, `ev_net = net` so the EV series and the
+for, after rake)`. When not all-in, `ev_net = net` so the EV series and the
   actual series stay identical outside all-in spots, which is the correct
   behaviour for a luck graph.
 - the pot-proportional transfer list.
@@ -394,7 +395,7 @@ style as `ca_hand_player_idx_state`.
 ### 1.7 Phase 1 acceptance criteria
 
 - A human plays 20 hands at a live table. `select count(*) from ca_hand_facts
-  where user_id = <them>` returns 20.
+where user_id = <them>` returns 20.
 - `hole_cards` is non-null on all 20, including hands they folded preflop.
 - At least one all-in hand has `all_in_equity` strictly between 0 and 1 and
   `ev_net <> net`.
@@ -581,8 +582,8 @@ so no separate change there.
 
 A card with two halves:
 
-- **Your Nemesis** - the opponent with the largest net chip flow *from* the
-  player *to* them.
+- **Your Nemesis** - the opponent with the largest net chip flow _from_ the
+  player _to_ them.
 - **Your Target** - the largest net flow the other way.
 
 Each side shows avatar, username, net chips (and bb), hands played together, and
@@ -635,7 +636,7 @@ tabs on it.
 
 ### 5.1 What exists versus what is asked for
 
-`PlayerStyleRadar.tsx` plots six *derived personality* axes and lives on
+`PlayerStyleRadar.tsx` plots six _derived personality_ axes and lives on
 ProfilePage. Feature 4 asks for something different: **VPIP, PFR and 3-Bet
 plotted across positions**, so the shape of the web reveals positional
 imbalance - a web that bulges at UTG and pinches at BTN is a player with the
@@ -702,6 +703,7 @@ Replace the page's CSS-keyframe animation with `framer-motion`, which is already
 a dependency and already used in nine `src/components/common/` primitives.
 
 Targets:
+
 - **Tab transitions.** Wrap `.stats-content` in `<AnimatePresence mode="wait">`
   keyed on `category`, with a short fade-and-slide. This is the change the player
   will feel most, because they switch tabs constantly.
@@ -761,8 +763,9 @@ global module that was already rejected once.
 The audit found a complete, working achievements stack:
 `achievementService` + canonical `ACHIEVEMENTS` array + `training_user_achievements`
 (67 rows) + `AchievementBadge` / `AchievementGrid` (CSS modules, rarity colours)
-+ `AchievementShareCard` (canvas PNG export) + `ConfettiEffect` + `StreakFire` +
-`AchievementNotification`.
+
+- `AchievementShareCard` (canvas PNG export) + `ConfettiEffect` + `StreakFire` +
+  `AchievementNotification`.
 
 Three known friction points to resolve first, in a small preparatory PR:
 
@@ -794,6 +797,7 @@ across `shark | fish | rock | maniac | tag | lag | nit | calling_station`. That
 covers the Rock and Maniac examples directly.
 
 Work needed:
+
 - Feed it from `full.overall` (fractions) rather than the percent-scaled session
   tables, and convert once at the boundary.
 - Honour `confidence` in the UI: below a threshold, show "Style forming" with a
@@ -914,7 +918,7 @@ relative to the healthy band: "Your VPIP of 42% is above the profitable range
 
 The user's example - "You fold to 3-bets 75% of the time (Bottom 20%, easily
 exploitable)" - is exactly right in tone and should be the template: number,
-percentile, and the *consequence*. Keep the consequence text short and factual.
+percentile, and the _consequence_. Keep the consequence text short and factual.
 
 ### 8.4 Existing infrastructure worth reusing
 
@@ -998,15 +1002,15 @@ they are built. Therefore build the data plumbing first so the clock starts,
 ship visible no-data-required wins immediately after, and land the data features
 as their data matures.
 
-| Week | Ships | Visible to players? |
-|---|---|---|
-| 1 | Phase 1 (fact layer, engine writes, `has_human` fix) | No - invisible plumbing, but starts the clock |
-| 1 | Phase 5 (positional radar), Phase 6 (Framer Motion), 9.3 (PNG share card) | Yes - immediate, obvious improvement |
-| 2 | Phase 2 (EV chart) behind a low-sample state; Phase 8 (percentiles) | Yes |
-| 3 | Phase 3 (heatmap); Phase 4 (nemesis) | Yes - and by now they have ~2 weeks of data |
-| 4 | Phase 7 (Trophy Room) | Yes |
-| 5 | Phase 9 (PDF dossier) | Yes |
-| 6 | Phase 3b (PLO categorical grid), cleanup, retention review | Partial |
+| Week | Ships                                                                     | Visible to players?                           |
+| ---- | ------------------------------------------------------------------------- | --------------------------------------------- |
+| 1    | Phase 1 (fact layer, engine writes, `has_human` fix)                      | No - invisible plumbing, but starts the clock |
+| 1    | Phase 5 (positional radar), Phase 6 (Framer Motion), 9.3 (PNG share card) | Yes - immediate, obvious improvement          |
+| 2    | Phase 2 (EV chart) behind a low-sample state; Phase 8 (percentiles)       | Yes                                           |
+| 3    | Phase 3 (heatmap); Phase 4 (nemesis)                                      | Yes - and by now they have ~2 weeks of data   |
+| 4    | Phase 7 (Trophy Room)                                                     | Yes                                           |
+| 5    | Phase 9 (PDF dossier)                                                     | Yes                                           |
+| 6    | Phase 3b (PLO categorical grid), cleanup, retention review                | Partial                                       |
 
 Total: roughly **5-6 weeks** of focused work. The critical path is Phase 1;
 everything else parallelises.
@@ -1056,7 +1060,7 @@ Phase 6**: one page-level fetch, one cache key, data passed down as props via th
 ### 11.3 Storage and retention
 
 `hand_history` is 10 GB at 7-day retention. This plan does not change that, and
-the `has_human` fix will *slightly* increase it by sparing human hands from the
+the `has_human` fix will _slightly_ increase it by sparing human hands from the
 prune - which is a few hundred rows per week today and entirely acceptable.
 
 `ca_hand_facts` should have its own retention policy defined now, before it
@@ -1081,6 +1085,7 @@ rows. `ca_hand_transfers` likewise. Add both to the prune observability that
 ### 11.5 Rules compliance checklist for every PR here
 
 From Club Arena CLAUDE.md:
+
 - `.maybeSingle()`, never `.single()`
 - No emoji anywhere in source
 - Popups: Title Case, no em dashes, always through the Toast layer
@@ -1090,11 +1095,15 @@ From Club Arena CLAUDE.md:
 - Never call the AI players bots. They are horses.
 
 From World Hub CLAUDE.md:
+
 - New cron jobs go to **Open Claw**, never `vercel.json` (CI enforces this)
 - Migrations under `supabase/migrations/<YYYYMMDD>_<desc>.sql`, applied via the
   Supabase MCP `apply_migration`, never raw `execute_sql`
-- Deploy via `bash scripts/sync-club-arena.sh` / `git-safe-push.sh`; only claim
-  deployed on `DEPLOY_VERIFIED:true`
+- Deploy by pushing a branch and stopping (corrected 2026-09-04; the sync
+  script named here was deleted on 2026-09-02). Autopilot merges,
+  `publish-club-arena.yml` publishes to `ca-static.smarter.poker`, and the only
+  claim of "deployed" that counts is `ca_sha` in
+  `https://smarter.poker/hub/club-arena/build-info.json` equalling main
 
 ---
 
@@ -1102,15 +1111,15 @@ From World Hub CLAUDE.md:
 
 Dan delegated every call. These are final and are reflected in the shipped code.
 
-| # | Decision | Call taken |
-|---|---|---|
-| 1 | Benchmark cohort | **The field**, including horses. Labelled "the field" everywhere and never "players like you". `ca_stat_distribution.cohort` exists from day one so a human-only cohort is a config flip, not a rebuild. |
-| 2 | PDF approach | **Reversed during implementation.** Not server-side headless Chrome — see below. Print stylesheet + the browser's own vector PDF writer, plus a canvas PNG share card. |
-| 3 | Nemesis: horses? | **Included, undistinguished.** Minimum 25 shared hands, enforced server-side. Never referred to as bots. |
-| 4 | `/stats/:userId` exposure | Aggregates stay public. **Hands and Trophies tabs are owner-only**, EV chart and rivals render only for the owner, and every RPC asserts caller identity server-side. |
-| 5 | `hand_history` retention | Left at 7 days. `has_human` is now actually set, so the purge stops deleting human hands — a column that had been NULL on all 1,509,240 rows since it was added. |
-| 6 | PLO heatmap | `hand_class` is NULL for PLO so those hands never reach the grid; the empty state explains why. Categorical PLO breakdown deferred to 3b. |
-| 7 | Transfer attribution *(new)* | **Hand-level proportional**, not per-pot. Exact for single-pot and single-winner hands, conserves chips exactly, attributes rake to nobody. Per-pot attribution would have required editing an oversized engine file for accuracy invisible in the aggregate a nemesis stat displays. |
+| #   | Decision                     | Call taken                                                                                                                                                                                                                                                                            |
+| --- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Benchmark cohort             | **The field**, including horses. Labelled "the field" everywhere and never "players like you". `ca_stat_distribution.cohort` exists from day one so a human-only cohort is a config flip, not a rebuild.                                                                              |
+| 2   | PDF approach                 | **Reversed during implementation.** Not server-side headless Chrome — see below. Print stylesheet + the browser's own vector PDF writer, plus a canvas PNG share card.                                                                                                                |
+| 3   | Nemesis: horses?             | **Included, undistinguished.** Minimum 25 shared hands, enforced server-side. Never referred to as bots.                                                                                                                                                                              |
+| 4   | `/stats/:userId` exposure    | Aggregates stay public. **Hands and Trophies tabs are owner-only**, EV chart and rivals render only for the owner, and every RPC asserts caller identity server-side.                                                                                                                 |
+| 5   | `hand_history` retention     | Left at 7 days. `has_human` is now actually set, so the purge stops deleting human hands — a column that had been NULL on all 1,509,240 rows since it was added.                                                                                                                      |
+| 6   | PLO heatmap                  | `hand_class` is NULL for PLO so those hands never reach the grid; the empty state explains why. Categorical PLO breakdown deferred to 3b.                                                                                                                                             |
+| 7   | Transfer attribution _(new)_ | **Hand-level proportional**, not per-pot. Exact for single-pot and single-winner hands, conserves chips exactly, attributes rake to nobody. Per-pot attribution would have required editing an oversized engine file for accuracy invisible in the aggregate a nemesis stat displays. |
 
 ### 12.1 Why decision 2 was reversed
 
@@ -1139,15 +1148,15 @@ as PDF" already sits in every print dialog.
 
 All eight requested features are built, verified and on `main`.
 
-| Feature | Status | Where |
-|---|---|---|
-| 1. EV vs actual profit | Shipped | `EVLuckChart.tsx`, `ca_player_ev_curve` |
-| 2. 13x13 hole card heatmap | Shipped | `HoleCardHeatmap.tsx`, `ca_player_hand_grid` |
-| 3. Nemesis / Target | Shipped | `NemesisPanel.tsx`, `ca_player_nemesis` |
-| 4. Positional radar | Shipped | `PositionalRadar.tsx` (no new queries) |
-| 5. Framer Motion | Shipped | `statsMotion.ts`, tab transitions, reduced-motion respected |
-| 6. PDF dossier | Shipped | print mode + print stylesheet, plus `StatsShareCard.tsx` |
-| 7. Trophy Room | Shipped | `TrophyRoom.tsx`, milestones derived from live stats |
+| Feature                    | Status  | Where                                                             |
+| -------------------------- | ------- | ----------------------------------------------------------------- |
+| 1. EV vs actual profit     | Shipped | `EVLuckChart.tsx`, `ca_player_ev_curve`                           |
+| 2. 13x13 hole card heatmap | Shipped | `HoleCardHeatmap.tsx`, `ca_player_hand_grid`                      |
+| 3. Nemesis / Target        | Shipped | `NemesisPanel.tsx`, `ca_player_nemesis`                           |
+| 4. Positional radar        | Shipped | `PositionalRadar.tsx` (no new queries)                            |
+| 5. Framer Motion           | Shipped | `statsMotion.ts`, tab transitions, reduced-motion respected       |
+| 6. PDF dossier             | Shipped | print mode + print stylesheet, plus `StatsShareCard.tsx`          |
+| 7. Trophy Room             | Shipped | `TrophyRoom.tsx`, milestones derived from live stats              |
 | 8. Percentile benchmarking | Shipped | `BenchmarkPanel.tsx`, `statBenchmarks.ts`, `ca_stat_distribution` |
 
 Supporting work:
@@ -1186,10 +1195,10 @@ here is wrong forever.
 1. **`rake_paid` was hardcoded `0`.** Every row claimed the player paid no
    rake, so "win rate net of rake" was permanently unanswerable. Now
    contribution-weighted, matching `atomic_distribute_rake`.
-2. **`saw_flop` used a fold on *any* street.** A player who called preflop and
+2. **`saw_flop` used a fold on _any_ street.** A player who called preflop and
    folded to a c-bet was recorded as never having seen the flop. That collapsed
    `saw_flop` into `went_to_showdown` and — worse — made `cbet%` measure only
-   the c-bets that *worked*, because the ones that got raised off were excluded
+   the c-bets that _worked_, because the ones that got raised off were excluded
    from their own denominator.
 3. **`was_all_in` missed every all-in reached by calling.** The engine sets
    `is_all_in` on a stack-consuming call but records the action as `'call'`, so
@@ -1200,8 +1209,8 @@ here is wrong forever.
 ### 12B.2 The rest
 
 - `folded_to_three_bet` fired on folds to 4-bets and cold 4-bets (took two
-  passes to get right: it needs *opened*, *has not already answered*, and *no
-  further raise since*).
+  passes to get right: it needs _opened_, _has not already answered_, and _no
+  further raise since_).
 - `faced_three_bet` fired on any re-raise, inflating fold-to-3-bet.
 - Transfer shares were rounded per pair, so they did not sum to what the winner
   won — drift accumulating monotonically in the Nemesis aggregate. Now
@@ -1212,16 +1221,16 @@ here is wrong forever.
   percentile: the worse a player ran, the better they scored.
 - **The benchmark bar contradicted its own pill.** The field is 584 horses, so
   VPIP p10 is 27.6 while the healthy band is 18-28 — a disciplined human at 24%
-  got a green "In Range" pill *and* a marker pinned under "Bottom 10%". Band
+  got a green "In Range" pill _and_ a marker pinned under "Bottom 10%". Band
   metrics now draw no bar at all.
 - **Two leak rules were unreachable.** `overall.wtsd` is showdowns over hands
-  *dealt* (~5% live), but the thresholds were written for showdowns over flops
-  *seen* (24-30%).
+  _dealt_ (~5% live), but the thresholds were written for showdowns over flops
+  _seen_ (24-30%).
 - **The print dossier printed white-on-white** for most of its content, and
   recharts' inline axis fills meant printed charts lost both axes. The 1s
   "safety net" also collapsed the dossier mid-preview on Safari and mobile,
   where `print()` does not block.
-- The EV gap band was green whether running above *or* below expectation.
+- The EV gap band was green whether running above _or_ below expectation.
 - The playstyle classifier was fed an aggression factor of exactly 1.0 on every
   call, making shark/lag/maniac/tag literally unreachable.
 - A non-positive big blind wrote `net_bb` as raw chips, silently poisoning the
@@ -1234,8 +1243,8 @@ here is wrong forever.
 
 - **`LeakPanel` / `findLeaks`** — the page could say what a player's numbers
   were and nothing about what to do. Ranked, actionable findings derived purely
-  from stats already loaded. Its headline rule catches *position played
-  backwards*, which is invisible in a table of numbers.
+  from stats already loaded. Its headline rule catches _position played
+  backwards_, which is invisible in a table of numbers.
 - **Heatmap drill-down** — clicking a cell lists the hands behind it.
 - **`four_bet`** column, because it is also unrecoverable if not captured now.
 
@@ -1248,7 +1257,7 @@ here is wrong forever.
 - `had_cbet_flop_opp` counts spots where the hero was donked into, which most
   trackers exclude.
 - `folds_to_3bet` and the c-bet rules are gated on hand volume rather than on
-  *opportunity* counts, which the RPC does not expose. At 1,000 hands and 8%
+  _opportunity_ counts, which the RPC does not expose. At 1,000 hands and 8%
   PFR a player faces perhaps 15-25 three-bets.
 - A 5-bet sets neither `three_bet` nor `four_bet`, matching usual tracker
   scoping.

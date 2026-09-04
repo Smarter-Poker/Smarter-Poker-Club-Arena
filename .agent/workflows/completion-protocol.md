@@ -17,114 +17,106 @@
 
 ---
 
-## description: MANDATORY end-of-task protocol — push to GitHub, deploy to Vercel, write SQL LAST
+## description: MANDATORY end-of-task protocol - push a branch, stop, write SQL LAST
 
-# Task Completion Protocol — MANDATORY FOR ALL AGENTS
+# Task Completion Protocol - MANDATORY FOR ALL AGENTS
 
-> **ZERO EXCEPTIONS — Every agent MUST follow this protocol at the end of every task.**
-
-> [!CAUTION]
-> **If your deploy isn't showing up on smarter.poker — READ THIS FIRST:**
-> `/deploy-troubleshooting` — the full guide covering every known failure mode.
-> The #1 silent killer: a broken build in Club Arena means NOTHING ever reaches Vercel.
-> **Always verify the build succeeds before doing anything else.**
+**REWRITTEN 2026-09-04.** The banner above has been on this file since
+2026-09-03 and the whole protocol under it was still the old one, in the
+present tense and marked ZERO EXCEPTIONS: `git push origin main`, then
+`scripts/sync-club-arena.sh` - deleted from main - then compare index hashes.
+Every step of that is now either refused (main is a protected mirror) or
+actively harmful (re-vendoring the bundle SHADOWS the live one, because Next
+serves `public/` before the rewrite). A banner over a body that still reads as
+law does not help a reader who skims into the middle of it.
 
 ## The Three Rules
 
-### Rule 1: ALL Testing on smarter.poker ONLY
+### Rule 1: ALL testing on smarter.poker ONLY
 
-- **NEVER** test on `localhost`, `127.0.0.1`, or any local dev server
-- **NEVER** test on `club-arena.vercel.app` or any Vercel preview app
-- **ONLY** test on `https://smarter.poker` (production)
-- See `/browser-testing` workflow for full details
+- **NEVER** test on `localhost`, `127.0.0.1`, or any local dev server as your
+  proof. The Vite dev server is fine for looking at something while you build.
+- **NEVER** test on `club-arena.vercel.app` or any Vercel preview.
+- **ONLY** claim behaviour verified on `https://smarter.poker`.
+- See `/browser-testing` for the walkthrough scripts.
 
-### Rule 2: Push ALL Work to GitHub + Vercel
-
-After you are **fully finished building and testing**, you MUST:
-
-1. **Push Club Arena to GitHub:**
+### Rule 2: Push a branch, and STOP
 
 ```bash
-cd /Users/smarter.poker/Documents/club-arena
+# In your own worktree, never the shared clone
 npx tsc --noEmit
-git add -A && git commit -m "your message" && git push origin main
+git add -A && git commit -m "type(scope): what changed"
+git push origin HEAD:refs/heads/fix/<slug>
 ```
 
-2. **Build and atomically deploy to World Hub & Vercel:**
+**That is the end of your job.** `agent-open-pr.yml` opens the pull request,
+`agent-autopilot.yml` squash-merges it when the six required checks are green,
+and `publish-club-arena.yml` rsyncs `dist/` to `ca-static.smarter.poker`.
 
-   This script handles compiling the Vite SPA, cleaning the old hashes in World Hub, safely pushing the update as an atomic commit, AND triggering Vercel – all in one command.
+Do not open the pull request yourself. Do not merge. **Do not set a timer to
+watch CI** - CLAUDE.md 10.8.3 is explicit about this, and "I'll check back
+shortly" is the forbidden wait-and-merge loop written in prose. Checking ONCE
+at the end to report why something is blocked is fine.
 
-   ```bash
-   cd /Users/smarter.poker/Documents/Smarter-Poker-World-Hub
-   bash scripts/sync-club-arena.sh "chore: update Club Arena — [describe changes]"
-   ```
+### Rule 3: Write SQL LAST - after building and testing
 
-   > [!WARNING]
-   > `build-club-arena.sh` is a deprecated shim — it forwards to `sync-club-arena.sh`.
-   > Always use `sync-club-arena.sh` directly. Both repos need `BypassSandbox: true`
-   > for all git operations. See `/deploy-troubleshooting` for failure recovery.
+- **DO NOT** write migrations until the code is done and tested. They go to
+  production immediately and cannot be undone.
+- `supabase/migrations/<YYYYMMDD>_<desc>.sql`, applied through the Supabase MCP
+  `apply_migration`, never raw `execute_sql`.
+- One change = ONE transaction. Every DDL statement makes PostgREST reload its
+  whole schema cache (~28s on this database); ten statements outside a
+  transaction is up to ten reloads. See CLAUDE.md section 2.
+- **NEVER** probe a money path against production. Roll it back, or reason
+  about it in a unit test and say so (CLAUDE.md 11.5).
+- **NEVER** open the Supabase web dashboard to run SQL (a Cloudflare captcha
+  blocks it).
 
-3. **VERIFY the deploy actually landed (mandatory — do not skip):**
+## Execution order
 
-   ```bash
-   # Wait ~2 minutes, then check which index bundle is live:
-   curl -sL https://smarter.poker/hub/club-arena/ | grep -o 'assets/index-[^"]*\.js'
-   # Compare to your local: ls ~/Documents/club-arena/dist/assets/index-*.js
-   # They MUST match. If they don't — the deploy did NOT land. See /deploy-troubleshooting.
-   ```
+```
+1. WRITE CODE     - in your own worktree, off fresh origin/main
+2. TYPECHECK      - npx tsc --noEmit, zero errors
+3. TEST           - npx vitest run <the tests covering your change>
+4. BUILD          - npm run build, if you touched src/
+5. CHANGELOG      - docs/changelog/YYYY-MM-DD-<slug>.md, YOUR OWN FILE
+6. PUSH A BRANCH  - and stop. The pipeline does the rest.
+7. WRITE SQL      - only after everything else is confirmed
+8. APPLY SQL      - Supabase MCP apply_migration, one transaction
+```
 
-````
+## Verify - by reading, never by assuming
 
-4. **Verify deployment on production:**
 ```bash
-# Wait for Vercel to deploy, then verify
-open https://smarter.poker/hub/club-arena/
-````
-
-### Rule 3: Write SQL LAST — After Building and Testing
-
-- **DO NOT** write SQL migrations until you are 100% done with code changes and testing
-- SQL migrations are the FINAL step — they go to production immediately and cannot be undone
-- Write SQL to `supabase/migrations/` with timestamped filenames
-- Execute via the programmatic CLI: `npm run db:push` (from World Hub)
-- **NEVER** open the Supabase web dashboard to run SQL (Cloudflare Captcha will block you)
-
-## Execution Order (SACRED)
-
-```
-1. WRITE CODE        — Make all changes in the Club Arena repo
-2. BUILD VERIFY      — npx vite build (MUST end with ✓ — fix any errors before continuing)
-3. TYPECHECK         — npx tsc --noEmit (verify no TS errors)
-4. PUSH CLUB ARENA   — git add <files> && git commit && git push (BypassSandbox: true)
-5. ATOMIC DEPLOY     — cd ~/Documents/Smarter-Poker-World-Hub && bash scripts/sync-club-arena.sh "message"
-6. VERIFY ON PROD    — curl to check index hash matches local dist (see above)
-7. TEST ON PROD      — Verify on https://smarter.poker/hub/club-arena/
-8. WRITE SQL (LAST)  — Only after everything else is confirmed working
-9. EXECUTE SQL       — npm run db:push (from World Hub)
+curl -s https://smarter.poker/hub/club-arena/build-info.json
 ```
 
-> [!IMPORTANT]
-> Step 2 is the most important step. If the Vite build fails, STOP and fix it.
-> A broken build is invisible — git push succeeds, sync script runs, but NOTHING
-> ever changes on production. This caused a 3-hour outage on 2026-07-25.
+`ca_sha` must equal the squash commit on `main`. Comparing index hashes against
+your local `dist/` no longer proves anything: the publisher builds its own
+bundle from the merge commit, so your local hash is a different build of
+possibly the same source.
 
-## What Happens If You Break This Order
+## What happens if you break this order
 
-- Writing SQL before code is done → schema changes go live before the code that uses them
-- Testing on localhost → false confidence, bugs in production
-- Not pushing to GitHub → work is lost, other agents see stale code
-- Not syncing to World Hub → changes exist in Club Arena repo but are NOT deployed
+- SQL before code is done -> schema changes go live before the code using them.
+- Testing on localhost -> false confidence, bugs in production.
+- Not pushing -> the work is lost. `prune-stale-worktrees.sh` removes clean
+  pushed worktrees after 72 hours, and Antigravity's periodic
+  `git reset --hard origin/main` discards uncommitted work anywhere.
+- Pushing to `main` -> refused by the ruleset. Push a branch.
 
-## DO NOT End a Session Without
+## Do not end a session without
 
-- [ ] All code changes committed and pushed to GitHub
-- [ ] Club Arena code pushed to origin/main
-- [ ] `npx vite build` succeeded locally before syncing
-- [ ] Atomic build run via `scripts/sync-club-arena.sh` in the World Hub
-- [ ] Production index hash verified via curl (matches local dist)
-- [ ] SQL migrations written and executed (if any schema changes)
-- [ ] MIGRATION-CHANGELOG.md updated (if migration work)
+- [ ] Everything committed and the branch pushed
+- [ ] `npx tsc --noEmit` clean
+- [ ] The tests covering your change run, with a count you can paste
+- [ ] A changelog file under `docs/changelog/` (never appended to
+      MIGRATION-CHANGELOG.md - it is frozen history and was the single biggest
+      source of merge conflict in this repo)
+- [ ] Any new `*.law.test.*` registered in `docs/LAWS.md`
+- [ ] Migrations written AND applied, and mirrored into `supabase/migrations/`
+- [ ] The PR number reported, and your session ended
 
 > [!TIP]
-> If anything in the deploy goes wrong, read `/deploy-troubleshooting` —
-> it covers every known failure mode with exact fix commands.
+> If a change is not live, `/deploy-troubleshooting` works down the list from
+> "what does build-info.json actually say".

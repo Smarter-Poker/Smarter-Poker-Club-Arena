@@ -804,8 +804,13 @@ test the next agent notices first.
 
 ## 10.8 LAWS LIVE IN docs/LAWS.md, AND YOU NEVER WAIT ON CI (added 2026-09-01, binding)
 
-**1. THE LAW REGISTRY.** Every `*.law.test.*` file must have a row in
-`docs/LAWS.md` — `tests/law-registry.law.test.ts` enforces it. Before
+**1. THE LAW REGISTRY.** Every `*.law.test.*` file must have a file in
+`docs/laws.d/` (one per law: `# <test path>` then one line on what it
+guards) — `tests/law-registry.law.test.ts` enforces it both ways. The table
+in `docs/LAWS.md` is gone (2026-09-04): every law appended to its last line,
+so any two law-bearing PRs conflicted there and nowhere else. `docs/LAWS.md`
+keeps the rules and Dan's rulings; `node scripts/laws-registry.mjs` prints
+the table. Before
 enforcing any law, confirm it exists on **current `origin/main`**, never in
 your local tree: stale worktrees carrying retired laws are how the hamburger
 revert war ran for two days. If two laws (or two CLAUDE.md copies) demand

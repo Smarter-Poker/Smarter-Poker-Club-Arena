@@ -24,11 +24,9 @@ import { resolve } from 'node:path';
 
 import GameCreationActions from '../../src/components/club/GameCreationActions';
 import {
-  CLUB_NAME_MAX_CQW,
-  CLUB_NAME_MIN_CQW,
+  CLUB_IDENTITY_CANVAS,
+  CLUB_IDENTITY_ZONES,
   ClubIdentityCard,
-  clubNameSizeCqw,
-  fittedNameSizeCqw,
 } from '../../src/components/club-buttons/ClubIdentityCard';
 import { NUMERIC_ZONES, zoneText } from '../../src/components/lobby/game-cards/arenaGameCardTypes';
 import { playerDisplayName } from '../../src/utils/playerDisplayName';
@@ -271,9 +269,10 @@ describe('the club identity card', () => {
     expect(container.textContent).not.toContain('Bekavac');
   });
 
-  it('puts the club name in its own band, above everything else', () => {
-    // "the club name should be across the very top of the card, all the way
-    // left to right, with the logo under it."
+  it('keeps the club name first, spoken to assistive tech, never painted', () => {
+    // Dan 2026-09-02 asked for the name across the top; his 2026-09-04
+    // master has no name band (the lobby header carries it), so the H2 stays
+    // first in the DOM for screen readers and is visually hidden.
     const { container } = renderCard();
     const name = container.querySelector('.club-identity__name');
     expect(name).not.toBeNull();
@@ -308,50 +307,42 @@ describe('the club identity card', () => {
     expect(ids[1].textContent).toContain('1'); // then player ID
   });
 
-  it('estimates a first-paint size from the name, then measures the exact fit', () => {
+  it('prints the alias into its measured zone and fits it by measurement', () => {
     /*
-     * Two of Dan's rules meet on this string: it may not wrap, and it may not
-     * be cut off. CSS alone cannot satisfy both - `clamp()` sizes from the
-     * CARD's width, never from how much text there is.
-     *
-     * A character count alone cannot either, and that was the first attempt.
-     * Measured in Chromium at weight 850, "DEEP STACK SOCIETY" averages 0.62em
-     * per character, "ACES" 0.70, and a name of all Ws 0.95: no single
-     * coefficient is both safe for the widest name and generous to the ordinary
-     * one. So the count is the FIRST PAINT and the measurement is the answer.
+     * Two of Dan's rules meet on the headline: it may not wrap, and it may
+     * not be cut off. CSS alone cannot satisfy both - `clamp()` sizes from
+     * the CARD's width, never from how much text there is - so the alias is
+     * fitted the way every card title is: useFitText measures the laid-out
+     * span against its zone and writes `--fit`, and the font-size is
+     * `calc(8.1cqw * var(--fit, 1))`. In happy-dom every width is 0, so the
+     * hook must leave the text at its natural size rather than collapse it.
      */
     const { container } = renderCard();
-    const style = container.querySelector('.club-identity__name')?.getAttribute('style') || '';
-    expect(style).toContain('--club-name-size');
+    const alias = container.querySelector<HTMLElement>('.club-identity__alias');
+    expect(alias).not.toBeNull();
     // The measurable span is what the fit pass reads; without it there is
-    // nothing whose width can be compared to the band's.
-    expect(container.querySelector('.club-identity__name > span')?.textContent).toBe(
-      'Deep Stack Society'
-    );
+    // nothing whose width can be compared to the zone's.
+    expect(alias?.querySelector(':scope > span')?.textContent).toBe('Dan Bekavac');
 
-    // Estimate: shorter name, bigger type. Monotonic, so no length is rewarded
-    // with a size that overflows the one before it.
-    expect(clubNameSizeCqw('ACES')).toBeGreaterThanOrEqual(clubNameSizeCqw('DEEP STACK SOCIETY'));
-    expect(clubNameSizeCqw('DEEP STACK SOCIETY')).toBeGreaterThan(
-      clubNameSizeCqw('THE VERY LONG CLUB NAME THAT KEEPS ON GOING FOREVER')
-    );
-    expect(clubNameSizeCqw('A')).toBe(CLUB_NAME_MAX_CQW);
-    // Whitespace is not a character worth shrinking for.
-    expect(clubNameSizeCqw('  ACES  ')).toBe(clubNameSizeCqw('ACES'));
+    // The zone is the master's alias band, converted to percentages of the
+    // 1566 x 672 canvas, so every phone prints it in the same place.
+    const z = CLUB_IDENTITY_ZONES.alias;
+    const pct = (n: number, of: number) => `${(n / of) * 100}%`;
+    expect(alias?.style.left).toBe(pct(z.x, CLUB_IDENTITY_CANVAS.width));
+    expect(alias?.style.top).toBe(pct(z.y, CLUB_IDENTITY_CANVAS.height));
+    expect(alias?.style.width).toBe(pct(z.width, CLUB_IDENTITY_CANVAS.width));
+    expect(alias?.style.height).toBe(pct(z.height, CLUB_IDENTITY_CANVAS.height));
 
-    // The measured pass: text width is linear in font size, so scaling by
-    // available/needed lands on the exact fit in one step.
-    expect(fittedNameSizeCqw(100, 200, 7)).toBe(3.5); // twice too wide -> half
-    expect(fittedNameSizeCqw(200, 100, 7)).toBe(CLUB_NAME_MAX_CQW); // never past the ceiling
-    expect(fittedNameSizeCqw(100, 100, 7)).toBe(7); // already exact
-    expect(fittedNameSizeCqw(1, 1000, 7)).toBe(CLUB_NAME_MIN_CQW); // never below the floor
+    // No layout, no change: with nothing measured the fit stays at 1 (or is
+    // simply absent), never 0 - a server render must not blank the name.
+    const fit = alias?.querySelector<HTMLElement>(':scope > span')?.style.getPropertyValue('--fit');
+    expect(fit === '' || Number(fit) === 1).toBe(true);
 
-    /* No layout, no change. happy-dom reports every width as 0, and so does any
-       server render; the estimate has to survive that rather than collapsing
-       the name to nothing. */
-    expect(fittedNameSizeCqw(0, 0, 4.2)).toBe(4.2);
-    expect(fittedNameSizeCqw(0, 120, 4.2)).toBe(4.2);
-    expect(fittedNameSizeCqw(120, 0, 4.2)).toBe(4.2);
+    // The club name is still in the DOM for assistive tech, but not painted:
+    // the master carries no name band and the lobby header already says it.
+    const name = container.querySelector('.club-identity__name');
+    expect(name?.classList.contains('sr-only')).toBe(true);
+    expect(container.querySelector('.club-identity__name')?.getAttribute('style')).toBeNull();
   });
 
   it('puts the count and the copy link on the same line', () => {

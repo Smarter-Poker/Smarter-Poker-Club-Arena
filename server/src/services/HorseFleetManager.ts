@@ -1097,6 +1097,8 @@ export class HorseFleetManager {
        * this layer decides which games are SENSIBLE, not which are possible.
        */
       const bankrolls = new Map<string, number>();
+      /** Clubs the bankroll map holds at least one row for. Telemetry only. */
+      const clubsWithRolls = new Set<string>();
       /* The same rows, read the other way round: which clubs each horse
          belongs to. This is what decides whether a horse is a CANDIDATE for a
          table at all - see resolveSeatClub. */
@@ -1183,6 +1185,13 @@ export class HorseFleetManager {
           }
           for (const r of brPage.rows) {
             const v = Number(r.chip_balance);
+            /* Which clubs the map actually holds rows FOR. On 2026-08-31 it
+               loaded "completely" while keyed on clubs that own zero cash
+               tables, so every lookup missed and the gate emptied the floor.
+               The load flag alone cannot tell that apart from a genuine
+               non-member; this set can. Read only by the telemetry split at
+               the fail-open branch - it decides nothing. */
+            clubsWithRolls.add(String(r.club_id));
             if (Number.isFinite(v)) bankrolls.set(`${r.club_id}:${r.user_id}`, v);
             if (!memberships.has(r.user_id)) memberships.set(r.user_id, new Set());
             memberships.get(r.user_id)!.add(r.club_id);
@@ -1830,7 +1839,25 @@ export class HorseFleetManager {
               const roll = seatClub ? bankrolls.get(`${seatClub}:${h.id}`) : undefined;
               if (roll === undefined) {
                 rollUnknown++;
-                bankrollEvent('seat_fail_open_roll_unknown');
+                /* THE COUNTER SPLITS; THE DECISION DOES NOT.
+                   Both branches below seat the horse, and both must. This
+                   fail-open is the line that kept the cash floor up for forty
+                   minutes on 2026-08-31, and a 2026-09-04 change that turned
+                   the very evidence below into a REFUSAL was reverted the same
+                   day - two existing guards refused it. `maySeatWithUnknownRoll`
+                   exists and is deliberately NOT consulted here.
+
+                   What the evidence is worth is TELLING THE TWO APART. An
+                   unreadable roll for a club the map does not cover is the
+                   ordinary case - 261 of 584 horses are not members of the club
+                   that owns the open cash tables. An unreadable roll for a club
+                   the map DOES cover is a data fault. One number for both hid
+                   that. */
+                bankrollEvent(
+                  seatClub && clubsWithRolls.has(seatClub)
+                    ? 'seat_fail_open_roll_faulty'
+                    : 'seat_fail_open_roll_unknown'
+                );
                 return true;
               }
               const ref = referenceBuyIn(

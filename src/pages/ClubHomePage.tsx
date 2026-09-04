@@ -48,6 +48,7 @@ import LobbyTable, {
 import GameLobbyPanel from '../components/lobby/GameLobbyPanel';
 import {
   cashEntry,
+  isHiddenClusterMember,
   tournamentEntry,
   classifyTournament,
   type LobbyEntry,
@@ -3624,9 +3625,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     const tourns = filteredTournaments.map((t) =>
       stable(t as unknown as LobbyTournamentRow, (r) => tournamentEntry(r, classifyTournament(r)))
     );
-    let cash = filteredTables.map((t) =>
-      stable(t as unknown as LobbyTableRow, (r) => cashEntry(r, waitlistCounts.get(r.id) ?? 0))
-    );
+    /* R10 (Dan 2026-09-04): a must-move game is ONE row on the board - its
+       Main 1 - carrying the count of players inside the whole game. Its
+       other tables are never rows of their own. */
+    let cash = filteredTables
+      .filter((t) => !isHiddenClusterMember(t as unknown as LobbyTableRow))
+      .map((t) =>
+        stable(t as unknown as LobbyTableRow, (r) => cashEntry(r, waitlistCounts.get(r.id) ?? 0))
+      );
     entryCacheRef.current = next;
     /* The Favorites chip lives in the quick-prefs row, which ALL does not
        render - so leaving the filter applied there stripped the board to two

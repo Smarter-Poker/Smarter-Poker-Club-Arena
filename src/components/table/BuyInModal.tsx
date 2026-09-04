@@ -27,7 +27,16 @@ export interface BuyInModalProps {
   minBuyIn: number;
   maxBuyIn: number;
   defaultBuyIn?: number;
-  accountBalance: number;
+  /**
+   * null = "we could not find out" (Dan 2026-09-04, the bust rebuy that
+   * "failed to load"). It used to be collapsed to 0 one file up, so a failed
+   * read rendered as INSUFFICIENT BALANCE on a player with chips - a dialog
+   * that could not be confirmed and said nothing true. Unknown says unknown,
+   * and offers a retry.
+   */
+  accountBalance: number | null;
+  /** Re-read the balance when it is unknown. */
+  onRetryBalance?: () => void;
   bigBlind: number;
   currency?: string;
   countdown?: number; // Seconds remaining to buy in
@@ -67,10 +76,14 @@ export function BuyInModal({
   countdown,
   cashoutRestriction,
   onTopUp,
+  onRetryBalance,
 }: BuyInModalProps) {
   // State
-  // Default to MAX buy-in (capped by account balance) — Dan's directive
-  const effectiveDefault = defaultBuyIn || Math.min(maxBuyIn, accountBalance);
+  const balanceKnown = accountBalance !== null;
+  // Default to MAX buy-in (capped by account balance) — Dan's directive.
+  // Unknown balance: default to the table max; the confirm stays closed below.
+  const effectiveDefault =
+    defaultBuyIn || Math.min(maxBuyIn, balanceKnown ? accountBalance : maxBuyIn);
   const [buyInAmount, setBuyInAmount] = useState(effectiveDefault);
   // Auto-rebuy was removed on 2026-08-20 (see the note in the render below).
   // `onConfirm` keeps its second parameter so callers and the atomic_table_buyin
@@ -100,7 +113,7 @@ export function BuyInModal({
   // time the modal OPENS (and if min/max settle late), from the live props.
   useEffect(() => {
     if (!isOpen) return;
-    const fresh = defaultBuyIn || Math.min(maxBuyIn, accountBalance);
+    const fresh = defaultBuyIn || Math.min(maxBuyIn, balanceKnown ? accountBalance : maxBuyIn);
     const clamped = Math.max(minBuyIn, Math.min(maxBuyIn, fresh));
     if (Number.isFinite(clamped) && clamped > 0) {
       setBuyInAmount(clamped);
@@ -122,8 +135,8 @@ export function BuyInModal({
     return range > 0 ? ((clampedBuyIn - effectiveMinBuyIn) / range) * 100 : 0;
   }, [clampedBuyIn, effectiveMinBuyIn, maxBuyIn]);
 
-  // Check if user has enough balance
-  const hasEnoughBalance = accountBalance >= clampedBuyIn;
+  // Check if user has enough balance. Unknown is not enough - and not "insufficient".
+  const hasEnoughBalance = balanceKnown && accountBalance >= clampedBuyIn;
 
   // Animate amount counter when buyInAmount changes
   useEffect(() => {
@@ -357,11 +370,16 @@ export function BuyInModal({
         <div className="buy-in-modal__balance">
           <span className="buy-in-modal__balance-label">( Account Balance:</span>
           <span
-            className={`buy-in-modal__balance-value ${!hasEnoughBalance ? 'buy-in-modal__balance-value--insufficient' : ''}`}
+            className={`buy-in-modal__balance-value ${balanceKnown && !hasEnoughBalance ? 'buy-in-modal__balance-value--insufficient' : ''}`}
           >
-            {formatAmount(accountBalance, currency)}
+            {balanceKnown ? formatAmount(accountBalance, currency) : 'Unavailable'}
           </span>
           <span className="buy-in-modal__balance-label">)</span>
+          {!balanceKnown && onRetryBalance && (
+            <button type="button" className="buy-in-modal__balance-retry" onClick={onRetryBalance}>
+              Retry
+            </button>
+          )}
         </div>
 
         {/* AUTO REBUY REMOVED 2026-08-20.
@@ -385,7 +403,13 @@ export function BuyInModal({
           onClick={handleConfirm}
           disabled={!hasEnoughBalance || isProcessing}
         >
-          {isProcessing ? 'Joining...' : hasEnoughBalance ? 'Buy Chips' : 'Insufficient Balance'}
+          {isProcessing
+            ? 'Joining...'
+            : hasEnoughBalance
+              ? 'Buy Chips'
+              : balanceKnown
+                ? 'Insufficient Balance'
+                : 'Balance Unavailable'}
         </button>
 
         {/* Top Up Link.

@@ -72,14 +72,9 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
              into the exported hand text too. The service type now says
              `all_in`, which is what turned this from silence into a compiler
              error. */
-          action: (a.action === 'all_in' ? 'allin' : a.action) as
-            | 'fold'
-            | 'check'
-            | 'call'
-            | 'bet'
-            | 'raise'
-            | 'allin'
-            | 'discard',
+          action: (a.action === 'all_in'
+            ? 'allin'
+            : a.action) as PanelHandRecord['streets'][number]['actions'][number]['action'],
           amount: a.amount,
           /* PHASE 4 COMPLETION 2026-09-01: the viewer's own thrown card, as a
              canonical code because that is the only card shape this panel
@@ -112,6 +107,11 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
      panel unparsed prints "UNDEFINE" beside a diamond. Empty runs are dropped
      rather than rendered as a blank RUN badge. */
   const ritBoards = (h.rit_boards || []).map((b) => toCardCodes(b)).filter((b) => b.length > 0);
+  /* Bomb-pot boards 2 and 3, the same way. A double-board bomb pot rendered as
+     ONE board here until 2026-09-04 because the adapter never carried them. */
+  const bombBoards = [h.community_cards2, h.community_cards3]
+    .map((b) => toCardCodes(b || []))
+    .filter((b) => b.length > 0);
 
   /* TWO DIFFERENT MONEY FIGURES, and conflating them cost a player the truth
      about their own hand.
@@ -183,6 +183,27 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
     // Absent rather than empty on a single-run hand: `runBoardsFor` reads the
     // length, and an empty array is a claim that the hand ran once, not silence.
     ritBoards: ritBoards.length ? ritBoards : undefined,
+    bombBoards: bombBoards.length ? bombBoards : undefined,
+    winnersByBoard: (h.winners_by_board || []).length
+      ? (h.winners_by_board || []).map((w) => ({
+          board: w.board,
+          playerId: w.user_id,
+          playerName: nameFor(w.user_id),
+          amount: w.amount,
+          hand: w.hand_name,
+        }))
+      : undefined,
+    /* A showdown is a card turning over. The persisted `showdown` record is
+       the table's own account of that; a winner on a fold-around hand is not
+       a showdown and must not be filed under one (Dan 2026-09-04). */
+    wentToShowdown: (h.players || []).some(
+      (p) => p.showdown_reveal !== undefined || (p.hole_cards && p.hole_cards.length > 0)
+    ),
+    muckedIds: (h.players || [])
+      .filter((p) => p.showdown_reveal?.mucked === true)
+      .map((p) => p.user_id),
+    rake: Number(h.rake) || 0,
+    bbjFee: Number(h.bbj_fee) || 0,
   };
 }
 

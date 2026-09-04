@@ -82,6 +82,7 @@ function idleEngine() {
     // throws and this file silently stops testing the thing it exists for.
     // Returns no evictions.
     collectAwayBlindEvictions: () => [] as string[],
+    collectAbandonedSeatEvictions: () => [] as string[],
     // dealHand calls this for whoever is in the blind seats. Stubbed as a
     // no-op: presence is not what these tests are about.
     noteBlindChargedWhileAway: vi.fn(),

@@ -27,9 +27,12 @@ describe('identity', () => {
       const i = identityFor(id);
       // A real name is two words; an alias is a nickname, not the same string.
       expect(i.realName.split(' ').length).toBe(2);
-      expect(i.alias).not.toContain(' ');
+      // Dan 2026-09-04: an alias may carry a space now ("Mr Flush"), as
+      // long as it is not the real name and fits the seat plate.
+      expect(i.alias.length).toBeLessThanOrEqual(11);
       expect(i.alias.toLowerCase()).not.toBe(i.realName.toLowerCase());
-      expect(i.username).toMatch(/^[a-z]+\d{3}$/);
+      // The trigger's rule for a username (fn_protect_profile_username_and_gate).
+      expect(i.username).toMatch(/^[a-z0-9][a-z0-9_.]{2,19}$/);
     }
   });
 

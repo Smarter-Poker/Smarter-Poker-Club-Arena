@@ -40,8 +40,16 @@ import type { CashPersona, HorseMode, MttPersona } from './StableHand.js';
 
 /** Tags change only when the tagger runs. */
 export const TAG_TTL_MS = 10 * 60_000;
-/** State carries live counters, so it is refreshed about once a cycle. */
-export const STATE_TTL_MS = 25_000;
+/**
+ * State carries live counters, so it is refreshed often - but not every cycle.
+ *
+ * It was 25 seconds, which is shorter than the 30-second seeding cycle and
+ * therefore meant a full 1,000-row read on EVERY pass. Whatever the counters
+ * gain from that they do not need: this cycle folds its own writes back into
+ * the cached map before the next one reads it, so the only thing a shorter TTL
+ * buys is another process's writes, and there is no other writer.
+ */
+export const STATE_TTL_MS = 60_000;
 
 export interface HorseTag {
   horseId: string;
@@ -251,10 +259,23 @@ export class StableHandTagBook {
             this.statesReadAt = nowMs;
           }
         }
-        if (!this.tags || !this.states) return null;
+        /* ── THE TAGS ARE THE BOOK; THE STATES ARE AN ANNEX ─────────────────
+           This used to return null unless BOTH reads succeeded, and that cost
+           four hours of live running on 2026-09-04: the same key read a
+           complete book from a laptop and returned null on the engine, so the
+           whole tag layer - variants, stakes, lanes, table ceilings - was
+           switched off and no counter was written, silently.
+           The two are not equally load-bearing. Tags decide who may sit where
+           and are read once every ten minutes. States carry the day's counters,
+           are re-read constantly, and EVERY reader of them already fails open
+           on a missing row (`dailyCapReached(undefined)` is false, the mutex
+           block skips a horse with no state). So a book with tags and no states
+           is a smaller, honest degradation - the texture still applies, the
+           day's limits abstain - where returning null threw all of it away. */
+        if (!this.tags) return null;
         return {
           tags: this.tags,
-          states: this.states,
+          states: this.states ?? new Map(),
           tagsReadAt: this.tagsReadAt,
           statesReadAt: this.statesReadAt,
         };

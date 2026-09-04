@@ -24,6 +24,7 @@ const LIVE_SAMPLE = {
   },
   checkedAt: '2026-09-04T08:55:19.890568+00:00',
   indexCeil: '2026-09-04T08:45:19.412255+00:00',
+  seatBackfill: { done: false, cursorAt: '2026-08-28T21:29:00+00:00', rowsAdded: 2 },
   indexRows: 23356167,
   lastAudit: null,
   recentHands: 897,
@@ -38,6 +39,7 @@ const healthyAudit = {
   buttonDisagree: 0,
   showdownDisagree: 0,
   handsWithoutStat: 0,
+  playerHandsWithoutIdx: 0,
   humanPlayerHands: 0,
   humanWithoutFacts: 0,
   durationMs: 10416,
@@ -78,6 +80,7 @@ describe('parseStatsHealth', () => {
     expect(s.recentHandsWithoutStat).toBe(0);
     expect(s.repair?.done).toBe(false);
     expect(s.repair?.handsSeen).toBe(584000);
+    expect(s.seatBackfill?.rowsAdded).toBe(2);
     expect(s.lastAudit).toBeNull();
   });
 
@@ -169,6 +172,17 @@ describe('StatsHealthMonitor', () => {
       STATS_HEALTH_COMPONENT,
       expect.any(String)
     );
+  });
+
+  it('a seat with no index row is a witness disagreement too (horses are players)', async () => {
+    const { mon, raise } = harness([
+      { ...LIVE_SAMPLE, lastAudit: { ...healthyAudit, playerHandsWithoutIdx: 1050 } },
+    ]);
+    await mon.tick();
+    const witness = raise.mock.calls.find((c) => c[0]?.alertname === STATS_WITNESS_ALERT);
+    expect(witness?.[0].labels?.player_hands_without_idx).toBe('1050');
+    expect(witness?.[0].summary).toContain('1050 no-index');
+    expect(mon.prometheusLines().join('\n')).toContain('poker_stats_player_hands_without_idx 1050');
   });
 
   it('does not touch the witness alert at all when no audit has run yet', async () => {

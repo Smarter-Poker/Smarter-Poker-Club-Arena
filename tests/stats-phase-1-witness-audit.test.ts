@@ -24,7 +24,15 @@ const migrationFile = readdirSync(MIGRATIONS).find((f) =>
 const indexFile = readdirSync(MIGRATIONS).find((f) =>
   f.endsWith('_stats_phase_1_hand_player_stat_hand_id_index.sql')
 );
+const seatsFile = readdirSync(MIGRATIONS).find((f) =>
+  f.endsWith('_stats_phase_1_every_seat_is_indexed.sql')
+);
 const migration = migrationFile ? readFileSync(join(MIGRATIONS, migrationFile), 'utf8') : '';
+const seats = seatsFile ? readFileSync(join(MIGRATIONS, seatsFile), 'utf8') : '';
+
+const LOOSE_UUID =
+  "'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'";
+const STRICT_UUID = '[1-5][0-9a-f]{3}-[89ab]';
 const index = indexFile ? readFileSync(join(MIGRATIONS, indexFile), 'utf8') : '';
 const gameServer = readFileSync(join(ROOT, 'server', 'src', 'GameServer.ts'), 'utf8');
 const monitor = readFileSync(
@@ -161,6 +169,63 @@ describe('phase 1 migration: the witness audit', () => {
   });
 });
 
+describe('phase 1 verification: every seat is indexed (horses are players, CLAUDE.md 10.5)', () => {
+  it('exists, lands after the audit migration, and is one transaction', () => {
+    expect(seatsFile).toBeTruthy();
+    expect(seatsFile! > migrationFile!).toBe(true);
+    expect((seats.match(/^BEGIN;/gm) ?? []).length).toBe(1);
+    expect((seats.match(/^COMMIT;/gm) ?? []).length).toBe(1);
+  });
+
+  it('both index writers accept the same uuid shape the stat writer accepts, never the RFC 4122 filter', () => {
+    const trg = seats.slice(
+      seats.indexOf('CREATE OR REPLACE FUNCTION public.trg_ca_stats_live_from_hand()'),
+      seats.indexOf('CREATE OR REPLACE FUNCTION public.ca_refresh_hand_player_index(')
+    );
+    const refresh = seats.slice(
+      seats.indexOf('CREATE OR REPLACE FUNCTION public.ca_refresh_hand_player_index('),
+      seats.indexOf('CREATE TABLE IF NOT EXISTS public.ca_idx_every_seat_state')
+    );
+    expect(trg).toContain(LOOSE_UUID);
+    expect(trg).not.toContain(STRICT_UUID);
+    expect(refresh).toContain(LOOSE_UUID);
+    expect(refresh).not.toContain(STRICT_UUID);
+    // The index writer and the stat writer agree on who is a player.
+    expect(migration).toContain(LOOSE_UUID.replace(/'/g, "'")); // seated in the facts body
+  });
+
+  it('the backfill targets exactly the seats the old regex skipped, bounded, self-unscheduling', () => {
+    const fn = seats.slice(seats.indexOf('CREATE OR REPLACE FUNCTION public.ca_index_every_seat('));
+    expect(fn).toContain(LOOSE_UUID);
+    expect(fn).toMatch(/AND NOT pl->>'userId' ~\* '\^\[0-9a-f\]\{8\}-\[0-9a-f\]\{4\}-\[1-5\]/);
+    expect(fn).toMatch(/pg_try_advisory_xact_lock\(hashtext\('ca_index_every_seat'\)\)/);
+    expect(fn).toMatch(/interval '50 seconds'/);
+    expect(fn).toMatch(/PERFORM cron\.unschedule\('ca-stats-idx-every-seat-1m'\)/);
+    expect(seats).toMatch(/cron\.schedule\(\s*'ca-stats-idx-every-seat-1m',\s*'\* \* \* \* \*'/);
+  });
+
+  it('the audit counts seats without an index row and health reports it', () => {
+    expect(seats).toMatch(
+      /ADD COLUMN IF NOT EXISTS player_hands_without_idx integer NOT NULL DEFAULT 0/
+    );
+    expect(seats).toMatch(
+      /SELECT 1 FROM public\.ca_hand_player_idx i WHERE i\.hand_id = seat\.hand_id AND i\.user_id = seat\.uid/
+    );
+    expect(seats).toMatch(/'playerHandsWithoutIdx', player_hands_without_idx/);
+    expect(seats).toMatch(
+      /'seatBackfill', \(SELECT jsonb_build_object\('done', done, 'cursorAt', cursor_at, 'rowsAdded', rows_added\)/
+    );
+    // The audit calls the range form directly now.
+    expect(seats).toMatch(/FROM public\.ca_hand_player_facts_range\(v_from, v_to, NULL\) f/);
+  });
+
+  it('the engine treats a missing index row as a witness disagreement and exposes the gauge', () => {
+    expect(monitor).toContain("'poker_stats_player_hands_without_idx'");
+    expect(monitor).toMatch(/\(a\.playerHandsWithoutIdx \?\? 0\) \+/);
+    expect(rules).toMatch(/or poker_stats_player_hands_without_idx > 0/);
+  });
+});
+
 describe('phase 1 engine wiring', () => {
   it('GameServer owns one StatsHealthMonitor reading ca_stats_health and paused by the maintenance break', () => {
     expect(gameServer).toMatch(
@@ -190,6 +255,7 @@ describe('phase 1 engine wiring', () => {
       'poker_stats_index_lag_seconds',
       'poker_stats_recent_hands_without_stat',
       'poker_stats_witness_disagreements',
+      'poker_stats_player_hands_without_idx',
       'poker_stats_human_hands_without_facts',
       'poker_stats_money_repair_done',
       'poker_stats_health_age_seconds',
@@ -227,11 +293,13 @@ describe('phase 1 schema manifest fragment', () => {
     expect(existsSync(p)).toBe(true);
     const frag = JSON.parse(readFileSync(p, 'utf8')) as { tables: string[]; functions: string[] };
     expect(frag.tables).toContain('ca_stats_witness_audit_log');
+    expect(frag.tables).toContain('ca_idx_every_seat_state');
     for (const fn of [
       'ca_hand_player_facts_range',
       'ca_hand_player_facts_one',
       'ca_stats_witness_audit',
       'ca_stats_health',
+      'ca_index_every_seat',
     ]) {
       expect(frag.functions).toContain(fn);
     }

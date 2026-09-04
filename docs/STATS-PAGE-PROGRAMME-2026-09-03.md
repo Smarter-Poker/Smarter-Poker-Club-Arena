@@ -105,6 +105,12 @@ count (`docs/changelog/2026-09-04-stats-phase-1-witness-audit.md`). If a
 real recording defect ever appears, it is found within 15 minutes, with the
 hands in its window named in `ca_stats_witness_audit_log`.
 
+The verification pass then found a real one, of a different kind: 57 horses
+with synthetic ids had stat rows and no index rows because the index
+writers' uuid regex demanded RFC 4122 bits the stat writer did not. Fixed,
+backfilled, and the audit now counts seats without an index row (changelog
+section 4).
+
 ### 1.2 Finish the money repair and re-measure the hand write
 
 - Watch `ca_hand_player_stat_repair_state` until `done = true`. Then confirm

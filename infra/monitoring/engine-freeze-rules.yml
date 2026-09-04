@@ -195,7 +195,10 @@ groups:
       # Zero is the only healthy number. A disagreement is a recording defect
       # in the engine (button_seat or the showdown roster) or a failed writer.
       - alert: StatsWitnessAuditDisagrees
-        expr: poker_stats_witness_disagreements > 0 or poker_stats_human_hands_without_facts > 0
+        expr: |
+          poker_stats_witness_disagreements > 0
+            or poker_stats_player_hands_without_idx > 0
+            or poker_stats_human_hands_without_facts > 0
         for: 1m
         labels:
           severity: warning
@@ -205,8 +208,9 @@ groups:
           description: |
             ca_stats_witness_audit() checks button_seat against the blind
             posts and the derived showdown flag against the engine's showdown
-            roster, and counts human seats with no settlement row. Read the
-            latest ca_stats_witness_audit_log row and the hands in its window.
+            roster, and counts seats with no index row (every seat, horse or
+            human) and human seats with no settlement row. Read the latest
+            ca_stats_witness_audit_log row and the hands in its window.
 
       # The engine could not read ca_stats_health() for ten minutes: the
       # gauges above are frozen at their last value and mean nothing.

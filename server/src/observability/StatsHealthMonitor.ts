@@ -21,7 +21,8 @@
  *   lastAudit.*              what the 15-minute witness audit last found:
  *                            button_seat vs the blind posts, the derived
  *                            showdown flag vs the engine's showdown roster,
- *                            and the two coverage gaps
+ *                            and the three coverage gaps (no stat row, no
+ *                            index row, no settlement row)
  *
  * The monitor raises through the same engine alert path as clock skew
  * (raiseEngineAlert / resolveEngineAlert), so a lagging index or a witness
@@ -54,12 +55,18 @@ export interface StatsHealthSnapshot {
     rowsChanged: number | null;
     updatedAt: string | null;
   } | null;
+  seatBackfill: {
+    done: boolean | null;
+    cursorAt: string | null;
+    rowsAdded: number | null;
+  } | null;
   lastAudit: {
     ranAt: string | null;
     hands: number | null;
     buttonDisagree: number | null;
     showdownDisagree: number | null;
     handsWithoutStat: number | null;
+    playerHandsWithoutIdx: number | null;
     humanPlayerHands: number | null;
     humanWithoutFacts: number | null;
     durationMs: number | null;
@@ -118,6 +125,7 @@ const obj = (v: unknown): Record<string, unknown> | null =>
 export function parseStatsHealth(raw: unknown, fallbackCheckedAt: string): StatsHealthSnapshot {
   const r = obj(raw) ?? {};
   const repair = obj(r.repair);
+  const seatfill = obj(r.seatBackfill);
   const audit = obj(r.lastAudit);
   return {
     checkedAt: str(r.checkedAt) ?? fallbackCheckedAt,
@@ -137,6 +145,13 @@ export function parseStatsHealth(raw: unknown, fallbackCheckedAt: string): Stats
           updatedAt: str(repair.updatedAt),
         }
       : null,
+    seatBackfill: seatfill
+      ? {
+          done: bool(seatfill.done),
+          cursorAt: str(seatfill.cursorAt),
+          rowsAdded: num(seatfill.rowsAdded),
+        }
+      : null,
     lastAudit: audit
       ? {
           ranAt: str(audit.ranAt),
@@ -144,6 +159,7 @@ export function parseStatsHealth(raw: unknown, fallbackCheckedAt: string): Stats
           buttonDisagree: num(audit.buttonDisagree),
           showdownDisagree: num(audit.showdownDisagree),
           handsWithoutStat: num(audit.handsWithoutStat),
+          playerHandsWithoutIdx: num(audit.playerHandsWithoutIdx),
           humanPlayerHands: num(audit.humanPlayerHands),
           humanWithoutFacts: num(audit.humanWithoutFacts),
           durationMs: num(audit.durationMs),
@@ -240,6 +256,11 @@ export class StatsHealthMonitor {
         disagree
       ),
       ...g(
+        'poker_stats_player_hands_without_idx',
+        'Seats (any uuid-shaped id, horse or human) with no ca_hand_player_idx row, from the last witness audit; 0 is healthy',
+        audit?.playerHandsWithoutIdx ?? null
+      ),
+      ...g(
         'poker_stats_human_hands_without_facts',
         'Human player-hands with no ca_hand_facts settlement row, from the last witness audit; 0 is healthy',
         audit?.humanWithoutFacts ?? null
@@ -314,6 +335,7 @@ export class StatsHealthMonitor {
         (a.buttonDisagree ?? 0) +
         (a.showdownDisagree ?? 0) +
         (a.handsWithoutStat ?? 0) +
+        (a.playerHandsWithoutIdx ?? 0) +
         (a.humanWithoutFacts ?? 0);
       if (bad > 0) {
         await this.deps.raise({
@@ -322,17 +344,19 @@ export class StatsHealthMonitor {
           component: STATS_HEALTH_COMPONENT,
           summary:
             `Witness audit: ${a.buttonDisagree ?? 0} button, ${a.showdownDisagree ?? 0} showdown, ` +
-            `${a.handsWithoutStat ?? 0} no-stat, ${a.humanWithoutFacts ?? 0} no-facts disagreements`,
+            `${a.handsWithoutStat ?? 0} no-stat, ${a.playerHandsWithoutIdx ?? 0} no-index, ` +
+            `${a.humanWithoutFacts ?? 0} no-facts disagreements`,
           description:
             'ca_stats_witness_audit() compares what the engine recorded (button_seat, the ' +
-            'showdown roster) with the action log, and counts hands the stat trigger and the ' +
-            'settlement writer missed. A non-zero count is a recording defect in the engine or ' +
+            'showdown roster) with the action log, and counts the seats the stat trigger, the ' +
+            'index writer and the settlement writer missed. A non-zero count is a recording defect in the engine or ' +
             'a failed writer - read the latest ca_stats_witness_audit_log row and the hands in ' +
             'its window. Positions, WTSD and exact money on the stats page depend on these.',
           labels: {
             button_disagree: String(a.buttonDisagree ?? 0),
             showdown_disagree: String(a.showdownDisagree ?? 0),
             hands_without_stat: String(a.handsWithoutStat ?? 0),
+            player_hands_without_idx: String(a.playerHandsWithoutIdx ?? 0),
             human_without_facts: String(a.humanWithoutFacts ?? 0),
           },
         });

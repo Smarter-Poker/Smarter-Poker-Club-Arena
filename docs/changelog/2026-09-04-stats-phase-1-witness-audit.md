@@ -97,7 +97,37 @@ guard. Monitoring config reaches cron-01 through `infra/monitoring/deploy.sh`
 a workflow, so these rules load at the next deploy.sh run; the engine-side
 alerts above deploy with the engine and need nothing.
 
-### 4. The retention law
+### 4. Every seat is indexed (found in the verification pass)
+
+Verifying the audit against production turned up a horses-are-players
+defect that predates this phase (CLAUDE.md 10.5). In two hours, 57 players
+played 9,750 hands that the trigger wrote to `ca_hand_player_stat` and
+received zero rows in `ca_hand_player_idx`. All 57 are horses with synthetic
+ids (`00000000-0000-0000-0000-000000000003`, `face0000-...`): valid uuid
+shapes, present in `profiles`, but without the RFC 4122 version nibble and
+variant bits the index writers' regex demanded. The stat writer used the
+plain shape and counted them; the index writers did not. For those players
+"Hands Played" read 0, the notable-hands list was empty, and the live
+subscription never fired. About 0.35% of hands carried at least one such
+seat.
+
+`20260904092705_stats_phase_1_every_seat_is_indexed.sql`, applied 09:31 UTC
+after a rolled-back probe: both index writers (`trg_ca_stats_live_from_hand`
+part (a), `ca_refresh_hand_player_index`) accept the same uuid shape the stat
+writer accepts; `ca_index_every_seat()` walks retained `hand_history` forward
+from a cursor and inserts the missing rows for exactly those ids, one minute
+at a time under a 50 s deadline, and unschedules its own cron when it reaches
+the present; the witness audit gains `player_hands_without_idx` (every
+uuid-shaped seat must have an index row) and the engine treats it as a
+witness disagreement with its own gauge, `poker_stats_player_hands_without_idx`.
+
+Measured after apply, per minute: 09:28 99 synthetic seats / 99 without an
+index row, 09:29 109 / 109, 09:30 99 / 84 (the apply landed mid-minute),
+09:31 99 / 0, 09:32 91 / 0. The probe of the audit before the fix reported
+`player_hands_without_idx: 1050` for a ten-minute window, which is the
+tripwire proving it would have caught this on its own.
+
+### 5. The retention law
 
 `tests/the-stats-a-player-reads-survive-the-hand-prune.law.test.ts`
 (registered in `docs/LAWS.md`): the newest `sp_prune_hand_history` never
@@ -132,10 +162,10 @@ tightens it below the page's window or ages it out.
 
 ## Tests
 
-- `server/src/observability/StatsHealthMonitor.test.ts` (14): parser pinned
+- `server/src/observability/StatsHealthMonitor.test.ts` (15): parser pinned
   to the live jsonb shape, every alert edge, the break suppression, the stale
-  read, the gauges, timers, overlap.
-- `tests/stats-phase-1-witness-audit.test.ts` (16): the migration, the
+  read, the gauges, timers, overlap, the missing-index disagreement.
+- `tests/stats-phase-1-witness-audit.test.ts` (21): the migrations, the
   trigger, the grants, the cron, the engine wiring, the rules, the manifest
   fragment.
 - `tests/the-stats-a-player-reads-survive-the-hand-prune.law.test.ts` (7).

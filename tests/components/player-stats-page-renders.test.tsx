@@ -364,6 +364,45 @@ describe('PlayerStatsPage mounts', () => {
     });
   });
 
+  it('lazy-loads the Analysis tab chunk and the coach reads the page payload through the seam (phase 2)', async () => {
+    // 2,000 hands clears LEAK_MIN_HANDS (500); VPIP 41 / PFR 9 is the loose-
+    // passive leak findLeaks names first. The numbers arrive from the page's
+    // payload, cross the lazy() boundary as props, and render inside
+    // AnalysisTab - the whole point of the split being safe.
+    rpcPayload = {
+      ...rpcPayload,
+      overall: {
+        ...EMPTY_OVERALL,
+        total_hands: 2_000,
+        cash_hands: 2_000,
+        vpip: 0.41,
+        pfr: 0.09,
+        three_bet_percent: 0.04,
+        fold_to_three_bet: 0.6,
+        cbet_flop: 0.5,
+        wtsd: 0.28,
+        aggression_factor: 1.2,
+        showdowns_total: 400,
+        showdowns_won: 180,
+        bb_per_100: -12,
+      },
+    };
+    render(<PlayerStatsPage />);
+    // The tab strip mounts with the payload, not with the heading; on a loaded
+    // runner the two are visibly apart (the awaited-element law, 2026-09-04).
+    const analysisTab = await screen.findByRole('tab', { name: 'Analysis' }, { timeout: 6_000 });
+    await screen.findByText('2,000');
+    fireEvent.click(analysisTab);
+    expect(
+      await screen.findByText('What To Work On', undefined, { timeout: 6_000 })
+    ).toBeInTheDocument();
+    // The Overview chunk is not what is on screen any more.
+    await waitFor(() => {
+      expect(screen.getByRole('tabpanel')).toHaveAttribute('id', 'stats-panel-analysis');
+      expect(screen.queryByRole('heading', { name: /Core Tendencies/i })).not.toBeInTheDocument();
+    });
+  });
+
   it('survives a completely malformed RPC payload', async () => {
     // normalizeFull() is supposed to harden every field. If it ever stops
     // doing so, the page must still not throw.

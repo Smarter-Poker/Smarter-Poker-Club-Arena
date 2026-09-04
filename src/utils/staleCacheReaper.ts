@@ -16,9 +16,9 @@
  *   leaderboard_    → LeaderboardPage
  *   achievements_   → AchievementsPage
  *   hh_cache_       → HandHistoryPage
- *   psr_cache_      → PlayerStyleRadar
- *   pt_cache_       → PerformanceTrends
- *   slc_cache_      → StakeLevelComparison
+ *   psr_cache_      → PlayerStyleRadar (component retired 2026-09-04; keys still reaped)
+ *   pt_cache_       → PerformanceTrends (retired 2026-09-04; keys still reaped)
+ *   slc_cache_      → StakeLevelComparison (retired 2026-09-04; keys still reaped)
  *   profile_cache_  → ProfilePage (Phase 4)
  *   members_cache_  → ClubMembersPage (Phase 4)
  *   tx_cache_       → TransactionHistoryPage (Phase 8)

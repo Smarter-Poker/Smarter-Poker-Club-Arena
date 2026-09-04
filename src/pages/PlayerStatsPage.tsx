@@ -42,33 +42,34 @@ import { useToast } from '../components/common/Toast';
 import { retryFetch } from '../utils/retryFetch';
 import { exportToCSV } from '../lib/export';
 import { useIsMounted } from '../hooks/useIsMounted';
-import PanelBoundary from '../components/stats/PanelBoundary';
 /**
- * LAZY (Dan 2026-08-25). recharts is 120 KB gzipped and these three charts live
- * on the Analysis tab, while the default tab is Overview - so three quarters of
- * what a Stats visitor downloaded was a charting library they had not scrolled
- * to. See StatsCharts.tsx for the measurements.
+ * ONE LAZY CHUNK PER TAB (Stats Page Programme phase 2, 2026-09-04).
+ *
+ * recharts (120 KB gzipped) and every panel used to be lazy one by one while
+ * the markup of all eight tabs sat inline in this file. The tabs are their
+ * own modules now, so the default Overview visit downloads the page plus one
+ * tab, and a panel is only ever requested by the tab that draws it. The
+ * per-panel lazies inside each tab keep the chart split from 2026-08-25.
  */
-const StatsCharts = lazy(() => import('../components/stats/StatsCharts'));
-/**
- * The other two recharts consumers on this page. Both also live on non-default
- * tabs (EV And Luck on Performance, Bankroll on Analysis), and between them
- * they were what kept CartesianChart - 96.5 KB of the 120 KB - eager even
- * after StatsCharts was split out.
- */
-const EVLuckChart = lazy(() => import('../components/stats/EVLuckChart'));
-const BankrollTracker = lazy(() => import('../components/stats/BankrollTracker'));
-const PositionWinRates = lazy(() => import('../components/stats/PositionWinRates'));
-const PositionalRadar = lazy(() => import('../components/stats/PositionalRadar'));
-const HoleCardHeatmap = lazy(() => import('../components/stats/HoleCardHeatmap'));
-const NemesisPanel = lazy(() => import('../components/stats/NemesisPanel'));
-const BenchmarkPanel = lazy(() => import('../components/stats/BenchmarkPanel'));
-const TrophyRoom = lazy(() => import('../components/stats/TrophyRoom'));
-const StatsShareCard = lazy(() => import('../components/stats/StatsShareCard'));
-const SessionHistory = lazy(() => import('../components/stats/SessionHistory'));
-const AdvancedStatsSummary = lazy(() => import('../components/stats/AdvancedStatsSummary'));
-const DownlineRakePanel = lazy(() => import('../components/agent/DownlineRakePanel'));
+const RakeTab = lazy(() => import('./stats/RakeTab'));
+const OverviewTab = lazy(() => import('./stats/OverviewTab'));
+const PerformanceTab = lazy(() => import('./stats/PerformanceTab'));
+const PositionsTab = lazy(() => import('./stats/PositionsTab'));
+const HandsTab = lazy(() => import('./stats/HandsTab'));
+const TrophiesTab = lazy(() => import('./stats/TrophiesTab'));
+const TournamentsTab = lazy(() => import('./stats/TournamentsTab'));
+const AnalysisTab = lazy(() => import('./stats/AnalysisTab'));
 import { playerStyleFromStats } from '../components/stats/playerStyleFromStats';
+import {
+  RANGES,
+  num,
+  str,
+  type FullStats,
+  type HandMode,
+  type HandRow,
+  type OverallStats,
+  type LifetimeStats,
+} from './stats/types';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
@@ -125,169 +126,7 @@ function setCachedFull(userId: string, full: FullStats) {
   }
 }
 
-// ── Types matching the ca_player_stats_overview_v2 RPC payload ──
-interface OverallStats {
-  total_hands: number;
-  cash_hands: number;
-  tourney_hands: number;
-  tournaments_with_hands: number;
-  hands_won: number;
-  hands_lost: number;
-  vpip: number; // fraction 0..1
-  pfr: number;
-  three_bet_percent: number;
-  fold_to_three_bet: number;
-  cbet_flop: number;
-  aggression_factor: number;
-  showdowns_total: number;
-  showdowns_won: number;
-  wtsd: number;
-  total_profit: number;
-  total_winnings: number;
-  total_invested: number;
-  biggest_pot_won: number;
-  biggest_hand_loss: number;
-  bb_per_100: number;
-  hours_played: number;
-  // Analysis window. The RPC scores the player's most recent `hand_cap` hands;
-  // `hands_capped` is true when that limit actually bit, so the UI can say so
-  // instead of presenting a truncated total as a lifetime figure.
-  hand_cap: number;
-  hands_capped: boolean;
-  first_hand_at?: string;
-  last_hand_at?: string;
-}
-
-interface DailyPoint {
-  date: string;
-  hands: number;
-  profit: number;
-}
-
-interface SessionRow {
-  id: number;
-  date: string;
-  ended: string;
-  duration_minutes: number;
-  hands_played: number;
-  buy_in: number;
-  cash_out: number;
-  profit_loss: number;
-}
-
-interface PositionRow {
-  position: string;
-  hands_played: number;
-  vpip_count: number;
-  pfr_count: number;
-  three_bet_count: number;
-  hands_won: number;
-  total_profit: number;
-  bb100: number;
-}
-
-interface VariantRow {
-  variant: string;
-  hands: number;
-  hands_won: number;
-  profit: number;
-  bb100: number;
-}
-
-interface LifetimeStats {
-  hands: number;
-  first_hand_at: string | null;
-  last_hand_at: string | null;
-  /** False while the indexer is still walking back through older history. */
-  indexed_complete: boolean;
-}
-
-interface HandRow {
-  id: string;
-  played_at: string;
-  variant: string;
-  big_blind: number;
-  is_tournament: boolean;
-  position: string | null;
-  pot_size: number;
-  won: number;
-  profit: number;
-  is_winner: boolean;
-  players: number;
-  board: string[] | null;
-  hole_cards: unknown;
-}
-
-type HandMode = 'biggest_won' | 'biggest_lost' | 'recent';
-
-interface StakeRow {
-  big_blind: number;
-  hands: number;
-  hands_won: number;
-  profit: number;
-  bb100: number;
-}
-
-interface TournamentSummary {
-  entries: number;
-  cashes: number;
-  wins: number;
-  best_finish: number | null;
-  itm_percent: number;
-  total_buyins: number;
-  /** Placement prizes PLUS bounty earnings. Unchanged meaning. */
-  total_winnings: number;
-  /** Placement prizes only (Dan section 37). */
-  total_prizes: number;
-  /** Every bounty collected, mystery and flat alike. */
-  total_bounty_winnings: number;
-  /** Knockouts that paid. */
-  total_bounties: number;
-  net_profit: number;
-  roi: number;
-}
-
-/**
- * One past event (Dan section 45).
- *
- * `prize` is the PLACEMENT prize only and `total_won` is prize + bounties. Until
- * 2026-08-25 the RPC returned a single `prize` field that was already the sum,
- * which made a mystery bounty result unreadable: a min-cash plus a 5,000 chest
- * reported "prize 5,040" and nothing could get the split back. See
- * supabase/migrations/20260825600000_player_history_splits_prize_from_bounty.sql.
- */
-interface RecentTournament {
-  tournament_id: string | null;
-  name: string;
-  start_time: string | null;
-  variant: string | null;
-  is_mystery_bounty: boolean;
-  finish_rank: number | null;
-  status: string | null;
-  /** Placement prize only. */
-  prize: number;
-  /** Bounty earnings. */
-  bounty_winnings: number;
-  /** Knockouts that paid. */
-  bounties: number;
-  /** prize + bounty_winnings. */
-  total_won: number;
-  buyin: number;
-}
-
-interface FullStats {
-  contract: StatsContractMetadata;
-  overall: OverallStats;
-  lifetime: LifetimeStats;
-  window_days: number | null;
-  daily: DailyPoint[];
-  sessions: SessionRow[];
-  positions: PositionRow[];
-  variants: VariantRow[];
-  stakes: StakeRow[];
-  tournaments: TournamentSummary;
-  recent_tournaments: RecentTournament[];
-}
+// Types, RANGES and num/str live in ./stats/types.ts (phase 2 split).
 
 type StatCategory =
   | 'overview'
@@ -326,15 +165,6 @@ const TAB_LABELS: Record<StatCategory, string> = {
   trophies: 'Trophies',
   rake: 'Rake',
 };
-
-// Analysis ranges. `null` = no time bound (the most recent hand_cap hands,
-// whenever they were played) — the previous, only behaviour.
-const RANGES: { key: string; days: number | null; label: string }[] = [
-  { key: '7d', days: 7, label: '7 Days' },
-  { key: '30d', days: 30, label: '30 Days' },
-  { key: '90d', days: 90, label: '90 Days' },
-  { key: 'all', days: null, label: 'All' },
-];
 
 const EMPTY_OVERALL: OverallStats = {
   total_hands: 0,
@@ -396,21 +226,6 @@ const EMPTY_FULL: FullStats = {
   },
   recent_tournaments: [],
 };
-
-// ── RPC payload hardening ──────────────────────────────────────────────────
-// Every number the UI formats goes through `num()`. A spread over defaults only
-// fills in MISSING keys — an explicit null (which Postgres aggregates can
-// produce) would survive it and blow up the first .toFixed()/.toLocaleString()
-// in the hero, taking the whole page down rather than one tile.
-const num = (v: unknown, fallback = 0): number =>
-  typeof v === 'number' && Number.isFinite(v)
-    ? v
-    : typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v))
-      ? Number(v)
-      : fallback;
-
-const str = (v: unknown, fallback = ''): string =>
-  typeof v === 'string' && v.length > 0 ? v : fallback;
 
 /**
  * Harden the notable-hands payload (Dan 2026-08-25).
@@ -767,6 +582,14 @@ export default function PlayerStatsPage() {
      * load is left to PanelBoundary - we still print the rest.
      */
     await Promise.all([
+      import('./stats/RakeTab'),
+      import('./stats/OverviewTab'),
+      import('./stats/PerformanceTab'),
+      import('./stats/PositionsTab'),
+      import('./stats/HandsTab'),
+      import('./stats/TrophiesTab'),
+      import('./stats/TournamentsTab'),
+      import('./stats/AnalysisTab'),
       import('../components/stats/StatsCharts'),
       import('../components/stats/EVLuckChart'),
       import('../components/stats/BankrollTracker'),
@@ -2007,803 +1830,110 @@ export default function PlayerStatsPage() {
             a downline generating rake, and that is the whole point of the tab. */}
             {!hasData && category !== 'rake' && emptyState}
 
-            {showTab('rake') && rakeLoading && (
-              <div className="stats-section-loading" role="status">
-                Loading Rake For This Analysis Window...
-              </div>
+            {showTab('rake') && (
+              <RakeTab
+                rakeLoading={rakeLoading}
+                rakeStats={rakeStats}
+                agentRoles={agentRoles}
+                isOwnProfile={isOwnProfile}
+                panelResetKey={panelResetKey}
+              />
             )}
 
-            {showTab('rake') &&
-              !rakeLoading &&
-              agentRoles !== null &&
-              (!rakeStats || rakeStats.hands === 0) &&
-              agentRoles.length === 0 && (
-                <div className="stats-empty-state" role="status">
-                  <span className="empty-icon" aria-hidden="true">
-                    $
-                  </span>
-                  <span className="empty-title">No Rake In This Window</span>
-                  <span className="empty-description">
-                    Player-Attributed Rake Will Appear Here After A Raked Cash Hand Is Recorded.
-                  </span>
-                </div>
-              )}
-
-            {/* ── RAKE TAB — live downline earnings, agents only ── */}
-            {showTab('rake') && isOwnProfile && rakeStats && rakeStats.hands > 0 && (
-              <PanelBoundary name="Your Rake" resetKey={panelResetKey}>
-                <div className="stats-grid">
-                  <StatRow
-                    label="Rake Paid"
-                    value={rakeStats.rake_paid.toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                    color="#f59e0b"
-                    highlight
-                  />
-                  <StatRow
-                    label="Rake Per 100 Hands"
-                    value={rakeStats.rake_per_100.toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                    color="#00d4ff"
-                  />
-                  <StatRow
-                    label="Rake In Big Blinds"
-                    value={rakeStats.rake_in_bb.toFixed(2)}
-                    color="#8b5cf6"
-                  />
-                  <StatRow
-                    label="Raked Hands"
-                    value={rakeStats.raked_hands.toLocaleString()}
-                    color="#22c55e"
-                  />
-                  <StatRow
-                    label="Average Per Raked Hand"
-                    value={rakeStats.avg_rake_per_raked_hand.toFixed(4)}
-                    color="#06b6d4"
-                  />
-                  <StatRow
-                    label="Cash Hands Counted"
-                    value={rakeStats.hands.toLocaleString()}
-                    color="#4169E1"
-                  />
-                </div>
-              </PanelBoundary>
-            )}
-
-            {showTab('rake') && agentRoles && agentRoles.length > 0 && (
-              <PanelBoundary name="Downline Rake" resetKey={panelResetKey}>
-                <DownlineRakePanel roles={agentRoles} />
-              </PanelBoundary>
-            )}
-
-            {/* ── OVERVIEW TAB ── */}
             {showTab('overview') && hasData && (
-              <>
-                <div className="stats-section-lead">
-                  <div>
-                    <span className="stats-section-kicker">Live Readout</span>
-                    <h2>Core Tendencies</h2>
-                  </div>
-                  <span>{RANGES.find((r) => r.key === rangeKey)?.label ?? 'All'} Window</span>
-                </div>
-                <div className="stats-grid stats-overview-grid">
-                  <StatRow
-                    label="VPIP"
-                    value={`${(overall.vpip * 100).toFixed(1)}%`}
-                    color="#00d4ff"
-                  />
-                  <StatRow
-                    label="PFR"
-                    value={`${(overall.pfr * 100).toFixed(1)}%`}
-                    color="#8b5cf6"
-                  />
-                  <StatRow
-                    label="Aggression Factor"
-                    value={overall.aggression_factor.toFixed(2)}
-                    color="#f59e0b"
-                  />
-                  <StatRow
-                    label="Hours Played"
-                    value={`${overall.hours_played.toFixed(1)}h`}
-                    color="#06b6d4"
-                  />
-                  <StatRow label="Showdown Win %" value={`${showdownWinRate}%`} color="#22c55e" />
-                  <StatRow
-                    label="BB/100"
-                    value={overall.bb_per_100.toFixed(2)}
-                    color="#4169E1"
-                    highlight
-                  />
-                  <StatRow
-                    label="Cash Hands"
-                    value={overall.cash_hands.toLocaleString()}
-                    color="#00d4ff"
-                  />
-                  <StatRow
-                    label="Tournament Hands"
-                    value={overall.tourney_hands.toLocaleString()}
-                    color="#8b5cf6"
-                  />
-                </div>
-
-                <div className="stats-ledger-grid">
-                  {/* Per-variant breakdown */}
-                  {(full?.variants?.length ?? 0) > 0 && (
-                    <div className="variant-table" role="region" aria-label="Performance By Game">
-                      <h3 className="variant-title">Game Mix</h3>
-                      <div className="variant-row variant-head">
-                        <span>Game</span>
-                        <span>Hands</span>
-                        <span>Won</span>
-                        <span>Profit</span>
-                        <span>BB/100</span>
-                      </div>
-                      {(full?.variants || []).map((v) => (
-                        <button
-                          type="button"
-                          className="variant-row stats-evidence-row"
-                          key={v.variant}
-                          onClick={() => openHandEvidence({ variant: v.variant })}
-                          aria-label={`Review ${String(v.variant).toUpperCase()} Hands`}
-                        >
-                          <span className="variant-name">{String(v.variant).toUpperCase()}</span>
-                          <span>{v.hands.toLocaleString()}</span>
-                          <span>{v.hands_won.toLocaleString()}</span>
-                          <span className={v.profit >= 0 ? 'positive' : 'negative'}>
-                            {v.profit >= 0 ? '+' : ''}
-                            {v.profit.toLocaleString()}
-                          </span>
-                          <span className={v.bb100 >= 0 ? 'positive' : 'negative'}>
-                            {v.bb100.toFixed(1)}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Per-stake breakdown: which game size is actually carrying (or
-                  bleeding) the results, instead of one blended number. */}
-                  {(full?.stakes?.length ?? 0) > 1 && (
-                    <div className="variant-table" role="region" aria-label="Performance By Stake">
-                      <h3 className="variant-title">Stake Ledger</h3>
-                      <div className="variant-row variant-head">
-                        <span>Stake</span>
-                        <span>Hands</span>
-                        <span>Won</span>
-                        <span>Profit</span>
-                        <span>BB/100</span>
-                      </div>
-                      {(full?.stakes || []).map((st) => (
-                        <button
-                          type="button"
-                          className="variant-row stats-evidence-row"
-                          key={`stake-${st.big_blind}`}
-                          onClick={() => openHandEvidence({ bigBlind: st.big_blind })}
-                          aria-label={`Review Hands At ${st.big_blind} Big Blind`}
-                        >
-                          <span className="variant-name">{st.big_blind} BB</span>
-                          <span>{st.hands.toLocaleString()}</span>
-                          <span>{st.hands_won.toLocaleString()}</span>
-                          <span className={st.profit >= 0 ? 'positive' : 'negative'}>
-                            {st.profit >= 0 ? '+' : ''}
-                            {st.profit.toLocaleString()}
-                          </span>
-                          <span className={st.bb100 >= 0 ? 'positive' : 'negative'}>
-                            {st.bb100.toFixed(1)}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Coaching is intentionally absent until the persisted Personal
-                Assistant workflow is real. Phase 1 removed the demo solver path
-                rather than presenting fabricated analysis as player evidence. */}
-
-                {/* Rivals: the most socially engaging stat on the page, so it sits
-                where a player looks first. Owner only — head-to-head chip flow
-                is private, and ca_player_nemesis refuses a cross-user read. */}
-                {isOwnProfile && (
-                  <PanelBoundary name="Rivals" resetKey={panelResetKey}>
-                    <NemesisPanel userId={targetUserId} days={windowDays} />
-                  </PanelBoundary>
-                )}
-
-                {/* Where the player stands against the field. Rates arrive from the
-                RPC as FRACTIONS and the distribution is stored in PERCENT, so
-                they are converted exactly once, here, at the boundary. */}
-                <PanelBoundary name="Benchmarks" resetKey={panelResetKey}>
-                  <BenchmarkPanel
-                    // The metric being benchmarked hardest here is bb/100, which the
-                    // RPC computes over CASH hands only. Passing total_hands let a
-                    // player with 400 cash + 900 tournament hands clear the 500-hand
-                    // confidence gate on a 400-hand sample.
-                    handsPlayed={overall.cash_hands || overall.total_hands}
-                    days={windowDays}
-                    values={{
-                      bb100: overall.bb_per_100,
-                      // The same memo the gauge uses. Matches the field definition:
-                      // hands won over hands dealt.
-                      win_rate: overall.total_hands > 0 ? handsWonPct : undefined,
-                      vpip: overall.vpip * 100,
-                      pfr: overall.pfr * 100,
-                      three_bet: overall.three_bet_percent * 100,
-                    }}
-                  />
-                </PanelBoundary>
-
-                {/* The export people actually use: a card for the club chat after
-                a good session, built on canvas so it costs no bundle weight. */}
-                {isOwnProfile && (
-                  <PanelBoundary name="Share Card" resetKey={panelResetKey}>
-                    <StatsShareCard
-                      displayName={playerDisplayName(user)}
-                      styleLabel={shareStyle?.label ?? null}
-                      styleColor={shareStyle?.color ?? null}
-                      stats={{
-                        hands: overall.total_hands,
-                        bb100: overall.bb_per_100,
-                        profit: overall.total_profit,
-                        vpip: overall.vpip * 100,
-                        pfr: overall.pfr * 100,
-                        hoursPlayed: overall.hours_played,
-                      }}
-                      rangeLabel={rangeLabel === 'All' ? 'All Time' : `Last ${rangeLabel}`}
-                    />
-                  </PanelBoundary>
-                )}
-
-                <div className="stats-action-row">
-                  <button className="view-hands-btn" onClick={() => openHandEvidence()}>
-                    View Hand Histories
-                  </button>
-                  <button className="view-hands-btn" onClick={printDossier} disabled={printing}>
-                    {printing ? 'Preparing Dossier...' : 'Print Or Save Dossier'}
-                  </button>
-                </div>
-              </>
+              <OverviewTab
+                overall={overall}
+                full={full}
+                rangeKey={rangeKey}
+                rangeLabel={rangeLabel}
+                showdownWinRate={showdownWinRate}
+                handsWonPct={handsWonPct}
+                isOwnProfile={isOwnProfile}
+                panelResetKey={panelResetKey}
+                targetUserId={targetUserId}
+                windowDays={windowDays}
+                user={user}
+                shareStyle={shareStyle}
+                printing={printing}
+                printDossier={printDossier}
+                openHandEvidence={openHandEvidence}
+              />
             )}
 
-            {/* ── PERFORMANCE TAB ── */}
             {showTab('performance') && hasData && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                {/* Luck first. Every number below it is a rate the player can act
-                on; this is the one that tells them whether the results they are
-                staring at were earned or dealt. Owner only: it is derived from
-                their own per-hand records. */}
-                {isOwnProfile && (
-                  <PanelBoundary name="EV And Luck" resetKey={panelResetKey}>
-                    <Suspense
-                      fallback={<div className="hand-empty hand-loading">Loading Chart...</div>}
-                    >
-                      <EVLuckChart userId={targetUserId} days={windowDays} still={printing} />
-                    </Suspense>
-                  </PanelBoundary>
-                )}
-
-                {/* Preflop */}
-                <div>
-                  <div className="stats-section-header">
-                    <h3 style={{ color: '#00d4ff' }}>Preflop</h3>
-                  </div>
-                  <div className="stats-grid">
-                    <StatRow
-                      label="VPIP"
-                      value={`${(overall.vpip * 100).toFixed(1)}%`}
-                      color="#00d4ff"
-                    />
-                    <StatRow
-                      label="PFR"
-                      value={`${(overall.pfr * 100).toFixed(1)}%`}
-                      color="#8b5cf6"
-                    />
-                    <StatRow
-                      label="3-Bet %"
-                      value={`${(overall.three_bet_percent * 100).toFixed(1)}%`}
-                      color="#f59e0b"
-                    />
-                    <StatRow
-                      label="Fold To 3-Bet"
-                      value={`${(overall.fold_to_three_bet * 100).toFixed(1)}%`}
-                      color="#ef4444"
-                    />
-                  </div>
-                </div>
-                {/* Postflop */}
-                <div>
-                  <div className="stats-section-header">
-                    <h3 style={{ color: '#8b5cf6' }}>Postflop</h3>
-                  </div>
-                  <div className="stats-grid">
-                    <StatRow
-                      label="C-Bet Flop"
-                      value={`${(overall.cbet_flop * 100).toFixed(1)}%`}
-                      color="#8b5cf6"
-                    />
-                    <StatRow
-                      label="WTSD"
-                      value={`${(overall.wtsd * 100).toFixed(1)}%`}
-                      color="#6366f1"
-                    />
-                    <StatRow
-                      label="Aggression Factor"
-                      value={overall.aggression_factor.toFixed(2)}
-                      color="#f59e0b"
-                    />
-                    <StatRow label="Showdown Win %" value={`${showdownWinRate}%`} color="#22c55e" />
-                  </div>
-                </div>
-                {/* Results */}
-                <div>
-                  <div className="stats-section-header">
-                    <h3 style={{ color: '#22c55e' }}>Results</h3>
-                  </div>
-                  <div className="stats-grid">
-                    <StatRow
-                      label="Cash Profit"
-                      value={overall.total_profit.toLocaleString()}
-                      color="#22c55e"
-                      highlight
-                    />
-                    <StatRow label="BB/100" value={overall.bb_per_100.toFixed(2)} color="#4169E1" />
-                    <StatRow
-                      label="Total Won"
-                      value={overall.total_winnings.toLocaleString()}
-                      color="#10b981"
-                    />
-                    <StatRow
-                      label="Total Invested"
-                      value={overall.total_invested.toLocaleString()}
-                      color="#06b6d4"
-                    />
-                    <StatRow
-                      label="Biggest Pot Won"
-                      value={overall.biggest_pot_won.toLocaleString()}
-                      color="#10b981"
-                    />
-                    <StatRow
-                      label="Biggest Hand Loss"
-                      value={overall.biggest_hand_loss.toLocaleString()}
-                      color="#ef4444"
-                    />
-                    <StatRow
-                      label="Hands Won"
-                      value={overall.hands_won.toLocaleString()}
-                      color="#22c55e"
-                    />
-                    <StatRow
-                      label="Hands Lost"
-                      value={overall.hands_lost.toLocaleString()}
-                      color="#ef4444"
-                    />
-                  </div>
-                </div>
-              </div>
+              <PerformanceTab
+                overall={overall}
+                showdownWinRate={showdownWinRate}
+                isOwnProfile={isOwnProfile}
+                panelResetKey={panelResetKey}
+                targetUserId={targetUserId}
+                windowDays={windowDays}
+                printing={printing}
+              />
             )}
 
-            {/* ── POSITIONS TAB ── */}
             {showTab('positions') && hasData && (
-              <div>
-                <div className="stats-position-evidence" aria-label="Review Hands By Position">
-                  {(full?.positions || []).map((position) => (
-                    <button
-                      type="button"
-                      key={position.position}
-                      onClick={() => openHandEvidence({ position: position.position })}
-                    >
-                      {position.position} · {position.hands_played.toLocaleString()} Hands
-                    </button>
-                  ))}
-                </div>
-                {/* Positional shape first: a player reads the SHAPE of their game
-                before they read any individual number, and a web that pinches
-                at the button is a leak no table of rates makes obvious. Pure
-                presentation over full.positions, which is already loaded. */}
-                <PanelBoundary name="Positional Shape" resetKey={panelResetKey}>
-                  <PositionalRadar positions={full?.positions} />
-                </PanelBoundary>
-                <PanelBoundary name="Position Win Rates" resetKey={panelResetKey}>
-                  <PositionWinRates
-                    userId={targetUserId}
-                    initialPositions={full?.positions}
-                    days={windowDays}
-                  />
-                </PanelBoundary>
-              </div>
+              <PositionsTab
+                full={full}
+                panelResetKey={panelResetKey}
+                targetUserId={targetUserId}
+                windowDays={windowDays}
+                openHandEvidence={openHandEvidence}
+              />
             )}
 
-            {/* ── HANDS TAB — owner only, see the PRIVACY note on BASE_TABS ── */}
+            {/* Owner only, see the PRIVACY note on BASE_TABS */}
             {showTab('hands') && isOwnProfile && hasData && (
-              <div>
-                <PanelBoundary name="Starting Hands" resetKey={panelResetKey}>
-                  <HoleCardHeatmap userId={targetUserId} days={windowDays} />
-                </PanelBoundary>
-              </div>
+              <HandsTab
+                panelResetKey={panelResetKey}
+                targetUserId={targetUserId}
+                windowDays={windowDays}
+              />
             )}
 
-            {/* ── TROPHIES TAB — owner only ── */}
             {showTab('trophies') && isOwnProfile && hasData && (
-              <div>
-                <PanelBoundary name="Trophy Room" resetKey={panelResetKey}>
-                  {/* Trophies are LIFETIME achievements. They read the all-time
-                      payload, never the range-windowed one, so switching to
-                      "7 Days" cannot un-earn a 10,000-hand milestone. */}
-                  {allTimeStats ? (
-                    <TrophyRoom
-                      overall={allTimeStats.overall}
-                      tournaments={allTimeStats.tournaments}
-                      lifetimeHands={allTimeStats.lifetime.hands}
-                    />
-                  ) : allTimeError ? (
-                    <div className="hand-empty" role="alert">
-                      Your All-Time Stats Could Not Be Loaded For The Trophy Room.{' '}
-                      <button className="hand-retry" onClick={() => setAllTimeReload((n) => n + 1)}>
-                        Try Again
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="hand-empty hand-loading">Loading Your All-Time Record...</div>
-                  )}
-                </PanelBoundary>
-              </div>
+              <TrophiesTab
+                panelResetKey={panelResetKey}
+                allTimeStats={allTimeStats}
+                allTimeError={allTimeError}
+                setAllTimeReload={setAllTimeReload}
+              />
             )}
 
-            {/* ── TOURNAMENTS TAB ── */}
             {showTab('tournaments') && hasData && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                <div>
-                  <div className="stats-section-header">
-                    <h3 style={{ color: '#f59e0b' }}>Tournament Results</h3>
-                  </div>
-                  <div className="stats-grid">
-                    <StatRow
-                      label="Entries"
-                      value={tourn.entries.toLocaleString()}
-                      color="#00d4ff"
-                    />
-                    <StatRow label="Cashes" value={tourn.cashes.toLocaleString()} color="#22c55e" />
-                    <StatRow
-                      label="ITM %"
-                      value={`${(tourn.itm_percent * 100).toFixed(1)}%`}
-                      color="#10b981"
-                    />
-                    <StatRow label="Wins" value={tourn.wins.toLocaleString()} color="#f59e0b" />
-                    <StatRow
-                      label="Best Finish"
-                      value={tourn.best_finish ? `#${tourn.best_finish}` : '-'}
-                      color="#8b5cf6"
-                    />
-                    <StatRow
-                      label="Total Buy-Ins"
-                      value={tourn.total_buyins.toLocaleString()}
-                      color="#06b6d4"
-                    />
-                    <StatRow
-                      label="Total Winnings"
-                      value={tourn.total_winnings.toLocaleString()}
-                      color="#10b981"
-                    />
-                    <StatRow
-                      label="Net Profit"
-                      value={`${tourn.net_profit >= 0 ? '+' : ''}${tourn.net_profit.toLocaleString()}`}
-                      color={tourn.net_profit >= 0 ? '#22c55e' : '#ef4444'}
-                      highlight
-                    />
-                    <StatRow
-                      label="ROI"
-                      value={`${(tourn.roi * 100).toFixed(1)}%`}
-                      color={tourn.roi >= 0 ? '#22c55e' : '#ef4444'}
-                    />
-                    <StatRow
-                      label="Tournament Hands"
-                      value={overall.tourney_hands.toLocaleString()}
-                      color="#8b5cf6"
-                    />
-                  </div>
-                </div>
-
-                {(full?.recent_tournaments?.length ?? 0) > 0 ? (
-                  <div>
-                    <div className="stats-section-header">
-                      <h3 style={{ color: '#3b82f6' }}>Recent Tournaments</h3>
-                    </div>
-                    <div className="tournament-list">
-                      {(full?.recent_tournaments || []).map((t, i) => (
-                        <div className="tournament-item" key={i}>
-                          <div className="tournament-item-main">
-                            <span className="tournament-item-name">{t.name}</span>
-                            <span className="tournament-item-date">
-                              {t.start_time
-                                ? new Date(t.start_time).toLocaleDateString('en-US', {
-                                    month: 'short',
-                                    day: 'numeric',
-                                    year: 'numeric',
-                                  })
-                                : '-'}
-                              {t.variant ? ` · ${t.variant.toUpperCase()}` : ''}
-                              {t.is_mystery_bounty ? ' · MYSTERY BOUNTY' : ''}
-                            </span>
-                          </div>
-                          <div className="tournament-item-result">
-                            <span className="tournament-item-rank">
-                              {t.finish_rank ? `#${t.finish_rank}` : t.status || '-'}
-                            </span>
-                            {/* Dan section 45: Finish / Prize / Bounties / Bounty
-                              Earnings / Total Won. The net below is
-                              total_won - buyin, which is the same number this
-                              line always showed - the old `prize` field WAS
-                              prize + bounty. What changed is that the two
-                              halves are now visible instead of merged. */}
-                            <span
-                              style={{
-                                fontSize: 10,
-                                color: '#94a3b8',
-                                display: 'block',
-                                marginTop: 2,
-                              }}
-                            >
-                              Prize {num(t.prize).toLocaleString()}
-                              {num(t.bounty_winnings) > 0 && (
-                                <>
-                                  {' '}
-                                  / {num(t.bounties).toLocaleString()} KO
-                                  {num(t.bounties) === 1 ? '' : 's'}{' '}
-                                  {num(t.bounty_winnings).toLocaleString()}
-                                </>
-                              )}
-                              {' / Total '}
-                              {num(t.total_won).toLocaleString()}
-                            </span>
-                            <span
-                              className={`tournament-item-net ${num(t.total_won) - num(t.buyin) >= 0 ? 'positive' : 'negative'}`}
-                            >
-                              {num(t.total_won) - num(t.buyin) >= 0 ? '+' : ''}
-                              {(num(t.total_won) - num(t.buyin)).toLocaleString()}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="stats-empty-state">
-                    <span className="empty-title">No Tournaments Yet</span>
-                    <span className="empty-description">
-                      Register For A Tournament In The Lobby And Your Results Will Show Up Here.
-                    </span>
-                  </div>
-                )}
-              </div>
+              <TournamentsTab tourn={tourn} overall={overall} full={full} />
             )}
 
-            {/* ── ANALYSIS TAB ── */}
             {showTab('analysis') && hasData && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                {/* Advanced Stats */}
-                <div>
-                  <div className="stats-section-header">
-                    <h3 style={{ color: '#f59e0b' }}>Advanced Stats</h3>
-                  </div>
-                  <PanelBoundary name="Advanced Stats" resetKey={panelResetKey}>
-                    <AdvancedStatsSummary
-                      initialData={advancedInitialData}
-                      rangeLabel={rangeLabel}
-                    />
-                  </PanelBoundary>
-                </div>
-
-                {/* Charts */}
-                <PanelBoundary name="Charts" resetKey={panelResetKey}>
-                  <Suspense
-                    fallback={
-                      <div className="charts-section hand-loading">
-                        <div className="stats-section-header">
-                          <h3 style={{ color: '#00d4ff' }}>Charts</h3>
-                        </div>
-                        <div className="hand-empty">Loading Charts...</div>
-                      </div>
-                    }
-                  >
-                    <StatsCharts
-                      dailySeries={dailySeries}
-                      positionPie={positionPie}
-                      profitChartSummary={profitChartSummary}
-                      dailyChartSummary={dailyChartSummary}
-                      positionChartSummary={positionChartSummary}
-                      rangeLabel={RANGES.find((r) => r.key === rangeKey)?.label ?? 'All Time'}
-                      // recharts animates its entrance over 1500ms and the print
-                      // fires at 1200ms, so without this all three charts were
-                      // caught mid-draw in the PDF. EVLuckChart already took
-                      // `still`; these three never did, despite the comment on
-                      // printDossier claiming otherwise.
-                      still={printing}
-                      sessionRows={sessionRows}
-                      onExportSessions={exportSessionsCSV}
-                      onExportOverview={exportOverviewCSV}
-                    />
-                  </Suspense>
-                </PanelBoundary>
-
-                {/* Notable hands — every stat above used to be a dead end. */}
-                <PanelBoundary name="Notable Hands" resetKey={panelResetKey}>
-                  <div>
-                    <div className="stats-section-header">
-                      <h3 style={{ color: '#f59e0b' }}>Notable Hands</h3>
-                    </div>
-                    <div className="hand-mode-row">
-                      {(
-                        [
-                          ['biggest_won', 'Biggest Cash Wins'],
-                          ['biggest_lost', 'Worst Cash Losses'],
-                          ['recent', 'Most Recent'],
-                        ] as [HandMode, string][]
-                      ).map(([mode, label]) => (
-                        <button
-                          key={mode}
-                          className={handMode === mode ? 'active' : ''}
-                          aria-pressed={handMode === mode}
-                          onClick={() => setHandMode(mode)}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                    {handsLoading && (
-                      <div className="hand-empty hand-loading">Loading Hands...</div>
-                    )}
-                    {!handsLoading && handsError && (
-                      <div className="hand-empty" role="alert">
-                        Could Not Load Notable Hands.{' '}
-                        <button className="hand-retry" onClick={() => setHandsReload((n) => n + 1)}>
-                          Try Again
-                        </button>
-                      </div>
-                    )}
-                    {/* "No hands" only when the read actually succeeded. This list is
-                    all-time: ca_player_hands takes no window argument, so saying
-                    "in this range" claimed a filter that does not exist. */}
-                    {!handsLoading && !handsError && hands && hands.length === 0 && (
-                      <div className="hand-empty">
-                        {handMode === 'recent'
-                          ? 'No Hands Recorded Yet.'
-                          : 'No Cash Hands Recorded Yet. Tournament Chips Are Not Ranked Here.'}
-                      </div>
-                    )}
-                    {!handsLoading && hands && hands.length > 0 && (
-                      <div className="hand-list">
-                        {hands.map((h) => (
-                          <div className="hand-row" key={h.id}>
-                            <div className="hand-row-main">
-                              <span className="hand-row-meta">
-                                {handDate(h.played_at)}
-                                {' · '}
-                                {String(h.variant || '').toUpperCase()}
-                                {h.position ? ` · ${h.position}` : ''}
-                                {h.is_tournament ? ' · MTT' : ` · ${h.big_blind} BB`}
-                                {` · ${h.players} Players`}
-                              </span>
-                              {Array.isArray(h.board) && h.board.length > 0 && (
-                                <span className="hand-row-board">
-                                  {h.board.map((c) => formatCard(String(c))).join('  ')}
-                                </span>
-                              )}
-                            </div>
-                            <div className="hand-row-result">
-                              <span
-                                className={`hand-row-profit ${h.profit >= 0 ? 'positive' : 'negative'}`}
-                              >
-                                {h.profit >= 0 ? '+' : ''}
-                                {h.profit.toLocaleString()}
-                              </span>
-                              <span className="hand-row-pot">
-                                Pot {h.pot_size.toLocaleString()}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                        <button className="view-hands-btn" onClick={() => openHandEvidence()}>
-                          Open Full Hand History
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </PanelBoundary>
-
-                {/* Sessions */}
-                <div>
-                  <div className="stats-section-header">
-                    <h3 style={{ color: '#3b82f6' }}>Cash Sessions</h3>
-                  </div>
-                  <PanelBoundary name="Session History" resetKey={panelResetKey}>
-                    <SessionHistory
-                      userId={targetUserId}
-                      initialSessions={sessionRows}
-                      rangeLabel={rangeLabel}
-                    />
-                  </PanelBoundary>
-                  {overall.tourney_hands > 0 && (
-                    <div className="stats-notice">
-                      Cash Tables Only - Tournament Results Are In The Tournaments Tab, Because A
-                      Tournament Result Is A Prize, Not Chips Won At A Table.
-                    </div>
-                  )}
-                </div>
-
-                {/* Bankroll */}
-                <div>
-                  <div className="stats-section-header">
-                    <h3 style={{ color: '#10b981' }}>Cash Bankroll</h3>
-                  </div>
-                  <PanelBoundary name="Bankroll" resetKey={panelResetKey}>
-                    <Suspense
-                      fallback={<div className="hand-empty hand-loading">Loading Chart...</div>}
-                    >
-                      <BankrollTracker
-                        userId={targetUserId}
-                        initialSessions={sessionRows}
-                        rangeLabel={rangeLabel}
-                        still={printing}
-                      />
-                    </Suspense>
-                  </PanelBoundary>
-                </div>
-              </div>
+              <AnalysisTab
+                overall={overall}
+                full={full}
+                panelResetKey={panelResetKey}
+                targetUserId={targetUserId}
+                rangeKey={rangeKey}
+                rangeLabel={rangeLabel}
+                printing={printing}
+                advancedInitialData={advancedInitialData}
+                dailySeries={dailySeries}
+                positionPie={positionPie}
+                profitChartSummary={profitChartSummary}
+                dailyChartSummary={dailyChartSummary}
+                positionChartSummary={positionChartSummary}
+                sessionRows={sessionRows}
+                exportSessionsCSV={exportSessionsCSV}
+                exportOverviewCSV={exportOverviewCSV}
+                handMode={handMode}
+                setHandMode={setHandMode}
+                hands={hands}
+                handsLoading={handsLoading}
+                handsError={handsError}
+                setHandsReload={setHandsReload}
+                openHandEvidence={openHandEvidence}
+              />
             )}
           </Suspense>
         </motion.div>
       </AnimatePresence>
-    </div>
-  );
-}
-
-// hand_history stores board cards as "8hearts" / "Aspades". Render them as
-// rank + suit symbol rather than dumping the raw token at the player.
-const SUIT_SYMBOLS: Record<string, string> = {
-  hearts: '\u2665',
-  diamonds: '\u2666',
-  clubs: '\u2663',
-  spades: '\u2660',
-};
-
-/** A short date, or a dash. `new Date('')` renders "Invalid Date" at the user. */
-function handDate(iso: string): string {
-  const d = new Date(iso);
-  return Number.isFinite(d.getTime())
-    ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    : '-';
-}
-
-function formatCard(card: string): string {
-  const m = /^([0-9TJQKA]{1,2})(hearts|diamonds|clubs|spades)$/i.exec(card.trim());
-  if (!m) return card;
-  return `${m[1].toUpperCase()}${SUIT_SYMBOLS[m[2].toLowerCase()] ?? ''}`;
-}
-
-function StatRow({
-  label,
-  value,
-  highlight,
-  color = '#00d4ff',
-}: {
-  label: string;
-  value: string;
-  highlight?: boolean;
-  color?: string;
-}) {
-  return (
-    <div className={`stat-row ${highlight ? 'highlight' : ''}`}>
-      <span className="row-label">
-        <span className="row-dot" style={{ backgroundColor: color }} />
-        {label}
-      </span>
-      <span className="row-value" style={{ color }}>
-        {value}
-      </span>
     </div>
   );
 }

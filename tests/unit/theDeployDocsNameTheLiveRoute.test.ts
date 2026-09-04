@@ -22,7 +22,7 @@
  * text law, not a behaviour test, because the failure mode is a human or an
  * agent reading prose and doing what it says.
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -122,11 +122,17 @@ function docsAndScripts(root: string): string[] {
   ]);
   const out: string[] = [];
   const walk = (dir: string) => {
-    for (const name of readdirSync(dir)) {
-      if (SKIP.has(name)) continue;
-      const full = join(dir, name);
-      if (statSync(full).isDirectory()) walk(full);
-      else if (/\.(md|sh)$/.test(name)) out.push(relative(root, full));
+    // withFileTypes, and SYMLINKS ARE SKIPPED. A CI runner's checkout carries
+    // a dangling `.node_modules` symlink (agents link the shared install in
+    // rather than reinstalling), and `statSync` on a dangling link throws
+    // ENOENT - which failed this whole law on the runner while passing on
+    // every machine where the target existed. A symlink is never a document
+    // this repo is responsible for anyway.
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (SKIP.has(entry.name) || entry.isSymbolicLink()) continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile() && /\.(md|sh)$/.test(entry.name)) out.push(relative(root, full));
     }
   };
   walk(root);
@@ -141,7 +147,12 @@ function deadInstructionsIn(text: string): string[] {
       if (!pattern.test(lines[i])) continue;
       const context = lines.slice(Math.max(0, i - 1), i + 2).join('\n');
       if (RETIREMENT_WORDS.test(context)) continue;
-      found.push(`line ${i + 1}: ${why} -> ${lines[i].trim().slice(0, 110)}`);
+      // The whole line, untruncated. A `.slice(0, N)` here is a magic
+      // number in a test file, and noFixedSizeSourceWindows refuses one on
+      // sight - correctly, since it cannot tell a display truncation from a
+      // source window that will silently drift off the code it guards. A
+      // markdown or shell line is short enough to print in full anyway.
+      found.push(`line ${i + 1}: ${why} -> ${lines[i].trim()}`);
     }
   }
   return found;

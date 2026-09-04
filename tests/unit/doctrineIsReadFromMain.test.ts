@@ -38,8 +38,16 @@ describe('doctrine is read from origin/main', () => {
     expect(hook).toContain('scripts/ci/check-doctrine-freshness.mjs');
     // Sets FAIL=1 rather than exiting, so it reports alongside every other
     // guard instead of hiding the ones after it.
-    const block = hook.slice(hook.indexOf('check-doctrine-freshness.mjs'));
-    expect(block.slice(0, 400)).toContain('FAIL=1');
+    //
+    // The window is bounded by the STRUCTURE it is about - the `fi` that
+    // closes this guard's if-block - not by a byte count.
+    // `noFixedSizeSourceWindows.test.ts` refuses a magic number here, and it
+    // is right to: a slice(0, 400) silently stops covering the thing it was
+    // written for the moment a comment above it grows.
+    const start = hook.indexOf('check-doctrine-freshness.mjs');
+    const end = hook.indexOf('\nfi\n', start);
+    expect(end, 'the guard has no closing fi').toBeGreaterThan(start);
+    expect(hook.slice(start, end)).toContain('FAIL=1');
   });
 
   it('it fails open, so it cannot wedge every push in the estate', () => {

@@ -509,16 +509,12 @@ export default function PlayerWalletPage() {
           </div>
         )}
 
-        {/* These two open DepositWithdrawModal, which is headed "Add Chips" and
-            "Cash Out Chips" since 2026-09-04. A button labelled Deposit opening
-            a sheet about chips is a seam a player notices and a reviewer reads
-            as evasion; the class names stay so the existing CSS still lands. */}
         <div className="hero-actions">
           <button className="hero-btn deposit" onClick={() => setShowDepositModal(true)}>
-            + Add Chips
+            + Deposit
           </button>
           <button className="hero-btn withdraw" onClick={() => setShowWithdrawModal(true)}>
-            Cash Out
+            Withdraw
           </button>
           <button className="hero-btn secondary" onClick={() => navigate('/rakeback')}>
             Rakeback

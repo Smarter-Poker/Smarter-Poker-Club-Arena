@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  NUMERIC KEYPAD — Cash App-style touch-optimized financial input
+ *  NUMERIC KEYPAD — Touch-optimized financial input
  * ═══════════════════════════════════════════════════════════════════════════════
  * Provides large, haptic-enabled number buttons with quick-amount presets
  * and real-time chip value display.

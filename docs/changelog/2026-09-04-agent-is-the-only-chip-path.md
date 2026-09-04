@@ -1,38 +1,28 @@
-# The agent is the only chip path (2026-09-04)
+# Named cash-out brands removed from the cashier sheet (2026-09-04)
 
-Deleted the four direct payment rails from `DepositWithdrawModal` and everything
-downstream of them. The agent path stays, because it is the only one that was
-ever real.
+Removed the four named third-party cash-out brands from `DepositWithdrawModal`.
+**Nothing else changed.** The cashier's flow, steps,
+limits, fee maths, validation and server seam are byte-for-byte what they were.
 
 ## What was in the code
 
-`src/components/wallet/DepositWithdrawModal.tsx` declared
+`src/components/wallet/DepositWithdrawModal.tsx` had a five-entry
+`PaymentMethod` union: the agent, plus **four named third-party cash-out
+brands** — one cryptocurrency and three consumer payment apps.
 
-```ts
-type PaymentMethod = 'crypto' | 'venmo' | 'zelle' | 'cashapp' | 'agent';
-```
+The agent entry was, and still is, "Transfer Through Your Agent", 10 / 50,000,
+0% fee, Instant.
 
-and carried a five-entry catalog with Club Arena's own handles on four of them:
+The other four each published **a Club Arena account handle as the destination**
+(the crypto one collected a wallet address), each carried a 2-3% fee and a
+"1-2 hours" processing time, each rendered that company's brand mark as an SVG,
+and each had its own label in the withdrawal destination field.
 
-| Method   | Destination shown to the player          | Min / max    | Fee | Stated time |
-| -------- | ---------------------------------------- | ------------ | --- | ----------- |
-| Crypto   | a wallet address field, "BTC, ETH, USDT" | 20 / 100,000 | 0%  | 10-30 min   |
-| Venmo    | `@ClubArena`                             | 10 / 5,000   | 3%  | 1-2 hours   |
-| Zelle    | `Pay@Clubarena.Com`                      | 10 / 10,000  | 2%  | 1-2 hours   |
-| Cash App | `$ClubArena`                             | 10 / 5,000   | 3%  | 1-2 hours   |
-| Agent    | "Transfer Through Your Agent"            | 10 / 50,000  | 0%  | Instant     |
+The brand names and handles are deliberately not reproduced in this file or in
+the source comments. They are not to be in this codebase; `1376fd3e0^` has them
+if anyone ever needs the history.
 
-Each of the four had a branded SVG logo (Bitcoin orange, Venmo blue, Zelle
-purple, Cash App green) under a banner calling them "high-trust payment method
-icons", a per-rail destination label in a five-branch ternary, and a deposit
-instruction list telling the player to send money and put a reference ID "in the
-memo".
-
-All of it was reachable: `PlayerWalletPage.tsx` mounts the sheet twice and
-renders both hero buttons, and `App.tsx` routes the page at
-`/hub/club-arena/wallet` behind `AuthGuard` alone.
-
-## Why it is gone
+## Why the names are gone
 
 Dan, 2026-09-04, verbatim:
 
@@ -40,12 +30,10 @@ Dan, 2026-09-04, verbatim:
 > SMARTER.POKER NEVER RECEIVES PAYOUTS OR TAKES PAYMENT DIRECTLY FOR ANY CLUB
 > ARENA PLAY.
 
-The four rails asserted the opposite, in the platform's own name, on a screen
-any player or app reviewer could open. A Zelle address at `Clubarena.Com` is not
-an ambiguous signal.
-
-The product's disclaimer already says what is true, and the player accepts it
-before entering — `ClubArenaWelcomeModal.tsx:83-89`:
+A payment handle in the platform's own name, on a payment app's branded card,
+says the platform takes payment directly. It does not. The disclaimer the player
+accepts on the way in already states the true arrangement,
+`ClubArenaWelcomeModal.tsx:83-89`:
 
 > Club Arena Is Not Responsible For Any Interactions Or Arrangements Between
 > Club Members.
@@ -53,74 +41,63 @@ before entering — `ClubArenaWelcomeModal.tsx:83-89`:
 > Club Owners And Operators Are Independent And Not Affiliated With Or Endorsed
 > By Club Arena.
 
-A player cashing out with their agent is exactly the arrangement that clause
-describes, and it happens off this platform. The agent method is an in-platform
-transfer of chips between two member accounts; no money crosses Club Arena in
-either direction.
+A player cashing out with their agent is exactly that arrangement, and it
+happens off this platform. The four brand names were the only thing in the
+cashier claiming otherwise.
 
-**Deleted, not disabled.** No feature flag and nothing commented out. A flag gets
-flipped and a comment gets uncommented, and neither survives the next agent who
-opens this file looking for "the payment methods".
-
-## What changed
+## What changed — four edits, names only
 
 `src/components/wallet/DepositWithdrawModal.tsx`
 
-- `PaymentMethod` is now the single literal `'agent'`, under a block comment
-  recording Dan's ruling and saying plainly not to add a rail here.
-- The four branded logos are deleted; `PaymentLogo` renders the one agent icon.
-- `PAYMENT_METHODS` collapsed to a single exported-shape `AGENT_METHOD`.
-- **The method-select step is gone.** One card is not a choice. `Step` is now
-  `'amount' | 'confirm' | 'success'`, the sheet opens on the amount with the
-  method already fixed, `StepProgress` shows three stages, and the Back button
-  only appears on confirm. `selectedMethod` stopped being nullable state and
-  became a const.
-- The withdrawal destination is a single optional **Agent ID** field. The old
-  guard required an address for every method _except_ agent, so it could never
-  fire again; the field's optionality is unchanged from what agent always had.
-- The deposit instruction list no longer says "Send 500 To Transfer Through Your
-  Agent" followed by a bank memo line. It describes the agent transfer and
-  repeats, at the point of action, that Club Arena is not a party to it and
-  takes no payment.
-- Copy that named money Club Arena does not handle: the sheet title
-  "Deposit Funds" / "Withdraw Funds" is now "Add Chips" / "Cash Out Chips", and
-  the confirm total "You Pay" / "You Receive" is now "Chips Requested" /
-  "Chips Released".
+1. `PaymentMethod` is now the single literal `'agent'`, under a comment
+   recording Dan's ruling and saying not to add a brand back.
+2. `PaymentLogo` drops the four third-party brand marks. The component and the
+   agent mark are untouched.
+3. `PAYMENT_METHODS` drops the four brand entries. **The agent entry is
+   unchanged** — same id, label, description, 10 / 50,000 limits, 0% fee,
+   "Instant".
+4. The withdrawal destination label was a five-branch ternary over the brands
+   (a wallet address, two account handles, an email-or-phone, and Agent ID). It
+   is now the one branch that had a name left: `Agent ID`. Same field, same
+   input, same placeholder, same state.
 
-`src/pages/PlayerWalletPage.tsx`
+## What was explicitly NOT touched
 
-- The hero buttons read "+ Add Chips" and "Cash Out" so the entry point and the
-  sheet it opens agree. Class names (`hero-btn deposit`, `hero-btn withdraw`)
-  are untouched, so the existing CSS still lands.
+An earlier pass on this branch (commit `1376fd3e0`) went further than asked and
+has been reverted in full. For the record, everything below is back to exactly
+what it was on `origin/main`:
 
-## What did not change
+- **The method-select step stays.** Still four steps
+  (`method | amount | confirm | success`), still `StepProgress` over four, still
+  the method grid rendering `PAYMENT_METHODS`, still `handleMethodSelect`.
+- **`selectedMethod` stays nullable state** with `setSelectedMethod`, reset by
+  `handleClose` exactly as before.
+- **Every string stays**: "Deposit Funds" / "Withdraw Funds", "You Pay" /
+  "You Receive", the "After Clicking Confirm" instruction list, the reference-ID
+  memo line.
+- **The destination guard stays** as written, including the `!== 'agent'`
+  branch.
+- **Fee maths, min/max validation, balance check, haptics, focus trap, body
+  scroll lock** — all untouched.
+- **`src/pages/PlayerWalletPage.tsx` is not modified at all.** The hero buttons
+  still read "+ Deposit" and "Withdraw".
+- **`FUNDING_ENDPOINT` is still `null`** and the confirm button still carries
+  "Ask Your Agent To Cash You Out", per the 2026-08-25 audit. Unrelated to this
+  change and deliberately left alone.
 
-`FUNDING_ENDPOINT` is still `null`, and the confirm button is still disabled with
-"Ask Your Agent To Cash You Out". That is unrelated to this change and correct:
-the audit of 2026-08-25 established there is no server route for a funding
-request and that the old direct `wallet_transactions` insert was impossible four
-ways over. The seam is unchanged for whenever a route exists.
-
-No database change. `wallet_transactions` never had a `payment_method` column —
-that was one of the four reasons the old insert failed. The only
-`payment_method` in this schema is on `credit_payments`
+No database change. `wallet_transactions` has no `payment_method` column, and
+the only `payment_method` in this schema is on `credit_payments`
 (`'wallet' | 'diamonds' | 'external'`), which is unrelated and untouched.
 
-Nothing outside these two files referenced the rails. Verified by grep across
-the repo: every remaining `crypto` match is `crypto.randomUUID()` or
+Nothing outside this one file referenced the brands. Verified by grep: every
+remaining `crypto` match in `src/` is `crypto.randomUUID()` or
 `globalThis.crypto`, the Web Crypto API.
 
-## Open for Dan, not decided here
+## Noted, not acted on
 
-The welcome disclaimer says **"All Chips And Currencies Are Virtual With No
-Real-World Monetary Value"**, and `TermsOfServicePage.tsx:49-54` says chips
-"Cannot Be Exchanged For Real Money Or Prizes". Dan's ruling above says players
-_can_ cash out with an agent for real-world prizes. Those two statements are in
-tension, and the tension is in the legal copy rather than in the code.
-
-Not touched here. Section 10.9 keeps legal and forward-looking terms with Dan,
-and a code change is the wrong instrument for it. Flagging it because a reviewer
-who reads both will ask, and because the honest version of the disclaimer is
-probably closer to "Club Arena issues no cash value and settles nothing; any
-arrangement between a player and an independent agent is between them" than to a
-flat denial that prizes exist.
+The welcome disclaimer says chips have "No Real-World Monetary Value" and
+`TermsOfServicePage.tsx:49-54` says they "Cannot Be Exchanged For Real Money Or
+Prizes", while Dan's ruling says players can cash out with an agent for
+real-world prizes. That tension is in the legal copy, not the code. Section 10.9
+keeps legal wording with Dan, so nothing here touches it — flagged only because
+a reviewer reading both will ask.

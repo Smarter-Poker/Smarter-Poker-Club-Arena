@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * DEPOSIT/WITHDRAW MODAL — Premium Financial Engine (Q2 Upgrade)
- * Branded payment logos, step progress indicator, celebration animations
+ * Method icon, step progress indicator, celebration animations
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -33,37 +33,19 @@ const triggerHaptic = (pattern: number | number[] = 10) => {
 type Mode = 'deposit' | 'withdraw';
 
 /**
- * ══ THE AGENT IS THE ONLY CHIP PATH. Dan, 2026-09-04, BINDING. ═══════════════
+ * NAMED CASH-OUT BRANDS ARE GONE. Dan, 2026-09-04.
  *
+ * This union carried four named third-party cash-out brands beside `agent`, and
+ * the catalog below published a Club Arena account handle for each of them.
  * Dan, verbatim: "PLAYERS CAN CASH OUT THEIR CHIPS WITH AN AGENT FOR REAL WORLD
- * PRIZES, SMARTER.POKER NEVER RECEIVES PAYOUTS OR TAKES PAYMENT DIRECTLY FOR ANY
- * CLUB ARENA PLAY."
+ * PRIZES, SMARTER.POKER NEVER RECEIVES PAYOUTS OR TAKES PAYMENT DIRECTLY FOR
+ * ANY CLUB ARENA PLAY." Publishing a payment handle in the platform's own name
+ * said the opposite. The names are not recorded here on purpose; they are not
+ * to be in this codebase.
  *
- * This type used to read `'crypto' | 'venmo' | 'zelle' | 'cashapp' | 'agent'`,
- * and the catalog below carried the platform's own handles for four of them:
- * Venmo `@ClubArena`, Zelle `Pay@Clubarena.Com`, Cash App `$ClubArena`, and a
- * crypto wallet address field. Every one of those said, to any player or any
- * app reviewer who opened the sheet, that Club Arena takes money directly. It
- * does not, it never has, and the product's own disclaimer says so twice:
- *
- *   ClubArenaWelcomeModal.tsx:83-89 - "Club Arena Is Not Responsible For Any
- *   Interactions Or Arrangements Between Club Members" and "Club Owners And
- *   Operators Are Independent And Not Affiliated With Or Endorsed By Club
- *   Arena."
- *
- * An arrangement between a player and their agent is exactly the interaction
- * that clause describes, and it happens off this platform. A branded Zelle
- * address on a Club Arena screen is the opposite claim.
- *
- * So the four direct rails are DELETED, not disabled and not feature-flagged.
- * A flag can be flipped and a commented-out rail gets uncommented; neither
- * survives the next agent who reads this file looking for "the payment
- * methods". There is one method because there is one path.
- *
- * DO NOT ADD A PAYMENT RAIL HERE. If Club Arena ever needs to take money
- * directly, that is a licensing decision of Dan's, not a component change, and
- * it arrives with a server route (see FUNDING_ENDPOINT below) rather than a new
- * entry in this union.
+ * ONLY THE NAMES WERE REMOVED. The sheet's flow, steps, limits, fee maths,
+ * validation and the FUNDING_ENDPOINT seam are all exactly as they were.
+ * Do not add a brand back to this union.
  */
 type PaymentMethod = 'agent';
 
@@ -91,12 +73,8 @@ interface PaymentMethodInfo {
 // METHOD ICON
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/* Four branded third-party logos used to live here - Bitcoin orange, Venmo
-   blue, Zelle purple, Cash App green - under a banner calling them "high-trust
-   payment method icons". They were doing trust-transfer work for a claim that
-   was not true: none of those companies has any relationship with Club Arena,
-   and Club Arena takes no payment through any of them. Deleted with the rails
-   they belonged to. */
+/* Four third-party brand marks stood beside the agent one. Removed with the
+   names; the component and the agent mark are unchanged. */
 const PaymentLogo = ({ method }: { method: PaymentMethod }) => {
   const size = 32;
   const logos: Record<PaymentMethod, React.ReactNode> = {
@@ -111,14 +89,9 @@ const PaymentLogo = ({ method }: { method: PaymentMethod }) => {
   return logos[method] || null;
 };
 
-/** The stages a request passes through. `method` was the first of four until
-    2026-09-04; with one path there is nothing to choose, and a select screen
-    offering a single card is a step that exists only to be clicked past. */
-type Step = 'amount' | 'confirm' | 'success';
-
 // Step progress indicator
-const StepProgress = ({ current }: { current: Step }) => {
-  const steps: Step[] = ['amount', 'confirm', 'success'];
+const StepProgress = ({ current }: { current: 'method' | 'amount' | 'confirm' | 'success' }) => {
+  const steps = ['method', 'amount', 'confirm', 'success'];
   const currentIdx = steps.indexOf(current);
   return (
     <div
@@ -161,22 +134,18 @@ const StepProgress = ({ current }: { current: Step }) => {
  */
 const FUNDING_ENDPOINT: string | null = null;
 
-/**
- * ONE ENTRY, ON PURPOSE. See the note on PaymentMethod above before adding a
- * second. The `fee` stays on the shape because the confirm screen reads it, but
- * an agent transfer carries none: Club Arena is not in the middle of it and has
- * nothing to charge for.
- */
-const AGENT_METHOD: PaymentMethodInfo = {
-  id: 'agent',
-  icon: '',
-  label: 'Agent',
-  description: 'Transfer Through Your Agent',
-  minAmount: 10,
-  maxAmount: 50000,
-  fee: 0,
-  processingTime: 'Instant',
-};
+const PAYMENT_METHODS: PaymentMethodInfo[] = [
+  {
+    id: 'agent',
+    icon: '',
+    label: 'Agent',
+    description: 'Transfer Through Your Agent',
+    minAmount: 10,
+    maxAmount: 50000,
+    fee: 0,
+    processingTime: 'Instant',
+  },
+];
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
@@ -191,10 +160,8 @@ export default function DepositWithdrawModal({
   onComplete,
 }: DepositWithdrawModalProps) {
   const toast = useToast();
-  const [step, setStep] = useState<Step>('amount');
-  /* Not nullable any more. There is exactly one method, so the sheet opens with
-     it already chosen rather than asking a question with one answer. */
-  const selectedMethod: PaymentMethod = 'agent';
+  const [step, setStep] = useState<'method' | 'amount' | 'confirm' | 'success'>('method');
+  const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
   const [amount, setAmount] = useState('');
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -221,7 +188,8 @@ export default function DepositWithdrawModal({
 
   // ── Close handler: resets all form state and calls parent onClose ──
   const handleClose = useCallback(() => {
-    setStep('amount');
+    setStep('method');
+    setSelectedMethod(null);
     setAmount('');
     setError(null);
     setReferenceId(null);
@@ -309,7 +277,7 @@ export default function DepositWithdrawModal({
     };
   }, [isOpen]);
 
-  const currentMethod = AGENT_METHOD;
+  const currentMethod = PAYMENT_METHODS.find((m) => m.id === selectedMethod);
   const parsed = parseFloat(amount);
   const numericAmount = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   // Use integer math to avoid floating-point precision errors:
@@ -322,6 +290,13 @@ export default function DepositWithdrawModal({
      unused one quietly waiting for somebody to render it. Deleted rather than
      reconciled - the confirm screen and the balance check already agree with
      each other, and they are the two the player actually sees. */
+
+  const handleMethodSelect = (method: PaymentMethod) => {
+    triggerHaptic(10);
+    setSelectedMethod(method);
+    setStep('amount');
+    setError(null);
+  };
 
   const handleAmountSubmit = () => {
     if (!currentMethod) return;
@@ -345,11 +320,12 @@ export default function DepositWithdrawModal({
       triggerHaptic([30, 50, 30]);
       return;
     }
-    /* The destination check that stood here required an address for every
-       method EXCEPT agent, so with the four direct rails gone it could never
-       fire again. An agent already knows who its own player is; the Agent ID
-       field below stays available for a player who wants to name one, and stays
-       optional exactly as it always was for this method. */
+    // Require withdrawal destination for non-agent methods
+    if (mode === 'withdraw' && selectedMethod !== 'agent' && !withdrawAddress.trim()) {
+      setError('Please Enter A Withdrawal Destination');
+      triggerHaptic([30, 50, 30]);
+      return;
+    }
 
     triggerHaptic(15);
     setStep('confirm');
@@ -491,14 +467,12 @@ export default function DepositWithdrawModal({
         <div className={styles.dragHandle} />
         {/* Header */}
         <div className={styles.header}>
-          {/* "Funds" was the wrong noun and the wrong claim. What moves here is
-              chips, and the welcome disclaimer the player accepted on the way in
-              says the chips are virtual and that Club Arena provides no
-              real-money service. A sheet headed "Deposit Funds" contradicted
-              that in its own title bar. */}
-          <h2>{mode === 'deposit' ? 'Add Chips' : 'Cash Out Chips'}</h2>
-          {step === 'confirm' && (
-            <button className={styles.backBtn} onClick={() => setStep('amount')}>
+          <h2>{mode === 'deposit' ? 'Deposit Funds' : 'Withdraw Funds'}</h2>
+          {step !== 'method' && step !== 'success' && (
+            <button
+              className={styles.backBtn}
+              onClick={() => setStep(step === 'confirm' ? 'amount' : 'method')}
+            >
               ← Back
             </button>
           )}
@@ -519,16 +493,33 @@ export default function DepositWithdrawModal({
         {/* Error */}
         {error && <div className={styles.error}>{error}</div>}
 
-        {/* The four-card method grid stood here. One card is not a choice, so
-            the sheet now opens on the amount and states the path instead of
-            asking for it. */}
+        {/* Step 1: Select Method */}
+        {step === 'method' && (
+          <div className={styles.methodGrid}>
+            {PAYMENT_METHODS.map((method) => (
+              <button
+                key={method.id}
+                className={styles.methodCard}
+                onClick={() => handleMethodSelect(method.id)}
+              >
+                <PaymentLogo method={method.id} />
+                <span className={styles.methodLabel}>{method.label}</span>
+                <span className={styles.methodDesc}>{method.description}</span>
+                <span className={styles.methodFee}>
+                  {method.fee > 0 ? `${method.fee}% Fee` : 'No Fee'}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
 
-        {/* Step 1: Enter Amount */}
+        {/* Step 2: Enter Amount */}
         {step === 'amount' && currentMethod && (
           <div className={styles.amountSection}>
             <div className={styles.selectedMethod}>
-              <PaymentLogo method={currentMethod.id} />
-              <span>{currentMethod.label}</span>
+              <span>
+                {currentMethod.icon} {currentMethod.label}
+              </span>
               <span className={styles.processingTime}> {currentMethod.processingTime}</span>
             </div>
 
@@ -592,15 +583,14 @@ export default function DepositWithdrawModal({
               </span>
             </div>
 
-            {/* A five-branch ternary picked a label per rail here - Wallet
-                Address, Venmo Username, Email/Phone, Cash App Tag, Agent ID.
-                Four of those destinations no longer exist. */}
             {mode === 'withdraw' && (
               <div className={styles.addressInput}>
-                <label>Agent ID (Optional)</label>
+                {/* A five-branch ternary picked a destination label per brand
+                    here. Only the agent branch has a name left to show. */}
+                <label>Agent ID</label>
                 <input
                   type="text"
-                  placeholder="Which Agent Is Cashing You Out?"
+                  placeholder="Enter Destination..."
                   value={withdrawAddress}
                   onChange={(e) => setWithdrawAddress(e.target.value)}
                 />
@@ -638,9 +628,7 @@ export default function DepositWithdrawModal({
                 </div>
               )}
               <div className={`${styles.summaryRow} ${styles.total}`}>
-                {/* "You Pay" named a payment Club Arena never takes. What this
-                    row totals is chips moving between two member accounts. */}
-                <span>{mode === 'deposit' ? 'Chips Requested' : 'Chips Released'}</span>
+                <span>{mode === 'deposit' ? 'You Pay' : 'You Receive'}</span>
                 <span>
                   {mode === 'deposit'
                     ? numericAmount.toLocaleString()
@@ -658,24 +646,16 @@ export default function DepositWithdrawModal({
               <span className={styles.processingTime}> {currentMethod.processingTime}</span>
             </div>
 
-            {/* The old three-step list read "Send 500 To Transfer Through Your
-                Agent", then "Include Your Reference ID In The Memo" - a bank
-                memo line, for a transfer Club Arena is not a party to. It was
-                written for the four rails and made no sense once they were the
-                agent. What is true of the agent path is stated instead. */}
             {mode === 'deposit' && (
               <div className={styles.instructions}>
-                <p>How This Works:</p>
+                <p>After Clicking Confirm:</p>
                 <ol>
                   <li>
-                    Your Agent Sends You {numericAmount.toLocaleString()} Chips From Their Own
-                    Balance
+                    Send {numericAmount.toLocaleString()} To{' '}
+                    <strong>{currentMethod.description}</strong>
                   </li>
-                  <li>The Chips Appear In Your Wallet As Soon As They Send Them</li>
-                  <li>
-                    Anything You Arrange With Your Agent Is Between The Two Of You. Club Arena Is
-                    Not A Party To It And Takes No Payment
-                  </li>
+                  <li>Include Your Reference ID In The Memo</li>
+                  <li>Funds Will Be Credited Within {currentMethod.processingTime}</li>
                 </ol>
               </div>
             )}

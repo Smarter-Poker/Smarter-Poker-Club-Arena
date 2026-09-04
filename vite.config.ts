@@ -129,6 +129,22 @@ export default defineConfig({
   },
   build: {
     sourcemap: true, // Enabled — Sentry source maps are uploaded for readable production stack traces
+    // BUILD CONCURRENCY CAP, for the same reason vitest.config.ts caps its
+    // thread pool: on CI this build does not own the machine.
+    //
+    // Rollup defaults maxParallelFileOps to 20. On a laptop that is free
+    // speed. On an 8-core runner box hosting six runners it is six builds
+    // each asking for twenty concurrent file operations, and the box goes to
+    // load 63 - measured on estate-ci-eu-3, 2026-09-04, while estate-ci-eu-1
+    // sat at 38 doing the same thing.
+    //
+    // A thrashing box does not merely build slowly. It times out tests that
+    // pass in seconds elsewhere, and those timeouts are indistinguishable
+    // from real failures, which is how a green suite turns into a red pull
+    // request nobody can explain.
+    //
+    // Local builds are untouched: CI is capped, a laptop keeps the default.
+    maxParallelFileOps: process.env.CI ? 4 : 20,
     rollupOptions: {
       output: {
         // 2026-04-15 cache-bust: append a build-time tag to every emitted

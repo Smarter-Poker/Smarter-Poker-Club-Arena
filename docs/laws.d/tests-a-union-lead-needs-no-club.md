@@ -1,0 +1,3 @@
+# tests/a-union-lead-needs-no-club.law.test.ts
+
+The snapshot panel reads a union handed to it directly rather than deriving one from whichever member club the operator walked in through, so a union lead who owns no club has a door to their own figures; the page at `/unions/:unionId/data` is NOT behind `ClubMemberGuard` and something links to it; `ca_can_view_club_finances` admits a union overseer scoped through `union_clubs`, which it previously did not, so opening a member club worked only by the coincidence that this union's lead owns both; the club row's `can_drill` is that same gate rather than a second opinion; and commission stays behind `fn_is_club_admin_uid`, so an overseer reads what a club produced and not what it costs

@@ -441,7 +441,7 @@ const MAX_TABLES = typeof window !== 'undefined' && window.innerWidth >= 1024 ? 
  * never matter again; tests/unit/multiTablePageHelpersAreHoisted.test.ts
  * pins it here.
  */
-function parseTimed(v?: string): { kind: string; at: number } | null {
+export function parseTimed(v?: string): { kind: string; at: number } | null {
   if (!v) return null;
   const i = v.lastIndexOf(':');
   if (i <= 0) return null;

@@ -14,6 +14,61 @@
 
 import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
+import { raiseFinancialAlert } from '../financialAlerts.js';
+
+/**
+ * BBJ AUDIT 2026-09-05: every club that shares a jackpot pool with `clubId`.
+ *
+ * A club inside a union banks into (and is paid from) the UNION pool, so a hit
+ * at one of its tables is news at every table of every club in that union -
+ * that is the whole point of a shared jackpot, and it is who Dan means by
+ * "everyone currently playing in the club or union". A standalone club is its
+ * own set of one.
+ *
+ * Used by the settlement's club-wide announcement (see
+ * ServerTableEngineSettlement, bbj_payout step) to choose which live engines
+ * receive the `bbj_hit_global` event. Never throws: an announcement must not
+ * be able to fail a payout that has already landed. On any error it returns
+ * the hitting club alone, which is never wrong, only smaller.
+ */
+export async function resolveJackpotSiblingClubIds(clubId: string): Promise<string[]> {
+  try {
+    const { data: club } = await supabase
+      .from('clubs')
+      .select('union_id')
+      .eq('id', clubId)
+      .maybeSingle();
+    if (!club?.union_id) return [clubId];
+    const { data: siblings } = await supabase
+      .from('clubs')
+      .select('id')
+      .eq('union_id', club.union_id);
+    const ids = new Set<string>([clubId]);
+    for (const row of siblings ?? []) if (row?.id) ids.add(row.id as string);
+    return [...ids];
+  } catch (e) {
+    console.warn('[resolveJackpotSiblingClubIds] falling back to the hitting club only:', e);
+    return [clubId];
+  }
+}
+
+/**
+ * BBJ AUDIT 2026-09-05: which errors from the payout RPC are worth a retry.
+ *
+ * Same shape as FeeReconciler's TRANSIENT_DB_ERROR: transport, timeouts,
+ * PostgREST schema-cache reloads (PGRST001/002 - 28 seconds each on this
+ * database, CLAUDE.md §2), connection exhaustion, and the maintenance freeze
+ * (a hand that finished at :54:59 has its payout land at :55:00, when
+ * zz_freeze_guard refuses every money write for five minutes). The RPC is
+ * idempotent on (pool, table, hand) - a retry after a success that timed out
+ * on the way back returns `already_paid` and re-drives any missing credit -
+ * so retrying is free, and NOT retrying is how a detected jackpot goes unpaid.
+ */
+const BBJ_PAYOUT_RETRYABLE =
+  /timeout|timed out|fetch failed|socket hang up|ECONNRESET|ECONNREFUSED|EAI_AGAIN|network|502|503|504|57014|too many connections|schema cache|PGRST002|PGRST001|PLATFORM_FROZEN|deadlock|could not serialize|40001|40P01/i;
+const BBJ_PAYOUT_ATTEMPTS = 4;
+/** 400ms, 1.2s, 3.6s - long enough to outlive a schema-cache reload retry loop, short enough to keep the felt moving. */
+const BBJ_PAYOUT_BACKOFF_MS = (attempt: number): number => 400 * 3 ** (attempt - 1);
 
 /**
  * Log BBJ contribution — splits fee into main/backup/promo pools per allocation.
@@ -269,13 +324,12 @@ export async function logBBJCollection(
 }
 
 /**
- * Process BBJ payout — fetch pool balance, calculate shares, deduct from pool,
- * record payout in bbj_payouts + bbj_payout_recipients, and return amounts.
- *
- * Returns null if pool not found or balance is zero.
- * Chips are credited to players' table stacks by ServerTableEngine after this returns.
+ * Everything the payout RPC needs, and everything a human needs to re-drive
+ * it by hand. This is what gets queued when the live attempt fails, so it
+ * has to be complete on its own: the engine's memory of the hit does not
+ * survive the next hand, let alone a restart.
  */
-export async function processBBJPayout(params: {
+export interface BBJPayoutParams {
   tableId: string;
   clubId: string;
   handNumber: number;
@@ -286,179 +340,325 @@ export async function processBBJPayout(params: {
   dealtInPlayerIds: string[];
   seatedUserIds: string[]; // currently-seated user_ids (engine memory) — decides seat-credit vs direct wallet-credit for departed recipients
   payoutTotalPercent: number; // e.g., 55 for Mid stakes = 55% of main pool
-}): Promise<{
+}
+
+export interface BBJPayoutResult {
   totalPayout: number;
   loserShare: number;
   winnerShare: number;
   tableShare: number;
   perPlayerShare: number;
   poolId: string;
-} | null> {
-  try {
-    // 1. Find the club's union (if any)
-    const { data: club } = await supabase
-      .from('clubs')
-      .select('union_id')
-      .eq('id', params.clubId)
-      .maybeSingle();
+}
 
-    if (!club) {
-      console.warn(`[processBBJPayout] Club ${params.clubId} not found`);
-      return null;
-    }
+/**
+ * Signature of the durable-queue writer, injected by FeeReconciler at boot so
+ * this module does not import it (FeeReconciler imports logBBJCollection from
+ * here; a static import back would be a cycle).
+ */
+export type BBJPayoutQueueWriter = (params: BBJPayoutParams, lastError: string) => Promise<void>;
+let bbjPayoutQueueWriter: BBJPayoutQueueWriter | null = null;
+/** Called once by FeeReconciler when it loads. Tests may call it with a stub. */
+export function setBBJPayoutQueueWriter(writer: BBJPayoutQueueWriter | null): void {
+  bbjPayoutQueueWriter = writer;
+}
 
-    // 2. Find the BBJ pool (union-level first, then club-level)
-    // HARDEN 2026-08-18: only an active pool can pay (matches collection path).
-    let poolQuery = supabase
-      .from('bbj_pools')
-      .select('id, main_balance, backup_balance')
-      .eq('status', 'active');
-    if (club.union_id) {
-      poolQuery = poolQuery.eq('union_id', club.union_id);
-    } else {
-      poolQuery = poolQuery.eq('club_id', params.clubId);
-    }
-    const { data: pool } = await poolQuery.maybeSingle();
+/** Thrown inside the attempt loop to say "this one is not worth retrying". */
+class BBJPayoutFinal extends Error {
+  constructor(
+    message: string,
+    public readonly reason: string
+  ) {
+    super(message);
+  }
+}
 
-    if (!pool || pool.main_balance <= 0) {
-      console.warn(`[processBBJPayout] No BBJ pool or zero balance for club ${params.clubId}`);
-      return null;
-    }
+/**
+ * Process BBJ payout — fetch pool balance, calculate shares, deduct from pool,
+ * record payout in bbj_payouts + bbj_payout_recipients, and return amounts.
+ *
+ * Returns null if pool not found or balance is zero, if the hand was already
+ * paid (a replay), or if every attempt failed - in which case the payout has
+ * been QUEUED in pending_fee_distributions (kind 'bbj_payout') for the
+ * reconciler to re-drive, and a CRITICAL financial alert carries every
+ * parameter.
+ *
+ * BBJ AUDIT 2026-09-05 - why the retries and the queue exist:
+ *
+ * The old body made ONE call to bbj_atomic_payout_v2 and returned null on any
+ * error. The engine's memory of the hit (`snap.bbjHit`) lives for one hand,
+ * so a transient failure here - a PostgREST schema-cache reload (28 seconds
+ * on this database), a dropped socket, the :55 maintenance freeze refusing
+ * the write - meant a jackpot that had been DETECTED and ANNOUNCED
+ * (`bbj_hit` had already gone out to the table) was never paid, never
+ * recorded, and never retried. Nothing downstream could see it: there was no
+ * bbj_payouts row to reconcile against. The pool simply kept the money.
+ *
+ * The RPC is idempotent on (pool, table, hand) - a retry after a success
+ * whose response was lost returns already_paid and re-drives any missing
+ * credit - so retrying is free. And in delta mode (chip standard 2026-09-04)
+ * a seat credit that lands from the queue minutes later is preserved by the
+ * next hand's write rather than erased, so a late payout is a correct payout.
+ *
+ * Chips are credited to players' table stacks INSIDE the RPC; ServerTableEngine
+ * mirrors the shares into its memory after this returns.
+ */
+export async function processBBJPayout(
+  params: BBJPayoutParams,
+  options: {
+    /**
+     * True when the reconciler is re-driving a queued payout: no re-queue on
+     * failure (the reconciler bumps the row's attempt counter itself), and
+     * every recipient is notified, because the table has long since moved on
+     * and nobody is going to see a celebration overlay for this hand.
+     */
+    fromQueue?: boolean;
+  } = {}
+): Promise<BBJPayoutResult | null> {
+  let lastError = '';
 
-    // 3-5. FIX-A4 2026-07-19: atomic + idempotent payout via RPC. The RPC locks
-    // the pool row, computes the payout from the LOCKED balance (no stale-read
-    // mint), claims the hand via a unique (pool,table,hand) key before
-    // decrementing, and records bbj_payouts — all in one transaction. Replaces
-    // the previous non-atomic read-modify-write that could double-pay on
-    // simultaneous hits or a task retry.
-    const { data: rpcRows, error: rpcErr } = await supabase.rpc('bbj_atomic_payout_v2', {
-      p_pool_id: pool.id,
-      p_table_id: params.tableId,
-      p_hand_number: params.handNumber,
-      p_payout_total_percent: params.payoutTotalPercent,
-      p_loser_user_id: params.loserUserId, // BBJ "winner" (bad-beat holder, 50%)
-      p_winner_user_id: params.winnerUserId, // BBJ "loser" (hand winner, 25%)
-      // FIX P0-2 (2026-07-24): v2 credits recipients INSIDE the payout txn —
-      // seated players (present in p_seated_ids) get table_seats.stack += share,
-      // departed players get their wallet credited directly. The debit and every
-      // credit are one atomic unit, so a crash can no longer debit the pool while
-      // paying nobody, and a departed winner's share is never dropped.
-      p_dealt_in_ids: params.dealtInPlayerIds,
-      p_seated_ids: params.seatedUserIds,
-      p_metadata: {
-        winner_hand_name: params.loserHandName,
-        loser_hand_name: params.winnerHandName,
-        status: 'completed',
-      },
-    });
-
-    if (rpcErr) {
-      reportError(rpcErr, 'processBBJPayout.Atomic_rpc_failed');
-      return null;
-    }
-
-    const rpc = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
-    if (!rpc || !rpc.applied) {
-      // already_paid (retry / concurrent / restart) or empty/zero pool. v2 has
-      // already RE-DRIVEN any missing recipient credit inside the RPC (money is
-      // durably placed — seats + wallets), so there is nothing left for the
-      // engine to credit. Returning null here is now SAFE (no chip loss); it
-      // used to mean permanent loss under the old non-recoverable payout.
-      if (rpc?.already_paid) {
-        console.warn(
-          `[processBBJPayout] Already paid - hand ${params.tableId}#${params.handNumber} on pool ${pool.id}` +
-            (rpc?.recovered ? ' (re-drove a missing recipient credit)' : '')
-        );
-      }
-      return null;
-    }
-
-    const totalPayout = Number(rpc.total_payout);
-    const loserShare = Number(rpc.loser_share);
-    const winnerShare = Number(rpc.winner_share);
-    const tableShareTotal = Number(rpc.table_share);
-
-    // Table-only players (for the log/broadcast only). v2 already credited every
-    // recipient atomically and returns the exact per-player share it applied.
-    const tableOnlyPlayers = params.dealtInPlayerIds.filter(
-      (id) => id !== params.loserUserId && id !== params.winnerUserId
-    );
-    const perPlayerShare = Number(rpc.per_player_share);
-
-    // NOTE (FIX P0-2): bbj_atomic_payout_v2 already records every recipient in
-    // bbj_payout_recipients (idempotently, via the (payout_id,user_id) claim key)
-    // AND inserts the bbj_winners "Previous Winners" row inside the same atomic
-    // transaction as the debit + credits. The former app-side inserts here were
-    // removed — the recipient insert would now violate the new unique claim key,
-    // and the bbj_winners insert would create a duplicate row.
-
-    console.log(
-      `[processBBJPayout] BBJ HIT! Pool ${pool.id}: $${totalPayout} total ` +
-        `(loser=$${loserShare}, winner=$${winnerShare}, table=$${tableShareTotal} / ${tableOnlyPlayers.length} players)`
-    );
-
-    // DEPARTED-RECIPIENT NOTIFICATIONS (2026-08-18): players who left the
-    // table before the payout landed get their share credited straight to
-    // their wallet by the RPC — silently. Without a notification they would
-    // never know a jackpot paid them. Seated players see the celebration
-    // overlay, so only the departed set is notified. Non-fatal: the money is
-    // already durably placed by the RPC; a failed insert only costs the note.
+  for (let attempt = 1; attempt <= BBJ_PAYOUT_ATTEMPTS; attempt++) {
     try {
-      const departed = params.dealtInPlayerIds.filter((id) => !params.seatedUserIds.includes(id));
-      if (departed.length > 0) {
-        const shareFor = (id: string): number =>
-          id === params.loserUserId
-            ? loserShare
-            : id === params.winnerUserId
-              ? winnerShare
-              : perPlayerShare;
-        const rows = departed
-          .map((id) => ({ id, share: shareFor(id) }))
-          .filter((r) => r.share > 0)
-          .map((r) => ({
-            user_id: r.id,
-            type: 'bonus',
-            title: 'Bad Beat Jackpot - You Got Paid!',
-            message:
-              `A Bad Beat Jackpot hit on a hand you were dealt into after you left the table. ` +
-              `Your share of $${r.share.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ` +
-              `was credited to your wallet.`,
-            metadata: {
-              tableId: params.tableId,
-              handNumber: params.handNumber,
-              amount: r.share,
-              poolId: pool.id,
-            },
-            read: false,
-          }));
-        if (rows.length > 0) {
-          const { error: notifyErr } = await supabase.from('notifications').insert(rows);
-          if (notifyErr) {
-            console.warn(
-              `[processBBJPayout] departed-recipient notifications failed (money already placed):`,
-              notifyErr.message
-            );
-          } else {
-            console.log(
-              `[processBBJPayout] Notified ${rows.length} departed recipient(s) of their wallet credit`
-            );
-          }
-        }
+      const outcome = await attemptBBJPayoutOnce(params, options.fromQueue === true);
+      return outcome;
+    } catch (e) {
+      if (e instanceof BBJPayoutFinal) {
+        // Not a failure of the transport: the pool is empty, the club is
+        // gone, the RPC refused the arguments. Retrying cannot change it.
+        console.warn(`[processBBJPayout] ${e.reason}: ${e.message}`);
+        return null;
       }
-    } catch (notifyEx) {
-      console.warn('[processBBJPayout] departed-recipient notification error:', notifyEx);
+      lastError = e instanceof Error ? e.message : String(e);
+      const retryable = BBJ_PAYOUT_RETRYABLE.test(lastError);
+      if (attempt < BBJ_PAYOUT_ATTEMPTS && retryable) {
+        console.warn(
+          `[processBBJPayout] attempt ${attempt}/${BBJ_PAYOUT_ATTEMPTS} failed for ` +
+            `${params.tableId}#${params.handNumber} - retrying: ${lastError}`
+        );
+        await new Promise((r) => setTimeout(r, BBJ_PAYOUT_BACKOFF_MS(attempt)));
+        continue;
+      }
+      break;
     }
+  }
 
-    return {
-      totalPayout,
-      loserShare,
-      winnerShare,
-      tableShare: tableShareTotal,
-      perPlayerShare,
-      poolId: pool.id,
-    };
-  } catch (e) {
-    reportError(e, 'processBBJPayout.Fatal_error');
+  // Every attempt failed. The hit is real (the engine detected it from a
+  // showdown it witnessed) and the money is still in the pool. Make the
+  // failure durable and loud, in that order.
+  const detail =
+    `[BBJ] Jackpot payout FAILED for table ${params.tableId} hand #${params.handNumber} ` +
+    `(club ${params.clubId}, bad beat ${params.loserUserId} with ${params.loserHandName} ` +
+    `beaten by ${params.winnerUserId} with ${params.winnerHandName}, ${params.dealtInPlayerIds.length} dealt in, ` +
+    `${params.payoutTotalPercent}% of main): ${lastError}. ` +
+    (options.fromQueue
+      ? 'Re-drive from the queue failed again; the row stays open.'
+      : 'Queued in pending_fee_distributions (kind bbj_payout) for the reconciler to re-drive; ') +
+    `bbj_atomic_payout_v2 is idempotent on (pool, table, hand), so re-driving it by hand is safe.`;
+  reportError(new Error(detail), 'processBBJPayout.exhausted');
+
+  if (!options.fromQueue) {
+    if (bbjPayoutQueueWriter) {
+      try {
+        await bbjPayoutQueueWriter(params, lastError);
+      } catch (qErr) {
+        reportError(qErr, 'processBBJPayout.queue_failed');
+      }
+    }
+    await raiseFinancialAlert('critical', 'processBBJPayout.exhausted', detail, {
+      ...params,
+      attempts: BBJ_PAYOUT_ATTEMPTS,
+      lastError,
+      queued: bbjPayoutQueueWriter !== null,
+    });
+  }
+  return null;
+}
+
+/**
+ * One attempt: resolve the pool, call the RPC, notify. Throws a plain Error
+ * for anything the caller should consider retrying, BBJPayoutFinal for
+ * anything it should not.
+ */
+async function attemptBBJPayoutOnce(
+  params: BBJPayoutParams,
+  fromQueue: boolean
+): Promise<BBJPayoutResult | null> {
+  // 1. Find the club's union (if any). A read error is a transport failure,
+  //    not "club not found" - the two used to be indistinguishable here, and
+  //    the second one silently ended the payout.
+  const { data: club, error: clubErr } = await supabase
+    .from('clubs')
+    .select('union_id')
+    .eq('id', params.clubId)
+    .maybeSingle();
+  if (clubErr) throw new Error(`clubs read failed: ${clubErr.message}`);
+  if (!club) {
+    throw new BBJPayoutFinal(`Club ${params.clubId} not found`, 'club_not_found');
+  }
+
+  // 2. Find the BBJ pool (union-level first, then club-level)
+  // HARDEN 2026-08-18: only an active pool can pay (matches collection path).
+  let poolQuery = supabase
+    .from('bbj_pools')
+    .select('id, main_balance, backup_balance')
+    .eq('status', 'active');
+  if (club.union_id) {
+    poolQuery = poolQuery.eq('union_id', club.union_id);
+  } else {
+    poolQuery = poolQuery.eq('club_id', params.clubId);
+  }
+  const { data: pool, error: poolErr } = await poolQuery.maybeSingle();
+  if (poolErr) throw new Error(`bbj_pools read failed: ${poolErr.message}`);
+
+  if (!pool || pool.main_balance <= 0) {
+    throw new BBJPayoutFinal(
+      `No BBJ pool or zero balance for club ${params.clubId}`,
+      'no_pool_or_empty'
+    );
+  }
+
+  // 3-5. FIX-A4 2026-07-19: atomic + idempotent payout via RPC. The RPC locks
+  // the pool row, computes the payout from the LOCKED balance (no stale-read
+  // mint), claims the hand via a unique (pool,table,hand) key before
+  // decrementing, and records bbj_payouts — all in one transaction. Replaces
+  // the previous non-atomic read-modify-write that could double-pay on
+  // simultaneous hits or a task retry.
+  const { data: rpcRows, error: rpcErr } = await supabase.rpc('bbj_atomic_payout_v2', {
+    p_pool_id: pool.id,
+    p_table_id: params.tableId,
+    p_hand_number: params.handNumber,
+    p_payout_total_percent: params.payoutTotalPercent,
+    p_loser_user_id: params.loserUserId, // BBJ "winner" (bad-beat holder, 50%)
+    p_winner_user_id: params.winnerUserId, // BBJ "loser" (hand winner, 25%)
+    // FIX P0-2 (2026-07-24): v2 credits recipients INSIDE the payout txn —
+    // seated players (present in p_seated_ids) get table_seats.stack += share,
+    // departed players get their wallet credited directly. The debit and every
+    // credit are one atomic unit, so a crash can no longer debit the pool while
+    // paying nobody, and a departed winner's share is never dropped.
+    p_dealt_in_ids: params.dealtInPlayerIds,
+    p_seated_ids: params.seatedUserIds,
+    p_metadata: {
+      winner_hand_name: params.loserHandName,
+      loser_hand_name: params.winnerHandName,
+      status: 'completed',
+    },
+  });
+
+  if (rpcErr) {
+    reportError(rpcErr, 'processBBJPayout.Atomic_rpc_failed');
+    // A refused argument (percent out of range, service-only guard) will be
+    // refused again; everything else is worth another go.
+    if (/out of range|service only|42501/i.test(rpcErr.message || '')) {
+      throw new BBJPayoutFinal(rpcErr.message, 'rpc_refused');
+    }
+    throw new Error(`bbj_atomic_payout_v2 failed: ${rpcErr.message}`);
+  }
+
+  const rpc = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+  if (!rpc || !rpc.applied) {
+    // already_paid (retry / concurrent / restart) or empty/zero pool. v2 has
+    // already RE-DRIVEN any missing recipient credit inside the RPC (money is
+    // durably placed — seats + wallets), so there is nothing left for the
+    // engine to credit. Returning null here is now SAFE (no chip loss); it
+    // used to mean permanent loss under the old non-recoverable payout.
+    if (rpc?.already_paid) {
+      console.warn(
+        `[processBBJPayout] Already paid - hand ${params.tableId}#${params.handNumber} on pool ${pool.id}` +
+          (rpc?.recovered ? ' (re-drove a missing recipient credit)' : '')
+      );
+    }
     return null;
   }
+
+  const totalPayout = Number(rpc.total_payout);
+  const loserShare = Number(rpc.loser_share);
+  const winnerShare = Number(rpc.winner_share);
+  const tableShareTotal = Number(rpc.table_share);
+
+  // Table-only players (for the log/broadcast only). v2 already credited every
+  // recipient atomically and returns the exact per-player share it applied.
+  const tableOnlyPlayers = params.dealtInPlayerIds.filter(
+    (id) => id !== params.loserUserId && id !== params.winnerUserId
+  );
+  const perPlayerShare = Number(rpc.per_player_share);
+
+  // NOTE (FIX P0-2): bbj_atomic_payout_v2 already records every recipient in
+  // bbj_payout_recipients (idempotently, via the (payout_id,user_id) claim key)
+  // AND inserts the bbj_winners "Previous Winners" row inside the same atomic
+  // transaction as the debit + credits. The former app-side inserts here were
+  // removed — the recipient insert would now violate the new unique claim key,
+  // and the bbj_winners insert would create a duplicate row.
+
+  console.log(
+    `[processBBJPayout] BBJ HIT! Pool ${pool.id}: $${totalPayout} total ` +
+      `(loser=$${loserShare}, winner=$${winnerShare}, table=$${tableShareTotal} / ${tableOnlyPlayers.length} players)`
+  );
+
+  // DEPARTED-RECIPIENT NOTIFICATIONS (2026-08-18): players who left the
+  // table before the payout landed get their share credited straight to
+  // their wallet by the RPC — silently. Without a notification they would
+  // never know a jackpot paid them. Seated players see the celebration
+  // overlay, so only the departed set is notified. Non-fatal: the money is
+  // already durably placed by the RPC; a failed insert only costs the note.
+  //
+  // BBJ AUDIT 2026-09-05: a payout re-driven from the queue has no
+  // celebration to lean on - the hand is minutes old - so EVERY recipient is
+  // told, seated or not, and the note says where the chips went.
+  try {
+    const notify = fromQueue
+      ? params.dealtInPlayerIds
+      : params.dealtInPlayerIds.filter((id) => !params.seatedUserIds.includes(id));
+    if (notify.length > 0) {
+      const shareFor = (id: string): number =>
+        id === params.loserUserId
+          ? loserShare
+          : id === params.winnerUserId
+            ? winnerShare
+            : perPlayerShare;
+      const rows = notify
+        .map((id) => ({ id, share: shareFor(id), seated: params.seatedUserIds.includes(id) }))
+        .filter((r) => r.share > 0)
+        .map((r) => ({
+          user_id: r.id,
+          type: 'bonus',
+          title: 'Bad Beat Jackpot - You Got Paid!',
+          message: fromQueue
+            ? `A Bad Beat Jackpot hit on hand #${params.handNumber}, a hand you were dealt into. ` +
+              `Your share of $${r.share.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ` +
+              (r.seated ? `was added to your stack at the table.` : `was credited to your wallet.`)
+            : `A Bad Beat Jackpot hit on a hand you were dealt into after you left the table. ` +
+              `Your share of $${r.share.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ` +
+              `was credited to your wallet.`,
+          metadata: {
+            tableId: params.tableId,
+            handNumber: params.handNumber,
+            amount: r.share,
+            poolId: pool.id,
+          },
+          read: false,
+        }));
+      if (rows.length > 0) {
+        const { error: notifyErr } = await supabase.from('notifications').insert(rows);
+        if (notifyErr) {
+          console.warn(
+            `[processBBJPayout] recipient notifications failed (money already placed):`,
+            notifyErr.message
+          );
+        } else {
+          console.log(`[processBBJPayout] Notified ${rows.length} recipient(s) of their credit`);
+        }
+      }
+    }
+  } catch (notifyEx) {
+    console.warn('[processBBJPayout] recipient notification error:', notifyEx);
+  }
+
+  return {
+    totalPayout,
+    loserShare,
+    winnerShare,
+    tableShare: tableShareTotal,
+    perPlayerShare,
+    poolId: pool.id,
+  };
 }

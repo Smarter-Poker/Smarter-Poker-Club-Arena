@@ -168,7 +168,6 @@ import { useSeatAddOnBubbles } from '../components/table/AddOnBubble';
 import { useTableVoice } from '../hooks/useTableVoice';
 import { holeCardCountFor } from '../lib/holeCardCount';
 import { shouldAnnounceBbjHit } from '../lib/bbjHitOnce';
-import BBJHitNotification from '../components/bbj/BBJHitNotification';
 import { type InsuranceOffer } from '../components/table/InsuranceModal';
 import { ThrowAnimationContainer } from '../components/table/ThrowAnimation';
 import { useTableEnvironment } from '../hooks/useTableEnvironment';
@@ -5578,17 +5577,15 @@ export default function TablePage({
   // (tableSessionDate removed 2026-08-26 — item 5 dropped the date from the
   // felt masthead, and nothing else read it.)
 
-  /* The bottom-right hit notification (Dan 2026-08-26). Null when nothing is
-     celebrating. `key` remounts the card if a second jackpot lands while the
-     first is still up, so the new one plays its own intro instead of
-     inheriting a card mid-outro. */
-  const [bbjHitNotice, setBbjHitNotice] = useState<{
-    key: string;
-    winnerName: string;
-    amount: number;
-    tableName: string;
-    tableId: string;
-  } | null>(null);
+  /* The bottom-right hit notification (Dan 2026-08-26) no longer lives here.
+     BBJ audit 2026-09-05: with up to four TablePages mounted and the inactive
+     ones display:none, the first instance to consume BBJ_HIT_GLOBAL marked the
+     hit seen and rendered the card into a hidden slot - the visible table
+     showed nothing. The card is now rendered ONCE by BBJHitAnnouncer, mounted
+     in PersistentTableLayer beside the container (the same reasoning that put
+     PortraitLock there). This page still PRODUCES the event: from the pool-row
+     Realtime subscription below and from the engine's bbj_hit_global socket
+     event. */
 
   // FIX 128: BBJ Celebration overlay state — triggered by server bbj_hit + bbj_payout_complete events
   const [showBBJCelebration, setShowBBJCelebration] = useState(false);
@@ -9765,6 +9762,30 @@ export default function TablePage({
         return;
       }
 
+      /* A JACKPOT AT ANOTHER TABLE IN THIS CLUB OR UNION (BBJ audit 2026-09-05).
+         The engine fans `bbj_hit_global` out over the socket to every sibling
+         cash table the moment the payout lands - the Realtime pool-row path
+         below still exists as a fallback, but it rides a WAL stream measured
+         a minute or more behind at peak and then met a 90-second freshness
+         gate, so it could lose the race silently. Both paths emit the same
+         bus event with the same identity (table + hand + stamp); BBJHitAnnouncer
+         announces whichever arrives first and drops the other. */
+      if (eventType === 'bbj_hit_global') {
+        const hitTableId = (handState.table_id as string) || '';
+        if (!hitTableId || hitTableId === tableId) return;
+        masterBus.emit('BBJ_HIT_GLOBAL', {
+          tableId: hitTableId,
+          tableName: (handState.table_name as string) || 'a table',
+          gameVariant: (handState.game_variant as string) || 'Poker',
+          bigBlind: Number(handState.big_blind) || 0,
+          winnerName: (handState.winner_name as string) || 'A player',
+          amount: Number(handState.amount) || Number(handState.total_payout) || 0,
+          handNumber: Number(handState.hand_number) || 0,
+          emittedAt: typeof handState.emitted_at === 'number' ? handState.emitted_at : undefined,
+        });
+        return;
+      }
+
       if (eventType === 'bbj_payout_complete') {
         /* Dan 2026-08-26 — THE REPLAY GATE, and this is the path the bug was
            actually reported on: refresh the table and the jackpot celebrated
@@ -12479,50 +12500,11 @@ export default function TablePage({
   // The subscribeToHandState callback handles 'insurance_offers' events.
   // Legacy MasterBus handler removed — server is the single source of truth.
 
-  useMasterBusSubscription('BBJ_HIT_GLOBAL', (payload: any) => {
-    // Show an in-game pop-up on all cash game tables when BBJ is hit globally.
-    // Skip if the hit happened on THIS table — they already saw the massive animation.
-    if (payload.tableId === tableId) return;
-    if (tableState.isTournament) return;
-
-    /* Dan 2026-08-26: "it should only display once, and at the actual time it
-       happens." The gate owns both halves — see lib/bbjHitOnce for why a
-       connection-scoped seq could never have covered a page refresh.
-
-       Dan 2026-08-28: `requireStamp` — this is the login-path banner about a
-       hit SOMEWHERE ELSE, and an event with no timestamp cannot be proven
-       live. Both emitters now stamp their events (the ledger's awarded_at,
-       or Date.now() on the detail-less fallback), so the only thing this
-       refuses is exactly the unprovable case that was replaying Valentina's
-       days-old jackpot on every login. */
-    if (
-      !shouldAnnounceBbjHit({
-        tableId: payload.tableId,
-        handNumber: payload.handNumber,
-        emittedAt: payload.emittedAt,
-        requireStamp: true,
-      })
-    ) {
-      return;
-    }
-
-    if (soundService.isEnabled()) soundService.playBadBeatJackpot();
-
-    /* Was a 10-second text toast in the shared stack (and before that, one
-       carrying a siren emoji, which CLAUDE.md §5.3 forbids outright). Dan
-       2026-08-26 replaced it: three seconds, bottom-right, exploding. The
-       card is its own fixed-position layer rather than a toast because the
-       toast stack QUEUES — a routine notice could push the rarest event on
-       the platform down the screen. Amount keeps .toLocaleString() (§5.5)
-       and the component capitalises its own labels (§5.7). */
-    setBbjHitNotice({
-      key: `${payload.tableId}:${payload.handNumber ?? 0}:${Date.now()}`,
-      winnerName: payload.winnerName,
-      amount: payload.amount,
-      tableName: payload.tableName,
-      tableId: payload.tableId,
-    });
-  });
+  /* BBJ_HIT_GLOBAL is CONSUMED by BBJHitAnnouncer (mounted once in
+     PersistentTableLayer), not here - see the note at bbjHitDataRef. The
+     subscription that used to sit here marked the hit as seen in whichever
+     TablePage ran first, hidden slots included, and the visible table showed
+     nothing (BBJ audit 2026-09-05). This page only produces the event. */
 
   useMasterBusSubscription('TIME_BANK_ACTIVATED', (payload: any) => {
     /* Two transports publish this - the supabase channel (camelCase, via
@@ -23439,27 +23421,10 @@ export default function TablePage({
         soundEnabled={isSoundEnabled && ambientSoundsAllowed}
       />
 
-      {/* BAD BEAT JACKPOT HIT — bottom-right, three seconds, then it leaves on
-          its own (Dan 2026-08-26). Whether it appears at all is decided by
-          `shouldAnnounceBbjHit` at the subscription, never here; this only
-          draws what was already ruled announceable, and clears itself when
-          the card's own outro finishes. */}
-      {bbjHitNotice && (
-        <BBJHitNotification
-          key={bbjHitNotice.key}
-          winnerName={bbjHitNotice.winnerName}
-          amount={bbjHitNotice.amount}
-          tableName={bbjHitNotice.tableName}
-          onObserve={() => {
-            masterBus.emit('OPEN_OBSERVE_TABLE', {
-              tableId: bbjHitNotice.tableId,
-              tableName: bbjHitNotice.tableName,
-            });
-            setBbjHitNotice(null);
-          }}
-          onDone={() => setBbjHitNotice(null)}
-        />
-      )}
+      {/* BAD BEAT JACKPOT HIT (bottom-right, three seconds, Dan 2026-08-26) is
+          rendered ONCE by BBJHitAnnouncer in PersistentTableLayer, never per
+          table - a card drawn inside a display:none slot is a card nobody
+          sees (BBJ audit 2026-09-05). */}
     </div>
   );
 }

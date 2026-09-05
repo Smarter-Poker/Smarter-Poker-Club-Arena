@@ -36,10 +36,20 @@
 
 import { supabase } from './supabase.js';
 import { logBBJCollection } from './supabase.js';
+import { processBBJPayout, setBBJPayoutQueueWriter } from './supabase/bbj.js';
+import type { BBJPayoutParams } from './supabase/bbj.js';
 import { reportError } from './errorReporter.js';
 import { raiseFinancialAlert } from './financialAlerts.js';
 
-export type PendingFeeKind = 'rake' | 'bbj_contribution';
+/**
+ * 'bbj_payout' (BBJ audit 2026-09-05): a jackpot the engine DETECTED but could
+ * not PAY - every attempt at bbj_atomic_payout_v2 failed. The payout's full
+ * parameter set rides in `contributions` (the row's free jsonb column); rake
+ * and bbj are 0 because no fee is at stake, the pool's money is. The drain
+ * re-drives it through processBBJPayout, which is idempotent on (pool, table,
+ * hand). See processBBJPayout for why a one-shot payout was a defect.
+ */
+export type PendingFeeKind = 'rake' | 'bbj_contribution' | 'bbj_payout';
 
 export interface UnbankedFee {
   tableId: string;
@@ -115,6 +125,78 @@ const QUEUE_BACKOFF_MS = (attempt: number): number => 100 * 3 ** attempt;
  * which re-drives idempotently without the per-row HTTP round trip.
  */
 const RECONCILE_BATCH = 250;
+
+/**
+ * Durably record a jackpot payout the engine could not land (BBJ audit
+ * 2026-09-05). Same table, same drain loop, same dedupe indexes as the fee
+ * queue; the difference is what the row carries and what re-driving it calls.
+ *
+ * `hand_id` is resolved from hand_history here rather than trusted from the
+ * caller: postHandTasks writes the hand BEFORE the payout step, so it is
+ * normally present, and the (hand_id, kind) index then makes a second queue
+ * attempt for the same hand a no-op. When the hand row is missing too (the
+ * outage took both), the (table_id, hand_number, kind) index covers it.
+ *
+ * Registered with bbj.ts below so processBBJPayout can call it without a
+ * static import in the other direction (bbj.ts is imported by this module).
+ */
+export async function queueUnpaidBBJPayout(
+  params: BBJPayoutParams,
+  lastError: string
+): Promise<void> {
+  let handId: string | null = null;
+  try {
+    const { data: hh } = await supabase
+      .from('hand_history')
+      .select('id')
+      .eq('table_id', params.tableId)
+      .eq('hand_number', params.handNumber)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (hh?.id) handId = hh.id as string;
+  } catch {
+    /* the (table_id, hand_number, kind) index dedupes a null hand_id */
+  }
+
+  let queueError = '';
+  for (let attempt = 1; attempt <= QUEUE_INSERT_ATTEMPTS; attempt++) {
+    const { error } = await supabase.from('pending_fee_distributions').insert({
+      table_id: params.tableId,
+      club_id: params.clubId,
+      hand_id: handId,
+      hand_number: params.handNumber,
+      rake: 0,
+      bbj: 0,
+      pot: 0,
+      num_players: params.dealtInPlayerIds.length,
+      contributions: params as unknown as Record<string, unknown>,
+      kind: 'bbj_payout',
+      last_error: lastError.slice(0, 500),
+    });
+    if (!error) {
+      console.warn(
+        `[BBJ] Queued unpaid jackpot for table ${params.tableId} hand #${params.handNumber} ` +
+          `(${params.dealtInPlayerIds.length} recipients) - the reconciler will re-drive it`
+      );
+      return;
+    }
+    if (/duplicate|unique/i.test(error.message || '')) return; // already queued
+    queueError = error.message || String(error);
+    if (!TRANSIENT_DB_ERROR.test(queueError) || attempt === QUEUE_INSERT_ATTEMPTS) break;
+    await new Promise((r) => setTimeout(r, QUEUE_BACKOFF_MS(attempt)));
+  }
+  // The caller (processBBJPayout) raises the CRITICAL alert with every
+  // parameter; this one says the durable copy is missing too.
+  reportError(
+    new Error(
+      `[BBJ] Could not queue the unpaid jackpot for table ${params.tableId} hand #${params.handNumber}: ` +
+        `${queueError}. The financial alert is now the only record of it.`
+    ),
+    'FeeReconciler.bbj_payout_queue_failed'
+  );
+}
+setBBJPayoutQueueWriter(queueUnpaidBBJPayout);
 
 /**
  * Durably record a fee that left the pot but could not be banked.
@@ -383,6 +465,67 @@ export async function reconcilePendingFees(): Promise<{
         });
         ok = !rdErr;
         failureMessage = rdErr?.message ?? '';
+      } else if (row.kind === 'bbj_payout') {
+        // BBJ AUDIT 2026-09-05: re-drive a jackpot payout the live path could
+        // not land. The parameter set was frozen at hit time (who was dealt
+        // in, who took the beat, who beat them, the tier's percent). The ONE
+        // thing re-read live is who is still seated: the RPC credits a seat
+        // that is still there and the club wallet of anyone who has left, and
+        // "still there" is a fact about NOW, not about the moment the hit was
+        // queued. Both routes are durable and both are keyed, so a recipient
+        // is paid exactly once whichever one they land on.
+        const p = row.contributions as unknown as Partial<BBJPayoutParams> | null;
+        if (
+          !p ||
+          !p.tableId ||
+          !p.clubId ||
+          !p.loserUserId ||
+          !p.winnerUserId ||
+          !Array.isArray(p.dealtInPlayerIds) ||
+          typeof p.payoutTotalPercent !== 'number'
+        ) {
+          ok = false;
+          failureMessage = 'bbj_payout row is missing its parameters';
+        } else {
+          const { data: seats } = await supabase
+            .from('table_seats')
+            .select('user_id')
+            .eq('table_id', p.tableId)
+            .is('left_at', null);
+          const seatedNow = new Set((seats ?? []).map((s) => s.user_id as string));
+          const result = await processBBJPayout(
+            {
+              tableId: p.tableId,
+              clubId: p.clubId,
+              handNumber: Number(p.handNumber ?? row.hand_number),
+              loserUserId: p.loserUserId,
+              winnerUserId: p.winnerUserId,
+              loserHandName: p.loserHandName || 'Unknown',
+              winnerHandName: p.winnerHandName || 'Unknown',
+              dealtInPlayerIds: p.dealtInPlayerIds,
+              seatedUserIds: p.dealtInPlayerIds.filter((id) => seatedNow.has(id)),
+              payoutTotalPercent: p.payoutTotalPercent,
+            },
+            { fromQueue: true }
+          );
+          // null here is EITHER "already paid" (the live attempt succeeded and
+          // only its response was lost - the RPC re-drove any missing credit)
+          // OR a repeat failure. Tell them apart by the ledger, not the return.
+          if (result) {
+            ok = true;
+          } else {
+            const { data: paid } = await supabase
+              .from('bbj_payouts')
+              .select('id')
+              .eq('table_id', p.tableId)
+              .eq('hand_number', Number(p.handNumber ?? row.hand_number))
+              .limit(1)
+              .maybeSingle();
+            ok = !!paid?.id;
+            if (!ok)
+              failureMessage = 'processBBJPayout returned null and no bbj_payouts row exists';
+          }
+        }
       } else {
         ok = await logBBJCollection(
           row.table_id,

@@ -1,32 +1,60 @@
-/* PLAYER ACTIVITY FEED — CSS */
+/* ═══════════════════════════════════════════════════════════════════════════
+   PLAYER ACTIVITY FEED — #SmarterCasinoRealism (2026-09-05)
+
+   Dan: "YELLOW ISN'T A SMARTER.POKER ALLOWED COLOR SCHEMA." This panel sits
+   inside the Profile's Network tab, which is now machined obsidian and chrome;
+   it used soft 16px cards on a blue-tinted wash, at odds with the credential
+   plate directly above it. Same hardware, same tokens, one restrained blue
+   core and a brass accent for a distinction earned.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 .paf-container {
-  background: rgba(8, 20, 40, 0.6);
-  border: 1px solid rgba(0, 212, 255, 0.08);
-  border-radius: 16px;
-  padding: 1.25rem;
-  margin-top: 1rem;
+  --paf-panel: #080d12;
+  --paf-raised: #0d141b;
+  --paf-line: #26333d;
+  --paf-text: #f4f8fb;
+  --paf-chrome: #dce8f0;
+  --paf-muted: #8fa2af;
+  --paf-dim: #738692;
+  --paf-blue: #3aa8ff;
+  --paf-brass: #d6ad52;
+  padding: 1rem;
+  margin-top: 0.75rem;
+  border: 1px solid var(--paf-line);
+  border-radius: 4px;
+  background:
+    linear-gradient(115deg, rgba(58, 168, 255, 0.035), transparent 36%),
+    linear-gradient(145deg, var(--paf-raised), var(--paf-panel));
+  box-shadow: inset 0 1px rgba(185, 202, 215, 0.07);
 }
 
 .paf-title {
-  margin: 0 0 1rem;
-  font-size: 1rem;
-  color: #e2e8f0;
-  font-weight: 700;
+  margin: 0 0 0.8rem;
+  color: #9fb1bd;
+  font:
+    800 0.72rem/1.2 ui-monospace,
+    'SFMono-Regular',
+    Consolas,
+    monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .paf-list {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.4rem;
 }
 
 .paf-item {
   display: flex;
+  min-height: 54px;
   align-items: center;
   gap: 0.75rem;
   padding: 0.6rem 0.75rem;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 10px;
+  border: 1px solid #1f2b34;
+  border-radius: 2px;
+  background: #060a0e;
   animation: pafSlide 0.3s ease-out both;
 }
 
@@ -41,52 +69,62 @@
   }
 }
 
+/* A distinction is the one warm mark on the plate. */
 .paf-icon {
-  font-size: 1.3rem;
   flex-shrink: 0;
+  color: var(--paf-brass);
+  font-size: 1.2rem;
 }
 
 .paf-content {
   display: flex;
-  flex-direction: column;
   flex: 1;
   min-width: 0;
+  flex-direction: column;
+  gap: 0.15rem;
 }
 
 .paf-label {
+  color: var(--paf-chrome);
   font-size: 0.8rem;
-  font-weight: 600;
-  color: #e2e8f0;
+  font-weight: 700;
 }
 
 .paf-detail {
-  font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.4);
-  text-transform: capitalize;
   overflow: hidden;
+  color: var(--paf-muted);
+  font-size: 0.7rem;
   text-overflow: ellipsis;
+  text-transform: capitalize;
   white-space: nowrap;
 }
 
 .paf-time {
-  font-size: 0.65rem;
-  color: rgba(255, 255, 255, 0.25);
   flex-shrink: 0;
+  color: var(--paf-dim);
+  font:
+    700 0.62rem/1 ui-monospace,
+    'SFMono-Regular',
+    Consolas,
+    monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
 .paf-empty {
-  color: rgba(255, 255, 255, 0.3);
-  font-size: 0.85rem;
-  text-align: center;
   padding: 2rem 0;
+  color: var(--paf-muted);
+  font-size: 0.82rem;
+  text-align: center;
 }
 
 .paf-skeleton {
-  height: 44px;
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 10px;
-  margin-bottom: 0.5rem;
+  height: 54px;
+  margin-bottom: 0.4rem;
+  border: 1px solid #1f2b34;
+  border-radius: 2px;
+  background: #14202a;
   animation: playerActivityFeedPulse 1.5s infinite;
 }
 
@@ -97,5 +135,36 @@
   }
   50% {
     opacity: 0.8;
+  }
+}
+
+/* ── Light mode: brushed silver ──────────────────────────────────────── */
+
+[data-theme='light'] .paf-container {
+  --paf-panel: #f3f6f8;
+  --paf-raised: #fbfcfd;
+  --paf-line: #b7c3cc;
+  --paf-text: #0d161d;
+  --paf-chrome: #1c2a35;
+  --paf-muted: #55697a;
+  --paf-dim: #6b7d8b;
+  --paf-blue: #1878c8;
+  --paf-brass: #a07a1e;
+}
+
+[data-theme='light'] .paf-item,
+[data-theme='light'] .paf-skeleton {
+  border-color: #d5dde3;
+  background: #ffffff;
+}
+
+[data-theme='light'] .paf-title {
+  color: #4d6272;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .paf-item,
+  .paf-skeleton {
+    animation: none;
   }
 }

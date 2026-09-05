@@ -320,6 +320,8 @@ export async function logHandHistory(params: {
       roster: params.roster,
       // The rule and its evidence must cover the same seats. See writeHandFacts.
       nitGame: params.nitGame,
+      // Bomb pots count as VPIP for everyone dealt in (Dan 2026-09-05).
+      isBombPot: Boolean(params.bombPot),
     });
     // (V16 deep-read observation moved ABOVE the handId gate — V28 audit.)
 

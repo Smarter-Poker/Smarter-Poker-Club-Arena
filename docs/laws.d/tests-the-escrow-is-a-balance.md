@@ -1,0 +1,3 @@
+# tests/the-escrow-is-a-balance.law.test.ts
+
+Chip standard Phase 5.1 (2026-09-04): a tournament's money is a balance, not a counter (tournament_escrow: prize, bounty and fee banks derived from their components, maintained by triggers in the same transaction as every operational row the shadow trusts); an event pays only what it holds (an outflow below zero is refused inside the write, and fn_settle_tournament_obligation reads the balance before it credits); an event the balance has never seen is opened from the shadow on first sight and the live events were opened with the triggers inside the platform freeze; a close with prize or bounty left is an incident and the hourly shadow compares itself to the balance; spins are tracked, never refused

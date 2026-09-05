@@ -1,6 +1,96 @@
-# SLO recording rules — DISABLED in engine-01 co-located deploy.
-# Original rules in infra/monitoring/slo-rules.yml depend on
-# probe_success{job="vercel_health"} emitted by blackbox-exporter which
-# is not deployed in this stack. Re-enable after adding blackbox-exporter
-# to docker-compose.yml.
-groups: []
+# RECOVERED FROM engine-01, 2026-09-05.
+#
+# This file said `groups: []` while slo-recording was live on the box with
+# 7 healthy rules. deploy.sh SYMLINKS this file over the live one, so the
+# first person to run it would have silently deleted them. The live
+# content is restored here verbatim so the repo is a superset and a
+# deploy can only add. Pinned by
+# tests/an-alert-that-is-live-is-in-the-repo.law.test.ts.
+#
+# Previous content of this file, kept for the record:
+#   # SLO recording rules — DISABLED in engine-01 co-located deploy.
+#   # Original rules in infra/monitoring/slo-rules.yml depend on
+#   # probe_success{job="vercel_health"} emitted by blackbox-exporter which
+#   # is not deployed in this stack. Re-enable after adding blackbox-exporter
+#   # to docker-compose.yml.
+#   groups: []
+
+# SLO recording rules.
+#
+# 2026-09-04 — REWRITTEN. This file, and slo-alerts.yml beside it, previously
+# contained `groups: []` and a comment saying DISABLED. They were declared in
+# prometheus.yml rule_files, mounted in docker-compose.yml, and symlinked onto
+# the host by deploy.sh — three layers of plumbing carrying nothing. They
+# passed CI legitimately, through the drift check's documented DISABLED opt-out,
+# which has no expiry; it had been open since 2026-08-28 and nobody owned
+# closing it.
+#
+# They were disabled because every rule in them read
+# probe_success{job="vercel_health"} from a blackbox-exporter that this stack
+# does not deploy. That is still true and still not deployed.
+#
+# The mistake was equating "SLO" with "external HTTP probe". A service level
+# objective is a promise about the service, and the promises this platform
+# actually makes to a player are about DEALING, RESPONDING and SETTLING —
+# every one of which the engine already measures and Prometheus already
+# scrapes. So these are written against gauges that exist today, and they fire
+# today.
+#
+# External reachability (is smarter.poker up from the outside) is NOT covered
+# here and cannot be from this stack — the engine cannot see itself from the
+# internet. That coverage lives in the World Hub's publish-watchdog.yml, which
+# deliberately does not share a failure domain with the pipeline it watches.
+#
+# Naming: sp:<objective>:<window>. Recording rules only — the objectives
+# themselves are asserted in slo-alerts.yml.
+
+groups:
+  - name: slo-recording
+    interval: 30s
+    rules:
+      # ── AVAILABILITY ────────────────────────────────────────────────────
+      # The engine is scraped every 15s. Averaged over 30m this is the
+      # fraction of scrapes that found it alive.
+      - record: sp:engine_availability:ratio30m
+        expr: |
+          avg_over_time(up{job="engine_game_server"}[30m])
+
+      # ── DEALING ─────────────────────────────────────────────────────────
+      # The platform's core promise: hands are being dealt. A table that is up,
+      # seated and dealing nothing is the failure players actually notice, and
+      # no availability metric can see it.
+      - record: sp:hands_dealt:rate5m
+        expr: |
+          rate(poker_hands_total[5m])
+
+      # Tables that exist but have made no progress. poker_table_ms_since_progress
+      # is emitted per table; this is the worst one.
+      - record: sp:table_stall:max_ms
+        expr: |
+          max(poker_table_ms_since_progress)
+
+      # ── RESPONDING ──────────────────────────────────────────────────────
+      # From a player's action arriving to every seat seeing it. This is the
+      # number that feels like lag at the table.
+      - record: sp:action_to_broadcast:p95_ms
+        expr: |
+          max(poker_action_processing_p95_ms)
+
+      - record: sp:broadcast:p95_ms
+        expr: |
+          max(poker_broadcast_latency_p95_ms)
+
+      # ── SETTLING ────────────────────────────────────────────────────────
+      # Expressed as a success ratio so it reads like an SLO. The underlying
+      # gauge is a five-minute window; see SettlementMetrics.ts for why it is
+      # never a lifetime ratio.
+      - record: sp:settlement_success:ratio5m
+        expr: |
+          1 - poker_settlement_failure_rate
+
+      # ── THE PLUMBING BENEATH ALL OF IT ──────────────────────────────────
+      # The engine reaches Postgres only through PostgREST. Every objective
+      # above depends on this staying near zero.
+      - record: sp:db_error:rate10m
+        expr: |
+          rate(poker_rpc_errors_total[10m])

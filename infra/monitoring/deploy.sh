@@ -29,6 +29,27 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
+# ─── cron_secret guard ───────────────────────────────────────────────────
+# The alertmanager-page Hub route authenticates every POST with the value
+# in this file (CRON_SECRET env var). Without it, Alertmanager fires into
+# a 401 on every page attempt — the pager silently fails every notification.
+# A monitoring stack that cannot page is worse than none.
+# This guard was added 2026-09-04 after resend_key was found unprotected on
+# the host (never gitignored — one `git add -A` from a leaked key).
+if [[ ! -f "$RUN_DIR/cron_secret" ]] || [[ ! -s "$RUN_DIR/cron_secret" ]]; then
+  echo "❌ $RUN_DIR/cron_secret is missing or empty."
+  echo "   The alertmanager-page webhook authenticates with this secret."
+  echo "   Without it every page attempt returns 401 and no one gets woken up."
+  echo ""
+  echo "   Create it now:"
+  echo "     echo 'your-cron-secret-here' > $RUN_DIR/cron_secret"
+  echo "     chmod 600 $RUN_DIR/cron_secret"
+  echo ""
+  echo "   The value must match the CRON_SECRET env var in Vercel."
+  exit 1
+fi
+echo "   ✅ cron_secret present"
+
 echo "🚀 smarter.poker monitoring stack deploy — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 # ─── 1. Prereqs ──────────────────────────────────────────────────────────

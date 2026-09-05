@@ -106,7 +106,7 @@ export function isChunkLoadError(error: unknown): boolean {
  * the Cache Storage it was serving from, then navigate with a cache-busting
  * query so the browser and the edge are both forced to fetch a fresh document.
  */
-async function hardReload(): Promise<void> {
+export async function hardReload(): Promise<void> {
   try {
     if ('serviceWorker' in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();

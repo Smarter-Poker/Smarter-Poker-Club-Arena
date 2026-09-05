@@ -3684,6 +3684,21 @@ export default function TablePage({
           });
         return;
       }
+      /* THE SCHEDULED BREAK IS NOT A WEDGED SOCKET (Realtime Phase 4,
+         2026-09-05). The engine is deliberately down for two or three minutes
+         of every hour, and reloading the page under a player who was just
+         promised their seat would survive is the exact opposite of what the
+         break is for - it discards the felt, the overlays and any armed
+         pre-action, then arrives at a box that is still booting.
+
+         EngineStateClient already declines to reach 'failed' while it is
+         inside an announced restart, so this timer usually never fires during
+         a break. This is the case its signal cannot reach: a browser that
+         LOADED during the outage never received the maintenance frame,
+         because there was no socket to receive it on. `useMaintenanceBreak`
+         reads the break from the database for exactly that reader, and this
+         is the one guard that works with no engine at all. */
+      if (maintenanceBreakRef.current.active) return;
       const KEY = 'ca_ws_autoreload_at';
       const last = Number(sessionStorage.getItem(KEY) || 0);
       if (Date.now() - last < 120_000) return;

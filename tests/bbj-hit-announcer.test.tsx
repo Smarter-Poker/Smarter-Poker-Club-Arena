@@ -142,6 +142,11 @@ describe('who renders the card (source pins)', () => {
     const src = read('src/components/table/PersistentTableLayer.tsx');
     expect(src.match(/<BBJHitAnnouncer \/>/g)).toHaveLength(1);
     expect(src.indexOf('<BBJHitAnnouncer />')).toBeLessThan(src.indexOf('<ErrorBoundary'));
+    // Lazy, not static: this layer is in the entry chunk every player
+    // downloads before first paint, and the CI entry-chunk guard refuses a
+    // static import of the card and its dependencies there.
+    expect(src).toMatch(/lazyWithRetry\(\(\) => import\('\.\.\/bbj\/BBJHitAnnouncer'\)\)/);
+    expect(src).not.toMatch(/^import BBJHitAnnouncer from/m);
   });
 
   it('TablePage no longer renders the card or consumes BBJ_HIT_GLOBAL - it only produces it', () => {

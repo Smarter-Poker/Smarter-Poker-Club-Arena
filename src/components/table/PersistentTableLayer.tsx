@@ -27,10 +27,16 @@ import { matchPath, useLocation } from 'react-router-dom';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import ErrorBoundary from '../common/ErrorBoundary';
 import PortraitLock from './PortraitLock';
-import BBJHitAnnouncer from '../bbj/BBJHitAnnouncer';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
 const MultiTablePage = lazyWithRetry(() => import('../../pages/MultiTablePage'));
+/* Lazy for the same reason MultiTablePage is: this layer is imported by
+   App.tsx, so a static import here lands in the ENTRY chunk that every
+   player downloads before first paint (the CI entry-chunk guard refused six
+   modules - the card, its CSS, the gate, the formatters - on 2026-09-05).
+   The announcer mounts the moment a user is signed in, long before any
+   jackpot could need it. */
+const BBJHitAnnouncer = lazyWithRetry(() => import('../bbj/BBJHitAnnouncer'));
 
 export default function PersistentTableLayer() {
   const { user } = useAuthUser();
@@ -59,7 +65,9 @@ export default function PersistentTableLayer() {
           often as not - so the visible table showed nothing. Outside the
           ErrorBoundary for the same reason PortraitLock is: a crash in the
           table layer must not take the jackpot announcement with it. */}
-      <BBJHitAnnouncer />
+      <Suspense fallback={null}>
+        <BBJHitAnnouncer />
+      </Suspense>
       <ErrorBoundary
         // A crash in the (hidden) table layer must never paint a full-screen
         // error over whatever page the player is actually browsing; on /table/*

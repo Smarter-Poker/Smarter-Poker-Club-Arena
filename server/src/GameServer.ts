@@ -366,6 +366,7 @@ export class GameServer {
    *  feed, break and sleep on their own. Leader-only, like the fleet. */
   private clusterController = new ClusterController({
     eligibleHorseCount: (tableId) => this.horseFleet.eligibleHorseCount(tableId),
+    eligibleCounts: () => this.horseFleet.eligibleCounts(),
     ensureEngine: (tableId) => this.ensureCashTableEngine(tableId),
     hasEngine: (tableId) => this.tableEngines.has(tableId),
     seatedCount: async (tableId) => {

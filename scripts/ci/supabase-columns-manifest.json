@@ -6907,6 +6907,34 @@
       "tank_bet_sd",
       "tank_bet_sd_strong"
     ],
+    "horse_mind_stats_scoped": [
+      "user_id",
+      "scope",
+      "hands",
+      "vpip",
+      "pfr",
+      "three_bet",
+      "aggr",
+      "passive",
+      "folds",
+      "faced_aggr",
+      "cbet_opps",
+      "cbet_folds",
+      "f3b_opps",
+      "f3b_folds",
+      "bigbet_sd",
+      "bigbet_sd_strong",
+      "river_bet_opps",
+      "river_bet_folds",
+      "checks",
+      "post_aggr",
+      "post_passive",
+      "snap_bet_sd",
+      "snap_bet_sd_strong",
+      "tank_bet_sd",
+      "tank_bet_sd_strong",
+      "updated_at"
+    ],
     "horse_opponent_journals": [
       "horse_id",
       "opponent_id",
@@ -7070,6 +7098,14 @@
       "session_minutes",
       "recorded_at"
     ],
+    "horse_solver_agreement": [
+      "run_date",
+      "reference",
+      "spots",
+      "agreement",
+      "pure_misses",
+      "created_at"
+    ],
     "horse_source_assignments": [
       "id",
       "horse_id",
@@ -7091,6 +7127,16 @@
       "hands",
       "net_chips",
       "bb_per_100"
+    ],
+    "horse_thread_state": [
+      "id",
+      "post_id",
+      "horse_id",
+      "comment_id",
+      "parent_id",
+      "reason",
+      "turn_index",
+      "created_at"
     ],
     "horse_threat_intel": [
       "id",
@@ -9006,6 +9052,25 @@
       "published_at",
       "scraped_at",
       "created_at"
+    ],
+    "post_briefs": [
+      "post_id",
+      "kind",
+      "domain",
+      "sport",
+      "title",
+      "source",
+      "people",
+      "teams",
+      "concepts",
+      "amounts",
+      "topic",
+      "tone",
+      "is_question",
+      "confidence",
+      "summary",
+      "built_from",
+      "built_at"
     ],
     "posted_clips": [
       "id",

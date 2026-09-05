@@ -180,6 +180,46 @@
   animation-delay: 0.3s;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   NOTICE (Dan 2026-09-04: "HAS ADDED ON FOR XX.XX" above the player's head)
+   ═══════════════════════════════════════════════════════════════════════════
+   A fact about the seat, not a line from the player. Gold like a chip, so it
+   is never mistaken for chat (white) or a live microphone (green). It wins
+   over `--own` on purpose: the hero's own add-on is the same gold as anyone
+   else's — the words say whose it is, the seat says where. */
+
+.chat-bubble--notice,
+.chat-bubble--notice.chat-bubble--own {
+  min-width: 0;
+  background: linear-gradient(180deg, rgba(255, 214, 102, 0.98) 0%, rgba(232, 172, 32, 0.98) 100%);
+  color: #1c1405;
+  border-color: rgba(255, 244, 200, 0.7);
+  align-items: center;
+}
+
+.chat-bubble--notice .chat-bubble__text {
+  white-space: nowrap;
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+
+.chat-bubble--notice .chat-bubble__name {
+  color: rgba(28, 20, 5, 0.6);
+}
+
+.chat-bubble--notice .chat-bubble__tail,
+.chat-bubble--notice.chat-bubble--own .chat-bubble__tail {
+  background: rgba(232, 172, 32, 0.98);
+  border-color: rgba(255, 244, 200, 0.7);
+}
+
+.chat-bubble--notice.chat-bubble--below .chat-bubble__tail {
+  background: rgba(255, 214, 102, 0.98);
+}
+
 @keyframes chatVoicePulse {
   0%,
   100% {

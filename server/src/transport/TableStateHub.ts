@@ -75,7 +75,21 @@ export interface EventMessage {
   payload: Record<string, unknown>;
 }
 
-export type HubMessage = SnapshotMessage | DeltaMessage | EventMessage;
+/**
+ * 2026-09-04 (disconnect audit items 11 + 12): a frame for ONE player at a
+ * table, outside the public seq chain. Hole cards and the armed pre-action
+ * are per-player facts; the shared snapshot cannot carry them and the
+ * Supabase Realtime + poll path they used to travel by is a second transport
+ * for the one thing a seat cannot play without. Never retained, never
+ * replayed: the engine re-sends on RESYNC.
+ */
+export interface UserEventMessage {
+  type: 'USER_EVENT';
+  tableId: string;
+  payload: Record<string, unknown>;
+}
+
+export type HubMessage = SnapshotMessage | DeltaMessage | EventMessage | UserEventMessage;
 
 /**
  * Minimal interface a subscriber must satisfy.
@@ -85,6 +99,8 @@ export type HubMessage = SnapshotMessage | DeltaMessage | EventMessage;
 export interface HubSubscriber {
   readonly id: string;
   readonly readyState: number; // ws.OPEN === 1
+  /** 2026-09-04: who is behind this socket, so sendToUser can find them. */
+  readonly userId?: string;
   /**
    * B12: bytes queued in the socket's send buffer but not yet flushed to the
    * network. `ws.WebSocket` exposes this natively; it is optional here so test
@@ -312,6 +328,31 @@ export class TableStateHub {
 
   /** SHOWDOWN POLISH 2026-08-25: per-table monotonic EVENT sequence. */
   private eventSeqs = new Map<string, number>();
+
+  /**
+   * Deliver a private frame to every open socket ONE user holds on a table
+   * (a player may have the table open in two tabs). Returns how many sockets
+   * took it; 0 means the player is not subscribed right now, and the caller
+   * relies on the RESYNC re-send when they are.
+   */
+  sendToUser(tableId: string, userId: string, payload: Record<string, unknown>): number {
+    const room = this.rooms.get(tableId);
+    if (!room || !userId) return 0;
+    const message: UserEventMessage = { type: 'USER_EVENT', tableId, payload };
+    const data = JSON.stringify(message);
+    let delivered = 0;
+    for (const sub of room.subscribers) {
+      if (sub.userId !== userId) continue;
+      if (sub.readyState !== 1 /* ws.OPEN */) continue;
+      try {
+        sub.send(data);
+        delivered++;
+      } catch {
+        /* the dead-subscriber sweep in broadcast() collects it */
+      }
+    }
+    return delivered;
+  }
 
   /**
    * Re-send the latest snapshot to a single subscriber. Used when the client

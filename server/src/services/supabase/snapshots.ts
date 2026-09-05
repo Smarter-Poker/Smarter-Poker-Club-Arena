@@ -128,6 +128,15 @@ export interface DisconnectStateEntry {
   state: DisconnectFsmState;
   sinceMs: number;
   graceDeadlineMs: number | null;
+  // 2026-09-04: optional carry-over so a restore continues rather than
+  // restarts (DisconnectEngine.DisconnectFsmEntry is the authority).
+  sitOutSinceMs?: number | null;
+  sitOutOrbits?: number;
+  sitOutReason?: 'voluntary' | 'forced' | null;
+  strikes?: number;
+  awayBlindSbCharged?: boolean;
+  awayBlindBbCharged?: boolean;
+  pageLeftAtMs?: number | null;
 }
 
 /**
@@ -172,6 +181,74 @@ export async function getActiveHandSnapshotFull(tableId: string): Promise<{
     };
   } catch (e) {
     console.warn(`[getActiveHandSnapshotFull] Exception:`, e);
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PRESENCE ACROSS THE HOURLY RESTART (disconnect audit item 2, 2026-09-04)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A parked table's presence FSM is read back only while it is this fresh.
+ * The break is five minutes and the cut-over lands inside it; anything older
+ * describes a table that has since dealt, and a seat that re-registered
+ * meanwhile wins anyway (restoreFsmStates never clobbers a live entry).
+ */
+export const PARKED_PRESENCE_FRESH_MS = 20 * 60_000;
+
+/**
+ * Write the presence FSM for a table that is parking for the restart.
+ * One row per table (engine_presence_parked, service role only). Best
+ * effort: a failure here costs the next boot its strike counts and blind
+ * budgets, which is what every boot cost before this existed.
+ */
+export async function savePresenceAtPark(params: {
+  tableId: string;
+  disconnectStates: Record<string, DisconnectStateEntry>;
+  engineInstance?: string | null;
+}): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('engine_presence_parked').upsert(
+      {
+        table_id: params.tableId,
+        disconnect_states: params.disconnectStates,
+        parked_at: new Date().toISOString(),
+        engine_instance: params.engineInstance ?? null,
+      },
+      { onConflict: 'table_id' }
+    );
+    if (error) {
+      console.warn(`[savePresenceAtPark] ${params.tableId}: ${error.message}`);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.warn(`[savePresenceAtPark] Exception:`, e);
+    return false;
+  }
+}
+
+/**
+ * The presence FSM a table parked with, if it parked recently. Null when
+ * there is no row or the row is older than PARKED_PRESENCE_FRESH_MS.
+ */
+export async function loadPresenceFromPark(
+  tableId: string,
+  nowMs: number = Date.now()
+): Promise<Record<string, DisconnectStateEntry> | null> {
+  try {
+    const { data, error } = await supabase
+      .from('engine_presence_parked')
+      .select('disconnect_states, parked_at')
+      .eq('table_id', tableId)
+      .maybeSingle();
+    if (error || !data) return null;
+    const parkedAt = Date.parse(String(data.parked_at));
+    if (!Number.isFinite(parkedAt) || nowMs - parkedAt > PARKED_PRESENCE_FRESH_MS) return null;
+    return (data.disconnect_states as Record<string, DisconnectStateEntry>) ?? null;
+  } catch (e) {
+    console.warn(`[loadPresenceFromPark] Exception:`, e);
     return null;
   }
 }

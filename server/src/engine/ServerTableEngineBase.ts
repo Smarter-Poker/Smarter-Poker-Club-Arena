@@ -50,11 +50,18 @@ import {
   saveHandStateSnapshot,
   completeHandSnapshot,
   getActiveHandSnapshotFull,
+  savePresenceAtPark,
+  loadPresenceFromPark,
   supabase,
   atomicCashout,
   markSeatAsLeft,
 } from '../services/supabase.js';
-import { collectNitEvictions } from '../services/supabase/nitGame.js';
+import {
+  collectNitEvictions,
+  collectNitStatus,
+  type NitSeatStatus,
+} from '../services/supabase/nitGame.js';
+import { INSTANCE_ID } from '../services/tableLease.js';
 import { evaluateCashSessions, atomicCashoutVoluntary } from '../services/supabase/cashSessions.js';
 import {
   executePendingSeatMoves,
@@ -88,6 +95,24 @@ import type { TableStatus } from '../types.js';
 export abstract class ServerTableEngineBase {
   protected tableId: string;
   protected running: boolean = false;
+  /**
+   * ═══ READY IS NOT DEALING (2026-09-05) ═══
+   *
+   * `start()` resolves when the DEALING LOOP starts, which is after the table
+   * has its AutoStart figure of players seated - for a one-player table that
+   * is "when a second player arrives", possibly never. Every on-demand caller
+   * (`ensureCashTableEngine`: GET /state, GET /actions, the WS `ensureTable`,
+   * the cluster wake) wants something earlier: the engine exists, has loaded
+   * its row, is configured, and can publish the waiting snapshot. That moment
+   * is the FSM's `waiting` transition, and this promise settles there.
+   *
+   * `true`  - the engine reached `waiting` (it may still be waiting for players).
+   * `false` - start() failed, or the engine was stopped/killed before it got there.
+   *
+   * Settled at most once; later settles are no-ops. Never rejects.
+   */
+  readonly ready: Promise<boolean>;
+  private settleReady: (ok: boolean) => void = () => {};
   /** Bible V8 §3.1: Formal Table State Machine with entry/exit/fail conditions */
   protected tableFSM: StateMachine<TableStatus> = createTableStateMachine('empty');
   /** Bible V8 §3.2: Formal Turn State Machine — unifies timer/timebank/preaction/disconnect */
@@ -1298,6 +1323,9 @@ export abstract class ServerTableEngineBase {
 
   constructor(tableId: string) {
     this.tableId = tableId;
+    this.ready = new Promise<boolean>((resolve) => {
+      this.settleReady = resolve;
+    });
     // CROSS-INSTANCE OWNERSHIP: the newest instance for a tableId is the
     // authoritative one. Any older instance still mid-stop() sees itself
     // superseded and keeps its hands off the shared scheduler.
@@ -1417,6 +1445,14 @@ export abstract class ServerTableEngineBase {
       console.log(
         `[ServerTableEngine:${tableId}] PreAction: ${event.type} player=${event.playerId}`
       );
+      /* 2026-09-04 (disconnect audit item 11): THE ENGINE'S COPY IS THE ONE
+         THE BAR SHOWS. Pre-actions were one-way - the client pushed them and
+         nothing ever read the armed state back - so a reconnect could leave
+         the bar dark while the engine was armed, or lit while the engine had
+         invalidated it. Every change to the engine's copy now goes to the
+         player's own sockets as a private frame; the client reconciles its
+         bar to it, and asks for it again on RESYNC (rePushPreAction). */
+      this.pushPreActionToPlayer(event.playerId);
     });
     this.atomicStackService = new AtomicStackService((event) => {
       console.log(`[ServerTableEngine:${tableId}] Stack: ${event.type}`);
@@ -1947,8 +1983,36 @@ export abstract class ServerTableEngineBase {
         );
       }
 
+      /* ═══ PRESENCE SURVIVES THE SCHEDULED RESTART (2026-09-04, audit item 2) ═══
+         checkCrashRecovery restores the presence FSM only from an INCOMPLETE
+         hand snapshot, and the :55 park guarantees there is none: every table
+         finishes its hand before the cut-over. So on the one restart that
+         happens every hour, every seat booted CONNECTED with its strikes,
+         away-blind budget, sit-out reason and /away stamp wiped. The park
+         writes the FSM to engine_presence_parked (see the dealing loop) and
+         this reads it back, once, while it is fresh. restoreFsmStates never
+         clobbers a seat that has already re-registered, so a player who is
+         genuinely back loses nothing to a stale row. */
+      if (!recovered) {
+        try {
+          const parked = await loadPresenceFromPark(this.tableId);
+          if (parked && Object.keys(parked).length > 0) {
+            const restored = this.disconnectEngine.restoreFsmStates(this.tableId, parked);
+            console.log(
+              `[ServerTableEngine:${this.tableId}] presence restored from the park: ${restored}/${Object.keys(parked).length} seats`
+            );
+          }
+        } catch (err) {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.presence_restore');
+        }
+      }
+
       // Bible V8 §3.1: Table FSM — empty → waiting (engine started, waiting for players)
       this.tableFSM.transition('waiting');
+      // READY IS NOT DEALING: the row is loaded, every sub-engine is configured
+      // and the waiting snapshot can be published. On-demand callers may
+      // return now; the wait for players below is this engine's business.
+      this.settleReady(true);
 
       // 2026-08-29: open the manual-bomb listener once the table row is loaded
       // (bomb_pot_enabled is known by now) and before any hand is dealt, so a
@@ -2071,6 +2135,7 @@ export abstract class ServerTableEngineBase {
         this.killForRestart('dealing_loop_threw');
       });
     } catch (err) {
+      this.settleReady(false);
       reportError(err, 'ServerTableEnginethistableId.Failed_to_start');
       // 2026-08-22: was a bare `running = false`, which could leak an armed
       // heartbeat scheduler entry (scheduleHeartbeatCheck runs before the
@@ -2089,6 +2154,8 @@ export abstract class ServerTableEngineBase {
   async stop(): Promise<void> {
     if (!this.running) return;
     this.running = false;
+    // A stop before `waiting` is a "never got there"; after it, a no-op.
+    this.settleReady(false);
 
     // FIX 147 + Phase 1.2 PR-G-real: set the flag first so any heartbeat
     // callback already mid-flight bails before re-arming.
@@ -2579,6 +2646,7 @@ export abstract class ServerTableEngineBase {
     );
     this.recordRecoveryEvent('watchdog_kill_rebuild', reason);
     this.running = false;
+    this.settleReady(false);
     this.heartbeatActive = false;
     this.clearHandSafetyTimer();
     this.clearLooseHandTimers();
@@ -2777,12 +2845,57 @@ export abstract class ServerTableEngineBase {
   pauseForMaintenance(maxWaitMs: number): void {
     this.maintenancePaused = true;
     this.holdBeforeNextHand = true;
+    // 2026-09-04 (audit item 2): the break is the restart. Persist the
+    // presence FSM now, and again when the loop actually parks (a seat can
+    // drop between the announcement and the park). Fire-and-forget: the
+    // break must not wait on a write.
+    void this.persistPresenceForRestart('announced');
     if (maxWaitMs > 0) {
       // Take the LONGER of the two budgets. A hand-for-hand pause armed a
       // moment ago must not shorten the break's safety window.
       this.pauseMaxWaitMs = Math.max(this.pauseMaxWaitMs ?? 0, maxWaitMs);
     }
     if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
+  }
+
+  /**
+   * Write this table's presence FSM to engine_presence_parked so the next
+   * boot (loadPresenceFromPark in start()) continues it rather than
+   * resetting it. Called when the break is announced and when the loop
+   * parks. Never throws; a miss costs exactly what every boot cost before.
+   */
+  protected async persistPresenceForRestart(when: 'announced' | 'parked'): Promise<void> {
+    try {
+      const states = this.disconnectEngine.getFsmStatesForTable(this.tableId);
+      if (Object.keys(states).length === 0) return;
+      await savePresenceAtPark({
+        tableId: this.tableId,
+        disconnectStates: states,
+        engineInstance: `${INSTANCE_ID}:${when}`,
+      });
+    } catch (err) {
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.presence_persist');
+    }
+  }
+
+  /**
+   * Send this player the engine's current pre-action (or its absence) as a
+   * private frame. Called on every PreActionEngine event and on RESYNC.
+   */
+  protected pushPreActionToPlayer(userId: string): void {
+    if (!this.hub || !userId) return;
+    const entry = this.preActionEngine.getPreAction(this.tableId, userId);
+    this.hub.sendToUser(this.tableId, userId, {
+      kind: 'pre_action',
+      hand_number: this.handCount,
+      action: entry?.action ?? null,
+      to_call_at_set: entry?.toCallAtSet ?? null,
+    });
+  }
+
+  /** RESYNC / reconnect: re-send the engine's pre-action for this player. */
+  public rePushPreAction(userId: string): void {
+    this.pushPreActionToPlayer(userId);
   }
 
   /** Lift the maintenance break. Leaves any hand-for-hand pause in place. */
@@ -3463,6 +3576,23 @@ export abstract class ServerTableEngineBase {
   protected bombPotScheduler = new BombPotScheduler();
 
   /**
+   * THE JUDGED VPIP OF EVERY SEAT (Dan 2026-09-04), refreshed at each hand
+   * boundary on a table that runs the floor. Read by the horse brain for its
+   * OWN row, so a horse at an Action / Madness table widens toward the floor
+   * instead of being stood up every ten hands (10.5: a horse obeys the floor
+   * identically, and obeying it means staying above it). Empty on a table
+   * with no rule, and after a failed read - the brain then plays its prior.
+   */
+  protected nitStatus: Map<string, NitSeatStatus> = new Map();
+
+  /** The floor a seat at this table must keep, percent; 0 when there is none. */
+  protected vpipFloor(): number {
+    if (this.tableInfo?.nit_game !== true) return 0;
+    const min = Number(this.tableInfo?.maintain_percent_min ?? 0);
+    return Number.isFinite(min) && min > 0 ? min : 0;
+  }
+
+  /**
    * FULL SCHEDULER PERSISTENCE (2026-08-28): last serialized scheduler state
    * written to tables.bomb_pot_sched_state — the change detector that keeps
    * the per-hand write down to one row only when something actually moved.
@@ -3940,6 +4070,10 @@ export abstract class ServerTableEngineBase {
     // eviction reasons live — including the start-up wait loop.
     const nitEvictable: string[] = [];
     if (this.tableInfo?.nit_game === true) {
+      // The board every seat is judged on, kept for the brain (Dan
+      // 2026-09-04). Read beside the eviction, at the same boundary, from the
+      // same rows, so what a horse steers by is what it is stood up on.
+      this.nitStatus = await collectNitStatus(this.tableId);
       const nits = await collectNitEvictions(this.tableId);
       for (const n of nits) {
         console.log(

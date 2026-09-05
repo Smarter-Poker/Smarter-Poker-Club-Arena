@@ -241,6 +241,9 @@ export function UserProfileEdit({
 
           <form onSubmit={handleSave} className="profile-form">
             <div className="form-group">
+              {/* Validation is validateHandle() on submit, not native pattern/
+                  minLength: the native path blocks the submit silently and
+                  never trims, so " RiverKing " could not be saved at all. */}
               <label htmlFor={aliasId}>Arena Handle</label>
               <input
                 id={aliasId}
@@ -249,10 +252,7 @@ export function UserProfileEdit({
                   setSaveError('');
                   setFormData({ ...formData, handle: e.target.value });
                 }}
-                minLength={HANDLE_MIN}
                 maxLength={HANDLE_MAX}
-                pattern="[A-Za-z0-9_.\-]+"
-                required
                 autoFocus
                 autoComplete="nickname"
                 spellCheck={false}

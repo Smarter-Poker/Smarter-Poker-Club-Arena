@@ -5,8 +5,7 @@ import PlayerBlockModal from '../../src/components/social/PlayerBlockModal';
 
 const profile = {
   id: 'player-1',
-  username: 'riverking',
-  displayName: 'River King',
+  handle: 'riverking',
   avatarUrl: 'https://example.com/original.svg',
   bio: 'Mixed games.',
   tags: ['Grinder'],
@@ -27,19 +26,48 @@ describe('profile editor account mutation states', () => {
     expect(screen.getByRole('dialog', { name: 'Edit Profile' })).toBeInTheDocument();
   });
 
-  it('submits a keyboard-operable avatar choice and closes after success', async () => {
+  // 2026-09-04: the dicebear avatar picker is gone (CSP-blocked art the page
+  // never saved). The editor's own controls are the arena handle and the tags.
+  it('submits a trimmed handle and a toggled tag, then closes after success', async () => {
     const onClose = vi.fn();
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(<UserProfileEdit isOpen onClose={onClose} initialData={profile} onSave={onSave} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Choose Profile Avatar' }));
-    const choices = screen.getAllByRole('button', { name: 'Select This Avatar' });
-    fireEvent.click(choices[1]);
+    fireEvent.change(screen.getByLabelText('Arena Handle'), { target: { value: ' RiverKing ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Shark', pressed: false }));
     fireEvent.click(screen.getByRole('button', { name: 'Save Profile' }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
-    expect(onSave.mock.calls[0][0].avatarUrl).toContain('seed=Aneka');
+    expect(onSave.mock.calls[0][0].handle).toBe('RiverKing');
+    expect(onSave.mock.calls[0][0].tags).toEqual(['Grinder', 'Shark']);
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  it('refuses an invalid handle before anything is written', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<UserProfileEdit isOpen onClose={vi.fn()} initialData={profile} onSave={onSave} />);
+
+    fireEvent.change(screen.getByLabelText('Arena Handle'), { target: { value: 'river king' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Profile' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Letters, Numbers');
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('opens the avatar studio from the portrait control', () => {
+    const onChangeAvatar = vi.fn();
+    render(
+      <UserProfileEdit
+        isOpen
+        onClose={vi.fn()}
+        initialData={profile}
+        onSave={vi.fn()}
+        onChangeAvatar={onChangeAvatar}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open The Avatar Studio' }));
+    expect(onChangeAvatar).toHaveBeenCalledTimes(1);
   });
 });
 

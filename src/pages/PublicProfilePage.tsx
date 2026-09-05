@@ -381,7 +381,7 @@ export default function PublicProfilePage() {
             <button type="button" className="action-btn" onClick={() => navigate(-1)}>
               Go Back
             </button>
-            <button type="button" className="action-btn" onClick={() => navigate('/players')}>
+            <button type="button" className="action-btn" onClick={() => navigate('/friends')}>
               Find Players
             </button>
           </div>

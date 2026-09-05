@@ -21,6 +21,7 @@ import {
 import type { HandStage, ActionType } from '../types.js';
 
 import { HorseLogic, resolveHorseStyle } from './HorseLogic.js';
+import { horseSessionMemory } from './HorseSessionMemory.js';
 import { getTournamentBrainContext } from '../services/TournamentBrainContext.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
 import { deadlineScheduler } from './DeadlineScheduler.js';
@@ -2127,6 +2128,27 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // — PLO equity on a PLO bomb hand, whatever the table's label says.
       gameVariant: (this.activeHandVariant() || 'nlh') as string,
       bigBlind: this.tableInfo?.big_blind || 2,
+      /* THE TABLE'S REAL RAKE (2026-09-05). `rakeDrag` priced every marginal
+         call off a hardcoded 10% and a cap "approximated at 2.5bb" while this
+         method sat here holding the actual schedule the pot is raked by. A
+         club on 5%, or capped at 1bb, was charging one rake and its horses
+         were reasoning about another - and the error lands on the closest
+         decisions on the board. Undefined here (no table config yet) keeps
+         the old constants, so nothing changes where nothing is known. */
+      rakeSchedule: this.getRakeOverride(),
+      /* WHAT THIS HORSE HAS LIVED THROUGH AT THIS TABLE (2026-09-05).
+         Until today the only time input in the entire decision path was
+         `moodOf()`, a hash of the wall clock - deterministic, zero-mean
+         across the fleet, and by construction unrelated to anything that had
+         actually happened. A horse forty minutes and two hundred hands into a
+         session, stuck three buy-ins, played exactly like one that had just
+         sat down. See HorseSessionMemory: it is fed by the engine's own hand
+         boundaries and reads no database. */
+      session: horseSessionMemory.read(
+        this.tableId,
+        player.user_id,
+        this.tableInfo?.big_blind || 2
+      ),
       // AUDIT V2: position + action context for the V2 decision engine
       dealerSeat: fullState?.dealerSeat ?? this.currentHandDealerSeat,
       lastRaise: fullState?.lastRaise,

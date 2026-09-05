@@ -670,6 +670,19 @@ function scareShift(board: Card[]): ScareShift {
 /** Extended game state — ServerTableEngine passes the full HandController view. */
 export interface HorseGameStateV2 extends HorseGameState {
   dealerSeat?: number;
+  /** THE TABLE'S REAL RAKE (2026-09-05). Absent = the old constants, so the
+   *  league simulator and every unit test are unaffected. See rakeDrag. */
+  rakeSchedule?: RakeSchedule;
+  /** WHAT THIS HORSE HAS LIVED THROUGH AT THIS TABLE (2026-09-05).
+   *  Absent in the league simulator and in unit tests, where a horse has no
+   *  session - every reader treats absence as "no opinion". */
+  session?: {
+    handsHere: number;
+    minutesSeated: number;
+    netChips: number;
+    netBB: number;
+    hasTableImage: boolean;
+  };
   lastRaise?: number;
   actionHistory?: ActionRecord[];
   /** V7 ICM: explicit tournament context. When absent AND no gameMode is
@@ -1374,6 +1387,9 @@ export interface HorseDecideOpts {
    *  short deck, pineapple, fixed limit) and the MDF river line for every
    *  game. Disable to ablate (default: enabled). */
   v38Ev?: boolean;
+  /** V41 SESSION AWARENESS. DEFAULT OFF - a strategy change waits for a
+   *  league matchup. The telemetry beside it fires regardless. */
+  v41Session?: boolean;
   /** V40 (Dan 2026-09-04): Omaha is not hold'em. Aggressors are sampled
    *  toward a made category that scales with their line (a pot-sized third
    *  barrel is a boat, not "something that connects"), pair/two-pair/trips
@@ -1489,9 +1505,57 @@ function snapFraction(frac: number, familyBias: number = 0.5): number {
  * 2.5bb (schedule: $5 cap at 1/2, $7.5 at 2/5) — deliberately conservative.
  */
 const RAKE_PCT = 0.1;
-function rakeDrag(pot: number, bigBlind: number): number {
-  const capChips = Math.max((bigBlind > 0 ? bigBlind : 2) * 2.5, 3);
-  return pot > 0 && pot * RAKE_PCT < capChips ? RAKE_PCT : 0;
+
+/**
+ * ── THE TABLE'S OWN RAKE, NOT A GUESS (2026-09-05) ────────────────────────
+ *
+ * This function priced every marginal call, bluff-catch and thin value bet in
+ * the engine off TWO HARDCODED NUMBERS: ten percent, and a cap "approximated
+ * at 2.5bb". Meanwhile `ServerTableEngineBase.getRakeOverride()` has always
+ * held the real schedule - `tables.rake_percent` and `tables.rake_cap_bb`,
+ * refreshed on a timer, falling back to the club's own defaults.
+ *
+ * The two were never connected. A club that set 5% or capped at 1bb was
+ * charging one rake and its horses were reasoning about another, and the
+ * error lands exactly where it hurts: `potOdds = toCall / ((pot + toCall) *
+ * (1 - rakeMarg))` at the closest decisions on the board. Overstating the
+ * rake folds hands that were a call; understating it calls hands that were a
+ * fold. Every hand, every street, on every table whose schedule was not
+ * 10%/2.5bb.
+ *
+ * `schedule` is now threaded from the engine. When it is absent - the league
+ * simulator, a unit test, a table whose config has not loaded yet - the old
+ * constants are used and the behaviour is byte-identical to before, which is
+ * what makes this safe to land in one step.
+ *
+ * WHAT IT RETURNS is unchanged: the MARGINAL rake fraction. Below the cap
+ * every chip added to the pot is taxed, so marginal calls need a little more
+ * equity than raw pot odds imply; at or above the cap the marginal rake is
+ * zero and pot odds are honest again.
+ */
+export interface RakeSchedule {
+  /** Percent as a fraction, e.g. 0.05 for 5%. */
+  rakePercent?: number;
+  /** Cap in big blinds. */
+  rakeCapBB?: number;
+}
+
+export function rakeDrag(pot: number, bigBlind: number, schedule?: RakeSchedule): number {
+  const bb = bigBlind > 0 ? bigBlind : 2;
+  const pct =
+    schedule && Number.isFinite(Number(schedule.rakePercent)) && Number(schedule.rakePercent) >= 0
+      ? Number(schedule.rakePercent)
+      : RAKE_PCT;
+  /* A rake of zero is a real answer, not a missing one: a freeroll or a
+     rake-free promotion table means pot odds are honest at every pot size,
+     and the early return says so rather than falling through to the cap
+     arithmetic and dividing by a percentage of nothing. */
+  if (!(pct > 0)) return 0;
+  const capChips =
+    schedule && Number.isFinite(Number(schedule.rakeCapBB)) && Number(schedule.rakeCapBB) > 0
+      ? Number(schedule.rakeCapBB) * bb
+      : Math.max(bb * 2.5, 3);
+  return pot > 0 && pot * pct < capChips ? pct : 0;
 }
 
 export class HorseLogic {
@@ -1602,6 +1666,44 @@ export class HorseLogic {
       const m01 = moodOf(player.user_id);
       params.bluffFreq *= 0.88 + 0.24 * m01;
       params.aggression *= 0.96 + 0.08 * m01;
+    }
+
+    /* ── V41 SESSION AWARENESS (2026-09-05) ──────────────────────────────
+       Until today `moodOf` above was the ONLY time input in this entire
+       function, and it is a hash of the wall clock - it knows nothing about
+       what has happened to this horse. `gs.session` is measured by the engine
+       at its own hand boundaries (see HorseSessionMemory) and is the first
+       thing here that does.
+
+       THE TELEMETRY FIRES WHETHER OR NOT THE FLAG DOES, and deliberately: the
+       question Dan asked is whether the data is real and reaching the brain,
+       and a receipt gated behind a default-off flag would answer that with
+       silence forever. `v41_session_read` counts decisions taken with a live
+       session attached; `v41_table_image` counts the subset where this horse
+       has been at the table long enough to be modelled by anybody watching.
+
+       THE BEHAVIOUR IS DEFAULT OFF, because it is a STRATEGY change and this
+       house does not ship those on an argument (CLAUDE.md rule 8 and the
+       league protocol): a table image means the horse's own patterns are
+       visible, so it should mix more and lean on its pure lines less, and
+       whether that is worth anything is a question for a league matchup, not
+       for me. Turning `v41Session` on without a significant run would be
+       exactly the mistake the ledger keeps a list of. */
+    const sess = gs.session;
+    if (sess && sess.handsHere > 0) {
+      if (telemetryOn(opts)) noteFire('v41_session_read');
+      if (sess.hasTableImage) {
+        if (telemetryOn(opts)) noteFire('v41_table_image');
+        if (opts.v41Session === true) {
+          /* Bounded, and small. A horse being read balances toward its own
+             baseline rather than adopting a different personality: the mood
+             swing above is damped, not reversed, and nothing here can move a
+             dial further than the swing it is damping. */
+          const baseParams = STYLE_PARAMS[styleName] || STYLE_PARAMS.balanced;
+          params.bluffFreq = params.bluffFreq * 0.85 + baseParams.bluffFreq * 0.15;
+          params.aggression = params.aggression * 0.9 + baseParams.aggression * 0.1;
+        }
+      }
     }
 
     const v7 = opts.v7 !== false;
@@ -1955,7 +2057,9 @@ export class HorseLogic {
           const riskAdd38 = icmRisk(gs, stackBB, opts.v16Icm !== false, opts.v23Endgame !== false);
           const share38 = Math.min(1, effCall38 / Math.max(1, player.stack));
           const rake38 =
-            (opts.v10Rake ?? opts.v10) !== false && !isTournamentMode(gs) ? rakeDrag(pot38, bb) : 0;
+            (opts.v10Rake ?? opts.v10) !== false && !isTournamentMode(gs)
+              ? rakeDrag(pot38, bb, gs.rakeSchedule)
+              : 0;
           // Omaha's range read narrows by score percentile, which cannot see
           // domination (four napkins keep 44% against the sampled "3-bet
           // range" in PLO6; against the real one it is nearer 35%). The price
@@ -3374,7 +3478,8 @@ export class HorseLogic {
     // V11: tournaments rake the buy-in, not the pot — pot odds are honest.
     // V34: computed here, above the solver consult, so V32 prices the same
     // raked pot the heuristic call line does.
-    const rakeMarg = useRake10 && !isTournamentMode(gs) ? rakeDrag(pot, gs.bigBlind) : 0;
+    const rakeMarg =
+      useRake10 && !isTournamentMode(gs) ? rakeDrag(pot, gs.bigBlind, gs.rakeSchedule) : 0;
     /** V34: the solver said CALL with a drawing hand; the semi-bluff raise
      *  gates below get first refusal, and the call is guaranteed after them. */
     let solverCall32 = false;
@@ -4008,7 +4113,8 @@ export class HorseLogic {
             inPosition: ip,
             drawy: drawy38,
           }),
-          rakeMarg: useRake10 && !isTournamentMode(gs) ? rakeDrag(pot, gs.bigBlind) : 0,
+          rakeMarg:
+            useRake10 && !isTournamentMode(gs) ? rakeDrag(pot, gs.bigBlind, gs.rakeSchedule) : 0,
           riskPremium: risk,
           minBet: Math.max(gs.minRaise || 0, 0.01),
           maxBet: vi.isPotLimit ? pot : stack,

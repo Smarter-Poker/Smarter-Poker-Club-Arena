@@ -27,6 +27,7 @@ import { cashMinBuyIn } from '../config/cashBuyIn.js';
 import { horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
 import type { SeatPlayer, GameVariant, HandConfig, HandEvent, SeatedPlayer } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { horseSessionMemory } from './HorseSessionMemory.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { holeCardCount, deckSizeFor, maxSeatsFor } from './VariantRules.js';
 // The VARIANT'S OWN seat ceiling, which is a house rule and not deck
@@ -1401,6 +1402,13 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       return;
     }
 
+    /* SESSION MEMORY (2026-09-05): the opening stacks of the hand about to be
+       dealt. Paired with noteHandEnd below, this is what makes the session net
+       a sum over HANDS - so a rebuy between hands never enters it. */
+    horseSessionMemory.noteHandStart(
+      this.tableId,
+      players.map((p) => ({ user_id: p.user_id, stack: p.stack }))
+    );
     const hcPlayers: SeatPlayer[] = players.map((p) => ({
       seat: p.seat_number,
       user_id: p.user_id,
@@ -2492,6 +2500,14 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
             // Fire hand-complete callback for tournament chip sync
             this.clearTurnTimer();
+            /* SESSION MEMORY (2026-09-05). The hand boundary is the only
+               honest place to measure a session: chips added BETWEEN hands -
+               a rebuy, a top-up - never enter the sum, so a rebuy cannot read
+               as a catastrophic loss. See HorseSessionMemory. */
+            horseSessionMemory.noteHandEnd(
+              this.tableId,
+              players.map((p) => ({ user_id: p.user_id, stack: p.stack }))
+            );
             if (this.handCompleteCallback) {
               const finalStacks = players.map((p) => ({
                 user_id: p.user_id,

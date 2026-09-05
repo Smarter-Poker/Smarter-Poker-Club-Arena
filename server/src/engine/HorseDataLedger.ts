@@ -236,6 +236,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   flag('v37Satellite', 'satellite survival play', 'V37'),
   flag('v38Ev', 'the EV engine arbiter for solverless games and the MDF river', 'V38'),
   flag(
+    'v41Session',
+    'DEFAULT OFF. Session awareness: a horse with a table image balances toward its own baseline. The DATA is always read and always counted (v41_session_read, v41_table_image); only the behaviour waits for a league matchup',
+    'V41'
+  ),
+  flag(
     'v40Omaha',
     'Omaha is not hold em: tiered sampler, pressure cap, small ball, tag loop',
     'V40'
@@ -357,6 +362,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   state(
     'actionHistory',
     'this hand, every action with stage and amount (range reads, barrels, plans)'
+  ),
+  state(
+    'rakeSchedule',
+    "the table's OWN rake_percent and rake_cap_bb. Absent = the old 10%/2.5bb constants, which is what every pot-odds calculation used to be priced off regardless of what the club charged"
+  ),
+  state(
+    'session',
+    'what this horse has lived through AT THIS TABLE: hands here, minutes seated, net chips and bb, and whether it has been here long enough to be modelled. Measured by the engine at its own hand boundaries - no database read at decision time'
   ),
   state('gameMode', 'cash / tournament'),
   state('format', 'cash / mtt / spin / hu_sng'),
@@ -973,6 +986,29 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic (V40)',
     'the horse own review tags changed a decision; needs tuner-written leaks',
     'V40'
+  ),
+  /* V41 SESSION AWARENESS (2026-09-05). These two are the ANSWER to "prove
+     they know they are playing live at a table". Until today the only time
+     input in `decide` was a hash of the wall clock; these fire when a
+     decision is taken with a real, engine-measured session attached.
+     They fire whether or not `v41Session` is on - a receipt gated behind a
+     default-off flag proves nothing, which is the whole reason the receipt
+     exists. `v41_table_image` is the subset past TABLE_IMAGE_HANDS. */
+  receipt(
+    'v41_session_read',
+    'HorseLogic (V41)',
+    'a decision taken with a live session attached: hands here, minutes seated, net',
+    'V41',
+    'decide',
+    0.2
+  ),
+  receipt(
+    'v41_table_image',
+    'HorseLogic (V41)',
+    'the horse has been at this table long enough to be modelled by anybody watching',
+    'V41',
+    'decide',
+    0.02
   ),
 ];
 

@@ -32,6 +32,12 @@ export interface VIPStatus {
 }
 
 export interface VIPMonthlyLimits {
+  /**
+   * Throwables are metered in their OWN table, `throw_usage`, one row per
+   * throw - not in `vip_feature_usage_monthly` like the other four. That is
+   * why getMonthlyUsage reads two sources.
+   */
+  throwables: { used: number; limit: number };
   rabbitHunts: { used: number; limit: number };
   timeBankSeconds: { used: number; limit: number };
   emojis: { used: number; limit: number };
@@ -93,6 +99,14 @@ export type VIPFeature =
  *                        use, and the engine seeds the bank from it.
  *   emojis 1200/mo       counted by fn_increment_vip_usage under 'emoji_pack'.
  *   tags 1000/mo         counted by fn_increment_vip_usage under 'tag_pack'.
+ *   throwables 500/mo    fn_use_throwable counts this calendar month's rows in
+ *                        `throw_usage` and only charges the 1-diamond price
+ *                        from the 501st. RESTORED 2026-09-05: I removed this
+ *                        line the same morning on the strength of
+ *                        `feature_pricing.throwable.vip_tiers_included` being
+ *                        empty. That column is read by NOTHING - the
+ *                        enforcement is the function, and it was there all
+ *                        along. 95 throws by 5 players, every one of them free.
  *
  * The three booleans are features a non-VIP pays for per session or per use
  * (5, 10 and 5 diamonds) and a VIP does not. "Included" - never "Unlimited",
@@ -104,6 +118,7 @@ export const VIP_MONTHLY_ALLOWANCES = {
   timeBankSeconds: 120,
   emojis: 1200,
   tags: 1000,
+  throwables: 500,
   showStackBB: true,
   offlineProtection: true,
   autoTimeBank: true,
@@ -497,6 +512,23 @@ class VIPServiceClass {
         usage[(row as any).feature] = (row as any).usage_count || 0;
       }
 
+      /* fn_use_throwable meters against `throw_usage` by calendar month, not
+         against vip_feature_usage_monthly, so it takes its own count. */
+      let throwsUsed = 0;
+      const monthStart = new Date(
+        Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)
+      );
+      const { count: throwCount, error: throwErr } = await supabase
+        .from('throw_usage')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .gte('created_at', monthStart.toISOString());
+      if (throwErr) {
+        console.warn('[VIPService] throw_usage count error:', throwErr.message);
+      } else {
+        throwsUsed = throwCount || 0;
+      }
+
       return {
         rabbitHunts: { used: usage['rabbit_hunt'] || 0, limit: VIP_MONTHLY_ALLOWANCES.rabbitHunts },
         timeBankSeconds: {
@@ -513,6 +545,10 @@ class VIPServiceClass {
            the enforcement is already real. */
         emojis: { used: usage['emoji_pack'] || 0, limit: VIP_MONTHLY_ALLOWANCES.emojis },
         tags: { used: usage['tag_pack'] || 0, limit: VIP_MONTHLY_ALLOWANCES.tags },
+        /* Counted from throw_usage, which is where fn_use_throwable writes and
+           reads it. A failed count is reported as 0 used rather than 0 allowed:
+           a read that did not happen is not an exhausted allowance. */
+        throwables: { used: throwsUsed, limit: VIP_MONTHLY_ALLOWANCES.throwables },
       };
     } catch (err) {
       console.warn('[VIPService] getMonthlyUsage unexpected error:', err);
@@ -526,6 +562,7 @@ class VIPServiceClass {
       timeBankSeconds: { used: 0, limit: 0 },
       emojis: { used: 0, limit: 0 },
       tags: { used: 0, limit: 0 },
+      throwables: { used: 0, limit: 0 },
     };
   }
 

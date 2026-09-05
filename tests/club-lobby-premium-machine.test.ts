@@ -251,7 +251,11 @@ describe('responsive premium Club Arena', () => {
     expect(HEADER_CSS).toMatch(
       /@media \(min-width: 901px\)[\s\S]*?\.headerControls\s*\{[^}]*height:\s*96px[^}]*aspect-ratio:\s*auto/s
     );
-    expect(GLOBALS_CSS).toContain('--bottom-nav-height: clamp(44px, 13.72vw, 132px)');
+    /* 12.326vw since 2026-09-05, same commit as the change. The approved
+       asset's frame measures 1866 x 230, so an undistorted full-bleed footer
+       is 100 / (1866/230) = 12.326vw tall; 13.72vw stretched it 11.3%. The
+       132px desktop ceiling this test is really about is untouched. */
+    expect(GLOBALS_CSS).toContain('--bottom-nav-height: clamp(44px, 12.326vw, 132px)');
   });
 
   it('keeps every desktop lobby table inside the premium frame', () => {

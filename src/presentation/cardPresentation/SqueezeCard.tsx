@@ -41,18 +41,36 @@ export function squeezeVars(p: CardAnimationProfile, boardIndex = 0): React.CSSP
 /** Spread onto the host slot element to make it a squeeze host. */
 export function squeezeHostProps(
   p: CardAnimationProfile,
-  boardIndex = 0
+  boardIndex = 0,
+  /**
+   * MOBILE PASS 2026-09-05: false once the engine says this presentation is
+   * over. It drives `data-rs-animating`, which is the ONLY thing that
+   * promotes the rotating box to its own compositor layer - see the
+   * will-change note in cardSqueeze.css. MDN: "switch will-change on and off
+   * using script code before and after the change occurs."
+   */
+  animating = true
 ): {
   className: string;
   style: React.CSSProperties;
   'data-rs-profile': string;
   'data-rs-sweep': 'on' | 'off';
+  'data-rs-3d': 'on' | 'off';
+  'data-rs-animating': 'on' | 'off';
 } {
   return {
     className: 'card-squeeze-host',
     style: squeezeVars(p, boardIndex),
+    'data-rs-animating': animating ? 'on' : 'off',
     'data-rs-profile': p.id,
     'data-rs-sweep': p.lightSweepEnabled ? 'on' : 'off',
+    /* AUDIT FIX 2026-09-05: `threeD` was declared on every profile and read
+       by NOTHING, so `reduced.threeD: false` documented "a flat crossfade"
+       that did not exist. It is real now: a reveal that is not a 3D turn has
+       no edge to show, so the spine is suppressed for it (see cardSqueeze.css).
+       A profile field nothing reads is a claim about behaviour that no code
+       has to honour, which is worse than no field at all. */
+    'data-rs-3d': p.threeD ? 'on' : 'off',
   };
 }
 

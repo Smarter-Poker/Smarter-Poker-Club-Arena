@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/community-friends-unions-chrome",
+  "functions": ["fn_can_i_operate_the_union_network", "fn_community_overview"]
+}

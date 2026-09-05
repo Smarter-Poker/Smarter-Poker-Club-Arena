@@ -9,6 +9,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   CARD_PRESENTATION_PROFILES,
+  FLIP_CEILING_MS,
+  MOBILE_FLIP_MS,
   SQUEEZE_KEYFRAME_SPLIT,
   flipMs,
 } from '../../../src/presentation/cardPresentation/profiles';
@@ -48,14 +50,36 @@ describe('profile table', () => {
     expect(P.spectatorDesktop.mode).toBe('spectator');
   });
 
-  it('matches the spec starting values (spec 8, 118)', () => {
-    expect(P.cashDesktop.durationMs).toBe(560);
-    expect(P.tournamentDesktop.durationMs).toBe(640);
-    expect(P.lightningDesktop.durationMs).toBe(420);
-    expect(P.mobile.durationMs).toBe(360);
-    expect(P.reduced).toMatchObject({ prepareMs: 0, squeezeMs: 80, revealMs: 40, settleMs: 0 });
-    expect(P.background.durationMs).toBeGreaterThanOrEqual(250);
-    expect(P.background.durationMs).toBeLessThanOrEqual(350);
+  it('every flip is at or under the published 400ms ceiling', () => {
+    // "Transitions that exceed 400ms may feel too slow" - Material Design.
+    // The spec's own suggested defaults put cash at a 480ms flip, tournament
+    // at 540 and replay at 640; all three were over it, and the spec itself
+    // said those numbers were "initial defaults only ... tune after testing".
+    for (const p of all) {
+      expect(flipMs(p), `${p.id} flip`).toBeLessThanOrEqual(FLIP_CEILING_MS);
+    }
+  });
+
+  it('MOBILE IS THE LONGER ONE, which is the opposite of the intuition', () => {
+    // Material: mobile transitions typically 300ms; "Desktop animations
+    // should be faster and simpler than their mobile counterparts ... 150ms
+    // to 200ms". The first version of this table had mobile at 320ms and
+    // desktop at 480ms - backwards.
+    expect(flipMs(P.mobile)).toBe(MOBILE_FLIP_MS);
+    expect(flipMs(P.mobile)).toBeGreaterThan(flipMs(P.cashDesktop));
+  });
+
+  it('durations come off the Material 3 ladder, not out of the air', () => {
+    const LADDER = [0, 50, 100, 150, 200, 250, 300, 350, 400];
+    for (const p of all) {
+      expect(LADDER, `${p.id} flip ${flipMs(p)}`).toContain(flipMs(p));
+    }
+    expect(flipMs(P.cashDesktop)).toBe(250);
+    expect(flipMs(P.tournamentDesktop)).toBe(300);
+    expect(flipMs(P.lightningDesktop)).toBe(200);
+    expect(flipMs(P.replayDesktop)).toBe(400);
+    expect(flipMs(P.background)).toBe(150);
+    expect(flipMs(P.reduced)).toBe(150);
     expect(P.off.durationMs).toBe(0);
   });
 
@@ -129,13 +153,23 @@ describe('resolver priority (spec 46)', () => {
     reducedMotion: false,
     allIn: false,
   };
-  it('reduced motion beats everything', () => {
+  it('a hidden table is instant, and that outranks even reduced motion', () => {
+    // AUDIT FIX 2026-09-05: `off` used to lose to `reduced`, which still
+    // schedules a 120ms presentation with markup to mount and tear down for a
+    // table nobody can see. Both put the correct card on the board; this is
+    // the cheaper way to say it.
+    expect(resolveCardAnimationProfile({ ...base, focus: 'hidden', allIn: true })).toBe(P.off);
+    expect(resolveCardAnimationProfile({ ...base, focus: 'hidden', reducedMotion: true })).toBe(
+      P.off
+    );
+  });
+  it('reduced motion beats everything a player can actually see', () => {
     expect(resolveCardAnimationProfile({ ...base, reducedMotion: true, allIn: true })).toBe(
       P.reduced
     );
-  });
-  it('a hidden table is instant', () => {
-    expect(resolveCardAnimationProfile({ ...base, focus: 'hidden', allIn: true })).toBe(P.off);
+    expect(resolveCardAnimationProfile({ ...base, reducedMotion: true, focus: 'visible' })).toBe(
+      P.reduced
+    );
   });
   it('an all-in runout holds, on every platform and mode', () => {
     expect(resolveCardAnimationProfile({ ...base, allIn: true })).toBe(P.allIn);

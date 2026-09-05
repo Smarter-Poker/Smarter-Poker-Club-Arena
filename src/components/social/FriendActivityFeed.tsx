@@ -4,6 +4,10 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
+import { chunkSocialProfileIds } from '../../utils/socialGraph';
+
+/** Same batch size the page uses to hydrate profiles. */
+const ACTIVITY_ID_CHUNK = 100;
 import { reportError } from '../../utils/errorReporter';
 import './FriendActivityFeed.css';
 
@@ -62,27 +66,68 @@ export default function FriendActivityFeed({ friends }: { friends: FeedFriend[] 
     const friendIds = friends.map((friend) => friend.user_id).filter(Boolean);
     if (friendIds.length === 0) return;
 
+    /* A FEED IS THE LATEST FEW, NOT A QUERY OVER EVERY FRIEND (2026-09-05).
+       This built one `.in('user_id', friendIds)` over the COMPLETE friends
+       array the page hands down - 1,309 uuids on the founder's account, a
+       ~48KB query string - with no chunking, unlike the page's own profile
+       fetch which chunks at 100. Past a few hundred friends PostgREST or the
+       CDN rejects the URL and the component's only response is the generic
+       "Live friend activity could not be reached", so the tab looked broken
+       for exactly the accounts with the most activity to show.
+
+       Both queries below already ask for `.limit(10)`. Chunking preserves that
+       contract: every chunk returns its own newest ten, the merge below sorts
+       and slices, and the result is identical to what one unbounded query
+       would have returned had it been able to run. */
+    const idChunks = chunkSocialProfileIds(friendIds, ACTIVITY_ID_CHUNK);
+
     setLoading(true);
     setError(null);
     try {
-      const [achievementResult, challengeResult] = await Promise.all([
-        supabase
-          .from('training_user_achievements')
-          .select('id, user_id, achievement_id, unlocked_at')
-          .in('user_id', friendIds)
-          .not('unlocked_at', 'is', null)
-          .order('unlocked_at', { ascending: false })
-          .limit(10),
-        supabase
-          .from('user_daily_challenges')
-          .select('id, user_id, challenge_id, completed, assigned_date')
-          .in('user_id', friendIds)
-          .eq('completed', true)
-          .order('assigned_date', { ascending: false })
-          .limit(10),
+      const [achievementChunks, challengeChunks] = await Promise.all([
+        Promise.all(
+          idChunks.map((ids) =>
+            supabase
+              .from('training_user_achievements')
+              .select('id, user_id, achievement_id, unlocked_at')
+              .in('user_id', ids)
+              .not('unlocked_at', 'is', null)
+              .order('unlocked_at', { ascending: false })
+              .limit(10)
+          )
+        ),
+        Promise.all(
+          idChunks.map((ids) =>
+            supabase
+              .from('user_daily_challenges')
+              .select('id, user_id, challenge_id, completed, assigned_date')
+              .in('user_id', ids)
+              .eq('completed', true)
+              .order('assigned_date', { ascending: false })
+              .limit(10)
+          )
+        ),
       ]);
-      if (achievementResult.error) throw achievementResult.error;
-      if (challengeResult.error) throw challengeResult.error;
+
+      const firstFailure =
+        achievementChunks.find((result) => result.error)?.error ??
+        challengeChunks.find((result) => result.error)?.error;
+      if (firstFailure) throw firstFailure;
+
+      const achievementResult = {
+        data: achievementChunks
+          .flatMap((result) => result.data ?? [])
+          .sort((a, b) => String(b.unlocked_at ?? '').localeCompare(String(a.unlocked_at ?? '')))
+          .slice(0, 10),
+      };
+      const challengeResult = {
+        data: challengeChunks
+          .flatMap((result) => result.data ?? [])
+          .sort((a, b) =>
+            String(b.assigned_date ?? '').localeCompare(String(a.assigned_date ?? ''))
+          )
+          .slice(0, 10),
+      };
 
       const feed: ActivityItem[] = [];
       for (const achievement of achievementResult.data || []) {

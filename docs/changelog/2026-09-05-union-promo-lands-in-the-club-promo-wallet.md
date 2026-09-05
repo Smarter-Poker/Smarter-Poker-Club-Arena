@@ -220,6 +220,32 @@ force_custom_plan` (the generic plan skipped the index: 580 ms in the
   operator routine is reachable from a browser."
 - **World Hub wording: done** (#1372, live as `efba06e8`).
 
+## Line-By-Line Re-Read After #3067 (Dan: "finish up everything that's still pending")
+
+- **The Pull (Clawback) tab had the send bug in reverse.** Opened on the
+  promo wallet it called `fn_union_clawback_from_club` - club **Club Bank** ->
+  union **bank** - and added the amount to the promo figure on screen. Built
+  the inverse of the send: `fn_union_clawback_promo_from_club` (club
+  `promo_balance` -> union `promo_wallet`, refused below zero, union owner or
+  union_lead, one declared `chip_ledger` row `promo_wallet -> union_wallet`,
+  `promo_clawback` union row keyed on the op, `union_promo_clawback` club
+  row). `clubPullRoute` in `unionWalletRoutes.ts` routes the tab: promo
+  wallet -> promo pull, union bank -> bank pull, rake / BBJ / spin reserve
+  refused with the reason on the club row. Both pulls now carry an op id (the
+  bank pull never did) and the wallet figure after comes from the response.
+  Probed on production in a self-aborting block as KingFish: pull 1,250.50
+  from Club JAQK (pot 5,000 -> 3,749.50, union promo +1,250.50), the same op
+  replayed answers `duplicate`, 999,999 refused as insufficient, a second club
+  pulls fine, two ledger rows `promo:promo_wallet>union_wallet`; rolled back,
+  balances read back unchanged. Migration
+  `20260905080120_a_promo_pull_comes_back_from_the_club_promo_wallet.sql`,
+  applied.
+- Member-send note and notice were the one place still in sentence case
+  ("Promo Wallet to Fish" / "Sent 250 chips to Fish"); now "To" and the kind
+  spelled out.
+- Three new modal tests (promo pull, bank pull with op id, rake pull refused)
+  and three law pins (route table, modal wiring, function shape).
+
 ## Still Open
 
 - The World Hub route `pages/api/club-arena/union-wallet.js` still words its

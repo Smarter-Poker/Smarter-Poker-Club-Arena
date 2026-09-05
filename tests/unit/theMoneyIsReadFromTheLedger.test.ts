@@ -91,6 +91,11 @@ const CORRECTION_4 = readFileSync(
   'utf8'
 );
 const ACTIVITY_CHART = readFileSync('src/components/club/ClubActivityChart.tsx', 'utf8');
+const RAKE_PANEL = readFileSync('src/components/club/RakeSnapshotPanel.tsx', 'utf8');
+const INDEXES = readFileSync(
+  'supabase/migrations/20260905003000_the_bomb_pot_report_can_be_read.sql',
+  'utf8'
+);
 
 const fn = (name: string) => {
   const start = MIGRATION.indexOf(`FUNCTION public.${name}(`);
@@ -569,5 +574,49 @@ describe('the gate on phase 6: hands still meant two things in two places', () =
   it('the ledger-total helper is declared to the schema gate', () => {
     const manifest = JSON.parse(MANIFEST) as { functions: string[] };
     expect(manifest.functions).toContain('fn_ca_club_rake_daily_ledger_total');
+  });
+});
+
+describe('the gate on phase 6: two pages that only fail in a browser', () => {
+  /**
+   * Neither of these is visible in the code. Both were found by opening the
+   * published page and reading what the database answered.
+   *
+   *   fn_club_bomb_pot_report  {p_days: 7 and 30}  ->  500 / 57014, ~8s
+   *   ca_club_player_page      cold 8,635ms -> 57014;  warm 384ms
+   *
+   * The bomb pot report scans 2.7M rows / 7.2 GB for the 19,078 hands (0.7%)
+   * that carry a bomb_pot, taking 46 seconds against an 8-second budget - it
+   * had never rendered. ca_club_player_page reads club_member_daily_stats by
+   * (club_id, stat_date), a pair neither existing index leads with, so the
+   * first operator to open the tab after a quiet period got the failure and
+   * everyone after them got a page.
+   */
+  it('the bomb pot report has an index for the predicate it filters on', () => {
+    expect(INDEXES).toContain('idx_hand_history_bomb_pot_created');
+    expect(INDEXES).toContain('WHERE bomb_pot IS NOT NULL');
+    expect(INDEXES).toContain('the bomb pot report still has no index to read');
+  });
+
+  it('the club reports have an index on the (club, date) range they all read', () => {
+    expect(INDEXES).toContain('idx_cmds_club_date_user');
+    expect(INDEXES).toContain('ON public.club_member_daily_stats (club_id, stat_date)');
+    expect(INDEXES).toContain('INCLUDE (user_id, hands_played)');
+  });
+
+  it('the index build says why it belongs in the maintenance freeze', () => {
+    // Both tables are written continuously by the engine, and a plain CREATE
+    // INDEX takes a lock that blocks those writes for the length of the scan.
+    expect(INDEXES).toContain(':55 maintenance freeze');
+    expect(INDEXES).toContain('CREATE INDEX CONCURRENTLY is');
+  });
+
+  it('a failing rake read is not retried by the money-event firehose', () => {
+    // Measured while ca_rake_snapshot was timing out: the bus subscription
+    // re-issued the failing 8-second query seven times in fourteen seconds.
+    expect(RAKE_PANEL).toContain('lastReadFailed');
+    expect(RAKE_PANEL).toContain('if (lastReadFailed.current) return;');
+    expect(RAKE_PANEL).toContain('lastReadFailed.current = false;');
+    expect(RAKE_PANEL).toContain('lastReadFailed.current = true;');
   });
 });

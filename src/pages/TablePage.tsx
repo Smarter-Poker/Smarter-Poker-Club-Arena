@@ -19875,7 +19875,14 @@ export default function TablePage({
                         id: 'marketplace',
                         label: 'Club Marketplace',
                         icon: <SettingsIcon />,
-                        onClick: () => window.open('/hub/marketplace', '_blank'),
+                        // Dan 2026-09-04: a hub tab beside this table, not a
+                        // separate browser tab the felt cannot see (the
+                        // strip, the swipe and every other table stay put).
+                        onClick: () =>
+                          masterBus.emit('OPEN_HUB_TAB', {
+                            path: '/hub/marketplace',
+                            requestedBy: userId,
+                          }),
                       },
                       // AUTO-REBUY TOGGLE REMOVED 2026-08-20. It set React state and
                       // a localStorage key and nothing else: `isAutoRebuyEnabled`

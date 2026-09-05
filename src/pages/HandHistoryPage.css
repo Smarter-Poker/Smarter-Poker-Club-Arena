@@ -260,6 +260,12 @@
     0 14px 34px rgba(0, 0, 0, 0.24) !important;
 }
 
+.hand-card--linked {
+  box-shadow:
+    inset 0 0 0 1px rgba(214, 173, 82, 0.55),
+    0 14px 34px rgba(0, 0, 0, 0.24) !important;
+}
+
 .hand-card__summary {
   display: block;
   width: 100%;

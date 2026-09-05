@@ -64,6 +64,7 @@ import {
 import { INSTANCE_ID } from '../services/tableLease.js';
 import { evaluateCashSessions, atomicCashoutVoluntary } from '../services/supabase/cashSessions.js';
 import {
+  announceSeatMoves,
   executePendingSeatMoves,
   pendingSeatMoves,
   seatMoveNotice,
@@ -2125,6 +2126,20 @@ export abstract class ServerTableEngineBase {
         await this.evictExpiredSitOuts({ countOrbit: false }).catch((err) =>
           reportError(err, 'ServerTableEngine.' + this.tableId + '.wait_loop_sitout_evict')
         );
+        // MUST-MOVE (2026-09-05). The same shape, the same reason: a lone
+        // player on a feeder waits HERE, and the move the controller planned
+        // for them was executed only from the dealing loop, which this table
+        // never reaches. Production 00:28-00:45 UTC: seventeen must-move rows
+        // for one horse, one a minute, every one expired, while Main 1 sat one
+        // short beside it. A table below the minimum is at a hand boundary
+        // all the time; every pending move lands now.
+        await this.executePendingSeatMoves().catch((err) =>
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.wait_loop_seat_moves')
+        );
+        await this.stopIfClusterTableClosed().catch((err) =>
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.wait_loop_cluster_closed')
+        );
+        if (!this.running) break;
         // IDLE BROADCAST (2026-08-22): publish the waiting-state snapshot so
         // a client joining an idle table gets a real SNAPSHOT (seats, stacks,
         // 'waiting' stage) instead of an eternal spinner. The hub drops
@@ -2372,14 +2387,45 @@ export abstract class ServerTableEngineBase {
   protected announcedSeatMoves: Set<string> = new Set();
 
   /**
+   * A SWAP SIDE HOLDING FOR ITS PARTNER (Dan 2026-09-05). Two seat-change
+   * requests that would take each other's table are swapped: both chairs are
+   * occupied, so the first side to reach its hand boundary cannot land and is
+   * held OUT OF THE DEAL here (not sat out: the sit-out clock and its
+   * eviction are for a player who chose to leave the action) until the other
+   * table's boundary lands both chairs in one transaction. Cleared when the
+   * player vanishes from this table's roster (the swap landed), or when the
+   * pending list no longer carries their move (it was cancelled or expired).
+   */
+  protected heldForSwap: Set<string> = new Set();
+
+  /**
    * MUST-MOVE, the engine's half (OPORD 1.3 s9.5, OPORD 1.4 s18.3). At the
    * START of a hand every player with a planned move is told, once:
    * "Seat Open On Main 2. Moving After This Hand." Nothing is asked.
+   *
+   * THE PROMISE IS WRITTEN DOWN (2026-09-05): the row is stamped announced_at
+   * and its expiry extended to cover the hand, so settlement executes exactly
+   * the moves the deal promised, and a slow hand cannot expire one from under
+   * the player who was told. Called immediately before dealHand, so it only
+   * ever speaks of a hand that is about to be dealt.
    */
   protected async announcePendingSeatMoves(): Promise<void> {
     if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return;
     const pending = await pendingSeatMoves(this.tableId);
+    const live = new Set(pending.map((m) => m.move_id));
+    for (const id of this.announcedSeatMoves) {
+      if (!live.has(id)) this.announcedSeatMoves.delete(id);
+    }
+    // A held swap side whose move is no longer pending (cancelled, expired,
+    // or landed from the other table) is released; if they are still seated
+    // here they are simply back in the deal.
+    const liveHeld = new Set(pending.filter((m) => m.ready_at != null).map((m) => m.player_id));
+    for (const uid of this.heldForSwap) {
+      if (!liveHeld.has(uid)) this.heldForSwap.delete(uid);
+    }
+    const fresh: string[] = [];
     for (const m of pending) {
+      if (m.announced_at == null) fresh.push(m.move_id);
       if (this.announcedSeatMoves.has(m.move_id)) continue;
       this.announcedSeatMoves.add(m.move_id);
       this.hub?.emitEvent(this.tableId, {
@@ -2390,27 +2436,56 @@ export abstract class ServerTableEngineBase {
         to_role: m.to_role,
         to_main_index: m.to_main_index,
         reason: m.reason,
+        swap: m.swap_move_id != null,
         message: seatMoveNotice(m),
         timestamp: Date.now(),
       });
     }
+    if (fresh.length > 0) await announceSeatMoves(fresh);
   }
 
   /**
-   * At the END of a hand (and on every idle tick) the planned moves are
-   * executed: chair, chips and session go to the other table in one SQL
-   * transaction; this engine forgets the player the way it forgets a leaver,
-   * except that nothing is cashed out and no clock is closed. The destination
-   * engine sees the new seat on its next deal (loadSeatedPlayers) and the
-   * controller wakes a dealer for a table that has none.
+   * A HELD PLAYER IS NOT IN THE DEAL. Read wherever the table counts who is
+   * playing the next hand (activePlayers, the liveness count).
    */
-  protected async executePendingSeatMoves(): Promise<string[]> {
+  protected isHeldForSwap(userId: string): boolean {
+    return this.heldForSwap.has(userId);
+  }
+
+  /**
+   * At the END of a hand (announced moves only) and whenever the table is
+   * below the minimum to deal (every pending move - there is no hand to
+   * finish) the planned moves are executed: chair, chips and session go to
+   * the other table in one SQL transaction; this engine forgets the player
+   * the way it forgets a leaver, except that nothing is cashed out and no
+   * clock is closed. The destination engine sees the new seat on its next
+   * deal (loadSeatedPlayers) and the controller wakes a dealer for a table
+   * that has none.
+   */
+  protected async executePendingSeatMoves(
+    opts: { announcedOnly: boolean } = { announcedOnly: false }
+  ): Promise<string[]> {
     if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return [];
-    const done = await executePendingSeatMoves(this.tableId);
+    const { done, held } = await executePendingSeatMoves(this.tableId, opts);
+    // The first side of a swap to reach its boundary: held out of the deal
+    // until the other table lands both chairs. Told once.
+    for (const h of held) {
+      if (this.heldForSwap.has(h.player_id)) continue;
+      this.heldForSwap.add(h.player_id);
+      this.hub?.emitEvent(this.tableId, {
+        type: 'seat_move_held',
+        table_id: this.tableId,
+        user_id: h.player_id,
+        to_table_id: h.to_table_id,
+        message: 'Seat Change: Waiting For The Other Table To Finish Its Hand.',
+        timestamp: Date.now(),
+      });
+    }
     const movedIds: string[] = [];
     for (const m of done) {
       movedIds.push(m.player_id);
       this.announcedSeatMoves.delete(m.move_id);
+      this.heldForSwap.delete(m.player_id);
       const seated = this.seatedPlayers.find((sp) => sp.user_id === m.player_id);
       this.disconnectEngine.unregisterPlayer(this.tableId, m.player_id);
       this.timeBankEngine.removePlayer(this.tableId, m.player_id);
@@ -2429,17 +2504,73 @@ export abstract class ServerTableEngineBase {
         to_table_id: m.to_table_id,
         to_seat: m.to_seat_number,
         stack: m.stack,
+        reason: m.reason,
         timestamp: Date.now(),
       });
       console.log(
-        `[ServerTableEngine:${this.tableId}] ${m.player_id} moved to ${m.to_table_id} seat ${m.to_seat_number} with ${m.stack}`
+        `[ServerTableEngine:${this.tableId}] ${m.player_id} moved to ${m.to_table_id} seat ${m.to_seat_number} with ${m.stack} (${m.reason})`
       );
+      // A SWAP LANDED FROM THIS SIDE: the partner left the OTHER table in the
+      // same transaction, and that table's engine will only see an empty
+      // chair. Tell that table now, so the partner's client follows them the
+      // way every mover's does; that engine drops its own mirrors the moment
+      // its roster no longer carries them (the gone-player prune).
+      if (m.partner) {
+        this.hub?.emitEvent(m.partner.from_table_id, {
+          type: 'seat_moved',
+          table_id: m.partner.from_table_id,
+          seat: null,
+          user_id: m.partner.player_id,
+          to_table_id: m.partner.to_table_id,
+          to_seat: m.partner.to_seat_number,
+          stack: m.partner.stack,
+          reason: 'seat_change',
+          timestamp: Date.now(),
+        });
+        console.log(
+          `[ServerTableEngine:${this.tableId}] swap: ${m.partner.player_id} arrived from ${m.partner.from_table_id} into seat ${m.partner.to_seat_number}`
+        );
+      }
     }
     if (movedIds.length > 0) {
       this.seatedPlayers = this.seatedPlayers.filter((sp) => !movedIds.includes(sp.user_id));
       void this.broadcastCurrentState();
     }
     return movedIds;
+  }
+
+  /** Last time the empty-cluster-table check read the row. See below. */
+  private lastClusterClosedCheckAt = 0;
+
+  /**
+   * AN ENGINE ON A CLOSED CLUSTER TABLE STOPS (2026-09-05). The controller
+   * closes a breaking table the moment its last chair empties, and nothing
+   * on the engine side read that: the engine sat in the idle branch for ever,
+   * asking for seats, add-ons, leavers and moves every three seconds on a
+   * table no one can join. Asked once a minute, only while the table is
+   * empty; a closed row ends this engine, the reaper drops it from the map,
+   * and discovery would rebuild it if a seat ever appeared (it cannot: the
+   * door refuses a closed table).
+   */
+  protected async stopIfClusterTableClosed(): Promise<void> {
+    if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return;
+    if (this.seatedPlayers.length > 0) return;
+    const now = Date.now();
+    if (now - this.lastClusterClosedCheckAt < 60_000) return;
+    this.lastClusterClosedCheckAt = now;
+    const { data, error } = await supabase
+      .from('tables')
+      .select('lifecycle, status')
+      .eq('id', this.tableId)
+      .maybeSingle();
+    if (error || !data) return;
+    const row = data as { lifecycle?: string | null; status?: string | null };
+    if (row.lifecycle === 'closed' || row.status === 'closed') {
+      console.log(
+        `[ServerTableEngine:${this.tableId}] cluster table is ${row.lifecycle ?? row.status} and empty - stopping the engine`
+      );
+      await this.stop();
+    }
   }
 
   protected isContinuityActive(userId: string): boolean {
@@ -2783,7 +2914,8 @@ export abstract class ServerTableEngineBase {
         p.stack > 0 &&
         (this.isTournamentTable() ||
           !this.disconnectEngine.isSittingOut(this.tableId, p.user_id)) &&
-        !this.waitingForBB.has(p.user_id)
+        !this.waitingForBB.has(p.user_id) &&
+        !this.heldForSwap.has(p.user_id)
     ).length;
   }
 
@@ -3294,6 +3426,37 @@ export abstract class ServerTableEngineBase {
         });
     } catch {
       /* never let telemetry break recovery */
+    }
+  }
+
+  /**
+   * Which FORMAT this table is, for metrics. Dan, 2026-09-05: "you need to fix
+   * the real time connection to the spins, heads up and mtt's as well. not
+   * just the cash game tables."
+   *
+   * Every format already shares one ServerTableEngine and one table socket, so
+   * the act-to-broadcast instrument covered them from the start - but it was
+   * labelled only by audience, so a Spin's latency, an MTT final table's and a
+   * cash table's were one indistinguishable number and nobody could answer
+   * "are Spins slow?". This is the label that makes each answerable.
+   *
+   * Derived from the tournament brain context, which is a SYNCHRONOUS cached
+   * read and already warmed for every tournament table this engine owns, so
+   * this is safe on the broadcast path. A tournament whose context has not
+   * landed yet reports 'mtt' rather than guessing - it is the majority shape
+   * and it never silently becomes 'cash'.
+   *
+   * Four values, so at most eight series with the audience label. Never a
+   * table_id: that is the cardinality the gated registry exists to avoid.
+   */
+  protected tableFormat(): 'cash' | 'spin' | 'hu_sng' | 'mtt' {
+    if (!this.isTournamentTable()) return 'cash';
+    try {
+      const id = this.tableInfo?.tournament_id;
+      const ctx = id ? getTournamentBrainContext(String(id)) : null;
+      return ctx?.format ?? 'mtt';
+    } catch {
+      return 'mtt';
     }
   }
 
@@ -4192,7 +4355,15 @@ export abstract class ServerTableEngineBase {
         timestamp: Date.now(),
       });
       try {
-        await atomicCashout(userId, this.tableId, seated.seat_number);
+        // BOOTED FOR LOW VPIP = BARRED FOR TWO HOURS (Dan 2026-09-05): the
+        // database writes the bar from this leave mode; every other eviction
+        // stays a plain system exit.
+        await atomicCashout(
+          userId,
+          this.tableId,
+          seated.seat_number,
+          nitEvict ? { leaveMode: 'vpip_evicted' } : undefined
+        );
         this.disconnectEngine.unregisterPlayer(this.tableId, userId);
         this.timeBankEngine.removePlayer(this.tableId, userId);
         this.straddleEngine.removePlayer(this.tableId, userId);
@@ -4413,6 +4584,12 @@ export abstract class ServerTableEngineBase {
         // to the next hand, and they owe the live big blind for it.
         this.postingBBToEnter.add(p.user_id);
         restored += 1;
+      } else if (hold === 'moved') {
+        // Moved here by the game (must-move / break) and the restart landed
+        // before this table's first deal read the marker: they are dealt in
+        // owing nothing, exactly as the arrival path would have done, and the
+        // marker is cleared so nothing reads it twice.
+        this.persistEntryHold(p.user_id, { hold: null, agreed: false });
       }
     }
 

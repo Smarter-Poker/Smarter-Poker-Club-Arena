@@ -1567,6 +1567,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         EngineMetrics.actionsTotal.inc(1, { table_id: this.tableId });
         EngineMetrics.actionsFleetTotal.inc(1, {
           audience: this.humansSeated() > 0 ? 'human' : 'horse',
+          format: this.tableFormat(),
         });
         this.lastActionAcceptedAtMs = Date.now();
       } catch {
@@ -2409,6 +2410,27 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // Unconditional markProgress() here reset watchdogTrips even when all
       // three actions were rejected, hiding a genuine stall for a full window.
       if (applied) {
+        // Realtime programme Phase 1 (2026-09-04): a horse's action is timed
+        // exactly like a human's. This path bypasses _handlePlayerActionInner,
+        // so before this the act-to-broadcast clock started only for HTTP
+        // actions and the horse series could never fill - which also meant the
+        // engine's own baseline latency was invisible whenever no human sat.
+        // Same instrument, same clock, same treatment (CLAUDE.md 10.5).
+        //
+        // AUDIT FIX (2026-09-05): this sat above the check/fold fallback, so a
+        // horse whose intended action was REJECTED still reached the felt via
+        // the degrade and was neither counted nor timed. It now keys on the
+        // same `applied` that markProgress() does - the one place that already
+        // means "this seat acted", whichever of the three attempts landed.
+        try {
+          EngineMetrics.actionsFleetTotal.inc(1, {
+            audience: this.humansSeated() > 0 ? 'human' : 'horse',
+            format: this.tableFormat(),
+          });
+          this.lastActionAcceptedAtMs = Date.now();
+        } catch {
+          /* metrics must never affect gameplay */
+        }
         this.markProgress();
       } else {
         reportError(

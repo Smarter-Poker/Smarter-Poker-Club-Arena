@@ -29,16 +29,19 @@ export function arenaGameCardActionsForEntry(
         primaryTone: joined ? 'red' : 'blue',
         onPrimary: () => ctx.onWaitlistToggle?.(entry.id, !joined),
         primaryDisabled: !ctx.onWaitlistToggle,
-        secondaryLabel: 'Watch Table',
+        secondaryLabel: entry.game ? 'Watch Game' : 'Watch Table',
         onSecondary: () => ctx.onViewTable?.(entry),
       };
     }
+    /* GATE 6 (OPORD 1.4 s2.9): a must-move game is JOIN GAME / VIEW GAME -
+       the platform picks the table. A single manual table keeps its words. */
+    const game = Boolean(entry.game);
     return {
-      primaryLabel: 'Join Table',
+      primaryLabel: game ? 'Join Game' : 'Join Table',
       primaryTone: 'blue',
       onPrimary: () => ctx.onJoinTable?.(entry),
       primaryDisabled: !ctx.onJoinTable,
-      secondaryLabel: 'View Table',
+      secondaryLabel: game ? 'View Game' : 'View Table',
       onSecondary: () => ctx.onViewTable?.(entry),
     };
   }

@@ -121,6 +121,13 @@ interface TableInstance {
   raiseBounds?: string;
   /** Hero's current stack at this table. */
   heroStack?: number;
+  /**
+   * MUST-MOVE (Dan 2026-09-05): the hero's chair went to another table of
+   * the same game. Consumed by updateTableInfo, which re-points THIS tab at
+   * the destination (same position, same activeIndex - never a table switch);
+   * it is never stored on the instance.
+   */
+  movedToTableId?: string;
   /** Hero is sitting out at this table. */
   sittingOut?: boolean;
   /** Absolute epoch-ms this table's sit-out clock runs out. Cash only. */
@@ -2438,6 +2445,29 @@ export default function MultiTablePage() {
       const idx = prev.findIndex((t) => t.id === tableId);
       if (idx === -1) return prev;
       const current = prev[idx];
+      // THE TAB FOLLOWS THE CHAIR (Dan 2026-09-05). A must-move / seat change
+      // landed the hero at another table of the same game: this tab becomes
+      // that table, in place. Its per-hand figures are cleared (they belong
+      // to the old table); the name and stakes are re-reported by the
+      // remounted TablePage. If the destination is already open as a tab,
+      // the old one simply closes.
+      if (updates.movedToTableId && updates.movedToTableId !== tableId) {
+        const dest = updates.movedToTableId;
+        if (prev.some((t) => t.id === dest)) {
+          return prev.filter((t) => t.id !== tableId);
+        }
+        const next = prev.slice();
+        next[idx] = {
+          id: dest,
+          name: current.name,
+          stakes: current.stakes,
+          isMyTurn: false,
+          pot: 0,
+          gameCode: current.gameCode,
+          isTournament: current.isTournament,
+        } as TableInstance;
+        return next;
+      }
       let changed = false;
       for (const key of Object.keys(updates) as (keyof TableInstance)[]) {
         if (current[key] !== updates[key]) {

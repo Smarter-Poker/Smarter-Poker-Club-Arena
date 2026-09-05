@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest';
 import {
   BombPotScheduler,
   bombPotSettingsFromTable,
+  drawArmedHands,
   resolveBombPotVariant,
   type BombPotSchedulerSettings,
 } from './BombPotScheduler.js';
@@ -475,5 +476,63 @@ describe('once_per_orbit - the button must not stand still', () => {
     const revived = new BombPotScheduler();
     revived.restoreState(sch.exportState());
     expect(revived.exportState().x).toBe(sch.exportState().x);
+  });
+});
+
+describe('nobody tanks for the bomb (Dan 2026-09-05): the last three minutes become 1-5 hands', () => {
+  const MIN = 60_000;
+  const s = base({ triggerMode: 'timed', intervalSeconds: 900 }); // 15 min
+
+  it('the clock is the pill until three minutes are left, then hands are', () => {
+    const sch = new BombPotScheduler(() => 0.5); // draws 3
+    sch.noteHandStart(s, 1, 4, 0); // due at 15 min
+    expect(sch.nextBombDueAt(s)).toBe(15 * MIN);
+    expect(sch.handsUntilDue(s)).toBeNull();
+    sch.noteHandStart(s, 2, 4, 11 * MIN); // 4 min left: still the clock
+    expect(sch.nextBombDueAt(s)).toBe(15 * MIN);
+    // 12:30 - inside the last three minutes: armed at 3 hands, clock retired.
+    expect(sch.noteHandStart(s, 3, 4, 12.5 * MIN).isBombPot).toBe(false);
+    expect(sch.nextBombDueAt(s)).toBeNull();
+    expect(sch.handsUntilDue(s)).toBe(3);
+    // Two more hands count down; the third is the bomb - by HANDS, not by
+    // minutes: a table that slows to a crawl cannot push it back.
+    expect(sch.noteHandStart(s, 4, 4, 12.6 * MIN).isBombPot).toBe(false);
+    expect(sch.handsUntilDue(s)).toBe(2);
+    expect(sch.noteHandStart(s, 5, 4, 12.7 * MIN).isBombPot).toBe(false);
+    expect(sch.handsUntilDue(s)).toBe(1);
+    const d = sch.noteHandStart(s, 6, 4, 12.8 * MIN);
+    expect(d.isBombPot).toBe(true);
+    expect(d.triggerReason).toBe('timed');
+    // The interval restarts from the bomb hand and the clock is back.
+    expect(sch.nextBombDueAt(s)).toBe(12.8 * MIN + 15 * MIN);
+    expect(sch.handsUntilDue(s)).toBeNull();
+  });
+
+  it('the draw is uniform over 1..5 and a draw of 1 makes the next hand the bomb', () => {
+    expect(drawArmedHands(() => 0)).toBe(1);
+    expect(drawArmedHands(() => 0.999)).toBe(5);
+    expect(drawArmedHands(() => 0.2)).toBe(2);
+    const sch = new BombPotScheduler(() => 0);
+    sch.noteHandStart(s, 1, 4, 0);
+    expect(sch.noteHandStart(s, 2, 4, 13 * MIN).isBombPot).toBe(false); // armed: 1
+    expect(sch.handsUntilDue(s)).toBe(1);
+    expect(sch.noteHandStart(s, 3, 4, 13.1 * MIN).isBombPot).toBe(true);
+  });
+
+  it('a table idle straight through the window still gets one bomb at the next boundary', () => {
+    const sch = new BombPotScheduler(() => 0.9);
+    sch.noteHandStart(s, 1, 4, 0);
+    expect(sch.noteHandStart(s, 2, 4, 20 * MIN).isBombPot).toBe(true);
+  });
+
+  it('the armed count survives a restart', () => {
+    const sch = new BombPotScheduler(() => 0.9); // 5
+    sch.noteHandStart(s, 1, 4, 0);
+    sch.noteHandStart(s, 2, 4, 12.5 * MIN);
+    expect(sch.handsUntilDue(s)).toBe(5);
+    const fresh = new BombPotScheduler();
+    fresh.restoreState(sch.exportState());
+    expect(fresh.handsUntilDue(s)).toBe(5);
+    expect(fresh.nextBombDueAt(s)).toBeNull();
   });
 });

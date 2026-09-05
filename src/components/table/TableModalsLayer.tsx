@@ -53,7 +53,7 @@ import RebuyModal from './RebuyModal';
 import TournamentBreakScreen from './TournamentBreakScreen';
 import TournamentAnnouncementOverlay from './TournamentAnnouncementOverlay';
 import TournamentWinnerOverlay from './TournamentWinnerOverlay';
-import HandHistoryPanel, { type HandRecord } from './HandHistoryPanel';
+import HandHistoryPanel, { type HandRecord, type HandHistoryLoadState } from './HandHistoryPanel';
 import { ConfettiCanvas } from './ConfettiCanvas';
 import { ParticleSystem } from './ParticleSystem';
 // ChipAnimationManager is inline in TablePage — imported via parent
@@ -293,7 +293,9 @@ export interface TableModalsLayerProps {
 
   // Cashier
   showCashier: boolean;
-  accountBalance: number;
+  /** null = unknown (a failed read), never 0. See BuyInModal. */
+  accountBalance: number | null;
+  onRetryAccountBalance?: () => void;
   cashoutMinBuyIn: number;
   /** @deprecated unused by this layer — see the note on boardStage */
   buyInProcessingRef: React.MutableRefObject<boolean>;
@@ -448,8 +450,11 @@ export interface TableModalsLayerProps {
   // Hand History Panel
   showHandHistory: boolean;
   handHistory: HandRecord[];
+  handHistoryState?: HandHistoryLoadState;
   onCloseHandHistory: () => void;
   onReplay?: (hand: HandRecord) => void;
+  /** Open the Hand Detail modal at the hand passed in. */
+  onOpenHandDetail?: (hand: HandRecord) => void;
 
   /* Session Summary props REMOVED (Phase 2 audit 2026-08-22): the in-table
      SessionSummary modal was dead code — `showSessionSummary` was never set
@@ -589,6 +594,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     // Cashier
     showCashier,
     accountBalance,
+    onRetryAccountBalance,
     cashoutMinBuyIn,
     onCloseCashier,
     onAddChips,
@@ -653,8 +659,10 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     // Hand History
     showHandHistory,
     handHistory,
+    handHistoryState,
     onCloseHandHistory,
     onReplay,
+    onOpenHandDetail,
     // Session HUD
     showSessionHUD,
     onCloseSessionHUD,
@@ -1098,6 +1106,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         })()}
         maxBuyIn={maxBuyIn}
         accountBalance={accountBalance}
+        onRetryBalance={onRetryAccountBalance}
         bigBlind={safeBB(blinds)}
         cashoutRestriction={cashoutMinBuyIn > 0 ? cashoutMinBuyIn : undefined}
         countdown={buyInSecondsLeft ?? undefined}
@@ -1279,7 +1288,9 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         onClose={onCloseHandHistory}
         hands={handHistory}
         heroId={userId || ''}
+        loadState={handHistoryState}
         onReplay={onReplay}
+        onOpenDetail={onOpenHandDetail}
       />
 
       {/* Session Summary modal REMOVED (Phase 2 audit 2026-08-22). It could

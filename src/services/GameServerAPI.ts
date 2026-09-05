@@ -467,7 +467,12 @@ export async function sendHeartbeat(
    * make the engine quieter about a player, never harsher, so a client that
    * never sends it is treated exactly as every client is treated today.
    */
-  opts?: { turnRendered?: boolean }
+  opts?: {
+    turnRendered?: boolean;
+    /** The bust-rebuy dialog is on screen: the engine's busted-seat sweep
+     *  waits for a player who is at the cashier (2026-09-04). */
+    rebuyPromptOpen?: boolean;
+  }
 ): Promise<ActionResult> {
   // Circuit breaker: skip if game server is known-unreachable
   if (circuitBreaker.isOpen()) {
@@ -478,7 +483,11 @@ export async function sendHeartbeat(
     const response = await engineFetch(`${GAME_SERVER_URL}/heartbeat`, {
       method: 'POST',
       headers,
-      body: JSON.stringify(opts?.turnRendered ? { tableId, turnRendered: true } : { tableId }),
+      body: JSON.stringify({
+        tableId,
+        ...(opts?.turnRendered ? { turnRendered: true } : {}),
+        ...(opts?.rebuyPromptOpen ? { rebuyPromptOpen: true } : {}),
+      }),
     });
     if (!response.ok) {
       circuitBreaker.recordFailure(new Error(`HTTP ${response.status}`), 'GameServerAPI.heartbeat');

@@ -307,7 +307,23 @@ export interface RitResultData {
   distribution: Record<string, number>;
   /** Exact winner userIds per board (splits/side pots included). */
   perBoardWinners?: string[][];
+  /**
+   * The engine's verdict per board (2026-09-04): post-rake share, the half
+   * (low = true on the low half of a hi-lo pot) and the hand name the engine
+   * scored. Absent on payloads older than this field; the felt then falls
+   * back to its own bestFive, which cannot see a low.
+   */
+  perBoardAwards?: Array<{
+    board: number;
+    userId: string;
+    amount: number;
+    low: boolean;
+    handName: string | null;
+  }>;
+  /** Gross pot (every pot on the wire). */
   potTotal: number;
+  /** Post-rake total actually shipped. Per-board share labels divide this. */
+  netPot?: number;
   /**
    * POKERBROS PARITY 2026-08-26: community cards already dealt when the
    * all-in locked (0 / 3 / 4). Extra runs re-deal only the streets past

@@ -125,8 +125,12 @@ describe('every beat is inside the hold', () => {
     // by run), then the pot-push/muck beats every hand carries.
     const H = HAND_COMPLETION;
     const push = H.BETS_SWEEP_MS + H.POT_PUSH_MS + H.MUCK_MS + H.POST_PUSH_PAUSE_MS;
+    /* 2026-09-04 second sweep: the last ribbon lands RIT_RIBBON_MS after the
+       last river, and the hold covers it. This pin used to omit the ribbon -
+       the server was 900ms short of the client's last ribbon, against a
+       comment claiming "same arithmetic". */
     const reveal2 = H.RIT_REVEAL_LEAD_MS + 2 * 3 * H.RIT_STREET_MS + 1 * H.RIT_RUN_GAP_MS;
-    expect(rit2).toBe(reveal2 + 2 * H.RIT_RESULT_RUN_MS + push);
+    expect(rit2).toBe(reveal2 + H.RIT_RIBBON_MS + 2 * H.RIT_RESULT_RUN_MS + push);
     expect(rit3).toBeGreaterThan(rit2);
     // A river-only re-deal (turn all-in) holds far less than a full re-deal.
     const rit2river = handCompletionHoldMs({

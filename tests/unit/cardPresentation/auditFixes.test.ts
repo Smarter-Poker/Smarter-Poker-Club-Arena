@@ -292,3 +292,50 @@ describe('tile view is VISIBLE, not hidden (my own regression)', () => {
     expect(table).not.toContain('isVisible={isActive}');
   });
 });
+
+describe('mobile: nothing is promoted speculatively (2026-09-05)', () => {
+  it('board cards are not blanket-promoted on phones any more', () => {
+    // The rule gave every board card its own compositor layer, permanently,
+    // on every phone - five per table, twenty in a four-up tile view - and
+    // justified it as "only on mobile", which is backwards. MDN: "Use
+    // will-change as a last resort ... Don't use it to anticipate performance
+    // problems"; "Excessive use ... will result in excessive memory use".
+    const css = read('src/pages/TablePage.css');
+    const block = css.slice(css.indexOf('@media (max-width: 768px) and (pointer: coarse)'));
+    const rule = block.slice(0, block.indexOf('}'));
+    expect(rule).not.toContain('.community-cards__card');
+    // the ones nobody measured are left alone on purpose
+    expect(rule).toContain('.pot-display');
+  });
+
+  it('the squeeze promotes its own box, and only while it turns', () => {
+    const css = read('src/presentation/cardPresentation/cardSqueeze.css');
+    // comment-stripped: the note explaining WHY mentions the property a lot
+    const code = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    expect((code.match(/will-change/g) || []).length).toBe(1);
+    expect(css).toContain(".card-squeeze-host[data-rs-animating='on'] .card-squeeze {");
+  });
+
+  it('the dead 3D flip-deal keyframe is gone with the class nothing emitted', () => {
+    const css = read('src/components/table/CommunityCards.css');
+    const code = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(code).not.toContain('ccCardFlip3D');
+    expect(code).not.toContain('card--dealing');
+  });
+});
+
+describe('mobile: the board animates on the compositor only (2026-09-05)', () => {
+  it('the specular sheen travels by transform, not by `left`', () => {
+    // It looped forever on every board card - twenty of them in a four-up
+    // tile view - animating a LAYOUT property. web.dev's own comparison of
+    // the identical animation: 50% of frames dropped via left/top, 1% via
+    // transform. Found by tests/e2e/card-squeeze-mobile.spec.ts, which
+    // asserts no ccCard* keyframe touches anything but transform and opacity.
+    const css = read('src/components/table/CommunityCards.css');
+    const kf = css.slice(css.indexOf('@keyframes ccCardSheen'));
+    const body = kf.slice(0, kf.indexOf('\n}\n'));
+    expect(body).not.toMatch(/\bleft\b|\btop\b|\bwidth\b|\bheight\b/);
+    expect(body).toContain('translateX(-171.43%)');
+    expect(body).toContain('translateX(228.57%)');
+  });
+});

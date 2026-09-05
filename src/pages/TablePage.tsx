@@ -234,7 +234,7 @@ import {
   LeaveTableIcon,
 } from '../components/table/TableMenuIcons';
 import { useToast } from '../components/common/Toast';
-import { isVibrationAllowed, setVibrationAllowed } from '../utils/vibrationGate';
+import { isVibrationPreferred, setVibrationAllowed } from '../utils/vibrationGate';
 import SeatKnockoutLayer, {
   type SeatKnockoutHit,
   SKO_STAMP_AT_MS,
@@ -10411,7 +10411,13 @@ export default function TablePage({
          Route it through `updateSetting` instead: that commits to the store,
          broadcasts under the key the stores accept, applies the gate through
          `applyGateChanges`, and pushes the column for cross-device. */
-      updateSetting('isHapticEnabled', !isVibrationAllowed());
+      /* `isVibrationPreferred()`, not the capability check. This computes the
+         NEW value by inverting the current one, so it has to read the
+         PREFERENCE - and the capability check also asks whether the device can
+         vibrate. On an iPhone that was false forever (no Vibration API), so this
+         menu item could only ever turn haptics ON: tapping "Vibrations" to mute
+         them set them to `!false` = true, every time. */
+      updateSetting('isHapticEnabled', !isVibrationPreferred());
     }
   });
 

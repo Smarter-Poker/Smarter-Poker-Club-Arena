@@ -116,7 +116,9 @@ export function BBJHitNotification({
       className={`bbj-hit${leaving ? ' bbj-hit--leaving' : ''}${reduced ? ' bbj-hit--still' : ''}`}
       role="status"
       aria-live="polite"
-      aria-label={`Bad Beat Jackpot Hit. ${winnerName} Won ${money} Dollars On ${tableName}.`}
+      /* BBJ audit 2026-09-05: this interpolated `money` - the FORMATTER - so a
+         screen reader heard the function's source instead of the amount. */
+      aria-label={`Bad Beat Jackpot Hit. ${winnerName} Won ${amountText} Dollars On ${tableName}.`}
     >
       {!reduced && (
         <div className="bbj-hit__burst" aria-hidden="true">

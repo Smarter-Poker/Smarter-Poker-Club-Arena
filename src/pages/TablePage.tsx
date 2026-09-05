@@ -3531,6 +3531,13 @@ export default function TablePage({
         new Error('engine WS failed >20s - auto-refresh failsafe'),
         'TablePage.wsAutoReload'
       );
+      // Phase 2 (2026-09-05): this failsafe fired all night on 2026-09-03 and
+      // the platform never knew. Tell the server before the page goes.
+      void import('../services/clientConnectionBeacon')
+        .then((m) => m.reportConnectionEvent('auto_reload'))
+        .catch(() => {
+          /* the page is leaving; telemetry must not hold it up */
+        });
       window.location.reload();
     }, 20_000);
     return () => window.clearTimeout(t);

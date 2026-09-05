@@ -14,7 +14,6 @@
 
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
-import { handleEngineAuthRejection } from '../lib/sessionRevoked';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -93,7 +92,13 @@ async function engineFetch(url: string, init: RequestInit = {}): Promise<Respons
       // pointless. Ask GoTrue once (throttled inside the handler); a
       // definitively dead session ends in a prompt and a sign-in rather than
       // a table that spins forever. 'unknown' changes nothing.
-      void handleEngineAuthRejection('http:401');
+      // Lazy: this module is only needed once a request has already been
+      // refused, and a static import puts it in the entry chunk (CI, 2026-09-05).
+      void import('../lib/sessionRevoked')
+        .then((m) => m.handleEngineAuthRejection('http:401'))
+        .catch(() => {
+          /* a chunk that will not load must never sign anyone out */
+        });
       return resp;
     }
     const headers = {

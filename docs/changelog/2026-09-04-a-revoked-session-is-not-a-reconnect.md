@@ -234,3 +234,21 @@ callback, and the old banner string being gone.
   `engine-event-ordering` (8) green; `tsc --noEmit` clean in both trees.
 - Live: after the World Hub deploy, a fresh sign-in on Dan's account and
   `auth_audit_logs` showing no further `logout / node` pairs on it.
+
+## Kept out of the entry chunk (2026-09-05)
+
+CI refused the first version: importing `isEngineAuthClose` pulled the whole
+of `lib/sessionRevoked` into the entry chunk **every player downloads before
+first paint** (+1kB, 206 modules). The module is only ever needed AFTER a
+socket has already failed, so it must not be part of what a player waits for
+to see their first frame.
+
+`EngineStateClient` now carries a byte-identical inline copy of the two-line
+predicate (`closeMeansAuth`) and loads the module lazily; `GameServerAPI`
+loads it lazily too. Both lazy paths resolve to 'unknown' if the chunk cannot
+be fetched, so a chunk that fails to arrive can never sign a player out.
+
+Two copies of a rule is a drift risk, so LAW 7 executes the inlined predicate
+from source and asserts it agrees with the exported one on every close code
+that matters, and pins that neither hot-path client statically imports the
+module. Verified after a local build: 205 modules, 155kB gz, **drift +0kB**.

@@ -23,7 +23,6 @@
 import { noteServerTime } from '../lib/serverClock';
 import jsonPatch from 'fast-json-patch';
 import { engineSocketMux, isMuxEnabled, CLOSE_MUX_SUPERSEDED } from './EngineSocketMux';
-import { handleEngineAuthRejection, isEngineAuthClose } from '../lib/sessionRevoked';
 import type { Operation } from 'fast-json-patch';
 const { applyPatch } = jsonPatch;
 
@@ -104,6 +103,31 @@ function beacon(reason: 'auth_failed' | 'stale' | 'handshake_timeout' | 'closed'
 }
 
 export const CLOSE_AUTH_FAILED = 4401;
+
+/**
+ * Does this close frame say "auth", as opposed to "gone"?
+ *
+ * INLINED, NOT IMPORTED (2026-09-05). Importing it pulled all of
+ * `lib/sessionRevoked` into the ENTRY CHUNK every player downloads before
+ * first paint - CI caught it at +1kB, and the module is only ever needed
+ * AFTER a socket has already failed. The predicate itself is two comparisons;
+ * the module behind it loads lazily in `askWhetherTheSessionIsAlive` below.
+ * Kept byte-identical to the exported version, which the law pins.
+ */
+function closeMeansAuth(code: number | undefined, reason: string | undefined): boolean {
+  return code === 4401 || /^auth:/.test(String(reason || ''));
+}
+
+/**
+ * Ask GoTrue whether the session is still alive, loading the prober lazily.
+ * Resolves 'unknown' if the module cannot be loaded, so a chunk that fails to
+ * arrive can never sign a player out.
+ */
+function askWhetherTheSessionIsAlive(source: string): Promise<'alive' | 'revoked' | 'unknown'> {
+  return import('../lib/sessionRevoked')
+    .then((m) => m.handleEngineAuthRejection(source))
+    .catch(() => 'unknown' as const);
+}
 
 /**
  * 2026-09-04 - A REVOKED SESSION IS NOT A RECONNECT (see lib/sessionRevoked).
@@ -493,7 +517,7 @@ export class EngineStateClient {
       if (this.intentionalClose) return;
 
       // Auth failure — bubble up to the host; do not retry with the same token
-      if (e.code === CLOSE_AUTH_FAILED || isEngineAuthClose(e.code, e.reason)) {
+      if (e.code === CLOSE_AUTH_FAILED || closeMeansAuth(e.code, e.reason)) {
         this.setStatus('auth_failed');
         // Phase 2 (2026-09-05): the server counts what the browser saw.
         // Throttled and fire-and-forget - it cannot delay the reconnect.
@@ -907,7 +931,7 @@ export class EngineStateClient {
    * a player whose session is fine and whose link is not.
    */
   private checkSessionThenReconnect(source: string): void {
-    void handleEngineAuthRejection(source)
+    void askWhetherTheSessionIsAlive(source)
       .catch(() => 'unknown' as const)
       .then((verdict) => {
         if (this.intentionalClose) return;
@@ -1508,7 +1532,7 @@ export class EngineChannelClient {
     ws.onclose = (e) => {
       if (this.ws !== null && this.ws !== ws) return;
       if (this.intentionalClose) return;
-      if (e.code === CLOSE_AUTH_FAILED || isEngineAuthClose(e.code, e.reason)) {
+      if (e.code === CLOSE_AUTH_FAILED || closeMeansAuth(e.code, e.reason)) {
         this.setStatus('auth_failed');
         // 2026-09-04: see EngineStateClient.checkSessionThenReconnect.
         this.checkSessionThenReconnect('channel:4401');
@@ -1665,7 +1689,7 @@ export class EngineChannelClient {
 
   /** 2026-09-04: see EngineStateClient.checkSessionThenReconnect. */
   private checkSessionThenReconnect(source: string): void {
-    void handleEngineAuthRejection(source)
+    void askWhetherTheSessionIsAlive(source)
       .catch(() => 'unknown' as const)
       .then((verdict) => {
         if (this.intentionalClose) return;

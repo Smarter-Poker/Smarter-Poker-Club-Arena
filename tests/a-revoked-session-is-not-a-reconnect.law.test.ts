@@ -138,6 +138,55 @@ describe('LAW 3/4 - the verdict', () => {
   });
 });
 
+describe('LAW 7 - the inlined close predicate cannot drift from the exported one', () => {
+  // 2026-09-05: importing isEngineAuthClose pulled all of lib/sessionRevoked
+  // into the entry chunk every player downloads before first paint, so
+  // EngineStateClient carries a byte-identical inline copy (closeMeansAuth)
+  // and loads the module lazily. Two copies of a rule is a drift risk, so the
+  // copy is pinned against the original here.
+  it('agrees with isEngineAuthClose on every case that matters', async () => {
+    const src = readFileSync(
+      join(__dirname, '..', 'src', 'services', 'EngineStateClient.ts'),
+      'utf8'
+    );
+    const m = src.match(
+      /function closeMeansAuth\(code: number \| undefined, reason: string \| undefined\): boolean \{[\s\S]*?\n\}/
+    );
+    expect(m, 'the inlined predicate must exist').not.toBeNull();
+    // Strip the TS annotations so the real source can be executed as JS.
+    const js = m![0]
+      .replace('function closeMeansAuth', 'return function closeMeansAuth')
+      .replace(/code: number \| undefined/, 'code')
+      .replace(/reason: string \| undefined/, 'reason')
+      .replace(/\): boolean \{/, ') {');
+    const inlined = new Function(js)() as (c?: number, r?: string) => boolean;
+
+    const cases: Array<[number | undefined, string | undefined]> = [
+      [4401, ''],
+      [4401, 'auth:session_not_found'],
+      [1006, 'auth:bad_jwt'],
+      [1006, ''],
+      [4404, 'table_not_found'],
+      [undefined, undefined],
+      [1000, 'normal'],
+      [4429, 'rate'],
+    ];
+    for (const [c, r] of cases) {
+      expect(inlined(c, r), `code=${c} reason=${r}`).toBe(isEngineAuthClose(c, r));
+    }
+  });
+
+  it('the module is NOT statically imported by the hot-path clients', () => {
+    for (const f of ['EngineStateClient.ts', 'GameServerAPI.ts']) {
+      const src = readFileSync(join(__dirname, '..', 'src', 'services', f), 'utf8');
+      expect(src, `${f} must not statically import sessionRevoked`).not.toMatch(
+        /^import .*from '\.\.\/lib\/sessionRevoked';$/m
+      );
+      expect(src).toContain("import('../lib/sessionRevoked')");
+    }
+  });
+});
+
 describe('LAW 1/5 - the wire signals', () => {
   it('4401, or an auth: reason, is an auth close; 1006 alone is not', () => {
     expect(isEngineAuthClose(4401, '')).toBe(true);

@@ -69,7 +69,9 @@ describe('the correct hands', () => {
     expect(svc).toContain(".order('hand_number', { ascending: false })");
     expect(svc).not.toContain(".order('created_at', { ascending: false })\n      .limit(limit)");
     const page = read('src/pages/TablePage.tsx');
-    expect(page).toContain('handHistoryService.getPlayerHands(userId, 50, { tableId })');
+    expect(page).toMatch(
+      /handHistoryService\.getPlayerHands\(userId, HAND_HISTORY_PAGE, \{\s*tableId,?\s*\}\)/
+    );
     expect(page).toContain('handHistoryService.getPlayerHands(userId, 1, { tableId })');
   });
 
@@ -123,7 +125,7 @@ describe('the correct data', () => {
     expect(svc).toContain('replayInputFromRow(row, {');
     expect(svc).toContain('replay,\n    };');
     const panel = read('src/components/table/HandHistoryPanel.tsx');
-    expect(panel).toContain('<HandDetailView model={hand.replay}');
+    expect(panel).toMatch(/<HandDetailView\s+model=\{hand\.replay\}/);
     expect(panel).not.toMatch(/getActionColor|getActionLabel|showdownRows/);
     const modal = read('src/components/table/HandDetailModal.tsx');
     expect(modal).toContain('const model = hand.replay;');

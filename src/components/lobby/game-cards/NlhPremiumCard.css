@@ -153,26 +153,18 @@
   transform: scaleX(1.06);
 }
 
+/* SIDE BY SIDE, NOT STACKED (Dan 2026-09-05: "IT SHOULD SAY 4 - 20"). This
+   master's buy-in bay is 302 of 729 canvas units - 41.4% of the card, against
+   the PLO console's 12.9% - so the range reads across it on one line and the
+   stack only wasted the bay. `--fit` is written by useFitText: 1 for a range
+   that fits, less for the widest ones ("2,000 - 10,000"), so a long figure
+   shrinks to the bay instead of being clipped at its edge. */
 .agc-nlh-premium__value--buy-in .arena-premium-text {
-  font-size: 6.15cqw;
-  letter-spacing: -0.055em;
-  transform: scaleX(1.04);
-}
-
-/* A range stacks: minimum over maximum, both centred, no dash. */
-.agc-nlh-premium__buy-in-stack {
-  display: grid;
-  justify-items: center;
-  align-content: center;
-  row-gap: 0.2cqw;
   max-width: 100%;
-}
-
-.agc-nlh-premium__buy-in-stack .arena-premium-text {
-  font-size: 5.4cqw;
-  line-height: 0.95;
+  font-size: calc(6.15cqw * var(--fit, 1));
+  letter-spacing: -0.055em;
   text-align: center;
-  transform: none;
+  transform: scaleX(1.04);
 }
 
 /* Status pill, DOM-text states. Mirrors the approved RUNNING bitmap: a soft

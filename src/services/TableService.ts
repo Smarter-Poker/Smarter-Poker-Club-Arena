@@ -389,7 +389,7 @@ class TableService {
         // engine's async DB write hasn't landed yet.
         await supabase
           .from('table_seats')
-          .update({ status: 'sitting_out', leave_pending: true })
+          .update({ status: 'sitting_out', is_sitting_out: true, leave_pending: true })
           .eq('table_id', tableId)
           .eq('seat_number', seatNo)
           .is('left_at', null);
@@ -406,7 +406,7 @@ class TableService {
         // Mark as leave_pending — server's processLeavePending will handle cashout at end of hand
         await supabase
           .from('table_seats')
-          .update({ status: 'sitting_out', leave_pending: true })
+          .update({ status: 'sitting_out', is_sitting_out: true, leave_pending: true })
           .eq('table_id', tableId)
           .eq('seat_number', seatNo)
           .is('left_at', null);
@@ -540,7 +540,7 @@ class TableService {
         // they return or bust.
         await supabase
           .from('table_seats')
-          .update({ status: 'sitting_out' })
+          .update({ status: 'sitting_out', is_sitting_out: true })
           .eq('table_id', tableId)
           .eq('seat_number', seatNo)
           .eq('user_id', userId)

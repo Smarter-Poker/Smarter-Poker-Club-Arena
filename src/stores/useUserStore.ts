@@ -11,6 +11,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
+import { resolveVipStatus } from '../utils/vipStatus';
 import { clearCachedIdentity } from '../lib/cachedIdentity';
 import { PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 
@@ -51,6 +52,14 @@ export interface UserProfile {
    * see the note on the select in loadProfile: ONE ungranted column 403s the
    * whole statement, and the store then silently never populates.
    */
+  /**
+   * REAL VIP STATUS (2026-09-05). `vip_level` below is `profiles.tier`, which
+   * is the literal string 'Newcomer' on all 1,310 production rows (AuthPage
+   * writes it at signup and nothing else ever changes it). Anything gating an
+   * entitlement on it is gating on a constant - see the note on `vip_level`.
+   * VIP is is_vip + vip_tier + vip_expires_at, resolved by utils/vipStatus.
+   */
+  vip_status?: import('../utils/vipStatus').VipStatus;
   alias?: string | null;
   first_name?: string | null;
   last_name?: string | null;
@@ -240,7 +249,7 @@ export const useUserStore = create<UserState>()(
                  granted to `authenticated` (checked against the live schema);
                  if that ever stops being true this select 403s WHOLE, per the
                  note above, so add to that constant with the same care. */
-              `id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, tier, created_at, player_number`
+              `id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, tier, is_vip, vip_tier, vip_expires_at, created_at, player_number`
             )
             .eq('id', userId)
             .maybeSingle();
@@ -273,7 +282,23 @@ export const useUserStore = create<UserState>()(
             display_name_preference: data.display_name_preference ?? null,
             use_real_name: data.use_real_name ?? null,
             avatar_url: data.avatar_url,
-            vip_level: data.tier || 'bronze', // DB uses `tier`, not `vip_level`
+            /**
+             * `tier` IS NOT A VIP COLUMN, AND NOTHING MAY GATE ON IT.
+             *
+             * 2026-09-05: this line read `data.tier || 'bronze'`, and
+             * `profiles.tier` is 'Newcomer' on 1,310 of 1,310 rows
+             * (AuthPage.tsx writes that literal at signup; nothing updates
+             * it). CompleteProfileModal then gated the VIP avatar collection
+             * on `user.vip_level !== 'bronze'` - and 'Newcomer' !== 'bronze'
+             * is TRUE, so the gate stood open for every account on the
+             * platform, VIP or not.
+             *
+             * `vip_level` is kept only because three type files still declare
+             * it; `vip_status` beside it is the answer to "is this player a
+             * VIP", and it is the one an entitlement may read.
+             */
+            vip_level: data.tier || 'bronze', // legacy mirror of `tier`. NEVER gate on this.
+            vip_status: resolveVipStatus(data),
             player_number: data.player_number,
             // `stats` is NOT a column on profiles (verified against the live
             // schema), so this was always DEFAULT_STATS via the `||`. Kept

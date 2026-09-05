@@ -326,6 +326,8 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
     bbjFee: Number(h.bbj_fee) || 0,
     tableName: h.table_name,
     bombPot: h.bomb_pot ?? null,
+    /* Phase 2: the viewer's own all-in / EV facts, when the record has them. */
+    heroFacts: (h.players || []).find((p) => p.user_id === heroId)?.facts,
     replay,
   };
 }

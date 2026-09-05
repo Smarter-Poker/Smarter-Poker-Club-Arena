@@ -33,6 +33,7 @@
 import { useState, useEffect, memo, useCallback, useMemo, useRef } from 'react';
 import HandDetailView from '../handdetail/HandDetailView';
 import type { ReplayModel } from '../../utils/handReplay';
+import type { HeroHandFacts } from '../../services/HandHistoryService';
 import { gameTypeLabel, money, stamp } from '../../utils/handFormat';
 import { formatTableChips } from '../../utils/format';
 import './HandHistoryPanel.css';
@@ -133,6 +134,8 @@ export interface HandRecord {
     board_count?: number;
     variant?: string;
   } | null;
+  /** Phase 2: the viewer's own all-in equity / EV facts (ca_hand_facts), when recorded. */
+  heroFacts?: HeroHandFacts;
   /** THE model. Built once by HandHistoryService; every surface draws this. */
   replay: ReplayModel;
 }
@@ -146,6 +149,12 @@ export interface HandHistoryPanelProps {
   heroId: string;
   /** Where the list is in its fetch, so an empty list can say why it is empty. */
   loadState?: HandHistoryLoadState;
+  /**
+   * False for a spectator (Phase 1, 2026-09-05). A hand is readable by the
+   * players dealt into it, so a railbird's list is empty by design - and the
+   * old copy told them the TABLE had no hands, which was false.
+   */
+  viewerSeated?: boolean;
   /** Open the animated replay of THE HAND PASSED IN. */
   onReplay?: (hand: HandRecord) => void;
   /** Open the Hand Detail modal AT the hand passed in. */
@@ -350,7 +359,12 @@ function HandEntry({
           {hand.bombPot && <BombPotFacts facts={hand.bombPot} />}
           {/* THE rundown: the same component and the same model as the Previous
               Hand modal and the jackpot popup. Nothing here is computed twice. */}
-          <HandDetailView model={hand.replay} currentUserId={heroId} badge={variant} />
+          <HandDetailView
+            model={hand.replay}
+            currentUserId={heroId}
+            badge={variant}
+            viewerFacts={hand.heroFacts}
+          />
           {(onReplay || onOpenDetail) && (
             <div className="hh-entry__actions-row">
               {onOpenDetail && (
@@ -381,6 +395,7 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
   hands,
   heroId,
   loadState = 'ready',
+  viewerSeated = true,
   onReplay,
   onOpenDetail,
 }: HandHistoryPanelProps) {
@@ -584,7 +599,9 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
                 ? 'Loading Hands'
                 : loadState === 'failed'
                   ? 'Could Not Load The Hands For This Table'
-                  : 'No Hands Recorded At This Table Yet'}
+                  : viewerSeated
+                    ? 'No Completed Hands For You At This Table Yet'
+                    : 'You Are Watching. Hands Are Recorded For The Players Dealt Into Them. Take A Seat And Yours Will Appear Here.'}
             </div>
           ) : (
             hands.map((hand) => (

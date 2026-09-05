@@ -325,30 +325,51 @@ export function detectLeaks(row: {
    * exact name (nonnut_flush_stackoff, big_bet_fold, preflop_stackoff), so
    * nothing downstream picks it up by accident.
    */
-  if (row.netBB > 0) {
-    if (row.wentToShowdown && raisedOrBet('river')) {
-      tags.push('river_aggr_won');
-      /*
-       * ── 2026-09-02: river_raise_war had the SAME missing denominator ──
-       * The block above fixed river_aggr_lost by recording its win side. The
-       * war tag, added under it, was left one-sided and reproduced the bug in
-       * miniature: measured over 2026-08-28..09-01, river_raise_war carried
-       * 1,696 hands and NOT ONE win, because a won war carries no tag at all.
-       * On 2026-09-01 it was the worst average line in the whole audit at
-       * -87.7bb over 226 hands and it could not be acted on for the reason
-       * already written down here - the sample is selected for being
-       * negative. Same fix, same naming rule, same exclusion from the tuner.
-       */
-      if (riverAggressiveActions(row) >= 2) {
-        tags.push('river_raise_war_won');
-      }
-    }
-    return tags; // wins carry no LEAK tags (they are still stored)
-  }
+  /*
+   * ═══ EVERY SITUATION TAG CARRIES A DENOMINATOR (2026-09-05) ═══
+   *
+   * This function used to return here on a win, so 21 of its 23 tags existed
+   * ONLY on losing hands. That is a sample selected for being negative, and
+   * it makes the whole leak table unrankable: a tag's total is "how often
+   * this shape happens in big pots", never "whether this shape is wrong".
+   *
+   * It was found and fixed twice already, one tag at a time - river_aggr on
+   * 2026-09-01, river_raise_war on 2026-09-02 - each time with the note
+   * "same fix, same naming rule". Nobody generalised it, so the other
+   * twenty-one kept the defect.
+   *
+   * WHAT IT COST, measured 2026-09-05 over 7 days. Ranking the tags by their
+   * loss totals put `river_aggr_lost` first by a distance: 27,486 hands and
+   * -1,941,955bb, over three times the next line. With its mirror included,
+   * river aggression is +609,194bb overall and PROFITABLE in six of seven
+   * variants - only NLH is even slightly negative (-11,816bb over 15,201
+   * hands, 52.3% wins, about 1.4 sigma from zero and therefore not a finding
+   * at all). Acting on the one-sided ranking would have tightened the horses
+   * out of a winning line and made them EASIER to beat, which is the opposite
+   * of the point.
+   *
+   * So every OUTCOME-INDEPENDENT situation is now recorded on both sides:
+   * the loss keeps its existing name (the self-tuner reads exact names and is
+   * deliberately untouched) and the win records `<name>_won`. The audit can
+   * then rank by EV instead of by damage.
+   *
+   * THE FOLD FAMILY IS NOT MIRRORED, and cannot be: big_bet_fold,
+   * big_fold_river, big_fold_early and bet_fold_line all require hero to have
+   * FOLDED, and a folded hand never wins. They stay one-sided by nature, and
+   * that means they must never be ranked against the mirrored tags - a fold
+   * always shows a negative net, because the negative net IS the fold.
+   */
+  const won = row.netBB > 0;
+
+  /** Record a situation: `name` when the hand lost, `name_won` when it won. */
+  const flag = (name: string): void => {
+    tags.push(won ? `${name}_won` : name);
+  };
 
   // Big loss with a fold at the end: chips went in and then the hand was
   // surrendered — a blown-off bluff or a bet-fold line that cost a stack.
-  if (folded && investedBB >= FLAG_BB) {
+  // NOT MIRRORED - a folded hand never wins. See the note above `flag`.
+  if (!won && folded && investedBB >= FLAG_BB) {
     tags.push('big_bet_fold');
 
     // V23 DETECTOR SPLIT (2026-08-28): big_bet_fold has two OPPOSITE fixes.
@@ -379,11 +400,11 @@ export function detectLeaks(row: {
     if (maxPreCall <= bb * 1.05) {
       // Entered for one big blind and lost 40bb+ — limped pots are supposed
       // to stay SMALL; a stack went in behind a passive entry.
-      tags.push('limped_pot_bloat');
+      flag('limped_pot_bloat');
     } else if (maxPreCall >= bb * 3) {
       // Cold-called a raise (never took the initiative) and lost 40bb+ —
       // the classic dominated-flat: crushed by the range it called.
-      tags.push('coldcall_stackoff');
+      flag('coldcall_stackoff');
     }
   }
 
@@ -394,11 +415,11 @@ export function detectLeaks(row: {
     try {
       const st = omahaNutStatus(row.holeCards, row.board);
       if (st.category === 6 && st.higherFlushRanks >= 2) {
-        tags.push('nonnut_flush_stackoff');
+        flag('nonnut_flush_stackoff');
       } else if (st.category === 6 && st.higherFlushRanks === 1) {
-        tags.push('second_nut_flush_stackoff');
+        flag('second_nut_flush_stackoff');
       } else if (st.category === 5 && !st.straightIsNut) {
-        tags.push('dominated_straight_stackoff');
+        flag('dominated_straight_stackoff');
       }
     } catch {
       /* detector is best-effort */
@@ -409,13 +430,16 @@ export function detectLeaks(row: {
   // (no postflop action from the horse at all).
   const postflopActed = row.heroActions.some((a) => a.stage !== 'preflop');
   if (!postflopActed && investedBB >= 2 * FLAG_BB) {
-    tags.push('preflop_stackoff');
+    flag('preflop_stackoff');
   }
 
   // River aggression that lost at showdown: bet/raised the river and paid off
   // or was called by better — worth human eyes when it repeats.
   if (row.wentToShowdown && raisedOrBet('river')) {
-    tags.push('river_aggr_lost');
+    // HISTORICAL SPELLING KEPT: the win side has been `river_aggr_won` since
+    // 2026-09-01, not `river_aggr_lost_won`. Renaming it would orphan four
+    // months of rows, so this pair keeps its own names.
+    tags.push(won ? 'river_aggr_won' : 'river_aggr_lost');
 
     // V21 (2026-08-27): river_aggr_lost lumped ordinary value bets that ran
     // into the top of the range together with RAISE WARS — and the wars are
@@ -423,7 +447,7 @@ export function detectLeaks(row: {
     // the horse in one hand is a war it kept escalating.
     const riverAggrCount = riverAggressiveActions(row);
     if (riverAggrCount >= 2) {
-      tags.push('river_raise_war');
+      tags.push(won ? 'river_raise_war_won' : 'river_raise_war');
     }
     // V23 (2026-08-28): hero bet the river, then CALLED on the river — the
     // only way that sequence exists is a raise arrived and hero paid it off.
@@ -432,7 +456,7 @@ export function detectLeaks(row: {
     const acts = row.heroActions.filter((a) => a.stage === 'river');
     const betIdx = acts.findIndex((a) => isAggressiveAction(a));
     if (betIdx >= 0 && acts.slice(betIdx + 1).some((a) => isCallAction(a))) {
-      tags.push('river_raise_paidoff');
+      flag('river_raise_paidoff');
     }
   }
 
@@ -452,13 +476,13 @@ export function detectLeaks(row: {
       const flushCat = vi.isShortDeck ? 7 : 6;
       const boatCat = vi.isShortDeck ? 6 : 7;
       if (ns.cat === 5 && ns.flushPossible) {
-        tags.push('straight_into_flush_stackoff');
+        flag('straight_into_flush_stackoff');
       } else if (ns.cat === 5 && ns.heroStraightTop < ns.maxStraightTop) {
-        tags.push('nonnut_straight_stackoff');
+        flag('nonnut_straight_stackoff');
       } else if (ns.cat === flushCat && ns.higherFlushRanks >= 1) {
-        tags.push('nonnut_flush_stackoff');
+        flag('nonnut_flush_stackoff');
       } else if (ns.cat === boatCat && ns.underfull) {
-        tags.push('underfull_stackoff');
+        flag('underfull_stackoff');
       }
     } catch {
       /* detector is best-effort */
@@ -500,7 +524,7 @@ export function detectLeaks(row: {
         const kickerFillsBoat = (boardCount.get(kicker) ?? 0) >= 1;
         // An ace kicker cannot be out-kicked; anything below it can.
         if (!kickerFillsBoat && kicker < 14) {
-          tags.push('weak_kicker_trips_stackoff');
+          flag('weak_kicker_trips_stackoff');
         }
       } else if (r1 !== rr2) {
         // Top pair on an unpaired top rank with a kicker nine or worse.
@@ -510,7 +534,7 @@ export function detectLeaks(row: {
         if (pairsTop) {
           const kicker = r1 === topBoard ? rr2 : r1;
           if (kicker <= 9 && (boardCount.get(kicker) ?? 0) === 0) {
-            tags.push('top_pair_weak_kicker_stackoff');
+            flag('top_pair_weak_kicker_stackoff');
           }
         }
       }
@@ -566,7 +590,7 @@ export function detectLeaks(row: {
           // category-4 hand on a paired board is trips (a pocket pair on a
           // paired board would be a boat or quads, never trips); on an
           // unpaired board it can only be a set.
-          tags.push(boardHasPair(row.board) ? 'plo_naked_trips_stackoff' : 'plo_set_stackoff');
+          flag(boardHasPair(row.board) ? 'plo_naked_trips_stackoff' : 'plo_set_stackoff');
         }
       } else if (st.category === CAT_FULL_HOUSE) {
         // ── THE PLO UNDER-FULL (2026-09-05) ──
@@ -583,21 +607,24 @@ export function detectLeaks(row: {
         // is there ANY two-card holding, from the cards hero cannot see,
         // that makes a bigger full house or quads on this exact board.
         if (!omahaBoatIsNut(row.holeCards, row.board)) {
-          tags.push('plo_underfull_stackoff');
+          flag('plo_underfull_stackoff');
         }
       } else if (st.category <= CAT_ONE_PAIR) {
         // At most one pair with a full stack in. By the river every redraw has
         // resolved, so a hand that still shows one pair is one that had no
         // wrap, no flush and no nut redraw arrive - the second shape the audit
         // panel proposed (plo_toppair_no_redraw_stackoff).
-        tags.push('plo_toppair_no_redraw_stackoff');
+        flag('plo_toppair_no_redraw_stackoff');
       }
     } catch {
       /* detector is best-effort */
     }
   }
 
-  return tags;
+  // nonnut_flush_stackoff is reachable from both the Omaha block and the NLH
+  // board-demotion block, so a hand can pick it up twice. It always could;
+  // the mirror doubles the chance of noticing.
+  return [...new Set(tags)];
 }
 
 /** Pure: build the rows to insert (exported for tests; no IO). */

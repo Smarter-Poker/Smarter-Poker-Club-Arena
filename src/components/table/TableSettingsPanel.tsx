@@ -3,7 +3,9 @@
  *  TABLE SETTINGS PANEL — Bible V8 §11.1 Reusable Settings Toggles
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Renders all 12 table settings toggles from Bible V8 §11.1.1.
+ * Renders every toggle in TABLE_SETTINGS_META (the hook owns the list; this
+ * file has never owned a count and must not start - it said "all 12" while
+ * the list held 13, and then 14).
  * Used in TWO locations:
  *   1. Table view gear icon (overlay panel)
  *   2. Hamburger menu Settings section (inline)

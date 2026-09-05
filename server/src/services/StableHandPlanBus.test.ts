@@ -174,20 +174,23 @@ describe('SOURCE LAW: opening a table is the most refused thing in the fleet', (
     );
   });
 
-  it('opens ONLY a game the host does not already have - the count cannot creep', () => {
-    expect(method).toContain(
-      'if (existing.has(`${order.hostId}|${name.toLowerCase()}`)) continue;'
-    );
+  it('opens a GAME, never a table (Gate 7, 2026-09-05): the order is fn_cash_game_ensure, idempotent on the key', () => {
+    // A repeated order for a key the host already runs returns the same game;
+    // the count cannot creep because the database holds one game per
+    // (club, variant, sb, bb) and refuses a cash table with no game behind it.
+    expect(method).toContain("supabase.rpc('fn_cash_game_ensure', {");
+    expect(method).toContain('p_club_id: order.hostId,');
+    expect(method).toContain('p_variant: variant,');
+    expect(method).toContain('p_sb: stake.sb,');
+    expect(method).toContain('p_bb: stake.bb,');
+    expect(method).not.toContain("from('tables').insert(");
   });
 
-  it('stamps the HOST as club_id so the close and park machinery owns it', () => {
-    expect(method).toContain('club_id: order.hostId,');
-    expect(method).toContain(
-      'union_id: order.hostId === MIDWAY_UNION_ID ? MIDWAY_UNION_ID : null,'
-    );
+  it('stamps the HOST as the game club, so the host owns the game', () => {
+    expect(method).toContain('p_club_id: order.hostId,');
   });
 
   it('clamps the seats to what the deck can serve', () => {
-    expect(method).toContain('max_players: clampSeatsForVariant(variant, 9)');
+    expect(method).toContain('p_handedness: clampSeatsForVariant(variant, 9)');
   });
 });

@@ -104,6 +104,9 @@ describe('daily challenge batch claims', () => {
         replayed: false,
         claimedIds: [ROW],
         alreadyClaimedIds: [],
+        // The RPC still emits `chips`, always 0 since migration 20260905114421.
+        // The fixture keeps it non-zero deliberately: the assertion below is
+        // that the client DROPS it rather than that the server stopped sending.
         chips: 750,
         diamonds: 10,
         diamondBalance: 500,
@@ -149,11 +152,15 @@ describe('daily challenge batch claims', () => {
     });
     expect(receipt).toMatchObject({
       claimedIds: [ROW],
-      chips: 750,
       diamonds: 10,
       diamondBalance: 500,
       vault: { count: 1, items: [{ challengeId: 'straight_1', tier: 'daily' }] },
     });
+    // A mission reward is diamonds (Dan 2026-09-05). Nothing on the receipt,
+    // its lifetime stats or its vault page carries a chip figure any more.
+    expect(receipt).not.toHaveProperty('chips');
+    expect(receipt.stats).not.toHaveProperty('totalChipsEarned');
+    expect(receipt.vault).not.toHaveProperty('chips');
     expect(emit).toHaveBeenCalledWith('BALANCE_UPDATED', {
       source: 'daily_challenge_claim',
       userId: USER,
@@ -231,7 +238,9 @@ describe('the page ships the casino-realism surface without the old stubs', () =
   });
 
   it('ships complete reward feedback and keyboard-operable period tabs', () => {
-    expect(page).toContain('reward.chips.toLocaleString()');
+    // Was `reward.chips.toLocaleString()`. The celebration no longer has a
+    // chip payout tile to render (Dan 2026-09-05: rewards are diamonds).
+    expect(page).toContain('reward.diamonds.toLocaleString()');
     expect(page).toContain('aria-controls={`mission-panel-${tier}`}');
     expect(page).toContain("event.key === 'ArrowRight'");
     expect(page).toContain('Current Progress Will Be Replaced');

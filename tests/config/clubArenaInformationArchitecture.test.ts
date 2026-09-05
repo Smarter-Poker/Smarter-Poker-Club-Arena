@@ -162,18 +162,34 @@ describe('Club Arena information architecture', () => {
     );
     expect(community?.items[0]).toEqual({ label: 'Overview', path: '/community' });
     expect(community?.items.map((item) => item.path)).toEqual(
-      expect.arrayContaining(['/search', '/friends', '/messages', '/unions'])
+      expect.arrayContaining(['/search', '/friends', '/messages'])
     );
     expect(play?.items.map((item) => item.path)).toContain('/session-history');
     expect(play?.items[0]).toEqual({ label: 'Overview', path: '/play' });
+
+    /* THE UNION DIRECTORY IS OPT-IN, AND THE DEFAULT IS NO (2026-09-05).
+       Dan: "(AND THIS PAGE SHOULD BE HIDDEN TO EVERYONE EXECPT ME:
+       .../unions)". The rail is a pure function of the path plus what the
+       caller knows, so with nothing passed it must offer nothing - the same
+       fail-closed rule Create Union has followed since 2026-09-04. Asserting
+       both directions is stricter than the single expectation this replaced. */
+    expect(community?.items.map((item) => item.path)).not.toContain('/unions');
     expect(union?.items.map((item) => item.path)).toEqual([
-      '/unions',
       '/unions/union-1',
       '/unions/union-1/games',
       '/unions/union-1/operations',
       '/unions/union-1/statements',
       '/unions/union-1/settlement',
     ]);
+
+    const communityForOperator = getArenaSectionNavigation('/community', {
+      canOperateUnionNetwork: true,
+    });
+    const unionForOperator = getArenaSectionNavigation('/unions/union-1/statements', {
+      canOperateUnionNetwork: true,
+    });
+    expect(communityForOperator?.items.map((item) => item.path)).toContain('/unions');
+    expect(unionForOperator?.items.map((item) => item.path)[0]).toBe('/unions');
     const unionGames = getArenaSectionNavigation('/unions/union-1/games');
     expect(unionGames?.items.map((item) => item.path)).not.toContain('/unions/union-1/statements');
     expect(getActiveArenaSectionPath('/unions/union-1/games', unionGames?.items || [])).toBe(

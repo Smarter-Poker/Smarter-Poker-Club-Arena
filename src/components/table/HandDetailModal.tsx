@@ -44,6 +44,7 @@ import { cardKey } from '../../utils/handEvaluator';
 import type { ReplayModel, ReplayShowdownRow } from '../../utils/handReplay';
 import './HandDetailModal.css';
 import { blindLabel, gameTypeLabel, money, stamp } from '../../utils/handFormat';
+import { handDeepLink } from '../../lib/handHistoryLive';
 import { StatsFactsService, type HandRakeShare } from '../../services/StatsFactsService';
 
 export interface HandDetailModalProps {
@@ -61,6 +62,8 @@ export interface HandDetailModalProps {
    * from a row of the Hand History panel.
    */
   initialHandId?: string | null;
+  /** False for a spectator: the empty state says so instead of claiming the table has no hands. */
+  viewerSeated?: boolean;
   /** Open the full animated replay of THE HAND PASSED IN, not "the last hand". */
   onReplay?: (hand: HandRecord) => void;
   /** Open the share modal for THE HAND PASSED IN. */
@@ -249,6 +252,7 @@ export function HandDetailModal({
   currentUserName,
   loadState = 'ready',
   initialHandId = null,
+  viewerSeated = true,
   onReplay,
   onShare,
 }: HandDetailModalProps) {
@@ -292,6 +296,15 @@ export function HandDetailModal({
       setDragging(false);
     }
   }, [isOpen, initialHandId]);
+
+  /* PIN THE NEWEST TOO (Phase 1). With live refresh a hand can land while the
+     modal is open. "Newest" was resolved as index 0 on every render, so the
+     reader was moved onto the new hand mid-read. Once the list has a newest
+     hand, that hand becomes the subject by id; the navigator's total grows
+     and the arrows still reach the new one. */
+  useEffect(() => {
+    if (isOpen && subjectId === null && hands.length > 0) setSubjectId(hands[0].id);
+  }, [isOpen, subjectId, hands]);
 
   const index = useMemo(() => {
     if (!hands.length) return 0;
@@ -374,6 +387,42 @@ export function HandDetailModal({
     };
   }, [isOpen, hand?.id, heroId, tab]);
 
+  /**
+   * COPY HAND NUMBER / COPY LINK (Phase 1, 2026-09-05). Every dispute and every
+   * chat about a hand starts with its number; the link opens the archive on
+   * this hand for anyone who was in it. A transient "Copied" on the button
+   * itself, so the modal needs no toast layer of its own.
+   */
+  const [copied, setCopied] = useState<'number' | 'link' | null>(null);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copyText = useCallback(async (kind: 'number' | 'link', text: string) => {
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+      else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+      }
+      setCopied(kind);
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+      copiedTimerRef.current = setTimeout(() => setCopied(null), 1600);
+    } catch {
+      setCopied(null);
+    }
+  }, []);
+  useEffect(
+    () => () => {
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+    },
+    []
+  );
+
   const sheetStyle: React.CSSProperties | undefined = dragY
     ? {
         transform: `translateY(${dragY}px)`,
@@ -435,7 +484,9 @@ export function HandDetailModal({
               ? 'Loading The Hands For This Table'
               : loadState === 'failed'
                 ? 'Could Not Load The Hands For This Table. Close And Try Again.'
-                : 'No Completed Hands Yet At This Table. Play A Hand To The End And It Will Appear Here.'}
+                : viewerSeated
+                  ? 'No Completed Hands For You At This Table Yet. Play A Hand To The End And It Will Appear Here.'
+                  : 'You Are Watching. Hands Are Recorded For The Players Dealt Into Them. Take A Seat And Yours Will Appear Here.'}
           </div>
         </div>
       </div>
@@ -514,7 +565,35 @@ export function HandDetailModal({
             {blindLabel(model.smallBlind)} / {blindLabel(model.bigBlind)}
             {variant ? <em className="hdm-variant">{variant}</em> : null}
           </span>
-          <span className="hdm-sn">#{hand.handNumber}</span>
+          <span className="hdm-sn">
+            <button
+              type="button"
+              className="hdm-copy"
+              title="Copy Hand Number"
+              aria-label={`Copy Hand Number ${hand.handNumber}`}
+              onClick={() => void copyText('number', `#${hand.handNumber}`)}
+            >
+              #{hand.handNumber}
+              <span className="hdm-copy__hint">{copied === 'number' ? 'Copied' : 'Copy'}</span>
+            </button>
+            <button
+              type="button"
+              className="hdm-copy"
+              title="Copy Link To This Hand"
+              aria-label="Copy Link To This Hand"
+              onClick={() => void copyText('link', handDeepLink(hand.id))}
+            >
+              <svg width="12" height="12" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path
+                  d="M8.5 11.5l3-3M7 13a3 3 0 0 1 0-4.2l2-2a3 3 0 0 1 4.2 4.2l-.6.6M13 7a3 3 0 0 1 0 4.2l-2 2a3 3 0 0 1-4.2-4.2l.6-.6"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span className="hdm-copy__hint">{copied === 'link' ? 'Copied' : 'Link'}</span>
+            </button>
+          </span>
         </div>
 
         <div
@@ -530,6 +609,7 @@ export function HandDetailModal({
               currentUserId={heroId}
               currentUserName={currentUserName}
               badge={variant}
+              viewerFacts={hand.heroFacts}
               footer={rakeShare ? <HandRakeShareBlock share={rakeShare} /> : null}
             />
           ) : (

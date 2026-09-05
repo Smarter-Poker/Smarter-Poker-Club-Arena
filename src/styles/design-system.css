@@ -127,7 +127,27 @@
   --header-height: 56px;
   /* Keep all six approved controls visible in a compact fixed bar. The floor
      is a full touch target and the ceiling protects the content viewport. */
-  --bottom-nav-height: clamp(44px, 13.72vw, 132px);
+  /* THE FOOTER FRAME KEEPS ITS OWN SHAPE (Dan 2026-09-05: the footer "IS
+     DISTORTED").
+     Measured from the approved asset itself (public/images/club-footer/
+     club-arena-footer-v2.webp): a 1916x256 canvas whose opaque frame is the
+     rect x=25 y=14 1866x230, so the frame's aspect is 1866/230 = 8.113:1 and
+     an undistorted full-bleed footer is 100vw / 8.113 = 12.326vw tall.
+     This constant said 13.72vw, which stretched the art 11.3% taller than the
+     frame everywhere below the ceiling, and the 132px ceiling then squashed it
+     the other way on every desktop - measured 11.7% at a 1204px viewport,
+     where the honest height is 147.4px. Distorted at every width, in one
+     direction or the other.
+     The ceiling itself is right and stays: Dan approved a 132px desktop
+     footer, and the 263px ceiling before it "covered the lobby". What was
+     wrong is that only the HEIGHT stopped growing. ClubBottomNav.module.css
+     now stops the artwork's WIDTH at the same moment
+     (132 x 8.113 = 1070.9px) and centres it, so the frame keeps its shape on
+     both sides of the ceiling: proportional and full-bleed through phones and
+     tablets, then a centred bar of the approved height on desktop.
+     This value remains what a PAGE RESERVES; the artwork derives its own
+     height from `aspect-ratio` so it can never disagree with the asset. */
+  --bottom-nav-height: clamp(44px, 12.326vw, 132px);
   --bottom-nav-clearance: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
   --sidebar-width: 280px;
   --max-width-mobile: 480px;

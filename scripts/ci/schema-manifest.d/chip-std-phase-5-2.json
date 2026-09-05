@@ -1,5 +1,5 @@
 {
-  "_owner": "fix/union-to-club-money-declares-itself (chip standard Phase 5.2, the spin escrow reads the reserve, and the journal is never refused by the freeze, 2026-09-05). Applied as 20260905074227 (inside the 07:55 freeze) and 20260905075122.",
+  "_owner": "fix/union-to-club-money-declares-itself (chip standard Phase 5.2, the spin escrow reads the reserve, and the journal is never refused by the freeze, 2026-09-05). Applied as 20260905074227 (inside the 07:55 freeze), 20260905075122, 20260905083654 (the drift check re-reads the balance) and 20260905081408 (the register closes the definitional era).",
   "tables": [],
   "functions": ["fn_ca_escrow_on_reserve_leg"],
   "columns": {

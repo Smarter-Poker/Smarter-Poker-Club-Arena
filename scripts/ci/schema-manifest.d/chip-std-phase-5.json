@@ -1,0 +1,41 @@
+{
+  "_owner": "fix/chip-std-phase-5 (chip standard Phase 5.1, escrow becomes a balance, 2026-09-04/05). Applied as 20260904220932 (part one), 20260905025630 (part two, inside the freeze), 20260905025642 (part three, the meter reads the escrow).",
+  "tables": ["tournament_escrow"],
+  "functions": [
+    "fn_ca_escrow_apply",
+    "fn_ca_escrow_on_wallet_tx",
+    "fn_ca_escrow_on_rake_record",
+    "fn_ca_escrow_on_overlay_leg",
+    "fn_ca_escrow_on_seat_payout",
+    "fn_ca_escrow_on_rake_settlement",
+    "fn_ca_escrow_on_close",
+    "fn_ca_escrow_can_pay",
+    "fn_ca_escrow_balance_drift"
+  ],
+  "columns": {
+    "tournament_escrow": [
+      "tournament_id",
+      "enforced",
+      "gross_in",
+      "fee_entries_in",
+      "satellite_fee_in",
+      "bounty_in",
+      "overlay_in",
+      "satellite_in",
+      "prize_out",
+      "bounty_out",
+      "fee_out",
+      "refund_prize",
+      "refund_bounty",
+      "refund_fee",
+      "prize_balance",
+      "bounty_balance",
+      "fee_balance",
+      "opened_at",
+      "opened_from",
+      "updated_at",
+      "closed_at",
+      "close_note"
+    ]
+  }
+}

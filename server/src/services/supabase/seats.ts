@@ -123,7 +123,9 @@ export async function markSeatAsLeft(
  * richer return type so every existing caller keeps its `number` contract.
  */
 export interface CashoutOptions {
-  leaveMode?: 'voluntary' | 'forced';
+  /** 'vpip_evicted' (Dan 2026-09-05): a nit-game eviction - a system exit
+      that also bars the player from this game for the rejoin window. */
+  leaveMode?: 'voluntary' | 'forced' | 'vpip_evicted';
   onLocked?: (stayRemainingMs: number) => void;
   onFailed?: (message: string) => void;
 }

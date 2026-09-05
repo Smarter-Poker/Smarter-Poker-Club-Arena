@@ -256,14 +256,17 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
     if (isCash) {
       const t = entry.raw as LobbyTableRow;
       const status = String(t.status || '').toLowerCase();
+      /* GATE 6 (OPORD 1.4 s2.9): a must-move GAME is joined, viewed and
+         watched as a game - the platform picks the table. The words say so. */
+      const game = Boolean(entry.game);
       if (seated)
         return {
-          label: 'Return To Table',
+          label: game ? 'Return To Game' : 'Return To Table',
           kind: 'gold' as const,
           run: () => onJoinTable(entry.id),
         };
       if (status === 'closed' || status === 'deleted')
-        return { label: 'Table Closed', kind: 'disabled' as const };
+        return { label: game ? 'Game Closed' : 'Table Closed', kind: 'disabled' as const };
       if (status === 'paused') return { label: 'Game Paused', kind: 'disabled' as const };
       const full = entry.capacity > 0 && entry.players >= entry.capacity;
       if (full && waitlisted)
@@ -281,10 +284,12 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
           needsAuth: true,
         };
       return {
-        label: 'Join Table',
+        label: game ? 'Join Game' : 'Join Table',
         kind: 'primary' as const,
         run: () => onJoinTable(entry.id),
-        note: 'Pick Your Seat And Buy In At The Table',
+        note: game
+          ? 'The Game Seats You At The Right Table, Or Holds Your Place'
+          : 'Pick Your Seat And Buy In At The Table',
       };
     }
 
@@ -420,10 +425,10 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         if (cta.link) navigate(cta.link);
         else cta.run?.();
       },
-      secondaryLabel: 'View Table',
+      secondaryLabel: entry.game ? 'View Game' : 'View Table',
       onSecondary: () => navigate(`/table/${entry.id}`),
     };
-  }, [busy, cta, ctaDisabled, entry.id, navigate]);
+  }, [busy, cta, ctaDisabled, entry.id, entry.game, navigate]);
 
   // ── Right zone of the plaque ──
   /* The lobby row is the fallback for the two figures the table now prints

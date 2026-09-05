@@ -1,0 +1,243 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   CARD SQUEEZE — the shared reveal stylesheet (Card Presentation Engine)
+   ═══════════════════════════════════════════════════════════════════════════
+   RIVER SQUEEZE 2026-09-04 / ROUND 2 2026-09-05. One stylesheet for every
+   consumer of the squeeze: the felt board (CommunityCards) and the hand
+   replay. It is imported by SqueezeCard.tsx, so any chunk that renders the
+   component carries it - a replay route never loads the board's stylesheet
+   and must not depend on it.
+
+   Measured from RIVER SQUEEZE ANIMATION.MOV at 30fps: the card arrives FACE
+   DOWN in its slot and holds; at frame 289 the back compresses toward its
+   edge (a dark edge shows - rotateY, not scaleX); at +33ms it is a ~25%
+   sliver; at +66ms the face is at full width; a settle by +130ms.
+
+     HOST      .card-squeeze-host    materialises in place (opacity, scaleX)
+     FLIP      .card-squeeze         rotateY 0 -> 90 -> 180 with overshoot
+     SPINE     .card-squeeze__spine  the card's edge, visible only edge-on
+     SHADOW    .card-squeeze__shadow an opacity-driven shadow that thins
+                                     with the card (spec 72: no blur change)
+
+   Every duration is a custom property the component sets inline from the
+   resolved profile (src/presentation/cardPresentation/profiles.ts); the
+   :root values below are the desktop-cash DEFAULTS and tests pin them to
+   that table. Everything scales by --animation-speed, the one sanctioned
+   control (CLAUDE.md 10.6). Compositor-only: transform and opacity.
+   Resting state is FACE UP so an interrupted or collapsed animation leaves a
+   correct board.
+
+   Keyframe split (pinned by tests/unit/cardPresentation/profiles.test.ts):
+     0 -> 37.5%  SQUEEZE  rotateY 0 -> 90   (ease-in: the back accelerates
+                                             to its edge)
+     37.5 -> 75% REVEAL   rotateY 90 -> 180 (ease-out: the face expands)
+     75 -> 90%   OVERSHOOT scale 1 -> var(--rs-overshoot)
+     90 -> 100%  SETTLE   scale -> 1
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --rs-prepare: 0.08s;
+  --rs-hold: 0s;
+  --rs-flip: 0.48s;
+  --rs-overshoot: 1.03;
+  --rs-stagger: 0s;
+  /* Theme tokens (spec 51/53). Overridable by a table theme. */
+  --rs-edge: rgba(14, 14, 18, 0.88);
+  --rs-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+/* The host is the card's slot element. It materialises IN PLACE (spec 69):
+   no travel.
+
+   THE CLASS IS DOUBLED ON PURPOSE. The host is somebody else's element -
+   `.community-cards__card` on the felt - and that element sets
+   `overflow: hidden`, which flattens a preserve-3d flip. A single class ties
+   on specificity, so which one wins would come down to the order two
+   independently-imported stylesheets happen to land in the bundle. Doubling
+   it settles that at (0,2,0) and removes the question. */
+.card-squeeze-host.card-squeeze-host {
+  /* The flip's surfaces are absolutely positioned against this element, so it
+     has to be a containing block. The felt's card already is; the replay's
+     `.card.small` is not, and without this the faces escaped it entirely. */
+  position: relative;
+  animation: ccCardMaterialize calc(var(--rs-prepare, 0.08s) * var(--animation-speed, 1))
+    cubic-bezier(0.25, 0.1, 0.25, 1) both;
+  animation-delay: calc(var(--rs-stagger, 0s) * var(--animation-speed, 1));
+  /* The flip needs depth; a clipped box flattens it. */
+  overflow: visible;
+  will-change: transform, opacity;
+}
+
+@keyframes ccCardMaterialize {
+  0% {
+    opacity: 0;
+    transform: scaleX(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The two-surface card. */
+.card-squeeze {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transform: rotateY(180deg);
+  will-change: transform;
+  border-radius: inherit;
+  animation: ccCardSqueeze calc(var(--rs-flip, 0.48s) * var(--animation-speed, 1))
+    cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(
+    (var(--rs-prepare, 0.08s) + var(--rs-hold, 0s) + var(--rs-stagger, 0s)) *
+      var(--animation-speed, 1)
+  );
+}
+
+.card-squeeze__face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: inherit;
+  overflow: hidden;
+}
+
+.card-squeeze__face--front {
+  transform: rotateY(180deg);
+}
+
+/* The faces fill the host whatever size class the card renderer was given
+   (the replay uses xs, the felt lg). */
+.card-squeeze__face .card-image {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.card-squeeze__face .card-image__img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+@keyframes ccCardSqueeze {
+  /* SQUEEZE: the back accelerates to its edge. */
+  0% {
+    transform: rotateY(0deg) scale(1);
+    animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45);
+  }
+  /* Edge-on. The two backface-hidden surfaces swap here. */
+  37.5% {
+    transform: rotateY(90deg) scale(0.985);
+    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  /* REVEAL: the face expands out of the edge - readable by ~60% width. */
+  75% {
+    transform: rotateY(180deg) scale(1);
+    animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+  }
+  /* Micro overshoot (spec 20): subtle enough for the thousandth hand. */
+  90% {
+    transform: rotateY(180deg) scale(var(--rs-overshoot, 1.03));
+    animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0);
+  }
+  100% {
+    transform: rotateY(180deg) scale(1);
+  }
+}
+
+/* THE SPINE (spec 73). At exactly 90deg both backface-hidden faces vanish
+   and the card is a zero-width line; the recording shows a dark card EDGE
+   there, not nothing. This 2px bar lives on the non-rotating host, fades in
+   around the edge-on instant and out again as the face widens, so the
+   sliver still reads as a card. Opacity only. */
+.card-squeeze__spine {
+  position: absolute;
+  top: 3%;
+  bottom: 3%;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--rs-edge, rgba(14, 14, 18, 0.88));
+  opacity: 0;
+  pointer-events: none;
+  will-change: opacity;
+  animation: ccCardSpine calc(var(--rs-flip, 0.48s) * var(--animation-speed, 1)) linear both;
+  animation-delay: calc(
+    (var(--rs-prepare, 0.08s) + var(--rs-hold, 0s) + var(--rs-stagger, 0s)) *
+      var(--animation-speed, 1)
+  );
+}
+
+@keyframes ccCardSpine {
+  0%,
+  28% {
+    opacity: 0;
+  }
+  37.5% {
+    opacity: 1;
+  }
+  47%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* THE SHADOW (spec 72). A card edge-on casts almost nothing; a face-up card
+   casts the felt's normal card shadow. This layer carries the host's shadow
+   on its own compositor layer and dips its OPACITY through the flip - the
+   blur radius never changes, so nothing repaints. */
+.card-squeeze__shadow {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: var(--rs-shadow);
+  opacity: 1;
+  pointer-events: none;
+  will-change: opacity;
+  animation: ccCardShadow calc(var(--rs-flip, 0.48s) * var(--animation-speed, 1)) linear both;
+  animation-delay: calc(
+    (var(--rs-prepare, 0.08s) + var(--rs-hold, 0s) + var(--rs-stagger, 0s)) *
+      var(--animation-speed, 1)
+  );
+}
+
+@keyframes ccCardShadow {
+  0% {
+    opacity: 1;
+  }
+  37.5% {
+    opacity: 0.3;
+  }
+  75%,
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Reduced motion: the global rule in src/styles/reducedMotion.css already
+   collapses every duration to 1ms, and every resting state here is the
+   final one - face up, spine hidden, shadow full. This block makes that
+   explicit so the board is correct even without the global sheet. */
+@media (prefers-reduced-motion: reduce) {
+  .card-squeeze-host,
+  .card-squeeze,
+  .card-squeeze__spine,
+  .card-squeeze__shadow {
+    animation: none !important;
+  }
+  .card-squeeze-host.card-squeeze-host {
+    opacity: 1;
+    transform: none;
+  }
+  .card-squeeze {
+    transform: rotateY(180deg);
+  }
+  .card-squeeze__spine {
+    opacity: 0;
+  }
+  .card-squeeze__shadow {
+    opacity: 1;
+  }
+}

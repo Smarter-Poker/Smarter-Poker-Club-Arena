@@ -22,7 +22,12 @@ import { HAND_COMPLETION } from '../../../src/config/handCompletionSpec';
 import type { CardAnimationProfile } from '../../../src/presentation/cardPresentation/types';
 
 const ROOT = path.resolve(__dirname, '../../..');
-const css = fs.readFileSync(path.join(ROOT, 'src/components/table/CommunityCards.css'), 'utf8');
+// ROUND 2 2026-09-05: the squeeze moved out of the board's stylesheet into
+// the presentation layer, so the replay can squeeze without loading the felt.
+const css = fs.readFileSync(
+  path.join(ROOT, 'src/presentation/cardPresentation/cardSqueeze.css'),
+  'utf8'
+);
 const P = CARD_PRESENTATION_PROFILES;
 const all = Object.values(P) as CardAnimationProfile[];
 
@@ -95,7 +100,7 @@ describe('the one bridge to the stylesheet', () => {
   });
 
   it('the keyframe carries exactly that split', () => {
-    const kf = css.slice(css.indexOf('@keyframes ccRiverSqueeze'));
+    const kf = css.slice(css.indexOf('@keyframes ccCardSqueeze'));
     const body = kf.slice(0, kf.indexOf('\n}\n') + 3);
     expect(body).toContain(`${SQUEEZE_KEYFRAME_SPLIT.SQUEEZE_END * 100}% {`);
     expect(body).toContain(`${SQUEEZE_KEYFRAME_SPLIT.REVEAL_END * 100}% {`);

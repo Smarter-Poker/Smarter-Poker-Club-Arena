@@ -5,7 +5,8 @@
 
 import { useState, useEffect, useRef, Suspense } from 'react';
 import type { Card, CardSuit, CardRank } from '../../types/database.types';
-import { CardImage } from '../table/CardImage';
+import { CardImage, CardBack } from '../table/CardImage';
+import { SqueezeCard, squeezeHostProps, useCardSqueeze } from '../../presentation/cardPresentation';
 import { LiveHandReplayer2D } from './LiveHandReplayer2D';
 import type { Card as CardImageCard } from '../table/CardImage';
 import './HandReplay.css';
@@ -402,6 +403,25 @@ export default function HandReplay({
     }
   };
 
+  /**
+   * ROUND 2 2026-09-05 (spec 35, 123): the replay's community cards reveal
+   * with the SAME squeeze the felt uses, on the replay profile - the slowest
+   * and most cinematic of them, because this is the surface a player is
+   * deliberately studying. Stepping BACKWARD is not a reveal and does not
+   * animate; nor does a step the engine has already presented. If the
+   * animation never runs, the board below is unchanged and still correct.
+   *
+   * Declared HERE, above the two early returns below and below
+   * `getVisibleCommunityCards`, so the hook order is identical on every
+   * render whether the hand has loaded or not.
+   */
+  const squeeze = useCardSqueeze({
+    visibleCount: handData ? getVisibleCommunityCards().length : 0,
+    handId: handData?.id ?? handId ?? 'replay',
+    surfaceId: `replay:${handData?.id ?? handId ?? 'demo'}`,
+    mode: 'replay',
+  });
+
   if (isLoading) {
     return (
       <div className="hand-replay loading">
@@ -590,11 +610,27 @@ export default function HandReplay({
 
                 {/* Community Cards (repeated per row for visual) */}
                 <div className="community-cards-row">
-                  {getVisibleCommunityCards().map((card, idx) => (
-                    <div key={idx} className="card small">
-                      <CardImage card={toCardImage(card)} size="xs" />
-                    </div>
-                  ))}
+                  {getVisibleCommunityCards().map((card, idx) => {
+                    const isSqueezing = squeeze.index === idx && squeeze.profile !== null;
+                    const host = isSqueezing ? squeezeHostProps(squeeze.profile!) : null;
+                    return (
+                      <div
+                        key={idx}
+                        className={`card small${host ? ` ${host.className}` : ''}`}
+                        style={host ? host.style : undefined}
+                        data-rs-profile={host ? host['data-rs-profile'] : undefined}
+                      >
+                        {isSqueezing ? (
+                          <SqueezeCard
+                            back={<CardBack size="xs" />}
+                            face={<CardImage card={toCardImage(card)} size="xs" />}
+                          />
+                        ) : (
+                          <CardImage card={toCardImage(card)} size="xs" />
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
                 {/* Round 2 (double board): board 2 under board 1, same street slice */}
                 {(handData.community_cards2?.length ?? 0) > 0 && (

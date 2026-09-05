@@ -427,27 +427,17 @@ const makeLobbyTab = (): TableInstance => ({
 
 const MAX_TABLES = typeof window !== 'undefined' && window.innerWidth >= 1024 ? 6 : 4;
 
-/**
- * Parse a reported "kind:deadlineMs" channel into its parts.
- *
- * A MODULE-LEVEL FUNCTION DECLARATION, ON PURPOSE (2026-09-05 outage). This
- * was a `const` arrow inside the component, declared a few hundred lines
- * below `anyTurnLive`. On 2026-09-05 the second RIT sweep (#3089) made
- * `anyTurnLive` call it - a `const` read before its declaration in the same
- * scope is a ReferenceError ("Cannot access before initialization"), and it
- * fired on the FIRST render with any table open. Every /table/:id on
- * production showed "Something Went Wrong" until this moved. A function
- * declaration is hoisted and has no temporal dead zone, so its position can
- * never matter again; tests/unit/multiTablePageHelpersAreHoisted.test.ts
- * pins it here.
- */
-function parseTimed(v?: string): { kind: string; at: number } | null {
-  if (!v) return null;
-  const i = v.lastIndexOf(':');
-  if (i <= 0) return null;
-  const at = Number(v.slice(i + 1));
-  return Number.isFinite(at) && at > 0 ? { kind: v.slice(0, i), at } : null;
-}
+/* `parseTimed` LIVED HERE TOO, AND main DID NOT COMPILE (2026-09-05).
+   Two agents fixed the same production outage the same day - the temporal
+   dead zone that put "Something Went Wrong" on every open table - and both
+   hoisted the helper to module scope, one here and one just above the
+   component. Neither branch conflicted textually, so git merged both copies
+   and origin/main carried two `function parseTimed` declarations: TS2393,
+   and `TypeScript Check` is a required check, so nothing could merge.
+   The exported declaration below the COMPONENT banner is the one kept, because
+   tests/no-tdz-in-table-route.law.test.ts looks for `export function
+   parseTimed(` by name. This duplicate is removed rather than the other.
+   Forward fix, no revert label (CLAUDE.md 10.8.2). */
 
 /**
  * Dan 2026-08-19 (persistence upgrade): what the GLOBAL dock should show while

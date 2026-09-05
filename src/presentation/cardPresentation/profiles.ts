@@ -16,7 +16,7 @@
  * every profile.
  */
 
-import { HAND_COMPLETION } from '../../config/handCompletionSpec';
+import { ALL_IN_SQUEEZE_CEILING_MS } from '../../config/handCompletionSpec';
 import type { CardAnimationProfile } from './types';
 
 type ProfileSpec = Omit<CardAnimationProfile, 'durationMs'>;
@@ -69,19 +69,32 @@ function profile(spec: ProfileSpec): CardAnimationProfile {
  */
 
 /**
- * The all-in runout. The video IS an all-in river: the card sits face down for
- * a beat and then snaps over. The server already paces run-out streets by
- * HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS (mirrored byte-for-byte into the
- * engine and pinned by tests/unit/handCompletionLaw.test.ts), so the hold is
- * derived from that gate rather than written twice: the card is face up the
- * instant the server's reveal gate opens, never before, never after.
+ * THE VIP ALL-IN SQUEEZE (Dan 2026-09-05). The video IS an all-in river: the
+ * card sits face down and then snaps over. Since today that face-down beat is
+ * the PLAYER'S: an all-in VIP drags (desktop) or touch-squeezes (mobile) the
+ * card open, and the snap plays from wherever their fingers left it. The hold
+ * below is therefore not a pause the card waits out but a CEILING - the
+ * longest the card may stay face down before it opens on its own - and it is
+ * derived from the server's own run-out pacing (ALL_IN_SQUEEZE_CEILING_MS in
+ * handCompletionSpec, mirrored byte-for-byte into the engine), so a card is
+ * always face up before the next street lands or the pot ships.
+ *
+ * It resolves ONLY for a viewer who is themselves all-in in this hand, holds
+ * a VIP card, has the perk on, and is not on a Run It Twice board (see
+ * resolveProfile). Everyone else at the table - the folded, the spectators,
+ * an all-in opponent without the perk - sees the ordinary street reveal on
+ * the ordinary rhythm, which is what stops the perk leaking through timing.
+ *
+ * The 400ms of prepare + squeeze + reveal + settle is
+ * HAND_COMPLETION.ALL_IN_SQUEEZE_SNAP_RESERVE_MS; the ceiling is sized with
+ * it subtracted, and tests pin the two equal.
  */
 const ALL_IN_PREPARE_MS = 100;
 const ALL_IN_SQUEEZE_MS = 113;
 const ALL_IN_REVEAL_MS = 112;
 const ALL_IN_SETTLE_MS = 75;
 const ALL_IN_HOLD_MS =
-  HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS -
+  ALL_IN_SQUEEZE_CEILING_MS -
   (ALL_IN_PREPARE_MS + ALL_IN_SQUEEZE_MS + ALL_IN_REVEAL_MS + ALL_IN_SETTLE_MS);
 
 export const CARD_PRESENTATION_PROFILES = Object.freeze({
@@ -194,8 +207,9 @@ export const CARD_PRESENTATION_PROFILES = Object.freeze({
     threeD: true,
   }),
   /**
-   * All-in runout, every mode and platform. The hold makes up the difference
-   * to the server's reveal gate, so durationMs === ALL_IN_STREET_REVEAL_MS.
+   * The VIP all-in squeeze, every mode and platform. The hold is the CEILING
+   * the player's own squeeze runs under, so durationMs ===
+   * ALL_IN_SQUEEZE_CEILING_MS; the engine's releaseHold() ends it early.
    */
   allIn: profile({
     id: 'all-in',
@@ -214,6 +228,8 @@ export const CARD_PRESENTATION_PROFILES = Object.freeze({
     threeD: true,
     // The only profile the SERVER times. See serverPaced in types.ts.
     serverPaced: true,
+    // The only profile the PLAYER drives. See interactive in types.ts.
+    interactive: true,
   }),
   /** A visible but unfocused multi-table slot. Compact. ~280ms. */
   background: profile({

@@ -8,7 +8,7 @@
  * a squeeze in flight.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, act } from '@testing-library/react';
+import { render, act, fireEvent } from '@testing-library/react';
 import React from 'react';
 
 const played: string[] = [];
@@ -34,7 +34,7 @@ import {
   CARD_PRESENTATION_PROFILES,
   flipMs,
 } from '../../src/presentation/cardPresentation';
-import { HAND_COMPLETION } from '../../src/config/handCompletionSpec';
+import { ALL_IN_SQUEEZE_CEILING_MS } from '../../src/config/handCompletionSpec';
 
 const BOARD = [
   { rank: '4' as const, suit: 'd' as const },
@@ -140,18 +140,30 @@ describe('the squeeze on the board', () => {
     expect(played.filter((p2) => p2 === 'playCommunityCard')).toHaveLength(1);
   });
 
-  it('an all-in river holds face down for the server gate, and the snap waits with it', () => {
+  it('an all-in river holds face down for the squeezer, and the snap waits with it', () => {
+    // VIP ALL-IN SQUEEZE 2026-09-05: `slowReveal` alone no longer holds the
+    // card - that is what every other seat sees, and it is the ordinary
+    // reveal. The hold belongs to the viewer with `squeezeEligible`, and its
+    // length is the player's ceiling, not the equity gate.
     const p = CARD_PRESENTATION_PROFILES.allIn;
-    expect(p.durationMs).toBe(HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS);
+    expect(p.durationMs).toBe(ALL_IN_SQUEEZE_CEILING_MS);
     const { container, rerender } = render(
-      <CommunityCards {...props()} cards={BOARD.slice(0, 4)} stage="turn" slowReveal />
+      <CommunityCards
+        {...props()}
+        cards={BOARD.slice(0, 4)}
+        stage="turn"
+        slowReveal
+        squeezeEligible
+      />
     );
     act(() => {
       vi.advanceTimersByTime(2000);
     });
     played.length = 0;
     act(() => {
-      rerender(<CommunityCards {...props()} cards={BOARD} stage="river" slowReveal />);
+      rerender(
+        <CommunityCards {...props()} cards={BOARD} stage="river" slowReveal squeezeEligible />
+      );
     });
     expect(riverCard(container)!.dataset.rsProfile).toBe('all-in');
     expect(riverCard(container)!.style.getPropertyValue('--rs-hold')).toBe(`${p.holdMs}ms`);
@@ -164,6 +176,112 @@ describe('the squeeze on the board', () => {
       vi.advanceTimersByTime(p.squeezeMs + 10);
     });
     expect(played).toContain('playCommunityCard');
+  });
+
+  it('an all-in river for a seat WITHOUT the squeeze right is the ordinary reveal (Dan: NORMAL for everyone else)', () => {
+    // VIP ALL-IN SQUEEZE 2026-09-05 (R7). The folded player, the spectator,
+    // the all-in opponent without a VIP card or with the perk off: same
+    // markup, same profile, same timing as a river on any other hand.
+    const ordinary = (over: Partial<React.ComponentProps<typeof CommunityCards>>) => {
+      const { container, rerender, unmount } = render(
+        <CommunityCards {...props(over)} cards={BOARD.slice(0, 4)} stage="turn" />
+      );
+      act(() => {
+        vi.advanceTimersByTime(2000);
+      });
+      act(() => {
+        rerender(<CommunityCards {...props(over)} cards={BOARD} stage="river" />);
+      });
+      const card = riverCard(container)!;
+      const out = {
+        profile: card.dataset.rsProfile,
+        hold: card.style.getPropertyValue('--rs-hold'),
+        interactive: card.dataset.rsHold ?? null,
+      };
+      unmount();
+      return out;
+    };
+    const plain = ordinary({});
+    hand += 1;
+    cardPresentationEngine.forgetTable('table-rs');
+    const allInNoRight = ordinary({ slowReveal: true });
+    hand += 1;
+    cardPresentationEngine.forgetTable('table-rs');
+    const allInRightButRerun = ordinary({ slowReveal: true, squeezeEligible: true, runs: 2 });
+    expect(plain.profile).not.toBe('all-in');
+    expect(allInNoRight).toEqual(plain);
+    expect(allInRightButRerun).toEqual(plain);
+    expect(plain.interactive).toBeNull();
+  });
+
+  it('the squeezer can open the card early, and the snap follows their hand', () => {
+    const p = CARD_PRESENTATION_PROFILES.allIn;
+    const { container, rerender } = render(
+      <CommunityCards
+        {...props()}
+        cards={BOARD.slice(0, 4)}
+        stage="turn"
+        slowReveal
+        squeezeEligible
+      />
+    );
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    played.length = 0;
+    act(() => {
+      rerender(
+        <CommunityCards {...props()} cards={BOARD} stage="river" slowReveal squeezeEligible />
+      );
+    });
+    const card = riverCard(container)!;
+    expect(card.dataset.rsHold).toBe('drag');
+    expect(card.getAttribute('aria-label')).toBe('Squeeze To Reveal');
+    act(() => {
+      vi.advanceTimersByTime(p.prepareMs + 300);
+    });
+    // Still the player's: no sound, still under the hand.
+    expect(played).not.toContain('playCommunityCard');
+    expect(card.dataset.rsHold).toBe('drag');
+    // The player opens it (the pointer path ends in releaseHold; drive the
+    // engine directly here - pointer capture is not something happy-dom has).
+    act(() => {
+      const key = [...cardPresentationEngine.activeViews()].find((v) => v.street === 'river')!.key;
+      expect(cardPresentationEngine.releaseHold(key)).toBe(true);
+    });
+    expect(riverCard(container)!.dataset.rsHold).toBe('released');
+    act(() => {
+      vi.advanceTimersByTime(p.squeezeMs + 10);
+    });
+    expect(played).toContain('playCommunityCard');
+  });
+
+  it('a keyboard user opens the held card with Enter or Space (audit 2026-09-05)', () => {
+    const { container, rerender } = render(
+      <CommunityCards
+        {...props()}
+        cards={BOARD.slice(0, 4)}
+        stage="turn"
+        slowReveal
+        squeezeEligible
+      />
+    );
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    act(() => {
+      rerender(
+        <CommunityCards {...props()} cards={BOARD} stage="river" slowReveal squeezeEligible />
+      );
+    });
+    const card = riverCard(container)!;
+    expect(card.getAttribute('tabindex')).toBe('0');
+    expect(card.dataset.rsHold).toBe('drag');
+    act(() => {
+      fireEvent.keyDown(card, { key: 'Enter' });
+    });
+    expect(riverCard(container)!.dataset.rsHold).toBe('released');
+    expect(riverCard(container)!.style.getPropertyValue('--rs-drag')).toBe('1.000');
   });
 
   it('with no squeeze in flight the cue is paid on the spot, never dropped (10.6)', () => {

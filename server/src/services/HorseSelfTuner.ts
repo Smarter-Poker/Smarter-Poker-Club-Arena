@@ -36,311 +36,10 @@ import { reportError } from './errorReporter.js';
 import { claimNightlyJob } from '../benchmark/HorseLeague.js';
 import type { HorseProfileMods } from '../engine/HorseLogic.js';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────────────────────
+import { accumulatePlayStats, freshPlay, type HandRow, type PlayStats } from './HorsePlayStats.js';
 
-interface RawAction {
-  userId?: string;
-  action?: string;
-  amount?: number;
-  stage?: string;
-  seat?: number;
-  /** V12.3: persisted as of this version; absent on older rows (see the
-   *  fallback in playFromHand). A short all-in is NOT a raise. */
-  isFullRaise?: boolean;
-}
-
-export interface HandRow {
-  actions: RawAction[] | null;
-  players: Array<{ userId?: string; seat?: number }> | null;
-  winners: Array<{ userId?: string; amount?: number }> | null;
-  big_blind: number | string | null;
-  button_seat: number | null;
-}
-
-export interface PlayStats {
-  hands: number;
-  vpip: number;
-  pfr: number;
-  threeBets: number;
-  threeBetOpps: number;
-  openRaises: number;
-  foldTo3Bets: number;
-  faced3Bets: number;
-  sawFlop: number;
-  wonWhenSawFlop: number;
-  postAggr: number;
-  postPassive: number;
-  netBB: number;
-}
-
-const freshPlay = (): PlayStats => ({
-  hands: 0,
-  vpip: 0,
-  pfr: 0,
-  threeBets: 0,
-  threeBetOpps: 0,
-  openRaises: 0,
-  foldTo3Bets: 0,
-  faced3Bets: 0,
-  sawFlop: 0,
-  wonWhenSawFlop: 0,
-  postAggr: 0,
-  postPassive: 0,
-  netBB: 0,
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 1. MEASURE — pure, unit-tested
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Aggregate play statistics for the tracked ids across a batch of hands.
- * Mutates and returns `into` so pages can stream through without holding
- * every hand in memory.
- */
-export function accumulatePlayStats(
-  rows: HandRow[],
-  tracked: Set<string>,
-  into: Map<string, PlayStats>
-): Map<string, PlayStats> {
-  for (const row of rows) {
-    try {
-      accumulateOne(row, tracked, into);
-    } catch {
-      /* one malformed hand must never stop the study */
-    }
-  }
-  return into;
-}
-
-function accumulateOne(row: HandRow, tracked: Set<string>, into: Map<string, PlayStats>): void {
-  const actions = Array.isArray(row.actions) ? row.actions : [];
-  if (actions.length === 0) return;
-  const bb = Number(row.big_blind) > 0 ? Number(row.big_blind) : 2;
-
-  const get = (id: string): PlayStats => {
-    let s = into.get(id);
-    if (!s) {
-      s = freshPlay();
-      into.set(id, s);
-    }
-    return s;
-  };
-
-  const inHand = new Set<string>();
-  for (const p of row.players ?? []) {
-    if (p && typeof p.userId === 'string') inHand.add(p.userId);
-  }
-  for (const a of actions) if (typeof a.userId === 'string') inHand.add(a.userId);
-
-  // Per-hand per-player flags
-  const didVpip = new Set<string>();
-  const didPfr = new Set<string>();
-  const did3Bet = new Set<string>();
-  const openedBy = { id: null as string | null };
-  const foldedPreflop = new Set<string>();
-  const sawPostflop = new Set<string>();
-  const contributed = new Map<string, number>();
-  /** V12.3: blinds are already counted in `contributed`, and bet/raise amounts
-   *  are STREET TOTALS — so a blind that later raises must have its blind
-   *  seeded as its opening street bet, or the increment (amount - 0) charges
-   *  the blind a second time. BB posts 2 and 3-bets to 20 was billed 22. */
-  const blindPosted = new Map<string, number>();
-
-  // Blind posts are not ActionRecords — reconstruct from the button.
-  if (typeof row.button_seat === 'number' && row.players && row.players.length >= 2) {
-    const seats = row.players
-      .filter((p) => p && typeof p.seat === 'number' && typeof p.userId === 'string')
-      .sort((a, b) => (a.seat as number) - (b.seat as number));
-    if (seats.length >= 2) {
-      const after = (seat: number) => {
-        const higher = seats.filter((s) => (s.seat as number) > seat);
-        return (higher.length > 0 ? higher : seats)[0];
-      };
-      const sbP =
-        seats.length === 2
-          ? (seats.find((s) => s.seat === row.button_seat) ?? after(row.button_seat))
-          : after(row.button_seat);
-      const bbP = after(sbP.seat as number);
-      if (sbP.userId) {
-        contributed.set(sbP.userId, (contributed.get(sbP.userId) || 0) + bb / 2);
-        blindPosted.set(sbP.userId, bb / 2);
-      }
-      if (bbP.userId && bbP.userId !== sbP.userId) {
-        contributed.set(bbP.userId, (contributed.get(bbP.userId) || 0) + bb);
-        blindPosted.set(bbP.userId, bb);
-      }
-    }
-  }
-
-  let preflopRaises = 0;
-  let curStreet = 'preflop';
-  let streetBets = new Map<string, number>(blindPosted);
-  /** highest street total posted so far — the bar an all-in must clear */
-  let streetLevel = bb;
-
-  for (const a of actions) {
-    const id = typeof a.userId === 'string' ? a.userId : null;
-    if (!id) continue;
-    const stage = a.stage || 'preflop';
-    const preflop = stage === 'preflop';
-    // V12.3: a SHORT all-in is not aggression — it is a call for less. Every
-    // other consumer in this codebase requires isFullRaise === true, and
-    // treating a forced shove as an open made the next real opener look like a
-    // 3-bettor, corrupting PFR, 3-bet, fold-to-3-bet and the opener attribution
-    // all at once. `isFullRaise` is persisted as of V12.3; when it is absent
-    // (rows written before that), fall back to the street-total test rather
-    // than assuming aggression.
-    const isAggr =
-      a.action === 'bet' ||
-      a.action === 'raise' ||
-      (a.action === 'all_in' &&
-        (a.isFullRaise === true ||
-          (a.isFullRaise === undefined &&
-            typeof a.amount === 'number' &&
-            a.amount > streetLevel + 1e-9)));
-    const amount = typeof a.amount === 'number' && isFinite(a.amount) ? a.amount : 0;
-
-    if (stage !== curStreet) {
-      curStreet = stage;
-      streetBets = new Map();
-      streetLevel = 0;
-    }
-    // Contribution replay: calls are increments; bet/raise/all_in are street totals.
-    if (isAggr || a.action === 'call') {
-      const prev = streetBets.get(id) || 0;
-      const inc = a.action === 'call' ? amount : Math.max(0, amount - prev);
-      contributed.set(id, (contributed.get(id) || 0) + inc);
-      streetBets.set(id, prev + inc);
-      if (prev + inc > streetLevel) streetLevel = prev + inc;
-    }
-
-    if (preflop) {
-      const voluntary = isAggr || a.action === 'call';
-      if (voluntary) didVpip.add(id);
-      if (isAggr) {
-        if (preflopRaises === 0) {
-          didPfr.add(id);
-          openedBy.id = id;
-        } else {
-          didPfr.add(id);
-          if (preflopRaises === 1) did3Bet.add(id);
-        }
-        preflopRaises++;
-      }
-      if (a.action === 'fold') foldedPreflop.add(id);
-    } else {
-      sawPostflop.add(id);
-      if (tracked.has(id)) {
-        if (isAggr) get(id).postAggr++;
-        else if (a.action === 'call') get(id).postPassive++;
-      }
-    }
-  }
-
-  // Fold-to-3-bet: the opener faced a 3-bet; did their NEXT preflop action fold?
-  let opener3BetFaced = false;
-  let opener3BetFolded = false;
-  if (openedBy.id) {
-    let seen3Bet = false;
-    for (const a of actions) {
-      if ((a.stage || 'preflop') !== 'preflop') break;
-      const isAggr = a.action === 'bet' || a.action === 'raise' || a.action === 'all_in';
-      if (isAggr && a.userId !== openedBy.id && didPfr.has(openedBy.id) && !seen3Bet) {
-        // first re-raise after the open
-        if (did3Bet.has(a.userId as string)) seen3Bet = true;
-        continue;
-      }
-      if (seen3Bet && a.userId === openedBy.id) {
-        opener3BetFaced = true;
-        opener3BetFolded = a.action === 'fold';
-        break;
-      }
-    }
-  }
-
-  // ── V12.3: RETURN THE UNCALLED BET ───────────────────────────────────────
-  // HandController.completeHandInner() calls returnUncalledBet() BEFORE pots
-  // and rake, so `winners[].amount` is the post-refund award — but the actions
-  // array still carries the full posted amount. Charging the full bet while
-  // crediting the reduced award scored EVERY uncontested pot as a loss, which
-  // is the most common way a hand is won. Left unfixed, essentially every
-  // horse lands under the `bb100 < -15` regression trigger and has all three
-  // of its dials halved toward neutral, every night, erasing the fleet's
-  // per-horse differentiation while writing an audit trail claiming it fixed
-  // leaks. The refund is the excess of the top street contribution over the
-  // second-highest on the FINAL betting street.
-  {
-    const finalStreetBets = new Map<string, number>();
-    let street = 'preflop';
-    let levelSeed = new Map<string, number>(blindPosted);
-    let cur = new Map<string, number>(levelSeed);
-    for (const a of actions) {
-      const id = typeof a.userId === 'string' ? a.userId : null;
-      if (!id) continue;
-      const stg = a.stage || 'preflop';
-      if (stg !== street) {
-        street = stg;
-        levelSeed = new Map();
-        cur = new Map();
-      }
-      const amt = typeof a.amount === 'number' && isFinite(a.amount) ? a.amount : 0;
-      if (a.action === 'call') cur.set(id, (cur.get(id) || 0) + amt);
-      else if (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
-        cur.set(id, Math.max(cur.get(id) || 0, amt));
-      finalStreetBets.clear();
-      for (const [k, v] of cur) finalStreetBets.set(k, v);
-    }
-    const sorted = [...finalStreetBets.entries()].sort((x, y) => y[1] - x[1]);
-    if (sorted.length >= 2 && sorted[0][1] > sorted[1][1]) {
-      const refund = sorted[0][1] - sorted[1][1];
-      const id = sorted[0][0];
-      contributed.set(id, Math.max(0, (contributed.get(id) || 0) - refund));
-    } else if (sorted.length === 1 && sorted[0][1] > 0) {
-      // Everyone else folded without matching a single chip of it.
-      contributed.set(
-        sorted[0][0],
-        Math.max(0, (contributed.get(sorted[0][0]) || 0) - sorted[0][1])
-      );
-    }
-  }
-
-  const wonBy = new Map<string, number>();
-  for (const w of row.winners ?? []) {
-    if (w && typeof w.userId === 'string' && typeof w.amount === 'number') {
-      wonBy.set(w.userId, (wonBy.get(w.userId) || 0) + w.amount);
-    }
-  }
-
-  for (const id of inHand) {
-    if (!tracked.has(id)) continue;
-    const s = get(id);
-    s.hands++;
-    if (didVpip.has(id)) s.vpip++;
-    if (didPfr.has(id)) s.pfr++;
-    if (did3Bet.has(id)) s.threeBets++;
-    // V12.3: the denominator used to exclude everyone in didPfr — which
-    // includes the 3-bettor — so the numerator's own hands were never counted
-    // and a horse that 3-bet every chance showed threeBetOpps = 0.
-    if (preflopRaises >= 1 && (did3Bet.has(id) || !didPfr.has(id))) s.threeBetOpps++;
-    if (openedBy.id === id) {
-      s.openRaises++;
-      if (opener3BetFaced) {
-        s.faced3Bets++;
-        if (opener3BetFolded) s.foldTo3Bets++;
-      }
-    }
-    const saw = sawPostflop.has(id) || (!foldedPreflop.has(id) && sawPostflop.size > 0);
-    if (saw) {
-      s.sawFlop++;
-      if (wonBy.has(id)) s.wonWhenSawFlop++;
-    }
-    s.netBB += ((wonBy.get(id) || 0) - (contributed.get(id) || 0)) / bb;
-  }
-}
-
+// Re-exported so existing readers (tests, the panel scripts) keep their import path.
+export { accumulatePlayStats, type HandRow, type PlayStats } from './HorsePlayStats.js';
 // ─────────────────────────────────────────────────────────────────────────────
 // 2. DIAGNOSE + 3. ADJUST — pure, unit-tested
 // ─────────────────────────────────────────────────────────────────────────────
@@ -375,6 +74,59 @@ const clampMod = (n: number): number => Math.max(MOD_MIN, Math.min(MOD_MAX, n));
 /** Real-nets sample bar: below this, a bb100 figure is variance, not signal. */
 export const MIN_REAL_HANDS_FOR_BB100 = 1500;
 
+/**
+ * THE REGRESSION RULE NEEDS TO KNOW WHAT THE RAKE IS (2026-09-05, measured).
+ *
+ * On 2026-09-04 the fleet's cash net was -32.0 bb/100 over 2.67M seat-hands.
+ * hand_history rake for the day (198,206bb) plus BBJ drop (23,954bb) equalled
+ * the horse loss (220,971bb) to within one percent, and 40 of the 263,033
+ * hands had a human in them. The horses play each other; the fleet's loss IS
+ * the rake. `realBB100 < -15` therefore fired on 221 of the 383 horses tuned
+ * that night and halved every dial toward neutral - the +/-0.01 the leak tags
+ * had nudged, erased by a rule reading the house edge as a personality defect.
+ *
+ * Two numbers fix it, and either one alone is enough to stop the bleeding:
+ *
+ *   rakeBB100   this horse's own weighted-contributed rake over the same hands
+ *               (horse_daily_nets.rake_bb). The RAKE-ADJUSTED result
+ *               (realBB100 + rakeBB100) is what a human means by "am I beating
+ *               the game". A horse that is -32 raw and -3 adjusted is not
+ *               broken; it is paying rake at a rake-heavy table.
+ *   fleetP25    the same-window rake-adjusted bb/100 below which the worst
+ *               quarter of the 1,500-hand fleet sits. A horse the rule touches
+ *               must be losing AFTER rake AND be in that quarter. On a night
+ *               when everyone loses the same rake, nobody regresses.
+ *
+ * Before rake_bb has accumulated (rakeBB100 absent) the fleet gate alone
+ * carries the rule; before either exists (tests, first night) the old raw
+ * threshold applies unchanged, so nothing that passed yesterday changes today.
+ */
+export interface RegressionContext {
+  /** rake paid, bb/100, over the same hands as realBB100 (positive number) */
+  rakeBB100?: number | null;
+  /** fleet p25 of rake-adjusted bb/100 among 1,500-hand horses; null = unknown */
+  fleetP25?: number | null;
+  /** reviewed hands behind `leaks` (the V40 denominator); 0 = unknown */
+  leaksHands?: number;
+}
+
+/** Rake-adjusted regression threshold, bb/100. */
+export const REGRESS_BB100 = -15;
+/** Minimum reviewed hands before a leak RATE means anything. */
+export const MIN_LEAK_HANDS_FOR_RATE = 40;
+/**
+ * Leak gates as RATES per reviewed hand (2026-09-05). The counts they replace
+ * (6 stackoffs, 10 big-bet folds, 8 preflop stackoffs) were set against a
+ * ~200-reviewed-hand window; a horse that plays three times the hands got
+ * three times the tags and three times the nudges for the same discipline.
+ * Rates at the same window are 0.03 / 0.05 / 0.04.
+ */
+export const LEAK_RATE_GATES = {
+  stackoff: 0.03,
+  bigBetFold: 0.05,
+  preflopStackoff: 0.04,
+} as const;
+
 export function diagnoseAndNudge(
   s: PlayStats,
   current: HorseProfileMods,
@@ -385,7 +137,9 @@ export function diagnoseAndNudge(
   realHands: number = 0,
   /** V18: this horse's leak-tag counts from horse_review_rollup over the
    *  window - the 20bb review system's verdicts, driving the dials. */
-  leaks: Record<string, number> | null = null
+  leaks: Record<string, number> | null = null,
+  /** 2026-09-05: what the regression rule needs to tell a leak from the rake. */
+  ctx: RegressionContext = {}
 ): TuneResult {
   let tightness = current.tightness ?? 1;
   let aggression = current.aggression ?? 1;
@@ -487,23 +241,32 @@ export function diagnoseAndNudge(
       n('nonnut_flush_stackoff') +
       n('second_nut_flush_stackoff') +
       n('dominated_straight_stackoff');
-    if (stackoffs >= 6) {
+    // RATES, NOT COUNTS (2026-09-05). With a denominator the gate is a rate
+    // per reviewed hand; without one (older callers) the count gates stand,
+    // which at the ~200-hand window they were set against is the same bar.
+    const lh = ctx.leaksHands ?? 0;
+    const rated = lh >= MIN_LEAK_HANDS_FOR_RATE;
+    const over = (count: number, countGate: number, rateGate: number): boolean =>
+      rated ? count / lh >= rateGate : count >= countGate;
+    const per100 = (count: number): string =>
+      rated ? `${((count / lh) * 100).toFixed(1)}/100 reviewed` : `${count}`;
+    if (over(stackoffs, 6, LEAK_RATE_GATES.stackoff)) {
       tightness += STEP / 2;
       aggression -= STEP / 2;
       reasons.push(
-        `leak: ${stackoffs} dominated-hand stackoffs in 20bb pots - tighten and calm down`
+        `leak: ${per100(stackoffs)} dominated-hand stackoffs in 20bb pots - tighten and calm down`
       );
     }
-    if (n('big_bet_fold') >= 10) {
+    if (over(n('big_bet_fold'), 10, LEAK_RATE_GATES.bigBetFold)) {
       bluffFreq -= STEP / 2;
       reasons.push(
-        `leak: ${n('big_bet_fold')} big bluffs surrendered - fewer, better-picked bluffs`
+        `leak: ${per100(n('big_bet_fold'))} big bluffs surrendered - fewer, better-picked bluffs`
       );
     }
-    if (n('preflop_stackoff') >= 8) {
+    if (over(n('preflop_stackoff'), 8, LEAK_RATE_GATES.preflopStackoff)) {
       tightness += STEP / 2;
       reasons.push(
-        `leak: ${n('preflop_stackoff')} preflop stackoffs of 40bb+ - stop shipping marginal`
+        `leak: ${per100(n('preflop_stackoff'))} preflop stackoffs of 40bb+ - stop shipping marginal`
       );
     }
   }
@@ -515,13 +278,35 @@ export function diagnoseAndNudge(
   // 1500-hand sample has dial settings that are not working: regress all
   // three halfway to neutral rather than pile more nudges on top. This is
   // the original V8 rule, disabled only because its input was garbage.
-  if (realBB100 !== null && realHands >= MIN_REAL_HANDS_FOR_BB100 && realBB100 < -15) {
-    tightness = 1 + (tightness - 1) / 2;
-    aggression = 1 + (aggression - 1) / 2;
-    bluffFreq = 1 + (bluffFreq - 1) / 2;
-    reasons.push(
-      `real bb100 ${realBB100.toFixed(1)} over ${realHands} exact-net hands - regress dials halfway to neutral`
-    );
+  // ── 2026-09-05: ...AND THE RULE NO LONGER FIGHTS THE RAKE (see
+  // RegressionContext). Adjusted = after the rake this horse actually paid;
+  // fleet gate = it must also sit in the fleet's worst quarter.
+  if (realBB100 !== null && realHands >= MIN_REAL_HANDS_FOR_BB100) {
+    const rake =
+      typeof ctx.rakeBB100 === 'number' && isFinite(ctx.rakeBB100) ? ctx.rakeBB100 : null;
+    const adjusted = rake !== null ? realBB100 + rake : realBB100;
+    const p25 = typeof ctx.fleetP25 === 'number' && isFinite(ctx.fleetP25) ? ctx.fleetP25 : null;
+    const losing = adjusted < REGRESS_BB100;
+    const worstQuarter = p25 === null || adjusted < p25;
+    if (losing && worstQuarter) {
+      tightness = 1 + (tightness - 1) / 2;
+      aggression = 1 + (aggression - 1) / 2;
+      bluffFreq = 1 + (bluffFreq - 1) / 2;
+      reasons.push(
+        `real bb100 ${realBB100.toFixed(1)}` +
+          (rake !== null ? ` (${adjusted.toFixed(1)} after ${rake.toFixed(1)} rake)` : '') +
+          (p25 !== null ? ` under fleet p25 ${p25.toFixed(1)}` : '') +
+          ` over ${realHands} exact-net hands - regress dials halfway to neutral`
+      );
+    } else if (realBB100 < REGRESS_BB100) {
+      reasons.push(
+        `real bb100 ${realBB100.toFixed(1)} is ` +
+          (rake !== null && !losing
+            ? `${adjusted.toFixed(1)} after ${rake.toFixed(1)} rake - the game's edge, not a leak`
+            : `not under fleet p25 ${(p25 ?? 0).toFixed(1)} - the table's rake, not a leak`) +
+          ' - dials left alone'
+      );
+    }
   }
 
   return {
@@ -651,6 +436,89 @@ export function stopHorseSelfTuner(): void {
   }
 }
 
+/**
+ * First quartile of rake-adjusted bb/100 across horses with a qualifying real
+ * sample. Null when fewer than 20 horses qualify - a quartile of a handful is
+ * noise, and the rule then falls back to the absolute threshold. Exported for
+ * tests. Pure.
+ */
+export function fleetQuartile(
+  nets: Map<string, { hands: number; netBB: number; rakeBB: number }>,
+  minHands: number = MIN_REAL_HANDS_FOR_BB100
+): number | null {
+  const xs: number[] = [];
+  for (const rn of nets.values()) {
+    if (rn.hands < minHands) continue;
+    xs.push(((rn.netBB + rn.rakeBB) / rn.hands) * 100);
+  }
+  if (xs.length < 20) return null;
+  xs.sort((a, b) => a - b);
+  const pos = (xs.length - 1) * 0.25;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  return xs[lo] + (xs[hi] - xs[lo]) * (pos - lo);
+}
+
+/**
+ * Load the window's horse_daily_play rows into PlayStats (cash + hu_cash;
+ * the tuner is cash-only by design). Returns the set of horses that had rows.
+ * A read failure reports and returns an empty set: the hand_history stream
+ * then carries the night exactly as it did before this table existed.
+ */
+async function loadPlayRows(
+  into: Map<string, PlayStats>,
+  tracked: Set<string>
+): Promise<Set<string>> {
+  const seen = new Set<string>();
+  try {
+    const sinceDay = new Date(Date.now() - STUDY_WINDOW_DAYS * 86400_000)
+      .toISOString()
+      .slice(0, 10);
+    for (let offset = 0; ; offset += 1000) {
+      const { data, error } = await supabase
+        .from('horse_daily_play')
+        .select(
+          'horse_user_id, format, hands, vpip, pfr, three_bets, three_bet_opps, open_raises, faced_3bets, fold_to_3bets, saw_flop, won_when_saw_flop, post_aggr, post_passive'
+        )
+        .gte('day', sinceDay)
+        .in('format', ['cash', 'hu_cash'])
+        // Full unique key: (horse_user_id, day, format). See the note on the
+        // real-nets loop - an unstable page order drops rows.
+        .order('horse_user_id', { ascending: true })
+        .order('day', { ascending: true })
+        .order('format', { ascending: true })
+        .range(offset, offset + 999);
+      if (error) throw new Error(error.message);
+      if (!data || data.length === 0) break;
+      for (const r of data as Array<Record<string, number | string>>) {
+        const id = String(r.horse_user_id);
+        if (!tracked.has(id)) continue;
+        const s = into.get(id) ?? freshPlay();
+        s.hands += Number(r.hands) || 0;
+        s.vpip += Number(r.vpip) || 0;
+        s.pfr += Number(r.pfr) || 0;
+        s.threeBets += Number(r.three_bets) || 0;
+        s.threeBetOpps += Number(r.three_bet_opps) || 0;
+        s.openRaises += Number(r.open_raises) || 0;
+        s.faced3Bets += Number(r.faced_3bets) || 0;
+        s.foldTo3Bets += Number(r.fold_to_3bets) || 0;
+        s.sawFlop += Number(r.saw_flop) || 0;
+        s.wonWhenSawFlop += Number(r.won_when_saw_flop) || 0;
+        s.postAggr += Number(r.post_aggr) || 0;
+        s.postPassive += Number(r.post_passive) || 0;
+        into.set(id, s);
+        seen.add(id);
+      }
+      if (data.length < 1000) break;
+    }
+  } catch (err) {
+    reportError(err, 'HorseSelfTuner.playRows');
+    for (const id of seen) into.delete(id);
+    seen.clear();
+  }
+  return seen;
+}
+
 /** One full nightly study. Exported for tests and for manual runs. */
 export async function runSelfTune(runDate?: string): Promise<{ studied: number; tuned: number }> {
   if (running) return { studied: 0, tuned: 0 };
@@ -717,7 +585,7 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
 
     // ── V16: real per-horse nets for the window (cash + hu_cash only — the
     // tuner is cash-only by design and tournament chips are not bb-comparable).
-    const realNets = new Map<string, { hands: number; netBB: number }>();
+    const realNets = new Map<string, { hands: number; netBB: number; rakeBB: number }>();
     try {
       const sinceDay = new Date(Date.now() - STUDY_WINDOW_DAYS * 86400_000)
         .toISOString()
@@ -725,7 +593,7 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
       for (let offset = 0; ; offset += 1000) {
         const { data, error } = await supabase
           .from('horse_daily_nets')
-          .select('horse_user_id, hands, net_bb, format')
+          .select('horse_user_id, hands, net_bb, rake_bb, format')
           .gte('day', sinceDay)
           .in('format', ['cash', 'hu_cash'])
           /*
@@ -764,10 +632,12 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
           horse_user_id: string;
           hands: number;
           net_bb: number;
+          rake_bb: number | null;
         }>) {
-          const acc = realNets.get(row.horse_user_id) ?? { hands: 0, netBB: 0 };
+          const acc = realNets.get(row.horse_user_id) ?? { hands: 0, netBB: 0, rakeBB: 0 };
           acc.hands += row.hands ?? 0;
           acc.netBB += Number(row.net_bb ?? 0);
+          acc.rakeBB += Number(row.rake_bb ?? 0);
           realNets.set(row.horse_user_id, acc);
         }
         if (data.length < 1000) break;
@@ -778,6 +648,10 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
       reportError(err, 'HorseSelfTuner.realNets');
       realNets.clear();
     }
+    // 2026-09-05: the fleet's own distribution is the yardstick. Rake-adjusted
+    // bb/100 across every horse with a qualifying sample; the regression rule
+    // only touches a horse under the first quartile (see RegressionContext).
+    const fleetP25 = fleetQuartile(realNets);
 
     // ── V18: leak-tag counts per horse over the window ──
     const leaksByHorse = new Map<string, Record<string, number>>();
@@ -833,9 +707,18 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
       leaksByHorse.clear();
     }
 
+    // ── 2026-09-05: EVERY HORSE, FROM ITS OWN ROWS ───────────────────────
+    // horse_daily_play holds the same counts this accumulator derives,
+    // compiled at settlement by the same code (HorsePlayStats), for every
+    // horse, for the whole window. The hand_history stream below is now the
+    // fallback for a horse with no play rows (the table is young, or the
+    // flush was off), so a night can never study fewer horses than before.
+    const stats = new Map<string, PlayStats>();
+    const fromPlayRows = await loadPlayRows(stats, tracked);
+
     // Stream the study window through the accumulator, newest first.
     const since = new Date(Date.now() - STUDY_WINDOW_DAYS * 86400_000).toISOString();
-    const stats = new Map<string, PlayStats>();
+    const streamed = new Map<string, PlayStats>();
     let fetched = 0;
     let oldestSeen: string | null = null;
     // V12.3: this used to page with `.lt('created_at', before)`. created_at is
@@ -854,7 +737,7 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
         .range(offset, offset + PAGE_SIZE - 1);
       if (error) throw new Error(error.message);
       if (!data || data.length === 0) break;
-      accumulatePlayStats(data as unknown as HandRow[], tracked, stats);
+      accumulatePlayStats(data as unknown as HandRow[], tracked, streamed);
       fetched += data.length;
       oldestSeen = (data[data.length - 1] as { created_at: string }).created_at;
       if (data.length < PAGE_SIZE) break;
@@ -863,6 +746,13 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
     const coveredHours = oldestSeen
       ? Math.round(((Date.now() - Date.parse(oldestSeen)) / 3600_000) * 10) / 10
       : 0;
+    // A horse with play rows is studied from them; the stream fills the gaps.
+    let fromStream = 0;
+    for (const [id, st] of streamed) {
+      if (stats.has(id)) continue;
+      stats.set(id, st);
+      fromStream++;
+    }
 
     // Diagnose + write.
     let tuned = 0;
@@ -872,12 +762,21 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
       const rn = realNets.get(horseId);
       const realBB100 =
         rn && rn.hands >= MIN_REAL_HANDS_FOR_BB100 ? (rn.netBB / rn.hands) * 100 : null;
+      const rakeBB100 =
+        rn && rn.hands >= MIN_REAL_HANDS_FOR_BB100 && rn.rakeBB > 0
+          ? (rn.rakeBB / rn.hands) * 100
+          : null;
       const { mods, reasons } = diagnoseAndNudge(
         s,
         prevMods,
         realBB100,
         rn?.hands ?? 0,
-        leaksByHorse.get(horseId) ?? null
+        leaksByHorse.get(horseId) ?? null,
+        {
+          rakeBB100,
+          fleetP25,
+          leaksHands: leakHandsByHorse.get(horseId) ?? 0,
+        }
       );
       // V40 (Dan 2026-09-04): the leak profile travels WITH the dials, so
       // the brain can read its own review verdicts at decision time
@@ -929,6 +828,13 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
               // = no qualifying real sample this window.
               real_bb100: realBB100 !== null ? round4(realBB100) : -9999,
               real_hands: rn?.hands ?? 0,
+              // 2026-09-05: the rake this horse paid, and what it did after it.
+              rake_bb100: rakeBB100 !== null ? round4(rakeBB100) : -9999,
+              adjusted_bb100:
+                realBB100 !== null && rakeBB100 !== null ? round4(realBB100 + rakeBB100) : -9999,
+              fleet_p25_bb100: fleetP25 !== null ? round4(fleetP25) : -9999,
+              // where this horse's frequencies came from: play rows or the stream
+              study_source: fromPlayRows.has(horseId) ? 1 : 0,
             },
             mods_before: {
               tightness: prevMods.tightness ?? 1,
@@ -952,8 +858,9 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
 
     const eligible = [...stats.values()].filter((s) => s.hands >= MIN_HANDS_TO_TUNE).length;
     console.log(
-      `[HorseSelfTuner] Studied ${fetched} hands covering the newest ${coveredHours}h ` +
-        `(declared window ${STUDY_WINDOW_DAYS}d), ${stats.size} horses with data, ` +
+      `[HorseSelfTuner] Studied ${fromPlayRows.size} horses from horse_daily_play (full ${STUDY_WINDOW_DAYS}d) ` +
+        `and ${fromStream} from a ${fetched}-hand hand_history stream covering the newest ${coveredHours}h, ` +
+        `${stats.size} horses with data, fleet p25 ${fleetP25 === null ? 'n/a' : fleetP25.toFixed(1)} bb/100, ` +
         `${eligible} over the ${MIN_HANDS_TO_TUNE}-hand bar, ${tuned} tuned, ` +
         `in ${Date.now() - t0}ms`
     );

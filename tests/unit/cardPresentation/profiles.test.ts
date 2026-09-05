@@ -20,7 +20,7 @@ import {
   MOBILE_MAX_WIDTH_PX,
   TABLET_MAX_WIDTH_PX,
 } from '../../../src/presentation/cardPresentation/resolveProfile';
-import { HAND_COMPLETION } from '../../../src/config/handCompletionSpec';
+import { ALL_IN_SQUEEZE_CEILING_MS, HAND_COMPLETION } from '../../../src/config/handCompletionSpec';
 import type { CardAnimationProfile } from '../../../src/presentation/cardPresentation/types';
 
 const ROOT = path.resolve(__dirname, '../../..');
@@ -83,9 +83,14 @@ describe('profile table', () => {
     expect(P.off.durationMs).toBe(0);
   });
 
-  it('the all-in profile is sized from the server reveal gate, not hand-tuned', () => {
-    expect(P.allIn.durationMs).toBe(HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS);
+  it('the all-in profile is sized from the server run-out pacing, not hand-tuned', () => {
+    // VIP ALL-IN SQUEEZE 2026-09-05: the hold is the player's ceiling, derived
+    // from the reveal gate plus the shorter server pause after it, less the
+    // snap. It used to equal ALL_IN_STREET_REVEAL_MS; see handCompletionSpec.
+    expect(P.allIn.durationMs).toBe(ALL_IN_SQUEEZE_CEILING_MS);
+    expect(P.allIn.durationMs).toBeGreaterThan(HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS);
     expect(P.allIn.holdMs).toBeGreaterThan(P.allIn.squeezeMs);
+    expect(P.allIn.interactive).toBe(true);
   });
 
   it('the overshoot stays subtle (spec 20) and the reduced/background ones have none', () => {
@@ -171,10 +176,13 @@ describe('resolver priority (spec 46)', () => {
       P.reduced
     );
   });
-  it('an all-in runout holds, on every platform and mode', () => {
-    expect(resolveCardAnimationProfile({ ...base, allIn: true })).toBe(P.allIn);
-    expect(resolveCardAnimationProfile({ ...base, allIn: true, platform: 'mobile' })).toBe(P.allIn);
-    expect(resolveCardAnimationProfile({ ...base, allIn: true, mode: 'tournament' })).toBe(P.allIn);
+  it('an all-in runout holds for the viewer who may squeeze, on every platform and mode', () => {
+    // VIP ALL-IN SQUEEZE 2026-09-05: `allIn` AND `squeeze`. See
+    // tests/unit/vipAllInSqueeze.test.ts for the other half of the matrix.
+    const sq = { ...base, allIn: true, squeeze: true };
+    expect(resolveCardAnimationProfile(sq)).toBe(P.allIn);
+    expect(resolveCardAnimationProfile({ ...sq, platform: 'mobile' })).toBe(P.allIn);
+    expect(resolveCardAnimationProfile({ ...sq, mode: 'tournament' })).toBe(P.allIn);
   });
   it('a visible background table is compact', () => {
     expect(resolveCardAnimationProfile({ ...base, focus: 'visible', mode: 'tournament' })).toBe(

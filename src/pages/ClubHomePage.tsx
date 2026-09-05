@@ -290,6 +290,8 @@ interface TableData {
   min_buy_in: number;
   max_buy_in: number;
   settings?: string;
+  /** The must-move game's template (classic / action / madness), from get_club_home. */
+  cluster_template?: string | null;
 }
 
 interface TournamentData {
@@ -2793,6 +2795,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             seats: Number(table.max_players) || 0,
             seatsTaken: Number(table.current_players) || 0,
             name: table.name,
+            style: table.cluster_template ?? null,
             row: table as unknown as Record<string, unknown>,
             settings,
           })
@@ -4958,6 +4961,29 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                   onVariantsChange: (games: string[]) => {
                     haptic.selection();
                     const next: FilterStore = { ...advFilters, [gameType]: { ...vVal, games } };
+                    setAdvFilters(next);
+                    if (resolvedClubId) saveFilters(resolvedClubId, next);
+                  },
+                };
+              })()}
+              /* THE STAKES MENU (Dan 2026-09-04): the Stakes heading opens the
+                 game styles - Classic / Action / Madness, with All - and the
+                 two stakes sorts. Every cash tab that has a Stakes column has
+                 it, and it reads and writes the SAME saved `styles` filter
+                 the Advanced Filters sheet does. */
+              {...(() => {
+                const sSpec =
+                  gameType === 'HOLDEM' || gameType === 'OMAHA' || gameType === 'LIMIT'
+                    ? FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>]
+                    : null;
+                if (!sSpec?.styles) return {};
+                const sVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(sSpec);
+                return {
+                  styleChoices: sSpec.styles,
+                  selectedStyles: sVal.styles ?? [],
+                  onStylesChange: (styles: string[]) => {
+                    haptic.selection();
+                    const next: FilterStore = { ...advFilters, [gameType]: { ...sVal, styles } };
                     setAdvFilters(next);
                     if (resolvedClubId) saveFilters(resolvedClubId, next);
                   },

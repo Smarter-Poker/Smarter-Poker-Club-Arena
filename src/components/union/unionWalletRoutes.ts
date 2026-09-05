@@ -37,8 +37,18 @@ export type ClubSendRoute =
  *                                             union promo wallet -> club Promo Wallet
  *   union bank / BBJ, Chips kind -> 'bank'    unionApi.sendToClub
  *                                             union bank -> Club Bank
- *   rake wallet                  -> refused   no rake -> club route exists; the
- *                                             old code silently drew on the bank
+ *   rake wallet                  -> refused   the Rake Treasury is held IN TRUST
+ *                                             for the member clubs until the
+ *                                             weekly close (20260820b_rake_only_to
+ *                                             _treasury, 20260903161443_the_weekly
+ *                                             _union_close_pays_from_the_rake
+ *                                             _treasury_and_only_from_it;
+ *                                             fn_union_move_rake_to_chips_atomic is
+ *                                             retired for the same reason). A
+ *                                             manual rake -> club send would spend
+ *                                             money that belongs to the clubs, so
+ *                                             it is not built, and the old code's
+ *                                             silent draw on the bank is gone
  *   diamonds                     -> refused   a club has no diamond wallet
  */
 export function clubSendRoute(walletKey: UnionWalletKey, kind: UnionSendKind): ClubSendRoute {
@@ -49,7 +59,8 @@ export function clubSendRoute(walletKey: UnionWalletKey, kind: UnionSendKind): C
   if (walletKey === 'rake') {
     return {
       kind: 'refused',
-      reason: 'The Rake Wallet Has No Route Into A Club. Open The Union Bank To Fund A Club Bank.',
+      reason:
+        'The Rake Treasury Is Held In Trust For The Clubs Until The Weekly Close. To Fund A Club Bank Now, Open The Union Bank.',
     };
   }
   if (walletKey === 'spin_reserve') {

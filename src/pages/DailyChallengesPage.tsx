@@ -184,10 +184,11 @@ function ChallengeCard({
         </div>
         <div className={styles.rewardReadout} aria-label="Challenge Rewards">
           <span className={styles.rewardLabel}>Reward</span>
-          <strong>{c.chipReward.toLocaleString()} Chips</strong>
-          {c.diamondReward > 0 && (
-            <strong className={styles.diamondReward}>◆ {c.diamondReward}</strong>
-          )}
+          {/* 2026-09-05: this led with "{chipReward} Chips" and put the diamonds
+              second. A mission reward is diamonds (Dan: nothing ever earns
+              chips, only diamonds), and as of migration 20260905114421 no code
+              path credits a chip for one. */}
+          <strong className={styles.diamondReward}>◆ {c.diamondReward.toLocaleString()}</strong>
         </div>
       </div>
 
@@ -584,7 +585,6 @@ export default function DailyChallengesPage() {
   const [diamondBalance, setDiamondBalance] = useState(0);
   const [rewardVault, setRewardVault] = useState<DailyChallengeRewardVault>({
     count: 0,
-    chips: 0,
     diamonds: 0,
     items: [],
     pageSize: 100,
@@ -603,9 +603,11 @@ export default function DailyChallengesPage() {
 
   // Celebration state
   const [celebratingIds, setCelebratingIds] = useState<Set<string>>(new Set());
+  /* No `chips` field: a mission reward is diamonds, and since migration
+     20260905114421 the RPC returns a literal 0 for every chip figure. A field
+     that can only ever be zero is an invitation to render "+0 Chips". */
   const [reward, setReward] = useState<{
     name: string;
-    chips: number;
     diamonds: number;
     diamondBalance: number;
     returnFocusId: string;
@@ -879,7 +881,6 @@ export default function DailyChallengesPage() {
         } else if (newlyClaimed) {
           setReward({
             name: challenge.challenge.name,
-            chips: paid.chips,
             diamonds: paid.diamonds,
             diamondBalance: paid.diamondBalance,
             returnFocusId: `mission-card-${challenge.id}`,
@@ -894,7 +895,6 @@ export default function DailyChallengesPage() {
         if (newlyClaimed) {
           capture('daily_mission_claimed', {
             tier: challenge.tier,
-            chip_reward: paid.chips,
             diamond_reward: paid.diamonds,
             claim_count: 1,
           });
@@ -921,8 +921,8 @@ export default function DailyChallengesPage() {
           masterBus.emit('MISSION_CLAIMED', {
             missionId: challenge.id,
             tier: challenge.tier,
-            rewardType: paid.diamonds > 0 ? 'diamonds' : 'chips',
-            rewardAmount: paid.diamonds > 0 ? paid.diamonds : paid.chips,
+            rewardType: 'diamonds',
+            rewardAmount: paid.diamonds,
           });
         }
       } catch (err: any) {
@@ -1146,7 +1146,6 @@ export default function DailyChallengesPage() {
       if (paid.claimedIds.length > 0) {
         capture('daily_mission_claimed', {
           tier: 'vault',
-          chip_reward: paid.chips,
           diamond_reward: paid.diamonds,
           claim_count: paid.claimedIds.length,
         });
@@ -1160,7 +1159,6 @@ export default function DailyChallengesPage() {
         triggerHaptic('success');
         setReward({
           name: `${paid.claimedIds.length} challenge${paid.claimedIds.length === 1 ? '' : 's'}`,
-          chips: paid.chips,
           diamonds: paid.diamonds,
           diamondBalance: paid.diamondBalance,
           returnFocusId: 'mission-board-title',
@@ -1170,11 +1168,8 @@ export default function DailyChallengesPage() {
           masterBus.emit('MISSION_CLAIMED', {
             missionId: challenge.id,
             tier: challenge.tier,
-            rewardType: challenge.challenge.diamondReward > 0 ? 'diamonds' : 'chips',
-            rewardAmount:
-              challenge.challenge.diamondReward > 0
-                ? challenge.challenge.diamondReward
-                : challenge.challenge.chipReward,
+            rewardType: 'diamonds',
+            rewardAmount: challenge.challenge.diamondReward,
           });
         }
       } else {
@@ -1318,8 +1313,7 @@ export default function DailyChallengesPage() {
             <span className={styles.eyebrow}>Club Arena // Mission Control</span>
             <h1 id="missions-title">Daily Missions</h1>
             <p>
-              Complete Live Poker Objectives, Protect Your Streak, And Unlock Real Chip And Diamond
-              Rewards.
+              Complete Live Poker Objectives, Protect Your Streak, And Unlock Real Diamond Rewards.
             </p>
             <div className={styles.heroMeters}>
               <div>
@@ -1467,7 +1461,7 @@ export default function DailyChallengesPage() {
               <strong className={`${styles.summaryValue} ${styles.gold}`}>
                 +{(stats?.milestoneReward || 0).toLocaleString()}
               </strong>
-              <small>Bonus Chips</small>
+              <small>Bonus Diamonds</small>
             </div>
           </div>
         </section>
@@ -1480,8 +1474,7 @@ export default function DailyChallengesPage() {
                 {unclaimed.count} Mission{unclaimed.count === 1 ? '' : 's'} Ready
               </strong>
               <small>
-                +{unclaimed.chips.toLocaleString()} Chips
-                {unclaimed.diamonds > 0 ? ` + ◆ ${unclaimed.diamonds.toLocaleString()}` : ''}
+                +{'\u25C6'} {unclaimed.diamonds.toLocaleString()}
               </small>
             </div>
             <button
@@ -1651,14 +1644,6 @@ export default function DailyChallengesPage() {
               </p>
 
               <div className={styles.celebratePayouts} aria-label="Rewards Earned">
-                {reward.chips > 0 && (
-                  <div>
-                    <span className={styles.celebratePayoutValue}>
-                      +{reward.chips.toLocaleString()}
-                    </span>
-                    <span className={styles.celebratePayoutLabel}>Chips</span>
-                  </div>
-                )}
                 {reward.diamonds > 0 && (
                   <div className={styles.celebrateDiamondPayout}>
                     <span className={styles.celebratePayoutValue}>

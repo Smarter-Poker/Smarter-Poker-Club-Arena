@@ -14748,6 +14748,10 @@ export default function TablePage({
                 potSize: outcome.potWon,
                 handRank: outcome.handRank || undefined,
                 showdown: outcome.showdown,
+                /* player_stats is keyed (user_id, club_id). Without the club
+                   the counter cannot be incremented truthfully - see the note
+                   in AchievementTriggerService.updateUserStats. */
+                clubId: actualClubIdRef.current || undefined,
               })
               .catch((e) => reportError(e, 'TablePage.achievementOnHandComplete'));
           }

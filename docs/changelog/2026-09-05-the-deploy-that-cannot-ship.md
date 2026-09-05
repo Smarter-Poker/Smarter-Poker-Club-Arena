@@ -173,6 +173,57 @@ and the run warning, the job summary and the deploy ledger all print that same
 string. 23 rows in `ca_engine_deploy_attempts` blamed a break that had never
 been reached; they cannot be written again.
 
+### 5. Nothing was watching for an unannounced restart
+
+Five restarts outside the break in one day and no alarm fired, because the only
+rule that looks at restarts is `EngineTableRebuildChurn`:
+`resets(poker_uptime_seconds[30m]) > 3`. The real pattern was one restart every
+35-70 minutes - always under four in thirty, therefore always silent. They were
+found only because they were also breaking deploys, and a coincidence is not a
+detector.
+
+New rule, `EngineRestartedOutsideTheBreak`:
+
+```
+resets(poker_uptime_seconds[8m]) > 0
+unless max_over_time(poker_maintenance_break_active[8m]) == 1
+```
+
+That is §13 stated as a query: the engine restarts inside the announced break
+or it is an incident. ONE restart is enough - a threshold here would rebuild
+the blind spot. The 8-minute lookback outlives the 5-minute break so a legitimate
+deploy restart at ~:57 still sees the break samples that preceded it, and the
+break guard is there for §13 rule 6, or it would page hourly about a stop we
+scheduled. Its description routes the reader straight to
+`docker logs sp-autoheal` and to `poker_dead_stalled_tables` vs
+`poker_dealable_tables`, which is the two hours this investigation took.
+
+### 6. The staleness alarm never said WHY, and the answer was already in the database
+
+`engine-watchdog.sh` has opened "production is not running main" faithfully -
+issue #3161 was open the whole time. It has never said why, and the pipeline's
+own recorded reason for every one of those 52 runs was sitting in
+`ca_engine_deploy_attempts` untouched.
+
+The issue body now carries `.github/scripts/deploy-ship-rate.mjs`: shipped vs
+skipped over 24 hours, the reasons given, and - the sharpest of the three -
+**commits offered to production repeatedly and never shipped**. Run against the
+live ledger while writing this, it correctly names `aa6b6387`, offered twice and
+never landed. When that list is non-empty the pipeline is the problem, not the
+code, and staleness alone can never make that distinction. It is best-effort: no
+`DATABASE_URL`, no `pg`, no rows, and the section is simply absent. A watchdog
+that fails because its optional evidence was unavailable is worse than one that
+reports without it.
+
+The same script's dispatch rule was also part of the failure. It refused to
+dispatch unless the next :55 was within 13 minutes, on the reasoning that a run
+which cannot reach the break provably ships nothing. Both halves of that moved:
+a run that cannot reach the break now STAGES the image, and the 13-minute rule
+was itself concentrating every dispatch into :42-:47, where the build then
+outlived the break it was aimed at - which is precisely runs 33985138036 and
+33986167969 above. It dispatches whenever the engine is behind now, and says
+honestly which of the two things this dispatch will do.
+
 ## Hardening
 
 `tests/the-deploy-can-always-ship.law.test.ts` (registered in
@@ -190,11 +241,14 @@ read `/health.uptime`; the clock comes from the ledger; an unreadable ledger
 does not coalesce; an unplanned restart is reported; `steps.window` and
 "7am/7pm" appear nowhere as live code; the count of `skip=true` paths in the
 break gate equals the count of `gate_reason` paths; the warning, summary and
-ledger read one string; and a staged image is adopted before any `docker
-build`.
+ledger read one string; a staged image is adopted before any `docker build`;
+a single restart outside a break alerts, on `resets()` and never `changes()`,
+with no threshold above zero; the staleness issue quotes the ledger; that
+evidence is optional and cannot fail the watchdog; and being behind always
+dispatches.
 
 **Run against `origin/main`, 9 of its 12 assertions fail** - one per defect
-fixed here.
+fixed here. (Sixteen assertions now, with the two prevention groups added.)
 
 `server/src/engineLiveness.test.ts` gains the fleet-wide rule in the same
 commit that changes it (§5 rule 8), including the two production readings as

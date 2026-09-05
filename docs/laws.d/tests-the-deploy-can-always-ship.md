@@ -15,4 +15,10 @@ warning, the job summary and the deploy ledger all read, so one run can never
 again give three different answers; the deleted 7am/7pm restart-window gate
 (`steps.window`) must not be referenced as though it were live (§13); and an
 image already staged for a commit must be adopted rather than rebuilt, which
-is what leaves a retry enough budget to wait for the break.
+is what leaves a retry enough budget to wait for the break. It also pins the
+two detectors that were missing entirely: a single engine restart outside an
+announced break must alert (on `resets()`, never `changes()`, with no
+threshold above zero - five unannounced restarts in one day all sat under the
+existing four-in-thirty rule), and the staleness issue must quote the deploy
+ledger for WHY production is behind, with that evidence optional so it can
+never fail the watchdog.

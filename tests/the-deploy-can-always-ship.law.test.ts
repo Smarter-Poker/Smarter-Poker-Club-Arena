@@ -253,6 +253,69 @@ describe('a run that ships nothing names the gate that actually held', () => {
   });
 });
 
+describe('an unannounced restart is an incident, and something watches for one', () => {
+  const rules = readFileSync(join(ROOT, 'infra/monitoring/engine-freeze-rules.yml'), 'utf8');
+
+  it('a single restart outside a maintenance break alerts', () => {
+    // NOTHING watched for this before 2026-09-05. EngineTableRebuildChurn
+    // needs FOUR restarts in thirty minutes; the real pattern was one every
+    // 35-70 minutes - five unannounced restarts in a day, every one under the
+    // threshold and therefore silent. They were found only because they were
+    // also breaking deploys, which is a coincidence, not a detector.
+    expect(rules).toMatch(/alert:\s*EngineRestartedOutsideTheBreak/);
+    const alert = rules.slice(rules.indexOf('alert: EngineRestartedOutsideTheBreak'));
+    const expr = alert.slice(0, alert.indexOf('for:'));
+    // resets(), not changes(): changes() counts every scrape of a monotonic
+    // counter and fires forever on a healthy engine (measured 2026-08-16,
+    // changes()=118 vs resets()=3), which trains people to ignore it.
+    expect(expr).toMatch(/resets\(poker_uptime_seconds/);
+    expect(expr).not.toMatch(/changes\(poker_uptime_seconds/);
+    // Guarded by the break, or it pages every hour about a stop we scheduled
+    // (§13 rule 6).
+    expect(expr).toMatch(/poker_maintenance_break_active/);
+    // ONE restart. A threshold here re-creates the blind spot it was written
+    // to close.
+    expect(expr).toMatch(/>\s*0\b/);
+  });
+});
+
+describe('the watchdog can say WHY production is behind', () => {
+  const sh = readFileSync(join(ROOT, '.github/scripts/engine-watchdog.sh'), 'utf8');
+
+  it('the staleness issue quotes the pipeline ledger', () => {
+    // Staleness said "the engine is behind" and never once said why, while
+    // ca_engine_deploy_attempts held the pipeline's own recorded reason for
+    // every one of the 52 runs that shipped nothing.
+    expect(existsSync(join(ROOT, '.github/scripts/deploy-ship-rate.mjs'))).toBe(true);
+    expect(sh).toMatch(/deploy-ship-rate\.mjs/);
+    expect(sh).toMatch(/\$LEDGER/);
+  });
+
+  it('the evidence is optional and can never fail the watchdog', () => {
+    // A watchdog that dies because its optional evidence was unavailable is
+    // worse than one that reports without it.
+    const script = readFileSync(join(ROOT, '.github/scripts/deploy-ship-rate.mjs'), 'utf8');
+    expect(script).toMatch(/process\.exit\(0\)/);
+    expect(sh).toMatch(/if \[ -n "\$\{DATABASE_URL:-\}" \]/);
+  });
+
+  it('being behind always dispatches a deploy, even far from the break', () => {
+    // It used to refuse unless the next :55 was within 13 minutes, because a
+    // run that cannot reach the break "provably ships nothing". With the image
+    // staged that is no longer true - the run does the expensive half and the
+    // :35 tick finishes in a minute - and the old rule was itself concentrating
+    // every dispatch into :42-:47, where the build then outlived the break it
+    // was aimed at.
+    const block = sh.slice(sh.indexOf('MINS_TO_WINDOW='), sh.indexOf('BODY=$(cat'));
+    expect(block).toMatch(/gh workflow run/);
+    expect(
+      block,
+      'a dispatch must no longer be gated on the break being close - it stages the image either way'
+    ).not.toMatch(/if \[ "\$MINS_TO_WINDOW" -le \d+ \]; then\s*\n\s*if gh workflow run/);
+    expect(block).toMatch(/stages the image/);
+  });
+});
+
 describe('an image is built once per commit', () => {
   it('a staged image is adopted instead of rebuilt', () => {
     // The tag is the commit, so the bytes are identical; rebuilding is 8-18

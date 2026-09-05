@@ -40,6 +40,9 @@ vi.mock('../../src/services/SoundService', () => ({
   },
 }));
 
+import { createRoot } from 'react-dom/client';
+import { flushSync } from 'react-dom';
+
 import { SeatSlot, type SeatPlayer } from '../../src/components/table/SeatSlot';
 
 import { computePeel } from '../../src/components/table/cardPeel';
@@ -151,23 +154,26 @@ describe('the pair tips up and the face arrives from the top', () => {
    * curl, and a horizontal boundary running the wrong way (face revealed
    * bottom-up), which is what "the cards are still backwards" meant.
    */
-  it('dragging UP reveals the face from the TOP, and the two clips meet', () => {
+  it('dragging UP reveals the face from the BOTTOM, and the two clips meet', () => {
     const { row, card } = renderHero();
     pointer(card, 'pointerdown', 25, 64);
     pointer(row, 'pointermove', 25, 64 - H / 2); // half a card of lift
     expect(progressOf(row)).toBeCloseTo(0.5, 2);
-    expect(row.style.getPropertyValue('--peel-back-clip')).toBe('inset(50% 0 0 0)');
-    expect(row.style.getPropertyValue('--peel-face-clip')).toBe('inset(0 0 50% 0)');
+    expect(row.style.getPropertyValue('--peel-back-clip')).toBe('inset(0 0 50% 0)');
+    expect(row.style.getPropertyValue('--peel-face-clip')).toBe('inset(50% 0 0 0)');
     expect(row.style.getPropertyValue('--peel-fold')).toBe('50%');
   });
 
-  it('a small lift shows the TOP sliver of the face, where the index is printed', () => {
+  it('a small lift shows the BOTTOM sliver of the face', () => {
     const { row, card } = renderHero();
     pointer(card, 'pointerdown', 25, 64);
     pointer(row, 'pointermove', 25, 64 - H * 0.15);
-    // Face keeps its top 15%; the back keeps everything below that line.
-    expect(row.style.getPropertyValue('--peel-face-clip')).toBe('inset(0 0 85% 0)');
-    expect(row.style.getPropertyValue('--peel-back-clip')).toBe('inset(15% 0 0 0)');
+    // Face keeps its bottom 15%; the back keeps everything above that line.
+    expect(row.style.getPropertyValue('--peel-face-clip')).toBe('inset(85% 0 0 0)');
+    expect(row.style.getPropertyValue('--peel-back-clip')).toBe('inset(0 0 15% 0)');
+    // Named against v3, which shipped the mirror of this and passed every
+    // structural check in the file.
+    expect(row.style.getPropertyValue('--peel-face-clip')).not.toBe('inset(0 0 85% 0)');
   });
 
   it('dragging DOWN does not peel - the card just stays on the felt', () => {
@@ -199,7 +205,7 @@ describe('the pair tips up and the face arrives from the top', () => {
     const { row, card } = renderHero();
     pointer(card, 'pointerdown', 25, 68);
     pointer(row, 'pointermove', 25, 63);
-    pointer(row, 'pointermove', 25, 30);
+    pointer(row, 'pointermove', 25, 68 - H); // all the way open
     expect(haptics[0]).toBe('light');
     expect(haptics).toContain('medium');
   });
@@ -211,7 +217,7 @@ describe('letting go', () => {
     pointer(card, 'pointerdown', 25, 64);
     pointer(row, 'pointermove', 25, 54); // a short lift, under the threshold
     expect(progressOf(row)).toBeGreaterThan(0);
-    expect(progressOf(row)).toBeLessThan(0.45);
+    expect(progressOf(row)).toBeLessThan(0.9);
     pointer(row, 'pointerup', 25, 54);
     expect(row.hasAttribute('data-peeling')).toBe(false);
     act(() => {
@@ -223,13 +229,18 @@ describe('letting go', () => {
     expect(sounds).not.toContain('playCardSqueeze');
   });
 
-  it('past the commit line: the corner flies open and the hand is revealed', () => {
+  it('peeled ALL THE WAY open: the hand opens and stays up', () => {
+    /* RAISED 0.45 -> 0.9 on 2026-09-05. Dan: "YOU SHOULD ALSO BE ABLE TO PEEL
+       THEM ALL THE WAY OPEN. WHEN THAT HAPPENS THEY STAY UP AND LIVE." At 0.45
+       a glance committed the hand, so you could not look without turning the
+       cards over - the opposite of what a peek is for. A HALF peel now settles
+       back down; only a full one latches. */
     const { row, card, container } = renderHero();
     pointer(card, 'pointerdown', 25, 68);
     pointer(row, 'pointermove', 25, 40);
-    pointer(row, 'pointermove', 25, 10); // well past the threshold
-    expect(progressOf(row)).toBeGreaterThanOrEqual(0.45);
-    pointer(row, 'pointerup', 25, 10);
+    pointer(row, 'pointermove', 25, 68 - H); // all the way
+    expect(progressOf(row)).toBeGreaterThanOrEqual(0.9);
+    pointer(row, 'pointerup', 25, 68 - H);
     act(() => {
       vi.advanceTimersByTime(600);
     });
@@ -299,8 +310,8 @@ describe('a card you have not turned over does not tell you what it is', () => {
     const { row, card, container } = renderHero({ handStrength: 'Pair Of Kings' });
     pointer(card, 'pointerdown', 40, 64);
     pointer(row, 'pointermove', 70, 30);
-    pointer(row, 'pointermove', 90, 4);
-    pointer(row, 'pointerup', 90, 4);
+    pointer(row, 'pointermove', 90, 64 - H); // all the way open, past the commit line
+    pointer(row, 'pointerup', 90, 64 - H);
     act(() => {
       vi.advanceTimersByTime(600);
     });
@@ -487,5 +498,209 @@ describe('the markup', () => {
   it('is announced as a peel, not a drag-up', () => {
     const { row } = renderHero();
     expect(row.getAttribute('aria-label')).toMatch(/Peel/);
+  });
+});
+
+/* ═════════════════════════════════════════════════════════════════════════
+   THE BUGS FROM DAN'S SCREEN RECORDING, 2026-09-05 (SLIDE BUGS.MOV)
+   ═════════════════════════════════════════════════════════════════════════ */
+
+describe('a new hand is face down in its FIRST painted frame', () => {
+  /*
+   * Dan: "CARDS ARE FLASHED BEFORE YOU CAN PEEL THEM, THAT KINDA DEFEATS THE
+   * PURPOSE OF THE PEEL."
+   *
+   * `squeezeRevealed` was state cleared by an effect keyed on handNumber, and
+   * a passive effect runs AFTER the commit it belongs to - so the first commit
+   * of the next hand still carried the previous hand's `true` and painted the
+   * fresh hole cards FACE UP, with the hand-strength label, before flipping
+   * them down. Visible in his recording at 4.6-5.2s: K-diamond / Q-heart,
+   * "King High", then the backs.
+   *
+   * THIS TEST HAS TO SEE BETWEEN THE COMMIT AND THE EFFECT, so it cannot use
+   * `act()` or RTL's `rerender` - both flush passive effects, which is exactly
+   * what hid the bug. The first version of this test did, and passed against
+   * the broken code. `flushSync` commits synchronously and leaves passive
+   * effects scheduled, so the DOM read straight afterwards is the frame the
+   * player actually saw.
+   */
+  const renderFrames = () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const paint = (handNumber: number, player: SeatPlayer = hero) =>
+      flushSync(() => {
+        root.render(
+          <SeatSlot
+            seatNumber={1}
+            player={player}
+            position={null}
+            isActive={false}
+            lastAction={null}
+            cardSqueezeActive={true}
+            handNumber={handNumber}
+            playSounds={true}
+            handStrength="Ace High"
+          />
+        );
+      });
+    return { host, root, paint };
+  };
+
+  it('does not flash the cards face up when the hand number advances', () => {
+    const { host, root, paint } = renderFrames();
+    paint(1);
+    const row = host.querySelector('.seat__cards--squeeze') as HTMLElement;
+    const card = host.querySelector('.seat__card--squeeze') as HTMLElement;
+
+    // Open hand 1 all the way.
+    pointer(card, 'pointerdown', 25, 68);
+    pointer(row, 'pointermove', 25, 68 - H);
+    pointer(row, 'pointerup', 25, 68 - H);
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(host.querySelector('.seat__cards--squeeze-open')).toBeTruthy();
+
+    // Hand 2 arrives. Read the DOM with the effects still pending.
+    paint(2);
+    expect(host.querySelector('.seat__cards--squeeze')).toBeTruthy();
+    expect(host.querySelector('.seat__cards--squeeze-open')).toBeNull();
+    // The strength label is the tell in the video - it must not appear either.
+    expect(host.querySelector('.seat__strength')).toBeNull();
+
+    act(() => {
+      root.unmount();
+    });
+    host.remove();
+  });
+
+  it('drops the open hand in the same frame the cards are taken away', () => {
+    const { host, root, paint } = renderFrames();
+    paint(1);
+    const row = host.querySelector('.seat__cards--squeeze') as HTMLElement;
+    const card = host.querySelector('.seat__card--squeeze') as HTMLElement;
+    pointer(card, 'pointerdown', 25, 68);
+    pointer(row, 'pointermove', 25, 68 - H);
+    pointer(row, 'pointerup', 25, 68 - H);
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(host.querySelector('.seat__cards--squeeze-open')).toBeTruthy();
+
+    paint(1, { ...hero, holeCards: [] } as SeatPlayer);
+    expect(host.querySelector('.seat__cards--squeeze-open')).toBeNull();
+
+    act(() => {
+      root.unmount();
+    });
+    host.remove();
+  });
+});
+
+describe('double tap holds a small lift', () => {
+  /*
+   * Dan: "OR DOUBLE TAP, THAT LIFTS THEM SLIGHTLY (LIKE IN THE REAL VIDEO I
+   * SENT YOU)." A held look, so you can read the cards without keeping a
+   * finger on them, and without committing the hand.
+   */
+  const tap = (row: HTMLElement, card: HTMLElement) => {
+    pointer(card, 'pointerdown', 25, 64);
+    pointer(row, 'pointerup', 25, 64);
+  };
+
+  it('two taps lift the pair and LEAVE it lifted', () => {
+    const { row, card, container } = renderHero();
+    tap(row, card);
+    tap(row, card);
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(progressOf(row)).toBeGreaterThan(0);
+    // Lifted, but NOT opened - the hand is still face down and still peelable.
+    expect(container.querySelector('.seat__cards--squeeze')).toBeTruthy();
+    expect(container.querySelector('.seat__cards--squeeze-open')).toBeNull();
+  });
+
+  it('two more taps put them back down', () => {
+    const { row, card } = renderHero();
+    tap(row, card);
+    tap(row, card);
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(progressOf(row)).toBeGreaterThan(0);
+    tap(row, card);
+    tap(row, card);
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(progressOf(row)).toBe(0);
+  });
+
+  it('a single tap is still only a hint, never a lift', () => {
+    const { row, card } = renderHero();
+    tap(row, card);
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(progressOf(row)).toBe(0);
+  });
+
+  it('two taps far apart are two single taps, not a double', () => {
+    const { row, card } = renderHero();
+    tap(row, card);
+    act(() => {
+      vi.advanceTimersByTime(900); // well past DOUBLE_TAP_MS
+    });
+    tap(row, card);
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(progressOf(row)).toBe(0);
+  });
+
+  it('the held lift does not survive into the next hand', () => {
+    const { row, card, container } = renderHero();
+    tap(row, card);
+    tap(row, card);
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(progressOf(row)).toBeGreaterThan(0);
+    act(() => {
+      container.remove();
+    });
+  });
+});
+
+describe('the show-card eye is never on a card you cannot click', () => {
+  /*
+   * Dan: "THE EYE BALL STAYS LOCKED, YOU CAN NEVER UNLOCK IT OR UNSHOW, AND IT
+   * STAYS LOCKED FOR FUTURE HANDS AS WELL."
+   *
+   * `.seat__card-pick--marked` draws a gold eye on the card corner and was
+   * applied with no reference to squeeze state, while BOTH of its handlers
+   * early-return on `squeezeDown`. A pick that outlived its hand therefore sat
+   * visibly on the back of a face-down card and did nothing when tapped.
+   */
+  it('is not drawn while the cards are face down', () => {
+    const { container } = renderHero({ showPickedCardIndexes: [0], onToggleShowCard: () => {} });
+    expect(container.querySelector('.seat__cards--squeeze')).toBeTruthy();
+    expect(container.querySelector('.seat__card-pick--marked')).toBeNull();
+  });
+
+  it('is drawn once the hand is open, where the click works', () => {
+    const { row, card, container } = renderHero({
+      showPickedCardIndexes: [0],
+      onToggleShowCard: () => {},
+    });
+    pointer(card, 'pointerdown', 25, 68);
+    pointer(row, 'pointermove', 25, 68 - H);
+    pointer(row, 'pointerup', 25, 68 - H);
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(container.querySelector('.seat__card-pick--marked')).toBeTruthy();
   });
 });

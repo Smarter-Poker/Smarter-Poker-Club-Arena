@@ -52,22 +52,29 @@ describe('the spec is mirrored, not forked', () => {
 });
 
 describe('THE central invariant: the table implies the advertised rake', () => {
-  it('expects 2.7638 across the full ladder', () => {
-    expect(expectedMultiplier()).toBeCloseTo(2.7638, 4);
+  it('expects exactly 2.76 across the full ladder', () => {
+    /* REBALANCED 2026-09-05, and this pin moved with the change that replaced
+       the behaviour it guards (CLAUDE.md 5.8). It read 2.7638, which is what
+       the ladder expected while SPIN_RAKE_RATE booked 8.00% - so the product
+       charged 7.874% and the 0.126pp went to players out of the reserve. The
+       equality E[m] = seats x (1 - rake) is now exact rather than nearly
+       true. */
+    expect(expectedMultiplier()).toBeCloseTo(2.76, 10);
   });
 
-  it('implies ~7.87% — the advertised 8% at the stakes it covers', () => {
-    const edge = impliedHouseEdge();
-    expect(edge).toBeGreaterThan(0.075);
-    expect(edge).toBeLessThan(0.081);
+  it('implies the 8% it books, not a nearby number', () => {
+    // This assertion used to accept anything from 7.5% to 8.1% and the product
+    // sat at 7.874% inside that band for weeks. A rate that is BOOKED to the
+    // basis point is testable to the basis point.
+    expect(impliedHouseEdge()).toBeCloseTo(0.08, 9);
   });
 
   it('PROVES the buy-in carries no fee on top', () => {
     // If a player paid B plus 8% on top, collected would be 3 x 1.08B = 3.24B
-    // against an expected payout of 2.7638B — a true edge of 14.7%, which is
+    // against an expected payout of 2.76B — a true edge of 14.8%, which is
     // nearly double what any room advertises. The only pricing consistent with
     // both the table and an 8% headline is: the buy-in IS the whole charge.
-    const withFeeOnTop = (3 * 1.08 - 2.7638) / (3 * 1.08);
+    const withFeeOnTop = (3 * 1.08 - 2.76) / (3 * 1.08);
     expect(withFeeOnTop).toBeGreaterThan(0.14);
     expect(impliedHouseEdge()).toBeLessThan(0.09);
   });
@@ -78,14 +85,19 @@ describe('THE central invariant: the table implies the advertised rake', () => {
 
   it('frequencies land on the stated denominator', () => {
     const total = SPIN_TIERS.reduce((s, t) => s + t.freq, 0);
-    // Dan's table sums to 10,000,099; the drift is rounding in the source and
-    // is immaterial (1 part in 100k). Pinned so a real edit cannot hide in it.
     /* EXACT, not within 200 (2026-08-28). The slack existed because the
        denominator was a hand-written literal that had drifted 99 off the
        ladder's real total; it is derived from the ladder now, so the only
        honest assertion is equality — and a tolerance that hides a real
-       mismatch is how the drift survived in the first place. */
+       mismatch is how the drift survived in the first place.
+
+       BUT `total === SPIN_FREQ_DENOMINATOR` is now TAUTOLOGICAL: the constant
+       IS this reduce. It can never fail, so on its own it is a test that
+       reassures without checking anything. The literal below is what actually
+       pins the ladder - it moved from 10,000,099 to 10,000,000 in the
+       2026-09-05 rebalance, and a future retune has to come here and say so. */
     expect(total).toBe(SPIN_FREQ_DENOMINATOR);
+    expect(total).toBe(10_000_000);
   });
 });
 
@@ -371,12 +383,30 @@ describe('reserve gating — an unpayable jackpot must be impossible', () => {
 
   it('retiring it did NOT quietly raise the house edge', () => {
     // Deleting the row without moving its 50,000 weighted units would have
-    // taken the expectation to 2.7588 — an 8.04% edge on a 7.87% product.
-    // The mass went to 100x (+508) and 3x (+16), paid for out of 2x (-424).
-    expect(expectedMultiplier()).toBeCloseTo(2.763773, 6);
-    expect(SPIN_TIERS.reduce((s, t) => s + t.freq, 0)).toBe(10_000_099);
-    expect(SPIN_TIERS.reduce((s, t) => s + t.multiplier * t.freq, 0)).toBe(27_638_000);
+    // taken the expectation to 2.7588. The mass went to 100x (+508) and 3x
+    // (+16), paid for out of 2x (-424).
+    //
+    // The totals below moved on 2026-09-05, when the 2x/3x split was solved to
+    // put E[m] exactly on 2.76 - the retirement's own arithmetic is unchanged
+    // and 100x still holds every unit it was given.
+    expect(expectedMultiplier()).toBeCloseTo(2.76, 10);
+    expect(SPIN_TIERS.reduce((s, t) => s + t.freq, 0)).toBe(10_000_000);
+    expect(SPIN_TIERS.reduce((s, t) => s + t.multiplier * t.freq, 0)).toBe(27_600_000);
     expect(spinTier(100)!.freq).toBe(1_008);
+  });
+
+  it('the rebalance moved ONLY the two bottom rungs', () => {
+    // Every tier a player celebrates keeps its exact frequency: the change is
+    // invisible above 3x by construction, which is the whole point of solving
+    // it as an equality on f2/f3 rather than refitting the ladder.
+    expect(spinTier(4)!.freq).toBe(900_000);
+    expect(spinTier(5)!.freq).toBe(250_000);
+    expect(spinTier(10)!.freq).toBe(100_000);
+    expect(spinTier(25)!.freq).toBe(7_500);
+    expect(spinTier(50)!.freq).toBe(1_000);
+    expect(spinTier(100)!.freq).toBe(1_008);
+    expect(spinTier(2)!.freq).toBe(4_809_776);
+    expect(spinTier(3)!.freq).toBe(3_930_716);
   });
 
   it('measures the threshold against the HIGHEST stake running, not this table', () => {

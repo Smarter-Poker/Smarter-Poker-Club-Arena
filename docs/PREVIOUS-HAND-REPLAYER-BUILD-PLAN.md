@@ -17,6 +17,8 @@ The changelog for each phase lives in `docs/changelog/2026-09-05-previous-hand-p
 
 ## Phase 1 of 7 - Live, instant and honest at the table
 
+LIVE 2026-09-05 (squash `42a2dc9fd`); `docs/changelog/2026-09-05-previous-hand-phase-1.md`.
+
 - Live refresh: the panel and the modal prepend a hand the moment the engine
   emits `hand_history_saved`, without close-and-reopen.
 - Instant reopen: the built models stay in memory per table; a reopen is free
@@ -30,6 +32,9 @@ The changelog for each phase lives in `docs/changelog/2026-09-05-previous-hand-p
 
 ## Phase 2 of 7 - Equity and EV on the rundown
 
+LIVE 2026-09-05 (squash `de22f5f88`, review `736831960`);
+`docs/changelog/2026-09-05-previous-hand-phase-2.md`.
+
 - `ca_hand_facts` already stores `all_in_equity`, `all_in_street`,
   `all_in_at_risk`, `ev_returned`, `ev_net` per hand. Read them beside the
   private cards (same RLS read) and show an "All-In" block: your equity when
@@ -40,6 +45,9 @@ The changelog for each phase lives in `docs/changelog/2026-09-05-previous-hand-p
   client; hold'em exact, Omaha sampled with the count shown).
 
 ## Phase 3 of 7 - The replayer moves
+
+BUILT 2026-09-05 (`feat/previous-hand-phase-3`); see
+`docs/changelog/2026-09-05-previous-hand-phase-3.md`.
 
 - Motion between frames: bets slide to the pot, the board deals, a show flips,
   the winner's stack grows - scaled by Animation Speed, collapsing to meaning

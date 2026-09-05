@@ -79,6 +79,19 @@ export interface RabbitHuntProps {
   /** Authenticated player supplied by TablePage, the owner of the session. */
   userId: string | null | undefined;
   onReveal: () => Promise<RabbitHuntRevealResult>;
+  /**
+   * P4 2026-09-05: the hotkey's way in. While the tile is mounted with an
+   * offer up it hands its reveal handler to the page, so useTableKeyboard
+   * (the ONLY keyboard system on the table - see that file's header) can run
+   * the SAME function a tap runs: single-flight, charged once, toasts
+   * included. Called with null the moment the offer is gone, the reveal has
+   * happened, or the tile unmounts, so B on a table with nothing to hunt is a
+   * no-op rather than a second code path. A callback rather than a ref on
+   * purpose: the page keeps the ref and makes the assignment itself, where
+   * tests/unit/bustHoldIsWired.test.ts can see that every callable ref on
+   * the page is assigned by the page.
+   */
+  registerHotkey?: (handler: (() => void) | null) => void;
 }
 
 /* The card-image helpers that lived here (`normalizeRank`, `toCardImage`) are
@@ -97,6 +110,7 @@ export function RabbitHunt({
   rabbitDiamondCost,
   userId,
   onReveal,
+  registerHotkey,
 }: RabbitHuntProps) {
   const rabbitHuntIcon = useButtonImage('icon-rabbit');
   const toast = useToast();
@@ -241,6 +255,15 @@ export function RabbitHunt({
     }
   }, [isRevealing, hasRevealed, isAvailable, onReveal, userId, toast]);
 
+  // The hotkey sees exactly what the button sees: a handler while an offer
+  // is up and not yet revealed, nothing otherwise.
+  const hotkeyLive = isAvailable && !hasRevealed;
+  useEffect(() => {
+    if (!registerHotkey) return;
+    registerHotkey(hotkeyLive ? () => void handleReveal() : null);
+    return () => registerHotkey(null);
+  }, [registerHotkey, hotkeyLive, handleReveal]);
+
   if (!isAvailable && !hasRevealed) {
     return null;
   }
@@ -268,7 +291,8 @@ export function RabbitHunt({
                 ? `Rabbit Hunt, ${vipRemaining} Free This Month`
                 : `Rabbit Hunt, ${cost} Diamonds`
           }
-          title="Rabbit Hunt"
+          title="Rabbit Hunt (B)"
+          aria-keyshortcuts="b"
         >
           <img
             className="rabbit-hunt__icon-img"

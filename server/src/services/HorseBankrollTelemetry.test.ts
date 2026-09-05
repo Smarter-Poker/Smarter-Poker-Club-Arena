@@ -24,6 +24,10 @@ const ROTATOR = read('services/HorseSessionRotator.ts');
 const TOURNEY = read('services/TournamentRecurringService.ts');
 const REBUY = read('services/HorseRebuyPolicy.ts');
 const TELEMETRY = read('services/HorseBankrollTelemetry.ts');
+/* 2026-09-05: the aggregate-exposure refusal is decided in the one sit
+   predicate (HorseSitVerdict), which RETURNS its telemetry for the fleet to
+   emit where the verdict is acted on. It names the event; the fleet emits it. */
+const VERDICT = read('services/HorseSitVerdict.ts');
 
 describe('telemetry says WHY, and stays quiet when there is nothing to say', () => {
   beforeEach(() => resetBankrollCounters());
@@ -153,11 +157,15 @@ describe('WIRING - the module exists and something calls it', () => {
     /* 2026-08-31: this refusal now lives in `computeHorseBuyIn`, which reports a
        refused seat by returning 0 rather than by `continue`-ing a loop it is no
        longer inside. The counter must still fire AT the refusal. */
-    expect(FLEET).toMatch(/bankrollEvent\('seat_refused_share_below_min'\);\s*return 0;/);
+    /* 2026-09-05: `note` is the sizing's telemetry sink. It IS bankrollEvent by
+       default; the sit verdict hands in a collector so judging a horse for the
+       buyer COUNT emits nothing and the seat stage emits it once. */
+    expect(FLEET).toMatch(/note: \(e: BankrollEvent\) => void = bankrollEvent/);
+    expect(FLEET).toMatch(/note\('seat_refused_share_below_min'\);\s*return 0;/);
   });
 
   it('counts a cap only when the policy actually cut the buy-in', () => {
-    expect(FLEET).toMatch(/if \(capped < buyIn\) bankrollEvent\('buyin_capped'\);/);
+    expect(FLEET).toMatch(/if \(capped < buyIn\) note\('buyin_capped'\);/);
   });
 
   /**
@@ -190,7 +198,7 @@ describe('WIRING - the module exists and something calls it', () => {
     /* Every file that may emit. A name whose only emitter is a file missing
        from this list reads as dead vocabulary and fails the pin, which is how
        the tournament gate's two events were caught when they landed. */
-    const emitters = FLEET + ROTATOR + TOURNEY + REBUY;
+    const emitters = FLEET + ROTATOR + TOURNEY + REBUY + VERDICT;
     for (const event of declared) {
       expect(emitters, `no emitter for ${event}`).toContain(`'${event}'`);
     }

@@ -14,6 +14,17 @@ import { resolve } from 'node:path';
 
 const RAW = readFileSync(resolve(__dirname, 'HorseFleetManager.ts'), 'utf8');
 const SRC = RAW.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+/* 2026-09-05: the mutex call moved into the ONE sit predicate
+   (HorseSitVerdict.sitVerdictFor), which the seat stage asks for the chair and
+   the cluster buyer count asks for the count. The call is pinned where it
+   lives; the fleet is pinned to ask it before it buys a seat. */
+const VRAW = readFileSync(resolve(__dirname, 'HorseSitVerdict.ts'), 'utf8');
+const VERDICT = VRAW.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+const vat = (needle: string) => {
+  const i = VERDICT.indexOf(needle);
+  expect(i, `expected to find ${JSON.stringify(needle)} in HorseSitVerdict`).toBeGreaterThan(-1);
+  return i;
+};
 const at = (needle: string) => {
   const i = SRC.indexOf(needle);
   expect(i, `expected to find ${JSON.stringify(needle)}`).toBeGreaterThan(-1);
@@ -84,9 +95,12 @@ describe('A WAITING HUMAN OUTRANKS EVERY TEXTURE RULE', () => {
 
 describe('the mutex is called, and only on a horse it can actually judge', () => {
   it('evaluateSit gates the seat', () => {
-    expect(at('const verdict = evaluateSit({')).toBeLessThan(
+    vat('const verdict = evaluateSit({');
+    expect(at('const verdict = sitVerdictFor(horse.id, table, sitCtx);')).toBeLessThan(
       at('const success = await this.seatHorse(')
     );
+    // a refusal skips the chair
+    expect(SRC).toMatch(/if \(!verdict\.ok\) \{[\s\S]*?continue;\s*\}/);
   });
 
   it('IS SKIPPED for an untagged horse rather than refusing it', () => {
@@ -94,11 +108,15 @@ describe('the mutex is called, and only on a horse it can actually judge', () =>
        cash sits - so calling the mutex on an untagged horse would refuse every
        one of them. That is fail-CLOSED, and it is the exact shape of the bug
        that emptied the cash floor for forty minutes on 2026-08-31. */
-    expect(SRC).toContain('if (seatClub && sitTag && sitState && sitTag.personaCash) {');
+    expect(VERDICT).toContain('if (seatClub && sitTag && sitState && sitTag.personaCash) {');
   });
 
   it('judges against the SAME key the counter is written on', () => {
-    expect(SRC).toContain('sitsOnKeyToday: sitsOnKeyToday(sitState, key, todayKey)');
+    expect(VERDICT).toContain('sitsOnKeyToday: sitsOnKeyToday(sitState, key, ctx.todayKey)');
+    // the key the mutex judged travels back on the verdict, and the fleet
+    // records the sit against exactly that key
+    expect(VERDICT).toContain('sitKey = key;');
+    expect(SRC).toContain('const key = verdict.sitKey;');
     expect(SRC).toContain('sitKeyOf.set(`${horse.id}:${table.id}`, key)');
     expect(SRC).toContain('const takenKey = sitKeyOf.get(`${horse.id}:${table.id}`);');
   });
@@ -106,8 +124,12 @@ describe('the mutex is called, and only on a horse it can actually judge', () =>
   it('reads where the horse already is from the SEAT MAP, not from the state table', () => {
     // The seat rows are what actually happened. The state table's mirror of
     // them is written by this cycle, not trusted by it.
-    expect(SRC).toContain('activeClubId: activeClubOf.get(horse.id) ?? null');
-    expect(SRC).toContain('activeHostId: activeHostOf.get(horse.id) ?? null');
+    expect(VERDICT).toContain('activeClubId: ctx.activeClubOf.get(horseId) ?? null');
+    expect(VERDICT).toContain('activeHostId: ctx.activeHostOf.get(horseId) ?? null');
+    // and the fleet hands the verdict the maps it built from the seat rows
+    expect(SRC).toMatch(
+      /const sitCtx: SitVerdictContext = \{[\s\S]*?activeClubOf,\s*activeHostOf,/
+    );
     expect(SRC).toContain('for (const seat of allActiveSeats) {');
   });
 

@@ -13,7 +13,11 @@ import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { sanitizeInput } from '../utils/sanitizeInput';
-import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
+import {
+  resolveClubIdFilter,
+  resolveClubUUID,
+  resolveClubUUIDStrict,
+} from '../utils/clubIdResolver';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import './ClubRulesPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
@@ -138,13 +142,18 @@ export default function ClubRulesPage() {
       }
 
       // Rules live in the clubs.settings jsonb (there is no clubs.rules_text column).
-      const { data: club } = await supabase
+      /* THE ERROR IS READ. Without it a failed club read was identical to "this
+         club has published no rules": the page rendered empty (or a stale
+         sessionStorage copy), set no loadError, said nothing, and the owner
+         lost the Edit button at the same time. */
+      const { data: club, error: clubErr } = await supabase
         .from('clubs')
         .select('name, settings, owner_id')
         .eq(clubCol, clubVal)
         .maybeSingle();
 
       if (getIsMounted && !getIsMounted()) return;
+      if (clubErr) throw clubErr;
 
       let adminFromOwner = false;
       if (club) {
@@ -172,7 +181,7 @@ export default function ClubRulesPage() {
       // Check if admin via club_members (only if not already owner)
       if (!adminFromOwner) {
         const resolvedId = await resolveClubUUID(clubId!);
-        const { data: membership } = await supabase
+        const { data: membership, error: membershipErr } = await supabase
           .from('club_members')
           .select('role')
           .eq('club_id', resolvedId)
@@ -180,6 +189,9 @@ export default function ClubRulesPage() {
           .maybeSingle();
 
         if (getIsMounted && !getIsMounted()) return;
+        /* Fails closed either way, but a staff member who is told nothing about
+           why their Edit button vanished will try again and again. */
+        if (membershipErr) reportError(membershipErr, 'ClubRulesPage.role_lookup_failed');
 
         if (isClubStaff(membership?.role)) {
           setIsAdmin(true);
@@ -204,27 +216,54 @@ export default function ClubRulesPage() {
     if (!clubId) return;
     setSaving(true);
     try {
-      const { column: saveCol, value: saveVal } = resolveClubIdFilter(clubId!);
-      // Merge rules_text into the clubs.settings jsonb without clobbering other keys.
-      const { data: cur } = await supabase
-        .from('clubs')
-        .select('settings')
-        .eq(saveCol, saveVal)
+      /**
+       * ONE RPC, NOT A READ-MODIFY-WRITE (20260905083442).
+       *
+       * This used to select `clubs.settings`, spread `rules_text` into the
+       * object and write the whole document back. Two defects came with it:
+       *
+       *  - the UPDATE had no `.select()`, and the `clubs` UPDATE policy is
+       *    `owner_id = auth.uid()`. A co-owner or admin - both of whom this
+       *    page SHOWS the Edit button to - matched zero rows, got a 204 with
+       *    no error, and was told "Club rules updated!" over text that was
+       *    never stored;
+       *  - `settings` also carries rake cap, buy-in bounds, straddle, run it
+       *    twice and the time bank default, so saving prose wrote back a stale
+       *    copy of the club's rake configuration.
+       *
+       * `fn_set_club_rules` writes the one key with `jsonb_set`, refuses
+       * anybody who is not owner, co-owner or admin, and RETURNS what it
+       * stored - so an empty result is a refusal, not a success.
+       */
+      const resolvedForSave = await resolveClubUUIDStrict(clubId!);
+      /* NO `.select()` ON AN RPC. The function RETURNS TABLE, so PostgREST
+         already hands back the row and `.maybeSingle()` is all that is needed.
+         Naming a column in a select after this call also made
+         `check-phantom-columns` read that name against the last TABLE the file
+         mentions - club_members - and fail the branch for a column that table
+         has never had. The column list is the function's return type; it does
+         not belong in the client at all. */
+      const { data: saved, error } = await supabase
+        .rpc('fn_set_club_rules', {
+          p_club_id: resolvedForSave,
+          p_rules: sanitizeInput(editValue),
+        })
         .maybeSingle();
-      const newSettings = {
-        ...((cur?.settings as Record<string, unknown> | null) || {}),
-        rules_text: sanitizeInput(editValue),
-      };
-      const { error } = await supabase
-        .from('clubs')
-        .update({ settings: newSettings })
-        .eq(saveCol, saveVal);
 
       if (error) throw error;
+      if (!saved) {
+        // No row means the write did not happen. Never paint it as if it did.
+        toast.error('Those Rules Were Not Saved. Ask An Owner To Try.');
+        return;
+      }
 
-      setRules(editValue);
+      // Paint what the DATABASE stored, not what was typed: the function caps
+      // the length, so the two can legitimately differ.
+      const storedText = String((saved as { rules_text: string | null }).rules_text ?? '');
+      setRules(storedText);
+      setEditValue(storedText);
       setIsEditing(false);
-      toast.success('Club rules updated!');
+      toast.success('Club Rules Updated');
       masterBus.emit('CLUB_UPDATED', { clubId });
     } catch (err) {
       reportError(err, 'ClubRulesPage.Failed_to_save_rules');

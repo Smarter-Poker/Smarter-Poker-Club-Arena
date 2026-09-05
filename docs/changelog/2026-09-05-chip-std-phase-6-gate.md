@@ -21,6 +21,22 @@ All 20 chip-standard migrations applied today are byte-exact against `schema_mig
 
 **Measured after the change: 0 legs with no hand, no event and no table.** Every leg written in the window since names one of the three.
 
+## The one I broke: the kill switch opened the freeze, and a written law says only a person may
+
+`tests/law/PayoutFreezeIsHumanOnly.law.test.ts` has said since 2026-09-02, in as many words: "THE PAYOUT FREEZE IS OPENED BY A HUMAN, NEVER BY A DETECTOR ... A switch a detector throws on a threshold is exactly the false-alarm mechanism that pays nobody for an hour because a snapshot was re-based ... The threshold itself is Dan's decision and has not been made ... that is a decision for Dan, not a test to weaken." Phase 6.2 built the roadmap's "kill switch automation at Dan's threshold" as a detector that opens the freeze itself, at a threshold I chose. I broke a law of this programme's own writing and shipped it to production at 20:43.
+
+The full suite caught it at this gate. The pre-push hook runs the tests covering the diff; this law reads every migration instead, so only a whole-suite run sees it. That is why the gate runs the whole suite.
+
+**The law is right, and today's meter proves it.** At 03:05 UTC the supply meter read -3,305.68 unexplained in one hour. Nothing leaked: the meter had changed DEFINITION at 02:56 (Phase 5.1). An armed switch at 1,000 chips would have frozen every tournament payout on the platform that hour, and the day's other 22 readings (-193.33 to +659.08, and within +/- 7 for the fourteen hours since the meter became exact) would have passed. One false freeze, zero true ones, on the day it was armed.
+
+Corrected in this order: production disarmed first (`ca_kill_switch_policy.armed = false` is data, so the automation stopped when it was read, not when a migration applied); then `20260905224524_the_kill_switch_escalates_and_only_a_human_freezes_a_payout` rewrote `fn_ca_kill_switch_trip` so it never touches `ca_payout_freeze` and instead ESCALATES at the same thresholds - critical incident, senior page, financial alert - and re-armed the three meters as escalation. Probed rolled back at the 03:05 figure: escalated true, incident critical, alert raised, freezes opened 0.
+
+Kept, because it extends the HUMAN switch rather than replacing it: the `bbj_payouts` scope. Before Phase 6 a person could freeze tournament payouts and diamonds but had no way to stop a jackpot payout; now the same human door covers it, and the jackpot refuses with a message the engine's queue retries, so nothing is lost while frozen. Reading the table is not opening it.
+
+The law itself now records the one superseded file, and the exemption is spent on evidence: the correcting migration must exist, must re-create `fn_ca_kill_switch_trip` with no insert, and must assert the same at apply time. Its checker also stopped counting an INSERT written inside a quoted SQL string as an opener - that is what the correcting migration's own assertion is, and the negative controls (real, unquoted statements) still fail as they must.
+
+**Still Dan's, with the cost.** Option A, in force now: the meters escalate at 1,000 chips and a person opens the freeze; cost is minutes of human latency on a real leak. Option B: the switch opens the freeze itself; cost is that a re-definition or a bad snapshot freezes every payout until a person clears it - once today, on nothing. Recommendation: A until the meter has run a week inside +/- 50 an hour, then B at a threshold set from that week's spread, armed one meter at a time. Moving between them is the `armed` flag and one function body; the machinery is built either way.
+
 ## Named, with their owner
 
 - The `ca_mint_ledger.chip_ledger_id` foreign key is what makes chip_ledger partitioning a dated cut of its own (a partitioned parent's unique key must carry the partition column); measured at 1.3 GB and 232k rows a day, due before December.

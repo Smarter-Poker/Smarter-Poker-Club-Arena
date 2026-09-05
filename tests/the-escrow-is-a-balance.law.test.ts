@@ -133,6 +133,23 @@ describe('LAW 4b: the supply meter reads the escrow', () => {
   });
 });
 
+describe('LAW 4c: a change of the meter definition is a labelled correction, never a movement', () => {
+  const d = find(
+    /^\d{14}_phase_5_1_part_four_the_meter_definition_is_reconciled_to_the_register\.sql$/
+  );
+  it('spins are read from the counters (enforced is the switch), the step is measured and recorded on the register, and the comparison counts it', () => {
+    expect(d).toMatch(
+      /CASE WHEN e\.enforced THEN e\.prize_balance \+ e\.bounty_balance \+ e\.fee_balance END/
+    );
+    expect(d).toMatch(
+      /'register-opening-baseline-correction:supply-meter-redefinition:2026-09-05'/
+    );
+    expect(d).toMatch(/OPENING BASELINE CORRECTION, not a retirement/);
+    expect(d).toMatch(/m\.op_id LIKE 'register-opening-baseline-correction:%'/);
+    expect(d).toMatch(/IF v_delta < 1000 OR v_delta > 6000 THEN/);
+  });
+});
+
 describe('LAW 5: spins are tracked, not refused', () => {
   it('a spin opens with enforced = false', () => {
     expect(a).toMatch(

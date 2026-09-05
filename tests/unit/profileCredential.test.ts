@@ -26,7 +26,7 @@ import {
   ordinal,
   relativeTimeTitle,
 } from '../../src/utils/format';
-import { streakMultiplier, daysToNextStreakStep } from '../../src/utils/streakMultiplier';
+import { streakMultiplier } from '../../src/utils/streakMultiplier';
 import { profileStatsFromV2, EMPTY_STATS } from '../../src/utils/profileStats';
 import { aggregateArenaRecord } from '../../src/utils/arenaRecord';
 
@@ -100,9 +100,6 @@ describe('the streak multiplier is the one the ledger pays', () => {
   });
 
   it('never advertises 1 + 0.1 x days again', () => {
-    expect(daysToNextStreakStep(7)).toBe(7);
-    expect(daysToNextStreakStep(29)).toBe(1);
-    expect(daysToNextStreakStep(30)).toBeNull();
     expect(PROFILE).not.toContain('dailyStreak * 0.1');
     expect(PROFILE).toContain('multiplier={streakMultiplier(dailyStreak)}');
   });
@@ -277,6 +274,53 @@ describe('the public dossier', () => {
     // took Share out of the action grid entirely. Hashed names end the class.
     expect(PUBLIC_PROFILE).not.toMatch(/className="/);
     expect(PUBLIC_PROFILE).toContain("from './PublicProfilePage.module.css'");
+  });
+});
+
+describe('every formatter this file pins is reachable by a player', () => {
+  /**
+   * The 2026-09-05 verification pass found five helpers here whose only caller
+   * was this test: the credential kept its own `fixedTrunc` + `signed` +
+   * inline `toLocaleDateString` and never imported the shared ones. So the
+   * pins were green, the duplication was invisible, and the two profile
+   * surfaces had drifted apart - the same join date read "Oct 25" on the
+   * owner's credential and "October 2025" on the public dossier, and neither
+   * guarded a null created_at.
+   *
+   * A pin on an unreachable helper is worse than no pin: it reports coverage
+   * for code no player can execute. This test makes that impossible to repeat.
+   */
+  const CONSUMERS = [
+    'src/pages/ProfilePage.tsx',
+    'src/pages/PublicProfilePage.tsx',
+    // The credential's own chart is a surface too: it is where a player reads
+    // their daily P/L, and it is the only caller of formatSignedChips.
+    'src/components/profile/ProfitChart.tsx',
+  ].map(read);
+  const PINNED = [
+    'formatPct',
+    'formatSignedPct',
+    'formatSignedChips',
+    'formatCount',
+    'formatHours',
+    'formatMemberSince',
+    'ordinal',
+    'relativeTimeTitle',
+    'streakMultiplier',
+  ];
+
+  it.each(PINNED)('%s is imported and called by a real surface', (symbol) => {
+    const used = CONSUMERS.some((src) => new RegExp(`\\b${symbol}\\s*\\(`).test(src));
+    expect(used, `${symbol} is pinned here but no profile surface calls it`).toBe(true);
+  });
+
+  it('leaves no duplicate of a shared formatter on the credential', () => {
+    // `signed(fixedTrunc(...))` for a percentage is formatSignedPct rewritten
+    // by hand; that pair is what printed a different ROI rule from the tested
+    // one. The remaining fixedTrunc uses are chips and ratios, which carry a
+    // sign the shared helpers do not add - those are deliberate.
+    expect(PROFILE).not.toMatch(/signed\(fixedTrunc\(stats\.roi/);
+    expect(PROFILE).not.toContain("toLocaleDateString('en-US', {\n    month: 'short',\n    year:");
   });
 });
 

@@ -405,4 +405,32 @@ describe('the felt colour is not the interface mode', () => {
     expect(TABLE_SETTINGS).toMatch(/: DEFAULT_SETTINGS\.theme;/);
     expect(DEFAULT_TABLE_USER_SETTINGS.theme).toBe('black');
   });
+
+  it('FELT_THEMES lists exactly the felt palettes the CSS defines, and nothing else', () => {
+    /*
+     * The coercion is only safe while its list matches reality. Add a sixth
+     * felt palette to design-tokens.css and forget this Set, and every player
+     * who picks it is silently reset to black on their next load - the same
+     * silent-reset class of bug the Set exists to stop, pointed the other way.
+     *
+     * Derived from the CSS rather than retyped, so the two cannot drift.
+     * `light` is excluded deliberately: it is the INTERFACE mode, it lives on
+     * `data-theme`, and that separation is the whole point of the fix above.
+     */
+    const declared = new Set(
+      [...DESIGN_TOKENS.matchAll(/\[data-color-theme='([a-z]+)'\]/g)].map((m) => m[1])
+    );
+    declared.delete('light');
+
+    const guarded = new Set(
+      (TABLE_SETTINGS.match(/const FELT_THEMES = new Set\(\[([^\]]*)\]/)?.[1] ?? '')
+        .split(',')
+        .map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
+        .filter(Boolean)
+    );
+
+    expect([...guarded].sort()).toEqual([...declared].sort());
+    // A non-empty set, because an empty one coerces every player to black.
+    expect(guarded.size).toBeGreaterThan(0);
+  });
 });

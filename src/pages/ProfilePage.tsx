@@ -49,7 +49,13 @@ import {
   type Achievement as AchievementDef,
 } from '../services/AchievementService';
 import { streakMultiplier } from '../utils/streakMultiplier';
-import { ordinal, relativeTimeTitle } from '../utils/format';
+import {
+  ordinal,
+  relativeTimeTitle,
+  formatMemberSince,
+  formatSignedPct,
+  formatHours,
+} from '../utils/format';
 import {
   EMPTY_STATS as DEFAULT_STATS,
   profileStatsFromV2,
@@ -796,10 +802,14 @@ export default function ProfilePage() {
   const tourneyWinRate =
     stats.tournamentsPlayed > 0 ? (stats.tournamentsWon / stats.tournamentsPlayed) * 100 : 0;
   const lastHandLabel = relativeTimeTitle(stats.lastHandAt);
-  const memberSinceLabel = new Date(user.memberSince).toLocaleDateString('en-US', {
-    month: 'short',
-    year: '2-digit',
-  });
+  /* One member-since format for every identity surface (utils/format).
+     This was `{ month: 'short', year: '2-digit' }` while the public dossier
+     used `{ month: 'long', year: 'numeric' }`, so the same join date read
+     "Oct 25" here and "October 2025" there - and "Oct 25" is ambiguous: it
+     reads as a day. The hand-rolled version also had no null guard, so a
+     profile with no created_at would have printed "Dec 69" (0 of 1,310 rows
+     today, so this is a latent hazard rather than a live one). */
+  const memberSinceLabel = formatMemberSince(user.memberSince);
 
   return (
     <StandardContentLayout className={styles.page}>
@@ -915,7 +925,7 @@ export default function ProfilePage() {
           </div>
           <div className={styles.telemetryCell}>
             <dt>ROI</dt>
-            <dd>{statsAvailable ? `${signed(fixedTrunc(stats.roi, 1), stats.roi)}%` : NO_DATA}</dd>
+            <dd>{statsAvailable ? formatSignedPct(stats.roi) : NO_DATA}</dd>
           </div>
           <div className={styles.telemetryCell}>
             <dt>Streak</dt>
@@ -1155,9 +1165,13 @@ export default function ProfilePage() {
                       label="Won At SD"
                       isVisible={visibleStats.has(14)}
                     />
+                    {/* formatHours carries its own unit so a short session
+                        stays legible: 2 minutes on the felt printed "0.0"
+                        against a "Hours" label, which reads as none at all.
+                        It is "1m" now, and "9.9h" once past the hour. */}
                     <StatCard
-                      value={fixedTrunc(stats.hoursPlayed, 1)}
-                      label="Hours"
+                      value={formatHours(stats.hoursPlayed)}
+                      label="On Felt"
                       isVisible={visibleStats.has(15)}
                     />
                   </div>

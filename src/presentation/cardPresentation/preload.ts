@@ -29,8 +29,21 @@ const MAX_REMEMBERED = 128;
 export function preloadImage(url: string | null | undefined): void {
   if (!url) return;
   if (typeof Image === 'undefined') return;
-  if (requested.has(url)) return;
-  if (requested.size >= MAX_REMEMBERED) requested.clear();
+  if (requested.has(url)) {
+    // Refresh its place so the deck in play is never the thing evicted.
+    requested.delete(url);
+    requested.add(url);
+    return;
+  }
+  /* AUDIT FIX 2026-09-05: evict ONE, oldest first. This used to `clear()` the
+     whole set at the ceiling, so a player near the boundary - two decks is
+     104 faces plus backs - re-decoded a card they had just decoded, every
+     time they crossed it. */
+  while (requested.size >= MAX_REMEMBERED) {
+    const oldest = requested.values().next().value;
+    if (oldest === undefined) break;
+    requested.delete(oldest);
+  }
   requested.add(url);
   try {
     const img = new Image();

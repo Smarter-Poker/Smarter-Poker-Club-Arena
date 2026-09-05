@@ -108,6 +108,97 @@ async function at(page: Page, pct: number) {
   }, pct);
 }
 
+/**
+ * AUDIT FIX 2026-09-05. The replay's card wrapper had `display: inline-flex`
+ * and no size, on the reasoning that it would "hug the CardImage exactly".
+ * Every element SqueezeCard renders is `position: absolute`, so during a
+ * reveal the wrapper had no in-flow child, collapsed to 0x0 and took the
+ * whole card with it - invisible for the entire reveal, on the one surface a
+ * player is deliberately studying, with the row reflowing around the hole.
+ *
+ * Only a real browser can catch that: happy-dom does no layout, so every
+ * unit test measured zero and could not tell the difference. This measures.
+ */
+test.describe('the replay card keeps its box while it squeezes', () => {
+  test.beforeEach(async ({ page }) => {
+    await loadLiveCss(page);
+    await page.evaluate(() => {
+      document.body.innerHTML = `<div class="hr-felt"><div class="hr-felt__boards">
+        <div class="hr-felt__board" id="board">
+          <div class="hr-felt__card" id="plain">
+            <div class="card-image card-image--sm"></div>
+          </div>
+          <div class="hr-felt__card card-squeeze-host" id="sq">
+            <div class="card-squeeze__shadow"></div>
+            <div class="card-squeeze">
+              <div class="card-squeeze__face card-squeeze__face--back"></div>
+              <div class="card-squeeze__face card-squeeze__face--front"></div>
+            </div>
+            <div class="card-squeeze__spine"></div>
+          </div>
+        </div></div></div>`;
+    });
+  });
+
+  test('a squeezing card is the same size as a still one, and never 0x0', async ({ page }) => {
+    const box = await page.evaluate(() => {
+      /* offsetWidth/Height, not getBoundingClientRect: the squeezing card is
+         mid-animation and its RENDERED rect carries the transform (scaleX at
+         the materialise keyframe). What must not collapse is the LAYOUT box,
+         which is what the row is measured from. */
+      const r = (id: string) => {
+        const el = document.getElementById(id)! as HTMLElement;
+        return { w: el.offsetWidth, h: el.offsetHeight };
+      };
+      const face = document.querySelector('#sq .card-squeeze__face--front')! as HTMLElement;
+      return { plain: r('plain'), squeeze: r('sq'), face: face.offsetWidth };
+    });
+    expect(box.squeeze.w, 'the squeezing card must have a width').toBeGreaterThan(0);
+    expect(box.squeeze.h, 'and a height').toBeGreaterThan(0);
+    expect(box.squeeze, 'squeezing must not change the box').toEqual(box.plain);
+    expect(box.face, 'the faces must fill the wrapper, not collapse').toBe(box.squeeze.w);
+  });
+
+  test('the board row does not reflow when a card starts squeezing', async ({ page }) => {
+    const widths = await page.evaluate(() => {
+      const board = document.getElementById('board')!;
+      const before = board.getBoundingClientRect().width;
+      document.getElementById('sq')!.classList.remove('card-squeeze-host');
+      const after = board.getBoundingClientRect().width;
+      return { before: Math.round(before), after: Math.round(after) };
+    });
+    expect(widths.before).toBe(widths.after);
+  });
+});
+
+test.describe('the host lends its decoration to the card that is turning', () => {
+  test.beforeEach(async ({ page }) => {
+    await loadLiveCss(page);
+    await mountSqueeze(page);
+  });
+
+  test('the felt card suppresses its own shadow and pseudo-elements mid-flip', async ({ page }) => {
+    const seen = await page.evaluate(() => {
+      const host = document.getElementById('card')!;
+      /* getComputedStyle returns a LIVE declaration - reading it after the
+         class is removed reports the restored value, not the one under test.
+         Snapshot to primitives first. */
+      const shadow = getComputedStyle(host).boxShadow;
+      const beforeDisplay = getComputedStyle(host, '::before').display;
+      const afterDisplay = getComputedStyle(host, '::after').display;
+      host.classList.remove('card-squeeze-host');
+      const restored = getComputedStyle(host).boxShadow;
+      return { shadow, beforeDisplay, afterDisplay, restored };
+    });
+    // While squeezing: no host shadow, no gloss, no sheen over the edge-on card.
+    expect(seen.shadow).toBe('none');
+    expect(seen.beforeDisplay).toBe('none');
+    expect(seen.afterDisplay).toBe('none');
+    // And it all comes back the moment the class goes.
+    expect(seen.restored).not.toBe('none');
+  });
+});
+
 test.describe('the squeeze, quarter by quarter', () => {
   test.beforeEach(async ({ page }) => {
     await loadLiveCss(page);

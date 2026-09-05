@@ -6901,7 +6901,11 @@
       "river_bet_opps",
       "river_bet_folds",
       "checks",
-      "r_checks"
+      "r_checks",
+      "snap_bet_sd",
+      "snap_bet_sd_strong",
+      "tank_bet_sd",
+      "tank_bet_sd_strong"
     ],
     "horse_opponent_journals": [
       "horse_id",

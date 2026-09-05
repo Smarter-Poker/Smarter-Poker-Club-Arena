@@ -1,0 +1,110 @@
+/**
+ * UNION WALLET MODAL — the same cashier hardware as the Club Bank
+ * (WalletCashierModal.css, smarter.poker palette only). This file carries only
+ * what the union surface adds: the subtitle under the title, the club tag on
+ * a club row, the role tint on a member row, the amount-and-button row, and
+ * the notice. Every colour here is one the cashier already uses.
+ */
+
+.uwm-overlay {
+  z-index: 9999;
+}
+
+.uwm-panel {
+  max-width: 440px;
+}
+
+.uwm-sub {
+  margin: 6px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: #8892a4;
+}
+
+.uwm-list {
+  max-height: 230px;
+}
+
+.uwm-club-tag {
+  flex-shrink: 0;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 3px 7px;
+  border-radius: 6px;
+  color: #6fdcff;
+  background: rgba(0, 180, 230, 0.12);
+  border: 1px solid rgba(0, 180, 230, 0.35);
+}
+
+.cbc-member--on.uwm-member--pull {
+  background: rgba(239, 68, 68, 0.14);
+  border-color: rgba(239, 68, 68, 0.45);
+}
+
+.uwm-role--owner {
+  color: #ffd166;
+}
+
+.uwm-role--co_owner,
+.uwm-role--admin {
+  color: #6fdcff;
+}
+
+.uwm-role--super_agent,
+.uwm-role--agent,
+.uwm-role--sub_agent {
+  color: #9ad7ff;
+}
+
+.uwm-amount-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.uwm-amount-row .cbc-input {
+  flex: 0 0 150px;
+}
+
+.uwm-amount-row .cbc-confirm {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uwm-confirm--pull {
+  background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%) !important;
+  border-color: rgba(239, 68, 68, 0.6) !important;
+  color: #fff !important;
+}
+
+.uwm-notice {
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.uwm-notice--ok {
+  color: #cfe4ff;
+  background: rgba(0, 180, 230, 0.12);
+  border: 1px solid rgba(0, 180, 230, 0.4);
+}
+
+.uwm-notice--bad {
+  color: #ffb4b4;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+@media (max-width: 380px) {
+  .uwm-amount-row {
+    flex-direction: column;
+  }
+  .uwm-amount-row .cbc-input {
+    flex-basis: auto;
+  }
+}

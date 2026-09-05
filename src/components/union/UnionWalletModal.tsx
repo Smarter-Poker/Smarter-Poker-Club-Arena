@@ -9,6 +9,10 @@
  * Dan 2026-08-27: "pull and send chips to any club, club wallet, player wallet
  * or agent wallet from the union bank wallet, or promo wallet"
  *
+ * Dan 2026-09-05: "MAKE SURE YOU ADD AND HAVE A TRANSACTION LEDGER ATTACHED TO
+ * EVERY PROMO WALLET." Every wallet this modal opens now carries a Ledger tab
+ * read from fn_promo_wallet_ledger (scope 'union', any wallet column).
+ *
  * The member list is the union-wide roster (fn_union_player_directory): every
  * player of every member club, with their role. We also fetch union_clubs to
  * support sending to and clawing back from clubs.
@@ -16,6 +20,25 @@
  * The BBJ wallet is a jackpot reserve — fn_union_chip_integrity_check audits
  * it — so it is not offered as a chip SOURCE. Opening it still gives the full
  * send flow, drawing on the main bank instead.
+ *
+ * ── A CLUB SEND GOES WHERE THE OPEN WALLET SAYS IT GOES (2026-09-05, binding) ──
+ *
+ * On 2026-09-05 02:51 UTC Dan opened THIS modal on the Promo Wallet, picked
+ * Club JAQK and then SHARK CLUB, and sent 5,000 to each. Both went through
+ * `unionApi.sendToClub` (fn_union_send_to_club_atomic), which only knows one
+ * route: union BANK -> club BANK. The chips left the wrong union wallet and
+ * landed in the wrong club wallet, stamped "Promo Wallet to club". Nothing
+ * reached a promo account and Dan reported the chips as missing.
+ *
+ * So a club target is routed by `clubSendRoute` below, which a law test pins:
+ *   promo wallet, or Promo kind  -> unionApi.promoSend(..., 'club', clubId)
+ *                                   union promo wallet -> club Promo Wallet
+ *   union bank / BBJ, Chips kind -> unionApi.sendToClub
+ *                                   union bank -> Club Bank
+ *   rake wallet                  -> refused here (no rake -> club route exists;
+ *                                   the old code silently drew on the bank)
+ *   diamonds                     -> refused here (a club has no diamond wallet)
+ * A refused route is a sentence on screen, never a silent substitution.
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -23,8 +46,12 @@ import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
 import { fmt } from '../../utils/format';
 import { unionApi } from '../../services/UnionApiService';
+import { clubSendRoute, UNION_WALLET_COLUMN, type UnionSendKind } from './unionWalletRoutes';
+import '../wallet/WalletCashierModal.css';
+import './UnionWalletModal.css';
 
 export type UnionWalletKey = 'chips' | 'rake' | 'bbj' | 'promo' | 'spin_reserve';
+export { clubSendRoute, UNION_WALLET_COLUMN };
 
 export interface UnionWalletModalProps {
   isOpen: boolean;
@@ -48,7 +75,8 @@ interface RosterRow {
   member_status: string | null;
 }
 
-type SendKind = 'chips' | 'diamonds' | 'promo';
+type SendKind = UnionSendKind;
+type Mode = 'send' | 'pull' | 'ledger';
 
 const ROLE_ORDER: Record<string, number> = {
   owner: 0,
@@ -59,6 +87,49 @@ const ROLE_ORDER: Record<string, number> = {
   member: 5,
 };
 
+const LEDGER_PAGE = 40;
+
+interface LedgerRow {
+  id: string;
+  created_at: string;
+  amount: number;
+  direction: 'in' | 'out';
+  category: string;
+  notes: string | null;
+  balance_after: number | null;
+  counterparty_type: string | null;
+  counterparty_name: string | null;
+  actor_name: string | null;
+}
+
+interface LedgerTotals {
+  in: number;
+  out: number;
+  net: number;
+}
+
+/** "Promo To Club" from "promo_to_club". Popup and label casing law. */
+function titleCase(raw: string): string {
+  return raw
+    .replace(/[_-]+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
+/** Ledger money, always to the hundredth: 5,000.00, never 5,000 beside 32,482.58. */
+const money = (n: number | null | undefined) =>
+  Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const when = (iso: string) =>
+  new Date(iso).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
 export function UnionWalletModal({
   isOpen,
   onClose,
@@ -68,7 +139,7 @@ export function UnionWalletModal({
   balance,
   onSent,
 }: UnionWalletModalProps) {
-  const [mode, setMode] = useState<'send' | 'pull'>('send');
+  const [mode, setMode] = useState<Mode>('send');
   const [clubs, setClubs] = useState<Array<{ id: string; name: string }>>([]);
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -94,15 +165,11 @@ export function UnionWalletModal({
       created_at: string;
     }>
   >([]);
-  const [recent, setRecent] = useState<
-    {
-      id: string;
-      amount: number;
-      notes: string | null;
-      transaction_type: string;
-      created_at: string;
-    }[]
-  >([]);
+  const [ledger, setLedger] = useState<LedgerRow[]>([]);
+  const [ledgerTotal, setLedgerTotal] = useState(0);
+  const [ledgerTotals, setLedgerTotals] = useState<LedgerTotals | null>(null);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledgerError, setLedgerError] = useState<string | null>(null);
 
   const chipSource = walletKey === 'rake' ? 'rake' : walletKey === 'promo' ? 'promo' : 'chips';
 
@@ -122,11 +189,14 @@ export function UnionWalletModal({
     setNotice(null);
     setTarget(null);
     setAmount('');
+    setMode('send');
     setLiveBalance(balance);
     setKind(walletKey === 'promo' ? 'promo' : 'chips');
+    setLedger([]);
+    setLedgerTotals(null);
+    setLedgerError(null);
 
     if (readOnly) {
-      setRecent([]);
       void supabase
         .from('union_wallet_transactions')
         .select('id, amount, direction, tx_type, notes, balance_after, created_at')
@@ -147,14 +217,6 @@ export function UnionWalletModal({
       return;
     }
     setReserveLedger([]);
-    void supabase
-      .from('chip_transactions')
-      .select('id, amount, notes, transaction_type, created_at')
-      .contains('metadata', { union_id: unionId })
-      .in('transaction_type', ['union_member_send', 'union_promo_send'])
-      .order('created_at', { ascending: false })
-      .limit(8)
-      .then(({ data }) => setRecent((data as typeof recent) || []));
 
     setLoading(true);
     void Promise.all([
@@ -163,7 +225,7 @@ export function UnionWalletModal({
     ]).then(([rosterRes, clubsRes]) => {
       if (rosterRes.error) {
         reportError(rosterRes.error, 'UnionWalletModal.roster_load_failed');
-        setNotice({ ok: false, text: 'Could not load the union roster.' });
+        setNotice({ ok: false, text: 'Could Not Load The Union Roster.' });
         setRoster([]);
       } else {
         setRoster((rosterRes.data as RosterRow[]) || []);
@@ -178,7 +240,56 @@ export function UnionWalletModal({
       }
       setLoading(false);
     });
-  }, [isOpen, unionId, walletKey]);
+  }, [isOpen, unionId, walletKey, balance, readOnly]);
+
+  /**
+   * THE LEDGER TAB. fn_promo_wallet_ledger scope 'union' reads
+   * union_wallet_transactions for the open wallet's column, newest first, with
+   * the club and the person on each row named. Same RPC the club promo wallet
+   * uses, so a chip that leaves here can be found there under the same words.
+   */
+  const loadLedger = useCallback(
+    async (offset: number) => {
+      setLedgerLoading(true);
+      setLedgerError(null);
+      try {
+        const { data, error } = await supabase.rpc('fn_promo_wallet_ledger', {
+          p_scope: 'union',
+          p_scope_id: unionId,
+          p_limit: LEDGER_PAGE,
+          p_offset: offset,
+          p_wallet: UNION_WALLET_COLUMN[walletKey],
+        });
+        if (error) throw error;
+        const res = (Array.isArray(data) ? data[0] : data) as {
+          authorized?: boolean;
+          error?: string;
+          total?: number;
+          totals?: LedgerTotals;
+          rows?: LedgerRow[];
+        } | null;
+        if (!res?.authorized) {
+          setLedgerError(res?.error || 'The Ledger Is Not Available To You.');
+          setLedger([]);
+          return;
+        }
+        setLedgerTotal(Number(res.total) || 0);
+        setLedgerTotals(res.totals ?? null);
+        setLedger((prev) => (offset === 0 ? res.rows || [] : [...prev, ...(res.rows || [])]));
+      } catch (e) {
+        reportError(e, 'UnionWalletModal.ledger_load_failed');
+        setLedgerError('Could Not Load The Ledger.');
+      } finally {
+        setLedgerLoading(false);
+      }
+    },
+    [unionId, walletKey]
+  );
+
+  useEffect(() => {
+    if (!isOpen || readOnly || mode !== 'ledger') return;
+    void loadLedger(0);
+  }, [isOpen, readOnly, mode, loadLedger]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -202,11 +313,14 @@ export function UnionWalletModal({
     return { clubs: matchedClubs, roster: sortedRoster };
   }, [clubs, roster, search]);
 
+  const route = clubSendRoute(walletKey, kind);
+  const clubRefusal = mode === 'send' && route.kind === 'refused' ? route.reason : null;
+
   const send = useCallback(async () => {
     const amt = Number(amount);
     if (!target || !Number.isFinite(amt) || amt <= 0 || busy) return;
     if (kind === 'diamonds' && amt !== Math.floor(amt)) {
-      setNotice({ ok: false, text: 'Diamonds must be a whole number.' });
+      setNotice({ ok: false, text: 'Diamonds Must Be A Whole Number.' });
       return;
     }
     setBusy(true);
@@ -223,22 +337,63 @@ export function UnionWalletModal({
             p_source_wallet: kind === 'chips' ? chipSource : null,
             p_note: `${walletLabel} to ${target.data.display_name || target.data.username || 'member'}`,
           });
-          const res = (data ?? {}) as { success?: boolean; error?: string; wallet_after?: number };
+          const res = (data ?? {}) as {
+            success?: boolean;
+            error?: string;
+            wallet_after?: number;
+            destination?: string;
+          };
           if (error || !res.success)
             throw new Error(error?.message || res.error || 'union send failed');
+          const who = target.data.display_name || target.data.username;
+          const landed =
+            res.destination === 'promo_float'
+              ? ' Into Their Promo Float'
+              : res.destination === 'agent_wallet'
+                ? ' Into Their Agent Wallet'
+                : res.destination === 'player_wallet'
+                  ? ' Into Their Player Wallet'
+                  : '';
           setNotice({
             ok: true,
-            text: `Sent ${fmt(amt)} ${kind} to ${target.data.display_name || target.data.username}.`,
+            text: `Sent ${fmt(amt)} ${kind} to ${who}.${landed ? landed + '.' : ''}`,
           });
           if (res.wallet_after != null) setLiveBalance(res.wallet_after);
         } else {
-          await unionApi.sendToClub(unionId, target.data.id, amt, `${walletLabel} to club`);
-          setNotice({ ok: true, text: `Sent ${fmt(amt)} chips to ${target.data.name}.` });
+          const r = clubSendRoute(walletKey, kind);
+          if (r.kind === 'refused') throw new Error(r.reason);
+          if (r.kind === 'promo') {
+            /* THE PROMO ROUTE. Union promo wallet -> the club's PROMO WALLET
+               (clubs.promo_balance), through fn_union_promo_send. Never the
+               chip bank, never the club treasury: that is the 2026-09-05 bug. */
+            await unionApi.promoSend(
+              unionId,
+              amt,
+              'club',
+              target.data.id,
+              `${walletLabel} To ${target.data.name} Promo Wallet`
+            );
+            setNotice({
+              ok: true,
+              text: `Sent ${fmt(amt)} Promo Chips Into The ${target.data.name} Promo Wallet.`,
+            });
+          } else {
+            await unionApi.sendToClub(
+              unionId,
+              target.data.id,
+              amt,
+              `${walletLabel} To ${target.data.name} Club Bank`
+            );
+            setNotice({
+              ok: true,
+              text: `Sent ${fmt(amt)} Chips Into The ${target.data.name} Club Bank.`,
+            });
+          }
           setLiveBalance((prev) => prev - amt);
         }
       } else {
         if (target.type === 'member') {
-          throw new Error('Member clawbacks must be performed by the club owner.');
+          throw new Error('Member Clawbacks Must Be Performed By The Club Owner.');
         } else {
           const { data: cbRes, error: cbErr } = await supabase.rpc('fn_union_clawback_from_club', {
             p_union_id: unionId,
@@ -250,10 +405,10 @@ export function UnionWalletModal({
           if (cbRes && (cbRes as any).success === false) {
             const msg = (cbRes as any).error || 'Clawback failed';
             throw new Error(
-              msg.includes('insufficient') ? 'Club has insufficient treasury balance' : msg
+              msg.includes('insufficient') ? 'Club Has Insufficient Treasury Balance' : msg
             );
           }
-          setNotice({ ok: true, text: `Clawed back ${fmt(amt)} chips from ${target.data.name}.` });
+          setNotice({ ok: true, text: `Clawed Back ${fmt(amt)} Chips From ${target.data.name}.` });
           setLiveBalance((prev) => prev + amt);
         }
       }
@@ -261,57 +416,44 @@ export function UnionWalletModal({
       if (onSent) onSent();
     } catch (err: any) {
       reportError(err, 'UnionWalletModal.action_failed');
-      setNotice({ ok: false, text: err.message || 'The action was refused.' });
+      setNotice({ ok: false, text: err.message || 'The Action Was Refused.' });
     } finally {
       setBusy(false);
     }
-  }, [amount, target, busy, kind, mode, unionId, chipSource, walletLabel, onSent]);
+  }, [amount, target, busy, kind, mode, unionId, chipSource, walletLabel, walletKey, onSent]);
 
   if (!isOpen) return null;
 
+  const isPromo = walletKey === 'promo';
+  const sendDisabled =
+    !target ||
+    !(Number(amount) > 0) ||
+    busy ||
+    (mode === 'send' && target.type === 'club' && route.kind === 'refused');
+
   return (
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 9999,
-        background: 'rgba(0,0,0,0.65)',
-        backdropFilter: 'blur(3px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 20,
-      }}
+      className="cbc-overlay uwm-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${walletLabel} Cashier`}
       onClick={onClose}
     >
-      <div
-        style={{
-          background: '#191b28',
-          border: '1px solid rgba(255,255,255,0.08)',
-          boxShadow: '0 24px 60px rgba(0,0,0,0.4)',
-          borderRadius: 16,
-          width: '100%',
-          maxWidth: 420,
-          padding: 20,
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            marginBottom: 20,
-          }}
-        >
+      <div className="cbc-panel uwm-panel" onClick={(e) => e.stopPropagation()}>
+        {/* ── Header ─────────────────────────────────────────────────────── */}
+        <div className="cbc-head">
           <div>
-            <h2 style={{ margin: '0 0 4px', fontSize: 20, color: '#fff' }}>{walletLabel}</h2>
-
-            <p style={{ color: '#888', fontSize: 12, margin: '0 0 14px' }}>
+            <div className="cbc-title">{walletLabel}</div>
+            <p className="uwm-sub">
               {readOnly ? (
                 <>
                   The Capital Every Spin Bonus Pool Is Seeded From, And Every Spin Prize Is Paid Out
                   Of. It Is Not A Send Source: Add Funds With Fund Spin Reserve On The Wallet Tab.
+                </>
+              ) : isPromo ? (
+                <>
+                  Promo Chips For The Union. To A Club They Land In The Club Promo Wallet. To A
+                  Player They Are As Good As Cash. To An Agent They Top Up Their Promo Float.
                 </>
               ) : (
                 <>
@@ -321,365 +463,347 @@ export function UnionWalletModal({
                 </>
               )}
             </p>
-
-            <div style={{ color: '#4599FF', fontSize: 16, fontWeight: 700 }}>
-              {fmt(liveBalance)}
-            </div>
           </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#888',
-              fontSize: 24,
-              cursor: 'pointer',
-              lineHeight: 1,
-              padding: '0 4px',
-            }}
-          >
-            ×
+          <button className="cbc-x" onClick={onClose} aria-label="Close">
+            &times;
           </button>
         </div>
 
+        <div className="cbc-bank">
+          <span>{walletLabel} Balance</span>
+          <strong aria-live="polite">{money(liveBalance)}</strong>
+          <em className="cbc-bank-sub">Union Wallet</em>
+        </div>
+
         {!readOnly && (
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-            {(['chips', 'diamonds', 'promo'] as SendKind[]).map((k) => (
+          <div className="cbc-tabs" role="tablist">
+            {(['send', 'pull', 'ledger'] as Mode[]).map((m) => (
               <button
-                key={k}
-                className={`admin-btn admin-btn-sm ${kind === k ? '' : 'admin-btn-ghost'}`}
-                aria-pressed={kind === k}
-                onClick={() => setKind(k)}
+                key={m}
+                role="tab"
+                aria-selected={mode === m}
+                className={mode === m ? 'cbc-tab cbc-tab--on' : 'cbc-tab'}
+                onClick={() => {
+                  setMode(m);
+                  setTarget(null);
+                  setNotice(null);
+                }}
               >
-                {k === 'chips' ? 'Chips' : k === 'diamonds' ? 'Diamonds' : 'Promo'}
+                {m === 'send' ? 'Send' : m === 'pull' ? 'Pull (Clawback)' : 'Ledger'}
               </button>
             ))}
           </div>
         )}
 
-        {!readOnly && (
-          <>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-              <button
-                style={{
-                  flex: 1,
-                  padding: '8px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  background: mode === 'send' ? 'rgba(69,153,255,0.2)' : 'rgba(255,255,255,0.05)',
-                  color: mode === 'send' ? '#4599FF' : '#888',
-                  fontWeight: mode === 'send' ? 700 : 500,
-                  cursor: 'pointer',
-                }}
-                onClick={() => {
-                  setMode('send');
-                  setTarget(null);
-                  setNotice(null);
-                }}
-              >
-                Send
-              </button>
-              <button
-                style={{
-                  flex: 1,
-                  padding: '8px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  background: mode === 'pull' ? 'rgba(239,68,68,0.2)' : 'rgba(255,255,255,0.05)',
-                  color: mode === 'pull' ? '#ef4444' : '#888',
-                  fontWeight: mode === 'pull' ? 700 : 500,
-                  cursor: 'pointer',
-                }}
-                onClick={() => {
-                  setMode('pull');
-                  setTarget(null);
-                  setNotice(null);
-                }}
-              >
-                Pull (Clawback)
-              </button>
-            </div>
-
-            <input
-              className="admin-input"
-              style={{ width: '100%', marginBottom: 8 }}
-              placeholder="Search Clubs Or Members…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <div
-              style={{
-                maxHeight: 220,
-                overflowY: 'auto',
-                border: '1px solid rgba(255,255,255,0.08)',
-                borderRadius: 8,
-                marginBottom: 12,
-              }}
-            >
-              {loading ? (
-                <div style={{ padding: 14, color: '#888', fontSize: 13 }}>Loading Directory…</div>
-              ) : filtered.clubs.length === 0 && filtered.roster.length === 0 ? (
-                <div style={{ padding: 14, color: '#888', fontSize: 13 }}>No Targets Match.</div>
-              ) : (
+        <div className="cbc-body">
+          {/* Two guards on the outbound flow, both on readOnly: the spin
+              reserve is not a send source and must never grow a picker or a
+              send button (tests/config/spinReserveWalletView.test.ts). */}
+          {!readOnly && (
+            <>
+              {mode !== 'ledger' && (
                 <>
-                  {filtered.clubs.map((c) => (
-                    <button
-                      key={`club-${c.id}`}
-                      onClick={() => setTarget({ type: 'club', data: c })}
-                      aria-pressed={target?.type === 'club' && target.data.id === c.id}
-                      style={{
-                        display: 'flex',
-                        width: '100%',
-                        alignItems: 'center',
-                        gap: 10,
-                        padding: '8px 12px',
-                        background:
-                          target?.type === 'club' && target.data.id === c.id
-                            ? mode === 'pull'
-                              ? 'rgba(239,68,68,0.18)'
-                              : 'rgba(69,153,255,0.18)'
-                            : 'transparent',
-                        border: 'none',
-                        borderBottom: '1px solid rgba(255,255,255,0.05)',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                      }}
-                    >
-                      <span style={{ color: '#fff', fontSize: 13, fontWeight: 700, flex: 1 }}>
-                        {c.name}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          letterSpacing: '0.06em',
-                          color: '#C084FC',
-                          background: 'rgba(192,132,252,0.15)',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                        }}
-                      >
-                        CLUB TREASURY
-                      </span>
-                    </button>
-                  ))}
-                  {filtered.roster.slice(0, 200).map((r) => {
-                    const isDisabled = mode === 'pull';
-                    return (
+                  {mode === 'send' && (
+                    <div className="cbc-field">
+                      <label className="cbc-label">Send</label>
+                      <div className="cbc-seg">
+                        {(['chips', 'diamonds', 'promo'] as SendKind[]).map((k) => (
+                          <button
+                            key={k}
+                            className={kind === k ? 'cbc-seg-on' : ''}
+                            aria-pressed={kind === k}
+                            onClick={() => setKind(k)}
+                          >
+                            {k === 'chips' ? 'Chips' : k === 'diamonds' ? 'Diamonds' : 'Promo'}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="cbc-blurb">
+                        {kind === 'promo'
+                          ? 'Promo Chips. A Club Receives Them In Its Promo Wallet; A Player As Cash; An Agent In Their Promo Float.'
+                          : kind === 'diamonds'
+                            ? 'Diamonds Go To A Member. A Club Has No Diamond Wallet.'
+                            : isPromo
+                              ? 'Chips Drawn From The Promo Wallet. A Player Receives Them As Cash.'
+                              : walletKey === 'rake'
+                                ? 'Chips Drawn From The Rake Wallet, To A Member Only.'
+                                : 'Chips Drawn From The Union Bank. A Club Receives Them In Its Club Bank.'}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="cbc-field">
+                    <label className="cbc-label" htmlFor="uwm-search">
+                      {mode === 'pull' ? 'Pull From Club' : 'Recipient'}
+                    </label>
+                    <input
+                      id="uwm-search"
+                      className="cbc-input"
+                      placeholder="Search Clubs Or Members…"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      aria-label="Search Clubs Or Members"
+                    />
+                    <div className="cbc-list uwm-list">
+                      {loading ? (
+                        <div className="cbc-empty">Loading Directory…</div>
+                      ) : filtered.clubs.length === 0 && filtered.roster.length === 0 ? (
+                        <div className="cbc-empty">No Targets Match.</div>
+                      ) : (
+                        <>
+                          {filtered.clubs.map((c) => {
+                            const on = target?.type === 'club' && target.data.id === c.id;
+                            const blocked = mode === 'send' && route.kind === 'refused';
+                            return (
+                              <button
+                                key={`club-${c.id}`}
+                                onClick={() => !blocked && setTarget({ type: 'club', data: c })}
+                                aria-pressed={on}
+                                aria-disabled={blocked ? true : undefined}
+                                title={blocked ? (clubRefusal ?? undefined) : undefined}
+                                className={
+                                  blocked
+                                    ? 'cbc-member cbc-member--blocked'
+                                    : on
+                                      ? mode === 'pull'
+                                        ? 'cbc-member cbc-member--on uwm-member--pull'
+                                        : 'cbc-member cbc-member--on'
+                                      : 'cbc-member'
+                                }
+                              >
+                                <div className="cbc-member-info">
+                                  <span className="cbc-member-name">{c.name}</span>
+                                  <span className="cbc-member-id">
+                                    {mode === 'pull'
+                                      ? 'Pull From The Club Bank'
+                                      : route.kind === 'promo'
+                                        ? 'Into The Club Promo Wallet'
+                                        : route.kind === 'bank'
+                                          ? 'Into The Club Bank'
+                                          : 'Not Available From Here'}
+                                  </span>
+                                </div>
+                                <span className="uwm-club-tag">
+                                  {mode === 'send' && route.kind === 'promo'
+                                    ? 'CLUB PROMO WALLET'
+                                    : 'CLUB BANK'}
+                                </span>
+                              </button>
+                            );
+                          })}
+                          {filtered.roster.slice(0, 200).map((r) => {
+                            const isDisabled = mode === 'pull';
+                            const on =
+                              target?.type === 'member' && target.data.user_id === r.user_id;
+                            return (
+                              <button
+                                key={`${r.user_id}-${r.club_id}`}
+                                onClick={() =>
+                                  !isDisabled && setTarget({ type: 'member', data: r })
+                                }
+                                disabled={isDisabled}
+                                title={
+                                  isDisabled
+                                    ? 'Member Clawbacks Must Be Performed By The Club Owner.'
+                                    : undefined
+                                }
+                                aria-pressed={on}
+                                className={
+                                  isDisabled
+                                    ? 'cbc-member cbc-member--blocked'
+                                    : on
+                                      ? 'cbc-member cbc-member--on'
+                                      : 'cbc-member'
+                                }
+                              >
+                                <div
+                                  className="cbc-member-avatar"
+                                  style={{ backgroundImage: `url(${r.avatar_url || ''})` }}
+                                />
+                                <div className="cbc-member-info">
+                                  <span className="cbc-member-name">
+                                    {r.display_name || r.username || r.user_id.slice(0, 8)}
+                                  </span>
+                                  <span className="cbc-member-id">{r.club_name || ''}</span>
+                                </div>
+                                <span
+                                  className={`cbc-member-role uwm-role uwm-role--${r.member_role || 'member'}`}
+                                >
+                                  {(r.member_role || 'member').replace('_', ' ').toUpperCase()}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </>
+                      )}
+                    </div>
+                    {clubRefusal && filtered.clubs.length > 0 && (
+                      <div className="cbc-blurb">{clubRefusal}</div>
+                    )}
+                  </div>
+
+                  <div className="cbc-field">
+                    <label className="cbc-label" htmlFor="uwm-amount">
+                      Amount
+                    </label>
+                    <div className="uwm-amount-row">
+                      <input
+                        id="uwm-amount"
+                        className="cbc-input"
+                        type="number"
+                        inputMode="decimal"
+                        min="1"
+                        placeholder="Amount"
+                        value={amount}
+                        onChange={(e) => setAmount(e.target.value)}
+                        aria-label={mode === 'pull' ? 'Chips To Pull Back' : 'Amount To Send'}
+                      />
                       <button
-                        key={`${r.user_id}-${r.club_id}`}
-                        onClick={() => !isDisabled && setTarget({ type: 'member', data: r })}
-                        disabled={isDisabled}
-                        title={
-                          isDisabled
-                            ? 'Member Clawbacks Must Be Performed By The Club Owner.'
-                            : undefined
+                        className={
+                          mode === 'pull' ? 'cbc-confirm uwm-confirm--pull' : 'cbc-confirm'
                         }
-                        aria-pressed={
-                          target?.type === 'member' && target.data.user_id === r.user_id
-                        }
-                        style={{
-                          display: 'flex',
-                          width: '100%',
-                          alignItems: 'center',
-                          gap: 10,
-                          padding: '8px 12px',
-                          background:
-                            target?.type === 'member' && target.data.user_id === r.user_id
-                              ? 'rgba(69,153,255,0.18)'
-                              : 'transparent',
-                          border: 'none',
-                          borderBottom: '1px solid rgba(255,255,255,0.05)',
-                          cursor: isDisabled ? 'not-allowed' : 'pointer',
-                          textAlign: 'left',
-                          opacity: isDisabled ? 0.4 : 1,
-                        }}
+                        disabled={sendDisabled}
+                        onClick={() => void send()}
                       >
-                        <span style={{ color: '#fff', fontSize: 13, fontWeight: 600, flex: 1 }}>
-                          {r.display_name || r.username || r.user_id.slice(0, 8)}
-                        </span>
-                        <span
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 700,
-                            letterSpacing: '0.06em',
-                            color:
-                              r.member_role === 'owner'
-                                ? '#F7C52A'
-                                : r.member_role === 'co_owner' || r.member_role === 'admin'
-                                  ? '#4599FF'
-                                  : r.member_role === 'agent' || r.member_role === 'super_agent'
-                                    ? '#31A24C'
-                                    : '#888',
-                          }}
-                        >
-                          {(r.member_role || 'member').replace('_', ' ').toUpperCase()}
-                        </span>
-                        <span style={{ color: '#666', fontSize: 11 }}>{r.club_name || ''}</span>
+                        {busy
+                          ? mode === 'send'
+                            ? 'Sending...'
+                            : 'Pulling...'
+                          : !target
+                            ? 'Pick A Member Or Club'
+                            : mode === 'send'
+                              ? `Send To ${target.type === 'club' ? target.data.name : target.data.display_name || target.data.username}`
+                              : `Pull From ${target.type === 'club' ? target.data.name : 'Target'}`}
                       </button>
-                    );
-                  })}
+                    </div>
+                    {Number(amount) > 0 && target && (
+                      <div className="cbc-blurb">
+                        {mode === 'pull'
+                          ? `Pulling ${money(Number(amount))}. This Wallet Would Hold ${money(liveBalance + Number(amount))} Afterwards.`
+                          : kind === 'diamonds'
+                            ? `Sending ${fmt(Number(amount))} Diamonds.`
+                            : `Sending ${money(Number(amount))}. This Wallet Would Hold ${money(liveBalance - Number(amount))} Afterwards.`}
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
-            </div>
 
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                className="admin-input"
-                style={{ flex: '0 0 160px' }}
-                type="number"
-                min="1"
-                placeholder="Amount"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-              />
-              <button
-                className="admin-btn"
-                style={mode === 'pull' ? { background: '#ef4444', color: '#fff' } : {}}
-                disabled={!target || !(Number(amount) > 0) || busy}
-                onClick={() => void send()}
-              >
-                {busy
-                  ? mode === 'send'
-                    ? 'Sending…'
-                    : 'Pulling…'
-                  : target
-                    ? mode === 'send'
-                      ? `Send To ${target.type === 'club' ? target.data.name : target.data.display_name || target.data.username}`
-                      : `Pull From ${target.type === 'club' ? target.data.name : 'Target'}`
-                    : 'Pick A Member Or Club'}
-              </button>
-            </div>
-          </>
-        )}
-
-        {readOnly && (
-          <div>
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: '0.07em',
-                color: '#6b7392',
-                marginBottom: 6,
-              }}
-            >
-              RESERVE LEDGER
-            </div>
-            {reserveLedger.length === 0 ? (
-              <p style={{ color: '#666', fontSize: 12, margin: '8px 0 0' }}>
-                Nothing Has Moved Through This Wallet Yet. Seeding A Pool Or Funding The Reserve
-                Writes A Row Here.
-              </p>
-            ) : (
-              reserveLedger.map((r) => {
-                const inbound = r.direction === 'credit';
-                return (
-                  <div
-                    key={r.id}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      gap: 8,
-                      padding: '6px 0',
-                      borderBottom: '1px solid rgba(255,255,255,0.05)',
-                      fontSize: 12,
-                    }}
-                  >
-                    <span style={{ minWidth: 0 }}>
-                      <span
-                        style={{
-                          color: '#ddd',
-                          display: 'block',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {r.notes || r.tx_type}
+              {mode === 'ledger' && (
+                <>
+                  {ledgerError && <div className="cbc-empty cbc-empty--bad">{ledgerError}</div>}
+                  {!ledgerError && ledgerTotals && (
+                    <div className="cbc-totals">
+                      <div>
+                        <span>Received</span>
+                        <strong className="cbc-in">{money(ledgerTotals.in)}</strong>
+                      </div>
+                      <div>
+                        <span>Sent Out</span>
+                        <strong className="cbc-out">{money(ledgerTotals.out)}</strong>
+                      </div>
+                      <div>
+                        <span>Net</span>
+                        <strong>{money(ledgerTotals.net)}</strong>
+                      </div>
+                    </div>
+                  )}
+                  {!ledgerError && (
+                    <div className="cbc-ledger-head">
+                      <span>
+                        {ledgerTotal.toLocaleString('en-US')} Entries · {walletLabel}
                       </span>
-                      <span style={{ color: '#6b7392', fontSize: 11 }}>
-                        {new Date(r.created_at).toLocaleString()}
-                        {r.balance_after != null && ` · Balance ${fmt(r.balance_after)}`}
-                      </span>
-                    </span>
-                    <span
-                      style={{
-                        color: inbound ? '#39d17a' : '#e74c3c',
-                        fontWeight: 700,
-                        flexShrink: 0,
-                      }}
-                    >
-                      {inbound ? '+' : '-'}
-                      {fmt(r.amount)}
-                    </span>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        )}
-
-        {recent.length > 0 && (
-          <div style={{ marginTop: 14 }}>
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: '0.07em',
-                color: '#6b7392',
-                marginBottom: 6,
-              }}
-            >
-              RECENT SENDS
-            </div>
-            {recent.map((r) => (
-              <div
-                key={r.id}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  gap: 8,
-                  padding: '5px 0',
-                  borderBottom: '1px solid rgba(255,255,255,0.05)',
-                  fontSize: 12,
-                }}
-              >
-                <span
-                  style={{
-                    color: '#aaa',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {r.notes ||
-                    (r.transaction_type === 'union_promo_send' ? 'Promo Send' : 'Chip Send')}
-                </span>
-                <span style={{ color: '#e74c3c', fontWeight: 700, flexShrink: 0 }}>
-                  -{fmt(r.amount)}
-                </span>
+                    </div>
+                  )}
+                  {!ledgerError &&
+                    ledger.map((r) => {
+                      const inbound = r.direction === 'in';
+                      const other = r.counterparty_name || null;
+                      return (
+                        <div key={r.id} className={inbound ? 'cbc-tx cbc-tx--in' : 'cbc-tx'}>
+                          <div className="cbc-tx-top">
+                            <span className="cbc-tx-type">{titleCase(r.category)}</span>
+                            <span
+                              className={inbound ? 'cbc-tx-amount cbc-in' : 'cbc-tx-amount cbc-out'}
+                            >
+                              {`${inbound ? '+' : '-'}${money(r.amount)}`}
+                            </span>
+                          </div>
+                          <div className="cbc-tx-mid">
+                            <span>
+                              {other ? (inbound ? `From ${other}` : `To ${other}`) : walletLabel}
+                            </span>
+                            <span className="cbc-tx-when">{when(r.created_at)}</span>
+                          </div>
+                          <div className="cbc-tx-foot">
+                            {r.notes && <span>{r.notes}</span>}
+                            {r.actor_name && <span>By {r.actor_name}</span>}
+                            {r.balance_after != null && (
+                              <span>Wallet After {money(Number(r.balance_after))}</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  {!ledgerError && !ledgerLoading && ledger.length === 0 && (
+                    <div className="cbc-empty">
+                      Nothing Has Moved Through This Wallet Yet. Every Send, Sweep And Settlement
+                      Writes A Row Here.
+                    </div>
+                  )}
+                  {ledgerLoading && <div className="cbc-empty">Loading Ledger…</div>}
+                  {!ledgerError && !ledgerLoading && ledger.length < ledgerTotal && (
+                    <button className="cbc-more" onClick={() => void loadLedger(ledger.length)}>
+                      Load More
+                    </button>
+                  )}
+                </>
+              )}
+            </>
+          )}
+          {readOnly && (
+            <div>
+              <div className="cbc-label" style={{ marginBottom: 6 }}>
+                RESERVE LEDGER
               </div>
-            ))}
-          </div>
-        )}
+              {reserveLedger.length === 0 ? (
+                <div className="cbc-empty">
+                  Nothing Has Moved Through This Wallet Yet. Seeding A Pool Or Funding The Reserve
+                  Writes A Row Here.
+                </div>
+              ) : (
+                reserveLedger.map((r) => {
+                  const inbound = r.direction === 'credit';
+                  return (
+                    <div key={r.id} className={inbound ? 'cbc-tx cbc-tx--in' : 'cbc-tx'}>
+                      <div className="cbc-tx-top">
+                        <span className="cbc-tx-type">{r.notes || titleCase(r.tx_type)}</span>
+                        <span
+                          className={inbound ? 'cbc-tx-amount cbc-in' : 'cbc-tx-amount cbc-out'}
+                        >
+                          {`${inbound ? '+' : '-'}${money(r.amount)}`}
+                        </span>
+                      </div>
+                      <div className="cbc-tx-mid">
+                        <span className="cbc-tx-when">{when(r.created_at)}</span>
+                        {r.balance_after != null && <span>Balance {money(r.balance_after)}</span>}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
 
-        {notice && (
-          <div
-            role={notice.ok ? 'status' : 'alert'}
-            style={{
-              marginTop: 12,
-              padding: '9px 12px',
-              borderRadius: 8,
-              fontSize: 13,
-              background: notice.ok ? 'rgba(49,162,76,0.15)' : 'rgba(231,76,60,0.15)',
-              border: `1px solid ${notice.ok ? 'rgba(49,162,76,0.5)' : 'rgba(231,76,60,0.5)'}`,
-              color: notice.ok ? '#7ee2a0' : '#ffb4ab',
-            }}
-          >
-            {notice.text}
-          </div>
-        )}
+          {notice && (
+            <div
+              role={notice.ok ? 'status' : 'alert'}
+              className={notice.ok ? 'uwm-notice uwm-notice--ok' : 'uwm-notice uwm-notice--bad'}
+            >
+              {notice.text}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

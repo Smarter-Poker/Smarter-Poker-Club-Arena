@@ -83,9 +83,12 @@ describe('HandHistoryService', () => {
       expect(typeof handHistoryService.getHand).toBe('function');
       expect(typeof handHistoryService.getPlayerHands).toBe('function');
       // 2026-08-15: the three legacy `hands`-table readers were removed; the
-      // surviving surface is getHand / getPlayerHands (hand_history readers)
-      // plus the saveHandToSupabase writer.
-      expect(typeof handHistoryService.saveHandToSupabase).toBe('function');
+      // surviving surface is getHand / getPlayerHands (hand_history readers).
+      // 2026-09-04: the saveHandToSupabase writer went too - it wrote to the
+      // empty legacy tables and nothing called it.
+      expect((handHistoryService as unknown as Record<string, unknown>).saveHandToSupabase).toBe(
+        undefined
+      );
     });
   });
 });

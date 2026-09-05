@@ -274,18 +274,57 @@ export function handCompletionHoldMs(opts: HandCompletionOpts): number {
    * rit_result handler exactly (same constants, same arithmetic).
    */
   if ((opts.ritRuns ?? 0) >= 2) {
-    const runs = opts.ritRuns as number;
-    const streets = Math.max(1, Math.min(3, opts.ritStreetsPerRun ?? 3));
-    const reveal =
-      H.RIT_REVEAL_LEAD_MS + runs * streets * H.RIT_STREET_MS + (runs - 1) * H.RIT_RUN_GAP_MS;
+    // ONE ARITHMETIC (2026-09-04 second sweep). The client's rit_result handler
+    // and this hold used to each write the timeline out by hand, and they had
+    // drifted: the server omitted RIT_RIBBON_MS (900ms short of the client's
+    // last ribbon), and the client's pot_win-before-rit_result fallback
+    // forgot the streets-per-run factor (8.4s early on a preflop 3-run).
+    // Both now read ritRevealTimelineMs; a test holds them equal.
+    const t = ritRevealTimelineMs({
+      runs: opts.ritRuns as number,
+      streetsPerRun: opts.ritStreetsPerRun ?? 3,
+      speed: 1,
+    });
     // RUN IT 3X recording (2026-08-26): the winner phase replays run by run
     // (ribbon → ship → settle, one RIT_RESULT_RUN_MS window each), which IS
     // the showdown read for a multi-board hand — `read` is not added on top.
-    const resultWindows = runs * H.RIT_RESULT_RUN_MS;
-    return reveal + resultWindows + push;
+    return t.doneAt + push;
   }
 
   return read + push;
+}
+
+/**
+ * THE RUN-IT-MULTIPLE-TIMES REVEAL, AS ONE FUNCTION (2026-09-04).
+ *
+ * Every instant the felt cares about, from the moment the consent panel
+ * closes: when the last river of the last run lands, when the first run's
+ * ribbon (and first pot ship) may go, and when the last run's ribbon lands.
+ * The client builds its street timers to these values, the server's hold is
+ * computed from them, and a test asserts the two agree - because when they
+ * were written twice they did not.
+ *
+ * `speed` is the player's animation-speed multiplier (1 = spec, >1 slower).
+ * THE SERVER CANNOT KNOW A CLIENT'S SPEED, so the engine holds for speed 1
+ * and the client CLAMPS its reveal to speed <= 1 for this timeline only (see
+ * TablePage's rit_result handler): a reveal that ran slower than the engine's
+ * hold was jump-cut by the next hand, which is worse than a reveal at 1x.
+ */
+export function ritRevealTimelineMs(opts: { runs: number; streetsPerRun: number; speed: number }): {
+  riversDoneAt: number;
+  firstRibbonAt: number;
+  doneAt: number;
+} {
+  const H = HAND_COMPLETION;
+  const runs = Math.max(2, Math.min(3, Math.floor(opts.runs)));
+  const streets = Math.max(1, Math.min(3, Math.floor(opts.streetsPerRun)));
+  const speed = Math.max(0.05, opts.speed);
+  const reveal =
+    (H.RIT_REVEAL_LEAD_MS + runs * streets * H.RIT_STREET_MS + (runs - 1) * H.RIT_RUN_GAP_MS) *
+    speed;
+  const firstRibbonAt = reveal + H.RIT_RIBBON_MS * speed;
+  const doneAt = firstRibbonAt + runs * H.RIT_RESULT_RUN_MS * speed;
+  return { riversDoneAt: reveal, firstRibbonAt, doneAt };
 }
 
 /** The board/card sweep that follows the hold. */

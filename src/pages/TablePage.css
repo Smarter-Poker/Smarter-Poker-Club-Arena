@@ -869,7 +869,20 @@
 
      max(200px, ...) is the floor: on a viewport too short to satisfy the
      budget the felt degrades to small-but-visible rather than to zero. */
-  width: min(100%, max(200px, calc(var(--sp-table-h, 100dvh) * 605 / 1000)));
+  /* ── THE CANVAS SHAPE IS A VARIABLE NOW (Dan 2026-09-05) ─────────────────
+     "THE 6 HANDED TABLE SHOULDN'T BE AS TALL AS THE 9 HANDED TABLE."
+
+     605/1000 was written into two places that must agree - this width
+     derivation and the `aspect-ratio` below - so shortening the canvas for
+     the small rings by editing one of them would have silently re-engaged the
+     max-height clamp this whole block exists to avoid. One pair of tokens,
+     read by both, overridden per seat count at the foot of this rule. */
+  --sp-table-ar-w: 605;
+  --sp-table-ar-h: 1000;
+  width: min(
+    100%,
+    max(200px, calc(var(--sp-table-h, 100dvh) * var(--sp-table-ar-w) / var(--sp-table-ar-h)))
+  );
   /* Dan 2026-08-17 (audit): 320px read small once the backdrop stopped
      faking a giant table. 360px lets the painted rail span nearly the full
      375px viewport, PokerBros-style. */
@@ -882,10 +895,68 @@
      at the foot of this file relies on exactly that to fill a real phone's
      box (see the 2026-08-29 note there). Desktop keeps this ratio because it
      is height-bound with room to spare and this is the look. */
-  aspect-ratio: 605 / 1000;
+  aspect-ratio: var(--sp-table-ar-w) / var(--sp-table-ar-h);
   position: relative;
   transform-origin: center center;
   max-height: 100%;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   A SIX-HANDED TABLE IS NOT A NINE-HANDED TABLE (Dan 2026-09-05)
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Dan, verbatim: "THE 6 HANDED TABLE SHOULDN'T BE AS TALL AS THE 9 HANDED
+   TABLE, IT SHOULD BE SHORTER SO THE AVATARS AT THE TOP DON'T HAVE TO BE
+   SHRUNK OR SQUISHED DOWN."
+
+   The rings are not the same shape and never were. 9-max fills the long oval:
+   two bottom caps at y 82.5, two rail seats a side, and a THREE-seat top band
+   (27/6, 73/6 plus the centre). 6-max uses the same 1000-unit canvas for two
+   rail seats a side and ONE seat on top at y 5 - the bottom caps and the top
+   diagonals are simply empty, which is what makes it read as a stretched
+   9-max rather than a six-handed table.
+
+   `object-fit: fill` on `.table-art` means the painted table stretches by the
+   same linear map as the seat ring, which is the property the <=768px block at
+   the foot of this file already relies on - so art and seats stay registered
+   at any aspect and nothing has to be re-measured.
+
+   ── WHY 960, AND WHY IT IS MEASURED RATHER THAN REASONED ────────────────────
+
+   This said 860 first, then 920, both derived from a sentence in SeatSlot.css
+   ("clears with 5px to spare"). Then it was actually MEASURED, in Chromium,
+   against the real stylesheet, with the harness from
+   tests/e2e/top-rail-seat.spec.ts. The 6-max top-centre seat's bust art clears
+   the top of the canvas by:
+
+       H = 1000   4.2px      H = 940    1.2px
+       H =  980   3.2px      H =  920   0.2px   <- what 'the arithmetic' allowed
+       H =  960   2.2px
+
+   0.2px is not a margin, it is a rounding error away from the 2026-08-19 bug
+   (Dan's item 10) that the top-row cap exists to prevent. 960 keeps 2.2px at
+   every shipped width, and that is the number.
+
+   The lesson is worth more than the number: the estimate said H >= 900 was
+   safe and the measurement says 940 is already tight. Estimating a clearance
+   from a prose description of a clearance is how you get 0.2px and call it
+   fine. Measure it - the harness takes a minute to run.
+
+   It is 4% shorter rather than 14%, because the top-centre seat sits at y 5
+   and every point of canvas height removed walks it 0.05px toward the banner.
+   Shortening further needs that seat's y raised in step, which moves it off
+   the painted rail band, and that is a design change rather than a tuning
+   one.
+
+   2..6 as one band because every ring below 7 has the same shape: no bottom
+   caps, one seat on the top band. 7, 8 and 9 keep the full canvas.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.table-page[data-seats='2'] .table-scaler,
+.table-page[data-seats='3'] .table-scaler,
+.table-page[data-seats='4'] .table-scaler,
+.table-page[data-seats='5'] .table-scaler,
+.table-page[data-seats='6'] .table-scaler {
+  --sp-table-ar-h: 960;
 }
 
 /* Table Felt (Vertical Oval) */
@@ -2755,6 +2826,20 @@
   letter-spacing: 0.05em;
 }
 
+/* THE PRIZE, BESIDE THE MULTIPLIER (Dan 2026-09-05). Separated by a hairline
+   rather than a gap so the pair reads as one badge — "12x | 36,000" — and set
+   a step down from the multiplier, which stays the headline. `tabular-nums`
+   because this number changes on nothing and must not jitter the badge width
+   between tables. */
+.spinMultiplierPrize {
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  padding-left: 8px;
+  border-left: 1px solid rgba(26, 26, 46, 0.35);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Premium spins (100x+) get special styling */
 .spinMultiplierBadge.premium {
   background: linear-gradient(135deg, #ec4899, #8b5cf6);
@@ -2794,6 +2879,11 @@
   .spinMultiplierValue {
     font-size: 1rem;
   }
+
+  .spinMultiplierPrize {
+    font-size: 0.85rem;
+    padding-left: 6px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -2809,6 +2899,11 @@
 
   .spinMultiplierValue {
     font-size: 0.95rem;
+  }
+
+  .spinMultiplierPrize {
+    font-size: 0.8rem;
+    padding-left: 6px;
   }
 }
 
@@ -3519,8 +3614,28 @@
    Only on mobile (avoid unnecessary layer creation on desktop)
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* MOBILE PASS 2026-09-05: `.community-cards__card` is NO LONGER in this list.
+   The rule promoted every board card to its own compositor layer, permanently,
+   on every phone - five per table, twenty in a four-up tile view - and the
+   comment above justified it with "only on mobile", which is backwards: it
+   created the layers exactly where memory is scarcest.
+
+   MDN on this property: "Use will-change as a last resort ... Don't use it to
+   anticipate performance problems", and "Excessive use of will-change will
+   result in excessive memory use and will cause more complex rendering to
+   occur as the browser attempts to prepare for the possible change. This will
+   lead to worse performance." A board card that is not mid-reveal animates
+   nothing at all.
+
+   The squeeze promotes its own rotating box instead, and only while it turns
+   (cardSqueeze.css, `[data-rs-animating='on']`), which is the same source's
+   "switch will-change on and off using script code before and after the
+   change occurs".
+
+   The other selectors are left alone deliberately: their animations have not
+   been studied here, and removing a hint on an unmeasured element is a guess
+   in the other direction. */
 @media (max-width: 768px) and (pointer: coarse) {
-  .community-cards__card,
   .pot-display,
   .pot-display__chip-stack,
   .dealer-button,
@@ -4208,62 +4323,15 @@ button.post-bb-overlay-button {
   line-height: 1.45;
   color: rgba(255, 255, 255, 0.45);
 }
-/* ── Multiplier odds ladder on the Spin buy-in sheet (2026-08-29) ──────────
-   Collapsed behind a toggle so the 375px sheet keeps Buy In above the fold;
-   the open table caps its own height and scrolls inside itself, never the
-   sheet. */
-.seat-buyin-confirm__odds {
-  margin-top: 12px;
-}
-.seat-buyin-confirm__odds-toggle {
-  width: 100%;
-  min-height: 34px;
-  border-radius: 10px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  cursor: pointer;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.65);
-}
-.seat-buyin-confirm__odds-toggle:active {
-  transform: scale(0.98);
-}
-.seat-buyin-confirm__odds-table {
-  margin-top: 8px;
-  max-height: 168px;
-  overflow-y: auto;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.25);
-}
-.seat-buyin-confirm__odds-row {
-  display: grid;
-  grid-template-columns: 44px 1fr 1fr 1.2fr;
-  gap: 6px;
-  align-items: center;
-  padding: 5px 10px;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.72);
-  text-align: left;
-}
-.seat-buyin-confirm__odds-row:nth-child(even) {
-  background: rgba(255, 255, 255, 0.03);
-}
-.seat-buyin-confirm__odds-row--head {
-  position: sticky;
-  top: 0;
-  background: #16181d;
-  font-size: 10px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.42);
-}
-.seat-buyin-confirm__odds-row > span:first-child {
-  font-weight: 700;
-  color: #ffd479;
-}
+/* ── THE MULTIPLIER ODDS LADDER IS DELETED (Dan 2026-09-05, binding) ───────
+   "HIDE THE MULTIPLIER ODDS, GET RIDE OF THAT ALL TOGETHER, NOBODY SHOULD
+   EVER VISIBLY SEE THAT."
+
+   Eight rules lived here (`.seat-buyin-confirm__odds*`) dressing a disclosure
+   that printed every tier, its prize at this stake and its 1-in frequency.
+   The markup went with them in the same commit - leaving orphaned styling
+   behind is how a deleted surface gets rebuilt by the next agent who finds
+   CSS with no owner and assumes something is missing. */
 
 .seat-buyin-confirm__actions {
   margin-top: 20px;

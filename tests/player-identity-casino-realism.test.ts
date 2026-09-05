@@ -76,9 +76,13 @@ describe('VIP is VIP or Lifetime VIP, nothing else', () => {
     ]) {
       expect(PROFILE_CODE, `${ghost} is back on the profile`).not.toContain(ghost);
     }
-    // The benefits it does show are the VIP page's own constants.
-    expect(PROFILE).toContain('VIP_GOLD_LIMITS.rabbitHunts');
-    expect(PROFILE).toContain('VIP_GOLD_LIMITS.timeBankSeconds');
+    /* The benefits it does show are the VIP page's own constants, renamed on
+       2026-09-05: there is no Gold, and the three entries with nothing behind
+       them (leaderboardBoost, themes, clubCreation) went with the ladder. */
+    expect(PROFILE).toContain('VIP_MONTHLY_ALLOWANCES.rabbitHunts');
+    expect(PROFILE).toContain('VIP_MONTHLY_ALLOWANCES.timeBankSeconds');
+    expect(PROFILE_CODE).not.toContain('VIP_GOLD_LIMITS');
+    expect(PROFILE_CODE).not.toContain('leaderboardBoost');
     expect(PROFILE).toContain('resolveVipStatus(profile)');
     expect(PUBLIC_CODE).not.toContain('VIP_LABELS');
     expect(PUBLIC).toContain('vipStatusLabel(profile.vipStatus)');
@@ -200,8 +204,15 @@ describe('every identity surface ships its own web-sized casino render', () => {
     ]) {
       expect(read(css)).toContain(":global([data-theme='light'])");
     }
-    expect(read('src/pages/PublicProfilePage.css')).toContain(
-      "[data-theme='light'] .public-profile-page"
+    /* 2026-09-05: this page became a CSS Module (PR #3077). `.action-btn`,
+       `.share-btn`, `.vip-badge`, `.level-badge` and six more of its class
+       names were bare globals that seven other stylesheets also define, and
+       with those chunks loaded the Share button left the grid entirely
+       (`.share-btn { position: absolute }` in the hand replayer). Hashed
+       names make that impossible. The light-mode contract is unchanged, so
+       the assertion follows the file. */
+    expect(read('src/pages/PublicProfilePage.module.css')).toContain(
+      ":global([data-theme='light']) .publicProfilePage"
     );
     expect(read('src/pages/NotificationsPage.css')).toContain("[data-theme='light'] .ca-notif");
     // The dead sibling stylesheets are gone, not lingering as a second owner.

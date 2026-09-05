@@ -29,7 +29,13 @@
  */
 
 import { buildAnimationKey, isOlderHand, laneKey } from './animationKey';
-import { MOUNT_WINDOW_MARGIN_MS } from './profiles';
+import {
+  DEGRADED_FPS_THRESHOLD,
+  rafFrameSampler,
+  type FrameSample,
+  type FrameSamplerStart,
+} from './frameSampler';
+import { FLOP_FAN_TOTAL_MS, MOUNT_WINDOW_MARGIN_MS } from './profiles';
 import { resolveCardAnimationProfile } from './resolveProfile';
 import type {
   CardAnimationProfile,
@@ -47,6 +53,16 @@ export interface CardPresentationEngineOptions {
   now?: () => number;
   /** The --animation-speed multiplier at presentation time. Defaults to 1. */
   speed?: () => number;
+  /**
+   * Frame-rate sampling (spec 63, 64). Defaults to the rAF sampler; tests
+   * pass a no-op. Sampled at `frameSampleRate` because a rAF loop on every
+   * river would be the jank it is measuring.
+   */
+  frameSampler?: FrameSamplerStart;
+  /** 0..1, how often a presentation is frame-sampled. Default 0.05. */
+  frameSampleRate?: number;
+  /** Injectable randomness so the sampling decision is testable. */
+  random?: () => number;
   /** How many keys the duplicate registry remembers. */
   maxProcessed?: number;
 }
@@ -55,10 +71,34 @@ interface ActivePresentation {
   readonly key: string;
   readonly event: CommunityCardDealPresentation;
   readonly profile: CardAnimationProfile;
+  /**
+   * AUDIT FIX 2026-09-05: the mode and platform THIS PRESENTATION resolved
+   * from, kept beside the profile it resolved to. `animation_started` used
+   * the caller's input and `animation_completed` used the profile constant,
+   * and those are different for most real sessions - a tournament all-in
+   * started as `tournament` and completed as `cash` (allIn.mode is 'cash'),
+   * a phone completed as `desktop`, and a tablet completed as desktop always
+   * because no profile carries `platform: 'tablet'`. Joining the two events
+   * on those dimensions gave incoherent totals.
+   */
+  readonly mode: CardAnimationProfile['mode'];
+  readonly platform: CardAnimationProfile['platform'];
+  /** What the animation on screen actually takes, which is not always the profile. */
+  readonly expectedMs: number;
   readonly startedAt: number;
   /** Speed-scaled phase end offsets, ms from startedAt. */
   readonly ends: { prepare: number; hold: number; squeeze: number; reveal: number; settle: number };
   timer: ReturnType<typeof setTimeout> | null;
+  /**
+   * ROUND 2 2026-09-05: fires at the EDGE-ON instant, where the two
+   * backface-hidden surfaces swap and the face first appears. That is the
+   * beat the card lands on in the reference recording, and it is what the
+   * board plays its snap on - not the street transition, which on an all-in
+   * runout is a full second earlier (the card is still face down then).
+   */
+  revealTimer: ReturnType<typeof setTimeout> | null;
+  /** Cancel for the frame sampler, when this presentation was sampled. */
+  stopSampling: (() => void) | null;
 }
 
 export interface ActivePresentationView {
@@ -85,6 +125,9 @@ export class CardPresentationEngine {
   private readonly now: () => number;
   private readonly speed: () => number;
   private readonly maxProcessed: number;
+  private readonly frameSampler: FrameSamplerStart;
+  private readonly frameSampleRate: number;
+  private readonly random: () => number;
 
   /** Insertion-ordered so the oldest key is evicted first (spec 15). */
   private readonly processed = new Map<string, true>();
@@ -93,6 +136,15 @@ export class CardPresentationEngine {
   private readonly lanes = new Map<string, string>();
   /** table -> newest hand seen; an older hand's card is stale (spec 16, 31). */
   private readonly latestHand = new Map<string, string | number>();
+  /**
+   * lane -> the furthest street presented on it, for THIS hand (spec 16, 84,
+   * 103). Hand-level staleness alone cannot catch a late turn arriving after
+   * the river: same hand, same board, and the registry only knows the turn was
+   * not presented BEFORE - not that the board has since moved past it. A
+   * reconnect replays exactly that shape, and animating it would turn a card
+   * over that is already face up.
+   */
+  private readonly laneProgress = new Map<string, { handId: string | number; sequence: number }>();
   private readonly listeners = new Set<PhaseListener>();
 
   constructor(opts: CardPresentationEngineOptions = {}) {
@@ -100,6 +152,9 @@ export class CardPresentationEngine {
     this.now = opts.now ?? monotonicNow;
     this.speed = opts.speed ?? (() => 1);
     this.maxProcessed = opts.maxProcessed ?? DEFAULT_MAX_PROCESSED;
+    this.frameSampler = opts.frameSampler ?? rafFrameSampler;
+    this.frameSampleRate = opts.frameSampleRate ?? 0.05;
+    this.random = opts.random ?? Math.random;
   }
 
   /**
@@ -120,7 +175,7 @@ export class CardPresentationEngine {
       profile: profile.id,
       platform: input.platform,
       mode: input.mode,
-      durationExpected: profile.durationMs,
+      durationExpected: event.street === 'flop' ? FLOP_FAN_TOTAL_MS : profile.durationMs,
     } as const;
 
     if (this.processed.has(key)) {
@@ -134,7 +189,27 @@ export class CardPresentationEngine {
       this.telemetry({ ...base, event: 'animation_skipped', reason: 'stale-hand' });
       return { status: 'stale', key, profile, durationMs: 0 };
     }
-    this.latestHand.set(event.tableId, event.handId);
+    const lane = laneKey(event);
+    const progress = this.laneProgress.get(lane);
+    if (progress && progress.handId === event.handId && event.sequence < progress.sequence) {
+      this.remember(key);
+      this.telemetry({ ...base, event: 'animation_skipped', reason: 'out-of-order' });
+      return { status: 'stale', key, profile, durationMs: 0 };
+    }
+    /* AUDIT FIX 2026-09-05: BOUND THESE TWO.
+       `processed` was capped from the start; these were not, and they are the
+       ones that actually grow. `useCardSqueeze` gives every replayed hand its
+       OWN surface id, so a player who opens five hundred hands in the hand
+       history leaves five hundred `latestHand` entries and as many
+       `laneProgress` entries in a process-global singleton, for the life of
+       the tab. Evicting oldest-first is safe: the worst case for a table that
+       falls off the end is that one card animates which would have been
+       suppressed, and the board is correct either way. */
+    this.rememberIn(this.latestHand, event.tableId, event.handId);
+    this.rememberIn(this.laneProgress, lane, {
+      handId: event.handId,
+      sequence: event.sequence,
+    });
     this.remember(key);
 
     if (profile.intensity === 'off' || profile.durationMs <= 0) {
@@ -144,12 +219,17 @@ export class CardPresentationEngine {
 
     // One presentation per lane: a newer card on the same board pre-empts an
     // older one still mid-flight, and that one renders its final state.
-    const lane = laneKey(event);
     const previous = this.lanes.get(lane);
     if (previous && previous !== key) this.cancel(previous, 'superseded');
 
-    const s = this.speed();
+    // A server-paced reveal may run FASTER than spec but never slower: the
+    // engine's equity gate is a fixed wall-clock hold that does not know this
+    // client's speed. See serverPaced in types.ts.
+    const s = profile.serverPaced ? Math.min(1, this.speed()) : this.speed();
     const startedAt = this.now();
+    // The flop runs its own fan, not the squeeze; the profile does not
+    // describe it (see FLOP_FAN_TOTAL_MS).
+    const expectedMs = event.street === 'flop' ? FLOP_FAN_TOTAL_MS : profile.durationMs;
     const prepare = profile.prepareMs * s;
     const hold = prepare + profile.holdMs * s;
     const squeeze = hold + profile.squeezeMs * s;
@@ -159,16 +239,39 @@ export class CardPresentationEngine {
       key,
       event,
       profile,
+      mode: input.mode,
+      platform: input.platform,
+      expectedMs,
       startedAt,
       ends: { prepare, hold, squeeze, reveal, settle },
       timer: null,
+      revealTimer: null,
+      stopSampling: null,
     };
     entry.timer = setTimeout(
       () => this.complete(key),
-      Math.ceil(settle + MOUNT_WINDOW_MARGIN_MS * s)
+      Math.ceil(Math.max(settle, expectedMs * s) + MOUNT_WINDOW_MARGIN_MS * s)
     );
+    // The face appears at the edge-on instant, which is the END of the
+    // squeeze beat. Listeners (the board's sound cue) hang off this.
+    entry.revealTimer = setTimeout(() => {
+      const live = this.active.get(key);
+      if (!live) return;
+      live.revealTimer = null;
+      this.notify(key, 'reveal', this.now() - live.startedAt);
+    }, Math.ceil(squeeze));
+    /* AUDIT FIX 2026-09-05: REGISTER FIRST. A sampler that completes
+       synchronously - any injected one, and a plausible future rAF shim -
+       landed in reportFrameSample before the entry existed and was silently
+       discarded. The rAF sampler happens never to do it, which is exactly the
+       kind of accident that holds until it does not. */
     this.active.set(key, entry);
     this.lanes.set(lane, key);
+    if (this.random() < this.frameSampleRate) {
+      entry.stopSampling = this.frameSampler(settle, (sample) =>
+        this.reportFrameSample(key, sample)
+      );
+    }
     this.telemetry({ ...base, event: 'animation_started' });
     this.notify(key, 'prepare', 0);
 
@@ -176,7 +279,7 @@ export class CardPresentationEngine {
       status: 'started',
       key,
       profile,
-      durationMs: profile.durationMs + MOUNT_WINDOW_MARGIN_MS,
+      durationMs: expectedMs + MOUNT_WINDOW_MARGIN_MS,
     };
   }
 
@@ -192,9 +295,9 @@ export class CardPresentationEngine {
       street: entry.event.street,
       boardIndex: entry.event.boardIndex,
       profile: entry.profile.id,
-      platform: entry.profile.platform,
-      mode: entry.profile.mode,
-      durationExpected: entry.profile.durationMs,
+      platform: entry.platform,
+      mode: entry.mode,
+      durationExpected: entry.expectedMs,
       durationActual: Math.round(elapsed),
     });
     this.notify(key, 'complete', elapsed);
@@ -212,9 +315,9 @@ export class CardPresentationEngine {
       street: entry.event.street,
       boardIndex: entry.event.boardIndex,
       profile: entry.profile.id,
-      platform: entry.profile.platform,
-      mode: entry.profile.mode,
-      durationExpected: entry.profile.durationMs,
+      platform: entry.platform,
+      mode: entry.mode,
+      durationExpected: entry.expectedMs,
       durationActual: Math.round(elapsed),
       reason,
     });
@@ -232,6 +335,19 @@ export class CardPresentationEngine {
     }
   }
 
+  /**
+   * Cancel every presentation on every surface (spec 39, 40, 66, 76, 77).
+   *
+   * The environment interrupts use this: a window resize, an orientation
+   * change or the tab being backgrounded all invalidate the geometry a flip
+   * is running against, and correctness beats visual continuation - every
+   * card renders its authoritative final state instead of finishing a turn
+   * against a board that has moved underneath it.
+   */
+  cancelAll(reason: string): void {
+    for (const entry of Array.from(this.active.values())) this.cancel(entry.key, reason);
+  }
+
   isActive(key: string): boolean {
     return this.active.has(key);
   }
@@ -246,7 +362,6 @@ export class CardPresentationEngine {
     if (t < e.hold) return 'hold';
     if (t < e.squeeze) return 'squeeze';
     if (t < e.reveal) return 'reveal';
-    if (t < e.settle) return 'settle';
     return 'settle';
   }
 
@@ -278,6 +393,9 @@ export class CardPresentationEngine {
     for (const key of Array.from(this.processed.keys())) {
       if (key.startsWith(prefix)) this.processed.delete(key);
     }
+    for (const lane of Array.from(this.laneProgress.keys())) {
+      if (lane.startsWith(prefix)) this.laneProgress.delete(lane);
+    }
   }
 
   /** Cancel everything and drop every listener (spec 99, 100). */
@@ -285,6 +403,7 @@ export class CardPresentationEngine {
     for (const entry of Array.from(this.active.values())) this.cancel(entry.key, 'disposed');
     this.listeners.clear();
     this.lanes.clear();
+    this.laneProgress.clear();
     this.processed.clear();
     this.latestHand.clear();
   }
@@ -294,18 +413,94 @@ export class CardPresentationEngine {
     return this.active.size;
   }
 
+  /* ROUND 2 2026-09-05: the counters the soak test measures. A leak here is
+     invisible for an hour - the animation still plays and the tab just gets
+     heavier - so every internal collection is countable from outside and
+     tests/unit/cardPresentation/soak.test.ts drives a thousand hands through
+     them. They are reads; nothing about the engine's behaviour depends on
+     them existing. */
+
+  /** Lanes currently held (one per table-and-board with work in flight). */
+  get laneCount(): number {
+    return this.lanes.size;
+  }
+
+  /** Keys in the bounded duplicate registry. */
+  get processedSize(): number {
+    return this.processed.size;
+  }
+
+  /** The registry's ceiling, so a test can assert the bound rather than a literal. */
+  get maxProcessedKeys(): number {
+    return this.maxProcessed;
+  }
+
+  /** Tables whose newest hand is remembered for stale rejection. */
+  get trackedTableCount(): number {
+    return this.latestHand.size;
+  }
+
+  /** Live phase listeners. */
+  get listenerCount(): number {
+    return this.listeners.size;
+  }
+
+  /**
+   * Lanes whose street progression is remembered. AUDIT FIX 2026-09-05: this
+   * had no counter, which is exactly why the soak could not see that the map
+   * had no bound - every other collection was measured and this one was not.
+   */
+  get laneProgressSize(): number {
+    return this.laneProgress.size;
+  }
+
   private remember(key: string): void {
-    this.processed.set(key, true);
-    while (this.processed.size > this.maxProcessed) {
-      const oldest = this.processed.keys().next().value;
+    this.rememberIn(this.processed, key, true);
+  }
+
+  /** Insertion-ordered set-with-a-ceiling; the oldest key falls off the end. */
+  private rememberIn<K, V>(map: Map<K, V>, key: K, value: V): void {
+    map.delete(key);
+    map.set(key, value);
+    while (map.size > this.maxProcessed) {
+      const oldest = map.keys().next().value;
       if (oldest === undefined) break;
-      this.processed.delete(oldest);
+      map.delete(oldest);
     }
+  }
+
+  /**
+   * A sampled presentation that painted below the threshold is reported once,
+   * with the measured rate. It is never acted on here: degrading an animation
+   * because a previous one stuttered is how a product ends up permanently
+   * animation-free on a device that had one bad second (CLAUDE.md 10.6).
+   */
+  private reportFrameSample(key: string, sample: FrameSample): void {
+    const entry = this.active.get(key);
+    if (!entry) return;
+    entry.stopSampling = null;
+    if (sample.fps >= DEGRADED_FPS_THRESHOLD || sample.frames === 0) return;
+    this.telemetry({
+      event: 'animation_performance_degraded',
+      key,
+      street: entry.event.street,
+      boardIndex: entry.event.boardIndex,
+      profile: entry.profile.id,
+      platform: entry.platform,
+      mode: entry.mode,
+      durationExpected: entry.expectedMs,
+      durationActual: Math.round(sample.elapsedMs),
+      reason: `fps=${sample.fps.toFixed(1)} frames=${sample.frames} dropped=${sample.droppedFrames}`,
+    });
   }
 
   private release(entry: ActivePresentation): void {
     if (entry.timer) clearTimeout(entry.timer);
     entry.timer = null;
+    if (entry.revealTimer) clearTimeout(entry.revealTimer);
+    entry.revealTimer = null;
+    if (entry.stopSampling) entry.stopSampling();
+    entry.stopSampling = null;
     this.active.delete(entry.key);
     const lane = laneKey(entry.event);
     if (this.lanes.get(lane) === entry.key) this.lanes.delete(lane);

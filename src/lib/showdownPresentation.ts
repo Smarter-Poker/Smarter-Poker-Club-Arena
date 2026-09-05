@@ -164,12 +164,44 @@ export function boardLabelFromAwards(
  * delivered. Returns 0 when the player is not a pending winner or the hold
  * has been released.
  */
+/**
+ * ── PER-BOARD RELEASE (2026-09-05, run-it-twice parity) ──
+ *
+ * `released` used to be the whole story: one boolean, flipped once, after the
+ * LAST award group's fan landed. On a single-board hand that is right — one
+ * ship, one release. On a run-it-twice or run-it-three-times hand it is the
+ * reported bug. The engine credits ONE merged total, the seat holds ALL of it
+ * through boards 1..N-1, and the stack then jumps by the entire amount in a
+ * single step at the end.
+ *
+ * The reference client (PokerBros, frame-verified 2026-09-05) pays each board
+ * as it lands: a player taking two of three boards is seen going 0 → 2.73 →
+ * 5.46, each step landing with that board's own chip fan. Ours went
+ * 0 → 0 → 5.46.
+ *
+ * `releasedByPlayer` carries the amount already visually delivered to each
+ * player, accumulated one award group at a time as each fan arrives, so the
+ * seat rises in the same beats the chips do.
+ *
+ * The subtraction is done in integer cents. These are two independently
+ * rounded money paths meeting; a float subtraction leaves 0.00499… behind and
+ * renders as a stack permanently a cent short of the truth.
+ *
+ * `released === true` still short-circuits to zero: it is the backstop
+ * (HAND_COMPLETE, HAND_STARTED) and must always be able to end the hold
+ * outright, whatever the per-player ledger says.
+ */
 export function pendingStackHold(
   engineWinners: Array<{ userId: string; amount: number }> | undefined,
   playerId: string,
-  released: boolean
+  released: boolean,
+  releasedByPlayer?: Readonly<Record<string, number>>
 ): number {
   if (released || !engineWinners) return 0;
   const w = engineWinners.find((x) => x.userId === playerId);
-  return w && w.amount > 0 ? w.amount : 0;
+  if (!w || !(w.amount > 0)) return 0;
+  const shipped = releasedByPlayer?.[playerId] ?? 0;
+  if (!(shipped > 0)) return w.amount;
+  const remainingCents = Math.round(w.amount * 100) - Math.round(shipped * 100);
+  return remainingCents > 0 ? remainingCents / 100 : 0;
 }

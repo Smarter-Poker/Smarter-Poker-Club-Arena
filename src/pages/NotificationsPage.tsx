@@ -53,18 +53,24 @@
  * to be fast.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
+import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PushEnableBanner from '../components/notifications/PushEnableBanner';
 import AccountSurfaceHeader from '../components/account/AccountSurfaceHeader';
 import './NotificationsPage.css';
 
 /** Club Arena's router basename. Paths under it are handled in-SPA. */
 const CA_BASE = '/hub/club-arena';
+
+/* The placeholder portrait lives in THIS bundle's public/. A bare
+   '/default-avatar.png' resolves against the World Hub root, which is a
+   different deployment and owes us nothing at that path. */
+const DEFAULT_AVATAR = `${import.meta.env.BASE_URL || '/hub/club-arena/'}default-avatar.png`;
 
 /**
  * Shared with the World Hub notifications page, which writes the same shape
@@ -129,10 +135,19 @@ function categorise(type: string | null | undefined, message: string | null | un
   const t = (type || '').toLowerCase();
   const msg = (message || '').toLowerCase();
 
+  /* #SmarterCasinoRealism palette: seat calls are the one red light on the
+     desk, money is green felt, tournaments and distinctions are brass,
+     conversation and people are broadcast blue, the house is steel. The old
+     map used Instagram pink, Facebook blue and a YouTube-ish yellow. */
+  const SEAT = '#c6303f';
+  const MONEY = '#1f8f55';
+  const BRASS = '#b8902f';
+  const BLUE = '#1e7fd0';
+  const STEEL = '#4c5f6d';
+
   if (t.startsWith('waitlist') || t === 'seat_ready' || t === 'called_for_seat')
-    return { glyph: 'seat', bg: '#e4405f' };
-  if (t === 'table_invite' || t === 'live' || t === 'live_game')
-    return { glyph: 'seat', bg: '#e4405f' };
+    return { glyph: 'seat', bg: SEAT };
+  if (t === 'table_invite' || t === 'live' || t === 'live_game') return { glyph: 'seat', bg: SEAT };
   if (
     t === 'settlement' ||
     t === 'weekly_settlement' ||
@@ -142,30 +157,29 @@ function categorise(type: string | null | undefined, message: string | null | un
     t === 'bonus' ||
     t.startsWith('rakeback')
   )
-    return { glyph: 'money', bg: '#22c55e' };
-  if (t.startsWith('tournament')) return { glyph: 'trophy', bg: '#ffd60a' };
+    return { glyph: 'money', bg: MONEY };
+  if (t.startsWith('tournament')) return { glyph: 'trophy', bg: BRASS };
   if (t === 'achievement' || t === 'level_up' || t.startsWith('streak'))
-    return { glyph: 'star', bg: '#ffd60a' };
+    return { glyph: 'star', bg: BRASS };
   if (t === 'message' || t === 'messenger_message' || t === 'comment' || t === 'mention')
-    return { glyph: 'chat', bg: '#1877f2' };
+    return { glyph: 'chat', bg: BLUE };
   if (t.startsWith('friend') || t === 'member_joined' || t === 'new_follow' || t === 'follow')
-    return { glyph: 'person', bg: '#42b72a' };
-  if (t.endsWith('announcement') || t === 'club_updates')
-    return { glyph: 'megaphone', bg: '#ffd60a' };
+    return { glyph: 'person', bg: BLUE };
+  if (t.endsWith('announcement') || t === 'club_updates') return { glyph: 'megaphone', bg: BRASS };
 
   // Content fallback, for types that have not been enumerated yet.
-  if (msg.includes('seat')) return { glyph: 'seat', bg: '#e4405f' };
-  if (msg.includes('rake') || msg.includes('settlement')) return { glyph: 'money', bg: '#22c55e' };
-  if (msg.includes('tournament')) return { glyph: 'trophy', bg: '#ffd60a' };
+  if (msg.includes('seat')) return { glyph: 'seat', bg: SEAT };
+  if (msg.includes('rake') || msg.includes('settlement')) return { glyph: 'money', bg: MONEY };
+  if (msg.includes('tournament')) return { glyph: 'trophy', bg: BRASS };
 
-  return { glyph: 'bell', bg: '#1877f2' };
+  return { glyph: 'bell', bg: STEEL };
 }
 
-function CategoryIcon({ glyph }: { glyph: Glyph }) {
+function CategoryIcon({ glyph, size = 13 }: { glyph: Glyph; size?: number }) {
   return (
     <svg
-      width="13"
-      height="13"
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -219,6 +233,18 @@ const isUnread = (n: FeedNotification) => !(n.read || n.is_read);
 /** The destination the server resolved, or null when there genuinely is none. */
 const destinationOf = (n: FeedNotification): string | null =>
   n.link || n.action_url || (typeof n.data?.action_url === 'string' ? n.data.action_url : null);
+
+/** Day bucket for the rail headings. Local time, because that is the clock the player reads. */
+function dayBucket(iso: string, now = new Date()): 'Today' | 'Yesterday' | 'This Week' | 'Earlier' {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'Earlier';
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const t = d.getTime();
+  if (t >= startOfToday) return 'Today';
+  if (t >= startOfToday - 86_400_000) return 'Yesterday';
+  if (t >= startOfToday - 6 * 86_400_000) return 'This Week';
+  return 'Earlier';
+}
 
 /* ═══════════════════════════════════════════════════════════════════════
    PAGE
@@ -298,6 +324,10 @@ export default function NotificationsPage() {
     refresh(controller.signal);
     return () => controller.abort();
   }, [refresh]);
+
+  // A tab left open through a session and brought back should not show the
+  // list as it stood an hour ago.
+  useVisibilityRefresh(() => refresh());
 
   /* ── Clear the header badge on open ──────────────────────────────── */
 
@@ -501,9 +531,10 @@ export default function NotificationsPage() {
   return (
     <div className="ca-notif">
       <AccountSurfaceHeader
+        artwork="images/account/signal-desk-hero-v1.webp"
         eyebrow="Signal Inbox // Live Player Network"
         title="Notifications"
-        description="Seat Calls, Tournament Movement, Messages, Rewards, And Club Operations, Resolved By The Same Canonical Destination Service Used Across Smarter.Poker."
+        description="Seat Calls, Tournament Starts, Settlements, Messages And Club Announcements. Tap A Signal To Go Straight To It."
         status={loading ? 'Synchronizing' : 'Live Feed'}
       >
         <span className="ca-notif__heroMetric">
@@ -561,8 +592,11 @@ export default function NotificationsPage() {
           ))
         ) : notifications.length === 0 ? (
           <div className="ca-notif__empty">
-            <h3>No Notifications Yet</h3>
-            <p>When Someone Likes, Comments, Or Tags You, You Will See It Here.</p>
+            <h3>No Signals Yet</h3>
+            <p>
+              Seat Calls, Tournament Starts, Settlements, Friend Requests And Club Announcements
+              Will Land Here.
+            </p>
           </div>
         ) : visibleNotifications.length === 0 ? (
           <div className="ca-notif__empty" role="status">
@@ -573,7 +607,7 @@ export default function NotificationsPage() {
             </button>
           </div>
         ) : (
-          visibleNotifications.map((n) => {
+          visibleNotifications.map((n, index) => {
             const unread = isUnread(n);
             const clickable = !!destinationOf(n);
             const { glyph, bg } = categorise(n.type, n.message);
@@ -585,61 +619,95 @@ export default function NotificationsPage() {
               .filter(Boolean)
               .join(' ');
 
+            const bucket = dayBucket(n.created_at);
+            const previous = index > 0 ? visibleNotifications[index - 1] : null;
+            const showHeading = !previous || dayBucket(previous.created_at) !== bucket;
+
             return (
-              <article className={rowClass} key={n.id} data-notif-id={n.id}>
-                <button
-                  type="button"
-                  className={`ca-notif__tap${clickable ? ' ca-notif__tap--clickable' : ''}`}
-                  onClick={clickable ? () => handleTap(n) : undefined}
-                  disabled={!clickable}
-                  aria-label={
-                    clickable
-                      ? `${n.actor_name || n.title || 'Notification'} ${n.message || ''}. ${timeAgo(n.created_at)}`
-                      : undefined
-                  }
-                >
-                  <div className="ca-notif__avatarWrap">
-                    <img
-                      className="ca-notif__avatar"
-                      src={n.actor_avatar_url || '/default-avatar.png'}
-                      alt=""
-                      loading="lazy"
-                    />
-                    <span className="ca-notif__badge" style={{ background: bg }}>
-                      <CategoryIcon glyph={glyph} />
-                    </span>
-                  </div>
-
-                  <div className="ca-notif__body">
-                    <div className="ca-notif__text">
-                      <span className="ca-notif__actor">{n.actor_name || n.title}</span> {n.message}
-                    </div>
-                    <div className="ca-notif__time">{timeAgo(n.created_at)}</div>
-                  </div>
-
-                  {unread && <span className="ca-notif__dot" aria-label="Unread" />}
-                </button>
-                <button
-                  type="button"
-                  className="ca-notif__delete"
-                  title="Dismiss"
-                  aria-label={`Dismiss ${n.title || n.message || 'Notification'}`}
-                  onClick={() => handleDelete(n.id)}
-                >
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    aria-hidden="true"
+              <Fragment key={n.id}>
+                {showHeading && (
+                  <h2 className="ca-notif__day" aria-label={`${bucket} Notifications`}>
+                    {bucket}
+                  </h2>
+                )}
+                <article className={rowClass} data-notif-id={n.id}>
+                  <button
+                    type="button"
+                    className={`ca-notif__tap${clickable ? ' ca-notif__tap--clickable' : ''}`}
+                    onClick={clickable ? () => handleTap(n) : undefined}
+                    disabled={!clickable}
+                    aria-label={
+                      clickable
+                        ? `${n.actor_name || n.title || 'Notification'} ${n.message || ''}. ${timeAgo(n.created_at)}`
+                        : undefined
+                    }
                   >
-                    <path d="M18 6L6 18M6 6l12 12" />
-                  </svg>
-                </button>
-              </article>
+                    <div className="ca-notif__avatarWrap">
+                      {n.actor_avatar_url ? (
+                        <>
+                          <img
+                            className="ca-notif__avatar"
+                            src={n.actor_avatar_url}
+                            alt=""
+                            loading="lazy"
+                            width={54}
+                            height={54}
+                            onError={(e) => {
+                              const img = e.currentTarget;
+                              if (img.src !== DEFAULT_AVATAR) img.src = DEFAULT_AVATAR;
+                            }}
+                          />
+                          <span className="ca-notif__badge" style={{ background: bg }}>
+                            <CategoryIcon glyph={glyph} />
+                          </span>
+                        </>
+                      ) : (
+                        /* A system signal has no actor. It used to borrow the
+                           hub's placeholder portrait (a hooded figure), which
+                           made every ledger alert look like a stranger's DM.
+                           The category plate is the honest face for it. */
+                        <span
+                          className="ca-notif__systemTile"
+                          style={{ borderColor: bg, color: bg }}
+                          aria-hidden="true"
+                        >
+                          <CategoryIcon glyph={glyph} size={22} />
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="ca-notif__body">
+                      <div className="ca-notif__text">
+                        <span className="ca-notif__actor">{n.actor_name || n.title}</span>{' '}
+                        {n.message}
+                      </div>
+                      <div className="ca-notif__time">{timeAgo(n.created_at)}</div>
+                    </div>
+
+                    {unread && <span className="ca-notif__dot" aria-label="Unread" />}
+                  </button>
+                  <button
+                    type="button"
+                    className="ca-notif__delete"
+                    title="Dismiss"
+                    aria-label={`Dismiss ${n.title || n.message || 'Notification'}`}
+                    onClick={() => handleDelete(n.id)}
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                  </button>
+                </article>
+              </Fragment>
             );
           })
         )}

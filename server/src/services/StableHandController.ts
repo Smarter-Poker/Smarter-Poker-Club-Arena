@@ -67,6 +67,21 @@ export interface TableSnapshot {
   seatedHorses: YieldCandidate[];
   status: string;
   waitlistId?: string;
+  /**
+   * The must-move game this table belongs to (Operation Table Stakes, R9),
+   * or null for a fleet table. A CLUSTER TABLE'S LIFE IS THE
+   * CLUSTERCONTROLLER'S: it opens, feeds, breaks, sleeps and reopens Main 1
+   * itself (R3). The Stable Hand still shapes WHO sits there - a horse is a
+   * player everywhere (10.5) - but it never closes, parks or duplicates one.
+   *
+   * Found live 2026-09-05 00:10 UTC: the exotic/limit trim marked 25 enabled
+   * cluster Main 1s (PLO8, Short Deck, Pineapple, FLH, FLO8 - Dan's ladder of
+   * two rungs x three templates is six per variant against this cap of two)
+   * `retire_when_empty`. The fleet then refused to seed them, the rotator
+   * walked their horses out, retireSurplusTables closed them, and the
+   * controller reopened them on its next tick, forever.
+   */
+  clusterId?: string | null;
 }
 
 export interface HostSnapshot {
@@ -417,13 +432,22 @@ export function planFloor(snap: FloorSnapshot): FloorPlan {
       }
     }
 
-    // 5. Exotic and limit caps, per variant.
+    // 5. Exotic and limit caps, per variant - FLEET tables only. A cluster
+    //    table (a must-move game's Main, feeder or extra Main) is the
+    //    ClusterController's: it is never closed here, and while a variant
+    //    has a cluster the fleet opens nothing of its own beside it - the
+    //    cluster is that variant's supply and opens its own feeders.
     const byVariant = new Map<string, TableSnapshot[]>();
+    const clusteredVariants = new Set<string>();
     host.tables.forEach((t) => {
       const key = isLimitGame(t.variant)
         ? t.variant.toLowerCase()
         : (canonicalExotic(t.variant) ?? '');
       if (!key) return;
+      if (t.clusterId) {
+        clusteredVariants.add(key);
+        return;
+      }
       if (!byVariant.has(key)) byVariant.set(key, []);
       byVariant.get(key)!.push(t);
     });
@@ -431,7 +455,7 @@ export function planFloor(snap: FloorSnapshot): FloorPlan {
       const rows = ts.map((t) => ({ tableId: t.tableId, variant, bb: t.bb, seated: t.occupied }));
       const p = isLimitGame(variant) ? planLimitGames(rows, host.n) : planExoticTrim(rows, host.n);
       plan.close.push(...p.close);
-      if (p.mayOpen > 0 && !snap.killed) {
+      if (p.mayOpen > 0 && !snap.killed && !clusteredVariants.has(variant)) {
         plan.open.push({ hostId: host.hostId, variant, band: 'low', count: p.mayOpen });
       }
       ts.filter((t) => t.bb > 2).forEach((t) =>
@@ -466,8 +490,11 @@ export function planFloor(snap: FloorSnapshot): FloorPlan {
            derived from the cap rather than fixed - 29 bodies at up to 1.3
            seats each is 38 seats and needs seven full rings, not six. */
     if (isNightWindow(snap.chicagoHour)) {
+      /* ...and never a cluster table: a must-move game thins itself (its
+         controller breaks the newest table when everyone fits in the rest)
+         and Main 1 is always open while the game is enabled (R3). */
       const parkable = running
-        .filter((t) => t.humansSeated === 0 && t.humansWaiting === 0)
+        .filter((t) => t.humansSeated === 0 && t.humansWaiting === 0 && !t.clusterId)
         .sort((a, b) => b.occupied - a.occupied);
       const keepOpen = nightTablesNeeded(occ.max, snap.chicagoHour);
       const keep = new Set(parkable.slice(0, keepOpen).map((t) => t.tableId));

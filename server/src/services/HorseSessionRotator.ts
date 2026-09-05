@@ -161,7 +161,7 @@ export class HorseSessionRotator {
       const { data: chunk, error } = await supabase
         .from('table_seats')
         .select(
-          'table_id, user_id, seat_number, stack, joined_at, club_id, tables!inner(id, big_blind, tournament_id, status, settings)'
+          'table_id, user_id, seat_number, stack, joined_at, club_id, tables!inner(id, big_blind, tournament_id, status, settings, cluster_id)'
         )
         .is('left_at', null)
         .order('table_id', { ascending: true })
@@ -374,6 +374,12 @@ export class HorseSessionRotator {
      */
     for (const [tableId, tableSeats] of byTable) {
       const t = (tableSeats[0] as any)?.tables;
+      /* A CLUSTER TABLE IS NEVER RETIRED BY THE FLEET (2026-09-05). Its life
+         is its game's controller's: it breaks and moves its players itself.
+         A stale `retire_when_empty` flag on one (the old Stable Hand executor
+         wrote 25 of them) used to have this loop walk its horses out every
+         cycle while the fleet seeded them straight back. */
+      if (t?.cluster_id) continue;
       if (!isRetiringTable(t)) continue;
       /* A PERSON OUTRANKS THE CLOSURE (2026-09-03).
          Every other departure rule in this file protects a human's game -

@@ -84,6 +84,7 @@ export function sanitizeStore(parsed: FilterStore | null | undefined): FilterSto
       if (!spec || !value || typeof value !== 'object') continue;
       const known = new Set(spec.features.map((f) => f.key));
       const gameKeys = new Set((spec.games ?? []).map((g) => g.key));
+      const styleKeys = new Set((spec.styles ?? []).map((g) => g.key));
       const statusKeys = new Set(spec.statuses.map((s) => s.key));
       const presetKeys = new Set(spec.range.presets.map((pr) => pr.key));
       const list = (x: unknown) => (Array.isArray(x) ? (x as string[]) : []);
@@ -105,6 +106,7 @@ export function sanitizeStore(parsed: FilterStore | null | undefined): FilterSto
         ...value,
         // Drop keys a previous build wrote that this one no longer defines.
         games: list(value.games).filter((g) => gameKeys.has(g)),
+        styles: list(value.styles).filter((g) => styleKeys.has(g)),
         statuses: list(value.statuses).filter((st) => statusKeys.has(st)),
         mustHave: list(value.mustHave).filter((k) => known.has(k)),
         hide: list(value.hide).filter((k) => known.has(k)),
@@ -386,6 +388,7 @@ export default function AdvancedFilters({
     let count = 0;
     count += value.format.length;
     count += value.games.length;
+    count += value.styles?.length ?? 0;
     count += value.statuses.length;
     count += value.mustHave.length;
     count += value.hide.length;
@@ -417,8 +420,8 @@ export default function AdvancedFilters({
   );
 
   const toggle = useCallback(
-    (field: 'games' | 'format' | 'statuses' | 'mustHave' | 'hide', key: string) => {
-      const cur = value[field];
+    (field: 'games' | 'format' | 'styles' | 'statuses' | 'mustHave' | 'hide', key: string) => {
+      const cur = value[field] ?? [];
       const next = cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key];
       /* MUST-HAVE and Hide are mutually exclusive for the same feature: asking
          for tables that both have and do not have Bomb Pot returns nothing, and
@@ -446,7 +449,7 @@ export default function AdvancedFilters({
 
   const chipRow = (
     items: { key: string; label: string }[],
-    field: 'games' | 'format' | 'statuses',
+    field: 'games' | 'format' | 'styles' | 'statuses',
     selected: string[]
   ) => (
     <div className="afx-chips">
@@ -553,6 +556,15 @@ export default function AdvancedFilters({
                     <h3>Games</h3>
                   </summary>
                   {chipRow(spec.games, 'games', value.games)}
+                </details>
+              )}
+
+              {spec.styles && (
+                <details className="afx-section" open>
+                  <summary>
+                    <h3>Game Style</h3>
+                  </summary>
+                  {chipRow(spec.styles, 'styles', value.styles ?? [])}
                 </details>
               )}
 

@@ -48,6 +48,14 @@ interface ActionPanelProps {
   smallBlind?: number;
   onAction: (action: 'fold' | 'check' | 'call' | 'raise' | 'allin', amount?: number) => void;
   isMyTurn?: boolean;
+  /**
+   * 2026-09-04 (disconnect audit item 6): true while the engine socket is not
+   * connected. The panel is drawn from the last snapshot, which may be a
+   * street old; the buttons stay live (the HTTP action path is a second
+   * transport and the server is the authority on whose turn it is) but they
+   * are marked so a tap is an informed one, and the row says why.
+   */
+  connectionStale?: boolean;
   showPotOdds?: boolean;
   /**
    * @deprecated Dan 2026-08-19, bug list item 12: "do NOT add a confirm-all-in
@@ -495,6 +503,7 @@ export default function ActionPanel({
   smallBlind,
   onAction,
   isMyTurn = true,
+  connectionStale = false,
   showPotOdds = false,
   confirmAllIn: _confirmAllInDeprecated,
   showBetSizePresets = true,
@@ -1339,9 +1348,17 @@ export default function ActionPanel({
       ref={panelRootRef}
       className={`action-panel${isMyTurn ? ' action-panel--active' : ''}${
         turnPulse ? ' action-panel--attention' : ''
-      }${isRaiseMode ? ' action-panel--raise action-panel--raise-vertical' : ''}`}
+      }${isRaiseMode ? ' action-panel--raise action-panel--raise-vertical' : ''}${
+        connectionStale ? ' action-panel--stale' : ''
+      }`}
+      data-connection={connectionStale ? 'stale' : 'live'}
     >
       {raiseOverlay}
+      {connectionStale && (
+        <div className="action-panel__stale-note" role="status" aria-live="polite">
+          Reconnecting To The Table, These Buttons May Be A Moment Behind
+        </div>
+      )}
       {/* ═══ THE ROW IS NOT CONDITIONAL. ═══════════════════════════════════
           AUDIT 2026-08-25. This was `{!isRaiseMode && (<div className="action-row">`,
           which quietly reverted Dan's 2026-08-25 item 5 — "these 3 action

@@ -35,6 +35,15 @@ const SETTLEMENT = read('server/src/engine/ServerTableEngineSettlement.ts');
 const DEALING = read('server/src/engine/ServerTableEngineDealing.ts');
 const CONTROLLER = read('server/src/cluster/ClusterController.ts');
 const MOVES = read('server/src/services/supabase/seatMoves.ts');
+const STABLE_HAND = read('server/src/services/StableHandController.ts');
+const STABLE_HAND_EXECUTOR = read('server/src/services/StableHandExecutor.ts');
+const STABLE_HAND_SNAPSHOT = read('server/src/services/StableHandSnapshot.ts');
+const TICK_FIX = read('supabase/migrations/20260905030000_cluster_tick_survives_safeupdate.sql');
+const ROTATOR = read('server/src/services/HorseSessionRotator.ts');
+const LIFECYCLE = read('server/src/services/HorseLifecycleManager.ts');
+const DEEP_DIVE = read(
+  'supabase/migrations/20260905050000_the_move_survives_the_hand_and_a_game_seats_you_once.sql'
+);
 
 describe('the controller is wired on the leader, beside the fleet', () => {
   it('is constructed with the fleet census, the engine door and the engine map', () => {
@@ -176,24 +185,72 @@ describe('a move is not a leave', () => {
 });
 
 describe('the engine executes at the hand boundary and announces at the start', () => {
-  it('settlement executes moves after the leavers, at the end of the hand', () => {
+  /* 2026-09-05, the deep dive after the first live cycle. Three things the
+     first cut got wrong, each now a pin:
+       - a move was announced at load_seats and executed in the leave_pending
+         sweep on the SAME iteration, milliseconds later, before the hand the
+         notice referred to; the announcement now sits immediately before
+         dealHand and the idle-branch execute is in the idle branch;
+       - settlement executed every pending move, announced or not, so a move
+         planned mid-hand landed unannounced; settlement executes announced
+         moves only, and the announcement is written to the row
+         (fn_cash_seat_move_announce) so a slow hand cannot expire it;
+       - the start() wait-for-players loop never executed a move at all, so a
+         lone player on a feeder was planned onto Main 1 every minute and
+         never moved (seventeen expired rows, 00:28-00:45 UTC). */
+  it('settlement executes ANNOUNCED moves after the leavers, at the end of the hand', () => {
     const step = SETTLEMENT.slice(
       SETTLEMENT.indexOf("runStep('leave_pending'"),
       SETTLEMENT.indexOf("runStep('table_unlock'")
     );
     expect(step).toMatch(/await processLeavePending\(/);
-    expect(step).toMatch(/await this\.executePendingSeatMoves\(\);/);
+    expect(step).toMatch(/await this\.executePendingSeatMoves\(\{ announcedOnly: true \}\);/);
     expect(step.indexOf('processLeavePending(')).toBeLessThan(
-      step.indexOf('executePendingSeatMoves()')
+      step.indexOf('executePendingSeatMoves(')
     );
   });
 
-  it('an idle table executes them too', () => {
+  it('an idle table executes every pending move, in the idle branch and nowhere before the deal', () => {
     const idle = DEALING.slice(
-      DEALING.indexOf("'leave_pending',"),
-      DEALING.indexOf('THE TOURNAMENT COUNTERPART')
+      DEALING.indexOf("this.setLoopPhase('idle_not_enough_players');"),
+      DEALING.indexOf('SPIN REVEAL HOLD')
     );
-    expect(idle).toMatch(/await this\.executePendingSeatMoves\(\);/);
+    expect(idle).toMatch(
+      /'idle_seat_moves',\s*ServerTableEngineBase\.DEAL_STEP_BUDGET_MS,\s*this\.executePendingSeatMoves\(\)/
+    );
+    // The pre-deal sweeps must not execute: a move announced for THIS hand
+    // would land before it.
+    const preDeal = DEALING.slice(
+      DEALING.indexOf("'load_seats',"),
+      DEALING.indexOf("this.setLoopPhase('idle_not_enough_players');")
+    );
+    expect(preDeal).not.toMatch(/executePendingSeatMoves\(/);
+  });
+
+  it('the wait-for-players loop executes them too (a lone feeder player is not stranded)', () => {
+    const wait = BASE.slice(
+      BASE.indexOf("this.setLoopPhase('start_wait_for_players');"),
+      BASE.indexOf("this.tableFSM.transition('seating');")
+    );
+    expect(wait).toMatch(/await this\.executePendingSeatMoves\(\)\.catch\(/);
+    expect(wait).toMatch(/await this\.stopIfClusterTableClosed\(\)\.catch\(/);
+  });
+
+  it('the announcement is made immediately before the deal and written to the row', () => {
+    const beforeDeal = DEALING.slice(
+      DEALING.indexOf('if (this.hasOpenBountyReveal()) {'),
+      DEALING.indexOf('await this.dealHand(activePlayers);')
+    );
+    expect(beforeDeal).toMatch(
+      /'announce_seat_moves',\s*ServerTableEngineBase\.DEAL_STEP_BUDGET_MS,\s*this\.announcePendingSeatMoves\(\)/
+    );
+    const announce = BASE.slice(
+      BASE.indexOf('protected async announcePendingSeatMoves'),
+      BASE.indexOf('protected async executePendingSeatMoves')
+    );
+    expect(announce).toMatch(/await announceSeatMoves\(fresh\)/);
+    expect(MOVES).toMatch(/fn_cash_seat_move_announce/);
+    expect(MOVES).toMatch(/pending\.filter\(\(m\) => m\.announced_at != null\)/);
   });
 
   it('a player is told once at the start of the hand, and never asked', () => {
@@ -213,7 +270,7 @@ describe('the engine executes at the hand boundary and announces at the start', 
   it('forgets the mover without cashing out: no atomicCashout in the move path', () => {
     const fn = BASE.slice(
       BASE.indexOf('protected async executePendingSeatMoves'),
-      BASE.indexOf('protected isContinuityActive')
+      BASE.indexOf('private lastClusterClosedCheckAt')
     );
     expect(fn).toMatch(/this\.chipContinuity\.forget\(m\.player_id\)/);
     expect(fn).not.toMatch(/atomicCashout|markSeatAsLeft|leaveTable\(/);
@@ -241,9 +298,138 @@ describe('the fleet keeps its hands off cluster tables', () => {
     );
   });
 
-  it('reports how many horses could sit, per table, for the open rule', () => {
-    expect(FLEET).toMatch(/this\.lastEligibleByTable\.set\(table\.id, pool\.length\);/);
+  it('reports how many horses could sit, per table, for the open rule - full tables included', () => {
+    /* 2026-09-05: the count used to be written only for a table with a seat
+       to fill and never cleared, so a FULL Main 1 - the one state in which
+       the open rule needs it - reported a stale number for ever. Built fresh
+       per cycle and swapped whole; a cluster table that has nothing to fill
+       still runs the candidate filter (countOnly) and answers. */
+    expect(FLEET).toMatch(
+      /nextEligible\.set\(table\.id, pool\.length\);\s*if \(countOnly\) continue;/
+    );
+    expect(FLEET).toMatch(/this\.lastEligibleByTable = nextEligible;/);
+    expect(FLEET).toMatch(
+      /if \(seatsAllowed <= 0\) \{\s*if \(!table\.cluster_id\) continue;\s*countOnly = true;/
+    );
     expect(FLEET).toMatch(/eligibleHorseCount\(tableId: string\): number/);
+  });
+
+  it('one seat per game: a horse at any table of a game is no candidate for another of them', () => {
+    expect(FLEET).toMatch(/clusterByTableId\.get\(tid\) === table\.cluster_id\) return false;/);
+  });
+
+  it('a planned arrival holds its seat: pending moves count as occupied', () => {
+    expect(FLEET).toMatch(
+      /\.from\('cash_seat_moves'\)\s*\.select\('to_table_id'\)\s*\.eq\('state', 'pending'\)/
+    );
+    expect(FLEET).toMatch(
+      /occupiedNumbers\.size \+ \(pendingMovesByTable\.get\(table\.id\) \?\? 0\)/
+    );
+  });
+
+  it('inside a game the mains are seeded before the feeder', () => {
+    expect(FLEET).toMatch(/t\.role === 'feeder' \? 1000 : Number\(t\.main_index \?\? 999\)/);
+  });
+
+  it('the stale-seat sweep and the rotator drain leave cluster tables alone', () => {
+    expect(LIFECYCLE).toMatch(/if \(tableRow\?\.cluster_id\) continue;/);
+    expect(ROTATOR).toMatch(
+      /if \(t\?\.cluster_id\) continue;\s*if \(!isRetiringTable\(t\)\) continue;/
+    );
+  });
+
+  it('an engine on a closed, empty cluster table stops itself', () => {
+    expect(BASE).toMatch(/protected async stopIfClusterTableClosed\(\)/);
+    expect(DEALING).toMatch(
+      /'idle_cluster_closed',\s*ServerTableEngineBase\.DEAL_STEP_BUDGET_MS,\s*this\.stopIfClusterTableClosed\(\)/
+    );
+  });
+
+  it('discovery re-checks the map after its awaits, so a controller wake cannot double an engine', () => {
+    expect(GAME_SERVER).toMatch(
+      /if \(!\(await claimTable\(row\.table_id\)\)\) continue;[\s\S]{0,1200}this\.tableEngines\.has\(row\.table_id\) \|\|\s*this\.tableEngineStartPromises\.has\(row\.table_id\)/
+    );
+  });
+});
+
+describe('a cluster table is never retired, parked or duplicated by the Stable Hand', () => {
+  /* Live, 2026-09-05 00:10 UTC: the exotic/limit trim flagged 25 enabled
+     Main 1s retire_when_empty; fleet refused to seed, rotator drained,
+     retireSurplusTables closed, the tick reopened (R3). Every 30 s. */
+  it('the snapshot carries cluster_id and the planner reads it', () => {
+    expect(STABLE_HAND_SNAPSHOT).toMatch(/current_players, cluster_id'/);
+    expect(STABLE_HAND_SNAPSHOT).toMatch(
+      /clusterId: t\.cluster_id \? String\(t\.cluster_id\) : null/
+    );
+    expect(STABLE_HAND).toMatch(/clusterId\?: string \| null;/);
+  });
+
+  it('the per-variant trim skips cluster tables and opens nothing beside a cluster', () => {
+    expect(STABLE_HAND).toMatch(
+      /if \(t\.clusterId\) \{\s*clusteredVariants\.add\(key\);\s*return;\s*\}/
+    );
+    expect(STABLE_HAND).toMatch(/!clusteredVariants\.has\(variant\)/);
+  });
+
+  it('the night park never takes a cluster table', () => {
+    expect(STABLE_HAND).toMatch(/t\.humansSeated === 0 && t\.humansWaiting === 0 && !t\.clusterId/);
+  });
+
+  it('the flag writer itself refuses a cluster row', () => {
+    expect(STABLE_HAND_EXECUTOR).toMatch(/select\('id, settings, cluster_id'\)/);
+    expect(STABLE_HAND_EXECUTOR).toMatch(/if \(row\.cluster_id\) continue;/);
+  });
+
+  it('the fleet never counts a cluster table as retiring or parked', () => {
+    expect(FLEET).toMatch(/if \(t\.cluster_id\) continue;\s*if \(isRetiringTable\(t/);
+  });
+});
+
+describe('the tick survives the PostgREST session (safeupdate)', () => {
+  /* authenticator preloads safeupdate: no UPDATE or DELETE without WHERE,
+     inside SECURITY DEFINER functions included. The temp-table census had
+     four; every production tick failed for 13 minutes on 2026-09-05. */
+  it('the census is an array of a composite type, not a temp table', () => {
+    expect(TICK_FIX).toMatch(/CREATE TYPE public\.cash_cluster_census_row AS \(/);
+    expect(TICK_FIX).toMatch(/RETURNS public\.cash_cluster_census_row\[\]/);
+    const tick = TICK_FIX.slice(
+      TICK_FIX.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_cluster_tick'),
+      TICK_FIX.indexOf('REVOKE ALL ON FUNCTION public.fn_cash_cluster_tick')
+    );
+    expect(tick).not.toMatch(/CREATE TEMP TABLE|pg_temp\.cluster_census|DELETE FROM/);
+    expect(tick).toMatch(/FROM unnest\(v_census\) c/);
+  });
+
+  it('the migration asserts it and the probe checks every fn_cash_* body', () => {
+    expect(TICK_FIX).toMatch(/still uses the temp-table census/);
+    expect(TICK_FIX).toMatch(/has a DELETE; safeupdate would refuse/);
+    const probe = read('scripts/dev/probe-cluster-controller.sql');
+    expect(probe).toMatch(/SAFEUPDATE statements without WHERE in fn_cash_\*/);
+  });
+
+  it('ticks games in a bounded pool, not one after another', () => {
+    expect(CONTROLLER).toMatch(/export const CLUSTER_TICK_CONCURRENCY = 8;/);
+    expect(CONTROLLER).toMatch(/await Promise\.all\(workers\);/);
+  });
+});
+
+describe('the controller cannot go silent', () => {
+  /* Live 2026-09-04 22:10 UTC: `await ensureEngine()` on a Main 1 with one
+     player seated waits for the second player (engine.start() returns only
+     when the table can deal). The pass never ended, the inTick latch held,
+     and every tick after it returned early - eleven minutes with no error
+     and no log line, found only from cash_games.last_tick_at. */
+  it('the wake is never awaited - the engine map is the proof of the wake', () => {
+    expect(CONTROLLER).toMatch(/void this\.deps\s*\.ensureEngine\(tableId\)/);
+    expect(CONTROLLER).not.toMatch(/await this\.deps\.ensureEngine\(/);
+  });
+
+  it('a stuck pass is reported and the latch released, not honoured forever', () => {
+    expect(CONTROLLER).toMatch(/export const CLUSTER_TICK_STALL_MS = 120_000;/);
+    expect(CONTROLLER).toMatch(
+      /if \(heldMs < CLUSTER_TICK_STALL_MS\) return this\.lastSummary \?\? summary;/
+    );
+    expect(CONTROLLER).toMatch(/'ClusterController\.tick_stalled'/);
   });
 });
 
@@ -252,5 +438,90 @@ describe('the columns part is its own, lock-timed transactions', () => {
     expect(COLS).toMatch(/SET LOCAL lock_timeout = '3s';/);
     expect((COLS.match(/^BEGIN;$/gm) ?? []).length).toBe(3);
     expect(COLS).toMatch(/realtime/);
+  });
+});
+
+describe('the deep dive after the first live cycle (20260905050000)', () => {
+  it('a move lives three minutes and the announcement extends it', () => {
+    expect(DEEP_DIVE).toMatch(
+      /ALTER COLUMN expires_at SET DEFAULT now\(\) \+ interval '3 minutes'/
+    );
+    expect(DEEP_DIVE).toMatch(
+      /CREATE OR REPLACE FUNCTION public\.fn_cash_seat_move_announce\(p_move_ids uuid\[\]\)/
+    );
+    expect(DEEP_DIVE).toMatch(
+      /expires_at\s*=\s*GREATEST\(expires_at, clock_timestamp\(\) \+ interval '5 minutes'\)/
+    );
+  });
+
+  it('the executor declares itself, refuses to move nothing, and gives the mover a fresh entry', () => {
+    const exec = DEEP_DIVE.slice(
+      DEEP_DIVE.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_seat_move_execute'),
+      DEEP_DIVE.indexOf('CREATE OR REPLACE FUNCTION public.fn_enforce_four_table_limit')
+    );
+    expect(exec).toMatch(/set_config\('app\.cash_seat_move', 'on', true\)/);
+    expect(exec).toMatch(/IF coalesce\(src\.stack, 0\) <= 0 THEN/);
+    expect(exec).toMatch(/note = 'busted'/);
+    expect(exec).toMatch(/entry_hold = 'waiting', entry_post_agreed = false/);
+    expect(exec).not.toMatch(/entry_post_agreed = src\.entry_post_agreed/);
+  });
+
+  it('the cap exempts the declared move and nothing else; the door refuses a second seat in one game', () => {
+    const cap = DEEP_DIVE.slice(
+      DEEP_DIVE.indexOf('CREATE OR REPLACE FUNCTION public.fn_enforce_four_table_limit'),
+      DEEP_DIVE.indexOf('CREATE OR REPLACE FUNCTION public.fn_refuse_seat_on_closed_cluster_table')
+    );
+    expect(cap).toMatch(/current_setting\('app\.cash_seat_move', true\) = 'on'/);
+    expect(cap.replace(/--.*$/gm, '')).not.toMatch(/t\.cluster_id = v_cluster/);
+    const door = DEEP_DIVE.slice(
+      DEEP_DIVE.indexOf('CREATE OR REPLACE FUNCTION public.fn_refuse_seat_on_closed_cluster_table'),
+      DEEP_DIVE.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_cluster_open_table')
+    );
+    expect(door).toMatch(/ALREADY_IN_GAME/);
+    expect(door).toMatch(/TABLE_CLOSING/);
+  });
+
+  it('the planner skips a busted or leaving seat, and never plans a player onto a table they sit at', () => {
+    const tick = DEEP_DIVE.slice(
+      DEEP_DIVE.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_cluster_tick')
+    );
+    expect(tick).toMatch(/coalesce\(ts\.stack, 0\) > 0/);
+    expect(tick).toMatch(/coalesce\(ts\.leave_pending, false\) = false/);
+    expect(tick).toMatch(/d\.table_id = t\.id AND d\.user_id = ts\.user_id AND d\.left_at IS NULL/);
+  });
+
+  it('an abandoned opening feeder closes, and OPEN waits two minutes after it', () => {
+    const tick = DEEP_DIVE.slice(
+      DEEP_DIVE.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_cluster_tick')
+    );
+    expect(tick).toMatch(/'feeder_abandoned'/);
+    expect(tick).toMatch(/interval '3 minutes'/);
+    expect(tick).toMatch(/e\.kind = 'feeder_abandoned' AND e\.at > v_now - interval '2 minutes'/);
+  });
+
+  it('a second chair on a breaking table goes home through the table-close cash-out', () => {
+    const tick = DEEP_DIVE.slice(
+      DEEP_DIVE.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_cluster_tick')
+    );
+    expect(tick).toMatch(
+      /atomic_seat_cashout_locked\(r\.user_id, t\.id, r\.seat_number, 'forced'\)/
+    );
+    expect(tick).toMatch(/'second_chair_cashed_out'/);
+    // The same three calls fn_cashout_seats_for_closing_table makes.
+    expect(tick).toMatch(/fn_ensure_club_wallet\(r\.user_id, r\.club_id\)/);
+    expect(tick).toMatch(/fn_ca_declare_ledger\('table_cashout', 'table_stack', t\.id\)/);
+  });
+
+  it('Big Blind Ante means the big blind posts it: the writer sets the flag', () => {
+    expect(DEEP_DIVE).toMatch(/ante_enabled, ante, ante_bb, big_blind_ante_enabled,/);
+    expect(DEEP_DIVE).toMatch(/\(v_ante = 'bb'\),/);
+  });
+
+  it('no temp table and no bare UPDATE or DELETE in any body (safeupdate)', () => {
+    const code = DEEP_DIVE.replace(/--.*$/gm, '');
+    expect(code).not.toMatch(/CREATE TEMP TABLE/);
+    for (const stmt of code.match(/\b(UPDATE|DELETE FROM) public\.\w+[\s\S]*?;/g) ?? []) {
+      expect(stmt, stmt.slice(0, 80)).toMatch(/\bWHERE\b/);
+    }
   });
 });

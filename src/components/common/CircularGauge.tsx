@@ -93,7 +93,8 @@ export default function CircularGauge({
               color: accent,
             }}
           >
-            {Math.round(animatedValue)}
+            {/* Truncated, never rounded: STANDING_DIRECTIVES forbid rounding anywhere. */}
+            {Math.trunc(animatedValue * 10) / 10}
           </span>
           <span
             style={{

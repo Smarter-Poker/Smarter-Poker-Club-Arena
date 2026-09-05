@@ -1052,10 +1052,13 @@ export class HorseFleetManager {
          with N pending arrivals has N fewer seats to fill. */
       const pendingMovesByTable = new Map<string, number>();
       {
+        // A SWAP IS NOT A RESERVATION (2026-09-05): two linked seat-change
+        // moves exchange two occupied chairs and change no table's headcount.
         const { data: pm, error: pmErr } = await supabase
           .from('cash_seat_moves')
           .select('to_table_id')
-          .eq('state', 'pending');
+          .eq('state', 'pending')
+          .is('swap_move_id', null);
         if (pmErr) {
           reportError(pmErr, 'HorseFleet.pending_moves_read_failed');
         } else {

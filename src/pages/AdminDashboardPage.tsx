@@ -2360,7 +2360,7 @@ function CardSlideAdoption() {
     keyboard_opens: number;
     commit_rate: number | null;
   } | null>(null);
-  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [state, setState] = useState<'loading' | 'ready' | 'error' | 'not-entitled'>('loading');
   const isMounted = useIsMounted();
 
   useEffect(() => {
@@ -2369,7 +2369,20 @@ function CardSlideAdoption() {
         const { data, error } = await supabase.rpc('fn_card_slide_adoption', { p_days: 7 });
         if (!isMounted.current) return;
         if (error) throw error;
-        setRow(Array.isArray(data) ? data[0] : data);
+        const first = Array.isArray(data) ? data[0] : data;
+        /*
+         * NO ROW IS NOT AN ERROR. fn_card_slide_adoption returns an empty set
+         * to anyone who is not a PLATFORM admin, and this tab belongs to CLUB
+         * admins - 3 of 1310 profiles carry the platform role, so the other
+         * 1307 were being shown "Usage Could Not Be Read" for a panel that was
+         * simply not theirs. A club owner reading that reasonably files a bug.
+         * Say nothing instead.
+         */
+        if (!first) {
+          setState('not-entitled');
+          return;
+        }
+        setRow(first);
         setState('ready');
       } catch {
         if (isMounted.current) setState('error');
@@ -2377,7 +2390,9 @@ function CardSlideAdoption() {
     })();
   }, [isMounted]);
 
-  if (state === 'loading') return null;
+  // Nothing to say while loading, and nothing to say to someone the readout
+  // is not for.
+  if (state === 'loading' || state === 'not-entitled') return null;
   if (state === 'error' || !row) {
     return (
       <>

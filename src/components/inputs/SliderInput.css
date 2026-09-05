@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 .slider-input-wrapper {
   margin-bottom: 16px;
 }
@@ -9,7 +14,7 @@
   margin-bottom: 12px;
 }
 
-.slider-label {
+.slider-input-wrapper .slider-label {
   color: rgba(255, 255, 255, 0.8);
   font-size: 0.9rem;
   font-weight: 500;
@@ -28,7 +33,7 @@
   align-items: center;
 }
 
-.slider-input {
+.slider-input-wrapper .slider-input {
   width: 100%;
   height: 8px;
   -webkit-appearance: none;
@@ -43,7 +48,7 @@
   cursor: pointer;
 }
 
-.slider-input::-webkit-slider-thumb {
+.slider-input-wrapper .slider-input::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 24px;
   height: 24px;
@@ -53,11 +58,11 @@
   cursor: grab;
   transition: transform 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-.slider-input::-webkit-slider-thumb:active {
+.slider-input-wrapper .slider-input::-webkit-slider-thumb:active {
   cursor: grabbing;
 }
 
-.slider-input::-moz-range-thumb {
+.slider-input-wrapper .slider-input::-moz-range-thumb {
   width: 24px;
   height: 24px;
   background: linear-gradient(135deg, #ffd700, #ff8c00);

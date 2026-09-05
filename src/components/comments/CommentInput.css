@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 .comment-input {
   display: flex;
   gap: 12px;
@@ -50,7 +55,7 @@
   outline: none;
 }
 
-.send-btn {
+.comment-input .send-btn {
   padding: 10px 16px;
   background: none;
   border: none;
@@ -60,7 +65,7 @@
   transition: opacity 0.2s;
 }
 
-.send-btn:disabled {
+.comment-input .send-btn:disabled {
   opacity: 0.3;
   cursor: not-allowed;
 }

@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  ACHIEVEMENTS PAGE — Metal UI Theme
@@ -62,7 +67,7 @@
   padding: 1rem;
 }
 
-.summary-stat {
+.achievements-page .summary-stat {
   flex: 1;
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
   border: 2px solid #2a3a4a;
@@ -71,13 +76,13 @@
   text-align: center;
 }
 
-.summary-stat.highlight {
+.achievements-page .summary-stat.highlight {
   border-color: rgba(255, 215, 0, 0.4);
   background: linear-gradient(145deg, rgba(255, 215, 0, 0.12) 0%, rgba(255, 215, 0, 0.04) 100%);
   box-shadow: 0 0 15px rgba(255, 215, 0, 0.2);
 }
 
-.summary-stat .stat-value {
+.achievements-page .summary-stat .stat-value {
   display: block;
   font-size: 1.5rem;
   font-weight: 700;
@@ -86,12 +91,12 @@
   text-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
 }
 
-.summary-stat.highlight .stat-value {
+.achievements-page .summary-stat.highlight .stat-value {
   color: #ffd700;
   text-shadow: 0 0 10px rgba(255, 215, 0, 0.4);
 }
 
-.summary-stat .stat-label {
+.achievements-page .summary-stat .stat-label {
   font-size: 0.7rem;
   color: #6a7a8a;
   text-transform: uppercase;
@@ -267,7 +272,7 @@
   overflow: hidden;
 }
 
-.progress-fill {
+.achievements-page .progress-fill {
   height: 100%;
   background: linear-gradient(90deg, #00d4ff 0%, #0099cc 100%);
   transition: width 0.3s;
@@ -410,10 +415,10 @@
     padding: 0.75rem;
     gap: 0.5rem;
   }
-  .summary-stat {
+  .achievements-page .summary-stat {
     padding: 0.75rem;
   }
-  .summary-stat .stat-value {
+  .achievements-page .summary-stat .stat-value {
     font-size: 1.25rem;
   }
   .category-filter {
@@ -454,7 +459,7 @@
   .progress-summary {
     flex-direction: column;
   }
-  .summary-stat .stat-value {
+  .achievements-page .summary-stat .stat-value {
     font-size: 1rem;
   }
 }

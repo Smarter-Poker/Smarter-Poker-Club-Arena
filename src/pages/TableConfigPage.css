@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * TABLE CONFIGURATION PAGE - CSS Styles
  * Facebook Color Scheme: Blue (#1877F2), Dark backgrounds, clean look
@@ -310,7 +315,7 @@
   margin-bottom: 0.5rem;
 }
 
-.slider-label {
+.table-config-page .slider-label {
   color: white;
   font-size: 0.9rem;
   display: flex;
@@ -323,7 +328,7 @@
   padding: 0.5rem 0;
 }
 
-.slider-input {
+.table-config-page .slider-input {
   width: 100%;
   height: 4px;
   background: linear-gradient(
@@ -339,7 +344,7 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.slider-input::-webkit-slider-thumb {
+.table-config-page .slider-input::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 24px;
@@ -352,7 +357,7 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.slider-input::-moz-range-thumb {
+.table-config-page .slider-input::-moz-range-thumb {
   width: 24px;
   height: 24px;
   background: #1877f2;
@@ -507,8 +512,8 @@
   box-shadow: 0 -12px 24px rgba(0, 0, 0, 0.42);
 }
 
-.btn-save,
-.btn-start {
+.table-config-page .btn-save,
+.table-config-page .btn-start {
   flex: 1;
   padding: 0.75rem 1.5rem;
   border-radius: 20px;
@@ -520,20 +525,20 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.btn-save {
+.table-config-page .btn-save {
   background: transparent;
   border: 2px solid #1877f2;
   color: #1877f2;
 }
 
-.btn-start {
+.table-config-page .btn-start {
   background: #1877f2;
   border: 2px solid #1877f2;
   color: white;
 }
 
-.btn-save:disabled,
-.btn-start:disabled {
+.table-config-page .btn-save:disabled,
+.table-config-page .btn-start:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -785,8 +790,8 @@
      buttons are .btn-save/.btn-start (kept for safety, corrected below) */
   .save-btn,
   .reset-btn,
-  .btn-save,
-  .btn-start,
+  .table-config-page .btn-save,
+  .table-config-page .btn-start,
   .btn-template {
     min-height: 44px;
   }

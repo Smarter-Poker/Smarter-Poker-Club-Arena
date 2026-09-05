@@ -390,6 +390,23 @@ class IdentityDNACore {
             display_name_preference: profile.display_name_preference ?? null,
             use_real_name: profile.use_real_name ?? null,
             avatar_url: profile.avatar_url,
+            /*
+             * LEGACY MIRROR OF `profiles.tier`. NEVER GATE ON THIS.
+             *
+             * The same shape useUserStore labelled on 2026-09-05; labelled
+             * here too because this was the last write of it left unmarked.
+             * `profiles.tier` is the literal 'Newcomer' on 1,313 of 1,313
+             * production rows - AuthPage writes it at signup and nothing ever
+             * updates it - and `profiles.vip_level` is not a column at all, so
+             * this expression is the constant 'Newcomer' for every player.
+             *
+             * An entitlement gated on it is gated on a constant: that is
+             * exactly how CompleteProfileModal's VIP avatar collection stood
+             * open for every account, since 'Newcomer' !== 'bronze' is true.
+             * VIP is is_vip + vip_tier + vip_expires_at, resolved by
+             * utils/vipStatus. `vip_level` survives only because three type
+             * files still declare it.
+             */
             vip_level: ((profile as any).tier ||
               profile.vip_level ||
               'bronze') as UserProfile['vip_level'],

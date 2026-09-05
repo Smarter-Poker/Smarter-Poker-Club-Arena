@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * Odds Display Component Styles
  * Premium animations and glass morphism
@@ -66,7 +71,7 @@
   letter-spacing: 0.5px;
 }
 
-.equity-value {
+.odds-display .equity-value {
   font-size: 1.5rem;
   font-weight: 700;
   color: #06b6d4;
@@ -178,7 +183,7 @@
   transition: all 0.25s ease;
 }
 
-.metric-label {
+.odds-display .metric-label {
   font-size: 0.65rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -262,7 +267,7 @@
     padding: 12px;
   }
 
-  .equity-value {
+  .odds-display .equity-value {
     font-size: 1.25rem;
   }
 

@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 .rating-modal-overlay {
   position: fixed;
   inset: 0;
@@ -100,7 +105,7 @@
   transition: background 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.submit-btn {
+.rating-modal-overlay .submit-btn {
   flex: 1;
   padding: 12px;
   background: linear-gradient(135deg, #ffd700, #ff8c00);
@@ -111,7 +116,7 @@
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-.submit-btn:disabled {
+.rating-modal-overlay .submit-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -120,7 +125,7 @@
   padding: 30px 0;
 }
 
-.success-icon {
+.rating-modal-overlay .success-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;

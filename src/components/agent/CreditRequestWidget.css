@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 .credit-request-widget {
   background: var(--card-bg, #1a1a2e);
   border-radius: 12px;
@@ -190,7 +195,7 @@
 }
 
 /* Status Badge */
-.status-badge {
+.credit-request-widget .status-badge {
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
   font-size: 0.7rem;

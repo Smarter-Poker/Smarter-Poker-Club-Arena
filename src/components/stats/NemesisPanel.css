@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * NemesisPanel — two hero cards (nemesis red, target green) over an expandable
  * table. Mobile-first: cards stack at 375px, sit side by side from 480px.
@@ -145,7 +150,7 @@
 
 /* ── Expand + table ────────────────────────────────────────────────────── */
 
-.nemesis-expand {
+.nemesis-panel .nemesis-expand {
   width: 100%;
   margin-top: 0.7rem;
   padding: 0.5rem;
@@ -159,7 +164,7 @@
   min-height: 40px;
 }
 
-.nemesis-expand:focus-visible {
+.nemesis-panel .nemesis-expand:focus-visible {
   outline: 2px solid #00d4ff;
   outline-offset: 2px;
 }
@@ -213,7 +218,7 @@
   color: rgba(220, 238, 255, 0.8);
 }
 
-.nemesis-note {
+.nemesis-panel .nemesis-note {
   margin: 0.6rem 0 0;
   font-size: 0.66rem;
   line-height: 1.5;

@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 .report-review-page {
   min-height: 100vh;
   min-height: 100dvh;
@@ -30,7 +35,7 @@
   text-transform: uppercase;
 }
 .case-toolbar h2,
-.modal-header h2 {
+.report-review-page .modal-header h2 {
   margin: 0;
   font-family: 'Rajdhani', system-ui, sans-serif;
   font-size: clamp(1.35rem, 3vw, 2rem);
@@ -65,7 +70,7 @@
   box-shadow: inset 0 -2px 0 #3ba7ff;
 }
 .filter-tab:focus-visible,
-.report-card:focus-visible,
+.report-review-page .report-card:focus-visible,
 .report-review-page button:focus-visible,
 .report-review-page textarea:focus-visible {
   outline: 2px solid #75bdff;
@@ -76,7 +81,7 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
-.report-card {
+.report-review-page .report-card {
   position: relative;
   display: grid;
   gap: 12px;
@@ -94,7 +99,7 @@
   cursor: pointer;
   clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 9px, 100% 100%, 9px 100%, 0 calc(100% - 9px));
 }
-.report-card::after {
+.report-review-page .report-card::after {
   content: '';
   position: absolute;
   inset: auto 18px 0;
@@ -103,7 +108,7 @@
   opacity: 0;
   box-shadow: 0 0 12px #3ba7ff;
 }
-.report-card:focus-visible::after {
+.report-review-page .report-card:focus-visible::after {
   opacity: 1;
 }
 .report-header {
@@ -112,7 +117,7 @@
   justify-content: space-between;
   gap: 12px;
 }
-.reason-label {
+.report-review-page .reason-label {
   color: #f0f7fb;
   font:
     700 1.08rem 'Rajdhani',
@@ -234,7 +239,7 @@
   text-transform: uppercase;
   cursor: pointer;
 }
-.modal-overlay {
+.report-review-page .modal-overlay {
   position: fixed;
   inset: 0;
   z-index: 1000;
@@ -262,7 +267,7 @@
     0 calc(100% - 12px)
   );
 }
-.modal-header {
+.report-review-page .modal-header {
   position: sticky;
   top: 0;
   z-index: 2;
@@ -274,7 +279,7 @@
   border-bottom: 1px solid #26313d;
   background: #0d1218;
 }
-.modal-header button {
+.report-review-page .modal-header button {
   min-height: 44px;
   padding: 8px 13px;
   border: 1px solid #3b4b58;
@@ -369,7 +374,7 @@
   background: #381116;
   color: #ffb6ba;
 }
-.btn-secondary {
+.report-review-page .btn-secondary {
   border-color: #384956;
   background: #151d24;
   color: #b8c5ce;
@@ -397,7 +402,7 @@
   .report-workspace {
     padding-inline: 10px;
   }
-  .report-card {
+  .report-review-page .report-card {
     min-height: 0;
   }
   .case-details {
@@ -409,7 +414,7 @@
   .action-buttons {
     grid-template-columns: 1fr;
   }
-  .modal-overlay {
+  .report-review-page .modal-overlay {
     align-items: end;
     padding: 0;
   }
@@ -419,7 +424,7 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .report-card {
+  .report-review-page .report-card {
     transition: none;
   }
 }

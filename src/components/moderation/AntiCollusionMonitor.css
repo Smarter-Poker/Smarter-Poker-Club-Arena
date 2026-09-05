@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ♠ CLUB ARENA — Anti-Collusion Monitor Styles
  */
@@ -20,7 +25,7 @@
   gap: var(--space-4);
 }
 
-.spinner {
+.collusion-monitor .spinner {
   width: 32px;
   height: 32px;
   border: 3px solid var(--border-subtle);
@@ -89,7 +94,7 @@
   border-color: var(--fb-blue);
 }
 
-.report-header {
+.collusion-monitor .report-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -279,7 +284,7 @@
   cursor: pointer;
 }
 
-.empty-state {
+.collusion-monitor .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -291,6 +296,6 @@
   font-size: 2rem;
 }
 
-.empty-state p {
+.collusion-monitor .empty-state p {
   color: var(--text-muted);
 }

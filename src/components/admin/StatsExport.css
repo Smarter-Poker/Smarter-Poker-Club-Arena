@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  *  STATS EXPORT — Styles
  */
@@ -36,7 +41,7 @@
   font-weight: 700;
 }
 
-.close-btn {
+.stats-export-overlay .close-btn {
   width: 28px;
   height: 28px;
   border-radius: 50%;
@@ -77,12 +82,12 @@
   font-weight: 500;
 }
 
-.button-group {
+.stats-export-overlay .button-group {
   display: flex;
   gap: 8px;
 }
 
-.button-group button {
+.stats-export-overlay .button-group button {
   flex: 1;
   padding: 10px;
   background: rgba(255, 255, 255, 0.05);
@@ -95,7 +100,7 @@
   transition: all 0.15s;
 }
 
-.button-group button.active {
+.stats-export-overlay .button-group button.active {
   background: rgba(59, 130, 246, 0.2);
   border-color: rgba(59, 130, 246, 0.5);
   color: #60a5fa;

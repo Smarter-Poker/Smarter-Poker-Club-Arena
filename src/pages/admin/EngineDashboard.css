@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 .engine-dashboard {
   padding: 40px;
   width: 100%;
@@ -49,14 +54,14 @@
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
 }
 
-.card-header {
+.engine-dashboard .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
 }
 
-.card-header h3 {
+.engine-dashboard .card-header h3 {
   font-size: 20px;
   font-weight: 700;
   color: #fff;
@@ -150,7 +155,7 @@
   color: #fff;
   box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
 }
-.btn-secondary {
+.engine-dashboard .btn-secondary {
   background: rgba(255, 255, 255, 0.1);
   color: #94a3b8;
   cursor: not-allowed;
@@ -183,7 +188,7 @@
     padding: 16px;
   }
 
-  .card-header h3 {
+  .engine-dashboard .card-header h3 {
     font-size: 16px;
   }
 

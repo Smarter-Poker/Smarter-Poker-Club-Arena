@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ♠ CLUB ARENA — Hand Replayer Styles
  * PokerBros-inspired dark theme with gold accents
@@ -108,7 +113,7 @@
   color: var(--text-secondary);
 }
 
-.pot-display {
+.hand-replayer .pot-display {
   background: rgba(0, 0, 0, 0.4);
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-full);
@@ -147,11 +152,11 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
-.card.red {
+.hand-replayer .card.red {
   color: #e74c3c;
 }
 
-.card.black {
+.hand-replayer .card.black {
   color: #2c3e50;
 }
 
@@ -368,7 +373,7 @@
 }
 
 /* Share button */
-.share-btn {
+.hand-replayer .share-btn {
   position: absolute;
   bottom: var(--space-4);
   left: var(--space-4);
@@ -674,7 +679,7 @@
 
   .tab-btn,
   .view-btn,
-  .share-btn {
+  .hand-replayer .share-btn {
     min-height: 44px;
     touch-action: manipulation;
   }

@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ♠ CLUB ARENA — Player Notes Styles
  */
@@ -19,7 +24,7 @@
   min-height: 200px;
 }
 
-.spinner {
+.player-notes .spinner {
   width: 32px;
   height: 32px;
   border: 3px solid var(--border-subtle);
@@ -148,7 +153,7 @@
   margin-bottom: var(--space-2);
 }
 
-.player-info {
+.player-notes .player-info {
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -174,7 +179,7 @@
   color: #9b59b6;
 }
 
-.player-name {
+.player-notes .player-name {
   font-size: var(--fs-sm);
   font-weight: var(--fw-bold);
   color: var(--text-primary);
@@ -208,7 +213,7 @@
   gap: var(--space-1);
 }
 
-.tag {
+.player-notes .tag {
   padding: 2px 8px;
   background: var(--bg-tertiary);
   border-radius: var(--radius-full);

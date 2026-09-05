@@ -150,7 +150,8 @@ export default function PlayerActivityFeed({ userId }: PlayerActivityFeedProps) 
 
   useMasterBusSubscription('MISSION_CLAIMED', debouncedRefresh);
   useMasterBusSubscription('DAILY_REWARD_CLAIMED', debouncedRefresh);
-  useMasterBusSubscription('WHEEL_SPIN_RESULT', debouncedRefresh);
+  /* WHEEL_SPIN_RESULT removed 2026-09-05: its only emitter was the
+     unmounted LuckyDrawWheel, so this handler could never run. */
 
   if (loading) {
     return (

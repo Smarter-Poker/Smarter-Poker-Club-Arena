@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 .search-bar {
   position: relative;
   display: flex;
@@ -16,13 +21,13 @@
   transform: translateY(-2px);
 }
 
-.search-icon {
+.search-bar .search-icon {
   padding-left: 14px;
   font-size: 1rem;
   opacity: 0.5;
 }
 
-.search-input {
+.search-bar .search-input {
   flex: 1;
   padding: 14px;
   background: transparent;
@@ -31,11 +36,11 @@
   font-size: 0.95rem;
 }
 
-.search-input::placeholder {
+.search-bar .search-input::placeholder {
   color: rgba(255, 255, 255, 0.4);
 }
 
-.search-input:focus {
+.search-bar .search-input:focus {
   outline: none;
 }
 

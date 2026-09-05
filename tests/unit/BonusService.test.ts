@@ -285,7 +285,9 @@ describe('BonusService', () => {
       expect(typeof bonusService.canSpinToday).toBe('function');
       expect(typeof bonusService.claimDailyBonus).toBe('function');
       expect(typeof bonusService.claimSpecialBonus).toBe('function');
-      expect(typeof bonusService.getWheelStats).toBe('function');
+      // getWheelStats was removed with the wheel on 2026-09-05: the component
+      // was imported by nobody and its ladder disagreed with the payout RPC.
+      expect((bonusService as unknown as Record<string, unknown>).getWheelStats).toBeUndefined();
       expect(typeof bonusService.spinLuckyWheel).toBe('function');
     });
   });

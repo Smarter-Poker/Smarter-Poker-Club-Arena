@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  SESSION HISTORY — Timeline with Expandable Cards
@@ -53,7 +58,7 @@
   -webkit-backdrop-filter: blur(16px);
 }
 
-.stat-label {
+.session-history .stat-label {
   font-size: 0.7rem;
   color: #6a7a8a;
   text-transform: uppercase;
@@ -357,7 +362,7 @@
   border-radius: 8px;
 }
 
-.empty-icon {
+.session-history .empty-icon {
   font-size: 2rem;
 }
 

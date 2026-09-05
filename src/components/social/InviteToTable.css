@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ♠ CLUB ARENA — Invite to Table Styles
  */
@@ -33,7 +38,7 @@
   color: var(--text-muted);
 }
 
-.close-btn {
+.invite-to-table .close-btn {
   width: 32px;
   height: 32px;
   background: var(--bg-card);
@@ -54,14 +59,14 @@
   margin-bottom: var(--space-3);
 }
 
-.filter-tabs {
+.invite-to-table .filter-tabs {
   display: flex;
   gap: var(--space-2);
   margin-bottom: var(--space-3);
   flex-wrap: wrap;
 }
 
-.filter-tabs button {
+.invite-to-table .filter-tabs button {
   padding: var(--space-1) var(--space-2);
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
@@ -71,7 +76,7 @@
   cursor: pointer;
 }
 
-.filter-tabs button.active {
+.invite-to-table .filter-tabs button.active {
   background: var(--fb-blue);
   border-color: var(--fb-blue);
   color: white;
@@ -90,7 +95,7 @@
   margin-bottom: var(--space-4);
 }
 
-.player-row {
+.invite-to-table .player-row {
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -102,17 +107,17 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.player-row.selected {
+.invite-to-table .player-row.selected {
   border-color: var(--fb-blue);
   background: rgba(24, 119, 242, 0.1);
 }
 
-.player-row.disabled {
+.invite-to-table .player-row.disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.player-row.skeleton {
+.invite-to-table .player-row.skeleton {
   height: 52px;
   animation: shimmer 1.5s infinite;
 }
@@ -148,7 +153,7 @@
   color: var(--fb-blue);
 }
 
-.status-dot {
+.invite-to-table .status-dot {
   position: absolute;
   bottom: 0;
   right: 0;
@@ -163,7 +168,7 @@
   min-width: 0;
 }
 
-.player-name {
+.invite-to-table .player-name {
   display: block;
   font-size: var(--fs-sm);
   font-weight: var(--fw-bold);
@@ -190,13 +195,13 @@
   color: var(--fb-blue);
 }
 
-.player-row.selected .checkbox {
+.invite-to-table .player-row.selected .checkbox {
   background: var(--fb-blue);
   border-color: var(--fb-blue);
   color: white;
 }
 
-.send-btn {
+.invite-to-table .send-btn {
   width: 100%;
   padding: var(--space-3);
   background: var(--fb-blue);
@@ -208,22 +213,22 @@
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-.send-btn:disabled {
+.invite-to-table .send-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.empty-state {
+.invite-to-table .empty-state {
   text-align: center;
   padding: var(--space-8);
 }
 
-.empty-state span {
+.invite-to-table .empty-state span {
   font-size: 2rem;
   display: block;
   margin-bottom: var(--space-2);
 }
 
-.empty-state p {
+.invite-to-table .empty-state p {
   color: var(--text-muted);
 }

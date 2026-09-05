@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB SETTINGS PAGE — Metal UI Theme
@@ -32,7 +37,7 @@
    SECTIONS — Brushed Metal Panels
    ───────────────────────────────────────────────────────────────────────────── */
 
-.settings-section {
+.club-settings-page .settings-section {
   background: linear-gradient(
     145deg,
     rgba(255, 255, 255, 0.06) 0%,
@@ -50,7 +55,7 @@
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
 }
 
-.settings-section h3 {
+.club-settings-page .settings-section h3 {
   margin: 0 0 1rem;
   font-size: 0.9rem;
   color: #00d4ff;
@@ -65,11 +70,11 @@
    FORM ELEMENTS
    ───────────────────────────────────────────────────────────────────────────── */
 
-.form-group {
+.club-settings-page .form-group {
   margin-bottom: 1rem;
 }
 
-.form-group label {
+.club-settings-page .form-group label {
   display: block;
   font-size: 0.85rem;
   color: #8a9aaa;
@@ -77,8 +82,8 @@
   font-weight: 500;
 }
 
-.form-group input,
-.form-group textarea {
+.club-settings-page .form-group input,
+.club-settings-page .form-group textarea {
   width: 100%;
   padding: 0.75rem 1rem;
   background: linear-gradient(180deg, #0d1520 0%, #1a2332 100%);
@@ -89,8 +94,8 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.form-group input:focus,
-.form-group textarea:focus {
+.club-settings-page .form-group input:focus,
+.club-settings-page .form-group textarea:focus {
   outline: none;
   border-color: #00d4ff;
   box-shadow:
@@ -98,8 +103,8 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.form-group input:disabled,
-.form-group textarea:disabled {
+.club-settings-page .form-group input:disabled,
+.club-settings-page .form-group textarea:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -133,7 +138,7 @@
   flex: 1;
 }
 
-.toggle-label {
+.club-settings-page .toggle-label {
   display: block;
   font-weight: 500;
   color: #fff;
@@ -240,7 +245,7 @@
   margin-top: 0.25rem;
 }
 
-.btn-danger {
+.club-settings-page .btn-danger {
   background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
   border: 2px solid #ef4444;
   color: white;
@@ -253,7 +258,7 @@
     0 0 10px rgba(239, 68, 68, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-.btn-danger:disabled {
+.club-settings-page .btn-danger:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -273,7 +278,7 @@
   }
 }
 
-.modal-overlay {
+.club-settings-page .modal-overlay {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.85);
@@ -326,7 +331,7 @@
   margin-top: 1.5rem;
 }
 
-.btn-secondary {
+.club-settings-page .btn-secondary {
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
   border: 2px solid #3a4a5a;
   color: #8a9aaa;
@@ -347,8 +352,8 @@
     touch-action: manipulation;
   }
   .save-btn,
-  .btn-danger,
-  .btn-secondary {
+  .club-settings-page .btn-danger,
+  .club-settings-page .btn-secondary {
     min-height: 44px;
     touch-action: manipulation;
   }
@@ -358,15 +363,15 @@
   .settings-content {
     padding: 0.75rem;
   }
-  .settings-section {
+  .club-settings-page .settings-section {
     padding: 1rem;
     border-radius: 12px;
   }
-  .settings-section h3 {
+  .club-settings-page .settings-section h3 {
     font-size: 0.8rem;
   }
-  .form-group input,
-  .form-group textarea {
+  .club-settings-page .form-group input,
+  .club-settings-page .form-group textarea {
     padding: 0.625rem 0.75rem;
     font-size: 16px; /* was 0.85rem; under 16px makes iOS zoom the page on focus */
   }
@@ -374,7 +379,7 @@
     flex-direction: column;
     gap: 0;
   }
-  .toggle-label {
+  .club-settings-page .toggle-label {
     font-size: 0.85rem;
   }
   .save-btn {
@@ -386,7 +391,7 @@
     align-items: flex-start;
     gap: 0.75rem;
   }
-  .btn-danger {
+  .club-settings-page .btn-danger {
     width: 100%;
     text-align: center;
   }
@@ -400,7 +405,7 @@
 }
 
 @media (max-width: 380px) {
-  .settings-section {
+  .club-settings-page .settings-section {
     padding: 0.75rem;
   }
   .toggle-row {

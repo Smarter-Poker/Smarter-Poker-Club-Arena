@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 .club-rules-page {
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
@@ -64,7 +69,7 @@
   padding: 40px 20px;
 }
 
-.empty-icon {
+.club-rules-page .empty-icon {
   font-size: 2.5rem;
   display: block;
   margin-bottom: 12px;

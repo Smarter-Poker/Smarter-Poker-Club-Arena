@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  SUPER AGENT DASHBOARD — Metal UI Theme
@@ -77,7 +82,7 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 .loading-state,
-.empty-state {
+.super-agent-dashboard .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -96,14 +101,14 @@
    STATS GRID — Metal Cards
    ───────────────────────────────────────────────────────────────────────────── */
 
-.stats-grid {
+.super-agent-dashboard .stats-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 0.75rem;
   padding: 1rem;
 }
 
-.stat-card {
+.super-agent-dashboard .stat-card {
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
@@ -118,7 +123,7 @@
     inset 0 -1px 0 rgba(0, 0, 0, 0.15);
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-.stat-card.highlight {
+.super-agent-dashboard .stat-card.highlight {
   border-color: rgba(0, 212, 255, 0.4);
   background: linear-gradient(145deg, rgba(0, 212, 255, 0.12) 0%, rgba(0, 212, 255, 0.04) 100%);
   box-shadow: 0 0 15px rgba(0, 212, 255, 0.2);
@@ -133,7 +138,7 @@
   flex-direction: column;
 }
 
-.stat-value {
+.super-agent-dashboard .stat-value {
   font-size: 1.25rem;
   font-weight: 700;
   color: #00d4ff;
@@ -141,7 +146,7 @@
   text-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
 }
 
-.stat-label {
+.super-agent-dashboard .stat-label {
   font-size: 0.7rem;
   color: #6a7a8a;
   text-transform: uppercase;
@@ -281,8 +286,8 @@
   gap: 0.5rem;
 }
 
-.agent-row,
-.player-row {
+.super-agent-dashboard .agent-row,
+.super-agent-dashboard .player-row {
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -300,8 +305,8 @@
   flex-direction: column;
 }
 
-.agent-name,
-.player-name {
+.super-agent-dashboard .agent-name,
+.super-agent-dashboard .player-name {
   font-weight: 500;
   color: #fff;
 }
@@ -349,7 +354,7 @@
   object-fit: cover;
 }
 
-.online-dot {
+.super-agent-dashboard .online-dot {
   position: absolute;
   bottom: 0;
   right: 0;
@@ -469,16 +474,16 @@
     padding: 0.75rem;
   }
 
-  .stats-grid {
+  .super-agent-dashboard .stats-grid {
     gap: 0.5rem;
     padding: 0.75rem;
   }
 
-  .stat-card {
+  .super-agent-dashboard .stat-card {
     padding: 0.75rem;
   }
 
-  .stat-value {
+  .super-agent-dashboard .stat-value {
     font-size: 1rem;
   }
 
@@ -501,7 +506,7 @@
     min-height: 44px;
   }
 
-  .stats-grid {
+  .super-agent-dashboard .stats-grid {
     grid-template-columns: 1fr;
   }
 

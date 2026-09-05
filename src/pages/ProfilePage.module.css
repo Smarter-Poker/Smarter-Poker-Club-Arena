@@ -91,6 +91,32 @@
   box-shadow: 0 -8px 24px rgba(58, 168, 255, 0.28);
 }
 
+/*
+ * THE PLATE'S EMPTY SOCKET, MEASURED (2026-09-05) AND DELIBERATELY NOT USED.
+ *
+ * `identity-vault-hero-v1.webp` (1536x1024) carries a chrome medallion ring
+ * with an empty interior. Measured off the render so nobody has to do it
+ * again: the socket interior is centred at 34.80% x / 51.22% y, spans 21.94%
+ * of the width and 21.00% of the height, and is an ELLIPSE - the plate is
+ * tilted, so a circular portrait dropped in needs scaleY(0.638).
+ *
+ * The portrait is NOT set into it, and that is a decision rather than an
+ * omission. Two things would have to change first, and both belong to whoever
+ * owns the art direction:
+ *
+ *   1. This hero is `background-size: cover` under a 0.98 -> 0.16 veil - a
+ *      dimmed full-bleed backdrop by design. Percentage background-position
+ *      anchors image-x% to box-x%, so a socket at image 34.8% cannot be made
+ *      to land under an avatar sitting at box ~7%. Aligning them means
+ *      letterboxing the hero to the render's 3:2 aspect, which turns the
+ *      backdrop into a stage.
+ *   2. The credential portrait is a 116px machined plate at 3px radius,
+ *      matching the 2-3px radii the whole surface uses. A round medallion
+ *      squashed to 0.638 is a different design language.
+ *
+ * The numbers are here so that if the art direction does change, the geometry
+ * is already known.
+ */
 .heroArtwork {
   position: absolute;
   inset: 0;

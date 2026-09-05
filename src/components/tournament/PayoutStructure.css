@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  *  PAYOUT STRUCTURE — Styles with Premium Animations
  *  Enhanced with progress tracking and player status indicators
@@ -92,7 +97,7 @@
   justify-content: center;
 }
 
-.badge {
+.payout-structure .badge {
   display: inline-block;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-full);
@@ -102,20 +107,20 @@
   letter-spacing: 0.8px;
 }
 
-.badge.bubble {
+.payout-structure .badge.bubble {
   background: rgba(240, 40, 73, 0.2);
   color: #f02849;
   border: 1px solid rgba(240, 40, 73, 0.4);
   animation: bubbleAlert 1.5s ease-in-out infinite;
 }
 
-.badge.money {
+.payout-structure .badge.money {
   background: rgba(49, 162, 76, 0.2);
   color: #31a24c;
   border: 1px solid rgba(49, 162, 76, 0.4);
 }
 
-.badge.remaining {
+.payout-structure .badge.remaining {
   background: rgba(247, 147, 26, 0.2);
   color: #f7931a;
   border: 1px solid rgba(247, 147, 26, 0.4);

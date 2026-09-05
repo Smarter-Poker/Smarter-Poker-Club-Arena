@@ -21,12 +21,9 @@ export default function GamificationLeaderboard() {
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Hook calls at top level
-  useMasterBusSubscription('WHEEL_SPIN_RESULT', () => {
-    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-    refreshTimerRef.current = setTimeout(() => {
-      fetchLeaderboard();
-    }, 1500);
-  });
+  /* WHEEL_SPIN_RESULT removed 2026-09-05: its only emitter was LuckyDrawWheel,
+     a component no file imported, so this refresh could never run. The
+     MISSION_CLAIMED subscription below does have a live emitter. */
 
   useMasterBusSubscription('MISSION_CLAIMED', () => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);

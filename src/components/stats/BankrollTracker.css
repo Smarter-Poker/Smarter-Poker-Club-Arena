@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  BANKROLL TRACKER — Line Chart + Milestones
@@ -93,7 +98,7 @@
   background: linear-gradient(145deg, rgba(0, 212, 255, 0.08) 0%, rgba(0, 212, 255, 0.02) 100%);
 }
 
-.amount-label,
+.bankroll-tracker .amount-label,
 .change-label,
 .health-label {
   font-size: 0.7rem;
@@ -191,13 +196,13 @@
   margin-top: 0.5rem;
 }
 
-.stats-grid {
+.bankroll-tracker .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 0.75rem;
 }
 
-.stat-card {
+.bankroll-tracker .stat-card {
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -247,7 +252,7 @@
   color: #00d4ff;
 }
 
-.stat-content {
+.bankroll-tracker .stat-content {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
@@ -261,7 +266,7 @@
   font-weight: 500;
 }
 
-.stat-value {
+.bankroll-tracker .stat-value {
   font-size: 1.1rem;
   font-weight: 700;
   color: #00d4ff;
@@ -353,7 +358,7 @@
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .stats-grid {
+  .bankroll-tracker .stats-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 }
@@ -367,12 +372,12 @@
     font-size: 1.4rem;
   }
 
-  .stats-grid {
+  .bankroll-tracker .stats-grid {
     grid-template-columns: 1fr;
     gap: 0.5rem;
   }
 
-  .stat-card {
+  .bankroll-tracker .stat-card {
     padding: 0.75rem;
   }
 

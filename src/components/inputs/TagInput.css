@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 .tag-input-wrapper {
   margin-bottom: 16px;
   position: relative;
@@ -27,7 +32,7 @@
   border-color: rgba(255, 215, 0, 0.5);
 }
 
-.tag {
+.tag-input-wrapper .tag {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -38,7 +43,7 @@
   font-size: 0.85rem;
 }
 
-.tag button {
+.tag-input-wrapper .tag button {
   background: none;
   border: none;
   color: rgba(255, 215, 0, 0.7);

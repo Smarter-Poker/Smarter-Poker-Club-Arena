@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ♠ CLUB ARENA — Audit Log Styles
  */
@@ -61,7 +66,7 @@
   font-size: var(--fs-sm);
 }
 
-.log-entries {
+.audit-log .log-entries {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -111,18 +116,18 @@
   }
 }
 
-.empty-state {
+.audit-log .empty-state {
   text-align: center;
   padding: var(--space-8);
 }
 
-.empty-state span {
+.audit-log .empty-state span {
   font-size: 3rem;
   display: block;
   margin-bottom: var(--space-2);
 }
 
-.empty-state p {
+.audit-log .empty-state p {
   color: var(--text-muted);
 }
 

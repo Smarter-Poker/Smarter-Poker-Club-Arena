@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * 👥 MEMBER LIST — Styles
@@ -99,7 +104,7 @@
   flex-direction: column;
 }
 
-.member-row {
+.member-list .member-row {
   display: grid;
   grid-template-columns: 2fr 1fr 1.5fr 1fr 1fr;
   align-items: center;
@@ -262,7 +267,7 @@
 
 /* Responsive */
 @media (max-width: 700px) {
-  .member-row {
+  .member-list .member-row {
     grid-template-columns: 3fr 2fr 1fr;
     gap: 8px;
   }

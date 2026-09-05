@@ -209,7 +209,6 @@ export type BusEventType =
   | 'CHALLENGE_PROGRESS_UPDATED'
   | 'MISSION_CLAIMED'
   | 'DAILY_REWARD_CLAIMED'
-  | 'WHEEL_SPIN_RESULT'
   | 'DAILY_RESET_AVAILABLE'
   | 'NOTIFICATION_DISMISSED'
   // Q3: Social, Messaging & Discovery events
@@ -905,7 +904,6 @@ export interface BusPayloadMap {
   CHALLENGE_PROGRESS_UPDATED: Record<string, unknown>;
   MISSION_CLAIMED: { missionId: string; tier: string; rewardType: string; rewardAmount: number };
   DAILY_REWARD_CLAIMED: { amount: number; rewardType: string; streakDay: number };
-  WHEEL_SPIN_RESULT: { segmentId: string; amount: number; type: string };
   DAILY_RESET_AVAILABLE: { date: string };
   NOTIFICATION_DISMISSED: { notificationId: string };
   // Q3: Social, Messaging & Discovery payloads

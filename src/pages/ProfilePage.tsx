@@ -595,8 +595,7 @@ export default function ProfilePage() {
       () => {
         invalidateProfileCache();
         // Re-load profile when updated from settings or other pages
-        supabase.auth
-          .getUser()
+        getAuthUser()
           .then(({ data: { user: authUser } }) => {
             if (authUser && isMounted) {
               supabase
@@ -623,8 +622,7 @@ export default function ProfilePage() {
       () => {
         invalidateProfileCache();
         // Refresh stats after a hand is completed
-        supabase.auth
-          .getUser()
+        getAuthUser()
           .then(({ data: { user: authUser } }) => {
             if (authUser && isMounted) {
               supabase
@@ -644,8 +642,7 @@ export default function ProfilePage() {
     );
     const refreshDiamondBalance = () => {
       invalidateProfileCache();
-      supabase.auth
-        .getUser()
+      getAuthUser()
         .then(({ data: { user: authUser } }) => {
           if (authUser && isMounted) {
             DiamondService.getBalance(authUser.id).then((dw) => {
@@ -678,8 +675,7 @@ export default function ProfilePage() {
         // UI_THEME_CHANGED audit.
         const payload = event?.payload ?? event;
         if (payload?.rewardType === 'diamonds') setShowDiamondRain(true);
-        supabase.auth
-          .getUser()
+        getAuthUser()
           .then(({ data: { user: authUser } }) => {
             if (authUser && isMounted) {
               supabase
@@ -706,8 +702,7 @@ export default function ProfilePage() {
         // Wrapper unwrap — see the DAILY_REWARD_CLAIMED note above.
         const payload = event?.payload ?? event;
         if (payload?.rewardType === 'diamonds') setShowDiamondRain(true);
-        supabase.auth
-          .getUser()
+        getAuthUser()
           .then(({ data: { user: authUser } }) => {
             if (authUser && isMounted) {
               supabase
@@ -724,36 +719,14 @@ export default function ProfilePage() {
       },
       500
     );
-    const unsubWheelSpin = masterBus.subscribeDebounced(
-      'WHEEL_SPIN_RESULT',
-      (event: any) => {
-        if (!isMounted) return;
-        // Wrapper unwrap — the most insidious variant of the class: the
-        // WRAPPER has a real `.type` field holding the event NAME
-        // ('WHEEL_SPIN_RESULT'), so `payload?.type === 'diamonds'` was
-        // silently, permanently false with no undefined to trip a guard.
-        // The payload's own `type` (LuckyDrawWheel emits segment type) is
-        // what this comparison was written for.
-        const payload = event?.payload ?? event;
-        if (payload?.type === 'diamonds') setShowDiamondRain(true);
-        supabase.auth
-          .getUser()
-          .then(({ data: { user: authUser } }) => {
-            if (authUser && isMounted) {
-              supabase
-                .from('profiles')
-                .select('diamonds')
-                .eq('id', authUser.id)
-                .maybeSingle()
-                .then(({ data }) => {
-                  if (data && isMounted) setDiamonds(data.diamonds || 0);
-                });
-            }
-          })
-          .catch((e) => console.warn('[Profile] Refreshing wheel spin diamonds failed:', e));
-      },
-      500
-    );
+    /* WHEEL_SPIN_RESULT's subscription is REMOVED (2026-09-05). Its only
+       emitter was LuckyDrawWheel, a component no file imported, so this
+       handler could never run - `user_lucky_wheel_spins` has 0 rows and the
+       wheel has never been spun. Deleting the component made the dead wiring
+       visible to tests/unit/noDeadBusSubscriptions.test.ts, which is what
+       that guard is for. The diamond rain and the balance refresh are not
+       lost: DAILY_REWARD_CLAIMED and MISSION_CLAIMED above drive both, and
+       both have live emitters. */
 
     return () => {
       isMounted = false;
@@ -763,7 +736,6 @@ export default function ProfilePage() {
       unsubDiamond();
       unsubDailyReward();
       unsubMissionClaim();
-      unsubWheelSpin();
     };
   }, []);
 

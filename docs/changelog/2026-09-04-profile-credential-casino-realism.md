@@ -313,19 +313,82 @@ written and rendered neither. The split is the shape of a player's volume and
 it is the one thing a single "Hands" figure cannot say. Two tiles added
 (indices 21 and 22, `statCount` 21 -> 23).
 
+## Clearing the backlog (2026-09-05)
+
+Every item that was still listed as open, closed or decided.
+
+### 163 -> 99 CSS collisions, and a first attempt thrown away
+
+60 component stylesheets scoped, 278 selectors. The value is in what was NOT
+shipped: a first pass scoped 130 files and chose roots by "longest bare class
+that appears as a className", which picked `.audit-log__summary`, `.active` and
+`.filter-chips` - inner nodes and a state modifier. Rules scoped to elements
+that do not contain them would have silently unstyled those components. It was
+reverted whole and redone with a root that must be BOTH the component's
+outermost rendered element AND its namesake wrapper, then every one of the 60
+was verified three ways: root rendered, leaking class present in the same
+component's own markup, selector actually rewritten. Portal-rendering
+components are excluded, because their markup can render outside their root.
+99 remain, each needing the same two lines by hand.
+
+### The five round trips were already four, in parallel
+
+Measured instead of assumed, and my earlier note was wrong: the cold load
+creates `secondaryDataPromise` (achievements + ledger + v2 stats) BEFORE it
+awaits the profile row, so there is no waterfall to collapse into one RPC.
+Building one would have added a large SQL surface for nothing.
+
+The real cost was elsewhere and it is fixed: six bus subscribers
+(PROFILE_UPDATED, HAND_COMPLETED, BALANCE_UPDATED, DIAMOND_BALANCE_CHANGED,
+DAILY_REWARD_CLAIMED, MISSION_CLAIMED) each called `supabase.auth.getUser()`,
+which is a GoTrue round trip, when the page already imports `getAuthUser()` -
+which reads the local session and only falls back to the network. HAND_COMPLETED
+fires for every hand a player finishes, so the credential was paying a request
+per hand to re-learn who was already signed in. All six switched; both facts
+are pinned.
+
+### The wheel is gone from the client, and whole on the server
+
+489 lines deleted: `LuckyDrawWheel.tsx`, its stylesheet, and
+`BonusService.getWheelStats`. It was imported by no file, no surface had a slot
+waiting for it, and `user_lucky_wheel_spins` held 0 rows - never mounted, never
+spun. `claim_lucky_wheel_spin`, `lucky_wheel_segments` and the table are
+untouched and still work; the RPC was always the hard part.
+
+### The dead mirrors are named in the schema
+
+Migration `20260905162259`, COMMENT-only, nothing dropped:
+`training_achievement_definitions` (23 rows, threshold 0 and icon_url NULL on
+every one, no reader) is marked a dead mirror of the client `ACHIEVEMENTS`
+array; `profiles.tier` and `profiles.access_tier` are marked constants that
+must never gate an entitlement; and `skill_tier` (7 distinct values) and
+`vip_tier` are marked REAL so nobody retires the wrong one.
+
+`IdentityDNA` carried the last unlabelled `tier -> vip_level` write. It now
+carries the same warning `useUserStore` got: the expression is the constant
+'Newcomer' for every player, and gating on it is how the VIP avatar collection
+stood open for every account.
+
+### The plate socket: measured, and deliberately left empty
+
+`identity-vault-hero-v1.webp` has a chrome medallion ring with an empty
+interior, centred at 34.80% x / 51.22% y, spanning 21.94% x 21.00%, elliptical
+enough to need `scaleY(0.638)`. The portrait is not set into it, and the
+numbers plus the reasoning are recorded in `ProfilePage.module.css` so nobody
+re-measures. Aligning a socket at image-34.8% under an avatar at box-7% is not
+expressible with `background-position` percentages under `cover`; it needs the
+hero letterboxed to 3:2, which replaces a deliberately full-bleed veiled
+backdrop. And the credential portrait is a 116px machined plate at 3px radius,
+matching every other radius on the surface. Both are art-direction calls that
+belong with whoever owns the art, not with a measurement.
+
 ## What is left
 
-- Set the portrait INTO #3041's credential plate ring and the dossier folio
-  frame (measure the socket centre and size, `container-type: inline-size`
-  stage at the render's aspect, translate the medallion). The technique is in
-  this branch's history (commit 62f49ffd9, `PublicProfilePage.css`).
-- One RPC for the credential (`profiles` + `vip` flags + stats + achievements
-  - ledger) to replace five round trips on a cold mobile load.
-- `training_achievement_definitions` (threshold 0, icon_url null on every
-  row) is a dead mirror of the client `ACHIEVEMENTS`; pick one source.
-- 164 component stylesheets still define a class bare that another component also defines, with a
-  property gap between them (down from 256). Each is a live cross-page
-  collision and each is the same two-line fix; the law ratchets the count.
+- 99 component stylesheets still define a class bare that another component
+  also defines with a property gap (down from 256). Each is the same two-line
+  fix and the law ratchets the count; the 99 are the ones where no namesake
+  wrapper could be proven automatically, so each needs a human to name its
+  container.
 
 ## Design direction
 

@@ -136,8 +136,19 @@ describe('a global class name has exactly one owner', () => {
     // if it were a leak. That published a broken gate and stalled the bundle
     // for 17 minutes. `src/styles/` is excluded now (see isThemeLayer), so the
     // number counts one thing only: a COMPONENT deciding another COMPONENT's
-    // layout. It reads 164 with the wallet's two fixes included; it was 242 on
+    // layout. It read 164 with the wallet's two fixes included; it was 242 on
     // the old basis and 256 when this law was written.
+    //
+    // 2026-09-05, fourth pass: 60 more component stylesheets scoped in one
+    // sweep - 278 selectors - taking it 163 -> 99. Every root was verified as
+    // that component's OWN outermost rendered element AND its namesake
+    // wrapper, not merely a class that appeared somewhere in the file: a first
+    // attempt chose `.audit-log__summary` and `.active` as roots, which would
+    // have scoped rules to elements that do not contain them, and it was
+    // thrown away rather than shipped. The 99 that remain are files where no
+    // namesake wrapper could be proven, or the component uses a portal so its
+    // markup can render outside its own root; each is still the same two-line
+    // change, done by hand.
     //
     // This is a ratchet, not a target: it may fall, never rise. Fixing one is
     // two lines - scope it to its container.
@@ -149,6 +160,6 @@ describe('a global class name has exactly one owner', () => {
       const union = new Set(declared.flatMap((s) => [...s]));
       if ([...union].some((p) => declared.some((s) => !s.has(p)))) leakable += 1;
     }
-    expect(leakable).toBeLessThanOrEqual(164);
+    expect(leakable).toBeLessThanOrEqual(99);
   });
 });

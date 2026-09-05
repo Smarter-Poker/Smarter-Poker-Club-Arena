@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 /* ═══════════════════════════════════════════════════════════════════════════════
    FINANCIAL ALERTS PAGE — Styles
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -51,17 +56,17 @@
   font-weight: 600;
 }
 
-.stat.critical {
+.financial-alerts-page .stat.critical {
   background: rgba(239, 68, 68, 0.15);
   color: #ef4444;
 }
 
-.stat.warning {
+.financial-alerts-page .stat.warning {
   background: rgba(234, 179, 8, 0.15);
   color: #eab308;
 }
 
-.stat.clear {
+.financial-alerts-page .stat.clear {
   background: rgba(34, 197, 94, 0.15);
   color: #22c55e;
 }
@@ -78,7 +83,7 @@
 }
 
 /* ── Filter Tabs ── */
-.filter-tabs {
+.financial-alerts-page .filter-tabs {
   display: flex;
   gap: 8px;
   margin-bottom: 20px;
@@ -87,7 +92,7 @@
   scrollbar-width: none;
 }
 
-.filter-tabs::-webkit-scrollbar {
+.financial-alerts-page .filter-tabs::-webkit-scrollbar {
   display: none;
 }
 
@@ -239,8 +244,8 @@
 }
 
 /* ── Empty & Loading States ── */
-.loading-state,
-.empty-state {
+.financial-alerts-page .loading-state,
+.financial-alerts-page .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;

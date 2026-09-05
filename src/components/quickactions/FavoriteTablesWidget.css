@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 .favorite-tables-widget {
   background: linear-gradient(135deg, rgba(20, 20, 35, 0.95), rgba(15, 15, 25, 0.95));
   border-radius: 12px;
@@ -54,7 +59,7 @@
   gap: 2px;
 }
 
-.table-name {
+.favorite-tables-widget .table-name {
   color: #fff;
   font-weight: 500;
   font-size: 0.9rem;
@@ -91,7 +96,7 @@
   gap: 6px;
 }
 
-.join-btn {
+.favorite-tables-widget .join-btn {
   padding: 6px 12px;
   background: rgba(74, 222, 128, 0.2);
   border: 1px solid rgba(74, 222, 128, 0.4);
@@ -103,7 +108,7 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.join-btn:disabled {
+.favorite-tables-widget .join-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }

@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 .onboarding-checklist {
   background: linear-gradient(135deg, rgba(20, 20, 35, 0.95), rgba(15, 15, 25, 0.95));
   border-radius: 16px;
@@ -30,7 +35,7 @@
   font-weight: 600;
 }
 
-.progress-bar {
+.onboarding-checklist .progress-bar {
   height: 6px;
   background: rgba(255, 255, 255, 0.1);
   border-radius: 3px;
@@ -112,7 +117,7 @@
   font-size: 0.85rem;
 }
 
-.claim-btn {
+.onboarding-checklist .claim-btn {
   padding: 4px 10px;
   background: linear-gradient(135deg, #4ade80, #22c55e);
   border: none;

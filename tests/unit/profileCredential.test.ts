@@ -324,6 +324,36 @@ describe('every formatter this file pins is reachable by a player', () => {
   });
 });
 
+describe('the credential does not pay for the session it already has', () => {
+  it('resolves the signed-in user from the local session, never over the network', () => {
+    /*
+     * `supabase.auth.getUser()` is a GoTrue round trip. `getAuthUser()` reads
+     * the session out of localStorage and only falls back to the network when
+     * there is none - the page already imported it for its two load paths.
+     *
+     * Six bus subscribers called the network one: PROFILE_UPDATED,
+     * HAND_COMPLETED, BALANCE_UPDATED, DIAMOND_BALANCE_CHANGED,
+     * DAILY_REWARD_CLAIMED and MISSION_CLAIMED. HAND_COMPLETED fires for every
+     * hand a player finishes, so the credential was paying a round trip per
+     * hand to re-learn who was already signed in.
+     */
+    expect(PROFILE).not.toMatch(/supabase\.auth\s*\n?\s*\.getUser\(\)/);
+    expect(PROFILE).toContain("import { supabase, getAuthUser } from '../lib/supabase'");
+  });
+
+  it('loads the cold credential concurrently, not in a waterfall', () => {
+    // The profile row, the achievements, the ledger page and the v2 stats
+    // snapshot are all in flight together: `secondaryDataPromise` is created
+    // BEFORE the profile is awaited. There is no five-request waterfall to
+    // collapse into one RPC - that claim was wrong when this changelog first
+    // made it, and the shape below is why.
+    const secondary = PROFILE.indexOf('const secondaryDataPromise = Promise.allSettled');
+    const awaitProfile = PROFILE.indexOf('const { data: profile, error: profileError } = await');
+    expect(secondary).toBeGreaterThan(-1);
+    expect(awaitProfile).toBeGreaterThan(secondary);
+  });
+});
+
 describe('the VIP ring shows VIP, and only when there is one', () => {
   /**
    * Absence pins have to read CODE, not prose. Each removal below is recorded

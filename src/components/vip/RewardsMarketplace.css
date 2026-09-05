@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 /* RewardsMarketplace — Exclusive rewards shopping with filters and sorting */
 
 .rewards-marketplace {
@@ -220,7 +225,7 @@
   font-weight: 600;
 }
 
-.tab-count {
+.rewards-marketplace .tab-count {
   font-size: 11px;
   background: rgba(255, 215, 0, 0.2);
   padding: 2px 6px;

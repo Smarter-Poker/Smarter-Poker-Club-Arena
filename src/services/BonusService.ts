@@ -253,52 +253,24 @@ class BonusServiceClass {
     return data.last_spin_date !== today;
   }
 
-  /**
-   * Lifetime wheel stats.
+  /*
+   * REMOVED 2026-09-05: `getWheelStats`, together with the LuckyDrawWheel
+   * component and its stylesheet (489 lines).
    *
-   * `streakMultiplier` IS ALWAYS 1, AND THAT IS THE FIX, not an oversight.
+   * The wheel was imported by no file, `user_lucky_wheel_spins` held 0 rows,
+   * and no surface had a slot waiting for it: it had never been mounted or
+   * spun by anyone since it was written. What it DID have was a streak ladder
+   * of its own (1.5x at 3 days, 2x at 7) that the payout RPC does not honour -
+   * `claim_lucky_wheel_spin` credits `v_pick.amount` exactly - so the first
+   * player ever to spin would have been shown up to twice what reached their
+   * wallet.
    *
-   * This method used to compute a third streak ladder of its own - 1.5x at a
-   * 3-day login streak, 2x at 7 - read out of `user_daily_rewards` and handed
-   * to LuckyDrawWheel, which both announced "{n}x Streak Bonus!" and
-   * multiplied the won amount by it before showing the player.
-   *
-   * `claim_lucky_wheel_spin` applies NO multiplier. It credits `v_pick.amount`
-   * exactly, through atomic_credit_wallet_and_log / add_diamonds_to_balance /
-   * add_vip_points. So the ladder invented a bonus the ledger does not pay,
-   * and a player on a 7-day streak would have read that they won twice what
-   * actually arrived in their wallet.
-   *
-   * It also disagreed with the platform's real ladder: `fn_get_streak_multiplier`
-   * is 1.2x at 3 days, 1.5x at 7, 1.8x at 14, 2.0x at 30 (mirrored for the
-   * credential in utils/streakMultiplier.ts). Two ladders, and a payout path
-   * honouring neither.
-   *
-   * Nothing was ever paid wrongly: the wheel is imported by no file and
-   * `user_lucky_wheel_spins` holds 0 rows - it has never been spun. The shape
-   * is removed so that the day someone mounts it, it cannot lie. If the wheel
-   * is ever MEANT to pay a streak bonus, that belongs in the RPC first: the
-   * number a player reads has to be the number the platform pays.
+   * EVERYTHING SERVER-SIDE IS UNTOUCHED and still works: the
+   * `claim_lucky_wheel_spin` RPC, `lucky_wheel_segments`, and
+   * `user_lucky_wheel_spins`. Rebuilding the UI against them is a small job;
+   * the RPC was always the hard part. What is gone is 489 lines of client code
+   * no player could reach and a multiplier that disagreed with the ledger.
    */
-  async getWheelStats(
-    userId: string
-  ): Promise<{ totalSpins: number; lastSpinDate: string | null; streakMultiplier: number }> {
-    const { data, error } = await supabase
-      .from('user_lucky_wheel_spins')
-      .select('total_spins, last_spin_date')
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    if (error || !data) {
-      return { totalSpins: 0, lastSpinDate: null, streakMultiplier: 1 };
-    }
-
-    return {
-      totalSpins: data.total_spins || 0,
-      lastSpinDate: data.last_spin_date,
-      streakMultiplier: 1,
-    };
-  }
 
   /**
    * Spin Lucky Draw Wheel (Atomic + Server RNG)

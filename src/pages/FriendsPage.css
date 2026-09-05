@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 .friends-page {
   width: min(1180px, calc(100% - 32px));
   min-width: 0;
@@ -165,7 +170,7 @@
   text-align: center;
 }
 
-.friends-panel {
+.friends-page .friends-panel {
   min-width: 0;
   min-height: 320px;
   padding: 24px;
@@ -609,7 +614,7 @@
   }
 
   .friends-command-heading,
-  .friends-panel {
+  .friends-page .friends-panel {
     padding-right: 16px;
     padding-left: 16px;
   }
@@ -643,7 +648,7 @@
     padding: 3px 4px;
   }
 
-  .friends-panel {
+  .friends-page .friends-panel {
     padding: 14px 12px 22px;
   }
 

@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 .waitlist-manager {
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -66,7 +71,7 @@
   min-width: 30px;
 }
 
-.entry-avatar {
+.waitlist-manager .entry-avatar {
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -78,13 +83,13 @@
   flex-shrink: 0;
 }
 
-.entry-avatar img {
+.waitlist-manager .entry-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.entry-avatar span {
+.waitlist-manager .entry-avatar span {
   font-weight: 700;
   color: #fff;
 }

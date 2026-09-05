@@ -1,3 +1,8 @@
+/* SCOPED 2026-09-05. These class names are also defined bare in another
+   component's stylesheet. Every plain .css file here is global once imported,
+   so the two were ONE rule and whichever chunk loaded last won any property
+   the other did not declare. Scoped to this component's own container; its
+   appearance is unchanged. tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB SETTINGS — Styles
@@ -114,19 +119,19 @@
   gap: 16px;
 }
 
-.form-group {
+.club-settings-overlay .form-group {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.form-group label {
+.club-settings-overlay .form-group label {
   font-size: 0.8125rem;
   font-weight: 600;
   color: #8b949e;
 }
 
-.form-input,
+.club-settings-overlay .form-input,
 .form-textarea {
   padding: 10px 12px;
   background: #0d1117;
@@ -137,7 +142,7 @@
   outline: none;
 }
 
-.form-input:focus,
+.club-settings-overlay .form-input:focus,
 .form-textarea:focus {
   border-color: #1877f2;
 }
@@ -166,7 +171,7 @@
   flex-direction: column;
 }
 
-.checkbox-label {
+.club-settings-overlay .checkbox-label {
   font-weight: 600;
   color: #e4e6eb;
   font-size: 0.9375rem;
@@ -194,7 +199,7 @@
   margin: 0 0 12px 0;
 }
 
-.btn-danger {
+.club-settings-overlay .btn-danger {
   width: 100%;
   padding: 10px;
   background: #f85149;
@@ -230,7 +235,7 @@
   cursor: pointer;
 }
 
-.btn-save {
+.club-settings-overlay .btn-save {
   padding: 8px 16px;
   background: #1877f2;
   border: none;
@@ -240,7 +245,7 @@
   cursor: pointer;
 }
 
-.btn-save:disabled {
+.club-settings-overlay .btn-save:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

@@ -160,10 +160,52 @@ describe('the rake snapshot grants', () => {
   it('no migration ever grants a rake helper to anon', () => {
     for (const sql of migrationsMentioning('fn_ca_rake_')) {
       const grants = sql.match(/GRANT EXECUTE ON FUNCTION public\.fn_ca_rake_[^;]*;/g) ?? [];
-      for (const g of grants) {
-        expect(g).not.toContain('anon');
-        expect(g).not.toMatch(/\bauthenticated\b/);
+      for (const g of grants) expect(g).not.toContain('anon');
+    }
+  });
+
+  /**
+   * A helper opened to `authenticated` has to be SHUT AGAIN BY A LATER
+   * MIGRATION, or this fails - which is not the same as "no migration may ever
+   * contain that grant", and the difference is the incident that widened it.
+   *
+   * On 2026-09-05 `20260905042000` shipped the right query behind
+   * `GRANT ... TO authenticated, service_role` - the shape every GATED RPC in
+   * this programme uses, applied to the one family where the gate lives a
+   * level up in `ca_rake_snapshot`. This law caught it in the full-suite run
+   * before the commit, and `20260905043000` re-issued the function with the
+   * grant closed. An applied migration is never edited (AGENT-PLAYBOOK), so
+   * the bad line is still in the tree and always will be; what matters is
+   * whether the door is shut by the end of the sequence.
+   *
+   * So an UNCORRECTED bad grant still fails here, exactly as it did then.
+   */
+  it('any rake helper opened to authenticated is closed again by a later migration', () => {
+    const files = readdirSync(MIGRATIONS)
+      .filter((f) => f.endsWith('.sql'))
+      .sort();
+    const opened = new Map<string, string>();
+    const closedAfter = new Map<string, string[]>();
+    for (const f of files) {
+      const sql = readFileSync(resolve(MIGRATIONS, f), 'utf8');
+      for (const g of sql.match(/GRANT EXECUTE ON FUNCTION public\.(fn_ca_rake_\w+)[^;]*;/g) ??
+        []) {
+        if (!/\bauthenticated\b/.test(g)) continue;
+        const fn = /public\.(fn_ca_rake_\w+)/.exec(g)![1];
+        if (!opened.has(fn)) opened.set(fn, f);
       }
+      for (const r of sql.match(/REVOKE ALL ON FUNCTION public\.(fn_ca_rake_\w+)[^;]*;/g) ?? []) {
+        if (!/\bauthenticated\b/.test(r)) continue;
+        const fn = /public\.(fn_ca_rake_\w+)/.exec(r)![1];
+        closedAfter.set(fn, [...(closedAfter.get(fn) ?? []), f]);
+      }
+    }
+    for (const [fn, openedIn] of opened) {
+      const shut = (closedAfter.get(fn) ?? []).filter((f) => f > openedIn);
+      expect(
+        shut.length,
+        `${fn} is granted to authenticated in ${openedIn} and never revoked from it afterwards`
+      ).toBeGreaterThan(0);
     }
   });
 });

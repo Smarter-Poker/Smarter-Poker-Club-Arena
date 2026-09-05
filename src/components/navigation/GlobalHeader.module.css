@@ -393,3 +393,39 @@
     scroll-behavior: auto;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   INSIDE A "+" TAB (Dan 2026-09-04)
+   ---------------------------------------------------------------------------
+   MultiTablePage renders this header at the top of the lobby it opens with
+   "+", under the table strip, so that lobby has a Hub button. The strip above
+   already pays the notch, so in a tab the header pads by nothing and paints
+   no black band; sticky at 0 of the tab's own scroll container keeps it in
+   view while the lobby scrolls beneath it. Every other rule - the artwork,
+   the hit regions, the badges - is unchanged, so it is the same header. */
+.header.inTab,
+.header.inTab::before {
+  padding-top: 0;
+}
+
+.header.inTab::before {
+  height: 0;
+}
+
+.header.inTab .headerControls {
+  top: 0;
+}
+
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .header.inTab {
+    padding-top: 0;
+  }
+
+  .header.inTab::before {
+    height: 0;
+  }
+
+  .header.inTab .headerControls {
+    top: 0;
+  }
+}

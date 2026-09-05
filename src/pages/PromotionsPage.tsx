@@ -109,8 +109,15 @@ export default function PromotionsPage() {
       await promotionService.claimPromotion(promoId, user.id);
       if (!isMounted.current) return;
       setClaimedIds((prev) => new Set(prev).add(promoId));
-      masterBus.emit('BALANCE_UPDATED', { source: 'promotion_claim', userId: user.id });
-      toast.success('Promotion claimed!');
+      /* NO BALANCE_UPDATED HERE, AND THE MESSAGE SAYS WHAT HAPPENED.
+         Claiming records a `promotion_claims` row; it credits no wallet. Only
+         the deposit-match path calls `add_to_promo_wallet`, and that path
+         filters on a promotion type the table's own check constraint forbids
+         (`promotions_type_check` allows leaderboard, rake_race, milestone,
+         mystery, high_hand), so it can never match. Emitting BALANCE_UPDATED
+         made every surface re-read a balance that had not moved, and
+         "Promotion claimed!" beside it read as "you have been paid". */
+      toast.success('Promotion Claimed. Your Reward Is Recorded Against This Offer.');
     } catch (err: any) {
       if (isMounted.current) toast.error(err?.message || 'Failed to claim promotion');
       reportError(err, 'PromotionsPage.claim');

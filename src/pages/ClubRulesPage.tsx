@@ -13,7 +13,11 @@ import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { sanitizeInput } from '../utils/sanitizeInput';
-import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
+import {
+  resolveClubIdFilter,
+  resolveClubUUID,
+  resolveClubUUIDStrict,
+} from '../utils/clubIdResolver';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import './ClubRulesPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
@@ -204,27 +208,48 @@ export default function ClubRulesPage() {
     if (!clubId) return;
     setSaving(true);
     try {
-      const { column: saveCol, value: saveVal } = resolveClubIdFilter(clubId!);
-      // Merge rules_text into the clubs.settings jsonb without clobbering other keys.
-      const { data: cur } = await supabase
-        .from('clubs')
-        .select('settings')
-        .eq(saveCol, saveVal)
+      /**
+       * ONE RPC, NOT A READ-MODIFY-WRITE (20260905083442).
+       *
+       * This used to select `clubs.settings`, spread `rules_text` into the
+       * object and write the whole document back. Two defects came with it:
+       *
+       *  - the UPDATE had no `.select()`, and the `clubs` UPDATE policy is
+       *    `owner_id = auth.uid()`. A co-owner or admin - both of whom this
+       *    page SHOWS the Edit button to - matched zero rows, got a 204 with
+       *    no error, and was told "Club rules updated!" over text that was
+       *    never stored;
+       *  - `settings` also carries rake cap, buy-in bounds, straddle, run it
+       *    twice and the time bank default, so saving prose wrote back a stale
+       *    copy of the club's rake configuration.
+       *
+       * `fn_set_club_rules` writes the one key with `jsonb_set`, refuses
+       * anybody who is not owner, co-owner or admin, and RETURNS what it
+       * stored - so an empty result is a refusal, not a success.
+       */
+      const resolvedForSave = await resolveClubUUIDStrict(clubId!);
+      const { data: saved, error } = await supabase
+        .rpc('fn_set_club_rules', {
+          p_club_id: resolvedForSave,
+          p_rules: sanitizeInput(editValue),
+        })
+        .select('rules_text')
         .maybeSingle();
-      const newSettings = {
-        ...((cur?.settings as Record<string, unknown> | null) || {}),
-        rules_text: sanitizeInput(editValue),
-      };
-      const { error } = await supabase
-        .from('clubs')
-        .update({ settings: newSettings })
-        .eq(saveCol, saveVal);
 
       if (error) throw error;
+      if (!saved) {
+        // No row means the write did not happen. Never paint it as if it did.
+        toast.error('Those Rules Were Not Saved. Ask An Owner To Try.');
+        return;
+      }
 
-      setRules(editValue);
+      // Paint what the DATABASE stored, not what was typed: the function caps
+      // the length, so the two can legitimately differ.
+      const storedText = String((saved as { rules_text: string | null }).rules_text ?? '');
+      setRules(storedText);
+      setEditValue(storedText);
       setIsEditing(false);
-      toast.success('Club rules updated!');
+      toast.success('Club Rules Updated');
       masterBus.emit('CLUB_UPDATED', { clubId });
     } catch (err) {
       reportError(err, 'ClubRulesPage.Failed_to_save_rules');

@@ -241,6 +241,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V40'
   ),
   flag(
+    'deepEquity',
+    'V44 second look: every Monte Carlo read at this multiple of its sample; set only by the engine replay inside the think time',
+    'V44'
+  ),
+  flag(
+    'v43Tempo',
+    'tempo reads: a river big bet priced by how fast it was made against what this player shows down at that tempo',
+    'V43'
+  ),
+  flag(
     'v41Leaks',
     'the rest of the tag table reaches a decision: hold em stack-off load, river-war load, limp-bloat load, by variant family',
     'V41'
@@ -267,7 +277,10 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
       ['nlhStackoffLoad', 'V41: this horse own hold em stack-off tag rate (leaksHoldem)'],
       ['riverWarLoad', 'V41: river raise-war / paid-off tag rate for this hand family'],
       ['limpBloatLoad', 'V41: limped-pot bloat tag rate for this hand family'],
-      ['tourneyLeakPremium', 'V41: extra ICM survival premium for a horse tagged for event stack-offs (leaksTournament)'],
+      [
+        'tourneyLeakPremium',
+        'V41: extra ICM survival premium for a horse tagged for event stack-offs (leaksTournament)',
+      ],
     ] as const
   ).map(
     ([key, note]): LedgerEntry => ({
@@ -313,7 +326,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
       ['leaksHandsOmaha', 'V41: reviewed Omaha hands (the denominator)', 'V41'],
       ['leaksHoldem', 'V41: the hold em-family share of the counts', 'V41'],
       ['leaksHandsHoldem', 'V41: reviewed hold em hands (the denominator)', 'V41'],
-      ['leaksTournament', 'V41: the tournament-format share, from fn_horse_tournament_leaks', 'V41'],
+      [
+        'leaksTournament',
+        'V41: the tournament-format share, from fn_horse_tournament_leaks',
+        'V41',
+      ],
       ['leaksHandsTournament', 'V41: reviewed tournament hands (the denominator)', 'V41'],
     ] as const
   ).map(
@@ -345,6 +362,26 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   mind('f3bOpps', 'their open got 3-bet', 'HorseMind.foldTo3BetOf (V16)'),
   mind('f3bFolds', '... and they folded', 'HorseMind.foldTo3BetOf (V16)'),
   mind('bigBetSD', 'big bets that reached showdown', 'HorseMind.bigBetValueTendency (V16)'),
+  mind(
+    'snapBetSD',
+    'V43: river big bets made within 1.5s that reached showdown',
+    'HorseMind.snapBetValueTendency (V43)'
+  ),
+  mind(
+    'snapBetSDStrong',
+    'V43: ... shown as two pair or better',
+    'HorseMind.snapBetValueTendency (V43)'
+  ),
+  mind(
+    'tankBetSD',
+    'V43: river big bets made after 8s or more that reached showdown',
+    'HorseMind.tankBetValueTendency (V43)'
+  ),
+  mind(
+    'tankBetSDStrong',
+    'V43: ... shown as two pair or better',
+    'HorseMind.tankBetValueTendency (V43)'
+  ),
   mind('bigBetSDStrong', '... that showed real strength', 'HorseMind.bigBetValueTendency (V16)'),
   mind('riverBetOpps', 'river bet opportunities', 'HorseMind.tableExploit (river reads)'),
   mind('riverBetFolds', 'river bets folded to', 'HorseMind.tableExploit (river reads)'),
@@ -1058,6 +1095,26 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic (V41)',
     'a horse tagged for river raise wars gave a river raise more respect; needs tuner-written leaks',
     'V41'
+  ),
+  receipt(
+    'v44_second_look',
+    'ServerTableEngineTurns.scheduleHorseAction',
+    'a close call/fold/all-in was replayed at 6x the equity sample inside the think time',
+    'V44',
+    'decide',
+    0.005
+  ),
+  receipt(
+    'v44_second_look_flipped',
+    'ServerTableEngineTurns.scheduleHorseAction',
+    'the deeper read overturned the fast answer',
+    'V44'
+  ),
+  receipt(
+    'v43_tempo_read',
+    'HorseLogic (V43)',
+    'a river big bet was priced by its tempo; needs a player with five snap or tank showdowns',
+    'V43'
   ),
   receipt(
     'v41_tourney_leak_read',

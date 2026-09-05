@@ -437,6 +437,22 @@ const makeLobbyTab = (): TableInstance => ({
 
 const MAX_TABLES = typeof window !== 'undefined' && window.innerWidth >= 1024 ? 6 : 4;
 
+/* `parseTimed` LIVED HERE TOO, AND main DID NOT COMPILE (2026-09-05).
+   Two agents fixed the same production outage the same day - the temporal
+   dead zone that put "Something Went Wrong" on every open table - and both
+   hoisted the helper to module scope, one here and one just above the
+   component. Neither branch conflicted textually, so git merged both copies
+   and origin/main carried two `function parseTimed` declarations: TS2393,
+   and `TypeScript Check` is a required check, so nothing could merge.
+   The exported declaration below the COMPONENT banner is the one kept, because
+   tests/no-tdz-in-table-route.law.test.ts looks for `export function
+   parseTimed(` by name. This duplicate is removed rather than the other.
+   Forward fix, no revert label (CLAUDE.md 10.8.2).
+   main later hoisted its own copy back to this position, which is how this
+   hunk came to conflict. Resolved the same way and for the same reason: one
+   declaration, the exported one below, which is what
+   tests/no-tdz-in-table-route.law.test.ts looks for by name. */
+
 /**
  * Parse a reported "kind:deadlineMs" channel into its parts.
  *
@@ -448,8 +464,8 @@ const MAX_TABLES = typeof window !== 'undefined' && window.innerWidth >= 1024 ? 
  * fired on the FIRST render with any table open. Every /table/:id on
  * production showed "Something Went Wrong" until this moved. A function
  * declaration is hoisted and has no temporal dead zone, so its position can
- * never matter again; tests/unit/multiTablePageHelpersAreHoisted.test.ts
- * pins it here.
+ * never matter again; tests/unit/multiTablePageHelpersAreHoisted.test.ts and
+ * tests/no-tdz-in-table-route.law.test.ts both pin it.
  */
 export function parseTimed(v?: string): { kind: string; at: number } | null {
   if (!v) return null;
@@ -2220,11 +2236,6 @@ export default function MultiTablePage() {
     loading: boolean;
     rows: QuickJoinRow[];
   }>({ open: false, loading: false, rows: [] });
-  const closeQuickJoin = useCallback(
-    () => setQuickJoin((q) => (q.open ? { ...q, open: false } : q)),
-    []
-  );
-
   /* The arguments the SPIN branch of the quick-join sheet last answered with,
      or null when the sheet is showing cash tables. The live refresh below
      re-asks exactly this question; it does not re-run the whole loader, which
@@ -2240,6 +2251,16 @@ export default function MultiTablePage() {
     scopeClubIds: string[];
     activeTableId: string | null;
   } | null>(null);
+
+  const closeQuickJoin = useCallback(() => {
+    setQuickJoin((q) => (q.open ? { ...q, open: false } : q));
+    /* And forget which spin the sheet was answering for. Leaving it set meant
+       the NEXT press re-opened the sheet with a stale scope still live (the
+       loader is async and only clears it after several round trips), so a
+       realtime event landing inside that window painted the previous table's
+       spin rows - and `loading: false` - over a sheet that was still loading. */
+    setSpinSheetScope(null);
+  }, []);
 
   /**
    * Escape closes the two sheets this page owns. Both already had a backdrop,
@@ -2406,6 +2427,10 @@ export default function MultiTablePage() {
       return;
     }
     setQuickJoin({ open: true, loading: true, rows: [] });
+    /* Before the first await, not after it. The spin branch re-arms this a few
+       round trips down; until it does there is no scope, so the live refresh
+       stays inert rather than answering for the table the player just left. */
+    setSpinSheetScope(null);
     try {
       const openIds = new Set(tablesRef.current.map((t) => t.id));
       const activeStakes = tablesRef.current[activeIndexRef.current]?.stakes || '';
@@ -2700,7 +2725,12 @@ export default function MultiTablePage() {
         )
         .on(
           'postgres_changes',
-          { event: 'UPDATE', schema: 'public', table: 'tables', filter: `club_id=eq.${clubId}` },
+          /* '*', not 'UPDATE'. The recycler opens a replacement board by
+             INSERTing the tournament row and then its table row; on UPDATE-only
+             the tournament INSERT woke the refresh, the table row did not exist
+             yet, quickJoinSpinRows dropped the board for having no table, and
+             nothing ever re-triggered. */
+          { event: '*', schema: 'public', table: 'tables', filter: `club_id=eq.${clubId}` },
           schedule
         );
     }

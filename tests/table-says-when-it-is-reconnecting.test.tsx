@@ -145,12 +145,18 @@ describe('the table says when it is not connected', () => {
     // a sibling pinned to the top of the table container.
     const surface = TABLE_PAGE.indexOf('className="table-surface"');
     const brand = TABLE_PAGE.indexOf('className="table-brand"');
-    const banner = TABLE_PAGE.indexOf('<TableConnectionBanner status=');
+    /* Matched whitespace-insensitively, like the sibling pin above (2026-09-05).
+       The element gained a third prop in Realtime Phase 3 (`authRefused`), so
+       Prettier wraps it across lines and a literal `'<TableConnectionBanner
+       status='` finds nothing - which failed this pin while the placement it
+       guards had not moved by a pixel. What is being asserted is WHERE the
+       banner is mounted, not how it happens to be formatted. */
+    const banner = TABLE_PAGE.search(/<TableConnectionBanner\s+status=/);
     expect(surface).toBeGreaterThan(-1);
     expect(banner).toBeGreaterThan(surface);
     expect(banner).toBeLessThan(brand);
     // Exactly one. Two would race each other on the same felt.
-    expect(TABLE_PAGE.match(/<TableConnectionBanner status=/g)).toHaveLength(1);
+    expect(TABLE_PAGE.match(/<TableConnectionBanner\s+status=/g)).toHaveLength(1);
   });
 
   it('cannot swallow a tap on the felt or an action button', () => {

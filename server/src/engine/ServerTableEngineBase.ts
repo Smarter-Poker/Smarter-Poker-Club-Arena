@@ -883,6 +883,14 @@ export abstract class ServerTableEngineBase {
    * run-it-twice/three-times hand populates this with the RUN index (1..3),
    * the same axis the double-board bomb pot uses for its two boards.
    */
+  /**
+   * userId -> the last heartbeat that said the bust-rebuy dialog was open for
+   * this player (2026-09-04). Written by heartbeat() in Turns, read by
+   * standUpBustedCashPlayers() in Dealing, which will not release a seat
+   * whose owner is at the cashier.
+   */
+  protected rebuyPromptOpenAt: Map<string, number> = new Map();
+
   protected currentHandWinnersByBoard: Array<{
     board: number;
     userId: string;

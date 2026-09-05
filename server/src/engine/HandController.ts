@@ -2373,10 +2373,37 @@ export class HandController {
       }
     }
 
+    /* POST-RAKE, LIKE EVERYTHING ELSE ON THIS EVENT (2026-09-04 second
+       sweep). pendingWinnersByBoard was built above from the PRE-rake board
+       winners and emitted raw beside post-rake `winners` and `perPotAwards`,
+       then persisted verbatim into hand_history.winners_by_board - so on a
+       double/triple-board bomb pot the per-board shares summed to MORE than
+       the paid total, while on a run-it-twice hand (built from the penny-
+       repaired awards in ServerTableEngineRunout) they summed exactly. One
+       column, two meanings. Rebuilt here from the repaired awards, grouped
+       by board and winner, the same way the RIT path does it. */
+    const winnersByBoardPostRake = this.pendingWinnersByBoard
+      ? (() => {
+          const byKey = new Map<
+            string,
+            { board: 1 | 2 | 3; userId: string; amount: number; handName?: string }
+          >();
+          for (const a of scaledPerPot) {
+            const board = ((a.board ?? 1) as 1 | 2 | 3) || 1;
+            const key = `${board}|${a.userId}`;
+            const existing = byKey.get(key);
+            if (existing) existing.amount = Math.round((existing.amount + a.amount) * 100) / 100;
+            else
+              byKey.set(key, { board, userId: a.userId, amount: a.amount, handName: a.hand?.name });
+          }
+          return [...byKey.values()].sort((x, y) => x.board - y.board);
+        })()
+      : undefined;
+
     this.emit({
       type: 'WINNERS',
       winners: adjustedWinners,
-      winnersByBoard: this.pendingWinnersByBoard,
+      winnersByBoard: winnersByBoardPostRake,
       perPotAwards: scaledPerPot,
     });
     this.handFSM.transition('settlement');

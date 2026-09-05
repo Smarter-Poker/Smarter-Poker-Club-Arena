@@ -994,9 +994,10 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
 
     if (horseIds.has(chooserPlayerId)) {
       // A chooser who never picks 1 is a chooser who never runs it once.
-      const runs = this.horseRitVerdict(chooserPlayerId) === 'once'
-        ? (1 as const)
-        : ((this.handCount % 3 === 0 ? 3 : 2) as 2 | 3);
+      const runs =
+        this.horseRitVerdict(chooserPlayerId) === 'once'
+          ? (1 as const)
+          : ((this.handCount % 3 === 0 ? 3 : 2) as 2 | 3);
       respond(1200 + (this.handCount % 5) * 240, () => {
         this.respondToRIT(chooserPlayerId, undefined, runs);
       });
@@ -1628,6 +1629,23 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       // Exact winners of each run (splits/side pots included) for the
       // client's per-board "won by" labels.
       per_board_winners: perBoardWinners,
+      /* THE ENGINE'S OWN VERDICT PER BOARD (2026-09-04 second sweep). The
+         client used to re-evaluate each board with bestFive on whatever hole
+         cards it could see: on a hi-lo variant that labelled the LOW winner
+         with their high hand and lit the wrong five cards, and on a split it
+         called a hi/lo divide a "Chop". These are the post-rake shares the
+         pot actually ships, with the half named. board is 1-based, like
+         winners_by_board. */
+      per_board_awards: this.currentHandPerPotAwards.map((a) => ({
+        board: a.board ?? 1,
+        user_id: a.userId,
+        amount: a.amount,
+        low: a.low === true,
+        hand_name: a.hand?.name ?? null,
+      })),
+      // What is actually paid out across every run, after rake and drops.
+      // The felt's per-board share labels divide THIS, not the gross pot.
+      net_pot: netPot,
       pots: pots.map((p) => ({ amount: p.amount, eligiblePlayers: p.eligiblePlayers })),
       // POKERBROS PARITY 2026-08-26: how many community cards were already on
       // the felt when the all-in locked. The client reveals boards street by

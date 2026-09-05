@@ -293,7 +293,9 @@ export interface TableModalsLayerProps {
 
   // Cashier
   showCashier: boolean;
-  accountBalance: number;
+  /** null = unknown (a failed read), never 0. See BuyInModal. */
+  accountBalance: number | null;
+  onRetryAccountBalance?: () => void;
   cashoutMinBuyIn: number;
   /** @deprecated unused by this layer — see the note on boardStage */
   buyInProcessingRef: React.MutableRefObject<boolean>;
@@ -589,6 +591,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     // Cashier
     showCashier,
     accountBalance,
+    onRetryAccountBalance,
     cashoutMinBuyIn,
     onCloseCashier,
     onAddChips,
@@ -1098,6 +1101,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         })()}
         maxBuyIn={maxBuyIn}
         accountBalance={accountBalance}
+        onRetryBalance={onRetryAccountBalance}
         bigBlind={safeBB(blinds)}
         cashoutRestriction={cashoutMinBuyIn > 0 ? cashoutMinBuyIn : undefined}
         countdown={buyInSecondsLeft ?? undefined}

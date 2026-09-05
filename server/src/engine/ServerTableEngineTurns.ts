@@ -1027,7 +1027,19 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
      * already resolves the table engine. A second endpoint would be a second
      * thing to keep alive for the sake of one boolean.
      */
-    opts?: { turnRendered?: boolean }
+    opts?: {
+      turnRendered?: boolean;
+      /**
+       * 2026-09-04 (second sweep, Dan: "my rebuy said it failed to load ...
+       * and booted me"). The client is showing this player the bust-rebuy
+       * dialog right now. BUSTED_GRACE_MS starts on the first dealing-loop
+       * tick that sees a 0 stack - BEFORE the dialog has even rendered - so a
+       * player reading the sheet, retrying a balance read, or picking an
+       * amount was stood up under it. A seat whose owner is at the cashier is
+       * being defended, and the sweep waits while this is fresh.
+       */
+      rebuyPromptOpen?: boolean;
+    }
   ): {
     success: boolean;
     connected: boolean;
@@ -1046,6 +1058,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     if (opts?.turnRendered) {
       this.disconnectEngine.noteTurnRendered(this.tableId, userId);
     }
+    if (opts?.rebuyPromptOpen) this.rebuyPromptOpenAt.set(userId, Date.now());
     const connected = this.disconnectEngine.isConnected(this.tableId, userId);
     return { success: true, connected, gracePeriodRemaining: 0 };
   }

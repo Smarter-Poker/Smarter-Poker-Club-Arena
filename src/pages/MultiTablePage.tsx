@@ -1357,7 +1357,8 @@ export default function MultiTablePage() {
   const anyTurnLive = tables.some(
     (t) =>
       (t.isMyTurn && t.turnDeadlineMs !== undefined) ||
-      !!t.decision ||
+      // An expired decision is not a live clock (2026-09-04 second sweep).
+      (parseTimed(t.decision)?.at ?? 0) > nowMs ||
       !!t.timeBank ||
       t.sitOutDeadlineMs !== undefined
   );
@@ -1482,12 +1483,17 @@ export default function MultiTablePage() {
   useEffect(() => {
     for (const t of tables) {
       if (isLobbyTab(t)) continue;
-      const d = parseTimed(t.decision);
+      const raw = parseTimed(t.decision);
+      // Expired decisions do not alarm (2026-09-04 second sweep): the old
+      // `left < 0` guard let `Math.ceil` of a value in (-1, 0) - which is -0,
+      // and -0 < 0 is false - through, so every RIT offer that timed out
+      // buzzed the player the second it stopped mattering.
+      const d = raw && raw.at > nowMs ? raw : null;
       const deadline =
         d?.at ?? (t.isMyTurn && t.turnDeadlineMs !== undefined ? t.turnDeadlineMs : undefined);
       if (deadline === undefined) continue;
       const left = Math.ceil((deadline - nowMs) / 1000);
-      if (left > 5 || left < 0) continue;
+      if (left > 5 || left <= 0) continue;
       if (urgentAlertedRef.current.get(t.id) === deadline) continue;
       urgentAlertedRef.current.set(t.id, deadline);
       if (soundService.isEnabled()) soundService.playTimerWarning();

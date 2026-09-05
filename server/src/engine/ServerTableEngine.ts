@@ -68,7 +68,8 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
         // observers too — same gate as the player-facing surfaces.
         cards:
           showCards &&
-          state.stage === 'showdown' &&
+          // Tabled hands during an all-in runout are public too (2026-09-04).
+          (state.stage === 'showdown' || this.runoutRevealActive) &&
           !p.is_folded &&
           !this.isMuckedAtShowdown(p.user_id)
             ? p.cards
@@ -330,7 +331,13 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
           if (p.user_id === requestingUserId) {
             showCards = true;
           } else if (
-            state.stage === 'showdown' &&
+            // 2026-09-04 second sweep: `|| this.runoutRevealActive`, the same
+            // clause broadcastCurrentState has carried since 2026-08-19. Without
+            // it a reconnect DURING an all-in runout (the paced single-run and
+            // decline paths keep the controller alive for the whole runout)
+            // served every villain face-down while everyone still connected
+            // saw the tabled hands.
+            (state.stage === 'showdown' || this.runoutRevealActive) &&
             !p.is_folded &&
             !this.isMuckedAtShowdown(p.user_id)
           ) {

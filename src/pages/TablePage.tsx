@@ -328,7 +328,11 @@ import { bestFive, cardKey, isPineappleVariant } from '../utils/handEvaluator';
 // Dan 2026-08-21, items 11 + 16: the client's post-hand hold comes from the
 // same animation spec the engine derives its own hold from, so the table can
 // never clear the winner before the pot has finished travelling to them.
-import { handCompletionHoldMs, HAND_COMPLETION } from '../config/handCompletionSpec';
+import {
+  handCompletionHoldMs,
+  ritRevealTimelineMs,
+  HAND_COMPLETION,
+} from '../config/handCompletionSpec';
 // SHOWDOWN POLISH 2026-08-25: pure, unit-tested presentation logic — award
 // sequencing, hi-lo board labels, and the spec-21 stack hold — extracted so
 // the beats are testable outside this 13k-line component.
@@ -3254,6 +3258,9 @@ export default function TablePage({
          notice. */
       const res = await sendHeartbeat(tableId, {
         turnRendered: heroActionRenderedRef.current,
+        // The engine will not stand up a busted seat whose owner is at the
+        // cashier (2026-09-04); this is how it knows.
+        rebuyPromptOpen: bustRebuyOpenRef.current,
       });
       if (res?.success) {
         // Silent recovery (Dan 2026-08-23). A "Reconnected" toast is only
@@ -3563,6 +3570,9 @@ export default function TablePage({
   // 2026-04-14 per Dan: bust rebuy flow
   const [bustRebuyOpen, setBustRebuyOpen] = useState(false);
   const [bustWalletBalance, setBustWalletBalance] = useState<number | null>(null);
+  /** Mirror for the heartbeat loop, which closes over stale state. */
+  const bustRebuyOpenRef = useRef(false);
+  bustRebuyOpenRef.current = bustRebuyOpen;
   const [bustRebuyProcessing, setBustRebuyProcessing] = useState(false);
   // bustPromptFiredRef provided by useTableSession hook
   const [selectedSeat, setSelectedSeat] = useState<number | null>(null);
@@ -4866,6 +4876,18 @@ export default function TablePage({
   const [ritFeltBanner, setRitFeltBanner] = useState<string | null>(null);
   const ritFeltBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const RIT_WAITING_BANNER = 'Waiting For Players To Run It Multiple Times.';
+  /* The waiting strip as RENDERED. Every banner goes through formatPopupText,
+     so comparing state against the raw constant only worked because that
+     sentence happened to be a fixed point of the transform. Compare against
+     the rendered form, so a wording change cannot silently unfix the clears. */
+  const RIT_WAITING_BANNER_RENDERED = formatPopupText(RIT_WAITING_BANNER);
+  const clearRitWaitingStrip = useCallback(
+    () =>
+      setRitFeltBanner((prev) =>
+        prev === RIT_WAITING_BANNER_RENDERED || prev === RIT_WAITING_BANNER ? null : prev
+      ),
+    [RIT_WAITING_BANNER_RENDERED]
+  );
   /**
    * @param revertToWaiting — RUN IT 3X recording: a per-player accept banner
    * shows for a few seconds, then the table drops BACK to the waiting strip
@@ -4888,7 +4910,9 @@ export default function TablePage({
       ritFeltBannerTimerRef.current = setTimeout(() => {
         ritFeltBannerTimerRef.current = null;
         setRitFeltBanner(
-          revertToWaiting && ritDeadlineRef.current > Date.now() ? RIT_WAITING_BANNER : null
+          revertToWaiting && ritDeadlineRef.current > Date.now()
+            ? formatPopupText(RIT_WAITING_BANNER)
+            : null
         );
       }, ms);
     }
@@ -5132,7 +5156,14 @@ export default function TablePage({
     if (!ritResult?.boards || ritResult.boards.length < 2) return [];
     const runs = ritResult.runs || ritResult.boards.length || 2;
     const sharePct = Math.round(100 / runs);
-    const boardPot = Math.floor(ritResult.potTotal / runs);
+    /* THE SHARE THE POT ACTUALLY SHIPS (2026-09-04 second sweep). This was
+       Math.floor(GROSS / runs): Dan's 4.40 pot over 3 runs read "$1" on each
+       board while 1.32 landed. Net when the wire says, to the cent; whole
+       chips only where chips are whole (tournaments). */
+    const netTotal = ritResult.netPot ?? ritResult.potTotal;
+    const boardPot = tableState.isTournament
+      ? Math.floor(netTotal / runs)
+      : Math.round((netTotal / runs) * 100) / 100;
 
     return ritResult.boards.map((rawBoard, bi) => {
       const cards = normalizeCards(rawBoard) as Card[];
@@ -5140,6 +5171,24 @@ export default function TablePage({
       const winnerNames = winnerIds
         .map((id) => tableState.players.find((p) => p?.id === id)?.name || 'Player')
         .filter(Boolean);
+      /* THE ENGINE SCORED THIS BOARD; USE ITS ANSWER. On a hi-lo variant the
+         low half's winner was labelled with their HIGH hand by the local
+         re-evaluation below, and a hi/lo split read as a chop. Awards for
+         this board, high first, then low. */
+      const awardsHere = (ritResult.perBoardAwards || []).filter((a) => a.board === bi + 1);
+      const engineLabel =
+        awardsHere.length > 0
+          ? awardsHere
+              .map((a) => {
+                const who = tableState.players.find((p) => p?.id === a.userId)?.name || 'Player';
+                const what = a.handName ? ` ${a.handName}` : '';
+                return `${who}${what}${a.low ? ' (Low)' : ''}`;
+              })
+              .join(' · ')
+          : undefined;
+      const engineShareFor = awardsHere.length
+        ? Math.round(awardsHere.reduce((sum, a) => sum + a.amount, 0) * 100) / 100
+        : undefined;
 
       let winnerHandName: string | undefined;
       let highlightedIndices: number[] = [];
@@ -5205,10 +5254,13 @@ export default function TablePage({
         visibleCount: Math.min(5, Math.max(0, visibleCount)),
         winnerNames: revealed ? winnerNames : [],
         winnerHandName: revealed ? winnerHandName : undefined,
+        /* The engine's line for this board, when the wire carries one. The
+           renderer prefers it to the name/hand pair above. */
+        engineLabel: revealed ? engineLabel : undefined,
         highlightedIndices: revealed ? highlightedIndices : [],
         holeIndices: revealed ? winnerHoleIndices : {},
         sharePct,
-        shareAmount: boardPot,
+        shareAmount: engineShareFor ?? boardPot,
         revealed,
       };
     });
@@ -6104,9 +6156,11 @@ export default function TablePage({
     handNumber: number;
   } | null>(null);
   const scoopBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scoopBannerClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
       if (scoopBannerTimerRef.current) clearTimeout(scoopBannerTimerRef.current);
+      if (scoopBannerClearTimerRef.current) clearTimeout(scoopBannerClearTimerRef.current);
     },
     []
   );
@@ -7439,6 +7493,16 @@ export default function TablePage({
     if (!userId || !tableId) return;
     void readBustBalance(userId, tableId).then((b) => setBustWalletBalance(b));
   }, [userId, tableId, readBustBalance]);
+  /** The normal buy-in sheet's Retry (2026-09-04 second sweep): the same
+   *  two-read helper, landing through the revision fence so an optimistic
+   *  debit issued meanwhile is not undone by the answer. */
+  const retryAccountBalance = useCallback(() => {
+    if (!userId || !tableId) return;
+    const revision = readBalanceRevision();
+    void readBustBalance(userId, tableId).then((b) => {
+      if (b !== null) setBalanceIfCurrent(revision, b);
+    });
+  }, [userId, tableId, readBustBalance, readBalanceRevision, setBalanceIfCurrent]);
 
   // Watch for the hero's stack to drop to 0 AND the hand to complete; at
   // that moment, look up the wallet balance and pop the BuyInModal (reused
@@ -9404,7 +9468,7 @@ export default function TablePage({
            Consent completed: the deadline is gone, and so is the clock. */
         ritDeadlineRef.current = 0;
         setDecisionDeadline((prev) => (prev?.kind === 'rit' ? null : prev));
-        setRitFeltBanner((prev) => (prev === RIT_WAITING_BANNER ? null : prev));
+        clearRitWaitingStrip();
         // The table has AGREED to N boards. Record it now: pot_win can beat
         // rit_result onto the wire, and without this it would ship the pot
         // over a runout the client has not drawn yet (see POT_WIN's ritHold).
@@ -9490,7 +9554,7 @@ export default function TablePage({
         // here (accepted, mandatory, a missed event), nothing is waiting now.
         ritDeadlineRef.current = 0;
         setDecisionDeadline((prev) => (prev?.kind === 'rit' ? null : prev));
-        setRitFeltBanner((prev) => (prev === RIT_WAITING_BANNER ? null : prev));
+        clearRitWaitingStrip();
         /**
          * ── RIT REVEAL FIX 2026-08-27, part 1: DEFEND THE SHAPE ──
          *
@@ -9543,6 +9607,21 @@ export default function TablePage({
             boards,
             distribution,
             perBoardWinners: (handState.per_board_winners as string[][]) || undefined,
+            perBoardAwards: Array.isArray(handState.per_board_awards)
+              ? (handState.per_board_awards as any[])
+                  .filter((a) => a && typeof a === 'object' && a.user_id)
+                  .map((a) => ({
+                    board: Number(a.board) || 1,
+                    userId: String(a.user_id),
+                    amount: Number(a.amount) || 0,
+                    low: a.low === true,
+                    handName: typeof a.hand_name === 'string' ? a.hand_name : null,
+                  }))
+              : undefined,
+            netPot:
+              typeof handState.net_pot === 'number' && Number.isFinite(handState.net_pot)
+                ? (handState.net_pot as number)
+                : undefined,
             potTotal: pots.reduce((sum, p) => sum + (Number(p.amount) || 0), 0),
             baseBoardCount: Math.min(
               5,
@@ -9567,7 +9646,15 @@ export default function TablePage({
             5,
             Math.max(0, Number(handState.base_board_count as number) || 0)
           );
-          const speed = getAnimationSpeed();
+          /* THE ENGINE CANNOT SEE THE PLAYER'S ANIMATION SPEED (2026-09-04
+             second sweep). Its hold is computed at speed 1; this reveal used
+             to scale by the preference unclamped, so at 3x the last ribbon
+             landed 46 seconds after the next hand had been dealt and the
+             boards were jump-cut, and at 0.25x the felt sat blank for 24
+             seconds waiting for the engine. Faster than spec is still
+             honoured (the hold floors to the engine's, below); slower is
+             clamped to spec for this timeline only. */
+          const speed = Math.min(1, getAnimationSpeed());
           // The engine's post-hand hold derives from the SAME constants
           // (handCompletionSpec RIT_*), so the next hand always waits for
           // exactly this timeline. Change them there, both sides move.
@@ -9620,6 +9707,23 @@ export default function TablePage({
             ritRevealTimersRef.current.push(tRibbon);
           }
           const doneAt = riversDoneAt + RIBBON_MS + boards.length * RESULT_RUN_MS;
+          // One arithmetic: the shared helper the server's hold is built from
+          // must agree with the timers just armed. If they ever disagree the
+          // helper is the truth and this is the bug.
+          if (import.meta.env.DEV) {
+            const shared = ritRevealTimelineMs({
+              runs: boards.length,
+              streetsPerRun: streetStops.length || 1,
+              speed,
+            });
+            if (streetStops.length > 0 && Math.abs(shared.doneAt - doneAt) > 1) {
+              console.warn('[rit] client timeline drifted from handCompletionSpec', {
+                shared,
+                doneAt,
+                riversDoneAt,
+              });
+            }
+          }
           const tDone = window.setTimeout(() => {
             setRitRevealDone(true);
           }, doneAt);
@@ -13742,6 +13846,22 @@ export default function TablePage({
           clearTimeout(muckTimerRef.current);
           muckTimerRef.current = null;
         }
+        /* SCOOP TIMERS DIE AT THE BOUNDARY (2026-09-04 second sweep). The
+           banner's arm/poll timer and its self-clear were never cleared here,
+           so a poll chain started on hand N could run into hand N+1, overwrite
+           the ref hand N+1's own scoop then armed, and cancel one banner or
+           the other. Cleared here like every other end-of-hand timer, and the
+           self-clear has its own ref so arming and clearing cannot cancel each
+           other. */
+        if (scoopBannerTimerRef.current) {
+          clearTimeout(scoopBannerTimerRef.current);
+          scoopBannerTimerRef.current = null;
+        }
+        if (scoopBannerClearTimerRef.current) {
+          clearTimeout(scoopBannerClearTimerRef.current);
+          scoopBannerClearTimerRef.current = null;
+        }
+        setScoopBanner(null);
         setMuckingSeats(Array(9).fill(false));
         // SHOWDOWN SYSTEM 2026-08-25 (spec section 39): clear the previous
         // hand's MUCKED labels and reveal stagger before the new deal.
@@ -14563,9 +14683,20 @@ export default function TablePage({
          * engine is ready to deal and never a beat before. Changing an
          * animation length in that file moves both sides together.
          */
+        const ritForHold = ritResultRef.current;
         const holdBaseMs = handCompletionHoldMs({
           wentToShowdown: handShowdownRef.current.wentToShowdown,
           showdownHands: handShowdownRef.current.hands,
+          /* Second sweep 2026-09-04: the three inputs the server passes and the
+             client did not. Without ritRuns the client hold on a 3-run hand was
+             an ordinary showdown hold (rescued only by ritRevealRemainingMs
+             below, which depends on rit_result having arrived); without
+             potAwardGroups every split under-held by the stagger tail. */
+          ritRuns: ritForHold?.boards?.length ?? 0,
+          ritStreetsPerRun: ritForHold
+            ? [3, 4, 5].filter((n) => n > (ritForHold.baseBoardCount ?? 0)).length
+            : undefined,
+          potAwardGroups: Math.max(1, ritForHold?.boards?.length ?? 1),
           // bbjHit was the one input the client did not pass, and it is the one
           // that matters most: the spec returns BBJ_CELEBRATION_MS (9000) for it.
           // Without it the client held ~7.9s against the server's 9s, so the
@@ -15032,7 +15163,14 @@ export default function TablePage({
                 const base = 2200 * speed;
                 return end > Date.now() ? Math.max(base, end - Date.now() + scoopBeat) : base;
               };
-              const ritExpected = ritExpectedRunsRef.current >= 2 || boardsSeen.length >= 2;
+              /* Second sweep 2026-09-04 - a regression from the first fix. This
+                 OR-ed in `boardsSeen.length >= 2` inside a block that is only
+                 entered when boardsSeen.length >= 2, so it was always true, and
+                 a double/triple-board BOMB POT (which
+                 never sets ritRevealEndsAtRef) polled for 8s and then landed its
+                 SCOOP! ~10s late, after the hand-number guard had moved on. Only
+                 an agreed run-it-twice has a reveal timeline to wait for. */
+              const ritExpected = ritExpectedRunsRef.current >= 2;
               const armScoop = (delay: number) => {
                 scoopBannerTimerRef.current = setTimeout(() => {
                   scoopBannerTimerRef.current = null;
@@ -15059,9 +15197,12 @@ export default function TablePage({
                   if (soundService.isEnabled() && ambientSoundsAllowedRef.current) {
                     soundService.playBigWin();
                   }
-                  // Self-clears with the celebration.
-                  scoopBannerTimerRef.current = setTimeout(() => {
-                    scoopBannerTimerRef.current = null;
+                  // Self-clears with the celebration - on its OWN ref, so a
+                  // later arm cannot cancel the clear or the clear the arm.
+                  if (scoopBannerClearTimerRef.current)
+                    clearTimeout(scoopBannerClearTimerRef.current);
+                  scoopBannerClearTimerRef.current = setTimeout(() => {
+                    scoopBannerClearTimerRef.current = null;
                     setScoopBanner(null);
                   }, 5000 * getAnimationSpeed());
                 }, delay);
@@ -15408,14 +15549,18 @@ export default function TablePage({
              * timeline supersedes this the moment rit_result lands, because
              * every award group is re-timed off ritRunRibbonAtRef below.
              */
+            /* Second sweep 2026-09-04: this wrote the timeline by hand and
+               dropped the streets-per-run factor - `runs * STREET` instead of
+               `runs * 3 * STREET` - so on a preflop 3-run the pot shipped 8.4s
+               early, over board 2's flop. Three streets is the right
+               assumption here: base_board_count only arrives on rit_result,
+               and this branch exists because it has not. */
             const runs = Math.min(3, Math.max(2, ritExpectedRunsRef.current));
-            const speed = getAnimationSpeed();
-            const pendingRitMs =
-              (HAND_COMPLETION.RIT_REVEAL_LEAD_MS +
-                runs * HAND_COMPLETION.RIT_STREET_MS +
-                (runs - 1) * HAND_COMPLETION.RIT_RUN_GAP_MS +
-                HAND_COMPLETION.RIT_RIBBON_MS) *
-              speed;
+            const pendingRitMs = ritRevealTimelineMs({
+              runs,
+              streetsPerRun: 3,
+              speed: Math.min(1, getAnimationSpeed()),
+            }).firstRibbonAt;
             shipDelayMs = Math.max(shipDelayMs, pendingRitMs);
           }
           // Pot center in screen px (mirrors the constant 50,45 used by
@@ -20239,9 +20384,15 @@ export default function TablePage({
                                   Kind" renders "Three Of A Kind". Names keep
                                   their interior capitals. */}
                               {formatPopupText(
-                                board.winnerNames.length > 1
-                                  ? `${board.winnerNames.join(' & ')} • ${board.winnerHandName ? `${board.winnerHandName} (Chop)` : 'Chop'}`
-                                  : `${board.winnerNames[0]}${board.winnerHandName ? ` • ${board.winnerHandName}` : ''}`
+                                /* The engine's line wins when the wire has it
+                                   (hi-lo halves named, no "Chop" on a split).
+                                   The local evaluation is the fallback for
+                                   older payloads only. */
+                                board.engineLabel
+                                  ? board.engineLabel
+                                  : board.winnerNames.length > 1
+                                    ? `${board.winnerNames.join(' & ')} • ${board.winnerHandName ? `${board.winnerHandName} (Chop)` : 'Chop'}`
+                                    : `${board.winnerNames[0]}${board.winnerHandName ? ` • ${board.winnerHandName}` : ''}`
                               )}
                             </span>
                           )}
@@ -22813,7 +22964,11 @@ export default function TablePage({
         showCashier={showCashier}
         /* The cashier renders a figure rather than gating an action, so an
            unknown balance shows as 0 there exactly as it always has. */
-        accountBalance={accountBalance ?? 0}
+        /* NULL STAYS NULL on every balance surface (2026-09-04 second sweep).
+           The bust rebuy was fixed on 2026-09-04; this `?? 0` fed the normal
+           Add Chips sheet and the table cashier the same lie one line over. */
+        accountBalance={accountBalance}
+        onRetryAccountBalance={retryAccountBalance}
         cashoutMinBuyIn={cashoutMinBuyIn}
         buyInProcessingRef={buyInProcessingRef}
         onCloseCashier={() => setShowCashier(false)}

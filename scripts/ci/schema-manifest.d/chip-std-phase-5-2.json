@@ -1,7 +1,7 @@
 {
-  "_owner": "fix/union-to-club-money-declares-itself (chip standard Phase 5.2, the spin escrow reads the reserve, and the journal is never refused by the freeze, 2026-09-05). Applied as 20260905074227 (inside the 07:55 freeze), 20260905075122, 20260905083654 (the drift check re-reads the balance) and 20260905081408 (the register closes the definitional era).",
+  "_owner": "fix/union-to-club-money-declares-itself (chip standard Phase 5.2, the spin escrow reads the reserve, and the journal is never refused by the freeze, 2026-09-05). Applied as 20260905074227 (inside the 07:55 freeze), 20260905075122, 20260905083654 (the drift check re-reads the balance) and 20260905081408 (the register closes the definitional era). Phase 5 gate: 20260905101732, 20260905102140, 20260905194420 (inside the 19:55 freeze), 20260905195011, 20260905200041.",
   "tables": [],
-  "functions": ["fn_ca_escrow_on_reserve_leg"],
+  "functions": ["fn_ca_escrow_on_reserve_leg", "fn_ca_escrow_on_seat_transfer_leg"],
   "columns": {
     "tournament_escrow": ["reserve_out", "reserve_in"]
   }

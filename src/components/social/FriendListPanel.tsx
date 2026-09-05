@@ -122,7 +122,12 @@ function FriendListPanelInner({
         try {
           const { data: profiles } = await supabase
             .from('profiles')
-            .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url, level, tier`)
+            /* `tier` is 'Newcomer' on every profile, so asking for it fed
+               PlayerAvatar a truthy non-'bronze' string and painted a
+               `tier-Newcomer` ring - a class with no CSS rule - on every
+               friend row. Dropped 2026-09-05; VIP rings are not a friend-list
+               concern and the real columns are is_vip / vip_tier. */
+            .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url, level`)
             .in('id', allFriendIds);
           if (profiles) {
             for (const p of profiles) profileMap[p.id] = p;
@@ -146,7 +151,7 @@ function FriendListPanelInner({
           status: 'offline' as PresenceStatus,
           tableName: undefined,
           level: p?.level || 1,
-          vipTier: (p?.tier as VipTier) || 'bronze',
+          vipTier: 'bronze' as VipTier,
         };
       });
 
@@ -163,7 +168,7 @@ function FriendListPanelInner({
           status: 'offline' as PresenceStatus,
           tableName: undefined,
           level: p?.level || 1,
-          vipTier: (p?.tier as VipTier) || 'bronze',
+          vipTier: 'bronze' as VipTier,
         };
       });
 

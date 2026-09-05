@@ -885,9 +885,16 @@ export default function ProfilePage() {
           <h1 id="profile-heading" className={styles.displayName}>
             {user.displayName}
             {dailyStreak > 0 && <StreakFire streakCount={dailyStreak} size="sm" showLabel />}
-            {dailyStreak > 0 && (
-              <StreakMultiplier streak={dailyStreak} multiplier={1 + dailyStreak * 0.1} size="sm" />
-            )}
+            {/* 2026-09-05: this passed `multiplier={1 + dailyStreak * 0.1}`, so an
+                8-day streak printed "1.8x Earnings" beside the player's name.
+                NOTHING PAYS THAT. The only multiplier in the codebase is the
+                Spin & Go prize ladder (src/config/spinSpec.ts), which is
+                unrelated; AchievementTriggerService.onLogin maintains
+                login_streak and awards fixed chip amounts at 7/30/100 days.
+                Same class as the random player_number this page used to
+                invent - a figure made up in the JSX and rendered as fact. The
+                streak itself is real, so the day count stays. */}
+            {dailyStreak > 0 && <StreakMultiplier streak={dailyStreak} size="sm" />}
           </h1>
           {/* 2026-08-20: this was `profile.player_number || Math.floor(Math.random() * 9999) + 1`
               in three separate places in this file. When a profile had no

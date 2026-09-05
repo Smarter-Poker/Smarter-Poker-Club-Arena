@@ -101,17 +101,17 @@
   font-size: 24px;
 }
 
-.sm-multiplier {
+.sm-streak-label {
   font-size: 10px;
   font-weight: 600;
-  color: #fbbf24;
+  color: #b9cad7;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
-.sm-sm .sm-multiplier {
+.sm-sm .sm-streak-label {
   font-size: 8px;
 }
-.sm-lg .sm-multiplier {
+.sm-lg .sm-streak-label {
   font-size: 12px;
 }

@@ -3059,41 +3059,30 @@
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   CARD SLIDE — the corner peel (Dan 2026-09-04)
-   ═══════════════════════════════════════════════════════════════════════════════
+/* ===========================================================================
+   CARD SLIDE - the peel (Dan 2026-09-04, rebuilt from video 2026-09-05)
+   ===========================================================================
    "THE CORNERS OF THE CARDS SHOULD BE 'PEELED BACK' LIKE YOUR LOOKING AT THEM
    AT A REAL POKER TABLE ... NOT JUST CLICK TO REVEAL, IT NEEDS TO FEEL AND ACT
    LIKE THE USER IS ACTUALLY TOUCHING THE SCREEN AND LIFTING THE CARDS OFF THE
    FELT."
 
-   Replaces COMPETITOR-PARITY 2026-08-19's hinge (the whole back rotating up
-   from its top edge by a drag-up distance). The hero's cards are dealt face
-   down; the finger pinches a corner and drags it anywhere; the back folds along
-   the perpendicular bisector of that drag and the pinched corner stays under
-   the finger. SeatSlot writes these custom properties on the cards row every
-   frame (cardPeel.ts does the geometry; no React render per move):
+   The hero's cards are dealt face down; a finger drags up and the pair tips
+   toward the player, far edge first, so the face comes into view from the TOP
+   DOWN and reads the right way up throughout. cardPeel.ts derives the geometry
+   from Dan's video of himself doing it; SeatSlot writes these custom properties
+   on the cards row every frame, so no React render happens per pointermove:
 
-     --peel-progress        0 flat .. 1 corner at the opposite corner
-     --peel-cover-clip      polygon: the part of the back still lying flat
-     --peel-flap-clip       polygon: the lifted part (in the flap's own frame)
-     --peel-flap-transform  matrix(): reflection across the fold line
-     --peel-fold-x/-y       the fold's midpoint, card px
-     --peel-fold-angle      the fold's direction
-     --peel-depth           fold-to-corner distance, px
-
-   Layers inside .seat__squeeze-flip, bottom to top:
-     --under   the face, plus a shade band along the fold (the shadow the
-               lifted corner throws on what it has just uncovered)
-     --cover   the back, clip-path'd to the flat part
-     flap      the lifted corner: card stock folded over, clipped to the
-               lifted part and reflected across the fold, with a crease
-               highlight fading into shadow toward the fold, and a drop shadow
-               that deepens as the corner rises
+     --peel-progress    0 flat .. 1 fully tipped up
+     --peel-fold        where face meets back, % from the top
+     --peel-back-clip   inset() for the back  (everything below the boundary)
+     --peel-face-clip   inset() for the face  (everything above it)
+     --peel-bend        how far the pair is tipped toward the player, deg
 
    And the whole card - both cards, together - lifts off the felt as the peel
-   deepens: a small rise, a small grow, and a shadow that spreads underneath.
-   That is the "lifting the cards off the felt" half of the instruction. */
+   deepens: a small rise, a small grow, a tip toward the player, and a shadow
+   that spreads underneath. That is the "lifting the cards off the felt" half
+   of the instruction. */
 
 .seat__cards--squeeze {
   touch-action: none; /* the drag must never scroll the page */
@@ -3126,8 +3115,13 @@
   width: 100%;
   height: 100%;
   border-radius: 4px;
-  transform: translateY(calc(var(--peel-progress, 0) * -4px))
-    scale(calc(1 + var(--peel-progress, 0) * 0.03));
+  /* The tip toward the player has to be inside this transform: `perspective`
+     as a property applies to an element's CHILDREN, not to the element, so a
+     bare rotateX here with `perspective: 600px` alongside it would be flat.
+     Negative, because a positive rotateX in CSS swings the TOP edge away. */
+  transform: perspective(600px) translateY(calc(var(--peel-progress, 0) * -5px))
+    rotateX(calc(var(--peel-bend, 0deg) * -1)) scale(calc(1 + var(--peel-progress, 0) * 0.03));
+  transform-origin: 50% 100%;
   box-shadow:
     0 calc(2px + var(--peel-progress, 0) * 10px) calc(8px + var(--peel-progress, 0) * 14px)
       rgba(0, 0, 0, calc(0.5 + var(--peel-progress, 0) * 0.25)),
@@ -3162,159 +3156,56 @@
   background: #fff;
 }
 
+/* ===========================================================================
+   THE PEEL - the pair tips up and the face arrives from the TOP (2026-09-05)
+   ===========================================================================
+   Rebuilt from Dan's video of himself doing it with real cards, and this is
+   the second correction, not the first. v1 folded a CORNER diagonally,
+   page-curl style, with a dog-ear flap. v2 got the horizontal boundary right
+   but ran it the wrong way, revealing the face bottom-up - "THE CARDS ARE
+   STILL BACKWARDS".
+
+   In the video he tips the pair toward himself, pivoting on the near edge, and
+   the face appears from the TOP DOWN: the Q and J indices first, side by side,
+   right way up, then the court art filling in beneath them. Nothing is
+   mirrored, so nothing in here reflects.
+
+   Two stacked layers, one boundary between them, driven by --peel-fold:
+     --cover  the BACK,  clipped to everything BELOW the boundary
+     --under  the FACE,  clipped to everything ABOVE it
+   plus a crease shadow sitting on the line itself. */
+
 .seat__squeeze-face--cover {
-  /* The back, minus the lifted corner. */
   z-index: 2;
-  clip-path: var(--peel-cover-clip, none);
+  clip-path: var(--peel-back-clip, inset(0 0 0 0));
   will-change: clip-path;
 }
 
-/* THE FLAP. */
-.seat__peel-flap {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  pointer-events: none;
-  transform-origin: 0 0;
-  transform: var(--peel-flap-transform, matrix(1, 0, 0, 1, 0, 0));
-  /* Nothing to draw until a corner lifts (the clip is empty at rest). */
-  filter: drop-shadow(
-    0 calc(1px + var(--peel-progress, 0) * 8px) calc(2px + var(--peel-progress, 0) * 8px)
-      rgba(0, 0, 0, 0.45)
-  );
-  will-change: transform;
-}
-.seat__peel-flap-inner {
-  position: absolute;
-  inset: 0;
-  border-radius: 4px;
-  clip-path: var(--peel-flap-clip, polygon(0 0, 0 0, 0 0));
-  /* Card stock: the underside of the back. A warm off-white with a hint of
-     the felt's shadow toward its edges, never the face (the face is what the
-     peel UNCOVERS, beneath), never the back's art mirrored. */
-  background:
-    radial-gradient(120% 120% at 50% 50%, rgba(255, 255, 255, 0) 60%, rgba(0, 0, 0, 0.08) 100%),
-    #f3efe4;
+.seat__squeeze-face--under {
+  z-index: 1;
+  background: #fff;
+  clip-path: var(--peel-face-clip, inset(0 0 100% 0));
   will-change: clip-path;
 }
 
-/* THE AFFORDANCE — a corner that is ALWAYS turned up (Dan 2026-09-05).
-   ---------------------------------------------------------------------------
-   Dan asked for a desktop cue: a mouse has no grip feedback, so a player sees
-   two face-down cards and no reason to think they can be picked up. The first
-   version of this was a `:hover` dog-ear behind
-   `@media (hover: hover) and (pointer: fine)`.
-
-   CI refused it, and the law it broke was written about exactly that:
-   `tests/no-hover-effects.law.test.ts` (Dan, 2026-08-29, "Remove hover
-   entirely, everywhere") names the capability-query version as "the most
-   persuasive version of this mistake ... It is still a hover style, it is
-   still invisible to most of the people using this product", and ends "If you
-   are here because this test is red: delete your hover rule. Do not add a file
-   to a list. There is no list."
-
-   So the dog-ear is permanent instead. This is strictly better on the law's
-   own reasoning - Club Arena is mobile-first, and a hover affordance is one
-   only some players can ever see. A corner that is always turned up says "this
-   lifts" to a thumb and a mouse alike, cannot stick after a tap the way iOS's
-   synthetic hover does, and cannot become a hidden affordance because it is
-   never hidden.
-
-   It is drawn on the COVER, so it exists only while a card is face down, and
-   it is suppressed the moment a real peel starts - the flap owns the corner
-   then, and two turned-up corners at once reads as a rendering bug. */
-.seat__squeeze-face--cover::after {
-  content: '';
+/* THE CREASE. A card that bends is darkest right at the fold and lightens
+   away from it; without this the reveal reads as a window sliding open
+   rather than card stock lifting. Sits ON the fold line and rides it up. */
+.seat__peel-crease {
   position: absolute;
   left: 0;
-  bottom: 0;
-  width: 22%;
-  height: 16%;
-  /* Card stock, darker along the fold, so it reads as the back lifted rather
-     than a shape painted on it. */
-  background: linear-gradient(45deg, #f3efe4 55%, #ddd7c7 80%, #c9c2b0 100%);
-  clip-path: polygon(0 100%, 100% 100%, 0 0);
-  border-bottom-left-radius: 4px;
+  right: 0;
+  top: var(--peel-fold, 0%);
+  height: 10px;
+  transform: translateY(-5px);
+  z-index: 3;
   pointer-events: none;
-}
-.seat__cards--squeeze[data-peeling] .seat__squeeze-face--cover::after {
-  content: none;
-}
-
-/* THE PEEL INDEX - the rank and suit in the bottom-left corner of the face,
-   where the peel opens (Dan 2026-09-04: "the QJ are on the bottom left hand
-   corner when you are peeling them back"). Sized off the card so it reads on
-   a 44px phone card and does not swallow a 60px desktop one. The 2-colour
-   deck is black / red; the 4-colour deck follows CardImage's palette. */
-.seat__peel-index {
-  position: absolute;
-  left: 5%;
-  bottom: 3%;
-  display: flex;
-  flex-direction: row;
-  align-items: baseline;
-  gap: 0.06em;
-  line-height: 0.92;
-  font-family:
-    'Inter',
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    sans-serif;
-  font-weight: 800;
-  pointer-events: none;
-  z-index: 1;
-  text-shadow: 0 0 2px rgba(255, 255, 255, 0.9);
-}
-/* Rank then suit on ONE line, tucked into the corner: the lifted triangle at
-   a third of the way across is about 25% of the card wide, and the index has
-   to be legible inside it, not stacked up into the artwork above. */
-.seat__peel-index-rank {
-  font-size: calc(var(--sp-hero-card-h, 66px) * 0.26);
-  letter-spacing: -0.03em;
-}
-.seat__peel-index-suit {
-  font-size: calc(var(--sp-hero-card-h, 66px) * 0.2);
-}
-/* No colour here on purpose: SeatSlot sets it inline from CardImage's
-   SUIT_COLOR, so the corner rank and the suit on the card face can never
-   disagree. See peelIndexColor(). */
-
-/* SHADE BANDS. One geometry, used twice: a strip whose top edge lies along
-   the fold and which extends toward the pinched corner (in the card's own
-   frame, that is the lifted region). On the face it is the shadow under the
-   curl; on the flap it is the crease - a hairline of light where the stock
-   bends, falling into shadow toward the fold. --peel-fold-angle rotates local
-   +x along the fold, so local +y points at the corner. Height tracks the
-   flap's depth, capped so a deep peel does not darken half the card. */
-.seat__peel-shade {
-  position: absolute;
-  left: var(--peel-fold-x, -100px);
-  top: var(--peel-fold-y, -100px);
-  width: 400px;
-  height: min(var(--peel-depth, 0px), 26px);
-  transform: rotate(var(--peel-fold-angle, 0deg)) translate(-50%, 0);
-  transform-origin: 0 0;
-  pointer-events: none;
-}
-.seat__peel-shade--under {
-  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0));
-}
-/* The under-shade must not spill onto the part of the face still covered by
-   the back. clip-path is applied in an element's OWN frame and the band is
-   rotated, so the clip lives on an unrotated, card-sized wrapper around it. */
-.seat__peel-shade-clip {
-  position: absolute;
-  inset: 0;
-  clip-path: var(--peel-flap-clip, polygon(0 0, 0 0, 0 0));
-  pointer-events: none;
-}
-.seat__peel-shade--flap {
+  opacity: calc(var(--peel-progress, 0) * 1.6);
   background: linear-gradient(
     to bottom,
-    rgba(255, 255, 255, 0.55) 0,
-    rgba(255, 255, 255, 0.15) 8%,
-    rgba(0, 0, 0, 0.3) 30%,
+    rgba(0, 0, 0, 0) 0%,
+    rgba(255, 255, 255, 0.5) 42%,
+    rgba(0, 0, 0, 0.42) 55%,
     rgba(0, 0, 0, 0) 100%
   );
 }
@@ -3372,9 +3263,6 @@
   .seat__squeeze-face--cover::after {
     transition: none;
     transform: none;
-  }
-  .seat__peel-flap {
-    filter: none;
   }
   .seat__cards--squeeze-hint .seat__squeeze-flip,
   .seat__cards--squeeze-open .seat__card {

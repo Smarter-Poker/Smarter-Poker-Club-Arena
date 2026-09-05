@@ -64,14 +64,7 @@ const PEEL_SUIT_GLYPH: Record<string, string> = {
 };
 
 import { cardSlideTelemetry } from '../../services/CardSlideTelemetry';
-import {
-  computePeel,
-  flatPeel,
-  leftCorner,
-  peelPointAtProgress,
-  type PeelCorner,
-  type PeelFrame,
-} from './cardPeel';
+import { computePeel, flatPeel, liftAtProgress, type PeelFrame } from './cardPeel';
 import { seatCardSide, type CardSide } from '../../lib/tableSeatGeometry';
 import './avatarChoreography.css';
 import { formatStackChips, formatTableChips } from '../../utils/format';
@@ -1516,28 +1509,15 @@ export const SeatSlot = memo(
     const squeezeRowRef = useRef<HTMLDivElement | null>(null);
     /** The live drag, or null when no finger is down. */
     const peelRef = useRef<{
-      corner: PeelCorner;
       width: number;
       height: number;
-      left: number;
-      top: number;
+      /** Where the finger went down, in client px. */
+      startY: number;
       pointerId: number;
       moved: boolean;
-      /** The pinched corner's resting point, card px. */
-      cx: number;
-      cy: number;
-      /** Where the finger went down, card px. */
-      fx: number;
-      fy: number;
-      /** Where the pinched corner is now, card px. */
-      x: number;
-      y: number;
-      /** Last sample, for the drag speed the friction voice is fed. */
-      lastT: number;
-      lastX: number;
-      lastY: number;
-      /** True once the paper tick for this drag has fired. */
       lifted: boolean;
+      /** How far the near edge is currently lifted, px. */
+      lift: number;
     } | null>(null);
     const peelTweenRef = useRef<number | null>(null);
     const peelTweenTimerRef = useRef<number | null>(null);
@@ -1545,19 +1525,6 @@ export const SeatSlot = memo(
       () => () => {
         if (peelTweenRef.current != null) cancelAnimationFrame(peelTweenRef.current);
         if (peelTweenTimerRef.current != null) clearTimeout(peelTweenTimerRef.current);
-        // THE THIRD PATH. pointerup and pointercancel close the friction
-        // voice; an unmount mid-drag (table closed, hand ended, seat rebuilt)
-        // reaches neither, and a looping noise source with nobody left to
-        // stop it plays until the tab dies.
-        //
-        // ONLY IF THIS SEAT OWNS THE DRAG. The voice is a single global on the
-        // service, and EVERY seat at EVERY table mounts this cleanup - so an
-        // unconditional stop here means any unrelated seat unmounting (a player
-        // leaving, a background table closing, a seat rebuilt by a roster
-        // update) cuts the friction out from under a peel that is still in
-        // progress somewhere else. `peelRef.current` is non-null only while
-        // THIS component has a finger down.
-        if (peelRef.current) soundService.stopPeelFriction();
       },
       []
     );
@@ -1567,13 +1534,10 @@ export const SeatSlot = memo(
       if (!row) return;
       const st = row.style;
       st.setProperty('--peel-progress', String(frame.progress));
-      st.setProperty('--peel-cover-clip', frame.coverClip);
-      st.setProperty('--peel-flap-clip', frame.flapClip);
-      st.setProperty('--peel-flap-transform', frame.flapTransform);
-      st.setProperty('--peel-fold-x', `${frame.foldX}px`);
-      st.setProperty('--peel-fold-y', `${frame.foldY}px`);
-      st.setProperty('--peel-fold-angle', `${frame.foldAngle}deg`);
-      st.setProperty('--peel-depth', `${frame.flapDepth}px`);
+      st.setProperty('--peel-back-clip', frame.backClip);
+      st.setProperty('--peel-face-clip', frame.faceClip);
+      st.setProperty('--peel-fold', `${frame.foldPercent}%`);
+      st.setProperty('--peel-bend', `${frame.bendDeg}deg`);
       squeezeProgressRef.current = frame.progress;
     };
     const clearPeelVars = () => {
@@ -1581,13 +1545,10 @@ export const SeatSlot = memo(
       if (!row) return;
       for (const v of [
         '--peel-progress',
-        '--peel-cover-clip',
-        '--peel-flap-clip',
-        '--peel-flap-transform',
-        '--peel-fold-x',
-        '--peel-fold-y',
-        '--peel-fold-angle',
-        '--peel-depth',
+        '--peel-back-clip',
+        '--peel-face-clip',
+        '--peel-fold',
+        '--peel-bend',
       ]) {
         row.style.removeProperty(v);
       }
@@ -1600,20 +1561,8 @@ export const SeatSlot = memo(
      * waits for requestAnimationFrame lags a finger by a frame at best and
      * stalls entirely in a throttled tab.
      */
-    const paintPeelNow = (drag: {
-      corner: PeelCorner;
-      width: number;
-      height: number;
-      x: number;
-      y: number;
-    }): number => {
-      const frame = computePeel({
-        width: drag.width,
-        height: drag.height,
-        corner: drag.corner,
-        x: drag.x,
-        y: drag.y,
-      });
+    const paintPeelNow = (drag: { width: number; height: number; lift: number }): number => {
+      const frame = computePeel({ width: drag.width, height: drag.height, lift: drag.lift });
       paintPeel(frame);
       return frame.progress;
     };
@@ -1622,26 +1571,19 @@ export const SeatSlot = memo(
      * the diagonal, then call `done`. Speed-scaled like every other motion.
      */
     const tweenPeel = (
-      drag: { corner: PeelCorner; width: number; height: number; x: number; y: number },
+      drag: { width: number; height: number; lift: number },
       targetProgress: number,
       ms: number,
       done: () => void
     ) => {
       if (peelTweenRef.current != null) cancelAnimationFrame(peelTweenRef.current);
       if (peelTweenTimerRef.current != null) clearTimeout(peelTweenTimerRef.current);
-      const [tx, ty] = peelPointAtProgress(drag.width, drag.height, drag.corner, targetProgress);
-      const sx = drag.x;
-      const sy = drag.y;
+      const target = liftAtProgress(drag.height, targetProgress);
+      const from = drag.lift;
       const duration = Math.max(1, ms * getAnimationSpeed());
       const t0 = performance.now();
       const at = (k: number) =>
-        computePeel({
-          width: drag.width,
-          height: drag.height,
-          corner: drag.corner,
-          x: sx + (tx - sx) * k,
-          y: sy + (ty - sy) * k,
-        });
+        computePeel({ width: drag.width, height: drag.height, lift: from + (target - from) * k });
       let finished = false;
       const finish = () => {
         if (finished) return;
@@ -1746,7 +1688,7 @@ export const SeatSlot = memo(
       setSqueezeRevealed(true);
       peelRef.current = null;
       clearPeelVars();
-      if (playSounds) soundService.playCardSqueeze();
+      // No sound on open either - the whole peel is silent now.
     };
     /** Progress past which a release opens the hand instead of dropping it. */
     const PEEL_COMMIT = 0.45;
@@ -1767,45 +1709,27 @@ export const SeatSlot = memo(
         if (!cardEl) return;
         const rect = cardEl.getBoundingClientRect();
         if (rect.width < 1 || rect.height < 1) return;
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        // Dan 2026-09-04: "they should be peeled left to right, not right to
-        // left." The pinched corner is always on the card's LEFT edge - top
-        // or bottom, whichever half the finger lands in - so a slide to the
-        // right opens the card left to right, wherever the thumb started.
-        const corner = leftCorner(rect.width, rect.height, x, y);
-        const [cx, cy] = peelPointAtProgress(rect.width, rect.height, corner, 0);
+        /* Dan 2026-09-05, from his own video with real cards: the NEAR edge
+           lifts and the fold travels UP the card. So the only thing that
+           matters is how far the finger has moved upward from where it went
+           down - not which corner it landed nearest. */
         peelRef.current = {
-          corner,
           width: rect.width,
           height: rect.height,
-          left: rect.left,
-          top: rect.top,
+          startY: e.clientY,
           pointerId: e.pointerId,
           moved: false,
-          cx,
-          cy,
-          fx: x,
-          fy: y,
-          x: cx,
-          y: cy,
-          lastT: performance.now(),
-          lastX: cx,
-          lastY: cy,
           lifted: false,
+          lift: 0,
         };
-        // Pin the pinched corner exactly where it is: the flat frame.
         row.setAttribute('data-peeling', '');
-        row.setAttribute('data-peel-corner', corner);
-        paintPeel(flatPeel(rect.width, rect.height, corner));
+        paintPeel(flatPeel());
         // The card is picked up the moment it is touched.
-        if (playSounds) {
-          haptic.light();
-          // Open the friction voice now, silent, so the first millimetre of
-          // movement already has a sound to modulate. Opening it on the first
-          // MOVE would put an audible attack a frame late, every time.
-          soundService.startPeelFriction();
-        }
+        /* SILENT PEEL (Dan 2026-09-05: "remove the sound effect when you
+           actually peel your card, its not needed"). The friction voice and
+           the paper tick are gone; the haptic stays, because that is the
+           feedback he asked to keep. */
+        haptic.light();
         // Capture so the peel keeps tracking a finger that wanders off the
         // cards. Guarded: a pointer the browser no longer knows (or a
         // synthetic one) makes this throw, and a throw here must never
@@ -1819,39 +1743,27 @@ export const SeatSlot = memo(
       onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => {
         const drag = peelRef.current;
         if (!drag || e.pointerId !== drag.pointerId) return;
-        // The corner moves WITH the finger from wherever it was pinched: the
-        // finger's own offset from the corner at touch-down is not a peel.
-        const dx = e.clientX - drag.left - drag.fx;
-        const dy = e.clientY - drag.top - drag.fy;
-        if (!drag.moved && Math.hypot(dx, dy) > 4) {
+        /* UP is the gesture. Dragging up lifts the near edge and walks the
+           fold toward the top of the card; dragging back down lays it flat
+           again, which is what a thumb actually does. */
+        const lift = drag.startY - e.clientY;
+        if (!drag.moved && Math.abs(lift) > 4) {
           drag.moved = true;
           cardSlideTelemetry.peelStarted();
         }
         if (!drag.moved) return;
-        drag.x = drag.cx + dx;
-        drag.y = drag.cy + dy;
+        drag.lift = Math.max(0, lift);
         const before = squeezeProgressRef.current;
         // Tactile beats: the grip as the corner first bends, and a firmer
         // one as the peel crosses the point where letting go opens the hand.
         const after = paintPeelNow(drag);
-        if (playSounds) {
-          // Drag speed in card-widths per second - what the friction voice is
-          // modulated by, because paper is silent when nothing is moving.
-          const now = performance.now();
-          const dt = Math.max(8, now - drag.lastT);
-          const moved = Math.hypot(drag.x - drag.lastX, drag.y - drag.lastY);
-          drag.lastT = now;
-          drag.lastX = drag.x;
-          drag.lastY = drag.y;
-          soundService.updatePeelFriction(after, (moved / drag.width / dt) * 1000);
-          // The corner leaving the felt: one soft tick and a light haptic,
-          // once per drag.
-          if (!drag.lifted && after >= 0.06) {
-            drag.lifted = true;
-            soundService.playPeelLift();
-          }
-          if (after >= PEEL_COMMIT && before < PEEL_COMMIT) haptic.medium();
+        // The card leaving the felt, and the point where letting go opens the
+        // hand. Haptics only - the peel is silent (Dan 2026-09-05).
+        if (!drag.lifted && after >= 0.06) {
+          drag.lifted = true;
+          haptic.light();
         }
+        if (after >= PEEL_COMMIT && before < PEEL_COMMIT) haptic.medium();
       },
       onPointerUp: (e: React.PointerEvent<HTMLDivElement>) => {
         const drag = peelRef.current;
@@ -1863,13 +1775,6 @@ export const SeatSlot = memo(
           /* already released */
         }
         peelRef.current = null;
-        // NEVER gated on playSounds, though STARTING is. `playSounds` is
-        // `ambientSoundsAllowed`, which goes false the moment this table stops
-        // being the focused one - so a player who starts a peel and switches
-        // tabs mid-drag would hit a `stop` that never ran, and the loop would
-        // hum on until the seat unmounted. Starting is a preference; stopping
-        // is a resource being released.
-        soundService.stopPeelFriction();
         if (!drag.moved) {
           // A tap: bounce the corner to show what the gesture is.
           clearPeelVars();
@@ -1884,9 +1789,7 @@ export const SeatSlot = memo(
         const current = computePeel({
           width: drag.width,
           height: drag.height,
-          corner: drag.corner,
-          x: drag.x,
-          y: drag.y,
+          lift: drag.lift,
         });
         row.removeAttribute('data-peeling');
         if (current.progress >= PEEL_COMMIT) {
@@ -1906,13 +1809,6 @@ export const SeatSlot = memo(
         const drag = peelRef.current;
         if (!drag) return;
         peelRef.current = null;
-        // NEVER gated on playSounds, though STARTING is. `playSounds` is
-        // `ambientSoundsAllowed`, which goes false the moment this table stops
-        // being the focused one - so a player who starts a peel and switches
-        // tabs mid-drag would hit a `stop` that never ran, and the loop would
-        // hum on until the seat unmounted. Starting is a preference; stopping
-        // is a resource being released.
-        soundService.stopPeelFriction();
         (e.currentTarget as HTMLDivElement).removeAttribute('data-peeling');
         tweenPeel(drag, 0, 200, clearPeelVars);
       },
@@ -1997,7 +1893,6 @@ export const SeatSlot = memo(
         return () => window.clearTimeout(t);
       }
 
-      const corner = leftCorner(rect.width, rect.height, 4, rect.height - 4);
       const speed = getAnimationSpeed();
       const RISE = 900 * speed;
       const HOLD = 420 * speed;
@@ -2007,7 +1902,6 @@ export const SeatSlot = memo(
       const PEAK = 0.34;
       const t0 = performance.now();
       row.setAttribute('data-peeling', '');
-      row.setAttribute('data-peel-corner', corner);
 
       const step = (now: number) => {
         // A real finger outranks the demonstration, always.
@@ -2033,8 +1927,13 @@ export const SeatSlot = memo(
         } else {
           p = 0;
         }
-        const [x, y] = peelPointAtProgress(rect.width, rect.height, corner, p);
-        paintPeel(computePeel({ width: rect.width, height: rect.height, corner, x, y }));
+        paintPeel(
+          computePeel({
+            width: rect.width,
+            height: rect.height,
+            lift: liftAtProgress(rect.height, p),
+          })
+        );
         tutorialRafRef.current = requestAnimationFrame(step);
       };
       tutorialRafRef.current = requestAnimationFrame(step);
@@ -3192,58 +3091,27 @@ export const SeatSlot = memo(
                      overflow:hidden so the 3D peel is never clipped. */
                   <div className="seat__card seat__card--squeeze">
                     <div className="seat__squeeze-flip">
-                      {/* The face, waiting under the back. */}
+                      {/* THE FACE, revealed from the BOTTOM UP as the near
+                          edge lifts (Dan's video, 2026-09-05). Clipped to
+                          everything BELOW the fold line. The real card art -
+                          no synthetic index, because the whole face comes
+                          into view, exactly as it does on a real card. */}
                       <div className="seat__squeeze-face seat__squeeze-face--under">
                         {card ? (
                           <CardImage card={card} deckStyle={deckStyle} size="md" />
                         ) : (
                           <CardBack size="md" style={cardBack} />
                         )}
-                        {/* THE PEEL INDEX. Dan 2026-09-04: "THINK ABOUT HOW IT
-                            WOULD LOOK IF YOU WERE REALLY AT THE TABLE AND THE
-                            CARDS WERE FACE DOWN, THE QJ ARE ON THE BOTTOM LEFT
-                            HAND CORNER WHEN YOU ARE PEELING THEM BACK." The
-                            deck art carries ONE index, top-left, so peeling
-                            the bottom-left corner uncovered artwork. A real
-                            card's corner shows its rank the moment it lifts:
-                            this draws the rank and suit, upright, in the
-                            bottom-left corner of the face, exactly where the
-                            peel opens. Under the shade band, over the art. */}
-                        {card ? (
-                          <div
-                            className="seat__peel-index"
-                            style={{ color: peelIndexColor(card.suit, deckStyle) }}
-                            aria-hidden="true"
-                          >
-                            <span className="seat__peel-index-rank">
-                              {card.rank === 'T' ? '10' : card.rank}
-                            </span>
-                            <span className="seat__peel-index-suit">
-                              {PEEL_SUIT_GLYPH[card.suit] ?? ''}
-                            </span>
-                          </div>
-                        ) : null}
-                        {/* The shadow the lifted corner throws onto the face
-                            it has just uncovered - a band along the fold,
-                            clipped to the lifted region. */}
-                        <div className="seat__peel-shade-clip">
-                          <div className="seat__peel-shade seat__peel-shade--under" />
-                        </div>
                       </div>
-                      {/* The back, minus the part the finger has lifted. */}
+                      {/* THE BACK, clipped to everything ABOVE the fold, so it
+                          recedes upward as the face comes up to meet it. */}
                       <div className="seat__squeeze-face seat__squeeze-face--cover">
                         <CardBack size="md" style={cardBack} />
                       </div>
-                      {/* The lifted corner: card stock folded over, mirrored
-                          across the fold with its tip under the finger. The
-                          outer element carries the reflection + drop shadow,
-                          the inner one the clip (filters run before clips, so
-                          a shadow on a clipped element would be cut off). */}
-                      <div className="seat__peel-flap" aria-hidden="true">
-                        <div className="seat__peel-flap-inner">
-                          <div className="seat__peel-shade seat__peel-shade--flap" />
-                        </div>
-                      </div>
+                      {/* The crease: a soft shadow sitting on the fold line,
+                          which is what sells the card bending rather than a
+                          window sliding open. */}
+                      <div className="seat__peel-crease" aria-hidden="true" />
                     </div>
                   </div>
                 ) : (

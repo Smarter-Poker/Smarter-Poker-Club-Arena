@@ -609,6 +609,7 @@ export function HandDetailModal({
               currentUserId={heroId}
               currentUserName={currentUserName}
               badge={variant}
+              viewerFacts={hand.heroFacts}
               footer={rakeShare ? <HandRakeShareBlock share={rakeShare} /> : null}
             />
           ) : (

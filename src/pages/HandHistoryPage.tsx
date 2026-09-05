@@ -529,7 +529,12 @@ export default function HandHistoryPage() {
 
                 {expanded && (
                   <div className="hand-card__detail">
-                    <HandDetailView model={hand.replay} currentUserId={heroId} badge={variant} />
+                    <HandDetailView
+                      model={hand.replay}
+                      currentUserId={heroId}
+                      badge={variant}
+                      viewerFacts={hand.heroFacts}
+                    />
                     <div className="hand-card__actions">
                       <button
                         type="button"

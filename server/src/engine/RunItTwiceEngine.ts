@@ -81,17 +81,14 @@ export interface RITState {
   // eventId = 'rit_offer' on the state's tableId. Raw setTimeout handle deleted.
 }
 
-export interface RITResult {
-  board1: string[];
-  board2: string[];
-  board3?: string[];
-  pot1: number;
-  pot2: number;
-  pot3?: number;
-  board1Winner: string;
-  board2Winner: string;
-  board3Winner?: string;
-}
+/*
+ * RITResult WAS HERE (deleted 2026-09-05). It was the return type of
+ * dealDualBoards() and nothing else ever referenced it. Its shape is the
+ * reason that function could never be right: `pot1 / pot2 / pot3` is one
+ * number per board, which cannot express a hand with a main pot and two side
+ * pots — the ordinary shape of the multi-way all-ins run-it-twice exists for.
+ * The real runout carries `PerPotAward[]`, keyed by (run, pot, winner).
+ */
 
 export type RITEventType = 'RIT_OFFERED' | 'RIT_ACCEPTED' | 'RIT_DECLINED' | 'RIT_RESOLVED';
 
@@ -207,10 +204,12 @@ export class RunItTwiceEngine {
    *
    * This builds the same RITState `offer()` builds, in the state that flow
    * only reaches after everyone has agreed: chooserDecided, status 'accepted',
-   * and every player already in acceptedBy — because dealDualBoards hard
-   * returns null unless status is 'accepted', and tryCompleteAcceptance needs
-   * every allPlayerIds member present. No deadline is scheduled: there is
-   * nothing to time out when there was never a question.
+   * and every player already in acceptedBy — because `getChosenRuns()` reports
+   * 1 unless the offer is accepted AND the chooser has decided, and
+   * `tryCompleteAcceptance` needs every allPlayerIds member present. A
+   * mandatory table that skipped either would deal one board while telling
+   * everyone it was running two. No deadline is scheduled: there is nothing
+   * to time out when there was never a question.
    */
   forceRuns(
     tableId: string,
@@ -382,162 +381,59 @@ export class RunItTwiceEngine {
     });
   }
 
-  /**
-   * Deal two (or three) independent boards from the remaining deck.
+  /*
+   * dealDualBoards() WAS HERE, AND IT DEALT NOTHING (deleted 2026-09-05).
+   *
+   * Zero call sites, ever — verified across server/src, src/ and tests/: the
+   * only mentions were two of its own comments and the NAME of a test. The
+   * boards are dealt by ServerTableEngineRunout.dealAndResolveRIT, which
+   * slices the remaining deck into `runs` contiguous blocks and handles the
+   * short-deck fallback, hi-lo, side pots and rake. This function modelled
+   * TWO boards with a third bolted on, split `state.pot` as a single number,
+   * and would have been wrong the moment anybody called it.
+   *
+   * Deleted rather than left "in case": a plausible-looking dealer sitting
+   * beside the real one is how the next agent calls the wrong one, and its
+   * pot split had no idea side pots exist.
    */
-  dealDualBoards(
-    tableId: string,
-    remainingDeck: string[],
-    existingBoard: string[]
-  ): RITResult | null {
-    const state = this.activeOffers.get(tableId);
-    if (!state || state.status !== 'accepted') return null;
-
-    // FIX 171: Use chosenRuns (set by chooser in FIX 96) instead of maxRuns.
-    // If chooser picked 2 runs but maxRuns is 3, we should deal 2 boards, not 3.
-    const runs = state.chosenRuns || state.maxRuns || 2;
-    const cardsNeeded = 5 - existingBoard.length;
-    if (remainingDeck.length < cardsNeeded * runs) {
-      reportError(
-        new Error(`[RunItTwiceEngine] Not enough cards for ${runs} runouts at ${tableId}`),
-        'RunItTwiceEngine.Not_enough_cards_for_runs_runo'
-      );
-      return null;
-    }
-
-    const run1Cards = remainingDeck.slice(0, cardsNeeded);
-    const run2Cards = remainingDeck.slice(cardsNeeded, cardsNeeded * 2);
-    state.board1 = [...existingBoard, ...run1Cards];
-    state.board2 = [...existingBoard, ...run2Cards];
-
-    const result: RITResult = {
-      board1: state.board1,
-      board2: state.board2,
-      pot1: 0,
-      pot2: 0,
-      board1Winner: '',
-      board2Winner: '',
-    };
-
-    if (runs === 3) {
-      const run3Cards = remainingDeck.slice(cardsNeeded * 2, cardsNeeded * 3);
-      state.board3 = [...existingBoard, ...run3Cards];
-      result.board3 = state.board3;
-      const third = Math.trunc((state.pot / 3) * 100) / 100;
-      result.pot1 = third;
-      result.pot2 = third;
-      result.pot3 = state.pot - third * 2;
-      result.board3Winner = '';
-    } else {
-      result.pot1 = Math.trunc((state.pot / 2) * 100) / 100;
-      result.pot2 = state.pot - result.pot1;
-    }
-
-    return result;
-  }
 
   /**
-   * Resolve RIT with board winners (called after hand evaluation)
+   * Close the offer once the boards have been evaluated: record who took each
+   * run, announce RIT_RESOLVED, and release the offer state.
+   *
+   * ── THIS FUNCTION MOVES NO MONEY (2026-09-05) ──
+   *
+   * It used to return a `Map<string, number>` distribution, computed here by
+   * splitting `state.pot` evenly across the runs. Nothing has ever spent that
+   * map: the only caller (ServerTableEngineRunout.dealAndResolveRIT, at the
+   * `this.runItTwiceEngine.resolve(` line) discards the return, because it has
+   * already done the real settlement — `determineWinners` per board against
+   * the live pot structure, rake and BBJ deducted once, cent-exact scaling.
+   *
+   * The deleted math was also WRONG, and said so in its own comment: it
+   * treated `state.pot` as a single number, so a multi-way all-in with SIDE
+   * POTS was split as one pot. Ninety lines of plausible, unreachable,
+   * incorrect money math beside the real thing is a trap — the next agent
+   * either "fixes" a bug that cannot fire or, worse, wires it up. Money for a
+   * run-it-twice hand has exactly one source, and this is not it.
+   *
+   * What it still does is real and load-bearing: the winner bookkeeping, the
+   * RIT_RESOLVED announcement, and `clearOffer()` — without which the offer
+   * would outlive its hand.
    */
   resolve(
     tableId: string,
     board1Winner: string,
     board2Winner: string,
     board3Winner?: string
-  ): Map<string, number> {
+  ): void {
     const state = this.activeOffers.get(tableId);
-    if (!state) return new Map();
+    if (!state) return;
 
     state.board1Winner = board1Winner;
     state.board2Winner = board2Winner;
     if (board3Winner) state.board3Winner = board3Winner;
     state.status = 'resolved';
-
-    const distribution = new Map<string, number>();
-    // FIX 171: Use chosenRuns for consistency with dealDualBoards
-    const runs = state.chosenRuns || state.maxRuns || 2;
-
-    /**
-     * A9 FIX (2026-08-20): split by the number of boards that actually resolved.
-     *
-     * This used to read `if (runs === 3 && board3Winner)`. A three-run hand
-     * whose third winner was falsy fell into the TWO-way branch and divided the
-     * whole pot between boards 1 and 2 — so the player who won board three got
-     * nothing and the other two shared a third of the pot that was never
-     * theirs. And it was reachable by design, not just by accident: the offer
-     * path initialises `board3Winner = ''`, which is falsy.
-     *
-     * The split is now driven by the winners that are actually present. Chips
-     * are conserved either way — the remainder always goes to the last share,
-     * so the parts sum to the pot exactly — but they now go to the right people,
-     * and a three-run hand that resolves fewer than three boards is reported
-     * rather than silently reshaped into a different game.
-     *
-     * KNOWN LIMITATION, unchanged here: `state.pot` is a single number, so a
-     * multi-way all-in with SIDE POTS is split as one pot. Fixing that needs the
-     * side-pot structure threaded into the RIT state, which is a larger change
-     * than this correction.
-     */
-    const declaredRuns = runs === 3 ? 3 : 2;
-    const declared = [board1Winner, board2Winner, board3Winner].slice(0, declaredRuns);
-    const resolvedCount = declared.filter((w) => typeof w === 'string' && w.length > 0).length;
-
-    // Each board that was RUN is worth an equal share of the pot, regardless of
-    // whether it produced a winner. The last share carries the rounding
-    // remainder so the parts always sum to the pot exactly.
-    const share = Math.trunc((state.pot / declaredRuns) * 100) / 100;
-    const lastShare = Math.round((state.pot - share * (declaredRuns - 1)) * 100) / 100;
-    const award = (playerId: string, amount: number) => {
-      if (amount <= 0) return;
-      distribution.set(
-        playerId,
-        Math.round(((distribution.get(playerId) || 0) + amount) * 100) / 100
-      );
-    };
-
-    let unresolvedChips = 0;
-    for (let i = 0; i < declaredRuns; i++) {
-      const amount = i === declaredRuns - 1 ? lastShare : share;
-      const winner = declared[i];
-      if (typeof winner === 'string' && winner.length > 0) {
-        award(winner, amount);
-      } else {
-        unresolvedChips = Math.round((unresolvedChips + amount) * 100) / 100;
-      }
-    }
-
-    if (unresolvedChips > 0) {
-      /**
-       * A board that was run but produced no winner cannot be awarded, and its
-       * share is NOT the other boards' to take — that is exactly the mis-split
-       * this fix exists to stop. An undecidable share is chopped among the
-       * players who were entitled to contest it, which conserves the pot without
-       * paying anyone for a board they did not win.
-       */
-      const contenders =
-        state.allPlayerIds && state.allPlayerIds.length > 0
-          ? state.allPlayerIds
-          : [
-              ...new Set(
-                declared.filter((w): w is string => typeof w === 'string' && w.length > 0)
-              ),
-            ];
-
-      reportError(
-        new Error(
-          `[RunItTwice] Hand ${state.handId} ran ${declaredRuns} boards but ${declaredRuns - resolvedCount} ` +
-            `produced no winner. ${unresolvedChips} chips chopped among ${contenders.length} contender(s) ` +
-            `rather than awarded to the other boards.`
-        ),
-        'RunItTwiceEngine.unresolved_board'
-      );
-
-      if (contenders.length > 0) {
-        const chop = Math.trunc((unresolvedChips / contenders.length) * 100) / 100;
-        const chopLast = Math.round((unresolvedChips - chop * (contenders.length - 1)) * 100) / 100;
-        contenders.forEach((p, idx) => award(p, idx === contenders.length - 1 ? chopLast : chop));
-      }
-    }
 
     this.emitEvent({
       type: 'RIT_RESOLVED',
@@ -547,11 +443,10 @@ export class RunItTwiceEngine {
       board2: state.board2,
       board1Winner,
       board2Winner,
-      distribution: Object.fromEntries(distribution),
+      board3Winner,
     });
 
     this.clearOffer(tableId);
-    return distribution;
   }
 
   isActive(tableId: string): boolean {

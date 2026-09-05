@@ -1,2 +1,144 @@
-# SLO alert rules — DISABLED (depend on slo-rules.yml recording rules).
-groups: []
+# RECOVERED FROM engine-01, 2026-09-05.
+#
+# This file said `groups: []` while slo-objectives was live on the box with
+# 7 healthy rules. deploy.sh SYMLINKS this file over the live one, so the
+# first person to run it would have silently deleted them. The live
+# content is restored here verbatim so the repo is a superset and a
+# deploy can only add. Pinned by
+# tests/an-alert-that-is-live-is-in-the-repo.law.test.ts.
+#
+# Previous content of this file, kept for the record:
+#   # SLO alert rules — DISABLED (depend on slo-rules.yml recording rules).
+#   groups: []
+
+# SLO alerts — the objectives themselves.
+#
+# 2026-09-04 — REWRITTEN alongside slo-rules.yml, which was `groups: []`.
+# Every rule here reads a recording rule from that file, so the two must ship
+# together; a recording rule referenced by nothing and an alert referencing a
+# recording rule that does not exist are the same failure this file was found in.
+#
+# Thresholds are set from what this platform actually does, not from round
+# numbers: ~500 hands settle a minute, the engine is scraped every 15s, and the
+# settlement failure baseline before the 2026-09-04 incident was 0.0-0.2%.
+#
+# Every fleet-wide rule carries the maintenance-break guard. The engine is
+# deliberately down for up to five minutes of every hour (CLAUDE.md 13) and an
+# SLO that pages on a stop we scheduled is an SLO nobody keeps.
+
+groups:
+  - name: slo-objectives
+    interval: 30s
+    rules:
+      # ── AVAILABILITY: 99% of scrapes over 30 minutes ────────────────────
+      # 5 minutes of every 60 is a scheduled break, so a naive availability
+      # SLO would read 91.7% at perfect health. The guard is what makes 99%
+      # the right number rather than an unreachable one.
+      - alert: SLOEngineAvailability
+        expr: |
+          sp:engine_availability:ratio30m < 0.99
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: critical
+          component: slo
+          objective: availability
+        annotations:
+          summary: "Engine availability {{ $value | humanizePercentage }} over 30m, below the 99% objective"
+          description: "Scrapes of job=engine_game_server are failing outside a maintenance break."
+          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+
+      # ── DEALING: the platform deals hands ───────────────────────────────
+      # ~33,500 hands an hour is the floor this estate runs at. A collapse to
+      # near zero while the engine is up and tables are seated is invisible to
+      # every availability check.
+      - alert: SLOHandsAreNotBeingDealt
+        expr: |
+          sp:hands_dealt:rate5m < 1
+          and poker_active_tables > 0
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: critical
+          page: sms
+          component: slo
+          objective: dealing
+        annotations:
+          summary: "{{ $value }} hands/sec with tables still seated"
+          description: "Tables exist and are seated, and almost nothing is being dealt. The engine is up - this is not an availability failure, which is exactly why it needs its own objective."
+          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+
+      # A single table wedged for a quarter of an hour is a table of players
+      # who cannot act and cannot leave.
+      - alert: SLOTableHasStalled
+        expr: |
+          sp:table_stall:max_ms > 900000
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 5m
+        labels:
+          severity: critical
+          component: slo
+          objective: dealing
+        annotations:
+          summary: "A table has made no progress for {{ $value | humanizeDuration }}"
+          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+
+      # ── RESPONDING: the felt feels live ─────────────────────────────────
+      - alert: SLOActionLatencyDegraded
+        expr: |
+          sp:action_to_broadcast:p95_ms > 1000
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 15m
+        labels:
+          severity: warning
+          component: slo
+          objective: responding
+        annotations:
+          summary: "p95 action processing {{ $value }}ms, above the 1s objective"
+          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+
+      - alert: SLOBroadcastLatencyDegraded
+        expr: |
+          sp:broadcast:p95_ms > 2000
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 15m
+        labels:
+          severity: warning
+          component: slo
+          objective: responding
+        annotations:
+          summary: "p95 broadcast latency {{ $value }}ms - seats are seeing actions late"
+          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+
+      # ── SETTLING: 99.5% of hands settle ─────────────────────────────────
+      # The baseline before 2026-09-03 was 99.8-100%. On the day a no-op
+      # trigger broke seat writes it ran at 56-75% for thirteen hours with no
+      # alert anywhere. This is the objective that would have caught it.
+      - alert: SLOSettlementSuccess
+        expr: |
+          sp:settlement_success:ratio5m < 0.995
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: critical
+          component: slo
+          objective: settling
+        annotations:
+          summary: "Settlement success {{ $value | humanizePercentage }}, below the 99.5% objective"
+          description: "Read ca_settlements.error_detail before changing anything."
+          runbook: "docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md"
+
+      # ── THE PLUMBING ────────────────────────────────────────────────────
+      - alert: SLODatabaseErrorBudget
+        expr: |
+          sp:db_error:rate10m > 2
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 15m
+        labels:
+          severity: warning
+          component: slo
+          objective: plumbing
+        annotations:
+          summary: "PostgREST error rate {{ $value }}/s"
+          description: "Every objective above rides on this. Sustained errors here are seats, hands and settlements failing to write."
+          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"

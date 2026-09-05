@@ -35,3 +35,14 @@ pin fails on the pre-fix source (verified by running it against the stash).
 Hub tabs (#3069) shipped in the same window and were the reason anyone was
 looking at a table page in a browser pane; they are unrelated to the crash and
 are not touched here.
+
+## Two agents, one fix, two declarations (08:57 UTC)
+
+Another agent shipped the same hoist as #3105 (`export function parseTimed`)
+minutes before #3106 landed. The two touched different lines, so GitHub
+merged both cleanly and `main` held TWO `function parseTimed` declarations:
+`tsc` refuses a duplicate implementation, so `main` was red and the publisher
+(which runs `tsc -b` first) could not ship anything after a505dca7f. This
+removes the second copy and keeps the exported one; both pins
+(`no-tdz-in-table-route`, `multiTablePageHelpersAreHoisted`) still hold.
+Production was never on the red commit.

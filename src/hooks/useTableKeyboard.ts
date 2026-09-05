@@ -17,6 +17,9 @@
  *  TOGGLE KEYS (always active):
  *    M = Mute/unmute sound
  *    S = Toggle stats HUD
+ *    B = Rabbit Hunt (P4, 2026-09-05: GGPoker's answer to a short window for
+ *        a multi-tabler is a hotkey; ours runs the tile's own reveal, and
+ *        does nothing when no offer is up)
  *    (FIX 199: H key for hand strength REMOVED — not allowed for live play)
  *    Escape = Close any open panel or modal
  *
@@ -80,6 +83,14 @@ export interface UseTableKeyboardOptions {
   // FIX 199: onToggleHandStrength REMOVED — not allowed for live online gameplay
   onToggleStats?: () => void;
   onClosePanel?: () => void;
+  /**
+   * P4 2026-09-05: B fires the Rabbit Hunt tile's OWN reveal (the tile hands
+   * TablePage its handler through a ref) - the same single-flight, the same
+   * charge, the same toasts as a tap. When no offer is up the tile has no
+   * handler registered and the key does nothing; the hook never decides
+   * whether a hunt is purchasable.
+   */
+  onRabbitHunt?: () => void;
 }
 
 export function useTableKeyboard(options: UseTableKeyboardOptions): void {
@@ -130,6 +141,13 @@ export function useTableKeyboard(options: UseTableKeyboardOptions): void {
               e.preventDefault();
               opts.onToggleStats?.();
             }
+            return;
+          case 'b':
+            // Not while a modal owns the keyboard, and never with a modifier
+            // (Cmd/Ctrl+B belongs to the browser).
+            if (opts.isModalOpen || e.ctrlKey || e.metaKey || e.altKey) return;
+            e.preventDefault();
+            opts.onRabbitHunt?.();
             return;
         }
       }

@@ -359,6 +359,8 @@ export class HorseFleetManager {
   private lastBeatComplaint: string | null = null;
   /** When the unread-tag-book alert was last raised. Throttled to hourly. */
   private lastTagBookComplaintAt = 0;
+  /** When the failing-counter-write alert was last raised. Throttled to hourly. */
+  private lastStateWriteComplaintAt = 0;
   private seeding = false; // Prevents concurrent seeding
   /** Per table, how many horses the last cycle found able to sit there.
    *  Read by the ClusterController (OPORD 1.4 18.3): a horse is a buyer. */
@@ -2410,6 +2412,42 @@ export class HorseFleetManager {
                 `${stateMutations.filter((m) => m.closedKey).length} seat(s) given up, ` +
                 `${stateMutations.filter((m) => m.addMinutes).length} minute accrual(s))`
             );
+          }
+          if (folded.skippedUntagged > 0) {
+            console.warn(
+              `[HorseFleet] ${folded.skippedUntagged} counter update(s) skipped - ` +
+                `the tagger has never assigned those horses a rest day or a daily cap`
+            );
+          }
+          /* A WRITE THAT WROTE NOTHING IS THE FAILURE THAT HID ALL DAY.
+             writeStateRows deliberately swallows its error and returns 0, so
+             that a bad counter write can never take the floor down with it -
+             which is right, and which is also why nobody saw 23502 repeating
+             every cycle from 08:42 to 23:07 on 2026-09-04. reportError was not
+             the backstop it looked like: Sentry's own budget was dropping
+             hundreds of events an hour that day. So the zero is raised HERE,
+             where it is a fact about the platform rather than a log line, and
+             throttled to once an hour so it stays readable. */
+          if (folded.rows.length > 0 && written === 0) {
+            if (nowMs - this.lastStateWriteComplaintAt >= 60 * 60_000) {
+              this.lastStateWriteComplaintAt = nowMs;
+              await supabase
+                .rpc('fn_raise_server_financial_alert', {
+                  p_severity: 'warning',
+                  p_source: 'HorseFleet.stableHandState',
+                  p_message:
+                    `The Stable Hand counter write is failing: ${folded.rows.length} row(s) ` +
+                    'were folded and none were accepted. Sit counts, the daily minute cap and ' +
+                    'the two-hour re-buy window are all reading zero, so those three gates are ' +
+                    'passing everything. The fleet is otherwise unaffected.',
+                  p_context: { kind: 'stable_hand_state_write_failing', rows: folded.rows.length },
+                  p_entity_id: 'stable_hand',
+                })
+                .then(
+                  () => undefined,
+                  (err: unknown) => reportError(err, 'HorseFleet.stateWriteAlert')
+                );
+            }
           }
         } else if (controllerEnabled() && stateMutations.length > 0 && !book) {
           console.warn(

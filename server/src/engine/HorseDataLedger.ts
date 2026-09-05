@@ -363,6 +363,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   state('bombPot', 'this hand is a bomb pot (V36)'),
   state('boardCount', 'boards dealt (V36)'),
   state(
+    'vpipFloor',
+    'the table VPIP floor a seat is stood up under after ten hands (Dan 2026-09-04)',
+    'HorseLogic.vpipFloorMul'
+  ),
+  state(
+    'ownVpip',
+    'this seat: hands and judged VPIP this sitting, from fn_nit_status - the eviction query',
+    'HorseLogic.vpipFloorMul'
+  ),
+  state(
     'tournament',
     'ICM inputs: stacks, payouts, bubble, bounties, chests, satellite, blind clock',
     'HorseLogic.icmRisk / endgameAdjust / satelliteRead'

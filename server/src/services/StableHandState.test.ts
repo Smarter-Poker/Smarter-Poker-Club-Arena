@@ -19,9 +19,14 @@ const TODAY = '2026-09-04';
 const YESTERDAY = '2026-09-03';
 const NOW = Date.UTC(2026, 8, 4, 18, 0, 0);
 
+/* restWeekday is a REAL day here, not null, because that is what every horse
+   in the tag book actually carries - the tagger assigns one to all 1,000 - and
+   because a row folded from a state with no rest day is deliberately not
+   written at all (see 'the columns the table demands' below). A helper that
+   defaulted it to null was quietly asserting the untagged path everywhere. */
 const state = (over: Partial<HorseState> = {}): HorseState => ({
   horseId: 'h1',
-  restWeekday: null,
+  restWeekday: 3,
   dailyCapMinutes: 525,
   minutesPlayedToday: 0,
   sessionStartBalance: null,
@@ -45,8 +50,20 @@ describe('a sit is counted against the key the mutex judged', () => {
     expect(rows[0].cash_sits_today).toEqual({ a: 1, b: 1 });
   });
 
-  it('starts a horse it has never seen from zero', () => {
-    const { rows } = fold([], [{ horseId: 'newcomer', sitOnKey: 'k' }]);
+  /* REPLACED 2026-09-04, deliberately, and the old assertion is quoted here so
+     nobody restores it by accident. This used to read:
+
+         const { rows } = fold([], [{ horseId: 'newcomer', sitOnKey: 'k' }]);
+         expect(rows[0].cash_sits_today).toEqual({ k: 1 });
+
+     - a horse the tag book has never seen produced a row. That row could never
+     reach the table: with no rest day and no daily cap it proposes NULL into
+     two NOT NULL columns and Postgres rejects the whole chunk, taking every
+     other horse's counters in the same array down with it. The intent behind
+     the test - counters START at zero, they never inherit - is kept below and
+     is what actually mattered. */
+  it('starts a horse whose counters are empty from zero', () => {
+    const { rows } = fold([state({ cashSitsToday: {} })], [{ horseId: 'h1', sitOnKey: 'k' }]);
     expect(rows[0].cash_sits_today).toEqual({ k: 1 });
     expect(rows[0].counters_reset_on).toBe(TODAY);
   });
@@ -200,5 +217,99 @@ describe('SOURCE LAW: the writer is one round trip, and it never invents a horse
     ]) {
       expect(src).not.toContain(banned);
     }
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE COLUMNS THE TABLE DEMANDS
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * From 08:42 to 23:07 on 2026-09-04 this write failed on every single cycle
+ * and nothing above it noticed. The payload left out `rest_weekday` and
+ * `daily_cap_minutes` on the reasoning that an upsert conflicting on
+ * `horse_id` takes the DO UPDATE branch and DO UPDATE only touches the columns
+ * you name. Postgres checks NOT NULL on the PROPOSED tuple before it looks for
+ * the conflict, so every chunk was rejected with 23502, `writeStateRows`
+ * returned 0 by design, and the fleet carried on seeding with all three
+ * counter-driven gates reading zero.
+ *
+ * The first test below pins the instance. The second reads the migration and
+ * pins the CLASS: any column on this table that is NOT NULL with no DEFAULT
+ * must appear in the row this module writes, so the next one added fails here
+ * instead of switching the counters off in production for a day.
+ */
+describe('the columns the table demands', () => {
+  const migration = readFileSync(
+    resolve(
+      __dirname,
+      '../../../supabase/migrations/20260904060838_stable_hand_tag_and_state_tables.sql'
+    ),
+    'utf8'
+  );
+
+  const requiredColumns = (): string[] => {
+    const body = migration
+      .split(/CREATE TABLE IF NOT EXISTS public\.stable_hand_horse_state \(/)[1]
+      .split(/\n\);/)[0];
+    const out: string[] = [];
+    for (const raw of body.split('\n')) {
+      const line = raw.trim();
+      if (!line || line.startsWith('CONSTRAINT') || line.startsWith('--')) continue;
+      const name = line.split(/\s+/)[0].replace(/,$/, '');
+      if (!/^[a-z_]+$/.test(name)) continue;
+      if (name === 'horse_id') continue; // the primary key, always supplied
+      if (!/NOT NULL/i.test(line)) continue;
+      if (/DEFAULT/i.test(line)) continue;
+      out.push(name);
+    }
+    return out;
+  };
+
+  it('the migration really does have NOT NULL columns with no default', () => {
+    // If this ever goes empty the test below stops proving anything, so say so.
+    expect(requiredColumns()).toEqual(['rest_weekday', 'daily_cap_minutes']);
+  });
+
+  it('every one of them is in the row we write', () => {
+    const { rows } = fold(
+      [state({ restWeekday: 5, dailyCapMinutes: 400 })],
+      [{ horseId: 'h1', sitOnKey: 'k' }]
+    );
+    expect(rows).toHaveLength(1);
+    for (const col of requiredColumns()) {
+      expect(Object.keys(rows[0])).toContain(col);
+      expect((rows[0] as unknown as Record<string, unknown>)[col]).not.toBeNull();
+    }
+  });
+
+  it("carries the tagger's values through rather than inventing them", () => {
+    const { rows } = fold(
+      [state({ restWeekday: 5, dailyCapMinutes: 400 })],
+      [{ horseId: 'h1', addMinutes: 5 }]
+    );
+    expect(rows[0].rest_weekday).toBe(5);
+    expect(rows[0].daily_cap_minutes).toBe(400);
+  });
+
+  it('writes NO row for a horse the tagger has never seen, and says how many', () => {
+    const { rows, skippedUntagged } = fold(
+      [state({ horseId: 'h1', restWeekday: null })],
+      [
+        { horseId: 'h1', sitOnKey: 'k' },
+        { horseId: 'unknown-horse', sitOnKey: 'k' },
+      ]
+    );
+    expect(rows).toHaveLength(0);
+    expect(skippedUntagged).toBe(2);
+  });
+
+  it('a missing daily cap is refused on the same terms as a missing rest day', () => {
+    const { rows, skippedUntagged } = fold(
+      [state({ dailyCapMinutes: null })],
+      [{ horseId: 'h1', sitOnKey: 'k' }]
+    );
+    expect(rows).toHaveLength(0);
+    expect(skippedUntagged).toBe(1);
   });
 });

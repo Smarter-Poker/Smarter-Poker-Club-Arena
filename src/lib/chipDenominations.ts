@@ -86,8 +86,16 @@
  *   - Renderers show the whole chips plus the exact numeric label, which
  *     already prints two decimals below 1. For 0 < amount < 1 they draw ONE
  *     `partial` disc (see visualChipStacks) so a 0.5 small blind is not
- *     invisible on the felt — styled as a sliver, not as a white 1 chip,
- *     because drawing a full white chip for 0.5 would be a lie about value.
+ *     invisible on the felt.
+ *
+ *     That disc is a FULL, ROUND white chip. Dan 2026-09-04: "WHY ARE THE
+ *     CHIPS OVAL SHAPED NOW PREFLOP INSTEAD OF CIRCLES? ... FIX THIS BUG."
+ *     It used to be drawn as a squashed, dashed, translucent sliver so it
+ *     could not be mistaken for a white 1 — but at 0.10/0.25 stakes every
+ *     preflop bet is under 1, so every chip on the felt was an oval until
+ *     the flop. The numeric label is what carries a sub-1 value; the disc
+ *     never did. `partial` stays on the visual as DATA (it is why 7.5 draws
+ *     three chips and not four), not as a shape.
  *
  * Arithmetic runs in integer cents throughout. Floating-point descent gets
  * this wrong in practice: 0.1 + 0.2 style drift turns a clean 7.5 into
@@ -309,8 +317,9 @@ export interface ChipStackVisual {
   truncated: boolean;
   /**
    * True only for the placeholder disc standing in for a sub-1 remainder (see
-   * FRACTIONAL AND SUB-1 AMOUNTS). Renderers style it as a sliver so it is
-   * never mistaken for a real white 1 chip.
+   * FRACTIONAL AND SUB-1 AMOUNTS). It is drawn as an ordinary round white
+   * chip - Dan 2026-09-04, "chips are circles" - and the flag exists so the
+   * breakdown and its tests can tell the placeholder from a real white 1.
    */
   partial: boolean;
 }
@@ -357,8 +366,9 @@ export function visualChipStacks(
   const { chips, remainder } = breakChips(amount);
 
   // Sub-1 amount (a 0.5 small blind): no chip on the ladder represents it, but
-  // bare felt in front of a player who has money out is worse than a sliver,
-  // so draw one disc marked partial.
+  // bare felt in front of a player who has money out is worse than a disc,
+  // so draw one round white chip marked partial. The label beside it carries
+  // the exact value.
   if (chips.length === 0) {
     if (remainder <= 0) return [];
     return [{ denom: SMALLEST_CHIP, count: 1, drawn: 1, truncated: false, partial: true }];

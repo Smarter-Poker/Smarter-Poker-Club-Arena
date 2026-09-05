@@ -2,18 +2,28 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  PUBLIC PROFILE PAGE — View Another Player's Profile
  * ═══════════════════════════════════════════════════════════════════════════════
- * Shows: avatar, username, bio, VIP tier, level, achievements,
- * mutual friends, and action buttons (Add Friend, Message, Block)
+ * Shows: arena avatar, poker alias, bio, VIP tier, level, player number,
+ * mutual friends, and action buttons (Add Friend, Message, Block, Report,
+ * Share). The name and the face are the ones the felt shows: alias and
+ * library art, never a legal name or the social photo (playerDisplayName.ts,
+ * arenaAvatarSeparation.test.ts).
+ *
+ * 2026-09-04 #SmarterCasinoRealism audit: the QR code is rendered locally
+ * (qrcode.react, already a dependency) instead of by api.qrserver.com, which
+ * put every profile URL through a third party and drew a blank on a phone
+ * with no route to it. The share button reports a clipboard refusal instead
+ * of celebrating one. The "Achievement Showcase" that read a field no profile
+ * ever carried is gone.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useParams, useNavigate } from 'react-router-dom';
+import { QRCodeSVG } from 'qrcode.react';
 import { profileService } from '../services/ProfileService';
 import type { UserProfile } from '../services/ProfileService';
 import { friendSuggestionService } from '../services/FriendSuggestionService';
 import { blockService } from '../services/BlockService';
-import { messagingService } from '../services/MessagingService';
 import { playerStatusService } from '../services/PlayerStatusService';
 import type { PlayerStatus } from '../services/PlayerStatusService';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -27,23 +37,11 @@ import './PublicProfilePage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { generateDefaultAvatar } from '../utils/avatarGenerator';
 import { reportError } from '../utils/errorReporter';
+import { mediaUrl } from '../utils/mediaBase';
+import { vipStatusLabel } from '../utils/vipStatus';
 
-// VIP tier colors
-const VIP_COLORS: Record<string, string> = {
-  bronze: '#cd7f32',
-  silver: '#c0c0c0',
-  gold: '#ffd700',
-  platinum: '#e5e4e2',
-  diamond: '#b9f2ff',
-};
-
-const VIP_LABELS: Record<string, string> = {
-  bronze: 'Bronze',
-  silver: 'Silver',
-  gold: 'Gold',
-  platinum: 'Platinum',
-  diamond: '♦ Diamond',
-};
+/** Purpose-built hero for this route (public/images/account). */
+const HERO_ART = mediaUrl('images/account/public-dossier-hero-v1.webp');
 
 export default function PublicProfilePage() {
   const { userId } = useParams<{ userId: string }>();
@@ -287,11 +285,37 @@ export default function PublicProfilePage() {
   // Unblock
   const handleUnblock = async () => {
     if (!user?.id || !userId) return;
+    setActionLoading(true);
     const success = await blockService.unblockUser(user.id, userId);
     if (!isMounted.current) return;
+    setActionLoading(false);
     if (success) {
       setIsBlocked(false);
-      if (isMounted.current) toast.success('Player unblocked');
+      toast.success('Player unblocked');
+    } else {
+      toast.error('Failed to unblock player');
+    }
+  };
+
+  /* The clipboard write is a promise that can be refused (no permission,
+     insecure context, a WebView with no clipboard). The old handler fired the
+     success toast before the promise settled, so a refused copy still said
+     "Profile link copied!". */
+  const handleShare = async () => {
+    if (!userId) return;
+    const link = playerStatusService.generateProfileLink(userId);
+    try {
+      if (typeof navigator.share === 'function') {
+        await navigator.share({ title: 'Smarter Poker Player', url: link });
+        return;
+      }
+      await navigator.clipboard.writeText(link);
+      toast.success('Profile link copied!');
+    } catch (err) {
+      // A cancelled share sheet is the player's choice, not a failure.
+      if ((err as Error)?.name === 'AbortError') return;
+      reportError(err, 'PublicProfilePage.Share_failed');
+      toast.error('Could not copy the link. Scan the QR code instead.');
     }
   };
 
@@ -310,8 +334,13 @@ export default function PublicProfilePage() {
     return (
       <div className="public-profile-page">
         <div className="public-profile-empty">
-          <span className="empty-icon">◉</span>
+          <span className="empty-icon" aria-hidden="true">
+            ◉
+          </span>
           <h2>Player Not Found</h2>
+          <button type="button" className="action-btn" onClick={() => navigate('/search')}>
+            Find Players
+          </button>
         </div>
       </div>
     );
@@ -321,31 +350,43 @@ export default function PublicProfilePage() {
     month: 'long',
     year: 'numeric',
   });
+  const arenaName = profile.displayName || profile.username;
+  const profileLink = userId ? playerStatusService.generateProfileLink(userId) : '';
 
   return (
     <article className="public-profile-page">
       {/* Header with avatar & name */}
       <header className="public-profile-header">
-        <div className="public-profile-artwork" aria-hidden="true" />
+        <div
+          className="public-profile-artwork"
+          style={{ backgroundImage: `url("${HERO_ART}")` }}
+          aria-hidden="true"
+        />
         <div className="profile-hero">
           <span className="public-profile-eyebrow">Player Network // Public Credential</span>
           <PlayerAvatar
             src={profile.avatarUrl || generateDefaultAvatar()}
-            name={profile.username}
+            name={arenaName}
             size="xl"
             showPresence={false}
             showLevelBadge={true}
             level={profile.level}
-            showVipRing={true}
-            vipTier={profile.vipTier}
+            showVipRing={false}
           />
-          <h1 className="profile-username">{profile.displayName || profile.username}</h1>
-          <span className="profile-handle">@{profile.username}</span>
+          <h1 className="profile-username">{arenaName}</h1>
+          {profile.playerNumber && (
+            <span className="profile-handle">Player #{profile.playerNumber}</span>
+          )}
           {profile.bio && <p className="profile-bio">{profile.bio}</p>}
           <div className="profile-badges">
-            <span className="vip-badge" style={{ color: VIP_COLORS[profile.vipTier] || '#cd7f32' }}>
-              {VIP_LABELS[profile.vipTier] || 'Bronze'}
-            </span>
+            {/* VIP or Lifetime VIP. There is no tier ladder (utils/vipStatus). */}
+            {profile.vipStatus && profile.vipStatus !== 'none' && (
+              <span
+                className={`vip-badge${profile.vipStatus === 'lifetime' ? ' vip-badge--lifetime' : ''}`}
+              >
+                {vipStatusLabel(profile.vipStatus)}
+              </span>
+            )}
             <span className="level-badge">Level {profile.level}</span>
             <span className="member-since">Member Since {memberSince}</span>
           </div>
@@ -357,10 +398,12 @@ export default function PublicProfilePage() {
               className="playing-at-badge"
               onClick={() => navigate(`/table/${playerStatus.playingAtTableId}`)}
             >
+              <span className="playing-at-dot" aria-hidden="true" />
               Playing At <strong>{playerStatus.playingAt}</strong>
             </button>
           ) : playerStatus?.playingAt ? (
             <div className="playing-at-badge playing-at-badge--static">
+              <span className="playing-at-dot" aria-hidden="true" />
               Playing At <strong>{playerStatus.playingAt}</strong>
             </div>
           ) : null}
@@ -371,19 +414,21 @@ export default function PublicProfilePage() {
       </header>
 
       {/* Action Buttons */}
-      <div className="profile-actions">
+      <div className="profile-actions" role="group" aria-label="Player Actions">
         {isBlocked ? (
           <button
+            type="button"
             className="action-btn unblock-btn"
             onClick={handleUnblock}
             disabled={actionLoading}
           >
-            Unblock
+            {actionLoading ? 'Working...' : 'Unblock'}
           </button>
         ) : (
           <>
             {friendStatus === 'none' && (
               <button
+                type="button"
                 className="action-btn add-friend-btn"
                 onClick={handleAddFriend}
                 disabled={actionLoading}
@@ -392,12 +437,13 @@ export default function PublicProfilePage() {
               </button>
             )}
             {friendStatus === 'pending_sent' && (
-              <button className="action-btn pending-btn" disabled>
+              <button type="button" className="action-btn pending-btn" disabled>
                 Request Sent
               </button>
             )}
             {friendStatus === 'pending_received' && (
               <button
+                type="button"
                 className="action-btn accept-btn"
                 onClick={handleAcceptFriend}
                 disabled={actionLoading}
@@ -406,11 +452,12 @@ export default function PublicProfilePage() {
               </button>
             )}
             {friendStatus === 'friends' && (
-              <button className="action-btn friends-btn" disabled>
+              <button type="button" className="action-btn friends-btn" disabled>
                 ✓ Friends
               </button>
             )}
             <button
+              type="button"
               className="action-btn message-btn"
               onClick={handleMessage}
               disabled={actionLoading}
@@ -418,9 +465,10 @@ export default function PublicProfilePage() {
               Message
             </button>
             <button
+              type="button"
               className="action-btn block-btn"
               onClick={() => setShowBlockModal(true)}
-              aria-label={`Block ${profile.username}`}
+              aria-label={`Block ${arenaName}`}
             >
               Block
             </button>
@@ -432,20 +480,14 @@ export default function PublicProfilePage() {
               missing half - staff could review reports no player could file.
             */}
             <button
+              type="button"
               className="action-btn report-btn"
               onClick={() => navigate(`/report/${userId}`)}
-              aria-label={`Report ${profile.username}`}
+              aria-label={`Report ${arenaName}`}
             >
               Report
             </button>
-            <button
-              className="action-btn share-btn"
-              onClick={() => {
-                const link = playerStatusService.generateProfileLink(userId!);
-                navigator.clipboard.writeText(link);
-                toast.success('Profile link copied!');
-              }}
-            >
+            <button type="button" className="action-btn share-btn" onClick={handleShare}>
               Share
             </button>
           </>
@@ -454,8 +496,8 @@ export default function PublicProfilePage() {
 
       {/* Mutual Friends */}
       {mutualFriends.length > 0 && (
-        <div className="mutual-friends-section">
-          <h3>
+        <section className="mutual-friends-section" aria-labelledby="mutual-friends-heading">
+          <h3 id="mutual-friends-heading">
             {mutualFriends.length} Mutual Friend{mutualFriends.length !== 1 ? 's' : ''}
           </h3>
           <div className="mutual-friends-list">
@@ -468,8 +510,9 @@ export default function PublicProfilePage() {
               >
                 <img
                   src={friend.avatarUrl || generateDefaultAvatar()}
-                  alt={friend.username}
+                  alt=""
                   className="mutual-avatar"
+                  loading="lazy"
                   onError={(e) => {
                     (e.target as HTMLImageElement).src = generateDefaultAvatar();
                   }}
@@ -478,41 +521,24 @@ export default function PublicProfilePage() {
               </button>
             ))}
           </div>
-        </div>
+        </section>
       )}
 
-      {/* Q3: Achievement Showcase */}
-      {(profile as any).achievements && (profile as any).achievements.length > 0 && (
-        <div className="achievement-showcase">
-          <h3>Achievement Showcase</h3>
-          <div className="achievement-grid">
-            {(profile as any).achievements.slice(0, 5).map((achievement: any, i: number) => (
-              <div key={i} className="achievement-card">
-                <span className="achievement-icon">{achievement.icon || '★'}</span>
-                <span className="achievement-name">{achievement.name}</span>
-              </div>
-            ))}
+      {/* Q3: Profile QR Code, rendered locally. */}
+      {profileLink && (
+        <section className="profile-qr-section" aria-labelledby="profile-qr-heading">
+          <h3 id="profile-qr-heading">Scan To Connect</h3>
+          <div className="profile-qr-image" role="img" aria-label={`QR Code For ${arenaName}`}>
+            <QRCodeSVG value={profileLink} size={160} level="M" marginSize={1} />
           </div>
-        </div>
-      )}
-
-      {/* Q3: Profile QR Code */}
-      {userId && (
-        <div className="profile-qr-section">
-          <h3>Scan To Connect</h3>
-          <img
-            src={messagingService.generateProfileQRData(userId)}
-            alt="Profile QR Code"
-            className="profile-qr-image"
-          />
           <p className="qr-hint">Scan At The Table To Add As Friend</p>
-        </div>
+        </section>
       )}
 
       {/* Block Modal */}
       {showBlockModal && (
         <PlayerBlockModal
-          playerName={profile.username}
+          playerName={arenaName}
           onConfirm={handleBlockConfirm}
           onCancel={() => setShowBlockModal(false)}
         />

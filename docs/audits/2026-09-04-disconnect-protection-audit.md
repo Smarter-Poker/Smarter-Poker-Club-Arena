@@ -143,65 +143,28 @@ flags and entry holds survive via the database. The in-memory FSM map does
 
 ## 3. What is still needed, ranked
 
-1. **Publish the real deadline for a disconnected or sat-out seat.**
-   `ServerTableEngineHandEvents.ts` ~462 stamps `playerTurnStartTime/Duration`
-   before `handleTurnChange` declines to arm a clock for a MISSING seat, so
-   every client draws a 15s ring while the engine acts at 30s (disconnect) or
-   ~1s (sit-out beat). The table visibly hangs 15s past a dead countdown. Fix:
-   put `graceDeadlineMs` / the beat deadline in `turn_deadline_ms` for those
-   seats, or suppress the ring.
-2. **Persist the FSM across the hourly restart.** `restoreFsmStates` runs
-   only from `checkCrashRecovery`, which returns early when there is no
-   in-flight hand, and the maintenance break guarantees there is none. So
-   every :55 every seat is treated as CONNECTED with strikes and the
-   away-blind budget reset. Persist the map on the park path and read it at
-   boot regardless of hand snapshots.
-3. **Tell the player WHY they were sat out.** `PLAYER_SAT_OUT` carries
-   `reason: 'forced'` and the strike count; the engine handler writes
-   `table_seats.is_sitting_out` and emits no hub event, so the client cannot
-   distinguish a forced sit-out from a voluntary one (`mapEngineSnapshot.ts`
-   ~283 collapses both) and shows "You Are Sitting Out" to someone who never
-   chose it. Emit the event; render "You Timed Out Three Times And Were Sat
-   Out" with the same I'm Back.
-4. **Crash recovery resets the 5-minute sit-out clock.** `getFsmState` puts
-   `lastHeartbeat` in `sinceMs` for SAT_OUT; `restoreFsmStates` seeds
-   `sitOutSince` from it; `restoreSitOutsFromSeats` then `continue`s for a
-   seat already marked out, so the `Math.min` pull-back to `sit_out_at` is
-   unreachable on that path. Store a real `sitOutSince` in the entry.
-5. **`heartbeat()` / `markTransportGone()` have the same registration gap
-   `/away` had** (`DisconnectEngine.ts` ~307, ~357): a seat taken since boot
-   at a quiet table is untracked until the first deal, and `/heartbeat`
-   answers `connected: true` for an unknown key. Register on demand for a
-   seated player, as `sitOut()` and now `notifyPageLeft()` do.
-6. **The action panel is not connection-aware.** With the socket down, the
-   last snapshot's buttons stay tappable against `POST /action`. Disable or
-   mark them while `engineWsStatus !== 'connected'` (the felt banner already
-   says why).
-7. **Two transports, one vocabulary.** The TableTabBar chip says
-   "Reconnecting..." for Supabase realtime, driven by a watchdog whose health
-   check `supabaseConnectionWatchdog.ts` ~101 documents as never having
-   passed; the felt banner says "Reconnecting To The Table" for the game
-   socket. A player can read two contradictory statements. Retire the chip or
-   drive it from the game socket.
+**Updated the same evening (phase 2, `docs/changelog/2026-09-04-presence-phase-2.md`):
+items 1, 2, 3, 4, 5, 6, 7, 10, 11 and 12 below are DONE.** The two that
+remain need Dan's ruling before code:
+
 8. **Backgrounded mobile is treated as gone instantly.** iOS fires `pagehide`
    when it freezes a PWA; `/away` skips the 8s grace by design; the 5s
    heartbeat is frozen with the app. Two such windows spend the blind cap.
-   Consider requiring a missed heartbeat OR a WS close before `pageLeftAt`
-   alone arms the cap.
-9. **Disconnect protection for all-ins - Dan's call.** Today a disconnected
-   player is folded. Some rooms void or protect a hand when a player who is
-   all-in or facing no bet drops. Not implemented anywhere; needs a rule
-   before code.
-10. **`dispose(tableId)` leaks transport-grace timers** (bounded, 8s) and
-    `sinceMs` is `lastHeartbeat` rather than a state start for CONNECTED /
-    SAT_OUT, which is what makes item 4 possible. Small, worth fixing with 4.
-11. **Pre-actions are one-way.** The client pushes them; nothing reads the
-    armed pre-action back from a snapshot, so a reconnect can leave the bar
-    dark while the engine is armed (or the reverse).
-12. **Hole-card recovery is Realtime-bound.** `handleHoleCardPayload` is fed
-    by a Supabase channel and a bounded poll; the engine already re-pushes on
-    RESYNC. Delivering the hero's cards over the engine socket would remove
-    the second transport from the one thing a player cannot play without.
+   Options: require a missed heartbeat OR a WS close before `pageLeftAt`
+   alone arms the cap; or keep it (a frozen app IS away). Dan's call.
+9. **Disconnect protection for all-ins.** Today a disconnected player is
+   folded. Some rooms void or protect a hand when a player who is all-in or
+   facing no bet drops. Not implemented anywhere; needs a rule before code.
 
-Items 1-5 are engine work with clear code paths; 6-7 are client afternoons;
-8-9 need Dan's decision; 10-12 are housekeeping with real upside.
+The original list, kept for the record:
+
+1. ~~Publish the real deadline for a disconnected or sat-out seat.~~ Done.
+2. ~~Persist the FSM across the hourly restart.~~ Done (`engine_presence_parked`).
+3. ~~Tell the player WHY they were sat out.~~ Done.
+4. ~~Crash recovery resets the 5-minute sit-out clock.~~ Done.
+5. ~~`heartbeat()` / `markTransportGone()` registration gap.~~ Done.
+6. ~~The action panel is not connection-aware.~~ Done (marked, not disabled).
+7. ~~Two transports, one vocabulary.~~ Done.
+8. ~~`dispose(tableId)` leaks transport-grace timers; `sinceMs` semantics.~~ Done.
+9. ~~Pre-actions are one-way.~~ Done (private frame, re-sent on RESYNC).
+10. ~~Hole-card recovery is Realtime-bound.~~ Done (engine socket carries them; Realtime + poll remain as the belt).

@@ -41,7 +41,9 @@ const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*
 /** Files whose data was reachable by pointer only. */
 const SURFACES = [
   'components/common/Tooltip.tsx',
-  'components/tooltips/Tooltip.tsx',
+  /* components/tooltips/Tooltip.tsx was DELETED 2026-09-05: a second Tooltip
+     nothing imported, unreachable from main/App/ClubArenaRoot and absent from
+     the built bundle. The surface it guarded no longer exists. */
   'components/common/ActivityHeatmap.tsx',
   'components/training/RangeViewer.tsx',
   'components/stats/PositionalRadar.tsx',
@@ -76,7 +78,10 @@ describe('every hover-driven readout has a non-pointer route', () => {
   it('a tooltip opened by tap can be closed again', () => {
     // A pointer user moves away. A finger cannot, so an open-only toggle traps
     // the tooltip on screen.
-    for (const file of ['components/common/Tooltip.tsx', 'components/tooltips/Tooltip.tsx']) {
+    // components/tooltips/Tooltip.tsx was DELETED 2026-09-05 with the rest of
+    // components/tooltips/, which no module imported and which never reached
+    // the built bundle. One Tooltip remains and it is the one this checks.
+    for (const file of ['components/common/Tooltip.tsx']) {
       const src = strip(read(file));
       expect(src, `${file} has no dismiss route`).toMatch(/Escape/);
     }

@@ -172,7 +172,8 @@ describe('no hover effects anywhere in Club Arena', () => {
     };
 
     for (const [file, selector] of [
-      ['components/players/PlayerNotes.css', '.delete-btn'],
+      /* components/players/PlayerNotes.css was DELETED 2026-09-05 with the
+         rest of components/players/, which nothing imported. */
       ['components/search/RecentSearches.css', '.remove-btn'],
       ['components/gameplay/PlayerNotesPanel.module.css', '.deleteBtn'],
       ['components/notifications/NotificationItem.css', '.notif-dismiss'],

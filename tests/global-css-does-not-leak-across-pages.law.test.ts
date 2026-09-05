@@ -192,6 +192,17 @@ describe('a global class name has exactly one owner', () => {
     //     test or e2e selector references the name, or the class is built
     //     dynamically rather than written as a literal.
     //
+    // 2026-09-05, sixth pass: 29 -> 22, and the cause was not CSS at all.
+    // Chasing the "seven duplicate components" in group A found that they were
+    // not duplicates competing for a name - they were DEAD. Five whole
+    // directories (components/buttons, /icons except LobbyIcons, /loaders,
+    // /tooltips, /players) plus club/CashierModal, table/PlayerCard,
+    // table/TimeBank and table/TimeBankDisplay are unreachable from
+    // main/App/ClubArenaRoot, and grepping the built bundle for their class
+    // names returns zero hits while a live control returns five. 45 files,
+    // ~2,400 lines, deleted. Group A of the list above is therefore closed,
+    // and it closed by deletion rather than by picking a winner.
+    //
     // This is a ratchet, not a target: it may fall, never rise. Fixing one is
     // two lines - scope it to its container, or rename it in both the
     // stylesheet and its markup.
@@ -203,6 +214,6 @@ describe('a global class name has exactly one owner', () => {
       const union = new Set(declared.flatMap((s) => [...s]));
       if ([...union].some((p) => declared.some((s) => !s.has(p)))) leakable += 1;
     }
-    expect(leakable).toBeLessThanOrEqual(29);
+    expect(leakable).toBeLessThanOrEqual(22);
   });
 });

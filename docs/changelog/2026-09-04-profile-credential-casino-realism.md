@@ -382,6 +382,39 @@ backdrop. And the credential portrait is a 116px machined plate at 3px radius,
 matching every other radius on the surface. Both are art-direction calls that
 belong with whoever owns the art, not with a measurement.
 
+## The seven "duplicate components" were dead, not duplicated (2026-09-05)
+
+Chasing group A of the remaining collisions - IconButton, CashierModal,
+OnlineIndicator, Tooltip, PlayerCard, Spinner, TimeBank, each existing twice -
+turned up something better than a dedupe decision: with one exception they were
+not competing implementations at all. They were unreachable.
+
+Three independent checks agreed:
+
+1. A module graph walked from the real entry points (main.tsx, App.tsx,
+   ClubArenaRoot.tsx), following both static imports and dynamic `import()`,
+   reaches 857 of 1,161 modules. None of these was among them.
+2. Nothing renders them. `<OnlineIndicator>`, `<Spinner>`, `<TimeBank>` and
+   `<TimeBankDisplay>` appear in zero JSX; every `<Tooltip>` in the app is
+   recharts'; the only `<IconButton>` comes from a THIRD implementation inside
+   `components/common/Button.tsx`.
+3. The built bundle does not contain them. Grepping `dist/assets/*.css` for
+   their class names returns 0 files, while the control (`player-avatar`,
+   `vip-status-ring`) returns 5 and 1.
+
+So five whole directories went: `components/buttons`, `components/icons`
+(keeping LobbyIcons.tsx, which three files really do import), and all of
+`components/loaders`, `components/tooltips` and `components/players`, plus
+`club/CashierModal`, `table/PlayerCard`, `table/TimeBank` and
+`table/TimeBankDisplay`. **45 files, about 2,400 lines.**
+
+Two tests pinned deleted files and were updated in the same commit, per the
+house rule: `touchCanReachHoverOnlyData` listed the second Tooltip in two
+places, and `no-hover-effects` pinned `players/PlayerNotes.css`.
+
+The collision count fell 29 -> 22 as a side effect. The point is the 2,400
+lines, not the seven.
+
 ## What is left
 
 - 29 collisions remain, down from 256, and every one is enumerated in

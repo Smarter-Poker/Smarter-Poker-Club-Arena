@@ -62,6 +62,7 @@ import {
   rejoinTableKey,
   type RejoinConstraints,
 } from './HorseRejoinConstraints.js';
+import { buildDisabledGameIds, isTableOfDisabledGame } from './HorseDisabledGames.js';
 import { reportError } from './errorReporter.js';
 import { clampSeatsForVariant, maxSeatsForVariant } from '../config/tableSeating.js';
 import {
@@ -152,6 +153,11 @@ interface CycleBeat {
   tablesSeeded: number | null;
   seatsFilled: number;
   withheldTables: number;
+  /** Cluster tables skipped this cycle because their game is switched off (18.4). */
+  disabledGameTables: number;
+  /** 1 when the disabled-games read failed or came back short; the cycle then
+   *  treated NO game as disabled (fail open), and the beat has to say so. */
+  disabledGamesReadFailed: number;
   rows: FleetStateRow[];
 }
 
@@ -841,6 +847,8 @@ export class HorseFleetManager {
       tablesSeeded: null,
       seatsFilled: 0,
       withheldTables: 0,
+      disabledGameTables: 0,
+      disabledGamesReadFailed: 0,
       rows: [],
     };
     try {
@@ -1327,6 +1335,52 @@ export class HorseFleetManager {
         reportError(err, 'HorseFleet.rejoin_constraints_load_failed');
       }
 
+      /* THE OPERATOR'S SWITCH (2026-09-05). `cash_games.enabled = false` is
+         OPORD 1.4 18.4: no seeding, no opening; empties close. The seeding
+         loop below skipped a cluster table only when its LIFECYCLE was
+         breaking or closed and never asked whether the GAME was enabled, so a
+         disabled game's live tables were seeded like any other. "NLH
+         0.05/0.10 Classic" was switched off by an operator at 16:47 CDT on
+         2026-09-04; between 01:10 and 03:41 the next morning the fleet seated
+         five horses onto its feeder and it dealt 76 hands in an hour. 30
+         games were disabled at the time. Read ONCE per cycle, paged like the
+         loaders above. See HorseDisabledGames.
+
+         FAILS OPEN, like the bankroll and rejoin loaders, and for a sharper
+         reason: failing CLOSED here would empty every cluster game on the
+         floor on one bad read, which is a worse outage than one more cycle of
+         seating on a switched-off game. So a failed or short read is counted
+         (`disabledGamesReadFailed`) and reaches both the cycle line and the
+         beat, and this cycle treats no game as disabled. */
+      let disabledGameIds = new Set<string>();
+      try {
+        const disabledPage = await fetchAllRows<{ id: string }>(
+          (cursor, want) => {
+            let q = supabase
+              .from('cash_games')
+              .select('id')
+              .eq('enabled', false)
+              .order('id', { ascending: true })
+              .limit(want);
+            if (cursor) q = q.gt('id', cursor);
+            return q;
+          },
+          { label: 'HorseFleet.disabledGames', maxRows: 50_000 }
+        );
+        if (disabledPage.complete) {
+          disabledGameIds = buildDisabledGameIds(disabledPage.rows);
+        } else {
+          beat.disabledGamesReadFailed = 1;
+          console.warn(
+            '[HorseFleet] disabled games read incomplete - seating this cycle as if every ' +
+              'game were enabled (fail open); a disabled game may be seeded for one cycle.'
+          );
+        }
+      } catch (err) {
+        beat.disabledGamesReadFailed = 1;
+        reportError(err, 'HorseFleet.disabled_games_load_failed');
+      }
+
       // V8: full horse-id set (any status) so we can tell HUMAN seats from
       // horse seats — humans get rescue priority below.
       // Paged: a horse missing from this set reads as a HUMAN, which triggers
@@ -1761,7 +1815,8 @@ export class HorseFleetManager {
             membership,
             surplusTableIds,
             seatBudget,
-            rejoin
+            rejoin,
+            disabledGameIds
           );
       seatBudget -= claimed;
       beat.seatsFilled += claimed;
@@ -1773,6 +1828,7 @@ export class HorseFleetManager {
          withheld, and everything after it still runs. */
       const tablesToSeed = cycleWithheld ? [] : orderedTables;
       let tablesSeeded = 0;
+      let disabledGameTables = 0;
       let firstTableWithheld: string | null = null;
       /* THE CLUSTER'S DEMAND IS COUNTED EVERY CYCLE, FULL TABLE OR NOT
          (2026-09-05). `lastEligibleByTable` used to be written only for a
@@ -1799,6 +1855,16 @@ export class HorseFleetManager {
           // A cluster table that is breaking (18.3: no new sit-ins) or closed
           // gets none either; the controller is walking its players out.
           if (table.lifecycle === 'breaking' || table.lifecycle === 'closed') continue;
+          /* A table of a DISABLED game gets none either (18.4: no seeding).
+             Before any seat arithmetic and before the pool is kept for
+             nextEligible, so the game reports 0 eligible - which is exactly
+             what lets fn_cash_cluster_tick mark it dormant and close its
+             empties instead of the fleet refilling them. Counted, and the
+             count reaches the cycle line. */
+          if (isTableOfDisabledGame(table, disabledGameIds)) {
+            disabledGameTables++;
+            continue;
+          }
 
           // Determine currently occupied seats for THIS table from our in-memory map
           const tableOccupiedSeats = allActiveSeats.filter((s) => s.table_id === table.id);
@@ -2477,6 +2543,7 @@ export class HorseFleetManager {
          is indistinguishable from a broken engine. */
       beat.tablesSeen = tables.length;
       beat.tablesSeeded = tablesSeeded;
+      beat.disabledGameTables = disabledGameTables;
       beat.seatsFilled += totalSeated;
       beat.horsesTotal = validHorses.length;
       beat.horsesSeated = seatedHorseCount;
@@ -2763,13 +2830,22 @@ export class HorseFleetManager {
          with nothing refilling it. A slow cycle is a bug in its own right, so
          it announces itself. */
       const cycleSeconds = Math.round((Date.now() - cycleStartedAt) / 1000);
+      /* 18.4 on the same line every cycle: how many cluster tables were left
+         alone because their game is switched off, and whether the switch was
+         actually read. A read failure is the one case where a disabled game
+         may have been seeded, so it is named rather than folded into zero. */
+      const disabledNote =
+        beat.disabledGamesReadFailed > 0
+          ? '; disabled games: READ FAILED, none skipped (fail open)'
+          : `; ${beat.disabledGameTables} table(s) of disabled games skipped`;
       if (this.overrunTicks > 0 || cycleSeconds > 60) {
         console.warn(
           `[HorseFleet] Seeding cycle took ${cycleSeconds}s and ${this.overrunTicks} 30s tick(s) ` +
-            'were dropped while it ran - the floor was not refilled for that long.'
+            'were dropped while it ran - the floor was not refilled for that long' +
+            disabledNote
         );
       } else {
-        console.log(`[HorseFleet] Seeding cycle took ${cycleSeconds}s`);
+        console.log(`[HorseFleet] Seeding cycle took ${cycleSeconds}s${disabledNote}`);
       }
       /* THE PULSE, ONCE, ON EVERY EXIT PATH (Phase 3 contract section 2).
          In `finally` deliberately: the early returns above are the cycles the
@@ -2892,6 +2968,8 @@ export class HorseFleetManager {
             reason: beat.reason,
             withheld_tables: beat.withheldTables,
             overrun_ticks: this.overrunTicks,
+            disabled_game_tables: beat.disabledGameTables,
+            disabled_games_read_failed: beat.disabledGamesReadFailed,
           },
         },
       });
@@ -3230,7 +3308,10 @@ export class HorseFleetManager {
     budget: number = Number.POSITIVE_INFINITY,
     /* The door rules read this cycle (VPIP bar, rejoin floor). Empty when
        the read failed: the database still refuses at the door. */
-    rejoin: RejoinConstraints = EMPTY_REJOIN_CONSTRAINTS
+    rejoin: RejoinConstraints = EMPTY_REJOIN_CONSTRAINTS,
+    /* Games the operator has switched off (18.4), read this cycle. Empty
+       when the read failed: fail open, same as the seeding loop. */
+    disabledGameIds: ReadonlySet<string> = new Set<string>()
   ): Promise<number> {
     let claimed = 0;
     try {
@@ -3270,6 +3351,10 @@ export class HorseFleetManager {
            ordering coincidence between two independent methods, not a rule.
            This is the rule. */
         if (surplusTableIds.has(String(offer.table_id))) continue;
+        /* A TABLE OF A DISABLED GAME IS NOT ANSWERED EITHER (18.4, 2026-09-05).
+           Same set, same predicate as the seeding loop: a horse holding an
+           offer for a switched-off game leaves the seat to its own sweep. */
+        if (isTableOfDisabledGame(table, disabledGameIds)) continue;
 
         const expiresAt = offer.hold_expires_at
           ? Date.parse(offer.hold_expires_at)

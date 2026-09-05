@@ -128,3 +128,83 @@ VPIP; M holding a rejoin floor their roll cannot cover` shows the drops
 
 3. `BUYIN_BELOW_FLOOR` retries in `seatHorse` should also fall to near zero:
    the first call now carries the floor.
+
+## Addendum, same branch - the fleet does not seat a disabled game (18.4)
+
+### What was measured (production, read 2026-09-05 03:45 CDT)
+
+`cash_games.enabled = false` is the operator's switch. OPORD 1.4 18.4:
+"enabled = false: no seeding, no opening; empties close". The controller does
+the closing (`fn_cash_cluster_tick` closes a disabled game's EMPTY tables); the
+fleet had to do the not-seeding, and it did not know the switch existed. Its
+seeding loop skipped a cluster table only when `table.lifecycle` was
+`'breaking'` or `'closed'` and never asked whether the game was enabled.
+
+- Game **"NLH 0.05/0.10 Classic"** (`37ac7634-69dd-434c-b947-bfcf8941ecf4`,
+  club `fade0000-...`) was disabled by an operator on **2026-09-04 16:47 CDT**.
+- Between **01:10 and 03:41** the next morning the fleet seated **five horses**
+  onto its feeder (`dbbc148e-384a-4c38-abb6-833b2d2847ff`), which dealt
+  **76 hands in the last hour**.
+- **30 games** were disabled at the time.
+
+The two halves of 18.4 were fighting: a table the fleet keeps refilling is
+never empty, so "empties close" never got its turn.
+
+### Shipped
+
+- **`server/src/services/HorseDisabledGames.ts`** (new, pure).
+  `buildDisabledGameIds(rows)` and `isTableOfDisabledGame(table, set)`: a
+  table with no `cluster_id` is never "of a disabled game"; an empty set
+  disables nothing.
+- **`HorseFleetManager.seedAllTables`**: once per cycle, beside the
+  rejoin-constraints loader, reads `cash_games.id where enabled = false`
+  through `fetchAllRows` (keyset on `id`, label `HorseFleet.disabledGames`).
+  **Fails OPEN**: a failed or short read sets `beat.disabledGamesReadFailed`
+  and the cycle treats no game as disabled. Failing closed was considered and
+  rejected - it would empty every cluster game on the floor on one bad read,
+  a worse outage than one more cycle of seating on a switched-off game.
+- **Seeding loop**: a cluster table whose game is disabled is skipped exactly
+  like a breaking one - `continue` before any seat arithmetic and before the
+  pool is kept for `nextEligible`, so the game reports **0 eligible**, which
+  is what lets the tick mark it dormant and close its empties. Counted as
+  `disabledGameTables`.
+- **`claimOfferedSeats`**: a seat offer on a table of a disabled game is not
+  answered by a horse (same set, same predicate).
+- **The cycle line and the beat**: every `Seeding cycle took Ns` line now ends
+  `; N table(s) of disabled games skipped`, or `; disabled games: READ FAILED,
+none skipped (fail open)` when the switch could not be read. The pulse
+  (`fn_ca_fleet_state_upsert` detail) carries `disabled_game_tables` and
+  `disabled_games_read_failed`.
+- **`server/src/services/aDisabledGameIsNotSeeded.test.ts`**: the rule proven
+  behaviourally (the disabled feeder is skipped whatever its lifecycle, the
+  enabled game beside it is untouched, a legacy table is never affected, an
+  empty set disables nothing, thirty disabled games skip thirty tables and
+  leave the thirty-first alone), and the seeding path proven wired to it by
+  source contract (loader once per cycle, fail-open shape, skip position
+  before seat arithmetic / `clusterPools.push` / `nextEligible.set`, seat-call
+  gate, one predicate with two callers).
+
+### How to verify (read, never assume)
+
+1. Once the engine carrying this is live, no NEW horse seat should land on a
+   table of a disabled game:
+
+   ```sql
+   SELECT ts.table_id, t.name, g.name AS game, count(*) AS horse_seats, max(ts.created_at)
+     FROM public.table_seats ts
+     JOIN public.tables t ON t.id = ts.table_id
+     JOIN public.cash_games g ON g.id = t.cluster_id
+     JOIN public.profiles p ON p.id = ts.user_id AND p.is_horse
+    WHERE g.enabled = false AND ts.left_at IS NULL
+    GROUP BY 1, 2, 3 ORDER BY 5 DESC;
+   ```
+
+   `max(created_at)` must predate the deploy for every row; as those seats
+   stand up, `fn_cash_cluster_tick` closes the emptied tables
+   (`cash_cluster_events.kind = 'table_closed_disabled'`).
+
+2. The engine log: `[HorseFleet] Seeding cycle took Ns; N table(s) of disabled
+games skipped` with N > 0 while any disabled game still has a live table.
+   `READ FAILED` on that line is the one case a disabled game may have been
+   seeded for a cycle, and it pairs with a Sentry
+   `HorseFleet.disabled_games_load_failed`.

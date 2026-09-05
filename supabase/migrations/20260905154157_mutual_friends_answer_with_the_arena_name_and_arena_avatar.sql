@@ -1,3 +1,8 @@
+-- APPLIED to production 2026-09-05 via the Supabase MCP, which assigned the
+-- version 20260905154157; this file is named for that version so the repo and
+-- supabase_migrations.schema_migrations agree and nothing re-applies it. The
+-- reservation script had handed out 20260905154022, which is free again.
+--
 -- Mutual friends answer with the arena name and the arena avatar.
 --
 -- WHAT WAS WRONG

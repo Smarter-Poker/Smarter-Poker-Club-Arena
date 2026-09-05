@@ -29,6 +29,7 @@
 import { supabase } from '../services/supabase.js';
 import { reportError } from '../services/errorReporter.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { clusterMetrics } from './ClusterMetrics.js';
 
 export const CLUSTER_TICK_MS = 5000;
 
@@ -146,6 +147,7 @@ export class ClusterController {
     // rather than merely silent.
     if (frozen()) {
       summary.skippedFrozen = true;
+      clusterMetrics.recordSkippedFrozen();
       this.lastSummary = summary;
       return summary;
     }
@@ -163,6 +165,7 @@ export class ClusterController {
         new Error(`ClusterController pass still open after ${heldMs}ms; releasing the latch`),
         'ClusterController.tick_stalled'
       );
+      clusterMetrics.recordStalled();
     }
     this.inTick = true;
     this.tickStartedAt = startedAt;
@@ -172,6 +175,8 @@ export class ClusterController {
       if (error) {
         reportError(error, 'ClusterController.worklist_failed');
         summary.errors++;
+        summary.elapsedMs = Date.now() - startedAt;
+        clusterMetrics.recordPass(summary);
         return summary;
       }
       const games = (data ?? []) as ClusterRow[];
@@ -267,6 +272,7 @@ export class ClusterController {
           `[ClusterController] pass over ${summary.games} games took ${summary.elapsedMs}ms (cadence ${CLUSTER_TICK_MS}ms)`
         );
       }
+      clusterMetrics.recordPass(summary, games);
       this.lastSummary = summary;
       return summary;
     } finally {

@@ -587,3 +587,186 @@ groups:
             retried; no player can join until GoTrue answers again. Check
             Supabase status and the engine's outbound connectivity.
           runbook: "docs/changelog/2026-09-04-a-revoked-session-is-not-a-reconnect.md"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # THE CLUSTER CONTROLLER (must-move cash games, OPORD 1.4 section 18) -
+  # 2026-09-05. Three silent failures on 2026-09-04/05 were every one found by
+  # a human reading rows: the controller's pass latch stalled for eleven
+  # minutes with no log line; a deploy reported success and shipped nothing;
+  # the engine died at 04:05 under the 04:00 thaw. The controller had a rich
+  # event log (cash_cluster_events) and a per-pass summary, and nothing that
+  # could page. These series are rendered by the engine's always-on registry
+  # (server/src/cluster/ClusterMetrics.ts, through GameServer.getPrometheus
+  # Metrics) on every scrape - the ENGINE_METRICS flag does not gate them.
+  #
+  # EVERY RULE CARRIES THE BREAK GUARD (CLAUDE.md 13 rule 6). The controller
+  # refuses to tick while the platform is frozen, and the engine restarts
+  # inside the break, so for up to six minutes an hour "no pass" is the
+  # design. `unless on() max_over_time(poker_maintenance_break_active[6m]) == 1`
+  # - `on()` because most of these expressions aggregate their left side away
+  # from {instance, job}, and a plain `unless` would then match no series and
+  # guard nothing. max_over_time reads through the restart's scrape gap.
+  - name: cluster
+    interval: 15s
+    rules:
+      # ── THE ONE THAT WOULD HAVE FIRED ON 2026-09-04 22:10 ──────────────
+      # poker_cluster_last_pass_timestamp_seconds is stamped at the end of
+      # every pass. The cadence is 5 s and a real pass is ~10 s, so a minute
+      # of silence while the engine is scraped is a controller that has
+      # stopped: a held latch, a wedged await, or a leader that never started
+      # it. The series is absent on a standby and until the first pass after
+      # boot, so neither of those can alarm.
+      - alert: ClusterControllerStalled
+        expr: |
+          (time() - poker_cluster_last_pass_timestamp_seconds) > 60
+          and on() up{job="engine_game_server"} == 1
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 1m
+        labels:
+          severity: critical
+          component: cluster
+        annotations:
+          summary: "Cluster controller has not completed a pass for {{ $value | humanizeDuration }}"
+          description: |
+            The must-move controller ticks every 5 s on the leader and stamps
+            this gauge at the end of every pass. It has gone quiet while the
+            engine is up, so no feeder opens, no table breaks and no move is
+            planned until it moves again. On 2026-09-04 this was the inTick
+            latch held by a never-resolving wake; the release ceiling is
+            CLUSTER_TICK_STALL_MS (120 s) and the release is counted below.
+            Read /health -> cluster.lastPassAt and the engine log for
+            '[ClusterController]'.
+          runbook: "docs/changelog/2026-09-05-cluster-metrics-that-page-and-a-deploy-that-proves-itself.md"
+
+      # The latch DID stick and the controller released it itself. Not an
+      # outage - the next pass ran - but every one is a wake or an RPC that
+      # outlived a 2-minute ceiling, and the 11-minute stall began as one.
+      - alert: ClusterPassLatchReleased
+        expr: |
+          sum(increase(poker_cluster_pass_stalled_total[30m])) > 0
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 0m
+        labels:
+          severity: warning
+          component: cluster
+        annotations:
+          summary: "Cluster controller released a stuck pass latch ({{ $value }} in 30 min)"
+          description: |
+            A pass was still open after CLUSTER_TICK_STALL_MS and was reported
+            as ClusterController.tick_stalled. Sentry has the stack. Every
+            await inside a pass is supposed to be bounded (15 s client
+            deadline, the wake never awaited); one that is not is a defect.
+
+      # Per-game tick failures. A blip is one or two on a slow database; ten
+      # in a quarter hour (180 passes) is a game whose fn_cash_cluster_tick
+      # throws every time, and that game's tables neither open nor close.
+      - alert: ClusterPassErrors
+        expr: |
+          sum(increase(poker_cluster_pass_errors_total[15m])) >= 10
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 5m
+        labels:
+          severity: warning
+          component: cluster
+        annotations:
+          summary: "{{ $value }} cluster tick errors in 15 min"
+          description: |
+            fn_cash_clusters_to_tick or fn_cash_cluster_tick is failing.
+            Sentry: ClusterController.worklist_failed / tick_rpc_failed /
+            game_tick_error, with the game_id. A single game failing every
+            pass reaches this in under a minute of passes; check that game's
+            cash_cluster_events for the last thing it did.
+
+      # Nothing ticks at all while there is work. Distinct from the stall:
+      # passes complete, on time, and every one of them fails.
+      - alert: ClusterTickingNothing
+        expr: |
+          poker_cluster_pass_ticked == 0 and poker_cluster_pass_games > 0
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 3m
+        labels:
+          severity: critical
+          component: cluster
+        annotations:
+          summary: "Cluster controller ticked 0 of {{ $value }} games for 3 minutes"
+          description: |
+            The worklist is non-empty and no game's tick succeeded in any
+            pass for three minutes. Every must-move game is unmanaged: seats
+            open, nobody moves; tables empty, nobody breaks them. Almost
+            always the RPC itself (a changed signature, a revoked grant, a
+            timeout on every call) rather than a data problem.
+
+      # ── FEEDERS THAT NEVER FILL ────────────────────────────────────────
+      # A feeder opens on two buyers and is abandoned when its opening hold
+      # expires with nobody seated. Five abandonments in half an hour with
+      # not one feeder going live is the fleet promising seats it never
+      # fills (2026-09-05, "the fleet keeps the promise that opened a
+      # feeder") - the buyers the census counted are not arriving.
+      - alert: ClusterFeedersAbandoned
+        expr: |
+          sum(increase(poker_cluster_actions_total{kind="feeder_abandoned"}[30m])) >= 5
+          and on() (sum(increase(poker_cluster_actions_total{kind="feeder_live"}[30m])) or vector(0)) == 0
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 0m
+        labels:
+          severity: warning
+          component: cluster
+        annotations:
+          summary: "{{ $value }} feeders abandoned in 30 min and none went live"
+          description: |
+            Feeders are opening on counted demand and closing unfilled. The
+            horse census (eligibleHorseCount) says buyers exist; the seeder
+            is not seating them on the feeder, or the opening hold is shorter
+            than the seeder's cycle. cash_cluster_events kind=feeder_opened
+            followed by feeder_abandoned names the tables.
+
+      # ── MOVES THAT EXPIRE ──────────────────────────────────────────────
+      # A planned move is executed by the engine at the end of the player's
+      # hand. One that expires was planned by the SQL and never executed by
+      # the engine: the table has no engine, the hand never ended, or the
+      # move handler is broken. Players told "Moving in N hands" who never
+      # move is the visible symptom.
+      - alert: ClusterMovesExpiring
+        expr: |
+          sum(increase(poker_cluster_actions_total{kind="moves_expired"}[30m])) >= 5
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 0m
+        labels:
+          severity: warning
+          component: cluster
+        annotations:
+          summary: "{{ $value }} planned must-moves expired unexecuted in 30 min"
+          description: |
+            fn_cash_cluster_tick planned moves (kind=moves_planned) that the
+            engine did not carry out before their deadline. Compare
+            moves_planned against moves_expired on the dashboard; check the
+            engine log for the move announcement at hand start and the
+            execution at hand end on the affected tables.
+
+      # ── THE PASS IS SLOW ───────────────────────────────────────────────
+      # The brief for this rule said p95 > 3 s. The measured norm is ~10 s a
+      # pass (78 games, eight in flight, ~0.85 s per tick RPC from Hetzner;
+      # docs/changelog/2026-09-05-cluster-autonomy-live-audit.md BUG 3), so
+      # 3 s would fire permanently and be muted within the week. 20 s is
+      # twice the norm and four cadences: a database that has slowed under
+      # the controller, or a worklist that outgrew the pool, and either way a
+      # seat opening being noticed late.
+      - alert: ClusterPassSlow
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(poker_cluster_pass_duration_seconds_bucket[10m]))
+          ) > 20
+          and on() sum(rate(poker_cluster_pass_duration_seconds_count[10m])) > 0
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: warning
+          component: cluster
+        annotations:
+          summary: "Cluster pass p95 is {{ $value | humanizeDuration }} (limit 20s, norm ~10s)"
+          description: |
+            The controller is spending longer than its own cadence on every
+            pass. Each game's tick is ~0.85 s round trip from Hetzner; the
+            pool is CLUSTER_TICK_CONCURRENCY. Either the worklist grew past
+            what eight in flight can cover in 5 s, or PostgREST is slow.
+            /health -> cluster.elapsedMs and cluster.games say which.

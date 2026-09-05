@@ -19,6 +19,7 @@ import {
 } from './services/supabase.js';
 import { HorseFleetManager } from './services/HorseFleetManager.js';
 import { ClusterController } from './cluster/ClusterController.js';
+import { clusterMetrics } from './cluster/ClusterMetrics.js';
 import {
   TournamentRecurringService,
   mttPrestartHorseTarget,
@@ -1340,6 +1341,12 @@ export class GameServer {
       // The stats pipeline: index lag, trigger gaps, the money repair cursor
       // and the last witness audit. null until the first read completes.
       stats: this.statsHealth.publish(),
+      // THE CLUSTER CONTROLLER'S LAST PASS (2026-09-05). On 2026-09-04 its
+      // latch stalled for eleven minutes with no log line; the only witness
+      // was cash_cluster_events read by hand. `lastPassAt` ageing while the
+      // leader is up is that stall, visible from outside the process. null
+      // on a standby: the controller runs on the leader only.
+      cluster: this.clusterController.isRunning ? clusterMetrics.healthSnapshot() : null,
       // ONE RAKE SPEC (R7): both checksums and whether they last agreed.
       // Informational: a drift alerts, it never holds a table.
       rakeSpec: rakeSpecDriftState(),

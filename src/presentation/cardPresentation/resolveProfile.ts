@@ -41,7 +41,14 @@ export function resolveCardAnimationProfile(input: ResolveProfileInput): CardAni
      presentation with markup to mount and tear down. Both answers put the
      correct card on the board; `off` is simply the cheaper way to say it. */
   if (input.focus === 'hidden') return P.off;
-  if (input.reducedMotion) return P.reduced;
+  /* REDUCED MOTION DOES NOT TAKE THE PERK AWAY (2026-09-05). A viewer who is
+     owed the squeeze still gets the hold and the interaction; only the 3D
+     turn collapses. See allInReduced in profiles.ts - measured on an emulated
+     iPhone, this branch used to hand them `reduced`, which has no hold at
+     all, so there was nothing on the felt to squeeze. */
+  if (input.reducedMotion) {
+    return input.allIn && input.squeeze === true ? P.allInReduced : P.reduced;
+  }
   /* VIP ALL-IN SQUEEZE 2026-09-05: BOTH, never one. `allIn` alone used to
      hold the card face down for everyone at the table; Dan's rule is that
      the squeeze is presented only to a player who is all-in AND holds the

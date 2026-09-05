@@ -61,8 +61,18 @@ const okRpc = (actions: unknown[] = []) =>
           errors: 0,
           rested: 0,
           results: [
-            { game_id: 'g1', main1_table_id: 't1', enabled: true, result: { ok: true, actions, seated_total: 0 } },
-            { game_id: 'g2', main1_table_id: 't2', enabled: true, result: { ok: true, actions, seated_total: 0 } },
+            {
+              game_id: 'g1',
+              main1_table_id: 't1',
+              enabled: true,
+              result: { ok: true, actions, seated_total: 0 },
+            },
+            {
+              game_id: 'g2',
+              main1_table_id: 't2',
+              enabled: true,
+              result: { ok: true, actions, seated_total: 0 },
+            },
           ],
         },
         error: null,
@@ -126,7 +136,10 @@ describe('LAW 3 - the released latch is counted', () => {
           first = false;
           return new Promise(() => {}); // the wedged pass
         }
-        return { data: { ok: true, games: 0, ticked: 0, errors: 0, rested: 0, results: [] }, error: null };
+        return {
+          data: { ok: true, games: 0, ticked: 0, errors: 0, rested: 0, results: [] },
+          error: null,
+        };
       }
       return { data: { ok: true }, error: null };
     }) as unknown as Rpc;

@@ -328,7 +328,18 @@ with main, and a timeout leaves the PR open for you to merge by hand.
 - Never run `vercel deploy` or `vercel --prod` in the Club Arena directory
 - Never push to or test on `club-arena.vercel.app`
 - Never call any deploy hook URL
-- Never add iframe code (`window.parent`, `postMessage`, `ClubArenaEmbed`)
+- Never add iframe code (`window.parent`, `postMessage`, `ClubArenaEmbed`).
+  **The one sanctioned iframe is `src/components/table/HubFrame.tsx`** (Dan's
+  ruling 2026-09-04): a same-origin frame that shows a World Hub page
+  (Social, Media, Trivia, Training, the Hub itself) INSIDE a "+" tab, so the
+  tab strip and every running table stay mounted - "it's basically opening
+  up a new browser tab internally, it shouldn't be limited to just poker".
+  It uses no postMessage and no `window.parent` (same origin lets it read the
+  frame's location and listen on its document directly), it is the only
+  `<iframe>` element in `src/`, and `tests/hub-tab-is-a-browser-tab.law.test.ts`
+  keeps it that wide. Never embed Club Arena inside anything, never bridge with
+  postMessage, and never add a second frame: the rule is unchanged except for
+  that one file. `docs/changelog/2026-09-04-the-plus-tab-is-a-browser-tab.md`.
 - Never add `VITE_` prefixed secret keys (use server-side API routes)
 - Never re-create `public/hub/club-arena/` in the World Hub. It was DELETED on
   2026-09-02 when Club Arena moved to its own origin, and Next.js serves
@@ -579,7 +590,9 @@ Club Arena is a Vite + React SPA inside the smarter.poker Next.js app:
 - Routing: SPA fallback rewrites unmatched routes to `index.html`
 - Auth: Same-origin Supabase session via `smarter-poker-auth` localStorage key
 
-NO iframe. NO postMessage. NO proxy. Everything from smarter.poker.
+NO iframe. NO postMessage. NO proxy. Everything from smarter.poker. (The one
+sanctioned iframe, `HubFrame`, frames smarter.poker's OWN World Hub pages
+inside a "+" tab - same origin, no bridge; see 1.3.)
 
 ---
 

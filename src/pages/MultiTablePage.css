@@ -128,6 +128,56 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
+   HUB TAB (Dan 2026-09-04) — a World Hub page in a slot, "basically opening up
+   a new browser tab internally". See src/components/table/HubFrame.tsx.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* The frame IS the slot: edge to edge, no border, the same black as the shell
+   behind it so the first paint before the hub page arrives is not a white
+   flash between two black surfaces. `display:block` kills the inline
+   baseline gap that would otherwise leave a strip of shell under it. */
+.multi-table-page__hub-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #000;
+  color-scheme: dark;
+}
+
+/* Tile view shows a card for a hub tab rather than a scaled-down web page;
+   tapping the cell (the grid's own handler) opens the tab full-size. */
+.multi-table-page__hub-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  color: rgba(255, 255, 255, 0.85);
+  text-align: center;
+}
+
+.multi-table-page__hub-tile-kicker {
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(0, 212, 255, 0.85);
+}
+
+.multi-table-page__hub-tile-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.multi-table-page__hub-tile-hint {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
    TABLE SLOT — Each table takes full viewport width
    ───────────────────────────────────────────────────────────────────────────── */
 
@@ -648,7 +698,11 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
    absolutely-positioned back-pill at top:10px. Push the pill clear of the bar
    so the two do not stack on the same pixels. */
 .multi-table-page__lobby-tab--tournament .multi-table-page__lobby-back {
-  top: 62px;
+  /* Dan 2026-09-04: the GlobalHeader now renders at the top of the tab, in
+     flow, above the take-seat bar. Its measured height is published on the
+     tab element by the header itself (GlobalHeader `inTab`), so the pill sits
+     below both rather than on top of the artwork. */
+  top: calc(var(--ca-in-tab-header-height, 0px) + 62px);
 }
 
 /* Floating "back to lobby" pill shown while a lobby tab renders

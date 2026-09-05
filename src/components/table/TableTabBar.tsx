@@ -473,8 +473,11 @@ export function TableTabBar({
     [onTabSelect]
   );
 
-  /** A LOBBY tab is a placeholder, not a seat — no engine, no chips. */
-  const isLobbyId = (id: string) => id.startsWith('lobby:');
+  /** A LOBBY tab is a placeholder, not a seat — no engine, no chips. A HUB
+   *  tab (Dan 2026-09-04: a World Hub page in a slot) is the same for every
+   *  purpose this strip has: nothing to sit out, mute or leave. */
+  const isLobbyId = (id: string) => id.startsWith('lobby:') || id.startsWith('hub:');
+  const isHubId = (id: string) => id.startsWith('hub:');
 
   /* handleClose removed 2026-08-26 (Dan: no × inside the pills) — the quick
      menu's Leave Table / Close Lobby emits the same FORCE_LEAVE_TABLE. */
@@ -1054,7 +1057,7 @@ export function TableTabBar({
                 {onQuickAction &&
                   (!isLobby || tabs.length > 1) &&
                   item(
-                    isLobby ? 'Close Lobby' : 'Leave Table',
+                    isHubId(tab.id) ? 'Close Tab' : isLobby ? 'Close Lobby' : 'Leave Table',
                     () => onQuickAction(tab.id, 'leave'),
                     true
                   )}
@@ -1077,9 +1080,11 @@ export function TableTabBar({
           sections={menuSections}
           position="bottom-left"
           tableName={
-            activeIsLobby
-              ? 'Lobby'
-              : formatGameTitle(tabs.find((t) => t.id === activeTabId)?.name) || 'Table'
+            isHubId(activeTabId)
+              ? tabs.find((t) => t.id === activeTabId)?.name || 'Hub'
+              : activeIsLobby
+                ? 'Lobby'
+                : formatGameTitle(tabs.find((t) => t.id === activeTabId)?.name) || 'Table'
           }
           onOpenIdentity={activeIsLobby ? undefined : handleOpenIdentity}
         />

@@ -45,12 +45,17 @@ import { gameCode, gameCodeFromName } from '../utils/gameCode';
 import { stakesLabel } from '../lib/bettingStructure';
 import { swipeTargetIndex } from '../utils/swipeTarget';
 import {
+  HUB_TAB_PREFIX,
   LOBBY_TAB_PREFIX,
   isLobbyLike,
+  isPageTab,
   isTournamentRow,
   pickObserveSlot,
   pruneStaleSeatedTabs,
 } from '../utils/tabSlots';
+import { hubTabTitle, isHubPath } from '../utils/hubTab';
+import { HubFrame, type HubFrameSwipeHandlers } from '../components/table/HubFrame';
+import GlobalHeader from '../components/navigation/GlobalHeader';
 import { soundService, haptic } from '../services/SoundService';
 import { setSitOut, submitAction } from '../services/GameServerAPI';
 import { sessionStatsService } from '../services/SessionStatsService';
@@ -167,7 +172,18 @@ interface TableInstance {
    * is the only guard that cannot itself rot. It is also what found the third
    * site: tsc named it in one run.
    */
-  kind: 'table' | 'lobby';
+  kind: 'table' | 'lobby' | 'hub';
+  /**
+   * Dan 2026-09-04: a HUB tab - "basically opening up a new browser tab
+   * internally, it shouldn't be limited to just poker." The World Hub page
+   * (`/hub`, `/hub/social`, `/hub/media`, `/hub/trivia`, `/hub/training`, ...)
+   * this tab is showing, as path + search. It is the frame's LAST KNOWN
+   * location, kept current by HubFrame as the player moves around inside the
+   * page, so the pill is named for where they actually are and a remount
+   * (tile view and back) reopens the page they were on rather than the one
+   * they started from. Only meaningful when `kind === 'hub'`.
+   */
+  hubUrl?: string;
   /**
    * Does the hero hold an ACTIVE SEAT at this table right now?
    *
@@ -349,6 +365,44 @@ const readDrillIn = (): InTabTournamentTarget[] | null => {
 const isLobbyTab = isLobbyLike;
 
 /**
+ * "Is this a live table?" - the question every count, dock, alert, sound and
+ * URL decision in this file is really asking. It used to be the negation of
+ * `isLobbyTab`,
+ * which was true exactly as long as a lobby tab was the only kind of tab that
+ * was not a felt. Hub tabs (Dan 2026-09-04) are the second kind, so the
+ * question is asked by name now and the answer covers both.
+ */
+const isTableTab = (t: TableInstance): boolean => !isPageTab(t);
+const isHubTab = (t: TableInstance): boolean => t.kind === 'hub';
+
+/** A fresh hub tab on `path`. `Date.now()` in the id, like a lobby tab, so two
+ *  hub tabs can coexist - two browser tabs on two hub pages is a normal thing
+ *  to want. */
+const makeHubTab = (path: string): TableInstance => ({
+  id: `${HUB_TAB_PREFIX}${Date.now()}`,
+  name: hubTabTitle(path),
+  stakes: '',
+  isMyTurn: false,
+  pot: 0,
+  kind: 'hub',
+  hubUrl: path,
+});
+
+/** What the swipe handlers read from a touch event - the part React's synthetic
+ *  TouchEvent and the DOM's own TouchEvent have in common. */
+type SwipeTouchEvent = { touches: ArrayLike<{ clientX: number; clientY: number }> };
+
+/** A fresh, empty lobby tab (the club lobby, no drill-in). */
+const makeLobbyTab = (): TableInstance => ({
+  id: `${LOBBY_TAB_PREFIX}${Date.now()}`,
+  name: 'Lobby',
+  stakes: '',
+  isMyTurn: false,
+  pot: 0,
+  kind: 'lobby',
+});
+
+/**
  * Dan 2026-08-21: "4-table cap ... Desktop could reasonably run 6-8."
  *
  * Six on a desktop-sized screen, four on a phone - four 2x2 tiles is already
@@ -389,7 +443,7 @@ const dockStateFor = (
   lastActiveId?: string
 ) => {
   if (!hidden) return { kind: 'none' as const };
-  const live = tabs.filter((t) => !isLobbyTab(t));
+  const live = tabs.filter((t) => isTableTab(t));
   if (live.length === 0) return { kind: 'none' as const };
   /**
    * TWO KINDS OF CLOCK CAN RUN OUT WHILE YOU ARE LOOKING SOMEWHERE ELSE.
@@ -982,7 +1036,7 @@ export default function MultiTablePage() {
           heroSeatMoveBusyRef.current = true;
           void (async () => {
             try {
-              const tabIds = tablesRef.current.filter((t) => !isLobbyTab(t)).map((t) => t.id);
+              const tabIds = tablesRef.current.filter((t) => isTableTab(t)).map((t) => t.id);
               const { data: rows, error: rowsErr } = await supabase
                 .from('tables')
                 .select(
@@ -1001,7 +1055,7 @@ export default function MultiTablePage() {
                 ? tablesRef.current.find(
                     (t) =>
                       t.id !== newId &&
-                      !isLobbyTab(t) &&
+                      isTableTab(t) &&
                       rows?.some((r) => r.id === t.id && r.tournament_id === tourId)
                   )
                 : undefined;
@@ -1173,7 +1227,13 @@ export default function MultiTablePage() {
   useMasterBusSubscription(
     'TABLE_MENU_ACTION',
     (payload: { tableId?: string; action?: string }) => {
-      if (!payload?.tableId || !payload.tableId.startsWith(LOBBY_TAB_PREFIX)) return;
+      if (
+        !payload?.tableId ||
+        !(
+          payload.tableId.startsWith(LOBBY_TAB_PREFIX) || payload.tableId.startsWith(HUB_TAB_PREFIX)
+        )
+      )
+        return;
       if (payload.action !== 'FORCE_LEAVE_TABLE' && payload.action !== 'LEAVE_TABLE') return;
       const prev = tablesRef.current;
       const idx = prev.findIndex((t) => t.id === payload.tableId);
@@ -1432,7 +1492,7 @@ export default function MultiTablePage() {
           seated: t.seated,
           // TablePage's value is authoritative; until it lands, recover what
           // the table NAME says so the box is never unlabeled.
-          gameCode: t.gameCode || gameCodeFromName(t.name),
+          gameCode: isTableTab(t) ? t.gameCode || gameCodeFromName(t.name) : '',
           ...(() => {
             // A non-turn decision (discard / insurance / RIT) and a burning
             // time bank each get their own countdown, computed from the same
@@ -1488,7 +1548,7 @@ export default function MultiTablePage() {
   const urgentAlertedRef = useRef<Map<string, number>>(new Map());
   useEffect(() => {
     for (const t of tables) {
-      if (isLobbyTab(t)) continue;
+      if (!isTableTab(t)) continue;
       const d = parseTimed(t.decision);
       const deadline =
         d?.at ?? (t.isMyTurn && t.turnDeadlineMs !== undefined ? t.turnDeadlineMs : undefined);
@@ -1603,7 +1663,7 @@ export default function MultiTablePage() {
     let badged = false;
 
     const apply = () => {
-      const live = tablesRef.current.filter((t) => !isLobbyTab(t));
+      const live = tablesRef.current.filter((t) => isTableTab(t));
       const urgent = live
         .filter((t) => t.isMyTurn)
         .sort((a, b) => (a.turnDeadlineMs ?? Infinity) - (b.turnDeadlineMs ?? Infinity))[0];
@@ -1720,7 +1780,7 @@ export default function MultiTablePage() {
   };
 
   const handleSitOutAll = useCallback(async () => {
-    const live = tablesRef.current.filter((t) => !isLobbyTab(t) && t.seated);
+    const live = tablesRef.current.filter((t) => isTableTab(t) && t.seated);
     if (live.length === 0) return;
     const results = await Promise.all(live.map((t) => setSitOut(t.id, true)));
     const ok = results.filter((r) => r?.success).length;
@@ -1741,7 +1801,7 @@ export default function MultiTablePage() {
   }, [toast]);
 
   const handleBackAll = useCallback(async () => {
-    const live = tablesRef.current.filter((t) => !isLobbyTab(t) && t.seated);
+    const live = tablesRef.current.filter((t) => isTableTab(t) && t.seated);
     if (live.length === 0) return;
     const results = await Promise.all(live.map((t) => setSitOut(t.id, false)));
     const ok = results.filter((r) => r?.success).length;
@@ -1802,7 +1862,7 @@ export default function MultiTablePage() {
        real table plus the lobby tab read as 2 and the chip appeared during
        single-table play. Count actual game tables only, here AND inside
        compute() (a tab closing between ticks must retire the chip too). */
-    const liveTableCount = tables.filter((t) => !isLobbyTab(t)).length;
+    const liveTableCount = tables.filter((t) => isTableTab(t)).length;
     /* Dan 2026-08-30: "THE PROFIT COUNTER NUMBER SHOULD NEVER WORK OR ENGAGE
        OR TRACK ANYTHING FOR TOURNAMENTS, THIS IS A 'CASHGAME ONLY FEATURE'."
        Tournament tables are excluded from the aggregation entirely - a
@@ -1815,8 +1875,8 @@ export default function MultiTablePage() {
       return;
     }
     const compute = () => {
-      const live = tablesRef.current.filter((t) => !isLobbyTab(t) && !t.isTournament);
-      if (live.length < 1 || tablesRef.current.filter((t) => !isLobbyTab(t)).length < 2) {
+      const live = tablesRef.current.filter((t) => isTableTab(t) && !t.isTournament);
+      if (live.length < 1 || tablesRef.current.filter((t) => isTableTab(t)).length < 2) {
         setSessionAgg(null);
         return;
       }
@@ -1968,7 +2028,7 @@ export default function MultiTablePage() {
       const target = tables[idx];
       if (!target) return;
 
-      if (!isLobbyTab(target)) {
+      if (isTableTab(target)) {
         navigate(`/table/${target.id}${tableQuery(target)}`, { replace: true });
         return;
       }
@@ -1989,8 +2049,8 @@ export default function MultiTablePage() {
        */
       if (!hidden) return;
       const host =
-        tables.find((t) => t.id === lastActiveTableIdRef.current && !isLobbyTab(t)) ??
-        tables.find((t) => !isLobbyTab(t));
+        tables.find((t) => t.id === lastActiveTableIdRef.current && isTableTab(t)) ??
+        tables.find((t) => isTableTab(t));
       if (!host) return; // lobby tabs only: nothing to borrow, nothing to do
       pendingTabIndexRef.current = idx;
       navigate(`/table/${host.id}${tableQuery(host)}`, { replace: true });
@@ -2156,7 +2216,7 @@ export default function MultiTablePage() {
     let club = homeClubIdRef.current;
     let tableClubId: string | null = null;
     {
-      const active = tablesRef.current.filter((t) => !isLobbyTab(t));
+      const active = tablesRef.current.filter((t) => isTableTab(t));
       const cached = active.map((t) => clubLookupCacheRef.current.get(t.id)).find(Boolean);
       if (cached) {
         tableClubId = cached;
@@ -2465,7 +2525,7 @@ export default function MultiTablePage() {
    */
   useEffect(() => {
     const unresolved = tables
-      .filter((t) => !isLobbyTab(t))
+      .filter((t) => isTableTab(t))
       .map((t) => t.id)
       .filter((id) => !clubLookupCacheRef.current.has(id));
     if (unresolved.length === 0) return;
@@ -2480,7 +2540,7 @@ export default function MultiTablePage() {
         }
         const firstKnown =
           tables
-            .filter((t) => !isLobbyTab(t))
+            .filter((t) => isTableTab(t))
             .map((t) => clubLookupCacheRef.current.get(t.id))
             .find(Boolean) ?? null;
         if (cancelled) return;
@@ -2610,9 +2670,123 @@ export default function MultiTablePage() {
    * exactly like a schedule row in ClubHomePage. See InTabLobbyContext.tsx for
    * why a DOM click-capture could never do this job.
    */
+  /**
+   * ─── HUB TABS: THE "+" TAB IS AN INTERNAL BROWSER TAB (Dan 2026-09-04) ────
+   *
+   * Dan, verbatim: "when you click the + button from inside the club lobby i
+   * should be able to go anywhere, its basically opening up a new browser tab
+   * internally, it shouldn't be limited to just poker, if i open the + tab, go
+   * to the lobby then hit the hub button and go to social, media, or trivia or
+   * training or any other world hub page, I should still see my action bar, I
+   * should still be able to swipe right or left to move back and forth between
+   * pages."
+   *
+   * The Hub button lives in GlobalHeader, which the "+" lobby tab now renders
+   * at its top (see renderLobbyTab). In a tab, the header hands hub
+   * destinations here instead of `window.location.href`, which would have
+   * unmounted this container and every table in it. The tab ON SCREEN becomes
+   * a hub tab IN PLACE - same index, same pill position - because the player
+   * pressed a button inside that tab, and a browser tab navigates itself
+   * rather than spawning a sibling. Everything else in the strip is untouched.
+   *
+   * Only a lobby tab can turn into a hub tab: a table tab is a seat, and a
+   * hub tab already is one (the frame navigates itself). If the tab on screen
+   * is neither, this returns false and the header falls back to the real
+   * navigation it always did, so the button is never dead.
+   */
+  const openHubTab = useCallback((path: string): boolean => {
+    if (!isHubPath(path)) return false;
+    const prev = tablesRef.current;
+    const idx = activeIndexRef.current;
+    const cur = prev[idx];
+    if (!cur || !isLobbyTab(cur)) return false;
+    const fresh = makeHubTab(path);
+    setTables((tabs) => tabs.map((t) => (t.id === cur.id ? fresh : t)));
+    return true;
+  }, []);
+
+  /**
+   * The frame moved within the World Hub (Next.js pushState, or a full load):
+   * rename the pill and remember the page. Identity is preserved, so the
+   * frame is NOT remounted by this - HubFrame reads `hubUrl` once, at mount.
+   */
+  const handleHubLocationChange = useCallback((tabId: string, path: string) => {
+    setTables((tabs) =>
+      tabs.map((t) =>
+        t.id === tabId && t.hubUrl !== path ? { ...t, hubUrl: path, name: hubTabTitle(path) } : t
+      )
+    );
+  }, []);
+
+  /**
+   * The frame is heading back INTO Club Arena (`/hub/club-arena/...`). Dan's
+   * ruling 2026-09-04: convert the tab in place, never let a second copy of
+   * this app boot inside the first. `caPath` is the destination relative to
+   * this SPA's basename.
+   *
+   *   /tournaments/:id  -> a lobby tab drilled into that event (the in-tab
+   *                        renderer this container already has);
+   *   /table/:id        -> a lobby tab, then a real navigation to the table,
+   *                        which the route effect converts in place - the
+   *                        same path sitting down from the lobby has always
+   *                        taken;
+   *   anything else     -> a lobby tab; and if the destination is not the
+   *                        lobby itself, a real navigation to it, under the
+   *                        pinned strip, exactly as the club bottom nav does.
+   */
+  const handleHubClubArenaTarget = useCallback(
+    (tabId: string, caPath: string) => {
+      const prev = tablesRef.current;
+      const idx = prev.findIndex((t) => t.id === tabId);
+      if (idx === -1) return;
+      const tournament = tournamentTargetFromTo(caPath);
+      const lobby: TableInstance = tournament
+        ? {
+            ...makeLobbyTab(),
+            lobbyTournamentId: tournament.tournamentId,
+            lobbyTournamentStack: [tournament],
+          }
+        : makeLobbyTab();
+      setTables((tabs) => tabs.map((t) => (t.id === tabId ? lobby : t)));
+      if (tournament) return;
+      const pathname = caPath.split('?')[0] ?? '/';
+      const isLobbyItself =
+        pathname === '/' ||
+        pathname === '' ||
+        /^\/clubs\/[^/]+\/?$/.test(pathname) ||
+        pathname === '/lobby' ||
+        pathname === '/home';
+      if (isLobbyItself) return;
+      navigate(caPath);
+    },
+    [navigate]
+  );
+
+  /**
+   * The in-tab header's Back: up the drill-in first, the browser's Back only
+   * when there is nothing left to pop (see InTabLobbyNav.goBack).
+   */
+  const goBackInTab = useCallback(() => {
+    const cur = tablesRef.current[activeIndexRef.current];
+    if (cur && isLobbyTab(cur) && (cur.lobbyTournamentStack?.length ?? 0) > 0) {
+      setTables((tabs) => tabs.map((t) => (t.id === cur.id ? popLobbyTournament(t) : t)));
+      return;
+    }
+    window.history.back();
+  }, []);
+
+  /* The swipe handlers, reachable from inside a hub frame's document. A ref
+     rather than the callbacks themselves so HubFrame's one-time listener
+     attachment never goes stale as `tables` and `activeIndex` change. */
+  const hubSwipeRef = useRef<HubFrameSwipeHandlers>({
+    start: () => {},
+    move: () => {},
+    end: () => {},
+  });
+
   const inTabLobbyNav = useMemo<InTabLobbyNav>(
-    () => ({ openTournament: openTournamentTab }),
-    [openTournamentTab]
+    () => ({ openTournament: openTournamentTab, openHub: openHubTab, goBack: goBackInTab }),
+    [openTournamentTab, openHubTab, goBackInTab]
   );
 
   // ─── In-tab lobby rendering (Dan 2026-08-19) ─────────────────────────
@@ -2679,12 +2853,12 @@ export default function MultiTablePage() {
    */
   const takeSeatTarget = (() => {
     /* Dan 2026-08-20: "take seat button must never exist if you're not active
-       on a table." This filtered on `!isLobbyTab(t)` — i.e. any tab that is not
+       on a table." This filtered on `isTableTab(t)` — i.e. any tab that is not
        the lobby — which counts spectator tabs and bare /table/:id deep links as
        seats. `seated` is set only by TABLE_SEATED and by the table_seats
        rebuild, so an undefined value means "no evidence of a seat" and the bar
        correctly does not render. */
-    const live = tables.filter((t) => !isLobbyTab(t) && t.seated === true);
+    const live = tables.filter((t) => isTableTab(t) && t.seated === true);
     if (live.length === 0) return null;
     // Same preference order as the global dock, for one reason: a player who
     // has learnt what "return" does at the dock must not find it means
@@ -2791,6 +2965,21 @@ export default function MultiTablePage() {
     /* No provider here any more — the whole container is inside one now (see
        the top-level return). A second, identical provider nested inside the
        first only invites the two to drift apart later. */
+    /**
+     * THE GLOBAL HEADER RIDES INSIDE THE "+" TAB (Dan 2026-09-04).
+     *
+     * On /table/* AppLayout hides the GlobalHeader, so the lobby a player
+     * opened with "+" had no hamburger, no Back and - the one that matters
+     * here - no Hub button. Dan's flow is "open the + tab, go to the lobby,
+     * hit the hub button and go to social, media, trivia, training", which
+     * needs the button to exist there. So the header renders at the top of
+     * the tab, under the strip, in `inTab` mode: its Hub / VIP / Messages taps
+     * become hub tabs in place via InTabLobbyNav.openHub instead of
+     * `window.location`, and it neither claims `#global-header` nor publishes
+     * `--ca-global-header-height`, because both of those describe the REAL
+     * header's place on the page and a copy inside a scroll container must not
+     * speak for it (the ticker and the pinned strip read them).
+     */
     return (
       <>
         {top ? (
@@ -2803,6 +2992,7 @@ export default function MultiTablePage() {
             className="multi-table-page__lobby-tab multi-table-page__lobby-tab--tournament"
             onClickCapture={handleLobbyLinkCapture}
           >
+            <GlobalHeader inTab />
             {renderTakeSeatBar()}
             <button
               className="multi-table-page__lobby-back"
@@ -2827,6 +3017,7 @@ export default function MultiTablePage() {
           </div>
         ) : (
           <div className="multi-table-page__lobby-tab" onClickCapture={handleLobbyLinkCapture}>
+            <GlobalHeader inTab />
             {renderTakeSeatBar()}
             {homeClubId ? <ClubHomePage clubIdOverride={homeClubId} /> : <HomePage />}
           </div>
@@ -2951,8 +3142,12 @@ export default function MultiTablePage() {
   }, [tables.length, hidden, handleReorder, quickJoin.open, showSessionAgg]);
 
   // ─── Swipe Gesture Handling ──────────────────────────────────────────
+  /* Typed on the shape both React's synthetic TouchEvent and the native one
+     share, because a hub frame's document delivers the NATIVE kind (see
+     HubFrame): a swipe that starts on a World Hub page has to move the strip
+     exactly as one that starts on the felt does. */
   const handleTouchStart = useCallback(
-    (e: React.TouchEvent) => {
+    (e: SwipeTouchEvent) => {
       if (tables.length <= 1) return;
       const touch = e.touches[0];
       touchStartRef.current = {
@@ -2965,7 +3160,7 @@ export default function MultiTablePage() {
   );
 
   const handleTouchMove = useCallback(
-    (e: React.TouchEvent) => {
+    (e: SwipeTouchEvent) => {
       if (!touchStartRef.current || tables.length <= 1) return;
       const touch = e.touches[0];
       const dx = touch.clientX - touchStartRef.current.x;
@@ -3019,7 +3214,7 @@ export default function MultiTablePage() {
       // Same URL agreement as handleTabSelect: a swipe is a tab switch by
       // thumb, and the address bar must follow the felt (Dan 2026-08-28).
       const target = tables[newIndex];
-      if (target && !isLobbyTab(target)) {
+      if (target && isTableTab(target)) {
         navigate(`/table/${target.id}${tableQuery(target)}`, { replace: true });
       }
     }
@@ -3027,6 +3222,15 @@ export default function MultiTablePage() {
     setSwipeOffset(0);
     touchStartRef.current = null;
   }, [swipeOffset, activeIndex, tables, trackedTimeout, navigate]);
+
+  /* Keep the hub frames' view of the swipe current (see hubSwipeRef). */
+  useEffect(() => {
+    hubSwipeRef.current = {
+      start: handleTouchStart,
+      move: handleTouchMove,
+      end: handleTouchEnd,
+    };
+  }, [handleTouchStart, handleTouchMove, handleTouchEnd]);
 
   // ─── Handle route-based table ID changes ─────────────────────────────
   // Dan 2026-08-19: the cash-game cards in the in-tab lobby are plain
@@ -3114,7 +3318,7 @@ export default function MultiTablePage() {
        */
       notifyCapReached('route');
       const current = prev[activeIndexRef.current] ?? prev[0];
-      if (current && !isLobbyTab(current))
+      if (current && isTableTab(current))
         navigate(`/table/${current.id}${tableQuery(current)}`, { replace: true });
     }
   }, [routeTableId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -3149,8 +3353,8 @@ export default function MultiTablePage() {
     const open = tablesRef.current;
     if (open.length === 0) return;
     const returnTo =
-      open.find((t) => t.id === lastActiveTableIdRef.current && !isLobbyTab(t)) ??
-      open.find((t) => !isLobbyTab(t));
+      open.find((t) => t.id === lastActiveTableIdRef.current && isTableTab(t)) ??
+      open.find((t) => isTableTab(t));
     // Nothing but lobby tabs open: there is no /table URL to put back, and the
     // container would hide itself again the moment we redirected. Leave it.
     if (!returnTo) return;
@@ -3184,8 +3388,8 @@ export default function MultiTablePage() {
     const open = tablesRef.current;
     if (open.length === 0) return;
     const returnTo =
-      open.find((t) => t.id === lastActiveTableIdRef.current && !isLobbyTab(t)) ??
-      open.find((t) => !isLobbyTab(t));
+      open.find((t) => t.id === lastActiveTableIdRef.current && isTableTab(t)) ??
+      open.find((t) => isTableTab(t));
     if (!returnTo) return;
     masterBus.emit('OPEN_LOBBY_TAB', {});
     navigate(`/table/${returnTo.id}${tableQuery(returnTo)}`, { replace: true });
@@ -3262,7 +3466,7 @@ export default function MultiTablePage() {
   useEffect(() => {
     if (hidden) return;
     const cur = tables[activeIndex];
-    if (cur && !isLobbyTab(cur)) {
+    if (cur && isTableTab(cur)) {
       lastActiveTableIdRef.current = cur.id;
       // Audit round 3: survive a reload. Only the ID is stored - the tab
       // itself is always rebuilt from server truth (table_seats), so a stale
@@ -3399,7 +3603,7 @@ export default function MultiTablePage() {
        */}
       {hidden && dock.kind === 'urgent' && (
         <LiveTablesBar
-          tables={tables.filter((t) => !isLobbyTab(t)).map((t) => ({ id: t.id, name: t.name }))}
+          tables={tables.filter((t) => isTableTab(t)).map((t) => ({ id: t.id, name: t.name }))}
           urgent={{ tableId: dock.targetId, name: dock.name, secondsLeft: dock.secondsLeft }}
           onReturn={handleDockReturn}
         />
@@ -3673,7 +3877,17 @@ export default function MultiTablePage() {
                     size, on the felt) are never covered by action chrome. */}
                 <div className="multi-table-grid__stage">
                   <Suspense fallback={<div className="multi-table-loading">Loading...</div>}>
-                    {isLobbyTab(table) ? (
+                    {isHubTab(table) ? (
+                      /* A hub page is not a felt to be scaled into a tile; the
+                         tile is a card that says where the tab is, and tapping
+                         it opens that tab full-size. The frame remounts on the
+                         way back at its last known page (`hubUrl`). */
+                      <div className="multi-table-page__hub-tile" aria-label={table.name}>
+                        <span className="multi-table-page__hub-tile-kicker">Hub</span>
+                        <span className="multi-table-page__hub-tile-title">{table.name}</span>
+                        <span className="multi-table-page__hub-tile-hint">Tap To Open</span>
+                      </div>
+                    ) : isLobbyTab(table) ? (
                       renderLobbyTab(table)
                     ) : (
                       <TableErrorBoundary
@@ -3696,7 +3910,7 @@ export default function MultiTablePage() {
                     instead of an overlay: presets + Raise + slider on top,
                     Fold / Check / Call + clock underneath. Every amount is
                     still server re-validated exactly as before. */}
-                {!isLobbyTab(table) &&
+                {isTableTab(table) &&
                   table.isMyTurn &&
                   (() => {
                     const pending = !!tilePending[table.id];
@@ -3915,7 +4129,23 @@ export default function MultiTablePage() {
                       </div>
                     }
                   >
-                    {isLobbyTab(table) ? (
+                    {isHubTab(table) ? (
+                      /* The World Hub page itself, in a same-origin frame that
+                         stays mounted behind the other tabs like a browser
+                         tab does (this slot is display:none when inactive,
+                         never unmounted). `key` on the id: a lobby tab that
+                         became a hub tab is a new slot, so the frame boots
+                         fresh rather than inheriting a stale element. */
+                      <HubFrame
+                        key={table.id}
+                        tabId={table.id}
+                        src={table.hubUrl ?? '/hub'}
+                        title={table.name}
+                        swipe={hubSwipeRef}
+                        onLocationChange={handleHubLocationChange}
+                        onClubArenaTarget={handleHubClubArenaTarget}
+                      />
+                    ) : isLobbyTab(table) ? (
                       renderLobbyTab(table)
                     ) : (
                       <TableErrorBoundary

@@ -13,6 +13,7 @@ import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { useInTabLobby } from '../../context/InTabLobbyContext';
 
 import styles from './GlobalHeader.module.css';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
@@ -36,11 +37,30 @@ const DEFAULT_AVATAR = `${BASE}default-avatar.png`;
  * onSearchClick were already declared and never read, so all three props are
  * gone rather than left sitting there looking like they do something.
  */
-export default function GlobalHeader() {
+/**
+ * `inTab` (Dan 2026-09-04): this header is rendered INSIDE a "+" tab of
+ * MultiTablePage, under the table strip, so the lobby a player opened with
+ * "+" has a Hub button. In that mode it is a copy of the header, not THE
+ * header, and three things follow:
+ *   - it does not claim `#global-header` and does not publish
+ *     `--ca-global-header-height` on the document root: the ticker and the
+ *     pinned strip position themselves by those, and they describe the real
+ *     header's place on the page. It publishes its height on its PARENT
+ *     instead (`--ca-in-tab-header-height`), for the tab's own chrome;
+ *   - Hub / VIP / Messages open IN THE TAB through InTabLobbyNav.openHub -
+ *     `window.location.href` would unmount every running table;
+ *   - the window-level hamburger listeners (HAMBURGER_TOGGLE, Ctrl+M, the
+ *     left-edge swipe) stay with the real header. Two headers answering one
+ *     gesture would open two menus, and the edge swipe is the strip's own
+ *     swipe-back gesture inside a tab.
+ */
+export default function GlobalHeader({ inTab = false }: { inTab?: boolean } = {}) {
   const navigate = useNavigate();
   const { loadBalances, loadDiamonds } = useWalletStore();
   const { user: authUser } = useAuthUser();
   const headerRef = useRef<HTMLElement>(null);
+  const inTabNav = useInTabLobby();
+  const inTabHub = inTab ? inTabNav : null;
 
   const {
     avatarUrl,
@@ -65,12 +85,18 @@ export default function GlobalHeader() {
     const header = headerRef.current;
     if (!header) return;
 
+    // In a tab, the height belongs to the TAB (see the `inTab` note above):
+    // it goes on the tab element as --ca-in-tab-header-height, and the root
+    // variable the pinned strip and the ticker read is left to the real header.
     const root = document.documentElement;
+    const tabHost = inTab ? (header.parentElement ?? header) : null;
     const publishHeight = () => {
-      root.style.setProperty(
-        '--ca-global-header-height',
-        `${header.getBoundingClientRect().height}px`
-      );
+      const height = `${header.getBoundingClientRect().height}px`;
+      if (tabHost) {
+        tabHost.style.setProperty('--ca-in-tab-header-height', height);
+        return;
+      }
+      root.style.setProperty('--ca-global-header-height', height);
     };
 
     publishHeight();
@@ -82,9 +108,10 @@ export default function GlobalHeader() {
     return () => {
       observer?.disconnect();
       window.removeEventListener('resize', publishHeight);
-      root.style.removeProperty('--ca-global-header-height');
+      if (tabHost) tabHost.style.removeProperty('--ca-in-tab-header-height');
+      else root.style.removeProperty('--ca-global-header-height');
     };
-  }, []);
+  }, [inTab]);
 
   const handleMenuToggle = useCallback(() => setMenuOpen((prev) => !prev), []);
   const handleMenuClose = useCallback(() => setMenuOpen(false), []);
@@ -96,12 +123,14 @@ export default function GlobalHeader() {
   useMasterBusSubscription(
     'HAMBURGER_TOGGLE',
     () => {
+      if (inTab) return;
       setMenuOpen((prev) => !prev);
     },
     { debounce: 200 }
   );
 
   useEffect(() => {
+    if (inTab) return;
     const handleKeyboard = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'm') {
         e.preventDefault();
@@ -110,10 +139,11 @@ export default function GlobalHeader() {
     };
     window.addEventListener('keydown', handleKeyboard);
     return () => window.removeEventListener('keydown', handleKeyboard);
-  }, []);
+  }, [inTab]);
 
   const edgeSwipeRef = useRef<number | null>(null);
   useEffect(() => {
+    if (inTab) return;
     const handleTouchStart = (e: TouchEvent) => {
       const x = e.touches[0].clientX;
       if (x < 25) edgeSwipeRef.current = x;
@@ -130,7 +160,7 @@ export default function GlobalHeader() {
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchend', handleTouchEnd);
     };
-  }, []);
+  }, [inTab]);
 
   useEffect(() => {
     if (!authUser?.id) return;
@@ -201,15 +231,26 @@ export default function GlobalHeader() {
    * Not a router-scoped back that stops at the app boundary.
    */
   const handleBackClick = () => {
+    if (inTabHub) {
+      inTabHub.goBack();
+      return;
+    }
     window.history.back();
   };
 
-  const navigateToHub = useCallback((path: string) => {
-    setIsNavigatingAway(true);
-    requestAnimationFrame(() => {
-      window.location.href = path;
-    });
-  }, []);
+  const navigateToHub = useCallback(
+    (path: string) => {
+      // In a "+" tab the destination opens IN THE TAB (Dan 2026-09-04). Only
+      // if the container declines - it is not a lobby tab on screen - does
+      // this fall through to the full navigation it always did.
+      if (inTabHub && inTabHub.openHub(path)) return;
+      setIsNavigatingAway(true);
+      requestAnimationFrame(() => {
+        window.location.href = path;
+      });
+    },
+    [inTabHub]
+  );
 
   const [prefetchedMessenger, setPrefetchedMessenger] = useState(false);
 
@@ -229,8 +270,11 @@ export default function GlobalHeader() {
 
   const handleMessagesClick = useCallback(async () => {
     if (authUser?.id) await clearUnreadMessages(authUser.id);
+    // /messages is NavigateToMessenger, which leaves for /hub/messenger with
+    // window.location. In a tab, go there as a hub page instead.
+    if (inTabHub && inTabHub.openHub('/hub/messenger')) return;
     navigate('/messages');
-  }, [authUser?.id, clearUnreadMessages, navigate]);
+  }, [authUser?.id, clearUnreadMessages, navigate, inTabHub]);
 
   const handleNotificationsClick = useCallback(async () => {
     if (authUser?.id) await clearUnreadNotifications(authUser.id);
@@ -249,10 +293,11 @@ export default function GlobalHeader() {
 
       <header
         ref={headerRef}
-        id="global-header"
-        className={styles.header}
+        id={inTab ? undefined : 'global-header'}
+        className={`${styles.header}${inTab ? ` ${styles.inTab}` : ''}`}
         style={headerStyle}
         data-artwork="approved-global-header"
+        data-in-tab={inTab ? 'true' : undefined}
         aria-label="Smarter.Poker Global Header"
       >
         {/* Desktop and landscape use the supplied artwork itself. This is a

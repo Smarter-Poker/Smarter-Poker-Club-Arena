@@ -3149,46 +3149,47 @@
   will-change: clip-path;
 }
 
-/* THE DESKTOP AFFORDANCE (Dan 2026-09-05). A finger finds the corner by
-   touching it; a mouse has no such feedback, so a desktop player sees two
-   face-down cards and no reason to think they can be picked up. On hover the
-   bottom-left corner turns up a few pixels - a dog-ear - which is the whole
-   message: this corner lifts, grab it here.
+/* THE AFFORDANCE — a corner that is ALWAYS turned up (Dan 2026-09-05).
+   ---------------------------------------------------------------------------
+   Dan asked for a desktop cue: a mouse has no grip feedback, so a player sees
+   two face-down cards and no reason to think they can be picked up. The first
+   version of this was a `:hover` dog-ear behind
+   `@media (hover: hover) and (pointer: fine)`.
 
-   `(hover: hover) and (pointer: fine)` so it cannot fire on touch, where
-   `:hover` sticks after a tap and would leave a permanent dog-ear on the
-   card. Suppressed while a peel is live (the real flap is drawn there) and
-   gone once the hand is open. Nothing here changes layout: it is a clip and
-   a gradient on a pseudo-element the card already owns. */
-@media (hover: hover) and (pointer: fine) {
-  .seat__squeeze-face--cover::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    bottom: 0;
-    width: 26%;
-    height: 19%;
-    opacity: 0;
-    transform: translate(-2px, 2px);
-    transition:
-      opacity 0.16s ease,
-      transform 0.16s cubic-bezier(0.2, 0.8, 0.3, 1);
-    /* The turned-up corner: card stock, darker along the fold. */
-    background: linear-gradient(45deg, #f3efe4 55%, #ddd7c7 80%, #c9c2b0 100%);
-    clip-path: polygon(0 100%, 100% 100%, 0 0);
-    border-bottom-left-radius: 4px;
-    pointer-events: none;
-  }
-  .seat__cards--squeeze:hover .seat__squeeze-face--cover::after {
-    opacity: 1;
-    transform: translate(0, 0);
-  }
-  /* While a finger or mouse is actually peeling, the real flap owns the
-     corner - two turned-up corners at once reads as a rendering bug. */
-  .seat__cards--squeeze[data-peeling] .seat__squeeze-face--cover::after {
-    opacity: 0;
-    transition: none;
-  }
+   CI refused it, and the law it broke was written about exactly that:
+   `tests/no-hover-effects.law.test.ts` (Dan, 2026-08-29, "Remove hover
+   entirely, everywhere") names the capability-query version as "the most
+   persuasive version of this mistake ... It is still a hover style, it is
+   still invisible to most of the people using this product", and ends "If you
+   are here because this test is red: delete your hover rule. Do not add a file
+   to a list. There is no list."
+
+   So the dog-ear is permanent instead. This is strictly better on the law's
+   own reasoning - Club Arena is mobile-first, and a hover affordance is one
+   only some players can ever see. A corner that is always turned up says "this
+   lifts" to a thumb and a mouse alike, cannot stick after a tap the way iOS's
+   synthetic hover does, and cannot become a hidden affordance because it is
+   never hidden.
+
+   It is drawn on the COVER, so it exists only while a card is face down, and
+   it is suppressed the moment a real peel starts - the flap owns the corner
+   then, and two turned-up corners at once reads as a rendering bug. */
+.seat__squeeze-face--cover::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 22%;
+  height: 16%;
+  /* Card stock, darker along the fold, so it reads as the back lifted rather
+     than a shape painted on it. */
+  background: linear-gradient(45deg, #f3efe4 55%, #ddd7c7 80%, #c9c2b0 100%);
+  clip-path: polygon(0 100%, 100% 100%, 0 0);
+  border-bottom-left-radius: 4px;
+  pointer-events: none;
+}
+.seat__cards--squeeze[data-peeling] .seat__squeeze-face--cover::after {
+  content: none;
 }
 
 /* THE PEEL INDEX - the rank and suit in the bottom-left corner of the face,
@@ -3226,18 +3227,9 @@
 .seat__peel-index-suit {
   font-size: calc(var(--sp-hero-card-h, 66px) * 0.2);
 }
-.seat__peel-index--black {
-  color: #111;
-}
-.seat__peel-index--red {
-  color: #d21f2c;
-}
-.seat__peel-index--4c-d {
-  color: #2563eb;
-}
-.seat__peel-index--4c-c {
-  color: #16a34a;
-}
+/* No colour here on purpose: SeatSlot sets it inline from CardImage's
+   SUIT_COLOR, so the corner rank and the suit on the card face can never
+   disagree. See peelIndexColor(). */
 
 /* SHADE BANDS. One geometry, used twice: a strip whose top edge lies along
    the fold and which extends toward the pinched corner (in the card's own

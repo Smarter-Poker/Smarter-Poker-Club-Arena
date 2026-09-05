@@ -20,7 +20,7 @@
 import React, { useMemo, useState, useEffect, useLayoutEffect, useRef, memo } from 'react';
 import { serverNow } from '../../utils/serverClock';
 import './SeatSlot.css';
-import { CardImage, CardBack } from './CardImage';
+import { CardImage, CardBack, SUIT_COLOR } from './CardImage';
 import MiniHUD, { type MiniHUDStats } from './MiniHUD';
 import { SitOutBadge } from './SitOutBadge';
 import type { PlayerStyleResult } from '../../services/PlayerStyleClassifier';
@@ -43,6 +43,19 @@ import { displayOrderWithDealtIndex } from '../../lib/tableCardDisplay';
  * variation selector so no platform swaps in an emoji). Same characters
  * CardImage's broken-image fallback uses.
  */
+/**
+ * The peel index's colour comes from the DECK, never from a literal here: a
+ * second set of hex values in a stylesheet is a second source of truth, and
+ * `tests/gameplay-wears-the-house-colours.test.ts` caught exactly that when
+ * the first version invented #16a34a for clubs (the deck's club green is
+ * #22c55e). Two-colour decks paint hearts and diamonds red and the rest black,
+ * which is what a two-colour deck IS; four-colour uses the suit's own colour.
+ */
+function peelIndexColor(suit: string, deckStyle?: '4color' | '2color'): string {
+  if (deckStyle === '4color') return SUIT_COLOR[suit] ?? SUIT_COLOR.s;
+  return suit === 'h' || suit === 'd' ? SUIT_COLOR.h : SUIT_COLOR.s;
+}
+
 const PEEL_SUIT_GLYPH: Record<string, string> = {
   s: '\u2660\uFE0E',
   h: '\u2665\uFE0E',
@@ -3178,13 +3191,8 @@ export const SeatSlot = memo(
                             peel opens. Under the shade band, over the art. */}
                         {card ? (
                           <div
-                            className={
-                              'seat__peel-index' +
-                              (card.suit === 'h' || card.suit === 'd'
-                                ? ' seat__peel-index--red'
-                                : ' seat__peel-index--black') +
-                              (deckStyle === '4color' ? ` seat__peel-index--4c-${card.suit}` : '')
-                            }
+                            className="seat__peel-index"
+                            style={{ color: peelIndexColor(card.suit, deckStyle) }}
                             aria-hidden="true"
                           >
                             <span className="seat__peel-index-rank">

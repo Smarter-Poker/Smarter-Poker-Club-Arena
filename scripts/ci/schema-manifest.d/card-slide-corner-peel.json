@@ -1,6 +1,5 @@
 {
   "_owner": "feat/card-slide-corner-peel",
   "tables": ["card_slide_usage"],
-  "functions": ["fn_record_card_slide_usage", "fn_card_slide_adoption"],
-  "_note": "20260905001550 flips the card_slide column default; 20260905040622 is data only; 20260905065636 adds the peel telemetry rollup."
+  "functions": ["fn_record_card_slide_usage", "fn_card_slide_adoption"]
 }

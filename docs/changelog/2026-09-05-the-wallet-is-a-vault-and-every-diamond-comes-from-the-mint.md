@@ -154,6 +154,34 @@ Verified live after apply: `fn_ca_diamond_register_vs_supply()` returns
 `fn_ca_mint_overview()` read as an admin returns `diamonds.balanced: true`.
 Pinned by `tests/theMintOwnsEveryDiamond.test.ts` (13 tests).
 
+## The live page then showed every wallet as zero, and that was a real bug
+
+Loading the published page as Dan is what found it. The console carried
+`useWalletStore.Load_balances_failed ... PGRST116: Results contain 2 rows`,
+and the hero read `ALL WALLETS 0 / PLAYABLE NOW 0` for an account that
+actually holds 1,000,744.97 chips across four clubs plus an 80,000 agent
+balance.
+
+`WalletService.getBalances` read the agent wallet with `.maybeSingle()`, and
+`agents` is UNIQUE on **(club_id, user_id)** - an agent is an agent per club,
+so anyone agenting two clubs has two rows and `maybeSingle` answers PGRST116.
+The `if (agentRes.error) throw agentRes.error` immediately below then aborted
+the whole read, discarding the `club_members` chips that had already loaded
+fine. Every wallet on the page rendered 0. Measured on production: **16 users
+hold more than one agents row**, and every one of them saw an empty wallet.
+
+Fixed by reading all the rows and summing them - Business is "Commissions And
+Settlements", so it is the sum across the clubs the player agents for, exactly
+as PLAYER already sums their club memberships. Pinned in
+`tests/wallet-casino-realism.test.ts` ("one sub-read must not zero the whole
+wallet").
+
+Also verified live on the published page: the Earn pane reads the real rewards
+API (streak 22 days, 0/150 daily cap, VIP multiplier) and Lifetime Diamonds
+resolves from the diamond ledger (earned 512,200, spent 20,020, on hand
+494,180). An earlier "Checking" reading was a 429 from repeated reloads during
+testing, not a defect.
+
 ## World Hub (shipped separately, PR #1373, merged)
 
 - `/api/vip/check-status`: a profile READ error answers 503 `success:false`

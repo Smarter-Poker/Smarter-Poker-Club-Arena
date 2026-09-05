@@ -451,6 +451,8 @@ export interface TableModalsLayerProps {
   showHandHistory: boolean;
   handHistory: HandRecord[];
   handHistoryState?: HandHistoryLoadState;
+  /** False for a spectator: the empty state says they are watching, not that the table has no hands. */
+  handHistoryViewerSeated?: boolean;
   onCloseHandHistory: () => void;
   onReplay?: (hand: HandRecord) => void;
   /** Open the Hand Detail modal at the hand passed in. */
@@ -660,6 +662,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     showHandHistory,
     handHistory,
     handHistoryState,
+    handHistoryViewerSeated,
     onCloseHandHistory,
     onReplay,
     onOpenHandDetail,
@@ -1289,6 +1292,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         hands={handHistory}
         heroId={userId || ''}
         loadState={handHistoryState}
+        viewerSeated={handHistoryViewerSeated}
         onReplay={onReplay}
         onOpenDetail={onOpenHandDetail}
       />

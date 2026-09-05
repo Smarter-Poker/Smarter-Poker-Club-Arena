@@ -829,6 +829,124 @@ class SoundService {
   }
 
   /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  CARD SLIDE — the friction of a card bending under a finger
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Dan 2026-09-05: a sound while you peel, not only when it opens.
+   *
+   * Every other cue in this file is a ONE-SHOT: it is fired and it decays on
+   * the AudioContext clock. Friction is not an event, it is a CONTINUOUS
+   * consequence of movement, and the thing that makes it read as paper rather
+   * than as a noise loop is that IT STOPS WHEN THE FINGER STOPS. So this is a
+   * sustained voice with a live gain: `startPeelFriction` opens it,
+   * `updatePeelFriction` is fed the drag speed on every pointer move, and
+   * `stopPeelFriction` closes it.
+   *
+   * The voice: looped white noise -> bandpass -> gain. The bandpass centre
+   * rises with peel progress (a card bent further is under more tension and
+   * speaks brighter), and Q stays low so it is breath rather than a whistle.
+   * Everything is ramped, never stepped: a `setValueAtTime` per pointer move
+   * is a staircase, and a staircase in a gain is heard as crackle.
+   *
+   * SAFETY. One voice at a time (`peelVoice`), `start` closes any voice still
+   * open, `stop` is idempotent, and the caller stops it on pointerup, on
+   * pointercancel and on unmount - three paths, because a noise loop that
+   * outlives the gesture is the worst bug this file could ship.
+   */
+  private peelVoice: {
+    source: AudioBufferSourceNode;
+    band: BiquadFilterNode;
+    gain: GainNode;
+  } | null = null;
+
+  startPeelFriction() {
+    // NOT through shouldPlay(): that claims the 50ms priority window, and a
+    // sustained voice claiming it on every drag frame would mute the deal,
+    // the chips and the turn alert for as long as a finger was down.
+    if (!this.isEnabled() || !this.ensureContext() || !this.ctx) return;
+    this.stopPeelFriction();
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+
+    // Two seconds of noise, looped. Long enough that the loop point is not
+    // heard as a pulse inside a gesture that rarely lasts one second.
+    const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 2), ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+
+    const band = ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.setValueAtTime(900, t);
+    band.Q.value = 0.9;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, t);
+
+    source.connect(band);
+    band.connect(gain);
+    gain.connect(this.out);
+    source.start(t);
+    this.peelVoice = { source, band, gain };
+  }
+
+  /**
+   * @param progress 0..1 - how far the corner has been peeled
+   * @param speed    card-widths per second, roughly; 0 = the finger is still
+   */
+  updatePeelFriction(progress: number, speed: number) {
+    const voice = this.peelVoice;
+    if (!voice || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    const p = Math.max(0, Math.min(1, progress));
+    // Paper speaks only while it moves. Ceiling is deliberately low: this
+    // sound sits under every other cue at the table and plays on most hands.
+    const target = Math.min(0.055, speed * 0.03) * (0.45 + p * 0.55);
+    // Fast up (the finger's own movement), slower down (the card settling).
+    voice.gain.gain.cancelScheduledValues(t);
+    voice.gain.gain.setTargetAtTime(target, t, target > 0.004 ? 0.012 : 0.05);
+    // 900Hz flat -> 2.4kHz at full bend.
+    voice.band.frequency.cancelScheduledValues(t);
+    voice.band.frequency.setTargetAtTime(900 + p * 1500, t, 0.05);
+  }
+
+  stopPeelFriction() {
+    const voice = this.peelVoice;
+    if (!voice) return;
+    this.peelVoice = null;
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    try {
+      voice.gain.gain.cancelScheduledValues(t);
+      voice.gain.gain.setTargetAtTime(0, t, 0.03);
+      voice.source.stop(t + 0.2);
+      voice.source.onended = () => {
+        voice.source.disconnect();
+        voice.band.disconnect();
+        voice.gain.disconnect();
+      };
+    } catch {
+      // Already stopped, or a context torn down under us. Nothing to release
+      // that garbage collection will not take.
+    }
+  }
+
+  /**
+   * The moment the corner leaves the felt: one soft paper tick. Distinct from
+   * playCardSqueeze, which is the card snapping fully open at the end.
+   */
+  playPeelLift() {
+    if (!this.shouldPlay('deal', 'action') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+    this.createNoiseBurst(t, 0.07, 0.05, 2600);
+    haptic.light();
+  }
+
+  /**
    * Dealer button move — one very soft felt 'tock' as the puck lands on the
    * next seat (COMPETITOR-PARITY 2026-08-19). Deliberately quiet: it fires
    * every hand.

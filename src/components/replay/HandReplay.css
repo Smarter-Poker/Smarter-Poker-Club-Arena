@@ -659,3 +659,13 @@
     animation: none;
   }
 }
+
+/* PHASE 2 2026-09-05: the wrapper the squeeze needs (see ReplayBoard).
+   `inline-flex` hugs the CardImage exactly, so the board row measures the
+   same whether a card is squeezing or not - a wrapper that only appeared
+   for the duration of the reveal would reflow the board mid-animation. */
+.hr-felt__card {
+  display: inline-flex;
+  position: relative;
+  border-radius: 3px;
+}

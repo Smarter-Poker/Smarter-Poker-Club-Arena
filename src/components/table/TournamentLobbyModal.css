@@ -37,6 +37,18 @@
 
 .tlm-panel {
   --tlm-accent: #1877f2;
+  /* A DARK SURFACE OWNS ITS INK (2026-09-05). The panel is always the dark
+     gradient below, but its text read the APP theme's --text-primary /
+     --text-secondary / --text-muted. On the light theme those are #1a2e1a /
+     #3d5a3d / #7a9a7a - dark green on near-black - so the tournament lobby
+     and the must-move lobby (which borrows this panel) were unreadable for
+     every light-theme account: game name, every player name, every stack,
+     every count. Seen live on the must-move lobby 2026-09-05 04:40 UTC. The
+     tokens are re-declared here for everything inside the panel. */
+  --text-primary: #ffffff;
+  --text-secondary: #b0b8c4;
+  --text-muted: #7c8696;
+  --text-inverse: #10151f;
   display: flex;
   flex-direction: column;
   width: 75vw;

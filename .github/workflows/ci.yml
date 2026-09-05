@@ -158,7 +158,14 @@ jobs:
           # dependencies INSTALL and which runtime runs them, so they can break
           # anything - added 2026-08-23 when the pull request REMOVING an .npmrc
           # setting skipped the build job that was supposed to prove it safe.
-          WIDE=$(has '^(package(-lock)?\.json|vite\.config|vitest\.config|tsconfig|\.npmrc|\.nvmrc|\.node-version|\.github/workflows/ci\.yml)')
+          # EVERY workflow, not only this one (2026-09-05). Nine unit tests
+          # read the OTHER workflow files as text (deployCannotPinStaleCode,
+          # deployAndPublishAreHonest, theCopyRulesReachTheEngineAndTheDatabase,
+          # the-break-clocks-agree ...). #3070 rewrote auto-deploy-hetzner.yml
+          # and nothing else, so this list said "no src, no tests", the unit
+          # suite was skipped, the ruleset counted the skip as green, and main
+          # was red for every pull request after it (five pins, three files).
+          WIDE=$(has '^(package(-lock)?\.json|vite\.config|vitest\.config|tsconfig|\.npmrc|\.nvmrc|\.node-version|\.github/workflows/)')
           if [ "$WIDE" = "true" ]; then
             echo "src=true"    >> "$GITHUB_OUTPUT"
             echo "server=true" >> "$GITHUB_OUTPUT"

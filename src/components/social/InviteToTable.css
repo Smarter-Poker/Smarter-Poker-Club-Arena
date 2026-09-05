@@ -117,7 +117,13 @@
   animation: shimmer 1.5s infinite;
 }
 
-.player-avatar {
+/* SCOPED 2026-09-05. This was a bare selector, and the same class name is
+   defined bare in several other stylesheets. Every stylesheet here is global
+   once imported, so whichever file loaded last won any property the owning
+   page did not itself declare - which is how a 32px admin icon button ended
+   up sizing the public dossier's player actions in production. Scoped to
+   this component's own container; its own appearance is unchanged. */
+.invite-to-table .player-avatar {
   width: 36px;
   height: 36px;
   border-radius: var(--radius-full);
@@ -130,13 +136,13 @@
   flex-shrink: 0;
 }
 
-.player-avatar img {
+.invite-to-table .player-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.player-avatar span {
+.invite-to-table .player-avatar span {
   font-size: var(--fs-md);
   font-weight: var(--fw-bold);
   color: var(--fb-blue);

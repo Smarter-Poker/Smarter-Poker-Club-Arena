@@ -75,6 +75,23 @@ export interface InTabLobbyNav {
    * navigation rather than swallowing the click.
    */
   openTournament: (target: InTabTournamentTarget) => boolean;
+  /**
+   * Show a World Hub page (`/hub`, `/hub/social`, `/hub/messenger`, ...)
+   * INSIDE the tab the caller is rendered in, instead of `window.location`
+   * (Dan 2026-09-04: the "+" tab is an internal browser tab, not just poker).
+   * The tab on screen becomes a hub tab in place; its strip pill, its swipe
+   * position and every running table stay exactly where they were. Returns
+   * false when the container could not (not a lobby tab on screen), and the
+   * caller must fall through to a real navigation.
+   */
+  openHub: (path: string) => boolean;
+  /**
+   * The header's Back, in a tab. A drill-in inside the tab pushes no history
+   * entry, so browser Back would step OUT of the table route rather than back
+   * up the drill-in; this pops the drill-in first and only then falls back to
+   * the browser's own Back, which is what it does everywhere else.
+   */
+  goBack: () => void;
 }
 
 export const InTabLobbyContext = createContext<InTabLobbyNav | null>(null);

@@ -1,0 +1,3 @@
+# tests/hub-tab-is-a-browser-tab.law.test.ts
+
+The "+" tab is an internal browser tab (Dan 2026-09-04): a World Hub page (Social, Media, Trivia, Training, ...) opens in the tab through `HubFrame`, the ONE sanctioned same-origin iframe, which uses no postMessage, no window.parent and no sandbox; a swipe on the hub page still moves the strip; a link back into `/hub/club-arena` converts the tab in place instead of booting a second Club Arena; the "+" lobby renders the GlobalHeader (so it has a Hub button) without impersonating the real one; and a hub tab is counted as neither a table nor a lobby anywhere either is counted.

@@ -9,10 +9,17 @@ export * from './types';
 export * from './profiles';
 export * from './animationKey';
 export * from './resolveProfile';
+export * from './squeezeEligibility';
 export { CardPresentationEngine } from './CardPresentationEngine';
 export type { ActivePresentationView } from './CardPresentationEngine';
 export { createAnalyticsTelemetrySink, TELEMETRY_SAMPLE_RATE } from './telemetry';
-export { SqueezeCard, squeezeHostProps, squeezeVars, type SqueezeCardProps } from './SqueezeCard';
+export {
+  SqueezeCard,
+  squeezeHostProps,
+  squeezeVars,
+  type SqueezeCardProps,
+  type SqueezeHoldState,
+} from './SqueezeCard';
 export { useCardSqueeze, streetForCount, type CardSqueezeState } from './useCardSqueeze';
 export { installEnvironmentInterrupts, RESIZE_SETTLE_MS } from './environmentInterrupts';
 export { preloadImage, resetPreloadCache, preloadCount } from './preload';

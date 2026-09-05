@@ -14,7 +14,7 @@ import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 import { useAuthUser } from '../../hooks/useAuthUser';
-import { useInTabLobby } from '../../context/InTabLobbyContext';
+import type { InTabLobbyNav } from '../../context/InTabLobbyContext';
 
 import styles from './GlobalHeader.module.css';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
@@ -55,13 +55,20 @@ const DEFAULT_AVATAR = `${BASE}default-avatar.png`;
  *     gesture would open two menus, and the edge swipe is the strip's own
  *     swipe-back gesture inside a tab.
  */
-export default function GlobalHeader({ inTab = false }: { inTab?: boolean } = {}) {
+/**
+ * `inTab` is the container's InTabLobbyNav, passed as a PROP rather than read
+ * from context on purpose: this header is in the entry chunk every player
+ * downloads before first paint, and a value import of InTabLobbyContext would
+ * drag that module in with it (tests/ci entry-chunk-delta). A type-only import
+ * is erased at build time; the runtime dependency stays with MultiTablePage,
+ * which is lazy.
+ */
+export default function GlobalHeader({ inTab = null }: { inTab?: InTabLobbyNav | null } = {}) {
   const navigate = useNavigate();
   const { loadBalances, loadDiamonds } = useWalletStore();
   const { user: authUser } = useAuthUser();
   const headerRef = useRef<HTMLElement>(null);
-  const inTabNav = useInTabLobby();
-  const inTabHub = inTab ? inTabNav : null;
+  const inTabHub = inTab;
 
   const {
     avatarUrl,

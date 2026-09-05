@@ -132,18 +132,9 @@
    a new browser tab internally". See src/components/table/HubFrame.tsx.
    ───────────────────────────────────────────────────────────────────────────── */
 
-/* The frame IS the slot: edge to edge, no border, the same black as the shell
-   behind it so the first paint before the hub page arrives is not a white
-   flash between two black surfaces. `display:block` kills the inline
-   baseline gap that would otherwise leave a strip of shell under it. */
-.multi-table-page__hub-frame {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  background: #000;
-  color-scheme: dark;
-}
+/* The frame's own rule lives beside its component (HubFrame.css): a class a
+   component renders must resolve from a stylesheet THAT component loads, not
+   from whichever chunk happens to share the page (tests/unit/classNamesResolve). */
 
 /* The take-seat bar is sticky at top:0 in the same scroller as the in-tab
    GlobalHeader (also sticky, z-index 390, first child). Both at 0 means the

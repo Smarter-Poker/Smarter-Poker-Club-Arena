@@ -112,7 +112,12 @@ describe('a link back into Club Arena converts the tab, it never boots a second 
 
 describe('the "+" lobby has the Hub button, and it opens in the tab', () => {
   it('GlobalHeader renders at the top of BOTH lobby-tab branches', () => {
-    expect(MULTI.split('<GlobalHeader inTab />').length - 1).toBe(2);
+    expect(MULTI.split('<GlobalHeader inTab={inTabLobbyNav} />').length - 1).toBe(2);
+    // A type-only import: the header is in the entry chunk, the context is not.
+    expect(HEADER).toContain(
+      "import type { InTabLobbyNav } from '../../context/InTabLobbyContext';"
+    );
+    expect(HEADER).not.toContain('useInTabLobby');
   });
 
   it('in a tab, Hub / VIP / Messages go through openHub instead of window.location', () => {

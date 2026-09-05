@@ -236,3 +236,19 @@ the whole branch diff cold. Fixed in the same PR:
 Still true and unchanged: tile view remounts frames (documented cost), and the
 merge with main resolved one conflict in the urgency-alert loop (kept both
 sides: `isTableTab` and main's expired-decision guard).
+
+### CI told the truth twice (2026-09-05, after the audit)
+
+Two failures on the pull request that the local suite did not show, both fixed:
+
+- **Entry chunk grew by one module.** `GlobalHeader` is in the chunk every
+  player downloads before first paint; round 1 gave it a value import of
+  `InTabLobbyContext` for `useInTabLobby`, and `entry-chunk-delta` refused.
+  The header now takes the container's `InTabLobbyNav` as a PROP with a
+  type-only import (erased at build), so the runtime dependency stays with the
+  lazy MultiTablePage. Verified locally: 205 modules, +0kB, unchanged.
+- **`multi-table-page__hub-frame` did not resolve on its route.**
+  `classNamesResolve` requires a class a component renders to come from a
+  stylesheet THAT component loads, not from a chunk it happens to share. The
+  frame rule moved from MultiTablePage.css into `HubFrame.css`, imported by
+  HubFrame.

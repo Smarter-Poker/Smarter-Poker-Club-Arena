@@ -69,6 +69,7 @@
  */
 
 import { useEffect, useRef, useState, type RefObject } from 'react';
+import './HubFrame.css';
 import {
   HUB_FRAME_IDLE_SUSPEND_MS,
   HUB_FRAME_POLL_MS,

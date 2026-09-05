@@ -3132,7 +3132,7 @@ export default function MultiTablePage() {
             className="multi-table-page__lobby-tab multi-table-page__lobby-tab--tournament"
             onClickCapture={handleLobbyLinkCapture}
           >
-            <GlobalHeader inTab />
+            <GlobalHeader inTab={inTabLobbyNav} />
             {renderTakeSeatBar()}
             <button
               className="multi-table-page__lobby-back"
@@ -3157,7 +3157,7 @@ export default function MultiTablePage() {
           </div>
         ) : (
           <div className="multi-table-page__lobby-tab" onClickCapture={handleLobbyLinkCapture}>
-            <GlobalHeader inTab />
+            <GlobalHeader inTab={inTabLobbyNav} />
             {renderTakeSeatBar()}
             {homeClubId ? <ClubHomePage clubIdOverride={homeClubId} /> : <HomePage />}
           </div>

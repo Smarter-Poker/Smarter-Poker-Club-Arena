@@ -87,6 +87,17 @@ export interface UserTableSettings {
    * the table something about the deck while it did.
    */
   rabbit_hunt_button: boolean;
+  /**
+   * VIP ALL-IN SQUEEZE (Dan 2026-09-05): when the player is all-in, each
+   * run-out card lands face down under their hand and they squeeze it open
+   * themselves (drag on desktop, touch on mobile); it opens on its own
+   * before the next card if they do not. A VIP perk, on by default. For a
+   * non-VIP the stored value is inert - the EFFECTIVE value is
+   * (all_in_squeeze AND active VIP), the switch renders off, and trying to
+   * switch it on shows the VIP upsell instead of writing. Never broadcast;
+   * the table's run-out rhythm is identical for every seat.
+   */
+  all_in_squeeze: boolean;
 }
 
 export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
@@ -133,6 +144,7 @@ export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
   // ca_ws_mux='0' and EngineStateClient falls back to per-table sockets.
   multi_shared_socket: true,
   rabbit_hunt_button: true,
+  all_in_squeeze: true, // 2026-09-05: VIP perk, ON by default (Dan); 20260905195426
 };
 
 // Metadata for rendering toggles
@@ -157,6 +169,16 @@ export interface SettingMeta {
    * persisted copy per setting.
    */
   quick?: boolean;
+  /**
+   * VIP ALL-IN SQUEEZE 2026-09-05: a VIP-gated perk. The panel renders the
+   * EFFECTIVE value (stored AND VIP), and a non-VIP who taps it on gets the
+   * upsell (ALL_IN_SQUEEZE_VIP_REQUIRED_MESSAGE) rather than a write - Dan:
+   * "IF A NONE VIP MEMBER TRIES TO TURN IT ON THEY SHOULD BE INSTRUCTED THAT
+   * THEY NEED A VIP CARD TO USE THIS FEATURE." Deliberately NOT `quick`: the
+   * Hero Hub's quick list writes straight through toggleSetting with no gate
+   * in front of it.
+   */
+  vip?: boolean;
 }
 
 // Only list a setting here if flipping it changes what the player sees.
@@ -209,6 +231,12 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
     label: 'Rabbit Hunt Button',
     description: 'Offer To Show The Cards That Would Have Come After A Hand Ends',
     quick: true,
+  },
+  {
+    key: 'all_in_squeeze',
+    label: 'All In Squeeze',
+    description: 'When You Are All In, Squeeze Each Run Out Card Open Yourself. VIP Perk',
+    vip: true,
   },
   {
     key: 'show_stack_in_bb',
@@ -585,6 +613,7 @@ export function useUserTableSettings(userId: string | null | undefined) {
               data.multi_shared_socket ?? DEFAULT_USER_TABLE_SETTINGS.multi_shared_socket,
             rabbit_hunt_button:
               data.rabbit_hunt_button ?? DEFAULT_USER_TABLE_SETTINGS.rabbit_hunt_button,
+            all_in_squeeze: data.all_in_squeeze ?? DEFAULT_USER_TABLE_SETTINGS.all_in_squeeze,
           };
           /* A LIVE EDIT OUTRANKS A STALE READ. Anything the user changed while
              this row was in flight keeps the value they chose — see the note on

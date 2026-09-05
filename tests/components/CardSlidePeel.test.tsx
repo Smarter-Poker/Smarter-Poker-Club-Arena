@@ -361,6 +361,58 @@ describe('the tutorial teaches the gesture once', () => {
   });
 });
 
+describe('the friction voice is a resource, not a preference', () => {
+  /*
+   * Both of these were live bugs on main, found by auditing the audio
+   * lifecycle rather than by a failing test. The voice is a SINGLE looping
+   * noise source on the service, so anything that fails to close it leaves it
+   * humming for the rest of the session.
+   */
+  it('stops even when the table has gone silent mid-drag (playSounds -> false)', () => {
+    // ambientSoundsAllowed goes false the moment this table stops being the
+    // focused one. Gating the STOP on it meant a player who peeled and then
+    // switched tabs left the loop running.
+    const view = renderHero({ playSounds: true });
+    pointer(view.card, 'pointerdown', 40, 64);
+    pointer(view.row, 'pointermove', 50, 56);
+    expect(sounds).toContain('startPeelFriction');
+    sounds.length = 0;
+    // The table loses focus, then the finger lifts.
+    view.rerender(
+      <SeatSlot
+        seatNumber={1}
+        player={hero}
+        position={null}
+        isActive={false}
+        lastAction={null}
+        cardSqueezeActive={true}
+        handNumber={1}
+        playSounds={false}
+      />
+    );
+    pointer(view.row, 'pointerup', 50, 56);
+    expect(sounds).toContain('stopPeelFriction');
+  });
+
+  it('an unrelated seat unmounting does not cut the friction of a live peel', () => {
+    // Every seat at every table mounts the same unmount cleanup, and the voice
+    // is global: an unconditional stop there meant a player leaving ANY seat
+    // silenced a peel in progress somewhere else.
+    const bystander = render(
+      <SeatSlot
+        seatNumber={5}
+        player={{ ...hero, id: 'other', isHero: false }}
+        position={null}
+        isActive={false}
+        lastAction={null}
+      />
+    );
+    sounds.length = 0;
+    bystander.unmount();
+    expect(sounds).not.toContain('stopPeelFriction');
+  });
+});
+
 describe('the markup', () => {
   it('carries face, cover, flap and both shade bands per card', () => {
     const { container } = renderHero();

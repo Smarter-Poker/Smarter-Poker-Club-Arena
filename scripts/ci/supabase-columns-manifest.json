@@ -1169,6 +1169,16 @@
       "net_request_id",
       "detail"
     ],
+    "ca_detector_registry": [
+      "source",
+      "owner",
+      "sla_hours",
+      "status",
+      "auto_resolve_hours",
+      "retired_by",
+      "note",
+      "updated_at"
+    ],
     "ca_diamond_balance_audit": [
       "id",
       "occurred_at",
@@ -1688,6 +1698,14 @@
       "active",
       "created_at"
     ],
+    "ca_kill_switch_policy": [
+      "detector",
+      "threshold_chips",
+      "armed",
+      "scopes",
+      "note",
+      "updated_at"
+    ],
     "ca_ledger_accounts": [
       "account_type",
       "side",
@@ -2055,6 +2073,11 @@
       "written",
       "amount",
       "created_at"
+    ],
+    "ca_settle_sources": [
+      "source",
+      "note",
+      "added_at"
     ],
     "ca_settlements": [
       "id",
@@ -6878,7 +6901,11 @@
       "river_bet_opps",
       "river_bet_folds",
       "checks",
-      "r_checks"
+      "r_checks",
+      "snap_bet_sd",
+      "snap_bet_sd_strong",
+      "tank_bet_sd",
+      "tank_bet_sd_strong"
     ],
     "horse_opponent_journals": [
       "horse_id",
@@ -7084,6 +7111,19 @@
       "topic",
       "last_posted_at",
       "cooldown_hours"
+    ],
+    "horse_tournament_daily": [
+      "horse_user_id",
+      "day",
+      "tournament_type",
+      "variant",
+      "entries",
+      "invested",
+      "won",
+      "itm_entries",
+      "finish_pct_sum",
+      "best_finish",
+      "updated_at"
     ],
     "idempotency_keys": [
       "key",
@@ -11517,7 +11557,8 @@
       "source",
       "created_at",
       "updated_at",
-      "settled_at"
+      "settled_at",
+      "adjustment_id"
     ],
     "tournament_payout_backfill_log": [
       "id",
@@ -13468,6 +13509,19 @@
       "is_bomb",
       "hands",
       "avg_pot"
+    ],
+    "v_ca_alert_board": [
+      "source",
+      "owner",
+      "status",
+      "sla_hours",
+      "auto_resolve_hours",
+      "open",
+      "oldest_open_at",
+      "past_sla",
+      "last_detected_at",
+      "filed_24h",
+      "note"
     ],
     "v_ca_suspense_balance": [
       "suspense_net",

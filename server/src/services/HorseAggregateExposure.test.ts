@@ -23,6 +23,10 @@ import {
 } from './HorseBankroll.js';
 
 const FLEET = readFileSync(join(process.cwd(), 'src/services/HorseFleetManager.ts'), 'utf8');
+/* 2026-09-05: the ceiling check moved into the ONE sit predicate the seat
+   stage and the cluster buyer count both ask (HorseSitVerdict). The guard is
+   pinned where it lives; the fleet is pinned to ask it before buying. */
+const VERDICT = readFileSync(join(process.cwd(), 'src/services/HorseSitVerdict.ts'), 'utf8');
 
 const idOf = (t: 'nit' | 'standard' | 'gambler'): string => {
   for (let i = 0; i < 5000; i++) {
@@ -107,8 +111,14 @@ describe('WIRING - the two details that would silently disable the gate', () => 
     // A call short-circuited behind a constant reads as wired and enforces
     // nothing. ADJACENCY rather than a byte window: the enclosing block also
     // holds other refusals, so a coarser slice matches their `continue` too.
-    expect(FLEET).toMatch(/!canOpenAnotherTable\(\{/);
-    expect(FLEET).toMatch(/bankrollEvent\('seat_refused_aggregate_exposure'\);\s*continue;/);
+    expect(VERDICT).toMatch(/!canOpenAnotherTable\(\{/);
+    expect(VERDICT).toMatch(
+      /telemetry\.push\('seat_refused_aggregate_exposure'\);\s*return \{ ok: false, reason: 'aggregate_exposure', telemetry \};/
+    );
+    // and the fleet, handed that verdict, emits the counter and skips the seat
+    expect(FLEET).toMatch(
+      /for \(const e of verdict\.telemetry\) bankrollEvent\(e\);\s*if \(!verdict\.ok\) \{[\s\S]*?continue;\s*\}/
+    );
   });
 
   /**
@@ -116,11 +126,11 @@ describe('WIRING - the two details that would silently disable the gate', () => 
    * could not read is the bug that emptied the cash floor for forty minutes.
    */
   it('an unreadable roll gets no aggregate opinion either', () => {
-    expect(FLEET).toMatch(/roll !== undefined &&\s*!canOpenAnotherTable\(\{/);
+    expect(VERDICT).toMatch(/roll !== undefined &&\s*!canOpenAnotherTable\(\{/);
   });
 
   it('checks the ceiling BEFORE buying the seat, not after', () => {
-    const guardIdx = FLEET.indexOf("bankrollEvent('seat_refused_aggregate_exposure')");
+    const guardIdx = FLEET.indexOf('const verdict = sitVerdictFor(horse.id, table, sitCtx);');
     const seatIdx = FLEET.indexOf('const success = await this.seatHorse(');
     expect(guardIdx).toBeGreaterThan(-1);
     expect(seatIdx).toBeGreaterThan(guardIdx);

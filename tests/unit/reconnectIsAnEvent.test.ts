@@ -110,3 +110,62 @@ describe("one I'm Back", () => {
     expect(strip(read('src/components/table/SitOutModal.tsx'))).not.toMatch(/I'm Back/);
   });
 });
+
+describe('one connection vocabulary (disconnect audit item 7, 2026-09-04)', () => {
+  it('the tab-bar chip names the feed it is about, not "Reconnecting" like the felt', () => {
+    const bar = strip(read('src/components/table/TableTabBar.tsx'));
+    expect(bar).toMatch(/Live Feed Reconnecting/);
+    expect(bar).not.toMatch(/>Reconnecting…</);
+  });
+
+  it('the top-of-page offline bar stays off the table route', () => {
+    const app = read('src/App.tsx');
+    expect(app).toMatch(
+      /isOffline && !\/\^\\\/\(table\|multi\)\/\.test\(location\.pathname\) && \(/
+    );
+    expect(app).not.toMatch(/ConnectionIndicator/);
+  });
+
+  it('the action row is marked while the socket is down', () => {
+    expect(PAGE).toMatch(/connectionStale=\{engineWsStatus !== 'connected'\}/);
+    const panel = strip(read('src/components/table/ActionPanel.tsx'));
+    expect(panel).toMatch(/action-panel--stale/);
+    expect(panel).toMatch(/These Buttons May Be A Moment Behind/);
+    // marked, not disabled: the HTTP action path is a second transport
+    expect(panel).not.toMatch(/disabled=\{!canFold \|\| connectionStale\}/);
+  });
+});
+
+describe("the player's own facts ride the engine socket (audit items 11 + 12, 2026-09-04)", () => {
+  it('EngineStateClient hands a USER_EVENT frame straight to onUserEvent, never the queue', () => {
+    expect(CLIENT).toMatch(
+      /if \(msg\.type === 'USER_EVENT'\) \{[\s\S]*?this\.opts\.onUserEvent\(msg\.payload\);[\s\S]*?return;/
+    );
+    expect(CLIENT).toMatch(/onUserEvent\?: \(payload: Record<string, unknown>\) => void;/);
+  });
+
+  it('the hook exposes it and TablePage reconciles hole cards and the pre-action from it', () => {
+    const hook = strip(read('src/hooks/useEngineTableState.ts'));
+    expect(hook).toMatch(/onUserEvent: \(payload\) => setLastUserEvent\(payload\),/);
+    expect(hook).toMatch(/lastUserEvent/);
+    const page = strip(PAGE);
+    expect(page).toMatch(/lastUserEvent: engineLastUserEvent,/);
+    expect(page).toMatch(/ev\.kind === 'hole_cards' && ev\.row && typeof ev\.row === 'object'/);
+    expect(page).toMatch(/handleHoleCardPayload\(\{ new: ev\.row \}\);/);
+    expect(page).toMatch(/if \(mapped === null\) hadPreActionRef\.current = false;/);
+    expect(page).toMatch(/setPreAction\(\(cur\) => \(cur === mapped \? cur : mapped\)\);/);
+  });
+
+  it('the engine sends both, and re-sends both on RESYNC', () => {
+    const dealing = strip(read('server/src/engine/ServerTableEngineDealing.ts'));
+    expect(dealing).toMatch(
+      /this\.hub\?\.sendToUser\(this\.tableId, userId, \{\s*kind: 'hole_cards',/
+    );
+    const base = strip(read('server/src/engine/ServerTableEngineBase.ts'));
+    expect(base).toMatch(/kind: 'pre_action',/);
+    expect(base).toMatch(/this\.pushPreActionToPlayer\(event\.playerId\);/);
+    const index = strip(read('server/src/index.ts'));
+    expect(index).toMatch(/engine\?\.rePushPreAction\(userId\);/);
+    expect(index).toMatch(/void engine\?\.rePushHoleCards\(userId\);/);
+  });
+});

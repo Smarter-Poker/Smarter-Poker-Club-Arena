@@ -63,11 +63,22 @@ export interface ServerEventMessage {
   seq?: number;
   payload: Record<string, unknown>;
 }
+/**
+ * 2026-09-04 (disconnect audit items 11 + 12): a frame for THIS player only,
+ * outside the public sequence. Hole cards and the engine's copy of the armed
+ * pre-action arrive this way; the engine re-sends both on RESYNC.
+ */
+export interface ServerUserEventMessage {
+  type: 'USER_EVENT';
+  tableId: string;
+  payload: Record<string, unknown>;
+}
 export type ServerMessage =
   | ServerSnapshotMessage
   | ServerDeltaMessage
   | ServerPingMessage
-  | ServerEventMessage;
+  | ServerEventMessage
+  | ServerUserEventMessage;
 
 // WS close codes the server emits (mirrors CLOSE_* constants on server).
 export const CLOSE_AUTH_FAILED = 4401;
@@ -101,6 +112,13 @@ export interface EngineStateClientOptions {
    * rit_*, time_bank_*, bbj_*, etc). Payload is forwarded verbatim.
    */
   onEvent?: (payload: Record<string, unknown>) => void;
+  /**
+   * Called when a private USER_EVENT frame arrives (hole cards, pre-action).
+   * Delivered immediately, never queued or de-duplicated: the payload is
+   * idempotent by construction (a full statement of the player's cards or
+   * armed action) and the recipient's own guards decide what to do with it.
+   */
+  onUserEvent?: (payload: Record<string, unknown>) => void;
   /** Maximum reconnect attempts. Default: 10. */
   maxRetries?: number;
   /** Initial backoff ms. Default: 1000. */
@@ -186,6 +204,7 @@ export class EngineStateClient {
     this.opts = {
       onStatus: () => undefined,
       onEvent: () => undefined,
+      onUserEvent: () => undefined,
       onError: () => undefined,
       maxRetries: 10,
       initialDelay: 1000,
@@ -563,6 +582,15 @@ export class EngineStateClient {
         this.opts.onEvent(msg.payload);
       } catch (err) {
         console.error('[EngineStateClient] onEvent listener threw', err);
+      }
+      return;
+    }
+    if (msg.type === 'USER_EVENT') {
+      // Private, unsequenced, idempotent: straight through, never queued.
+      try {
+        this.opts.onUserEvent(msg.payload);
+      } catch (err) {
+        console.error('[EngineStateClient] onUserEvent listener threw', err);
       }
       return;
     }

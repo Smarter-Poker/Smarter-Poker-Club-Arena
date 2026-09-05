@@ -446,7 +446,7 @@ describe('visualChipStacks', () => {
     expect(v.map((s) => s.denom.value)).toEqual([500, 100]);
   });
 
-  it('draws one partial sliver for a sub-1 amount so it is not invisible', () => {
+  it('draws one partial white disc for a sub-1 amount so it is not invisible', () => {
     const v = visualChipStacks(0.5);
     expect(v).toHaveLength(1);
     expect(v[0].partial).toBe(true);

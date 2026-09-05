@@ -83,7 +83,11 @@ function labelFor(status: TableConnectionState): string | null {
       // available move.
       return 'Connection Lost. Trying To Get You Back';
     case 'auth_failed':
-      return 'Signing You In Again';
+      // 2026-09-04: this said "Signing You In Again" through a 22-hour outage
+      // in which nobody was being signed in. It now says what is happening:
+      // the client is asking whether the session is still alive. A dead one
+      // gets its own full-screen prompt (lib/sessionRevoked.announceSessionEnded).
+      return 'Checking Your Sign-In';
     case 'idle':
     case 'connected':
     default:

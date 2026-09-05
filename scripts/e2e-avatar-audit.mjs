@@ -4,6 +4,9 @@ import fs from 'fs';
 const SUPABASE_URL = 'https://kuklfnapbkmacvwxktbh.supabase.co';
 const ANON = process.env.SB_ANON || 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx';
 const PASS = process.env.TEST_PASS || process.env.SP_PASS;
+// 2026-09-04: no default account. Read SP_EMAIL from .env.local or refuse.
+const EMAIL = process.env.SP_EMAIL || process.env.TEST_USER_EMAIL;
+if (!EMAIL) throw new Error('SP_EMAIL (or TEST_USER_EMAIL) is not set - refusing to guess an account');
 const BASE = 'https://smarter.poker/hub/club-arena';
 const CLUB = 'a0000000-0000-0000-0000-000000000001';
 const TABLE = process.env.TABLE_ID || '6e0e34c2-f51a-4fe2-aa4d-31fbc0384901';
@@ -22,7 +25,7 @@ async function login() {
     const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: ANON },
-      body: JSON.stringify({ email: process.env.SP_EMAIL || 'daniel@bekavactrading.com', password: PASS }),
+      body: JSON.stringify({ email: EMAIL, password: PASS }),
     });
     if (r.ok) { const s = await r.json(); fs.writeFileSync('/tmp/sb-session.json', JSON.stringify(s)); return s; }
     await new Promise(res => setTimeout(res, 3000));

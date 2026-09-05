@@ -1,724 +1,987 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  PLAYER WALLET PAGE — Premium Financial Engine (Q2 Upgrade)
- *  Color-coded Triple-Wallet + Animated Counters + Sparkline Indicators
- * ═══════════════════════════════════════════════════════════════════════════════
+/*
+ * PLAYER WALLET / #SMARTERCASINOREALISM
+ * Black-first vault room, gunmetal structure, chrome type, electric-blue energy.
+ * The rendered vault and the rendered wallet plates supply the physical realism;
+ * CSS frames them and lays live ledger data into their bays. Nothing here
+ * pretends to be the artwork.
+ *
+ * Palette (house tokens): Obsidian #05070a, Carbon #0d1218, Gunmetal #27313c,
+ * Chrome #b8c3cd, Energy Cyan #00d4ff, Club Blue #4169e1, VIP Gold #ffc93c.
  */
 
 .wallet-page {
-  min-height: 100vh;
-  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
-  width: 100%;
-  max-width: 100vw;
-  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
-     one axis computes the other to `auto`, which makes this a scroll container,
-     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
-     viewport. The bar leaves the bottom of the screen and rides up the page. */
-  overflow-x: hidden;
-  overflow-x: clip;
-  background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
-  padding-bottom: max(70px, env(safe-area-inset-bottom));
-}
+  --vault-obsidian: #05070a;
+  --vault-carbon: #0d1218;
+  --vault-panel: #0b1017;
+  --vault-panel-raised: #111925;
+  --vault-gunmetal: #27313c;
+  --vault-chrome: #b8c3cd;
+  --vault-chrome-hot: #e6edf3;
+  --vault-cyan: #00d4ff;
+  --vault-blue: #4169e1;
+  --vault-gold: #ffc93c;
+  --vault-green: #35d48a;
+  --vault-muted: #7f8c9b;
+  --vault-radius: 8px;
+  --vault-font-display: 'Rajdhani', 'Roboto Condensed', Inter, system-ui, sans-serif;
+  --vault-font-label: 'Roboto Condensed', 'Rajdhani', Inter, system-ui, sans-serif;
+  --vault-font-body: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   HERO BALANCE CARD — Premium Fintech
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.wallet-hero {
   position: relative;
-  margin: 1rem;
-  padding: 1.75rem 1.5rem;
-  border-radius: 20px;
-  background: linear-gradient(145deg, #141e2e 0%, #0b1420 60%, #0f1a2a 100%);
-  border: 1px solid rgba(0, 212, 255, 0.15);
+  isolation: isolate;
+  width: min(100%, 1280px);
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: 16px 20px calc(190px + env(safe-area-inset-bottom, 0px));
+  overflow-x: clip;
+  color: #f1f5f8;
+  font-family: var(--vault-font-body);
+  background:
+    radial-gradient(circle at 18% 6%, rgba(0, 212, 255, 0.08), transparent 30rem),
+    linear-gradient(180deg, #070a0f 0%, var(--vault-obsidian) 60%, #020304 100%);
+}
+
+.wallet-page::before {
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  opacity: 0.28;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: linear-gradient(to bottom, black, transparent 70%);
+}
+
+/* ── Vault hero: rendered room, live console ─────────────────────────── */
+
+.vault-hero {
+  position: relative;
+  min-height: 400px;
+  margin-top: 16px;
   overflow: hidden;
+  border: 1px solid #4a5868;
+  border-radius: var(--vault-radius);
+  background: #030405;
   box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.4),
-    0 0 60px rgba(0, 212, 255, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 -1px 0 rgba(0, 212, 255, 0.3),
+    0 28px 70px rgba(0, 0, 0, 0.5);
 }
 
-.wallet-hero::before {
-  content: '';
+.vault-hero::before,
+.vault-hero::after {
   position: absolute;
-  top: -50%;
-  right: -30%;
-  width: 300px;
-  height: 300px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(0, 212, 255, 0.08) 0%, transparent 70%);
+  z-index: 3;
+  content: '';
   pointer-events: none;
 }
 
-.wallet-hero::after {
-  content: '';
-  position: absolute;
-  bottom: -40%;
-  left: -20%;
-  width: 250px;
-  height: 250px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(168, 85, 247, 0.06) 0%, transparent 70%);
-  pointer-events: none;
+.vault-hero::before {
+  inset: 6px;
+  border: 1px solid rgba(184, 195, 205, 0.2);
+  border-radius: 4px;
+  clip-path: polygon(0 0, 31% 0, 33% 4px, 67% 4px, 69% 0, 100% 0, 100% 100%, 0 100%);
 }
 
-.hero-label {
-  font-size: 0.7rem;
-  color: #5a6a7a;
+.vault-hero::after {
+  right: 6px;
+  bottom: 6px;
+  left: 6px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--vault-cyan), transparent);
+  box-shadow: 0 0 18px rgba(0, 212, 255, 0.8);
+}
+
+.vault-hero__art {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: left center;
+  filter: saturate(0.92) contrast(1.06);
+}
+
+.vault-hero__hardware {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      270deg,
+      rgba(2, 3, 5, 0.98) 0%,
+      rgba(2, 3, 5, 0.9) 30%,
+      rgba(2, 3, 5, 0.3) 62%,
+      rgba(2, 3, 5, 0.02) 100%
+    ),
+    linear-gradient(180deg, rgba(2, 3, 5, 0.55) 0%, transparent 30%, rgba(2, 3, 5, 0.7) 100%);
+}
+
+.vault-hero__console {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(100%, 560px);
+  margin-left: auto;
+  padding: 30px 30px 26px;
+}
+
+.vault-hero__eyebrow {
+  margin: 0;
+  color: var(--vault-cyan);
+  font-family: var(--vault-font-label);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
-  letter-spacing: 2px;
+}
+
+.vault-hero__label {
+  margin: 0;
+  color: var(--vault-chrome);
+  font-family: var(--vault-font-label);
+  font-size: 0.86rem;
   font-weight: 600;
-  margin-bottom: 4px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
 }
 
-.hero-balance {
-  font-size: 2.5rem;
-  font-weight: 800;
-  background: linear-gradient(135deg, #00d4ff 0%, #00ff88 50%, #00d4ff 100%);
-  background-size: 200% 200%;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  font-family: 'Inter', 'SF Pro Display', system-ui, monospace;
-  animation: shimmerText 3s ease-in-out infinite;
-  line-height: 1.1;
+.vault-hero__figure {
+  margin: 0;
+  color: var(--vault-chrome-hot);
+  font-family: var(--vault-font-display);
+  font-size: clamp(2.6rem, 6vw, 4.4rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  text-shadow:
+    0 0 24px rgba(0, 212, 255, 0.28),
+    0 2px 0 rgba(0, 0, 0, 0.6);
 }
 
-/* The playable figure, stated next to the combined one. See the comment on the
-   hero label in PlayerWalletPage.tsx: a sum of three wallets is not a spendable
-   balance, and this line is what stops the big number being read as one. */
-.hero-sublabel {
-  margin-top: 4px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: #7c8b9a;
-  letter-spacing: 0.3px;
+.vault-hero__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  margin: 2px 0 0;
+  padding: 0;
 }
 
-@keyframes shimmerText {
-  0%,
-  100% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
+.vault-hero__meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vault-hero__meta-item dt {
+  color: var(--vault-muted);
+  font-family: var(--vault-font-label);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.vault-hero__meta-item dd {
+  margin: 0;
+  color: var(--vault-chrome-hot);
+  font-family: var(--vault-font-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.vault-hero__meta-item.live dd {
+  color: var(--vault-green);
+}
+
+.vault-hero__meta-item.diamond dd {
+  color: var(--vault-cyan);
+}
+
+.vault-hero__meta-item.escrow dd {
+  color: var(--vault-gold);
+  font-size: 0.95rem;
 }
 
 .hero-diamonds {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-top: 8px;
-  padding: 6px 14px;
-  background: linear-gradient(135deg, rgba(168, 85, 247, 0.15) 0%, rgba(99, 102, 241, 0.1) 100%);
-  border: 1px solid rgba(168, 85, 247, 0.3);
-  border-radius: 20px;
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: #c084fc;
-  backdrop-filter: blur(4px);
 }
 
-.hero-diamonds .diamond-glyph {
-  font-size: 1rem;
-  filter: drop-shadow(0 0 4px rgba(168, 85, 247, 0.6));
+.diamond-glyph {
+  color: var(--vault-cyan);
+  filter: drop-shadow(0 0 6px rgba(0, 212, 255, 0.7));
 }
 
-.hero-actions {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-  margin-top: 1.25rem;
-  position: relative;
-  z-index: 1;
-}
-
-.hero-btn {
-  padding: 14px 16px;
-  border: none;
-  border-radius: 14px;
-  font-weight: 700;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+.vault-hero__actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────── */
+
+.vault-btn {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  letter-spacing: 0.3px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--vault-gunmetal);
+  border-radius: 6px;
+  background: linear-gradient(180deg, #1a2430, #0e141c);
+  color: var(--vault-chrome-hot);
+  font-family: var(--vault-font-label);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 6px 14px rgba(0, 0, 0, 0.4);
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
-.hero-btn.deposit {
-  background: linear-gradient(135deg, #00c853 0%, #00e676 50%, #00c853 100%);
-  color: #fff;
-  box-shadow: 0 4px 20px rgba(0, 200, 83, 0.3);
-  background-size: 200% 200%;
-  animation: btnPulse 2s ease-in-out infinite;
+.vault-btn:hover {
+  border-color: #4d5c6d;
+  transform: translateY(-1px);
 }
 
-@keyframes btnPulse {
-  0%,
-  100% {
-    background-position: 0% 50%;
-    box-shadow: 0 4px 20px rgba(0, 200, 83, 0.3);
-  }
-  50% {
-    background-position: 100% 50%;
-    box-shadow: 0 4px 28px rgba(0, 200, 83, 0.5);
-  }
+.vault-btn:active {
+  transform: translateY(0);
 }
 
-.hero-btn.withdraw {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.04) 100%);
-  color: #fff;
-  border: 1.5px solid rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(4px);
+.vault-btn:focus-visible {
+  outline: 2px solid var(--vault-cyan);
+  outline-offset: 2px;
 }
 
-.hero-btn.secondary {
-  background: transparent;
-  color: #8899aa;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-/* Nothing else styles a disabled hero button, so without this one a disabled
-   button looked identical to an enabled one. The Dispute button is disabled
-   off a club context, so this is load-bearing rather than defensive.
-   (The rule that used to make the point -- `.hero-btn:hover:not(:disabled)`,
-   which excluded a state nobody had styled -- went with the estate-wide hover
-   removal on 2026-08-29.) */
-.hero-btn:disabled {
-  opacity: 0.45;
+.vault-btn:disabled {
   cursor: not-allowed;
+  opacity: 0.45;
+  transform: none;
 }
 
-.hero-btn:active {
-  transform: scale(0.96);
+.vault-btn.primary {
+  border-color: rgba(0, 212, 255, 0.6);
+  background: linear-gradient(180deg, #1b6fd4, #0f3f8f);
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 0 18px rgba(0, 212, 255, 0.28),
+    0 6px 14px rgba(0, 0, 0, 0.4);
 }
-/* ─────────────────────────────────────────────────────────────────────────────
-   TABS — Sleek Underline Style
-   ───────────────────────────────────────────────────────────────────────────── */
+
+.vault-btn.ghost {
+  background: rgba(13, 18, 24, 0.7);
+}
+
+.vault-btn.small {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 0.7rem;
+}
+
+.vault-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--vault-cyan);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.vault-link:focus-visible {
+  outline: 2px solid var(--vault-cyan);
+  outline-offset: 2px;
+}
+
+/* ── Tabs ────────────────────────────────────────────────────────────── */
 
 .wallet-tabs {
   display: flex;
-  gap: 0;
-  margin: 0 1rem;
-  border-bottom: 2px solid rgba(255, 255, 255, 0.06);
+  gap: 4px;
+  margin: 16px 0 0;
+  padding: 4px;
+  overflow-x: auto;
+  border: 1px solid var(--vault-gunmetal);
+  border-radius: var(--vault-radius);
+  background: linear-gradient(180deg, #0f151d, #090d12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  scrollbar-width: none;
+}
+
+.wallet-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .wallet-tabs button {
-  flex: 1;
-  padding: 14px 12px;
+  flex: 1 0 auto;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid transparent;
+  border-radius: 6px;
   background: transparent;
-  border: none;
-  border-bottom: 3px solid transparent;
-  color: #5a6a7a;
-  font-weight: 600;
-  font-size: 0.85rem;
+  color: var(--vault-muted);
+  font-family: var(--vault-font-label);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   cursor: pointer;
-  transition: all 0.25s ease;
-  position: relative;
-  letter-spacing: 0.3px;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.wallet-tabs button:hover {
+  color: var(--vault-chrome);
+}
+
+.wallet-tabs button:focus-visible {
+  outline: 2px solid var(--vault-cyan);
+  outline-offset: -2px;
 }
 
 .wallet-tabs button.active {
-  color: #00d4ff;
-  border-bottom-color: #00d4ff;
+  border-color: rgba(0, 212, 255, 0.35);
+  background: linear-gradient(180deg, #17222f, #0f161f);
+  color: var(--vault-chrome-hot);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 14px rgba(0, 212, 255, 0.12);
 }
 
 .wallet-content {
-  padding: 1rem;
+  margin-top: 16px;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   TRIPLE-WALLET CARDS — Color-Coded Premium
-   ───────────────────────────────────────────────────────────────────────────── */
+/* ── Wallet plates ───────────────────────────────────────────────────── */
 
-.wallet-cards-stack {
+.wallet-plates {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.wallet-plate {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-}
-
-.wallet-card-premium {
-  position: relative;
-  padding: 1.25rem;
-  border-radius: 16px;
   overflow: hidden;
-  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  cursor: default;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-/* Business Wallet — Royal Gold */
-.wallet-card-premium.business {
-  background: linear-gradient(
-    145deg,
-    rgba(26, 26, 15, 0.7) 0%,
-    rgba(15, 21, 16, 0.8) 60%,
-    rgba(20, 18, 9, 0.9) 100%
-  );
-  border: 1px solid rgba(255, 215, 0, 0.25);
+  border: 1px solid var(--vault-gunmetal);
+  border-radius: var(--vault-radius);
+  background: var(--vault-panel);
   box-shadow:
-    0 8px 32px rgba(255, 215, 0, 0.1),
-    inset 0 1px 0 rgba(255, 215, 0, 0.15);
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 18px 40px rgba(0, 0, 0, 0.45);
 }
 
-.wallet-card-premium.business::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, #ffd700, #ffa000, #ffd700);
-  background-size: 200% 100%;
-  animation: shimmerBar 3s ease-in-out infinite;
+.wallet-plate__art {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1088 / 548;
+  object-fit: cover;
 }
 
-/* Player Wallet — Emerald Green */
-.wallet-card-premium.player {
-  background: linear-gradient(
-    145deg,
-    rgba(15, 26, 20, 0.7) 0%,
-    rgba(11, 21, 15, 0.8) 60%,
-    rgba(13, 26, 16, 0.9) 100%
-  );
-  border: 1px solid rgba(0, 200, 83, 0.25);
-  box-shadow:
-    0 8px 32px rgba(0, 200, 83, 0.1),
-    inset 0 1px 0 rgba(0, 200, 83, 0.15);
-}
-
-.wallet-card-premium.player::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, #00c853, #69f0ae, #00c853);
-  background-size: 200% 100%;
-  animation: shimmerBar 3s ease-in-out infinite 0.5s;
-}
-
-/* Promo Wallet — Electric Blue */
-.wallet-card-premium.promo {
-  background: linear-gradient(
-    145deg,
-    rgba(15, 20, 26, 0.7) 0%,
-    rgba(11, 16, 24, 0.8) 60%,
-    rgba(13, 18, 31, 0.9) 100%
-  );
-  border: 1px solid rgba(66, 133, 244, 0.25);
-  box-shadow:
-    0 8px 32px rgba(66, 133, 244, 0.1),
-    inset 0 1px 0 rgba(66, 133, 244, 0.15);
-}
-
-.wallet-card-premium.promo::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, #448aff, #82b1ff, #448aff);
-  background-size: 200% 100%;
-  animation: shimmerBar 3s ease-in-out infinite 1s;
-}
-
-@keyframes shimmerBar {
-  0%,
-  100% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-}
-
-.wc-header {
+/* The plate render ends in an empty machined bay; the bay below is drawn in
+   its palette so the live figures read as etched into the same hardware. */
+.wallet-plate__bay {
   display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 16px;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: -6px;
+  padding: 12px 16px 16px;
+  border-top: 1px solid rgba(184, 195, 205, 0.12);
+  background: linear-gradient(180deg, #0a0e14, #06090d);
 }
 
-.wc-icon {
-  width: 48px;
-  height: 48px;
+.wallet-plate__row {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.4rem;
-  border-radius: 14px;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wallet-plate__stat {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wallet-plate__stat.wide {
+  flex: 2 1 0;
+}
+
+.wallet-plate__value {
+  color: var(--vault-chrome-hot);
+  font-family: var(--vault-font-display);
+  font-size: 1.35rem;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
 }
 
-.business .wc-icon {
-  background: linear-gradient(135deg, rgba(255, 215, 0, 0.15) 0%, rgba(255, 160, 0, 0.08) 100%);
-  border: 1px solid rgba(255, 215, 0, 0.25);
-  color: #ffd700;
+.wallet-plate__value.available {
+  color: var(--vault-green);
 }
 
-.player .wc-icon {
-  background: linear-gradient(135deg, rgba(0, 200, 83, 0.15) 0%, rgba(105, 240, 174, 0.08) 100%);
-  border: 1px solid rgba(0, 200, 83, 0.25);
-  color: #00c853;
+.wallet-plate__value.locked {
+  color: var(--vault-gold);
 }
 
-.promo .wc-icon {
-  background: linear-gradient(135deg, rgba(66, 133, 244, 0.15) 0%, rgba(130, 177, 255, 0.08) 100%);
-  border: 1px solid rgba(66, 133, 244, 0.25);
-  color: #448aff;
+.wallet-plate__value.diamond {
+  color: var(--vault-cyan);
+  font-size: 1.7rem;
+  text-shadow: 0 0 16px rgba(0, 212, 255, 0.3);
 }
 
-.wc-name {
+.wallet-plate__label {
+  color: var(--vault-muted);
+  font-family: var(--vault-font-label);
+  font-size: 0.62rem;
   font-weight: 700;
-  font-size: 1rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.wallet-plate__meter {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.wallet-plate__meter-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--vault-blue), var(--vault-cyan));
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+  transition: width 0.6s ease;
+}
+
+.wallet-plate.promo .wallet-plate__meter-fill {
+  background: linear-gradient(90deg, #7a5cff, #c084fc);
+}
+
+.wallet-plate.business .wallet-plate__meter-fill {
+  background: linear-gradient(90deg, #9a7a2c, var(--vault-gold));
+}
+
+.wallet-plate__desc {
+  color: var(--vault-muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.wallet-plate__cta {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid rgba(0, 212, 255, 0.55);
+  border-radius: 6px;
+  background: linear-gradient(180deg, #1b6fd4, #0f3f8f);
   color: #fff;
-  letter-spacing: 0.3px;
+  font-family: var(--vault-font-label);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 0 16px rgba(0, 212, 255, 0.25);
 }
 
-.wc-desc {
-  font-size: 0.75rem;
-  color: #5a6a7a;
-  margin-top: 2px;
+.wallet-plate__cta:focus-visible {
+  outline: 2px solid var(--vault-cyan);
+  outline-offset: 2px;
 }
 
-.wc-balances {
+/* ── Panels (send / receive / earn / ledger) ────────────────────────── */
+
+.wallet-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  padding-top: 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
 }
 
-.wc-stat {
-  text-align: center;
+.wallet-grid.single {
+  grid-template-columns: 1fr;
 }
 
-.wc-stat-value {
+.vault-panel {
+  position: relative;
+  padding: 18px 18px 16px;
+  border: 1px solid var(--vault-gunmetal);
+  border-radius: var(--vault-radius);
+  background: linear-gradient(180deg, var(--vault-panel-raised), var(--vault-panel));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 18px 40px rgba(0, 0, 0, 0.4);
+}
+
+.vault-panel::before {
+  position: absolute;
+  top: 0;
+  right: 18px;
+  left: 18px;
+  height: 1px;
+  content: '';
+  background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.45), transparent);
+}
+
+.vault-panel.accent {
+  border-color: rgba(0, 212, 255, 0.4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 24px rgba(0, 212, 255, 0.1),
+    0 18px 40px rgba(0, 0, 0, 0.4);
+}
+
+.vault-panel.span2 {
+  grid-column: 1 / -1;
+}
+
+.vault-panel__title {
+  margin: 0 0 4px;
+  color: var(--vault-chrome-hot);
+  font-family: var(--vault-font-display);
   font-size: 1.15rem;
   font-weight: 700;
-  font-family: 'Inter', 'SF Pro Display', system-ui, monospace;
-  transition: all 0.3s ease;
-}
-
-.business .wc-stat-value.available {
-  color: #ffd700;
-}
-.player .wc-stat-value.available {
-  color: #00e676;
-}
-.promo .wc-stat-value.available {
-  color: #448aff;
-}
-.wc-stat-value.locked {
-  color: #ff9500;
-}
-.wc-stat-value.total {
-  color: #fff;
-}
-
-.wc-stat-label {
-  font-size: 0.65rem;
-  color: #4a5a6a;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-top: 4px;
-  font-weight: 600;
 }
 
-/* Mini sparkline bar under available balance */
-.wc-sparkline {
-  height: 3px;
-  border-radius: 2px;
-  margin-top: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  overflow: hidden;
+.vault-panel__sub {
+  margin: 0 0 14px;
+  color: var(--vault-muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
-.wc-sparkline-fill {
-  height: 100%;
-  border-radius: 2px;
-  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.business .wc-sparkline-fill {
-  background: linear-gradient(90deg, #ffd700, #ffa000);
-}
-.player .wc-sparkline-fill {
-  background: linear-gradient(90deg, #00c853, #69f0ae);
-}
-.promo .wc-sparkline-fill {
-  background: linear-gradient(90deg, #448aff, #82b1ff);
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   TRANSFER SECTION — Premium
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.transfer-section {
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.03) 0%, rgba(100, 100, 100, 0.01) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 16px;
-  padding: 1.5rem;
-}
-
-.transfer-section h3 {
-  margin: 0 0 1.25rem 0;
-  font-size: 0.85rem;
-  color: #5a6a7a;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
-}
-
-.transfer-form {
+.vault-form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
-.transfer-select {
-  width: 100%;
-  padding: 14px 16px;
-  background: linear-gradient(180deg, #0d1520 0%, #111b28 100%);
-  border: 1.5px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  color: #fff;
-  font-size: 0.95rem;
-  transition:
-    border-color 0.2s ease,
-    box-shadow 0.2s ease;
-  appearance: none;
-  -webkit-appearance: none;
+.vault-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.transfer-select:focus {
-  outline: none;
-  border-color: rgba(0, 212, 255, 0.4);
-  box-shadow: 0 0 12px rgba(0, 212, 255, 0.15);
-}
-
-.transfer-input-wrap {
-  position: relative;
-}
-
-.transfer-input-wrap input {
-  width: 100%;
-  padding: 14px 16px;
-  background: linear-gradient(180deg, #0d1520 0%, #111b28 100%);
-  border: 1.5px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  color: #fff;
-  font-size: 1.1rem;
-  font-weight: 600;
-  font-family: 'Inter', 'SF Pro Display', system-ui, monospace;
-  transition: border-color 0.2s ease;
-  box-sizing: border-box;
-}
-
-.transfer-input-wrap input:focus {
-  outline: none;
-  border-color: rgba(0, 212, 255, 0.4);
-  box-shadow: 0 0 12px rgba(0, 212, 255, 0.15);
-}
-
-.transfer-label {
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: #5a6a7a;
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
-  margin-bottom: 6px;
-  display: block;
-}
-
-.transfer-arrow {
-  text-align: center;
-  font-size: 1.5rem;
-  color: #2a3a4a;
-  padding: 4px 0;
-}
-
-.transfer-btn {
-  margin-top: 8px;
-  padding: 16px;
-  font-size: 0.95rem;
+.vault-field__label {
+  color: var(--vault-muted);
+  font-family: var(--vault-font-label);
+  font-size: 0.66rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
-  border: none;
-  border-radius: 14px;
-  color: #fff;
-  cursor: pointer;
-  letter-spacing: 0.5px;
-  box-shadow: 0 4px 20px rgba(0, 212, 255, 0.3);
-  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-.transfer-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   MESSAGES — Toast-like
-   ───────────────────────────────────────────────────────────────────────────── */
+.vault-select,
+.vault-input {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 14px;
+  border: 1px solid var(--vault-gunmetal);
+  border-radius: 6px;
+  background: linear-gradient(180deg, #070a0f, #0b1017);
+  color: var(--vault-chrome-hot);
+  font-family: var(--vault-font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5);
+}
 
-/* SCOPED 2026-08-25. `.message`, `.message.success` and `.message.error` were
-   bare global selectors shipped from a page stylesheet - about as generic a
-   class name as exists - so every element anywhere in the app called "message"
-   inherited this padding, radius and colour, depending only on whether this
-   page's chunk had been loaded yet. That is a style that behaves differently
-   after you visit /wallet. Scoped to the page that owns it. */
-.wallet-page .message {
-  padding: 0.75rem 1rem;
-  border-radius: 12px;
+.vault-select {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--vault-chrome) 50%),
+    linear-gradient(135deg, var(--vault-chrome) 50%, transparent 50%);
+  background-position:
+    calc(100% - 20px) 50%,
+    calc(100% - 15px) 50%;
+  background-repeat: no-repeat;
+  background-size:
+    5px 5px,
+    5px 5px;
+  padding-right: 36px;
+}
+
+.vault-select:disabled {
+  opacity: 0.55;
+}
+
+.vault-select:focus-visible,
+.vault-input:focus-visible {
+  border-color: var(--vault-cyan);
+  outline: none;
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.5),
+    0 0 0 3px rgba(0, 212, 255, 0.2);
+}
+
+.vault-input::placeholder {
+  color: #4e5a68;
+}
+
+.vault-form__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.vault-form__hint {
+  color: var(--vault-muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.message {
+  padding: 10px 12px;
+  border-radius: 6px;
   font-size: 0.85rem;
   font-weight: 600;
 }
 
-.wallet-page .message.success {
-  background: rgba(0, 200, 83, 0.1);
-  color: #00e676;
-  border: 1px solid rgba(0, 200, 83, 0.2);
+.message.success {
+  border: 1px solid rgba(53, 212, 138, 0.35);
+  background: rgba(53, 212, 138, 0.1);
+  color: var(--vault-green);
 }
 
-.wallet-page .message.error {
-  background: rgba(239, 68, 68, 0.1);
-  color: #ff6b6b;
-  border: 1px solid rgba(239, 68, 68, 0.2);
+.message.error {
+  border: 1px solid rgba(255, 99, 99, 0.35);
+  background: rgba(255, 99, 99, 0.1);
+  color: #ff8a8a;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   MOBILE RESPONSIVE — Portrait-First Financial UX
-   ───────────────────────────────────────────────────────────────────────────── */
+.vault-empty {
+  padding: 22px 12px;
+  border: 1px dashed rgba(184, 195, 205, 0.18);
+  border-radius: 6px;
+  color: var(--vault-muted);
+  font-size: 0.84rem;
+  text-align: center;
+}
 
-/* Horizontal scroll-snap for wallet card stack on mobile */
-@media (max-width: 480px) {
-  .wallet-hero {
-    margin: 0.75rem;
-    padding: 1.25rem 1rem;
-    border-radius: 16px;
+/* ── Receive ─────────────────────────────────────────────────────────── */
+
+.receive-ids {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 14px;
+}
+
+.receive-ids__row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid rgba(184, 195, 205, 0.12);
+  border-radius: 6px;
+  background: rgba(3, 5, 8, 0.6);
+}
+
+.receive-ids__row dt {
+  color: var(--vault-muted);
+  font-family: var(--vault-font-label);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.receive-ids__row dd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+}
+
+.receive-ids__value {
+  color: var(--vault-chrome-hot);
+  font-family: var(--vault-font-display);
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.receive-ids__value.mono {
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: all;
+}
+
+.incoming-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.incoming-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(184, 195, 205, 0.1);
+  border-radius: 6px;
+  background: rgba(3, 5, 8, 0.6);
+}
+
+.incoming-row__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.incoming-row__label {
+  color: var(--vault-chrome-hot);
+  font-family: var(--vault-font-label);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.incoming-row__desc {
+  overflow: hidden;
+  color: var(--vault-muted);
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.incoming-row__side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.incoming-row__amount {
+  color: var(--vault-green);
+  font-family: var(--vault-font-display);
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.incoming-row__time {
+  color: var(--vault-muted);
+  font-size: 0.7rem;
+}
+
+/* ── Earn ────────────────────────────────────────────────────────────── */
+
+.earn-stats {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0 0 12px;
+}
+
+.earn-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid rgba(184, 195, 205, 0.12);
+  border-radius: 6px;
+  background: rgba(3, 5, 8, 0.6);
+}
+
+.earn-stat dt {
+  color: var(--vault-muted);
+  font-family: var(--vault-font-label);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.earn-stat dd {
+  margin: 0;
+  color: var(--vault-chrome-hot);
+  font-family: var(--vault-font-display);
+  font-size: 1.15rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.earn-stat dd.positive {
+  color: var(--vault-green);
+}
+
+.earn-stat dd.diamond {
+  color: var(--vault-cyan);
+}
+
+.earn-meter {
+  height: 6px;
+  margin: 0 0 12px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.earn-meter__fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--vault-blue), var(--vault-cyan));
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+  transition: width 0.6s ease;
+}
+
+.earn-doors {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.earn-door {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 72px;
+  padding: 12px 14px;
+  border: 1px solid var(--vault-gunmetal);
+  border-radius: 6px;
+  background: linear-gradient(180deg, #121a25, #0a0f16);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.earn-door:hover {
+  border-color: rgba(0, 212, 255, 0.45);
+  transform: translateY(-1px);
+}
+
+.earn-door:focus-visible {
+  outline: 2px solid var(--vault-cyan);
+  outline-offset: 2px;
+}
+
+.earn-door__title {
+  color: var(--vault-chrome-hot);
+  font-family: var(--vault-font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.earn-door__sub {
+  color: var(--vault-muted);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .vault-hero {
+    min-height: 0;
   }
 
-  .hero-balance {
-    font-size: 2rem;
+  .vault-hero__art {
+    object-position: 30% center;
   }
 
-  .hero-actions {
-    gap: 8px;
+  .vault-hero__hardware {
+    background: linear-gradient(
+      180deg,
+      rgba(2, 3, 5, 0.35) 0%,
+      rgba(2, 3, 5, 0.86) 45%,
+      rgba(2, 3, 5, 0.97) 100%
+    );
   }
 
-  .hero-btn {
-    padding: 14px 14px;
-    min-height: 48px;
-    font-size: 0.85rem;
-    border-radius: 12px;
-  }
-
-  .wallet-tabs {
-    margin: 0;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-  }
-
-  .wallet-tabs::-webkit-scrollbar {
-    display: none;
-  }
-
-  .wallet-tabs button {
-    padding: 14px 12px;
-    min-height: 48px;
-    font-size: 0.8rem;
-    white-space: nowrap;
-  }
-
-  .wallet-content {
-    padding: 0.75rem;
-  }
-
-  /* Card-stack: horizontal scroll-snap for triple wallet cards */
-  .wallet-cards-stack {
-    flex-direction: row;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    -webkit-overflow-scrolling: touch;
-    gap: 12px;
-    padding-bottom: 8px;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-  }
-
-  .wallet-cards-stack::-webkit-scrollbar {
-    display: none;
-  }
-
-  .wallet-card-premium {
-    min-width: 85vw;
-    scroll-snap-align: center;
-    flex-shrink: 0;
-    padding: 1rem;
-    border-radius: 14px;
-  }
-
-  .wc-icon {
-    width: 42px;
-    height: 42px;
-    font-size: 1.2rem;
-  }
-
-  .wc-stat-value {
-    font-size: 1rem;
-  }
-
-  .transfer-section {
-    padding: 1rem;
-  }
-
-  .transfer-btn {
-    min-height: 52px;
-    touch-action: manipulation;
-  }
-
-  /* Under 16px makes iOS zoom the page when a field gets focus */
-  .transfer-select,
-  .transfer-input-wrap input {
-    font-size: 16px;
-  }
-
-  /* Scroll indicator dots */
-  .wallet-cards-stack::after {
-    content: '';
-    min-width: 1px;
-    flex-shrink: 0;
+  .vault-hero__console {
+    width: 100%;
+    margin-top: 120px;
+    padding: 20px 18px 22px;
   }
 }
 
-@media (max-width: 380px) {
-  .wallet-hero {
-    margin: 0.5rem;
-    padding: 1rem 0.75rem;
+@media (max-width: 640px) {
+  .wallet-page {
+    padding-right: 12px;
+    padding-left: 12px;
   }
 
-  .hero-balance {
-    font-size: 1.75rem;
+  .vault-hero__console {
+    margin-top: 96px;
   }
 
-  .hero-actions {
-    grid-template-columns: 1fr;
+  .vault-hero__actions .vault-btn {
+    flex: 1 1 calc(50% - 8px);
+    padding: 0 10px;
+    font-size: 0.72rem;
   }
 
-  .wallet-card-premium {
-    min-width: 88vw;
+  .earn-stats {
+    grid-template-columns: 1fr 1fr;
   }
 
-  .wc-balances {
-    gap: 4px;
+  .wallet-plate__value {
+    font-size: 1.15rem;
+  }
+
+  .receive-ids__row dd {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wallet-page *,
+  .wallet-page *::before,
+  .wallet-page *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .vault-btn:hover,
+  .earn-door:hover {
+    transform: none;
   }
 }

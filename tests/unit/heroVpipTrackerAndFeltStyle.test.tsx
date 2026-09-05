@@ -271,6 +271,21 @@ describe('the regular ante reaches the felt', () => {
     expect(css).toMatch(/\.table-brand__line--rules \{[^}]*font-size: 0\.54rem;/);
   });
 
+  it('at 375px the placard keeps its own steps instead of squashing to the 7px club line', () => {
+    const css = read('src/pages/TablePage.css');
+    const phone = css.slice(css.indexOf('@media (max-width: 380px) {'));
+    const block = phone.slice(0, phone.indexOf('/* Fade the brand out'));
+    expect(block).toMatch(/\.table-brand__line \{\s*font-size: 0\.44rem;/);
+    expect(block).toMatch(
+      /\.table-page:not\(\.table-page--tournament\) \.table-brand__line--level \{\s*font-size: 0\.9rem;/
+    );
+    expect(block).toMatch(/\.table-brand__line--style \{\s*font-size: 0\.57rem;/);
+    expect(block).toMatch(/\.table-brand__line--rules \{\s*font-size: 0\.5rem;/);
+    expect(block).toMatch(/\.table-brand__line--hand \{\s*font-size: 0\.4rem;/);
+    // and every one of them comes AFTER the 0.44rem line, so it wins.
+    expect(block.indexOf('font-size: 0.44rem')).toBeLessThan(block.indexOf('font-size: 0.9rem'));
+  });
+
   it("the table page reads the game's template through the table's cluster_id", () => {
     const page = read('src/pages/TablePage.tsx');
     expect(page).toMatch(/bomb_pot_min_players, bomb_pot_button_policy, cluster_id, nit_game/);

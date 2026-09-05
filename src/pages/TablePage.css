@@ -1429,6 +1429,27 @@
   .table-brand__line {
     font-size: 0.44rem;
   }
+
+  /* THE PLACARD DOES NOT SQUASH (2026-09-05). The rule above is written
+     after the masthead rows' own sizes at the same specificity, so on a
+     phone it took the game + blinds, the style badge and the rules row down
+     to 7 px with the club line - the one screen Dan reads the felt on. Each
+     row keeps its own step here, ~8% under its base size. */
+  .table-page:not(.table-page--tournament) .table-brand__line--level {
+    font-size: 0.9rem;
+  }
+
+  .table-brand__line--style {
+    font-size: 0.57rem;
+  }
+
+  .table-brand__line--rules {
+    font-size: 0.5rem;
+  }
+
+  .table-brand__line--hand {
+    font-size: 0.4rem;
+  }
 }
 
 /* Fade the brand out while the drama is on the pot, not the felt. */

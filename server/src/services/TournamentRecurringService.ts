@@ -794,7 +794,7 @@ const OPEN_TABLE_WAIT_MS = 10 * 60 * 1000;
  *  another horse can fill the seat for human players."
  *
  * So a Spin opens at 2/3 and a heads-up at 1/2, and the LAST seat belongs to a
- * human for a minute to three minutes before a horse is allowed to take it.
+ * human for 90 to 350 seconds before a horse is allowed to take it.
  *
  * Randomised per game, not fixed, for a reason worth stating: a constant delay
  * makes the whole board tick over in lockstep, so every table on the lobby
@@ -809,14 +809,32 @@ const OPEN_TABLE_WAIT_MS = 10 * 60 * 1000;
  *
  * Dan 2026-09-03, restating the rule with a new ceiling: "YOU ARE SUPPOSED TO
  * WAIT 60-150 SECONDS TO ALLOW A HUMAN TO PLAY, BEFORE A 3RD HORSE CAN JOIN
- * AND PLAY." The floor stays at a minute; the ceiling comes down from three
- * minutes to two and a half. The window is the START TIME of the game, and
- * GameServer's past-start top-up is what seats the last horse once it has
- * passed - so the third horse joins between 60 and 150 seconds after the
- * board opened, never sooner, and the seat is a human's until then.
+ * AND PLAY." The window is the START TIME of the game, and GameServer's
+ * past-start top-up is what seats the last horse once it has passed - so the
+ * third horse joins some seconds after the board opened, never sooner, and the
+ * seat is a human's until then.
+ *
+ * ── WIDENED TO 90-350 SECONDS (Dan 2026-09-05) ──────────────────────────────
+ *
+ * Dan: "fleet should hold the seat for 90-350 seconds max before filling the
+ * 3rd seat."
+ *
+ * The measurement that prompted it: in the seven days to 2026-09-05 this
+ * platform ran 31,153 Spins and FOUR of them had a human in them. The fleet
+ * was playing 4,450 games a day against itself. A 60-150s window is a narrow
+ * door, and it was narrower still in practice because a separate defect (the
+ * `playHasBegun` stack latch, fixed the same day) meant a board a horse had
+ * already sat at showed no SIT button at all - so the door was not merely
+ * narrow, it was painted on.
+ *
+ * 90 at the floor because a human who opens the lobby, reads the stakes and
+ * taps a seat needs longer than a minute; 350 at the ceiling because a board
+ * that sits open for six minutes stops looking like a room that is about to
+ * deal. Still randomised per game, for the reason above: a constant delay
+ * makes the whole board tick over in lockstep.
  */
-export const SEAT_FIRST_HUMAN_WINDOW_MIN_MS = 60 * 1000;
-export const SEAT_FIRST_HUMAN_WINDOW_MAX_MS = 150 * 1000;
+export const SEAT_FIRST_HUMAN_WINDOW_MIN_MS = 90 * 1000;
+export const SEAT_FIRST_HUMAN_WINDOW_MAX_MS = 350 * 1000;
 
 function seatFirstHumanWindowMs(): number {
   const span = SEAT_FIRST_HUMAN_WINDOW_MAX_MS - SEAT_FIRST_HUMAN_WINDOW_MIN_MS;

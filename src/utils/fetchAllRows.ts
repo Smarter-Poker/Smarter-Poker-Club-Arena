@@ -30,6 +30,20 @@
  * carries a house rule about it, written after ten horses vanished from a
  * cashier. `assertOrdered` is on by default and throws in development if the
  * factory forgot.
+ *
+ * ORDER IT BY SOMETHING UNIQUE. An ORDER BY is necessary and not sufficient,
+ * and this is the half that keeps being missed: tied rows have no defined
+ * order among themselves, so Postgres may resolve a tie differently for each
+ * OFFSET window and rows still vanish. Measured 2026-09-05 on /friends, which
+ * paged `friendships` by `created_at` alone: 1,309 accepted rows carried 485
+ * distinct timestamps with a largest tie group of 214, and the page rendered
+ * 1,274 friends - 35 missing, a different 35 each load, with nothing anywhere
+ * saying so. `assertOrdered` cannot catch this; it can see that an order
+ * exists, not that it is total.
+ *
+ * So end every ordering with a unique column - `.order('id', ...)` after
+ * whatever you actually sort by. It costs nothing and it is the difference
+ * between "all of them" and "most of them".
  */
 
 export interface PagedResult<T> {

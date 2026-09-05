@@ -165,7 +165,15 @@
   text-align: center;
 }
 
-.friends-panel {
+/* NOT `.friends-panel` (2026-09-05). That name is claimed by
+   src/styles/metallic-popups.css, which is imported globally and paints every
+   name in its inventory as a floating dialog with `!important`: 16px radius, a
+   2px bright top border, an inset blue rail and a `0 34px 80px` drop shadow.
+   These are the page's four inline tab panels, so the friends list rendered as
+   a 1114 x 3835 pixel "popup" nested inside a panel that already had its own
+   border. The inventory entry is correct for the FriendsList drawer it was
+   written for; this page simply must not answer to that name. */
+.friends-tabpanel {
   min-width: 0;
   min-height: 320px;
   padding: 24px;
@@ -609,7 +617,7 @@
   }
 
   .friends-command-heading,
-  .friends-panel {
+  .friends-tabpanel {
     padding-right: 16px;
     padding-left: 16px;
   }
@@ -643,7 +651,7 @@
     padding: 3px 4px;
   }
 
-  .friends-panel {
+  .friends-tabpanel {
     padding: 14px 12px 22px;
   }
 

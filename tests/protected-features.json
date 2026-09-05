@@ -213,14 +213,16 @@
           "squeezeHostProps(",
           "community-cards__slot-reserve",
           "pendingRevealKeyRef",
-          "preloadImage("
+          "preloadImage(",
+          "FLOP_FAN.DEAL_STAGGER_MS"
         ],
         "src/presentation/cardPresentation/cardSqueeze.css": [
           "@keyframes ccCardSqueeze",
           "@keyframes ccCardMaterialize",
           "@keyframes ccCardSpine",
           "@keyframes ccCardShadow",
-          "--rs-flip"
+          "--rs-flip",
+          "card-squeeze-host.card-squeeze-host"
         ],
         "src/presentation/cardPresentation/SqueezeCard.tsx": [
           "card-squeeze__spine",
@@ -229,7 +231,9 @@
         "src/presentation/cardPresentation/engineSingleton.ts": [
           "installEnvironmentInterrupts(cardPresentationEngine)"
         ],
-        "src/components/replay/HandReplay.tsx": ["useCardSqueeze({", "<SqueezeCard"]
+        "src/components/replay/HandReplay.tsx": ["useCardSqueeze({", "<SqueezeCard"],
+        "src/components/replay/HandReplay.css": ["--hr-card-w", "flex: none"],
+        "src/presentation/cardPresentation/profiles.ts": ["FLOP_FAN_TOTAL_MS"]
       },
       "absent": {
         "src/components/table/CommunityCards.css": [
@@ -243,7 +247,8 @@
         "card-squeeze-host",
         "community-cards__slot-reserve",
         "--rs-flip",
-        "card-squeeze__spine"
+        "card-squeeze__spine",
+        "hr-felt__card"
       ]
     }
   ]

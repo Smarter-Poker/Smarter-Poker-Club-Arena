@@ -15,6 +15,12 @@ interface ClubArenaNavigationContext {
   clubRole?: string | null;
   isPlatformStaff?: boolean;
   canManageGames?: boolean;
+  /**
+   * fn_can_i_operate_the_union_network said yes for this account
+   * (see useCanOperateUnionNetwork). Fails closed: absent an explicit yes the
+   * union directory is not listed at all.
+   */
+  canOperateUnionNetwork?: boolean;
 }
 
 const CLUB_STAFF_ROLES = new Set(['owner', 'co_owner', 'admin', 'manager', 'super_agent', 'agent']);
@@ -59,6 +65,7 @@ export function getClubArenaNavigation({
   clubRole = null,
   isPlatformStaff = false,
   canManageGames = false,
+  canOperateUnionNetwork = false,
 }: ClubArenaNavigationContext): ClubArenaNavGroup[] {
   const clubPath = (suffix = '') => (clubId ? `/clubs/${clubId}${suffix}` : '/');
 
@@ -132,11 +139,21 @@ export function getClubArenaNavigation({
           path: '/friends',
           description: 'Friends, Requests, And Challenges',
         },
-        {
-          label: 'Unions',
-          path: '/unions',
-          description: 'Browse And Manage Club Networks',
-        },
+        /* The union directory is an allowlisted door (Dan 2026-09-05: "hidden
+           to everyone except me"). Absent an explicit yes it is not offered -
+           the same fail-closed rule the section rail and the Community Center
+           follow, and all three read the one answer from
+           fn_can_i_operate_the_union_network. A link that bounces the person
+           straight back out is worse than no link. */
+        ...(canOperateUnionNetwork
+          ? [
+              {
+                label: 'Unions',
+                path: '/unions',
+                description: 'Browse And Manage Club Networks',
+              },
+            ]
+          : []),
       ],
     },
     {

@@ -45,6 +45,14 @@ describe('LAW 1/2/4 - the always-on registry', () => {
     expect(gs).toContain('...alwaysOnPrometheusLines()');
   });
 
+  it('a hand ending disarms the clock: the gap between hands is not latency', () => {
+    const eng = readFileSync(join(ROOT, 'server', 'src', 'engine', 'ServerTableEngine.ts'), 'utf8');
+    const idleAt = eng.indexOf('if (!this.handController) {');
+    expect(idleAt).toBeGreaterThan(0);
+    const idleBlock = eng.slice(idleAt, eng.indexOf('this.publishIdleState();', idleAt));
+    expect(idleBlock).toContain('this.lastActionAcceptedAtMs = 0;');
+  });
+
   it('the engine observes the fleet twin wherever it observes the gated one', () => {
     const eng = readFileSync(join(ROOT, 'server', 'src', 'engine', 'ServerTableEngine.ts'), 'utf8');
     const turns = readFileSync(
@@ -54,6 +62,16 @@ describe('LAW 1/2/4 - the always-on registry', () => {
     expect(eng).toContain('actToBroadcastFleet.observe(');
     expect(eng).toMatch(/audience: this\.humansSeated\(\) > 0 \? 'human' : 'horse'/);
     expect(turns).toContain('actionsFleetTotal.inc(');
+    // A horse's action is timed like a human's (CLAUDE.md 10.5). The horse
+    // path calls handController.performAction directly and bypasses
+    // _handlePlayerActionInner, so the clock must be started there too -
+    // verified on production 2026-09-04: before this, zero samples with no
+    // human seated.
+    const horseAt = turns.indexOf('handControllerRef.performAction(seat, action as any, amount)');
+    expect(horseAt).toBeGreaterThan(0);
+    const afterHorse = turns.slice(horseAt);
+    expect(afterHorse.indexOf('this.lastActionAcceptedAtMs = Date.now()')).toBeGreaterThan(0);
+    expect(afterHorse.indexOf('actionsFleetTotal.inc(')).toBeGreaterThan(0);
   });
 });
 

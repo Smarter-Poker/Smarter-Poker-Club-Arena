@@ -257,6 +257,39 @@ describe('the Stakes heading on the phone sort bar', () => {
     expect(menu()).toBeNull();
   });
 
+  /*
+   * THE BUG THIS CATCHES (Dan 2026-09-05: "when you open STAKES or VARIATIONS
+   * and get the dropdowns, they aren't clickable. It's like it isn't there, and
+   * you click what's behind the page or behind the buttons").
+   *
+   * A real tap is pointerdown THEN click. Every other test in this file uses
+   * `fireEvent.click`, which emits only the second half - so the outside-tap
+   * handler on `document` never ran, and a handler that closed the menu on
+   * pointerdown could not be seen from here. On a phone it unmounted the button
+   * under the finger before its click could fire, and the click landed on the
+   * game card the menu had been covering.
+   *
+   * The cause was one ref serving two mounted copies of the menu (the phone
+   * bar's and the desktop heading's), so containment was measured against the
+   * wrong node. Any future test of these items must send pointerDown first, or
+   * it is testing a gesture no user makes.
+   */
+  it('survives a real tap: pointerdown then click still applies the choice', () => {
+    const { chip, menu, onStylesChange } = renderLobby();
+    fireEvent.pointerDown(chip);
+    fireEvent.click(chip);
+    expect(menu()).not.toBeNull();
+
+    const action = within(menu()!).getByRole('button', { name: 'Action' });
+    fireEvent.pointerDown(action);
+    expect(
+      menu(),
+      'the menu must survive the pointerdown that precedes its own click'
+    ).not.toBeNull();
+    fireEvent.click(action);
+    expect(onStylesChange).toHaveBeenLastCalledWith(['action']);
+  });
+
   it('without style choices the Stakes chip is a plain sort toggle, as before', () => {
     render(
       <MemoryRouter>

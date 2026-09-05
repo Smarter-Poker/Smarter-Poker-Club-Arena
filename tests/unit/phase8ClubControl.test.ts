@@ -31,6 +31,7 @@ const M = (f: string) => readFileSync(`supabase/migrations/${f}`, 'utf8');
 const VAULT = M('20260905083005_a_granted_item_reaches_the_player_or_is_not_spent.sql');
 const RULES = M('20260905083442_the_rules_save_writes_one_key_and_says_who_may_write_it.sql');
 const CLAIM = M('20260905084034_a_claim_records_what_the_promotion_says_not_what_the_client_.sql');
+const INVOKER = M('20260905085818_the_delivery_lookup_reads_a_catalogue_anyone_may_read.sql');
 
 const SETTINGS_PAGE = readFileSync('src/pages/ClubSettingsPage.tsx', 'utf8');
 const RULES_PAGE = readFileSync('src/pages/ClubRulesPage.tsx', 'utf8');
@@ -76,6 +77,20 @@ describe('a granted vault item reaches the player, or is not spent', () => {
     for (const key of ['vip_card_gold_30d', 'mystery_card_30d', 'multiplier_1500_30d']) {
       expect(VAULT, `${key} is asserted undeliverable`).toContain(key);
     }
+  });
+
+  it('does not make a definer out of a lookup over a catalogue anyone may read', () => {
+    // check-telemetry-exposure.mjs failed the branch on this, correctly: it was
+    // SECURITY DEFINER, took no identity argument and never looked at who was
+    // calling. The answer was not an allowlist entry excusing it but to stop
+    // being a definer - `promo_vault_catalog` carries RLS with a read policy
+    // and is granted to authenticated, so an invoker sees exactly what its
+    // caller already sees.
+    expect(INVOKER).toContain('SECURITY INVOKER');
+    expect(INVOKER).toContain('the delivery lookup is still a definer a browser can reach');
+    expect(INVOKER).toContain(
+      'REVOKE ALL ON FUNCTION public.fn_promo_vault_delivery_for(text) FROM PUBLIC, anon;'
+    );
   });
 
   it('is retryable, and the old five-argument form still answers the live bundle', () => {

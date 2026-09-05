@@ -148,6 +148,26 @@ Two more from the same page:
   does render and write. A co-owner setting the day's message from the lobby
   left this form showing the old one with nothing to say it was stale.
 
+## And the estate's own guard caught one of mine
+
+`scripts/ci/check-telemetry-exposure.mjs` failed the branch on
+`fn_promo_vault_delivery_for`: _"SECURITY DEFINER, takes no identity argument,
+never looks at who is calling, and a logged-in account can execute them."_ All
+three true.
+
+The answer was not an allowlist entry explaining why a definer is acceptable.
+It was to stop being one. That function reads exactly one table,
+`promo_vault_catalog`, which carries RLS with a read policy, is granted to
+`authenticated`, and which the vault page renders directly - a PostgREST select
+on it answers 200 for a signed-in caller today. As SECURITY INVOKER it sees
+precisely what its caller can see, and the exposure stops existing rather than
+being excused. `ca_promo_vault_grant` still calls it and still works, because
+THAT function is a definer owned by `postgres`.
+
+Worth keeping as a lesson: DEFINER was reached for out of habit, in a migration
+full of definers, and the question "what does this need to see that its caller
+cannot" was never asked. The guard asked it.
+
 ## Verified
 
 - Migrations `20260905083005`, `20260905083442` and `20260905084034`, one

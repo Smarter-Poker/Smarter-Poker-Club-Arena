@@ -208,9 +208,18 @@ describe('the squeeze on the board', () => {
     hand += 1;
     cardPresentationEngine.forgetTable('table-rs');
     const allInRightButRerun = ordinary({ slowReveal: true, squeezeEligible: true, runs: 2 });
+    hand += 1;
+    cardPresentationEngine.forgetTable('table-rs');
+    // Dan 2026-09-05: not on a bomb pot's second board either.
+    const allInRightButBoard2 = ordinary({
+      slowReveal: true,
+      squeezeEligible: true,
+      boardIndex: 1,
+    });
     expect(plain.profile).not.toBe('all-in');
     expect(allInNoRight).toEqual(plain);
     expect(allInRightButRerun).toEqual(plain);
+    expect(allInRightButBoard2).toEqual(plain);
     expect(plain.interactive).toBeNull();
   });
 

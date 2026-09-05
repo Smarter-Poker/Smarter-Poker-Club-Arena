@@ -63,6 +63,25 @@ interface Props {
   status: TableConnectionState;
   /** False for a backgrounded tab in the multi-table view. */
   isActive?: boolean;
+  /**
+   * The engine has refused this socket for AUTH during the current outage
+   * (Realtime Phase 3, 2026-09-05). It is not the same story as a lost
+   * connection and must not be told as one: "Connection Lost. Trying To Get
+   * You Back" invites the player to check their Wi-Fi and then hard-refresh,
+   * and a refresh is the one move that cannot help here - it presents the
+   * same token to the same refusal, mid-hand.
+   *
+   * TablePage keeps this sticky for the outage because 'auth_failed' is a
+   * status the client passes through in milliseconds on its way to
+   * 'reconnecting'; by the time a banner could render it, the status alone
+   * has already forgotten that auth was the cause.
+   *
+   * A session that is genuinely dead never rests on this text - it gets the
+   * full-screen prompt and the redirect from lib/sessionRevoked. What is left
+   * for this line to say is the other case: the session is fine and the
+   * ENGINE cannot verify it, which the ladder underneath is still retrying.
+   */
+  authRefused?: boolean;
 }
 
 /**
@@ -71,7 +90,21 @@ interface Props {
  * somebody choosing a seat that they are disconnected would be a lie, and it
  * is the exact case TablePage's auto-reload failsafe already carves out.
  */
-function labelFor(status: TableConnectionState): string | null {
+/**
+ * What the player is told while the engine is refusing their sign-in. Title
+ * Case and no em dashes, from the same house rule as everything else here
+ * (CLAUDE.md 5.7), and deliberately in the present continuous: something is
+ * still happening on their behalf, so there is nothing for them to do.
+ */
+export const AUTH_REFUSED_LABEL = 'The Table Cannot Verify Your Sign In. Still Trying';
+
+export function labelFor(status: TableConnectionState, authRefused = false): string | null {
+  /* An auth refusal outranks the transport words for every state that would
+     otherwise blame the connection. 'connecting' and 'idle' are left alone:
+     the first is a fresh attempt that may well succeed, and the second is a
+     seat-first table with no socket to hold yet. */
+  if (authRefused && (status === 'failed' || status === 'reconnecting' || status === 'auth_failed'))
+    return AUTH_REFUSED_LABEL;
   switch (status) {
     case 'connecting':
       return 'Connecting To The Table';
@@ -98,8 +131,9 @@ function labelFor(status: TableConnectionState): string | null {
 export function TableConnectionBanner({
   status,
   isActive = true,
+  authRefused = false,
 }: Props): React.ReactElement | null {
-  const label = labelFor(status);
+  const label = labelFor(status, authRefused);
   const wantsBanner = label !== null && isActive;
 
   const [visible, setVisible] = useState(false);

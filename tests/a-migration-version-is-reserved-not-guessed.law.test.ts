@@ -33,7 +33,7 @@
  * Registry: docs/laws.d/a-migration-version-is-reserved-not-guessed.md
  */
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import {
   accessSync,
@@ -52,6 +52,41 @@ const MIG_DIR = resolve(ROOT, 'supabase/migrations');
 
 const created: string[] = [];
 
+/**
+ * Every slug this file reserves. The script writes into the REAL
+ * supabase/migrations directory - that is the point, it is what makes the test
+ * exercise the real reservation - so a run that is killed rather than finished
+ * leaves stubs behind, and a later `git add -A` would commit them. It happened
+ * twice on 2026-09-05.
+ *
+ * afterEach handles the normal path; this sweep handles the killed one, on
+ * both sides of the run so a stub from a PREVIOUS crashed run cannot survive
+ * either.
+ */
+const FIXTURE_SLUGS = [
+  'a_reservation_that_can_be_seen',
+  'a_second_agent_wants_the_same_second',
+  'a_version_that_is_fourteen_digits_wide',
+  'a_later_version_that_sorts_after_it',
+  'the_first_agent_reserves_a_name',
+  'the_second_agent_reserves_a_name',
+  'squatter_holding_this_second',
+];
+
+function sweepFixtures(): void {
+  let entries: string[];
+  try {
+    entries = readdirSync(MIG_DIR);
+  } catch {
+    return;
+  }
+  for (const f of entries) {
+    if (FIXTURE_SLUGS.some((slug) => f.endsWith(`_${slug}.sql`))) {
+      rmSync(resolve(MIG_DIR, f), { force: true });
+    }
+  }
+}
+
 function reserve(slug: string): string {
   const out = execFileSync('bash', [SCRIPT, slug], {
     cwd: ROOT,
@@ -65,6 +100,9 @@ function reserve(slug: string): string {
 function versionOf(path: string): string {
   return path.replace(/^.*\//, '').replace(/_.*$/, '');
 }
+
+beforeAll(sweepFixtures);
+afterAll(sweepFixtures);
 
 afterEach(() => {
   while (created.length) {

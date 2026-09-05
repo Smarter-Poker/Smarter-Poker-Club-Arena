@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/cluster-break-boundary-and-closed-door",
+  "_comment": "20260905040000 (the closed-table door), 20260905041000/042000 (move exemption, executor order) and 20260905050000 (announce RPC, announced_at, one seat per game, abandoned feeder, second chair, bb ante). All applied to production 2026-09-05.",
+  "tables": [],
+  "functions": ["fn_refuse_seat_on_closed_cluster_table", "fn_cash_seat_move_announce"],
+  "columns": { "cash_seat_moves": ["announced_at"] }
+}

@@ -2214,7 +2214,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         }
         // MUST-MOVE (Slice 2): planned moves land here, at the hand boundary,
         // after the leavers. A move is not a leave: no cash-out, no clock.
-        await this.executePendingSeatMoves();
+        // ANNOUNCED ONLY (2026-09-05): the deal told the player "Moving After
+        // This Hand"; a move planned during the hand waits for the next deal
+        // to be announced, so nobody is moved off a hand they were not told
+        // about.
+        await this.executePendingSeatMoves({ announcedOnly: true });
       }
     });
 

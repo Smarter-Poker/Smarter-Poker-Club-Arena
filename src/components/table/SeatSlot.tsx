@@ -1549,7 +1549,15 @@ export const SeatSlot = memo(
         // voice; an unmount mid-drag (table closed, hand ended, seat rebuilt)
         // reaches neither, and a looping noise source with nobody left to
         // stop it plays until the tab dies.
-        soundService.stopPeelFriction();
+        //
+        // ONLY IF THIS SEAT OWNS THE DRAG. The voice is a single global on the
+        // service, and EVERY seat at EVERY table mounts this cleanup - so an
+        // unconditional stop here means any unrelated seat unmounting (a player
+        // leaving, a background table closing, a seat rebuilt by a roster
+        // update) cuts the friction out from under a peel that is still in
+        // progress somewhere else. `peelRef.current` is non-null only while
+        // THIS component has a finger down.
+        if (peelRef.current) soundService.stopPeelFriction();
       },
       []
     );
@@ -1855,7 +1863,13 @@ export const SeatSlot = memo(
           /* already released */
         }
         peelRef.current = null;
-        if (playSounds) soundService.stopPeelFriction();
+        // NEVER gated on playSounds, though STARTING is. `playSounds` is
+        // `ambientSoundsAllowed`, which goes false the moment this table stops
+        // being the focused one - so a player who starts a peel and switches
+        // tabs mid-drag would hit a `stop` that never ran, and the loop would
+        // hum on until the seat unmounted. Starting is a preference; stopping
+        // is a resource being released.
+        soundService.stopPeelFriction();
         if (!drag.moved) {
           // A tap: bounce the corner to show what the gesture is.
           clearPeelVars();
@@ -1892,7 +1906,13 @@ export const SeatSlot = memo(
         const drag = peelRef.current;
         if (!drag) return;
         peelRef.current = null;
-        if (playSounds) soundService.stopPeelFriction();
+        // NEVER gated on playSounds, though STARTING is. `playSounds` is
+        // `ambientSoundsAllowed`, which goes false the moment this table stops
+        // being the focused one - so a player who starts a peel and switches
+        // tabs mid-drag would hit a `stop` that never ran, and the loop would
+        // hum on until the seat unmounted. Starting is a preference; stopping
+        // is a resource being released.
+        soundService.stopPeelFriction();
         (e.currentTarget as HTMLDivElement).removeAttribute('data-peeling');
         tweenPeel(drag, 0, 200, clearPeelVars);
       },

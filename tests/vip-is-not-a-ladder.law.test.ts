@@ -155,6 +155,11 @@ describe('there is no tier ladder, and no rung of one survives', () => {
       'src/components/vip/VIPBenefitsGrid.tsx',
       'src/components/vip/VIPStatsHeader.tsx',
       'src/components/vip/VIPStatusCard.tsx',
+      // Removed 2026-09-05: exported from the barrel, rendered nowhere, and
+      // each still carrying a piece of the ladder. A barrel export is not a
+      // use; it is one import away from putting the ladder back on a page.
+      'src/components/vip/VIPUpgradeModal.tsx',
+      'src/components/vip/VIPProgressRing.tsx',
     ]) {
       expect(existsSync(resolve(ROOT, gone)), `${gone} is back`).toBe(false);
     }

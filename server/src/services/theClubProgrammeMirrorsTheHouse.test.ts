@@ -10,8 +10,8 @@
  *   3. "ADD IN ALL THE SPINS (MIRROR MIDWAY UNION)" - a club board offers the
  *      same SPIN_CONFIGS the house does (its maxStake permitting), and it is
  *      never starved: the house used to spend the whole BURST first.
- *   4. "WAIT 60-150 SECONDS TO ALLOW A HUMAN TO PLAY, BEFORE A 3RD HORSE CAN
- *      JOIN" - the human window is 60 to 150 seconds, in every place that
+ *   4. "fleet should hold the seat for 90-350 seconds max before filling the
+ *      3rd seat" - the human window is 90 to 350 seconds, in every place that
  *      hands one out.
  *   5. "ADD THE HIGHER STAKES FOR MIDWAY UNION, CAP IT AT 25-50."
  *   6. "SATELLITE SIT N GO'S ... A TICKET INTO BIGGER BUY IN MTT'S."
@@ -59,22 +59,41 @@ const ROTATOR = readFileSync(join(process.cwd(), 'src/services/HorseSessionRotat
 const REPAIR_MIGRATION = readFileSync(
   join(
     process.cwd(),
-    '../supabase/migrations/20260903171736_the_third_seat_waits_60_to_150_seconds_for_a_human_everywhere.sql'
+    '../supabase/migrations/20260905104109_the_third_seat_waits_90_to_350_seconds_for_a_human.sql'
   ),
   'utf8'
 );
 
-describe('4. the third seat waits 60 to 150 seconds for a human', () => {
-  it('the engine window is 60 to 150 seconds', () => {
-    expect(SEAT_FIRST_HUMAN_WINDOW_MIN_MS).toBe(60_000);
-    expect(SEAT_FIRST_HUMAN_WINDOW_MAX_MS).toBe(150_000);
+/**
+ * Dan 2026-09-05: "fleet should hold the seat for 90-350 seconds max before
+ * filling the 3rd seat." Widened from 60-150 (Dan 2026-09-03) on the strength
+ * of a measurement: in the seven days to 2026-09-05, 31,153 Spins ran on this
+ * platform and FOUR of them had a human in them.
+ *
+ * All three surfaces still move together or none do. That is the whole reason
+ * this block exists - the engine seating a horse at 90s while the repair sweep
+ * hands the same board a 60s window is a race nobody would find by reading.
+ */
+describe('4. the third seat waits 90 to 350 seconds for a human', () => {
+  it('the engine window is 90 to 350 seconds', () => {
+    expect(SEAT_FIRST_HUMAN_WINDOW_MIN_MS).toBe(90_000);
+    expect(SEAT_FIRST_HUMAN_WINDOW_MAX_MS).toBe(350_000);
   });
   it('the recovery window agrees', () => {
-    expect(FRESH_HUMAN_WINDOW_MIN_S).toBe(60);
-    expect(FRESH_HUMAN_WINDOW_MAX_S).toBe(150);
+    expect(FRESH_HUMAN_WINDOW_MIN_S).toBe(90);
+    expect(FRESH_HUMAN_WINDOW_MAX_S).toBe(350);
   });
-  it('and so does the SQL repair (60 + [0, 90] seconds)', () => {
-    expect(REPAIR_MIGRATION).toMatch(/v_window := 60 \+ floor\(random\(\) \* 91\)::int;/);
+  it('and so does the SQL repair (90 + [0, 260] seconds)', () => {
+    expect(REPAIR_MIGRATION).toMatch(/v_window := 90 \+ floor\(random\(\) \* 261\)::int;/);
+  });
+  it('the three agree on the same pair of numbers, derived not retyped', () => {
+    // A fourth statement of the same rule is a fourth thing to forget.
+    expect(SEAT_FIRST_HUMAN_WINDOW_MIN_MS).toBe(FRESH_HUMAN_WINDOW_MIN_S * 1000);
+    expect(SEAT_FIRST_HUMAN_WINDOW_MAX_MS).toBe(FRESH_HUMAN_WINDOW_MAX_S * 1000);
+    const sql = /v_window := (\d+) \+ floor\(random\(\) \* (\d+)\)::int;/.exec(REPAIR_MIGRATION);
+    expect(sql, 'the SQL window statement moved').toBeTruthy();
+    expect(Number(sql![1])).toBe(FRESH_HUMAN_WINDOW_MIN_S);
+    expect(Number(sql![1]) + Number(sql![2]) - 1).toBe(FRESH_HUMAN_WINDOW_MAX_S);
   });
 });
 

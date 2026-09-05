@@ -301,9 +301,15 @@ const FALLBACK_DIAMOND_PACKAGES: DiamondPackage[] = [
 /* ═══ VIP membership plans — mirrors VIP_MEMBERSHIP in WH diamondStoreData.js ═══ */
 
 export interface VipPlan {
-  /** key sent to /api/store/purchase-vip-with-diamonds ('monthly' | 'annual') */
-  planKey: 'monthly' | 'annual' | null;
-  /** plan id sent to create-checkout-session for Stripe ('vip-monthly' | 'vip-annual') */
+  /** key sent to /api/store/purchase-vip-with-diamonds */
+  planKey: 'monthly' | 'yearly' | 'lifetime' | null;
+  /**
+   * Plan id sent to create-checkout-session for Stripe. NULL means this term
+   * has no card path: lifetime is one payment, and the World Hub's session
+   * builder has no one-time VIP mode (and its webhook no one-time VIP grant),
+   * so a card session would be paid and grant nothing. The tab hides the card
+   * button when this is null rather than offering one that refuses.
+   */
   checkoutPlan: string | null;
   id: string;
   name: string;
@@ -315,21 +321,13 @@ export interface VipPlan {
   featured?: boolean;
 }
 
+/**
+ * Mirrors /api/club-arena/store-catalog, which mirrors VIP_MEMBERSHIP in the
+ * World Hub. Three terms since 2026-09-05 (Dan: "just vip, monthly, yearly or
+ * lifetime, add lifetime for $499"); the Daily Pass was retired the same day,
+ * unsold, and "Annual" became "Yearly". 100 diamonds per dollar throughout.
+ */
 const FALLBACK_VIP_PLANS: VipPlan[] = [
-  {
-    id: 'vip-daily',
-    planKey: null,
-    checkoutPlan: null,
-    name: 'Daily Pass',
-    period: '24 Hours',
-    priceUsd: null,
-    priceDiamonds: 150,
-    features: [
-      'All VIP Table Features For 24h',
-      'Rabbit Hunt + Stack In BB',
-      'Great For Trying VIP',
-    ],
-  },
   {
     id: 'vip-monthly',
     planKey: 'monthly',
@@ -347,14 +345,24 @@ const FALLBACK_VIP_PLANS: VipPlan[] = [
     featured: true,
   },
   {
-    id: 'vip-annual',
-    planKey: 'annual',
-    checkoutPlan: 'vip-annual',
-    name: 'Annual VIP',
+    id: 'vip-yearly',
+    planKey: 'yearly',
+    checkoutPlan: 'vip-yearly',
+    name: 'Yearly VIP',
     period: 'Per Year',
     priceUsd: 199.99,
     priceDiamonds: 19999,
     features: ['Everything In Monthly', 'Two Months Free Vs Monthly', 'Best Long-Run Value'],
+  },
+  {
+    id: 'vip-lifetime',
+    planKey: 'lifetime',
+    checkoutPlan: null,
+    name: 'Lifetime VIP',
+    period: 'One Payment',
+    priceUsd: 499,
+    priceDiamonds: 49900,
+    features: ['Every VIP Feature, Permanently', 'Never Renews, Never Expires', 'One Payment'],
   },
 ];
 

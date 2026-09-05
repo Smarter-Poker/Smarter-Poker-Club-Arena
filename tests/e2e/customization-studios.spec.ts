@@ -139,8 +139,18 @@ async function openStudio(page: Page) {
   await page.goto('/hub/club-arena/dev/customization', { waitUntil: 'domcontentloaded' });
   const studio = page.getByRole('dialog', { name: 'Make The Table Yours' });
   await expect(studio).toBeVisible({ timeout: 20_000 });
+  /* THE TILE CANNOT BE READY BEFORE THE DIALOG, SO ITS BUDGET MUST NOT BE
+     SMALLER (2026-09-05). A tile is disabled while
+     `themeLoadState !== 'ready'` - the catalog fetch - so this wait is on a
+     network round trip that starts only once the line above has passed. Giving
+     it half the dialog's budget meant a loaded runner failed here rather than
+     on the thing that was actually slow, and it did: it took the required CSS
+     Beat E2E check red on a branch whose diff does not touch Table Studio at
+     all. The failing tile carried neither `theme-asset--locked` nor the
+     "Checking Ownership" label, so ownership had already resolved - only the
+     catalog had not arrived. */
   await expect(studio.getByRole('button', { name: 'Carbon Club', exact: true })).toBeEnabled({
-    timeout: 10_000,
+    timeout: 20_000,
   });
   return studio;
 }

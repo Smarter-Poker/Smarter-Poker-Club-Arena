@@ -89,6 +89,9 @@ const UnionDataPage = lazyWithRetry(() => import('./pages/UnionDataPage'));
 const CreateUnionPage = lazyWithRetry(() => import('./pages/CreateUnionPage'));
 // Lazy like the page it wraps: it is only ever needed on /unions/create.
 const UnionCreationGuard = lazyWithRetry(() => import('./components/auth/UnionCreationGuard'));
+// Dan 2026-09-05: the union directory is hidden to everyone except him. Lazy
+// like the page it wraps - it is only ever needed on the /unions routes.
+const UnionNetworkGuard = lazyWithRetry(() => import('./components/auth/UnionNetworkGuard'));
 const SettlementPage = lazyWithRetry(() => import('./pages/SettlementPage'));
 
 // New Pages
@@ -914,9 +917,11 @@ function FullApp() {
                   path="unions"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Unions">
-                        <UnionsPage />
-                      </PageErrorBoundary>
+                      <UnionNetworkGuard>
+                        <PageErrorBoundary pageName="Unions">
+                          <UnionsPage />
+                        </PageErrorBoundary>
+                      </UnionNetworkGuard>
                     </AuthGuard>
                   }
                 />

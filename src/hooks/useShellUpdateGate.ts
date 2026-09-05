@@ -59,7 +59,27 @@ import { useEffect } from 'react';
 import { masterBus } from '../core/MasterBus';
 
 /** How long before another shell reload may be attempted in this tab. */
-export const RELOAD_COOLDOWN_MS = 10 * 60 * 1000;
+export const RELOAD_COOLDOWN_MS = 30 * 60 * 1000;
+
+/**
+ * ── A PLAYER WHO IS USING THE PAGE IS NEVER RELOADED (Dan 2026-09-05) ──────
+ *
+ * "FIX WHAT EVER BUG IS CAUSING THE CLUB ARENA GAME LOBBY PAGES TO RANDOMLY
+ * GLITCH AND RELOAD." Measured in client_shell_telemetry over the 24 hours
+ * before this: 91 distinct deployed bundles, and 115 shell reloads for two
+ * users - one every twenty-odd minutes, median page age 23 minutes - because
+ * every publish made every visible lobby stale and this gate adopted it
+ * after a 3 s settle. That IS the random reload. The bundle is not the
+ * problem; the moment is.
+ *
+ * So a reload now also needs the player to have been away from the page:
+ * no pointer, touch, key, wheel or scroll input for IDLE_BEFORE_RELOAD_MS.
+ * A tab coming back from hidden qualifies on its own (hidden tabs receive no
+ * input). The startup window is unchanged: a boot that lands stale restarts
+ * at once, before anything has been built. And the resume probe still finds
+ * a bundle that is days old - it just waits for the player to look away.
+ */
+export const IDLE_BEFORE_RELOAD_MS = 5 * 60 * 1000;
 
 /** Both conditions must hold continuously for this long before reloading. */
 export const SETTLE_MS = 3000;
@@ -104,10 +124,22 @@ export function mayReloadForShell(opts: {
   visible: boolean;
   lastReloadAt: number | null;
   now: number;
+  /** Epoch ms of the player's last input on this page; undefined = none known. */
+  lastInputAt?: number | null;
+  /** performance.now() at the decision; undefined = not in the startup window. */
+  pageAgeMs?: number;
 }): boolean {
   if (isAtTable(opts.pathname)) return false;
   if (!opts.visible) return false;
   if (opts.lastReloadAt != null && opts.now - opts.lastReloadAt < RELOAD_COOLDOWN_MS) return false;
+  const inStartup = opts.pageAgeMs != null && opts.pageAgeMs < STARTUP_WINDOW_MS;
+  if (
+    !inStartup &&
+    opts.lastInputAt != null &&
+    opts.now - opts.lastInputAt < IDLE_BEFORE_RELOAD_MS
+  ) {
+    return false;
+  }
   return true;
 }
 
@@ -168,6 +200,20 @@ export function useShellUpdateGate(): void {
     let pending = false;
     let armed = true;
     let timer = 0;
+    /* The player's last input on this page. Starts at mount so a page that
+       has just been opened counts as "in use" once the startup window ends;
+       a hidden tab receives nothing, so a return from hidden is idle. */
+    let lastInputAt = Date.now();
+    const noteInput = () => {
+      lastInputAt = Date.now();
+    };
+    const INPUT_EVENTS: Array<keyof WindowEventMap> = [
+      'pointerdown',
+      'keydown',
+      'wheel',
+      'touchstart',
+      'scroll',
+    ];
 
     const readLastReload = (): number | null => {
       try {
@@ -189,6 +235,8 @@ export function useShellUpdateGate(): void {
         visible: document.visibilityState === 'visible',
         lastReloadAt: readLastReload(),
         now: Date.now(),
+        lastInputAt,
+        pageAgeMs: performance.now(),
       });
       if (!ok) return;
 
@@ -205,6 +253,8 @@ export function useShellUpdateGate(): void {
             visible: document.visibilityState === 'visible',
             lastReloadAt: readLastReload(),
             now: Date.now(),
+            lastInputAt,
+            pageAgeMs: performance.now(),
           })
         ) {
           return;
@@ -347,12 +397,14 @@ export function useShellUpdateGate(): void {
     navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pageshow', onPageShow);
+    for (const ev of INPUT_EVENTS) window.addEventListener(ev, noteInput, { passive: true });
 
     return () => {
       navigator.serviceWorker.removeEventListener('message', onMessage);
       navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('pageshow', onPageShow);
+      for (const ev of INPUT_EVENTS) window.removeEventListener(ev, noteInput);
       window.clearInterval(poll);
       window.clearTimeout(timer);
     };

@@ -531,6 +531,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         players={entry.players}
         capacity={entry.capacity}
         bareCount={entry.kind === 'mtt'}
+        tables={entry.game ? entry.game.tables : undefined}
       />
       {cta.link && !busy ? (
         <Link
@@ -644,7 +645,11 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                       {/* `|| '-'` to match the tournament row below: a table
                           with no seat count rendered "3 / 0", which reads as a
                           zero-seat table rather than an unknown one. */}
-                      {entry.players} / {entry.capacity || '-'}
+                      {/* R10 (Dan 2026-09-05): a must-move game is a running
+                          count across every table, never x/y. */}
+                      {entry.game
+                        ? `${entry.players} In ${entry.game.tables} ${entry.game.tables === 1 ? 'Table' : 'Tables'}`
+                        : `${entry.players} / ${entry.capacity || '-'}`}
                     </dd>
                   </div>
                   {/* COLUMNS, not the settings blob. `settings` is {} on every

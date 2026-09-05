@@ -292,6 +292,9 @@ interface TableData {
   settings?: string;
   /** The must-move game's template (classic / action / madness), from get_club_home. */
   cluster_template?: string | null;
+  /** The must-move game this table belongs to (Operation Table Stakes), or null. */
+  cluster_id?: string | null;
+  cluster_must_move?: boolean | null;
 }
 
 interface TournamentData {
@@ -2493,7 +2496,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       const tableQuery = supabase
         .from('tables')
         .select(
-          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands'
+          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle'
         );
       // ONE rule, applied. Union clubs see the UNION's tables plus their OWN
       // private games; another club's private game is never visible.
@@ -2627,7 +2630,24 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       if (tableResult.error) {
         reportError(tableResult.error, 'ClubHomePage.tablesQueryFailed');
       } else if (tableData) {
-        setTables(tableData);
+        /* THE CHAIN SELECT KEEPS THE GAME COLUMNS (2026-09-05). get_club_home
+           (the fast path, R10) paints cluster_players / cluster_tables /
+           cluster_must_move / cluster_template / cluster_state on a Main 1
+           row; this authoritative read cannot compute those aggregates, and
+           replacing the rows wholesale dropped them ~300 ms after first
+           paint - the feeder and Main 2 rows leaked back onto the board, the
+           style filter went empty, and every game read x/y (Dan: "THEY
+           SHOULD NEVER BE 2/6 OR 9/9"). The chain now selects the cluster
+           identity columns itself (so the hidden-member rule holds even when
+           the fast path never ran) and OVERLAYS what it carries onto the rows
+           on screen, leaving the game-wide figures the fast path put there.
+           Rows the chain does not return are removed: it is the authority on
+           which tables exist. */
+        setTables((prev) => {
+          const incoming = new Set((tableData as Array<{ id: string }>).map((r) => String(r.id)));
+          const kept = prev.filter((r) => incoming.has(String(r.id)));
+          return mergeFastRows(kept, tableData as typeof prev);
+        });
       }
       const tableCapped = (tableData?.length ?? 0) >= QUERY_LIMITS.LIST;
 

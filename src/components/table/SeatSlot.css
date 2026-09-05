@@ -1001,7 +1001,22 @@
   animation:
     spTimerRingShrink var(--sp-timer-duration, 15s) linear var(--sp-timer-delay, 0s) forwards,
     spTimerColorShift var(--sp-timer-yellow-duration, 15s) linear var(--sp-timer-delay, 0s) forwards;
-  animation-timing-function: linear(0, 0.75 66.6%, 1), linear;
+  /* Dan 2026-09-05, "AS A FINAL PLEA": "FIX THE DISAPPEARING COUNTDOWN CLOCK
+     TO ACTUALLY TAKE 15 FULL SECONDS TO DISAPPEAR, IT CURRENTLY TAKES EXACTLY
+     HALF THE TIME AT 7.5 SECONDS... JUST TURN DOWN THE SPEED 50%."
+
+     The animation has been 15 s long since 2026-08-20 - every duration
+     guard above is real - and it STILL read as half the time, because of the
+     easing that used to sit here: `linear(0, 0.75 66.6%, 1)`, added on
+     2026-08-21 for "slow down at the end". It spent three quarters of the
+     arc in the first ten seconds, so on a 3 px ring the visible band was
+     already a sliver by the halfway mark and what remained was too thin to
+     read as a clock. Every fix since floored the DURATION; the shape was the
+     problem. The ring is LINEAR now: the arc that is left is exactly the
+     time that is left, at every second of the fifteen, and the five-second
+     blink (below) is still the end-of-clock cue. Do not put an easing back
+     on this ring. */
+  animation-timing-function: linear, linear;
 }
 
 /* Outer glow container */

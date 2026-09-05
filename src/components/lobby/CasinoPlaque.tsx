@@ -100,11 +100,29 @@ export function PlaqueSeats({
   players,
   capacity,
   bareCount = false,
+  tables,
 }: {
   players: number;
   capacity: number;
   bareCount?: boolean;
+  /** A must-move GAME (R10): the count is running, across this many tables. */
+  tables?: number;
 }) {
+  if (tables != null) {
+    /* Dan 2026-09-05: "THEY SHOULD NEVER BE 2/6 OR 9/9 THEY ARE RUNNING
+       COUNTS NOW." A game has no ceiling a single table would have - a full
+       Main opens a feeder - so it prints players and tables, no pips. */
+    return (
+      <div
+        className="cplaque__seats cplaque__seats--game"
+        aria-label={`${players} Playing Across ${tables} ${tables === 1 ? 'Table' : 'Tables'}`}
+      >
+        <span className="cplaque__seats-num">
+          {players.toLocaleString()} Playing {'\u00b7'} {tables} {tables === 1 ? 'Table' : 'Tables'}
+        </span>
+      </div>
+    );
+  }
   if (bareCount) {
     return (
       <div className="cplaque__seats" aria-label={`${players} Entered`}>

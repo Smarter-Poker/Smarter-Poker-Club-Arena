@@ -24,6 +24,7 @@ import {
   extractEntryScript,
   settleDelayMs,
   RELOAD_COOLDOWN_MS,
+  IDLE_BEFORE_RELOAD_MS,
   STALE_CHECK_MIN_INTERVAL_MS,
   STARTUP_WINDOW_MS,
   SETTLE_MS,
@@ -48,6 +49,45 @@ describe('mayReloadForShell — never mid-hand, never unseen, never in a loop', 
 
   it('never burns the update on a hidden tab', () => {
     expect(mayReloadForShell({ ...base, visible: false })).toBe(false);
+  });
+
+  it('NEVER reloads a player who is using the page (Dan 2026-09-05: the random lobby reload)', () => {
+    // 91 bundles a day made every visible lobby stale every few minutes; a
+    // reload is now also refused while the player has touched the page
+    // inside IDLE_BEFORE_RELOAD_MS, except inside the startup window.
+    expect(mayReloadForShell({ ...base, lastInputAt: base.now - 1000, pageAgeMs: 60_000 })).toBe(
+      false
+    );
+    expect(
+      mayReloadForShell({
+        ...base,
+        lastInputAt: base.now - IDLE_BEFORE_RELOAD_MS + 1,
+        pageAgeMs: 60_000,
+      })
+    ).toBe(false);
+    expect(
+      mayReloadForShell({
+        ...base,
+        lastInputAt: base.now - IDLE_BEFORE_RELOAD_MS - 1,
+        pageAgeMs: 60_000,
+      })
+    ).toBe(true);
+    // A stale boot still restarts at once, before anything is built.
+    expect(mayReloadForShell({ ...base, lastInputAt: base.now, pageAgeMs: 1000 })).toBe(true);
+    expect(IDLE_BEFORE_RELOAD_MS).toBeGreaterThanOrEqual(5 * 60 * 1000);
+    expect(RELOAD_COOLDOWN_MS).toBeGreaterThanOrEqual(30 * 60 * 1000);
+  });
+
+  it('the hook listens for the player input that gates it, passively', () => {
+    const src = readFileSync(
+      path.resolve(__dirname, '../../src/hooks/useShellUpdateGate.ts'),
+      'utf8'
+    );
+    for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart', 'scroll']) {
+      expect(src).toContain(`'${ev}'`);
+    }
+    expect(src).toMatch(/window\.addEventListener\(ev, noteInput, \{ passive: true \}\)/);
+    expect(src).toMatch(/lastInputAt,\s*pageAgeMs: performance\.now\(\),/);
   });
 
   it('refuses a second reload inside the cooldown, allows one after it', () => {

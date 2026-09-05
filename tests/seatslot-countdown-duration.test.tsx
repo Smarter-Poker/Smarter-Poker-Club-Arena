@@ -10,6 +10,8 @@
  * consumer end of that contract so a future handler change cannot quietly
  * collapse it again.
  */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
 import SeatSlot from '../src/components/table/SeatSlot';
@@ -102,5 +104,17 @@ describe('SeatSlot countdown ring duration', () => {
       (info?.style.getPropertyValue('--sp-timer-delay') ?? '').replace('s', '')
     );
     expect(delay).toBeCloseTo(0, 1);
+  });
+});
+
+describe('the ring is linear: the arc that is left IS the time that is left (Dan 2026-09-05)', () => {
+  it('carries no easing on the shrink - the 2026-08-21 linear() made a 15s ring read as 7.5', () => {
+    const css = readFileSync(resolve(__dirname, '../src/components/table/SeatSlot.css'), 'utf8');
+    const block = css
+      .slice(css.indexOf('.seat--active .seat__info {'), css.indexOf('/* Outer glow container */'))
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(block).toMatch(/animation-timing-function: linear, linear;/);
+    expect(block).not.toMatch(/linear\(/);
+    expect(block).not.toMatch(/ease|cubic-bezier/);
   });
 });

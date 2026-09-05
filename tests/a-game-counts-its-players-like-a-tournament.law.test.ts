@@ -120,6 +120,29 @@ describe('the wiring', () => {
     expect(counter).toMatch(/'Table' : 'Tables'/);
   });
 
+  it('the authoritative chain select carries the cluster identity and overlays, never replaces (Dan 2026-09-05: never 2/6 or 9/9)', () => {
+    const page = read('src/pages/ClubHomePage.tsx');
+    // The chain selects the identity columns itself...
+    expect(page).toMatch(/maintain_hands, cluster_id, role, main_index, lifecycle'/);
+    // ...and overlays onto the rows on screen so get_club_home's game-wide
+    // figures survive it. A bare setTables(tableData) is the bug: it dropped
+    // cluster_players ~300 ms after first paint and every game read x/y.
+    expect(page).toMatch(/return mergeFastRows\(kept, tableData as typeof prev\);/);
+    expect(page).not.toMatch(/\n\s*setTables\(tableData\);/);
+  });
+
+  it('the plaque and the panel print a running count and tables for a game, never x/y', () => {
+    const plaque = read('src/components/lobby/CasinoPlaque.tsx');
+    expect(plaque).toMatch(/if \(tables != null\) \{[\s\S]*?Playing[\s\S]*?'Table' : 'Tables'/);
+    const panel = read('src/components/lobby/GameLobbyPanel.tsx');
+    expect(panel).toMatch(/tables=\{entry\.game \? entry\.game\.tables : undefined\}/);
+    expect(panel).toMatch(/entry\.game\s*\? `\$\{entry\.players\} In \$\{entry\.game\.tables\}/);
+    const adapter = read('src/components/lobby/game-cards/arenaGameCardAdapter.ts');
+    expect(adapter).toMatch(
+      /players: entry\.capacity > 0 \? `\$\{entry\.players\}\/\$\{entry\.capacity\}` : String\(entry\.players\)/
+    );
+  });
+
   it('get_club_home carries the game-wide figures and drops closed cluster tables', () => {
     const sql = read('supabase/migrations/20260905020000_r10_a_game_counts_its_players.sql');
     for (const col of [

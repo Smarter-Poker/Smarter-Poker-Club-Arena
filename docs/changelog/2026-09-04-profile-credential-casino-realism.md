@@ -136,8 +136,10 @@ them renders `<PlayerAvatar>`, verified per file - so each was pure collision
 with the shared component. Scoping each to the container it belongs to is
 behaviour-preserving for the owner and removes the leak for everyone else.
 
-**256 -> 254.** The remaining 254 are logged, not fixed: they belong to
-surfaces outside this audit and each is the same two-line change.
+**256 -> 254**, and 252 once this branch is merged with main, whose own
+casino-realism rewrites removed two more. The remainder are logged, not fixed:
+they belong to surfaces outside this audit and each is the same two-line
+change.
 `tests/global-css-does-not-leak-across-pages.law.test.ts` pins `.action-btn`
 at zero bare definitions, pins `.player-avatar` to its one owner, and ratchets
 the total so the count can fall but never rise. It immediately earned its keep
@@ -195,7 +197,7 @@ in a service file is how the next agent revives one.
 - The mutual-friend chips still print social usernames on an arena surface.
 - `training_achievement_definitions` (threshold 0, icon_url null on every
   row) is a dead mirror of the client `ACHIEVEMENTS`; pick one source.
-- 254 class names are still defined bare in more than one stylesheet with a
+- 252 class names are still defined bare in more than one stylesheet with a
   property gap between them (down from 256). Each is a live cross-page
   collision and each is the same two-line fix; the law ratchets the count.
 

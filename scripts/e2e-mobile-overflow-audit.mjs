@@ -5,7 +5,9 @@ const SUPABASE_URL = 'https://kuklfnapbkmacvwxktbh.supabase.co';
 // The anon key is the PUBLISHABLE client key (already shipped in every
 // browser bundle) — a default here lets CI run without repo secrets.
 const ANON = process.env.SB_ANON || 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx';
-const EMAIL = process.env.SP_EMAIL || 'daniel@bekavactrading.com';
+// 2026-09-04: no default account. Read SP_EMAIL from .env.local or refuse.
+const EMAIL = process.env.SP_EMAIL || process.env.TEST_USER_EMAIL;
+if (!EMAIL) throw new Error('SP_EMAIL (or TEST_USER_EMAIL) is not set - refusing to guess an account');
 const PASS = process.env.TEST_PASS || process.env.SP_PASS;
 const BASE = 'https://smarter.poker/hub/club-arena';
 const CLUB = 'a0000000-0000-0000-0000-000000000001';

@@ -51,7 +51,8 @@ export interface CashierModalProps {
   /** `opId` is the modal's per-attempt idempotency id (see opIdRef). */
   onAddChips: (amount: number, opId?: string) => Promise<boolean>;
   currentStack: number;
-  accountBalance: number;
+  /** null = unknown (a failed read). Nothing can be added until it is known. */
+  accountBalance: number | null;
   maxBuyIn: number;
   maxStack: number; // Max stack allowed at table
   transactions?: CashierTransaction[];
@@ -140,8 +141,11 @@ export function CashierModal({
   }, [onClose]);
 
   // Calculate limits
+  const balanceKnown = accountBalance !== null;
   const canAddAmount = useMemo(() => {
     const spaceInStack = maxStack - currentStack;
+    // An unknown balance affords nothing - and says "Unavailable", not 0.
+    if (accountBalance === null) return 0;
     return Math.min(spaceInStack, accountBalance, maxBuyIn);
   }, [currentStack, maxStack, accountBalance, maxBuyIn]);
 
@@ -311,7 +315,7 @@ export function CashierModal({
           <div className="cashier-modal__balance-item">
             <span className="cashier-modal__balance-label">Account</span>
             <span className="cashier-modal__balance-value">
-              {formatAmount(accountBalance, currency)}
+              {balanceKnown ? formatAmount(accountBalance, currency) : 'Unavailable'}
             </span>
           </div>
         </div>

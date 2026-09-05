@@ -46,6 +46,10 @@ export type BusEventType =
   // Dan 2026-08-15: the in-table "+" asks MultiTablePage to open a LOBBY tab
   // alongside the running game, instead of navigating the whole app away.
   | 'OPEN_LOBBY_TAB'
+  // Dan 2026-09-04: open a World Hub page (/hub/social, /hub/marketplace, ...)
+  // in a HUB tab beside the running game - "basically opening up a new
+  // browser tab internally" - instead of window.location / window.open.
+  | 'OPEN_HUB_TAB'
   // Dan 2026-08-25: the tournament lobby's Ranking and Tables tabs ask
   // MultiTablePage to open a table as an OBSERVER in a new screen, leaving
   // every screen already open still live. Cap-guarded like every other tab.
@@ -416,6 +420,9 @@ export interface BusPayloadMap {
   TABLE_LEFT: TableEventPayload;
   /** Request that MultiTablePage open a lobby tab beside the running game. */
   OPEN_LOBBY_TAB: { requestedBy?: string };
+  /** Request that MultiTablePage show a World Hub page in a hub tab
+   *  (focused if one is already on that page, else appended). */
+  OPEN_HUB_TAB: { path: string; requestedBy?: string };
   /**
    * Open a table as an observer in a NEW screen without disturbing the screens
    * already open. `tableName` is cosmetic (the tab label before the engine

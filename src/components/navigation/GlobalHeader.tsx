@@ -363,11 +363,20 @@ export default function GlobalHeader({ inTab = false }: { inTab?: boolean } = {}
               </span>
             </button>
 
+            {/*
+             * Dan 2026-09-04: "when you click the wallet from the global header
+             * it takes you to marketplace. It's supposed to take you to the
+             * wallet." The button carried the wallet artwork and the label
+             * "Diamond Wallet" and opened the diamond STORE tab. A wallet shows
+             * what you hold; a store sells you more. The store keeps its own
+             * entry points (the Buy Diamonds paths in Shell and the throwable
+             * selector); this button opens the wallet.
+             */}
             <button
               className={`${styles.artButton} ${styles.walletBtn}`}
-              onClick={() => navigate('/marketplace?tab=diamonds')}
-              aria-label="Diamond Wallet"
-              title="Diamond Wallet"
+              onClick={() => navigate('/wallet')}
+              aria-label="My Wallet"
+              title="My Wallet"
             >
               <img src={`${APPROVED_HEADER_ASSET}wallet.png`} alt="Wallet" />
             </button>

@@ -188,6 +188,43 @@
         }
       },
       "bundleMarkers": ["throw-animation__caption"]
+    },
+    {
+      "id": "river-squeeze-presentation",
+      "title": "Card Presentation Engine + River Squeeze (face-down materialise, hold, edge-on flip)",
+      "owner": "table",
+      "since": "2026-09-04",
+      "files": [
+        "src/presentation/cardPresentation/CardPresentationEngine.ts",
+        "src/presentation/cardPresentation/profiles.ts",
+        "src/presentation/cardPresentation/resolveProfile.ts",
+        "src/presentation/cardPresentation/animationKey.ts",
+        "src/presentation/cardPresentation/index.ts"
+      ],
+      "contains": {
+        "src/components/table/CommunityCards.tsx": [
+          "cardPresentationEngine.presentCard(",
+          "community-cards__card--squeeze",
+          "community-cards__slot-reserve"
+        ],
+        "src/components/table/CommunityCards.css": [
+          "@keyframes ccRiverSqueeze",
+          "@keyframes ccRiverMaterialize",
+          "--rs-flip"
+        ]
+      },
+      "absent": {
+        "src/components/table/CommunityCards.css": [
+          "@keyframes ccRiverReveal",
+          "community-cards__card--slow-reveal"
+        ],
+        "src/components/table/CommunityCards.tsx": ["isSlowFlip"]
+      },
+      "bundleMarkers": [
+        "community-cards__card--squeeze",
+        "community-cards__slot-reserve",
+        "--rs-flip"
+      ]
     }
   ]
 }

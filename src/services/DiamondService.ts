@@ -9,7 +9,6 @@
 
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
-import { retryAsync } from '../utils/retryAsync';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -104,35 +103,54 @@ export const DiamondService = {
 
     const balance = profileData?.diamonds || 0;
 
-    // 3. Compute lifetime stats from wallet_transactions (non-blocking)
-    let lifetimeEarned = 0;
-    let lifetimeSpent = 0;
-    try {
-      const { data: earnedData } = await supabase
-        .from('wallet_transactions')
-        .select('amount')
-        .eq('user_id', userId)
-        .eq('type', 'credit')
-        .in('category', ['diamond_purchase', 'diamond_reward', 'diamond_refund']);
-      lifetimeEarned = (earnedData || []).reduce((sum, t) => sum + Number(t.amount || 0), 0);
-
-      const { data: spentData } = await supabase
-        .from('wallet_transactions')
-        .select('amount')
-        .eq('user_id', userId)
-        .eq('type', 'debit')
-        .in('category', ['diamond_deduction', 'vip_purchase', 'mint']);
-      lifetimeSpent = (spentData || []).reduce((sum, t) => sum + Number(t.amount || 0), 0);
-    } catch (err) {
-      reportError(err, 'DiamondService.getBalance.lifetimeStats', { userId });
-      // Non-blocking: lifetime stats are best-effort
-    }
-
+    /*
+     * The two `wallet_transactions` reads that used to follow are gone.
+     * They filtered `category IN (diamond_purchase, diamond_reward,
+     * diamond_refund)` and `(diamond_deduction, vip_purchase, mint)`; five of
+     * those six values are rejected by `wallet_transactions_category_check`,
+     * so the sums were zero by construction - and every caller of this
+     * method (the wallet store, the profile page, the diamond modal, the
+     * club home) reads only `.balance`. Two dead round trips on every
+     * balance load, on a call the store's own comment names as part of the
+     * 85-request mount storm. Lifetime figures now come from the ledger that
+     * actually records diamonds, via `getLifetimeStats`, and only when a
+     * surface asks for them.
+     */
     return {
       balance: balance || 0,
-      lifetimeEarned,
-      lifetimeSpent,
+      lifetimeEarned: 0,
+      lifetimeSpent: 0,
     };
+  },
+
+  /**
+   * Lifetime earned / spent from `diamond_transactions`, the one ledger that
+   * records diamonds. Sign decides the bucket: a positive row is money in, a
+   * negative row is money out. Best-effort: a failed read reports zeros.
+   */
+  async getLifetimeStats(
+    userId: string
+  ): Promise<{ lifetimeEarned: number; lifetimeSpent: number }> {
+    try {
+      const { data, error } = await supabase
+        .from('diamond_transactions')
+        .select('amount')
+        .eq('user_id', userId)
+        .limit(5000);
+      if (error) throw error;
+      let lifetimeEarned = 0;
+      let lifetimeSpent = 0;
+      for (const row of data || []) {
+        const n = Number(row.amount || 0);
+        if (!Number.isFinite(n)) continue;
+        if (n > 0) lifetimeEarned += n;
+        else lifetimeSpent += -n;
+      }
+      return { lifetimeEarned, lifetimeSpent };
+    } catch (err) {
+      reportError(err, 'DiamondService.getLifetimeStats', { userId });
+      return { lifetimeEarned: 0, lifetimeSpent: 0 };
+    }
   },
 
   /**

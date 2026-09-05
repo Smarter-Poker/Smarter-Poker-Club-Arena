@@ -662,8 +662,6 @@ class HandHistoryServiceClass {
 
     const buildResult = (userId: string): number => netByUser.get(userId) ?? 0;
 
-    const playerCount = jsonbPlayers.length || 1;
-
     /* The hand's hole cards live in their own JSONB column, keyed by user id:
        { "<uuid>": [{ rank: 'A', suit: 'spades' }, ...] }. See the server's
        handHistory.ts `hole_cards: holeCardsPayload`. */

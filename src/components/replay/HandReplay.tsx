@@ -442,7 +442,12 @@ export default function HandReplay({ handId: propHandId, onClose }: HandReplayPr
 
       {tab === 'rundown' ? (
         <div className="hand-replay__rundown" role="tabpanel">
-          <HandDetailView model={model} currentUserId={heroId} badge={variant} />
+          <HandDetailView
+            model={model}
+            currentUserId={heroId}
+            badge={variant}
+            viewerFacts={handData.players.find((p) => p.user_id === heroId)?.facts}
+          />
         </div>
       ) : (
         <div className="hand-replay__stage" role="tabpanel">

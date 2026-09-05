@@ -189,3 +189,24 @@ __pycache__/
 # Written by the entry-module-manifest plugin in vite.config.ts each build;
 # read by scripts/ci/entry-chunk-delta.mjs. Build output, never committed.
 .entry-modules.json
+
+# MIGRATION-RESERVATION TEST DEBRIS (2026-09-05).
+# tests/a-migration-version-is-reserved-not-guessed.law.test.ts has to write
+# real files into supabase/migrations/ - that is the only way the reservation
+# script can see those seconds as taken - and it removes them in a `finally`.
+# A run that is interrupted never reaches the finally, and the next `git add -A`
+# commits the leftovers. That is not hypothetical: 197 of them reached main
+# through three separate pull requests, and one took the exact version another
+# agent's real migration had reserved, turning CI red for work that was correct
+# when it was written. Supabase keys schema_migrations on the version, so of two
+# files sharing one the second is SILENTLY NEVER APPLIED - the collision is
+# worse than the red build it causes.
+supabase/migrations/*_squatter_holding_this_second.sql
+supabase/migrations/*_the_first_agent_reserves_a_name.sql
+supabase/migrations/*_the_second_agent_reserves_a_name.sql
+supabase/migrations/*_a_second_agent_wants_the_same_second.sql
+
+# The migration-reservation law test writes its fixtures here instead of
+# supabase/migrations/, so they cannot race the dozen test files that scan that
+# directory. See tests/a-migration-version-is-reserved-not-guessed.law.test.ts.
+.tmp-migration-reservation-probe/

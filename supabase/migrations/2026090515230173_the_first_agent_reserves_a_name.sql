@@ -1,7 +1,0 @@
--- 2026090515230173_the_first_agent_reserves_a_name
---
--- Reserved by scripts/reserve-migration-version.sh on 2026-09-05 15:23:40 UTC.
---
--- CLAUDE.md 10.9: the reasoning goes in this header, not just the SQL.
--- Say what was wrong, what this changes, and what you measured. A
--- migration whose header is its own filename is the next agent's mystery.

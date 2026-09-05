@@ -7,9 +7,11 @@
  * ledger paid 1.5x. A multiplier a player can read must be the multiplier
  * the platform pays; this table is the SQL, verbatim, and the test pins it.
  *
- * Callers: ProfilePage (hero streak plate). No other client-side copy of this
- * ladder exists - BonusService.getWheelStats carries a different, wheel-only
- * ladder that is deliberately not this one.
+ * Callers: ProfilePage (hero streak plate). This is now the ONLY client-side
+ * copy of the ladder. BonusService.getWheelStats used to carry a second,
+ * wheel-only one (1.5x at 3 days, 2x at 7) that matched neither this table nor
+ * `claim_lucky_wheel_spin`, which pays no multiplier at all; it was removed on
+ * 2026-09-05 rather than reconciled, because the RPC is the thing that pays.
  */
 /* Module-local: `streakMultiplier` below is the only reader. It was exported
    for a countdown that was never wired to a surface (see the note below). */

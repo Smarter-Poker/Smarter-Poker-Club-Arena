@@ -73,7 +73,12 @@ describe('union creation is an allowlist', () => {
     const guard = read('src/components/auth/UnionCreationGuard.tsx');
     // Fails closed: still checking, or not allowed, means no page.
     expect(guard).toContain('if (checking)');
-    expect(guard).toContain('if (!canCreateUnion) return <Navigate to="/unions" replace />');
+    /* Sends a refused account to /community, not /unions. Since 2026-09-05
+       the directory is gated by the SAME allowlist (Dan: "hidden to everyone
+       except me"), so bouncing there would only bounce them again. What this
+       law cares about - that a refusal navigates away rather than rendering
+       the page - is unchanged. */
+    expect(guard).toContain('if (!canCreateUnion) return <Navigate to="/community" replace />');
   });
 
   it('nothing offers the door it cannot open', () => {

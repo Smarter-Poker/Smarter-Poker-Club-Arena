@@ -29,6 +29,28 @@ import { describe, expect, it } from 'vitest';
 
 const SRC = resolve(process.cwd(), 'src');
 
+/**
+ * `src/styles/` is the app-wide THEME layer - globals.css, club-engine.css,
+ * design-system.css and five others. Defining `.btn`, `.badge` or `.card-header`
+ * for the whole app is precisely their job, and a page that overrides one is
+ * using the cascade as intended, not leaking.
+ *
+ * The defect this law is about is narrower and it has a shape: one COMPONENT's
+ * private class silently deciding another COMPONENT's layout. That is what a
+ * 32px admin icon button did to the public dossier's action row, and neither
+ * file was a theme sheet.
+ *
+ * Counting the theme layer in made the number 244 instead of 166, and made it
+ * move whenever somebody restyled a button app-wide - which happened on
+ * 2026-09-05, when a second `.btn-success` block in club-engine.css added
+ * `border-color` and pushed the ratchet up by one for a change that was doing
+ * exactly what a design system is supposed to do. A ratchet that fires on
+ * correct work teaches people to raise it. Excluded, and the number means one
+ * thing.
+ */
+const isThemeLayer = (file: string) =>
+  relative(process.cwd(), file).split('\\').join('/').startsWith('src/styles/');
+
 const cssFiles = (): string[] => {
   const out: string[] = [];
   const walk = (dir: string) => {
@@ -40,7 +62,7 @@ const cssFiles = (): string[] => {
     }
   };
   walk(SRC);
-  return out;
+  return out.filter((f) => !isThemeLayer(f));
 };
 
 /** class name -> (file -> set of properties that file declares on it, bare) */
@@ -96,11 +118,38 @@ describe('a global class name has exactly one owner', () => {
 
   it('does not grow the number of class names that can leak between pages', () => {
     // A collision only MATTERS when one file declares a property another does
-    // not: that property is the one that crosses pages. 243 such classes remain
-    // app-wide (measured 2026-09-05 on this branch merged with main - 256
-    // before the scoping below, 254 after it, and 252 once main's own
-    // casino-realism rewrites landed; 243 once the rest of main caught up). This is a ratchet, not a target: it may
-    // fall, never rise. Fixing one is two lines - scope it to its container.
+    // not: that property is the one that crosses components.
+    //
+    // 2026-09-05, second pass (the wallet's, kept verbatim because both fixes
+    // are real): "The tree measured 244 against a ceiling of 243 - main was RED
+    // on this law - and two of the leaks were the wallet's own. `.message` was
+    // declared bare by BOTH PlayerWalletPage.css and ChipTransferModal.css with
+    // different padding, weight and error red, so the send banner took whichever
+    // the player had loaded last; it is scoped to `.wallet-page .message` now.
+    // `.wallet-page` stopped being a second bare owner when
+    // RewardsCircuitSurfaces.css gave up overpainting the wallet's ground with
+    // `!important`."
+    //
+    // 2026-09-05, third pass: main went red because a SECOND `.btn-success`
+    // block in club-engine.css added `border-color` - a design system doing
+    // exactly its job, tripping a ratchet that was counting the theme layer as
+    // if it were a leak. That published a broken gate and stalled the bundle
+    // for 17 minutes. `src/styles/` is excluded now (see isThemeLayer), so the
+    // number counts one thing only: a COMPONENT deciding another COMPONENT's
+    // layout. It reads 164 with the wallet's two fixes included; it was 242 on
+    // the old basis and 256 when this law was written.
+    //
+    // 2026-09-05, fourth pass: 161. Two came off by DELETING rather than
+    // scoping - VIPUpgradeModal.css and VIPProgressRing.css were exported from
+    // the vip barrel and rendered nowhere, so half of each collision was a
+    // stylesheet no page ever loaded. A dead stylesheet is still a live
+    // collision, because the bundler ships whatever the barrel re-exports.
+    // The number also had 2 of slack against reality when it was last set;
+    // this closes that, so the next regression is caught by one, not three.
+    //
+    // This is a ratchet, not a target: it may fall, never rise. Fixing one is
+    // two lines - scope it to its container, or delete the sheet if nothing
+    // renders it.
     // LOWER THIS NUMBER when you fix some; never raise it to make CI pass.
     let leakable = 0;
     for (const byFile of owners.values()) {
@@ -109,14 +158,6 @@ describe('a global class name has exactly one owner', () => {
       const union = new Set(declared.flatMap((s) => [...s]));
       if ([...union].some((p) => declared.some((s) => !s.has(p)))) leakable += 1;
     }
-    // 2026-09-05, second pass: 242. The tree measured 244 against a ceiling of
-    // 243 - main was RED on this law - and two of the leaks were the wallet's
-    // own. `.message` was declared bare by BOTH PlayerWalletPage.css and
-    // ChipTransferModal.css with different padding, weight and error red, so
-    // the send banner took whichever the player had loaded last; it is scoped
-    // to `.wallet-page .message` now. `.wallet-page` stopped being a second
-    // bare owner when RewardsCircuitSurfaces.css gave up overpainting the
-    // wallet's ground with `!important`. Ratcheted down to lock both in.
-    expect(leakable).toBeLessThanOrEqual(242);
+    expect(leakable).toBeLessThanOrEqual(161);
   });
 });

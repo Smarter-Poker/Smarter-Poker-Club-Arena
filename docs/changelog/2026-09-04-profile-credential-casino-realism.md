@@ -242,6 +242,77 @@ touches nothing that test covers, and CI installs with `npm ci`.
 The leak ratchet is tightened 252 -> **243**, its measured value on current
 main, so the nine that main's own rewrites removed cannot silently come back.
 
+## Line-by-line pass: three more live defects (2026-09-05)
+
+### 1. The dossier called 76% of players by the wrong name
+
+`get_mutual_friends` returned `p.username, p.avatar_url` straight off the
+profile, and the public dossier painted both onto its mutual-friend chips.
+A raw username is not the arena name: the resolver is alias -> username ->
+display_name, so reading `username` SKIPS the alias, which is the poker name.
+
+Measured on production:
+
+|                                                             |                    |
+| ----------------------------------------------------------- | ------------------ |
+| profiles whose alias differs from their username            | **1,004 of 1,313** |
+| profiles whose arena avatar differs from their social photo | **1,020 of 1,313** |
+| profiles where `username` IS the `full_name`                | **112 of 1,313**   |
+
+So three quarters of players were named by a username instead of their alias,
+three quarters were shown their World Hub photo on a Club Arena page, and for
+112 the chip printed a legal name. The chips were even ordered by a string the
+player never sees.
+
+Migration `20260905154022` replaces the function body: `username` now carries
+`fn_arena_name(...)` and `avatar_url` the arena portrait, falling back to the
+social photo only for a player who has chosen no library art. The column NAMES
+are unchanged, so no caller breaks - the same shape used to fix
+`fn_search_players`, `fn_union_player_directory` and `fn_list_pending_members`.
+`FriendSuggestionService` renames the field to `arenaName` on the way out so no
+caller can read a raw column by habit, and two dead `|| profile.username`
+fallbacks came off the dossier with it.
+
+**The law had a hole and it is closed.** `theArenaIsAlwaysTheAlias` policed
+`display_name` in two shapes and never saw `{friend.username}`. It does now:
+the three identity surfaces are pinned at ZERO raw-username renders, and the
+rest of the app is a ratchet at its measured 107. Not a blanket ban - username
+is the resolver's legitimate second choice and several RPCs return a resolved
+name in a field still called `username`, so a flat rule would be the coin flip
+CLAUDE.md 10.7 warns about.
+
+### 2. The wheel was going to lie about money
+
+`claim_lucky_wheel_spin` credits `v_pick.amount` EXACTLY. It applies no streak
+multiplier of any kind. `LuckyDrawWheel` rendered
+`+{(result.amount * streakMultiplier).toLocaleString()}` above a
+"{n}x Streak Bonus!" banner, with the multiplier coming from a third ladder
+invented in `BonusService.getWheelStats` (1.5x at a 3-day streak, 2x at 7).
+
+That ladder matched neither the payout path nor `fn_get_streak_multiplier`
+(1.2x at 3, 1.5x at 7, 1.8x at 14, 2.0x at 30). A player on a seven-day streak
+would have been told they won twice what landed in their wallet.
+
+Nobody was ever misled: the component is imported by no file and
+`user_lucky_wheel_spins` holds **0 rows** - the wheel has never been spun by
+anyone. The banner, the multiplication and the ladder are removed so that the
+day someone mounts it, it cannot lie. If a streak bonus is ever wanted on the
+wheel it belongs in the RPC first: the number a player reads has to be the
+number the platform pays.
+
+Related dead wiring recorded rather than "fixed": `WHEEL_SPIN_RESULT` has three
+live subscribers (`ProfilePage`, `GamificationLeaderboard`,
+`PlayerActivityFeed`) and exactly one emitter - the unmounted wheel. The event
+cannot currently fire. Whether the wheel should ship is Dan's call, not an
+agent's, so the component stays.
+
+### 3. The credential extracted a split it never showed
+
+`profileStatsFromV2` has read `cash_hands` and `tourney_hands` since it was
+written and rendered neither. The split is the shape of a player's volume and
+it is the one thing a single "Hands" figure cannot say. Two tiles added
+(indices 21 and 22, `statCount` 21 -> 23).
+
 ## What is left
 
 - Set the portrait INTO #3041's credential plate ring and the dossier folio
@@ -250,12 +321,9 @@ main, so the nine that main's own rewrites removed cannot silently come back.
   this branch's history (commit 62f49ffd9, `PublicProfilePage.css`).
 - One RPC for the credential (`profiles` + `vip` flags + stats + achievements
   - ledger) to replace five round trips on a cold mobile load.
-- `BonusService.getWheelStats` carries a third streak ladder (1.5x at 3-6,
-  2x at 7+) that matches neither the SQL nor the profile.
-- The mutual-friend chips still print social usernames on an arena surface.
 - `training_achievement_definitions` (threshold 0, icon_url null on every
   row) is a dead mirror of the client `ACHIEVEMENTS`; pick one source.
-- 252 class names are still defined bare in more than one stylesheet with a
+- 164 component stylesheets still define a class bare that another component also defines, with a
   property gap between them (down from 256). Each is a live cross-page
   collision and each is the same two-line fix; the law ratchets the count.
 

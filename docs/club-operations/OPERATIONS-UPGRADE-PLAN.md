@@ -672,6 +672,16 @@ full-suite run before the commit, closed against production at once, and
 re-issued correctly in `20260905043000`. Verified after: 403/42501 calling the
 helper directly as a signed-in user, 200 through `ca_rake_snapshot`.
 
+AND THE SAME BOUNDING DEFECT WAS HERE TOO, fixed in `20260905052500` once the
+bomb pot report showed what it costs: the live scan was bounded by the
+REQUESTED window with an anti-join to keep only the incomplete days, and an
+anti-join removes rows from the result rather than from the scan - 573,468 rows
+read to keep 14,091, 2.8s of the 4.8s the function took. Bounded by the
+earliest incomplete day now: the month range went from 3.7-5.2s to **983ms**,
+and `ca_rake_snapshot` from the browser to **1.3-1.6s**. Proved equivalent
+under REPEATABLE READ - the first READ COMMITTED comparison showed a difference
+that was the club earning rake between two statements, not the change.
+
 One thing measured on the way and deliberately left: `agent_commissions` has no
 `(club_id, created_at)` index either, and its CTE bitmap-scans 694,941 rows for
 a seven-day window at 1.14s. That is a second index on a second hot table; it

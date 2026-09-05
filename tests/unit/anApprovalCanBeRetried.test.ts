@@ -70,6 +70,19 @@ const INDEX_MIGRATION = readFileSync(
   'supabase/migrations/20260905042500_and_an_index_for_the_range_it_reads.sql',
   'utf8'
 );
+/**
+ * The correction that made the rewrite actually pay. The same shape was found
+ * in the bomb pot report an hour after this shipped: the live half was bounded
+ * by the REQUESTED window and relied on an anti-join to keep only the days the
+ * rollup had not finished. An anti-join removes rows from the RESULT, not from
+ * the scan - 573,468 rows read to keep 14,091 - so the live edge is bounded by
+ * the earliest incomplete day now, and the anti-join stays for the days above
+ * that floor which the rollup skipped and later filled.
+ */
+const LIVE_BOUND_MIGRATION = readFileSync(
+  'supabase/migrations/20260905052500_and_the_rake_breakdown_live_edge_is_bounded_the_same_way.sql',
+  'utf8'
+);
 const CASHIER = readFileSync('src/pages/CashierPage.tsx', 'utf8');
 
 const fn = (name: string) => {
@@ -323,6 +336,32 @@ describe('the agent breakdown reads the attributions instead of re-deriving them
     expect(INDEX_MIGRATION).toContain('ON public.rake_attributions (club_id, created_at)');
     expect(INDEX_MIGRATION).toContain('INCLUDE (player_id, rake_amount)');
     expect(INDEX_MIGRATION).toContain(':55 MAINTENANCE FREEZE');
+  });
+
+  it('bounds the live scan by the earliest incomplete day, not by the window', () => {
+    // Measured as postgres with the owner's claims: 3.7-5.2s before this
+    // bound, 983ms after, for the page's default month range. From the
+    // browser, ca_rake_snapshot went to 1.3-1.6s.
+    expect(LIVE_BOUND_MIGRATION).toContain('ra.created_at >= v_live');
+    expect(LIVE_BOUND_MIGRATION).toContain('public.club_rake_rollup_complete rc');
+    // The anti-join is not replaced by the bound, it is narrowed by it.
+    expect(LIVE_BOUND_MIGRATION).toContain('NOT EXISTS (SELECT 1 FROM ok_days o');
+    // And the correction re-asserts both of the things that went wrong today:
+    // the per-hand allocator stays gone, and the helper stays shut.
+    expect(LIVE_BOUND_MIGRATION).toContain(
+      'the agent breakdown re-derives a share per raked hand again'
+    );
+    expect(LIVE_BOUND_MIGRATION).toContain(
+      'the ungated breakdown helper is open to authenticated again'
+    );
+  });
+
+  it('proves equivalence under a snapshot rather than against a moving figure', () => {
+    // The first comparison ran READ COMMITTED and the month range came back
+    // different while every other case matched: each statement takes a fresh
+    // snapshot and this club produces rake continuously. Pinned to one
+    // snapshot, old and new agree exactly.
+    expect(LIVE_BOUND_MIGRATION).toContain('PROVED EQUIVALENT UNDER REPEATABLE READ');
   });
 
   it('still only rolls up the days that are complete, live-reading the rest', () => {

@@ -441,18 +441,61 @@ p_days=90    200 in 1,784ms
 p_days=365   200 in 3,199ms
 ```
 
+### The rake breakdown had the same defect, and it was fixed rather than left to be rediscovered
+
+`fn_ca_rake_by_agent` bounded its live scan the same wrong way, an hour before
+the bomb pot report showed what that costs:
+
+```sql
+WHERE ra.club_id = p_club_id
+  AND ra.created_at >= v_from AND ra.created_at < v_to
+  AND NOT EXISTS (SELECT 1 FROM ok_days o ...)
+```
+
+Measured on the reference club over seven days: **573,468 rows read to keep
+14,091**, a serial sequential scan costing 2.8s of the 4.8s the function took.
+`20260905052500` bounds it by the earliest day the rollup has not marked
+complete, and keeps the anti-join for days above that floor which the rollup
+skipped and later filled. As postgres with the owner's claims, the month range
+went from **3.7-5.2s to 983ms**.
+
+Proved equivalent **under REPEATABLE READ**, and that detail earns its place.
+The first comparison ran in an ordinary READ COMMITTED transaction and the
+month range came back DIFFERENT while the seven-day, year, paged and search
+cases all matched. That was not the change: every statement in a READ COMMITTED
+transaction takes a fresh snapshot, and this club produces rake continuously.
+Pinned to one snapshot, old and new agree exactly, on all of them. A comparison
+of a live figure that does not control the snapshot proves nothing in either
+direction, and reading that first `f` as a defect would have been as wrong as
+reading it as noise.
+
+### One operational note worth carrying: five applies in one night is a reload storm
+
+Immediately after the third and fourth migrations, browser calls that had just
+been answering in 1.2s returned **7,045ms, then 500 at 9,453ms and 8,520ms**,
+and the same function measured **983ms in psql at the same moment**. That is
+the PostgREST schema-cache reload CLAUDE.md section 2 is about: every DDL
+statement fires `pgrst_ddl_watch` and a reload takes ~28 seconds on this
+database. Nothing was wrong with the code. Sixty seconds later everything was
+200 again. **A timing taken inside the reload window is not a measurement**, and
+neither is the 500 beside it - which is the same trap as measuring a cold path
+warm, in the opposite direction.
+
 ### Verified in a browser, on production, signed in as the club owner
 
 Both of the reads this phase was handed as broken now render:
 
 - **`/clubs/<slug>/data`** - Rake Produced shows 380,124.56 rake, the five-day
   chart, and all 34 agent rows, where it showed dashes and "Reading Rollups".
+  Final timings from that browser session: month 1,266ms and 1,639ms, year
+  3,443ms, all 200.
   (The first paint still showed "That Took Too Long" once and recovered on the
   next poll; the retry-suppression fix for that is in this branch and not yet
   published.)
 - **`/clubs/<slug>/bomb-pot-report`** - 18,690 bomb pots, 50 tables, 4.7 players
   per bomb, 233,370.58 in forced antes, 55,041.77 of rake, and the full
   per-table breakdown, where the page said "Could Not Load The Bomb Pot Report".
+  Final timings from that browser session: 30 days 1,404ms, 365 days 885ms.
 
 ## Two things measured and deliberately left
 
@@ -469,8 +512,9 @@ Both of the reads this phase was handed as broken now render:
 ## Verified
 
 - Migrations `20260905040100`, `20260905041500`, `20260905042100`,
-  `20260905043000`, `20260905051000` and `20260905052000`, one transaction
-  each, applied and recorded. `20260905042500` - the index alone -
+  `20260905043000`, `20260905051000`, `20260905052000` and `20260905052500`,
+  one transaction each, applied and recorded. `20260905042500` - the index
+  alone - is queued for the `:55` freeze. `20260905042500` - the index alone -
   is queued for the `:55` freeze, because it is the only statement here that
   takes a lock on a table the engine writes on every raked hand.
 - `ca_rake_snapshot` read live through PostgREST as the club owner after the

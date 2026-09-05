@@ -196,10 +196,17 @@ test.describe('real Table Studio browser flows', () => {
     await tapReadyControl(studio.getByRole('button', { name: 'Royal', exact: true }));
     await expect(preview).toHaveAttribute('data-card-back', 'royal');
 
+    /* POLL ALL FOUR, NOT JUST THE FIRST (2026-09-05).
+       These are four independent debounced writes and they do not land in the
+       order they were made, so polling `table_id` and then asserting the other
+       three flat is a race the suite loses intermittently. It lost on
+       2026-09-05 with background_id still reading its default 'midnight'
+       against an expected 'emerald_room' - a red check on a branch that had not
+       touched Table Studio at all. */
     await expect.poll(() => server.saved.table_id).toBe('carbon_red');
-    expect(server.saved.button_id).toBe('red-d-gear');
-    expect(server.saved.background_id).toBe('emerald_room');
-    expect(server.saved.cards_id).toBe('royal');
+    await expect.poll(() => server.saved.button_id).toBe('red-d-gear');
+    await expect.poll(() => server.saved.background_id).toBe('emerald_room');
+    await expect.poll(() => server.saved.cards_id).toBe('royal');
 
     await tapReadyControl(studio.getByRole('button', { name: 'Final Table' }));
     await expect(preview).toHaveAttribute('data-table-theme', 'final_table');

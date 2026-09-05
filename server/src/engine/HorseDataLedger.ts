@@ -190,7 +190,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   flag('v16Blockers', 'river unblocker bluffs', 'V16'),
   flag('v16SizeCond', 'big-bet-conditioned sampling', 'V16'),
   flag('v16PloPolar', 'PLO polarity read', 'V16'),
-  flag('v16Ratio', 'DEFAULT OFF: bet-ratio rescale experiment (league-decided)', 'V16'),
+  flag(
+    'v16Ratio',
+    'DEFAULT OFF and DEAD BY PRECEDENCE since V38 (2026-09-03): both gates it rescales sit below the V38 call/fold return; league matchup retired 2026-09-05 after 0.00 +/- 0.00 over 12,000 hands',
+    'V16'
+  ),
   flag('v17Pos', 'players-behind bluff pressure', 'V17'),
   flag('v17RiverProbe', 'river probe into a capped field', 'V17'),
   flag('v17CatchBlock', 'call-side blocker on missed-flush rivers', 'V17'),

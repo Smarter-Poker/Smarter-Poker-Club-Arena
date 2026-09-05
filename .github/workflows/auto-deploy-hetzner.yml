@@ -110,7 +110,16 @@ on:
   # :45 gives the runner time to check out, test and build before :55; the
   # winner then sleeps in the break gate until `maintenance.readyForRestart`.
   schedule:
-    - cron: '45 * * * *'
+    # :35, not :45 (2026-09-05). The tick has to leave room for the BUILD, and
+    # the build grew from ~5 minutes to 8-18. From :45 an 8-minute build lands
+    # at :53 and a 14-minute one lands at :59 - past the break it was aiming
+    # for, so the run waits through an empty hour and ships nothing. That is
+    # how production came to sit four merges behind on 2026-09-05. From :35
+    # every build length actually observed lands inside the window, and the
+    # gate's budget (below) now stretches to the next :55 rather than a fixed
+    # fourteen minutes. tests/the-break-clocks-agree.law.test.ts holds every
+    # tick in :35-:50.
+    - cron: '35 * * * *'
 
   # The override, and the only path that may restart outside a window:
   # a deliberate `force: true` dispatch. A plain dispatch -- which is what
@@ -136,7 +145,12 @@ jobs:
   deploy:
     name: Deploy to Hetzner
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # 2026-09-05: 25 was written when the build took ~5 minutes and the wait
+    # was a fixed 14. The build now takes 8-18, so 25 could not hold both and
+    # the wait was silently the part that got squeezed - it expired 23 seconds
+    # before the gate opened on run 33942233521 and shipped nothing. 40 holds
+    # the worst observed build plus a full wait to the next :55 plus cutover.
+    timeout-minutes: 40
 
     env:
       HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
@@ -157,6 +171,12 @@ jobs:
       # DB-side dispatcher at :41 reads this to know a run is already in flight
       # for the coming window, so it does not fire a duplicate. Best-effort:
       # a failure here must never stop a deploy.
+      # Stamped BEFORE the build so the break gate can subtract the build's
+      # real cost from its wait budget (2026-09-05). Without it the gate
+      # assumes zero elapsed and can hand itself more time than the job has.
+      - name: Stamp the job start for the break-gate budget
+        run: echo "DEPLOY_STARTED_AT=$(date -u +%s)" >> $GITHUB_ENV
+
       - name: Record that this deploy run started
         if: always()
         continue-on-error: true
@@ -528,9 +548,63 @@ jobs:
             echo "force=true — skipping the break gate"; exit 0
           fi
 
-          # Poll for up to 14 minutes. We are dispatched at :40/:45/:50 and the
-          # flag opens at :55, so the wait is normally 5-15 minutes of sleeping
-          # and the budget has to cover the earliest tick.
+          # ── THE BUDGET REACHES THE BREAK, OR THE RUN SAYS SO AT ONCE ────
+          #
+          # This was a FIXED 14 minutes, written when the workflow ran on three
+          # ticks (:40/:45/:50) and the wait began seconds after dispatch. Both
+          # of those changed: the ticks were cut to one (:45) and the build
+          # ahead of this step now takes 8-18 minutes. So the budget stopped
+          # covering the thing it exists to cover.
+          #
+          # MEASURED 2026-09-05. Run 33942233521 carried the whole of Realtime
+          # Phase 1. Its build finished at 03:40:37, it polled its 56 attempts,
+          # and it gave up at 03:54:37 - TWENTY-THREE SECONDS before
+          # readyForRestart went true at 03:55:00. It reported success, shipped
+          # nothing, and production stayed four merges behind. The run before
+          # it (33939973701) missed the same way. Dan 2026-09-01: "no work ever
+          # gets lost, orphaned or not published ... EVER" - a gate that can
+          # expire one breath before it opens is exactly that failure.
+          #
+          # The budget is now derived from the clock instead of guessed: poll
+          # until the next :56 (one minute past the moment the flag opens), so
+          # a run whose build lands anywhere in the viable window ALWAYS
+          # reaches the gate. Two guards keep it honest:
+          #   - a hard ceiling of BUDGET_CAP_S, so this can never eat the job
+          #     timeout and strand the cutover it is waiting for;
+          #   - when the next break is further away than the cap, the run says
+          #     so IMMEDIATELY and exits instead of sleeping 14 minutes to
+          #     reach the same conclusion. A run that cannot win should cost
+          #     one HTTP request, not a quarter hour of runner time.
+          NOW_EPOCH=$(date -u +%s)
+          # Seconds until the next :56 (UTC minute 56 of this hour, or the next).
+          MIN_NOW=$(date -u +%-M); SEC_NOW=$(date -u +%-S)
+          if [ "$MIN_NOW" -lt 56 ]; then
+            SECS_TO_GATE=$(( (56 - MIN_NOW) * 60 - SEC_NOW ))
+          else
+            SECS_TO_GATE=$(( (60 - MIN_NOW + 56) * 60 - SEC_NOW ))
+          fi
+          # The ceiling is what this JOB has left, not a guess. DEPLOY_STARTED_AT
+          # is stamped by the first step, so the build's real cost is subtracted
+          # here instead of assumed - which is what made a fixed cap wrong twice
+          # (14 min when builds were 5, then 15 min when the gate was 923s away).
+          JOB_TIMEOUT_S=$(( 40 * 60 ))
+          CUTOVER_RESERVE_S=300     # cutover + verify + promote, measured at ~2-4 min
+          ELAPSED_S=$(( NOW_EPOCH - ${DEPLOY_STARTED_AT:-$NOW_EPOCH} ))
+          BUDGET_CAP_S=$(( JOB_TIMEOUT_S - ELAPSED_S - CUTOVER_RESERVE_S ))
+          [ "$BUDGET_CAP_S" -lt 0 ] && BUDGET_CAP_S=0
+          echo "break gate budget: job elapsed ${ELAPSED_S}s, ${BUDGET_CAP_S}s left for the wait" 
+          POLL_S=15
+          if [ "$SECS_TO_GATE" -gt "$BUDGET_CAP_S" ]; then
+            echo "::warning title=Break is out of reach::The next maintenance break is ${SECS_TO_GATE}s away, beyond this run's ${BUDGET_CAP_S}s budget. Not sleeping to reach the same answer - the next tick carries this commit."
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "gate_reason=the next break is ${SECS_TO_GATE}s away, beyond this run's budget" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          # +90s of margin past the flag so a slow park does not lose the run.
+          ATTEMPTS=$(( (SECS_TO_GATE + 90) / POLL_S ))
+          [ "$ATTEMPTS" -lt 8 ] && ATTEMPTS=8
+          echo "break gate: ${SECS_TO_GATE}s to the next :55, polling ${ATTEMPTS}x${POLL_S}s"
+
           # ── HOW FAR BEHIND IS PRODUCTION? ───────────────────────────────
           #
           # Read before the wait, because it decides what to do when the gate
@@ -598,16 +672,16 @@ jobs:
           # liveness verify is comfortably under two minutes; below that floor
           # we let the poll run out and take the old post-loop path instead.
           MIN_BREAK_LEFT_S=120
-          for i in $(seq 1 56); do
+          for i in $(seq 1 $ATTEMPTS); do
             BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
             # Three outcomes, deliberately distinguished: ready / not ready /
             # this engine predates the feature. Collapsing the third into the
             # second would deadlock the very deploy that ships the feature.
             STATE=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d.get("maintenance"); print("LEGACY" if m is None else ("READY" if m.get("readyForRestart") else "phase=%s remaining=%ss unparked=%s" % (m.get("phase"), int((m.get("remainingMs") or 0)/1000), m.get("unparkedTables"))))' 2>/dev/null || echo ERR)
             case "$STATE" in
-              READY)  READY=yes; echo "attempt $i/56: break is running and every table is parked — restarting now"; break ;;
-              LEGACY) LEGACY=yes; echo "attempt $i/56: /health has no maintenance block"; break ;;
-              ERR)    echo "attempt $i/56: /health unreadable — retrying" ;;
+              READY)  READY=yes; echo "attempt $i/$ATTEMPTS: break is running and every table is parked — restarting now"; break ;;
+              LEGACY) LEGACY=yes; echo "attempt $i/$ATTEMPTS: /health has no maintenance block"; break ;;
+              ERR)    echo "attempt $i/$ATTEMPTS: /health unreadable — retrying" ;;
               *)
                 # Remember that a break was actually RUNNING at some point,
                 # even if a straggler table kept the strict gate shut. That is
@@ -637,11 +711,11 @@ jobs:
                   REMAIN_S=$(printf '%s' "$STATE" | sed -n 's/.*remaining=\([0-9][0-9]*\)s.*/\1/p')
                   if [ -n "$REMAIN_S" ] && [ "$REMAIN_S" -ge "$MIN_BREAK_LEFT_S" ]; then
                     STRAGGLER_NOW=yes
-                    echo "attempt $i/56: break is running with ${REMAIN_S}s left and production is ${BEHIND_MIN}m behind — escalating NOW, inside the break, rather than after the poll outlives it"
+                    echo "attempt $i/$ATTEMPTS: break is running with ${REMAIN_S}s left and production is ${BEHIND_MIN}m behind — escalating NOW, inside the break, rather than after the poll outlives it"
                     break
                   fi
                 fi
-                echo "attempt $i/56: waiting for the break — $STATE" ;;
+                echo "attempt $i/$ATTEMPTS: waiting for the break — $STATE" ;;
             esac
             sleep 15
           done

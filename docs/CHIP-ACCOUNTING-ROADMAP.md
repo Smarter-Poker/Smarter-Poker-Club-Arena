@@ -144,6 +144,8 @@ What the reset gives Phase 5: exact opening figures, so the escrow floor of zero
 
 ### Phase 6 - controls that enforce
 
+**Phase 6 status - 2026-09-05 21:00 UTC (measured, not intended).** 6.1 DONE: a settlement from outside the platform names an approved `ca_manual_adjustments` row or is refused; the agent's row is written under Dan's standing 10.9 grant with the paragraph and the migration. 6.2 DONE: the kill switch trips itself at 1,000 chips on the supply, BBJ or escrow meters and freezes tournament and jackpot payouts until a human clears them. 6.3 DONE: `ca_detector_registry` (owner, SLA, retire, clear window), `v_ca_alert_board`, two detectors retired, 54 stale findings cleared on the first tick. 6.4: every leg names its hand or its event; dedupe stays on the door by design; partitioning measured and planned as its own dated cut before December. `docs/changelog/2026-09-05-chip-std-phase-6-controls-that-enforce.md`.
+
 6.1 `p_adjustment_id` on the settle function requires an approved `ca_manual_adjustments` row; migrations that credit wallets fail R3.
 6.2 Kill switch automation at Dan's threshold (proposed 1,000 chips/hour break on escrow or BBJ).
 6.3 Alert board: an owner and a 24h SLA per detector; auto-resolve on clear; retire every detector that R1-R11 make impossible.

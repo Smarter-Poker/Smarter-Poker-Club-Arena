@@ -1,0 +1,3 @@
+# tests/the-controls-enforce.law.test.ts
+
+Chip standard Phase 6 (2026-09-05): a settlement from outside the platform needs an approved ca_manual_adjustments row (the agent's row is written under Dan's standing 10.9 grant with the paragraph and the migration name); the kill switch trips itself at Dan's threshold (1,000 chips on the supply, BBJ or escrow meters) and freezes tournament and jackpot payouts until a human clears them; every detector has an owner, an SLA and a way to retire, and a transient finding clears itself; every ledger leg names its hand or its event, and dedupe stays on the door

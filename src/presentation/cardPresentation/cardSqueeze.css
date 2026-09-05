@@ -250,6 +250,9 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 .card-squeeze-host.card-squeeze-host[data-rs-hold] {
   touch-action: none;
+}
+
+.card-squeeze-host.card-squeeze-host[data-rs-hold='drag'] {
   cursor: grab;
 }
 

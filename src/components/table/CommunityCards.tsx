@@ -96,9 +96,12 @@ export interface CommunityCardsProps {
    * flow's slowed reveal - instead of the normal one-sided spin-in. Normal
    * (non-all-in) streets keep their existing animation.
    *
-   * RIVER SQUEEZE 2026-09-04: both all-in streets now run the squeeze with
-   * the `all-in` profile (face down, hold to the server's reveal gate, snap
-   * over) - see src/presentation/cardPresentation.
+   * RIVER SQUEEZE 2026-09-04: both all-in streets ran the squeeze with the
+   * `all-in` profile for every seat. VIP ALL-IN SQUEEZE 2026-09-05: no
+   * longer on its own. This flag says "the server is pacing a run-out"; the
+   * `all-in` profile is chosen only when `squeezeEligible` (below) is also
+   * true. With `slowReveal` alone the street resolves the ORDINARY profile,
+   * which is what every non-squeezing seat sees.
    */
   slowReveal?: boolean;
   /**
@@ -327,6 +330,15 @@ function CardFace({
     // Below the threshold (or a cancelled pointer): the card springs flat.
     writeDrag(0);
   };
+  // A keyboard user has no squeeze to perform, but the card is theirs to
+  // open all the same: Enter or Space opens it from flat.
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!interactiveHold) return;
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    writeDrag(1);
+    onRelease();
+  };
   // A card whose hold ended (released, or the presentation is over) forgets
   // any drag in flight, so the next hand's card starts flat.
   useEffect(() => {
@@ -398,7 +410,9 @@ function CardFace({
       onPointerMove={host && interactiveHold ? onPointerMove : undefined}
       onPointerUp={host && interactiveHold ? (e) => endDrag(e, false) : undefined}
       onPointerCancel={host && interactiveHold ? (e) => endDrag(e, true) : undefined}
+      onKeyDown={host && interactiveHold ? onKeyDown : undefined}
       role={host && interactiveHold ? 'button' : undefined}
+      tabIndex={host && interactiveHold ? 0 : undefined}
       aria-label={host && interactiveHold ? 'Squeeze To Reveal' : undefined}
     >
       {isSqueeze ? (

@@ -312,7 +312,25 @@ describe('the equity the squeezer sees waits for the card (Dan 2026-08-28)', () 
     expect(page).toContain(
       'const displayedEquities = useHeldValue(allInEquities, squeezeHolding);'
     );
-    expect(page).toContain('onSqueezeHold={setSqueezeHolding}');
+    // AUDIT 2026-09-05: every board squeezes and the hold is the UNION of
+    // the boards still face down (a bomb pot deals two or three in lockstep).
+    expect(page).toContain('const squeezeHolding = holdingBoards.size > 0;');
+    for (const b of [0, 1, 2]) {
+      expect(page, `board ${b} reports its hold`).toContain(
+        `onSqueezeHold={onSqueezeHoldBoard${b}}`
+      );
+    }
+    expect(page.match(/squeezeEligible=\{heroSqueezeEligible\}/g), 'all three boards').toHaveLength(
+      3
+    );
+    // AUDIT 2026-09-05: "all in" is run-out PARTICIPATION. The engine's
+    // ALL_IN_RUNOUT carries getActivePlayers(), which includes the player who
+    // called the shove with chips behind; status alone would have denied the
+    // perk to the covering player in every heads-up all-in.
+    expect(page).toMatch(
+      /heroInRunout =[\s\S]*status === 'all_in' \|\|[\s\S]*allInEquities\.some\(/
+    );
+    expect(page).toContain('heroAllIn: heroInRunout,');
     // The two render sites of the per-seat equity read the held value...
     expect(page).toContain('displayedEquities.find((e) => e.userId === player.id)');
     expect(page).toContain("? ' seat-wrapper--equity'");

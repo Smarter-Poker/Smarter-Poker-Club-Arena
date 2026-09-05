@@ -8,7 +8,7 @@
  * a squeeze in flight.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, act } from '@testing-library/react';
+import { render, act, fireEvent } from '@testing-library/react';
 import React from 'react';
 
 const played: string[] = [];
@@ -254,6 +254,34 @@ describe('the squeeze on the board', () => {
       vi.advanceTimersByTime(p.squeezeMs + 10);
     });
     expect(played).toContain('playCommunityCard');
+  });
+
+  it('a keyboard user opens the held card with Enter or Space (audit 2026-09-05)', () => {
+    const { container, rerender } = render(
+      <CommunityCards
+        {...props()}
+        cards={BOARD.slice(0, 4)}
+        stage="turn"
+        slowReveal
+        squeezeEligible
+      />
+    );
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    act(() => {
+      rerender(
+        <CommunityCards {...props()} cards={BOARD} stage="river" slowReveal squeezeEligible />
+      );
+    });
+    const card = riverCard(container)!;
+    expect(card.getAttribute('tabindex')).toBe('0');
+    expect(card.dataset.rsHold).toBe('drag');
+    act(() => {
+      fireEvent.keyDown(card, { key: 'Enter' });
+    });
+    expect(riverCard(container)!.dataset.rsHold).toBe('released');
+    expect(riverCard(container)!.style.getPropertyValue('--rs-drag')).toBe('1.000');
   });
 
   it('with no squeeze in flight the cue is paid on the spot, never dropped (10.6)', () => {

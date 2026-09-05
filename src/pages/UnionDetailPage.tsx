@@ -686,7 +686,12 @@ export default function UnionDetailPage() {
           eyebrow="Network Unavailable"
           title="Union Not Found"
           description="This Union May Have Been Removed, Or The Link May Use An Outdated Identifier."
-          action={{ label: 'Browse Unions', onClick: () => navigate('/unions', { replace: true }) }}
+          /* Not /unions - see UnionDashboardPage: a person refused here would
+             be refused there too since the directory became allowlisted. */
+          action={{
+            label: 'Back To Community',
+            onClick: () => navigate('/community', { replace: true }),
+          }}
           secondaryAction={{ label: 'Return To Arena', onClick: () => navigate('/') }}
         />
       </div>

@@ -98,7 +98,10 @@ describe('FriendSuggestionService', () => {
       } as any);
 
       await expect(friendSuggestionService.getMutualFriends('user-1', 'user-2')).resolves.toEqual([
-        { id: 'mutual-1', username: 'Table Friend', avatarUrl: 'avatar.png' },
+        // The RPC column is still called `username`; since migration
+        // 20260905154022 it carries the resolved ARENA name, and the mapper
+        // renames it so no caller can paint a raw column.
+        { id: 'mutual-1', arenaName: 'Table Friend', avatarUrl: 'avatar.png' },
       ]);
       expect(supabase.rpc).toHaveBeenCalledWith('get_mutual_friends', {
         p_other_user_id: 'user-2',

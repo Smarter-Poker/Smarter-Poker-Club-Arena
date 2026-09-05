@@ -125,9 +125,15 @@ export default function LuckyDrawWheel({
           </button>
         </div>
 
-        {streakMultiplier > 1 && (
-          <div className="ldw-streak-banner"> {streakMultiplier}x Streak Bonus!</div>
-        )}
+        {/* 2026-09-05: the "{n}x Streak Bonus!" banner is REMOVED, and so is
+            the multiplication further down. `claim_lucky_wheel_spin` credits
+            `v_pick.amount` exactly - it applies no streak multiplier of any
+            kind - so both were advertising a bonus the ledger does not pay.
+            Nobody was misled only because this component is imported by no
+            file and `user_lucky_wheel_spins` holds 0 rows: the wheel has
+            never been spun, by anyone. If it is ever mounted, it now tells
+            the truth. See docs/changelog/2026-09-04-profile-credential-
+            casino-realism.md. */}
 
         {/* Wheel */}
         <div className="ldw-wheel-frame">
@@ -180,8 +186,12 @@ export default function LuckyDrawWheel({
             <span className="ldw-result-icon">{result.icon}</span>
             <span className="ldw-result-text">
               You Won{' '}
+              {/* The amount the RPC actually credited. It was multiplied by
+                  `streakMultiplier` here, which claim_lucky_wheel_spin never
+                  applies - the player would have been shown up to twice what
+                  landed in their wallet. */}
               <strong>
-                +{(result.amount * streakMultiplier).toLocaleString()} {result.label}
+                +{result.amount.toLocaleString()} {result.label}
               </strong>
               !
             </span>

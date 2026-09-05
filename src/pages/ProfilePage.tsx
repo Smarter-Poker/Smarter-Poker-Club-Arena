@@ -367,7 +367,7 @@ export default function ProfilePage() {
       setVisibleStats(new Set());
       // Three gauges plus ten stat cards. The old count stopped at index 10,
       // leaving Bounty KOs and tournament Win Rate permanently at opacity 0.
-      const statCount = 21;
+      const statCount = 23;
       for (let i = 0; i < statCount; i++) {
         timers.push(setTimeout(() => setVisibleStats((prev) => new Set(prev).add(i)), i * 50));
       }
@@ -1148,6 +1148,21 @@ export default function ProfilePage() {
                       value={stats.totalHands.toLocaleString()}
                       label={stats.analysisCapped ? 'Hands Analyzed' : 'Hands Played'}
                       isVisible={visibleStats.has(3)}
+                    />
+                    {/* The v2 payload has carried `cash_hands` and
+                        `tourney_hands` since the reader was written, and the
+                        credential extracted both and rendered neither. The
+                        split is the shape of a player's volume, and it is the
+                        one thing the single "Hands" figure cannot say. */}
+                    <StatCard
+                      value={stats.cashHands.toLocaleString()}
+                      label="Cash Hands"
+                      isVisible={visibleStats.has(21)}
+                    />
+                    <StatCard
+                      value={stats.tourneyHands.toLocaleString()}
+                      label="Tourney Hands"
+                      isVisible={visibleStats.has(22)}
                     />
                     <StatCard
                       value={`${fixedTrunc(stats.threeBet, 1)}%`}

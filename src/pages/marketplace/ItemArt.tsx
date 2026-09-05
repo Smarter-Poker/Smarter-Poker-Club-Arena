@@ -418,16 +418,20 @@ export function VipArt({
   variant = 'monthly',
   className,
 }: {
-  variant?: 'daily' | 'monthly' | 'annual';
+  /* The three terms since 2026-09-05: was daily | monthly | annual. */
+  variant?: 'monthly' | 'yearly' | 'lifetime';
   className?: string;
 }) {
   const ids = useId().replace(/[^a-zA-Z0-9]/g, '');
+  /* Lifetime takes the brass the rest of the platform reserves for a
+     membership that is earned rather than rented (see VIPMembershipPlate);
+     yearly keeps the violet the annual plan had, monthly the blue. */
   const accent =
-    variant === 'annual'
-      ? { main: '#a78bfa', deep: '#6d28d9', glow: 'rgba(167, 139, 250, 0.55)' }
-      : variant === 'monthly'
-        ? { main: '#00d4ff', deep: '#0284c7', glow: 'rgba(0, 212, 255, 0.55)' }
-        : { main: '#4599ff', deep: '#1d4ed8', glow: 'rgba(69, 153, 255, 0.5)' };
+    variant === 'lifetime'
+      ? { main: '#d6ad52', deep: '#8a6614', glow: 'rgba(214, 173, 82, 0.5)' }
+      : variant === 'yearly'
+        ? { main: '#a78bfa', deep: '#6d28d9', glow: 'rgba(167, 139, 250, 0.55)' }
+        : { main: '#00d4ff', deep: '#0284c7', glow: 'rgba(0, 212, 255, 0.55)' };
   return (
     <svg
       viewBox="0 0 200 150"

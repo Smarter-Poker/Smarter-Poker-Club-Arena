@@ -137,6 +137,55 @@ describe('the arena is always the alias', () => {
     ).toEqual([]);
   });
 
+  it('the profile surfaces never paint a raw username, and the rest do not grow', () => {
+    /* THE THIRD SHAPE, found 2026-09-05 on the public dossier.
+     *
+     * The two checks above police `display_name`. They do not see
+     * `{friend.username}` - and a raw username is not the arena name either:
+     * the resolver is alias -> username -> display_name, so reading `username`
+     * SKIPS the alias, which is the poker name. Measured on production that
+     * day: 1,004 of 1,313 profiles carry an alias that differs from their
+     * username, and 112 have username = full_name outright.
+     *
+     * The dossier's mutual-friend chips did this, through an RPC that handed
+     * back `p.username` raw. Both halves are fixed - migration 20260905154022
+     * makes `get_mutual_friends` emit fn_arena_name, and the service renames
+     * the field to `arenaName` so no caller can read a raw column by habit.
+     *
+     * WHY THIS IS NOT A BLANKET BAN. `username` is the resolver's legitimate
+     * SECOND choice, and several RPCs deliberately return the resolved arena
+     * name in a field still called `username` (their published contract). So
+     * a flat "never render username" would be a coin flip, and CLAUDE.md 10.7
+     * is explicit that two laws demanding opposite things is worse than one.
+     * Instead: the identity surfaces are pinned at ZERO, and the rest of the
+     * app is a ratchet at its measured value. Lower it; never raise it.
+     */
+    const jsxUsername = /\{\s*[\w?.[\]]*\.username\s*(\|\||\})/g;
+
+    const IDENTITY_SURFACES = [
+      'src/pages/ProfilePage.tsx',
+      'src/pages/PublicProfilePage.tsx',
+      'src/components/profile/ProfitChart.tsx',
+    ];
+    for (const surface of IDENTITY_SURFACES) {
+      const file = FILES.find((f) => f.path === surface);
+      expect(file, `${surface} is missing - update IDENTITY_SURFACES`).toBeTruthy();
+      expect(
+        file!.body.match(jsxUsername) ?? [],
+        `${surface} paints a raw username. The credential and the dossier are ` +
+          'the identity surfaces; render playerDisplayName(row), or a field a ' +
+          'resolver already produced (arenaName).'
+      ).toEqual([]);
+    }
+
+    const total = FILES.reduce((n, f) => n + (f.body.match(jsxUsername)?.length ?? 0), 0);
+    expect(
+      total,
+      'A raw username reached a new screen. Resolve it with playerDisplayName ' +
+        '(or an RPC that emits fn_arena_name) rather than raising this number.'
+    ).toBeLessThanOrEqual(107);
+  });
+
   it('every profiles query that wants a name asks for all the name columns', () => {
     /* THE QUIET HALF OF THIS BUG. playerDisplayName resolves
        alias -> username -> display_name. Hand it a row selected as

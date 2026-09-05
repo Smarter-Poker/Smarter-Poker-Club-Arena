@@ -56,8 +56,11 @@ document is the behavioral contract the implementation targets.
   cards dim. Winning hole cards highlighted at the seat.
 - ~1s later pots ship ONE AT A TIME, board by board, pot by pot:
   - Chips fan from the pot to that board-share's winner with a floating
-    "+<amount>" that rides the fan; the pot counter decrements as each pot
-    leaves.
+    "+<amount>" that rides the fan.
+  - ~~the pot counter decrements as each pot leaves~~ **— WRONG. Corrected
+    2026-09-05 from the same recordings re-read at 6-10fps; see §2e. The
+    counter does NOT tick down. Each pot row holds its full contested amount
+    and disappears only once that pot has paid every run.**
   - **Split pots fan to every winner of that pot simultaneously**, each with
     their own float showing their exact share (video 3: +0.12 to two players
     at once).
@@ -131,10 +134,15 @@ Closed in round 2:
   the accepted/rejected outcome (decliner named) replaces it for ~5s, exactly
   like the reference. The panel itself slides in a beat (~1.5s) after the
   strip appears, matching the reference lead-in.
-- **The POT counter decrements as each pot leaves the middle** during any
+- ~~**The POT counter decrements as each pot leaves the middle** during any
   sequenced award (splits, side pots, every RIT board) — the number over the
   felt always says what is still in the middle. Single-pot hands keep the
-  existing slide-and-fade.
+  existing slide-and-fade.~~
+  **REVERSED 2026-09-05 — do not re-implement this.** It was built from a
+  misreading of the recordings and the recordings say the opposite: the
+  counter never ticks down, and a pot row leaves only when that pot has paid
+  every run. See §2e for the frame evidence. This bullet is struck rather than
+  deleted because a deleted mistake is one the next agent gets to make again.
 - **Runs 2+ dim the shared base cards** (flop/turn all-ins) so the re-dealt
   streets read as the new information, like the reference's offset cards.
 - **Ship cadence retuned**: POT_AWARD_STAGGER_MS 600 → 900 (measured
@@ -200,6 +208,122 @@ from a FOLDED player's seat) added three behaviors:
   cases were AUDITED AND KEPT — the event type is uppercased before that
   switch, so they do fire (an earlier audit note claiming they were dead
   was wrong).
+
+## 2e. Round 5 (2026-09-05) — "it does not ship the pot individually"
+
+Dan's report. The three recordings were re-cut a third time — 6-10fps, with
+each seat's stack, each floating badge and the pot block cropped and tiled
+into per-timestamp montages so the money could be read digit by digit rather
+than inferred from card motion. That produced one correction to this document
+and one real bug.
+
+### What the recordings actually show
+
+**RUN IT 3X** (Crazy Pineapple, HU turn all-in, pot 8.81, three boards):
+
+| t     | event                                                                 |
+| ----- | --------------------------------------------------------------------- |
+| 24.3s | pot stack bursts into individual chips, flies to Gordo Chris          |
+| 25.0s | chips land, gold burst on the seat, `+1.52` float, **stack 0 → 2.73** |
+| 26.5s | run 2 featured, "Three of a Kind"                                     |
+| 27.3s | Canelo1294 paid, **stack 3.51 → 6.24**                                |
+| 30.5s | Gordo paid again, **stack 2.73 → 5.46**                               |
+| 32.5s | pot block gone; next hand posts 0.15                                  |
+
+**RUN IT TWICE + SPLIT POT** (NLH, preflop 3-way all-in, main 20.32 / side
+1.95 / total 22.27): three award beats — Player2 at 23.4s (0 → 10.61), then
+Player1 **and** Player5 paid **simultaneously** at 26.4s (+0.44 each, the side
+pot chopped), then Player1 again at 28.4s (8.94 → 18.66).
+
+Three findings follow from that, in order of importance.
+
+1. **The stack rises with EVERY board, not once at the end.** Gordo is seen at
+   0, then 2.73, then 5.46. This is the reported bug: our engine credits one
+   merged total and the client held all of it behind a single boolean
+   (`stackHoldReleased`) that only flipped after the LAST award group's fan
+   landed. Chips fanned three times; the number moved once.
+2. **The pot counter does not decrement** (correcting §1.5 and §2b). It read
+   8.81 before the first ship and 8.81 after it, and after the second. In the
+   split-pot hand both rows stayed up and the **1.95 side-pot row vanished on
+   its own at 26.5s** — the moment that pot had paid both runs — while the
+   20.32 main pot stayed. A pot row means "this hand played for this"; its
+   disappearance means "that one is settled".
+3. **A chop inside one board pays both winners in the same beat**, each with
+   their own fan and their own float (Player1 and Player5, both +0.44, at
+   26.4s). Already correct in our implementation.
+
+Noted but deliberately NOT copied (Dan's call): the reference's float shows a
+**net** figure, not the gross award — Gordo's stack rose 2.73 with a `+1.52`
+badge; Player2 rose 10.61 with `+5.20`; consistently gross minus that
+player's own contribution to the share. Ours shows the gross, so badge and
+stack delta always agree.
+
+### Fixed
+
+- **Per-board stack release.** `pendingStackHold` takes a per-player ledger of
+  what has already been visually delivered; each award group releases its own
+  shares ~700ms after its fan launches (chip travel is ~600ms). A player
+  taking two of three boards now steps 0 → 2.73 → 5.46. Subtraction is in
+  integer cents so repeated releases cannot strand a rounding crumb and leave
+  a stack a cent short forever.
+- **Pot rows match the reference.** `potShipRemaining` (one decrementing
+  number, side-pot rows blanked for the whole sequence) is replaced by
+  `potShipView` — the pot rows frozen at POT_WIN, each at its full contested
+  amount, retired individually as each pot finishes paying every run. Frozen
+  because the engine settles synchronously: on a RIT hand the snapshot pot is
+  already zero many seconds before the last board is even revealed.
+- **`hand_history.pots` was NULL on every RIT hand ever played.**
+  `currentHandPots` is captured only in the WINNERS handler behind
+  `hasWinners && state.pots`; a RIT hand satisfies neither (it settles via
+  `finalizeRunout(true)`, which emits WINNERS empty, and never reaches
+  `completeHandInner()`, the only assigner of `state.pots`). Measured before
+  the fix: **6,939 of 6,939** recorded RIT hands had `pots` NULL. The RIT path
+  now records the live pots it evaluates the boards against.
+- **`pot_distributed` shipped `pots: []` on every RIT hand** — same root
+  cause, same read. It now falls back to that capture.
+
+### Started, then withdrawn — and why it is written down
+
+Persisting the per-(run, pot) breakdown was the fifth fix. It was built and
+then removed before it shipped, which is worth a paragraph because the
+reasoning generalises.
+
+The gap was real when measured: of 6,940 recorded multi-board hands, **zero**
+carried a board axis or a non-zero pot index, so the database could say a hand
+ran three boards and never say who won which one. A `hand_history.
+rit_pot_awards` column was added, wired from `currentHandPerPotAwards` (which
+the engine has always had and simply never passed to the write), read back
+through the service and the adapter, and rendered on the run rows.
+
+It was withdrawn on discovering that `hand_history.winners_by_board` — shipped
+2026-09-04, while this work was in flight — already answers the same question,
+and answers it through a path that is complete end to end: the engine writes
+it, `handReplay.ts:951` reads it into the ReplayModel, and every hand-history
+surface draws that one model. It was live and populated on 299 hands. The only
+thing the withdrawn column added over it was the pot axis (main versus side
+pot within a run), which is not worth a second source of truth for "who won
+which board" — the exact thing `HandHistoryPanel.tsx` warns against: "Do not
+reintroduce a second source for this, two of them can disagree."
+
+The column was dropped again the same day (`drop_redundant_hand_history_rit_
+pot_awards`), with zero rows ever written and no reader. **If you are about to
+add per-board award persistence: it exists. Use `winners_by_board`.**
+
+- **Degraded payloads no longer ship the whole pot on run 1's beat.** The
+  board axis exists only inside `pot_awards`; every fallback path stamps
+  `board: 1` because it has nothing better. Combined with a live multi-run
+  ribbon timeline that fired every group on run 1's ribbon — the entire pot
+  shipped while boards 2..N were still face down. When several runs are being
+  revealed and no group claims a board past the first, the axis is treated as
+  missing and the uniform stagger (already anchored past the end of the reveal
+  timeline) is used instead.
+
+### Still open, deliberately
+
+- **Board layout.** The reference renders the shared prefix once and features
+  one run at a time in the main line with the others dimmed below; the
+  2026-08-30 decision was full 5-card boards for every run, stacked. Kept as
+  is — see the divergence list in §2b.
 
 ## 3. Explicitly out of scope
 

@@ -150,9 +150,18 @@ describe('winners', () => {
   /* A row written before `winners` was persisted still pins the gross: the
      service defines result as `won - invested`, so `won = result + invested`
      reconstructs it from the same inputs rather than guessing. */
-  it('reconstructs the gross exactly on a legacy row that stored no winners', () => {
+  it('reconstructs the gross on a legacy row that stored no winners: result + invested', () => {
+    /* `won = result + invested`, with `invested` from the model's differenced
+       walk (raise-TO levels, blinds synthesised, uncalled bets returned) - not
+       a naive sum of `actions[].amount`. In this fixture the villain never
+       calls the flop or river bets, so those come back and the hero's true
+       investment is what was called, not what was bet. */
     const hand = baseHand({ winners: [] });
-    expect(adaptServiceHandToPanel(hand, HERO).winners[0].amount).toBe(201);
+    const out = adaptServiceHandToPanel(hand, HERO);
+    const invested = out.replay.players.find((p) => p.userId === HERO)?.invested ?? 0;
+    expect(invested).toBeGreaterThan(0);
+    expect(out.winners[0].amount).toBe(Math.round((125 + invested) * 100) / 100);
+    expect(out.winners[0].amount).toBeGreaterThan(125);
   });
 
   it('keeps both winners of a split pot', () => {
@@ -165,11 +174,22 @@ describe('winners', () => {
     expect(w).toHaveLength(2);
   });
 
-  it('is empty, not broken, when nobody is flagged as a winner', () => {
-    const hand = baseHand();
+  it('is empty, not broken, when the row records no winner anywhere', () => {
+    const hand = baseHand({ winners: [] });
     for (const p of (hand as never as { players: { is_winner: boolean }[] }).players)
       p.is_winner = false;
     expect(adaptServiceHandToPanel(hand, HERO).winners).toEqual([]);
+  });
+
+  it("the row's own winners list is read even when the roster flag is missing", () => {
+    // `winners` is the settlement's record; `is_winner` is derived from it. A
+    // winner the roster does not carry used to be dropped here.
+    const hand = baseHand();
+    for (const p of (hand as never as { players: { is_winner: boolean }[] }).players)
+      p.is_winner = false;
+    const w = adaptServiceHandToPanel(hand, HERO).winners;
+    expect(w.map((x) => x.playerId)).toEqual([HERO]);
+    expect(w[0].amount).toBe(201);
   });
 });
 

@@ -385,11 +385,27 @@
     sans-serif;
 }
 
+/* THE WHOLE AVATAR SITS INSIDE THE CIRCLE (Dan 2026-09-05: avatars must
+   "either be inside the circle, or remove the circle and just have the
+   avatar").
+   These are table-seat BUST portraits - measured, /avatars/table/
+   free_viking@2x.webp is 250x340 - and `object-fit: cover` in a square box
+   scales one to 48x65, throws 26% of its height away, and then the circle
+   clips 31% of what is left. Rendered at 120px against five real avatars, that
+   takes the tips off the viking's horns, the point off the wizard's hat and
+   the shiba's ears. Anchoring the crop to the top rescues the hat but not the
+   horns or the ears: they run the full WIDTH of the art, and a circle
+   inscribed in a square always cuts its corners. No crop can keep them.
+   `contain` can, and does - every one of the five is whole, with the circle
+   acting as a frame rather than a cookie cutter. For a square source it is
+   identical to `cover` (nothing to letterbox), and for a wide one it prefers a
+   gap over slicing a face. SeatSlot keeps its own `cover`/`50% 100%`: at a
+   seat the bust is meant to fill the frame and sit low. */
 .friend-avatar img {
   width: 100%;
   height: 100%;
   border-radius: inherit;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .friend-avatar i {

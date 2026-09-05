@@ -1284,6 +1284,11 @@
    both rows centre under the wordmark with no extra work. */
 .table-brand__club {
   color: rgba(255, 215, 0, 0.5);
+  /* Dan 2026-09-05: "THE CLUB AND UNION SHOULD BE THE SAME SIZE AS 'CLASSIC'"
+     (the style badge below the blinds, .table-brand__line--style). The club
+     line used to be the smallest text on the felt. */
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
 }
 
 /* Tournament masthead line 2 (Dan 2026-08-20): Level # · blinds · clock.
@@ -1413,6 +1418,9 @@
    gold so the two read as different things at a glance. */
 .table-brand__union {
   color: rgba(148, 197, 255, 0.45);
+  /* Same size as the club and the CLASSIC badge (Dan 2026-09-05). */
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
 }
 
 @media (max-width: 380px) {

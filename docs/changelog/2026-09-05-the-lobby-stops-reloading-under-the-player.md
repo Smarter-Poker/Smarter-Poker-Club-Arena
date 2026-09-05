@@ -49,3 +49,12 @@ Every fix since floored the duration; the shape was the problem. The shrink
 is **linear** now - the arc that is left is exactly the time that is left at
 every second of the fifteen - and the five-second blink stays as the
 end-of-clock cue. Pinned in `tests/seatslot-countdown-duration.test.tsx`.
+
+## 4. "TABLES MUST ALWAYS HAVE THE CLUB FIRST THEN THE UNION. NEVER JUST THE UNION"
+
+The felt read "MIDWAY UNION" alone whenever the viewer's current club was
+unset or was the hub club itself (the masthead dropped a club name equal to
+the union's). The club shown is now the viewer's own club INSIDE the union,
+read from their memberships when the store cannot say; only a viewer with no
+club in the union sees the hub's name, once. Club and union are the size of
+the CLASSIC badge (0.62rem), no longer the smallest text on the felt.

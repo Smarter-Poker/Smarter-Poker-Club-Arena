@@ -10470,7 +10470,7 @@ export default function TablePage({
         if (table.club_id) {
           supabase
             .from('clubs')
-            .select('name, unions:union_id (name)')
+            .select('name, union_id, unions:union_id (name)')
             .eq('id', table.club_id)
             .maybeSingle()
             .then(async ({ data: clubData }) => {
@@ -10504,9 +10504,38 @@ export default function TablePage({
                 }
                 if (viewerClub?.name) clubName = viewerClub.name;
               }
-              if (unionName && clubName === unionName) {
-                // Still identical (no distinct viewer club) — show it once.
-                clubName = undefined;
+              /* Dan 2026-09-05: "TABLES MUST ALWAYS HAVE THE CLUB FIRST THEN
+                 THE UNION. NEVER JUST THE UNION." The felt read "MIDWAY
+                 UNION" alone whenever the viewer's current club was unset
+                 or was the hub itself. The club is the viewer's own club
+                 INSIDE this union - read from their memberships when the
+                 store cannot say - and only when they belong to no club in
+                 the union at all does the hub's name stand in, once. */
+              if (unionName && clubName === unionName && userId && userId !== 'guest') {
+                const unionId = (clubData as { union_id?: string | null }).union_id ?? null;
+                if (unionId) {
+                  const { data: memberClubs, error: memberErr } = await supabase
+                    .from('club_members')
+                    .select('club_id, clubs:club_id (name, union_id)')
+                    .eq('user_id', userId)
+                    .limit(20);
+                  if (memberErr) {
+                    reportError(memberErr, 'TablePage.masthead_member_club_read_failed');
+                  }
+                  const own = (memberClubs ?? [])
+                    .map((m) => {
+                      const c = (
+                        m as {
+                          clubs?:
+                            | { name?: string; union_id?: string | null }
+                            | { name?: string; union_id?: string | null }[];
+                        }
+                      ).clubs;
+                      return Array.isArray(c) ? c[0] : c;
+                    })
+                    .find((c) => c && c.union_id === unionId && c.name && c.name !== unionName);
+                  if (own?.name) clubName = own.name;
+                }
               }
               setTableState((prev) => ({
                 ...prev,

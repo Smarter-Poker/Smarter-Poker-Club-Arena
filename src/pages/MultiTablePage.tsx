@@ -437,6 +437,28 @@ const makeLobbyTab = (): TableInstance => ({
 const MAX_TABLES = typeof window !== 'undefined' && window.innerWidth >= 1024 ? 6 : 4;
 
 /**
+ * Parse a reported "kind:deadlineMs" channel into its parts.
+ *
+ * A MODULE-LEVEL FUNCTION DECLARATION, ON PURPOSE (2026-09-05 outage). This
+ * was a `const` arrow inside the component, declared a few hundred lines
+ * below `anyTurnLive`. On 2026-09-05 the second RIT sweep (#3089) made
+ * `anyTurnLive` call it - a `const` read before its declaration in the same
+ * scope is a ReferenceError ("Cannot access before initialization"), and it
+ * fired on the FIRST render with any table open. Every /table/:id on
+ * production showed "Something Went Wrong" until this moved. A function
+ * declaration is hoisted and has no temporal dead zone, so its position can
+ * never matter again; tests/unit/multiTablePageHelpersAreHoisted.test.ts
+ * pins it here.
+ */
+export function parseTimed(v?: string): { kind: string; at: number } | null {
+  if (!v) return null;
+  const i = v.lastIndexOf(':');
+  if (i <= 0) return null;
+  const at = Number(v.slice(i + 1));
+  return Number.isFinite(at) && at > 0 ? { kind: v.slice(0, i), at } : null;
+}
+
+/**
  * Dan 2026-08-19 (persistence upgrade): what the GLOBAL dock should show while
  * the container is hidden on a non-/table route. Pure so the logic harness
  * can lift it verbatim.
@@ -516,31 +538,6 @@ const dockStateFor = (
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Parse a reported "kind:deadlineMs" channel into its parts.
- *
- * MODULE SCOPE, NOT COMPONENT SCOPE (P0, 2026-09-05). The second sweep made
- * `anyTurnLive` read `parseTimed(t.decision)` so an expired decision is not a
- * live clock - and `parseTimed` was a `const` declared FURTHER DOWN the
- * component body. In a plain closure that is fine; here the read happens
- * synchronously during the same render, before the declaration is reached, so
- * every table opened on the published build threw "Cannot access 'parseTimed'
- * before initialization" into the error boundary. tsc does not flag a
- * use-before-declare inside a nested callback; only rendering does. A pure
- * function belongs above the component, where there is nothing to be before.
- * Pinned by tests/no-tdz-in-table-route.law.test.ts and, from the other side
- * of the same outage, tests/unit/multiTablePageHelpersAreHoisted.test.ts (#3106
- * hoisted it too; the two copies were then one too many, see #3110). ONE
- * declaration, module scope, above the component - keep it that way.
- */
-export function parseTimed(v?: string): { kind: string; at: number } | null {
-  if (!v) return null;
-  const i = v.lastIndexOf(':');
-  if (i <= 0) return null;
-  const at = Number(v.slice(i + 1));
-  return Number.isFinite(at) && at > 0 ? { kind: v.slice(0, i), at } : null;
-}
 
 export default function MultiTablePage() {
   const { user } = useAuthUser();

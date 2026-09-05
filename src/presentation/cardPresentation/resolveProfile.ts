@@ -9,8 +9,14 @@
  *                                       collapses, meaning never)
  *   hidden table     -> `off`          (a display:none multi-table slot; there
  *                                       is nothing on screen to animate)
- *   all-in runout    -> `allIn`        (the server paces the street; the card
- *                                       holds face down for that exact beat)
+ *   all-in + squeeze -> `allIn`        (THIS viewer is all-in, VIP, has the
+ *                                       perk on and is not on a re-run: the
+ *                                       card holds face down for THEM to
+ *                                       squeeze open. An all-in runout with
+ *                                       no squeeze right is an ordinary
+ *                                       street to this resolver - the board
+ *                                       looks the same as it does to every
+ *                                       seat that is not squeezing)
  *   unfocused table  -> `background`   (visible beside the focused one)
  *   phone            -> `mobile`
  *   game mode        -> cash / tournament / lightning / replay
@@ -36,7 +42,13 @@ export function resolveCardAnimationProfile(input: ResolveProfileInput): CardAni
      correct card on the board; `off` is simply the cheaper way to say it. */
   if (input.focus === 'hidden') return P.off;
   if (input.reducedMotion) return P.reduced;
-  if (input.allIn) return P.allIn;
+  /* VIP ALL-IN SQUEEZE 2026-09-05: BOTH, never one. `allIn` alone used to
+     hold the card face down for everyone at the table; Dan's rule is that
+     the squeeze is presented only to a player who is all-in AND holds the
+     perk, and that the run-out "should appear NORMAL and no different for any
+     other users at the table". So a runout without the squeeze right falls
+     through to the same profile the seat would get on any other hand. */
+  if (input.allIn && input.squeeze === true) return P.allIn;
   if (input.focus === 'visible') return P.background;
   if (input.platform === 'mobile') return P.mobile;
   switch (input.mode) {

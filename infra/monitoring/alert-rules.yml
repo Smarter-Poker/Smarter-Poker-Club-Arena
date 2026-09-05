@@ -28,7 +28,7 @@ groups:
           page: sms
           component: engine
         annotations:
-          summary: "Poker engine unreachable on {{ $labels.instance }}"
+          summary: 'Poker engine unreachable on {{ $labels.instance }}'
           description: |
             pm2-metrics has been unreachable for >1 minute. This means either
             the pm2 process is dead, the node is down, or the metrics module
@@ -52,7 +52,7 @@ groups:
           severity: critical
           component: engine
         annotations:
-          summary: "Engine has played zero hands in the last 10 minutes"
+          summary: 'Engine has played zero hands in the last 10 minutes'
           description: |
             No hands played during peak hours. Likely the dealer tick is
             blocked. Check engine-01 logs and pm2 list.
@@ -67,7 +67,7 @@ groups:
           severity: warning
           component: engine
         annotations:
-          summary: "Active table count dropped >50% vs 1h baseline"
+          summary: 'Active table count dropped >50% vs 1h baseline'
           description: |
             {{ $labels.instance }} reports {{ $value }} tables. Baseline was
             much higher. Investigate lobby.promote failures.
@@ -96,9 +96,9 @@ groups:
           severity: warning
           component: cron
         annotations:
-          summary: "{{ $value }} Open Claw job(s) past their staleness threshold"
-          description: "SELECT * FROM v_openclaw_job_staleness WHERE is_stale. A job that stops being dispatched produces no errors at all - it simply stops appearing."
-          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+          summary: '{{ $value }} Open Claw job(s) past their staleness threshold'
+          description: 'SELECT * FROM v_openclaw_job_staleness WHERE is_stale. A job that stops being dispatched produces no errors at all - it simply stops appearing.'
+          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
 
       - alert: OpenClawFleetLongSilence
         expr: |
@@ -109,9 +109,9 @@ groups:
           page: sms
           component: cron
         annotations:
-          summary: "An Open Claw job has been silent for {{ $value | humanizeDuration }}"
-          description: "More than a day with no successful run. The worst case observed before this alert existed was 18.3 days."
-          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+          summary: 'An Open Claw job has been silent for {{ $value | humanizeDuration }}'
+          description: 'More than a day with no successful run. The worst case observed before this alert existed was 18.3 days.'
+          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
 
       # Twelve at once on 2026-09-04, all 'job startup timeout', including the
       # snapshot prune and the daily-missions outbox drain.
@@ -124,9 +124,9 @@ groups:
           severity: warning
           component: cron
         annotations:
-          summary: "{{ $value }} pg_cron failures in the last hour"
+          summary: '{{ $value }} pg_cron failures in the last hour'
           description: "SELECT jobname, status, return_message FROM cron.job_run_details JOIN cron.job USING (jobid) WHERE status <> 'succeeded' ORDER BY start_time DESC."
-          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
 
       # 856 runs an hour is normal. A collapse means the scheduler itself has
       # stopped, which no per-job alert can see.
@@ -140,9 +140,9 @@ groups:
           severity: critical
           component: cron
         annotations:
-          summary: "Only {{ $value }} pg_cron runs in the last hour"
-          description: "The fleet normally runs ~856 an hour. The collector is fresh, so this is the scheduler, not the gauge."
-          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+          summary: 'Only {{ $value }} pg_cron runs in the last hour'
+          description: 'The fleet normally runs ~856 an hour. The collector is fresh, so this is the scheduler, not the gauge.'
+          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
 
       - alert: CronMetricsBlind
         expr: |
@@ -153,8 +153,8 @@ groups:
           severity: warning
           component: cron
         annotations:
-          summary: "Cron fleet gauges are stale ({{ $value }}s)"
-          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+          summary: 'Cron fleet gauges are stale ({{ $value }}s)'
+          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
 
   # ── POSTGRES ──────────────────────────────────────────────────────────
   # Also empty until 2026-09-04, and pointedly so: the realtime replication
@@ -180,9 +180,9 @@ groups:
           severity: critical
           component: database
         annotations:
-          summary: "Slot {{ $labels.slot }} is pinning {{ $value | humanize1024 }}B of WAL on disk"
+          summary: 'Slot {{ $labels.slot }} is pinning {{ $value | humanize1024 }}B of WAL on disk'
           description: "Postgres cannot recycle WAL behind a slot's restart_lsn. This is the number that fills the volume, and it runs well ahead of the flush lag."
-          runbook: "docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3"
+          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
 
       # The engine and the database disagreeing about the time silently breaks
       # every deadline, timer and retention window on the platform.
@@ -194,9 +194,9 @@ groups:
           severity: warning
           component: database
         annotations:
-          summary: "Engine and database clocks differ by {{ $value }}ms"
-          description: "Turn timers, maintenance-break windows and every retention cutoff are computed against one clock or the other."
-          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+          summary: 'Engine and database clocks differ by {{ $value }}ms'
+          description: 'Turn timers, maintenance-break windows and every retention cutoff are computed against one clock or the other.'
+          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
 
       - alert: DatabaseRpcErrorsElevated
         expr: |
@@ -207,9 +207,9 @@ groups:
           severity: warning
           component: database
         annotations:
-          summary: "Engine RPC errors at {{ $value }}/s"
-          description: "The engine reaches Postgres only through PostgREST. A sustained error rate here is seats, hands and settlements failing to write."
-          runbook: "docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md"
+          summary: 'Engine RPC errors at {{ $value }}/s'
+          description: 'The engine reaches Postgres only through PostgREST. A sustained error rate here is seats, hands and settlements failing to write.'
+          runbook: 'docs/changelog/2026-09-04-the-headings-that-alerted-on-nothing.md'
 
   # ── vercel-health: DELETED 2026-09-04, deliberately ───────────────────
   # This group existed with no rules in it. Filling it honestly is not
@@ -242,7 +242,7 @@ groups:
           severity: warning
           component: infra
         annotations:
-          summary: "Disk <10% free on {{ $labels.host }}"
+          summary: 'Disk <10% free on {{ $labels.host }}'
 
       - alert: HostCPUSaturated
         expr: |
@@ -252,7 +252,7 @@ groups:
           severity: warning
           component: infra
         annotations:
-          summary: "CPU >85% on {{ $labels.host }} for 10m"
+          summary: 'CPU >85% on {{ $labels.host }} for 10m'
 
       - alert: HostMemoryPressure
         expr: |
@@ -262,7 +262,7 @@ groups:
           severity: warning
           component: infra
         annotations:
-          summary: "Available memory <10% on {{ $labels.host }}"
+          summary: 'Available memory <10% on {{ $labels.host }}'
 
   # ── REPLICATION (2026-09-04) ────────────────────────────────────────────
   # The realtime replication slot was 136 MB behind and climbing, and nothing
@@ -286,9 +286,9 @@ groups:
           severity: warning
           component: database
         annotations:
-          summary: "Realtime slot {{ $labels.slot }} is >256MB behind"
-          description: "Logical decoding is not keeping up with WAL. This compounds: a lagging slot reads WAL from disk rather than memory. Players see it as stale lobbies and late seat updates."
-          runbook: "docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3"
+          summary: 'Realtime slot {{ $labels.slot }} is >256MB behind'
+          description: 'Logical decoding is not keeping up with WAL. This compounds: a lagging slot reads WAL from disk rather than memory. Players see it as stale lobbies and late seat updates.'
+          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
 
       - alert: ReplicationSlotCriticallyBehind
         expr: |
@@ -299,9 +299,9 @@ groups:
           page: sms
           component: database
         annotations:
-          summary: "Realtime slot {{ $labels.slot }} is >1GB behind"
-          description: "At this point the slot is pinning WAL on disk and the instance is at risk of filling it. Do not restart the consumer blind - read the runbook."
-          runbook: "docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3"
+          summary: 'Realtime slot {{ $labels.slot }} is >1GB behind'
+          description: 'At this point the slot is pinning WAL on disk and the instance is at risk of filling it. Do not restart the consumer blind - read the runbook.'
+          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
 
       # An inactive slot advances not at all and pins every WAL segment behind
       # it. Guarded, because the engine's own restart inside the :55 break can
@@ -315,9 +315,9 @@ groups:
           severity: critical
           component: database
         annotations:
-          summary: "Replication slot {{ $labels.slot }} has no consumer"
-          description: "A slot with no consumer never advances and holds every WAL segment after it on disk."
-          runbook: "docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3"
+          summary: 'Replication slot {{ $labels.slot }} has no consumer'
+          description: 'A slot with no consumer never advances and holds every WAL segment after it on disk.'
+          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
 
       # The collector itself. A gauge that stopped being collected reads as a
       # perfectly healthy slot, which is the failure this whole family exists
@@ -331,9 +331,9 @@ groups:
           severity: warning
           component: database
         annotations:
-          summary: "Replication gauges are stale ({{ $value }}s)"
-          description: "fn_replication_slot_metrics has not returned successfully in over 10 minutes. The lag numbers on the dashboard are last-known-good, not current."
-          runbook: "docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3"
+          summary: 'Replication gauges are stale ({{ $value }}s)'
+          description: 'fn_replication_slot_metrics has not returned successfully in over 10 minutes. The lag numbers on the dashboard are last-known-good, not current.'
+          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
 
       # Zero slots is not a quiet database - this database has two logical
       # slots. Zero means the collector cannot see pg_replication_slots.
@@ -346,9 +346,9 @@ groups:
           severity: critical
           component: database
         annotations:
-          summary: "No replication slots visible"
-          description: "The collector is fresh but reports zero slots. Either the slots were dropped - realtime is then entirely dead - or the function lost its catalog access."
-          runbook: "docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3"
+          summary: 'No replication slots visible'
+          description: 'The collector is fresh but reports zero slots. Either the slots were dropped - realtime is then entirely dead - or the function lost its catalog access.'
+          runbook: 'docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3'
 
   # ── Action latency (Realtime programme Phase 1, 2026-09-04) ──────────────
   # poker_act_to_broadcast_ms is the time from a player's action being
@@ -360,6 +360,25 @@ groups:
   # "not just the cash game tables"), so a Spin, a heads-up SNG and an MTT
   # each alert on their own p95 instead of hiding inside a cash average.
   # Guarded by the hourly maintenance break (CLAUDE.md 13.6).
+  #
+  # THE THRESHOLDS COME FROM THE MEASUREMENT, NOT FROM A WISH (2026-09-05).
+  # The first version of these rules guessed 500ms/1500ms before any data
+  # existed. The first hour of real data says the fleet normally runs:
+  #     p50 808ms   p90 1541ms   p95 1843ms   p99 3755ms   (24.3 actions/s)
+  # so 500ms was below the MEDIAN and 1500ms below the normal p95 - both would
+  # have fired permanently and been muted within a day, which is the failure
+  # this programme keeps finding in other people's monitors. 3s is above the
+  # normal p95 and below the normal p99; 6s is unambiguous.
+  #
+  # AND A SINGLE ACTION CANNOT RAISE AN ALARM. The guard was `> 0`, so one
+  # human action in ten minutes produced a p95 from a sample of one - and on
+  # a platform where humans are rare (15 hours with a human seat in 14 days)
+  # that is a false-alarm generator. 0.05/s is ~30 actions in the window.
+  #
+  # The BASELINE ITSELF is worth attention and is not an alert: 808ms median
+  # from action to broadcast, while the event loop is healthy (p99 54ms,
+  # equity governor not throttling). That is structural pacing in the
+  # broadcast path, not CPU starvation, and it is Phase 2 work to characterise.
   - name: action-latency
     interval: 30s
     rules:
@@ -367,39 +386,39 @@ groups:
         expr: |
           histogram_quantile(0.95,
             sum by (le, format) (rate(poker_act_to_broadcast_ms_bucket{audience="human"}[10m]))
-          ) > 500
-          and sum by (format) (rate(poker_act_to_broadcast_ms_count{audience="human"}[10m])) > 0
+          ) > 3000
+          and sum by (format) (rate(poker_act_to_broadcast_ms_count{audience="human"}[10m])) > 0.05
           unless max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 10m
         labels:
           severity: warning
           component: engine
         annotations:
-          summary: "{{ $labels.format }} tables: p95 act-to-broadcast {{ $value | humanize }}ms over 10m"
+          summary: '{{ $labels.format }} tables: p95 act-to-broadcast {{ $value | humanize }}ms over 10m'
           description: |
             A player's action is taking more than half a second to reach the
             other seats, sustained. Compare against the last deploy; check
             event-loop lag and DB write latency on engine-01.
-          runbook: "docs/REALTIME-CONNECTIONS-PROGRAMME.md"
+          runbook: 'docs/REALTIME-CONNECTIONS-PROGRAMME.md'
 
       - alert: ActionLatencyCritical
         expr: |
           histogram_quantile(0.95,
             sum by (le, format) (rate(poker_act_to_broadcast_ms_bucket{audience="human"}[10m]))
-          ) > 1500
-          and sum by (format) (rate(poker_act_to_broadcast_ms_count{audience="human"}[10m])) > 0
+          ) > 6000
+          and sum by (format) (rate(poker_act_to_broadcast_ms_count{audience="human"}[10m])) > 0.05
           unless max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 5m
         labels:
           severity: critical
           component: engine
         annotations:
-          summary: "{{ $labels.format }} tables: p95 act-to-broadcast {{ $value | humanize }}ms - the table is unplayable"
+          summary: '{{ $labels.format }} tables: p95 act-to-broadcast {{ $value | humanize }}ms - the table is unplayable'
           description: |
             More than 1.5 s from action to broadcast at p95. At this point
             turn timers are visibly wrong and players are acting on stale
             state. Treat as an outage.
-          runbook: "docs/REALTIME-CONNECTIONS-PROGRAMME.md"
+          runbook: 'docs/REALTIME-CONNECTIONS-PROGRAMME.md'
 
   # NOTE (merge, 2026-09-05): main carried a "RECOVERED FROM engine-01" copy of
   # the settlement and money-health groups below, taken from the box because
@@ -431,9 +450,9 @@ groups:
           page: sms
           component: money
         annotations:
-          summary: "{{ $value | humanizePercentage }} of hands are failing to settle"
-          description: "fn_ca_settle_hand_stacks_absolute is refusing hands whole. Read ca_settlements.error_detail for the reason before changing anything. The 2026-09-04 cause was a BEFORE UPDATE trigger on table_seats that cancelled no-op writes, making a correct seat write look like a failed one."
-          runbook: "docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md"
+          summary: '{{ $value | humanizePercentage }} of hands are failing to settle'
+          description: 'fn_ca_settle_hand_stacks_absolute is refusing hands whole. Read ca_settlements.error_detail for the reason before changing anything. The 2026-09-04 cause was a BEFORE UPDATE trigger on table_seats that cancelled no-op writes, making a correct seat write look like a failed one.'
+          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
 
       # Baseline before the incident was 0.0-0.2%. A rate that merely doubles
       # is worth knowing about long before it reaches a quarter of all hands.
@@ -446,8 +465,8 @@ groups:
           severity: warning
           component: money
         annotations:
-          summary: "Settlement failure rate {{ $value | humanizePercentage }}, above the 0.2% baseline"
-          runbook: "docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md"
+          summary: 'Settlement failure rate {{ $value | humanizePercentage }}, above the 0.2% baseline'
+          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
 
       # No hands settling at all is not a quiet table - this platform settles
       # ~500 hands a minute. The failure-rate gauge is ABSENT in this state, so
@@ -462,9 +481,9 @@ groups:
           severity: critical
           component: money
         annotations:
-          summary: "No hand has settled in five minutes"
-          description: "The collector is fresh and reports zero terminal settlements. Either the engine has stopped dealing or settlement is failing before it reaches a terminal state."
-          runbook: "docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md"
+          summary: 'No hand has settled in five minutes'
+          description: 'The collector is fresh and reports zero terminal settlements. Either the engine has stopped dealing or settlement is failing before it reaches a terminal state.'
+          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
 
       - alert: SettlementsStuckMidStateMachine
         expr: |
@@ -475,8 +494,8 @@ groups:
           severity: warning
           component: money
         annotations:
-          summary: "{{ $value }} settlements are neither final nor failed"
-          runbook: "docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md"
+          summary: '{{ $value }} settlements are neither final nor failed'
+          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
 
       - alert: SettlementMetricsBlind
         expr: |
@@ -487,9 +506,9 @@ groups:
           severity: warning
           component: money
         annotations:
-          summary: "Settlement gauges are stale ({{ $value }}s)"
-          description: "fn_settlement_health has not returned in over ten minutes. Whether hands are settling is currently unknown, and unknown is what thirteen hours of this looked like."
-          runbook: "docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md"
+          summary: 'Settlement gauges are stale ({{ $value }}s)'
+          description: 'fn_settlement_health has not returned in over ten minutes. Whether hands are settling is currently unknown, and unknown is what thirteen hours of this looked like.'
+          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
 
   # ── MONEY HEALTH (2026-09-04) ───────────────────────────────────────────
   # Two findings from one day, the same failure at two layers.
@@ -520,9 +539,9 @@ groups:
           page: sms
           component: money
         annotations:
-          summary: "{{ $value }} undeclared trigger(s) on a money or seat table"
-          description: "A trigger is live on table_seats, club_members, wallets, chip_ledger, tournaments, tournament_players or ca_settlements with no row in ca_declared_money_triggers. Run SELECT * FROM fn_undeclared_money_triggers(). Either it is a legitimate change missing its declaration, or it is an unreviewed one - and the last unreviewed one broke a third of all hand settlements."
-          runbook: "docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md"
+          summary: '{{ $value }} undeclared trigger(s) on a money or seat table'
+          description: 'A trigger is live on table_seats, club_members, wallets, chip_ledger, tournaments, tournament_players or ca_settlements with no row in ca_declared_money_triggers. Run SELECT * FROM fn_undeclared_money_triggers(). Either it is a legitimate change missing its declaration, or it is an unreviewed one - and the last unreviewed one broke a third of all hand settlements.'
+          runbook: 'docs/changelog/2026-09-04-settlement-was-failing-a-third-of-every-hand.md'
 
       # Criticals nobody has looked at in a day. Deliberately NOT the raw
       # unresolved count: a critical raised a minute ago is the system working.
@@ -534,9 +553,9 @@ groups:
           severity: warning
           component: money
         annotations:
-          summary: "{{ $value }} critical money alerts open longer than 24h"
+          summary: '{{ $value }} critical money alerts open longer than 24h'
           description: "financial_alerts is accumulating criticals nobody has resolved. A deep backlog is dangerous mainly because it hides a real one - on 2026-09-04 it was 1,345 rows deep and contained five 'player was never paid' alerts, all of which had in fact been paid within thirty minutes."
-          runbook: "docs/changelog/2026-09-04-the-money-alerts-nobody-was-told-about.md"
+          runbook: 'docs/changelog/2026-09-04-the-money-alerts-nobody-was-told-about.md'
 
       - alert: MoneyAlertBacklogGrowing
         expr: |
@@ -546,9 +565,9 @@ groups:
           severity: warning
           component: money
         annotations:
-          summary: "{{ $value }} unresolved money alerts"
-          description: "Above the 1,345 the backlog stood at when it was first measured. Check poker_financial_alerts_distinct_conditions - if the row count is climbing and the condition count is not, the table is duplicating rather than finding new problems."
-          runbook: "docs/changelog/2026-09-04-the-money-alerts-nobody-was-told-about.md"
+          summary: '{{ $value }} unresolved money alerts'
+          description: 'Above the 1,345 the backlog stood at when it was first measured. Check poker_financial_alerts_distinct_conditions - if the row count is climbing and the condition count is not, the table is duplicating rather than finding new problems.'
+          runbook: 'docs/changelog/2026-09-04-the-money-alerts-nobody-was-told-about.md'
 
       - alert: MoneyHealthBlind
         expr: |
@@ -559,6 +578,6 @@ groups:
           severity: warning
           component: money
         annotations:
-          summary: "Money-health gauges are stale ({{ $value }}s)"
-          description: "Neither the alert backlog nor the undeclared-trigger check has returned in over ten minutes. poker_money_undeclared_triggers is ABSENT rather than 0 in this state, deliberately - a zero here would be an all-clear the collector has not earned."
-          runbook: "docs/changelog/2026-09-04-the-money-alerts-nobody-was-told-about.md"
+          summary: 'Money-health gauges are stale ({{ $value }}s)'
+          description: 'Neither the alert backlog nor the undeclared-trigger check has returned in over ten minutes. poker_money_undeclared_triggers is ABSENT rather than 0 in this state, deliberately - a zero here would be an all-clear the collector has not earned.'
+          runbook: 'docs/changelog/2026-09-04-the-money-alerts-nobody-was-told-about.md'

@@ -333,11 +333,17 @@ describe('the fleet keeps the promise that opened a feeder (2026-09-05, 04:30 UT
 });
 
 describe('the fleet keeps its hands off cluster tables', () => {
-  it('a cluster table is in no name family (surplus, spawn)', () => {
-    expect(FLEET).toMatch(
-      /\.filter\(\(t\) => !t\.cluster_id\)\s*\.filter\(\(t\) => t\.name === config\.name/
-    );
-    expect(FLEET).toMatch(/\(t\) => !t\.cluster_id && \(t\.name === config\.name/);
+  it('the fleet no longer spawns, retires or reactivates a table (Gate 7, 2026-09-05)', () => {
+    // The name-family machinery (surplus count, #2/#3 overflow spawn, the
+    // retirement sweep, the boot-time insert/reactivate) is gone; demand
+    // opens a feeder through the controller and thin tables close through
+    // its break rule. The only table writer left in the fleet is the
+    // cluster opener, reached through fn_cash_game_ensure.
+    expect(FLEET).not.toMatch(/private async spawnOverflowTables/);
+    expect(FLEET).not.toMatch(/private async retireSurplusTables/);
+    expect(FLEET).not.toMatch(/const MAX_TABLES_PER_CONFIG = /);
+    expect(FLEET).not.toMatch(/from\('tables'\)\s*\.insert\(/);
+    expect(FLEET).toMatch(/supabase\.rpc\('fn_cash_game_ensure'/);
   });
 
   it('a breaking table gets no horses (18.3: no new sit-ins)', () => {
@@ -351,8 +357,24 @@ describe('the fleet keeps its hands off cluster tables', () => {
        to fill and never cleared, so a FULL Main 1 - the one state in which
        the open rule needs it - reported a stale number for ever. Built fresh
        per cycle and swapped whole; a cluster table that has nothing to fill
-       still runs the candidate filter (countOnly) and answers. */
+       still runs the candidate filter (countOnly) and answers.
+
+       PIN MOVED 2026-09-05 (a buyer is counted once). The answer for a
+       cluster table is no longer `pool.length` - the same two free horses
+       were counted as buyers for every full Main 1 on the host at once, and
+       eleven of twelve feeders opened in an hour were abandoned empty. The
+       pool is KEPT per cluster table and `allocateBuyers` hands each horse
+       out once, in seeding order, after the loop; a full table asks for the
+       open rule's two and no more. Non-cluster tables still report the pool
+       size. See HorseBuyerAllocation.test.ts for the allocation itself. */
     expect(FLEET).toMatch(
+      /clusterPools\.push\(clusterPool\);\s*\} else \{\s*nextEligible\.set\(table\.id, pool\.length\);\s*\}\s*if \(countOnly\) continue;/
+    );
+    expect(FLEET).toMatch(/seatsWanted: countOnly\s*\?\s*FULL_TABLE_BUYER_PROBE/);
+    expect(FLEET).toMatch(
+      /for \(const \[tableId, n\] of allocateBuyers\(clusterPools, capacityByHorse\)\) \{\s*nextEligible\.set\(tableId, n\);\s*\}\s*this\.lastEligibleByTable = nextEligible;/
+    );
+    expect(FLEET).not.toMatch(
       /nextEligible\.set\(table\.id, pool\.length\);\s*if \(countOnly\) continue;/
     );
     expect(FLEET).toMatch(/this\.lastEligibleByTable = nextEligible;/);

@@ -1,178 +1,72 @@
 /**
- * ensureAllTablesExist() must not create a table it already created.
+ * ensureAllTablesExist() cannot duplicate a table, because it creates none.
  *
- * It did, on every boot, for months. The existence check was
+ * HISTORY: it did, on every boot, for months. The existence check was
  *
  *   const { data: existing } = await supabase.from('tables')...maybeSingle();
  *
  * PostgREST answers .maybeSingle() with PGRST116 when MORE THAN ONE row
  * matches. The error was destructured away, so `existing` was null, so the
- * code inserted another row — which guaranteed the next boot would do it
- * again. Production held 120 'NLH 1.00/2.00', 120 'NLH 2.00/5.00', 83 PLO4,
- * 83 PLO5 and 81 PLO6 rows; the three configs that never got a second row
- * still had exactly one each.
+ * code inserted another row, which guaranteed the next boot would do it again.
+ * Production held 120 'NLH 1.00/2.00', 120 'NLH 2.00/5.00', 83 PLO4, 83 PLO5
+ * and 81 PLO6 rows. The 2026-08-19 fix was `.limit(1)` with the error checked,
+ * and this file drove a fake client through both lookups to prove it.
  *
- * These tests drive a fake supabase client, so they exercise the real control
- * flow rather than asserting on the source text.
+ * MOVED 2026-09-05 for Gate 7 (Operation Table Stakes). The lookup and the
+ * insert are both gone: every DEFAULT_TABLES key is a `cash_games` row, the
+ * ClusterController keeps each game's Main 1 open (R3) and reopens a closed
+ * one on every tick (RECONCILE), and the database refuses a cash table with no
+ * game behind it (tables_cash_needs_a_game). A duplicate is impossible by
+ * construction rather than avoided by a careful query, so the pin becomes:
+ * the method touches no `tables` row, and the fleet has no table insert.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
-type Row = Record<string, any>;
+const SRC = readFileSync(join(process.cwd(), 'src/services/HorseFleetManager.ts'), 'utf8');
+const ROOT = join(process.cwd(), '..');
+const GATE7 = readFileSync(
+  join(ROOT, 'supabase/migrations/20260905034937_gate_7_every_cash_table_is_a_game.sql'),
+  'utf8'
+);
+const SLICE2 = readFileSync(
+  join(ROOT, 'supabase/migrations/20260905010500_cluster_controller_slice_2.sql'),
+  'utf8'
+);
 
-/**
- * Minimal stand-in for the supabase query builder, covering exactly the
- * chain HorseFleetManager uses for this lookup.
- */
-function makeClient(opts: { rows: Row[]; selectError?: any }) {
-  const inserted: Row[] = [];
-  const updated: Row[] = [];
-  const client = {
-    from() {
-      const q: any = {
-        _rows: opts.rows,
-        select() {
-          return q;
-        },
-        eq() {
-          return q;
-        },
-        is() {
-          return q;
-        },
-        order() {
-          return q;
-        },
-        limit(n: number) {
-          return Promise.resolve(
-            opts.selectError
-              ? { data: null, error: opts.selectError }
-              : { data: opts.rows.slice(0, n), error: null }
-          );
-        },
-        maybeSingle() {
-          // The real thing: PGRST116 the moment there is more than one row.
-          if (opts.rows.length > 1) {
-            return Promise.resolve({
-              data: null,
-              error: { code: 'PGRST116', message: 'multiple rows returned' },
-            });
-          }
-          return Promise.resolve({ data: opts.rows[0] ?? null, error: null });
-        },
-        insert(row: Row) {
-          inserted.push(row);
-          return Promise.resolve({ error: null });
-        },
-        update(row: Row) {
-          updated.push(row);
-          return { eq: () => Promise.resolve({ error: null }) };
-        },
-      };
-      return q;
-    },
-  };
-  return { client, inserted, updated };
+/** The method body, from its signature to the next private method. */
+function ensureAllTablesExistBody(): string {
+  const start = SRC.indexOf('private async ensureAllTablesExist(');
+  expect(start).toBeGreaterThan(0);
+  const rest = SRC.slice(start + 1);
+  const next = rest.search(/\n {2}private async /);
+  return rest.slice(0, next);
 }
 
-/** The FIXED lookup, as HorseFleetManager now performs it. */
-async function lookupThenMaybeInsert(client: any, onError: (e: any) => void) {
-  const { data: matches, error } = await client
-    .from('tables')
-    .select('id, status')
-    .eq('name', 'PLO6 1.00/2.00')
-    .is('tournament_id', null)
-    .order('created_at', { ascending: true })
-    .limit(1);
-  if (error) {
-    onError(error);
-    return 'skipped';
-  }
-  const existing = matches?.[0] ?? null;
-  if (existing) return 'reused';
-  await client.from('tables').insert({ name: 'PLO6 1.00/2.00' });
-  return 'inserted';
-}
-
-/** The OLD lookup, kept so the regression is demonstrated, not just described. */
-async function oldLookupThenMaybeInsert(client: any) {
-  const { data: existing } = await client
-    .from('tables')
-    .select('id, status')
-    .eq('name', 'PLO6 1.00/2.00')
-    .is('tournament_id', null)
-    .maybeSingle();
-  if (existing) return 'reused';
-  await client.from('tables').insert({ name: 'PLO6 1.00/2.00' });
-  return 'inserted';
-}
-
-describe('ensureAllTablesExist duplicate amplification', () => {
-  /* `vi.fn()` with no implementation infers `Mock<Procedure | Constructable>`,
-     which has no call signature TypeScript can match against
-     `lookupThenMaybeInsert(client, onError: (e: any) => void)` — so this file
-     failed `tsc --noEmit` with seven TS2345s the moment it landed, taking the
-     Server Engine check down with it. Giving the mock a one-line implementation
-     lets vitest infer the real signature; the mock API is unchanged, so
-     `toHaveBeenCalledTimes` below still works. */
-  let onError = vi.fn((_e: unknown) => {});
-  beforeEach(() => {
-    onError = vi.fn((_e: unknown) => {});
+describe('ensureAllTablesExist creates nothing, so it can duplicate nothing (Gate 7)', () => {
+  it('is still called at boot: the seat-law check it carries must keep running', () => {
+    expect(SRC).toContain('await this.ensureAllTablesExist();');
+    expect(ensureAllTablesExistBody()).toContain("'HorseFleet.seat_law_override'");
   });
 
-  it('creates the table when none exists', async () => {
-    const { client, inserted } = makeClient({ rows: [] });
-    expect(await lookupThenMaybeInsert(client, onError)).toBe('inserted');
-    expect(inserted).toHaveLength(1);
+  it('reads no tables row, inserts none and updates none', () => {
+    const body = ensureAllTablesExistBody();
+    expect(body).not.toMatch(/\.from\(['"]tables['"]\)/);
+    expect(body).not.toContain('.insert(');
+    expect(body).not.toContain('.update(');
+    expect(body).not.toContain('maybeSingle(');
   });
 
-  it('reuses the table when exactly one exists', async () => {
-    const { client, inserted } = makeClient({ rows: [{ id: 'a', status: 'waiting' }] });
-    expect(await lookupThenMaybeInsert(client, onError)).toBe('reused');
-    expect(inserted).toHaveLength(0);
+  it('the whole fleet has no table insert, so no boot can add a row', () => {
+    expect(SRC).not.toMatch(/\.from\(['"]tables['"]\)\s*\.insert\(/);
   });
 
-  it('reuses - does NOT add another - when duplicates already exist', async () => {
-    const rows = Array.from({ length: 81 }, (_, i) => ({ id: `t${i}`, status: 'waiting' }));
-    const { client, inserted } = makeClient({ rows });
-    expect(await lookupThenMaybeInsert(client, onError)).toBe('reused');
-    expect(inserted).toHaveLength(0);
+  it('the database refuses a cash table with no game (the duplicate is impossible, not avoided)', () => {
+    expect(GATE7).toMatch(/ADD CONSTRAINT tables_cash_needs_a_game/);
   });
 
-  it('CONTROL: the old .maybeSingle() lookup inserts an 82nd copy', async () => {
-    const rows = Array.from({ length: 81 }, (_, i) => ({ id: `t${i}`, status: 'waiting' }));
-    const { client, inserted } = makeClient({ rows });
-    expect(await oldLookupThenMaybeInsert(client)).toBe('inserted');
-    expect(inserted).toHaveLength(1); // the bug, reproduced
-  });
-
-  it('skips rather than inserts when the lookup itself fails', async () => {
-    const { client, inserted } = makeClient({
-      rows: [],
-      selectError: { code: '08006', message: 'connection failure' },
-    });
-    expect(await lookupThenMaybeInsert(client, onError)).toBe('skipped');
-    expect(inserted).toHaveLength(0);
-    expect(onError).toHaveBeenCalledTimes(1);
-  });
-
-  it('the shipped code no longer uses maybeSingle for this lookup', async () => {
-    const { readFileSync } = await import('node:fs');
-    const { join } = await import('node:path');
-    const src = readFileSync(join(process.cwd(), 'src/services/HorseFleetManager.ts'), 'utf8');
-    const block = /ENSURE ALL TABLES EXIST[\s\S]*?const existing = matches/.exec(src);
-    expect(block).not.toBeNull();
-    // Strip comments first. The block explains the bug in prose and names
-    // maybeSingle while doing so; a naive substring check matches its own
-    // documentation and fails. Only a CALL counts.
-    const code = block![0]
-      .split('\n')
-      .filter((l) => {
-        const t = l.trimStart();
-        return !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*');
-      })
-      .join('\n');
-    expect(code).not.toContain('maybeSingle(');
-    expect(code).toContain('lookupError');
-    expect(code).toContain('.limit(1)');
+  it('the controller keeps Main 1 open itself (R3), which is what the boot insert used to be for', () => {
+    expect(SLICE2).toMatch(/IF g\.enabled AND \(v_main1\.id IS NULL OR v_main1\.status NOT IN/);
   });
 });

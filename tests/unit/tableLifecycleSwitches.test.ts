@@ -3,65 +3,65 @@ import fs from 'fs';
 import path from 'path';
 
 /**
- * AUTO RESTART / AUTO EXTENSION / AUTO CREATE TABLE — three switches on the
+ * AUTO RESTART / AUTO EXTENSION / AUTO CREATE TABLE - three switches on the
  * table creation page with three tooltips and, until 2026-08-25, zero readers.
  *
  * `auto_restart` was worse than merely dead. CreateTableModal's checkbox landed
  * in the `settings` JSONB blob nothing reads, so it never reached the column at
- * all — the same class of bug as the straddle / bomb-pot / ante mirrors beside
+ * all - the same class of bug as the straddle / bomb-pot / ante mirrors beside
  * it in TableService.
  *
  * Each switch now means what its tooltip promises, anchored to behaviour that
  * already existed rather than invented:
  *
- *   AUTO RESTART       GameServer's boot comment is the anchor — "CLOSED IS A
+ *   AUTO RESTART       GameServer's boot comment is the anchor - "CLOSED IS A
  *                      DECISION, NOT A STATE TO CLEAN UP ... the fleet still
  *                      reopens the tables it OWNS". A host's table, once
  *                      closed, stayed closed forever. This is the host saying
  *                      "reopen mine too".
- *   AUTO EXTENSION     extends the table's LIFE: an empty table carrying it is
- *                      skipped by retireSurplusTables instead of being closed
- *                      for going quiet.
+ *   AUTO EXTENSION     extended the table's LIFE: an empty table carrying it
+ *                      was skipped by retireSurplusTables instead of being
+ *                      closed for going quiet. GONE with Gate 7 (2026-09-05):
+ *                      the fleet closes nothing, the tick's BREAK rule does.
  *   AUTO CREATE TABLE  the overflow spawn the fleet's own tables already got,
  *                      extended to a host's table.
  *
  * The rules live in SQL (fn_table_lifecycle_pass) because spawnOverflowTables
- * only knows DEFAULT_TABLES, matched by name prefix — a host's table is not in
+ * only knows DEFAULT_TABLES, matched by name prefix - a host's table is not in
  * that list and never could be. Verified against production in rolled-back
  * transactions; see the migration header.
  */
 
 const src = (rel: string) => fs.readFileSync(path.join(process.cwd(), rel), 'utf8');
 
-describe('auto extension vetoes retirement, in the query that does the closing', () => {
+describe('the fleet closes no table; closing is the tick BREAK rule (Gate 7, 2026-09-05)', () => {
+  /* Moved 2026-09-05 for Gate 7. This block used to pin retireSurplusTables'
+     UPDATE: `.update({ status: 'closed' })` carrying an `.or(...)` in which
+     auto_extension vetoed the close unless the row was retire_when_empty or
+     night_parked. OPORD 1.4 s2.11 removes auto_extension, auto_restart and
+     auto_create_table as switches ("removed, not kept for compatibility") and
+     deletes retireSurplusTables outright: a cash table is closed ONLY by the
+     cluster controller's BREAK rule in fn_cash_cluster_tick, which writes
+     status = 'closed' and records table_break_completed. */
   const fleet = src('server/src/services/HorseFleetManager.ts');
+  const tick = src(
+    'supabase/migrations/20260905060000_the_must_move_lobby_a_seat_change_and_the_order_you_joined.sql'
+  );
 
-  it('is applied to the UPDATE, not filtered on the JS side', () => {
-    // A check anywhere else could be raced past between the seat fetch and the
-    // close. This is the statement that closes the table.
-    // The window is generous because the reasoning sits between the two, and
-    // that comment is the point: it is why the check is HERE and not in JS.
-    expect(fleet).toMatch(/\.update\(\{ status: 'closed' \}\)[\s\S]{0,2400}?auto_extension/);
+  it('the fleet never writes status closed onto a table and has no retirement sweep', () => {
+    expect(fleet).not.toContain("status: 'closed'");
+    expect(fleet).not.toMatch(/private async retireSurplusTables/);
+    expect(fleet).not.toContain('await this.retireSurplusTables(');
+    // and the switch that used to veto the close is not read by the fleet
+    expect(fleet).not.toContain('auto_extension');
   });
 
-  it('...but a RETIRED table closes anyway (Dan 2026-09-03, "close any tables over 2/5")', () => {
-    /* auto_extension is a host saying "do not close my table just because it
-       went quiet". A retirement is the club saying this stake is not offered
-       any anymore, and that outranks it - otherwise the table is drained to
-       empty by the session rotator, refused a re-seat forever because it is in
-       surplusTableIds, and then skipped by this very filter: permanently
-       empty, permanently open, invisible to every sweep.
-
-       A table PARKED FOR THE NIGHT (2026-09-04) outranks auto_extension for
-       exactly the same reason: it is drained, refused a re-seat while the park
-       stands, and would otherwise sit permanently empty and permanently open
-       until morning. The difference from a retirement is only what happens
-       next - a park is lifted and the table reopened after 08:00.
-
-       Still one expression on the UPDATE, for the same race reason as above. */
-    expect(fleet).toMatch(
-      /\.update\(\{ status: 'closed' \}\)[\s\S]{0,2400}?\.or\([\s\S]{0,200}?'auto_extension\.is\.null,auto_extension\.eq\.false,'[\s\S]{0,120}?'settings->>retire_when_empty\.eq\.true,settings->>night_parked\.eq\.true'/
-    );
+  it("closing is the tick's table_break_completed path, in SQL", () => {
+    const body = tick.slice(tick.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_cluster_tick'));
+    const close = body.indexOf("UPDATE public.tables SET status = 'closed', lifecycle = 'closed'");
+    const event = body.indexOf("'table_break_completed'");
+    expect(close).toBeGreaterThan(0);
+    expect(event).toBeGreaterThan(close);
   });
 });
 
@@ -79,8 +79,10 @@ describe('the lifecycle pass runs, and knows more than DEFAULT_TABLES', () => {
   it('never lets a failed pass take the fleet cycle down with it', () => {
     const body = fleet.slice(
       fleet.indexOf('private async runTableLifecyclePass'),
-      fleet.indexOf('private async spawnOverflowTables')
+      fleet.indexOf('private async openPlannedTables')
     );
+    expect(body.length).toBeGreaterThan(0);
+    expect(body.length).toBeLessThan(4000);
     expect(body).toContain('try {');
     expect(body).toContain('reportError(');
     // Every failure path returns rather than throwing into the cycle.

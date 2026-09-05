@@ -948,6 +948,15 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
              with table_id + hand_number as a stable identity so the same hit
              can never be shown twice. Additive: an older client ignores it. */
           emitted_at: Date.now(),
+          /* RETAINED FOR A RECONNECT (BBJ build plan phase 1, 2026-09-05). The
+             hub keeps an event only if it declares its own expiry (D3,
+             TableStateHub.retainIfReplayable). Without this a player whose
+             socket was between reconnects for the one second this went out -
+             a train, a backgrounded phone - never received the hand names the
+             celebration is built from. Sixty seconds is the hub's ceiling;
+             the client's identity gate (lib/bbjHitOnce) already refuses a
+             replay it has seen, so retention cannot make it play twice. */
+          replay_until: Date.now() + 60_000,
           loser: {
             userId: bbjResult.loserUserId,
             hand: bbjResult.loserHand,
@@ -1967,6 +1976,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                bbj_hit above - see the note there for why a retained replay is
                otherwise indistinguishable from a live hit. */
             emitted_at: Date.now(),
+            /* Retained for a reconnecting socket, same reason as bbj_hit. This
+               is THE event the ten-second celebration hangs on; before phase 1
+               a player reconnecting during the 1-3 s between the hand and the
+               payout missed the biggest moment on the platform, permanently. */
+            replay_until: Date.now() + 60_000,
             totalPayout: result.totalPayout,
             loser: { userId: bbjHit.loserUserId, share: result.loserShare },
             winner: { userId: bbjHit.winnerUserId, share: result.winnerShare },
@@ -2016,6 +2030,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                 club_id: this.tableInfo.club_id,
                 hand_number: snap.handNumber,
                 emitted_at: Date.now(),
+                // Retained so a sibling table's reconnecting socket still hears it.
+                replay_until: Date.now() + 60_000,
                 game_variant: this.tableInfo.game_variant,
                 big_blind: this.tableInfo.big_blind,
                 winner_user_id: bbjHit.loserUserId,

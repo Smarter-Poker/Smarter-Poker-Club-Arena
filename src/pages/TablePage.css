@@ -3614,8 +3614,28 @@
    Only on mobile (avoid unnecessary layer creation on desktop)
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* MOBILE PASS 2026-09-05: `.community-cards__card` is NO LONGER in this list.
+   The rule promoted every board card to its own compositor layer, permanently,
+   on every phone - five per table, twenty in a four-up tile view - and the
+   comment above justified it with "only on mobile", which is backwards: it
+   created the layers exactly where memory is scarcest.
+
+   MDN on this property: "Use will-change as a last resort ... Don't use it to
+   anticipate performance problems", and "Excessive use of will-change will
+   result in excessive memory use and will cause more complex rendering to
+   occur as the browser attempts to prepare for the possible change. This will
+   lead to worse performance." A board card that is not mid-reveal animates
+   nothing at all.
+
+   The squeeze promotes its own rotating box instead, and only while it turns
+   (cardSqueeze.css, `[data-rs-animating='on']`), which is the same source's
+   "switch will-change on and off using script code before and after the
+   change occurs".
+
+   The other selectors are left alone deliberately: their animations have not
+   been studied here, and removing a hint on an unmeasured element is a guess
+   in the other direction. */
 @media (max-width: 768px) and (pointer: coarse) {
-  .community-cards__card,
   .pot-display,
   .pot-display__chip-stack,
   .dealer-button,

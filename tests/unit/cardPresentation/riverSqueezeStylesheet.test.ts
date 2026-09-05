@@ -37,7 +37,7 @@ describe('the squeeze is compositor-only and speed-scaled', () => {
   it('the card materialises in place, scaled by --animation-speed, no travel (spec 69)', () => {
     const r = rule(squeezeCode, '.card-squeeze-host.card-squeeze-host');
     expect(r).toContain(
-      'ccCardMaterialize calc(var(--rs-prepare, 0.08s) * var(--animation-speed, 1))'
+      'ccCardMaterialize calc(var(--rs-prepare, 0.05s) * var(--animation-speed, 1))'
     );
     expect(r).toContain('animation-delay: calc(var(--rs-stagger, 0s) * var(--animation-speed, 1))');
     expect(keyframeBody(squeezeCode, 'ccCardMaterialize')).not.toMatch(/translate/);
@@ -47,9 +47,9 @@ describe('the squeeze is compositor-only and speed-scaled', () => {
     for (const sel of ['.card-squeeze', '.card-squeeze__spine', '.card-squeeze__shadow']) {
       const r = rule(squeezeCode, sel);
       expect(r, sel).toMatch(
-        /var\(--rs-prepare, 0\.08s\) \+ var\(--rs-hold, 0s\) \+ var\(--rs-stagger, 0s\)/
+        /var\(--rs-prepare, 0\.05s\) \+ var\(--rs-hold, 0s\) \+ var\(--rs-stagger, 0s\)/
       );
-      expect(r, sel).toContain('var(--rs-flip, 0.48s) * var(--animation-speed, 1)');
+      expect(r, sel).toContain('var(--rs-flip, 0.25s) * var(--animation-speed, 1)');
     }
     expect(rule(squeezeCode, '.card-squeeze')).toContain('cubic-bezier(0.16, 1, 0.3, 1)');
     expect(rule(squeezeCode, '.card-squeeze')).not.toContain('linear');
@@ -104,18 +104,36 @@ describe('the squeeze is compositor-only and speed-scaled', () => {
     expect(tablePageCss).not.toMatch(/allin-mode \.community-cards__card--(river|turn)/);
   });
 
-  it('reduced motion collapses the squeeze; resting state is face up (10.6)', () => {
+  it('reduced motion SWAPS the mechanism rather than deleting the reveal', () => {
+    // web.dev's own global override uses a 1ms duration rather than
+    // `animation: none`, "as some websites depend on an animation to be run
+    // in order to work correctly"; MDN's worked example swaps a scale pulse
+    // for an opacity dissolve. So: no rotation, no edge, no overshoot - the
+    // card cross-fades to its face, and every completion beat still fires.
     const rm = squeezeCode.slice(squeezeCode.indexOf('@media (prefers-reduced-motion: reduce)'));
-    for (const sel of [
-      '.card-squeeze-host',
-      '.card-squeeze,',
-      '.card-squeeze__spine',
-      '.card-squeeze__shadow',
-    ]) {
-      expect(rm, sel).toContain(sel);
-    }
+    expect(rm).toContain('ccCardCrossFade');
+    expect(rm).toContain('.card-squeeze-host.card-squeeze-host');
+    expect(rm).toContain('.card-squeeze__spine');
+    expect(rm).toContain('.card-squeeze__shadow');
+    // the resting state is still FACE UP, whichever path ran
     expect(rm).toContain('transform: rotateY(180deg)');
     expect(rule(squeezeCode, '.card-squeeze')).toContain('transform: rotateY(180deg)');
+    // and the reveal is opacity only - no movement at all
+    const kf = keyframeBody(squeezeCode, 'ccCardCrossFade');
+    expect(kf).not.toMatch(/transform|rotate|scale/);
+  });
+
+  it('will-change promotes ONE element, and only while it is turning', () => {
+    // MDN: "last resort", "excessive use ... excessive memory", "switch it on
+    // and off using script code before and after the change", and it applies
+    // to the whole subtree. It used to sit in the stylesheet on four elements
+    // per card, for the entire mount window.
+    const promoted = [...squeezeCode.matchAll(/will-change/g)];
+    expect(promoted).toHaveLength(1);
+    expect(squeezeCode).toContain(".card-squeeze-host[data-rs-animating='on'] .card-squeeze {");
+    // the component has to actually turn it off
+    expect(tsx).toContain('setAnimating(false)');
+    expect(squeezeCard).toContain("'data-rs-animating': animating ? 'on' : 'off'");
   });
 
   it('the host class is doubled so a foreign overflow:hidden cannot flatten the flip', () => {

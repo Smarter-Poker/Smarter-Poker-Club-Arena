@@ -202,6 +202,13 @@ interface CardFaceProps {
    */
   squeeze: SqueezePresentation | null;
   boardIndex: number;
+  /**
+   * MOBILE PASS 2026-09-05: still inside the profile's own duration. The
+   * mount window outlives the animation by design (so the markup is never
+   * torn out mid-flip), and for that remainder the card must stop being a
+   * promoted compositor layer. See cardSqueeze.css.
+   */
+  animating: boolean;
 }
 
 function CardFace({
@@ -215,6 +222,7 @@ function CardFace({
   cardBack,
   squeeze,
   boardIndex,
+  animating,
 }: CardFaceProps) {
   // Only apply animation classes to NEWLY DEALT cards — existing cards stay still
   const isTurnCard = isNewlyDealt && stage === 'turn' && index === 3;
@@ -231,7 +239,7 @@ function CardFace({
   // turn had no profile: it ignored the player's table focus and platform.
   // Both streets are the same mechanism now, sized by the same table.
   const isSqueeze = isNewlyDealt && squeeze !== null && squeeze.index === index;
-  const host = isSqueeze ? squeezeHostProps(squeeze.profile, boardIndex) : null;
+  const host = isSqueeze ? squeezeHostProps(squeeze.profile, boardIndex, animating) : null;
   const style = (
     host
       ? { ...host.style, '--card-index': index }
@@ -269,6 +277,8 @@ function CardFace({
       style={style}
       data-rs-profile={host ? host['data-rs-profile'] : undefined}
       data-rs-sweep={host ? host['data-rs-sweep'] : undefined}
+      data-rs-3d={host ? host['data-rs-3d'] : undefined}
+      data-rs-animating={host ? host['data-rs-animating'] : undefined}
     >
       {isSqueeze ? (
         /* ROUND 2 2026-09-05: the turn and river share ONE piece of markup
@@ -464,6 +474,15 @@ function CommunityCardsComponent({
   const [squeeze, setSqueeze] = useState<SqueezePresentation | null>(null);
   /** The profile the stage effect must read - state has not committed yet. */
   const squeezeProfileRef = useRef<CardAnimationProfile | null>(null);
+  /**
+   * MOBILE PASS 2026-09-05: true only while the flip is actually running.
+   * The mount window deliberately OUTLIVES the animation so the markup is
+   * never torn out mid-flip - but for that remainder the card should not go
+   * on being a promoted compositor layer. This flips false on the engine's
+   * `complete` beat, which is the earliest moment anything can know the
+   * animation is finished, and the CSS drops `will-change` with it.
+   */
+  const [animating, setAnimating] = useState(false);
   const cancelActiveSqueeze = (reason: string) => {
     if (activeSqueezeRef.current) {
       cardPresentationEngine.cancel(activeSqueezeRef.current, reason);
@@ -513,6 +532,7 @@ function CommunityCardsComponent({
     const closeWindow = () => {
       setNewlyDealtIndices(new Set());
       setSqueeze(null);
+      setAnimating(false);
       activeSqueezeRef.current = null;
     };
     if (visibleCount > prevCount) {
@@ -581,6 +601,7 @@ function CommunityCardsComponent({
             // reveal beat rather than to the street transition.
             pendingRevealKeyRef.current = result.key;
             squeezeProfileRef.current = result.profile;
+            setAnimating(true);
             setSqueeze({ key: result.key, profile: result.profile, index: slot });
           } else {
             // A flop pays its three snaps on the street, not on a reveal beat
@@ -697,8 +718,11 @@ function CommunityCardsComponent({
         // pays the cue. Clearing the newly-dealt set covers the FLOP too.
         activeSqueezeRef.current = null;
         setSqueeze(null);
+        setAnimating(false);
         setNewlyDealtIndices((prev) => (prev.size === 0 ? prev : new Set()));
       }
+      // The flip is over: stop paying for a compositor layer (see above).
+      if (phase === 'complete' || phase === 'cancelled') setAnimating(false);
       if (key !== pendingRevealKeyRef.current) return;
       if (phase !== 'reveal' && phase !== 'cancelled' && phase !== 'complete') return;
       pendingRevealKeyRef.current = null;
@@ -850,6 +874,7 @@ function CommunityCardsComponent({
               cardBack={cardBack}
               squeeze={squeeze}
               boardIndex={boardIndex}
+              animating={animating}
             />
           ) : (
             /* Dan 2026-08-26: "remove the ghost placeholders for the turn

@@ -103,3 +103,47 @@ second tick a no-op, roster 193 = seats 193.
 Money paragraph (CLAUDE.md 10.9): one player, a horse, gets its own 74-77
 chips back from a chair it should never have had, through the platform's own
 cash-out. Nothing is taken from anyone.
+
+## Afternoon, 2026-09-05: two more migrations on this branch, both from Dan's report
+
+Dan, 14:40 CDT: "GAMES ARE NOT RUNNING RIGHT, LOBBIES SAY 50 PLAYERS, AND
+ONLY ONE SITTING." Read live: `NLH 0.05/0.10 Classic` with 42 players on 16
+tables (main1=9 ... main7=1 main10=0 ... feeder=0); `PLO6 0.50/1 Classic`
+with 1 player on 4 tables; the same on three more. The card was right
+(`cluster_players` counts every seat in the game); the table you land on
+had one. Two defects, one of them mine.
+
+**`20260905194329_main_one_is_looked_up_on_the_live_board_not_the_oldest_row`**
+(applied 14:47). The R3 repair ("an enabled game always has Main 1 open")
+selected the OLDEST table ever numbered Main 1, closed or not. On the loop
+game the original Main 1 was closed for good - `lifecycle_followed_status`
+from 083756 had made its lifecycle agree with its status, where before it
+read `live` and took the harmless status-repair branch - and the game was
+re-enabled at 08:01. From then on every tick found a closed row and opened a
+NEW Main 1: `main_opened` 3,000 between 08:01 and 10:29, `main_renumbered`
+3,114, `move_planned` 10,989; 3,002 table rows on one game. Now R3 looks for
+a LIVE or opening Main 1; a game with any live table but no such Main 1
+opens nothing (the ROLES step promotes the oldest live table, 1.3 s9.2);
+only a game with no live table at all opens one; and an enabled game's Main
+1 is exempt from lifecycle-follows-status so a status-only close is repaired
+in place. Probed rolled back: the loop game opens nothing; an empty Main 1
+closed by status is reopened in place (same id); a game with no live table
+opens exactly one Main 1 and only once. The 2,986 closed rows are left as
+history; nothing is deleted.
+
+**`20260905194840_the_break_consolidates_a_thin_game_the_floor_was_never_a_bar`**
+(applied 14:51). `break_eligible_since` was NULL on every table of both
+games: the BREAK rule never armed, because it required
+`seated_total >= floor x remaining_tables` (the rest must average at or
+above the maintain floor after the break). Breaking a table never makes the
+rest shorter, so that clause could only refuse the breaks that matter most:
+1 >= 3 x 3 and 42 >= 4 x 15 are never true. Games grew (R3 loop, feeder
+over-count) and could not shrink. The clause is gone; the STRICT fit stays
+(everyone fits AND a seat stays open, so the OPEN rule cannot fire on the
+same board). The candidate order prefers an empty table, then the feeder,
+then the highest main. A candidate with nobody or one player has no hand to
+protect, so its window is 60 seconds; two-plus seated keeps two orbits or
+five minutes. Probed rolled back: the 1-player/4-table game sheds a table per
+minute down to one; the 16-table game arms its empty table first; a full
+two-table game (10 of 12 seats) does not arm. Live at 14:51:16, twenty
+seconds after apply: 5 tables armed, 0 tick errors.

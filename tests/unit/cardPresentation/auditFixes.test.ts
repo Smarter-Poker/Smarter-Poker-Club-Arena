@@ -110,7 +110,7 @@ describe('started and completed describe the SAME presentation', () => {
     let now = 0;
     const engine = build(events, () => now);
     vi.useFakeTimers();
-    const r = engine.presentCard(ev(), input({ mode: 'tournament', allIn: true }));
+    const r = engine.presentCard(ev(), input({ mode: 'tournament', allIn: true, squeeze: true }));
     expect(r.profile).toBe(CARD_PRESENTATION_PROFILES.allIn);
     expect(CARD_PRESENTATION_PROFILES.allIn.mode, 'the profile constant says cash').toBe('cash');
     now += r.durationMs;

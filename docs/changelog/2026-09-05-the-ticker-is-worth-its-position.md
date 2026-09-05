@@ -5,8 +5,9 @@ TICKER, FULL AUDIT ON IT AND EVERYTHING INSIDE OF IT... HOW IT CAN BE ENHANCED,
 IMPROVED, UPGRADED OR OPTIMIZED. AS WELL AS HOW TO MAKE IT BETTER AND MORE
 'PREMIUM FEELING'."_ Then: _"GO AHEAD AND FULLY BUILD ALL OF THESE."_
 
-The audit found seventeen things. Sixteen are fixed here. The seventeenth is
-recorded below as a correction to a promise the code could never keep.
+The audit found seventeen things. Fifteen are fixed here in full, one in part
+(section 15), and the seventeenth is recorded below as a correction to a promise
+the code could never keep.
 
 The engineering under this bar was better than the bar. Somebody thought hard
 about when an overlay is real, why a horse's buy-in counts, and why a bare
@@ -175,7 +176,7 @@ A club that had deliberately switched the rail OFF got it back - with a
 different mix of sources - during any transient failure. The last authoritative
 snapshot per scope is kept and returned instead; defaults are for a cold start.
 
-## 15. Priority was an if/else ladder, and nothing expired
+## 15. Priority was an if/else ladder, and nothing expired (PART OF THIS IS LEFT)
 
 Severity and expiry are fields on the item now. **One ordering change, stated:**
 SERVICE NOTICE and CLUB UPDATE moved above the three low-value operational
@@ -187,6 +188,12 @@ window.
 
 Every item now expires on its own terms, so a finished countdown leaves the bar
 whether or not a poll has run.
+
+**NOT built, and both are decisions rather than work.** `starts_at` / `ends_at`
+on an operator's own messages needs a column on `game_ticker_settings`, and
+per-source click telemetry needs somewhere for the events to land. Until the
+second one exists, nobody can answer "is the guarantees source worth its
+pixels" with a number, which was the point of asking.
 
 ## 16. 951 lines doing eight jobs, and no render test
 

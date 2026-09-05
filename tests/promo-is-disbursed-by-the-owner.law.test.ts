@@ -11,13 +11,21 @@
  * 0.00: every route that existed moved it sideways into another promo float,
  * and the one automatic payout could not run at all.
  *
+ * AMENDED 2026-09-05 BY DAN'S RULING (docs/LAWS.md, "Resolved conflicts").
+ * Dan sent promo from the Midway Union to two clubs, opened each club's Promo
+ * Wallet, found 0.00, and reported the chips missing; the 2026-09-03 model
+ * had landed union promo in the CLUB BANK. Put to him as a choice, he chose
+ * the club Promo Wallet. So two rules below changed and the rest stand:
+ *
  * The rules this pins:
  *
  *   - fn_promo_disburse is the owner's door: union owner -> member club, union
- *     owner -> a player in one, unaffiliated club owner -> a player in that club;
- *   - a club inside a union cannot disburse - its union owner does;
- *   - it always lands as ordinary chips (chip_treasury / chip_balance), never a
- *     promo_balance and never a playthrough lock;
+ *     owner -> a player in one, a club owner -> a player in that club;
+ *   - a club spends its OWN promo wallet whether or not it is in a union; the
+ *     union pays into it (fn_union_promo_send), the club hands it out;
+ *   - to a CLUB it lands in the club's PROMO WALLET (clubs.promo_balance); to a
+ *     PLAYER it lands as ordinary chips (chip_balance), never a playthrough
+ *     lock;
  *   - it declares its counterparty, so no leg lands in settlement_suspense;
  *   - it is op-keyed, so a retried click returns the first answer;
  *   - the union-funded leaderboard declares its counterparty like the
@@ -45,7 +53,13 @@ function read(fragment: string): string {
   expect(f, `the migration containing "${fragment}" is missing`).toBeTruthy();
   return readFileSync(resolve(DIR, f as string), 'utf8');
 }
-const DISBURSE = read('the_promo_disbursement_speaks_the_ledgers_own_word');
+/* DAN'S RULING, 2026-09-05 (docs/LAWS.md, "Resolved conflicts"): union promo
+   to a CLUB lands in that club's PROMO WALLET (clubs.promo_balance), and a
+   club inside a union spends its own promo wallet. To a PLAYER it still lands
+   as ordinary cashable chips. The 2026-09-03 door was amended in
+   20260905031715_the_club_promo_wallet_is_where_union_promo_lands.sql, and
+   the pins below read THAT definition - the one production runs. */
+const DISBURSE = read('the_club_promo_wallet_is_where_union_promo_lands');
 const LB_UNION = read('the_union_funded_leaderboard_names_its_counterparty');
 const LB_WORD = read('a_leaderboard_win_is_a_word_the_wallet_knows');
 
@@ -70,19 +84,24 @@ describe('promo is disbursed by the owner', () => {
     expect(b).toMatch(/FROM unions u WHERE u\.id = v_union AND u\.owner_id = v_actor/);
   });
 
-  it('refuses a club that belongs to a union: its union owner disburses', () => {
-    expect(body(DISBURSE, 'fn_promo_disburse')).toContain(
-      'This Club Belongs To A Union; Its Union Owner Disburses The Promo'
-    );
+  it('lets a club in a union spend its own promo wallet (Dan 2026-09-05)', () => {
+    const b = body(DISBURSE, 'fn_promo_disburse');
+    expect(b).not.toContain('This Club Belongs To A Union; Its Union Owner Disburses The Promo');
+    // the club source still spends clubs.promo_balance, and still asks for the owner
+    expect(b).toMatch(/SET promo_balance = promo_balance - v_amt/);
+    expect(b).toContain('Only The Club Owner May Disburse Club Promo');
   });
 
-  it('lands as ordinary chips, never a promo balance and never a playthrough lock', () => {
+  it('lands in the club promo wallet for a club, and as ordinary chips for a player', () => {
     const b = body(DISBURSE, 'fn_promo_disburse');
-    expect(b).toMatch(/SET chip_treasury = COALESCE\(chip_treasury, 0\) \+ v_amt/);
+    // union -> club: the club Promo Wallet, never the Club Bank
+    expect(b).toMatch(/SET promo_balance = COALESCE\(promo_balance, 0\) \+ v_amt/);
+    expect(b).not.toMatch(/SET chip_treasury = COALESCE\(chip_treasury, 0\) \+ v_amt/);
+    expect(b).toContain("v_lands_as := 'club_promo_wallet'");
+    // -> player: cashable chips, no playthrough
     expect(b).toMatch(/SET chip_balance = COALESCE\(chip_balance, 0\) \+ v_amt/);
-    expect(b).not.toMatch(/SET promo_balance\s*=\s*COALESCE\(promo_balance, 0\)\s*\+/);
     expect(b).not.toContain('promo_playthrough_required');
-    expect(b).toContain("'lands_as', 'ordinary_chips'");
+    expect(b).toContain("v_lands_as := 'ordinary_chips'");
   });
 
   it('declares both source shapes so no leg lands in suspense', () => {

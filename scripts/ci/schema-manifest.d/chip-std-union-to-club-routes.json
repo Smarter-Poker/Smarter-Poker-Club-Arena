@@ -1,0 +1,6 @@
+{
+  "_owner": "fix/union-to-club-money-declares-itself (chip standard, 2026-09-05, after the missing promo chips). Applied as 20260905034557. Re-creates fn_union_send_to_club_atomic and fn_union_promo_send with declarations; creates nothing new.",
+  "tables": [],
+  "functions": ["fn_union_send_to_club_atomic", "fn_union_promo_send"],
+  "columns": {}
+}

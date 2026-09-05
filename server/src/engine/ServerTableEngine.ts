@@ -428,6 +428,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
         // what the ActionLatency alerts read.
         EngineMetrics.actToBroadcastFleet.observe(actMs, {
           audience: this.humansSeated() > 0 ? 'human' : 'horse',
+          format: this.tableFormat(),
         });
       } catch {
         /* metrics must never affect gameplay */

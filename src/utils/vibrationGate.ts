@@ -122,8 +122,123 @@ function weigh(pattern: number | number[]): number {
  * Returns whether it actually fired — callers that need to know (tests, the
  * HapticService API) can use it; most should just call and forget.
  */
+/* ═══════════════════════════════════════════════════════════════════════════
+   iOS HAS NO VIBRATION API, AND NEVER HAS
+   ═══════════════════════════════════════════════════════════════════════════
+   Every iOS browser is WebKit, and Apple has never shipped `navigator.vibrate`
+   there. So `isVibrationAllowed()` above returns false on every iPhone and
+   iPad, and every haptic in Club Arena - the turn alert, the keypad, the
+   card-slide peel - has been silently doing nothing on the platform most of
+   our players hold. Verified 2026-09-05: desktop Chromium HAS the function and
+   `navigator.vibrate(1)` returns false (no motor); iOS does not have it at all.
+
+   THE ONE THING THAT DOES BUZZ on iOS is a native switch control changing
+   state: `<input type="checkbox" switch>`. Toggling one plays the system
+   haptic. That is the whole trick, and it is the mechanism behind
+   `ios-vibrator-pro-max` (ISC, https://vibrator.dev).
+
+   WE DO NOT USE THAT LIBRARY, DELIBERATELY. To make `navigator.vibrate()` work
+   ANYWHERE - including with no user gesture - it reparents document.body into
+   a <label>, redefines `document.body` with a getter, and runs two
+   MutationObservers over the whole subtree. This app measures the DOM to place
+   seats (tableGeometry), hides background tables with display:none, and has a
+   law about animations never dropping frames. A global body reparent and a
+   subtree observer are not things to take on for a buzz.
+
+   We do not need any of it, because we do not need the no-gesture case: every
+   haptic here is already fired from inside a real pointer or click handler.
+   So this is the mechanism alone - one hidden switch, toggled - and nothing
+   else. If Apple closes it, this returns false and we are exactly where we
+   were, with no other part of the app touched. */
+
+/** Cache: null = not built yet, false = cannot build here. */
+let iosSwitch: HTMLInputElement | null | false = null;
+
+/** iOS/iPadOS WebKit, which is the only place this technique applies. */
+function isIosWebkit(): boolean {
+  if (typeof navigator === 'undefined' || typeof document === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  // iPadOS 13+ reports a Mac UA, and is told apart by having touch points.
+  const iPadOS = /Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1;
+  if (!/iPhone|iPad|iPod/.test(ua) && !iPadOS) return false;
+  // Chrome/Firefox on iOS are WebKit underneath, so they count too. Exclude
+  // anything that is not WebKit-backed.
+  return /AppleWebKit/.test(ua);
+}
+
+function getIosSwitch(): HTMLInputElement | null {
+  if (iosSwitch !== null) return iosSwitch || null;
+  try {
+    if (!document.body) {
+      // Called before body exists; try again on a later buzz.
+      return null;
+    }
+    const label = document.createElement('label');
+    // Off-screen rather than display:none - a control that is not rendered at
+    // all is not guaranteed to produce the system haptic.
+    label.setAttribute(
+      'style',
+      'position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none;'
+    );
+    label.setAttribute('aria-hidden', 'true');
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.setAttribute('switch', '');
+    input.tabIndex = -1;
+    label.appendChild(input);
+    document.body.appendChild(label);
+    iosSwitch = input;
+    return input;
+  } catch {
+    iosSwitch = false;
+    return null;
+  }
+}
+
+/**
+ * One toggle per PULSE in the pattern. A Vibration API pattern alternates
+ * buzz/pause starting with a buzz, so the even indices are the pulses and the
+ * odd ones are the gaps between them.
+ *
+ * The first pulse is synchronous, because that is the one still inside the
+ * user's gesture and therefore the one iOS 18.4+ will honour. Later pulses are
+ * scheduled and may be dropped by the platform; a missing third buzz is a much
+ * smaller problem than no buzz at all.
+ */
+function fireIosHaptic(pattern: number | number[]): boolean {
+  const input = getIosSwitch();
+  if (!input) return false;
+  const list = typeof pattern === 'number' ? [pattern] : pattern;
+  const toggle = () => {
+    try {
+      input.checked = !input.checked;
+      input.click();
+    } catch {
+      /* never let a buzz break the caller */
+    }
+  };
+  toggle();
+  // Cap the tail: our longest pattern is three pulses, and an unbounded loop
+  // over a caller-supplied array is a timer leak waiting to happen.
+  let offset = 0;
+  let fired = 1;
+  for (let i = 0; i < list.length - 1 && fired < 3; i += 2) {
+    offset += (list[i] || 0) + (list[i + 1] || 0);
+    fired += 1;
+    window.setTimeout(toggle, offset);
+  }
+  return true;
+}
+
 export function fireVibration(pattern: number | number[]): boolean {
-  if (!isVibrationAllowed()) return false;
+  /* THE PREFERENCE, not the capability. This used to ask
+     `isVibrationAllowed()`, which is preference AND `navigator.vibrate`
+     existing - so on iOS, where it never exists, every caller was refused
+     before the fallback below could be reached. Both switches are still
+     honoured, and either being off still silences everything. */
+  if (!isVibrationPreferred()) return false;
+  const canNative = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
+  if (!canNative && !isIosWebkit()) return false;
 
   const now = Date.now();
   const weight = weigh(pattern);
@@ -135,8 +250,14 @@ export function fireVibration(pattern: number | number[]): boolean {
   lastWeight = weight;
 
   try {
-    navigator.vibrate(pattern);
-    return true;
+    // `vibrate()` returns false where the API exists but no motor does - every
+    // desktop browser. Fall through to the iOS path only when the API is
+    // genuinely absent, so a desktop never pays for a technique it cannot use.
+    if (canNative) {
+      navigator.vibrate(pattern);
+      return true;
+    }
+    return fireIosHaptic(pattern);
   } catch {
     // Restricted contexts (cross-origin iframe, some webviews) throw rather
     // than no-op. Never let a buzz break the caller.
@@ -148,6 +269,7 @@ export function fireVibration(pattern: number | number[]): boolean {
 export function __resetVibrationCoalescing(): void {
   lastFireAt = 0;
   lastWeight = 0;
+  iosSwitch = null;
 }
 
 /** Cancel any in-flight vibration. Not gated — stopping is always allowed. */

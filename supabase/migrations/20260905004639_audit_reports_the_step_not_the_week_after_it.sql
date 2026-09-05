@@ -189,3 +189,11 @@ end
 $function$;
 
 COMMIT;
+
+-- The function was already anon-executable before this migration; declaring it
+-- here is what made check-definer-authorization say so. It is operator
+-- telemetry (brain-layer fire rates), it backs no RLS policy expression
+-- (pg_policy scan returned zero rows), and nothing pre-login should read it.
+-- PUBLIC is named as well as the roles because anon inherits from PUBLIC.
+REVOKE ALL ON FUNCTION public.fn_audit_layer_drift(date) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_audit_layer_drift(date) TO service_role;

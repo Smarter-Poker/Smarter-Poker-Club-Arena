@@ -155,3 +155,9 @@ end
 $function$;
 
 COMMIT;
+
+-- Same as the layer-drift migration in this sweep: already anon-executable,
+-- operator telemetry (fleet occupancy and tournament state), backs no RLS
+-- policy expression. Closed to service_role only.
+REVOKE ALL ON FUNCTION public.fn_audit_fleet_health(date) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_audit_fleet_health(date) TO service_role;

@@ -748,6 +748,7 @@ import {
   TABLE_BACKGROUND_REPEAT,
 } from '../lib/tableTheme';
 import { adaptServiceHandToPanel, panelHandToShareable } from '../lib/handHistoryAdapter';
+import { HAND_HISTORY_PAGE, prependHand, shouldRefetchHandHistory } from '../lib/handHistoryLive';
 import { useUserStore } from '../stores/useUserStore';
 import { resolveLobbyClubId, resolveLobbyClubIdSync } from '../utils/clubQuickLink';
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
@@ -7267,6 +7268,13 @@ export default function TablePage({
      means the newest. */
   const [handDetailFocusId, setHandDetailFocusId] = useState<string | null>(null);
   const [showHandHistory, setShowHandHistory] = useState(false);
+  /* Phase 1 (2026-09-05): when and for which table the list was fetched, so a
+     reopen inside the staleness window is instant and the engine's
+     `hand_history_saved` can land straight into it. See lib/handHistoryLive. */
+  const handHistoryFetchedAtRef = useRef<number | null>(null);
+  const handHistoryTableRef = useRef<string | null>(null);
+  const handHistoryStateRef = useRef<'idle' | 'loading' | 'ready' | 'failed'>('idle');
+  handHistoryStateRef.current = handHistoryState;
 
   /**
    * STABLE CALLBACKS FOR TableModalsLayer (Dan 2026-08-27, stuck-announcement).
@@ -7305,18 +7313,37 @@ export default function TablePage({
   // cache. Both openers hydrate now.
   useEffect(() => {
     if ((!showHandHistory && !showHandDetail) || !userId || userId === 'guest') return;
+    /* INSTANT REOPEN (Phase 1). Fetch on the first open for this table, after
+       a failure, or when the list is stale enough that an event may have been
+       missed; otherwise the list on screen is the record plus every hand the
+       engine has announced since, and there is nothing to wait for. */
+    if (
+      !shouldRefetchHandHistory({
+        state: handHistoryStateRef.current,
+        fetchedAt: handHistoryFetchedAtRef.current,
+        fetchedTableId: handHistoryTableRef.current,
+        tableId,
+        now: Date.now(),
+      })
+    ) {
+      return;
+    }
     let cancelled = false;
     setHandHistoryState('loading');
     (async () => {
       try {
         // THIS table's hands, in play order (Dan 2026-09-04). See
         // HandHistoryService.getPlayerHands for what the missing tableId did.
-        const hands = await handHistoryService.getPlayerHands(userId, 50, { tableId });
+        const hands = await handHistoryService.getPlayerHands(userId, HAND_HISTORY_PAGE, {
+          tableId,
+        });
         if (cancelled) return;
         /* An empty answer is an answer. `hands.length > 0` used to gate this,
            which left whatever was on screen (a cache, another table's list) in
            place when the truth was "no hands here yet". */
         setHandHistory((hands || []).map((h) => adaptServiceHandToPanel(h, userId)));
+        handHistoryFetchedAtRef.current = Date.now();
+        handHistoryTableRef.current = tableId ?? null;
         setHandHistoryState('ready');
       } catch (e) {
         if (cancelled) return;
@@ -7331,6 +7358,35 @@ export default function TablePage({
        container can change table, and a closure over the old id fetched the
        previous table's hands into this one. */
   }, [showHandHistory, showHandDetail, userId, tableId]);
+
+  /**
+   * LIVE REFRESH (Phase 1, 2026-09-05). The engine announces every saved hand
+   * by id; the list on screen takes it the moment it lands, without a
+   * close-and-reopen. Only once the list has been fetched for THIS table - a
+   * first open fetches the page anyway - and only for a viewer the row is
+   * readable by (an observer's read returns null under RLS and nothing
+   * changes). The same read fills the viewer's own cards and discards, so the
+   * new row carries everything the fetched ones do.
+   */
+  const takeSavedHand = useCallback(
+    async (savedId: string) => {
+      if (!userId || userId === 'guest' || !tableId) return;
+      if (handHistoryStateRef.current !== 'ready' || handHistoryTableRef.current !== tableId)
+        return;
+      try {
+        const row = await handHistoryService.getHand(savedId);
+        if (!row || row.table_id !== tableId) return;
+        const record = adaptServiceHandToPanel(row, userId);
+        setHandHistory((prev) => prependHand(prev, record));
+        handHistoryFetchedAtRef.current = Date.now();
+      } catch (e) {
+        reportError(e, 'TablePage.takeSavedHand');
+      }
+    },
+    [userId, tableId]
+  );
+  const takeSavedHandRef = useRef(takeSavedHand);
+  takeSavedHandRef.current = takeSavedHand;
 
   // Hand replay — resolve the most recent hand id lazily when the panel opens
   // rather than paying a lookup on every completed hand.
@@ -9233,7 +9289,11 @@ export default function TablePage({
       // authoritative and arrives before the player can realistically tap.
       if (eventType === 'hand_history_saved') {
         const savedId = handState.hand_id as string | undefined;
-        if (savedId) setLastHandId(savedId);
+        if (savedId) {
+          setLastHandId(savedId);
+          // Phase 1: the Previous Hand list takes the hand as it lands.
+          void takeSavedHandRef.current(savedId);
+        }
         return;
       }
 
@@ -22905,6 +22965,7 @@ export default function TablePage({
         heroId={userId || ''}
         loadState={handHistoryState}
         initialHandId={handDetailFocusId}
+        viewerSeated={tableState.heroSeat > 0 || heroSeatRef.current > 0}
         /* Take the hand you are LOOKING AT. This was `onReplay={() => {...}}`
            — no parameter — and the replay modal resolves its own subject from
            `lastHandId`, which is filled by `getPlayerHands(userId, 1)`: the
@@ -23587,6 +23648,7 @@ export default function TablePage({
         showHandHistory={showHandHistory}
         handHistory={handHistory}
         handHistoryState={handHistoryState}
+        handHistoryViewerSeated={tableState.heroSeat > 0 || heroSeatRef.current > 0}
         onCloseHandHistory={handleCloseHandHistory}
         onReplay={(hand) => {
           setLastHandId(hand.id);

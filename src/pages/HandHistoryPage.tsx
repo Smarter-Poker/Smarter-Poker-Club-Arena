@@ -80,6 +80,11 @@ export default function HandHistoryPage() {
     [drilldownKey]
   );
   const hasStatsDrilldown = Object.keys(statsDrilldown).length > 0;
+  /* DEEP LINK (Phase 1, 2026-09-05): `/hand-history?hand=<id>` opens ON that
+     hand - expanded and scrolled to - fetching it by id when it is not on the
+     first page. The id is the hand_history row id the modal's Copy Link and a
+     dispute carry; RLS decides whether the viewer may read it. */
+  const linkedHandId = searchParams.get('hand');
   const toast = useToast();
   const isMounted = useIsMounted();
 
@@ -97,6 +102,10 @@ export default function HandHistoryPage() {
   const [shareHand, setShareHand] = useState<ShareableHand | null>(null);
   const [visible, setVisible] = useState<Record<string, boolean>>({});
   const loadingRef = useRef(false);
+  /* A linked hand not on the loaded page, fetched by id and shown first. */
+  const [linkedRow, setLinkedRow] = useState<ServiceHandRecord | null>(null);
+  const [linkedState, setLinkedState] = useState<'idle' | 'loading' | 'missing'>('idle');
+  const linkedScrolledRef = useRef<string | null>(null);
 
   const loadFirstPage = useCallback(async () => {
     if (!userId) return;
@@ -172,8 +181,41 @@ export default function HandHistoryPage() {
     };
   }, []);
 
+  // The linked hand: on the page already, or fetched by id.
+  useEffect(() => {
+    if (!linkedHandId || !userId) {
+      setLinkedRow(null);
+      setLinkedState('idle');
+      return;
+    }
+    if (rows.some((r) => r.id === linkedHandId)) {
+      setLinkedRow(null);
+      setLinkedState('idle');
+      return;
+    }
+    if (loading) return;
+    let alive = true;
+    setLinkedState('loading');
+    (async () => {
+      try {
+        const row = await handHistoryService.getHand(linkedHandId);
+        if (!alive) return;
+        setLinkedRow(row);
+        setLinkedState(row ? 'idle' : 'missing');
+      } catch (e) {
+        if (!alive) return;
+        reportError(e, 'HandHistoryPage.linked_hand');
+        setLinkedState('missing');
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [linkedHandId, userId, rows, loading]);
+
   /* The view model: the same record the table's panel renders, through the
-     same adapter. Filters and the stats drill-down apply on top. */
+     same adapter. Filters and the stats drill-down apply on top. A linked hand
+     fetched by id leads the list regardless of the filter, so the link lands. */
   const hands: HandRecord[] = useMemo(() => {
     if (!userId) return [];
     let list = filterHandsByStatsDrilldown(rows, statsDrilldown, userId);
@@ -183,8 +225,25 @@ export default function HandHistoryPage() {
       list = list.filter((h) => (h.players.find((p) => p.user_id === userId)?.result ?? 0) < 0);
     else if (filter === 'big-pots')
       list = list.filter((h) => h.replay.potTotal >= 100 * (h.replay.bigBlind || 1));
+    if (linkedHandId) {
+      const onPage = rows.find((r) => r.id === linkedHandId);
+      const lead = onPage ?? linkedRow;
+      if (lead && !list.some((h) => h.id === lead.id)) list = [lead, ...list];
+    }
     return list.map((h) => adaptServiceHandToPanel(h, userId));
-  }, [rows, filter, statsDrilldown, userId]);
+  }, [rows, filter, statsDrilldown, userId, linkedHandId, linkedRow]);
+
+  // Open and scroll to the linked hand once it is on screen.
+  useEffect(() => {
+    if (!linkedHandId || linkedScrolledRef.current === linkedHandId) return;
+    if (!hands.some((h) => h.id === linkedHandId)) return;
+    linkedScrolledRef.current = linkedHandId;
+    setExpandedId(linkedHandId);
+    const el = document.getElementById(`hand-${linkedHandId}`);
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
+  }, [linkedHandId, hands]);
 
   const idSignature = hands.map((h) => h.id).join('|');
   useEffect(() => {
@@ -306,6 +365,17 @@ export default function HandHistoryPage() {
         ))}
       </div>
 
+      {linkedHandId && linkedState === 'missing' && (
+        <div className="hh-stats-drilldown" role="status">
+          <span>
+            That Hand Is Not In Your Record. Hands Are Readable By The Players Dealt Into Them.
+          </span>
+          <button type="button" onClick={() => navigate('/hand-history', { replace: true })}>
+            Show All Hands
+          </button>
+        </div>
+      )}
+
       {hasStatsDrilldown && (
         <div className="hh-stats-drilldown" role="status">
           <span>
@@ -401,7 +471,10 @@ export default function HandHistoryPage() {
             return (
               <article
                 key={hand.id}
-                className={`hand-card${expanded ? ' hand-card--expanded' : ''}${visible[hand.id] ? ' hand-card--in' : ''}`}
+                id={`hand-${hand.id}`}
+                className={`hand-card${expanded ? ' hand-card--expanded' : ''}${visible[hand.id] ? ' hand-card--in' : ''}${
+                  hand.id === linkedHandId ? ' hand-card--linked' : ''
+                }`}
               >
                 <button
                   type="button"

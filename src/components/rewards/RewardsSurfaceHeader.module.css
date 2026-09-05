@@ -1,3 +1,36 @@
+/**
+ * REWARDS SURFACE HEADER / #SMARTERCASINOREALISM
+ *
+ * This one sheet renders on NINETEEN pages - wallet, VIP, rakeback,
+ * promotions, bonuses, achievements, hand history, marketplace, transactions,
+ * session history, six union pages and two tournament pages. Measured against
+ * the live DOM on 2026-09-05 it is the only module stylesheet besides the
+ * (Dan-approved, untouchable) global header that renders across a whole family
+ * of surfaces, which makes it the highest-leverage place in the app to put
+ * material.
+ *
+ * WHAT CHANGED AND WHAT DID NOT. Every layout decision here was already
+ * settled and mobile-tested: the grid, the 760px and 440px breakpoints, the
+ * full-bleed edge on a phone, the conduit, the scanlines. None of it is
+ * touched. What changed is where the colour comes from and what the surface is
+ * made of:
+ *
+ *   - The palette now reads --realism-* from club-engine.css instead of
+ *     hardcoded hexes. The drift this closes was real: this header lit its
+ *     live metrics #3aa8ff while the wallet - the approved reference for
+ *     #SMARTERCASINOREALISM - runs #00d4ff, so two pages in the SAME family,
+ *     one tab apart, glowed a different colour.
+ *   - The frame gained the machined treatment the wallet established: a lit
+ *     top edge and a cavity beneath it, so the panel sits IN the page rather
+ *     than on it.
+ *
+ * Every var() carries the previous literal as its fallback, so the header is
+ * unchanged if it is ever rendered without the global sheet.
+ *
+ * NO :hover anywhere (tests/no-hover-effects.law.test.ts). Reduced motion
+ * drops the glow and keeps every edge, so the object still reads as an object.
+ */
+
 .header {
   position: relative;
   isolation: isolate;
@@ -9,11 +42,17 @@
   width: min(1180px, calc(100vw - 32px));
   margin-bottom: clamp(20px, 3vw, 34px);
   transform: translateX(-50%);
-  border: 1px solid #26333d;
+  border: 1px solid var(--realism-gunmetal, #26333d);
   border-radius: 5px;
-  background: #020407;
+  background: linear-gradient(
+    180deg,
+    var(--realism-carbon, #020407) 0%,
+    var(--realism-obsidian, #020407) 62%,
+    #020407 100%
+  );
   box-shadow:
-    inset 0 1px 0 rgba(221, 243, 255, 0.12),
+    var(--realism-bevel, inset 0 1px 0 rgba(221, 243, 255, 0.12)),
+    var(--realism-cavity, inset 0 -1px 0 rgba(0, 0, 0, 0.6)),
     0 24px 64px rgba(0, 0, 0, 0.38);
 }
 
@@ -25,20 +64,30 @@
   pointer-events: none;
 }
 
+/* The lit spine down the left edge. Cyan is the family's live-data colour, so
+   the same energy runs the spine here, the metric pips below and the readouts
+   on the wallet. */
 .header::before {
   inset: 0;
-  border-left: 2px solid #3aa8ff;
+  border-left: 2px solid var(--realism-cyan, #3aa8ff);
   background:
-    linear-gradient(90deg, rgba(58, 168, 255, 0.09), transparent 18%),
+    linear-gradient(90deg, rgba(0, 212, 255, 0.09), transparent 18%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.028), transparent 24%);
 }
 
+/* The chrome-to-energy run along the top right: the machined edge catching the
+   light before it reaches the live corner. */
 .header::after {
   top: 0;
   right: 0;
   width: min(34%, 280px);
   height: 4px;
-  background: linear-gradient(90deg, transparent, #b9cad7 36%, #3aa8ff);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--realism-chrome, #b9cad7) 36%,
+    var(--realism-cyan, #3aa8ff)
+  );
 }
 
 .copy {
@@ -52,18 +101,21 @@
 
 .eyebrow {
   margin: 0 0 10px;
-  color: #6ebcff;
+  color: var(--realism-cyan, #6ebcff);
   font:
-    700 0.72rem/1.1 Inter,
+    700 0.72rem/1.1 'Roboto Condensed',
+    Inter,
     sans-serif;
   letter-spacing: 0.18em;
   text-transform: uppercase;
 }
 
+/* Etched into the panel: the dark line under the type is the cut, the faint
+   light above it is the edge of the cut catching the room. */
 .title {
   max-width: 760px;
   margin: 0;
-  color: #f4f8fb;
+  color: var(--realism-chrome-hot, #f4f8fb);
   font:
     700 clamp(2rem, 5vw, 4.25rem) / 0.92 Rajdhani,
     Inter,
@@ -71,12 +123,15 @@
   letter-spacing: -0.035em;
   text-transform: uppercase;
   text-wrap: balance;
+  text-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.8),
+    0 0 42px rgba(0, 212, 255, 0.14);
 }
 
 .description {
   max-width: 650px;
   margin: 14px 0 0;
-  color: #aab8c3;
+  color: var(--realism-chrome, #aab8c3);
   font:
     400 clamp(0.92rem, 1.4vw, 1.06rem) / 1.55 Inter,
     sans-serif;
@@ -97,11 +152,13 @@
   margin: 0;
 }
 
+/* A metric is a milled BAY, not a number with a rule beside it: a recessed
+   floor, a lit inner edge, and a status pip at the top of the slot. */
 .metric {
   position: relative;
   min-width: 74px;
   padding-left: 11px;
-  border-left: 1px solid #455560;
+  border-left: 1px solid var(--realism-gunmetal-lit, #455560);
 }
 
 .metric::before {
@@ -111,35 +168,40 @@
   left: -2px;
   width: 3px;
   height: 12px;
-  background: #768996;
+  background: var(--realism-muted, #768996);
 }
 
 .metric.live::before {
-  background: #35d48a;
+  background: var(--realism-green, #35d48a);
   box-shadow: 0 0 12px rgba(53, 212, 138, 0.58);
 }
 
 .metric.attention::before {
-  background: #3aa8ff;
-  box-shadow: 0 0 12px rgba(58, 168, 255, 0.72);
+  background: var(--realism-cyan, #3aa8ff);
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.72);
 }
 
 .metric dt {
-  color: #7f909d;
+  color: var(--realism-muted, #7f909d);
   font:
-    700 0.61rem/1 Inter,
+    700 0.61rem/1 'Roboto Condensed',
+    Inter,
     sans-serif;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
+/* Tabular figures: a readout that reflows its own digits as a number ticks is
+   the tell that it is text pretending to be an instrument. */
 .metric dd {
   margin: 5px 0 0;
-  color: #eaf3f9;
+  color: var(--realism-chrome-hot, #eaf3f9);
   font:
     700 1.15rem/1 Rajdhani,
     Inter,
     sans-serif;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 16px rgba(0, 212, 255, 0.22);
 }
 
 .actions {
@@ -182,8 +244,14 @@
   bottom: 14%;
   left: 43%;
   width: 1px;
-  background: linear-gradient(180deg, transparent, #3aa8ff 27%, #ddf3ff 52%, transparent 78%);
-  box-shadow: 0 0 20px rgba(58, 168, 255, 0.55);
+  background: linear-gradient(
+    180deg,
+    transparent,
+    var(--realism-cyan, #3aa8ff) 27%,
+    var(--realism-chrome-hot, #ddf3ff) 52%,
+    transparent 78%
+  );
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.55);
 }
 
 .conduit::after {

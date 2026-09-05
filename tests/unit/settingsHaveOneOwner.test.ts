@@ -340,3 +340,97 @@ describe('nothing left claiming to be wired that is not', () => {
     expect(TABLE_PAGE).not.toMatch(/settingsUpdate\.autoMuckWinners/);
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  THE FELT COLOUR IS NOT THE INTERFACE MODE (found live 2026-09-05)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * The same shape as everything above - one thing with two meanings, the winner
+ * decided by whichever ran last - except this one SURVIVED the fix that was
+ * meant to end it.
+ *
+ * `data-theme` once carried both the table felt colour and the light/dark
+ * interface mode; useTableSettings.ts documents that fight and the split, and
+ * states the intent plainly: "`data-theme` itself now belongs exclusively to
+ * the light/dark interface mode." The felt colour moved to `data-color-theme`.
+ *
+ * But design-tokens.css was given BOTH attributes for every palette, `light`
+ * included, and `theme` stayed an unvalidated `string`. So a felt setting still
+ * holding the old value "light" kept stamping `<html data-color-theme="light">`
+ * on every page, and that still matched the light palette.
+ *
+ * MEASURED ON PRODUCTION, signed in, 2026-09-05:
+ *   data-color-theme="light",  data-theme unset
+ *   club-arena-table-settings.theme === "light"
+ *   club-arena-user-settings.theme  === "dark"
+ *   --bg-primary resolved to #f0f4f0, --bg-secondary to #e8ede8
+ * The player had chosen dark, and the felt attribute was serving them the light
+ * token palette - against "THE WHOLE BACKGROUND SHOULD BE SOLID BLACK AND ALL
+ * THE SAME COLOR" (Dan 2026-08-30).
+ */
+describe('the felt colour is not the interface mode', () => {
+  const DESIGN_TOKENS = readRaw('src/styles/design-tokens.css');
+
+  it('only data-theme selects the light palette', () => {
+    // The felt attribute must not be able to turn the whole app light.
+    const lightRule = DESIGN_TOKENS.slice(
+      DESIGN_TOKENS.indexOf('THEME: Light Mode'),
+      DESIGN_TOKENS.indexOf('--bg-primary: #f0f4f0')
+    );
+    expect(lightRule).toContain("[data-theme='light']");
+    expect(lightRule).not.toContain("[data-color-theme='light']");
+  });
+
+  it('the felt palettes still answer to both attributes, so no skin changed', () => {
+    for (const felt of ['black', 'blue', 'gold', 'purple', 'red']) {
+      expect(DESIGN_TOKENS, `${felt} lost an attribute`).toContain(`[data-color-theme='${felt}']`);
+    }
+  });
+
+  it('a stored theme that is not a felt palette cannot be stamped on the DOM', () => {
+    // Both doors: what load() returns, and what applySideEffects() writes. The
+    // second matters because a bus message from another tab and a server
+    // settings row never pass through load().
+    expect(TABLE_SETTINGS).toMatch(/const FELT_THEMES = new Set\(/);
+    expect(TABLE_SETTINGS).toMatch(/merged\.theme = coerceFeltTheme\(merged\.theme\)/);
+    expect(TABLE_SETTINGS).toMatch(
+      /setAttribute\(DOM_ATTR_THEME, coerceFeltTheme\(next\.theme\)\)/
+    );
+  });
+
+  it('the coercion falls back to the declared default rather than a literal', () => {
+    // A second hardcoded 'black' would be a third place to change the default,
+    // which is how the copies audited above came to disagree in the first place.
+    expect(TABLE_SETTINGS).toMatch(/: DEFAULT_SETTINGS\.theme;/);
+    expect(DEFAULT_TABLE_USER_SETTINGS.theme).toBe('black');
+  });
+
+  it('FELT_THEMES lists exactly the felt palettes the CSS defines, and nothing else', () => {
+    /*
+     * The coercion is only safe while its list matches reality. Add a sixth
+     * felt palette to design-tokens.css and forget this Set, and every player
+     * who picks it is silently reset to black on their next load - the same
+     * silent-reset class of bug the Set exists to stop, pointed the other way.
+     *
+     * Derived from the CSS rather than retyped, so the two cannot drift.
+     * `light` is excluded deliberately: it is the INTERFACE mode, it lives on
+     * `data-theme`, and that separation is the whole point of the fix above.
+     */
+    const declared = new Set(
+      [...DESIGN_TOKENS.matchAll(/\[data-color-theme='([a-z]+)'\]/g)].map((m) => m[1])
+    );
+    declared.delete('light');
+
+    const guarded = new Set(
+      (TABLE_SETTINGS.match(/const FELT_THEMES = new Set\(\[([^\]]*)\]/)?.[1] ?? '')
+        .split(',')
+        .map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
+        .filter(Boolean)
+    );
+
+    expect([...guarded].sort()).toEqual([...declared].sort());
+    // A non-empty set, because an empty one coerces every player to black.
+    expect(guarded.size).toBeGreaterThan(0);
+  });
+});

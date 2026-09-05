@@ -219,6 +219,71 @@ reading `--realism-*`. It is never imposed from `*` in the one globally loaded
 stylesheet, which reaches every surface in the app - including approved artwork
 with pixel baselines.
 
+## 7. The wallet's own background had never rendered, and two of its class names leaked
+
+A line-by-line pass over everything above, after publication, found four more
+defects. Three of them were mine.
+
+**The realism reference was being repainted by the family sheet.**
+`RewardsCircuitSurfaces.css` listed `.wallet-page` in a `:is()` that sets the
+page ground with `!important`. Measured on the live published page:
+
+```
+computed background-image   radial-gradient(... rgba(58,168,255,.09) ...)   <- the family's blue
+the wallet's own rule       radial-gradient(... rgba(0,212,255,.08) ...)    <- present, and losing
+```
+
+So the page every other Rewards Circuit surface is converging _toward_ has
+never once shown the cyan vault ground written for it, and every realism pass
+over it was invisible. The wallet is out of that list now and keeps only the
+family's text colour; the other six destinations are byte-identical.
+
+**Five selectors in that sheet pointed at markup deleted in the rebuild.**
+`.wallet-page .wallet-hero`, `.wallet-card-premium`, `.transfer-section`,
+`.hero-btn`, `.transfer-btn` - all measured rendering **zero** times against
+the current page, which emits `vault-hero`, `vault-panel`, `vault-btn`. Dead
+since the rename. Deliberately NOT remapped onto the new names: those rules are
+`!important` and would overpaint the machined surfaces with the generic ones,
+which is the same defect as the ground, one level down.
+
+**`.message` was a live cross-page collision.** `PlayerWalletPage.css` and
+`ChipTransferModal.css` both declared it bare, with different padding
+(10px 12px against 0.875rem 1rem), weight (600 against 500) and error red
+(`#ff8a8a` against `#ef4444`). Both are plain `.css`, so the winner was
+whichever chunk the player loaded last: open the agent chip-transfer modal and
+then the wallet, and the send banner came out in the modal's metrics. Scoped to
+`.wallet-page .message`.
+
+**Main was RED on `global-css-does-not-leak-across-pages`** - 244 leakable
+classes against a ceiling of 243, reproduced on a pristine checkout, so not
+this branch's doing. Rule 5.8 puts that ahead of my own work. The two fixes
+above took it to **242**, and the ratchet is lowered to match rather than
+raised to pass.
+
+**Three utility classes were deleted as speculative.** `.realism-frame`,
+`.realism-readout` and `.realism-label` shipped in the global layer with
+**zero** consumers across every `.tsx` and `.ts`. The vocabulary is the tokens,
+which are genuinely consumed by three stylesheets; a page wanting a machined
+frame writes it in its own sheet from `--realism-bevel` and `--realism-cavity`,
+which also keeps it inside the module boundary.
+
+**And the felt-theme guard was checked against production rather than trusted.**
+`FELT_THEMES` is a hand-maintained list of five, and the studio catalog carries
+twelve ids (`classic_green`, `ocean_blue`, `jade_city` ...), so a mismatch would
+silently reset a player's table. `user_table_settings.color_theme` holds exactly
+three distinct values across all players - `black`, `gold`, and the one
+contaminated `light` - so nobody is reset. A new assertion now derives the legal
+set from `design-tokens.css` instead of trusting the retyped list, and fails if
+a sixth palette is added without updating it.
+
+**The route gate got the test it never had.** Its comment-blanking parser is now
+its most dangerous component: over-stripping produces a false negative, which is
+worse than the vacuum it replaced. `tests/unit/routeTargetGateParser.test.ts`
+pins 18 cases, including the ones that look like comments and are not - a regex
+holding escaped slashes, a division, a URL, an apostrophe inside a comment, a
+comment marker inside a string - and that byte offsets survive, so reported line
+numbers stay true.
+
 ## Verification
 
 - `npx tsc --noEmit`: exit 0.

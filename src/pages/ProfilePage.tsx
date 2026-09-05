@@ -43,7 +43,7 @@ import { mediaUrl } from '../utils/mediaBase';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { resolveHeaderPortrait } from '../stores/useHeaderDataStore';
 import { resolveVipStatus, vipStatusLabel, type VipStatus } from '../utils/vipStatus';
-import { VIP_GOLD_LIMITS } from '../services/VIPService';
+import { VIP_MONTHLY_ALLOWANCES } from '../services/VIPService';
 import {
   achievementService,
   type Achievement as AchievementDef,
@@ -935,7 +935,7 @@ export default function ProfilePage() {
       </section>
 
       {/* VIP ledger plate. Reads the same constants the VIP page quotes
-          (VIP_GOLD_LIMITS), so this can never promise something /vip does not.
+          (VIP_MONTHLY_ALLOWANCES), so this can never promise something /vip does not.
           Dan 2026-09-04: no tiers, nothing "unlimited". */}
       <section className={`${styles.contentSection} ${styles.vipSection}`} aria-label="VIP Status">
         <div className={styles.vipRow}>
@@ -962,21 +962,28 @@ export default function ProfilePage() {
           </div>
           {user.vipStatus !== 'none' && (
             <ul className={styles.vipBenefits} aria-label="Included Each Month">
+              {/* 2026-09-05: the last two tiles were "3 Premium Themes" and
+                  "+6% Leaderboard Boost". Nothing reads a theme allowance, and
+                  LeaderboardService applies no boost of any kind, so both were
+                  removed from VIP_MONTHLY_ALLOWANCES along with the tier ladder
+                  they came in with. These four are metered: rabbit hunts by
+                  fn_consume_rabbit_hunt, the bank by fn_time_bank_allowance,
+                  and both packs by fn_increment_vip_usage. */}
               <li>
-                <strong>{VIP_GOLD_LIMITS.rabbitHunts}</strong>
+                <strong>{VIP_MONTHLY_ALLOWANCES.rabbitHunts}</strong>
                 <span>Rabbit Hunts / Mo</span>
               </li>
               <li>
-                <strong>{VIP_GOLD_LIMITS.timeBankSeconds}s</strong>
+                <strong>{VIP_MONTHLY_ALLOWANCES.timeBankSeconds}s</strong>
                 <span>Time Bank / Mo</span>
               </li>
               <li>
-                <strong>{VIP_GOLD_LIMITS.themes}</strong>
-                <span>Premium Themes</span>
+                <strong>{VIP_MONTHLY_ALLOWANCES.emojis.toLocaleString()}</strong>
+                <span>Emojis / Mo</span>
               </li>
               <li>
-                <strong>+{Math.trunc(VIP_GOLD_LIMITS.leaderboardBoost * 100)}%</strong>
-                <span>Leaderboard Boost</span>
+                <strong>{VIP_MONTHLY_ALLOWANCES.tags.toLocaleString()}</strong>
+                <span>Player Tags / Mo</span>
               </li>
             </ul>
           )}

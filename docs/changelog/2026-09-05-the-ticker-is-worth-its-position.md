@@ -231,17 +231,21 @@ and `tests/unit/tickerReachAndLoad.test.ts` pins the correction.
   `noFixedSizeSourceWindows` (my own new test used byte windows),
   `no-hover-effects` (the hover draft).
 
-## One thing for Dan, unrelated to this branch
+## A note on the suite, corrected
 
-`npx vitest run` on **clean `origin/main`** fails 9 to 11 law files with a
-different random subset every run. Cause found and it is not flakiness in the
-usual sense:
-`tests/a-migration-version-is-reserved-not-guessed.law.test.ts` **creates and
-deletes real files inside `supabase/migrations/`** while seven other law tests
-are `readdirSync`-ing that same directory in parallel. They read a filename that
-existed a millisecond earlier and get ENOENT.
+While this branch was in flight I measured `npx vitest run` on the `origin/main`
+this branch was cut from (`68f353fa1`) failing 8 to 11 law files with a
+different random subset every run, and diagnosed it:
+`tests/a-migration-version-is-reserved-not-guessed.law.test.ts` created and
+deleted real files inside `supabase/migrations/` while seven other law tests
+were reading that directory in parallel.
 
-Every one of them passes in isolation, and the four-way shard in
-`publish-club-arena.yml` is probably what keeps the publisher green. It is a
-ten-line fixture fix in that one test - a temp directory instead of the real
-one - but it belongs in its own commit, not bundled into a ticker PR.
+**It was fixed on main before I could raise it**, in `22f972b89`, by the same
+reading of the same evidence - the script takes a `RESERVE_MIGRATION_DIR`
+override, the fixtures go to `.tmp-migration-reservation-probe`, and a
+`beforeEach` sweep heals a tree that already carries the debris. Verified on
+current main here: **1,013 files, 13,983 tests, exit 0, zero ENOENT.**
+
+Recorded rather than deleted, because this branch is cut from before that
+commit: if these law files go red on a merge preview, that is why, and the
+answer is the merge, not a second fix.

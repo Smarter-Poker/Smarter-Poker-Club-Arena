@@ -4314,7 +4314,15 @@ export abstract class ServerTableEngineBase {
         timestamp: Date.now(),
       });
       try {
-        await atomicCashout(userId, this.tableId, seated.seat_number);
+        // BOOTED FOR LOW VPIP = BARRED FOR TWO HOURS (Dan 2026-09-05): the
+        // database writes the bar from this leave mode; every other eviction
+        // stays a plain system exit.
+        await atomicCashout(
+          userId,
+          this.tableId,
+          seated.seat_number,
+          nitEvict ? { leaveMode: 'vpip_evicted' } : undefined
+        );
         this.disconnectEngine.unregisterPlayer(this.tableId, userId);
         this.timeBankEngine.removePlayer(this.tableId, userId);
         this.straddleEngine.removePlayer(this.tableId, userId);

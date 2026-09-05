@@ -482,3 +482,55 @@ groups:
   # equity governor not throttling). That is structural pacing in the
   # broadcast path, not CPU starvation, and it is Phase 2 work to characterise.
   # Guarded by the hourly maintenance break (CLAUDE.md 13.6).
+
+  # ── What the player's browser saw (Realtime Phase 2, 2026-09-05) ─────────
+  # The client-side twin of the session-refusal rules: those count sockets the
+  # SERVER refused, these count sockets the CLIENT lost. On 2026-09-03 every
+  # one of Dan's reconnects and every twenty-second auto-reload happened in
+  # his browser and reached the platform as nothing, so every rule here stayed
+  # green for twenty-two hours. Per-user counting happens in the engine
+  # (observability/ClientConnectionEvents.ts); only bounded numbers are
+  # scraped, and no user id ever reaches Prometheus.
+  - name: client-connections
+    interval: 30s
+    rules:
+      # Dan's question, verbatim: "one player reconnecting more than N times an
+      # hour". N is 6, counted in a rolling hour by the engine.
+      - alert: PlayersReconnectingRepeatedly
+        expr: |
+          poker_ws_clients_reconnecting_badly > 0
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: '{{ $value }} player(s) reconnecting repeatedly in the last hour'
+          description: |
+            At least one player's browser has lost its table socket more than
+            six times in an hour, sustained for ten minutes. The engine can
+            look perfectly healthy while this is true - that is exactly what
+            2026-09-03 looked like. Check poker_ws_client_reconnects_total by
+            reason: auth_failed points at sessions, stale at the link or the
+            engine going quiet, handshake_timeout at the edge.
+          runbook: 'docs/REALTIME-CONNECTIONS-PROGRAMME.md'
+
+      # One player having a bad night is a warning. The auto-reload failsafe
+      # firing at all is a different thing: it means a table sat dead for
+      # twenty seconds and the page reloaded itself under someone.
+      - alert: TablesAreReloadingThemselves
+        expr: |
+          increase(poker_ws_client_reconnects_total{reason="auto_reload"}[30m]) >= 3
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 5m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: 'The table auto-reload failsafe fired {{ $value }} times in 30 minutes'
+          description: |
+            TablePage reloads itself after the socket has been dead for twenty
+            seconds. It is a last resort, and it fired all night on 2026-09-03
+            without the platform knowing. Repeated firing means players are
+            being thrown out of tables, not recovering in them.
+          runbook: 'docs/REALTIME-CONNECTIONS-PROGRAMME.md'

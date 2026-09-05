@@ -23,6 +23,7 @@
 import { noteServerTime } from '../lib/serverClock';
 import jsonPatch from 'fast-json-patch';
 import { engineSocketMux, isMuxEnabled, CLOSE_MUX_SUPERSEDED } from './EngineSocketMux';
+import { reportConnectionEvent } from './clientConnectionBeacon';
 import type { Operation } from 'fast-json-patch';
 const { applyPatch } = jsonPatch;
 
@@ -383,6 +384,7 @@ export class EngineStateClient {
       this.handshakeTimer = null;
       if (this.ws !== ws) return;
       if (ws.readyState === 0 /* CONNECTING */) {
+        reportConnectionEvent('handshake_timeout');
         try {
           ws.close();
         } catch {
@@ -455,6 +457,9 @@ export class EngineStateClient {
       // Auth failure — bubble up to the host; do not retry with the same token
       if (e.code === CLOSE_AUTH_FAILED) {
         this.setStatus('auth_failed');
+        // Phase 2 (2026-09-05): the server counts what the browser saw.
+        // Throttled and fire-and-forget - it cannot delay the reconnect.
+        reportConnectionEvent('auth_failed');
         this.opts.onError({ code: e.code, reason: e.reason });
         // Still schedule a reconnect — getToken may return a refreshed token next
         this.scheduleReconnect();
@@ -779,6 +784,7 @@ export class EngineStateClient {
         this.opts.onError({
           reason: `engine silent for ${Math.round(silentFor / 1000)}s (${this.unansweredResyncs} unanswered resyncs) - forcing reconnect`,
         });
+        reportConnectionEvent('stale');
         this.lastInboundAt = Date.now(); // don't re-fire while the close lands
         this.unansweredResyncs = 0;
         // 2026-08-22: announce the truth. This path used to leave status at

@@ -1,4 +1,5 @@
 import { TableLoadFailureOverlay } from '../components/table/TableLoadFailureOverlay';
+import { reportConnectionEvent } from '../services/clientConnectionBeacon';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -3524,6 +3525,9 @@ export default function TablePage({
         new Error('engine WS failed >20s - auto-refresh failsafe'),
         'TablePage.wsAutoReload'
       );
+      // Phase 2 (2026-09-05): this failsafe fired all night on 2026-09-03 and
+      // the platform never knew. Tell the server before the page goes.
+      reportConnectionEvent('auto_reload');
       window.location.reload();
     }, 20_000);
     return () => window.clearTimeout(t);

@@ -15,6 +15,8 @@
  * "no flop no drop" must NOT zero the rake/BBJ - single-run and RIT alike.
  */
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { ServerTableEngine } from './ServerTableEngine.js';
 import { HandController } from './HandController.js';
 import type { HandConfig, HandEvent, SeatPlayer } from '../types.js';
@@ -103,6 +105,79 @@ function ritHarness(stacks: number[], runs: 2 | 3) {
     | undefined;
   return { hc, events, e, st, complete, totalBuyin: stacks.reduce((s, x) => s + x, 0) };
 }
+
+/**
+ * THE ODD CENT HAS A RULE NOW (2026-09-05).
+ *
+ * Each board used to be evaluated against the FULL pots and the winner's
+ * entitlement then divided by `runs` in floating point. Nothing was lost —
+ * the repairs downstream saw to that — but which run carried the odd cent was
+ * whatever the rounding happened to do, and a pot that does not divide by
+ * three cannot be explained to a player by "whatever the rounding did".
+ *
+ * Every pot is now cut into `runs` integer-cent slices up front, leftover
+ * cents to the EARLIEST runs, and each board settles its own slice through
+ * the ordinary path. These pin the two things that follow: the slices are a
+ * partition of the pot (nothing invented, nothing destroyed), and the rule is
+ * stated in the code rather than emergent from arithmetic.
+ */
+describe('RIT per-run split - integer cents, odd cent to the earliest run', () => {
+  /** The slicing rule, isolated. Mirrors dealAndResolveRIT exactly. */
+  const sliceCents = (potCents: number, runs: number) => {
+    const base = Math.floor(potCents / runs);
+    const rem = potCents - base * runs;
+    return Array.from({ length: runs }, (_, b) => base + (b < rem ? 1 : 0));
+  };
+
+  it('a pot that does not divide by three still sums to the pot, exactly', () => {
+    // 10.00 over three runs: 334/333/333 in cents. The old float world gave
+    // 3.3333... three times, which is 9.9999... and not a pot.
+    for (const cents of [1000, 1, 2, 5, 999, 2227, 881]) {
+      for (const runs of [2, 3]) {
+        const parts = sliceCents(cents, runs);
+        expect(
+          parts.reduce((a, b) => a + b, 0),
+          `${cents}c over ${runs} runs must partition exactly`
+        ).toBe(cents);
+        expect(parts.every((p) => Number.isInteger(p))).toBe(true);
+      }
+    }
+  });
+
+  it('gives the odd cents to the earliest runs, in order', () => {
+    expect(sliceCents(1000, 3)).toEqual([334, 333, 333]);
+    expect(sliceCents(1001, 3)).toEqual([334, 334, 333]);
+    expect(sliceCents(1002, 3)).toEqual([334, 334, 334]);
+    expect(sliceCents(101, 2)).toEqual([51, 50]);
+    // A pot too small to reach every board still pays the first ones rather
+    // than paying nobody: 1 cent over 3 runs is 1/0/0, not 0/0/0.
+    expect(sliceCents(1, 3)).toEqual([1, 0, 0]);
+    expect(sliceCents(2, 3)).toEqual([1, 1, 0]);
+  });
+
+  it('the engine divides nothing by runs any more', () => {
+    /**
+     * A source law. The runtime conservation tests below pass just as well
+     * with `w.amount / runs` restored, because the downstream repairs hide
+     * it — which is exactly why the float divide survived so long. The point
+     * of the change is that the division happens ONCE, in cents, with a rule.
+     */
+    const src = readFileSync(join(__dirname, 'ServerTableEngineRunout.ts'), 'utf8');
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    expect(code, 'no per-winner division by runs').not.toMatch(/amount\s*\/\s*runs/);
+    expect(code, 'the pots are sliced once, up front').toMatch(/potSlicesByBoard/);
+  });
+
+  it('three runs over a real hand still conserve every chip', () => {
+    // The rule change is upstream of rake, so the end-to-end invariant is the
+    // one that proves it did not leak: chips in === stacks + rake + bbj.
+    const { st, complete, totalBuyin } = ritHarness([333, 333, 333], 3);
+    const stacks = (st.players as SeatPlayer[]).reduce((s, p) => s + p.stack, 0);
+    const rake = complete?.rake ?? 0;
+    const bbj = complete?.bbjFee ?? 0;
+    expect(Math.round((stacks + rake + bbj) * 100) / 100).toBe(totalBuyin);
+  });
+});
 
 describe('RIT money path - 2 runs, heads-up', () => {
   it('conserves chips, takes rake + BBJ once, and records winners summing to the net pot', () => {

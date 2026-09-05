@@ -24,6 +24,21 @@ whichever test the next agent notices first.
 
 ## Resolved conflicts — do not reopen
 
+- **Where union promo to a club lands (resolved 2026-09-05, Dan):** in the
+  club's **PROMO WALLET** (`clubs.promo_balance`), not the Club Bank. The
+  2026-09-03 promo model (`promo-is-disbursed-by-the-owner.law.test.ts`) had it
+  land in `chip_treasury` "never a promo_balance" and refused a union club its
+  own promo wallet. On 2026-09-05 Dan sent promo from the Midway Union to two
+  clubs, opened each club's Promo Wallet, found 0.00, and reported the chips
+  missing. Put to him as a choice between the two rules he chose the club
+  Promo Wallet. So: `fn_union_promo_send(destination => 'club')` and
+  `fn_promo_disburse(target => 'club')` both credit `clubs.promo_balance`; a
+  club inside a union spends its own promo wallet through
+  `fn_club_promo_wallet_send` (into a player wallet as cash, or an agent promo
+  float); "promo chips are treated exactly like regular chips" holds at the
+  point they reach a PLAYER. Every promo wallet carries a ledger
+  (`fn_promo_wallet_ledger`). The union modal routes a club send by the wallet
+  that is open: `union-promo-goes-to-the-promo-wallet.law.test.ts`.
 - **Hamburger menu artwork (resolved 2026-09-01, PR #2432):** the hamburger
   STAYS on every drawer trigger. "Em bars" in Dan's 2026-08-20 instruction
   means EM DASHES (U+2014) in player-facing copy — a punctuation rule, not an

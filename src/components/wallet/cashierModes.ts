@@ -14,15 +14,26 @@
  * PROMO WALLET — "NEEDS THE ABILITY TO SEND TO PLAYER WALLETS OR AGENT
  *   WALLETS. IF ITS SENT TO AN AGENT WALLET, IT LANDS IN THEIR PROMO WALLET.
  *   IF IT LANDS IN A PLAYER WALLET, ITS JUST AS GOOD AS CASH."
- *   Tabs: Send Chips. Destinations: player wallet (cash) or agent wallet
- *   (their promo float). Anyone who can hold a promo wallet may stand here,
- *   plus the four bank roles.
+ *   Tabs: Send Chips / Transaction Ledger. Destinations: player wallet (cash)
+ *   or agent wallet (their promo float). Anyone who can hold a promo wallet
+ *   may stand here, plus the four bank roles.
+ *
+ *   TWO ACCOUNTS WEAR THE NAME "PROMO WALLET" ON A CLUB SURFACE (2026-09-05).
+ *   The Club Bank roles are looking at the CLUB'S promo pot,
+ *   clubs.promo_balance - the account the union's promo wallet pays into and
+ *   the BBJ promo slice is swept into. An agent is looking at their OWN float,
+ *   agents.promo_wallet_balance. Dan sent 5,000 promo from the Midway Union
+ *   to KingFish; it landed in his agent float while the row on the lobby read
+ *   the club pot, 0.00, and he reported the chips as missing. `promoSourceFor`
+ *   is the one rule that decides which account a viewer stands at, and a bank
+ *   role who ALSO holds a float may switch between the two.
  *
  * AGENT WALLET — unchanged: sends to a player wallet only.
  *
- * The server does not trust this file. fn_club_bank_claim_back and
- * fn_promo_wallet_send re-check every rule; hiding a button here is a
- * courtesy to the reader, never the security boundary.
+ * The server does not trust this file. fn_club_bank_claim_back,
+ * fn_promo_wallet_send and fn_club_promo_wallet_send re-check every rule;
+ * hiding a button here is a courtesy to the reader, never the security
+ * boundary.
  */
 
 import { canSeeClubBank, canHoldAgentWallet } from './walletRows';
@@ -30,6 +41,34 @@ import { canSeeClubBank, canHoldAgentWallet } from './walletRows';
 export type CashierWalletType = 'club_bank' | 'promo_wallet' | 'agent_wallet';
 export type CashierTab = 'send' | 'claim' | 'ledger';
 export type CashierDestination = 'agent_wallet' | 'promo_wallet' | 'player_wallet';
+
+/**
+ * Which promo account a viewer spends from at the Promo Wallet cashier.
+ *   club_pot  - clubs.promo_balance, spent through fn_club_promo_wallet_send
+ *   own_float - agents.promo_wallet_balance, spent through fn_promo_wallet_send
+ */
+export type PromoSource = 'club_pot' | 'own_float';
+
+/**
+ * The default promo account for a role. The same rule that decides the Club
+ * Bank row decides this (walletRows.canSeeClubBank), so the balance the row
+ * shows and the balance the cashier spends are the SAME account.
+ */
+export function promoSourceFor(role: unknown): PromoSource {
+  return canSeeClubBank(role) ? 'club_pot' : 'own_float';
+}
+
+/** The RPC that spends a promo source. Pinned so a test can read it. */
+export function promoSendRpc(
+  source: PromoSource
+): 'fn_club_promo_wallet_send' | 'fn_promo_wallet_send' {
+  return source === 'club_pot' ? 'fn_club_promo_wallet_send' : 'fn_promo_wallet_send';
+}
+
+/** The scope fn_promo_wallet_ledger reads for a promo source. */
+export function promoLedgerScope(source: PromoSource): 'club' | 'agent' {
+  return source === 'club_pot' ? 'club' : 'agent';
+}
 
 /**
  * THE CASHIER NEVER OPENS ON THE CLUB BANK (Dan 2026-08-25, binding).
@@ -57,12 +96,15 @@ export const DEFAULT_CASHIER_WALLET: CashierWalletType = 'agent_wallet';
  * window closes. See fn_agent_wallet_claim_back.
  *
  * The promo wallet has no claim: a promo hand-out is not a float that gets
- * reconciled, and fn_promo_wallet_send has no inverse.
+ * reconciled, and fn_promo_wallet_send has no inverse. It DOES have a ledger
+ * (Dan 2026-09-05: "MAKE SURE YOU ADD AND HAVE A TRANSACTION LEDGER ATTACHED
+ * TO EVERY PROMO WALLET") - fn_promo_wallet_ledger, scoped to the account the
+ * viewer is standing at.
  */
 export function cashierTabs(walletType: CashierWalletType): CashierTab[] {
   if (walletType === 'club_bank') return ['send', 'claim', 'ledger'];
   if (walletType === 'agent_wallet') return ['send', 'claim'];
-  return ['send'];
+  return ['send', 'ledger'];
 }
 
 /**
@@ -191,8 +233,33 @@ export function coercesToAgentWallet(
  * viewer (scope 'all' is every active member), so without this the roster
  * offered the viewer their own name and the send failed on tap.
  */
-export function cashierRefusesSelfSend(walletType: CashierWalletType): boolean {
-  return walletType !== 'club_bank';
+export function cashierRefusesSelfSend(
+  walletType: CashierWalletType,
+  promoSource: PromoSource = 'own_float'
+): boolean {
+  if (walletType === 'club_bank') return false;
+  /* The CLUB'S promo pot is club money, and an owner moving it into their own
+     promo float is the same funding route the Club Bank keeps open for the
+     agent float. fn_club_promo_wallet_send accepts the caller as recipient;
+     fn_promo_wallet_send (the agent's own float) still refuses a self-send. */
+  if (walletType === 'promo_wallet' && promoSource === 'club_pot') return false;
+  return true;
+}
+
+/**
+ * What the balance header on the Promo Wallet cashier is called. The word
+ * "Club" is the whole difference between the two accounts, so it is never
+ * dropped for the pot.
+ */
+export function promoBalanceLabel(source: PromoSource): string {
+  return source === 'club_pot' ? 'Club Promo Wallet Balance' : 'Your Promo Float';
+}
+
+/** The sentence under the source switch, in the viewer's terms. */
+export function promoSourceBlurb(source: PromoSource): string {
+  return source === 'club_pot'
+    ? 'The Club Promo Wallet. Funded By The Union Promo Wallet And The Jackpot Promo Slice. Spent By Club Staff.'
+    : 'Your Own Promo Float. Promo Chips Sent To You As An Agent, To Hand Out To Your Players.';
 }
 
 /**

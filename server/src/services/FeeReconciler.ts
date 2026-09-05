@@ -599,18 +599,66 @@ export async function reconcilePendingFees(): Promise<{
 }
 
 /**
- * Independent drift alarm.
+ * A CONDITION IS ONE ALERT, HOWEVER LONG IT STAYS TRUE (BBJ build plan phase 1).
  *
- * The queue only catches failures the engine noticed. This catches the rest by
- * comparing the two ledgers against each other: every chip `rake_records` books
- * as a BBJ contribution should have reached `bbj_contributions`. A persistent
- * gap means chips are being destroyed somewhere the queue is not seeing, which
- * is exactly the condition that went unnoticed for a week.
+ * For a periodic audit that re-measures the same fact every cycle. While the
+ * condition holds, exactly one unresolved financial_alerts row exists for
+ * `source`: raised the first time, refreshed (message + context) on later
+ * cycles so the operator sees the CURRENT figures, and resolved automatically
+ * - with a note - the first cycle the condition is false. Sentry hears about
+ * it once, when it is raised.
  *
- * Read-only — it reports, it does not try to heal, because the per-player
- * contribution split needed to re-drive correctly is not recoverable from these
- * two tables alone and guessing it would corrupt rakeback attribution.
+ * Never throws: bookkeeping about an alarm must not fail the audit.
  */
+export async function raiseOrRefreshCondition(
+  source: string,
+  isTrue: boolean,
+  message: string,
+  context: Record<string, unknown>
+): Promise<'raised' | 'refreshed' | 'resolved' | 'quiet'> {
+  try {
+    const { data: open } = await supabase
+      .from('financial_alerts')
+      .select('id, message')
+      .eq('source', source)
+      .eq('resolved', false)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (isTrue) {
+      if (open?.id) {
+        if (open.message !== message) {
+          await supabase
+            .from('financial_alerts')
+            .update({ message, context: { ...context, refreshed_at: new Date().toISOString() } })
+            .eq('id', open.id);
+        }
+        return 'refreshed';
+      }
+      reportError(new Error(message), source);
+      await raiseFinancialAlert('warning', source, message, context);
+      return 'raised';
+    }
+
+    if (open?.id) {
+      await supabase
+        .from('financial_alerts')
+        .update({
+          resolved: true,
+          resolved_at: new Date().toISOString(),
+          resolution: `Cleared by the next audit cycle: the condition is no longer true. ${JSON.stringify(context)}`,
+        })
+        .eq('id', open.id);
+      return 'resolved';
+    }
+    return 'quiet';
+  } catch (e) {
+    console.warn(`[FeeReconciler] raiseOrRefreshCondition(${source}) failed:`, e);
+    return 'quiet';
+  }
+}
+
 /**
  * SELF-HEAL 2026-08-18: bank BBJ fees that rake_records proves were withheld
  * from pots but that never reached a pool.
@@ -663,6 +711,19 @@ export async function repairUnbankedBBJFees(
   }
 }
 
+/**
+ * Independent drift alarm.
+ *
+ * The queue only catches failures the engine noticed. This catches the rest by
+ * comparing the two ledgers against each other: every chip `rake_records` books
+ * as a BBJ contribution should have reached `bbj_contributions`. A persistent
+ * gap means chips are being destroyed somewhere the queue is not seeing, which
+ * is exactly the condition that went unnoticed for a week.
+ *
+ * Read-only — it reports, it does not try to heal, because the per-player
+ * contribution split needed to re-drive correctly is not recoverable from these
+ * two tables alone and guessing it would corrupt rakeback attribution.
+ */
 export async function auditBBJDrift(
   windowDays = 1,
   toleranceChips = 0.05
@@ -703,33 +764,32 @@ export async function auditBBJDrift(
      */
     const unlinkableRows = Number(row?.unlinkable_rows ?? 0);
     const unlinkableChips = Number(row?.unlinkable_chips ?? 0);
-    if (unlinkableChips > toleranceChips) {
-      const detail =
-        `[A5] ${unlinkableChips} chips of BBJ contribution over the last ${windowDays}d sit on ` +
+    /* ONE OPEN ROW PER CONDITION (BBJ build plan phase 1, 2026-09-05).
+       This audit runs hourly and used to raise a NEW warning every hour for
+       the same 3.5 chips - 24 identical rows a day, each also a Sentry event
+       - which is precisely the pattern that buried the nine real alerts on
+       2026-08-22 under 988 duplicates. A condition that is still true is
+       still ONE fact: the open row is refreshed with the current figures, a
+       new row is raised only when there is none, and when the condition
+       clears the row is resolved with a note saying so. */
+    await raiseOrRefreshCondition(
+      'FeeReconciler.bbj_unlinkable',
+      unlinkableChips > toleranceChips,
+      `[A5] ${unlinkableChips} chips of BBJ contribution over the last ${windowDays}d sit on ` +
         `${unlinkableRows} rake_records row(s) with NO hand_id, so they can be reconciled ` +
         `against the jackpot pool by neither this audit nor fn_bbj_repair_unbanked. ` +
-        `Rising numbers here mean logHandHistory is failing and returning a null id.`;
-      reportError(new Error(detail), 'FeeReconciler.bbj_unlinkable');
-      await raiseFinancialAlert('warning', 'FeeReconciler.bbj_unlinkable', detail, {
-        windowDays,
-        unlinkableRows,
-        unlinkableChips,
-      });
-    }
+        `Rising numbers here mean logHandHistory is failing and returning a null id.`,
+      { windowDays, unlinkableRows, unlinkableChips }
+    );
 
-    if (Math.abs(drift) > toleranceChips) {
-      const detail =
-        `[A5] BBJ ledger drift over the last ${windowDays}d: rake_records booked ${booked} ` +
+    await raiseOrRefreshCondition(
+      'FeeReconciler.bbj_drift',
+      Math.abs(drift) > toleranceChips,
+      `[A5] BBJ ledger drift over the last ${windowDays}d: rake_records booked ${booked} ` +
         `of BBJ contribution, bbj_contributions received ${received} (drift ${drift}). ` +
-        `A positive drift means chips left pots and never reached the jackpot pool.`;
-      reportError(new Error(detail), 'FeeReconciler.bbj_drift');
-      await raiseFinancialAlert('warning', 'FeeReconciler.bbj_drift', detail, {
-        windowDays,
-        booked,
-        received,
-        drift,
-      });
-    }
+        `A positive drift means chips left pots and never reached the jackpot pool.`,
+      { windowDays, booked, received, drift }
+    );
     return { booked, received, drift, unlinkableRows, unlinkableChips };
   } catch (err) {
     reportError(err, 'FeeReconciler.drift_threw');

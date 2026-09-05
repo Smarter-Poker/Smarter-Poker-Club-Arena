@@ -72,6 +72,18 @@ export interface EventMessage {
    * Optional so recorded fixtures and older payloads stay valid.
    */
   seq?: number;
+  /**
+   * BBJ build plan phase 1 (2026-09-05): the engine's clock at the moment
+   * this frame was SENT - the live emission, or the replay. A client that
+   * judges an event's freshness (a jackpot celebration must play only for a
+   * hit that just happened, never for a replayed one hours old) used to
+   * compare the event's `emitted_at` against the DEVICE clock, so a phone
+   * running a few minutes fast silently refused every celebration, forever,
+   * with nothing to report. With the engine's own "now" on the envelope the
+   * comparison is engine-clock to engine-clock and the device clock is out
+   * of the decision. Optional so recorded fixtures stay valid.
+   */
+  ts?: number;
   payload: Record<string, unknown>;
 }
 
@@ -323,7 +335,11 @@ export class TableStateHub {
     this.eventSeqs.set(tableId, seq);
     // The delivered set records who actually got it live, so a later resync
     // from the SAME socket does not replay a beat it already animated.
-    this.broadcast(room, { type: 'EVENT', tableId, seq, payload }, retention?.delivered);
+    this.broadcast(
+      room,
+      { type: 'EVENT', tableId, seq, ts: Date.now(), payload },
+      retention?.delivered
+    );
   }
 
   /** SHOWDOWN POLISH 2026-08-25: per-table monotonic EVENT sequence. */
@@ -510,6 +526,9 @@ export class TableStateHub {
       const message: EventMessage = {
         type: 'EVENT',
         tableId,
+        // `ts` is the REPLAY instant, so a freshness check on the client sees
+        // the event's true age rather than believing a retained hit is new.
+        ts: Date.now(),
         payload: { ...entry.payload, replayed: true },
       };
       if (this.safeSend(sub, JSON.stringify(message))) this.replayedEvents++;

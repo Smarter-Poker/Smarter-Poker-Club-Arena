@@ -594,59 +594,80 @@ async function attemptBBJPayoutOnce(
       `(loser=$${loserShare}, winner=$${winnerShare}, table=$${tableShareTotal} / ${tableOnlyPlayers.length} players)`
   );
 
-  // DEPARTED-RECIPIENT NOTIFICATIONS (2026-08-18): players who left the
-  // table before the payout landed get their share credited straight to
-  // their wallet by the RPC — silently. Without a notification they would
-  // never know a jackpot paid them. Seated players see the celebration
-  // overlay, so only the departed set is notified. Non-fatal: the money is
-  // already durably placed by the RPC; a failed insert only costs the note.
+  // EVERY RECIPIENT IS TOLD (BBJ build plan phase 1, 2026-09-05).
   //
-  // BBJ AUDIT 2026-09-05: a payout re-driven from the queue has no
-  // celebration to lean on - the hand is minutes old - so EVERY recipient is
-  // told, seated or not, and the note says where the chips went.
+  // 2026-08-18 notified only the players who had LEFT the table, on the
+  // grounds that a seated player sees the celebration overlay. That left the
+  // seated winner of a $13,000 share with no record anywhere they can look:
+  // a seat credit writes no chip_transactions row (the chips landed on the
+  // felt, not in the wallet, and fn_my_wallet_ledger sums every row to a
+  // player as wallet-in, so journalling it there would double-count the
+  // cash-out later), and the overlay is gone in ten seconds. A player who was
+  // reconnecting, backgrounded, or simply looking away had nothing.
+  //
+  // Now every recipient gets one durable notification saying what they won
+  // and where it went - "added to your stack at the table" for a seated
+  // player, "credited to your wallet" for one who had left. Non-fatal: the
+  // money is already durably placed by the RPC; a failed insert only costs
+  // the note. A payout re-driven from the queue (fromQueue) says which hand,
+  // because by then the table has long moved on.
   try {
-    const notify = fromQueue
-      ? params.dealtInPlayerIds
-      : params.dealtInPlayerIds.filter((id) => !params.seatedUserIds.includes(id));
-    if (notify.length > 0) {
-      const shareFor = (id: string): number =>
-        id === params.loserUserId
-          ? loserShare
-          : id === params.winnerUserId
-            ? winnerShare
-            : perPlayerShare;
-      const rows = notify
-        .map((id) => ({ id, share: shareFor(id), seated: params.seatedUserIds.includes(id) }))
-        .filter((r) => r.share > 0)
-        .map((r) => ({
+    const shareFor = (id: string): number =>
+      id === params.loserUserId
+        ? loserShare
+        : id === params.winnerUserId
+          ? winnerShare
+          : perPlayerShare;
+    const money = (n: number): string =>
+      n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const rows = params.dealtInPlayerIds
+      .map((id) => ({ id, share: shareFor(id), seated: params.seatedUserIds.includes(id) }))
+      .filter((r) => r.share > 0)
+      .map((r) => {
+        const role =
+          r.id === params.loserUserId
+            ? 'You took the bad beat'
+            : r.id === params.winnerUserId
+              ? 'You won the hand'
+              : 'You were dealt in';
+        const where = r.seated
+          ? 'was added to your stack at the table.'
+          : 'was credited to your wallet.';
+        const which = fromQueue
+          ? `on hand #${params.handNumber}`
+          : r.seated
+            ? 'on the hand that just finished'
+            : 'on a hand you were dealt into after you left the table';
+        return {
           user_id: r.id,
           type: 'bonus',
           title: 'Bad Beat Jackpot - You Got Paid!',
-          message: fromQueue
-            ? `A Bad Beat Jackpot hit on hand #${params.handNumber}, a hand you were dealt into. ` +
-              `Your share of $${r.share.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ` +
-              (r.seated ? `was added to your stack at the table.` : `was credited to your wallet.`)
-            : `A Bad Beat Jackpot hit on a hand you were dealt into after you left the table. ` +
-              `Your share of $${r.share.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ` +
-              `was credited to your wallet.`,
+          message: `A Bad Beat Jackpot hit ${which}. ${role}, and your share of $${money(r.share)} ${where}`,
           metadata: {
             tableId: params.tableId,
             handNumber: params.handNumber,
             amount: r.share,
             poolId: pool.id,
+            placed: r.seated ? 'table_stack' : 'club_wallet',
+            role:
+              r.id === params.loserUserId
+                ? 'bad_beat'
+                : r.id === params.winnerUserId
+                  ? 'hand_winner'
+                  : 'table',
           },
           read: false,
-        }));
-      if (rows.length > 0) {
-        const { error: notifyErr } = await supabase.from('notifications').insert(rows);
-        if (notifyErr) {
-          console.warn(
-            `[processBBJPayout] recipient notifications failed (money already placed):`,
-            notifyErr.message
-          );
-        } else {
-          console.log(`[processBBJPayout] Notified ${rows.length} recipient(s) of their credit`);
-        }
+        };
+      });
+    if (rows.length > 0) {
+      const { error: notifyErr } = await supabase.from('notifications').insert(rows);
+      if (notifyErr) {
+        console.warn(
+          `[processBBJPayout] recipient notifications failed (money already placed):`,
+          notifyErr.message
+        );
+      } else {
+        console.log(`[processBBJPayout] Notified ${rows.length} recipient(s) of their credit`);
       }
     }
   } catch (notifyEx) {

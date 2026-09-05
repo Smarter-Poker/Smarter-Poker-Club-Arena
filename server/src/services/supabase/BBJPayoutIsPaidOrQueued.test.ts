@@ -224,7 +224,7 @@ describe('when every attempt fails, the hit is queued and alarmed, never dropped
   });
 });
 
-describe('a re-driven payout tells every recipient, because the table has moved on', () => {
+describe('every recipient is told, seated or not (phase 1), and the note says where the chips went', () => {
   it('notifies seated and departed alike when fromQueue', async () => {
     const inserted: unknown[] = [];
     from.mockImplementation((name: string) => {
@@ -248,8 +248,8 @@ describe('a re-driven payout tells every recipient, because the table has moved 
     );
   });
 
-  it('notifies only the departed on the live path (the seated see the celebration)', async () => {
-    const inserted: unknown[] = [];
+  it('notifies EVERY recipient on the live path, seated ones told the chips are on their stack', async () => {
+    const inserted: Array<{ user_id: string; message: string; metadata: { placed: string } }> = [];
     from.mockImplementation((name: string) => {
       if (name === 'clubs') return table({ data: { union_id: 'union-1' }, error: null });
       if (name === 'bbj_pools')
@@ -257,7 +257,7 @@ describe('a re-driven payout tells every recipient, because the table has moved 
       if (name === 'notifications') {
         return {
           insert: (rows: unknown[]) => {
-            inserted.push(...rows);
+            inserted.push(...(rows as typeof inserted));
             return Promise.resolve({ error: null });
           },
         };
@@ -266,7 +266,14 @@ describe('a re-driven payout tells every recipient, because the table has moved 
     });
     rpc.mockResolvedValueOnce({ data: [appliedRow()], error: null });
     await run();
-    expect(inserted.map((r) => (r as { user_id: string }).user_id).sort()).toEqual(['p4', 'p5']);
+    expect(inserted.map((r) => r.user_id).sort()).toEqual([...PARAMS.dealtInPlayerIds].sort());
+    const seated = inserted.find((r) => r.user_id === 'loser-uuid')!;
+    const departed = inserted.find((r) => r.user_id === 'p4')!;
+    expect(seated.message).toContain('added to your stack at the table');
+    expect(seated.message).toContain('You took the bad beat');
+    expect(seated.metadata.placed).toBe('table_stack');
+    expect(departed.message).toContain('credited to your wallet');
+    expect(departed.metadata.placed).toBe('club_wallet');
   });
 });
 

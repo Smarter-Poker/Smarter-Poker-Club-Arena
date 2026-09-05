@@ -2042,6 +2042,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       added_to_head?: number;
       capped?: boolean;
       pool_remaining?: number;
+      /** True when a tied pot split this head between several winners. */
+      split?: boolean;
+      /** One entry per winner of the pot: what they were paid and, in a PKO,
+       *  what went onto their own head. Sums to paid_cash / added_to_head. */
+      shares?: Array<{ user_id: string; cash: number; to_head: number }>;
     };
 
     if (!res.ok) {
@@ -2070,32 +2075,56 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // reveal overlay must show (the old code sent the KNOCKER's name), and the
     // knocker's name drives the "X knocked out Y" feed line.
     //
-    // The AVATAR rides along too. KnockoutAnimation was built with an
-    // `eliminatedAvatar` slot — the falling head is a real face when one is
-    // provided — but this payload only ever carried names, so every knockout
-    // in production has shown a bare initial. One extra lookup on a path that
-    // fires a few times per tournament, and the animation's centrepiece
-    // finally exists.
+    // `eliminatedAvatar` used to ride along here (one `profiles` query per
+    // knockout) for the full-screen KnockoutAnimation's falling head. That
+    // overlay was deleted on 2026-08-28; the seat knockout that replaced it
+    // draws on the busted player's own chair and never reads an avatar URL.
+    // Removed 2026-09-04 (knockout audit): a query per knockout for a field
+    // nothing consumes.
     try {
+      /* Every winner of the pot gets a name, not just the first. On a tied pot
+         `fn_collect_bounty` splits the head by claim weight and reports each
+         winner's share; the client draws one bounty stream per winner, so it
+         needs each one's name for the feed line and the accessibility label. */
+      const shareRows = Array.isArray(res.shares) ? res.shares : [];
+      const nameIds = Array.from(
+        new Set<string>([
+          eliminatedUserId,
+          knockerUserId,
+          ...shareRows.map((s) => String(s.user_id || '')).filter(Boolean),
+        ])
+      );
       const { data: names } = await supabase
         .from('tournament_players')
         .select('user_id, username')
         .eq('tournament_id', this.tournamentId)
-        .in('user_id', [eliminatedUserId, knockerUserId]);
+        .in('user_id', nameIds);
       const nameOf = (id: string) =>
         (names || []).find((n: any) => n.user_id === id)?.username || 'Player';
 
-      let eliminatedAvatar: string | undefined;
-      try {
-        const { data: avatarRow } = await supabase
-          .from('profiles')
-          .select('avatar_url:arena_avatar_url')
-          .eq('id', eliminatedUserId)
-          .maybeSingle();
-        eliminatedAvatar = avatarRow?.avatar_url || undefined;
-      } catch {
-        /* the head falls as an initial — same as every knockout before today */
-      }
+      /* ── THE SHARES, ON THE WIRE (knockout audit 2026-09-04) ───────────────
+         The 2026-08-31 split-pot ruling made the MONEY right — a tied pot pays
+         each winner their weighted share and halves each share onto its own
+         head in a PKO — but this broadcast kept sending the TOTAL under ONE
+         `knockerUserId`. TablePage therefore flew the whole bounty to one of
+         the two winners and showed the other nothing; in a PKO it also added
+         the whole `addedToHead` to one head badge. Measured against
+         production: 55 split knockouts between 08-30 and 09-04, every one
+         animated for the wrong amount at one seat and not at all at the other.
+
+         `shares` carries one row per winner. `amount`, `addedToHead`,
+         `knockerUserId` and `knockerName` are UNCHANGED for the single-winner
+         case and stay on the wire for it, so an older bundle that never reads
+         `shares` behaves exactly as before. */
+      const shares =
+        shareRows.length > 1
+          ? shareRows.map((s) => ({
+              userId: String(s.user_id),
+              name: nameOf(String(s.user_id)),
+              amount: Number(s.cash) || 0,
+              addedToHead: Number(s.to_head) || 0,
+            }))
+          : undefined;
 
       // NOTE: When an event is both PKO and mystery, `fn_collect_bounty` returns
       // 'pko'. In that case `res.paid_cash` is half a head, so ranking it against
@@ -2145,9 +2174,11 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         playerName: nameOf(eliminatedUserId),
         eliminatedName: nameOf(eliminatedUserId),
         eliminatedUserId,
-        eliminatedAvatar,
         knockerName: nameOf(knockerUserId),
         knockerUserId,
+        // Present ONLY on a split knockout (two or more winners of the pot).
+        // Undefined drops off the wire for the ordinary single-winner case.
+        shares,
         avgBounty: tournament?.bounty_amount || undefined,
         poolRemaining: res.pool_remaining,
         // Which table this happened at — see the tableId parameter.

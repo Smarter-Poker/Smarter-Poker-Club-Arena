@@ -39,6 +39,33 @@
 
 import { bettingStructureFor } from './BettingStructure.js';
 
+/**
+ * ── NOBODY TANKS FOR THE BOMB (Dan 2026-09-05) ─────────────────────────────
+ *
+ * "IN THE ACTION GAME WHEN THERE IS A BOMB POT EVERY 15 MINUTES. WHEN THERE IS
+ * 3 MINUTES LEFT, THE 15 MINUTES CONVERTS TO BOMB POT IN 1-5 HANDS (RANDOMLY
+ * SELECTED HANDS), SO PLAYERS DON'T TANK AND WAIT, TO GET AN UNFAIR
+ * ADVANTAGE."
+ *
+ * A timed bomb with a visible clock invites the obvious edge: fold fast until
+ * the clock is nearly out, then take the full timer on every decision so the
+ * bomb lands on you. So inside the last TIMED_ARM_WINDOW_MS of any timed
+ * interval the clock is retired and the bomb is instead N hands away, N drawn
+ * once, uniformly from 1..TIMED_ARM_MAX_HANDS, at the hand boundary that
+ * crosses the line. From then on the felt shows hands, not minutes, and the
+ * number cannot be gamed by slowing play. The interval restarts from the bomb
+ * hand as before.
+ */
+export const TIMED_ARM_WINDOW_MS = 3 * 60 * 1000;
+export const TIMED_ARM_MIN_HANDS = 1;
+export const TIMED_ARM_MAX_HANDS = 5;
+
+/** Uniform integer in [min, max]; `rng` is injectable for the tests. */
+export function drawArmedHands(rng: () => number = Math.random): number {
+  const span = TIMED_ARM_MAX_HANDS - TIMED_ARM_MIN_HANDS + 1;
+  return TIMED_ARM_MIN_HANDS + Math.min(span - 1, Math.floor(rng() * span));
+}
+
 export type BombPotTriggerMode = 'every_n_hands' | 'once_per_orbit' | 'timed' | 'bomb_pot_only';
 
 export interface BombPotSchedulerSettings {
@@ -168,6 +195,14 @@ export class BombPotScheduler {
   private pendingReason: BombPotTriggerMode | undefined;
   /** timed: epoch ms when the next bomb becomes due. Set on first sighting. */
   private nextDueAtMs: number | null = null;
+  /**
+   * timed: once the clock enters its last TIMED_ARM_WINDOW_MS, the bomb is
+   * this many hands away instead (1 = the next hand). Null while the clock is
+   * still the authority. Decremented per dealt hand; the bomb is due at zero.
+   */
+  private armedHands: number | null = null;
+
+  constructor(private readonly rng: () => number = Math.random) {}
   /** once_per_orbit: the seat the button must cross to complete the orbit. */
   private orbitAnchorSeat: number | null = null;
   /** once_per_orbit: the dealer seat of the previous hand. */
@@ -236,11 +271,24 @@ export class BombPotScheduler {
         if (this.nextDueAtMs === null) {
           this.nextDueAtMs = nowMs + s.intervalSeconds * 1000;
         }
-        if (!this.pending && nowMs >= this.nextDueAtMs) {
+        if (!this.pending && this.armedHands !== null) {
+          // Armed: the bomb is a number of hands away, and this is one of them.
+          this.armedHands -= 1;
+          if (this.armedHands <= 0) {
+            this.armedHands = null;
+            this.pending = true;
+            this.pendingReason = 'timed';
+          }
+        } else if (!this.pending && nowMs >= this.nextDueAtMs) {
           // One token regardless of how many intervals elapsed while the
           // table sat idle or paused (spec §4.3 "no catch-up spam", T04).
           this.pending = true;
           this.pendingReason = 'timed';
+        } else if (!this.pending && this.nextDueAtMs - nowMs <= TIMED_ARM_WINDOW_MS) {
+          // The last three minutes: the clock retires and the bomb becomes
+          // 1-5 hands away, drawn once (Dan 2026-09-05). This hand is the
+          // first of them, so a draw of 1 makes the NEXT hand the bomb.
+          this.armedHands = drawArmedHands(this.rng);
         }
         break;
       }
@@ -285,6 +333,7 @@ export class BombPotScheduler {
       if (s.triggerMode === 'timed') {
         // Reset from the ACTUAL bomb-hand start, not the old due time (§4.3).
         this.nextDueAtMs = nowMs + s.intervalSeconds * 1000;
+        this.armedHands = null;
       }
       if (s.triggerMode === 'once_per_orbit') {
         /**
@@ -414,14 +463,29 @@ export class BombPotScheduler {
       if (this.orbitAnchorSeat === null || this.lastDealtInCount === 0) return null;
       return Math.max(1, this.lastDealtInCount - this.handsSinceAnchor);
     }
+    if (s.triggerMode === 'timed') {
+      // Armed (the last three minutes): hands, not minutes. Null before that
+      // - the clock is the pill then.
+      return this.armedHands === null ? null : Math.max(1, this.armedHands);
+    }
     if (s.triggerMode !== 'every_n_hands') return null;
     return Math.max(1, s.frequency - this.handsSinceBomb);
   }
 
-  /** timed mode: epoch ms when the next bomb becomes due (null otherwise). */
+  /**
+   * timed mode: epoch ms when the next bomb becomes due (null otherwise).
+   * Null once the bomb is armed in hands: the clock is retired so nobody can
+   * play to it (Dan 2026-09-05); handsUntilDue is the countdown then.
+   */
   nextBombDueAt(s: BombPotSchedulerSettings): number | null {
     if (!s.enabled || s.triggerMode !== 'timed') return null;
+    if (this.armedHands !== null) return null;
     return this.nextDueAtMs;
+  }
+
+  /** timed mode: the armed hands countdown, if the clock has retired. */
+  armedHandsUntilDue(): number | null {
+    return this.armedHands;
   }
 
   /** Whether a due bomb is waiting for the next valid hand (any mode). */
@@ -470,6 +534,9 @@ export class BombPotScheduler {
       // bomb button on one seat for one extra orbit — small, but it is one
       // boolean and the whole point of the flag is that it survives.
       x: this.anchorAdvancePending,
+      // The armed hands countdown (Dan 2026-09-05): a deploy inside the last
+      // three minutes must not hand the clock back to the table.
+      m: this.armedHands,
     };
   }
 
@@ -508,6 +575,9 @@ export class BombPotScheduler {
       this.lastDealtInCount = Math.floor(o.n);
     }
     if (typeof o.x === 'boolean') this.anchorAdvancePending = o.x;
+    if (typeof o.m === 'number' && Number.isFinite(o.m) && o.m > 0) {
+      this.armedHands = Math.min(TIMED_ARM_MAX_HANDS, Math.floor(o.m));
+    }
   }
 
   private reset(): void {
@@ -520,5 +590,6 @@ export class BombPotScheduler {
     this.handsSinceAnchor = 0;
     this.lastDealtInCount = 0;
     this.anchorAdvancePending = false;
+    this.armedHands = null;
   }
 }

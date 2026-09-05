@@ -190,7 +190,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   flag('v16Blockers', 'river unblocker bluffs', 'V16'),
   flag('v16SizeCond', 'big-bet-conditioned sampling', 'V16'),
   flag('v16PloPolar', 'PLO polarity read', 'V16'),
-  flag('v16Ratio', 'DEFAULT OFF: bet-ratio rescale experiment (league-decided)', 'V16'),
+  flag(
+    'v16Ratio',
+    'DEFAULT OFF and DEAD BY PRECEDENCE since V38 (2026-09-03): both gates it rescales sit below the V38 call/fold return; league matchup retired 2026-09-05 after 0.00 +/- 0.00 over 12,000 hands',
+    'V16'
+  ),
   flag('v17Pos', 'players-behind bluff pressure', 'V17'),
   flag('v17RiverProbe', 'river probe into a capped field', 'V17'),
   flag('v17CatchBlock', 'call-side blocker on missed-flush rivers', 'V17'),
@@ -362,6 +366,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   state('straddleActive', 'a straddle is posted (V18)'),
   state('bombPot', 'this hand is a bomb pot (V36)'),
   state('boardCount', 'boards dealt (V36)'),
+  state(
+    'vpipFloor',
+    'the table VPIP floor a seat is stood up under after ten hands (Dan 2026-09-04)',
+    'HorseLogic.vpipFloorMul'
+  ),
+  state(
+    'ownVpip',
+    'this seat: hands and judged VPIP this sitting, from fn_nit_status - the eviction query',
+    'HorseLogic.vpipFloorMul'
+  ),
   state(
     'tournament',
     'ICM inputs: stacks, payouts, bubble, bounties, chests, satellite, blind clock',

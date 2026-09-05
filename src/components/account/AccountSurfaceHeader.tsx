@@ -8,6 +8,12 @@ interface AccountSurfaceHeaderProps {
   description: string;
   status?: string;
   children?: ReactNode;
+  /**
+   * Route-specific hero art, as a path under public/ (e.g.
+   * 'images/account/control-room-hero-v1.webp'). Falls back to the shared
+   * vault plate so a surface without its own art still has an anchor.
+   */
+  artwork?: string;
 }
 
 /**
@@ -22,12 +28,14 @@ export default function AccountSurfaceHeader({
   description,
   status,
   children,
+  artwork,
 }: AccountSurfaceHeaderProps) {
+  const artUrl = artwork ? mediaUrl(artwork) : mediaUrl('images/bg-vault.jpg');
   return (
     <header className={styles.hero}>
       <div
         className={styles.image}
-        style={{ backgroundImage: `url("${mediaUrl('images/bg-vault.jpg')}")` }}
+        style={{ backgroundImage: `url("${artUrl}")` }}
         aria-hidden="true"
       />
       <div className={styles.scanline} aria-hidden="true" />

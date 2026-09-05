@@ -72,6 +72,23 @@ describe('LAW 1/2/4 - the always-on registry', () => {
     const afterHorse = turns.slice(horseAt);
     expect(afterHorse.indexOf('this.lastActionAcceptedAtMs = Date.now()')).toBeGreaterThan(0);
     expect(afterHorse.indexOf('actionsFleetTotal.inc(')).toBeGreaterThan(0);
+
+    // AUDIT 2026-09-05: the instrumentation must sit BELOW the check/fold
+    // degrade, not above it. Above it, a horse whose intended action was
+    // rejected still reached the felt through the fallback and was neither
+    // counted nor timed - a silent hole in the horse series, and unequal
+    // treatment (CLAUDE.md 10.5). Keying on the same `applied` that
+    // markProgress() uses is what makes it whichever-attempt-landed.
+    const degradeAt = afterHorse.indexOf("performAction(seat, 'fold' as any)");
+    const countAt = afterHorse.indexOf('actionsFleetTotal.inc(');
+    expect(degradeAt).toBeGreaterThan(0);
+    expect(
+      countAt,
+      'the horse counter must come AFTER the check/fold degrade, so a degraded action is still counted'
+    ).toBeGreaterThan(degradeAt);
+    // And it must be in the same block that marks progress.
+    const progressAt = afterHorse.indexOf('this.markProgress();');
+    expect(Math.abs(progressAt - countAt)).toBeLessThan(900);
   });
 });
 

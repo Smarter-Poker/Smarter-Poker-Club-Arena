@@ -2377,6 +2377,18 @@ export abstract class ServerTableEngineBase {
   protected announcedSeatMoves: Set<string> = new Set();
 
   /**
+   * A SWAP SIDE HOLDING FOR ITS PARTNER (Dan 2026-09-05). Two seat-change
+   * requests that would take each other's table are swapped: both chairs are
+   * occupied, so the first side to reach its hand boundary cannot land and is
+   * held OUT OF THE DEAL here (not sat out: the sit-out clock and its
+   * eviction are for a player who chose to leave the action) until the other
+   * table's boundary lands both chairs in one transaction. Cleared when the
+   * player vanishes from this table's roster (the swap landed), or when the
+   * pending list no longer carries their move (it was cancelled or expired).
+   */
+  protected heldForSwap: Set<string> = new Set();
+
+  /**
    * MUST-MOVE, the engine's half (OPORD 1.3 s9.5, OPORD 1.4 s18.3). At the
    * START of a hand every player with a planned move is told, once:
    * "Seat Open On Main 2. Moving After This Hand." Nothing is asked.
@@ -2394,6 +2406,13 @@ export abstract class ServerTableEngineBase {
     for (const id of this.announcedSeatMoves) {
       if (!live.has(id)) this.announcedSeatMoves.delete(id);
     }
+    // A held swap side whose move is no longer pending (cancelled, expired,
+    // or landed from the other table) is released; if they are still seated
+    // here they are simply back in the deal.
+    const liveHeld = new Set(pending.filter((m) => m.ready_at != null).map((m) => m.player_id));
+    for (const uid of this.heldForSwap) {
+      if (!liveHeld.has(uid)) this.heldForSwap.delete(uid);
+    }
     const fresh: string[] = [];
     for (const m of pending) {
       if (m.announced_at == null) fresh.push(m.move_id);
@@ -2407,11 +2426,20 @@ export abstract class ServerTableEngineBase {
         to_role: m.to_role,
         to_main_index: m.to_main_index,
         reason: m.reason,
+        swap: m.swap_move_id != null,
         message: seatMoveNotice(m),
         timestamp: Date.now(),
       });
     }
     if (fresh.length > 0) await announceSeatMoves(fresh);
+  }
+
+  /**
+   * A HELD PLAYER IS NOT IN THE DEAL. Read wherever the table counts who is
+   * playing the next hand (activePlayers, the liveness count).
+   */
+  protected isHeldForSwap(userId: string): boolean {
+    return this.heldForSwap.has(userId);
   }
 
   /**
@@ -2428,11 +2456,26 @@ export abstract class ServerTableEngineBase {
     opts: { announcedOnly: boolean } = { announcedOnly: false }
   ): Promise<string[]> {
     if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return [];
-    const done = await executePendingSeatMoves(this.tableId, opts);
+    const { done, held } = await executePendingSeatMoves(this.tableId, opts);
+    // The first side of a swap to reach its boundary: held out of the deal
+    // until the other table lands both chairs. Told once.
+    for (const h of held) {
+      if (this.heldForSwap.has(h.player_id)) continue;
+      this.heldForSwap.add(h.player_id);
+      this.hub?.emitEvent(this.tableId, {
+        type: 'seat_move_held',
+        table_id: this.tableId,
+        user_id: h.player_id,
+        to_table_id: h.to_table_id,
+        message: 'Seat Change: Waiting For The Other Table To Finish Its Hand.',
+        timestamp: Date.now(),
+      });
+    }
     const movedIds: string[] = [];
     for (const m of done) {
       movedIds.push(m.player_id);
       this.announcedSeatMoves.delete(m.move_id);
+      this.heldForSwap.delete(m.player_id);
       const seated = this.seatedPlayers.find((sp) => sp.user_id === m.player_id);
       this.disconnectEngine.unregisterPlayer(this.tableId, m.player_id);
       this.timeBankEngine.removePlayer(this.tableId, m.player_id);
@@ -2451,11 +2494,33 @@ export abstract class ServerTableEngineBase {
         to_table_id: m.to_table_id,
         to_seat: m.to_seat_number,
         stack: m.stack,
+        reason: m.reason,
         timestamp: Date.now(),
       });
       console.log(
-        `[ServerTableEngine:${this.tableId}] ${m.player_id} moved to ${m.to_table_id} seat ${m.to_seat_number} with ${m.stack}`
+        `[ServerTableEngine:${this.tableId}] ${m.player_id} moved to ${m.to_table_id} seat ${m.to_seat_number} with ${m.stack} (${m.reason})`
       );
+      // A SWAP LANDED FROM THIS SIDE: the partner left the OTHER table in the
+      // same transaction, and that table's engine will only see an empty
+      // chair. Tell that table now, so the partner's client follows them the
+      // way every mover's does; that engine drops its own mirrors the moment
+      // its roster no longer carries them (the gone-player prune).
+      if (m.partner) {
+        this.hub?.emitEvent(m.partner.from_table_id, {
+          type: 'seat_moved',
+          table_id: m.partner.from_table_id,
+          seat: null,
+          user_id: m.partner.player_id,
+          to_table_id: m.partner.to_table_id,
+          to_seat: m.partner.to_seat_number,
+          stack: m.partner.stack,
+          reason: 'seat_change',
+          timestamp: Date.now(),
+        });
+        console.log(
+          `[ServerTableEngine:${this.tableId}] swap: ${m.partner.player_id} arrived from ${m.partner.from_table_id} into seat ${m.partner.to_seat_number}`
+        );
+      }
     }
     if (movedIds.length > 0) {
       this.seatedPlayers = this.seatedPlayers.filter((sp) => !movedIds.includes(sp.user_id));
@@ -2839,7 +2904,8 @@ export abstract class ServerTableEngineBase {
         p.stack > 0 &&
         (this.isTournamentTable() ||
           !this.disconnectEngine.isSittingOut(this.tableId, p.user_id)) &&
-        !this.waitingForBB.has(p.user_id)
+        !this.waitingForBB.has(p.user_id) &&
+        !this.heldForSwap.has(p.user_id)
     ).length;
   }
 
@@ -4248,7 +4314,15 @@ export abstract class ServerTableEngineBase {
         timestamp: Date.now(),
       });
       try {
-        await atomicCashout(userId, this.tableId, seated.seat_number);
+        // BOOTED FOR LOW VPIP = BARRED FOR TWO HOURS (Dan 2026-09-05): the
+        // database writes the bar from this leave mode; every other eviction
+        // stays a plain system exit.
+        await atomicCashout(
+          userId,
+          this.tableId,
+          seated.seat_number,
+          nitEvict ? { leaveMode: 'vpip_evicted' } : undefined
+        );
         this.disconnectEngine.unregisterPlayer(this.tableId, userId);
         this.timeBankEngine.removePlayer(this.tableId, userId);
         this.straddleEngine.removePlayer(this.tableId, userId);
@@ -4469,6 +4543,12 @@ export abstract class ServerTableEngineBase {
         // to the next hand, and they owe the live big blind for it.
         this.postingBBToEnter.add(p.user_id);
         restored += 1;
+      } else if (hold === 'moved') {
+        // Moved here by the game (must-move / break) and the restart landed
+        // before this table's first deal read the marker: they are dealt in
+        // owing nothing, exactly as the arrival path would have done, and the
+        // marker is cleared so nothing reads it twice.
+        this.persistEntryHold(p.user_id, { hold: null, agreed: false });
       }
     }
 

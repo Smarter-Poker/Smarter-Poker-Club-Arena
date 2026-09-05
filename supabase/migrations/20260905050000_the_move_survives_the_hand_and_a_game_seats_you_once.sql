@@ -875,6 +875,15 @@ BEGIN
 END;
 $$;
 
+-- Engine-only, all three (restated here because this file redefines them;
+-- the live ACLs already say so, and GRANT/REVOKE fire no schema reload).
+REVOKE ALL ON FUNCTION public.fn_cash_cluster_open_table(uuid, text, integer, text, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_cash_cluster_open_table(uuid, text, integer, text, uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_cash_seat_move_execute(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_cash_seat_move_execute(uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_cash_cluster_tick(uuid, integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_cash_cluster_tick(uuid, integer) TO service_role;
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 6 + 7. Data: the Madness tables, and the pre-Slice-2 flags
 -- ─────────────────────────────────────────────────────────────────────────────

@@ -659,8 +659,10 @@ export interface HandFactsInput {
    */
   roster: Array<{ userId: string; isHorse: boolean }>;
   /**
-   * `tables.nit_game`. When the table enforces a VPIP minimum, horses need
-   * fact rows too, because those rows ARE the evidence the rule is judged on.
+   * `tables.nit_game`. Retained as CONTEXT on the written row, not as a gate:
+   * fact rows are written for every seat everywhere since 2026-09-05. It still
+   * matters to a reader, because a VPIP measured where a floor is enforced is
+   * not the same measurement as one taken where the horse chose its own width.
    */
   nitGame?: boolean;
 }
@@ -695,19 +697,22 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
      * `career_vpip` (24.6% over 544 hands) and the horse beside them came back
      * `ok: true, within_limits`.
      *
-     * So horses get fact rows AT NIT TABLES: the rule and its evidence now
-     * cover exactly the same seats. It is scoped to those tables rather than
-     * switched on everywhere because horses play ~221k hands a day and this
-     * table carries one row per player per hand; writing every horse hand
-     * platform-wide is a storage decision with a real bill, and that is Dan's
-     * to make, not an agent's - the same line the retention policy draws.
+     * PLATFORM-WIDE FROM 2026-09-05, and it was Dan's call to make: "YES
+     * PLATFORM WIDE." The nit-table scoping meant a horse's VPIP was knowable
+     * only where a rule already judged it, so nobody could answer whether the
+     * fleet plays a realistic distribution anywhere else - the question that
+     * decides whether a watching human can pick the horses out with a HUD.
+     *
+     * THE BILL, measured 2026-09-05 before switching it on: 653,719 hands and
+     * 3.41 seats per hand in 24h is ~2.23M rows a day, and this table runs 575
+     * bytes a row, so ~1.28 GB a day and ~38 GB a month. `ca_hand_facts` had
+     * NO retention of any kind - so platform-wide without a prune is an
+     * unbounded table, and the migration that ships with this change adds one
+     * on the same 7-day horse retention `hand_history_retention_policy`
+     * already uses. Human rows are kept forever, exactly as there. Steady
+     * state is ~9 GB rather than growing without limit.
      */
-    const factIds = new Set(
-      input.roster
-        .filter((p) => !p.isHorse || input.nitGame === true)
-        .map((p) => p.userId)
-        .filter(Boolean)
-    );
+    const factIds = new Set(input.roster.map((p) => p.userId).filter(Boolean));
     if (factIds.size === 0) return; // nobody to store
 
     const dealtSeats: number[] = [];

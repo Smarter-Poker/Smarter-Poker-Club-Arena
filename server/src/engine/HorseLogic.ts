@@ -1585,7 +1585,38 @@ export class HorseLogic {
     }
     // THE VPIP FLOOR (Dan 2026-09-04): widen toward the table's floor. Last,
     // so it scales whatever style, mood and variant already decided.
-    params.tightness *= vpipFloorMul(gs);
+    //
+    // TELEMETRY (2026-09-05). The layer shipped in #3034 with none, so on
+    // 2026-09-05 the daily audit could see `decide` firing 6,950,276 times and
+    // could not answer whether this layer had ever run - the telemetry_dark
+    // case the audit calls top priority, and the reason it took an outcome
+    // measurement on ca_hand_facts to establish the layer worked at all.
+    // Three counters, because the interesting failures are distinguishable:
+    // `_prior` means it is steering with no sample yet, `_closing` means the
+    // loop is reading the horse's own judged VPIP and still widening, and
+    // `_satisfied` means the horse is over the floor and its own style is
+    // back in charge. A floored table showing only `_prior` for ever means
+    // ownVpip is not reaching the brain.
+    {
+      const vfMul = vpipFloorMul(gs);
+      params.tightness *= vfMul;
+      if (telemetryOn(opts) && Number(gs.vpipFloor ?? 0) > 0) {
+        noteFire('vpip_floor');
+        const own = gs.ownVpip;
+        if (!own || own.hands < 3 || own.vpip === null || !Number.isFinite(own.vpip)) {
+          noteFire('vpip_floor_prior');
+        } else if (vfMul < 1) {
+          noteFire('vpip_floor_closing');
+        } else {
+          noteFire('vpip_floor_satisfied');
+        }
+        // Pinned at its limit means the floor is unreachable by widening -
+        // the state every Madness table was in before the floors were
+        // retiered to 30/50. If this fires in volume, a floor is set above
+        // what any strategy reaches and the table churns rather than runs.
+        if (vfMul <= 0.35) noteFire('vpip_floor_clamped');
+      }
+    }
 
     // V18: per-horse sizing-family personality, hashed from the id.
     if (opts.v18Families !== false) {

@@ -57,9 +57,36 @@ export interface StateMutation {
   sessionStartBalance?: number;
 }
 
-/** The row shape written back to stable_hand_horse_state. */
+/**
+ * The row shape written back to stable_hand_horse_state.
+ *
+ * ── WHY THE TAGGER'S TWO COLUMNS ARE IN HERE ───────────────────────────────
+ *
+ * `rest_weekday` and `daily_cap_minutes` belong to the TAGGER, not to the
+ * counters, and the first draft of this row left them out on exactly that
+ * reasoning: an upsert that conflicts on `horse_id` takes the DO UPDATE
+ * branch, and DO UPDATE only touches the columns you name.
+ *
+ * That reasoning is wrong, and the way it is wrong is invisible until it runs
+ * against a real table. `INSERT ... ON CONFLICT DO UPDATE` builds the proposed
+ * tuple and checks NOT NULL on it BEFORE it looks for a conflict. Those two
+ * columns are the only ones on this table declared NOT NULL with no DEFAULT,
+ * so a payload without them proposes NULL, and Postgres rejects the whole
+ * chunk with 23502 before it ever notices the row it would have updated.
+ *
+ * Measured, not reasoned: the engine wrote this table zero times between
+ * 08:42 and 23:07 on 2026-09-04 while `writeStateRows` logged 23502 every
+ * cycle. Nothing above it broke - a failed write returns 0 and the fleet keeps
+ * seeding - so the only symptom was a column that stayed NULL on all 1,000
+ * rows. `stateRowCoversEveryRequiredColumn` in the test file reads the
+ * migration and pins the whole class, so a future NOT NULL column added to
+ * that table fails a test here rather than silently switching the counters off
+ * again.
+ */
 export interface StateRow {
   horse_id: string;
+  rest_weekday: number;
+  daily_cap_minutes: number;
   minutes_played_today: number;
   cash_sits_today: Record<string, number>;
   two_hour_window: Record<string, number>;
@@ -78,7 +105,7 @@ export function foldMutations(
   mutations: readonly StateMutation[],
   todayKey: string,
   nowMs: number
-): { rows: StateRow[]; next: Map<string, HorseState> } {
+): { rows: StateRow[]; next: Map<string, HorseState>; skippedUntagged: number } {
   const touched = new Map<string, HorseState>();
 
   const startOf = (horseId: string): HorseState => {
@@ -132,6 +159,7 @@ export function foldMutations(
   }
 
   const rows: StateRow[] = [];
+  let skippedUntagged = 0;
   for (const [horseId, st] of touched) {
     /* Drop windows that have long expired so the column does not grow without
        bound: a horse plays many keys over months and every one of them would
@@ -141,8 +169,20 @@ export function foldMutations(
       if (nowMs - at < 24 * 60 * 60_000) window[k] = at;
     }
     st.twoHourWindow = window;
+    /* A HORSE THE TAGGER HAS NEVER SEEN GETS NO ROW, AND NO INVENTED REST DAY.
+       Its rest day and daily cap are the tagger's to assign - deterministically,
+       from its own key - and a counter write is not entitled to guess them just
+       because it needs the columns to be non-null. Skipping costs one
+       unrecorded sit for a horse that has no tags to enforce yet; guessing
+       would hand that horse a rest day the tagger then disagrees with. */
+    if (st.restWeekday === null || st.dailyCapMinutes === null) {
+      skippedUntagged += 1;
+      continue;
+    }
     rows.push({
       horse_id: horseId,
+      rest_weekday: st.restWeekday,
+      daily_cap_minutes: st.dailyCapMinutes,
       minutes_played_today: Math.round(st.minutesPlayedToday),
       cash_sits_today: st.cashSitsToday,
       two_hour_window: window,
@@ -150,7 +190,7 @@ export function foldMutations(
       counters_reset_on: todayKey,
     });
   }
-  return { rows, next: touched };
+  return { rows, next: touched, skippedUntagged };
 }
 
 /**

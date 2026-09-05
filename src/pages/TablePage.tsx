@@ -164,6 +164,7 @@ import { roomService, type RoomMessage } from '../services/RoomService';
 import { HydraService } from '../services/HydraService';
 import TableChat from '../components/table/TableChat';
 import { ChatBubble, bubbleForSeat, useSeatChatBubbles } from '../components/table/ChatBubble';
+import { useSeatAddOnBubbles } from '../components/table/AddOnBubble';
 import { useTableVoice } from '../hooks/useTableVoice';
 import { holeCardCountFor } from '../lib/holeCardCount';
 import { shouldAnnounceBbjHit } from '../lib/bbjHitOnce';
@@ -314,6 +315,8 @@ import { TableHUD } from '../components/table/TableHUD';
 import { TournamentLobbyModal } from '../components/table/TournamentLobbyModal';
 import TournamentInfoPanel from '../components/tournament/TournamentInfoPanel';
 import HeroHubPanel from '../components/table/HeroHubPanel';
+import { CASH_TEMPLATES } from '../config/cashGames';
+import HeroVpipTracker from '../components/table/HeroVpipTracker';
 import { TournamentHUD } from '../components/tournament/TournamentHUD';
 import { PreviousHandCard } from '../components/table/PreviousHandCard';
 import { HandDetailModal } from '../components/table/HandDetailModal';
@@ -551,6 +554,27 @@ interface TableState {
   bombPotNextAt: number | null;
   /** 2026-08-29: seats a due-but-held bomb is waiting for. Null = not waiting. */
   bombPotWaitingFor: number | null;
+  /**
+   * THE REGULAR ANTE (Dan 2026-09-04): chips per posting, 0 when the table
+   * runs none, and who posts it. Printed on the felt beside the blinds.
+   */
+  ante: number;
+  anteMode: 'per_player' | 'big_blind' | null;
+  /**
+   * THE GAME STYLE (Dan 2026-09-04): Classic / Action / Madness for a table
+   * that belongs to a templated cash game, printed under the blinds. Null for
+   * a hand-made table, a fleet table and every tournament.
+   */
+  gameStyle: string | null;
+  /**
+   * THE VPIP FLOOR (Dan 2026-09-05): "IF THEY HAVE AN ANTE OR VPIP
+   * REQUIREMENT THAT SHOULD ALSO BE ON THE TABLE." The career VPIP a seat must
+   * keep (tables.maintain_percent_min) on a nit-game table, and the window it
+   * is judged over. Null when the table has no floor. Printed for everyone -
+   * the hero's tracker shows their own number; this is the rule of the game.
+   */
+  vpipFloor: number | null;
+  vpipWindow: number | null;
   /**
    * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant THIS hand is played
    * as — differs from gameType on a variant-override bomb pot (e.g. a PLO4
@@ -1052,11 +1076,13 @@ const ASK_TO_SHOW_ON_UNCONTESTED_WIN = false;
  * is cosmetic, "NaN/NaN" reads as a broken table.
  */
 function formatBlindPair(small: unknown, big: unknown): string {
-  const one = (v: unknown): string => {
-    const n = Number(v);
-    return Number.isFinite(n) ? String(n) : String(v ?? '?');
-  };
-  return `${one(small)}/${one(big)}`;
+  return `${formatChipFigure(small)}/${formatChipFigure(big)}`;
+}
+
+/** One blind-sized figure, printed the way the blinds are (see formatBlindPair). */
+function formatChipFigure(v: unknown): string {
+  const n = Number(v);
+  return Number.isFinite(n) ? String(n) : String(v ?? '?');
 }
 
 /**
@@ -1877,6 +1903,7 @@ export default function TablePage({
     status: engineWsStatus,
     lastEvent: rawEngineLastEvent,
     lastError: engineLastError,
+    lastUserEvent: engineLastUserEvent,
   } = useEngineTableState(tableId || undefined, { enabled: USE_ENGINE_WS });
 
   // RABBIT HUNT FREEZE 2026-08-25
@@ -2011,6 +2038,11 @@ export default function TablePage({
       bombPotIn: null,
       bombPotNextAt: null,
       bombPotWaitingFor: null,
+      ante: 0,
+      anteMode: null,
+      gameStyle: null,
+      vpipFloor: null,
+      vpipWindow: null,
       handVariant: null,
       boardStage: 'preflop',
       engineStage: 'preflop',
@@ -2384,6 +2416,8 @@ export default function TablePage({
         bombPotIn: mapped.bombPotIn,
         bombPotNextAt: mapped.bombPotNextAt,
         bombPotWaitingFor: mapped.bombPotWaitingFor,
+        ante: mapped.ante,
+        anteMode: mapped.anteMode,
         handVariant: mapped.handVariant,
         boardStage: nextStage,
         engineStage: mapped.boardStage,
@@ -2782,8 +2816,11 @@ export default function TablePage({
   const [isSeatDealing, setIsSeatDealing] = useState(false);
 
   // BOMB POT 2026-08-20: true from BOMB_POT_TRIGGERED until the next
-  // HAND_STARTED. Drives the magenta "BOMB" pill on every live seat
-  // (SeatSlot bombPotAnte) for the duration of the bomb-pot hand.
+  // HAND_STARTED. It used to drive a magenta "BOMB" pill on every live seat
+  // (SeatSlot bombPotAnte). Dan 2026-09-04: "THERE SHOULDN'T BE 'BOMB POT
+  // PILL BUTTONS' UNDER THE PLAYERS. THERE SHOULD JUST BE SOMETHING ON THE
+  // TABLE THAT SAYS 'BOMB POT'." So it now drives the ONE on-felt pill
+  // (.bomb-pot-eta--live below), which reads "BOMB POT" for the hand.
   const [bombPotActive, setBombPotActive] = useState(false);
   // IMPROVEMENT PASS 2026-08-20: in the reference capture the flop is dealt
   // only AFTER the bomb's explosion finishes — the engine, which skips
@@ -6986,6 +7023,13 @@ export default function TablePage({
     enabled: socialFeaturesAllowed && !isChatMuted,
     speakingPlayerIds,
   });
+  /* Dan 2026-09-04: "HAS ADDED ON FOR XX.XX" above the head of whoever added
+     on. NOT behind the social gate: it is a fact about the stack, not a line
+     from the player, so heads-up tables and muted chat still show it. Fed by
+     the engine's `add_on_applied` event — the moment the sweep lands the chips. */
+  const seatAddOnBubbles = useSeatAddOnBubbles(engineLastEvent, seatOwnerIds, {
+    nameForSeat: (seatNumber) => tableState.players[seatNumber - 1]?.name || '',
+  });
   cardsPreSortRef.current = v8Settings.cards_pre_sort;
 
   // Bible V8 §11.2: Per-game-type theme from Supabase
@@ -8632,6 +8676,53 @@ export default function TablePage({
     [userId, tableId, ambientSoundsAllowed]
   );
 
+  /* ═══ THE ENGINE SOCKET CARRIES THE PLAYER'S OWN FACTS (2026-09-04) ═════════
+     Disconnect audit items 11 and 12. Two things a seat cannot play without
+     used to reach it by a SECOND transport: hole cards by a Supabase Realtime
+     subscription on table_hole_cards (with the bounded poll behind it), and
+     the pre-action by nothing at all - the client pushed it and never read the
+     engine's copy back, so a reconnect could leave the bar dark while the
+     engine was armed, or lit while the engine had invalidated it.
+
+     Both now arrive as private USER_EVENT frames on the socket the felt is
+     already drawn from, and the engine re-sends both on RESYNC. The Realtime
+     row and the poll stay as the belt; this is the braces.
+
+     Hole cards go through handleHoleCardPayload in the row shape it already
+     accepts, so every guard on that path (heroHoleCardsAreForThisHand, the
+     board-collision refusal, the recovery re-arm) applies unchanged. The
+     pre-action reconciles the bar to the engine's copy: setting the same
+     value is a no-op, a different one re-arms through the normal effect and
+     converges on the next frame, and an engine "nothing armed" clears the bar
+     without a round trip (hadPreActionRef is dropped first so the clear
+     effect does not send a clear for something the engine never held). */
+  useEffect(() => {
+    const ev = engineLastUserEvent;
+    if (!ev) return;
+    if (ev.kind === 'hole_cards' && ev.row && typeof ev.row === 'object') {
+      handleHoleCardPayload({ new: ev.row });
+      return;
+    }
+    if (ev.kind === 'pre_action') {
+      const a = typeof ev.action === 'string' ? ev.action : null;
+      const mapped =
+        a === 'auto_fold' || a === 'auto_check_fold'
+          ? 'fold'
+          : a === 'auto_check'
+            ? 'check'
+            : a === 'auto_call'
+              ? 'call'
+              : a === 'auto_call_any'
+                ? 'callAny'
+                : null;
+      if (typeof ev.to_call_at_set === 'number' && Number.isFinite(ev.to_call_at_set)) {
+        preActionCallAmountRef.current = ev.to_call_at_set;
+      }
+      if (mapped === null) hadPreActionRef.current = false;
+      setPreAction((cur) => (cur === mapped ? cur : mapped));
+    }
+  }, [engineLastUserEvent, handleHoleCardPayload]);
+
   /* ═══ 'INSERT' MISSED EVERY PINEAPPLE DISCARD (2026-08-31) ═════════════
      `insert_hole_cards` is an upsert - `ON CONFLICT (table_id, hand_number,
      user_id) DO UPDATE SET cards = EXCLUDED.cards` (20260312_secure_hole_
@@ -10077,6 +10168,12 @@ export default function TablePage({
         bomb_pot_ante_fixed: number | null;
         bomb_pot_min_players: number | null;
         bomb_pot_button_policy: string | null;
+        /** The must-move game this table belongs to (Operation Table Stakes), or null. */
+        cluster_id: string | null;
+        /** THE VPIP FLOOR (Dan 2026-09-05): the rule the felt prints. */
+        nit_game: boolean | null;
+        maintain_percent_min: number | null;
+        maintain_hands: number | null;
       };
       let table: TableBootstrapRow | null = null;
       let error: unknown = null;
@@ -10088,7 +10185,7 @@ export default function TablePage({
         const res = await supabase
           .from('tables')
           .select(
-            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_announce_seconds, bomb_pot_ante_fixed, bomb_pot_min_players, bomb_pot_button_policy'
+            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_announce_seconds, bomb_pot_ante_fixed, bomb_pot_min_players, bomb_pot_button_policy, cluster_id, nit_game, maintain_percent_min, maintain_hands'
           )
           .eq('id', tableId)
           .maybeSingle();
@@ -10186,6 +10283,16 @@ export default function TablePage({
                   ? formatBlindPair(table.small_blind, table.big_blind)
                   : '?/?',
           maxPlayers: table.max_players || 6,
+          /* THE VPIP FLOOR (Dan 2026-09-05): only a nit-game table has one;
+             a floor of 0 is no floor. Same columns fn_nit_evictions judges by. */
+          vpipFloor:
+            table.nit_game === true && Number(table.maintain_percent_min) > 0
+              ? Number(table.maintain_percent_min)
+              : null,
+          vpipWindow:
+            table.nit_game === true && Number(table.maintain_hands) > 0
+              ? Number(table.maintain_hands)
+              : null,
           players: createEmptySeats(table.max_players || 6),
           positions: Array(table.max_players || 6).fill(null),
           lastActions: Array(table.max_players || 6).fill(null),
@@ -10298,6 +10405,36 @@ export default function TablePage({
         setActionTimeSeconds(settings.time_bank_seconds || settings.action_time_seconds || 15);
 
         // Fetch club name (and the union it belongs to) for the felt masthead.
+        // THE GAME STYLE (Dan 2026-09-04): "IF THE GAME IS CLASSIC, ACTION OR
+        // MADNESS, IT MUST SAY IT ON THE TABLE UNDER THE BLINDS." A table of a
+        // templated game carries the game's id; the game carries the template.
+        // One small read, fire-and-forget: the masthead prints it when it
+        // lands and nothing waits on it.
+        if (table.cluster_id) {
+          void (async () => {
+            try {
+              const { data: game, error: gameError } = await supabase
+                .from('cash_games')
+                .select('template_name')
+                .eq('id', table.cluster_id)
+                .maybeSingle();
+              if (!isMounted) return;
+              if (gameError) {
+                reportError(gameError, 'TablePage.gameStyleLookup', { tableId });
+                return;
+              }
+              const template = String(game?.template_name ?? '').toLowerCase();
+              const label = CASH_TEMPLATES.find((t) => t.id === template)?.label ?? null;
+              if (!label) return;
+              setTableState((prev) =>
+                prev.gameStyle === label ? prev : { ...prev, gameStyle: label }
+              );
+            } catch {
+              /* a missing style prints nothing; it never blocks the felt */
+            }
+          })();
+        }
+
         // Dan 2026-08-18: the union name must sit next to the club name when
         // the club is attached to one. Joined in the same query rather than a
         // follow-up round trip.
@@ -19954,16 +20091,57 @@ export default function TablePage({
                               </span>
                             </span>
                           )}
+                          {/* Dan 2026-09-05: "THE GAME NAME AND BLINDS ARE WAY
+                              TOO SMALL FONT." Line 2 is now the game and the
+                              blinds alone, twice the size of the club line;
+                              the hand number moves to its own row below so it
+                              still can never be cut off (2026-08-26 item 5). */}
                           <span className="table-brand__line table-brand__line--level">
                             <span className="table-brand__game">
                               {gameShort} {tableState.blinds || '1/2'}
                             </span>
-                            {(tableState.handNumber ?? 0) > 0 && (
-                              <span className="table-brand__hand">
-                                {'\u00B7 '}Hand #{tableState.handNumber}
-                              </span>
-                            )}
                           </span>
+                          {/* THE GAME STYLE (Dan 2026-09-04): "IF THE GAME IS
+                              CLASSIC, ACTION OR MADNESS, IT MUST SAY IT ON THE
+                              TABLE UNDER THE BLINDS." */}
+                          {tableState.gameStyle && (
+                            <span className="table-brand__line table-brand__line--style">
+                              <span className="table-brand__style">{tableState.gameStyle}</span>
+                            </span>
+                          )}
+                          {/* THE RULES OF THE GAME (Dan 2026-09-04/05: "ANTES
+                              ... ARE NOT DISPLAYING"; "IF THEY HAVE AN ANTE OR
+                              VPIP REQUIREMENT THAT SHOULD ALSO BE ON THE
+                              TABLE"). One row, in chips and percent, the way a
+                              card room's placard prints it. Absent on a table
+                              with neither. */}
+                          {(tableState.ante > 0 || tableState.vpipFloor != null) && (
+                            <span className="table-brand__line table-brand__line--rules">
+                              {tableState.ante > 0 && (
+                                <span className="table-brand__ante">
+                                  Ante {formatChipFigure(tableState.ante)}
+                                </span>
+                              )}
+                              {tableState.ante > 0 && tableState.vpipFloor != null && (
+                                <span className="table-brand__rules-sep">{'\u00B7'}</span>
+                              )}
+                              {tableState.vpipFloor != null && (
+                                <span className="table-brand__vpip">
+                                  VPIP {tableState.vpipFloor}% Min
+                                  {tableState.vpipWindow
+                                    ? ` \u00B7 ${tableState.vpipWindow} Hands`
+                                    : ''}
+                                </span>
+                              )}
+                            </span>
+                          )}
+                          {(tableState.handNumber ?? 0) > 0 && (
+                            <span className="table-brand__line table-brand__line--hand">
+                              <span className="table-brand__hand">
+                                Hand #{tableState.handNumber}
+                              </span>
+                            </span>
+                          )}
                         </>
                       );
                     })()}
@@ -20183,46 +20361,57 @@ export default function TablePage({
 
                 {/* ROUND 3 (2026-08-20): bomb pot countdown — players see the
                     forced ante coming instead of being ambushed by it. Server
-                    truth (tableState.bombPotIn from the snapshot), hidden
-                    while the bomb sequence itself is playing. */}
+                    truth (tableState.bombPotIn from the snapshot).
+
+                    AND THE HAND ITSELF (Dan 2026-09-04): "THERE SHOULDN'T BE
+                    'BOMB POT PILL BUTTONS' UNDER THE PLAYERS. THERE SHOULD
+                    JUST BE SOMETHING ON THE TABLE THAT SAYS 'BOMB POT'." This
+                    pill used to hide while the bomb hand played and every seat
+                    grew a magenta "BOMB" pill instead. Those are gone; this
+                    ONE pill stays up through the hand and reads "BOMB POT"
+                    (with its board count), in the live colour. */}
                 {/* Gate on the SNAPSHOT value only — it is server truth and
                     goes non-null the moment an owner enables bomb pots, while
                     bombPotRules is a one-shot fetch that would hold the pill
                     hostage until a page reload. */}
-                {(tableState.bombPotIn != null ||
+                {(bombPotActive ||
+                  tableState.bombPotIn != null ||
                   bombClockLabel != null ||
-                  tableState.bombPotWaitingFor != null) &&
-                  !bombPotActive && (
-                    <div
-                      className={`bomb-pot-eta ${
-                        // URGENCY IS NOT A STEADY STATE (2026-08-29). The pulse
-                        // marks "the next hand is the bomb". On a bomb_pot_only
-                        // table the scheduler reports 1 forever, because every
-                        // hand is a bomb — so this pill pulsed for the entire
-                        // session on the one table where the fact is ordinary
-                        // rather than urgent, and the animation stopped meaning
-                        // anything on every other table by association.
-                        bombPotRules?.triggerMode !== 'bomb_pot_only' &&
-                        tableState.bombPotWaitingFor == null &&
-                        (tableState.bombPotIn === 1 || bombClockLabel === 'NEXT HAND')
+                  tableState.bombPotWaitingFor != null) && (
+                  <div
+                    className={`bomb-pot-eta ${
+                      bombPotActive
+                        ? 'bomb-pot-eta--live'
+                        : // URGENCY IS NOT A STEADY STATE (2026-08-29). The pulse
+                          // marks "the next hand is the bomb". On a bomb_pot_only
+                          // table the scheduler reports 1 forever, because every
+                          // hand is a bomb — so this pill pulsed for the entire
+                          // session on the one table where the fact is ordinary
+                          // rather than urgent, and the animation stopped meaning
+                          // anything on every other table by association.
+                          bombPotRules?.triggerMode !== 'bomb_pot_only' &&
+                            tableState.bombPotWaitingFor == null &&
+                            (tableState.bombPotIn === 1 || bombClockLabel === 'NEXT HAND')
                           ? 'bomb-pot-eta--next'
                           : ''
-                      }`}
-                    >
-                      <span className="bomb-pot-eta__dot" />
-                      {/* BOMB POT STANDARDIZATION 2026-08-27: badge names the
+                    }`}
+                  >
+                    <span className="bomb-pot-eta__dot" />
+                    {/* BOMB POT STANDARDIZATION 2026-08-27: badge names the
                         board count (spec §15.2); bomb-only tables show a
                         permanent identity pill rather than a countdown.
                         TIMED CLOCK 2026-08-28: timed tables count down in
                         m:ss to the engine's bomb_pot_next_at. */}
-                      {/* WHY THE BOMB HAS NOT COME (2026-08-29). A due bomb waits
+                    {/* WHY THE BOMB HAS NOT COME (2026-08-29). A due bomb waits
                         for bomb_pot_min_players, and the engine held it in
                         silence — the pill said BOMB POT NEXT HAND and then the
                         table dealt ordinary hands, indefinitely, with no
                         explanation available anywhere in the product. This
                         branch is first because it is the truest thing the pill
                         can say when it applies. */}
-                      {tableState.bombPotWaitingFor != null
+                    {bombPotActive
+                      ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT`
+                      : tableState.bombPotWaitingFor != null
                         ? `BOMB POT WAITING FOR ${tableState.bombPotWaitingFor} PLAYERS`
                         : bombPotRules?.triggerMode === 'bomb_pot_only'
                           ? `${bombPotRules.boardCount >= 3 ? 'TRIPLE BOARD ' : bombPotRules.boardCount === 2 ? 'DOUBLE BOARD ' : ''}BOMB POT ONLY`
@@ -20233,8 +20422,8 @@ export default function TablePage({
                             : tableState.bombPotIn === 1
                               ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
                               : `BOMB POT IN ${tableState.bombPotIn}`}
-                    </div>
-                  )}
+                  </div>
+                )}
 
                 {/* Dan 2026-08-15: the "Game Info Strip" that lived here is
                     gone. It printed the stakes a second and third time
@@ -20816,7 +21005,6 @@ export default function TablePage({
                       ? tableState.bountyMap[player.id]
                       : undefined
                   }
-                  bombPotAnte={bombPotActive}
                   isWinner={player ? winnerInfo.playerIds.includes(player.id) : false}
                   /* POKERBROS PARITY 2026-08-26: table-wide dim flag — while
                      any winner is on display, every face-up card outside the
@@ -21007,7 +21195,12 @@ export default function TablePage({
                     positioned, so the bubble follows the seat with no coordinate
                     maths and SeatSlot needs no knowledge of chat at all. */}
                 {(() => {
-                  const bubble = bubbleForSeat(seatChatBubbles, seatNumber);
+                  /* The add-on notice takes the slot over a chat line: it is
+                     the newer fact, it lives 4s, and two boxes over one plate
+                     is how you cover the seat above. */
+                  const bubble =
+                    bubbleForSeat(seatAddOnBubbles, seatNumber) ??
+                    bubbleForSeat(seatChatBubbles, seatNumber);
                   if (!bubble) return null;
                   return (
                     <ChatBubble
@@ -21116,6 +21309,19 @@ export default function TablePage({
               </div>
             );
           })}
+          {/* THE HERO'S VPIP TRACKER (Dan 2026-09-04): to the left of the
+              hero, hero only, the judged figure. A sibling of the seats at
+              the hero seat's own point; HeroVpipTracker.css pushes it left of
+              the pod. Nothing renders for a spectator or on a tournament. */}
+          <HeroVpipTracker
+            tableId={tableId}
+            heroSeated={tableState.heroSeat > 0}
+            isTournament={tableState.isTournament}
+            handNumber={tableState.handNumber ?? 0}
+            heroPos={
+              tableState.heroSeat > 0 ? (seatPositions[tableState.heroSeat - 1] ?? null) : null
+            }
+          />
         </div>
 
         {/* AUDIT FIX 2026-07-19: mount the chip-flight layer. Every wager
@@ -21528,7 +21734,12 @@ export default function TablePage({
                   isTournament: tableState.isTournament,
                   now: sitOutTick,
                 }),
-                'You Are Sitting Out'
+                /* 2026-09-04 (audit item 3): the engine says whether this
+                   sit-out was forced (three timeouts) or chosen, and the bar
+                   says so too. Same I'm Back either way. */
+                disconnectStates[userId ?? '']?.sitOutReason === 'forced'
+                  ? 'You Timed Out Three Times, So You Are Sitting Out'
+                  : 'You Are Sitting Out'
               )}
             </span>
             <button
@@ -21748,6 +21959,9 @@ export default function TablePage({
                            printed chips. Same setting the seats and pot read. */
                         showStackInBB={v8Settings.show_stack_in_bb}
                         isMyTurn={true}
+                        /* 2026-09-04 (audit item 6): the row is marked while
+                           the socket is down. See ActionPanel.connectionStale. */
+                        connectionStale={engineWsStatus !== 'connected'}
                         isPreflop={tableState.boardStage === 'preflop'}
                         /* Dan 2026-08-26: cash sliders step by whole dollars,
                            tournament sliders by the level's chip unit. */

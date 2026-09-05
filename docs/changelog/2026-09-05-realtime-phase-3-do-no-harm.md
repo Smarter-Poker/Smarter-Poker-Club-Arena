@@ -172,6 +172,37 @@ duplicated" versus "the guard is not deployed").
 
 Both registered under `docs/laws.d/`.
 
+## Phase 3 audit - two defects in my own code, same day
+
+Both were in the direction that matters, and neither would have been caught by
+any test that existed when they were written.
+
+**1. The fingerprint discarded a non-numeric amount.** `actionFingerprint`
+kept the amount only when `typeof amount === 'number'` and folded everything
+else to the empty string. So a client sending `"50"` and one sending `"500"`
+produced the SAME fingerprint - and a retry carrying a different raise would
+have been answered with the first one's stored result. `submitAction` types
+the parameter as a number and would not do that today, but the entire purpose
+of this file is to stop depending on a caller behaving, and a coercion that
+silently drops the amount is the wrong failure mode for the one field that
+decides how many chips move. Every amount is stringified now; `undefined` and
+`null` are the only empty case.
+
+**2. A player could move both counters on demand - the Phase 2 self-alarm
+defect, in a second place.** The lookup sits above the rate limiter by design,
+so an authenticated player could post one spent key in a loop and drive
+`poker_action_idempotency_total` as high as they liked. `conflict` is
+documented as the series that should be flat zero forever, which makes it
+exactly the number a false signal ruins - and a monitor a player can trigger
+is worse than no monitor, because the first false page teaches everyone to
+ignore the next one. Counted once per KEY now rather than once per request:
+bounded by a map that is itself bounded, and the more meaningful number anyway,
+since it counts INTENTS that were duplicated rather than requests that arrived.
+
+Four pins added, including one that records WHY the counting has to be bounded
+here: the limiter that would otherwise absorb a loop is downstream of the
+lookup, on purpose.
+
 ## Not in this phase
 
 The `restart_in_ms` handoff frame and the protocol version negotiation belong

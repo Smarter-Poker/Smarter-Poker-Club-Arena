@@ -41,7 +41,6 @@ vi.mock('../../src/services/SoundService', () => ({
 }));
 
 import { SeatSlot, type SeatPlayer } from '../../src/components/table/SeatSlot';
-import { SUIT_COLOR } from '../../src/components/table/CardImage';
 
 import { computePeel } from '../../src/components/table/cardPeel';
 
@@ -134,68 +133,86 @@ afterEach(() => {
 });
 
 describe('touching the cards picks them up', () => {
-  it('a finger down marks the row peeling, pins the LEFT corner, and grips', () => {
+  it('a finger down marks the row peeling and starts flat', () => {
     const { row, card } = renderHero();
-    pointer(card, 'pointerdown', 40, 64); // bottom-RIGHT of the card
+    pointer(card, 'pointerdown', 25, 64);
     expect(row.hasAttribute('data-peeling')).toBe(true);
-    expect(row.getAttribute('data-peel-corner')).toBe('bl'); // left, not right
     expect(progressOf(row)).toBe(0);
     expect(haptics).toEqual(['light']);
   });
-
-  it('a finger in the top half pins the top-left corner', () => {
-    const { row, card } = renderHero();
-    pointer(card, 'pointerdown', 40, 10);
-    expect(row.getAttribute('data-peel-corner')).toBe('tl');
-  });
 });
 
-describe('the peel follows the finger, left to right', () => {
-  it('writes the geometry as CSS variables on every move, no React render', () => {
+describe('the pair tips up and the face arrives from the top', () => {
+  /*
+   * Dan 2026-09-05, from his own video with real cards: he tips the pair
+   * toward himself on the near edge and the face comes into view from the TOP
+   * DOWN - indices first, right way up. Dragging is VERTICAL. Two earlier
+   * models are pinned against here because both shipped: a diagonal corner
+   * curl, and a horizontal boundary running the wrong way (face revealed
+   * bottom-up), which is what "the cards are still backwards" meant.
+   */
+  it('dragging UP reveals the face from the TOP, and the two clips meet', () => {
     const { row, card } = renderHero();
-    pointer(card, 'pointerdown', 40, 64);
+    pointer(card, 'pointerdown', 25, 64);
+    pointer(row, 'pointermove', 25, 64 - H / 2); // half a card of lift
+    expect(progressOf(row)).toBeCloseTo(0.5, 2);
+    expect(row.style.getPropertyValue('--peel-back-clip')).toBe('inset(50% 0 0 0)');
+    expect(row.style.getPropertyValue('--peel-face-clip')).toBe('inset(0 0 50% 0)');
+    expect(row.style.getPropertyValue('--peel-fold')).toBe('50%');
+  });
+
+  it('a small lift shows the TOP sliver of the face, where the index is printed', () => {
+    const { row, card } = renderHero();
+    pointer(card, 'pointerdown', 25, 64);
+    pointer(row, 'pointermove', 25, 64 - H * 0.15);
+    // Face keeps its top 15%; the back keeps everything below that line.
+    expect(row.style.getPropertyValue('--peel-face-clip')).toBe('inset(0 0 85% 0)');
+    expect(row.style.getPropertyValue('--peel-back-clip')).toBe('inset(15% 0 0 0)');
+  });
+
+  it('dragging DOWN does not peel - the card just stays on the felt', () => {
+    const { row, card } = renderHero();
+    pointer(card, 'pointerdown', 25, 30);
+    pointer(row, 'pointermove', 25, 60); // downward
+    expect(progressOf(row)).toBe(0);
+  });
+
+  it('writes the geometry as CSS variables, without re-rendering the seat', () => {
+    const { row, card } = renderHero();
+    pointer(card, 'pointerdown', 25, 64);
     const before = row.outerHTML.length;
-    pointer(row, 'pointermove', 52, 56); // slide right and up
+    pointer(row, 'pointermove', 25, 34);
     expect(progressOf(row)).toBeGreaterThan(0);
-    const expected = computePeel({ width: W, height: H, corner: 'bl', x: 12, y: H - 8 });
-    expect(progressOf(row)).toBeCloseTo(expected.progress, 5);
-    expect(row.style.getPropertyValue('--peel-cover-clip')).toBe(expected.coverClip);
-    expect(row.style.getPropertyValue('--peel-flap-clip')).toBe(expected.flapClip);
-    expect(row.style.getPropertyValue('--peel-flap-transform')).toBe(expected.flapTransform);
-    // The markup did not change: no re-render, only style properties.
-    expect(row.querySelectorAll('.seat__peel-flap').length).toBe(2);
+    expect(row.querySelectorAll('.seat__peel-crease').length).toBe(2);
     expect(Math.abs(row.outerHTML.length - before)).toBeLessThan(600);
   });
 
-  it('both cards peel together from the same geometry', () => {
+  it('both cards peel together from one set of variables on the row', () => {
     const { row, card } = renderHero();
-    pointer(card, 'pointerdown', 40, 64);
-    pointer(row, 'pointermove', 60, 50);
-    // Variables live on the ROW, so both squeeze boxes read the same frame.
+    pointer(card, 'pointerdown', 25, 64);
+    pointer(row, 'pointermove', 25, 34);
     expect(row.querySelectorAll('.seat__card--squeeze').length).toBe(2);
-    expect(row.style.getPropertyValue('--peel-flap-transform')).toMatch(/^matrix\(/);
+    expect(row.style.getPropertyValue('--peel-face-clip')).toMatch(/^inset\(/);
   });
 
-  it('grips again as the corner first bends, and firmer at the commit line', () => {
+  it('grips as the card leaves the felt and again at the commit line', () => {
     const { row, card } = renderHero();
-    pointer(card, 'pointerdown', 40, 64);
-    pointer(row, 'pointermove', 48, 58);
-    pointer(row, 'pointermove', 70, 30);
-    pointer(row, 'pointermove', 90, 4);
-    expect(haptics[0]).toBe('light'); // the touch
-    expect(haptics).toContain('medium'); // the commit line
-    expect(progressOf(row)).toBeGreaterThanOrEqual(0.45);
+    pointer(card, 'pointerdown', 25, 68);
+    pointer(row, 'pointermove', 25, 63);
+    pointer(row, 'pointermove', 25, 30);
+    expect(haptics[0]).toBe('light');
+    expect(haptics).toContain('medium');
   });
 });
 
 describe('letting go', () => {
   it('early: the corner settles back flat and the hand stays face down', () => {
     const { row, card, container } = renderHero();
-    pointer(card, 'pointerdown', 40, 64);
-    pointer(row, 'pointermove', 50, 56);
+    pointer(card, 'pointerdown', 25, 64);
+    pointer(row, 'pointermove', 25, 54); // a short lift, under the threshold
     expect(progressOf(row)).toBeGreaterThan(0);
     expect(progressOf(row)).toBeLessThan(0.45);
-    pointer(row, 'pointerup', 50, 56);
+    pointer(row, 'pointerup', 25, 54);
     expect(row.hasAttribute('data-peeling')).toBe(false);
     act(() => {
       vi.advanceTimersByTime(600);
@@ -208,24 +225,26 @@ describe('letting go', () => {
 
   it('past the commit line: the corner flies open and the hand is revealed', () => {
     const { row, card, container } = renderHero();
-    pointer(card, 'pointerdown', 40, 64);
-    pointer(row, 'pointermove', 70, 30);
-    pointer(row, 'pointermove', 90, 4);
+    pointer(card, 'pointerdown', 25, 68);
+    pointer(row, 'pointermove', 25, 40);
+    pointer(row, 'pointermove', 25, 10); // well past the threshold
     expect(progressOf(row)).toBeGreaterThanOrEqual(0.45);
-    pointer(row, 'pointerup', 90, 4);
+    pointer(row, 'pointerup', 25, 10);
     act(() => {
       vi.advanceTimersByTime(600);
     });
     expect(container.querySelector('.seat__cards--squeeze')).toBeNull();
     expect(container.querySelector('.seat__cards--squeeze-open')).toBeTruthy();
-    expect(sounds).toContain('playCardSqueeze');
+    // SILENT (Dan 2026-09-05): the peel makes no sound at all now, on the
+    // way up or when it opens. Haptics are the only feedback.
+    expect(sounds).toEqual([]);
   });
 
   it('a cancelled pointer drops the corner too', () => {
     const { row, card } = renderHero();
-    pointer(card, 'pointerdown', 40, 64);
-    pointer(row, 'pointermove', 50, 56);
-    pointer(row, 'pointercancel', 50, 56);
+    pointer(card, 'pointerdown', 25, 64);
+    pointer(row, 'pointermove', 25, 54);
+    pointer(row, 'pointercancel', 25, 54);
     act(() => {
       vi.advanceTimersByTime(600);
     });
@@ -237,8 +256,8 @@ describe('letting go', () => {
 describe('there is no click to reveal', () => {
   it('a tap bounces a hint and leaves the hand face down', () => {
     const { row, card, container } = renderHero();
-    pointer(card, 'pointerdown', 40, 64);
-    pointer(row, 'pointerup', 41, 64);
+    pointer(card, 'pointerdown', 25, 64);
+    pointer(row, 'pointerup', 25, 64);
     expect(container.querySelector('.seat__cards--squeeze-hint')).toBeTruthy();
     expect(container.querySelector('.seat__cards--squeeze')).toBeTruthy();
     expect(sounds).not.toContain('playCardSqueeze');
@@ -246,13 +265,13 @@ describe('there is no click to reveal', () => {
 
   it('a second tap is still not a reveal', () => {
     const { row, card, container } = renderHero();
-    pointer(card, 'pointerdown', 40, 64);
-    pointer(row, 'pointerup', 40, 64);
+    pointer(card, 'pointerdown', 25, 64);
+    pointer(row, 'pointerup', 25, 64);
     act(() => {
       vi.advanceTimersByTime(100);
     });
-    pointer(card, 'pointerdown', 40, 64);
-    pointer(row, 'pointerup', 40, 64);
+    pointer(card, 'pointerdown', 25, 64);
+    pointer(row, 'pointerup', 25, 64);
     act(() => {
       vi.advanceTimersByTime(600);
     });
@@ -318,10 +337,10 @@ describe('the tutorial teaches the gesture once', () => {
     localStorage.clear();
     const { container, card, row } = renderHero();
     expect(container.querySelector('.seat__peel-coach')).toBeTruthy();
-    pointer(card, 'pointerdown', 40, 64);
+    pointer(card, 'pointerdown', 25, 64);
     expect(container.querySelector('.seat__peel-coach')).toBeNull();
     // ...and the peel that interrupted it still works.
-    pointer(row, 'pointermove', 70, 30);
+    pointer(row, 'pointermove', 25, 30);
     expect(progressOf(row)).toBeGreaterThan(0);
   });
 
@@ -361,107 +380,108 @@ describe('the tutorial teaches the gesture once', () => {
   });
 });
 
-describe('the friction voice is a resource, not a preference', () => {
+describe('the peel is silent', () => {
   /*
-   * Both of these were live bugs on main, found by auditing the audio
-   * lifecycle rather than by a failing test. The voice is a SINGLE looping
-   * noise source on the service, so anything that fails to close it leaves it
-   * humming for the rest of the session.
+   * Dan 2026-09-05: "remove the sound effect when you actually peel your card,
+   * its not needed." The friction voice and the paper tick are gone, and so is
+   * the open cue - which also deletes the whole class of bug the previous
+   * version had, where a looping noise source could outlive its gesture.
    */
-  it('stops even when the table has gone silent mid-drag (playSounds -> false)', () => {
-    // ambientSoundsAllowed goes false the moment this table stops being the
-    // focused one. Gating the STOP on it meant a player who peeled and then
-    // switched tabs left the loop running.
-    const view = renderHero({ playSounds: true });
-    pointer(view.card, 'pointerdown', 40, 64);
-    pointer(view.row, 'pointermove', 50, 56);
-    expect(sounds).toContain('startPeelFriction');
-    sounds.length = 0;
-    // The table loses focus, then the finger lifts.
-    view.rerender(
-      <SeatSlot
-        seatNumber={1}
-        player={hero}
-        position={null}
-        isActive={false}
-        lastAction={null}
-        cardSqueezeActive={true}
-        handNumber={1}
-        playSounds={false}
-      />
-    );
-    pointer(view.row, 'pointerup', 50, 56);
-    expect(sounds).toContain('stopPeelFriction');
+  it('makes no sound on touch, on drag, or on opening', () => {
+    const { row, card } = renderHero();
+    pointer(card, 'pointerdown', 25, 68);
+    pointer(row, 'pointermove', 25, 40);
+    pointer(row, 'pointermove', 25, 8);
+    pointer(row, 'pointerup', 25, 8);
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(sounds).toEqual([]);
   });
 
-  it('an unrelated seat unmounting does not cut the friction of a live peel', () => {
-    // Every seat at every table mounts the same unmount cleanup, and the voice
-    // is global: an unconditional stop there meant a player leaving ANY seat
-    // silenced a peel in progress somewhere else.
-    const bystander = render(
-      <SeatSlot
-        seatNumber={5}
-        player={{ ...hero, id: 'other', isHero: false }}
-        position={null}
-        isActive={false}
-        lastAction={null}
-      />
+  it('but still buzzes - the haptic is the feedback that stayed', () => {
+    const { row, card } = renderHero();
+    pointer(card, 'pointerdown', 25, 68);
+    pointer(row, 'pointermove', 25, 30);
+    expect(haptics.length).toBeGreaterThan(0);
+  });
+});
+
+describe('the tutorial teaches the gesture once', () => {
+  it('runs on the first face-down hand and says what to do', () => {
+    localStorage.clear();
+    const { container } = renderHero();
+    expect(container.querySelector('.seat__peel-coach')?.textContent).toBe(
+      'Slide The Corner To Look'
     );
-    sounds.length = 0;
-    bystander.unmount();
-    expect(sounds).not.toContain('stopPeelFriction');
+  });
+
+  it('never runs again once it has been seen', () => {
+    localStorage.clear();
+    const first = renderHero();
+    act(() => {
+      vi.advanceTimersByTime(6000);
+    });
+    first.unmount();
+    const { container } = renderHero();
+    expect(container.querySelector('.seat__peel-coach')).toBeNull();
+  });
+
+  it('a real touch outranks the demonstration', () => {
+    localStorage.clear();
+    const { container, card, row } = renderHero();
+    expect(container.querySelector('.seat__peel-coach')).toBeTruthy();
+    pointer(card, 'pointerdown', 25, 64);
+    expect(container.querySelector('.seat__peel-coach')).toBeNull();
+    // ...and the peel that interrupted it still works.
+    pointer(row, 'pointermove', 25, 30);
+    expect(progressOf(row)).toBeGreaterThan(0);
+  });
+
+  it('waits for a background tab to be looked at before spending its one showing', () => {
+    localStorage.clear();
+    const spy = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    try {
+      const { container, row } = renderHero();
+      expect(container.querySelector('.seat__peel-coach')).toBeNull();
+      // Nothing is left welded to the row either.
+      expect(row.hasAttribute('data-peeling')).toBe(false);
+      expect(localStorage.getItem('ca_card_slide_tutorial_v1')).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('ends even if no animation frame ever arrives', () => {
+    localStorage.clear();
+    // A tab backgrounded mid-demo stops delivering frames. Without the timer
+    // backstop the caption would stay up for the rest of the session.
+    vi.stubGlobal('requestAnimationFrame', () => 1);
+    const { container, row } = renderHero();
+    expect(container.querySelector('.seat__peel-coach')).toBeTruthy();
+    act(() => {
+      vi.advanceTimersByTime(8000);
+    });
+    expect(container.querySelector('.seat__peel-coach')).toBeNull();
+    expect(row.hasAttribute('data-peeling')).toBe(false);
+    expect(localStorage.getItem('ca_card_slide_tutorial_v1')).toBe('1');
+  });
+
+  it('does not run when Card Slide is off', () => {
+    localStorage.clear();
+    const { container } = renderHero({ cardSqueezeActive: false });
+    expect(container.querySelector('.seat__peel-coach')).toBeNull();
   });
 });
 
 describe('the markup', () => {
-  it('carries face, cover, flap and both shade bands per card', () => {
+  it('carries a face, a back and a crease per card', () => {
     const { container } = renderHero();
     for (const box of Array.from(container.querySelectorAll('.seat__card--squeeze'))) {
       expect(box.querySelector('.seat__squeeze-face--under')).toBeTruthy();
       expect(box.querySelector('.seat__squeeze-face--cover')).toBeTruthy();
-      expect(box.querySelector('.seat__peel-flap .seat__peel-flap-inner')).toBeTruthy();
-      expect(box.querySelector('.seat__peel-shade--under')).toBeTruthy();
-      expect(box.querySelector('.seat__peel-shade--flap')).toBeTruthy();
+      expect(box.querySelector('.seat__peel-crease')).toBeTruthy();
     }
-  });
-
-  it('draws the rank and suit in the bottom-left corner of the face, under the peel', () => {
-    // Dan 2026-09-04: "THE QJ ARE ON THE BOTTOM LEFT HAND CORNER WHEN YOU
-    // ARE PEELING THEM BACK." The deck art has one index, top-left; a real
-    // card shows its rank at whichever corner you lift.
-    const { container } = renderHero();
-    const idx = Array.from(container.querySelectorAll('.seat__peel-index'));
-    expect(idx.length).toBe(2);
-    expect(idx[0].querySelector('.seat__peel-index-rank')?.textContent).toBe('A');
-    expect(idx[1].querySelector('.seat__peel-index-rank')?.textContent).toBe('K');
-    // The colour comes from the DECK, not from a literal in a stylesheet:
-    // a second set of hex values is a second source of truth, and the first
-    // version of this invented #16a34a for clubs when the deck's club green
-    // is #22c55e (caught by gameplay-wears-the-house-colours). Two-colour
-    // decks paint hearts and diamonds red and everything else black.
-    expect((idx[0] as HTMLElement).style.color).toBe(SUIT_COLOR.s);
-    expect((idx[1] as HTMLElement).style.color).toBe(SUIT_COLOR.h);
-    // Inside the face layer (revealed by the peel), never on the cover.
-    for (const el of idx) {
-      expect(el.closest('.seat__squeeze-face--under')).toBeTruthy();
-    }
-  });
-
-  it('takes the four-colour deck club green from the deck itself', () => {
-    const { container } = renderHero({
-      deckStyle: '4color',
-      player: { ...hero, holeCards: [{ rank: '9', suit: 'c' }] },
-    });
-    const idx = container.querySelector('.seat__peel-index') as HTMLElement;
-    expect(idx.style.color).toBe(SUIT_COLOR.c);
-    expect(SUIT_COLOR.c).toBe('#22c55e');
-  });
-
-  it('spells ten as 10', () => {
-    const { container } = renderHero({
-      player: { ...hero, holeCards: [{ rank: 'T', suit: 'c' }] },
-    });
-    expect(container.querySelector('.seat__peel-index-rank')?.textContent).toBe('10');
   });
 
   it('is announced as a peel, not a drag-up', () => {

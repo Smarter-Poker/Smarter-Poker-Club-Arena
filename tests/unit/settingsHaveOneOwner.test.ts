@@ -145,7 +145,14 @@ describe('no control that cannot do anything', () => {
        buzzing. The identical bug on TOGGLE_SOUNDS was fixed the day before and
        this branch was left carrying it. */
     expect(TABLE_PAGE).not.toMatch(/setting:\s*'vibrations'/);
-    expect(TABLE_PAGE).toMatch(/updateSetting\('isHapticEnabled', !isVibrationAllowed\(\)\)/);
+    /* CHANGED 2026-09-05, deliberately, and the old pin is asserted against
+       below rather than just deleted. It read `!isVibrationAllowed()`, which is
+       preference AND "can this device vibrate". `navigator.vibrate` does not
+       exist on any iPhone, so the capability half was false forever there and
+       this menu item computed its new value as `!false` on every tap: it could
+       turn haptics ON and never OFF. A toggle inverts a PREFERENCE. */
+    expect(TABLE_PAGE).toMatch(/updateSetting\('isHapticEnabled', !isVibrationPreferred\(\)\)/);
+    expect(TABLE_PAGE).not.toMatch(/updateSetting\('isHapticEnabled', !isVibrationAllowed\(\)\)/);
   });
 
   it('the zustand store keeps only the interface mode it actually owns', () => {

@@ -254,7 +254,31 @@ class BonusServiceClass {
   }
 
   /**
-   * Get lifetime wheel stats and streak multiplier for a user
+   * Lifetime wheel stats.
+   *
+   * `streakMultiplier` IS ALWAYS 1, AND THAT IS THE FIX, not an oversight.
+   *
+   * This method used to compute a third streak ladder of its own - 1.5x at a
+   * 3-day login streak, 2x at 7 - read out of `user_daily_rewards` and handed
+   * to LuckyDrawWheel, which both announced "{n}x Streak Bonus!" and
+   * multiplied the won amount by it before showing the player.
+   *
+   * `claim_lucky_wheel_spin` applies NO multiplier. It credits `v_pick.amount`
+   * exactly, through atomic_credit_wallet_and_log / add_diamonds_to_balance /
+   * add_vip_points. So the ladder invented a bonus the ledger does not pay,
+   * and a player on a 7-day streak would have read that they won twice what
+   * actually arrived in their wallet.
+   *
+   * It also disagreed with the platform's real ladder: `fn_get_streak_multiplier`
+   * is 1.2x at 3 days, 1.5x at 7, 1.8x at 14, 2.0x at 30 (mirrored for the
+   * credential in utils/streakMultiplier.ts). Two ladders, and a payout path
+   * honouring neither.
+   *
+   * Nothing was ever paid wrongly: the wheel is imported by no file and
+   * `user_lucky_wheel_spins` holds 0 rows - it has never been spun. The shape
+   * is removed so that the day someone mounts it, it cannot lie. If the wheel
+   * is ever MEANT to pay a streak bonus, that belongs in the RPC first: the
+   * number a player reads has to be the number the platform pays.
    */
   async getWheelStats(
     userId: string
@@ -269,32 +293,10 @@ class BonusServiceClass {
       return { totalSpins: 0, lastSpinDate: null, streakMultiplier: 1 };
     }
 
-    // Determine current global login streak (as a proxy for spin streak)
-    let streakMultiplier = 1;
-    let loginStreak = 1; // Default
-    try {
-      const { data: ud } = await supabase
-        .from('user_daily_rewards')
-        .select('current_streak')
-        .eq('user_id', userId)
-        .maybeSingle();
-      if (ud) {
-        loginStreak = ud.current_streak;
-      }
-    } catch (e: unknown) {
-      console.warn('[BonusService] Login streak lookup failed - defaulting to 1:', e);
-    }
-
-    if (loginStreak >= 3 && loginStreak <= 6) {
-      streakMultiplier = 1.5;
-    } else if (loginStreak >= 7) {
-      streakMultiplier = 2;
-    }
-
     return {
       totalSpins: data.total_spins || 0,
       lastSpinDate: data.last_spin_date,
-      streakMultiplier,
+      streakMultiplier: 1,
     };
   }
 

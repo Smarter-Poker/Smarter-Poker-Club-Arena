@@ -30,6 +30,7 @@ import {
   logInsuranceSettlement,
   logHandHistory,
   processBBJPayout,
+  resolveJackpotSiblingClubIds,
   completeHandSnapshot,
   supabase,
 } from '../services/supabase.js';
@@ -1979,6 +1980,65 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           console.log(
             `[ServerTableEngine:${this.tableId}] BBJ payout complete: $${result.totalPayout} distributed to ${players.length} players`
           );
+
+          /* ── EVERY TABLE IN THE CLUB OR UNION HEARS IT (BBJ audit 2026-09-05) ──
+             Dan: "everyone currently playing in the club or union get a pop up
+             on screen." Until now the other tables learned of a hit only via
+             a Supabase Realtime subscription on the pool row - a WAL stream
+             measured a minute or more behind at peak (ClubHomePage, 2026-09-02)
+             - and then the client refused anything older than 90 seconds as
+             a replay (lib/bbjHitOnce). The announcement was racing its own
+             freshness gate and could lose it, silently, at every other table.
+
+             The engine has a socket to every one of those tables already.
+             Fan the same identity (table_id + hand_number + emitted_at) out
+             over it; the client de-duplicates against the Realtime path by
+             that identity, so whichever arrives first announces and the other
+             is dropped. The Realtime path stays as the fallback for a table
+             this process does not host.
+
+             Never a money step: after the payout has landed, wrapped so that
+             nothing here can fail the settlement. */
+          try {
+            const siblingClubs = new Set(
+              await resolveJackpotSiblingClubIds(this.tableInfo.club_id)
+            );
+            const siblings = ServerTableEngineSettlement.liveCashTableIdsInClubs(
+              siblingClubs,
+              this.tableId
+            );
+            if (siblings.length > 0 && this.hub) {
+              const badBeatHolder = players.find((p) => p.user_id === bbjHit.loserUserId);
+              const announcement = {
+                type: 'bbj_hit_global',
+                table_id: this.tableId,
+                table_name: this.tableInfo.name || 'a table',
+                club_id: this.tableInfo.club_id,
+                hand_number: snap.handNumber,
+                emitted_at: Date.now(),
+                game_variant: this.tableInfo.game_variant,
+                big_blind: this.tableInfo.big_blind,
+                winner_user_id: bbjHit.loserUserId,
+                winner_name: badBeatHolder?.username || 'A player',
+                // What the bad-beat holder took home - the headline figure,
+                // matching what the Realtime path reads (bad_beat_amount).
+                amount: result.loserShare,
+                total_payout: result.totalPayout,
+                qualifying_hand_label: bbjHit.qualifyingHandLabel || '',
+              };
+              for (const siblingId of siblings) {
+                this.hub.emitEvent(siblingId, announcement);
+              }
+              console.log(
+                `[ServerTableEngine:${this.tableId}] BBJ announced to ${siblings.length} sibling table(s) across ${siblingClubs.size} club(s)`
+              );
+            }
+          } catch (announceErr) {
+            console.warn(
+              `[ServerTableEngine:${this.tableId}] BBJ club-wide announcement failed (payout already landed):`,
+              announceErr
+            );
+          }
         }
       }
     });

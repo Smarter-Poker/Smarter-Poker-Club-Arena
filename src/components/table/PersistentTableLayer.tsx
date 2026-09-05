@@ -27,6 +27,7 @@ import { matchPath, useLocation } from 'react-router-dom';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import ErrorBoundary from '../common/ErrorBoundary';
 import PortraitLock from './PortraitLock';
+import BBJHitAnnouncer from '../bbj/BBJHitAnnouncer';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
 const MultiTablePage = lazyWithRetry(() => import('../../pages/MultiTablePage'));
@@ -50,6 +51,15 @@ export default function PersistentTableLayer() {
           deliberately: if the table layer crashes while the phone is sideways,
           the instruction to turn it back is the last thing that should go. */}
       <PortraitLock active={onTableRoute} />
+      {/* THE BAD BEAT JACKPOT POP-UP (BBJ audit 2026-09-05). Same argument as
+          PortraitLock, one line up: it must appear exactly once, on top of
+          whatever the player is looking at, and this is the component that is
+          mounted exactly once. Inside a TablePage it was drawn four times over
+          and, worse, consumed by whichever slot ran first - a hidden one, as
+          often as not - so the visible table showed nothing. Outside the
+          ErrorBoundary for the same reason PortraitLock is: a crash in the
+          table layer must not take the jackpot announcement with it. */}
+      <BBJHitAnnouncer />
       <ErrorBoundary
         // A crash in the (hidden) table layer must never paint a full-screen
         // error over whatever page the player is actually browsing; on /table/*

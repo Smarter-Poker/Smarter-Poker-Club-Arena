@@ -31,11 +31,25 @@
 const SETTINGS_KEY = 'vibrationsEnabled'; // Settings / HamburgerMenu
 const IN_TABLE_KEY = 'ca_vibration_enabled'; // in-table toggle (useTableSound)
 
+/**
+ * CAN THIS DEVICE PRODUCE A HAPTIC AT ALL - preference not consulted.
+ *
+ * Not the same question as "does navigator.vibrate exist". It does not exist on
+ * any iPhone, and until 2026-09-05 that made this file answer "no motor here"
+ * for the platform most of our players hold, which in turn made every UI that
+ * asks report haptics as unsupported and the hamburger's own toggle unable to
+ * turn them OFF (it computed the new value as `!isVibrationAllowed()`, which
+ * was `!false` every single time). The iOS switch path below is a real
+ * capability, so it belongs in the real capability check.
+ */
+export function isVibrationCapable(): boolean {
+  if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') return true;
+  return isIosHapticSupported();
+}
+
 /** True when the device can vibrate AND the player has not switched it off. */
 export function isVibrationAllowed(): boolean {
-  if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') {
-    return false;
-  }
+  if (!isVibrationCapable()) return false;
   try {
     // EITHER switch being off wins. Absent means "not configured" -> allowed.
     if (localStorage.getItem(IN_TABLE_KEY) === 'false') return false;
@@ -122,9 +136,9 @@ function weigh(pattern: number | number[]): number {
  * Returns whether it actually fired — callers that need to know (tests, the
  * HapticService API) can use it; most should just call and forget.
  */
-/* ═══════════════════════════════════════════════════════════════════════════
+/* ===========================================================================
    iOS HAS NO VIBRATION API, AND NEVER HAS
-   ═══════════════════════════════════════════════════════════════════════════
+   ===========================================================================
    Every iOS browser is WebKit, and Apple has never shipped `navigator.vibrate`
    there. So `isVibrationAllowed()` above returns false on every iPhone and
    iPad, and every haptic in Club Arena - the turn alert, the keypad, the
@@ -133,86 +147,134 @@ function weigh(pattern: number | number[]): number {
    `navigator.vibrate(1)` returns false (no motor); iOS does not have it at all.
 
    THE ONE THING THAT DOES BUZZ on iOS is a native switch control changing
-   state: `<input type="checkbox" switch>`. Toggling one plays the system
+   state: `<input type="checkbox" switch>`. Activating one plays the system
    haptic. That is the whole trick, and it is the mechanism behind
    `ios-vibrator-pro-max` (ISC, https://vibrator.dev).
 
-   WE DO NOT USE THAT LIBRARY, DELIBERATELY. To make `navigator.vibrate()` work
-   ANYWHERE - including with no user gesture - it reparents document.body into
-   a <label>, redefines `document.body` with a getter, and runs two
-   MutationObservers over the whole subtree. This app measures the DOM to place
-   seats (tableGeometry), hides background tables with display:none, and has a
-   law about animations never dropping frames. A global body reparent and a
-   subtree observer are not things to take on for a buzz.
+   WE DO NOT IMPORT THAT LIBRARY, DELIBERATELY. To make `navigator.vibrate()`
+   work ANYWHERE - including with no user gesture at all - it reparents
+   document.body into a <label>, redefines `document.body` with a getter, and
+   runs two MutationObservers over the whole subtree. This app measures the DOM
+   to place seats (tableGeometry), hides background tables with display:none,
+   and has a law about animations never dropping frames. A global body reparent
+   and a subtree observer are not things to take on for a buzz.
 
    We do not need any of it, because we do not need the no-gesture case: every
-   haptic here is already fired from inside a real pointer or click handler.
-   So this is the mechanism alone - one hidden switch, toggled - and nothing
-   else. If Apple closes it, this returns false and we are exactly where we
-   were, with no other part of the app touched. */
+   haptic here is fired from inside a real pointer or click handler.
 
-/** Cache: null = not built yet, false = cannot build here. */
-let iosSwitch: HTMLInputElement | null | false = null;
+   ---------------------------------------------------------------------------
+   CORRECTED 2026-09-05 AFTER DAN TESTED IT AND FELT NOTHING.
+   ---------------------------------------------------------------------------
+   The first version of this code was written from the description of the
+   technique rather than from its source, and got three things wrong. Read
+   against ios-vibrator-pro-max@3.0.3 `dist/vibration.js` + `dist/methods/
+   click-grant/index.js`, which is what it actually does:
 
-/** iOS/iPadOS WebKit, which is the only place this technique applies. */
-function isIosWebkit(): boolean {
-  if (typeof navigator === 'undefined' || typeof document === 'undefined') return false;
+     1. IT CLICKS THE LABEL, NEVER THE INPUT.  `hiddenTrigger.label.click()`.
+        We were clicking the input. Activating the label is what runs the
+        switch's activation behaviour the way a real tap does.
+
+     2. IT NEVER TOUCHES `.checked`.  We set `input.checked = !input.checked`
+        and then called click(), whose own activation behaviour toggles it
+        back - so the control ended every "buzz" in the state it started in.
+
+     3. THE TRIGGER IS NEVER IN THE DOCUMENT.  Its label is created detached
+        and stays detached; the input inside it carries
+        `display: none !important`. We were appending an off-screen,
+        opacity:0, fixed-position label to document.body on the belief that an
+        unrendered control would not fire - the opposite of what the library
+        proves. Detached is better here anyway: nothing for the seat-geometry
+        measurements or anyone's MutationObserver to trip over.
+
+   And one thing it knows that we did not ask about at all: THERE IS A VERSION
+   FLOOR. `dist/utils/supported-versions.js` only uses this click-inside-a-
+   gesture path ("granted") at Safari/iOS >= 18.4. Between 18.0 and 18.4 the
+   ONLY thing that works is the body-reparent, and below 18 nothing does. So
+   under 18.4 we return false and say so, rather than returning true and
+   leaving a caller believing the phone buzzed.
+
+   If Apple closes this, the version check stops matching or the click stops
+   buzzing, this returns false, and we are exactly where we were - with no
+   other part of the app touched. */
+
+/** iOS/iPadOS version as a number, or null when this is not iOS WebKit. */
+export function iosWebkitVersion(): number | null {
+  if (typeof navigator === 'undefined' || typeof document === 'undefined') return null;
   const ua = navigator.userAgent || '';
-  // iPadOS 13+ reports a Mac UA, and is told apart by having touch points.
+  // iPadOS 13+ reports a Mac UA and is told apart by having touch points.
   const iPadOS = /Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1;
-  if (!/iPhone|iPad|iPod/.test(ua) && !iPadOS) return false;
-  // Chrome/Firefox on iOS are WebKit underneath, so they count too. Exclude
-  // anything that is not WebKit-backed.
-  return /AppleWebKit/.test(ua);
+  if (!/iPhone|iPad|iPod/.test(ua) && !iPadOS) return null;
+  if (!/AppleWebKit/.test(ua)) return null;
+
+  /* Two shapes, and the second one is not an edge case - it is Dan.
+       Safari tab:  "... Version/18.5 Mobile/15E148 Safari/604.1"
+       PWA / Chrome on iOS: no "Version/" and no "Safari" at all, just
+                    "... CPU iPhone OS 18_5 like Mac OS X ... Mobile/15E148"
+     A home-screen install is the case most likely to be holding a table, so
+     read the OS token first and fall back to Version/ for the desktop-class
+     iPad UA, which has no OS token. */
+  const os = /(?:iPhone|CPU) OS (\d+)(?:_(\d+))?/.exec(ua);
+  if (os) return Number.parseFloat(`${os[1]}.${os[2] || 0}`);
+  const ver = /Version\/(\d+)(?:\.(\d+))?/.exec(ua);
+  if (ver) return Number.parseFloat(`${ver[1]}.${ver[2] || 0}`);
+  return null;
 }
 
-function getIosSwitch(): HTMLInputElement | null {
-  if (iosSwitch !== null) return iosSwitch || null;
+/**
+ * The floor from ios-vibrator-pro-max's own support table: below this, a click
+ * on the switch inside a user gesture does not buzz, and the only thing that
+ * would is the body reparent we have refused.
+ */
+export const IOS_HAPTIC_MIN_VERSION = 18.4;
+
+/** True when the switch trick is available on this device. */
+export function isIosHapticSupported(): boolean {
+  const v = iosWebkitVersion();
+  return v !== null && v >= IOS_HAPTIC_MIN_VERSION;
+}
+
+/** Cache: null = not built yet, false = cannot build here. */
+let iosTrigger: HTMLLabelElement | null | false = null;
+
+function getIosTrigger(): HTMLLabelElement | null {
+  if (iosTrigger !== null) return iosTrigger || null;
   try {
-    if (!document.body) {
-      // Called before body exists; try again on a later buzz.
-      return null;
-    }
     const label = document.createElement('label');
-    // Off-screen rather than display:none - a control that is not rendered at
-    // all is not guaranteed to produce the system haptic.
-    label.setAttribute(
-      'style',
-      'position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none;'
-    );
-    label.setAttribute('aria-hidden', 'true');
     const input = document.createElement('input');
     input.type = 'checkbox';
+    // The `switch` attribute is what makes WebKit render - and haptically
+    // announce - this as a native switch rather than a tick box.
     input.setAttribute('switch', '');
+    input.setAttribute('style', 'display: none !important');
     input.tabIndex = -1;
+    label.tabIndex = -1;
     label.appendChild(input);
-    document.body.appendChild(label);
-    iosSwitch = input;
-    return input;
+    // Deliberately NOT appended anywhere. See point 3 above.
+    iosTrigger = label;
+    return label;
   } catch {
-    iosSwitch = false;
+    iosTrigger = false;
     return null;
   }
 }
 
 /**
- * One toggle per PULSE in the pattern. A Vibration API pattern alternates
+ * One label click per PULSE in the pattern. A Vibration API pattern alternates
  * buzz/pause starting with a buzz, so the even indices are the pulses and the
  * odd ones are the gaps between them.
  *
  * The first pulse is synchronous, because that is the one still inside the
- * user's gesture and therefore the one iOS 18.4+ will honour. Later pulses are
- * scheduled and may be dropped by the platform; a missing third buzz is a much
- * smaller problem than no buzz at all.
+ * user's gesture. Later pulses are scheduled, and land while the platform's
+ * activation grant is still open - measured at ~850ms in the library, which
+ * every pattern we send is comfortably inside.
  */
 function fireIosHaptic(pattern: number | number[]): boolean {
-  const input = getIosSwitch();
-  if (!input) return false;
+  const label = getIosTrigger();
+  if (!label) return false;
   const list = typeof pattern === 'number' ? [pattern] : pattern;
   const toggle = () => {
     try {
-      input.checked = !input.checked;
-      input.click();
+      label.click();
     } catch {
       /* never let a buzz break the caller */
     }
@@ -238,7 +300,7 @@ export function fireVibration(pattern: number | number[]): boolean {
      honoured, and either being off still silences everything. */
   if (!isVibrationPreferred()) return false;
   const canNative = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
-  if (!canNative && !isIosWebkit()) return false;
+  if (!canNative && !isIosHapticSupported()) return false;
 
   const now = Date.now();
   const weight = weigh(pattern);
@@ -269,7 +331,7 @@ export function fireVibration(pattern: number | number[]): boolean {
 export function __resetVibrationCoalescing(): void {
   lastFireAt = 0;
   lastWeight = 0;
-  iosSwitch = null;
+  iosTrigger = null;
 }
 
 /** Cancel any in-flight vibration. Not gated — stopping is always allowed. */

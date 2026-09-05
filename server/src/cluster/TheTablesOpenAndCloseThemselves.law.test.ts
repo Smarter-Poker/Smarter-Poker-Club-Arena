@@ -333,11 +333,17 @@ describe('the fleet keeps the promise that opened a feeder (2026-09-05, 04:30 UT
 });
 
 describe('the fleet keeps its hands off cluster tables', () => {
-  it('a cluster table is in no name family (surplus, spawn)', () => {
-    expect(FLEET).toMatch(
-      /\.filter\(\(t\) => !t\.cluster_id\)\s*\.filter\(\(t\) => t\.name === config\.name/
-    );
-    expect(FLEET).toMatch(/\(t\) => !t\.cluster_id && \(t\.name === config\.name/);
+  it('the fleet no longer spawns, retires or reactivates a table (Gate 7, 2026-09-05)', () => {
+    // The name-family machinery (surplus count, #2/#3 overflow spawn, the
+    // retirement sweep, the boot-time insert/reactivate) is gone; demand
+    // opens a feeder through the controller and thin tables close through
+    // its break rule. The only table writer left in the fleet is the
+    // cluster opener, reached through fn_cash_game_ensure.
+    expect(FLEET).not.toMatch(/private async spawnOverflowTables/);
+    expect(FLEET).not.toMatch(/private async retireSurplusTables/);
+    expect(FLEET).not.toMatch(/const MAX_TABLES_PER_CONFIG = /);
+    expect(FLEET).not.toMatch(/from\('tables'\)\s*\.insert\(/);
+    expect(FLEET).toMatch(/supabase\.rpc\('fn_cash_game_ensure'/);
   });
 
   it('a breaking table gets no horses (18.3: no new sit-ins)', () => {

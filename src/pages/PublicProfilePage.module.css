@@ -4,7 +4,7 @@
    one blue core. Light mode is brushed silver.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-.public-profile-page {
+.publicProfilePage {
   --public-bg: #030609;
   --public-panel: #080d12;
   --public-raised: #0d141b;
@@ -31,8 +31,8 @@
   color: var(--public-text);
 }
 
-.public-profile-page .public-profile-loading,
-.public-profile-page .public-profile-empty {
+.publicProfileLoading,
+.publicProfileEmpty {
   display: flex;
   min-height: 60vh;
   flex-direction: column;
@@ -43,13 +43,13 @@
   text-align: center;
 }
 
-.public-profile-page .public-profile-empty .empty-icon {
+.publicProfileEmpty .emptyIcon {
   color: var(--public-blue-soft);
   font-size: 2.6rem;
   opacity: 0.7;
 }
 
-.public-profile-page .public-profile-empty h2 {
+.publicProfileEmpty h2 {
   margin: 0;
   color: var(--public-text);
   font:
@@ -58,14 +58,14 @@
   text-transform: uppercase;
 }
 
-.public-profile-page .public-profile-empty .action-btn {
+.publicProfileEmpty .actionBtn {
   min-width: 160px;
   margin-top: 0.5rem;
 }
 
 /* ── Dossier plate ────────────────────────────────────────────────────── */
 
-.public-profile-page .public-profile-header {
+.publicProfileHeader {
   position: relative;
   isolation: isolate;
   min-height: 390px;
@@ -87,7 +87,7 @@
     0 28px 70px rgba(0, 0, 0, 0.48);
 }
 
-.public-profile-page .public-profile-header::before {
+.publicProfileHeader::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -107,7 +107,7 @@
     );
 }
 
-.public-profile-page .public-profile-header::after {
+.publicProfileHeader::after {
   content: '';
   position: absolute;
   right: 0;
@@ -119,7 +119,7 @@
   box-shadow: 0 -8px 22px rgba(58, 168, 255, 0.28);
 }
 
-.public-profile-page .public-profile-artwork {
+.publicProfileArtwork {
   position: absolute;
   inset: 0;
   z-index: -3;
@@ -130,7 +130,7 @@
   transform: scale(1.015);
 }
 
-.public-profile-page .profile-hero {
+.profileHero {
   display: flex;
   min-height: 325px;
   flex-direction: column;
@@ -140,7 +140,7 @@
   text-align: center;
 }
 
-.public-profile-page .public-profile-eyebrow {
+.publicProfileEyebrow {
   position: absolute;
   top: 1.1rem;
   left: 1.2rem;
@@ -154,7 +154,13 @@
   text-transform: uppercase;
 }
 
-.public-profile-page .profile-username {
+/* SPECIFICITY, deliberate (2026-09-05). These five carry text the app shell
+   also styles through descendant rules like `.someLayout h1` - equal weight
+   to a bare class, so the later stylesheet won and the dossier's name drifted
+   from 800/-0.03em to 500/+0.03em once another route's chunk had loaded.
+   Qualifying with the page class puts them a step above; the names are hashed
+   either way, so nothing outside this file can match them. */
+.publicProfilePage .profileUsername {
   margin: 0.45rem 0 0;
   color: var(--public-text);
   font:
@@ -167,7 +173,7 @@
   overflow-wrap: anywhere;
 }
 
-.public-profile-page .profile-handle {
+.publicProfilePage .profileHandle {
   color: var(--public-blue-soft);
   font:
     700 0.7rem/1.2 ui-monospace,
@@ -178,7 +184,7 @@
   text-transform: uppercase;
 }
 
-.public-profile-page .profile-bio {
+.publicProfilePage .profileBio {
   max-width: 32rem;
   margin: 0.4rem 0 0;
   color: var(--public-steel);
@@ -186,7 +192,7 @@
   line-height: 1.45;
 }
 
-.public-profile-page .profile-badges {
+.profileBadges {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -194,9 +200,9 @@
   margin-top: 0.45rem;
 }
 
-.public-profile-page .vip-badge,
-.public-profile-page .level-badge,
-.public-profile-page .member-since {
+.vipBadge,
+.levelBadge,
+.memberSince {
   min-height: 29px;
   padding: 0.38rem 0.55rem;
   border: 1px solid rgba(185, 202, 215, 0.28);
@@ -210,18 +216,18 @@
   text-transform: uppercase;
 }
 
-.public-profile-page .vip-badge {
+.vipBadge {
   border-color: rgba(58, 168, 255, 0.55);
   color: var(--public-blue-soft);
 }
 
-.public-profile-page .vip-badge--lifetime {
+.vipBadge_Lifetime {
   border-color: rgba(214, 173, 82, 0.6);
   background: linear-gradient(145deg, rgba(214, 173, 82, 0.16), rgba(var(--public-veil), 0.8));
   color: #ead9a8;
 }
 
-.public-profile-page .playing-at-badge {
+.playingAtBadge {
   display: inline-flex;
   min-height: 42px;
   align-items: center;
@@ -236,7 +242,7 @@
   cursor: pointer;
 }
 
-.public-profile-page .playing-at-dot {
+.playingAtDot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -244,16 +250,16 @@
   box-shadow: 0 0 10px rgba(101, 216, 155, 0.9);
 }
 
-.public-profile-page .playing-at-badge--static {
+.playingAtBadge_Static {
   cursor: default;
 }
 
-.public-profile-page .playing-at-badge:focus-visible {
+.playingAtBadge:focus-visible {
   outline: 2px solid #80e6ad;
   outline-offset: 2px;
 }
 
-.public-profile-page .player-status-text {
+.playerStatusText {
   margin: 0.25rem 0 0;
   color: #9fb1bd;
   font-size: 0.75rem;
@@ -262,14 +268,24 @@
 
 /* ── Action rail ──────────────────────────────────────────────────────── */
 
-.public-profile-page .profile-actions {
+.profileActions {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   gap: 0.5rem;
   margin-top: 0.75rem;
 }
 
-.public-profile-page .action-btn {
+.actionBtn {
+  /* `.actionBtn` is a global class seven surfaces define. This page owns its
+     own geometry so no other stylesheet can resize these five controls: an
+     unscoped admin rule (`width: 32px`) squeezed them into 36px boxes in
+     production until 2026-09-05. Declared here, they cannot be won again. */
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  align-items: center;
+  justify-content: center;
   min-height: 46px;
   padding: 0.65rem 0.75rem;
   border: 1px solid var(--public-control-border);
@@ -286,52 +302,52 @@
   box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
 }
 
-.public-profile-page .action-btn:focus-visible {
+.actionBtn:focus-visible {
   border-color: var(--public-blue-soft);
   color: #fff;
   outline: none;
   box-shadow: 0 0 16px rgba(58, 168, 255, 0.16);
 }
 
-.public-profile-page .action-btn:disabled {
+.actionBtn:disabled {
   opacity: 0.58;
   cursor: not-allowed;
 }
 
-.public-profile-page .add-friend-btn,
-.public-profile-page .message-btn {
+.addFriendBtn,
+.messageBtn {
   border-color: rgba(58, 168, 255, 0.55);
   color: var(--public-blue-soft);
 }
 
-.public-profile-page .accept-btn,
-.public-profile-page .friends-btn {
+.acceptBtn,
+.friendsBtn {
   border-color: rgba(101, 216, 155, 0.45);
   color: #80e6ad;
 }
 
-.public-profile-page .pending-btn {
+.pendingBtn {
   border-color: rgba(214, 173, 82, 0.45);
   color: #e4c170;
 }
 
-.public-profile-page .block-btn,
-.public-profile-page .unblock-btn {
+.blockBtn,
+.unblockBtn {
   border-color: rgba(255, 124, 124, 0.48);
   color: #ff9a9a;
 }
 
 /* Report sits beside Block but reads as the milder of the two: reporting asks
    a human to look, blocking is the player acting alone. Amber, not red. */
-.public-profile-page .report-btn {
+.reportBtn {
   border-color: rgba(245, 166, 35, 0.48);
   color: #f5a623;
 }
 
 /* ── Plates ───────────────────────────────────────────────────────────── */
 
-.public-profile-page .mutual-friends-section,
-.public-profile-page .profile-qr-section {
+.mutualFriendsSection,
+.profileQrSection {
   margin-top: 0.75rem;
   padding: 1rem;
   border: 1px solid var(--public-line);
@@ -342,8 +358,8 @@
   box-shadow: inset 0 1px rgba(185, 202, 215, 0.07);
 }
 
-.public-profile-page .mutual-friends-section h3,
-.public-profile-page .profile-qr-section h3 {
+.publicProfilePage .mutualFriendsSection h3,
+.publicProfilePage .profileQrSection h3 {
   margin: 0 0 0.75rem;
   color: #9fb1bd;
   font:
@@ -355,13 +371,13 @@
   text-transform: uppercase;
 }
 
-.public-profile-page .mutual-friends-list {
+.mutualFriendsList {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
 }
 
-.public-profile-page .mutual-friend-chip {
+.mutualFriendChip {
   display: inline-flex;
   min-height: 44px;
   align-items: center;
@@ -375,12 +391,12 @@
   cursor: pointer;
 }
 
-.public-profile-page .mutual-friend-chip:focus-visible {
+.mutualFriendChip:focus-visible {
   border-color: var(--public-blue-soft);
   outline: none;
 }
 
-.public-profile-page .mutual-avatar {
+.mutualAvatar {
   width: 28px;
   height: 28px;
   border: 1px solid #607684;
@@ -388,11 +404,11 @@
   object-fit: cover;
 }
 
-.public-profile-page .profile-qr-section {
+.profileQrSection {
   text-align: center;
 }
 
-.public-profile-page .profile-qr-image {
+.profileQrImage {
   display: inline-flex;
   width: 172px;
   height: 172px;
@@ -407,13 +423,13 @@
     0 0 0 5px rgba(58, 168, 255, 0.4);
 }
 
-.public-profile-page .profile-qr-image svg {
+.profileQrImage svg {
   display: block;
   width: 160px;
   height: 160px;
 }
 
-.public-profile-page .qr-hint {
+.publicProfilePage .qrHint {
   margin: 0.8rem 0 0;
   color: #8496a2;
   font-size: 0.68rem;
@@ -421,7 +437,7 @@
 
 /* ── Light mode: brushed silver ──────────────────────────────────────── */
 
-[data-theme='light'] .public-profile-page {
+:global([data-theme='light']) .publicProfilePage {
   --public-bg: #e6ebef;
   --public-panel: #f3f6f8;
   --public-raised: #fbfcfd;
@@ -439,70 +455,140 @@
     radial-gradient(circle at 50% 0, rgba(24, 120, 200, 0.12), transparent 34rem), var(--public-bg);
 }
 
-[data-theme='light'] .public-profile-page .public-profile-artwork {
+:global([data-theme='light']) .publicProfileArtwork {
   filter: saturate(0.7) contrast(1.02) brightness(1.05);
 }
 
-[data-theme='light'] .public-profile-page .profile-username {
+:global([data-theme='light']) .profileUsername {
   text-shadow: 0 2px 14px rgba(255, 255, 255, 0.9);
 }
 
-[data-theme='light'] .public-profile-page .mutual-friend-chip {
+:global([data-theme='light']) .mutualFriendChip {
   background: #f7f9fb;
   border-color: var(--public-line);
 }
 
-[data-theme='light'] .public-profile-page .mutual-friends-section h3,
-[data-theme='light'] .public-profile-page .profile-qr-section h3,
-[data-theme='light'] .public-profile-page .qr-hint {
+:global([data-theme='light']) .mutualFriendsSection h3,
+:global([data-theme='light']) .profileQrSection h3,
+:global([data-theme='light']) .qrHint {
   color: #4d6272;
 }
 
 /* ── Responsive ──────────────────────────────────────────────────────── */
 
 @media (max-width: 768px) {
-  .public-profile-page {
+  .publicProfilePage {
     max-width: none;
     padding: 0;
     padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
   }
 
-  .public-profile-page .public-profile-header,
-  .public-profile-page .mutual-friends-section,
-  .public-profile-page .profile-qr-section {
+  .publicProfileHeader,
+  .mutualFriendsSection,
+  .profileQrSection {
     border-right: 0;
     border-left: 0;
     border-radius: 0;
     clip-path: none;
   }
 
-  .public-profile-page .profile-actions {
+  .profileActions {
     margin-right: 0.75rem;
     margin-left: 0.75rem;
   }
 }
 
 @media (max-width: 480px) {
-  .public-profile-page .public-profile-header {
+  .publicProfileHeader {
     min-height: 410px;
   }
 
-  .public-profile-page .profile-actions {
+  .profileActions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 340px) {
-  .public-profile-page .profile-actions {
+  .profileActions {
     grid-template-columns: 1fr;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .public-profile-page .public-profile-artwork,
-  .public-profile-page .action-btn,
-  .public-profile-page .mutual-friend-chip {
+  .publicProfileArtwork,
+  .actionBtn,
+  .mutualFriendChip {
     transform: none;
     transition: none;
+  }
+}
+
+/* ── Arena record rail (added 2026-09-04, PR #3077) ─────────────────────────
+   player_stats folded across every club: real figures or a hyphen. */
+
+.publicProfileRecord {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0.9rem 0 0;
+  border: 1px solid var(--public-line, #26333d);
+  border-radius: 2px;
+  background: rgba(3, 6, 9, 0.82);
+}
+
+.publicProfileRecord > div {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+  padding: 0.7rem 0.8rem;
+  border-right: 1px solid rgba(38, 51, 61, 0.9);
+}
+
+.publicProfileRecord > div:last-child {
+  border-right: 0;
+}
+
+.publicProfileRecord dt {
+  color: #8fa2af;
+  font:
+    700 0.58rem/1 'Roboto Condensed',
+    'Rajdhani',
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.publicProfileRecord dd {
+  margin: 0;
+  overflow: hidden;
+  color: #f4f8fb;
+  font:
+    800 1.05rem/1 'Rajdhani',
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global([data-theme='light']) .publicProfileRecord {
+  border-color: #c9d4dc;
+  background: rgba(244, 247, 249, 0.9);
+}
+
+:global([data-theme='light']) .publicProfileRecord dd {
+  color: #0b1218;
+}
+
+@media (max-width: 480px) {
+  .publicProfileRecord {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .publicProfileRecord > div:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .publicProfileRecord > div:nth-child(-n + 2) {
+    border-bottom: 1px solid rgba(38, 51, 61, 0.9);
   }
 }

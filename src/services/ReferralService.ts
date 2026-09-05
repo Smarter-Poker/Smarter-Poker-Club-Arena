@@ -23,7 +23,8 @@ export interface ReferralCode {
 export interface ReferralStats {
   code: string;
   totalReferrals: number;
-  totalChipsEarned: number;
+  /** Dan 2026-09-05: rewards are DIAMONDS. Nothing on this platform earns chips. */
+  totalDiamondsEarned: number;
 }
 
 export interface ReferralMilestone {
@@ -37,11 +38,21 @@ export interface ReferralMilestone {
 // MILESTONE DEFINITIONS
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * DIAMONDS. Dan 2026-09-05: "NOTHING EVER 'EARNS CHIPS' ONLY EVER DIAMONDS."
+ *
+ * These four numbers MUST equal the CASE inside `fn_claim_referral_milestone`
+ * (migration 20260905103510) - the server is what pays, this is only what the
+ * panel promises, and a panel that promises more than the server pays is the
+ * defect this sweep exists to remove. The old values (2,500 / 5,000 / 15,000 /
+ * 50,000) were chips and did not carry over: measured against
+ * daily_challenge_catalog.diamond_reward, the diamond economy runs 8-800.
+ */
 const MILESTONES: Omit<ReferralMilestone, 'unlocked'>[] = [
-  { count: 5, reward: 2500, label: '5 Referrals' },
-  { count: 10, reward: 5000, label: '10 Referrals' },
-  { count: 25, reward: 15000, label: '25 Referrals' },
-  { count: 50, reward: 50000, label: '50 Referrals' },
+  { count: 5, reward: 250, label: '5 Referrals' },
+  { count: 10, reward: 500, label: '10 Referrals' },
+  { count: 25, reward: 1500, label: '25 Referrals' },
+  { count: 50, reward: 5000, label: '50 Referrals' },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -142,24 +153,24 @@ class ReferralService {
 
       const { data: redemptions } = await supabase
         .from('referral_redemptions')
-        .select('chips_awarded_referrer')
+        .select('diamonds_awarded_referrer')
         .eq('referrer_id', userId)
         .limit(QUERY_LIMITS.BULK);
 
       const totalReferrals = redemptions?.length || 0;
-      const totalChipsEarned = (redemptions || []).reduce(
-        (sum, r) => sum + (r.chips_awarded_referrer || 0),
+      const totalDiamondsEarned = (redemptions || []).reduce(
+        (sum, r) => sum + (r.diamonds_awarded_referrer || 0),
         0
       );
 
       return {
         code: code?.code || '',
         totalReferrals,
-        totalChipsEarned,
+        totalDiamondsEarned,
       };
     } catch (err: unknown) {
       reportError(err, 'ReferralService.getStats_exception');
-      return { code: '', totalReferrals: 0, totalChipsEarned: 0 };
+      return { code: '', totalReferrals: 0, totalDiamondsEarned: 0 };
     }
   }
 

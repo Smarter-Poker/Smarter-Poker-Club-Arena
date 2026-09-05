@@ -36,6 +36,7 @@ import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { rankQuickJoinTables, bigBlindFromStakesLabel } from '../lib/quickJoinRanking';
+import { quickJoinSpinRows } from '../lib/quickJoinSpins';
 import { fetchFavoriteTableIds } from '../components/quickactions/favoriteTables';
 import { useUserTableSettings } from '../hooks/useUserTableSettings';
 import { formatGameTitle } from '../utils/formatGameTitle';
@@ -2393,6 +2394,7 @@ export default function MultiTablePage() {
       const openIds = new Set(tablesRef.current.map((t) => t.id));
       const activeStakes = tablesRef.current[activeIndexRef.current]?.stakes || '';
       const activeTableId = tablesRef.current[activeIndexRef.current]?.id || null;
+
       /* Dan 2026-08-23: "quick join should be users favorite games, or similar
          games to the one they are playing."
 
@@ -2426,6 +2428,36 @@ export default function MultiTablePage() {
          viewer may see either way. `club` continues to be the navigation
          answer and is not used for scoping any more. */
       const scopeClubIds = Array.from(new Set([tableClubId, club].filter(Boolean) as string[]));
+      /**
+       * ═══════════════════════════════════════════════════════════════════════
+       *  A SPIN OFFERS MORE SPINS (Dan 2026-09-05)
+       * ═══════════════════════════════════════════════════════════════════════
+       *
+       * Dan: "WHEN YOU ARE INSIDE A SPIN, AND HIT THE + BUTTON, IT SHOULD
+       * RECOMMEND MORE SPINS, NOT CASH GAMES."
+       *
+       * The candidate query below is `.is('tournament_id', null)` - cash
+       * tables, by construction, because that is all this sheet has ever
+       * known how to offer. So a player three-handed in a Spin pressed + and
+       * was shown 1/2 PLO. Not a wrong ANSWER so much as an answer to a
+       * different question.
+       *
+       * A Spin's "another one" is a different shape from a cash table's: you
+       * do not pick a seat off a roster, you pick a STAKE, and the recycler
+       * guarantees an open board at every stake (the supply audit behind
+       * PR #1702's Play Again). So this branch ranks the open spin boards -
+       * this club, this stake first - and hands back the same QuickJoinRow
+       * the sheet already renders.
+       *
+       * Failures fall THROUGH to the cash path rather than to a dead sheet:
+       * an unreadable tournaments table is a reason to offer something, not
+       * nothing.
+       */
+      const spinRows = await quickJoinSpinRows(scopeClubIds, activeTableId, openIds);
+      if (spinRows) {
+        setQuickJoin((q) => (q.open ? { open: true, loading: false, rows: spinRows } : q));
+        return;
+      }
 
       const [res, favIds] = await Promise.all([
         withTimeout(

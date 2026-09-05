@@ -24,6 +24,25 @@ export type VipTier = 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond';
 export type PresenceStatus = 'online' | 'away' | 'playing' | 'offline';
 export type AvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 
+/**
+ * The tiers `PlayerAvatar.css` actually paints. CLAUDE.md section 5 rule 4:
+ * "VIP levels must be validated before rendering badges."
+ *
+ * This is not defensive decoration. Until 2026-09-05 `FriendListPanel` passed
+ * `profiles.tier` here through an `as VipTier` cast, and that column reads
+ * 'Newcomer' for all 1,310 rows on production - it is a rank label, not a VIP
+ * column. `'Newcomer' !== 'bronze'` is true, so the ring element rendered with
+ * `class="vip-status-ring tier-Newcomer"`, which matches no rule: the base
+ * rule supplies only geometry, and every colour lives on a `.tier-*` class.
+ * The result was a ring that was present in the DOM and invisible on screen,
+ * for every player - so an actual VIP got no ring either, and the cast meant
+ * TypeScript could not see any of it.
+ */
+const PAINTED_VIP_TIERS: readonly VipTier[] = ['bronze', 'silver', 'gold', 'platinum', 'diamond'];
+
+const isPaintedVipTier = (tier: unknown): tier is VipTier =>
+  typeof tier === 'string' && (PAINTED_VIP_TIERS as readonly string[]).includes(tier);
+
 export interface PlayerAvatarProps {
   /** Avatar image URL */
   src?: string;
@@ -124,7 +143,9 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
       aria-label={alt}
     >
       {/* VIP Status Ring (outermost glow) */}
-      {showVipRing && vipTier !== 'bronze' && <div className={`vip-status-ring tier-${vipTier}`} />}
+      {showVipRing && isPaintedVipTier(vipTier) && vipTier !== 'bronze' && (
+        <div className={`vip-status-ring tier-${vipTier}`} />
+      )}
 
       {/* Avatar Image/Initials */}
       <div className="player-avatar-image">

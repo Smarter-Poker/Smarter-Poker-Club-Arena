@@ -324,7 +324,13 @@
   text-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
 }
 
-.player-avatar {
+/* SCOPED 2026-09-05. This was a bare selector, and the same class name is
+   defined bare in several other stylesheets. Every stylesheet here is global
+   once imported, so whichever file loaded last won any property the owning
+   page did not itself declare - which is how a 32px admin icon button ended
+   up sizing the public dossier's player actions in production. Scoped to
+   this component's own container; its own appearance is unchanged. */
+.super-agent-dashboard .player-avatar {
   width: 40px;
   height: 40px;
   border-radius: 50%;
@@ -337,7 +343,7 @@
   overflow: hidden;
 }
 
-.player-avatar img {
+.super-agent-dashboard .player-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;

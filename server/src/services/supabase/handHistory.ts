@@ -13,7 +13,7 @@ import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
 import { writeHandFacts } from './handFacts.js';
 import { recordHorseHandReviews } from '../HorseHandReview.js';
-import { HorseMind } from '../../engine/HorseMind.js';
+import { HorseMind, readScopeOf } from '../../engine/HorseMind.js';
 
 /**
  * Log hand history — every hand documented for audit and replay.
@@ -298,7 +298,12 @@ export async function logHandHistory(params: {
       `${params.tableId}:${params.handNumber}`,
       params.actions,
       params.bigBlind,
-      params.showdownReveal ?? null
+      params.showdownReveal ?? null,
+      // V45: the hand's scope - card family and how many were dealt in.
+      readScopeOf(
+        params.gameVariant,
+        params.holeCardsAll?.size ?? params.roster?.length ?? params.players?.length ?? 0
+      )
     );
   } catch {
     /* observation must never endanger settlement */

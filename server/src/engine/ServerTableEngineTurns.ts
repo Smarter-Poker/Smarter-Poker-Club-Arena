@@ -35,7 +35,9 @@ import { reportError } from '../services/errorReporter.js';
 import { ServerTableEngineSeating } from './ServerTableEngineSeating.js';
 // Static watchdog thresholds live on the Base class (single source of truth).
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
-import { noteDecisionMs } from './BrainTelemetry.js';
+import { noteDecisionMs, noteFire } from './BrainTelemetry.js';
+import { saveFastRandom, restoreFastRandom } from './HorseEval.js';
+import { equityGovernor } from './EquityLoadGovernor.js';
 
 /**
  * A monotonic millisecond clock that cannot throw.
@@ -145,6 +147,51 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   /** V14: how far into an auto-granted time bank a horse may tank. The bank
    *  grants ~20s per use, so this leaves a wide safety margin against the
    *  bank expiring and auto-folding the hand. */
+  /** V44: the second look runs every Monte Carlo read at this multiple. */
+  static readonly SECOND_LOOK_DEPTH = 6;
+  /** V44: a pot smaller than this, in big blinds, is not worth a second look. */
+  static readonly SECOND_LOOK_MIN_POT_BB = 20;
+  /** V44: a think time shorter than this cannot fit a second look. */
+  static readonly SECOND_LOOK_MIN_THINK_MS = 1500;
+
+  /**
+   * V44: whether a decision earns a second look, and when. Pure; exported
+   * for tests. A second look is for a CLOSE spot: hero is facing a bet, the
+   * pot is worth reading, the fast answer was a call, fold or all-in (the
+   * shapes the equity sample decides), there is think time to spend, and
+   * the equity governor is not already shedding load.
+   */
+  static secondLookPlan(
+    decision: { action: string; thinkTime: number },
+    toCall: number,
+    pot: number,
+    bigBlind: number,
+    thinkTimeMs: number,
+    governorScale: number
+  ): { afterMs: number } | null {
+    if (toCall <= 0) return null;
+    if (pot < ServerTableEngineTurns.SECOND_LOOK_MIN_POT_BB * Math.max(bigBlind, 0.01)) return null;
+    if (decision.action !== 'call' && decision.action !== 'fold' && decision.action !== 'all_in')
+      return null;
+    if (thinkTimeMs < ServerTableEngineTurns.SECOND_LOOK_MIN_THINK_MS) return null;
+    if (governorScale < 1) return null;
+    return { afterMs: Math.min(400, Math.floor(thinkTimeMs / 3)) };
+  }
+
+  /**
+   * V44: what the deep replay is allowed to change. Only a call/fold/all-in
+   * that differs from the fast answer; a bet or raise from the replay is a
+   * sizing question the sample did not decide, and is ignored.
+   */
+  static secondLookVerdict(
+    fast: { action: string; amount?: number },
+    deep: { action: string; amount?: number }
+  ): { action: string; amount?: number } | null {
+    if (deep.action !== 'call' && deep.action !== 'fold' && deep.action !== 'all_in') return null;
+    if (deep.action === fast.action) return null;
+    return { action: deep.action, amount: deep.amount };
+  }
+
   private static readonly HORSE_MAX_BANK_BURN_MS = 9000;
 
   protected clearTurnTimer(): void {
@@ -2179,13 +2226,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // that is a live horse, and the league and the nightly self-tuner must not
     // pollute the number with self-play bursts on an idle box.
     const decideStartedAt = perfNow();
-    const decision = HorseLogic.decide(
-      enginePlayer as any,
-      gameState as any,
-      horseStyle,
-      horseMods,
-      { telemetry: true }
-    );
+    // V44 SECOND LOOK: the strategy dice the fast decision rolls are replayed
+    // by the deep one, so the only thing that can differ between them is
+    // the equity sample. Snapshot the stream before the first roll.
+    const rngBeforeDecide = saveFastRandom();
+    let decision = HorseLogic.decide(enginePlayer as any, gameState as any, horseStyle, horseMods, {
+      telemetry: true,
+    });
     // Scoped by variant family, because a 6-card PLO decision runs the most
     // expensive equity simulation on the platform and averaging it into a
     // heads-up NLH decision would hide both.
@@ -2281,6 +2328,67 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     }
 
     const handControllerRef = this.handController;
+
+    // ═══ V44 SECOND LOOK (2026-09-05) ═══════════════════════════════════════
+    // The fast decision above ran its Monte Carlo at 120-450 iterations to
+    // stay under 15 ms, and the horse is now going to sit for `thinkTimeMs`
+    // doing nothing. On a CLOSE spot - facing a bet in a pot worth reading,
+    // with time to think - the same decision is replayed at six times the
+    // sample, from the same strategy dice, a few hundred milliseconds into
+    // the think time. If the deeper read lands on a different call/fold/
+    // all-in, the deeper read acts. Sizing decisions and checks are left
+    // alone: the sample is not what decides them.
+    //
+    // Cost: PLO6 at 6x is ~40 ms of CPU, on perhaps one decision in twenty.
+    // The equity governor still applies inside the replay, so a saturated
+    // loop runs the second look at whatever the floor allows; and it is
+    // skipped outright when the governor is already scaling down.
+    const secondLook = ServerTableEngineTurns.secondLookPlan(
+      decision,
+      toCall,
+      state.pot,
+      this.tableInfo?.big_blind || 2,
+      thinkTimeMs,
+      equityGovernor.current()
+    );
+    if (secondLook) {
+      const deepTimer = setTimeout(() => {
+        try {
+          if (!handControllerRef || handControllerRef !== this.handController || !this.running)
+            return;
+          if (handControllerRef.getState().currentPlayerSeat !== seat) return;
+          const t0 = perfNow();
+          const rngAfterFast = saveFastRandom();
+          restoreFastRandom(rngBeforeDecide);
+          let deep: typeof decision;
+          try {
+            deep = HorseLogic.decide(enginePlayer as any, gameState as any, horseStyle, horseMods, {
+              telemetry: false,
+              deepEquity: ServerTableEngineTurns.SECOND_LOOK_DEPTH,
+            });
+          } finally {
+            // The fast decision's stream position is the live one; the
+            // replay must not leave the fleet on a rewound, predictable
+            // stream (the V12.3 league bracket, same reason).
+            restoreFastRandom(rngAfterFast);
+          }
+          noteDecisionMs(`deep:${this.activeHandVariant() || 'nlh'}`, perfNow() - t0);
+          noteFire('v44_second_look');
+          const verdict = ServerTableEngineTurns.secondLookVerdict(decision, deep);
+          if (verdict) {
+            noteFire('v44_second_look_flipped');
+            decision = {
+              ...decision,
+              action: verdict.action as ActionType,
+              amount: verdict.amount,
+            };
+          }
+        } catch (err) {
+          reportError(err, 'ServerTableEngineTurns.secondLook');
+        }
+      }, secondLook.afterMs);
+      deepTimer.unref?.();
+    }
 
     // 2026-08-22: clear any prior think-timer before overwriting the handle —
     // re-entry used to orphan the previous setTimeout (it still fired; only

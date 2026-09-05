@@ -37,6 +37,8 @@ const COMPUTE = SRC.slice(
   SRC.indexOf('private computeHorseBuyIn('),
   SRC.indexOf('private async seatHorse(')
 );
+/* 2026-09-05: the seat stage reads the floor through the ONE sit predicate. */
+const VERDICT = readFileSync(join(process.cwd(), 'src/services/HorseSitVerdict.ts'), 'utf8');
 
 describe('the door rules are read once per cycle', () => {
   it('loads cash_rejoin_constraints through fetchAllRows, keyset on id, active rows only', () => {
@@ -123,7 +125,11 @@ describe('the candidate filter', () => {
 
 describe('the buy-in brings the floor', () => {
   it('computeHorseBuyIn takes the floor and applies it LAST, clamped to the max', () => {
-    expect(COMPUTE).toMatch(/rejoinFloor\?: number\s*\)/);
+    /* `note` (the telemetry sink, 2026-09-05) follows the floor in the
+       signature; the floor is still the last thing the SIZING reads. */
+    expect(COMPUTE).toMatch(
+      /rejoinFloor\?: number,\s*(?:\/\*[\s\S]*?\*\/\s*)?note: \(e: BankrollEvent\) => void = bankrollEvent\s*\)/
+    );
     expect(COMPUTE).toContain('return applyRejoinFloor(buyIn, rejoinFloor, maxB);');
     // nothing after the floor can lower it
     expect(COMPUTE.slice(COMPUTE.indexOf('return applyRejoinFloor'))).not.toContain('buyIn =');
@@ -131,8 +137,15 @@ describe('the buy-in brings the floor', () => {
 
   it('the seeding loop hands the floor in, keyed on the same table key the filter used', () => {
     const seatLoop = SEED.slice(SEED.indexOf('for (let i = 0; i < selectedHorses.length; i++)'));
-    expect(seatLoop).toMatch(
-      /this\.computeHorseBuyIn\(\s*table,\s*horse\.id,\s*bankrolls,\s*bankrollsLoaded,\s*seatClub,\s*rejoin\.rejoinFloor\.get\(rejoinPlayerKey\(horse\.id, constraintTableKey\)\)\s*\)/
+    expect(seatLoop).toContain('const verdict = sitVerdictFor(horse.id, table, sitCtx);');
+    // the verdict keys the floor the way the filter keyed the bar
+    expect(VERDICT).toMatch(
+      /const rejoinFloor = ctx\.rejoin\.rejoinFloor\.get\(rejoinPlayerKey\(horseId, rejoinTableKey\(table\)\)\);/
+    );
+    expect(VERDICT).toMatch(/ctx\.sizeBuyIn\(table, horseId, seatClub, rejoinFloor\)/);
+    // and the fleet's sizeBuyIn IS computeHorseBuyIn, telemetry collected
+    expect(SEED).toMatch(
+      /this\.computeHorseBuyIn\(\s*t,\s*id,\s*bankrolls,\s*bankrollsLoaded,\s*club,\s*floor,\s*\(e\) => telemetry\.push\(e\)\s*\)/
     );
   });
 

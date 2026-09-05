@@ -208,3 +208,115 @@ games skipped` with N > 0 while any disabled game still has a live table.
    `READ FAILED` on that line is the one case a disabled game may have been
    seeded for a cycle, and it pairs with a Sentry
    `HorseFleet.disabled_games_load_failed`.
+
+## Addendum, same branch - a buyer is a horse the fleet will actually seat
+
+### What was measured (production, read 2026-09-05 14:55 CDT)
+
+With the two fixes above live, feeders were still dying. Last 45 minutes:
+8 feeders opened, 2 went live, 6 abandoned. Two games -
+`b59525f3` (NLH 1/2 Classic, club `2a1132b9`) and `67e5ad65` (PLO5 0.10/0.25
+Classic, club `fade0000`) - opened a feeder every 5 minutes with
+`"buyers": 2` in `cash_cluster_events`, and NO horse ever sat on any of them:
+`table_seats` rows ever created on those feeders, 0. The engine log carried
+NO line about either feeder. Not `No available horses for ... Feeder`, not a
+buy-in failure, not a mutex refusal, not a host-cap line. Nothing.
+
+### The design fault - two predicates
+
+The seeding loop answered "may this horse sit here" in two places with two
+different rules.
+
+The CANDIDATE filter (club, door, tag, bankroll, host cap, table ceiling)
+built `pool`, and `pool` fed three things: `clusterPools` (the allocation),
+`eligibleHorseCount` (the number the ClusterController reads to OPEN a
+feeder), and `weighted` (the horses selected for chairs).
+
+The SEAT STAGE then asked four MORE questions of each selected horse, and on
+every one of them it `continue`d silently:
+
+| refusal                                   | what it was                                  | visibility                             |
+| ----------------------------------------- | -------------------------------------------- | -------------------------------------- |
+| `if (seatClub === null) continue;`        | no wallet resolved for this horse and table  | none                                   |
+| `if (buyIn <= 0) continue;`               | `computeHorseBuyIn` sized the buy-in to zero | a bankroll counter, no line            |
+| `!canOpenAnotherTable(...)` -> `continue` | aggregate exposure ceiling                   | a bankroll counter, no line            |
+| `evaluateSit(...) !== 'ok'` -> `continue` | the Stable Hand mutex                        | `mutexRefused`, logged only when non-0 |
+
+So the fleet could tell the controller "2 buyers" for two horses it would
+then refuse at the chair, every cycle; the controller opened the feeder on
+that count, nobody sat, the feeder was abandoned at three minutes, and the
+loop repeated every five.
+
+### Shipped
+
+- **`server/src/services/HorseSitVerdict.ts`** (new): `sitVerdictFor(horseId,
+table, ctx)` is the ONE predicate. Wallet (`resolveSeatClub`), buy-in
+  (`computeHorseBuyIn` with the rejoin floor), aggregate ceiling
+  (`canOpenAnotherTable`), Stable Hand mutex (`evaluateSit`), in the seat
+  stage's own order, behaviour identical to the seat stage before it. It
+  returns `{ ok: true, seatClub, buyIn, sitKey?, telemetry }` or
+  `{ ok: false, reason, telemetry }`, with `reason` one of `no_seat_club`,
+  `zero_buy_in`, `aggregate_exposure`, or the mutex's own `SitRejection`.
+  It is PURE: no bankroll counter, no state mutation; the telemetry the
+  decision would emit travels back on the verdict.
+- **`HorseFleetManager.seedAllTables`**: one `SitVerdictContext` per cycle,
+  built from the cycle's live maps. For a CLUSTER table the candidate filter
+  is followed by the SITTABLE filter - `candidateHorses` narrowed by the
+  verdict - and `pool` (allocation, `eligibleHorseCount`, selection) is
+  built from `sittable`. A horse the verdict refuses is neither counted as a
+  buyer nor selected. The cheap gates still run first. The seat stage asks
+  the same verdict for the chair, emits its telemetry there (once, where the
+  decision is acted on), and counts every refusal.
+- **`computeHorseBuyIn`** takes a telemetry sink (`note`, default
+  `bankrollEvent`); the verdict passes a collector so judging a horse for the
+  COUNT emits nothing.
+- **The diagnostic line.** For every cluster table with lifecycle `opening`
+  the cycle reaches, exactly one line, from a `finally`:
+
+  ```
+  [HorseFleet] opening feeder "<name>": candidates <n>, sittable <n>, wanted <n>, empty seats <n>, selected <n>, seated <n>, skipped {reason=count ...}
+  ```
+
+  (`, withheld <reason>` appended when the table never reached the filter.)
+  The same counts go to the beat detail as `opening_feeders[]`
+  (`fn_ca_fleet_state_upsert`).
+
+- **The cycle summary.** When any seat-stage skip happened:
+  `[HorseFleet] seat stage skipped: no_seat_club=N zero_buy_in=N aggregate_exposure=N`,
+  and when a cluster count left pairs out:
+  `[HorseFleet] not sittable: ... <reason=count ...>`. The mutex's own
+  `Stable Hand mutex refused:` line is unchanged.
+- **Tests.** `HorseSitVerdict.test.ts`: every refusal reason, the ok path
+  (club and buy-in), fail-open on an unknown roll and an untagged horse,
+  side-effect freedom; and source contracts that the cluster candidate filter
+  calls the verdict, that the pool used for allocation and selection is the
+  sittable pool, that the seat stage has exactly one `continue` and it is
+  counted, and that the feeder line exists once in the pinned format. Pins in
+  `StableHandSeatingWiring`, `HorseAggregateExposure`,
+  `HorseBankrollTelemetry`, `HorseStakeBands` and `aBarredHorseIsNotABuyer`
+  moved to the mechanism's new home in the same commit.
+
+### How to verify (read, never assume)
+
+1. `cash_cluster_events`: for the two games above, `feeder_opened` should be
+   followed by `feeder_live` rather than `feeder_abandoned`, and the
+   `buyers` figure on a `feeder_opened` row should be a number the next
+   cycle actually seats:
+
+   ```sql
+   SELECT cluster_id, kind, detail->>'buyers' AS buyers, created_at
+     FROM public.cash_cluster_events
+    WHERE kind IN ('feeder_opened', 'feeder_live', 'feeder_abandoned')
+      AND created_at > now() - interval '1 hour'
+    ORDER BY created_at DESC;
+   ```
+
+   Abandonments per hour should fall to the rate at which horses genuinely
+   stop being sittable between count and chair (near zero).
+
+2. The engine log, one line per opening feeder per cycle:
+   `[HorseFleet] opening feeder "..."`. `sittable` is the number the
+   controller was told. If `seated` is below `selected`, the `skipped {...}`
+   braces say why, by reason, and the cycle's `seat stage skipped:` line
+   totals the same reasons across the floor. A feeder that opens and gets
+   nobody can no longer do so in silence.

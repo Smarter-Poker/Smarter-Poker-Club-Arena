@@ -231,15 +231,43 @@ function WalletPlate({
       className={`wallet-plate ${config.cssClass}`}
       aria-label={`${config.label} Wallet: ${fmtNum(available)} Available, ${fmtNum(locked)} Locked, ${fmtNum(total)} Total`}
     >
-      <img
-        className="wallet-plate__art"
-        src={config.plate}
-        alt=""
-        aria-hidden="true"
-        loading="lazy"
-        decoding="async"
-      />
-      <div className="wallet-plate__bay">
+      {/* THE READOUT SITS IN THE PLATE, NOT UNDER IT.
+          Every plate is drawn with an empty machined bay across its lower half,
+          and the figures used to render BELOW the whole image - so the bay the
+          artwork exists to fill was blank on all four plates.
+          The frame is what makes the fix correct rather than approximate: the
+          readout is absolutely positioned, so its insets must resolve against
+          the ARTWORK's box. Measured against the article they would also span
+          the footer, and drift by the footer's height, which differs per plate. */}
+      <div className="wallet-plate__frame">
+        <img
+          className="wallet-plate__art"
+          src={config.plate}
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          decoding="async"
+        />
+        {/* ONE headline figure, because three will not fit LEGIBLY.
+            Measured at four widths with all three in the bay: the figures fit
+            without clipping, but the labels computed to 6.4-7.5px. A readout
+            nobody can read is not a readout, and shrinking type until it fits
+            is how the bay ended up ignored in the first place.
+            So the bay carries the number the plate is FOR - the total - at
+            ~20px with an 8px label, and Available/Locked keep their room in the
+            footer. The article's aria-label still announces all three, so
+            nothing is lost to a screen reader. */}
+        <div className="wallet-plate__readout">
+          <div className="wallet-plate__stat wide">
+            <span className="wallet-plate__value total">{fmtNum(animatedTotal)}</span>
+            <span className="wallet-plate__label">Total Balance</span>
+          </div>
+          <div className="wallet-plate__meter" aria-hidden="true">
+            <div className="wallet-plate__meter-fill" style={{ width: `${sharePct}%` }} />
+          </div>
+        </div>
+      </div>
+      <div className="wallet-plate__footer">
         <div className="wallet-plate__row">
           <div className="wallet-plate__stat">
             <span className="wallet-plate__value available">{fmtNum(animatedAvail)}</span>
@@ -249,13 +277,6 @@ function WalletPlate({
             <span className="wallet-plate__value locked">{fmtNum(animatedLocked)}</span>
             <span className="wallet-plate__label">Locked</span>
           </div>
-          <div className="wallet-plate__stat">
-            <span className="wallet-plate__value total">{fmtNum(animatedTotal)}</span>
-            <span className="wallet-plate__label">Total</span>
-          </div>
-        </div>
-        <div className="wallet-plate__meter" aria-hidden="true">
-          <div className="wallet-plate__meter-fill" style={{ width: `${sharePct}%` }} />
         </div>
         <div className="wallet-plate__desc">{config.description}</div>
       </div>
@@ -267,23 +288,31 @@ function DiamondPlate({ diamonds, onBuy }: { diamonds: number; onBuy: () => void
   const animated = useAnimatedNumber(diamonds);
   return (
     <article className="wallet-plate diamonds" aria-label={`Diamonds: ${fmtNum(diamonds)}`}>
-      <img
-        className="wallet-plate__art"
-        src={PLATE.DIAMONDS}
-        alt=""
-        aria-hidden="true"
-        decoding="async"
-      />
-      <div className="wallet-plate__bay">
-        <div className="wallet-plate__row">
-          <div className="wallet-plate__stat wide">
-            <span className="wallet-plate__value diamond">{fmtNum(animated)}</span>
-            <span className="wallet-plate__label">Diamonds On Hand</span>
+      <div className="wallet-plate__frame">
+        <img
+          className="wallet-plate__art"
+          src={PLATE.DIAMONDS}
+          alt=""
+          aria-hidden="true"
+          decoding="async"
+        />
+        {/* The count belongs in the bay the artwork was drawn around. The CTA
+            does not: a control inside the plate reads as part of the picture,
+            and at 375px the bay is about 66px tall - a tappable 44px target
+            plus the readout does not fit it honestly. */}
+        <div className="wallet-plate__readout">
+          <div className="wallet-plate__row">
+            <div className="wallet-plate__stat wide">
+              <span className="wallet-plate__value diamond">{fmtNum(animated)}</span>
+              <span className="wallet-plate__label">Diamonds On Hand</span>
+            </div>
           </div>
-          <button type="button" className="wallet-plate__cta" onClick={onBuy}>
-            Buy Diamonds
-          </button>
         </div>
+      </div>
+      <div className="wallet-plate__footer">
+        <button type="button" className="wallet-plate__cta" onClick={onBuy}>
+          Buy Diamonds
+        </button>
         <div className="wallet-plate__desc">
           Spend On VIP, Table Perks, Throwables And Club Shop Items. Send To Friends From The Send
           Tab.

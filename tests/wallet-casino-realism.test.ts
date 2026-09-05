@@ -111,6 +111,69 @@ describe('one sub-read must not zero the whole wallet', () => {
   });
 });
 
+describe('the readout sits IN the machined bay, not under the plate', () => {
+  /*
+   * Dan, 2026-09-05, looking at the shipped page: "why would all the fields
+   * that are supposed to have the totals in be empty and it listed below it?"
+   *
+   * He was right, and the assertions above did not catch it. Every plate is
+   * drawn with an empty machined bay across its lower half, and the figures
+   * rendered in a block BELOW the whole image - so the bay the artwork exists
+   * to fill was blank on all four plates while the totals sat underneath them.
+   * This suite asserted the VALUES EXISTED and never that they were inside the
+   * plate, so it stayed green through the entire thing.
+   *
+   * The slot was then MEASURED from the shipped artwork rather than guessed:
+   * sampling luminance down the centre of each 1088x548 plate and walking out
+   * to the lit machined frame gives top 51.3-52.0%, bottom 92.3-93.2%, sides
+   * 3.8-6.1%. The inset pinned below clears the tightest of the four.
+   */
+  it('wraps the art in a frame, because the insets must resolve against the ARTWORK', () => {
+    // Measured against the article they would also span the footer, and drift
+    // by its height, which differs per plate.
+    expect(PAGE).toContain('wallet-plate__frame');
+    expect(CSS).toMatch(/\.wallet-plate__frame \{[^}]*position: relative/s);
+  });
+
+  it('positions the readout into the measured slot', () => {
+    expect(CSS).toMatch(/\.wallet-plate__readout \{[^}]*position: absolute/s);
+    expect(CSS).toMatch(/\.wallet-plate__readout \{[^}]*inset: 53% 7\.5% 8\.5%/s);
+  });
+
+  it('the readout is a CHILD of the frame, not a sibling of it', () => {
+    // The whole bug in one assertion: a sibling stacks below the art.
+    expect(PAGE.indexOf('wallet-plate__readout')).toBeGreaterThan(
+      PAGE.indexOf('wallet-plate__frame')
+    );
+  });
+
+  it('sizes the bay type against the PLATE, so a two-up grid cannot overflow it', () => {
+    // cqw, not vw: the plate narrows on a tablet while the viewport does not.
+    expect(CSS).toContain('container-type: inline-size');
+    expect(CSS).toMatch(/\.wallet-plate__readout \.wallet-plate__value \{[^}]*cqw/s);
+  });
+
+  it('keeps a legibility floor, because three stats in the bay measured 6.4px', () => {
+    // Why the bay carries ONE figure: with Available/Locked/Total in it, the
+    // labels computed to 6.4-7.5px at every width tested. A readout nobody can
+    // read is not a readout.
+    expect(CSS).toMatch(/\.wallet-plate__readout \.wallet-plate__value \{[^}]*clamp\(1rem/s);
+    expect(CSS).toMatch(/\.wallet-plate__readout \.wallet-plate__label \{[^}]*clamp\(0\.5rem/s);
+  });
+
+  it('no media query re-pins the bay type to a fixed size', () => {
+    // A fixed rem inside a media query beats the clamp and pushes the figures
+    // back out of the bay. Exactly such a rule existed, and was deleted.
+    expect(CSS).not.toMatch(/@media[^{]*\{[^@]*\.wallet-plate__value \{\s*font-size: 1\.15rem/s);
+  });
+
+  it('still announces every figure, even though the bay shows one', () => {
+    expect(PAGE).toMatch(
+      /aria-label=\{`\$\{config\.label\} Wallet:[^`]*Available[^`]*Locked[^`]*Total/s
+    );
+  });
+});
+
 describe('the header wallet button opens the wallet', () => {
   it('navigates to /wallet, not the diamond store tab', () => {
     // Dan 2026-09-04: "when you click the wallet from the global header it

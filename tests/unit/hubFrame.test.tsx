@@ -14,14 +14,14 @@
  *   - an idle frame is unloaded, and reloaded on return, at its last page.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { render, cleanup, act } from '@testing-library/react';
 import { createRef } from 'react';
 import {
   HubFrame,
   pauseMediaIn,
   type HubFrameSwipeHandlers,
 } from '../../src/components/table/HubFrame';
-import { HUB_FRAME_IDLE_SUSPEND_MS } from '../../src/utils/hubTab';
+import { HUB_FRAME_IDLE_SUSPEND_MS, HUB_FRAME_STALL_MS } from '../../src/utils/hubTab';
 
 const swipe = createRef<HubFrameSwipeHandlers>() as React.RefObject<HubFrameSwipeHandlers>;
 (swipe as { current: HubFrameSwipeHandlers }).current = {
@@ -65,7 +65,13 @@ const docOf = (iframe: HTMLIFrameElement): Document => {
     configurable: true,
   });
   Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
-  iframe.dispatchEvent(new Event('load'));
+  Object.defineProperty(iframe, 'contentWindow', {
+    value: { location: { href: `${window.location.origin}/hub/social` } },
+    configurable: true,
+  });
+  act(() => {
+    iframe.dispatchEvent(new Event('load'));
+  });
   return doc;
 };
 
@@ -197,6 +203,36 @@ describe('input inside the frame reaches the strip', () => {
     doc.dispatchEvent(new TE('touchend', { bubbles: true }));
     expect(swipe.current.start).toHaveBeenCalled();
     expect(swipe.current.end).toHaveBeenCalled();
+  });
+});
+
+describe('a page that is still coming says so', () => {
+  it('shows the loading overlay, named for the page, until the frame loads', () => {
+    const { iframe, container } = mount();
+    const wrap = container.querySelector('.hub-frame') as HTMLElement;
+    expect(wrap.getAttribute('data-hub-loading')).toBe('true');
+    expect(container.querySelector('.hub-frame__overlay')?.textContent).toContain('Loading Social');
+    expect(container.querySelector('.hub-frame__reload')).toBeNull();
+    docOf(iframe); // the page arrives
+    expect(wrap.getAttribute('data-hub-loading')).toBe('false');
+    expect(container.querySelector('.hub-frame__overlay')).toBeNull();
+  });
+
+  it('offers Reload once the page has stalled, and Reload re-requests the page', () => {
+    const { iframe, container } = mount();
+    act(() => vi.advanceTimersByTime(HUB_FRAME_STALL_MS - 1));
+    expect(container.querySelector('.hub-frame__reload')).toBeNull();
+    act(() => vi.advanceTimersByTime(1));
+    const btn = container.querySelector('.hub-frame__reload') as HTMLButtonElement;
+    expect(btn).toBeTruthy();
+    act(() => btn.click());
+    expect(iframe.src.endsWith('/hub/social')).toBe(true);
+    expect(container.querySelector('.hub-frame__reload')).toBeNull(); // clock restarted
+  });
+
+  it('never shows the overlay on a frame that has not been armed', () => {
+    const { container } = mount({ active: false });
+    expect(container.querySelector('.hub-frame__overlay')).toBeNull();
   });
 });
 

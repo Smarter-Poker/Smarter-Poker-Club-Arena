@@ -10,7 +10,7 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { CardPresentationEngine } from '../../src/presentation/cardPresentation/CardPresentationEngine';
 import { CARD_PRESENTATION_PROFILES } from '../../src/presentation/cardPresentation/profiles';
-import { HAND_COMPLETION } from '../../src/config/handCompletionSpec';
+import { ALL_IN_SQUEEZE_CEILING_MS } from '../../src/config/handCompletionSpec';
 import { DEFAULT_USER_TABLE_SETTINGS } from '../../src/hooks/useUserTableSettings';
 import type {
   CommunityCardDealPresentation,
@@ -54,6 +54,7 @@ describe('a server-paced reveal never runs slower than the stopwatch', () => {
     focus: 'focused',
     reducedMotion: false,
     allIn: true,
+    squeeze: true,
   };
 
   beforeEach(() => {
@@ -67,25 +68,30 @@ describe('a server-paced reveal never runs slower than the stopwatch', () => {
   const engineAt = (speed: number) =>
     new CardPresentationEngine({ telemetry: () => {}, now: () => now, speed: () => speed });
 
-  it('the all-in card is face up before the equity gate opens, even on Slow', () => {
+  it('the all-in card is face up before the next street can land, even on Slow', () => {
     // Dan 2026-08-28: "EQUITY CHANGES ONLY AFTER THE FLOP IS DISPLAYED, (NOT
-    // BEFORE OR DURING)". The engine opens that gate a fixed
-    // ALL_IN_STREET_REVEAL_MS after sending the street and cannot know this
-    // client's animation speed, so the turn must be OVER by then at any speed.
+    // BEFORE OR DURING)". The engine paces the run-out on a fixed wall clock
+    // and cannot know this client's animation speed.
+    //
+    // VIP ALL-IN SQUEEZE 2026-09-05: the stopwatch this profile answers to
+    // moved. The card is now the PLAYER'S to open and may legitimately still
+    // be face down when the equity gate opens (the page holds the displayed
+    // equity for that viewer - tests/unit/vipAllInSqueeze.test.ts). What must
+    // still be true at every speed is that the snap is OVER by the ceiling,
+    // which is sized so the next street or the pot never lands on a card
+    // still turning.
     //
     // Asked of the engine's own phase clock rather than of durationMs, which
-    // carries a deliberate 100ms mount margin on top of the animation: the
-    // markup outliving the turn by a frame is fine, the TURN outliving the
-    // gate is the spoiler.
+    // carries a deliberate 100ms mount margin on top of the animation.
     for (const speed of [0.5, 1, 1.5, 3]) {
       const e = engineAt(speed);
       const started = now;
       const r = e.presentCard(river, allInInput);
       expect(r.status).toBe('started');
-      now = started + HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS;
+      now = started + ALL_IN_SQUEEZE_CEILING_MS;
       expect(
         e.phaseAt(r.key),
-        `at animation speed ${speed} the card must be face up when equity moves`
+        `at animation speed ${speed} the card must be face up by the ceiling`
       ).toMatch(/^(settle|complete)$/);
       e.dispose();
     }

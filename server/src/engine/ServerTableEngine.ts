@@ -156,6 +156,20 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
     };
   }
 
+  /**
+   * The table's regular ante, for the felt. `ante` is the per-posting amount
+   * in chips (0 = none); `ante_mode` says who posts it - every seat, or the
+   * big blind once for the table.
+   */
+  private anteSnapshotFields(): { ante: number; ante_mode: 'per_player' | 'big_blind' | null } {
+    const info = this.tableInfo;
+    if (!info) return { ante: 0, ante_mode: null };
+    const on = info.tournament_id ? true : (info.ante_enabled ?? true);
+    const ante = on ? Number(info.ante ?? 0) : 0;
+    if (!(ante > 0)) return { ante: 0, ante_mode: null };
+    return { ante, ante_mode: info.big_blind_ante_enabled === true ? 'big_blind' : 'per_player' };
+  }
+
   private bettingStructureFields(state: GameState): {
     betting_structure: 'no_limit' | 'pot_limit' | 'fixed_limit';
     fixed_bet_size?: number;
@@ -244,6 +258,10 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       // BOMB POT STANDARDIZATION 2026-08-27: countdown + timed due timestamp
       // now come from the scheduler (all trigger modes), not raw arithmetic.
       ...this.bombPotSnapshotFields(),
+      // THE REGULAR ANTE (Dan 2026-09-04: "ANTES ... ARE NOT DISPLAYING").
+      // The money moved every hand (HandController posts it and the pot
+      // showed it) but no field said so, so the felt could not print it.
+      ...this.anteSnapshotFields(),
       current_bet: state.currentBet ?? 0,
       current_player: currentSeatPlayer?.user_id ?? null,
       dealer_seat: state.dealerSeat ?? this.currentHandDealerSeat,
@@ -387,6 +405,13 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
     // instead: seats from seatedPlayers, no board, no clock, stage 'waiting'
     // (a first-class stage in the client contract - mapEngineSnapshot).
     if (!this.handController) {
+      // Phase 1 (2026-09-04), measured on production: the first 33 human
+      // samples included four over 5 s. They were not slow broadcasts - they
+      // were the LAST action of a hand: the hand ended, this branch published
+      // idle without observing, the clock stayed armed, and the next hand's
+      // first broadcast observed the whole gap between hands. That is not
+      // act-to-broadcast latency. Disarm the clock here; the sample is void.
+      this.lastActionAcceptedAtMs = 0;
       this.publishIdleState();
       return Promise.resolve();
     }
@@ -394,8 +419,16 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
     // ── ADDITIVE observability (#5): observe action→broadcast latency (cheap, always) ──
     if (this.lastActionAcceptedAtMs > 0) {
       try {
-        EngineMetrics.actToBroadcastLatency.observe(Date.now() - this.lastActionAcceptedAtMs, {
+        const actMs = Date.now() - this.lastActionAcceptedAtMs;
+        EngineMetrics.actToBroadcastLatency.observe(actMs, {
           table_id: this.tableId,
+        });
+        // Phase 1 (2026-09-04): the always-on, low-cardinality twin. The
+        // per-table series above is gated off in production; this one is
+        // what the ActionLatency alerts read.
+        EngineMetrics.actToBroadcastFleet.observe(actMs, {
+          audience: this.humansSeated() > 0 ? 'human' : 'horse',
+          format: this.tableFormat(),
         });
       } catch {
         /* metrics must never affect gameplay */
@@ -425,6 +458,10 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       // BOMB POT STANDARDIZATION 2026-08-27: scheduler-derived, all modes,
       // plus bomb_pot_next_at (epoch ms) for the timed mode's clock.
       ...this.bombPotSnapshotFields(),
+      // THE REGULAR ANTE (Dan 2026-09-04: "ANTES ... ARE NOT DISPLAYING").
+      // The money moved every hand (HandController posts it and the pot
+      // showed it) but no field said so, so the felt could not print it.
+      ...this.anteSnapshotFields(),
       current_bet: state.currentBet ?? 0,
       current_player: currentSeatPlayer?.user_id ?? null,
       dealer_seat: state.dealerSeat ?? this.currentHandDealerSeat,
@@ -676,6 +713,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       community_cards3: [],
       hand_variant: this.activeHandVariant(),
       ...this.bombPotSnapshotFields(),
+      ...this.anteSnapshotFields(),
       current_bet: 0,
       current_player: null,
       dealer_seat: this.currentHandDealerSeat,

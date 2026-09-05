@@ -121,6 +121,13 @@ interface TableInstance {
   raiseBounds?: string;
   /** Hero's current stack at this table. */
   heroStack?: number;
+  /**
+   * MUST-MOVE (Dan 2026-09-05): the hero's chair went to another table of
+   * the same game. Consumed by updateTableInfo, which re-points THIS tab at
+   * the destination (same position, same activeIndex - never a table switch);
+   * it is never stored on the instance.
+   */
+  movedToTableId?: string;
   /** Hero is sitting out at this table. */
   sittingOut?: boolean;
   /** Absolute epoch-ms this table's sit-out clock runs out. Cash only. */
@@ -1430,7 +1437,14 @@ export default function MultiTablePage() {
             // A non-turn decision (discard / insurance / RIT) and a burning
             // time bank each get their own countdown, computed from the same
             // 1s clock as the turn timer so all tables tick together.
-            const d = parseTimed(t.decision);
+            const raw = parseTimed(t.decision);
+            // A DECISION THAT HAS EXPIRED IS NOT A DECISION (Dan 2026-09-04):
+            // a leaked RIT deadline read as "RUN IT / 0s Left", red, on that
+            // tab for the rest of the session. The clamp below turned a past
+            // instant into a permanent zero. Past is gone; the tab shows
+            // nothing. (The leak itself is closed in TablePage; this is the
+            // strip refusing to display a clock that has already run out.)
+            const d = raw && raw.at > nowMs ? raw : null;
             const tb = parseTimed(t.timeBank);
             const secs = (at: number) => Math.max(0, Math.ceil((at - nowMs) / 1000));
             return {
@@ -2398,6 +2412,29 @@ export default function MultiTablePage() {
       const idx = prev.findIndex((t) => t.id === tableId);
       if (idx === -1) return prev;
       const current = prev[idx];
+      // THE TAB FOLLOWS THE CHAIR (Dan 2026-09-05). A must-move / seat change
+      // landed the hero at another table of the same game: this tab becomes
+      // that table, in place. Its per-hand figures are cleared (they belong
+      // to the old table); the name and stakes are re-reported by the
+      // remounted TablePage. If the destination is already open as a tab,
+      // the old one simply closes.
+      if (updates.movedToTableId && updates.movedToTableId !== tableId) {
+        const dest = updates.movedToTableId;
+        if (prev.some((t) => t.id === dest)) {
+          return prev.filter((t) => t.id !== tableId);
+        }
+        const next = prev.slice();
+        next[idx] = {
+          id: dest,
+          name: current.name,
+          stakes: current.stakes,
+          isMyTurn: false,
+          pot: 0,
+          gameCode: current.gameCode,
+          isTournament: current.isTournament,
+        } as TableInstance;
+        return next;
+      }
       let changed = false;
       for (const key of Object.keys(updates) as (keyof TableInstance)[]) {
         if (current[key] !== updates[key]) {

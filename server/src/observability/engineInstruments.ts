@@ -77,3 +77,54 @@ export const engineTracer = new Tracer({
   exporter: engineSpanExporter,
   durationHistogram: handDuration,
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  ALWAYS-ON FLEET INSTRUMENTS (Realtime programme, Phase 1 - 2026-09-04)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// THE GAP. `actToBroadcastLatency` above is the one number that defines how a
+// table FEELS - the time from a player's action being accepted to every seat
+// seeing it - and it has never been scraped in production. It lives in the
+// ENGINE_METRICS-gated registry, which is off (checked on engine-01 on
+// 2026-09-04: `/metrics` carried zero lines of it). The gate exists for a
+// good reason: the per-table label puts ~270 tables x 12 buckets on every
+// scrape. So nobody could say whether a Call takes 40 ms or 400 ms to reach
+// the felt, or whether a deploy made it slower.
+//
+// THIS REGISTRY is rendered by GameServer.getPrometheusMetrics() on EVERY
+// scrape and carries two series, not two hundred: `audience="human"` for
+// tables with at least one human seated and `audience="horse"` for the rest.
+// The split matters because the fleet is horse-heavy - a fleet-wide p95 would
+// be a horse number, and horses do not complain about lag. The human series
+// is the one the alert reads.
+//
+// FORMAT (Dan, 2026-09-05): "you need to fix the real time connection to the
+// spins, heads up and mtt's as well. not just the cash game tables." Every
+// format already shares this engine and this socket, so they were always
+// measured - but they were one indistinguishable number, so "are Spins slow?"
+// had no answer. `format` is cash | spin | hu_sng | mtt, four values, so at
+// most eight series with audience. Still never a table_id.
+//
+// Horses lose nothing here (CLAUDE.md 10.5): the same latency is observed for
+// every table; the label says who was watching, it does not change what any
+// seat gets.
+import { MetricsRegistry } from './Metrics.js';
+
+export const alwaysOnRegistry = new MetricsRegistry();
+
+/** act -> broadcast, ms, 2 series (audience=human|horse). */
+export const actToBroadcastFleet: Histogram = alwaysOnRegistry.histogram(
+  'poker_act_to_broadcast_ms',
+  'Latency from a player action being accepted to the new state reaching every seat (ms). audience=human when a human is seated at the table, else horse; format=cash|spin|hu_sng|mtt'
+);
+
+/** Actions processed, 2 series. */
+export const actionsFleetTotal: Counter = alwaysOnRegistry.counter(
+  'poker_actions_fleet_total',
+  'Player actions processed (labels: audience=human|horse, format=cash|spin|hu_sng|mtt)'
+);
+
+/** Prometheus lines for the always-on fleet registry. */
+export function alwaysOnPrometheusLines(): string[] {
+  return alwaysOnRegistry.renderPrometheus().split('\n').filter(Boolean);
+}

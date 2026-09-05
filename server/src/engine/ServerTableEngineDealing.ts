@@ -188,6 +188,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // class, on purpose.
         if (this.maintenancePaused || (this.handForHandPaused && this.holdBeforeNextHand)) {
           this.setLoopPhase('parked_for_pause');
+          // 2026-09-04 (audit item 2): the last word on presence before the
+          // process dies. Awaited, budgeted by the write itself (one upsert),
+          // and never thrown - see persistPresenceForRestart.
+          if (this.maintenancePaused) await this.persistPresenceForRestart('parked');
           await this.awaitPauseGate();
           if (!this.running) break;
           // Fall through and re-evaluate the table from scratch: seats,
@@ -300,8 +304,35 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               // CHIP CONTINUITY: a fresh arrival is a fresh session, even if
               // the mirror wrote this player off a moment ago.
               this.chipContinuity.welcome(p.user_id);
-              if (!this.returningFromSitout.has(p.user_id) && !this.isTournamentTable()) {
+              const entryHold = (p as { entry_hold?: string | null }).entry_hold ?? null;
+              const entryAgreed =
+                (p as { entry_post_agreed?: boolean | null }).entry_post_agreed === true;
+              if (!this.isTournamentTable() && entryHold === 'moved') {
+                // MOVED BY THE GAME (Dan 2026-09-05): a must-move or a break
+                // brought them here. "IF THEY ARE AUTO MOVED, NO POST ... FREE
+                // HANDS UNTIL BB BECAUSE THEY ALREADY POSTED AT THE PREVIOUS
+                // TABLE." Not registered as waiting, nothing owed: they are in
+                // the next deal and take the big blind when it comes round.
+                // Not a veteran either (dealtInUserIds is filled by the deal),
+                // so the button cannot land on them before they have played a
+                // hand here. The marker is cleared now; a restart between here
+                // and the deal reads a plain seat, which is the same thing.
+                this.persistEntryHold(p.user_id, { hold: null, agreed: false });
+                console.log(
+                  `[ServerTableEngine:${this.tableId}] ${p.user_id.slice(0, 8)} arrived by must-move: dealt in, nothing to post`
+                );
+              } else if (!this.returningFromSitout.has(p.user_id) && !this.isTournamentTable()) {
                 this.registerWaitForBB(p.user_id);
+                if (entryHold === 'waiting' && entryAgreed) {
+                  // A SEAT CHANGE ARRIVES (Dan 2026-09-05): "SEAT CHANGE ALWAYS
+                  // RE POSTS THE BB WHEN GETTING TO A NEW TABLE." The executor
+                  // wrote the agreement on the chair; the same replay that
+                  // honours a tapped POST honours it - the live big blind on
+                  // the next deal, held until clear if they landed between the
+                  // button and the blind.
+                  this.postBBWhenClear.add(p.user_id);
+                  this.persistEntryHold(p.user_id, { hold: 'waiting', agreed: true });
+                }
               } else if (this.isTournamentTable()) {
                 // B2 2026-08-27: a tournament arrival cannot be held out for a
                 // hand, so it is classified instead — see noteTournamentArrival.
@@ -319,6 +350,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           if (!currentIds.has(id)) {
             this.knownPlayerIds.delete(id);
             this.waitingForBB.delete(id);
+            // A held swap side that is gone from the roster: the other table
+            // landed the swap. Nothing to hold any more.
+            this.heldForSwap.delete(id);
             // B2: a player who has left owes this table nothing. If they come
             // back they are a fresh arrival and get classified again.
             this.mustPostBB.delete(id);
@@ -642,7 +676,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             p.stack > 0 &&
             (dealInWhileSittingOut ||
               !this.disconnectEngine.isSittingOut(this.tableId, p.user_id)) &&
-            !this.waitingForBB.has(p.user_id)
+            !this.waitingForBB.has(p.user_id) &&
+            // A swap side holding for its partner's table (Dan 2026-09-05).
+            !this.isHeldForSwap(p.user_id)
         );
 
         // Clean up rebuy map (Garbage Collection for horses no longer sitting here)
@@ -707,6 +743,23 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             this.tableFSM.transition('waiting');
           }
           this.setLoopPhase('idle_not_enough_players');
+          // MUST-MOVE (Slice 2; moved here 2026-09-05): a table with no hand
+          // to finish is at a hand boundary all the time, so every pending
+          // move lands now, announced or not. This used to run in the
+          // leave_pending sweep above, on EVERY iteration - which executed a
+          // move milliseconds after the deal had announced "Moving After
+          // This Hand", before the hand.
+          await this.withStepBudget(
+            'idle_seat_moves',
+            ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+            this.executePendingSeatMoves()
+          );
+          await this.withStepBudget(
+            'idle_cluster_closed',
+            ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+            this.stopIfClusterTableClosed()
+          );
+          if (!this.running) break;
           await this.sleep(3000);
           continue;
         }
@@ -742,6 +795,17 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           this.tableFSM.transition('seating');
           this.tableFSM.transition('running');
         }
+
+        // MUST-MOVE (Slice 2): a player with a planned move is told now, once,
+        // that they move after this hand - HERE, immediately before the deal,
+        // so the notice only ever speaks of a hand that is about to be dealt
+        // (2026-09-05: it used to run at load_seats, on idle iterations too).
+        // Bounded like every other step.
+        await this.withStepBudget(
+          'announce_seat_moves',
+          ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+          this.announcePendingSeatMoves()
+        );
 
         // Deal hand (self-transition: running → running for next hand)
         this.setLoopPhase('dealing');
@@ -2530,6 +2594,27 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     // it per attempt could stamp THIS hand's cards with the NEXT hand's
     // number on a slow attempt. Same class as the settlement snapshot fix.
     const handNumberAtDeal = this.handCount;
+    /* 2026-09-04 (disconnect audit item 12): THE CARDS GO DOWN THE SOCKET
+       TOO. The database row below is still written - it is the durable copy
+       and the client's poll reads it - but the hero's cards used to reach
+       the screen only through a Supabase Realtime subscription on that row
+       (a second transport, with its own reconnect, its own INSERT-only
+       history, and the bounded poll behind it). The engine socket the felt
+       is already drawn from now carries them privately to this player's
+       sockets, in the same row shape the Realtime handler accepts, so every
+       guard on that path (heroHoleCardsAreForThisHand) applies unchanged.
+       Sent before the write so a slow database does not delay the deal on
+       screen. */
+    this.hub?.sendToUser(this.tableId, userId, {
+      kind: 'hole_cards',
+      row: {
+        table_id: this.tableId,
+        user_id: userId,
+        seat_number: seat,
+        hand_number: handNumberAtDeal,
+        cards,
+      },
+    });
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         const { error } = await supabase.rpc('insert_hole_cards', {

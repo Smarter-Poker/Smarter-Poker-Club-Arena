@@ -48,6 +48,7 @@ import LobbyTable, {
 import GameLobbyPanel from '../components/lobby/GameLobbyPanel';
 import {
   cashEntry,
+  isHiddenClusterMember,
   tournamentEntry,
   classifyTournament,
   type LobbyEntry,
@@ -59,6 +60,7 @@ import { tournamentService } from '../services/TournamentService';
 import { tableService } from '../services/TableService';
 import { getClubLevelInfoFromMembers, ClubLevelInfo } from '../utils/clubLevels';
 import { useToast } from '../components/common/Toast';
+import { joinCashGame, joinGameRefusalText, waitlistedText } from '../services/cashGameLobby';
 import { applyClubScope, inClubScope, type ClubScope } from '../utils/clubScope';
 import { waitlistService } from '../services/WaitlistService';
 import ConfirmModal from '../components/common/ConfirmModal';
@@ -289,6 +291,11 @@ interface TableData {
   min_buy_in: number;
   max_buy_in: number;
   settings?: string;
+  /** The must-move game's template (classic / action / madness), from get_club_home. */
+  cluster_template?: string | null;
+  /** The must-move game this table belongs to (Operation Table Stakes), or null. */
+  cluster_id?: string | null;
+  cluster_must_move?: boolean | null;
 }
 
 interface TournamentData {
@@ -2490,7 +2497,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       const tableQuery = supabase
         .from('tables')
         .select(
-          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands'
+          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at, run_it_twice, run_it_twice_enabled, allow_run_it_twice, insurance_enabled, straddle_enabled, straddle_type, auto_utg_straddle, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_ante_multiplier, bomb_pot_ante_fixed, ante_enabled, ante, seven_deuce_enabled, seven_deuce_amount, time_bank_enabled, all_in_or_fold, club_id, is_featured, is_vip_only, label_as_new, hide_club_name, cap_enabled, cap_bb, no_rathole, pineapple_holdem, is_anonymous, restrict_observers, nit_game, career_percent_min, maintain_percent_min, maintain_hands, cluster_id, role, main_index, lifecycle'
         );
       // ONE rule, applied. Union clubs see the UNION's tables plus their OWN
       // private games; another club's private game is never visible.
@@ -2624,7 +2631,23 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       if (tableResult.error) {
         reportError(tableResult.error, 'ClubHomePage.tablesQueryFailed');
       } else if (tableData) {
-        setTables(tableData);
+        /* THE CHAIN SELECT KEEPS THE GAME COLUMNS (2026-09-05). get_club_home
+           (the fast path, R10) paints cluster_players / cluster_tables /
+           cluster_must_move / cluster_template / cluster_state on a Main 1
+           row; this authoritative read cannot compute those aggregates, and
+           replacing the rows wholesale dropped them ~300 ms after first
+           paint - the feeder and Main 2 rows leaked back onto the board and
+           the style filter went empty. The chain now selects the cluster
+           identity columns itself (so the hidden-member rule holds even when
+           the fast path never ran) and OVERLAYS what it carries onto the rows
+           on screen, leaving the game-wide figures the fast path put there.
+           Rows the chain does not return are removed: it is the authority on
+           which tables exist. */
+        setTables((prev) => {
+          const incoming = new Set((tableData as Array<{ id: string }>).map((r) => String(r.id)));
+          const kept = prev.filter((r) => incoming.has(String(r.id)));
+          return mergeFastRows(kept, tableData as typeof prev);
+        });
       }
       const tableCapped = (tableData?.length ?? 0) >= QUERY_LIMITS.LIST;
 
@@ -2792,6 +2815,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             seats: Number(table.max_players) || 0,
             seatsTaken: Number(table.current_players) || 0,
             name: table.name,
+            style: table.cluster_template ?? null,
             row: table as unknown as Record<string, unknown>,
             settings,
           })
@@ -3443,6 +3467,39 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     (tableId: string) => {
       haptic.medium();
       setPanelOpen(false);
+      /* JOIN GAME (Gate 4, 2026-09-05). A must-move game is one row on the
+         board (R10) and its row is Main 1 - but JOIN must never simply open
+         Main 1, which is full whenever the game is busy. The game door,
+         fn_cash_game_join, picks the shortest live Main with an unreserved
+         chair, then the feeder; with none open it holds the player's place on
+         the GAME's waitlist (a buyer for the OPEN rule) and says so. The
+         table it names is opened exactly as any table is; the buy-in itself
+         is still the table's own door. */
+      const row = tablesRef.current.find((t) => t.id === tableId);
+      if (row?.cluster_id && row.cluster_must_move !== false) {
+        const gameId = row.cluster_id;
+        void (async () => {
+          try {
+            const r = await joinCashGame(gameId);
+            if (r.action === 'waitlisted') {
+              toast.info(waitlistedText(r));
+              // Watch from Main 1 while the place is held; the Must Move box
+              // on that table shows the list place and offers the chair when
+              // one opens.
+              warmTable(tableId);
+              navigate(`/table/${tableId}`);
+              return;
+            }
+            const dest = r.table_id || tableId;
+            warmTable(dest);
+            navigate(`/table/${dest}`);
+          } catch (err) {
+            reportError(err, 'ClubHomePage.joinCashGame', { gameId });
+            toast.warning(joinGameRefusalText(err));
+          }
+        })();
+        return;
+      }
       // Execute navigate in the next tick to ensure the panel unmounts safely
       // without interrupting React Router transition internals
       // The card is closing and TablePage is one tick away - warm the table so
@@ -3467,7 +3524,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         });
       }, 0);
     },
-    [navigate]
+    [navigate, toast]
   );
 
   const handleRegister = useCallback(
@@ -3623,9 +3680,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     const tourns = filteredTournaments.map((t) =>
       stable(t as unknown as LobbyTournamentRow, (r) => tournamentEntry(r, classifyTournament(r)))
     );
-    let cash = filteredTables.map((t) =>
-      stable(t as unknown as LobbyTableRow, (r) => cashEntry(r, waitlistCounts.get(r.id) ?? 0))
-    );
+    /* R10 (Dan 2026-09-04): a must-move game is ONE row on the board - its
+       Main 1 - carrying the count of players inside the whole game. Its
+       other tables are never rows of their own. */
+    let cash = filteredTables
+      .filter((t) => !isHiddenClusterMember(t as unknown as LobbyTableRow))
+      .map((t) =>
+        stable(t as unknown as LobbyTableRow, (r) => cashEntry(r, waitlistCounts.get(r.id) ?? 0))
+      );
     entryCacheRef.current = next;
     /* The Favorites chip lives in the quick-prefs row, which ALL does not
        render - so leaving the filter applied there stripped the board to two
@@ -4952,6 +5014,29 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                   onVariantsChange: (games: string[]) => {
                     haptic.selection();
                     const next: FilterStore = { ...advFilters, [gameType]: { ...vVal, games } };
+                    setAdvFilters(next);
+                    if (resolvedClubId) saveFilters(resolvedClubId, next);
+                  },
+                };
+              })()}
+              /* THE STAKES MENU (Dan 2026-09-04): the Stakes heading opens the
+                 game styles - Classic / Action / Madness, with All - and the
+                 two stakes sorts. Every cash tab that has a Stakes column has
+                 it, and it reads and writes the SAME saved `styles` filter
+                 the Advanced Filters sheet does. */
+              {...(() => {
+                const sSpec =
+                  gameType === 'HOLDEM' || gameType === 'OMAHA' || gameType === 'LIMIT'
+                    ? FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>]
+                    : null;
+                if (!sSpec?.styles) return {};
+                const sVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(sSpec);
+                return {
+                  styleChoices: sSpec.styles,
+                  selectedStyles: sVal.styles ?? [],
+                  onStylesChange: (styles: string[]) => {
+                    haptic.selection();
+                    const next: FilterStore = { ...advFilters, [gameType]: { ...sVal, styles } };
                     setAdvFilters(next);
                     if (resolvedClubId) saveFilters(resolvedClubId, next);
                   },

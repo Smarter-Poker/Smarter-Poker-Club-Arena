@@ -15,7 +15,27 @@ import { formatTableChips } from '../../utils/format';
 export interface HandHistoryAction {
   playerName: string;
   playerId: string;
-  action: 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'allin' | 'discard';
+  /**
+   * Every verb the engine writes. `sb`/`bb`/`ante`/`straddle`/`post` are the
+   * forced money that opens a hand; `return` is an uncalled bet handed BACK
+   * (its amount comes OUT of the pot). Until 2026-09-04 the adapter's union
+   * stopped at the six voluntary verbs, so these printed as raw database
+   * tokens and `return` was ADDED to the pot.
+   */
+  action:
+    | 'fold'
+    | 'check'
+    | 'call'
+    | 'bet'
+    | 'raise'
+    | 'allin'
+    | 'discard'
+    | 'sb'
+    | 'bb'
+    | 'ante'
+    | 'straddle'
+    | 'post'
+    | 'return';
   amount?: number;
   /**
    * PHASE 4 COMPLETION 2026-09-01 — the card this player threw, as a canonical
@@ -85,6 +105,33 @@ export interface HandRecord {
    * majority of rows.
    */
   ritBoards?: string[][];
+  /**
+   * DOUBLE / TRIPLE-BOARD BOMB POT: boards 2 and 3 (hand_history.
+   * community_cards2/3). Absent on ordinary hands. Rendered with the same
+   * per-board block as run-it-twice, because to the reader they are the same
+   * thing: more than one board, each with its own winner.
+   */
+  bombBoards?: string[][];
+  /**
+   * WHO WON EACH BOARD (hand_history.winners_by_board, 2026-09-04). Per
+   * (board, winner): the board's own hand name and the pre-rake share. Absent
+   * on single-board hands and on rows written before the column existed -
+   * then the surfaces fall back to the aggregate `winners` and SAY so.
+   */
+  winnersByBoard?: Array<{
+    board: number;
+    playerId: string;
+    playerName: string;
+    amount: number;
+    hand?: string;
+  }>;
+  /** Did any card get turned over at the end? False on a fold-around. */
+  wentToShowdown: boolean;
+  /** Players who reached showdown and mucked (backs, never a hand name). */
+  muckedIds: string[];
+  /** Taken from the pot. Shown beside the pot, never silently netted. */
+  rake: number;
+  bbjFee: number;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -127,7 +174,9 @@ export interface RunBoards {
  * without a length check of its own.
  */
 export function runBoardsFor(hand: HandRecord): RunBoards | null {
-  const extra = hand.ritBoards;
+  /* Run-it-twice boards 2..N, or a bomb pot's boards 2..3: to the reader both
+     are "more than one board, each with its own winner". */
+  const extra = hand.ritBoards?.length ? hand.ritBoards : hand.bombBoards;
   if (!extra || extra.length === 0) return null;
 
   /* Board 1 is stored per street by the adapter, so it is read back the same
@@ -197,8 +246,32 @@ function getActionColor(action: string): string {
       return '#94a3b8';
     case 'allin':
       return '#ef4444';
+    case 'return':
+      return '#60a5fa';
     default:
       return '#9ca3af';
+  }
+}
+
+/** The word a reader expects, not the database token (Dan 2026-09-04). */
+function getActionLabel(action: string): string {
+  switch (action) {
+    case 'sb':
+      return 'Posts SB';
+    case 'bb':
+      return 'Posts BB';
+    case 'ante':
+      return 'Posts Ante';
+    case 'straddle':
+      return 'Straddles';
+    case 'post':
+      return 'Posts';
+    case 'return':
+      return 'Uncalled, Returned';
+    case 'allin':
+      return 'All In';
+    default:
+      return action.charAt(0).toUpperCase() + action.slice(1);
   }
 }
 
@@ -242,31 +315,60 @@ function HoleCards({ cards }: { cards: string[] }) {
  * cards carry full contrast. A player reading three near-identical rows of
  * five cards otherwise has to diff them by eye.
  */
-function RunBoards({ runs }: { runs: RunBoards }) {
+function RunBoards({ runs, hand }: { runs: RunBoards; hand: HandRecord }) {
+  const isBomb = !hand.ritBoards?.length && !!hand.bombBoards?.length;
+  const byBoard = new Map<number, NonNullable<HandRecord['winnersByBoard']>>();
+  for (const w of hand.winnersByBoard || []) {
+    if (!byBoard.has(w.board)) byBoard.set(w.board, []);
+    byBoard.get(w.board)!.push(w);
+  }
+  const hasPerBoard = byBoard.size > 0;
   return (
     <div className="hh-entry__street hh-runs">
       <div className="hh-entry__street-header">
-        <span className="hh-entry__street-name">Run It Twice</span>
+        <span className="hh-entry__street-name">
+          {isBomb ? 'Bomb Pot Boards' : runs.boards.length >= 3 ? 'Run It 3 Times' : 'Run It Twice'}
+        </span>
         <span className="hh-runs__count">{runs.boards.length} Boards</span>
       </div>
-      {runs.boards.map((board, bi) => (
-        <div className="hh-run" key={bi}>
-          <span className="hh-run__badge">RUN {bi + 1}</span>
-          <span className="hh-run__cards">
-            {board.map((c, ci) => (
-              <CardChip key={ci} code={c} shared={ci < runs.sharedCount} />
-            ))}
-          </span>
+      {runs.boards.map((board, bi) => {
+        const winners = byBoard.get(bi + 1) || [];
+        return (
+          <div className="hh-run" key={bi}>
+            <span className="hh-run__badge">
+              {isBomb ? 'BOARD' : 'RUN'} {bi + 1}
+            </span>
+            <span className="hh-run__cards">
+              {board.map((c, ci) => (
+                <CardChip key={ci} code={c} shared={ci < runs.sharedCount} />
+              ))}
+            </span>
+            {/* WHO WON THIS BOARD, WITH WHAT (Dan 2026-09-04: "results that
+                weren't accurate"). Read from hand_history.winners_by_board;
+                until that column existed the panel could only say "covers
+                every run", which is the note kept below for older rows. */}
+            {winners.length > 0 && (
+              <span className="hh-run__winner">
+                {winners.map((w, wi) => (
+                  <span key={wi} className="hh-run__winner-item">
+                    <span className="hh-entry__player-name">{w.playerName}</span>
+                    {w.hand && <span className="hh-entry__hand">{w.hand}</span>}
+                    <span className="hh-entry__won">{formatAmount(w.amount)}</span>
+                  </span>
+                ))}
+              </span>
+            )}
+          </div>
+        );
+      })}
+      {!hasPerBoard && (
+        /* Rows written before winners_by_board (2026-09-04) carry one aggregate
+           amount and one hand name per player for the WHOLE hand. Say so
+           rather than invent a split. */
+        <div className="hh-runs__note">
+          Boards Share The Cards Dealt Before The All In. Collected Totals Below Cover Every Run.
         </div>
-      ))}
-      {/* The stored winner rows carry one aggregate amount and one hand name
-          per player for the WHOLE hand — no run index — so which run each
-          player took is not recoverable from the row. The totals below are
-          therefore labelled as covering every run rather than being split
-          across the boards, which would be an invention. */}
-      <div className="hh-runs__note">
-        Boards Share The Cards Dealt Before The All In. Collected Totals Below Cover Every Run.
-      </div>
+      )}
     </div>
   );
 }
@@ -356,11 +458,18 @@ function HandEntry({
      of hands that were public — no client-side guessing about who showed. */
   const showdownRows = useMemo(() => {
     const winnerById = new Map(hand.winners.map((w) => [w.playerId, w]));
+    const mucked = new Set(hand.muckedIds || []);
+    /* A SHOWDOWN IS A CARD TURNING OVER (Dan 2026-09-04). This used to admit
+       any winner, so a fold-around hand filed its taker under "Showdown" with
+       "Not Shown" beside them. Rows here are players whose cards were shown,
+       or who reached showdown and mucked. A hand with no showdown gets no
+       showdown section - see the render. */
     return hand.players
-      .filter((p) => (p.holeCards && p.holeCards.length > 0) || winnerById.has(p.id))
+      .filter((p) => (p.holeCards && p.holeCards.length > 0) || mucked.has(p.id))
       .map((p) => ({
         id: p.id,
         name: p.name,
+        mucked: mucked.has(p.id) && !(p.holeCards && p.holeCards.length > 0),
         cards: p.holeCards || [],
         /* `collected` is the gross the pot paid this seat; `net` is what they
            are up or down on the hand. Both are shown, and labelled, because
@@ -382,7 +491,14 @@ function HandEntry({
       <button className="hh-entry__summary" onClick={onToggle}>
         <span className="hh-entry__num">#{hand.handNumber}</span>
         <span className="hh-entry__time">{formatTime(hand.timestamp)}</span>
-        <span className="hh-entry__pot">Pot: {formatAmount(hand.potTotal)}</span>
+        <span className="hh-entry__pot">
+          Pot: {formatAmount(hand.potTotal)}
+          {/* Rake was invisible on this surface; the pre-rake pot sat beside a
+              post-rake Collected with nothing saying why they differ. */}
+          {hand.rake > 0 && (
+            <span className="hh-entry__rake"> · Rake {formatAmount(hand.rake)}</span>
+          )}
+        </span>
         <span className="hh-entry__result" style={{ color: resultColor }}>
           {hand.heroResult > 0 ? '+' : ''}
           {formatAmount(hand.heroResult)}
@@ -419,7 +535,7 @@ function HandEntry({
                       className="hh-entry__action-type"
                       style={{ color: getActionColor(a.action) }}
                     >
-                      {a.action}
+                      {getActionLabel(a.action)}
                     </span>
                     {a.amount != null && (
                       <span className="hh-entry__action-amount">{formatAmount(a.amount)}</span>
@@ -433,10 +549,22 @@ function HandEntry({
           ))}
 
           {/* Run It Twice: every board the hand actually ran, board 1 first. */}
-          {runs && <RunBoards runs={runs} />}
+          {runs && <RunBoards runs={runs} hand={hand} />}
+
+          {/* No showdown: one honest line, not a roster of card backs. */}
+          {!hand.wentToShowdown && hand.winners.length > 0 && (
+            <div className="hh-entry__street">
+              <div className="hh-entry__street-header">
+                <span className="hh-entry__street-name">No Showdown</span>
+                <span className="hh-entry__street-cards">
+                  Pot Taken By {hand.winners.map((w) => w.playerName).join(', ')}
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* X6.2g: Showdown section header per spec §10.4 */}
-          {showdownRows.length > 0 && (
+          {hand.wentToShowdown && showdownRows.length > 0 && (
             <div className="hh-entry__street">
               <div className="hh-entry__street-header">
                 <span className="hh-entry__street-name">Showdown</span>
@@ -453,10 +581,12 @@ function HandEntry({
                     {r.cards.length > 0 ? (
                       <HoleCards cards={r.cards} />
                     ) : (
-                      /* The row holds nothing for this seat and never will:
-                         only showdown-revealed holdings are persisted. Say so,
-                         because an empty gap here reads as a load failure. */
-                      <span className="hh-entry__notshown">Not Shown</span>
+                      /* Reached showdown and mucked: the row holds nothing for
+                         this seat by design. Say which, because an empty gap
+                         reads as a load failure. */
+                      <span className="hh-entry__notshown">
+                        {r.mucked ? 'Mucked' : 'Not Shown'}
+                      </span>
                     )}
                     {r.handName && <span className="hh-entry__hand">{r.handName}</span>}
                     <span className="hh-entry__tail">

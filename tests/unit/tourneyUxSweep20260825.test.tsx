@@ -888,7 +888,13 @@ describe('Second audit - the balance gate cannot lock out a funded player', () =
        already typed `number | null`. */
     const page = code(read('src/pages/TablePage.tsx'));
     expect(page).not.toMatch(/setBustWalletBalance\(r\.balance \?\? 0\)/);
-    expect(page).toMatch(/setBustWalletBalance\(r\.balance\)/);
+    /* 2026-09-04: the read moved into readBustBalance (null after one retry,
+       never 0 for "unknown") and the layer stopped re-collapsing it - see
+       tests/run-it-multiple-times-tells-the-truth.law.test.ts. */
+    expect(page).toMatch(/setBustWalletBalance\(await readBustBalance\(userId, tableId\)\)/);
+    expect(read('src/components/table/TableModalsLayer.tsx')).not.toContain(
+      'accountBalance={bustWalletBalance ?? 0}'
+    );
   });
 });
 

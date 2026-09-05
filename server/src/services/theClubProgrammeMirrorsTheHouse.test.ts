@@ -312,13 +312,23 @@ describe('2. a table over the cap drains through the engine, never a mid-hand cu
     expect(isRetiringTable({ settings: 'garbage' })).toBe(false);
   });
   it('the fleet reads settings and treats a retiring table as surplus', () => {
-    expect(FLEET).toMatch(/current_players, created_at, settings'/);
+    // (Slice 2, 2026-09-05: the select also carries cluster_id and lifecycle,
+    //  so the fleet can keep its hands off the controller's tables.)
+    expect(FLEET).toMatch(
+      /current_players, created_at, settings, cluster_id, lifecycle, role, main_index'/
+    );
     expect(FLEET).toMatch(
       /if \(isRetiringTable\(t as \{ settings\?: unknown \}\)\) \{\s*surplusTableIds\.add\(t\.id\);/
     );
   });
   it('the rotator walks one horse out per cycle through the engine, outside the realism cap', () => {
-    expect(ROTATOR).toMatch(/tables!inner\(id, big_blind, tournament_id, status, settings\)/);
+    expect(ROTATOR).toMatch(
+      /tables!inner\(id, big_blind, tournament_id, status, settings, cluster_id\)/
+    );
+    // 2026-09-05: and the drain never touches a cluster table.
+    expect(ROTATOR).toMatch(
+      /if \(t\?\.cluster_id\) continue;\s*if \(!isRetiringTable\(t\)\) continue;/
+    );
     const drain = ROTATOR.slice(
       ROTATOR.indexOf('A TABLE MARKED FOR RETIREMENT'),
       ROTATOR.indexOf('let departures = 0;')

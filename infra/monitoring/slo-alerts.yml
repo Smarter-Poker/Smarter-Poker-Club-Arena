@@ -1,3 +1,16 @@
+# RECOVERED FROM engine-01, 2026-09-05.
+#
+# This file said `groups: []` while slo-objectives was live on the box with
+# 7 healthy rules. deploy.sh SYMLINKS this file over the live one, so the
+# first person to run it would have silently deleted them. The live
+# content is restored here verbatim so the repo is a superset and a
+# deploy can only add. Pinned by
+# tests/an-alert-that-is-live-is-in-the-repo.law.test.ts.
+#
+# Previous content of this file, kept for the record:
+#   # SLO alert rules — DISABLED (depend on slo-rules.yml recording rules).
+#   groups: []
+
 # SLO alerts — the objectives themselves.
 #
 # 2026-09-04 — REWRITTEN alongside slo-rules.yml, which was `groups: []`.

@@ -1,3 +1,20 @@
+# RECOVERED FROM engine-01, 2026-09-05.
+#
+# This file said `groups: []` while slo-recording was live on the box with
+# 7 healthy rules. deploy.sh SYMLINKS this file over the live one, so the
+# first person to run it would have silently deleted them. The live
+# content is restored here verbatim so the repo is a superset and a
+# deploy can only add. Pinned by
+# tests/an-alert-that-is-live-is-in-the-repo.law.test.ts.
+#
+# Previous content of this file, kept for the record:
+#   # SLO recording rules — DISABLED in engine-01 co-located deploy.
+#   # Original rules in infra/monitoring/slo-rules.yml depend on
+#   # probe_success{job="vercel_health"} emitted by blackbox-exporter which
+#   # is not deployed in this stack. Re-enable after adding blackbox-exporter
+#   # to docker-compose.yml.
+#   groups: []
+
 # SLO recording rules.
 #
 # 2026-09-04 — REWRITTEN. This file, and slo-alerts.yml beside it, previously

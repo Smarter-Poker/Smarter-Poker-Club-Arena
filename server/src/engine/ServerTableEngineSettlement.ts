@@ -30,6 +30,7 @@ import {
   logInsuranceSettlement,
   logHandHistory,
   processBBJPayout,
+  resolveJackpotSiblingClubIds,
   completeHandSnapshot,
   supabase,
 } from '../services/supabase.js';
@@ -947,6 +948,15 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
              with table_id + hand_number as a stable identity so the same hit
              can never be shown twice. Additive: an older client ignores it. */
           emitted_at: Date.now(),
+          /* RETAINED FOR A RECONNECT (BBJ build plan phase 1, 2026-09-05). The
+             hub keeps an event only if it declares its own expiry (D3,
+             TableStateHub.retainIfReplayable). Without this a player whose
+             socket was between reconnects for the one second this went out -
+             a train, a backgrounded phone - never received the hand names the
+             celebration is built from. Sixty seconds is the hub's ceiling;
+             the client's identity gate (lib/bbjHitOnce) already refuses a
+             replay it has seen, so retention cannot make it play twice. */
+          replay_until: Date.now() + 60_000,
           loser: {
             userId: bbjResult.loserUserId,
             hand: bbjResult.loserHand,
@@ -1172,6 +1182,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       holeCards: new Map(this.currentHandHoleCards),
       dealerSeat: this.currentHandDealerSeat,
       perPotAwards: [...this.currentHandPerPotAwards],
+      // WHO WON EACH RUN (2026-09-04): the per-board record the felt already
+      // reads off pot_win. It was built, broadcast, and then dropped at the
+      // write, so a run-it-3-times scoop was recorded as one board's hand name.
+      winnersByBoard: [...this.currentHandWinnersByBoard],
       showdownResults: [...this.currentHandShowdownResults],
       insuranceSettlements: [...this.currentHandInsuranceSettlements],
       insuranceNet: this.currentHandInsuranceNet,
@@ -1464,6 +1478,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           startedAt: snap.startedAt || Date.now(),
           endedAt: Date.now(),
           winners: snap.winners,
+          // Per-board winners for any multi-board hand; NULL otherwise (see
+          // handHistory.ts). This is the record that says which run went to
+          // whom, with what - `winners` is only the paid totals.
+          winnersByBoard: snap.winnersByBoard,
           // POT-LEVEL SETTLEMENT (Dan section 29). Captured at WINNERS, when
           // the breakdown still exists. `winners` already carry `potIndex`;
           // this is the other half of that pair, and without it the number is
@@ -1471,13 +1489,48 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // elimination sweep credit a knockout to the winner(s) of the pot
           // that held the busted player's last chips.
           pots: snap.pots,
-          players: players.map((p) => ({
-            userId: p.user_id,
-            username: p.username,
-            seat: p.seat_number,
-            stack: p.stack,
-            cards: [],
-          })),
+          /* THE ROSTER IS THE RLS KEY (2026-09-04). hand_history is readable by
+             `players @> [{userId}]`, so a hand whose roster is missing a
+             participant is a hand that participant can never open, and one
+             with an empty roster is invisible to everyone in it. The roster
+             here is the dealing loop's array; if it disagrees with who was
+             dealt cards or who was paid, the hand was still played - write
+             the union, and say so loudly, rather than lose it. */
+          players: (() => {
+            const roster = players.map((p) => ({
+              userId: p.user_id,
+              username: p.username,
+              seat: p.seat_number,
+              stack: p.stack,
+              cards: [] as string[],
+            }));
+            const seen = new Set(roster.map((r) => r.userId));
+            const seatOf = (uid: string): number => {
+              const sd = snap.showdownResults.find((r) => r.userId === uid);
+              if (sd && typeof sd.seat === 'number') return sd.seat;
+              const act = snap.actions.find((a) => a.userId === uid && typeof a.seat === 'number');
+              return act ? act.seat : 0;
+            };
+            const missing = [...snap.holeCards.keys(), ...snap.winners.map((w) => w.userId)].filter(
+              (uid, i, arr) => uid && !seen.has(uid) && arr.indexOf(uid) === i
+            );
+            for (const uid of missing) {
+              seen.add(uid);
+              roster.push({
+                userId: uid,
+                username: 'Player',
+                seat: seatOf(uid),
+                stack: 0,
+                cards: [],
+              });
+            }
+            if (missing.length > 0 || roster.length === 0) {
+              console.error(
+                `[hand_history] roster disagreed with the hand: hand=${snap.handNumber} table=${this.tableId} rosterLen=${players.length} added=${missing.length}`
+              );
+            }
+            return roster;
+          })(),
           actions: snap.actions,
           // STATS FACT LAYER 2026-08-21: engine-memory values the write used to
           // discard. Rationale in services/supabase/handFacts.ts.
@@ -1923,6 +1976,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
                bbj_hit above - see the note there for why a retained replay is
                otherwise indistinguishable from a live hit. */
             emitted_at: Date.now(),
+            /* Retained for a reconnecting socket, same reason as bbj_hit. This
+               is THE event the ten-second celebration hangs on; before phase 1
+               a player reconnecting during the 1-3 s between the hand and the
+               payout missed the biggest moment on the platform, permanently. */
+            replay_until: Date.now() + 60_000,
             totalPayout: result.totalPayout,
             loser: { userId: bbjHit.loserUserId, share: result.loserShare },
             winner: { userId: bbjHit.winnerUserId, share: result.winnerShare },
@@ -1936,6 +1994,67 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           console.log(
             `[ServerTableEngine:${this.tableId}] BBJ payout complete: $${result.totalPayout} distributed to ${players.length} players`
           );
+
+          /* ── EVERY TABLE IN THE CLUB OR UNION HEARS IT (BBJ audit 2026-09-05) ──
+             Dan: "everyone currently playing in the club or union get a pop up
+             on screen." Until now the other tables learned of a hit only via
+             a Supabase Realtime subscription on the pool row - a WAL stream
+             measured a minute or more behind at peak (ClubHomePage, 2026-09-02)
+             - and then the client refused anything older than 90 seconds as
+             a replay (lib/bbjHitOnce). The announcement was racing its own
+             freshness gate and could lose it, silently, at every other table.
+
+             The engine has a socket to every one of those tables already.
+             Fan the same identity (table_id + hand_number + emitted_at) out
+             over it; the client de-duplicates against the Realtime path by
+             that identity, so whichever arrives first announces and the other
+             is dropped. The Realtime path stays as the fallback for a table
+             this process does not host.
+
+             Never a money step: after the payout has landed, wrapped so that
+             nothing here can fail the settlement. */
+          try {
+            const siblingClubs = new Set(
+              await resolveJackpotSiblingClubIds(this.tableInfo.club_id)
+            );
+            const siblings = ServerTableEngineSettlement.liveCashTableIdsInClubs(
+              siblingClubs,
+              this.tableId
+            );
+            if (siblings.length > 0 && this.hub) {
+              const badBeatHolder = players.find((p) => p.user_id === bbjHit.loserUserId);
+              const announcement = {
+                type: 'bbj_hit_global',
+                table_id: this.tableId,
+                table_name: this.tableInfo.name || 'a table',
+                club_id: this.tableInfo.club_id,
+                hand_number: snap.handNumber,
+                emitted_at: Date.now(),
+                // Retained so a sibling table's reconnecting socket still hears it.
+                replay_until: Date.now() + 60_000,
+                game_variant: this.tableInfo.game_variant,
+                big_blind: this.tableInfo.big_blind,
+                winner_user_id: bbjHit.loserUserId,
+                winner_name: badBeatHolder?.username || 'A player',
+                // What the bad-beat holder took home - the headline figure,
+                // matching what the Realtime path reads (bad_beat_amount).
+                amount: result.loserShare,
+                total_payout: result.totalPayout,
+                qualifying_hand_label: bbjHit.qualifyingHandLabel || '',
+              };
+              for (const siblingId of siblings) {
+                this.hub.emitEvent(siblingId, announcement);
+              }
+              console.log(
+                `[ServerTableEngine:${this.tableId}] BBJ announced to ${siblings.length} sibling table(s) across ${siblingClubs.size} club(s)`
+              );
+            }
+          } catch (announceErr) {
+            console.warn(
+              `[ServerTableEngine:${this.tableId}] BBJ club-wide announcement failed (payout already landed):`,
+              announceErr
+            );
+          }
         }
       }
     });
@@ -2169,6 +2288,13 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           this.leaveHeldByClock.delete(userId);
           this.chipContinuity.forget(userId);
         }
+        // MUST-MOVE (Slice 2): planned moves land here, at the hand boundary,
+        // after the leavers. A move is not a leave: no cash-out, no clock.
+        // ANNOUNCED ONLY (2026-09-05): the deal told the player "Moving After
+        // This Hand"; a move planned during the hand waits for the next deal
+        // to be announced, so nobody is moved off a hand they were not told
+        // about.
+        await this.executePendingSeatMoves({ announcedOnly: true });
       }
     });
 

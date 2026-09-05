@@ -45,7 +45,9 @@ const logOutBody = (() => {
   expect(start, 'handleLogOut must exist').toBeGreaterThan(-1);
   const end = MENU.indexOf('\n  };', start);
   expect(end, 'handleLogOut must be a closed arrow function').toBeGreaterThan(start);
-  return MENU.slice(start, end).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  return MENU.slice(start, end)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '');
 })();
 
 describe('1. the sign-out does not depend on the network call succeeding', () => {
@@ -79,13 +81,10 @@ describe('2. the redirect belongs to the handler, not to whoever happens to be m
 
 describe('3. the breadcrumb has one owner and is cleared on the way out', () => {
   it('lives in lib/authUtils so writer and clearer share a constant', () => {
-    expect(AUTH_UTILS).toMatch(
-      /export const SPA_AUTH_BREADCRUMB = 'club-arena-auth-breadcrumb';/
+    expect(AUTH_UTILS).toMatch(/export const SPA_AUTH_BREADCRUMB = 'club-arena-auth-breadcrumb';/);
+    expect(GUARD, 'AuthGuard must import the constant, not declare its own copy').toMatch(
+      /import\s*\{[^}]*\bSPA_AUTH_BREADCRUMB\b[^}]*\}\s*from\s*'\.\.\/\.\.\/lib\/authUtils'/
     );
-    expect(
-      GUARD,
-      'AuthGuard must import the constant, not declare its own copy'
-    ).toMatch(/import\s*\{[^}]*\bSPA_AUTH_BREADCRUMB\b[^}]*\}\s*from\s*'\.\.\/\.\.\/lib\/authUtils'/);
     expect(GUARD).not.toMatch(/const SPA_AUTH_BREADCRUMB\s*=\s*'/);
   });
 

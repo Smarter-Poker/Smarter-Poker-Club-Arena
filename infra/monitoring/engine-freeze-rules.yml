@@ -212,6 +212,34 @@ groups:
             human) and human seats with no settlement row. Read the latest
             ca_stats_witness_audit_log row and the hands in its window.
 
+      # Phase 3. The EV line on the stats page is built from
+      # ca_hand_facts.all_in_equity. A seat in an all-in RUNOUT (all-in before
+      # the river, reached showdown, no betting after the hand's last all-in)
+      # with no equity figure is a gap in the settlement writer; a side pot
+      # that kept betting is not a runout and owes nothing. Measured
+      # 2026-09-04: 715 owed in 7 days, 1 without (0.9986). The bar is the
+      # programme's 99%; fifty is the sample floor so a quiet week cannot page
+      # on one hand.
+      - alert: StatsAllInEquityCoverageLow
+        expr: |
+          poker_stats_ev_coverage_7d < 0.99
+            and poker_stats_allin_showdowns_7d >= 50
+        for: 5m
+        labels:
+          severity: warning
+          component: club-arena-stats
+        annotations:
+          summary: "All-in equity coverage is {{ $value | humanizePercentage }} over 7 days"
+          description: |
+            Fewer than 99% of the week's all-in runouts carry an all-in
+            equity figure, so EV Adjusted and the luck readouts are
+            understating or overstating players. List the candidates with
+            SELECT hand_id FROM ca_hand_facts WHERE was_all_in AND
+            went_to_showdown AND coalesce(all_in_street,'') <> 'river' AND
+            all_in_equity IS NULL AND played_at >= now() - interval '7 days',
+            then drop the ones whose action log shows a check, bet or raise
+            after the last all-in (side pots, not runouts).
+
       # The engine could not read ca_stats_health() for ten minutes: the
       # gauges above are frozen at their last value and mean nothing.
       - alert: StatsHealthReadStale

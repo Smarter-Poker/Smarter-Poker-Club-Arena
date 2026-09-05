@@ -18,6 +18,7 @@ import {
   handHistoryQueueDepth,
 } from './services/supabase.js';
 import { HorseFleetManager } from './services/HorseFleetManager.js';
+import { ClusterController } from './cluster/ClusterController.js';
 import {
   TournamentRecurringService,
   mttPrestartHorseTarget,
@@ -32,6 +33,7 @@ import { ReplicationMetrics } from './services/ReplicationMetrics.js';
 import { SettlementMetrics } from './services/SettlementMetrics.js';
 import { MoneyHealthMetrics } from './services/MoneyHealthMetrics.js';
 import { CronFleetMetrics } from './services/CronFleetMetrics.js';
+import { alwaysOnPrometheusLines } from './observability/engineInstruments.js';
 import {
   planTableReopens,
   freshHumanWindowMs,
@@ -361,6 +363,22 @@ export class GameServer {
 
   // Server-side services (replaces browser-based DealerPage services)
   private horseFleet = new HorseFleetManager();
+  /** Operation Table Stakes, Slice 6: the tables of a must-move game open,
+   *  feed, break and sleep on their own. Leader-only, like the fleet. */
+  private clusterController = new ClusterController({
+    eligibleHorseCount: (tableId) => this.horseFleet.eligibleHorseCount(tableId),
+    ensureEngine: (tableId) => this.ensureCashTableEngine(tableId),
+    hasEngine: (tableId) => this.tableEngines.has(tableId),
+    seatedCount: async (tableId) => {
+      const { count, error } = await supabase
+        .from('table_seats')
+        .select('id', { count: 'exact', head: true })
+        .eq('table_id', tableId)
+        .is('left_at', null);
+      if (error) throw error;
+      return count ?? 0;
+    },
+  });
   private tournamentRecurring = new TournamentRecurringService();
   // Data-driven recurring schedules (tournament_schedules) — runs alongside the
   // hardcoded recurring blocks, acting only on rows written into the database.
@@ -766,6 +784,9 @@ export class GameServer {
         .start()
         .catch((err) => reportError(err, 'GameServer.horse_fleet_start_failed'));
 
+      // Slice 6: the cluster lifecycle, beside the fleet, on the leader only.
+      this.clusterController.start();
+
       // Step 3: Start tournament recurring service (creates MTTs, SNGs, Spins)
       this.tournamentRecurring.start();
 
@@ -919,6 +940,7 @@ export class GameServer {
 
     // Stop services
     this.horseFleet.stop();
+    this.clusterController.stop();
     this.tournamentRecurring.stop();
     this.scheduledTournaments.stop();
     this.lifecycle.stop();
@@ -1521,6 +1543,12 @@ export class GameServer {
       // rotated secret 401s every job and the log STOPS rather than filling
       // with errors. See services/CronFleetMetrics.ts.
       ...this.cronFleetMetrics.toPrometheus(),
+      // ── ACTION LATENCY, ALWAYS ON (Realtime programme Phase 1, 2026-09-04)
+      // The number that defines how a table feels, scraped for the first
+      // time. Two series (audience=human|horse), never per table. See
+      // observability/engineInstruments.ts and ActionLatency* in
+      // infra/monitoring/alert-rules.yml.
+      ...alwaysOnPrometheusLines(),
     ];
 
     // ── STATS PIPELINE (2026-09-04) ─────────────────────────────────────
@@ -2721,6 +2749,21 @@ export class GameServer {
           if (!(await claimTable(row.table_id))) continue;
 
           if (startedThisSweep > 0) await this.sleep(ENGINE_START_STAGGER_MS);
+
+          // RE-CHECKED AFTER THE AWAITS (2026-09-05). The ClusterController
+          // wakes a seated Main 1 through ensureCashTableEngine on the same
+          // 5 s cadence this sweep runs on, and on the same trigger (a seat
+          // appeared). Between the `has` check above and this line are a
+          // lease round trip and the stagger sleep; a wake that lands inside
+          // that window put a second engine on the same table, and the `set`
+          // below overwrote the first, which kept dealing unreferenced. The
+          // on-demand door re-checks after its claim; so does this one now.
+          if (
+            this.tableEngines.has(row.table_id) ||
+            this.tableEngineStartPromises.has(row.table_id)
+          ) {
+            continue;
+          }
           startedThisSweep++;
 
           console.log(
@@ -5005,8 +5048,25 @@ export class GameServer {
       .finally(() => {
         this.tableEngineStartPromises.delete(tableId);
       });
-    this.tableEngineStartPromises.set(tableId, startPromise);
-    return startPromise;
+    /* ═══ READY IS NOT DEALING (2026-09-05) ═══
+       `start()` resolves when the dealing loop begins, i.e. once the table has
+       its AutoStart figure of players. Returning THAT here meant every
+       on-demand caller - GET /state, GET /actions, the WS ensureTable, the
+       cluster wake (its BUG 4 of 2026-09-05: one lone-seated Main 1 parked
+       the whole controller) - waited for a second player before it could
+       serve the first. What they need is `engine.ready`: row loaded,
+       sub-engines configured, waiting snapshot publishable. The start chain
+       above keeps running for its failure handling; only the promise the
+       caller gets has changed. `ready` settles false when start fails before
+       `waiting`, and true means the engine is in the map and publishing. */
+    void startPromise;
+    const readyPromise: Promise<boolean> = engine.ready.finally(() => {
+      if (this.tableEngineStartPromises.get(tableId) === readyPromise) {
+        this.tableEngineStartPromises.delete(tableId);
+      }
+    });
+    this.tableEngineStartPromises.set(tableId, readyPromise);
+    return readyPromise;
   }
 
   /**

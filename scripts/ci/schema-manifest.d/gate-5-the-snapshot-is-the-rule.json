@@ -1,0 +1,7 @@
+{
+  "_owner": "feat/gate-5-the-snapshot-is-the-rule",
+  "_comment": "20260905033729: fn_cash_apply_ruleset - the game snapshot is written onto every open table by the tick's RECONCILE. Applied to production 2026-09-05 03:41 UTC; 46 stale tables corrected on the first tick.",
+  "tables": [],
+  "functions": ["fn_cash_apply_ruleset"],
+  "columns": {}
+}

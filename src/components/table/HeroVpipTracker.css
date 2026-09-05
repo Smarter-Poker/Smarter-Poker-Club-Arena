@@ -1,0 +1,105 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE HERO'S VPIP TRACKER (Dan 2026-09-04) - to the LEFT of the hero, hero
+   only. Anchored at the hero seat's own point and pushed left of the seat by
+   half the hero pod's width (tableGeometry SEAT_SIZE_RUNGS: 79 / 88 / 101 /
+   128 wide) plus a gap, so it rides with the seat at every breakpoint and
+   never overlaps the avatar. Mobile first; press feedback is not needed on a
+   readout, and there is no pointer state of any kind.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.hero-vpip {
+  --sp-hero-half: 64px;
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  box-sizing: border-box;
+  min-width: 62px;
+  padding: 4px 8px 5px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgb(12 15 20 / 92%) 0%, rgb(0 0 0 / 88%) 100%);
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 60%),
+    0 4px 12px rgb(0 0 0 / 55%);
+  color: #d5dbe4;
+  font-family: var(--font-primary, 'Inter', sans-serif);
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(calc(-100% - var(--sp-hero-half) - 10px), -50%);
+}
+
+.hero-vpip__eyebrow {
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: #8b95a3;
+}
+
+.hero-vpip__figure {
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-vpip__detail {
+  font-size: 0.5rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: #9aa4b2;
+}
+
+/* Standing against the floor, in the figure's colour: nothing to judge
+   (plain), still sampling (blue), safe (green), within five points (amber),
+   under after the window (red, and the box says so). */
+.hero-vpip--sample .hero-vpip__figure {
+  color: #8fd4ff;
+}
+
+.hero-vpip--safe .hero-vpip__figure {
+  color: #3fb950;
+}
+
+.hero-vpip--edge .hero-vpip__figure {
+  color: #ffc857;
+}
+
+.hero-vpip--under {
+  border-color: rgb(255 92 92 / 65%);
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 60%),
+    0 0 10px rgb(255 92 92 / 45%);
+}
+
+.hero-vpip--under .hero-vpip__figure {
+  color: #ff5c5c;
+}
+
+@media (max-width: 640px) {
+  .hero-vpip {
+    --sp-hero-half: 51px;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero-vpip {
+    --sp-hero-half: 44px;
+    min-width: 56px;
+    padding: 3px 6px 4px;
+  }
+
+  .hero-vpip__figure {
+    font-size: 0.875rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .hero-vpip {
+    --sp-hero-half: 40px;
+  }
+}

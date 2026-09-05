@@ -33,7 +33,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { buildReplay, type ReplayModel } from '../utils/handReplay';
+import { buildReplay, type ReplayInput, type ReplayModel } from '../utils/handReplay';
+
+type ReplayInputWinnersByBoard = ReplayInput['winnersByBoard'];
 import { reportError } from '../utils/errorReporter';
 
 const COLUMNS = [
@@ -50,10 +52,12 @@ const COLUMNS = [
   'button_seat',
   'community_cards',
   'community_cards2',
+  'community_cards3',
   'rit_boards',
   'players',
   'actions',
   'winners',
+  'winners_by_board',
   'hole_cards',
   'showdown',
   'pots',
@@ -131,7 +135,10 @@ export function useHandReplayModel(handId: string | null | undefined): {
           extraBoards: [
             ...(((row.rit_boards as string[][]) || []) as string[][]),
             ...(row.community_cards2 ? [row.community_cards2 as string[]] : []),
+            // A triple-board bomb pot showed two boards, ever, until 2026-09-04.
+            ...(row.community_cards3 ? [row.community_cards3 as string[]] : []),
           ],
+          winnersByBoard: (row.winners_by_board as ReplayInputWinnersByBoard) ?? null,
           players: (((row.players as unknown[]) || []) as Array<Record<string, unknown>>).map(
             (p) => ({
               userId: String(p.userId ?? ''),

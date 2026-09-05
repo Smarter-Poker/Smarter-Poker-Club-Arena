@@ -137,6 +137,15 @@ export function cashBuyInRefusalText(raw: unknown): string | null {
       ? `The Minimum Buy In For This Game Right Now Is ${amt[1]}`
       : 'The Minimum Buy In For This Game Is Higher Right Now';
   }
+  /* Booted for low VPIP: no seat in this game until the bar lifts (Dan
+     2026-09-05). The number is seconds, printed as minutes. */
+  if (/VPIP_BARRED|GAME_BARRED/.test(m)) {
+    const secs = m.match(/BARRED:(\d+)/);
+    const mins = secs ? Math.max(1, Math.ceil(Number(secs[1]) / 60)) : null;
+    return mins
+      ? `You Were Removed For Low VPIP. You May Rejoin This Game In ${mins} ${mins === 1 ? 'Minute' : 'Minutes'}`
+      : 'You Were Removed For Low VPIP And Cannot Rejoin This Game Yet';
+  }
   if (/BUYIN_ABOVE_MAX/.test(m)) {
     const max = m.match(/maximum \(([\d,.]+)\)/);
     return max

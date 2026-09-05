@@ -193,7 +193,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
 
     const { data: rows, error: readErr } = await supabase
       .from('table_pending_addons')
-      .select('id, user_id, amount')
+      .select('id, user_id, amount, kind')
       .eq('table_id', this.tableId)
       .is('resolved_at', null);
 
@@ -210,7 +210,12 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
 
     let delivered = 0;
     let unresolved = 0;
-    for (const row of rows as Array<{ id: string; user_id: string; amount: number }>) {
+    for (const row of rows as Array<{
+      id: string;
+      user_id: string;
+      amount: number;
+      kind?: string | null;
+    }>) {
       const { data, error: resolveErr } = await supabase.rpc('resolve_pending_addon', {
         p_pending_id: row.id,
         p_max_buy_in: maxBuyIn,
@@ -239,6 +244,28 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         const player = players.find((p) => p.user_id === row.user_id);
         if (player) player.stack = Math.round((player.stack + applied) * 100) / 100;
         delivered++;
+        /* Dan 2026-09-04: "IF A PLAYER ADDS ON AFTER A HAND, THEY SHOULD GET
+           A LITTLE POP UP ABOVE THEIR HEAD. 'HAS ADDED ON FOR XX.XX'."
+
+           This is the ONE place add-on chips land on a stack (the ledger row
+           is resolved here and nowhere else), so it is the one place the
+           table can be told. `applied`, not `row.amount`: the RPC caps at the
+           max buy-in and refunds the rest, and the bubble must say what the
+           stack actually gained. Every subscriber sees it — the pop-up is
+           for the table, not just the player. */
+        this.hub?.emitEvent(this.tableId, {
+          type: 'add_on_applied',
+          table_id: this.tableId,
+          seat: player?.seat_number ?? null,
+          user_id: row.user_id,
+          amount: applied,
+          stack: player?.stack ?? null,
+          // 'addon' (topping up a live stack) or 'rebuy' (C3: the bust rebuy
+          // rides the same ledger). Same bubble today; the client may differ
+          // the wording later without another engine change.
+          kind: row.kind ?? 'addon',
+          timestamp: Date.now(),
+        });
       }
 
       console.log(

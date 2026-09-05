@@ -350,6 +350,63 @@ groups:
           description: "The collector is fresh but reports zero slots. Either the slots were dropped - realtime is then entirely dead - or the function lost its catalog access."
           runbook: "docs/SENTRY-AND-REALTIME-PROGRAMME.md section 3"
 
+  # ── Action latency (Realtime programme Phase 1, 2026-09-04) ──────────────
+  # poker_act_to_broadcast_ms is the time from a player's action being
+  # accepted to the new state reaching every seat - the number that defines
+  # how a table FEELS. It had never been scraped in production (the per-table
+  # version is gated off for cardinality). Labelled audience=human|horse and
+  # format=cash|spin|hu_sng|mtt. The human series is what pages; a fleet-wide
+  # p95 would be a horse number. BOTH RULES GROUP BY format (Dan 2026-09-05:
+  # "not just the cash game tables"), so a Spin, a heads-up SNG and an MTT
+  # each alert on their own p95 instead of hiding inside a cash average.
+  # Guarded by the hourly maintenance break (CLAUDE.md 13.6).
+  - name: action-latency
+    interval: 30s
+    rules:
+      - alert: ActionLatencyDegraded
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le, format) (rate(poker_act_to_broadcast_ms_bucket{audience="human"}[10m]))
+          ) > 500
+          and sum by (format) (rate(poker_act_to_broadcast_ms_count{audience="human"}[10m])) > 0
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: warning
+          component: engine
+        annotations:
+          summary: "{{ $labels.format }} tables: p95 act-to-broadcast {{ $value | humanize }}ms over 10m"
+          description: |
+            A player's action is taking more than half a second to reach the
+            other seats, sustained. Compare against the last deploy; check
+            event-loop lag and DB write latency on engine-01.
+          runbook: "docs/REALTIME-CONNECTIONS-PROGRAMME.md"
+
+      - alert: ActionLatencyCritical
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le, format) (rate(poker_act_to_broadcast_ms_bucket{audience="human"}[10m]))
+          ) > 1500
+          and sum by (format) (rate(poker_act_to_broadcast_ms_count{audience="human"}[10m])) > 0
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 5m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: "{{ $labels.format }} tables: p95 act-to-broadcast {{ $value | humanize }}ms - the table is unplayable"
+          description: |
+            More than 1.5 s from action to broadcast at p95. At this point
+            turn timers are visibly wrong and players are acting on stale
+            state. Treat as an outage.
+          runbook: "docs/REALTIME-CONNECTIONS-PROGRAMME.md"
+
+  # NOTE (merge, 2026-09-05): main carried a "RECOVERED FROM engine-01" copy of
+  # the settlement and money-health groups below, taken from the box because
+  # they were live there before this branch merged. That copy was byte-for-byte
+  # this branch's content, so the groups appear once, here, with their pager
+  # labels. tests/an-alert-that-is-live-is-in-the-repo.law.test.ts pins them.
+
   # ── SETTLEMENT (2026-09-04) ─────────────────────────────────────────────
   # On 2026-09-04, 139,153 hands failed to settle over thirteen hours -
   # between 25% and 44% of every hand dealt - and nothing raised an alert.

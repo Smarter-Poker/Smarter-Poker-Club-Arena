@@ -7354,9 +7354,23 @@ export default function TablePage({
    * Lifetime VIP; there is no other rung - docs/laws.d/vip-is-not-a-ladder.md).
    */
   const { isVIP: viewerIsVip } = useVIPStatus();
+  /**
+   * "ALL IN" MEANS IN THE RUN-OUT, NOT ONLY OUT OF CHIPS (audit 2026-09-05).
+   * The engine's ALL_IN_RUNOUT carries `getActivePlayers()` - every live
+   * hand, including the player who CALLED the shove with chips behind. That
+   * player has no more decisions and their money is in the middle exactly
+   * like the shover's, and they are in the equity list the server sends. A
+   * check on `status === 'all_in'` alone would have denied the perk to the
+   * covering player in every heads-up all-in, which is half of them. So:
+   * the hero is a run-out participant if the equity broadcast names them
+   * (by id, or by seat where the entry has no id), or their status says so.
+   */
+  const heroInRunout =
+    tableState.heroSeat > 0 &&
+    (tableState.players[tableState.heroSeat - 1]?.status === 'all_in' ||
+      allInEquities.some((e) => (e.userId ? e.userId === userId : e.seat === tableState.heroSeat)));
   const heroSqueezeEligible = viewerMaySqueeze({
-    heroAllIn:
-      tableState.heroSeat > 0 && tableState.players[tableState.heroSeat - 1]?.status === 'all_in',
+    heroAllIn: heroInRunout,
     isVip: viewerIsVip,
     settingOn: v8Settings.all_in_squeeze,
     runItMultiple: ritRunsThisHand > 1 || (ritResult?.boards?.length ?? 0) > 1,
@@ -7374,7 +7388,22 @@ export default function TablePage({
    * is involved. The hold lifts on the engine's reveal beat, when the face is
    * on screen.
    */
-  const [squeezeHolding, setSqueezeHolding] = useState(false);
+  const [holdingBoards, setHoldingBoards] = useState<ReadonlySet<number>>(() => new Set());
+  const setBoardHolding = useCallback((boardIndex: number, holding: boolean) => {
+    setHoldingBoards((prev) => {
+      if (prev.has(boardIndex) === holding) return prev;
+      const next = new Set(prev);
+      if (holding) next.add(boardIndex);
+      else next.delete(boardIndex);
+      return next;
+    });
+  }, []);
+  /* A double or triple board bomb pot deals its boards in lockstep and
+     squeezes each one; the numbers wait until EVERY squeezed card is open. */
+  const onSqueezeHoldBoard0 = useCallback((h: boolean) => setBoardHolding(0, h), [setBoardHolding]);
+  const onSqueezeHoldBoard1 = useCallback((h: boolean) => setBoardHolding(1, h), [setBoardHolding]);
+  const onSqueezeHoldBoard2 = useCallback((h: boolean) => setBoardHolding(2, h), [setBoardHolding]);
+  const squeezeHolding = holdingBoards.size > 0;
   const displayedEquities = useHeldValue(allInEquities, squeezeHolding);
 
   // FIX-232: Ref for cards_pre_sort to avoid stale closure in hole card callbacks
@@ -21341,7 +21370,7 @@ export default function TablePage({
                            does (see heroSqueezeEligible). */
                         squeezeEligible={heroSqueezeEligible}
                         runs={ritRunsThisHand}
-                        onSqueezeHold={setSqueezeHolding}
+                        onSqueezeHold={onSqueezeHoldBoard0}
                         /* RIVER SQUEEZE 2026-09-04: presentation identity and
                            focus. The engine keys the river by table + hand +
                            board so a duplicate snapshot never replays it and
@@ -21380,6 +21409,11 @@ export default function TablePage({
                             cardBack={activeCardBack}
                             playSounds={false}
                             slowReveal={allInEquities.length > 0}
+                            /* VIP ALL-IN SQUEEZE 2026-09-05 (audit): every run-out card
+                               squeezes, on every board. */
+                            squeezeEligible={heroSqueezeEligible}
+                            runs={ritRunsThisHand}
+                            onSqueezeHold={onSqueezeHoldBoard1}
                             tableId={tableId}
                             handId={tableState.handNumber}
                             boardIndex={1}
@@ -21407,6 +21441,11 @@ export default function TablePage({
                             cardBack={activeCardBack}
                             playSounds={false}
                             slowReveal={allInEquities.length > 0}
+                            /* VIP ALL-IN SQUEEZE 2026-09-05 (audit): every run-out card
+                               squeezes, on every board. */
+                            squeezeEligible={heroSqueezeEligible}
+                            runs={ritRunsThisHand}
+                            onSqueezeHold={onSqueezeHoldBoard2}
                             tableId={tableId}
                             handId={tableState.handNumber}
                             boardIndex={2}

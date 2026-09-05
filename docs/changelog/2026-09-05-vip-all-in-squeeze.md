@@ -141,6 +141,45 @@ A non-VIP tap emits `SHOW_TOAST` with "You Need A VIP Card To Use The All In
 Squeeze. Visit The VIP Page To Get One." and writes nothing. Default true for
 everyone means a member who becomes a VIP tomorrow finds the perk on.
 
+## The audit before the next phase (same day, same branch)
+
+Dan's standing rule: before moving on, prove the previous phase is fully
+built, wired and tested. Read back against the engine and the page, three
+gaps and three stale sentences, all fixed on this branch before it merged:
+
+1. **"All in" was too narrow.** Eligibility read `status === 'all_in'`. The
+   engine's `ALL_IN_RUNOUT` carries `getActivePlayers()`, which includes the
+   player who CALLED the shove with chips behind - no more decisions, money
+   in the middle, named in the equity broadcast - and that player would have
+   been denied the perk in every heads-up all-in they covered. `heroInRunout`
+   is now: status all-in OR named in `allInEquities` (by id, or by seat where
+   an entry has no id).
+2. **Bomb-pot boards 2 and 3 did not squeeze.** Only board 1 was passed
+   `squeezeEligible`, so on a double or triple board the squeezer's second
+   board flipped on its own while the first sat under their hand. Every board
+   is eligible now, each reports its hold, and the displayed equity waits for
+   the UNION of boards still face down (`holdingBoards`).
+3. **No keyboard path.** The host announced itself as a button with no way to
+   press it. `tabIndex=0`; Enter or Space opens the card from flat.
+4. `ALL_IN_STREET_REVEAL_MS`'s doc (both mirrors) still promised "the face is
+   up exactly when this gate opens"; the `slowReveal` prop doc still said it
+   ran the all-in profile; `cursor: grab` lingered on the opened card. All
+   corrected.
+
+Checked and found sound: the settings cache merges defaults so the new key is
+never `undefined` on a warm start; no felt-level pointer handler or
+pointer-events rule sits between a thumb and the board card; the replay
+(`useCardSqueeze`) never passes `allIn`; the `squeeze` phase the engine now
+announces is ignored by every other subscriber; the flop path never sets a
+hold; reduced motion still outranks the perk.
+
+**One design question left for Dan, not built:** on a PRE-FLOP all-in the
+flop is a run-out street too, and it still deals as the three-card fan (one
+street, one server window, three cards). Squeezing three cards one by one
+does not fit inside the pacing; squeezing the flop as a group would need its
+own gesture. The turn and river squeeze regardless of where the all-in
+happened.
+
 ## What was deliberately not built
 
 - **Reduced motion still outranks the squeeze.** A viewer with
@@ -162,8 +201,9 @@ everyone means a member who becomes a VIP tomorrow finds the perk on.
   an early release through the engine).
 - Engine vitest: 5,760 passed, 401 files.
 - `npm run build:ci` clean.
-- `tests/unit/vipAllInSqueeze.test.ts`: 31 pins; run against the pre-feature
-  tree, 19 failed as designed.
+- `tests/unit/vipAllInSqueeze.test.ts`: 31 pins (the page pin widened by the
+  audit); run against the pre-feature tree, 19 failed as designed.
+  `RiverSqueeze.test.tsx` gained the keyboard-release pin in the audit.
 - Not done: a play-through on a real table with two all-in seats, one VIP and
   one not. The pointer path is exercised by the component test through
   `releaseHold` directly, because happy-dom has no pointer capture. That is

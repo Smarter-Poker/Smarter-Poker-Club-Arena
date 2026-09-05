@@ -16,7 +16,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { sliceEnclosingBlock } from '../helpers/sourceWindow';
+import { sliceEnclosingBlock, sliceMethod } from '../helpers/sourceWindow';
 
 const ROOT = join(__dirname, '..', '..');
 const read = (...p: string[]) => readFileSync(join(ROOT, ...p), 'utf8');
@@ -28,6 +28,7 @@ const RANKING_HOST = read('src', 'components', 'tournament', 'TournamentRankingH
 const MULTI_TABLE = read('src', 'pages', 'MultiTablePage.tsx');
 const QUICK_JOIN_SPINS = read('src', 'lib', 'quickJoinSpins.ts');
 const ENGINE_BASE = read('server', 'src', 'tournament', 'TournamentManagerBase.ts');
+const SOUND = read('src', 'services', 'SoundService.ts');
 
 /* ─────────────────────────────────────────────────────────────────────────
    1. "WHEN I TRY TO JOIN A SPIN THAT ALREADY HAS HORSES REGISTERED, I DON'T
@@ -324,5 +325,129 @@ describe('a shown hand is the same size at every seat', () => {
       '.seat-wrapper--top .seat .seat__cards--opponent.seat__cards--revealed'
     );
     expect(SEAT_CSS.slice(i, SEAT_CSS.indexOf('\n}', i))).toContain('--seat-avatar-size');
+  });
+});
+
+describe('the spin reveal is a sequence, so no beat of it can be suppressed', () => {
+  /* ROUND 18, 2026-09-05. Round 1 gave the reveal its cues and Dan still
+     reported "NO SOUND EFFECT AND NO COUNTDOWN". Every cue existed, was
+     wired, and was called; `shouldPlay` was throwing them away.
+
+     The gate is `rank <= currentFramePriority`, held for 50ms by whoever won
+     it. playSpinStart is big_win (95) and the countdown and the ticking are
+     ui (10), so any client that arrived mid reveal - where SpinWheel's `at()`
+     clamps every past beat to 0 and schedules them into ONE frame - heard the
+     lever and nothing else. The result cue is 95 as well, and the comparison
+     is `<=`, so the reveal ate its own climax.
+
+     The four now go through shouldPlaySpinCue, which is the mechanism
+     playPotCollect already moved to for exactly this reason (that move is
+     pinned in tests/animations-always-play.law.test.ts). */
+
+  /* No leading indent in these needles, deliberately: sliceMethod derives the
+     closing indent from the text between the line start and the match, so a
+     needle that already contains the indent computes '' and runs to the end of
+     the class - a window that is green on every negative assertion. */
+  const CUES: Record<string, string> = {
+    playSpinStart: 'playSpinStart()',
+    playSpinCountdownLight: 'playSpinCountdownLight(step',
+    playSpinTicking: 'playSpinTicking(durationMs',
+    playSpinMultiplierResult: 'playSpinMultiplierResult(multiplier',
+  };
+  const cue = (name: string) => sliceMethod(SOUND, CUES[name]);
+  const helper = () => sliceMethod(SOUND, 'private shouldPlaySpinCue(cue');
+
+  it('none of the four reveal cues is ranked against the felt any more', () => {
+    for (const name of [
+      'playSpinStart',
+      'playSpinCountdownLight',
+      'playSpinTicking',
+      'playSpinMultiplierResult',
+    ]) {
+      expect(cue(name)).not.toContain('this.shouldPlay(');
+      expect(cue(name)).toContain('this.shouldPlaySpinCue(');
+    }
+  });
+
+  it('the countdown throttle is keyed per step, so three lights are three cues', () => {
+    // One shared key would make lights 2 and 3 duplicates of light 1 and drop
+    // them - the same bug in a new place.
+    expect(cue('playSpinCountdownLight')).toContain('`countdown:${step}`');
+  });
+
+  it('every reveal cue still answers to the master switch', () => {
+    // Leaving the rank window must not leave the mute switch. This is the one
+    // gate that has to survive.
+    expect(helper()).toContain('if (!this.enabled || !isSoundAllowed()) return false;');
+  });
+
+  it('the reveal no longer parks the priority window against the table', () => {
+    // playSpinStart used to set currentFramePriority to 95 for 50ms, so a
+    // deal or a chip landing beside the lever was eaten BY the wheel.
+    expect(helper()).not.toContain('currentFramePriority');
+  });
+});
+
+describe('the spin quick-join sheet is live for as long as it is open', () => {
+  /* ROUND 18, 2026-09-05. Dan: "YOU NEED TO INSURE THAT REAL TIME CONNECTIONS
+     ARE FULLY ADDED TO THIS."
+
+     The sheet was a snapshot taken when "+" was pressed. A spin board holds
+     three seats, usually has two of them filled when the sheet renders, and
+     the fleet takes the last one within 90-350 seconds of a human sitting - so
+     the row a player taps can already have started. Both `tables` and
+     `tournaments` are in the supabase_realtime publication, so the fill was
+     already on the wire and nothing was listening to it. */
+
+  const effect = () => sliceEnclosingBlock(MULTI_TABLE, 'quick-join-spins-', 0, 1);
+
+  it('subscribes to both tables the fill is written to', () => {
+    expect(effect()).toContain("table: 'tournaments'");
+    expect(effect()).toContain("table: 'tables'");
+  });
+
+  it('refreshes without blanking the sheet the player is reading', () => {
+    // Re-running the loader would set { loading: true, rows: [] } and flash a
+    // spinner over a list being read. The refresh patches rows in place.
+    const e = effect();
+    expect(e).toContain('loading: false');
+    expect(e).not.toContain('rows: [] }');
+  });
+
+  it('a failed or empty re-read leaves the rows alone', () => {
+    // `null` from quickJoinSpinRows means "could not answer", never "no spins".
+    expect(effect()).toContain('if (cancelled || !rows) return;');
+  });
+
+  it('the channel is torn down when the sheet closes', () => {
+    expect(effect()).toContain('supabase.removeChannel(channel)');
+  });
+
+  it('the cash sheet is never overwritten by a spin refresh', () => {
+    // The spin branch stores its scope; the cash fall-through clears it, so the
+    // effect stays inert over a cash list.
+    expect(MULTI_TABLE).toContain('setSpinSheetScope({ scopeClubIds, activeTableId });');
+    expect(MULTI_TABLE).toContain('setSpinSheetScope(null);');
+    expect(effect()).toContain(
+      'if (!spinSheetScope || spinSheetScope.scopeClubIds.length === 0) return;'
+    );
+  });
+
+  it('every listener carries its club, so the sheet is not a firehose', () => {
+    // tests/no-unfiltered-realtime-firehose: unfiltered listeners on `tables`
+    // and `tournaments` were ~80% of 86 million realtime messages in one
+    // billing cycle, and this effect mounts for every player who presses "+".
+    const e = effect();
+    expect(e).toContain('filter: `club_id=eq.${clubId}`');
+    expect(e).not.toMatch(/table: 'tournaments' \}/);
+    expect(e).not.toMatch(/table: 'tables' \}/);
+  });
+
+  it('the scope is state, so the subscription arms on the FIRST opening', () => {
+    // The loader is async: `quickJoin.open` is true a round trip before the
+    // spin branch knows its scope. A ref read by an effect keyed on `open`
+    // alone is still null at that moment, and never re-runs.
+    expect(MULTI_TABLE).toContain('const [spinSheetScope, setSpinSheetScope] = useState<{');
+    expect(MULTI_TABLE).toContain('}, [quickJoin.open, spinSheetScope]);');
   });
 });

@@ -260,7 +260,14 @@ function WalletPlate({
         <div className="wallet-plate__readout">
           <div className="wallet-plate__stat wide">
             <span className="wallet-plate__value total">{fmtNum(animatedTotal)}</span>
-            <span className="wallet-plate__label">Total Balance</span>
+            {/* "Balance", never "Total Balance". tests/wallet-display-ledger,
+                under "wallet separation and honest labels", pins that this page
+                does not call a sum a Total Balance - the wallets are separate
+                and not all of a total is playable. This figure is one wallet's
+                own available + locked, and the plate already carries the
+                wallet's NAME in its artwork, so "Balance" is both accurate and
+                the plainer read. */}
+            <span className="wallet-plate__label">Balance</span>
           </div>
           <div className="wallet-plate__meter" aria-hidden="true">
             <div className="wallet-plate__meter-fill" style={{ width: `${sharePct}%` }} />

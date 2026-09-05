@@ -93,6 +93,64 @@ describe('LAW 1/2/4 - the always-on registry', () => {
   });
 });
 
+describe('LAW 7 - the clock measures action-to-broadcast, not the gap between actions', () => {
+  // THE BUG THIS PINS (2026-09-05). performAction emits PLAYER_ACTION
+  // synchronously and its handler calls broadcastCurrentState, so the
+  // broadcast for an action happens INSIDE performAction. The clock used to
+  // be armed AFTER that call, so every broadcast observed the clock left by
+  // the PREVIOUS action and the histogram recorded the interval between two
+  // actions. Production reported "median 808ms act-to-broadcast" for a day;
+  // it was really the median turn pacing, and the event loop was healthy the
+  // whole time (p99 54ms), which is what made the number look like a mystery.
+  const turns = readFileSync(
+    join(ROOT, 'server', 'src', 'engine', 'ServerTableEngineTurns.ts'),
+    'utf8'
+  );
+
+  it('the human path arms the clock BEFORE performAction', () => {
+    const m = turns.indexOf('protected _handlePlayerActionInner');
+    const seg = turns.slice(m, m + 20000);
+    const arm = seg.indexOf('this.lastActionAcceptedAtMs = Date.now();');
+    const act = seg.indexOf('const actionApplied = this.handController.performAction(');
+    expect(arm).toBeGreaterThan(0);
+    expect(act).toBeGreaterThan(0);
+    expect(
+      arm,
+      'arming must precede performAction, or the sample is the previous action'
+    ).toBeLessThan(act);
+  });
+
+  it('a rejected action does not leave a live clock behind', () => {
+    const m = turns.indexOf('protected _handlePlayerActionInner');
+    const seg = turns.slice(m, m + 20000);
+    expect(seg).toContain('if (!actionApplied) {');
+    expect(seg).toMatch(/this\.lastActionAcceptedAtMs = actClockWasArmed;/);
+  });
+
+  it('the horse path arms before its action and restores when nothing lands', () => {
+    const h = turns.indexOf('const horseClockWasArmed');
+    expect(h).toBeGreaterThan(0);
+    const seg = turns.slice(h, h + 4000);
+    const arm = seg.indexOf('this.lastActionAcceptedAtMs = Date.now();');
+    const act = seg.indexOf('handControllerRef.performAction(seat, action as any, amount)');
+    expect(arm).toBeLessThan(act);
+    // the degrade re-arms, and total failure restores
+    expect(seg).toContain("performAction(seat, 'fold' as any)");
+    expect(turns).toMatch(/this\.lastActionAcceptedAtMs = horseClockWasArmed;/);
+  });
+
+  it('the counter blocks no longer re-arm the clock after the broadcast', () => {
+    // Both counter sites sit after the broadcast has gone out. If either one
+    // arms the clock, the bug is back.
+    for (const marker of ['actionsTotal.inc(1, { table_id: this.tableId });']) {
+      const i = turns.indexOf(marker);
+      expect(i).toBeGreaterThan(0);
+      const after = turns.slice(i, i + 700);
+      expect(after).not.toContain('this.lastActionAcceptedAtMs = Date.now();');
+    }
+  });
+});
+
 describe('LAW 5 - every format is measured, not just cash (Dan 2026-09-05)', () => {
   it('both instruments carry a format label at every observation site', () => {
     const eng = readFileSync(join(ROOT, 'server', 'src', 'engine', 'ServerTableEngine.ts'), 'utf8');

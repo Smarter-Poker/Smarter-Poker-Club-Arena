@@ -211,6 +211,18 @@ groups:
   # "not just the cash game tables"), so a Spin, a heads-up SNG and an MTT
   # each alert on their own p95 instead of hiding inside a cash average.
   #
+  # ⚠ THE 2026-09-05 NUMBERS BELOW MEASURED THE WRONG THING, AND THESE
+  # THRESHOLDS INHERIT THAT. The clock was armed AFTER performAction, whose
+  # synchronous PLAYER_ACTION handler had already broadcast - so every sample
+  # was the interval between two consecutive actions (turn pacing), not
+  # action-to-broadcast latency. Fixed the same day by arming before the
+  # action. The p50 808ms / p95 1843ms / p99 3755ms below therefore describe
+  # PACING, and 3000/6000 are deliberately generous placeholders chosen from
+  # them. RE-DERIVE both once a day of true latency data exists: the real
+  # numbers will be far smaller, and thresholds this loose would miss a real
+  # regression. LAW 6 pins them against whatever the recorded baseline says,
+  # so update the baseline and the law together.
+  #
   # THE THRESHOLDS COME FROM THE MEASUREMENT, NOT FROM A WISH (2026-09-05).
   # The first version of these rules guessed 500ms/1500ms before any data
   # existed. The first hour of real data says the fleet normally runs:
@@ -438,6 +450,18 @@ groups:
   # p95 would be a horse number. BOTH RULES GROUP BY format (Dan 2026-09-05:
   # "not just the cash game tables"), so a Spin, a heads-up SNG and an MTT
   # each alert on their own p95 instead of hiding inside a cash average.
+  #
+  # ⚠ THE 2026-09-05 NUMBERS BELOW MEASURED THE WRONG THING, AND THESE
+  # THRESHOLDS INHERIT THAT. The clock was armed AFTER performAction, whose
+  # synchronous PLAYER_ACTION handler had already broadcast - so every sample
+  # was the interval between two consecutive actions (turn pacing), not
+  # action-to-broadcast latency. Fixed the same day by arming before the
+  # action. The p50 808ms / p95 1843ms / p99 3755ms below therefore describe
+  # PACING, and 3000/6000 are deliberately generous placeholders chosen from
+  # them. RE-DERIVE both once a day of true latency data exists: the real
+  # numbers will be far smaller, and thresholds this loose would miss a real
+  # regression. LAW 6 pins them against whatever the recorded baseline says,
+  # so update the baseline and the law together.
   #
   # THE THRESHOLDS COME FROM THE MEASUREMENT, NOT FROM A WISH (2026-09-05).
   # The first version of these rules guessed 500ms/1500ms before any data

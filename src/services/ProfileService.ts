@@ -249,6 +249,12 @@ class ProfileServiceClass {
    * Get leaderboard
    */
   async getLeaderboard(metric: 'winnings' | 'hands', limit: number = 10): Promise<UserProfile[]> {
+    /* `total_hands_played` is a real number again as of migration
+       20260905164455. It held 6 across all 1,312 profiles - one non-zero row -
+       so this ORDER BY was sorting on a constant and returning whatever
+       Postgres felt like, presented as a ranking. It is now a rollup of
+       SUM(player_stats.hands_played) maintained by trg_sync_profile_total_hands,
+       and it sums to 6,764,566 over 1,006 players. */
     const orderColumn = {
       winnings: 'diamonds', // No total_winnings column; use diamonds as proxy
       hands: 'total_hands_played',
@@ -372,8 +378,14 @@ class ProfileServiceClass {
       avatarUrl: data.avatar_url as string | undefined,
       bio: data.bio as string | undefined,
       level,
-      vipTier: (data.tier as UserProfile['vipTier']) || 'bronze', // DB column is `tier`
-      vipPoints: 0, // there is no points column; VIP is tier-only
+      /* `profiles.tier` is the literal string 'Newcomer' on every row - it is
+         NOT a VIP level, and nothing may gate on it (see
+         tests/vip-is-not-a-ladder.law.test.ts). It stays out of the mapped
+         profile entirely rather than being handed on as a `vipTier`; callers
+         that need the membership read `vipStatus`, which resolveVipStatus
+         answers from is_vip + vip_tier + vip_expires_at. */
+      vipTier: 'bronze',
+      vipPoints: 0, // vip_points is its own table; this mapper does not read it
       currentStreak: (data.login_streak as number) || 0, // DB column is `login_streak`
       longestStreak: (data.streak_days as number) || 0, // DB column is `streak_days`
       lastLoginDate: data.last_login_date as string | undefined,

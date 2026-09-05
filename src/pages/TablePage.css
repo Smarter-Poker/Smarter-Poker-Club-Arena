@@ -921,31 +921,32 @@
    the foot of this file already relies on - so art and seats stay registered
    at any aspect and nothing has to be re-measured.
 
-   ── WHY 920 AND NOT 860, WHICH IS WHAT THIS FIRST SAID ──────────────────────
+   ── WHY 960, AND WHY IT IS MEASURED RATHER THAN REASONED ────────────────────
 
-   Because the number is BOUNDED, and the bound is already written down two
-   files away. `.seat-wrapper--top` (SeatSlot.css) carries the measurement that
-   put the top row on the rail: at `--sp-bust-scale: 1.05` the TOP-CENTRE
-   seat's crown "clears with 5px to spare" on the 605x1000 reference frame -
-   and top-centre at `{ x: 50, y: 5 }` is the 6-max ring, i.e. exactly the
-   seat this rule moves.
+   This said 860 first, then 920, both derived from a sentence in SeatSlot.css
+   ("clears with 5px to spare"). Then it was actually MEASURED, in Chromium,
+   against the real stylesheet, with the harness from
+   tests/e2e/top-rail-seat.spec.ts. The 6-max top-centre seat's bust art clears
+   the top of the canvas by:
 
-   The seat's centre sits at 5% of the CANVAS, so shortening the canvas walks
-   it toward the BBJ banner at 0.05px per point of height removed:
+       H = 1000   4.2px      H = 940    1.2px
+       H =  980   3.2px      H =  920   0.2px   <- what 'the arithmetic' allowed
+       H =  960   2.2px
 
-       lift = 0.05 x (1000 - H)  <=  5px of spare   ->   H >= 900
+   0.2px is not a margin, it is a rounding error away from the 2026-08-19 bug
+   (Dan's item 10) that the top-row cap exists to prevent. 960 keeps 2.2px at
+   every shipped width, and that is the number.
 
-   860 would have lifted it 7px through a 5px margin and put the bust art back
-   inside the banner - which is the 2026-08-19 bug (Dan's item 10) that the
-   56px top-row cap was introduced to fix. 920 spends 4 of the 5px and leaves
-   one. It is 8% shorter, on the seat ring that had ~14% of its canvas doing
-   nothing, and it is the largest reduction the one real measurement supports.
+   The lesson is worth more than the number: the estimate said H >= 900 was
+   safe and the measurement says 940 is already tight. Estimating a clearance
+   from a prose description of a clearance is how you get 0.2px and call it
+   fine. Measure it - the harness takes a minute to run.
 
-   Going further is a MEASURED job, not a bolder literal: it needs the crown
-   clearance re-measured on device (tests/e2e/top-rail-seat.spec.ts is the
-   harness) or the top-centre seat's y raised in step. `tests/unit/
-   sixMaxFeltIsShorter.test.ts` pins this arithmetic so the next agent cannot
-   reach for 860 again without meeting it.
+   It is 4% shorter rather than 14%, because the top-centre seat sits at y 5
+   and every point of canvas height removed walks it 0.05px toward the banner.
+   Shortening further needs that seat's y raised in step, which moves it off
+   the painted rail band, and that is a design change rather than a tuning
+   one.
 
    2..6 as one band because every ring below 7 has the same shape: no bottom
    caps, one seat on the top band. 7, 8 and 9 keep the full canvas.
@@ -955,7 +956,7 @@
 .table-page[data-seats='4'] .table-scaler,
 .table-page[data-seats='5'] .table-scaler,
 .table-page[data-seats='6'] .table-scaler {
-  --sp-table-ar-h: 920;
+  --sp-table-ar-h: 960;
 }
 
 /* Table Felt (Vertical Oval) */
@@ -3613,8 +3614,28 @@
    Only on mobile (avoid unnecessary layer creation on desktop)
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* MOBILE PASS 2026-09-05: `.community-cards__card` is NO LONGER in this list.
+   The rule promoted every board card to its own compositor layer, permanently,
+   on every phone - five per table, twenty in a four-up tile view - and the
+   comment above justified it with "only on mobile", which is backwards: it
+   created the layers exactly where memory is scarcest.
+
+   MDN on this property: "Use will-change as a last resort ... Don't use it to
+   anticipate performance problems", and "Excessive use of will-change will
+   result in excessive memory use and will cause more complex rendering to
+   occur as the browser attempts to prepare for the possible change. This will
+   lead to worse performance." A board card that is not mid-reveal animates
+   nothing at all.
+
+   The squeeze promotes its own rotating box instead, and only while it turns
+   (cardSqueeze.css, `[data-rs-animating='on']`), which is the same source's
+   "switch will-change on and off using script code before and after the
+   change occurs".
+
+   The other selectors are left alone deliberately: their animations have not
+   been studied here, and removing a hint on an unmeasured element is a guess
+   in the other direction. */
 @media (max-width: 768px) and (pointer: coarse) {
-  .community-cards__card,
   .pot-display,
   .pot-display__chip-stack,
   .dealer-button,

@@ -24,6 +24,9 @@ import { LoadingState } from '../common/EmptyState';
 export default function UnionCreationGuard({ children }: { children: ReactNode }) {
   const { canCreateUnion, checking } = useCanCreateUnion();
   if (checking) return <LoadingState message="Checking Your Access" />;
-  if (!canCreateUnion) return <Navigate to="/unions" replace />;
+  /* Not /unions: since 2026-09-05 that directory is gated by the SAME
+     allowlist, so an account refused here would be refused there too and
+     bounced onward. /community is the section both entries live under. */
+  if (!canCreateUnion) return <Navigate to="/community" replace />;
   return <>{children}</>;
 }

@@ -74,6 +74,14 @@ const matchForward = (cleaned: string, from: number, open: '{' | '('): number =>
  * green on every negative assertion, and blind. Found 2026-08-28 by moving the
  * helper here and running the suites against it.
  *
+ * PASS THE SIGNATURE WITHOUT ITS LEADING INDENT (found 2026-09-05). The indent
+ * is derived from the text BETWEEN the line start and the match, so a needle
+ * that already carries it - `'  playSpinStart('` - computes an indent of '',
+ * and the closer then matches the CLASS's own `\n}`. The window silently
+ * becomes the rest of the file, which is green on every negative assertion:
+ * exactly the blindness the header of this file is about. Use
+ * `'playSpinStart()'`.
+ *
  * So the end is found by indentation instead: the method closes at the first
  * line that is this signature's own indent followed by `}`. Prettier runs on
  * every commit through .husky/pre-commit, so that shape is guaranteed. Brace

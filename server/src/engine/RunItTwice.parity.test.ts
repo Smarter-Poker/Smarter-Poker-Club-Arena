@@ -239,6 +239,69 @@ describe('per-run pot awards - the split-pot ship sequence', () => {
     const awards = e.currentHandPerPotAwards as Array<{ board?: number }>;
     expect([...new Set(awards.map((a) => a.board ?? 1))].sort()).toEqual([1, 2, 3]);
   });
+
+  /**
+   * THE POT BREAKDOWN SURVIVES A RIT HAND (2026-09-05).
+   *
+   * `currentHandPots` was captured only in the WINNERS handler, behind
+   * `hasWinners && state.pots`. A RIT hand satisfies neither — it settles
+   * through `finalizeRunout(true)` (WINNERS is emitted empty) and never
+   * reaches `completeHandInner()`, the only place `state.pots` is assigned.
+   *
+   * So every multi-board hand ever played wrote `hand_history.pots` NULL and
+   * shipped `pot_distributed` with `pots: []`. Measured on the live table
+   * before the fix: 6,939 of 6,939 recorded RIT hands had `pots` NULL.
+   */
+  it('records the pot breakdown a RIT hand settles against', () => {
+    const { e } = resolveRIT([100, 300, 500], 2);
+
+    const pots = e.currentHandPots as Array<{
+      index: number;
+      amount: number;
+      eligible: string[];
+    }>;
+
+    expect(pots.length, 'a RIT hand must record the pots it played for').toBeGreaterThan(0);
+    // 100/300/500 all-in three ways: a main pot plus at least one side pot.
+    expect(pots.length, 'side pots must be recorded, not merged away').toBeGreaterThanOrEqual(2);
+    // Indexes are dense and in pot order — `winners[].potIndex` is an index
+    // into exactly this array, and a gap makes it uninterpretable.
+    expect(pots.map((p) => p.index)).toEqual(pots.map((_, i) => i));
+    for (const p of pots) {
+      expect(p.amount, 'a recorded pot must hold chips').toBeGreaterThan(0);
+      expect(
+        p.eligible.length,
+        'eligibility is the whole point of the record — it is how a knockout is attributed'
+      ).toBeGreaterThan(0);
+    }
+    // The main pot is contested by everyone; each side pot by strictly fewer.
+    for (let i = 1; i < pots.length; i++) {
+      expect(pots[i].eligible.length).toBeLessThanOrEqual(pots[i - 1].eligible.length);
+    }
+    // And the recorded pots account for the whole hand: their sum is the pot
+    // the winners were paid out of, before rake.
+    const potTotal = pots.reduce((s, p) => s + p.amount, 0);
+    const credited = (e.currentHandWinners as Array<{ amount: number }>).reduce(
+      (s, w) => s + w.amount,
+      0
+    );
+    expect(potTotal).toBeGreaterThanOrEqual(credited - 0.01);
+  });
+
+  it('every per-(run, pot) award names a pot that was actually recorded', () => {
+    const { e } = resolveRIT([100, 300, 500], 3);
+    const pots = e.currentHandPots as Array<{ index: number }>;
+    const awards = e.currentHandPerPotAwards as Array<{ potIndex: number; board?: number }>;
+    const known = new Set(pots.map((p) => p.index));
+    expect(awards.length).toBeGreaterThan(0);
+    for (const a of awards) {
+      expect(known.has(a.potIndex), `award cites pot ${a.potIndex} which was never recorded`).toBe(
+        true
+      );
+    }
+    // Three runs, and every run pays out of the pots on record.
+    expect([...new Set(awards.map((a) => a.board ?? 1))].sort()).toEqual([1, 2, 3]);
+  });
 });
 
 describe('RIT IS CASH-ONLY (Dan 2026-08-26) - with an integer backstop behind the gate', () => {

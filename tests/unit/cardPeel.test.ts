@@ -1,170 +1,113 @@
 /**
- * The corner peel is geometry first (src/components/table/cardPeel.ts) so the
- * feel can be pinned to the pixel: the pinched corner lands under the finger,
- * the face shows through exactly where the back was lifted, and nothing is
- * lifted until the finger moves.
+ * THE FACE ARRIVES FROM THE TOP. It is not a corner curl and it is not a
+ * bottom-up fold.
+ *
+ * Rebuilt 2026-09-05 from Dan's video of himself doing it with real cards.
+ * He tips the pair toward himself, pivoting on the near edge, and the face
+ * comes into view from the TOP DOWN - the Q and J indices first, side by side,
+ * right way up, then the court art filling in beneath them.
+ *
+ * Two earlier versions are pinned against here because both shipped:
+ *   v1  a diagonal CORNER curl with a dog-ear flap
+ *   v2  a horizontal boundary running the WRONG WAY, face revealed bottom-up.
+ *       That one is what "THE CARDS ARE STILL BACKWARDS" meant, so the
+ *       direction is asserted explicitly below rather than left to a
+ *       partition check that both versions would satisfy.
  */
 import { describe, it, expect } from 'vitest';
-import {
-  computePeel,
-  clampPeelPoint,
-  leftCorner,
-  peelPointAtProgress,
-  flatPeel,
-} from '../../src/components/table/cardPeel';
+import { computePeel, flatPeel, liftAtProgress } from '../../src/components/table/cardPeel';
 
-const W = 60;
-const H = 84;
+const W = 50;
+const H = 70;
+const peel = (lift: number) => computePeel({ width: W, height: H, lift });
 
-function applyMatrix(m: string, x: number, y: number): [number, number] {
-  const [a, b, c, d, e, f] = m
-    .replace(/matrix\(|\)/g, '')
-    .split(',')
-    .map(Number);
-  return [a * x + c * y + e, b * x + d * y + f];
-}
-
-function polygonPoints(poly: string): Array<[number, number]> {
-  return poly
-    .replace(/polygon\(|\)/g, '')
-    .split(',')
-    .map((pair) => {
-      const [x, y] = pair.trim().split(/\s+/);
-      return [(parseFloat(x) / 100) * W, (parseFloat(y) / 100) * H];
-    });
-}
-
-function area(poly: Array<[number, number]>): number {
-  let s = 0;
-  for (let i = 0; i < poly.length; i++) {
-    const [x1, y1] = poly[i];
-    const [x2, y2] = poly[(i + 1) % poly.length];
-    s += x1 * y2 - x2 * y1;
-  }
-  return Math.abs(s) / 2;
-}
-
-describe('leftCorner: the peel opens left to right (Dan 2026-09-04)', () => {
-  it('always pinches a LEFT corner, top or bottom by the finger height', () => {
-    expect(leftCorner(W, H, 55, 80)).toBe('bl'); // thumb on the bottom-right
-    expect(leftCorner(W, H, 5, 80)).toBe('bl');
-    expect(leftCorner(W, H, 55, 5)).toBe('tl'); // finger on the top-right
-    expect(leftCorner(W, H, 5, 5)).toBe('tl');
-  });
-
-  it('a rightward slide from the bottom-left grows progress', () => {
-    let last = -1;
-    for (let dx = 0; dx <= W; dx += 10) {
-      const f = computePeel({ width: W, height: H, corner: 'bl', x: dx, y: H - dx * 0.6 });
-      expect(f.progress).toBeGreaterThanOrEqual(last);
-      last = f.progress;
-    }
-    expect(last).toBeGreaterThan(0.5);
-  });
-});
-
-describe('nothing is lifted until the finger moves', () => {
-  it('a touch with no movement is a flat card', () => {
-    const f = computePeel({ width: W, height: H, corner: 'br', x: W, y: H });
+describe('a card lying flat', () => {
+  it('shows all back and no face', () => {
+    const f = flatPeel();
     expect(f.progress).toBe(0);
-    expect(f.coverClip).toBe('polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%)');
-    expect(f.flapDepth).toBe(0);
-    expect(f).toEqual(flatPeel(W, H, 'br'));
+    expect(f.backClip).toBe('inset(0 0 0 0)');
+    expect(f.faceClip).toBe('inset(0 0 100% 0)');
+    expect(f.foldPercent).toBe(0);
+    expect(f.bendDeg).toBe(0);
+  });
+
+  it('a touch that has not moved, or moved DOWN, is still flat', () => {
+    expect(peel(0)).toEqual(flatPeel());
+    expect(peel(-30)).toEqual(flatPeel());
   });
 });
 
-describe('the pinched corner lands under the finger', () => {
-  it.each([
-    ['br', W, H],
-    ['bl', 0, H],
-    ['tr', W, 0],
-    ['tl', 0, 0],
-  ] as const)('%s corner reflects onto the drag point', (corner, cx, cy) => {
-    const x = W / 2 + (cx === 0 ? 8 : -8);
-    const y = H / 2 + (cy === 0 ? 10 : -10);
-    const f = computePeel({ width: W, height: H, corner, x, y });
-    const [rx, ry] = applyMatrix(f.flapTransform, cx, cy);
-    expect(rx).toBeCloseTo(x, 2);
-    expect(ry).toBeCloseTo(y, 2);
+describe('the face is revealed from the top downward', () => {
+  it('THE INDICES COME FIRST: a small lift shows the TOP of the face, not the bottom', () => {
+    const f = peel(H * 0.12);
+    // Face keeps its top 12% - the corner the rank and suit are printed in.
+    expect(f.faceClip).toBe('inset(0 0 88% 0)');
+    // Back keeps the remaining 88%, measured from its top.
+    expect(f.backClip).toBe('inset(12% 0 0 0)');
   });
 
-  it('the reflection is its own inverse (a fold, not a stretch)', () => {
-    const f = computePeel({ width: W, height: H, corner: 'br', x: 20, y: 30 });
-    const [x1, y1] = applyMatrix(f.flapTransform, 13, 47);
-    const [x2, y2] = applyMatrix(f.flapTransform, x1, y1);
-    expect(x2).toBeCloseTo(13, 2);
-    expect(y2).toBeCloseTo(47, 2);
-  });
-});
-
-describe('the face shows through exactly where the back was lifted', () => {
-  it('cover and flap partition the card', () => {
-    const f = computePeel({ width: W, height: H, corner: 'br', x: 24, y: 40 });
-    const cover = polygonPoints(f.coverClip);
-    const flap = polygonPoints(f.flapClip);
-    expect(area(cover) + area(flap)).toBeCloseTo(W * H, 0);
-    expect(area(flap)).toBeGreaterThan(0);
-    expect(area(cover)).toBeGreaterThan(0);
+  it('half a card of lift puts the boundary across the middle', () => {
+    const f = peel(H / 2);
+    expect(f.progress).toBeCloseTo(0.5, 5);
+    expect(f.foldPercent).toBeCloseTo(50, 5);
+    expect(f.backClip).toBe('inset(50% 0 0 0)');
+    expect(f.faceClip).toBe('inset(0 0 50% 0)');
   });
 
-  it('a small peel lifts a small triangle at the corner', () => {
-    const f = computePeel({ width: W, height: H, corner: 'br', x: W - 10, y: H - 10 });
-    const flap = polygonPoints(f.flapClip);
-    expect(flap.length).toBe(3);
-    expect(area(flap)).toBeLessThan(W * H * 0.05);
-    expect(f.progress).toBeLessThan(0.2);
-  });
-
-  it('dragging to the opposite corner is progress 1 and folds the back in half', () => {
-    // A fold can lift at most half the card - the fold line then runs through
-    // the centre. Past the commit threshold SeatSlot finishes the reveal.
-    const f = computePeel({ width: W, height: H, corner: 'br', x: 0, y: 0 });
-    expect(f.progress).toBe(1);
-    expect(area(polygonPoints(f.flapClip))).toBeCloseTo((W * H) / 2, 0);
-    expect(f.foldX).toBeCloseTo(W / 2, 3);
-    expect(f.foldY).toBeCloseTo(H / 2, 3);
-  });
-
-  it('progress grows monotonically along the diagonal', () => {
+  it('the boundary travels DOWN as the drag grows (v2 ran it up)', () => {
     let last = -1;
-    for (let p = 0; p <= 1; p += 0.1) {
-      const [x, y] = peelPointAtProgress(W, H, 'br', p);
-      const f = computePeel({ width: W, height: H, corner: 'br', x, y });
-      expect(f.progress).toBeGreaterThanOrEqual(last);
-      expect(f.progress).toBeCloseTo(p, 5);
-      last = f.progress;
+    for (const p of [0.1, 0.3, 0.5, 0.7, 0.9]) {
+      const fold = peel(H * p).foldPercent;
+      expect(fold).toBeGreaterThan(last);
+      last = fold;
+    }
+  });
+
+  it('the two clips always partition the card with no gap and no overlap', () => {
+    for (const p of [0.1, 0.25, 0.4, 0.6, 0.75, 0.9, 1]) {
+      const f = peel(H * p);
+      const backTop = Number(/inset\(([\d.]+)% 0 0 0\)/.exec(f.backClip)![1]);
+      const faceBottom = Number(/inset\(0 0 ([\d.]+)% 0\)/.exec(f.faceClip)![1]);
+      expect(backTop + faceBottom).toBeCloseTo(100, 5);
+      expect(backTop).toBeCloseTo(f.foldPercent, 5);
+    }
+  });
+
+  it('a full card of lift shows the whole face and none of the back', () => {
+    const f = peel(H);
+    expect(f.progress).toBe(1);
+    expect(f.foldPercent).toBe(100);
+    expect(f.faceClip).toBe('inset(0 0 0% 0)');
+    expect(f.backClip).toBe('inset(100% 0 0 0)');
+  });
+
+  it('never goes past fully open, however far the finger travels', () => {
+    expect(peel(H * 5).progress).toBe(1);
+    expect(peel(H * 5).foldPercent).toBe(100);
+  });
+
+  it('progress rises monotonically with lift', () => {
+    let last = -1;
+    for (let px = 0; px <= H; px += 5) {
+      const p = peel(px).progress;
+      expect(p).toBeGreaterThanOrEqual(last);
+      last = p;
     }
   });
 });
 
-describe('the corner cannot leave the card or overshoot', () => {
-  it('a finger dragged off the far side is held at the opposite corner', () => {
-    const [x, y] = clampPeelPoint(W, H, 'br', -500, -500);
-    expect(Math.hypot(W - x, H - y)).toBeCloseTo(Math.hypot(W, H), 3);
-  });
-
-  it('a finger dragged outward (away from the card) does not fold it inside out', () => {
-    const [x, y] = clampPeelPoint(W, H, 'br', W + 30, H + 30);
-    expect(x).toBe(W);
-    expect(y).toBe(H);
-    expect(computePeel({ width: W, height: H, corner: 'br', x: W + 30, y: H + 30 }).progress).toBe(
-      0
-    );
-  });
-
-  it('a drag along the bottom edge scores lower than a drag across the card', () => {
-    const edge = computePeel({ width: W, height: H, corner: 'br', x: 10, y: H }).progress;
-    const across = computePeel({ width: W, height: H, corner: 'br', x: 10, y: 14 }).progress;
-    expect(across).toBeGreaterThan(edge);
+describe('the pair tips toward the player as it comes up', () => {
+  it('is flat at both ends and tipped in the middle - held to the eye it is square again', () => {
+    expect(peel(0).bendDeg).toBe(0);
+    expect(peel(H).bendDeg).toBeCloseTo(0, 1);
+    expect(peel(H / 2).bendDeg).toBeGreaterThan(10);
   });
 });
 
-describe('shading points from the fold toward the pinched corner', () => {
-  it('a straight-up peel from the bottom-right shades downward', () => {
-    // Corner dragged straight up: fold is horizontal, corner is BELOW the fold.
-    const f = computePeel({ width: W, height: H, corner: 'br', x: W, y: H - 30 });
-    expect(f.shadeAngle).toBeCloseTo(180, 3); // CSS: 180deg = toward the bottom
-    expect(f.foldAngle % 180).toBeCloseTo(0, 3);
-    expect(f.foldY).toBeCloseTo(H - 15, 3);
+describe('liftAtProgress is the inverse, for tweening a release', () => {
+  it('round-trips', () => {
+    for (const p of [0, 0.3, 0.55, 1]) {
+      expect(peel(liftAtProgress(H, p)).progress).toBeCloseTo(p, 5);
+    }
   });
 });

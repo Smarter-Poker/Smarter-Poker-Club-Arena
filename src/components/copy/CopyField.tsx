@@ -20,7 +20,7 @@ export const CopyField: React.FC<CopyFieldProps> = ({ value, label }) => {
       {label && <label className="copy-label">{label}</label>}
       <div className="copy-input-wrapper">
         <input type="text" value={value} readOnly className="copy-input" />
-        <button className={`copy-btn ${copied ? 'copied' : ''}`} onClick={handleCopy}>
+        <button className={`copy-field__copy-btn ${copied ? 'copied' : ''}`} onClick={handleCopy}>
           {copied ? '' : ''}
         </button>
       </div>

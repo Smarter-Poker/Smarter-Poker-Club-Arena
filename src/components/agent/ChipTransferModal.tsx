@@ -627,7 +627,12 @@ export default function ChipTransferModal({
       >
         <div className="chip-transfer-header">
           <h2 id="chip-transfer-title">Cashier Transfer</h2>
-          <button type="button" className="close-btn" onClick={handleClose} aria-label="Close">
+          <button
+            type="button"
+            className="chip-transfer-modal__close-btn"
+            onClick={handleClose}
+            aria-label="Close"
+          >
             X
           </button>
         </div>

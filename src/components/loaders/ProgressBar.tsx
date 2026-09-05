@@ -21,9 +21,9 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
   const percentage = Math.min((value / max) * 100, 100);
 
   return (
-    <div className={`progress-bar size-${size}`}>
+    <div className={`progress-bar__progress-bar size-${size}`}>
       <div
-        className={`progress-fill variant-${variant} ${animated ? 'animated' : ''}`}
+        className={`progress-bar__progress-fill variant-${variant} ${animated ? 'animated' : ''}`}
         style={{ width: `${percentage}%` }}
       />
       {showLabel && <span className="progress-label">{Math.round(percentage)}%</span>}

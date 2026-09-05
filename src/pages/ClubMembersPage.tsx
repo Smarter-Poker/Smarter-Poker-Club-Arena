@@ -1021,7 +1021,7 @@ function MemberRow({
   const status = member.is_seated ? 'At A Table' : member.is_online ? 'Online' : 'Offline';
   return (
     <article
-      className={`member-row${member.is_seated ? ' member-row--seated' : member.is_online ? ' member-row--online' : ''}`}
+      className={`club-members-page__member-row${member.is_seated ? ' member-row--seated' : member.is_online ? ' member-row--online' : ''}`}
       role="listitem"
       aria-posinset={position}
       aria-setsize={total}

@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * HoleCardHeatmap.
  *
@@ -44,7 +50,7 @@
   margin: 0.75rem 0;
 }
 
-.heatmap-modes {
+.hole-card-heatmap__heatmap-modes {
   display: inline-flex;
   gap: 0.3rem;
   padding: 0.2rem;
@@ -96,7 +102,7 @@
   color: rgba(200, 224, 245, 0.45);
 }
 
-.heatmap-select {
+.hole-card-heatmap__heatmap-select {
   padding: 0.3rem 0.5rem;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -106,7 +112,7 @@
   min-height: 32px;
 }
 
-.heatmap-select:focus-visible {
+.hole-card-heatmap__heatmap-select:focus-visible {
   outline: 2px solid #00d4ff;
   outline-offset: 1px;
 }
@@ -136,7 +142,7 @@
   display: contents;
 }
 
-.heatmap-cell {
+.hole-card-heatmap__heatmap-cell {
   aspect-ratio: 1 / 1;
   min-width: 22px;
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -156,21 +162,21 @@
     border-color 0.12s ease;
 }
 
-.heatmap-cell.is-pair {
+.hole-card-heatmap__heatmap-cell.is-pair {
   border-color: rgba(255, 255, 255, 0.2);
 }
 
-.heatmap-cell.is-thin {
+.hole-card-heatmap__heatmap-cell.is-thin {
   color: rgba(232, 244, 255, 0.45);
 }
 
-.heatmap-cell.is-hovered {
+.hole-card-heatmap__heatmap-cell.is-hovered {
   transform: scale(1.16);
   border-color: #00d4ff;
   z-index: 2;
 }
 
-.heatmap-cell:focus-visible {
+.hole-card-heatmap__heatmap-cell:focus-visible {
   outline: 2px solid #00d4ff;
   outline-offset: 1px;
   z-index: 2;
@@ -214,7 +220,7 @@
   font-style: italic;
 }
 
-.heatmap-note {
+.hole-card-heatmap__heatmap-note {
   margin: 0.6rem 0 0;
   font-size: 0.68rem;
   line-height: 1.55;
@@ -253,7 +259,7 @@
 }
 
 @media (min-width: 560px) {
-  .heatmap-cell {
+  .hole-card-heatmap__heatmap-cell {
     font-size: 0.62rem;
   }
 }
@@ -263,12 +269,12 @@
     animation: none;
   }
 
-  .heatmap-cell,
+  .hole-card-heatmap__heatmap-cell,
   .heatmap-mode {
     transition: none;
   }
 
-  .heatmap-cell.is-hovered {
+  .hole-card-heatmap__heatmap-cell.is-hovered {
     transform: none;
   }
 }
@@ -277,8 +283,12 @@
 /* These were applied in TSX with no rule defined anywhere, so the empty
    states rendered inconsistently - only .pos-radar-empty was centred. */
 
-.heatmap-empty { text-align: center; }
-.heatmap-head { text-align: left; }
+.heatmap-empty {
+  text-align: center;
+}
+.heatmap-head {
+  text-align: left;
+}
 
 /* ── Drill-down: the hands behind one cell ─────────────────────────────── */
 

@@ -263,7 +263,7 @@ export default function VIPPage() {
 
   if (loading) {
     return (
-      <div className="vip-page">
+      <div className="vippage__vip-page">
         <RewardsSurfaceHeader
           eyebrow="Rewards Circuit / VIP"
           title="VIP Command Deck"
@@ -276,7 +276,7 @@ export default function VIPPage() {
             { label: 'Active Streak', value: 'Syncing' },
           ]}
         />
-        <div className="loading-state">
+        <div className="vippage__loading-state">
           <PageSkeleton variant="stats" />
         </div>
       </div>
@@ -284,7 +284,7 @@ export default function VIPPage() {
   }
 
   return (
-    <div className="vip-page">
+    <div className="vippage__vip-page">
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / VIP"
         title="VIP Command Deck"

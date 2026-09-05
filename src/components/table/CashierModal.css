@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CASHIER MODAL — Styles
@@ -8,7 +14,7 @@
    OVERLAY
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-.cashier-overlay {
+.cashier-modal__cashier-overlay {
   position: fixed;
   inset: 0;
   /* Cashier audit 2026-08-27 (P1-8): breathing room so the panel's own
@@ -93,7 +99,7 @@
   margin: 0;
 }
 
-.cashier-modal__close {
+.cashier-modal__cashier-modal__close {
   width: 32px;
   height: 32px;
   display: flex;
@@ -411,7 +417,7 @@
     padding: 12px 16px;
   }
 
-  .cashier-modal__close {
+  .cashier-modal__cashier-modal__close {
     width: 40px;
     height: 40px;
     min-width: 40px;

@@ -221,7 +221,7 @@ function FriendItem({
           ) : (
             <span>{(friend.name || '?')[0]?.toUpperCase() || '?'}</span>
           )}
-          <span className={`status-badge ${friend.status}`} />
+          <span className={`friends-list__status-badge ${friend.status}`} />
         </div>
         <div className="friend-info">
           <span className="friend-name">{friend.name}</span>
@@ -239,7 +239,7 @@ function FriendItem({
         </div>
       </div>
 
-      <div className="friend-actions">
+      <div className="friends-list__friend-actions">
         <button
           className="action-icon-btn"
           onClick={() => onChat(friend.id)}

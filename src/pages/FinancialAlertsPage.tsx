@@ -246,25 +246,25 @@ export default function FinancialAlertsPage() {
       {/* Filter Tabs */}
       <div className="filter-tabs">
         <button
-          className={`filter-tab ${filter === 'all' ? 'active' : ''}`}
+          className={`financial-alerts-page__filter-tab ${filter === 'all' ? 'active' : ''}`}
           onClick={() => setFilter('all')}
         >
           All ({totalCount})
         </button>
         <button
-          className={`filter-tab critical ${filter === 'critical' ? 'active' : ''}`}
+          className={`financial-alerts-page__filter-tab critical ${filter === 'critical' ? 'active' : ''}`}
           onClick={() => setFilter('critical')}
         >
           Critical ({criticalCount})
         </button>
         <button
-          className={`filter-tab warning ${filter === 'warning' ? 'active' : ''}`}
+          className={`financial-alerts-page__filter-tab warning ${filter === 'warning' ? 'active' : ''}`}
           onClick={() => setFilter('warning')}
         >
           Warning ({warningCount})
         </button>
         <button
-          className={`filter-tab ${filter === 'info' ? 'active' : ''}`}
+          className={`financial-alerts-page__filter-tab ${filter === 'info' ? 'active' : ''}`}
           onClick={() => setFilter('info')}
           style={
             filter === 'info'
@@ -319,7 +319,7 @@ export default function FinancialAlertsPage() {
           {filteredAlerts.map((alert) => (
             <div key={alert.id} className={`alert-card severity-${alert.severity}`}>
               <div className="alert-header">
-                <span className={`severity-badge ${alert.severity}`}>
+                <span className={`financial-alerts-page__severity-badge ${alert.severity}`}>
                   {alert.severity === 'critical' ? '●' : '◐'} {alert.severity.toUpperCase()}
                 </span>
                 <span className="alert-source">{alert.source}</span>

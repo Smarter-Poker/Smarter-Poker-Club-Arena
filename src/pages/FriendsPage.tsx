@@ -862,7 +862,7 @@ function FriendGroup({
               </span>
             </button>
             <div
-              className={`friend-actions ${friend.profile_available ? '' : 'is-unavailable'}`}
+              className={`friends-page__friend-actions ${friend.profile_available ? '' : 'is-unavailable'}`}
               aria-label={`Actions For ${friend.username}`}
             >
               {friend.profile_available && (

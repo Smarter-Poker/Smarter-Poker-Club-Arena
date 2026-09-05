@@ -280,7 +280,7 @@ export function CashierModal({
 
   return (
     <div
-      className="cashier-overlay"
+      className="cashier-modal__cashier-overlay"
       onClick={() => {
         if (!busy) onClose();
       }}
@@ -295,7 +295,7 @@ export function CashierModal({
             Cashier
           </h2>
           <button
-            className="cashier-modal__close"
+            className="cashier-modal__cashier-modal__close"
             onClick={onClose}
             disabled={busy}
             aria-label="Close Cashier"

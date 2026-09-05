@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  BAD BEAT JACKPOT PAGE — Metal UI Theme
@@ -44,7 +50,7 @@
   margin-top: 1rem;
 }
 
-.info-card {
+.bad-beat-jackpot-page__info-card {
   flex: 1;
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
   backdrop-filter: blur(16px) saturate(1.2);
@@ -170,7 +176,7 @@
   .jackpot-info {
     flex-wrap: wrap;
   }
-  .info-card {
+  .bad-beat-jackpot-page__info-card {
     flex: 1 1 140px;
     min-width: 0;
   }

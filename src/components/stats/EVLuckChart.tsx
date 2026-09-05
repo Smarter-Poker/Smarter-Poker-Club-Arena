@@ -311,18 +311,18 @@ export default function EVLuckChart({ userId, days = null, still = false }: Prop
       </div>
 
       {allIns > 0 && allIns < MEANINGFUL_ALL_INS && (
-        <p className="evluck-note">
+        <p className="evluck-chart__evluck-note">
           Based On {allIns} All-In {allIns === 1 ? 'Spot' : 'Spots'}. All-In EV Is Extremely
           High-Variance And A Sample This Small Can Swing Wildly. Treat It As A Curiosity Until It
           Is Well Past {MEANINGFUL_ALL_INS}.
         </p>
       )}
       {summary?.capped && (
-        <p className="evluck-note">
+        <p className="evluck-chart__evluck-note">
           Showing Your Most Recent {(summary?.hands ?? 0).toLocaleString()} Cash Hands.
         </p>
       )}
-      <p className="evluck-note">
+      <p className="evluck-chart__evluck-note">
         Expected Value Is Adjusted Only For All-In Runouts, Where Equity Is Known Exactly. It Does
         Not Judge Folds, Bet Sizing, Or Anything Else About How You Played.
       </p>

@@ -191,7 +191,7 @@ export function IdentityModal({
               onClick={onToggleAlias}
             >
               <span className="tsp-toggle__track">
-                <span className="tsp-toggle__thumb" />
+                <span className="identity-modal__tsp-toggle__thumb" />
               </span>
             </button>
           </div>

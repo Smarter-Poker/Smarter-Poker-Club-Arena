@@ -1,4 +1,10 @@
-.promo-card {
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
+.promo-card__promo-card {
   background: linear-gradient(135deg, rgba(25, 25, 40, 0.95), rgba(15, 15, 30, 0.95));
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -10,22 +16,22 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.promo-card.new {
+.promo-card__promo-card.new {
   border-color: rgba(74, 222, 128, 0.4);
 }
 
-.promo-image {
+.promo-card__promo-image {
   height: 140px;
   overflow: hidden;
 }
 
-.promo-image img {
+.promo-card__promo-image img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   transition: transform 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-.promo-content {
+.promo-card__promo-content {
   padding: 20px;
   position: relative;
 }
@@ -61,13 +67,13 @@
     0 0 0 1px rgba(255, 215, 0, 0.1);
 }
 
-.promo-content h3 {
+.promo-card__promo-content h3 {
   margin: 0 0 8px;
   color: #fff;
   font-size: 1.2rem;
 }
 
-.promo-content p {
+.promo-card__promo-content p {
   margin: 0 0 16px;
   color: rgba(255, 255, 255, 0.7);
   font-size: 0.9rem;

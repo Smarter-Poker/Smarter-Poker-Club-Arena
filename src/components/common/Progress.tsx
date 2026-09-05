@@ -44,7 +44,7 @@ export function Progress({
       )}
       <div className={`progress progress-${size}`}>
         <motion.div
-          className={`progress-bar progress-${variant}`}
+          className={`progress__progress-bar progress-${variant}`}
           initial={animated ? { width: 0 } : false}
           animate={{ width: `${percentage}%` }}
           transition={{ duration: 0.5, ease: 'easeOut' }}

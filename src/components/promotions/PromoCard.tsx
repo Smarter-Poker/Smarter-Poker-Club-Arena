@@ -36,14 +36,14 @@ export const PromoCard: React.FC<PromoCardProps> = ({
   };
 
   return (
-    <div className={`promo-card ${isNew ? 'new' : ''}`} onClick={onClick}>
+    <div className={`promo-card__promo-card ${isNew ? 'new' : ''}`} onClick={onClick}>
       {imageUrl && (
-        <div className="promo-image">
+        <div className="promo-card__promo-image">
           <img loading="lazy" decoding="async" src={imageUrl} alt={title} />
         </div>
       )}
 
-      <div className="promo-content">
+      <div className="promo-card__promo-content">
         {isNew && <span className="new-badge">NEW</span>}
         {badge && <span className="promo-badge">{badge}</span>}
 

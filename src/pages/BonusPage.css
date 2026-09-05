@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  BONUS PAGE — Metal UI Theme
@@ -5,7 +11,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-.bonus-page {
+.bonus-page__bonus-page {
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
@@ -222,7 +228,7 @@
     grid-template-columns: 1fr;
   }
 
-  .bonus-page {
+  .bonus-page__bonus-page {
     padding: 0.75rem;
     padding-bottom: max(70px, env(safe-area-inset-bottom));
   }
@@ -230,7 +236,7 @@
 
 /* ═══════ PHONE ═══════ */
 @media (max-width: 480px) {
-  .bonus-page {
+  .bonus-page__bonus-page {
     padding-bottom: max(70px, env(safe-area-inset-bottom));
   }
 

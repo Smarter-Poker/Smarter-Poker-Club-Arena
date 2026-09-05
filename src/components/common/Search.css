@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /* ═══════════════════════════════════════════════════════════════════════════════
  * 🔍 SEARCH — CSS Styles
  * ═══════════════════════════════════════════════════════════════════════════════ */
@@ -43,7 +49,7 @@
   font-size: 1rem;
 }
 
-.search-icon {
+.search__search-icon {
   font-size: 1rem;
   opacity: 0.5;
 }
@@ -166,7 +172,7 @@
   flex-wrap: wrap;
 }
 
-.filter-chip {
+.search__filter-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -181,7 +187,7 @@
   transition: all 0.2s ease;
 }
 
-.filter-chip.active {
+.search__filter-chip.active {
   background: rgba(65, 105, 225, 0.2);
   border-color: #4169e1;
   color: #6b8eff;
@@ -194,6 +200,6 @@
   border-radius: 999px;
 }
 
-.filter-chip.active .filter-chip-count {
+.search__filter-chip.active .filter-chip-count {
   background: rgba(65, 105, 225, 0.3);
 }

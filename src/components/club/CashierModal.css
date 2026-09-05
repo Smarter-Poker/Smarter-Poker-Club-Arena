@@ -1,10 +1,16 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * 🏦 CASHIER MODAL — Styles
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-.cashier-overlay {
+.cashier-modal__cashier-overlay {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.8);
@@ -68,7 +74,7 @@
   margin: 0;
 }
 
-.cashier-modal__close {
+.cashier-modal__cashier-modal__close {
   width: 32px;
   height: 32px;
   border: none;
@@ -289,16 +295,16 @@
   gap: 2px;
 }
 
-.tx-amount {
+.cashier-modal__tx-amount {
   font-weight: 700;
   font-size: 0.9375rem;
 }
 
-.tx-amount.pos {
+.cashier-modal__tx-amount.pos {
   color: #e4e6eb;
 }
 
-.tx-amount.neg {
+.cashier-modal__tx-amount.neg {
   color: #8b949e;
 }
 

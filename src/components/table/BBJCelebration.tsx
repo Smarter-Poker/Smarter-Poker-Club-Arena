@@ -447,7 +447,7 @@ export function BBJCelebration({
 
         {/* Total Amount */}
         <div
-          className={`bbj-amount ${phase === 'reveal' || phase === 'breakdown' ? 'bbj-amount-visible' : ''}`}
+          className={`bbjcelebration__bbj-amount ${phase === 'reveal' || phase === 'breakdown' ? 'bbj-amount-visible' : ''}`}
         >
           <span className="bbj-amount-label">TOTAL PAYOUT</span>
           <span className="bbj-amount-value">

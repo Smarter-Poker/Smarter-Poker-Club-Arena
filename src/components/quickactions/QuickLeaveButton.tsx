@@ -35,15 +35,17 @@ export const QuickLeaveButton: React.FC<QuickLeaveButtonProps> = ({
             <h3>Leave Table?</h3>
 
             <div className="leave-summary">
-              <div className="summary-row">
+              <div className="quick-leave-button__summary-row">
                 <span>Buy-In</span>
                 <span>{buyIn.toLocaleString()}</span>
               </div>
-              <div className="summary-row">
+              <div className="quick-leave-button__summary-row">
                 <span>Current Stack</span>
                 <span>{currentStack.toLocaleString()}</span>
               </div>
-              <div className={`summary-row profit ${profit >= 0 ? 'positive' : 'negative'}`}>
+              <div
+                className={`quick-leave-button__summary-row profit ${profit >= 0 ? 'positive' : 'negative'}`}
+              >
                 <span>Profit/Loss</span>
                 <span>
                   {profit >= 0 ? '+' : ''}

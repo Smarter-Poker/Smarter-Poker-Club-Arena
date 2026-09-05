@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  RAKEBACK PAGE / #SMARTERCASINOREALISM
@@ -21,7 +27,7 @@
  * press feedback lives in :active.
  */
 
-.rakeback-page {
+.rakeback-page__rakeback-page {
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   width: 100%;
@@ -94,7 +100,7 @@
    without the cavity, so it read as a sheet laid ON the page. The cavity and
    the lift put it IN the page: light on the top edge, shade under it, and a
    shadow the panel casts on the ground behind it. */
-.summary-card {
+.rakeback-page__summary-card {
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%),
     linear-gradient(
@@ -114,7 +120,7 @@
     var(--realism-cavity, inset 0 -1px 0 rgba(0, 0, 0, 0.6)),
     var(--realism-lift, 0 8px 24px rgba(0, 0, 0, 0.45));
 }
-.summary-card.main {
+.rakeback-page__summary-card.main {
   display: flex;
   align-items: center;
   gap: 1rem;
@@ -128,7 +134,7 @@
   overflow: hidden;
 }
 
-.summary-card.main::after {
+.rakeback-page__summary-card.main::after {
   content: '';
   position: absolute;
   top: 0;
@@ -139,7 +145,7 @@
   border-radius: 0 12px 12px 0;
 }
 
-.summary-card.pending {
+.rakeback-page__summary-card.pending {
   border-color: rgba(245, 158, 11, 0.4);
   background: linear-gradient(145deg, rgba(245, 158, 11, 0.15) 0%, rgba(245, 158, 11, 0.05) 100%);
 }
@@ -152,12 +158,12 @@
   flex: 1;
 }
 
-.summary-row {
+.rakeback-page__summary-row {
   display: flex;
   gap: 0.75rem;
 }
 
-.summary-row .summary-card {
+.rakeback-page__summary-row .rakeback-page__summary-card {
   flex: 1;
 }
 
@@ -339,10 +345,10 @@
     padding: 0.75rem;
     gap: 0.5rem;
   }
-  .summary-card {
+  .rakeback-page__summary-card {
     padding: 0.75rem;
   }
-  .summary-card.main {
+  .rakeback-page__summary-card.main {
     gap: 0.75rem;
   }
   .card-icon {
@@ -351,7 +357,7 @@
   .card-value {
     font-size: 1.25rem;
   }
-  .summary-row {
+  .rakeback-page__summary-row {
     gap: 0.5rem;
   }
   .rakeback-info {
@@ -381,7 +387,7 @@
 }
 
 @media (max-width: 380px) {
-  .summary-row {
+  .rakeback-page__summary-row {
     flex-direction: column;
   }
   .period-row {

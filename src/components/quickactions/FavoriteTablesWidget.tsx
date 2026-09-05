@@ -154,7 +154,9 @@ export const FavoriteTablesWidget: React.FC<FavoriteTablesWidgetProps> = ({ onJo
                 </span>
               </div>
               <div className="favorite-status">
-                <span className={`status-badge ${table.isRunning ? 'running' : 'idle'}`}>
+                <span
+                  className={`favorite-tables-widget__status-badge ${table.isRunning ? 'running' : 'idle'}`}
+                >
                   {table.isRunning ? `${table.currentPlayers}/${table.maxPlayers}` : 'Empty'}
                 </span>
               </div>

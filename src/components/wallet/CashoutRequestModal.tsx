@@ -89,7 +89,7 @@ function CashoutStepTracker({ status }: { status: string }) {
               {isComplete ? '✓' : i + 1}
             </div>
             <span
-              className={`step-label ${isComplete ? 'complete' : ''} ${isCurrent ? 'active' : ''}`}
+              className={`cashout-request-modal__step-label ${isComplete ? 'complete' : ''} ${isCurrent ? 'active' : ''}`}
             >
               {step.label}
             </span>
@@ -477,7 +477,11 @@ export default function CashoutRequestModal({
         <div className="modal-header">
           {/* id added: aria-labelledby="cashout-modal-title" pointed at nothing */}
           <h2 id="cashout-modal-title">Request Cashout</h2>
-          <button className="close-btn" onClick={closeIfIdle} disabled={isBusy}>
+          <button
+            className="cashout-request-modal__close-btn"
+            onClick={closeIfIdle}
+            disabled={isBusy}
+          >
             ×
           </button>
         </div>
@@ -540,7 +544,7 @@ export default function CashoutRequestModal({
             <div className="cashout-form">
               <div className="form-group">
                 <label htmlFor="cashout-amount">Amount</label>
-                <div className="amount-input-wrapper">
+                <div className="cashout-request-modal__amount-input-wrapper">
                   <input
                     id="cashout-amount"
                     type="number"
@@ -593,7 +597,7 @@ export default function CashoutRequestModal({
               {error && <div className="error-message">{error}</div>}
 
               <button
-                className="submit-btn"
+                className="cashout-request-modal__submit-btn"
                 onClick={handleSubmit}
                 disabled={isSubmitting || !amount}
               >

@@ -660,7 +660,7 @@ export default function PlayerSessionsPage() {
   // ── Loading State ──────────────────────────────────────────
   if (loading) {
     return (
-      <div className="admin-page">
+      <div className="admin-dashboard-page__admin-page">
         <div className="admin-container">
           <div className="admin-skeleton" style={{ height: '48px', marginBottom: '16px' }} />
           <div style={{ display: 'flex', gap: '8px' }}>
@@ -678,7 +678,7 @@ export default function PlayerSessionsPage() {
 
   if (!clubId) {
     return (
-      <div className="admin-page">
+      <div className="admin-dashboard-page__admin-page">
         <EmptyState
           icon="CLUB"
           eyebrow="Operations Context Required"
@@ -709,7 +709,7 @@ export default function PlayerSessionsPage() {
   };
 
   return (
-    <div className="admin-page">
+    <div className="admin-dashboard-page__admin-page">
       <div className="admin-container">
         {/* Banners */}
         {error && <div className="admin-error-banner">{error}</div>}
@@ -733,7 +733,7 @@ export default function PlayerSessionsPage() {
               <div style={{ marginBottom: '16px' }}>
                 <label className="admin-label">Chip Amount</label>
                 <input
-                  className="admin-input"
+                  className="admin-dashboard-page__admin-input"
                   type="number"
                   placeholder="500"
                   value={wbAmount}
@@ -770,7 +770,7 @@ export default function PlayerSessionsPage() {
               <div style={{ marginBottom: '12px' }}>
                 <label className="admin-label">Player Type</label>
                 <select
-                  className="admin-input"
+                  className="admin-dashboard-page__admin-input"
                   value={noteData.player_type}
                   onChange={(e) => setNoteData((d) => ({ ...d, player_type: e.target.value }))}
                 >
@@ -812,7 +812,7 @@ export default function PlayerSessionsPage() {
               <div style={{ marginBottom: '16px' }}>
                 <label className="admin-label">Notes</label>
                 <textarea
-                  className="admin-input admin-textarea"
+                  className="admin-dashboard-page__admin-input admin-textarea"
                   rows={4}
                   placeholder="Add Notes About This Player..."
                   value={noteData.notes}
@@ -897,7 +897,7 @@ export default function PlayerSessionsPage() {
           ].map((t) => (
             <button
               key={t.id}
-              className={`admin-tab ${tab === t.id ? 'active' : ''}`}
+              className={`admin-dashboard-page__admin-tab ${tab === t.id ? 'active' : ''}`}
               onClick={() => setTab(t.id)}
             >
               {t.label}
@@ -958,14 +958,14 @@ export default function PlayerSessionsPage() {
             {/* Filters */}
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
               <input
-                className="admin-input"
+                className="admin-dashboard-page__admin-input"
                 style={{ flex: '1 1 200px' }}
                 placeholder="Search By Name Or ID..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
               <select
-                className="admin-input"
+                className="admin-dashboard-page__admin-input"
                 style={{ flex: '0 0 140px' }}
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
@@ -977,7 +977,7 @@ export default function PlayerSessionsPage() {
                 <option value="offline">Offline</option>
               </select>
               <select
-                className="admin-input"
+                className="admin-dashboard-page__admin-input"
                 style={{ flex: '0 0 140px' }}
                 value={roleFilter}
                 onChange={(e) => setRoleFilter(e.target.value)}
@@ -991,7 +991,7 @@ export default function PlayerSessionsPage() {
               </select>
               {filtered.length > 0 && (
                 <button
-                  className="admin-input"
+                  className="admin-dashboard-page__admin-input"
                   style={{
                     flex: '0 0 120px',
                     cursor: 'pointer',

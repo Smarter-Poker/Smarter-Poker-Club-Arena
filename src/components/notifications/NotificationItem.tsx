@@ -38,7 +38,7 @@ export const NotificationItem: React.FC<NotificationItemProps> = ({
 }) => {
   return (
     <div
-      className={`notification-item ${isRead ? 'read' : 'unread'} type-${type}`}
+      className={`notification-item__notification-item ${isRead ? 'read' : 'unread'} type-${type}`}
       onClick={onClick}
     >
       <div className="notif-icon">
@@ -59,7 +59,7 @@ export const NotificationItem: React.FC<NotificationItemProps> = ({
 
       <div className="notif-content">
         <div className="notif-title">{title}</div>
-        <div className="notif-message">{message}</div>
+        <div className="notification-item__notif-message">{message}</div>
         <div className="notif-time">{formatTime(timestamp)}</div>
       </div>
 

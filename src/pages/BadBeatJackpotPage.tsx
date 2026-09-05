@@ -500,7 +500,7 @@ export default function BadBeatJackpotPage() {
       {/* Triple-Bank Breakdown */}
       <div className="jackpot-info" style={{ marginBottom: '0.5rem' }}>
         <div
-          className="info-card"
+          className="bad-beat-jackpot-page__info-card"
           style={{
             border: '1px solid rgba(0, 122, 255, 0.3)',
             background: 'rgba(0, 122, 255, 0.08)',
@@ -512,7 +512,7 @@ export default function BadBeatJackpotPage() {
           </span>
         </div>
         <div
-          className="info-card"
+          className="bad-beat-jackpot-page__info-card"
           style={{
             border: '1px solid rgba(175, 82, 222, 0.3)',
             background: 'rgba(175, 82, 222, 0.08)',
@@ -620,17 +620,17 @@ export default function BadBeatJackpotPage() {
           panel below. "Hands Dealt" showed total_contributed, which is a CHIP
           AMOUNT, not a hand count; both facts now come from the ledger. */}
       <div className="jackpot-info">
-        <div className="info-card">
+        <div className="bad-beat-jackpot-page__info-card">
           <span className="info-label">Hands Contributed</span>
           <span className="info-value">{(poolFacts?.hands || 0).toLocaleString()}</span>
         </div>
-        <div className="info-card">
+        <div className="bad-beat-jackpot-page__info-card">
           <span className="info-label">Total Collected</span>
           <span className="info-value">{(poolFacts?.chips || 0).toLocaleString()} Chips</span>
         </div>
         {playerContribution > 0 && (
           <div
-            className="info-card"
+            className="bad-beat-jackpot-page__info-card"
             style={{
               border: '1px solid rgba(52, 199, 89, 0.3)',
               background: 'rgba(52, 199, 89, 0.08)',

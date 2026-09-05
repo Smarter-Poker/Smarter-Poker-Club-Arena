@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /* VIPActivityHistory — Activity timeline with monthly summaries */
 
 .vip-activity-history {
@@ -76,7 +82,7 @@
   gap: 8px;
 }
 
-.filter-tab {
+.vipactivity-history__filter-tab {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -90,7 +96,7 @@
   font-weight: 500;
 }
 
-.filter-tab.active {
+.vipactivity-history__filter-tab.active {
   background: linear-gradient(135deg, rgba(255, 215, 0, 0.15), rgba(255, 215, 0, 0.05));
   border-color: rgba(255, 215, 0, 0.4);
   color: #ffd700;
@@ -159,7 +165,7 @@
 }
 
 /* Timeline Marker */
-.timeline-marker {
+.vipactivity-history__timeline-marker {
   position: relative;
   width: 40px;
   height: 40px;
@@ -407,7 +413,7 @@
     flex-direction: column;
   }
 
-  .filter-tab {
+  .vipactivity-history__filter-tab {
     width: 100%;
   }
 }

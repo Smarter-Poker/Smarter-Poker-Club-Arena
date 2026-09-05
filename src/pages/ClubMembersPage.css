@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * CLUB MEMBERS — #smarterCasinoRealism roster command surface.
  * The rendered roster vault is the signature; the UI is quiet, machined hardware.
@@ -666,7 +672,7 @@
   height: 1px;
 }
 
-.member-row {
+.club-members-page__member-row {
   position: relative;
   display: flex;
   width: 100%;
@@ -722,14 +728,14 @@
   accent-color: var(--members-cyan);
 }
 
-.member-row::before {
+.club-members-page__member-row::before {
   position: absolute;
   inset: 0 auto 0 0;
   width: 3px;
   content: '';
   background: #394550;
 }
-.member-row::after {
+.club-members-page__member-row::after {
   position: absolute;
   top: 0;
   right: 36px;
@@ -739,7 +745,7 @@
   background: linear-gradient(90deg, transparent, rgba(184, 195, 205, 0.48), transparent);
 }
 
-.member-row:has(.member-row__open:focus-visible) {
+.club-members-page__member-row:has(.member-row__open:focus-visible) {
   border-color: var(--members-cyan);
   background:
     linear-gradient(90deg, rgba(0, 212, 255, 0.055), transparent 34%), var(--members-panel);
@@ -747,7 +753,7 @@
     inset 0 0 0 1px rgba(0, 212, 255, 0.16),
     0 0 0 2px rgba(0, 212, 255, 0.09);
 }
-.member-row:has(.member-row__open:focus-visible)::before,
+.club-members-page__member-row:has(.member-row__open:focus-visible)::before,
 .member-row--online::before {
   background: var(--members-cyan);
   box-shadow: 0 0 10px rgba(0, 212, 255, 0.66);
@@ -947,11 +953,11 @@
   line-height: 1;
   text-align: center;
 }
-.member-row:has(.member-row__open:focus-visible) .member-chevron {
+.club-members-page__member-row:has(.member-row__open:focus-visible) .member-chevron {
   color: var(--members-cyan);
 }
 
-.member-row mark {
+.club-members-page__member-row mark {
   border-radius: 2px;
   color: #05070a;
   background: var(--members-gold);
@@ -1176,7 +1182,7 @@
     padding: 0 11px;
     font-size: 0.7rem;
   }
-  .member-row {
+  .club-members-page__member-row {
     height: 116px;
   }
   .member-row__open {
@@ -1280,7 +1286,7 @@
   .members-hero__content {
     min-height: 235px;
   }
-  .member-row {
+  .club-members-page__member-row {
     height: 116px;
   }
   .member-row__open {

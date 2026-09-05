@@ -1280,7 +1280,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Title"
-          className="admin-input"
+          className="admin-dashboard-page__admin-input"
           style={{ marginBottom: '8px' }}
         />
         <textarea
@@ -1288,7 +1288,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
           onChange={(e) => setContent(e.target.value)}
           placeholder="Content (Optional)"
           rows={3}
-          className="admin-input admin-textarea"
+          className="admin-dashboard-page__admin-input admin-textarea"
         />
         <div style={{ display: 'flex', gap: '8px', marginTop: '8px', justifyContent: 'flex-end' }}>
           {editing && (
@@ -1483,7 +1483,7 @@ function SettingsTab({ clubId }: { clubId: string }) {
               onChange={(e) => setField('default_action_time', Number(e.target.value))}
               min={10}
               max={120}
-              className="admin-input"
+              className="admin-dashboard-page__admin-input"
               style={{ width: '120px' }}
             />
           </div>
@@ -1794,7 +1794,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
               type="color"
               value={theme.primaryColor || '#4599FF'}
               onChange={(e) => setTheme((prev) => ({ ...prev, primaryColor: e.target.value }))}
-              className="admin-input"
+              className="admin-dashboard-page__admin-input"
               style={{ width: '60px', height: '40px', padding: '4px' }}
             />
           </div>
@@ -1804,7 +1804,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
               value={theme.bannerUrl || ''}
               onChange={(e) => setTheme((prev) => ({ ...prev, bannerUrl: e.target.value }))}
               placeholder="https://example.com/banner.png"
-              className="admin-input"
+              className="admin-dashboard-page__admin-input"
             />
           </div>
           <div>
@@ -1813,7 +1813,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
               value={theme.welcomeMessage || ''}
               onChange={(e) => setTheme((prev) => ({ ...prev, welcomeMessage: e.target.value }))}
               placeholder="Welcome To Our Club!"
-              className="admin-input"
+              className="admin-dashboard-page__admin-input"
             />
           </div>
           <button
@@ -1856,7 +1856,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
           <input
             id="ownership-target"
             placeholder="New Owner's User ID (UUID)"
-            className="admin-input"
+            className="admin-dashboard-page__admin-input"
             style={{ flex: 1 }}
           />
           <button
@@ -2492,7 +2492,7 @@ function MintChipsTab({ clubId }: { clubId: string }) {
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0"
               min={1}
-              className="admin-input"
+              className="admin-dashboard-page__admin-input"
             />
           </div>
           <div>
@@ -2501,7 +2501,7 @@ function MintChipsTab({ clubId }: { clubId: string }) {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Reason For Minting..."
-              className="admin-input"
+              className="admin-dashboard-page__admin-input"
             />
           </div>
           <button
@@ -2625,7 +2625,7 @@ export default function AdminDashboardPage() {
 
   if (loading) {
     return (
-      <div className="admin-page">
+      <div className="admin-dashboard-page__admin-page">
         <div className="admin-container">
           <div className="admin-skeleton" style={{ height: '48px', marginBottom: '16px' }} />
           <div style={{ display: 'flex', gap: '16px' }}>
@@ -2641,7 +2641,7 @@ export default function AdminDashboardPage() {
 
   if (error) {
     return (
-      <div className="admin-page">
+      <div className="admin-dashboard-page__admin-page">
         <div className="admin-container">
           <div
             className="admin-error-state"
@@ -2668,7 +2668,7 @@ export default function AdminDashboardPage() {
   const isAdmin = ['owner', 'co_owner', 'admin'].includes(role || '');
 
   return (
-    <div className="admin-page">
+    <div className="admin-dashboard-page__admin-page">
       <div className="admin-container">
         {/* Header */}
         <div className="admin-page-header">
@@ -2683,20 +2683,20 @@ export default function AdminDashboardPage() {
         {/* Tabs */}
         <div className="admin-tabs">
           <button
-            className={`admin-tab ${activeTab === 'dashboard' ? 'active' : ''}`}
+            className={`admin-dashboard-page__admin-tab ${activeTab === 'dashboard' ? 'active' : ''}`}
             onClick={() => setActiveTab('dashboard')}
           >
             Health
           </button>
           <button
-            className={`admin-tab ${activeTab === 'hierarchy' ? 'active' : ''}`}
+            className={`admin-dashboard-page__admin-tab ${activeTab === 'hierarchy' ? 'active' : ''}`}
             onClick={() => setActiveTab('hierarchy')}
           >
             Hierarchy
           </button>
           {isAdmin && (
             <button
-              className={`admin-tab ${activeTab === 'settlements' ? 'active' : ''}`}
+              className={`admin-dashboard-page__admin-tab ${activeTab === 'settlements' ? 'active' : ''}`}
               onClick={() => setActiveTab('settlements')}
             >
               Settlements
@@ -2704,7 +2704,7 @@ export default function AdminDashboardPage() {
           )}
           {isAdmin && (
             <button
-              className={`admin-tab ${activeTab === 'history' ? 'active' : ''}`}
+              className={`admin-dashboard-page__admin-tab ${activeTab === 'history' ? 'active' : ''}`}
               onClick={() => setActiveTab('history')}
             >
               History
@@ -2712,7 +2712,7 @@ export default function AdminDashboardPage() {
           )}
           {isAdmin && (
             <button
-              className={`admin-tab ${activeTab === 'audit' ? 'active' : ''}`}
+              className={`admin-dashboard-page__admin-tab ${activeTab === 'audit' ? 'active' : ''}`}
               onClick={() => setActiveTab('audit')}
             >
               Audit
@@ -2720,7 +2720,7 @@ export default function AdminDashboardPage() {
           )}
           {isAdmin && (
             <button
-              className={`admin-tab ${activeTab === 'branding' ? 'active' : ''}`}
+              className={`admin-dashboard-page__admin-tab ${activeTab === 'branding' ? 'active' : ''}`}
               onClick={() => setActiveTab('branding')}
             >
               Branding
@@ -2728,7 +2728,7 @@ export default function AdminDashboardPage() {
           )}
           {isAdmin && (
             <button
-              className={`admin-tab ${activeTab === 'recommendations' ? 'active' : ''}`}
+              className={`admin-dashboard-page__admin-tab ${activeTab === 'recommendations' ? 'active' : ''}`}
               onClick={() => setActiveTab('recommendations')}
             >
               Recs
@@ -2736,7 +2736,7 @@ export default function AdminDashboardPage() {
           )}
           {isAdmin && (
             <button
-              className={`admin-tab ${activeTab === 'announcements' ? 'active' : ''}`}
+              className={`admin-dashboard-page__admin-tab ${activeTab === 'announcements' ? 'active' : ''}`}
               onClick={() => setActiveTab('announcements')}
             >
               Announce
@@ -2744,7 +2744,7 @@ export default function AdminDashboardPage() {
           )}
           {isAdmin && (
             <button
-              className={`admin-tab ${activeTab === 'templates' ? 'active' : ''}`}
+              className={`admin-dashboard-page__admin-tab ${activeTab === 'templates' ? 'active' : ''}`}
               onClick={() => setActiveTab('templates')}
             >
               Templates
@@ -2752,7 +2752,7 @@ export default function AdminDashboardPage() {
           )}
           {isAdmin && (
             <button
-              className={`admin-tab ${activeTab === 'analytics' ? 'active' : ''}`}
+              className={`admin-dashboard-page__admin-tab ${activeTab === 'analytics' ? 'active' : ''}`}
               onClick={() => setActiveTab('analytics')}
             >
               Analytics
@@ -2760,7 +2760,7 @@ export default function AdminDashboardPage() {
           )}
           {isOwner && (
             <button
-              className={`admin-tab ${activeTab === 'mint' ? 'active' : ''}`}
+              className={`admin-dashboard-page__admin-tab ${activeTab === 'mint' ? 'active' : ''}`}
               onClick={() => setActiveTab('mint')}
             >
               Mint
@@ -2768,7 +2768,7 @@ export default function AdminDashboardPage() {
           )}
           {isOwner && (
             <button
-              className={`admin-tab ${activeTab === 'settings' ? 'active' : ''}`}
+              className={`admin-dashboard-page__admin-tab ${activeTab === 'settings' ? 'active' : ''}`}
               onClick={() => setActiveTab('settings')}
             >
               ⚙ Settings

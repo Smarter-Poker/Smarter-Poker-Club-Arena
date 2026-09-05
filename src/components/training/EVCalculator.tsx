@@ -27,7 +27,7 @@ export const EVCalculator: React.FC<EVCalculatorProps> = ({
   return (
     <div className="ev-calculator">
       <div className="ev-result">
-        <span className="ev-label">Expected Value</span>
+        <span className="evcalculator__ev-label">Expected Value</span>
         <span className={`ev-value ${isPositiveEV ? 'positive' : 'negative'}`}>
           {isPositiveEV ? '+' : ''}
           {totalEV.toFixed(2)}

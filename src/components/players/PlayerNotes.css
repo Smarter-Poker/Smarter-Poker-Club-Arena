@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /* SCOPED 2026-09-05. These class names are also defined bare in another
    component's stylesheet. Every plain .css file here is global once imported,
    so the two were ONE rule and whichever chunk loaded last won any property
@@ -240,7 +246,7 @@
   margin-bottom: var(--space-3);
 }
 
-.color-btn {
+.player-notes__color-btn {
   width: 32px;
   height: 32px;
   border: 2px solid transparent;
@@ -249,27 +255,27 @@
   transition: all var(--transition-base);
 }
 
-.color-btn.color-green {
+.player-notes__color-btn.color-green {
   background: #2ecc71;
 }
 
-.color-btn.color-yellow {
+.player-notes__color-btn.color-yellow {
   background: #f1c40f;
 }
 
-.color-btn.color-red {
+.player-notes__color-btn.color-red {
   background: #e74c3c;
 }
 
-.color-btn.color-blue {
+.player-notes__color-btn.color-blue {
   background: #3498db;
 }
 
-.color-btn.color-purple {
+.player-notes__color-btn.color-purple {
   background: #9b59b6;
 }
 
-.color-btn.active {
+.player-notes__color-btn.active {
   border-color: white;
   transform: scale(1.2);
 }

@@ -287,13 +287,13 @@ export default function HandReplayerPage() {
 
         <div className="replayer-tabs">
           <button
-            className={`tab-btn ${activeTab === 'replay' ? 'active' : ''}`}
+            className={`hand-replayer-page__tab-btn ${activeTab === 'replay' ? 'active' : ''}`}
             onClick={() => setActiveTab('replay')}
           >
             ▶ Replay
           </button>
           <button
-            className={`tab-btn ${activeTab === 'analysis' ? 'active' : ''}`}
+            className={`hand-replayer-page__tab-btn ${activeTab === 'analysis' ? 'active' : ''}`}
             onClick={() => setActiveTab('analysis')}
           >
             Analysis

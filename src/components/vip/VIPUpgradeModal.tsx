@@ -29,7 +29,7 @@ export const VIPUpgradeModal: React.FC<VIPUpgradeModalProps> = ({
   return (
     <div className="vip-upgrade-overlay" onClick={onClose}>
       <div className="vip-upgrade-modal" onClick={(e) => e.stopPropagation()}>
-        <button className="close-btn" onClick={onClose}>
+        <button className="vipupgrade-modal__close-btn" onClick={onClose}>
           ×
         </button>
 
@@ -42,7 +42,7 @@ export const VIPUpgradeModal: React.FC<VIPUpgradeModalProps> = ({
           {tiers.map((tier) => (
             <div
               key={tier.name}
-              className={`tier-card ${tier.isPopular ? 'popular' : ''} ${tier.name === currentTier ? 'current' : ''}`}
+              className={`vipupgrade-modal__tier-card ${tier.isPopular ? 'popular' : ''} ${tier.name === currentTier ? 'current' : ''}`}
             >
               {tier.isPopular && <span className="popular-badge">Most Popular</span>}
 

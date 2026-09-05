@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  PROMOTIONS PAGE — Metal UI Theme
@@ -5,7 +11,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-.promotions-page {
+.promotions-page__promotions-page {
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   width: 100%;
@@ -66,7 +72,7 @@
   gap: 1rem;
 }
 
-.promo-card {
+.promotions-page__promo-card {
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
@@ -77,19 +83,19 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.promo-image {
+.promotions-page__promo-image {
   height: 120px;
   overflow: hidden;
   background: linear-gradient(180deg, #1a2332 0%, #0d1520 100%);
 }
 
-.promo-image img {
+.promotions-page__promo-image img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.promo-content {
+.promotions-page__promo-content {
   padding: 1rem;
 }
 
@@ -215,7 +221,7 @@
    BONUS WHEEL MODAL
    ───────────────────────────────────────────────────────────────────────────── */
 
-.bonus-wheel-overlay {
+.promotions-page__bonus-wheel-overlay {
   position: fixed;
   top: 0;
   left: 0;
@@ -280,10 +286,10 @@
     padding: 0 0.75rem;
     gap: 0.75rem;
   }
-  .promo-image {
+  .promotions-page__promo-image {
     height: 100px;
   }
-  .promo-content {
+  .promotions-page__promo-content {
     padding: 0.75rem;
   }
   .promo-title {
@@ -457,13 +463,13 @@
   box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);
 }
 @media (max-width: 768px) {
-  .promotions-page {
+  .promotions-page__promotions-page {
     /* padding: 0 !important used to wipe the bottom-nav clearance declared on
        the root — the fixed bottom bar then covered the last card. Zero the
        sides/top only; keep the clearance. */
     padding: 0 0 var(--bottom-nav-clearance, 74px) !important;
   }
-  .promo-card {
+  .promotions-page__promo-card {
     border-radius: 0 !important;
     border-left: none !important;
     border-right: none !important;

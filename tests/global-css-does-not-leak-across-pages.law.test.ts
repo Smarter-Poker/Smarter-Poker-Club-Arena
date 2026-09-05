@@ -150,8 +150,51 @@ describe('a global class name has exactly one owner', () => {
     // markup can render outside its own root; each is still the same two-line
     // change, done by hand.
     //
+    // 2026-09-05, fifth pass: 99 -> 29, and the 29 are ENUMERATED below so
+    // this number is never an unknown quantity again. Two techniques, both
+    // verified afterwards: 123 (class, file) pairs RENAMED rather than scoped
+    // - renaming needs no assumption about which element contains which, so
+    // it cannot silently unstyle anything - and three stylesheets DELETED
+    // (703 lines) belonging to the notification UI retired on 2026-08-25.
+    //
+    // Two renames were reverted on inspection: `.lobby-sortbar__eyebrow` and
+    // `.theme-asset__btnstage` are ONE element styled by two sheets on
+    // purpose (a component sheet plus a shared token sheet), so renaming both
+    // split the link and orphaned a rule. That is the failure mode to watch
+    // for; an orphan check catches it.
+    //
+    // WHAT THE 29 ARE. None is a mystery, and none is a two-line fix:
+    //
+    //  A. SEVEN DUPLICATE COMPONENTS - the same thing built twice, in two
+    //     folders, each with its own stylesheet: IconButton (buttons/ vs
+    //     icons/), CashierModal (club/ vs table/), OnlineIndicator (common/
+    //     vs players/), Tooltip (common/ vs tooltips/), PlayerCard (players/
+    //     vs table/), Spinner vs LoadingSpinner, TimeBank vs TimeBankDisplay.
+    //     The CSS collision is a symptom; the fix is deciding which component
+    //     survives, which is a refactor and not a stylesheet edit.
+    //
+    //  B. NINE DELIBERATE SAME-FEATURE LAYERINGS - TablePage.css adjusting
+    //     .seat__info / .seat__stack / .table-chat / .table-page /
+    //     .table-container that its own children own; LobbySortBar with
+    //     LobbyTable; ControlThemeTokens with ThemeSettingsModal; SeatSlot
+    //     with avatarChoreography; PremiumTournamentConsole with
+    //     TournamentDetails. A container adjusting its children is the
+    //     cascade used as intended, the same reason src/styles/ is excluded.
+    //
+    //  C. THREE DESIGN-SYSTEM BUTTONS - .btn, .btn-secondary, .btn-danger in
+    //     components/common/Button.css against pages that restyle them.
+    //     Button.css is a theme sheet that happens to live under components/.
+    //
+    //  D. TEN GENERIC UTILITY NAMES across unrelated surfaces - .stat,
+    //     .stat-value, .stat-label, .empty-state, .empty-icon, .loading-state,
+    //     .spinner, .status-dot, .search-results, .table-container. These are
+    //     the only ones a rename would still fix; each was skipped because a
+    //     test or e2e selector references the name, or the class is built
+    //     dynamically rather than written as a literal.
+    //
     // This is a ratchet, not a target: it may fall, never rise. Fixing one is
-    // two lines - scope it to its container.
+    // two lines - scope it to its container, or rename it in both the
+    // stylesheet and its markup.
     // LOWER THIS NUMBER when you fix some; never raise it to make CI pass.
     let leakable = 0;
     for (const byFile of owners.values()) {
@@ -160,6 +203,6 @@ describe('a global class name has exactly one owner', () => {
       const union = new Set(declared.flatMap((s) => [...s]));
       if ([...union].some((p) => declared.some((s) => !s.has(p)))) leakable += 1;
     }
-    expect(leakable).toBeLessThanOrEqual(99);
+    expect(leakable).toBeLessThanOrEqual(29);
   });
 });

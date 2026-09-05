@@ -250,7 +250,7 @@ export const AvatarCustomizer: React.FC<AvatarCustomizerProps> = ({
                 key={color}
                 type="button"
                 aria-label={`Background ${color}`}
-                className={`color-btn ${selectedBg === color ? 'selected' : ''}`}
+                className={`avatar-customizer__color-btn ${selectedBg === color ? 'selected' : ''}`}
                 style={{ background: color }}
                 aria-pressed={selectedBg === color}
                 onClick={() => {

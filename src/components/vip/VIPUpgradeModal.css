@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 .vip-upgrade-overlay {
   position: fixed;
   inset: 0;
@@ -26,7 +32,7 @@
     0 0 32px rgba(255, 215, 0, 0.2);
 }
 
-.close-btn {
+.vipupgrade-modal__close-btn {
   position: absolute;
   top: 16px;
   right: 16px;
@@ -62,7 +68,7 @@
   gap: 20px;
 }
 
-.tier-card {
+.vipupgrade-modal__tier-card {
   background: rgba(0, 0, 0, 0.2);
   border: 2px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px;
@@ -73,12 +79,12 @@
   -webkit-backdrop-filter: blur(10px) saturate(1.3);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-.tier-card.popular {
+.vipupgrade-modal__tier-card.popular {
   border-color: #ffd700;
   background: rgba(255, 215, 0, 0.05);
 }
 
-.tier-card.current {
+.vipupgrade-modal__tier-card.current {
   border-color: #4ade80;
 }
 
@@ -96,7 +102,7 @@
   text-transform: uppercase;
 }
 
-.tier-card h3 {
+.vipupgrade-modal__tier-card h3 {
   margin: 0 0 16px;
   color: #fff;
   font-size: 1.3rem;

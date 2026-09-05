@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * EVLuckChart — matches the stats page glassmorphism (dark, cyan/purple).
  * Mobile-first: full-bleed card at 375px, chart fixed at 240px tall so the
@@ -81,7 +87,7 @@
   background: none;
 }
 
-.evluck-note {
+.evluck-chart__evluck-note {
   margin: 0.5rem 0 0;
   font-size: 0.68rem;
   line-height: 1.5;
@@ -130,5 +136,9 @@
    states rendered inconsistently - only .pos-radar-empty was centred. */
 
 .evluck-loading,
-.evluck-empty { text-align: center; }
-.evluck-head { text-align: left; }
+.evluck-empty {
+  text-align: center;
+}
+.evluck-head {
+  text-align: left;
+}

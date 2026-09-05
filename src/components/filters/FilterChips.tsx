@@ -35,7 +35,7 @@ export const FilterChips: React.FC<FilterChipsProps> = ({
       {options.map((opt) => (
         <button
           key={opt.value}
-          className={`filter-chip ${selected.includes(opt.value) ? 'selected' : ''}`}
+          className={`filter-chips__filter-chip ${selected.includes(opt.value) ? 'selected' : ''}`}
           onClick={() => toggle(opt.value)}
         >
           {opt.label}

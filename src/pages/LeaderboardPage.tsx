@@ -897,7 +897,7 @@ export default function LeaderboardPage() {
     const fallbackTier: VipTier = awardRank === 1 ? 'gold' : awardRank === 2 ? 'silver' : 'bronze';
     return (
       <div
-        className={`podium-place podium-position-${place} ${cls}`}
+        className={`leaderboard-page__podium-place podium-position-${place} ${cls}`}
         onClick={() => navigate(`/profile/${entry.userId}`)}
         onKeyDown={rowKeyActivate(entry.userId)}
         role="button"
@@ -1060,7 +1060,7 @@ export default function LeaderboardPage() {
           <div className="leaderboard-tabs" role="tablist" aria-label="Leaderboard Views">
             <button
               id="leaderboard-rankings-tab"
-              className={`tab-btn ${activeTab === 'rankings' ? 'active' : ''}`}
+              className={`leaderboard-page__tab-btn ${activeTab === 'rankings' ? 'active' : ''}`}
               onClick={() => setActiveTab('rankings')}
               onKeyDown={handleTabKeyDown}
               role="tab"
@@ -1073,7 +1073,7 @@ export default function LeaderboardPage() {
             {scope === 'my-clubs' && (
               <button
                 id="leaderboard-tournaments-tab"
-                className={`tab-btn ${activeTab === 'tournaments' ? 'active' : ''}`}
+                className={`leaderboard-page__tab-btn ${activeTab === 'tournaments' ? 'active' : ''}`}
                 onClick={() => setActiveTab('tournaments')}
                 onKeyDown={handleTabKeyDown}
                 role="tab"

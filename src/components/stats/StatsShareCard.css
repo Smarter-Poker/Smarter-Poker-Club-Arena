@@ -1,10 +1,16 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * StatsShareCard — canvas preview plus a single share/save action.
  * The canvas is drawn at 1200x630 and scaled down by CSS, so it stays crisp
  * on retina and exports at full social-card resolution.
  */
 
-.sharecard {
+.stats-share-card__sharecard {
   margin: 0 0.75rem 1rem;
   padding: 1rem;
   border-radius: 16px;
@@ -75,7 +81,7 @@
 /* The share card is a screen affordance; it must never appear in a printed
    dossier, which has its own layout. */
 @media print {
-  .sharecard {
+  .stats-share-card__sharecard {
     display: none;
   }
 }

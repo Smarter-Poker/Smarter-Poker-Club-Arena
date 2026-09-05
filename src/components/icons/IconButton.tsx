@@ -20,7 +20,7 @@ export const IconButton: React.FC<IconButtonProps> = ({
 }) => {
   return (
     <button
-      className={`icon-button variant-${variant} size-${size}`}
+      className={`icon-button__icon-button variant-${variant} size-${size}`}
       onClick={onClick}
       disabled={disabled}
       title={title}

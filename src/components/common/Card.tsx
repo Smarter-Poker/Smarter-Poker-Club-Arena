@@ -116,7 +116,7 @@ export function StatCard({
   className?: string;
 }) {
   return (
-    <Card variant="elevated" padding="medium" className={`stat-card ${className}`}>
+    <Card variant="elevated" padding="medium" className={`card__stat-card ${className}`}>
       <div className="stat-card-header">
         <span className="stat-title">{title}</span>
         {icon && <span className="stat-icon">{icon}</span>}
@@ -157,7 +157,7 @@ export function FeatureCard({
       onClick={onClick}
       className={`feature-card ${className}`}
     >
-      <div className="feature-icon">{icon}</div>
+      <div className="card__feature-icon">{icon}</div>
       <h4 className="feature-title">{title}</h4>
       <p className="feature-description">{description}</p>
     </Card>

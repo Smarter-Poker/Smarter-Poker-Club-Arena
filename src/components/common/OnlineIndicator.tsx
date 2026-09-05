@@ -44,7 +44,7 @@ export function OnlineIndicator({
   return (
     <div className={`online-indicator ${status} ${size}`}>
       <div className="indicator-dot" />
-      {showLabel && <span className="indicator-label">{getStatusLabel()}</span>}
+      {showLabel && <span className="online-indicator__indicator-label">{getStatusLabel()}</span>}
     </div>
   );
 }

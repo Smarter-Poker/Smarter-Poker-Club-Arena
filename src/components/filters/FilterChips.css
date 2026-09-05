@@ -1,10 +1,16 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 .filter-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.filter-chip {
+.filter-chips__filter-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -18,7 +24,7 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.filter-chip.selected {
+.filter-chips__filter-chip.selected {
   background: rgba(255, 215, 0, 0.15);
   border-color: rgba(255, 215, 0, 0.5);
   color: #ffd700;
@@ -31,6 +37,6 @@
   font-size: 0.75rem;
 }
 
-.filter-chip.selected .chip-count {
+.filter-chips__filter-chip.selected .chip-count {
   background: rgba(255, 215, 0, 0.2);
 }

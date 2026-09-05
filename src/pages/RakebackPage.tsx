@@ -251,7 +251,7 @@ export default function RakebackPage() {
   };
 
   return (
-    <div className="rakeback-page">
+    <div className="rakeback-page__rakeback-page">
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / Rakeback"
         title="Rakeback Engine"
@@ -273,19 +273,19 @@ export default function RakebackPage() {
       )}
 
       <div className="rakeback-summary">
-        <div className="summary-card main">
+        <div className="rakeback-page__summary-card main">
           <span className="card-icon"></span>
           <div className="card-content">
             <span className="card-value">{totalEarned.toLocaleString()}</span>
             <span className="card-label">Total Earned</span>
           </div>
         </div>
-        <div className="summary-row">
-          <div className="summary-card">
+        <div className="rakeback-page__summary-row">
+          <div className="rakeback-page__summary-card">
             <span className="card-value">{(currentRate * 100).toFixed(1)}%</span>
             <span className="card-label">Your Rate</span>
           </div>
-          <div className="summary-card pending">
+          <div className="rakeback-page__summary-card pending">
             <span className="card-value">{pendingAmount.toLocaleString()}</span>
             <span className="card-label">Pending</span>
             {pendingAmount > 0 && (

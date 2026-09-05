@@ -47,7 +47,7 @@ export function TimeBank({
           <span className="time-bank__icon">◷</span>
           <div className="time-bank__progress">
             <div
-              className="time-bank__bar"
+              className="time-bank__time-bank__bar"
               style={{ width: `${((timeRemaining || 0) / totalTime) * 100}%` }}
             />
           </div>
@@ -55,7 +55,7 @@ export function TimeBank({
         </div>
       ) : banksRemaining > 0 ? (
         <button className="time-bank__trigger" onClick={onActivate}>
-          <span className="time-bank__label">TIME BANK</span>
+          <span className="time-bank__time-bank__label">TIME BANK</span>
           <div className="time-bank__chips">
             {Array.from({ length: Math.min(5, banksRemaining) }).map((_, i) => (
               <div key={i} className="time-bank__chip" />
@@ -65,7 +65,7 @@ export function TimeBank({
         </button>
       ) : onBuyMore ? (
         <button className="time-bank__trigger time-bank__buy-ext" onClick={onBuyMore}>
-          <span className="time-bank__label">+EXTENSION</span>
+          <span className="time-bank__time-bank__label">+EXTENSION</span>
           <span className="time-bank__diamond-cost">{diamondCost} </span>
         </button>
       ) : null}

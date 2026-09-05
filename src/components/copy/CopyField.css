@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 .copy-field {
   display: flex;
   flex-direction: column;
@@ -31,7 +37,7 @@
   outline: none;
 }
 
-.copy-btn {
+.copy-field__copy-btn {
   padding: 10px 14px;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -41,7 +47,7 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.copy-btn.copied {
+.copy-field__copy-btn.copied {
   background: rgba(34, 197, 94, 0.2);
   color: #22c55e;
 }

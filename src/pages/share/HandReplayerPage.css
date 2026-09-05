@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /* SCOPED 2026-09-05. These class names are also defined bare in another
    component's stylesheet. Every plain .css file here is global once imported,
    so the two were ONE rule and whichever chunk loaded last won any property
@@ -469,7 +475,7 @@
   position: relative;
 }
 
-.tab-btn {
+.hand-replayer-page__tab-btn {
   padding: var(--space-2) var(--space-4);
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -481,7 +487,7 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.tab-btn.active {
+.hand-replayer-page__tab-btn.active {
   background: var(--fb-blue);
   border-color: var(--fb-blue);
   color: white;
@@ -560,7 +566,7 @@
     width: 100%;
   }
 
-  .tab-btn {
+  .hand-replayer-page__tab-btn {
     flex: 1;
     padding: var(--space-2) var(--space-3);
     font-size: var(--fs-xs);
@@ -677,7 +683,7 @@
     padding-top: 64px;
   }
 
-  .tab-btn,
+  .hand-replayer-page__tab-btn,
   .view-btn,
   .hand-replayer .share-btn {
     min-height: 44px;

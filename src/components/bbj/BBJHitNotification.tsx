@@ -147,7 +147,7 @@ export function BBJHitNotification({
            looks pressable is worse than a plain card. */
         disabled={!onObserve}
       >
-        <span className="bbj-hit__title">Bad Beat Jackpot</span>
+        <span className="bbjhit-notification__bbj-hit__title">Bad Beat Jackpot</span>
         <span className="bbj-hit__amount">${amountText}</span>
         <span className="bbj-hit__who">{winnerName}</span>
         <span className="bbj-hit__where">

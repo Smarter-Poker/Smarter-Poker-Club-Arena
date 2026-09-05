@@ -177,7 +177,7 @@ export const AntiCollusionMonitor: React.FC<AntiCollusionMonitorProps> = ({
                 <div className="pattern-header">
                   <span className="pattern-icon">{getPatternIcon(pattern.type)}</span>
                   <span className="pattern-type">{pattern.type.replace('_', ' ')}</span>
-                  <span className={`severity-badge ${pattern.severity}`}>
+                  <span className={`anti-collusion-monitor__severity-badge ${pattern.severity}`}>
                     {pattern.severity.toUpperCase()}
                   </span>
                 </div>

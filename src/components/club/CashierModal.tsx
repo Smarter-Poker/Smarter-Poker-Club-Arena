@@ -160,7 +160,7 @@ export function CashierModal({
 
   return (
     <div
-      className="cashier-overlay"
+      className="cashier-modal__cashier-overlay"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -184,7 +184,7 @@ export function CashierModal({
               Cashier
             </h2>
           </div>
-          <button className="cashier-modal__close" onClick={onClose}>
+          <button className="cashier-modal__cashier-modal__close" onClick={onClose}>
             ×
           </button>
         </div>
@@ -300,7 +300,7 @@ export function CashierModal({
                     </div>
                     <div className="tx-amount-group">
                       <span
-                        className={`tx-amount ${tx.type === 'withdrawal' || tx.type === 'rake' ? 'neg' : 'pos'}`}
+                        className={`cashier-modal__tx-amount ${tx.type === 'withdrawal' || tx.type === 'rake' ? 'neg' : 'pos'}`}
                       >
                         {tx.type === 'withdrawal' || tx.type === 'rake' ? '-' : '+'}
                         {tx.amount.toLocaleString()}

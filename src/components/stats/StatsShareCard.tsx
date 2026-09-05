@@ -248,7 +248,7 @@ export default function StatsShareCard({
   };
 
   return (
-    <div className="sharecard">
+    <div className="stats-share-card__sharecard">
       <h3 className="sharecard-title">Share Your Stats</h3>
       <div className="sharecard-preview">
         <canvas

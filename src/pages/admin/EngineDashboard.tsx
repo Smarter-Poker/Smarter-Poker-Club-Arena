@@ -163,7 +163,9 @@ export default function EngineDashboard() {
         <div className="engine-card">
           <div className="card-header">
             <h3>Cash Game Master Engine</h3>
-            <span className={`status-badge ${stats.running ? 'online' : 'offline'}`}>
+            <span
+              className={`engine-dashboard__status-badge ${stats.running ? 'online' : 'offline'}`}
+            >
               {stats.running ? 'ONLINE' : 'OFFLINE'}
             </span>
           </div>
@@ -192,7 +194,9 @@ export default function EngineDashboard() {
         <div className="engine-card">
           <div className="card-header">
             <h3>Hydra Fleet Command</h3>
-            <span className={`status-badge ${stats.running ? 'online' : 'offline'}`}>
+            <span
+              className={`engine-dashboard__status-badge ${stats.running ? 'online' : 'offline'}`}
+            >
               {stats.running ? 'ACTIVE' : 'IDLE'}
             </span>
           </div>
@@ -228,7 +232,9 @@ export default function EngineDashboard() {
         <div className="engine-card">
           <div className="card-header">
             <h3>Tournament Director</h3>
-            <span className={`status-badge ${tStats.running ? 'online' : 'offline'}`}>
+            <span
+              className={`engine-dashboard__status-badge ${tStats.running ? 'online' : 'offline'}`}
+            >
               {tStats.running ? 'ONLINE' : 'OFFLINE'}
             </span>
           </div>

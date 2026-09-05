@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /* SCOPED 2026-09-05. These class names are also defined bare in another
    component's stylesheet. Every plain .css file here is global once imported,
    so the two were ONE rule and whichever chunk loaded last won any property
@@ -286,7 +292,7 @@
   gap: 28px;
 }
 
-.tab-btn {
+.leaderboard-page__tab-btn {
   align-self: stretch;
   position: relative;
   padding: 0 2px;
@@ -301,7 +307,7 @@
   cursor: pointer;
 }
 
-.tab-btn::after {
+.leaderboard-page__tab-btn::after {
   content: '';
   position: absolute;
   left: 0;
@@ -311,11 +317,11 @@
   background: transparent;
 }
 
-.tab-btn.active {
+.leaderboard-page__tab-btn.active {
   color: #eef4f7;
 }
 
-.tab-btn.active::after {
+.leaderboard-page__tab-btn.active::after {
   background: var(--lb-blue);
   box-shadow: 0 0 10px rgba(53, 191, 248, 0.55);
 }
@@ -551,7 +557,7 @@
   padding: 20px 0 0;
 }
 
-.podium-place {
+.leaderboard-page__podium-place {
   min-width: 0;
   min-height: 250px;
   position: relative;
@@ -577,7 +583,7 @@
     border-color 180ms ease;
 }
 
-.podium-place::before {
+.leaderboard-page__podium-place::before {
   content: '';
   position: absolute;
   inset: 7px;
@@ -586,7 +592,7 @@
   border-radius: 2px;
 }
 
-.podium-place::after {
+.leaderboard-page__podium-place::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -601,7 +607,7 @@
   transition: transform 550ms ease;
 }
 
-.podium-place:active::after {
+.leaderboard-page__podium-place:active::after {
   transform: translateX(110%);
 }
 
@@ -731,7 +737,7 @@
   padding: 2px 6px;
 }
 
-.podium-place .entry-subline {
+.leaderboard-page__podium-place .entry-subline {
   margin-top: 8px;
   color: #71808a;
   font-size: 0.68rem;
@@ -1249,17 +1255,17 @@
   border-color: rgba(53, 191, 248, 0.58);
 }
 
-.podium-place:active {
+.leaderboard-page__podium-place:active {
   transform: translateY(-3px);
 }
 
-.tab-btn:focus-visible,
+.leaderboard-page__tab-btn:focus-visible,
 .lb-action-btn:focus-visible,
 .lb-filter-chip:focus-visible,
 .scope-toggle button:focus-visible,
 .lb-step-btn:focus-visible,
 .filter-group select:focus-visible,
-.podium-place:focus-visible,
+.leaderboard-page__podium-place:focus-visible,
 .leaderboard-entry:focus-visible,
 .tournament-stats-entry:focus-visible,
 .join-club-btn:focus-visible,
@@ -1435,7 +1441,7 @@
     margin-bottom: 22px;
     padding-top: 10px;
   }
-  .podium-place {
+  .leaderboard-page__podium-place {
     min-height: 205px;
     padding: 28px 8px 18px;
   }
@@ -1456,7 +1462,7 @@
     margin-top: 10px;
     font-size: 0.6rem;
   }
-  .podium-place .entry-subline {
+  .leaderboard-page__podium-place .entry-subline {
     display: none;
   }
 
@@ -1518,14 +1524,14 @@
   .leaderboard-tabs {
     gap: 20px;
   }
-  .tab-btn {
+  .leaderboard-page__tab-btn {
     font-size: 0.72rem;
   }
   .lb-filter-chip {
     padding-inline: 8px;
     font-size: 0.67rem;
   }
-  .podium-place {
+  .leaderboard-page__podium-place {
     min-height: 188px;
   }
   .podium-position-1 {
@@ -1695,7 +1701,7 @@
     animation: none !important;
   }
 
-  .podium-place,
+  .leaderboard-page__podium-place,
   .leaderboard-entry,
   .lb-action-btn,
   .lb-filter-chip,

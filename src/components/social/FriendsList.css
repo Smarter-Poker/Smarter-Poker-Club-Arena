@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * 👥 FRIENDS LIST — Styles
@@ -188,7 +194,7 @@
   object-fit: cover;
 }
 
-.status-badge {
+.friends-list__status-badge {
   width: 12px;
   height: 12px;
   border-radius: 50%;
@@ -198,15 +204,15 @@
   right: -2px;
 }
 
-.status-badge.online {
+.friends-list__status-badge.online {
   background: #3fb950;
 }
 
-.status-badge.in-game {
+.friends-list__status-badge.in-game {
   background: #a371f7;
 }
 
-.status-badge.offline {
+.friends-list__status-badge.offline {
   background: #6e7681;
 }
 
@@ -227,7 +233,7 @@
 }
 
 /* Actions */
-.friend-actions {
+.friends-list__friend-actions {
   display: flex;
   align-items: center;
   gap: 4px;

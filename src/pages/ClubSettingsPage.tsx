@@ -1565,7 +1565,7 @@ export default function ClubSettingsPage() {
               role="switch"
               aria-checked={settings.is_public}
               aria-label="Public Club"
-              className={`toggle-btn ${settings.is_public ? 'on' : ''}`}
+              className={`club-settings-page__toggle-btn ${settings.is_public ? 'on' : ''}`}
               onClick={() => {
                 const nextPublic = !settings.is_public;
                 setSettings((prev) => ({
@@ -1594,7 +1594,7 @@ export default function ClubSettingsPage() {
               role="switch"
               aria-checked={settings.requires_approval}
               aria-label="Require Approval"
-              className={`toggle-btn ${settings.requires_approval ? 'on' : ''}`}
+              className={`club-settings-page__toggle-btn ${settings.requires_approval ? 'on' : ''}`}
               onClick={() => updateSetting('requires_approval', !settings.requires_approval)}
               disabled={!isOwner}
             >
@@ -1707,7 +1707,7 @@ export default function ClubSettingsPage() {
                 role="switch"
                 aria-checked={settings.bbj_rake_enabled}
                 aria-label="BBJ Rake"
-                className={`toggle-btn ${settings.bbj_rake_enabled ? 'on' : ''}`}
+                className={`club-settings-page__toggle-btn ${settings.bbj_rake_enabled ? 'on' : ''}`}
                 onClick={() => updateSetting('bbj_rake_enabled', !settings.bbj_rake_enabled)}
                 disabled={!isOwner}
               >

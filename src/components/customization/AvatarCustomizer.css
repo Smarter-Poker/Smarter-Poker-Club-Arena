@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 .avatar-customizer {
   background: rgba(0, 0, 0, 0.2);
   border-radius: 16px;
@@ -90,7 +96,7 @@
   }
 }
 
-.color-btn {
+.avatar-customizer__color-btn {
   width: 100%;
   aspect-ratio: 1;
   border-radius: 50%;
@@ -98,7 +104,7 @@
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-.color-btn.selected {
+.avatar-customizer__color-btn.selected {
   border-color: #fff;
   box-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
 }

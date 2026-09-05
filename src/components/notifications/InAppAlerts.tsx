@@ -92,7 +92,7 @@ const AlertItem: React.FC<{ alert: Alert; onDismiss: () => void }> = ({ alert, o
     <div className={`alert-item type-${alert.type} ${isExiting ? 'exiting' : ''}`}>
       <div className="alert-icon">{getTypeIcon()}</div>
       <div className="alert-content">
-        <span className="alert-title">{alert.title}</span>
+        <span className="in-app-alerts__alert-title">{alert.title}</span>
         {alert.message && <span className="alert-message">{alert.message}</span>}
       </div>
       {alert.action && (

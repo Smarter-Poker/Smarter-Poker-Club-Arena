@@ -69,7 +69,7 @@ export function FAQPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
         </div>
 
         <div className="faq-search">
-          <span className="search-icon">⌕</span>
+          <span className="faqpanel__search-icon">⌕</span>
           <input
             placeholder="Search For Answers..."
             value={search}
@@ -82,10 +82,10 @@ export function FAQPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
             filtered.map((item) => (
               <div
                 key={item.id}
-                className={`faq-item ${expandedId === item.id ? 'open' : ''}`}
+                className={`faqpanel__faq-item ${expandedId === item.id ? 'open' : ''}`}
                 onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
               >
-                <div className="faq-question">
+                <div className="faqpanel__faq-question">
                   <span>{item.question}</span>
                   <span className="faq-arrow">▼</span>
                 </div>

@@ -11,7 +11,7 @@ export const TabPanel: React.FC<TabPanelProps> = ({ id, activeTab, children }) =
   if (activeTab !== id) return null;
 
   return (
-    <div className="tab-panel" role="tabpanel" id={`panel-${id}`}>
+    <div className="tab-panel__tab-panel" role="tabpanel" id={`panel-${id}`}>
       {children}
     </div>
   );

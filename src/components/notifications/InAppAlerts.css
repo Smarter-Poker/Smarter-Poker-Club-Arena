@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ♠ CLUB ARENA — In-App Alerts Styles
  */
@@ -142,7 +148,7 @@
   gap: 2px;
 }
 
-.alert-title {
+.in-app-alerts__alert-title {
   font-size: var(--fs-sm);
   font-weight: var(--fw-bold);
   color: var(--text-primary);

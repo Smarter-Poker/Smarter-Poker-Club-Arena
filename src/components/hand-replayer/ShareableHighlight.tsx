@@ -139,7 +139,7 @@ export default function ShareableHighlight({
 
       {/* Share buttons */}
       <div className="highlight-actions">
-        <button className="action-btn copy-btn" onClick={handleCopyLink}>
+        <button className="action-btn shareable-highlight__copy-btn" onClick={handleCopyLink}>
           {copied ? '✓ Copied!' : 'Copy Link'}
         </button>
         <button className="action-btn share-btn" onClick={handleShare}>

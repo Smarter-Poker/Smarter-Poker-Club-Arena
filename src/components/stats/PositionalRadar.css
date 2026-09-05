@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * PositionalRadar — matches the stats page's dark glassmorphism treatment
  * (cyan/purple on near-black, 16px radii, blurred panels).
@@ -101,7 +107,7 @@
   margin-bottom: 0.75rem;
 }
 
-.pos-radar-toggle {
+.positional-radar__pos-radar-toggle {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -122,13 +128,13 @@
   min-height: 32px;
 }
 
-.pos-radar-toggle.is-on {
+.positional-radar__pos-radar-toggle.is-on {
   background: rgba(0, 212, 255, 0.1);
   border-color: rgba(0, 212, 255, 0.35);
   color: #e8f4ff;
 }
 
-.pos-radar-toggle:focus-visible {
+.positional-radar__pos-radar-toggle:focus-visible {
   outline: 2px solid #00d4ff;
   outline-offset: 2px;
 }
@@ -209,7 +215,7 @@
   color: #00d4ff;
 }
 
-.pos-radar-note {
+.positional-radar__pos-radar-note {
   margin: 0.55rem 0 0;
   font-size: 0.68rem;
   line-height: 1.5;
@@ -254,7 +260,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .pos-radar-dot,
-  .pos-radar-toggle,
+  .positional-radar__pos-radar-toggle,
   .pos-radar-table tbody tr {
     transition: none;
   }

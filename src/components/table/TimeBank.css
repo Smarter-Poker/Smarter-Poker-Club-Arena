@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * ⏳ TIME BANK — Styles
@@ -33,7 +39,7 @@
   cursor: not-allowed;
 }
 
-.time-bank__label {
+.time-bank__time-bank__label {
   font-size: 0.625rem;
   font-weight: 700;
   color: #e4e6eb;
@@ -102,7 +108,7 @@
   overflow: hidden;
 }
 
-.time-bank__bar {
+.time-bank__time-bank__bar {
   height: 100%;
   background: linear-gradient(90deg, #ffb800 0%, #ffd54f 100%);
   transition: width 1s linear;

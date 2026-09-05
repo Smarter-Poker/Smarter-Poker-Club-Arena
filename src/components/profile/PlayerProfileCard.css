@@ -1,8 +1,14 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  *  PLAYER PROFILE CARD — Styles
  */
 
-.player-card {
+.player-profile-card__player-card {
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
@@ -12,14 +18,14 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.player-card.loading,
-.player-card.error {
+.player-profile-card__player-card.loading,
+.player-profile-card__player-card.error {
   padding: 24px;
   text-align: center;
   color: var(--text-secondary);
 }
 
-.player-card.compact {
+.player-profile-card__player-card.compact {
   padding: 10px;
 }
 
@@ -31,7 +37,7 @@
   position: relative;
 }
 
-.player-card.compact .player-card__header {
+.player-profile-card__player-card.compact .player-card__header {
   padding: 0;
 }
 
@@ -75,7 +81,7 @@
   font-size: 40px;
 }
 
-.player-card.compact .avatar {
+.player-profile-card__player-card.compact .avatar {
   font-size: 28px;
 }
 
@@ -94,7 +100,7 @@
   gap: 6px;
 }
 
-.player-card.compact .username {
+.player-profile-card__player-card.compact .username {
   font-size: 14px;
 }
 

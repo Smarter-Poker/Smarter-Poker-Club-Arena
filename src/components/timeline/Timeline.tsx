@@ -19,7 +19,9 @@ export const Timeline: React.FC<TimelineProps> = ({ items, variant = 'default' }
     <div className={`timeline variant-${variant}`}>
       {items.map((item, idx) => (
         <div key={item.id} className="timeline-item">
-          <div className="timeline-marker">{item.icon || <span className="marker-dot" />}</div>
+          <div className="timeline__timeline-marker">
+            {item.icon || <span className="marker-dot" />}
+          </div>
           <div className="timeline-content">
             <div className="timeline-time">{item.time}</div>
             <div className="timeline-title">{item.title}</div>

@@ -320,7 +320,7 @@ export default function DisputeManagementPage() {
               aria-selected={activeTab === tab}
               aria-controls="dispute-case-panel"
               tabIndex={activeTab === tab ? 0 : -1}
-              className={`tab-btn ${activeTab === tab ? 'active' : ''}`}
+              className={`dispute-management-page__tab-btn ${activeTab === tab ? 'active' : ''}`}
               onClick={() => setActiveTab(tab)}
               onKeyDown={(event) => handleTabKeyDown(event, tab)}
             >
@@ -349,7 +349,7 @@ export default function DisputeManagementPage() {
           aria-labelledby={`dispute-filter-${activeTab}`}
         >
           {loading ? (
-            <div className="loading-state">
+            <div className="dispute-management-page__loading-state">
               <PageSkeleton variant="list" />
               <p>Loading Disputes…</p>
             </div>

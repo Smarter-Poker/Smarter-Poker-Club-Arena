@@ -32,7 +32,7 @@ export const Stepper: React.FC<StepperProps> = ({
             <span className="step-number">{index < currentStep ? '' : index + 1}</span>
           </div>
           <div className="step-content">
-            <span className="step-label">{step.label}</span>
+            <span className="stepper__step-label">{step.label}</span>
             {step.description && <span className="step-description">{step.description}</span>}
           </div>
           {index < steps.length - 1 && <div className="step-connector" />}

@@ -931,7 +931,7 @@ export default function UnionDashboardPage() {
   // ── Loading State ──────────────────────────────────────────
   if (loading) {
     return (
-      <div className="admin-page">
+      <div className="admin-dashboard-page__admin-page">
         <div className="admin-container">
           <div className="admin-skeleton" style={{ height: '48px', marginBottom: '16px' }} />
           <div
@@ -953,7 +953,7 @@ export default function UnionDashboardPage() {
   if (error && !union) {
     const accessRestricted = /not a union admin|not.*owner/i.test(error);
     return (
-      <div className="admin-page">
+      <div className="admin-dashboard-page__admin-page">
         {accessRestricted ? (
           <EmptyState
             icon="UNION"
@@ -974,7 +974,7 @@ export default function UnionDashboardPage() {
   const pendingAppsCount = apps.filter((a) => a.status === 'pending').length;
 
   return (
-    <div className="admin-page" data-arena-surface="union-operations">
+    <div className="admin-dashboard-page__admin-page" data-arena-surface="union-operations">
       <div className="admin-container">
         {error && <div className="admin-error-banner">{error}</div>}
         {success && <div className="admin-success-banner">{success}</div>}
@@ -1010,7 +1010,7 @@ export default function UnionDashboardPage() {
               <div style={{ marginBottom: '12px' }}>
                 <label className="admin-label">Commission Rate (%)</label>
                 <input
-                  className="admin-input"
+                  className="admin-dashboard-page__admin-input"
                   type="number"
                   min="1"
                   max="100"
@@ -1168,7 +1168,7 @@ export default function UnionDashboardPage() {
               aria-selected={tab === t.id}
               aria-controls={`union-panel-${t.id}`}
               tabIndex={tab === t.id ? 0 : -1}
-              className={`admin-tab ${tab === t.id ? 'active' : ''}`}
+              className={`admin-dashboard-page__admin-tab ${tab === t.id ? 'active' : ''}`}
               onClick={() => setTab(t.id)}
             >
               {t.label}
@@ -1376,7 +1376,7 @@ export default function UnionDashboardPage() {
                 <div className="admin-card" style={{ marginTop: '16px', padding: '16px' }}>
                   <h3 className="admin-card-title">Broadcast Announcement</h3>
                   <textarea
-                    className="admin-input"
+                    className="admin-dashboard-page__admin-input"
                     value={annMsg}
                     onChange={(e) => setAnnMsg(e.target.value)}
                     maxLength={500}
@@ -1388,7 +1388,7 @@ export default function UnionDashboardPage() {
                     style={{ display: 'flex', gap: '8px', marginTop: '12px', alignItems: 'center' }}
                   >
                     <select
-                      className="admin-input"
+                      className="admin-dashboard-page__admin-input"
                       style={{ maxWidth: '200px' }}
                       value={annClub}
                       onChange={(e) => setAnnClub(e.target.value)}
@@ -1439,7 +1439,7 @@ export default function UnionDashboardPage() {
           {tab === 'clubs' && (
             <div className="admin-tab-content">
               <input
-                className="admin-input"
+                className="admin-dashboard-page__admin-input"
                 value={clubSearch}
                 onChange={(e) => setClubSearch(e.target.value)}
                 placeholder="Search Clubs..."
@@ -1548,7 +1548,7 @@ export default function UnionDashboardPage() {
                 style={{ display: 'flex', gap: '8px', marginBottom: '12px', alignItems: 'center' }}
               >
                 <input
-                  className="admin-input"
+                  className="admin-dashboard-page__admin-input"
                   value={agentSearch}
                   onChange={(e) => setAgentSearch(e.target.value)}
                   placeholder="Search Agents..."
@@ -1615,7 +1615,7 @@ export default function UnionDashboardPage() {
             <div className="admin-tab-content">
               <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
                 <input
-                  className="admin-input"
+                  className="admin-dashboard-page__admin-input"
                   style={{ flex: 1 }}
                   placeholder="Search Players By Name, Club Or Role…"
                   value={rosterSearch}
@@ -1796,7 +1796,7 @@ export default function UnionDashboardPage() {
                   </p>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     <input
-                      className="admin-input"
+                      className="admin-dashboard-page__admin-input"
                       style={{ flex: '0 0 150px' }}
                       type="number"
                       min="1"
@@ -1805,7 +1805,7 @@ export default function UnionDashboardPage() {
                       onChange={(e) => setDepositForm((f) => ({ ...f, amount: e.target.value }))}
                     />
                     <input
-                      className="admin-input"
+                      className="admin-dashboard-page__admin-input"
                       style={{ flex: '1 1 150px' }}
                       placeholder="Notes (Optional)"
                       value={depositForm.notes}
@@ -1883,7 +1883,7 @@ export default function UnionDashboardPage() {
                   </p>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     <select
-                      className="admin-input"
+                      className="admin-dashboard-page__admin-input"
                       style={{ flex: '1 1 160px' }}
                       value={spinReserveForm.from}
                       onChange={(e) => setSpinReserveForm((f) => ({ ...f, from: e.target.value }))}
@@ -1893,7 +1893,7 @@ export default function UnionDashboardPage() {
                       <option value="chip_balance">From Chip Balance</option>
                     </select>
                     <input
-                      className="admin-input"
+                      className="admin-dashboard-page__admin-input"
                       style={{ flex: '0 0 150px' }}
                       type="number"
                       min="1"
@@ -1957,7 +1957,7 @@ export default function UnionDashboardPage() {
                   </p>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     <input
-                      className="admin-input"
+                      className="admin-dashboard-page__admin-input"
                       style={{ flex: '0 0 150px' }}
                       type="number"
                       min="1"
@@ -2012,7 +2012,7 @@ export default function UnionDashboardPage() {
                   </p>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     <select
-                      className="admin-input"
+                      className="admin-dashboard-page__admin-input"
                       style={{ flex: '1 1 200px' }}
                       value={clawbackForm.target}
                       onChange={(e) => setClawbackForm((f) => ({ ...f, target: e.target.value }))}
@@ -2027,7 +2027,7 @@ export default function UnionDashboardPage() {
                       </optgroup>
                     </select>
                     <input
-                      className="admin-input"
+                      className="admin-dashboard-page__admin-input"
                       style={{ flex: '0 0 120px' }}
                       type="number"
                       min="1"
@@ -2036,7 +2036,7 @@ export default function UnionDashboardPage() {
                       onChange={(e) => setClawbackForm((f) => ({ ...f, amount: e.target.value }))}
                     />
                     <input
-                      className="admin-input"
+                      className="admin-dashboard-page__admin-input"
                       style={{ flex: '1 1 150px' }}
                       placeholder="Reason"
                       value={clawbackForm.reason}
@@ -2126,7 +2126,7 @@ export default function UnionDashboardPage() {
                   <h3 className="admin-card-title">Send Chips To Club</h3>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     <select
-                      className="admin-input"
+                      className="admin-dashboard-page__admin-input"
                       style={{ flex: '1 1 200px' }}
                       value={transferForm.clubId}
                       onChange={(e) => setTransferForm((f) => ({ ...f, clubId: e.target.value }))}
@@ -2139,7 +2139,7 @@ export default function UnionDashboardPage() {
                       ))}
                     </select>
                     <input
-                      className="admin-input"
+                      className="admin-dashboard-page__admin-input"
                       style={{ flex: '0 0 120px' }}
                       type="number"
                       min="1"
@@ -2148,7 +2148,7 @@ export default function UnionDashboardPage() {
                       placeholder="Amount"
                     />
                     <input
-                      className="admin-input"
+                      className="admin-dashboard-page__admin-input"
                       style={{ flex: '1 1 150px' }}
                       value={transferForm.notes}
                       onChange={(e) => setTransferForm((f) => ({ ...f, notes: e.target.value }))}
@@ -2488,7 +2488,7 @@ export default function UnionDashboardPage() {
                 style={{ display: 'flex', gap: '8px', marginBottom: '16px', alignItems: 'center' }}
               >
                 <select
-                  className="admin-input"
+                  className="admin-dashboard-page__admin-input"
                   style={{ maxWidth: '200px' }}
                   value={appsFilter}
                   onChange={(e) => {
@@ -2755,7 +2755,7 @@ export default function UnionDashboardPage() {
                     <div>
                       <label className="admin-label">Union Name</label>
                       <input
-                        className="admin-input"
+                        className="admin-dashboard-page__admin-input"
                         value={settingsForm.name ?? union?.name ?? ''}
                         onChange={(e) => setSettingsForm((f) => ({ ...f, name: e.target.value }))}
                       />
@@ -2763,7 +2763,7 @@ export default function UnionDashboardPage() {
                     <div>
                       <label className="admin-label">Rake Hold (%)</label>
                       <input
-                        className="admin-input"
+                        className="admin-dashboard-page__admin-input"
                         type="number"
                         min="0"
                         max="50"
@@ -2780,7 +2780,7 @@ export default function UnionDashboardPage() {
                     <div>
                       <label className="admin-label">Default Agent Comm (%)</label>
                       <input
-                        className="admin-input"
+                        className="admin-dashboard-page__admin-input"
                         type="number"
                         min="0"
                         max="100"
@@ -2800,7 +2800,7 @@ export default function UnionDashboardPage() {
                     <div>
                       <label className="admin-label">Default Club Comm (%)</label>
                       <input
-                        className="admin-input"
+                        className="admin-dashboard-page__admin-input"
                         type="number"
                         min="1"
                         max="100"
@@ -2819,7 +2819,7 @@ export default function UnionDashboardPage() {
                     </div>
                   </div>
                   <textarea
-                    className="admin-input"
+                    className="admin-dashboard-page__admin-input"
                     value={settingsForm.description ?? union?.description ?? ''}
                     onChange={(e) =>
                       setSettingsForm((f) => ({ ...f, description: e.target.value }))
@@ -3001,7 +3001,7 @@ export default function UnionDashboardPage() {
                     <label className="admin-label">Add Admin</label>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <input
-                        className="admin-input"
+                        className="admin-dashboard-page__admin-input"
                         value={adminSearch}
                         onChange={(e) => setAdminSearch(e.target.value)}
                         placeholder="Search By Username..."

@@ -140,7 +140,7 @@ export function TabPanel({
 
   return (
     <motion.div
-      className={`tab-panel ${className}`}
+      className={`tabs__tab-panel ${className}`}
       role="tabpanel"
       id={`tabpanel-${id}`}
       initial={{ opacity: 0, y: 10 }}

@@ -31,7 +31,7 @@ export const SearchFilters: React.FC<SearchFiltersProps> = ({
         {filters.map((filter) => (
           <button
             key={filter.id}
-            className={`filter-chip ${activeFilters.includes(filter.id) ? 'active' : ''}`}
+            className={`search-filters__filter-chip ${activeFilters.includes(filter.id) ? 'active' : ''}`}
             onClick={() => onFilterToggle(filter.id)}
           >
             {filter.label}

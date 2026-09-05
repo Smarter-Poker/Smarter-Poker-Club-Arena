@@ -123,7 +123,7 @@ export function TableSettingsPanel({
                   aria-hidden="true"
                 >
                   <span className="tsp-toggle__track">
-                    <span className="tsp-toggle__thumb" />
+                    <span className="table-settings-panel__tsp-toggle__thumb" />
                   </span>
                 </span>
               </button>

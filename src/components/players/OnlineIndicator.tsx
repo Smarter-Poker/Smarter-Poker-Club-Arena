@@ -26,7 +26,7 @@ export const OnlineIndicator: React.FC<OnlineIndicatorProps> = ({
     <div className={`online-indicator size-${size}`}>
       <span className={`indicator-dot ${status}`} style={{ backgroundColor: config.color }} />
       {showLabel && (
-        <span className="indicator-label" style={{ color: config.color }}>
+        <span className="online-indicator__indicator-label" style={{ color: config.color }}>
           {config.label}
         </span>
       )}

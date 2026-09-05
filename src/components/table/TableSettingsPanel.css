@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /* ═══════════════════════════════════════════════════════════════════════════════
  * TABLE SETTINGS PANEL — Bible V8 §11.1
  * Shared styles for overlay (table gear icon) and inline (hamburger menu) modes
@@ -137,7 +143,7 @@
   border: 2px solid #6b7280;
 }
 
-.tsp-toggle__thumb {
+.table-settings-panel__tsp-toggle__thumb {
   display: block;
   width: 16px;
   height: 16px;
@@ -147,11 +153,11 @@
   transition: transform 0.25s ease;
 }
 
-.tsp-toggle--on .tsp-toggle__thumb {
+.tsp-toggle--on .table-settings-panel__tsp-toggle__thumb {
   transform: translateX(20px);
 }
 
-.tsp-toggle--off .tsp-toggle__thumb {
+.tsp-toggle--off .table-settings-panel__tsp-toggle__thumb {
   transform: translateX(0);
 }
 
@@ -279,20 +285,20 @@
   background: #17222d;
   border-color: #34495a;
 }
-.tsp-toggle__thumb {
+.table-settings-panel__tsp-toggle__thumb {
   width: 18px;
   height: 18px;
   background: linear-gradient(145deg, #fff, #dce7ee);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
 }
-.tsp-toggle--on .tsp-toggle__thumb {
+.tsp-toggle--on .table-settings-panel__tsp-toggle__thumb {
   transform: translateX(20px);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .tsp-item,
   .tsp-toggle__track,
-  .tsp-toggle__thumb {
+  .table-settings-panel__tsp-toggle__thumb {
     transition: none !important;
   }
 }

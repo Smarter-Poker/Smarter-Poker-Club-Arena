@@ -675,7 +675,7 @@ export default function AgentDashboardPage() {
   // ── Loading State ──────────────────────────────────────────
   if (loading) {
     return (
-      <div className="admin-page">
+      <div className="admin-dashboard-page__admin-page">
         <div className="admin-container">
           <div className="admin-skeleton" style={{ height: '48px', marginBottom: '16px' }} />
           <div
@@ -700,7 +700,7 @@ export default function AgentDashboardPage() {
 
   if (!clubId) {
     return (
-      <div className="admin-page">
+      <div className="admin-dashboard-page__admin-page">
         <EmptyState
           icon="AGENT"
           eyebrow="Agent Context Required"
@@ -721,7 +721,7 @@ export default function AgentDashboardPage() {
   const isOwner = role === 'owner';
 
   return (
-    <div className="admin-page">
+    <div className="admin-dashboard-page__admin-page">
       <div className="admin-container">
         {/* Banners */}
         {error && <div className="admin-error-banner">{error}</div>}
@@ -757,7 +757,7 @@ export default function AgentDashboardPage() {
                 <div>
                   <label className="admin-label">Recipient Agent User ID</label>
                   <input
-                    className="admin-input"
+                    className="admin-dashboard-page__admin-input"
                     value={transferTarget}
                     onChange={(e) => setTransferTarget(e.target.value)}
                     placeholder="UUID Of Receiving Agent"
@@ -766,7 +766,7 @@ export default function AgentDashboardPage() {
                 <div>
                   <label className="admin-label">Amount (Chips)</label>
                   <input
-                    className="admin-input"
+                    className="admin-dashboard-page__admin-input"
                     type="number"
                     value={transferAmount}
                     onChange={(e) => setTransferAmount(e.target.value)}
@@ -777,7 +777,7 @@ export default function AgentDashboardPage() {
                 <div>
                   <label className="admin-label">Notes (Optional)</label>
                   <input
-                    className="admin-input"
+                    className="admin-dashboard-page__admin-input"
                     value={transferNotes}
                     onChange={(e) => setTransferNotes(e.target.value)}
                     placeholder="Transfer Reason..."
@@ -928,7 +928,7 @@ export default function AgentDashboardPage() {
           ].map((t) => (
             <button
               key={t.id}
-              className={`admin-tab ${tab === t.id ? 'active' : ''}`}
+              className={`admin-dashboard-page__admin-tab ${tab === t.id ? 'active' : ''}`}
               onClick={() => setTab(t.id)}
             >
               {t.label}
@@ -1044,7 +1044,7 @@ export default function AgentDashboardPage() {
         {tab === 'players' && (
           <div className="admin-tab-content">
             <input
-              className="admin-input"
+              className="admin-dashboard-page__admin-input"
               style={{ marginBottom: '16px' }}
               placeholder="Search Players By Name..."
               value={playerSearch}
@@ -1438,7 +1438,7 @@ export default function AgentDashboardPage() {
               <h3 className="admin-card-title">Grant Promo To Agent</h3>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <select
-                  className="admin-input"
+                  className="admin-dashboard-page__admin-input"
                   style={{ flex: '1 1 200px' }}
                   value={creditTarget}
                   onChange={(e) => setCreditTarget(e.target.value)}
@@ -1452,7 +1452,7 @@ export default function AgentDashboardPage() {
                   ))}
                 </select>
                 <input
-                  className="admin-input"
+                  className="admin-dashboard-page__admin-input"
                   style={{ flex: '0 0 120px' }}
                   type="number"
                   placeholder="Amount"
@@ -1558,7 +1558,7 @@ export default function AgentDashboardPage() {
                 <div>
                   <label className="admin-label">Agent</label>
                   <select
-                    className="admin-input"
+                    className="admin-dashboard-page__admin-input"
                     value={creditTarget}
                     onChange={(e) => setCreditTarget(e.target.value)}
                   >
@@ -1574,7 +1574,7 @@ export default function AgentDashboardPage() {
                 <div>
                   <label className="admin-label">Action</label>
                   <select
-                    className="admin-input"
+                    className="admin-dashboard-page__admin-input"
                     value={creditAction}
                     onChange={(e) => setCreditAction(e.target.value)}
                   >
@@ -1586,7 +1586,7 @@ export default function AgentDashboardPage() {
                 <div>
                   <label className="admin-label">Amount</label>
                   <input
-                    className="admin-input"
+                    className="admin-dashboard-page__admin-input"
                     type="number"
                     value={creditAmount}
                     onChange={(e) => setCreditAmount(e.target.value)}
@@ -1597,7 +1597,7 @@ export default function AgentDashboardPage() {
                 <div>
                   <label className="admin-label">Notes (Optional)</label>
                   <input
-                    className="admin-input"
+                    className="admin-dashboard-page__admin-input"
                     value={creditNotes}
                     onChange={(e) => setCreditNotes(e.target.value)}
                     placeholder="Reason..."

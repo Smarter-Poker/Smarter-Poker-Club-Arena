@@ -1196,7 +1196,7 @@ export default function TournamentPage() {
             filteredTournaments.map((tourn) => (
               <div
                 key={tourn.id}
-                className={`tournament-card ${selectedTournament?.id === tourn.id ? 'selected' : ''} ${visibleTournaments.has(tourn.id) ? 'fadeInUp' : 'hidden'}`}
+                className={`tournament-page__tournament-card ${selectedTournament?.id === tourn.id ? 'selected' : ''} ${visibleTournaments.has(tourn.id) ? 'fadeInUp' : 'hidden'}`}
                 style={
                   visibleTournaments.has(tourn.id)
                     ? { cursor: 'pointer' }
@@ -1309,7 +1309,7 @@ export default function TournamentPage() {
                     real chip counts. That is what "it hasn't started yet" was
                     reading off. Late registration and not-yet-started are two
                     different things and now say so. */}
-                <span className={`status-badge ${selectedTournament.status}`}>
+                <span className={`tournament-page__status-badge ${selectedTournament.status}`}>
                   {selectedTournament.status === 'RUNNING' && isLateRegOpen(selectedTournament)
                     ? 'LATE REG'
                     : selectedTournament.status}
@@ -1689,7 +1689,7 @@ export default function TournamentPage() {
                     )
                       .slice(0, 3)
                       .map((p: any, i: number) => (
-                        <div key={i} className={`podium-place podium-${i + 1}`}>
+                        <div key={i} className={`tournament-page__podium-place podium-${i + 1}`}>
                           <div className="podium-icon">{i === 0 ? '★' : i === 1 ? '☆' : '✧'}</div>
                           <div className="podium-payout">
                             {Math.trunc(

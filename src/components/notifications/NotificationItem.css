@@ -1,4 +1,10 @@
-.notification-item {
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
+.notification-item__notification-item {
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -8,11 +14,11 @@
   position: relative;
 }
 
-.notification-item.unread {
+.notification-item__notification-item.unread {
   background: rgba(255, 215, 0, 0.05);
 }
 
-.notification-item.unread::before {
+.notification-item__notification-item.unread::before {
   content: '';
   position: absolute;
   left: 4px;
@@ -58,7 +64,7 @@
   margin-bottom: 2px;
 }
 
-.notif-message {
+.notification-item__notif-message {
   color: rgba(255, 255, 255, 0.6);
   font-size: 0.8rem;
   overflow: hidden;
@@ -80,7 +86,7 @@
   border-radius: 50%;
   color: rgba(255, 255, 255, 0.55);
   cursor: pointer;
-  /* Visible at rest. `.notification-item:hover` was the only thing that ever
+  /* Visible at rest. `.notification-item__notification-item:hover` was the only thing that ever
      revealed this dismiss button, which is the wrong dependency for a control
      on a list people mostly read on a phone. */
   opacity: 1;

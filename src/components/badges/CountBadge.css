@@ -1,48 +1,54 @@
-.count-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 700;
-    border-radius: 10px;
-    min-width: 20px;
-    transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
+.count-badge__count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  border-radius: 10px;
+  min-width: 20px;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.count-badge.size-small {
-    height: 16px;
-    min-width: 16px;
-    padding: 0 4px;
-    font-size: 0.6rem;
-    border-radius: 8px;
+.count-badge__count-badge.size-small {
+  height: 16px;
+  min-width: 16px;
+  padding: 0 4px;
+  font-size: 0.6rem;
+  border-radius: 8px;
 }
 
-.count-badge.size-medium {
-    height: 20px;
-    min-width: 20px;
-    padding: 0 6px;
-    font-size: 0.7rem;
+.count-badge__count-badge.size-medium {
+  height: 20px;
+  min-width: 20px;
+  padding: 0 6px;
+  font-size: 0.7rem;
 }
 
-.count-badge.size-large {
-    height: 26px;
-    min-width: 26px;
-    padding: 0 8px;
-    font-size: 0.85rem;
-    border-radius: 13px;
+.count-badge__count-badge.size-large {
+  height: 26px;
+  min-width: 26px;
+  padding: 0 8px;
+  font-size: 0.85rem;
+  border-radius: 13px;
 }
 
-.count-badge.variant-default {
-    background: rgba(255, 255, 255, 0.2);
-    color: #fff;
+.count-badge__count-badge.variant-default {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
 }
 
-.count-badge.variant-primary {
-    background: #ffd700;
-    color: #000;
+.count-badge__count-badge.variant-primary {
+  background: #ffd700;
+  color: #000;
 }
 
-.count-badge.variant-danger {
-    background: #ef4444;
-    color: #fff;
+.count-badge__count-badge.variant-danger {
+  background: #ef4444;
+  color: #fff;
 }

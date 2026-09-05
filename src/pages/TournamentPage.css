@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /* SCOPED 2026-09-05. These class names are also defined bare in another
    component's stylesheet. Every plain .css file here is global once imported,
    so the two were ONE rule and whichever chunk loaded last won any property
@@ -151,7 +157,7 @@
   font-family: 'Rajdhani', 'Rajdhani', sans-serif;
 }
 
-.tournament-card {
+.tournament-page__tournament-card {
   padding: var(--space-4);
   background: linear-gradient(
     145deg,
@@ -171,7 +177,7 @@
   overflow: hidden;
 }
 
-.tournament-card.selected {
+.tournament-page__tournament-card.selected {
   border-color: #00d4ff;
   background: linear-gradient(
     145deg,
@@ -185,7 +191,7 @@
     inset 0 -1px 0 rgba(0, 0, 0, 0.2);
 }
 
-.tournament-card.selected::before {
+.tournament-page__tournament-card.selected::before {
   content: '';
   position: absolute;
   left: 0;
@@ -291,7 +297,7 @@
   letter-spacing: 1px;
 }
 
-.status-badge {
+.tournament-page__status-badge {
   padding: 6px 14px;
   border-radius: 6px;
   font-size: 0.75rem;
@@ -300,14 +306,14 @@
   letter-spacing: 0.5px;
 }
 
-.status-badge.registering {
+.tournament-page__status-badge.registering {
   background: rgba(0, 255, 136, 0.15);
   color: #00ff88;
   border: 1px solid rgba(0, 255, 136, 0.3);
   box-shadow: 0 0 10px rgba(0, 255, 136, 0.15);
 }
 
-.status-badge.running {
+.tournament-page__status-badge.running {
   background: rgba(255, 107, 107, 0.15);
   color: #ff6b6b;
   border: 1px solid rgba(255, 107, 107, 0.3);
@@ -753,7 +759,7 @@
     border-radius: 12px;
   }
 
-  .tournament-card {
+  .tournament-page__tournament-card {
     padding: var(--space-3);
   }
 
@@ -1055,7 +1061,7 @@
   gap: var(--space-4);
 }
 
-.podium-place {
+.tournament-page__podium-place {
   display: flex;
   flex-direction: column;
   align-items: center;

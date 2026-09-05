@@ -346,7 +346,7 @@ export default function HandHistoryPage() {
   const heroId = userId || '';
 
   return (
-    <div className="hand-history-page" data-arena-surface="play">
+    <div className="hand-history-page__hand-history-page" data-arena-surface="play">
       <CasinoSurfaceHeader
         eyebrow="Play & Review / Hands"
         title="Hand Archive"
@@ -430,7 +430,7 @@ export default function HandHistoryPage() {
             </div>
             <button
               type="button"
-              className="export-btn"
+              className="hand-history-page__export-btn"
               onClick={handleExport}
               aria-label="Export The Loaded Hands To CSV"
             >
@@ -499,7 +499,9 @@ export default function HandHistoryPage() {
                   <div className="hand-body">
                     <div className="pot-info">
                       <span className="pot-label">Pot</span>
-                      <span className="pot-value">{money(hand.replay.potTotal)}</span>
+                      <span className="hand-history-page__pot-value">
+                        {money(hand.replay.potTotal)}
+                      </span>
                       {hand.rake > 0 && <span className="pot-rake">Rake {money(hand.rake)}</span>}
                     </div>
                     <div className="hand-tags">

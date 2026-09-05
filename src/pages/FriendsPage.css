@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /* SCOPED 2026-09-05. These class names are also defined bare in another
    component's stylesheet. Every plain .css file here is global once imported,
    so the two were ONE rule and whichever chunk loaded last won any property
@@ -227,7 +233,7 @@
 .friends-toolbar button,
 .friends-empty button,
 .friends-panel-intro button,
-.friend-actions button,
+.friends-page__friend-actions button,
 .friends-request-actions button {
   min-height: 42px;
   padding: 0 14px;
@@ -437,27 +443,27 @@
   color: #61dca1;
 }
 
-.friend-actions,
+.friends-page__friend-actions,
 .friends-request-actions {
   display: flex;
   gap: 6px;
   padding: 0 14px 0 6px;
 }
 
-.friend-actions button.is-primary,
+.friends-page__friend-actions button.is-primary,
 .friends-request-actions button.is-accept {
   border-color: #2f729f;
   color: #c8e9ff;
   background: #081d2b;
 }
 
-.friend-actions button.is-danger {
+.friends-page__friend-actions button.is-danger {
   border-color: #51323a;
   color: #e997a2;
   background: #11090b;
 }
 
-.friend-actions.is-unavailable {
+.friends-page__friend-actions.is-unavailable {
   justify-content: flex-end;
 }
 
@@ -593,7 +599,7 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .friend-actions,
+  .friends-page__friend-actions,
   .friends-request-actions {
     justify-content: flex-end;
     padding: 0 12px 12px 76px;
@@ -677,7 +683,7 @@
     height: 46px;
   }
 
-  .friend-actions,
+  .friends-page__friend-actions,
   .friends-request-actions {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -695,7 +701,7 @@
     text-align: center;
   }
 
-  .friend-actions button,
+  .friends-page__friend-actions button,
   .friends-request-actions button {
     min-width: 0;
     min-height: 44px;

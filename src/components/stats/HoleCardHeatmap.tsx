@@ -220,7 +220,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
       </div>
 
       <div className="heatmap-controls">
-        <div className="heatmap-modes" role="group" aria-label="View Mode">
+        <div className="hole-card-heatmap__heatmap-modes" role="group" aria-label="View Mode">
           {(
             [
               ['frequency', 'How Often'],
@@ -244,7 +244,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
           <label className="heatmap-select-wrap">
             <span className="heatmap-select-label">Position</span>
             <select
-              className="heatmap-select"
+              className="hole-card-heatmap__heatmap-select"
               value={position ?? ''}
               onChange={(e) => {
                 setSelected(null);
@@ -262,7 +262,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
           <label className="heatmap-select-wrap">
             <span className="heatmap-select-label">Game</span>
             <select
-              className="heatmap-select"
+              className="hole-card-heatmap__heatmap-select"
               value={variant ?? ''}
               onChange={(e) => {
                 setSelected(null);
@@ -317,7 +317,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
                     key={key}
                     type="button"
                     role="gridcell"
-                    className={`heatmap-cell${rowIdx === colIdx ? ' is-pair' : ''}${
+                    className={`hole-card-heatmap__heatmap-cell${rowIdx === colIdx ? ' is-pair' : ''}${
                       hovered === key ? ' is-hovered' : ''
                     }${cell && mode !== 'frequency' && !confident ? ' is-thin' : ''}`}
                     style={{ background: bg }}
@@ -421,7 +421,7 @@ export default function HoleCardHeatmap({ userId, days = null }: Props) {
         </div>
       )}
 
-      <p className="heatmap-note">
+      <p className="hole-card-heatmap__heatmap-note">
         {mode === 'frequency' &&
           'How Often You Voluntarily Played Each Hand. This Is The View That Finds Leaks Earliest, Because A Frequency Settles Down Long Before A Win Rate Does.'}
         {mode === 'profit' &&

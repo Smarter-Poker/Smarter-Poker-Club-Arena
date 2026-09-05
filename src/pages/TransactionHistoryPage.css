@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /* SCOPED 2026-09-05. These class names are also defined bare in another
    component's stylesheet. Every plain .css file here is global once imported,
    so the two were ONE rule and whichever chunk loaded last won any property
@@ -119,19 +125,19 @@
   color: #00d4ff;
 }
 
-.tx-amount {
+.transaction-history-page__tx-amount {
   font-weight: 700;
   font-size: 1rem;
   white-space: nowrap;
   font-family: 'Rajdhani', monospace;
 }
 
-.tx-amount.positive {
+.transaction-history-page__tx-amount.positive {
   color: #10b981;
   text-shadow: 0 0 10px rgba(16, 185, 129, 0.6);
 }
 
-.tx-amount.negative {
+.transaction-history-page__tx-amount.negative {
   color: #ef4444;
   text-shadow: 0 0 10px rgba(239, 68, 68, 0.6);
 }
@@ -279,7 +285,7 @@
   .tx-desc {
     font-size: 0.85rem;
   }
-  .tx-amount {
+  .transaction-history-page__tx-amount {
     font-size: 0.85rem;
   }
   .export-btn {

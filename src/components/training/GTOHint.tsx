@@ -44,7 +44,7 @@ export const GTOHint: React.FC<GTOHintProps> = ({
         <div className="hint-details">
           {evDiff !== undefined && (
             <div className="ev-info">
-              <span className="ev-label">EV Difference</span>
+              <span className="gtohint__ev-label">EV Difference</span>
               <span className={`ev-value ${evDiff >= 0 ? 'positive' : 'negative'}`}>
                 {evDiff >= 0 ? '+' : ''}
                 {evDiff.toFixed(2)} BB

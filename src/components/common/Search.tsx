@@ -55,7 +55,7 @@ export function SearchInput({
 
   return (
     <div className={`search-input search-${size} ${fullWidth ? 'search-full' : ''} ${className}`}>
-      <span className="search-icon">⌕</span>
+      <span className="search__search-icon">⌕</span>
       <input
         ref={inputRef}
         type="text"
@@ -239,7 +239,7 @@ export function FilterChips({
       {filters.map(({ id, label, count }) => (
         <button
           key={id}
-          className={`filter-chip ${selected.includes(id) ? 'active' : ''}`}
+          className={`search__filter-chip ${selected.includes(id) ? 'active' : ''}`}
           onClick={() => handleClick(id)}
         >
           {label}

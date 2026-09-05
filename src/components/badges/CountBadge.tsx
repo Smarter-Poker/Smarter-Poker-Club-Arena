@@ -18,7 +18,11 @@ export const CountBadge: React.FC<CountBadgeProps> = ({
 
   if (count === 0) return null;
 
-  return <span className={`count-badge size-${size} variant-${variant}`}>{displayCount}</span>;
+  return (
+    <span className={`count-badge__count-badge size-${size} variant-${variant}`}>
+      {displayCount}
+    </span>
+  );
 };
 
 export default CountBadge;

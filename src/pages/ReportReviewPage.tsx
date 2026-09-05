@@ -239,7 +239,7 @@ export default function ReportReviewPage() {
                 aria-selected={filter === item}
                 aria-controls="report-case-panel"
                 tabIndex={filter === item ? 0 : -1}
-                className={`filter-tab ${filter === item ? 'active' : ''}`}
+                className={`report-review-page__filter-tab ${filter === item ? 'active' : ''}`}
                 onClick={() => setFilter(item)}
                 onKeyDown={(event) => handleFilterKeyDown(event, item)}
               >

@@ -81,7 +81,7 @@ export const TwoFactorSetup: React.FC<TwoFactorSetupProps> = ({
             Addition To Your Password.
           </p>
           <button
-            className={`toggle-btn ${isEnabled ? 'disable' : 'enable'}`}
+            className={`two-factor-setup__toggle-btn ${isEnabled ? 'disable' : 'enable'}`}
             onClick={handleToggle}
           >
             {isEnabled ? 'Disable 2FA' : 'Enable 2FA'}

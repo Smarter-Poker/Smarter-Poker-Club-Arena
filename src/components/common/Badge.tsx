@@ -144,7 +144,7 @@ export function TournamentStatusBadge({
 export function CountBadge({ count, max = 99 }: { count: number; max?: number }) {
   if (count <= 0) return null;
 
-  return <span className="count-badge">{count > max ? `${max}+` : count}</span>;
+  return <span className="badge__count-badge">{count > max ? `${max}+` : count}</span>;
 }
 
 /**

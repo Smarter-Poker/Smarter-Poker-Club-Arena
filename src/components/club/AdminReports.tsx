@@ -75,19 +75,19 @@ export function AdminReports({
         <div className="reports-toolbar">
           <div className="reports-ranges">
             <button
-              className={`range-btn ${dateRange === 'today' ? 'active' : ''}`}
+              className={`admin-reports__range-btn ${dateRange === 'today' ? 'active' : ''}`}
               onClick={() => handleRangeChange('today')}
             >
               Today
             </button>
             <button
-              className={`range-btn ${dateRange === 'week' ? 'active' : ''}`}
+              className={`admin-reports__range-btn ${dateRange === 'week' ? 'active' : ''}`}
               onClick={() => handleRangeChange('week')}
             >
               This Week
             </button>
             <button
-              className={`range-btn ${dateRange === 'month' ? 'active' : ''}`}
+              className={`admin-reports__range-btn ${dateRange === 'month' ? 'active' : ''}`}
               onClick={() => handleRangeChange('month')}
             >
               This Month
@@ -101,25 +101,25 @@ export function AdminReports({
         <div className="reports-content">
           {/* Summary Cards */}
           <div className="reports-summary">
-            <div className="summary-card">
+            <div className="admin-reports__summary-card">
               <span className="summary-label">Total Hands</span>
               <span className="summary-value">{summary.totalHands.toLocaleString()}</span>
             </div>
-            <div className="summary-card">
+            <div className="admin-reports__summary-card">
               <span className="summary-label">Gross Rake</span>
               <span className="summary-value">
                 {currency}
                 {summary.grossRake.toLocaleString()}
               </span>
             </div>
-            <div className="summary-card">
+            <div className="admin-reports__summary-card">
               <span className="summary-label">Jackpot Fees</span>
               <span className="summary-value">
                 {currency}
                 {summary.jackpotFees.toLocaleString()}
               </span>
             </div>
-            <div className="summary-card">
+            <div className="admin-reports__summary-card">
               <span className="summary-label">Insurance P/L</span>
               <span className="summary-value profit">
                 {summary.insuranceProfit >= 0 ? '+' : ''}

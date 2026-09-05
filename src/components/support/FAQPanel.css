@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * ❓ FAQ PANEL — Styles
@@ -59,7 +65,7 @@
   position: relative;
 }
 
-.search-icon {
+.faqpanel__search-icon {
   position: absolute;
   left: 32px;
   top: 50%;
@@ -91,7 +97,7 @@
   gap: 12px;
 }
 
-.faq-item {
+.faqpanel__faq-item {
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.02);
@@ -100,12 +106,12 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.faq-item.open {
+.faqpanel__faq-item.open {
   border-color: rgba(24, 119, 242, 0.3);
   background: rgba(24, 119, 242, 0.05);
 }
 
-.faq-question {
+.faqpanel__faq-question {
   padding: 16px;
   display: flex;
   justify-content: space-between;
@@ -120,7 +126,7 @@
   transition: transform 0.2s;
 }
 
-.faq-item.open .faq-arrow {
+.faqpanel__faq-item.open .faq-arrow {
   transform: rotate(180deg);
 }
 

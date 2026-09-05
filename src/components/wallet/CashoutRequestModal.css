@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * CashoutRequestModal Styles
  */
@@ -72,7 +78,7 @@
   color: #fff;
 }
 
-.close-btn {
+.cashout-request-modal__close-btn {
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -241,7 +247,7 @@
   color: var(--text-secondary, #8a8a9a);
 }
 
-.amount-input-wrapper {
+.cashout-request-modal__amount-input-wrapper {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -250,7 +256,7 @@
   padding: 4px;
 }
 
-.amount-input-wrapper input {
+.cashout-request-modal__amount-input-wrapper input {
   flex: 1;
   background: transparent;
   border: none;
@@ -335,7 +341,7 @@
   }
 }
 
-.submit-btn {
+.cashout-request-modal__submit-btn {
   padding: 18px;
   min-height: 56px;
   border-radius: 14px;
@@ -351,11 +357,11 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.submit-btn:active:not(:disabled) {
+.cashout-request-modal__submit-btn:active:not(:disabled) {
   opacity: 0.9;
 }
 
-.submit-btn:disabled {
+.cashout-request-modal__submit-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -442,7 +448,7 @@
   }
 }
 
-.step-label {
+.cashout-request-modal__step-label {
   font-size: 9px;
   color: rgba(255, 255, 255, 0.3);
   margin-top: 6px;
@@ -452,10 +458,10 @@
   font-weight: 500;
 }
 
-.step-label.complete {
+.cashout-request-modal__step-label.complete {
   color: #00c853;
 }
-.step-label.active {
+.cashout-request-modal__step-label.active {
   color: #ffa726;
 }
 
@@ -474,7 +480,7 @@
 }
 
 @media (max-width: 380px) {
-  .step-label {
+  .cashout-request-modal__step-label {
     font-size: 7px;
   }
   .step-dot {

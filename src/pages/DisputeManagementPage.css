@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 .dispute-management-page {
   width: min(100%, 1180px);
   min-height: 400px;
@@ -55,7 +61,7 @@
   overflow-x: auto;
   scrollbar-width: thin;
 }
-.tab-btn {
+.dispute-management-page__tab-btn {
   min-height: 44px;
   padding: 8px 14px;
   border: 1px solid #2b3945;
@@ -72,7 +78,7 @@
   cursor: pointer;
   touch-action: manipulation;
 }
-.tab-btn.active {
+.dispute-management-page__tab-btn.active {
   border-color: #3ba7ff;
   background: #0a2740;
   color: #e7f5ff;
@@ -336,7 +342,7 @@
   flex-wrap: wrap;
   gap: 8px;
 }
-.loading-state,
+.dispute-management-page__loading-state,
 .empty-state,
 .dispute-state {
   min-height: 250px;
@@ -357,7 +363,7 @@
     0 calc(100% - 10px)
   );
 }
-.loading-state p,
+.dispute-management-page__loading-state p,
 .empty-state p,
 .dispute-state p {
   margin: 0;

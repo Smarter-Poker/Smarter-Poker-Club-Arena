@@ -121,7 +121,7 @@ export default function ReportPlayerPage() {
                 onClick={() => setForm((prev) => ({ ...prev, reason: opt.value }))}
               >
                 <span className="reason-icon">{opt.icon}</span>
-                <span className="reason-label">{opt.label}</span>
+                <span className="report-player-page__reason-label">{opt.label}</span>
               </button>
             ))}
           </div>

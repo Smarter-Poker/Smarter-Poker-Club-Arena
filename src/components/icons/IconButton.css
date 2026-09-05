@@ -1,4 +1,10 @@
-.icon-button {
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
+.icon-button__icon-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -7,42 +13,42 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.icon-button:disabled {
+.icon-button__icon-button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
-.icon-button.size-small {
+.icon-button__icon-button.size-small {
   width: 32px;
   height: 32px;
   font-size: 1rem;
 }
 
-.icon-button.size-medium {
+.icon-button__icon-button.size-medium {
   width: 40px;
   height: 40px;
   font-size: 1.2rem;
 }
 
-.icon-button.size-large {
+.icon-button__icon-button.size-large {
   width: 48px;
   height: 48px;
   font-size: 1.4rem;
 }
 
-.icon-button.variant-ghost {
+.icon-button__icon-button.variant-ghost {
   background: transparent;
   border: none;
   color: rgba(255, 255, 255, 0.7);
 }
 
-.icon-button.variant-outlined {
+.icon-button__icon-button.variant-outlined {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.2);
   color: rgba(255, 255, 255, 0.8);
 }
 
-.icon-button.variant-filled {
+.icon-button__icon-button.variant-filled {
   background: rgba(255, 255, 255, 0.1);
   border: none;
   color: rgba(255, 255, 255, 0.9);

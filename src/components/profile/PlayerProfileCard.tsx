@@ -92,16 +92,16 @@ export function PlayerProfileCard({
   };
 
   if (loading) {
-    return <div className="player-card loading">Loading...</div>;
+    return <div className="player-profile-card__player-card loading">Loading...</div>;
   }
 
   if (!profile) {
-    return <div className="player-card error">Player Not Found</div>;
+    return <div className="player-profile-card__player-card error">Player Not Found</div>;
   }
 
   return (
     <div
-      className={`player-card ${compact ? 'compact' : ''}`}
+      className={`player-profile-card__player-card ${compact ? 'compact' : ''}`}
       style={{
         opacity: mounted ? 1 : 0,
         transform: mounted ? 'translateY(0)' : 'translateY(8px)',

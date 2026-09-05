@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 .quick-leave-button {
   display: flex;
   align-items: center;
@@ -55,38 +61,38 @@
   margin-bottom: 20px;
 }
 
-.summary-row {
+.quick-leave-button__summary-row {
   display: flex;
   justify-content: space-between;
   padding: 8px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.summary-row:last-child {
+.quick-leave-button__summary-row:last-child {
   border-bottom: none;
   padding-top: 12px;
   margin-top: 4px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.summary-row span:first-child {
+.quick-leave-button__summary-row span:first-child {
   color: rgba(255, 255, 255, 0.6);
 }
 
-.summary-row span:last-child {
+.quick-leave-button__summary-row span:last-child {
   color: #fff;
   font-weight: 500;
 }
 
-.summary-row.profit.positive span:last-child {
+.quick-leave-button__summary-row.profit.positive span:last-child {
   color: #4ade80;
 }
 
-.summary-row.profit.negative span:last-child {
+.quick-leave-button__summary-row.profit.negative span:last-child {
   color: #f87171;
 }
 
-.summary-row small {
+.quick-leave-button__summary-row small {
   color: rgba(255, 255, 255, 0.5);
   margin-left: 4px;
 }

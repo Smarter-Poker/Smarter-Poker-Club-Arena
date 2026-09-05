@@ -1,20 +1,26 @@
-.tab-panel {
-    padding: 20px 0;
-    animation: tabPanelFadeIn 0.2s;
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
+.tab-panel__tab-panel {
+  padding: 20px 0;
+  animation: tabPanelFadeIn 0.2s;
 }
 
 @keyframes tabPanelFadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(4px);
-    }
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
 
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-.tab-panel {
-    animation-timing-function: var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+.tab-panel__tab-panel {
+  animation-timing-function: var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }

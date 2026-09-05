@@ -399,7 +399,11 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
               value: owed ?? summary.pendingPayout,
             },
           ].map((card, idx) => (
-            <div key={idx} className={`summary-card ${card.className}`} style={summaryStyle(idx)}>
+            <div
+              key={idx}
+              className={`agent-commission-dashboard__summary-card ${card.className}`}
+              style={summaryStyle(idx)}
+            >
               <span className="label">{card.label}</span>
               <span className="value">{card.value.toLocaleString()}</span>
               {card.className === 'pending' && (owed ?? 0) > 0 && (

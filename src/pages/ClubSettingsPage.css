@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /* SCOPED 2026-09-05. These class names are also defined bare in another
    component's stylesheet. Every plain .css file here is global once imported,
    so the two were ONE rule and whichever chunk loaded last won any property
@@ -151,7 +157,7 @@
   margin-top: 0.25rem;
 }
 
-.toggle-btn {
+.club-settings-page__toggle-btn {
   padding: 0.4rem 1rem;
   border-radius: 20px;
   background: linear-gradient(180deg, #1a2332 0%, #0d1520 100%);
@@ -165,7 +171,7 @@
   text-transform: uppercase;
 }
 
-.toggle-btn.on {
+.club-settings-page__toggle-btn.on {
   background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
   border-color: #00d4ff;
   color: #fff;
@@ -174,7 +180,7 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.toggle-btn:disabled {
+.club-settings-page__toggle-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -347,7 +353,7 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 @media (max-width: 768px) {
-  .toggle-btn {
+  .club-settings-page__toggle-btn {
     min-height: 44px;
     touch-action: manipulation;
   }

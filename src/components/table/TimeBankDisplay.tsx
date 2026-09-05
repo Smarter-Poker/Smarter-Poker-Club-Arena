@@ -40,11 +40,11 @@ export function TimeBankDisplay({
     <div className={`time-bank ${isActive ? 'active' : ''} ${isLow ? 'low' : ''}`}>
       <div className="time-bank__header">
         <span className="time-bank__icon"></span>
-        <span className="time-bank__label">Time Bank</span>
+        <span className="time-bank-display__time-bank__label">Time Bank</span>
         {isVIP && <span className="time-bank__vip"></span>}
       </div>
 
-      <div className="time-bank__bar">
+      <div className="time-bank-display__time-bank__bar">
         <div className="time-bank__fill" style={{ width: `${percentage}%` }} />
       </div>
 

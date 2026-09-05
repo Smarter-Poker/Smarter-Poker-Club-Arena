@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  ADMIN DASHBOARD PAGE — Styles
@@ -5,7 +11,7 @@
  */
 
 /* ── Page Layout ── */
-.admin-page {
+.admin-dashboard-page__admin-page {
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   padding: 16px;
@@ -61,7 +67,7 @@
   display: none;
 }
 
-.admin-tab {
+.admin-dashboard-page__admin-tab {
   padding: 8px 16px;
   border-radius: 8px;
   border: none;
@@ -74,7 +80,7 @@
   transition: all 0.2s ease;
 }
 
-.admin-tab.active {
+.admin-dashboard-page__admin-tab.active {
   background: rgba(69, 153, 255, 0.15);
   color: #4599ff;
 }
@@ -276,7 +282,7 @@
   transition: transform 0.15s ease;
 }
 /* ── Inputs ── */
-.admin-input {
+.admin-dashboard-page__admin-input {
   width: 100%;
   padding: 10px 12px;
   background: rgba(0, 0, 0, 0.3);
@@ -287,7 +293,7 @@
   transition: border-color 0.2s ease;
 }
 
-.admin-input:focus {
+.admin-dashboard-page__admin-input:focus {
   outline: none;
   border-color: rgba(69, 153, 255, 0.5);
 }
@@ -487,7 +493,7 @@
 
 /* ── Mobile ── */
 @media (max-width: 768px) {
-  .admin-page {
+  .admin-dashboard-page__admin-page {
     padding: 12px;
     padding-bottom: max(70px, env(safe-area-inset-bottom));
   }
@@ -509,7 +515,7 @@
     padding: 16px;
   }
 
-  .admin-tab,
+  .admin-dashboard-page__admin-tab,
   .admin-btn {
     min-height: 44px;
     touch-action: manipulation;

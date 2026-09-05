@@ -384,11 +384,12 @@ belong with whoever owns the art, not with a measurement.
 
 ## What is left
 
-- 99 component stylesheets still define a class bare that another component
-  also defines with a property gap (down from 256). Each is the same two-line
-  fix and the law ratchets the count; the 99 are the ones where no namesake
-  wrapper could be proven automatically, so each needs a human to name its
-  container.
+- 29 collisions remain, down from 256, and every one is enumerated in
+  `tests/global-css-does-not-leak-across-pages.law.test.ts`: seven duplicate
+  components (the same thing built twice in two folders), nine deliberate
+  same-feature layerings, three design-system buttons, and ten generic utility
+  names whose rename is blocked by a test selector or a dynamically built
+  class. Only the last group is a stylesheet fix; the first is a refactor.
 
 ## Design direction
 

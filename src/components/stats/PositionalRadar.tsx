@@ -370,7 +370,7 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
               <button
                 key={m.key}
                 type="button"
-                className={`pos-radar-toggle${visible[m.key] ? ' is-on' : ''}`}
+                className={`positional-radar__pos-radar-toggle${visible[m.key] ? ' is-on' : ''}`}
                 aria-pressed={visible[m.key]}
                 onClick={() => setVisible((v) => ({ ...v, [m.key]: !v[m.key] }))}
               >
@@ -381,7 +381,7 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
             {referenceComplete && (
               <button
                 type="button"
-                className={`pos-radar-toggle pos-radar-toggle-ref${showReference ? ' is-on' : ''}`}
+                className={`positional-radar__pos-radar-toggle pos-radar-toggle-ref${showReference ? ' is-on' : ''}`}
                 aria-pressed={showReference}
                 onClick={() => setShowReference((s) => !s)}
               >
@@ -449,13 +449,13 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
       )}
 
       {lowSample.length > 0 && (
-        <p className="pos-radar-note">
+        <p className="positional-radar__pos-radar-note">
           Dimmed Positions Have Under {minHands} Hands, Which Is Too Few To Read Anything Into:{' '}
           {lowSample.map((r) => r.position).join(', ')}.
         </p>
       )}
       {showReference && referenceComplete && (
-        <p className="pos-radar-note">
+        <p className="positional-radar__pos-radar-note">
           The Dashed Shape Is A Conventional Opening-Frequency Reference Written Into This Chart,
           Not A Measurement Of Any Field. It Is A Comparison Point, Not A Target.
         </p>

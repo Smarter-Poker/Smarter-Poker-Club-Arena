@@ -185,7 +185,7 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
                 {r.def.unit === 'bb/100' ? ' BB/100' : r.def.unit}
               </span>
               {r.percentile !== null ? (
-                <span className={`bench-pill tone-${r.tone}`}>
+                <span className={`benchmark-panel__bench-pill tone-${r.tone}`}>
                   {r.percentile >= 90
                     ? `Top ${Math.max(1, Math.round(100 - r.percentile))}%`
                     : r.percentile <= 10
@@ -193,7 +193,7 @@ export default function BenchmarkPanel({ values, handsPlayed = 0, days = null }:
                       : `${Math.round(r.percentile)}th`}
                 </span>
               ) : (
-                <span className={`bench-pill tone-${r.tone}`}>
+                <span className={`benchmark-panel__bench-pill tone-${r.tone}`}>
                   {r.bandPosition === 'inside' ? 'In Range' : 'Out Of Range'}
                 </span>
               )}

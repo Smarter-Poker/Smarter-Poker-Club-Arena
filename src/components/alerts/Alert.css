@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 .alert {
   display: flex;
   align-items: flex-start;
@@ -67,7 +73,7 @@
   flex: 1;
 }
 
-.alert-title {
+.alert__alert-title {
   font-weight: 600;
   color: rgba(255, 255, 255, 0.95);
   margin-bottom: 4px;

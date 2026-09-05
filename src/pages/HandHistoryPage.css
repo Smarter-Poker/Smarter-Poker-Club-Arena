@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * Hand Archive  #SMARTERCASINOREALISM
  *
@@ -13,7 +19,7 @@
  * prefers-reduced-motion.
  */
 
-.hand-history-page {
+.hand-history-page__hand-history-page {
   --hha-void: #030609;
   --hha-black: #080d12;
   --hha-panel: #0c1118;
@@ -80,7 +86,7 @@
 }
 
 .hh-filter-chip:active,
-.export-btn:active,
+.hand-history-page__export-btn:active,
 .load-more-btn:active,
 .replay-btn:active,
 .analyze-btn:active,
@@ -89,7 +95,7 @@
 }
 
 .hh-filter-chip:focus-visible,
-.export-btn:focus-visible,
+.hand-history-page__export-btn:focus-visible,
 .load-more-btn:focus-visible,
 .replay-btn:focus-visible,
 .analyze-btn:focus-visible,
@@ -185,7 +191,7 @@
   color: var(--hha-muted);
 }
 
-.export-btn {
+.hand-history-page__export-btn {
   align-self: center;
   padding: 10px 14px;
   border-radius: 4px;
@@ -332,7 +338,7 @@
   color: var(--hha-muted);
 }
 
-.pot-value {
+.hand-history-page__pot-value {
   font-family: var(--hha-display);
   font-size: 17px;
   font-weight: 700;
@@ -529,7 +535,7 @@
     flex-basis: 30%;
   }
 
-  .export-btn {
+  .hand-history-page__export-btn {
     flex: 1 1 100%;
   }
 
@@ -554,7 +560,7 @@
 }
 
 /* ── Light mode: brushed silver, same hierarchy ─────────────────────────── */
-[data-theme='light'] .hand-history-page {
+[data-theme='light'] .hand-history-page__hand-history-page {
   --hha-void: #d9e0e6;
   --hha-black: #e6ebef;
   --hha-panel: #f1f4f7;
@@ -571,12 +577,12 @@
   --hha-line: rgba(20, 35, 50, 0.14);
 }
 
-[data-theme='light'] .hand-history-page .hh-filter-chip.active,
-[data-theme='light'] .hand-history-page .replay-btn {
+[data-theme='light'] .hand-history-page__hand-history-page .hh-filter-chip.active,
+[data-theme='light'] .hand-history-page__hand-history-page .replay-btn {
   background: linear-gradient(180deg, #2a8ae0, #1b6cb5);
 }
 
-[data-theme='light'] .hand-history-page .hand-tag {
+[data-theme='light'] .hand-history-page__hand-history-page .hand-tag {
   background: rgba(20, 107, 179, 0.08);
   border-color: rgba(20, 107, 179, 0.3);
 }

@@ -25,7 +25,7 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
 
   return (
     <span
-      className={`status-badge status-${status} size-${size}`}
+      className={`status-badge__status-badge status-${status} size-${size}`}
       style={{ '--status-color': config.color } as React.CSSProperties}
     >
       {showDot && <span className="status-dot" />}

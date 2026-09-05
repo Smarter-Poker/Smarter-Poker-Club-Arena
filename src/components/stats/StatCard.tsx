@@ -11,7 +11,7 @@ interface StatCardProps {
 
 export const StatCard: React.FC<StatCardProps> = ({ label, value, subValue, icon, trend }) => {
   return (
-    <div className="stat-card">
+    <div className="stat-card__stat-card">
       {icon && <div className="stat-icon">{icon}</div>}
       <div className="stat-content">
         <div className="stat-label">{label}</div>

@@ -32,7 +32,7 @@ export const PrimaryButton: React.FC<PrimaryButtonProps> = ({
       disabled={disabled || loading}
     >
       {loading ? (
-        <span className="loading-spinner" />
+        <span className="primary-button__loading-spinner" />
       ) : (
         <>
           {icon && <span className="btn-icon">{icon}</span>}

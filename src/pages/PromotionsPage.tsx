@@ -308,7 +308,7 @@ export default function PromotionsPage() {
   };
 
   return (
-    <StandardContentLayout className="promotions-page">
+    <StandardContentLayout className="promotions-page__promotions-page">
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / Promotions"
         title="Promotion Exchange"
@@ -390,7 +390,7 @@ export default function PromotionsPage() {
           filteredPromos.map((promo, index) => (
             <div
               key={promo.id}
-              className="promo-card"
+              className="promotions-page__promo-card"
               style={{
                 opacity: visiblePromoCards.has(index) ? 1 : 0,
                 transform: visiblePromoCards.has(index) ? 'translateY(0)' : 'translateY(10px)',
@@ -398,11 +398,11 @@ export default function PromotionsPage() {
               }}
             >
               {promo.image_url && (
-                <div className="promo-image">
+                <div className="promotions-page__promo-image">
                   <img src={promo.image_url} alt="" loading="lazy" />
                 </div>
               )}
-              <div className="promo-content">
+              <div className="promotions-page__promo-content">
                 <div className="promo-header">
                   <span className="promo-icon">{getTypeIcon(promo.type)}</span>
                   <span className="promo-type">{formatPromoType(promo.type)}</span>
@@ -480,7 +480,10 @@ export default function PromotionsPage() {
 
       {/* Daily Bonus Wheel Modal */}
       {showBonusWheel && (
-        <div className="bonus-wheel-overlay" onClick={() => setShowBonusWheel(false)}>
+        <div
+          className="promotions-page__bonus-wheel-overlay"
+          onClick={() => setShowBonusWheel(false)}
+        >
           <div className="bonus-wheel-modal" onClick={(e) => e.stopPropagation()}>
             <button className="modal-close" onClick={() => setShowBonusWheel(false)}>
               ✕

@@ -112,7 +112,7 @@ export const ReportPlayerModal: React.FC<ReportPlayerModalProps> = ({
       >
         <div className="report-header">
           <h2>Report Player</h2>
-          <button className="close-btn" onClick={onClose}>
+          <button className="report-player-modal__close-btn" onClick={onClose}>
             ×
           </button>
         </div>
@@ -137,7 +137,7 @@ export const ReportPlayerModal: React.FC<ReportPlayerModalProps> = ({
                 onChange={() => setSelectedReason(reason.id)}
               />
               <div className="reason-content">
-                <span className="reason-label">{reason.label}</span>
+                <span className="report-player-modal__reason-label">{reason.label}</span>
                 <span className="reason-desc">{reason.description}</span>
               </div>
             </label>
@@ -173,7 +173,7 @@ export const ReportPlayerModal: React.FC<ReportPlayerModalProps> = ({
             Cancel
           </button>
           <button
-            className="submit-btn"
+            className="report-player-modal__submit-btn"
             onClick={handleSubmit}
             disabled={submitting || !selectedReason}
           >

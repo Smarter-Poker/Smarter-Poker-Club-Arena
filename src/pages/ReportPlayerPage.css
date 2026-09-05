@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  REPORT PLAYER PAGE — Metal UI Theme
@@ -118,13 +124,13 @@
   margin-bottom: 0.25rem;
 }
 
-.reason-label {
+.report-player-page__reason-label {
   font-size: 0.625rem;
   color: #6a7a8a;
   text-align: center;
 }
 
-.reason-btn.active .reason-label {
+.reason-btn.active .report-player-page__reason-label {
   color: #ef4444;
 }
 
@@ -259,7 +265,7 @@
     font-size: 1rem;
   }
 
-  .reason-label {
+  .report-player-page__reason-label {
     font-size: 0.575rem;
   }
 

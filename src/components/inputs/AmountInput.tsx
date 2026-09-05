@@ -43,7 +43,7 @@ export const AmountInput: React.FC<AmountInputProps> = ({
   };
 
   return (
-    <div className={`amount-input-wrapper ${error ? 'has-error' : ''}`}>
+    <div className={`amount-input__amount-input-wrapper ${error ? 'has-error' : ''}`}>
       {label && <label className="amount-label">{label}</label>}
 
       <div className="amount-container">

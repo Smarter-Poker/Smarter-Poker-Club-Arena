@@ -344,7 +344,7 @@ export default function AnalyticsDashboard() {
             {TIME_RANGE_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
-                className={`range-btn ${timeRange === opt.value ? 'active' : ''}`}
+                className={`analytics-dashboard__range-btn ${timeRange === opt.value ? 'active' : ''}`}
                 onClick={() => setTimeRange(opt.value)}
               >
                 {opt.label}

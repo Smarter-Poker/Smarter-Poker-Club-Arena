@@ -267,7 +267,7 @@ export default function BonusPage() {
 
   if (loading) {
     return (
-      <div className="bonus-page">
+      <div className="bonus-page__bonus-page">
         <section className="bonus-section">
           <div className="bonus-skeleton-header" />
           <div className="bonus-skeleton-calendar">
@@ -282,7 +282,7 @@ export default function BonusPage() {
   }
 
   return (
-    <div className="bonus-page">
+    <div className="bonus-page__bonus-page">
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / Bonuses"
         title="Bonus Vault"

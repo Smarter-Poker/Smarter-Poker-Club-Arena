@@ -140,7 +140,7 @@ export function BadBeatJackpot({
       {isHit && (
         <div className="bbj-hit-overlay">
           <div className="bbj-hit-content">
-            <div className="bbj-hit__title">BAD BEAT JACKPOT</div>
+            <div className="bad-beat-jackpot__bbj-hit__title">BAD BEAT JACKPOT</div>
             <div className="bbj-hit__subtitle">HIT!</div>
             <div className="bbj-hit__amount">
               {currency}

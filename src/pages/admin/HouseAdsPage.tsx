@@ -636,7 +636,7 @@ export default function HouseAdsPage() {
   // ── Render ────────────────────────────────────────────────────────────────
   if (allowed === null) {
     return (
-      <div className="admin-page">
+      <div className="admin-dashboard-page__admin-page">
         <div className="admin-container">
           <div className="admin-skeleton" style={{ height: 40, marginBottom: 12 }} />
           <div className="admin-skeleton" style={{ height: 120 }} />
@@ -647,7 +647,7 @@ export default function HouseAdsPage() {
 
   if (!allowed) {
     return (
-      <div className="admin-page">
+      <div className="admin-dashboard-page__admin-page">
         <div className="admin-container">
           <div className="admin-error-banner">
             ACCESS DENIED: House Ads Are Managed By Smarter.Poker Staff. Club Owners Can Post To
@@ -677,7 +677,7 @@ export default function HouseAdsPage() {
   };
 
   return (
-    <div className="admin-page">
+    <div className="admin-dashboard-page__admin-page">
       <div className="admin-container">
         <div className="admin-page-header">
           <h1 className="admin-page-title">House Ads</h1>
@@ -701,7 +701,7 @@ export default function HouseAdsPage() {
                 </label>
                 <input
                   id="ad-key"
-                  className="admin-input"
+                  className="admin-dashboard-page__admin-input"
                   value={form.ad_key}
                   placeholder="spring_spins_push"
                   onChange={(e) => setForm((f) => ({ ...f, ad_key: e.target.value }))}
@@ -718,7 +718,7 @@ export default function HouseAdsPage() {
               </label>
               <input
                 id="ad-headline"
-                className="admin-input"
+                className="admin-dashboard-page__admin-input"
                 maxLength={120}
                 value={form.headline}
                 placeholder="Spins Pay Up To 1000X"
@@ -754,7 +754,7 @@ export default function HouseAdsPage() {
                 </label>
                 <select
                   id="ad-category"
-                  className="admin-input"
+                  className="admin-dashboard-page__admin-input"
                   value={form.category}
                   onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
                 >
@@ -772,7 +772,7 @@ export default function HouseAdsPage() {
                 </label>
                 <input
                   id="ad-glyph"
-                  className="admin-input"
+                  className="admin-dashboard-page__admin-input"
                   maxLength={4}
                   value={form.glyph}
                   placeholder="◉"
@@ -789,7 +789,7 @@ export default function HouseAdsPage() {
                 </label>
                 <input
                   id="ad-weight"
-                  className="admin-input"
+                  className="admin-dashboard-page__admin-input"
                   /* min={1}, not 0: the database refuses a zero weight
                      (ad_catalog_weight_positive), so a 0 here was a save that
                      came back "Could not create that ad" without ever naming
@@ -819,7 +819,7 @@ export default function HouseAdsPage() {
                 </label>
                 <input
                   id="ad-target"
-                  className="admin-input"
+                  className="admin-dashboard-page__admin-input"
                   value={form.target_url}
                   placeholder="/vip"
                   onChange={(e) => setForm((f) => ({ ...f, target_url: e.target.value }))}
@@ -831,7 +831,7 @@ export default function HouseAdsPage() {
                 </label>
                 <input
                   id="ad-cta"
-                  className="admin-input"
+                  className="admin-dashboard-page__admin-input"
                   maxLength={40}
                   value={form.cta_label}
                   placeholder="See VIP"
@@ -859,7 +859,7 @@ export default function HouseAdsPage() {
                 </label>
                 <input
                   id="ad-image"
-                  className="admin-input"
+                  className="admin-dashboard-page__admin-input"
                   placeholder="/images/promo.png"
                   value={form.image_url}
                   onChange={(e) => setForm((f) => ({ ...f, image_url: e.target.value }))}
@@ -875,7 +875,7 @@ export default function HouseAdsPage() {
                 </label>
                 <input
                   id="ad-experiment"
-                  className="admin-input"
+                  className="admin-dashboard-page__admin-input"
                   placeholder="spins_headline_test"
                   value={form.experiment_key}
                   onChange={(e) => setForm((f) => ({ ...f, experiment_key: e.target.value }))}
@@ -901,7 +901,7 @@ export default function HouseAdsPage() {
                   </label>
                   <select
                     id="ad-slot"
-                    className="admin-input"
+                    className="admin-dashboard-page__admin-input"
                     value={form.slot}
                     onChange={(e) => setForm((f) => ({ ...f, slot: e.target.value }))}
                   >
@@ -918,7 +918,7 @@ export default function HouseAdsPage() {
                   </label>
                   <select
                     id="ad-audience"
-                    className="admin-input"
+                    className="admin-dashboard-page__admin-input"
                     value={form.audience}
                     onChange={(e) => setForm((f) => ({ ...f, audience: e.target.value }))}
                   >
@@ -935,7 +935,7 @@ export default function HouseAdsPage() {
                   </label>
                   <input
                     id="ad-cap"
-                    className="admin-input"
+                    className="admin-dashboard-page__admin-input"
                     type="number"
                     min={1}
                     value={form.daily_cap}
@@ -959,7 +959,7 @@ export default function HouseAdsPage() {
                 </label>
                 <input
                   id="ad-start"
-                  className="admin-input"
+                  className="admin-dashboard-page__admin-input"
                   type="datetime-local"
                   value={form.starts_at}
                   onChange={(e) => setForm((f) => ({ ...f, starts_at: e.target.value }))}
@@ -971,7 +971,7 @@ export default function HouseAdsPage() {
                 </label>
                 <input
                   id="ad-end"
-                  className="admin-input"
+                  className="admin-dashboard-page__admin-input"
                   type="datetime-local"
                   value={form.ends_at}
                   onChange={(e) => setForm((f) => ({ ...f, ends_at: e.target.value }))}
@@ -1425,7 +1425,7 @@ export default function HouseAdsPage() {
                                     </label>
                                     <select
                                       id={`pl-slot-${ad.id}`}
-                                      className="admin-input"
+                                      className="admin-dashboard-page__admin-input"
                                       value={placementDraft.slot}
                                       onChange={(e) =>
                                         setPlacementDraft((d) => ({ ...d, slot: e.target.value }))
@@ -1444,7 +1444,7 @@ export default function HouseAdsPage() {
                                     </label>
                                     <select
                                       id={`pl-aud-${ad.id}`}
-                                      className="admin-input"
+                                      className="admin-dashboard-page__admin-input"
                                       value={placementDraft.audience}
                                       onChange={(e) =>
                                         setPlacementDraft((d) => ({
@@ -1466,7 +1466,7 @@ export default function HouseAdsPage() {
                                     </label>
                                     <input
                                       id={`pl-cap-${ad.id}`}
-                                      className="admin-input"
+                                      className="admin-dashboard-page__admin-input"
                                       type="number"
                                       min={1}
                                       placeholder="Uncapped"
@@ -1491,7 +1491,7 @@ export default function HouseAdsPage() {
                                     </label>
                                     <input
                                       id={`pl-target-${ad.id}`}
-                                      className="admin-input"
+                                      className="admin-dashboard-page__admin-input"
                                       type="text"
                                       placeholder="Inherited From The Ad"
                                       value={placementDraft.target_url}

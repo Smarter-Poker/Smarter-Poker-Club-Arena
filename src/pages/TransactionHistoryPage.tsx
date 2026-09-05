@@ -582,7 +582,9 @@ export default function TransactionHistoryPage() {
                       {formatDate(tx.created_at)}
                     </span>
                   </div>
-                  <span className={`tx-amount ${tx.amount >= 0 ? 'positive' : 'negative'}`}>
+                  <span
+                    className={`transaction-history-page__tx-amount ${tx.amount >= 0 ? 'positive' : 'negative'}`}
+                  >
                     {tx.amount >= 0 ? '+' : ''}
                     {getCurrencySymbol(tx.currency)}
                     {Math.abs(tx.amount).toLocaleString()}

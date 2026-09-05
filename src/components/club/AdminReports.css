@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  ADMIN REPORTS — Styles
@@ -101,7 +107,7 @@
   border-radius: 8px;
 }
 
-.range-btn {
+.admin-reports__range-btn {
   padding: 6px 12px;
   background: transparent;
   border: none;
@@ -112,7 +118,7 @@
   cursor: pointer;
 }
 
-.range-btn.active {
+.admin-reports__range-btn.active {
   background: #1877f2;
   color: #fff;
 }
@@ -148,7 +154,7 @@
   gap: 16px;
 }
 
-.summary-card {
+.admin-reports__summary-card {
   padding: 16px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.05);

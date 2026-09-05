@@ -1,3 +1,9 @@
+/* RENAMED 2026-09-05. These class names were also defined bare in another
+   component's stylesheet, so the two were ONE global rule and whichever chunk
+   loaded last won any property the other did not declare. Renaming (rather
+   than scoping) is behaviour-preserving by construction: it needs no
+   assumption about which element contains which.
+   tests/global-css-does-not-leak-across-pages.law.test.ts */
 /* SCOPED 2026-09-05. These class names are also defined bare in another
    component's stylesheet. Every plain .css file here is global once imported,
    so the two were ONE rule and whichever chunk loaded last won any property
@@ -96,7 +102,7 @@
   display: none;
 }
 
-.filter-tab {
+.financial-alerts-page__filter-tab {
   padding: 8px 16px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -111,19 +117,19 @@
   touch-action: manipulation;
 }
 
-.filter-tab.active {
+.financial-alerts-page__filter-tab.active {
   background: rgba(99, 102, 241, 0.15);
   color: #818cf8;
   border-color: rgba(99, 102, 241, 0.3);
 }
 
-.filter-tab.critical.active {
+.financial-alerts-page__filter-tab.critical.active {
   background: rgba(239, 68, 68, 0.12);
   color: #ef4444;
   border-color: rgba(239, 68, 68, 0.25);
 }
 
-.filter-tab.warning.active {
+.financial-alerts-page__filter-tab.warning.active {
   background: rgba(234, 179, 8, 0.12);
   color: #eab308;
   border-color: rgba(234, 179, 8, 0.25);
@@ -160,7 +166,7 @@
   flex-wrap: wrap;
 }
 
-.severity-badge {
+.financial-alerts-page__severity-badge {
   font-size: 0.75rem;
   padding: 2px 8px;
   border-radius: 6px;
@@ -168,12 +174,12 @@
   letter-spacing: 0.5px;
 }
 
-.severity-badge.critical {
+.financial-alerts-page__severity-badge.critical {
   background: rgba(239, 68, 68, 0.15);
   color: #ef4444;
 }
 
-.severity-badge.warning {
+.financial-alerts-page__severity-badge.warning {
   background: rgba(234, 179, 8, 0.15);
   color: #eab308;
 }
@@ -325,7 +331,7 @@
     font-size: 0.68rem;
   }
 
-  .filter-tab {
+  .financial-alerts-page__filter-tab {
     min-height: 44px;
   }
 

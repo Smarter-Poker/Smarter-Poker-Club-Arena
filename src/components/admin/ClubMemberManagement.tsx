@@ -360,7 +360,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
         {filteredMembers.map((member) => (
           <div
             key={member.id}
-            className={`member-row ${member.isBanned ? 'banned' : ''}`}
+            className={`club-member-management__member-row ${member.isBanned ? 'banned' : ''}`}
             style={{
               opacity: visibleIds.has(member.id) ? 1 : 0,
               transform: visibleIds.has(member.id) ? 'translateY(0)' : 'translateY(8px)',

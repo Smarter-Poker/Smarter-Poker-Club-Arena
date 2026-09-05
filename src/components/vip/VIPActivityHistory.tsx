@@ -117,7 +117,7 @@ export const VIPActivityHistory: React.FC<VIPActivityHistoryProps> = ({ activiti
         {(['all', 'earned', 'spent'] as ActivityFilter[]).map((filter) => (
           <button
             key={filter}
-            className={`filter-tab ${activeFilter === filter ? 'active' : ''}`}
+            className={`vipactivity-history__filter-tab ${activeFilter === filter ? 'active' : ''}`}
             onClick={() => setActiveFilter(filter)}
           >
             {filter === 'all' && 'All Activity'}
@@ -144,7 +144,7 @@ export const VIPActivityHistory: React.FC<VIPActivityHistoryProps> = ({ activiti
               style={{ '--reveal-delay': `${idx * 0.03}s` } as React.CSSProperties}
             >
               <div
-                className="timeline-marker"
+                className="vipactivity-history__timeline-marker"
                 style={{ '--color': getActivityColor(activity.action) } as React.CSSProperties}
               >
                 <span className="marker-icon">{activity.icon}</span>

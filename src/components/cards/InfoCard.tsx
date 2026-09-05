@@ -17,7 +17,7 @@ export const InfoCard: React.FC<InfoCardProps> = ({
   children,
 }) => {
   return (
-    <div className={`info-card variant-${variant}`}>
+    <div className={`info-card__info-card variant-${variant}`}>
       {icon && <div className="info-icon">{icon}</div>}
       <div className="info-content">
         <h4>{title}</h4>

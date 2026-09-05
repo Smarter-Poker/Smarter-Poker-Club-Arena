@@ -33,7 +33,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
   if (isLoading) {
     return (
       <div className="search-results loading">
-        <div className="loading-spinner" />
+        <div className="search-results__loading-spinner" />
         <p>Searching...</p>
       </div>
     );

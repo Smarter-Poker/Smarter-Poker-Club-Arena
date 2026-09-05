@@ -245,7 +245,7 @@ export const PlayerNotes: React.FC<PlayerNotesProps> = ({ playerId, onClose, mod
             {colors.map((c) => (
               <button
                 key={c.id}
-                className={`color-btn color-${c.id} ${selectedColor === c.id ? 'active' : ''}`}
+                className={`player-notes__color-btn color-${c.id} ${selectedColor === c.id ? 'active' : ''}`}
                 onClick={() => setSelectedColor(c.id)}
                 title={c.label}
               />

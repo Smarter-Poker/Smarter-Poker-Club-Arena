@@ -114,8 +114,9 @@ describe('TablePage takes the saved hand as it lands', () => {
   });
 
   it('only into a list already fetched for THIS table', () => {
-    expect(page).toContain(
-      "if (handHistoryStateRef.current !== 'ready' || handHistoryTableRef.current !== tableId) return;"
+    // Format-tolerant: Prettier decides the line breaks, the pin decides the guard.
+    expect(page).toMatch(
+      /if \(\s*handHistoryStateRef\.current !== 'ready' \|\|\s*handHistoryTableRef\.current !== tableId\s*\)\s*return;/
     );
     expect(page).toContain('if (!row || row.table_id !== tableId) return;');
   });

@@ -4,16 +4,24 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Deep profile customization.
- * - Change Avatar (uses dicebear.com API for avatars)
- * - Update Display Name
+ * - Update Poker Alias (the arena handle: profiles.alias + profiles.username)
  * - Edit Bio / About Me
  * - Manage Player Tags (e.g., "Aggressive", "Grinder")
+ *
+ * 2026-09-04: the dicebear avatar picker is gone. It let a player choose one
+ * of six external cartoon avatars, showed the choice in the dialog, and then
+ * nothing persisted it - ProfilePage never wrote avatarUrl (and must not: the
+ * arena avatar is library art written through AvatarService, the social photo
+ * belongs to the World Hub). A control that looks like it works and does
+ * nothing is a lie, so the portrait here is read-only and the caller owns the
+ * real avatar flow (ProfilePage opens AvatarGallery).
  */
 
 import React, { useState, useEffect, useId, useRef } from 'react';
 import { sanitizeInput } from '../../utils/sanitizeInput';
 import './UserProfileEdit.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { ALIAS_MAX, ALIAS_MIN, BIO_MAX, aliasProblem } from '../../utils/aliasRules';
 
 export interface UserProfileData {
   id: string;
@@ -29,16 +37,9 @@ export interface UserProfileEditProps {
   onClose: () => void;
   initialData: UserProfileData;
   onSave: (data: UserProfileData) => void | Promise<void>;
+  /** Optional: lets the caller open the real avatar flow from inside the dialog. */
+  onChangeAvatar?: () => void;
 }
-
-const AVAILABLE_AVATARS = [
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Aneka',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Bob',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Molly',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Jack',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah',
-];
 
 const AVAILABLE_TAGS = [
   'Aggressive',
@@ -51,12 +52,18 @@ const AVAILABLE_TAGS = [
   'Nit',
 ];
 
-export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserProfileEditProps) {
+export function UserProfileEdit({
+  isOpen,
+  onClose,
+  initialData,
+  onSave,
+  onChangeAvatar,
+}: UserProfileEditProps) {
   const [formData, setFormData] = useState<UserProfileData>(initialData);
-  const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [aliasTouched, setAliasTouched] = useState(false);
   const mountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const initialDataRef = useRef(initialData);
@@ -64,6 +71,7 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
   const savingRef = useRef(saving);
   const titleId = useId();
   const aliasId = useId();
+  const aliasHintId = useId();
   const bioId = useId();
   initialDataRef.current = initialData;
   onCloseRef.current = onClose;
@@ -71,9 +79,9 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
   useEffect(() => {
     if (isOpen) {
       setFormData(initialDataRef.current);
-      setShowAvatarPicker(false);
       setSaving(false);
       setSaveError('');
+      setAliasTouched(false);
       if (mountTimerRef.current) clearTimeout(mountTimerRef.current);
       mountTimerRef.current = setTimeout(() => {
         mountTimerRef.current = null;
@@ -128,15 +136,22 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
 
   if (!isOpen) return null;
 
+  const aliasError = aliasProblem(formData.username || '');
+  const showAliasError = aliasTouched && aliasError;
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (aliasError) {
+      setAliasTouched(true);
+      return;
+    }
     setSaving(true);
     setSaveError('');
     try {
       await onSave({
         ...formData,
-        username: sanitizeInput(formData.username),
-        bio: sanitizeInput(formData.bio),
+        username: sanitizeInput(formData.username).trim(),
+        bio: sanitizeInput(formData.bio).trim(),
         tags: formData.tags,
       });
       onClose();
@@ -173,7 +188,10 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
         }}
       >
         <div className="profile-header">
-          <h2 id={titleId}>Edit Profile</h2>
+          <div>
+            <span className="profile-eyebrow">Identity Record // Edit</span>
+            <h2 id={titleId}>Edit Profile</h2>
+          </div>
           <button
             type="button"
             className="close-btn"
@@ -189,73 +207,71 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
           <div className="avatar-section">
             <div className="current-avatar">
               <img
-                loading="lazy"
                 decoding="async"
-                src={formData.avatarUrl}
-                alt="Avatar"
+                src={formData.avatarUrl || generateDefaultAvatar()}
+                alt=""
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = generateDefaultAvatar();
                 }}
               />
-              <button
-                type="button"
-                className="edit-avatar-btn"
-                onClick={() => setShowAvatarPicker(!showAvatarPicker)}
-                aria-expanded={showAvatarPicker}
-                aria-label="Choose Profile Avatar"
-              >
-                Edit
-              </button>
             </div>
-            {showAvatarPicker && (
-              <div className="avatar-picker">
-                {AVAILABLE_AVATARS.map((url) => (
-                  <button
-                    type="button"
-                    key={url}
-                    className={`avatar-choice ${formData.avatarUrl === url ? 'selected' : ''}`}
-                    aria-label="Select This Avatar"
-                    aria-pressed={formData.avatarUrl === url}
-                    onClick={() => {
-                      setFormData({ ...formData, avatarUrl: url });
-                      setShowAvatarPicker(false);
-                    }}
-                  >
-                    <img loading="lazy" decoding="async" src={url} alt="" />
-                  </button>
-                ))}
-              </div>
-            )}
+            <p className="avatar-note">
+              {onChangeAvatar ? (
+                <button type="button" className="avatar-link" onClick={onChangeAvatar}>
+                  Change Table Avatar
+                </button>
+              ) : (
+                'Table Avatar Is Set From The Profile Page'
+              )}
+            </p>
           </div>
 
-          <form onSubmit={handleSave} className="profile-form">
+          <form onSubmit={handleSave} className="profile-form" noValidate>
             <div className="form-group">
               <label htmlFor={aliasId}>Poker Alias</label>
               <input
                 id={aliasId}
                 value={formData.username || ''}
                 onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                maxLength={16}
+                onBlur={() => setAliasTouched(true)}
+                maxLength={ALIAS_MAX}
                 required
                 autoFocus
                 autoComplete="nickname"
+                spellCheck={false}
+                aria-describedby={aliasHintId}
+                aria-invalid={showAliasError ? true : undefined}
               />
+              <span
+                id={aliasHintId}
+                className={`field-hint${showAliasError ? ' field-hint--error' : ''}`}
+                role={showAliasError ? 'alert' : undefined}
+              >
+                {showAliasError
+                  ? aliasError
+                  : `${ALIAS_MIN}-${ALIAS_MAX} Characters. Letters, Numbers, Underscores. Shown At Every Table.`}
+              </span>
             </div>
 
             <div className="form-group">
-              <label htmlFor={bioId}>Bio (Max 100 Chars)</label>
+              <label htmlFor={bioId}>Bio</label>
               <textarea
                 id={bioId}
                 value={formData.bio}
                 onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-                maxLength={100}
+                maxLength={BIO_MAX}
                 rows={3}
               />
+              <span className="field-hint field-hint--count" aria-live="polite">
+                {formData.bio.length} / {BIO_MAX}
+              </span>
             </div>
 
             <div className="form-group">
-              <label>Player Tags (Select Up To 3)</label>
-              <div className="tags-grid">
+              <span className="form-group-label" id={`${bioId}-tags`}>
+                Player Tags (Select Up To 3)
+              </span>
+              <div className="tags-grid" role="group" aria-labelledby={`${bioId}-tags`}>
                 {AVAILABLE_TAGS.map((tag) => (
                   <button
                     key={tag}

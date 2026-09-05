@@ -17,11 +17,15 @@
 
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { ChipPhysics } from '../src/components/table/ChipPhysics';
 import { PotDisplay } from '../src/components/table/PotDisplay';
 import { CHIP_DENOMINATIONS } from '../src/lib/chipDenominations';
 
 afterEach(cleanup);
+
+const readSrc = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 
 const byValue = (v: number) => CHIP_DENOMINATIONS.find((d) => d.value === v)!;
 
@@ -81,14 +85,46 @@ describe('a bet in front of a seat', () => {
     expect(container.querySelectorAll('.cp-chip')).toHaveLength(0);
   });
 
-  it('draws a partial sliver, not a white chip, for a 0.5 small blind', () => {
+  it('draws one white disc, with the exact amount beside it, for a 0.5 small blind', () => {
     // Stakes run 0.25/0.5 and nothing on the ladder is smaller than the white
-    // 1. A full white chip here would claim twice the value that is out.
+    // 1. The disc is still tagged `partial` (that is what stops 7.5 drawing a
+    // fourth chip) and the label is what carries the value.
     const { container } = render(<ChipPhysics amount={0.5} compact />);
     const chips = container.querySelectorAll('.cp-chip');
     expect(chips).toHaveLength(1);
     expect(chips[0].className).toContain('cp-chip--partial');
+    expect((chips[0] as HTMLElement).style.getPropertyValue('--chip-color').trim()).toBe(
+      byValue(1).color
+    );
     expect(container.querySelector('.cp-amount')?.textContent).toBe('0.50');
+  });
+
+  it('draws the sub-1 disc as a full circle, on the seat and in the pot', () => {
+    // Dan 2026-09-04: "WHY ARE THE CHIPS OVAL SHAPED NOW PREFLOP INSTEAD OF
+    // CIRCLES? THEY APPEAR NORMAL ON ALL OTHER STREETS... FIX THIS BUG."
+    //
+    // The partial disc used to be squashed to 55% height (37.5% in the pot),
+    // dashed and faded. At 0.10/0.25 every preflop bet is under 1, so EVERY
+    // chip on the felt was an oval until the flop. jsdom does not lay out
+    // CSS, so this reads the stylesheets: the partial rule may only restate
+    // the chip's own height, and may not touch its rim or opacity.
+    const partialRule = (css: string, selector: string) => {
+      const m = css.match(new RegExp(`${selector.replace(/[.-]/g, '\\$&')}\\s*\\{([^}]*)\\}`));
+      expect(m, `${selector} rule missing`).not.toBeNull();
+      return m![1];
+    };
+    const seat = partialRule(readSrc('src/components/table/ChipPhysics.css'), '.cp-chip--partial');
+    expect(seat).toMatch(/height:\s*var\(--cp-chip-size\)\s*;/);
+    expect(seat).not.toMatch(/\*\s*0?\.\d+/); // no fraction of the chip
+    expect(seat).not.toMatch(/opacity|dashed/);
+
+    const pot = partialRule(
+      readSrc('src/components/table/PotDisplay.css'),
+      '.pot-display__pile-chip--partial'
+    );
+    expect(pot).toMatch(/height:\s*var\(--cp-chip-size(,\s*24px)?\)\s*;/);
+    expect(pot).not.toMatch(/\*\s*0?\.\d+/);
+    expect(pot).not.toMatch(/opacity|dashed/);
   });
 
   it('caps a tall stack but prints its true count', () => {

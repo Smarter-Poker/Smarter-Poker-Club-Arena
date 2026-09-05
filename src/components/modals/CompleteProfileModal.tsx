@@ -428,7 +428,11 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
       <AvatarGallery
         userId={user.id}
         currentAvatarUrl={currentAvatar || ''}
-        isVip={user.vip_level !== 'bronze'}
+        /* 2026-09-05: this was `user.vip_level !== 'bronze'`. vip_level is
+           profiles.tier, which is 'Newcomer' on every row, so the comparison
+           was true for all 1,310 accounts and the VIP avatar collection was
+           free to everyone. vip_status is the resolved membership. */
+        isVip={user.vip_status === 'vip' || user.vip_status === 'lifetime'}
         isOpen={showAvatarGallery}
         onClose={() => setShowAvatarGallery(false)}
         onAvatarChanged={(newUrl) => {

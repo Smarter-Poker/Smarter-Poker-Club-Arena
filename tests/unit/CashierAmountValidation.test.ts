@@ -1,15 +1,19 @@
 /**
  * Cashier amount validation.
  *
- * Chips are whole units held PER CLUB (club_members.chip_balance is an
- * integer). The page previously validated with `parseFloat` + `<= 0` only,
- * which accepted fractions and exponent notation:
+ * A CHIP GOES TO TWO DECIMAL PLACES (2026-09-05, phase 7). These pins used to
+ * say "chips are whole units held PER CLUB (club_members.chip_balance is an
+ * integer)" and refuse any fraction on that basis. The column is
+ * `numeric(20,2)` - measured, not assumed - so it stores 12.34 exactly and
+ * nothing is rounded on write. The rule was refusing amounts the ledger keeps
+ * perfectly, AND it disagreed with the Trade cashier on the same platform,
+ * which accepts 2dp: the same operator could send 0.50 from one screen and be
+ * told "Chips must be a whole number" on the other.
  *
- *   - a fractional amount is rounded on write to the integer column while the
- *     sending side is debited the exact decimal — money created or destroyed
- *   - "1e9" parses to 1,000,000,000 from a field the user typed 4 characters in
- *
- * These cases pin the rules so neither can come back.
+ * What has NOT changed, because both were real: `parseFloat` accepted
+ * exponent notation ("1e9" - a billion chips from four keystrokes) and
+ * trailing garbage ("100abc"), and the ceiling mirrors the database's own
+ * guard. Those pins stay exactly as they were.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -22,11 +26,18 @@ describe('parseChipAmount', () => {
     expect(parseChipAmount(' 250 ')).toEqual({ ok: true, value: 250 });
   });
 
-  it('rejects fractional amounts — the ledger column is an integer', () => {
-    const r = parseChipAmount('0.5');
+  it('accepts two decimal places, which is what the ledger column holds', () => {
+    // club_members.chip_balance is numeric(20,2).
+    expect(parseChipAmount('0.5')).toEqual({ ok: true, value: 0.5 });
+    expect(parseChipAmount('100.01')).toEqual({ ok: true, value: 100.01 });
+    expect(parseChipAmount('12.34')).toEqual({ ok: true, value: 12.34 });
+  });
+
+  it('rejects a third decimal, which could not be stored exactly', () => {
+    const r = parseChipAmount('0.005');
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toMatch(/whole number/i);
-    expect(parseChipAmount('100.01').ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/two decimal places/i);
+    expect(parseChipAmount('1.234').ok).toBe(false);
   });
 
   it('rejects zero and negatives', () => {

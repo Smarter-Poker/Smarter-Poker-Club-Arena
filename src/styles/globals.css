@@ -395,10 +395,16 @@ a {
   background: var(--gradient-blue);
   color: var(--pure-white);
 }
-.btn-success {
-  background: var(--gradient-success);
-  color: var(--pure-white);
-}
+/* `.btn-success` intentionally not declared here (2026-09-05).
+   club-engine.css - the ONLY one of these three stylesheets main.tsx actually
+   imports - declares this variant twice: the same background and colour as the
+   line that used to sit here, plus a realism `border-color` added by #3126.
+   Two files declaring one bare class name with different property sets is the
+   leak `tests/global-css-does-not-leak-across-pages.law.test.ts` counts, and
+   this pair took it from 243 to 244, turning main red for everybody.
+   Deleting it is provably behaviour-free: nothing imports globals.css (see the
+   note at club-engine.css:232 - "the legacy, unimported globals.css file"), so
+   the live declaration was always the only one a browser ever saw. */
 .btn-danger {
   background: var(--gradient-danger);
   color: var(--pure-white);

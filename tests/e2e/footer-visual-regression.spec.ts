@@ -13,9 +13,14 @@ const footerArt = readFileSync(
    it went on asserting a value the app had stopped using and could never have
    noticed the difference. It now takes the declaration from the stylesheet the
    app actually loads. */
-const globalsCss = readFileSync(join(ROOT, 'src/styles/globals.css'), 'utf8');
-const HEIGHT_DECL = /--bottom-nav-height:\s*([^;]+);/.exec(globalsCss)?.[1]?.trim();
-if (!HEIGHT_DECL) throw new Error('globals.css no longer declares --bottom-nav-height');
+/* club-engine.css, not globals.css: main.tsx imports exactly one of the three
+   stylesheets that declare this constant, and it is this one. Reading either of
+   the other two would have gone on passing while the value the browser
+   actually resolves drifted away underneath. footer-clearance.test.ts is what
+   keeps all three in step. */
+const engineCss = readFileSync(join(ROOT, 'src/styles/club-engine.css'), 'utf8');
+const HEIGHT_DECL = /--bottom-nav-height:\s*([^;]+);/.exec(engineCss)?.[1]?.trim();
+if (!HEIGHT_DECL) throw new Error('club-engine.css no longer declares --bottom-nav-height');
 
 /* The frame inside the approved asset: the rect x=25 y=14 1866x230 of a
    1916x256 canvas. Everything below is derived from this one number. */

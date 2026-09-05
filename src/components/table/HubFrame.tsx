@@ -73,6 +73,7 @@ import './HubFrame.css';
 import {
   HUB_FRAME_IDLE_SUSPEND_MS,
   HUB_FRAME_POLL_MS,
+  HUB_FRAME_STALL_MS,
   clubArenaPathFromHubUrl,
   isOffSite,
 } from '../../utils/hubTab';
@@ -144,6 +145,15 @@ export function HubFrame({
      Latches true on first activation and never resets. */
   const [armed, setArmed] = useState(active);
   if (active && !armed) setArmed(true);
+  /* 8. A PAGE THAT IS STILL COMING says so. A whole Next.js app takes seconds
+     to boot, and a black slot with nothing on it reads as "broken". The
+     overlay names the page it is fetching and, if the frame has not fired
+     `load` inside HUB_FRAME_STALL_MS, offers Reload - the only recovery a
+     browser tab has either. Cleared by the frame's own load event; shown
+     again when an idle-unloaded frame is brought back. */
+  const [loading, setLoading] = useState(true);
+  const [stalled, setStalled] = useState(false);
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   useEffect(() => {
     const iframe = ref.current;
@@ -250,6 +260,17 @@ export function HubFrame({
     const onLoad = () => {
       attach();
       check();
+      // about:blank (the idle unload) is not a page arriving.
+      let blank = false;
+      try {
+        blank = (iframe.contentWindow?.location.href ?? 'about:blank') === 'about:blank';
+      } catch {
+        blank = false; // cross-origin IS a page, just not one we can read
+      }
+      if (!blank) {
+        setLoading(false);
+        setStalled(false);
+      }
     };
 
     iframe.addEventListener('load', onLoad);
@@ -275,6 +296,7 @@ export function HubFrame({
     if (active) {
       if (suspendedRef.current) {
         suspendedRef.current = false;
+        setLoading(true);
         iframe.src = lastPathRef.current;
       }
       return;
@@ -297,20 +319,50 @@ export function HubFrame({
     return () => window.clearTimeout(timer);
   }, [active, armed, idleSuspendMs]);
 
+  /* The stall clock: armed, still loading, on screen. */
+  useEffect(() => {
+    if (!armed || !loading || !active) return;
+    setStalled(false);
+    const timer = window.setTimeout(() => setStalled(true), HUB_FRAME_STALL_MS);
+    return () => window.clearTimeout(timer);
+  }, [armed, loading, active, reloadNonce]);
+
+  const reload = () => {
+    const iframe = ref.current;
+    if (!iframe) return;
+    setLoading(true);
+    setStalled(false);
+    setReloadNonce((n) => n + 1);
+    iframe.src = lastPathRef.current;
+  };
+
   return (
-    <iframe
-      ref={ref}
-      className="multi-table-page__hub-frame"
-      src={armed ? initialSrc : undefined}
-      title={title}
-      data-hub-active={active ? 'true' : 'false'}
-      /* Same-origin, no sandbox: the World Hub is our own app and needs its
-         storage, its scripts and its forms exactly as it has them standalone.
-         Sandboxing would also make it a foreign origin and take away the
-         location read and the document listeners this component exists for. */
-      allow="autoplay; fullscreen; clipboard-write; microphone; camera"
-      referrerPolicy="same-origin"
-    />
+    <div className="hub-frame" data-hub-loading={armed && loading ? 'true' : 'false'}>
+      <iframe
+        ref={ref}
+        className="multi-table-page__hub-frame"
+        src={armed ? initialSrc : undefined}
+        title={title}
+        data-hub-active={active ? 'true' : 'false'}
+        /* Same-origin, no sandbox: the World Hub is our own app and needs its
+           storage, its scripts and its forms exactly as it has them standalone.
+           Sandboxing would also make it a foreign origin and take away the
+           location read and the document listeners this component exists for. */
+        allow="autoplay; fullscreen; clipboard-write; microphone; camera"
+        referrerPolicy="same-origin"
+      />
+      {armed && loading && (
+        <div className="hub-frame__overlay" role="status" aria-live="polite">
+          <div className="hub-frame__spinner" aria-hidden="true" />
+          <span className="hub-frame__label">Loading {title}</span>
+          {stalled && (
+            <button type="button" className="hub-frame__reload" onClick={reload}>
+              Reload
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

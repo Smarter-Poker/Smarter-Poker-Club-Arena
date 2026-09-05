@@ -2346,6 +2346,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       });
     });
 
-    // Settlement pipeline complete — table unlocked for next hand
+    // Settlement pipeline complete - table unlocked for next hand.
+    // A HAND ENDED (2026-09-05): leavers cashed out, announced moves landed,
+    // the recount is written. The game's ClusterController tick is woken so a
+    // must-move plan or a break decision follows this boundary, not the clock.
+    this.wakeClusterGame('hand_complete');
   }
 }

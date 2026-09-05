@@ -252,3 +252,31 @@ Two failures on the pull request that the local suite did not show, both fixed:
   stylesheet THAT component loads, not from a chunk it happens to share. The
   frame rule moved from MultiTablePage.css into `HubFrame.css`, imported by
   HubFrame.
+
+## Round 3 (2026-09-05): browser-tab parity, and the Hub button never kills a table
+
+Dan: "find any and all ways to improve, enhance and upgrade this page and
+functionality to the max." Shipped in `feat/hub-tabs-polish`:
+
+- **A page that is still coming says so.** A hub tab shows a spinner and
+  "Loading Social" until the frame's own `load` event; after 12 s
+  (`HUB_FRAME_STALL_MS`) it offers Reload, the only recovery a browser tab has
+  either. Shown again when an idle-unloaded frame is brought back; never on a
+  frame that has not been armed.
+- **Quick menu on a hub tab: Reload Page, Open In Browser.** Reload remounts
+  the frame at its last known page (a fresh tab id, since the frame reads `src`
+  once); Open In Browser hands the same page to a real tab for anything a
+  frame cannot do.
+- **The pill sub-line is the page within the section**, where a table shows
+  its stakes: `/hub/training/drills/3` reads "Training" over "Drills / 3", so
+  two Training tabs are told apart. Title-cased, capped at 18 characters.
+- **The real GlobalHeader stops killing tables.** Off-route, above the pinned
+  strip, Hub / VIP / Messages used `window.location`, which unmounted every
+  felt the strip was holding. MultiTablePage now publishes
+  `data-ca-live-tables` on `<body>`; with any live table open those buttons
+  emit `OPEN_HUB_TAB` and the page lands in a hub tab beside the game (revealed
+  by borrowing a table URL). With none open, the navigation is unchanged. The
+  helper is inline in GlobalHeader on purpose: the header is in the entry
+  chunk and a shared module would grow it.
+- **Jarvis from Hand History** follows the same rule: a hub tab with a table
+  open, a browser tab otherwise.

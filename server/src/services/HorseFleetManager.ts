@@ -53,6 +53,15 @@ import { beatVerdict, lastBeatAt } from './StableHandBeats.js';
 import { seatBoosts, takeOpenOrders } from './StableHandPlanBus.js';
 import { stakeForBand } from './StableHandController.js';
 import { fetchAllRows } from './supabase/pagination.js';
+import { allocateBuyers, FULL_TABLE_BUYER_PROBE, type BuyerPool } from './HorseBuyerAllocation.js';
+import {
+  applyRejoinFloor,
+  buildRejoinConstraints,
+  EMPTY_REJOIN_CONSTRAINTS,
+  rejoinPlayerKey,
+  rejoinTableKey,
+  type RejoinConstraints,
+} from './HorseRejoinConstraints.js';
 import { reportError } from './errorReporter.js';
 import { clampSeatsForVariant, maxSeatsForVariant } from '../config/tableSeating.js';
 import {
@@ -1263,6 +1272,61 @@ export class HorseFleetManager {
         reportError(err, 'HorseFleet.bankroll_load_failed');
       }
 
+      /* ── THE DOOR RULES, READ ONCE (2026-09-05) ──────────────────────────
+         A horse booted for low VPIP is barred from that game for two hours
+         (fn_cash_rejoin_floor raises VPIP_BARRED), and a horse that left a
+         game with chips meets a rejoin floor in it (BUYIN_BELOW_FLOOR). A
+         human reads both in the lobby and does not try; the fleet is the
+         horse's browser (10.5) and until today it tried anyway - 341 of 349
+         buy-in refusals in one hour were VPIP_BARRED - and, worse, COUNTED
+         every barred horse as a buyer, so the controller opened feeders for
+         players the door would refuse. One paged read for the whole floor,
+         keyed exactly as the SQL joins (club, variant, sb, bb).
+
+         FAILS OPEN, like the bankroll loader above and for the same reason:
+         the database is the authoritative guard, so an unread row costs one
+         wasted buy-in attempt, whereas treating an unread map as "everyone is
+         barred" would empty the floor. */
+      let rejoin: RejoinConstraints = EMPTY_REJOIN_CONSTRAINTS;
+      try {
+        const nowIsoForRejoin = new Date().toISOString();
+        const rejoinPage = await fetchAllRows<{
+          id: string;
+          player_id: string;
+          club_id: string;
+          variant: string;
+          sb: number | string;
+          bb: number | string;
+          required_stack: number | string | null;
+          barred_until: string | null;
+          expires_at: string;
+        }>(
+          (cursor, want) => {
+            let q = supabase
+              .from('cash_rejoin_constraints')
+              .select(
+                'id, player_id, club_id, variant, sb, bb, required_stack, barred_until, expires_at'
+              )
+              .gt('expires_at', nowIsoForRejoin)
+              .order('id', { ascending: true })
+              .limit(want);
+            if (cursor) q = q.gt('id', cursor);
+            return q;
+          },
+          { label: 'HorseFleet.rejoinConstraints', maxRows: 50_000 }
+        );
+        if (rejoinPage.complete) {
+          rejoin = buildRejoinConstraints(rejoinPage.rows, Date.now());
+        } else {
+          console.warn(
+            '[HorseFleet] rejoin constraints read incomplete - seating this cycle without ' +
+              'the VPIP bar and rejoin floor; the database still refuses at the door.'
+          );
+        }
+      } catch (err) {
+        reportError(err, 'HorseFleet.rejoin_constraints_load_failed');
+      }
+
       // V8: full horse-id set (any status) so we can tell HUMAN seats from
       // horse seats — humans get rescue priority below.
       // Paged: a horse missing from this set reads as a HUMAN, which triggers
@@ -1631,6 +1695,14 @@ export class HorseFleetManager {
       const todayKey = chicagoCounterDay();
       let restDayDropped = 0;
       let dailyCapDropped = 0;
+      /* Horse/table pairs refused at the fleet's own door because the
+         database's door would refuse them: barred for low VPIP from this
+         game, or holding a rejoin floor the horse's wallet cannot cover.
+         Reported with the tag counters, because a barred horse that is still
+         counted as a buyer is exactly the number that opened eleven empty
+         feeders in an hour. */
+      let barredDropped = 0;
+      let floorUnaffordableDropped = 0;
       /* THE TAG BOOK. Null when it could not be read WHOLE, and every gate
          that consults it is written so that null means "today's behaviour,
          unchanged". */
@@ -1688,7 +1760,8 @@ export class HorseFleetManager {
             horseIdSet,
             membership,
             surplusTableIds,
-            seatBudget
+            seatBudget,
+            rejoin
           );
       seatBudget -= claimed;
       beat.seatsFilled += claimed;
@@ -1710,6 +1783,14 @@ export class HorseFleetManager {
          and swapped in whole at the end, so a reader never sees a half-built
          cycle; a withheld cycle honestly reports nothing. */
       const nextEligible = new Map<string, number>();
+      /* A BUYER IS COUNTED ONCE (2026-09-05). For every cluster table the
+         POOL is kept, not its length, and each horse's remaining table
+         capacity is kept beside it; after the loop `allocateBuyers` walks the
+         pools in this same seeding order and hands each horse out once. The
+         same two free horses used to be counted as buyers for every full Main
+         1 on the host at once. See HorseBuyerAllocation. */
+      const clusterPools: BuyerPool[] = [];
+      const capacityByHorse = new Map<string, number>();
       for (const table of tablesToSeed) {
         try {
           // A draining table gets no new horses. Without this the surplus can
@@ -1886,6 +1967,9 @@ export class HorseFleetManager {
           // 1. Not already at this table
           // 2. Not exceeding 4 max tables
           const MAX_TABLES_PER_HORSE = 4;
+          /* The game key the door rules are written against (club, variant,
+             sb, bb), formatted once per table. See rejoinTableKey. */
+          const constraintTableKey = rejoinTableKey(table);
           const candidateHorses = validHorses.filter((h) => {
             /* A HORSE PLAYS INSIDE ITS OWN CLUB (Dan 2026-09-02): only a horse
                whose membership can pay for this table is a candidate for it.
@@ -1900,6 +1984,18 @@ export class HorseFleetManager {
             const seatClub = this.resolveSeatClub(membership, table, h.id);
             if (seatClub === null) {
               clubDropped++;
+              return false;
+            }
+
+            /* ── THE DOOR (2026-09-05). A horse barred from THIS game for low
+               VPIP is not a candidate for it - the database would refuse the
+               seat (VPIP_BARRED) and, until today, did, 341 times an hour,
+               after the fleet had already counted the horse as a buyer. A
+               human sees GAME_BARRED in the lobby and does not try; neither
+               does the fleet. Every table, cluster or not. */
+            const doorKey = rejoinPlayerKey(h.id, constraintTableKey);
+            if (rejoin.barred.has(doorKey)) {
+              barredDropped++;
               return false;
             }
 
@@ -2033,6 +2129,23 @@ export class HorseFleetManager {
                 bankrollEvent('seat_refused_underrolled');
                 return false;
               }
+              /* THE REJOIN FLOOR MUST BE AFFORDABLE. A horse that left this
+                 game with more than its roll now holds cannot meet the floor
+                 the door will demand (fn_cash_effective_buyin clamps it to
+                 the table max, so that is the most it can be asked for). The
+                 database would refuse the buy-in; the fleet does not try, and
+                 does not count the horse as a buyer. Only when the roll is
+                 KNOWN - an unknown roll fails open, as above. */
+              const rejoinFloorForPair = rejoin.rejoinFloor.get(doorKey);
+              if (rejoinFloorForPair !== undefined) {
+                const tableMax = Number((table as any).max_buy_in) || table.big_blind * 200;
+                const effectiveFloor =
+                  tableMax > 0 ? Math.min(rejoinFloorForPair, tableMax) : rejoinFloorForPair;
+                if (effectiveFloor > roll) {
+                  floorUnaffordableDropped++;
+                  return false;
+                }
+              }
             }
             /* THE PER-HOST CAP (Operation Stable Hand). Last of the
                candidate gates, and the only one that reasons about the FLOOR
@@ -2053,6 +2166,17 @@ export class HorseFleetManager {
               return false;
             }
             const tablesForHorse = horseTables.get(h.id);
+            /* THE HORSE'S REMAINING CAPACITY, for the buyer allocation after
+               the loop. Recorded the FIRST time this cycle sees the horse, so
+               the allocator replays the cycle from the position it started in
+               (horseTables grows as this cycle seats; a later table's view is
+               already net of those seats, which the allocator counts itself). */
+            if (!capacityByHorse.has(h.id)) {
+              capacityByHorse.set(
+                h.id,
+                Math.max(0, tagMaxTables(tag, MAX_TABLES_PER_HORSE) - (tablesForHorse?.size ?? 0))
+              );
+            }
             if (!tablesForHorse) return true;
             /* THE HORSE'S OWN CEILING, never above the platform's four. A
                grinder carries four, a mixer one; before the tag was read every
@@ -2086,7 +2210,24 @@ export class HorseFleetManager {
           /* What the ClusterController asks: how many horses COULD sit here
              this cycle. A horse is a buyer (Law 10.5); the open rule in
              OPORD 1.4 18.3 counts them beside the humans on the waitlist. */
-          nextEligible.set(table.id, pool.length);
+          let clusterPool: BuyerPool | null = null;
+          if (table.cluster_id) {
+            /* A cluster table's pool is kept for the allocation after the
+               loop. A FULL table asks for FULL_TABLE_BUYER_PROBE (two: the
+               open rule's threshold), never more, so it cannot eat the
+               capacity a table with real open seats needs. */
+            clusterPool = {
+              tableId: table.id,
+              clusterId: table.cluster_id,
+              pool: pool.map((h) => h.id),
+              seatsWanted: countOnly
+                ? FULL_TABLE_BUYER_PROBE
+                : Math.max(0, Number(table.max_players) - currentCount),
+            };
+            clusterPools.push(clusterPool);
+          } else {
+            nextEligible.set(table.id, pool.length);
+          }
           if (countOnly) continue;
 
           /* FOUR TABLES IS THE TARGET, NOT THE CEILING (Dan 2026-09-02).
@@ -2147,7 +2288,8 @@ export class HorseFleetManager {
               horse.id,
               bankrolls,
               bankrollsLoaded,
-              seatClub
+              seatClub,
+              rejoin.rejoinFloor.get(rejoinPlayerKey(horse.id, constraintTableKey))
             );
             if (buyIn <= 0) continue;
 
@@ -2286,6 +2428,18 @@ export class HorseFleetManager {
             }
           }
 
+          if (seated > 0 && clusterPool) {
+            /* The horses this table actually took go to the front of its
+               pool, so the allocation after the loop hands out the same
+               bodies the cycle did. */
+            const seatedIds = new Set(
+              selectedHorses.filter((h) => horseTables.get(h.id)?.has(table.id)).map((h) => h.id)
+            );
+            clusterPool.pool = [
+              ...clusterPool.pool.filter((id) => seatedIds.has(id)),
+              ...clusterPool.pool.filter((id) => !seatedIds.has(id)),
+            ];
+          }
           if (seated > 0) {
             tablesSeeded++;
             // NOTE: We do NOT update current_players here.
@@ -2306,6 +2460,14 @@ export class HorseFleetManager {
       /* Swapped whole (see nextEligible above). A withheld cycle - the loop
          ran over nothing - leaves an empty map, which is the truth: the fleet
          will seat nobody this cycle, so no game has horse demand. */
+      /* THE ALLOCATION. Cluster tables get the number of horses the floor
+         can actually spare for them, walked in seeding order; a horse is
+         handed out once per table it can still open and never twice within
+         one game. Non-cluster tables keep their pool size (nobody opens a
+         feeder on it). */
+      for (const [tableId, n] of allocateBuyers(clusterPools, capacityByHorse)) {
+        nextEligible.set(tableId, n);
+      }
       this.lastEligibleByTable = nextEligible;
 
       /* ── WHAT THE CONSOLE WILL SEE ─────────────────────────────────────
@@ -2346,6 +2508,13 @@ export class HorseFleetManager {
           `[HorseFleet] tags: ${tagDropped} horse/table pair(s) excluded by the horse's own ` +
             `game, stake or lane; ${restDayDropped} on a rest day; ${dailyCapDropped} at their ` +
             `daily cap. A human short-handed at the table bypasses all three.`
+        );
+      }
+      if (barredDropped > 0 || floorUnaffordableDropped > 0) {
+        console.log(
+          `[HorseFleet] door: ${barredDropped} horse/table pair(s) barred from that game for ` +
+            `low VPIP; ${floorUnaffordableDropped} holding a rejoin floor their roll cannot ` +
+            `cover. Neither is tried, neither is counted as a buyer.`
         );
       }
       if (mutexRefused.size > 0) {
@@ -3058,7 +3227,10 @@ export class HorseFleetManager {
     surplusTableIds: Set<string>,
     /* How many seats the fleet-wide policy cap leaves this cycle. Infinity
        when there is no cap, which is today's behaviour. */
-    budget: number = Number.POSITIVE_INFINITY
+    budget: number = Number.POSITIVE_INFINITY,
+    /* The door rules read this cycle (VPIP bar, rejoin floor). Empty when
+       the read failed: the database still refuses at the door. */
+    rejoin: RejoinConstraints = EMPTY_REJOIN_CONSTRAINTS
   ): Promise<number> {
     let claimed = 0;
     try {
@@ -3121,12 +3293,18 @@ export class HorseFleetManager {
         // with the club that can pay for it, or does not answer at all.
         const seatClub = this.resolveSeatClub(membership, table, offer.user_id);
         if (seatClub === null) continue;
+        /* The same door rules as the seeding loop: a horse barred from this
+           game does not answer its seat call, and one holding a rejoin floor
+           answers with the floor. */
+        const offerDoorKey = rejoinPlayerKey(offer.user_id, rejoinTableKey(table));
+        if (rejoin.barred.has(offerDoorKey)) continue;
         const buyIn = this.computeHorseBuyIn(
           table,
           offer.user_id,
           bankrolls,
           bankrollsLoaded,
-          seatClub
+          seatClub,
+          rejoin.rejoinFloor.get(offerDoorKey)
         );
         if (buyIn <= 0) continue;
 
@@ -3165,7 +3343,13 @@ export class HorseFleetManager {
     horseId: string,
     bankrolls: Map<string, number>,
     bankrollsLoaded: boolean,
-    seatClub: string | null | undefined
+    seatClub: string | null | undefined,
+    /* The rejoin floor this horse holds in this game, if any (chip
+       continuity: it may not rejoin with less than it left with). Read once
+       per cycle from cash_rejoin_constraints; undefined when there is none
+       or the map did not load, in which case the database's own retry in
+       seatHorse still catches it. */
+    rejoinFloor?: number
   ): number {
     const minB = Number(table.min_buy_in) || table.big_blind * 40;
     const maxB = Number(table.max_buy_in) || table.big_blind * 200;
@@ -3201,7 +3385,14 @@ export class HorseFleetManager {
       const snapped = Math.round(capped / step) * step;
       buyIn = Math.round(Math.max(minB, Math.min(capped, snapped)) * 100) / 100;
     }
-    return buyIn;
+    /* THE FLOOR IS THE LAST WORD, AS IT IS FOR A HUMAN (2026-09-05). The
+       buy-in modal shows a returning player GREATEST(min, floor) clamped to
+       the table max (fn_cash_effective_buyin), and the door refuses less. A
+       horse reads the same number and brings it - the bankroll share above
+       decides what is sensible, the floor decides what is possible, and
+       possible wins or the horse does not sit. The candidate filter has
+       already dropped a horse whose known roll cannot cover it. */
+    return applyRejoinFloor(buyIn, rejoinFloor, maxB);
   }
 
   private async seatHorse(

@@ -31,6 +31,7 @@ import { TournamentMetrics } from './services/TournamentMetrics.js';
 import { SpinMetrics } from './services/SpinMetrics.js';
 import { ReplicationMetrics } from './services/ReplicationMetrics.js';
 import { alwaysOnPrometheusLines } from './observability/engineInstruments.js';
+import { clientConnectionPrometheusLines } from './observability/ClientConnectionEvents.js';
 import {
   planTableReopens,
   freshHumanWindowMs,
@@ -1511,6 +1512,12 @@ export class GameServer {
       // observability/engineInstruments.ts and ActionLatency* in
       // infra/monitoring/alert-rules.yml.
       ...alwaysOnPrometheusLines(),
+      // ── WHAT THE PLAYER'S BROWSER SAW (Phase 2, 2026-09-05) ──────────
+      // The client-side twin of poker_ws_auth_refused_total: that counts
+      // sockets the server refused, these count sockets the client lost.
+      // Per-user counting happens in the module; only bounded numbers reach
+      // Prometheus. See observability/ClientConnectionEvents.ts.
+      ...clientConnectionPrometheusLines(),
     ];
 
     // ── STATS PIPELINE (2026-09-04) ─────────────────────────────────────

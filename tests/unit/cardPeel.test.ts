@@ -8,7 +8,6 @@ import { describe, it, expect } from 'vitest';
 import {
   computePeel,
   clampPeelPoint,
-  nearestCorner,
   leftCorner,
   peelPointAtProgress,
   flatPeel,
@@ -44,15 +43,6 @@ function area(poly: Array<[number, number]>): number {
   }
   return Math.abs(s) / 2;
 }
-
-describe('nearestCorner', () => {
-  it('picks the corner the finger is closest to', () => {
-    expect(nearestCorner(W, H, 5, 5)).toBe('tl');
-    expect(nearestCorner(W, H, 55, 5)).toBe('tr');
-    expect(nearestCorner(W, H, 5, 80)).toBe('bl');
-    expect(nearestCorner(W, H, 55, 80)).toBe('br');
-  });
-});
 
 describe('leftCorner: the peel opens left to right (Dan 2026-09-04)', () => {
   it('always pinches a LEFT corner, top or bottom by the finger height', () => {

@@ -1,0 +1,81 @@
+/**
+ * HubFrame - the one sanctioned iframe (see HubFrame.tsx).
+ *
+ * The frame IS the slot: edge to edge, no border, the same black as the shell
+ * behind it so the first paint before the hub page arrives is not a white
+ * flash between two black surfaces. `display:block` kills the inline baseline
+ * gap that would otherwise leave a strip of shell under it.
+ */
+.multi-table-page__hub-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #000;
+  color-scheme: dark;
+}
+
+/* The slot wrapper: the frame fills it, the loading overlay floats over it. */
+.hub-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+
+/* Shown until the frame's own load event: a page is coming, and which one.
+   Same black as the shell, same spinner as the table loader, so a hub tab
+   opening feels like a table opening. */
+.hub-frame__overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #000;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.85rem;
+  pointer-events: none;
+}
+
+.hub-frame__spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: hubFrameSpin 0.8s linear infinite;
+}
+
+@keyframes hubFrameSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.hub-frame__label {
+  letter-spacing: 0.02em;
+}
+
+/* Only the button takes input; the rest of the overlay lets nothing through
+   and nothing needs to get through while the page is still black. */
+.hub-frame__reload {
+  pointer-events: auto;
+  margin-top: 4px;
+  padding: 8px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 212, 255, 0.35);
+  background: rgba(10, 10, 15, 0.85);
+  color: rgba(0, 212, 255, 0.9);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hub-frame__spinner {
+    animation: none;
+  }
+}

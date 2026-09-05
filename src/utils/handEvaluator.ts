@@ -306,6 +306,87 @@ export function bestFive(
   return { ...best, cards: ordered };
 }
 
+/**
+ * A split-pot variant: the pot is halved between the best high hand and the
+ * best qualifying (eight-or-better) low. PLO8 and FLO8 today; anything the
+ * engine names with an "8", "hi-lo", "hilo" or "o8" is one.
+ *
+ * 2026-09-04 (Previous Hand second sweep): the client had NO low evaluator, so
+ * on a PLO8 hand the rundown named a low winner by their HIGH hand ("High
+ * Card") and could not say why two players had "won". The engine decides the
+ * pot; this names the half it awarded.
+ */
+export function isEightOrBetterVariant(variant: string | null | undefined): boolean {
+  const raw = String(variant || '')
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '');
+  if (!raw) return false;
+  return (
+    raw === 'plo8' ||
+    raw === 'flo8' ||
+    raw.endsWith('o8') ||
+    raw.includes('hilo') ||
+    raw.includes('8orbetter') ||
+    raw.includes('eightorbetter')
+  );
+}
+
+export interface LowHand {
+  /** The five cards, sorted high to low (the way the low is spoken). */
+  cards: DeckCard[];
+  /** Rank values with the ace as 1, sorted descending: [8, 6, 4, 3, 2]. */
+  ranks: number[];
+  /** The engine's own name for it: "Low: 8-6-4-3-2". */
+  name: string;
+}
+
+/** Ace plays low; everything else is its face value. */
+function lowValue(card: DeckCard): number {
+  const v = value(card);
+  return v === 14 ? 1 : v;
+}
+
+/**
+ * Lower is better; lexicographic on the descending rank arrays, exactly as the
+ * engine's `compareLowHands` (server/src/engine/PokerEngine.ts).
+ */
+export function compareLow(a: number[], b: number[]): number {
+  for (let i = 0; i < 5; i++) {
+    if (a[i] !== b[i]) return a[i] - b[i];
+  }
+  return 0;
+}
+
+/**
+ * The best qualifying low - five distinct ranks, all eight or lower, ace low,
+ * exactly two from the hand and three from the board - or null when the holding
+ * does not qualify. Ported from the engine's `evaluateOmahaLowHand` so the
+ * rundown names the low the engine paid, not a different one.
+ */
+export function bestLow(hole: DeckCard[], board: DeckCard[]): LowHand | null {
+  const h = Array.isArray(hole) ? hole : [];
+  const b = Array.isArray(board) ? board : [];
+  if (h.length < 2 || b.length < 3) return null;
+  let best: LowHand | null = null;
+  for (const hp of combinations(h, 2)) {
+    for (const bt of combinations(b, 3)) {
+      const five = [...hp, ...bt];
+      const ranks = five.map(lowValue);
+      if (new Set(ranks).size !== 5) continue;
+      if (Math.max(...ranks) > 8) continue;
+      const sorted = [...ranks].sort((x, y) => y - x);
+      if (!best || compareLow(sorted, best.ranks) < 0) {
+        best = {
+          cards: [...five].sort((x, y) => lowValue(y) - lowValue(x)),
+          ranks: sorted,
+          name: `Low: ${sorted.join('-')}`,
+        };
+      }
+    }
+  }
+  return best;
+}
+
 /** Stable key for a card, so a "did this card play" lookup is cheap. */
 export function cardKey(card: DeckCard): string {
   return `${String(card.rank).toUpperCase()}${card.suit}`;

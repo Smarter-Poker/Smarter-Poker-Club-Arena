@@ -1,0 +1,594 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   PUBLIC PROFILE — Player Dossier  (#SmarterCasinoRealism, 2026-09-04)
+   Same hardware as the owner's credential: obsidian plate, chrome bezel,
+   one blue core. Light mode is brushed silver.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.publicProfilePage {
+  --public-bg: #030609;
+  --public-panel: #080d12;
+  --public-raised: #0d141b;
+  --public-line: #26333d;
+  --public-steel: #b9cad7;
+  --public-chrome: #dce8f0;
+  --public-text: #f4f8fb;
+  --public-muted: #8fa2af;
+  --public-blue: #3aa8ff;
+  --public-blue-soft: #77c9ff;
+  --public-veil: 3, 6, 9;
+  --public-control: linear-gradient(180deg, #121c24, #070c10);
+  --public-control-border: #465a67;
+  width: 100%;
+  max-width: 680px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: 1rem;
+  padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
+  overflow-x: clip;
+  background:
+    radial-gradient(circle at 50% 0, rgba(58, 168, 255, 0.1), transparent 34rem), var(--public-bg);
+  color: var(--public-text);
+}
+
+.publicProfileLoading,
+.publicProfileEmpty {
+  display: flex;
+  min-height: 60vh;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  color: var(--public-muted);
+  text-align: center;
+}
+
+.publicProfileEmpty .emptyIcon {
+  color: var(--public-blue-soft);
+  font-size: 2.6rem;
+  opacity: 0.7;
+}
+
+.publicProfileEmpty h2 {
+  margin: 0;
+  color: var(--public-text);
+  font:
+    800 1.45rem/1 'Rajdhani',
+    sans-serif;
+  text-transform: uppercase;
+}
+
+.publicProfileEmpty .actionBtn {
+  min-width: 160px;
+  margin-top: 0.5rem;
+}
+
+/* ── Dossier plate ────────────────────────────────────────────────────── */
+
+.publicProfileHeader {
+  position: relative;
+  isolation: isolate;
+  min-height: 390px;
+  overflow: hidden;
+  padding: 2rem 1rem;
+  border: 1px solid var(--public-line);
+  border-radius: 4px;
+  background: var(--public-bg);
+  clip-path: polygon(
+    0 0,
+    calc(100% - 18px) 0,
+    100% 18px,
+    100% 100%,
+    18px 100%,
+    0 calc(100% - 18px)
+  );
+  box-shadow:
+    inset 0 1px rgba(185, 202, 215, 0.13),
+    0 28px 70px rgba(0, 0, 0, 0.48);
+}
+
+.publicProfileHeader::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background:
+    linear-gradient(
+      0deg,
+      rgba(var(--public-veil), 0.98),
+      rgba(var(--public-veil), 0.42) 66%,
+      rgba(var(--public-veil), 0.55)
+    ),
+    linear-gradient(
+      90deg,
+      rgba(var(--public-veil), 0.72),
+      transparent,
+      rgba(var(--public-veil), 0.72)
+    );
+}
+
+.publicProfileHeader::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  z-index: -1;
+  background: linear-gradient(90deg, transparent, var(--public-blue), transparent);
+  box-shadow: 0 -8px 22px rgba(58, 168, 255, 0.28);
+}
+
+.publicProfileArtwork {
+  position: absolute;
+  inset: 0;
+  z-index: -3;
+  background-position: center 40%;
+  background-size: cover;
+  background-repeat: no-repeat;
+  filter: saturate(0.8) contrast(1.08) brightness(0.72);
+  transform: scale(1.015);
+}
+
+.profileHero {
+  display: flex;
+  min-height: 325px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  text-align: center;
+}
+
+.publicProfileEyebrow {
+  position: absolute;
+  top: 1.1rem;
+  left: 1.2rem;
+  color: var(--public-blue-soft);
+  font:
+    800 0.62rem/1 ui-monospace,
+    'SFMono-Regular',
+    Consolas,
+    monospace;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* SPECIFICITY, deliberate (2026-09-05). These five carry text the app shell
+   also styles through descendant rules like `.someLayout h1` - equal weight
+   to a bare class, so the later stylesheet won and the dossier's name drifted
+   from 800/-0.03em to 500/+0.03em once another route's chunk had loaded.
+   Qualifying with the page class puts them a step above; the names are hashed
+   either way, so nothing outside this file can match them. */
+.publicProfilePage .profileUsername {
+  margin: 0.45rem 0 0;
+  color: var(--public-text);
+  font:
+    800 clamp(2rem, 8vw, 3.4rem) / 0.9 'Rajdhani',
+    Inter,
+    sans-serif;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+  text-shadow: 0 10px 28px rgba(0, 0, 0, 0.8);
+  overflow-wrap: anywhere;
+}
+
+.publicProfilePage .profileHandle {
+  color: var(--public-blue-soft);
+  font:
+    700 0.7rem/1.2 ui-monospace,
+    'SFMono-Regular',
+    Consolas,
+    monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.publicProfilePage .profileBio {
+  max-width: 32rem;
+  margin: 0.4rem 0 0;
+  color: var(--public-steel);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.profileBadges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+}
+
+.vipBadge,
+.levelBadge,
+.memberSince {
+  min-height: 29px;
+  padding: 0.38rem 0.55rem;
+  border: 1px solid rgba(185, 202, 215, 0.28);
+  border-radius: 2px;
+  background: rgba(var(--public-veil), 0.76);
+  color: var(--public-chrome);
+  font:
+    800 0.62rem/1 'Rajdhani',
+    sans-serif;
+  letter-spacing: 0.065em;
+  text-transform: uppercase;
+}
+
+.vipBadge {
+  border-color: rgba(58, 168, 255, 0.55);
+  color: var(--public-blue-soft);
+}
+
+.vipBadge_Lifetime {
+  border-color: rgba(214, 173, 82, 0.6);
+  background: linear-gradient(145deg, rgba(214, 173, 82, 0.16), rgba(var(--public-veil), 0.8));
+  color: #ead9a8;
+}
+
+.playingAtBadge {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid rgba(101, 216, 155, 0.45);
+  border-radius: 3px;
+  background: rgba(20, 100, 62, 0.17);
+  color: #80e6ad;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.playingAtDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #65d89b;
+  box-shadow: 0 0 10px rgba(101, 216, 155, 0.9);
+}
+
+.playingAtBadge_Static {
+  cursor: default;
+}
+
+.playingAtBadge:focus-visible {
+  outline: 2px solid #80e6ad;
+  outline-offset: 2px;
+}
+
+.playerStatusText {
+  margin: 0.25rem 0 0;
+  color: #9fb1bd;
+  font-size: 0.75rem;
+  font-style: italic;
+}
+
+/* ── Action rail ──────────────────────────────────────────────────────── */
+
+.profileActions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.actionBtn {
+  /* `.actionBtn` is a global class seven surfaces define. This page owns its
+     own geometry so no other stylesheet can resize these five controls: an
+     unscoped admin rule (`width: 32px`) squeezed them into 36px boxes in
+     production until 2026-09-05. Declared here, they cannot be won again. */
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--public-control-border);
+  border-radius: 3px;
+  background: var(--public-control);
+  color: var(--public-chrome);
+  font:
+    800 0.72rem/1 'Rajdhani',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.actionBtn:focus-visible {
+  border-color: var(--public-blue-soft);
+  color: #fff;
+  outline: none;
+  box-shadow: 0 0 16px rgba(58, 168, 255, 0.16);
+}
+
+.actionBtn:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.addFriendBtn,
+.messageBtn {
+  border-color: rgba(58, 168, 255, 0.55);
+  color: var(--public-blue-soft);
+}
+
+.acceptBtn,
+.friendsBtn {
+  border-color: rgba(101, 216, 155, 0.45);
+  color: #80e6ad;
+}
+
+.pendingBtn {
+  border-color: rgba(214, 173, 82, 0.45);
+  color: #e4c170;
+}
+
+.blockBtn,
+.unblockBtn {
+  border-color: rgba(255, 124, 124, 0.48);
+  color: #ff9a9a;
+}
+
+/* Report sits beside Block but reads as the milder of the two: reporting asks
+   a human to look, blocking is the player acting alone. Amber, not red. */
+.reportBtn {
+  border-color: rgba(245, 166, 35, 0.48);
+  color: #f5a623;
+}
+
+/* ── Plates ───────────────────────────────────────────────────────────── */
+
+.mutualFriendsSection,
+.profileQrSection {
+  margin-top: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--public-line);
+  border-radius: 3px;
+  background:
+    linear-gradient(115deg, rgba(58, 168, 255, 0.035), transparent 38%),
+    linear-gradient(145deg, var(--public-raised), var(--public-panel));
+  box-shadow: inset 0 1px rgba(185, 202, 215, 0.07);
+}
+
+.publicProfilePage .mutualFriendsSection h3,
+.publicProfilePage .profileQrSection h3 {
+  margin: 0 0 0.75rem;
+  color: #9fb1bd;
+  font:
+    800 0.7rem/1.2 ui-monospace,
+    'SFMono-Regular',
+    Consolas,
+    monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.mutualFriendsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.mutualFriendChip {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid #354752;
+  border-radius: 3px;
+  background: #070c10;
+  color: var(--public-chrome);
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+
+.mutualFriendChip:focus-visible {
+  border-color: var(--public-blue-soft);
+  outline: none;
+}
+
+.mutualAvatar {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #607684;
+  border-radius: 2px;
+  object-fit: cover;
+}
+
+.profileQrSection {
+  text-align: center;
+}
+
+.profileQrImage {
+  display: inline-flex;
+  width: 172px;
+  height: 172px;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border: 1px solid #8ca1af;
+  border-radius: 3px;
+  background: #fff;
+  box-shadow:
+    0 0 0 4px #060a0e,
+    0 0 0 5px rgba(58, 168, 255, 0.4);
+}
+
+.profileQrImage svg {
+  display: block;
+  width: 160px;
+  height: 160px;
+}
+
+.publicProfilePage .qrHint {
+  margin: 0.8rem 0 0;
+  color: #8496a2;
+  font-size: 0.68rem;
+}
+
+/* ── Light mode: brushed silver ──────────────────────────────────────── */
+
+:global([data-theme='light']) .publicProfilePage {
+  --public-bg: #e6ebef;
+  --public-panel: #f3f6f8;
+  --public-raised: #fbfcfd;
+  --public-line: #b7c3cc;
+  --public-steel: #3f5261;
+  --public-chrome: #1c2a35;
+  --public-text: #0d161d;
+  --public-muted: #55697a;
+  --public-blue: #1878c8;
+  --public-blue-soft: #146bb3;
+  --public-veil: 230, 235, 239;
+  --public-control: linear-gradient(180deg, #ffffff, #dfe6eb);
+  --public-control-border: #9fb0bc;
+  background:
+    radial-gradient(circle at 50% 0, rgba(24, 120, 200, 0.12), transparent 34rem), var(--public-bg);
+}
+
+:global([data-theme='light']) .publicProfileArtwork {
+  filter: saturate(0.7) contrast(1.02) brightness(1.05);
+}
+
+:global([data-theme='light']) .profileUsername {
+  text-shadow: 0 2px 14px rgba(255, 255, 255, 0.9);
+}
+
+:global([data-theme='light']) .mutualFriendChip {
+  background: #f7f9fb;
+  border-color: var(--public-line);
+}
+
+:global([data-theme='light']) .mutualFriendsSection h3,
+:global([data-theme='light']) .profileQrSection h3,
+:global([data-theme='light']) .qrHint {
+  color: #4d6272;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+  .publicProfilePage {
+    max-width: none;
+    padding: 0;
+    padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
+  }
+
+  .publicProfileHeader,
+  .mutualFriendsSection,
+  .profileQrSection {
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+    clip-path: none;
+  }
+
+  .profileActions {
+    margin-right: 0.75rem;
+    margin-left: 0.75rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .publicProfileHeader {
+    min-height: 410px;
+  }
+
+  .profileActions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 340px) {
+  .profileActions {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .publicProfileArtwork,
+  .actionBtn,
+  .mutualFriendChip {
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ── Arena record rail (added 2026-09-04, PR #3077) ─────────────────────────
+   player_stats folded across every club: real figures or a hyphen. */
+
+.publicProfileRecord {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0.9rem 0 0;
+  border: 1px solid var(--public-line, #26333d);
+  border-radius: 2px;
+  background: rgba(3, 6, 9, 0.82);
+}
+
+.publicProfileRecord > div {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+  padding: 0.7rem 0.8rem;
+  border-right: 1px solid rgba(38, 51, 61, 0.9);
+}
+
+.publicProfileRecord > div:last-child {
+  border-right: 0;
+}
+
+.publicProfileRecord dt {
+  color: #8fa2af;
+  font:
+    700 0.58rem/1 'Roboto Condensed',
+    'Rajdhani',
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.publicProfileRecord dd {
+  margin: 0;
+  overflow: hidden;
+  color: #f4f8fb;
+  font:
+    800 1.05rem/1 'Rajdhani',
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global([data-theme='light']) .publicProfileRecord {
+  border-color: #c9d4dc;
+  background: rgba(244, 247, 249, 0.9);
+}
+
+:global([data-theme='light']) .publicProfileRecord dd {
+  color: #0b1218;
+}
+
+@media (max-width: 480px) {
+  .publicProfileRecord {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .publicProfileRecord > div:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .publicProfileRecord > div:nth-child(-n + 2) {
+    border-bottom: 1px solid rgba(38, 51, 61, 0.9);
+  }
+}

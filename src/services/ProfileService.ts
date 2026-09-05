@@ -49,14 +49,10 @@ export interface UserProfile {
   updatedAt: string;
 }
 
-// VIP thresholds
-const VIP_THRESHOLDS = {
-  bronze: 0,
-  silver: 1000,
-  gold: 5000,
-  platinum: 25000,
-  diamond: 100000,
-};
+// REMOVED 2026-09-05 with its only reader, `addVIPPoints`: a bronze -> diamond
+// points ladder for a `vip_points` column that does not exist, contradicting
+// both Dan's 2026-09-04 ruling (VIP and Lifetime VIP, nothing else) and
+// src/constants/vipTiers.ts, which disagreed with it at every rung above 5000.
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVICE CLASS
@@ -175,42 +171,26 @@ class ProfileServiceClass {
     return !error;
   }
 
-  /**
-   * Add VIP points
+  /*
+   * REMOVED 2026-09-05: `addVIPPoints(userId, points)`.
+   *
+   * It had no callers anywhere in src/, server/ or tests/, and it was wrong in
+   * three independent ways that only a caller would ever have discovered:
+   *
+   *   1. It started from `profile.vipPoints`, which `getProfile` hardcodes to
+   *      0 ("there is no points column") - because `profiles` genuinely has no
+   *      vip_points column. So `newPoints` was always just `points`.
+   *   2. It derived a bronze/silver/gold/platinum/diamond tier from that, but
+   *      Dan ruled on 2026-09-04: "THERE IS NO SUCH THING AS 'PLATINUM VIP'
+   *      BTW. JUST VIP, AND LIFETIME VIP." The ladder does not exist.
+   *   3. It wrote the result to `profiles.tier`, which is a RANK label reading
+   *      'Newcomer' on all 1,310 rows - not the VIP column. The VIP columns
+   *      are is_vip / vip_tier / vip_expires_at, resolved by utils/vipStatus.
+   *
+   * Anything that needs to move a player's VIP standing goes through the VIP
+   * membership path, not a points ladder. Keeping a dead ladder in a service
+   * file is how the next agent revives one.
    */
-  async addVIPPoints(
-    userId: string,
-    points: number
-  ): Promise<{ newPoints: number; newTier: string }> {
-    const profile = await this.getProfile(userId);
-    if (!profile) throw new Error('Profile not found');
-
-    const newPoints = profile.vipPoints + points;
-    let newTier = profile.vipTier;
-
-    // Check for tier upgrade
-    if (newPoints >= VIP_THRESHOLDS.diamond) newTier = 'diamond';
-    else if (newPoints >= VIP_THRESHOLDS.platinum) newTier = 'platinum';
-    else if (newPoints >= VIP_THRESHOLDS.gold) newTier = 'gold';
-    else if (newPoints >= VIP_THRESHOLDS.silver) newTier = 'silver';
-
-    const { error: vipErr } = await supabase
-      .from('profiles')
-      .update({ tier: newTier })
-      .eq('id', userId);
-
-    if (vipErr) {
-      reportError(vipErr, 'ProfileService.addVIPPoints', { userId, points });
-      throw new Error('Failed to update VIP points');
-    }
-
-    masterBus.emit('PROFILE_UPDATED', {
-      userId,
-      updates: { vipPoints: newPoints, vipTier: newTier } as unknown as Record<string, unknown>,
-    });
-
-    return { newPoints, newTier };
-  }
 
   /**
    * Update daily streak

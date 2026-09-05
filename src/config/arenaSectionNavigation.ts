@@ -18,12 +18,15 @@ const PLAY_ITEMS: ArenaSectionItem[] = [
   { label: 'Leaderboards', path: '/leaderboard' },
 ];
 
+/* Unions is appended by getArenaSectionNavigation, not listed here, because
+   the entry depends on the account: Dan 2026-09-05, "(AND THIS PAGE SHOULD BE
+   HIDDEN TO EVERYONE EXECPT ME: .../unions)". The rail is a pure function of
+   the path plus what the caller knows, so the caller passes the answer. */
 const COMMUNITY_ITEMS: ArenaSectionItem[] = [
   { label: 'Overview', path: '/community' },
   { label: 'Discover', path: '/search' },
   { label: 'Friends', path: '/friends' },
   { label: 'Messages', path: '/messages' },
-  { label: 'Unions', path: '/unions' },
 ];
 
 const REWARD_ITEMS: ArenaSectionItem[] = [
@@ -72,6 +75,12 @@ function isWithin(pathname: string, roots: readonly string[]): boolean {
 export interface ArenaSectionOptions {
   /** fn_can_create_union said yes for this account (see useCanCreateUnion). */
   canCreateUnion?: boolean;
+  /**
+   * fn_can_i_operate_the_union_network said yes (see useCanOperateUnionNetwork).
+   * Absent an explicit yes the union destinations are not offered - the same
+   * fail-closed rule canCreateUnion follows.
+   */
+  canOperateUnionNetwork?: boolean;
 }
 
 export function getArenaSectionNavigation(
@@ -94,7 +103,13 @@ export function getArenaSectionNavigation(
   }
 
   if (isWithin(current, ['/community', '/search', '/friends', '/messages'])) {
-    return { id: 'community', label: 'Community', items: COMMUNITY_ITEMS };
+    return {
+      id: 'community',
+      label: 'Community',
+      items: opts?.canOperateUnionNetwork
+        ? [...COMMUNITY_ITEMS, { label: 'Unions', path: '/unions' }]
+        : COMMUNITY_ITEMS,
+    };
   }
 
   if (
@@ -131,10 +146,12 @@ export function getArenaSectionNavigation(
       id: 'union',
       label: 'Union Network',
       items: [
-        { label: 'Directory', path: '/unions' },
-        /* Create Union is an allowlisted door (Dan 2026-09-04). The rail is a
-           pure function of the path, so the caller passes what it knows;
-           absent an explicit yes, the entry is not offered. */
+        /* Directory and Create Union are both allowlisted doors (Dan
+           2026-09-04, 2026-09-05). The rail is a pure function of the path, so
+           the caller passes what it knows; absent an explicit yes, neither
+           entry is offered - a link to a page that redirects is worse than no
+           link. */
+        ...(opts?.canOperateUnionNetwork ? [{ label: 'Directory', path: '/unions' }] : []),
         ...(opts?.canCreateUnion ? [{ label: 'Create Union', path: '/unions/create' }] : []),
       ],
     };
@@ -144,7 +161,10 @@ export function getArenaSectionNavigation(
     const gamesPath = `/unions/${unionId}/games`;
     const ownerWorkspace = current !== gamesPath;
     const items: ArenaSectionItem[] = [
-      { label: 'Directory', path: '/unions' },
+      /* A club member can reach /unions/:id/games without being allowed into
+         the directory, so this entry follows the same allowlist rather than
+         offering a link that would redirect them straight back out. */
+      ...(opts?.canOperateUnionNetwork ? [{ label: 'Directory', path: '/unions' }] : []),
       { label: 'Overview', path: `/unions/${unionId}` },
       { label: 'Games', path: gamesPath },
     ];

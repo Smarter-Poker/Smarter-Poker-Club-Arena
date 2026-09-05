@@ -47,12 +47,20 @@ export function squeezeHostProps(
   style: React.CSSProperties;
   'data-rs-profile': string;
   'data-rs-sweep': 'on' | 'off';
+  'data-rs-3d': 'on' | 'off';
 } {
   return {
     className: 'card-squeeze-host',
     style: squeezeVars(p, boardIndex),
     'data-rs-profile': p.id,
     'data-rs-sweep': p.lightSweepEnabled ? 'on' : 'off',
+    /* AUDIT FIX 2026-09-05: `threeD` was declared on every profile and read
+       by NOTHING, so `reduced.threeD: false` documented "a flat crossfade"
+       that did not exist. It is real now: a reveal that is not a 3D turn has
+       no edge to show, so the spine is suppressed for it (see cardSqueeze.css).
+       A profile field nothing reads is a claim about behaviour that no code
+       has to honour, which is worse than no field at all. */
+    'data-rs-3d': p.threeD ? 'on' : 'off',
   };
 }
 

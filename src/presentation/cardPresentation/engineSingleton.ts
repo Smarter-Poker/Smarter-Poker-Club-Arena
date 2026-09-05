@@ -24,6 +24,7 @@ export const cardPresentationEngine = new CardPresentationEngine({
  * the background all invalidate a flip already in flight. Installed once,
  * here, beside the singleton it protects - a per-board listener would add one
  * resize handler per table on a multi-tabling client and they would all do the
- * same thing. Guarded for SSR and for the test environment.
+ * same thing. Guarded for SSR (no `window`); under happy-dom the listeners are
+ * real, which is what lets tests exercise them.
  */
 installEnvironmentInterrupts(cardPresentationEngine);

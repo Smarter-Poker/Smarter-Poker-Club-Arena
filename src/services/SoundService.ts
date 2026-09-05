@@ -271,6 +271,8 @@ class SoundService {
   // playPotCollect bypasses the rank window (it accompanies the win fanfare
   // rather than competing with it) and dedupes itself with this stamp instead.
   private lastPotCollectMs = 0;
+  /** Per-cue clock for the spin reveal. See shouldPlaySpinCue. */
+  private lastSpinCueMs: Record<string, number> = {};
 
   /**
    * ═══════════════════════════════════════════════════════════════════════
@@ -567,6 +569,45 @@ class SoundService {
     this.priorityResetTimer = setTimeout(() => {
       this.currentFramePriority = -1;
     }, 50);
+    return true;
+  }
+
+  /* THE REVEAL IS A SEQUENCE, NOT A COMPETITOR (2026-09-05) ────────────────
+     The four spin cues went through `shouldPlay`, which is a winner-takes-the
+     frame gate: `rank <= currentFramePriority` rejects, and the winner holds
+     the frame for 50ms. That is right for a felt where a fold and an all in
+     land together and only one of them should be heard. It is wrong for a
+     reveal, because these four are consecutive movements of ONE animation and
+     10.6 owes every one of them, for its full duration, every time.
+
+     Three ways the gate silenced them, all reachable in production:
+
+       1. A CLIENT THAT ARRIVES MID REVEAL. `at()` in SpinWheel clamps every
+          beat already in the past to 0, so start, countdown, ticking and
+          result are scheduled into the SAME frame. playSpinStart (big_win,
+          95) went first and took the frame; the countdown and the ticking
+          (ui, 10) were rejected, and playSpinMultiplierResult was rejected
+          too, because it is also 95 and the comparison is `<=`. A late joiner
+          heard the lever and then nothing at all, including the result.
+       2. TWO `ui` CUES IN ONE WINDOW. `ui` is rank 10 and the gate is `<=`,
+          so the SECOND ui cue inside any 50ms window is rejected always. Any
+          unrelated ui cue landing beside a countdown light took the light.
+       3. THE WHEEL SILENCED THE TABLE. playSpinStart parked the frame at 95
+          for 50ms, so a deal, a chip or a fold arriving beside the lever was
+          eaten by the wheel.
+
+     `playPotCollect` hit exactly this and the answer recorded there is the
+     answer here: a companion cue leaves the rank window and dedupes on its
+     own clock (`tests/animations-always-play.law.test.ts` pins that it does).
+     These four now do the same. They suppress nothing and nothing suppresses
+     them; the only guard left is a short per cue throttle, which exists for a
+     double fire from a re-render and nothing else. It is keyed per cue, so
+     one movement of the reveal can never eat another. */
+  private shouldPlaySpinCue(cue: string, minGapMs: number): boolean {
+    if (!this.enabled || !isSoundAllowed()) return false;
+    const nowMs = Date.now();
+    if (nowMs - (this.lastSpinCueMs[cue] ?? 0) < minGapMs) return false;
+    this.lastSpinCueMs[cue] = nowMs;
     return true;
   }
 
@@ -2329,7 +2370,7 @@ class SoundService {
    * the whole first hand.
    */
   playSpinStart() {
-    if (!this.shouldPlay('big_win', 'event') || !this.ensureContext()) return;
+    if (!this.shouldPlaySpinCue('start', 250) || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // The lever: a dry mechanical thunk, no tail.
@@ -2380,7 +2421,8 @@ class SoundService {
    * engine blips underneath each one.
    */
   playSpinCountdownLight(step: number) {
-    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
+    // Keyed by step: three lights are three cues, never each other's duplicate.
+    if (!this.shouldPlaySpinCue(`countdown:${step}`, 250) || !this.ensureContext()) return;
     const f = [330, 392, 784][Math.max(0, Math.min(2, Math.floor(step)))];
     this.playTone(f, 0.22, 0.13, 'square', 0);
     this.playTone(f * 1.5, 0.16, 0.06, 'triangle', 0.01);
@@ -2436,7 +2478,7 @@ class SoundService {
    * progress: a peg struck by a slowing wheel is a heavier, louder knock.
    */
   playSpinTicking(durationMs: number, stepOffsetsMs?: number[]) {
-    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
+    if (!this.shouldPlaySpinCue('tick', 400) || !this.ensureContext()) return;
     const t0 = this.ctx!.currentTime;
     const dur = Math.max(0.4, durationMs / 1000);
 
@@ -2542,7 +2584,7 @@ class SoundService {
    * lesser noise teaches players that most of the format is a disappointment.
    */
   playSpinMultiplierResult(multiplier: number) {
-    if (!this.shouldPlay('big_win', 'event') || !this.ensureContext()) return;
+    if (!this.shouldPlaySpinCue('result', 400) || !this.ensureContext()) return;
     const ctx = this.ctx!;
     const t = ctx.currentTime;
 

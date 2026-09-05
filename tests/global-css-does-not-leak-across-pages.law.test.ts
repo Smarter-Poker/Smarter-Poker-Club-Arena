@@ -96,10 +96,10 @@ describe('a global class name has exactly one owner', () => {
 
   it('does not grow the number of class names that can leak between pages', () => {
     // A collision only MATTERS when one file declares a property another does
-    // not: that property is the one that crosses pages. 252 such classes remain
+    // not: that property is the one that crosses pages. 243 such classes remain
     // app-wide (measured 2026-09-05 on this branch merged with main - 256
     // before the scoping below, 254 after it, and 252 once main's own
-    // casino-realism rewrites landed). This is a ratchet, not a target: it may
+    // casino-realism rewrites landed; 243 once the rest of main caught up). This is a ratchet, not a target: it may
     // fall, never rise. Fixing one is two lines - scope it to its container.
     // LOWER THIS NUMBER when you fix some; never raise it to make CI pass.
     let leakable = 0;
@@ -109,6 +109,14 @@ describe('a global class name has exactly one owner', () => {
       const union = new Set(declared.flatMap((s) => [...s]));
       if ([...union].some((p) => declared.some((s) => !s.has(p)))) leakable += 1;
     }
-    expect(leakable).toBeLessThanOrEqual(252);
+    // 2026-09-05, second pass: 242. The tree measured 244 against a ceiling of
+    // 243 - main was RED on this law - and two of the leaks were the wallet's
+    // own. `.message` was declared bare by BOTH PlayerWalletPage.css and
+    // ChipTransferModal.css with different padding, weight and error red, so
+    // the send banner took whichever the player had loaded last; it is scoped
+    // to `.wallet-page .message` now. `.wallet-page` stopped being a second
+    // bare owner when RewardsCircuitSurfaces.css gave up overpainting the
+    // wallet's ground with `!important`. Ratcheted down to lock both in.
+    expect(leakable).toBeLessThanOrEqual(242);
   });
 });

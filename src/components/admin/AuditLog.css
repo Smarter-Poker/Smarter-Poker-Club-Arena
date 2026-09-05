@@ -75,7 +75,22 @@
   gap: var(--space-2);
 }
 
-.skeleton-row {
+/* SCOPED 2026-09-05. This was a BARE `.skeleton-row`, and
+   src/components/skeletons/TableRowSkeleton.css declares the same name bare
+   for the shared skeleton component - with a different set of properties
+   (flex, align-items, gap, padding, border-bottom against this file's height,
+   background, border-radius, animation). Neither declares what the other does,
+   so load order decided the result: an audit-log skeleton could inherit the
+   shared row's flex and border, and a shared TableRowSkeleton could inherit
+   this 60px height and shimmer, depending on which route the player had
+   already visited. That is the exact shape
+   tests/global-css-does-not-leak-across-pages.law.test.ts was written about,
+   and it put the app one over the ratchet (244 of 243), which turned main red
+   for every agent.
+
+   `.audit-log` is this component's root (AuditLog.tsx:294) and the skeleton is
+   inside it (:324), so scoping costs nothing and ends the collision. */
+.audit-log .skeleton-row {
   height: 60px;
   background: var(--bg-card);
   border-radius: var(--radius-md);

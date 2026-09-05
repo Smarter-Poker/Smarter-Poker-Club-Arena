@@ -1,8 +1,19 @@
+/* THE RAIL RESERVES ROOM FOR THE EDGE IT DRAWS (2026-09-05).
+   `overflow: hidden` here plus `padding-bottom: 0` put the chassis's bottom
+   edge exactly on the rail's clipping boundary - measured on production, the
+   chassis bottom and the rail bottom were the same y to the pixel. Everything
+   the chassis paints at or below that line was cut away: its 8px corner bevels
+   (the clip-path's `8px 100%, 0 calc(100% - 8px)` notch), its `0 8px 24px`
+   drop shadow, and the blue `::after` underline with its 10px glow. What
+   reached the player was a three-sided box - top, left and right border, then
+   the bar simply stopping. Dan, 2026-09-05: "FIX THE BROKEN HEADERS".
+   The padding is the fix: it is the room the rail always needed to show its
+   own bottom edge, symmetric with the top for the same reason. */
 .rail {
   position: relative;
   z-index: 12;
   width: 100%;
-  padding: 8px clamp(10px, 2vw, 24px) 0;
+  padding: 8px clamp(10px, 2vw, 24px);
   overflow: hidden;
   background: #05080b;
 }
@@ -121,7 +132,7 @@
 
 @media (max-width: 700px) {
   .rail {
-    padding: 6px 8px 0;
+    padding: 6px 8px;
   }
 
   .chassis {

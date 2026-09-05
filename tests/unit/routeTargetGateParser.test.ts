@@ -37,7 +37,7 @@ const loadStripComments = (): ((src: string) => string) => {
   const end = GATE.indexOf('\nfor (const file of walk');
   expect(start, 'stripComments not found in the gate').toBeGreaterThan(-1);
   expect(end, 'the walk loop that follows stripComments moved').toBeGreaterThan(start);
-   
+
   return new Function(`${GATE.slice(start, end)}\nreturn stripComments;`)() as (
     s: string
   ) => string;

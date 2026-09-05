@@ -165,7 +165,10 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
     // reveal + settle), with the edge spine and the shadow layer running on
     // the same clock. Built exactly as SqueezeCard renders it: the host card
     // carries the desktop-cash defaults from :root, and the inner
-    // .card-squeeze is what turns. 80 + 480 = the 560ms cash profile.
+    // .card-squeeze is what turns. 50 + 250 = the 300ms cash profile,
+    // retimed 2026-09-05 off the Material 3 duration ladder (the old 80 +
+    // 480 was over the published 400ms "may feel too slow" ceiling - see
+    // docs/research/2026-09-05-card-reveal-industry-standards.md).
     const squeezeCard = (slot: string, marker: string) =>
       `const d=document.createElement('div');
        d.className='community-cards__card community-cards__card--${marker} card-squeeze-host';
@@ -177,19 +180,19 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
        $('bc').appendChild(d);`;
 
     const b7 = await beat(page, squeezeCard('3', 'turn'));
-    expect(b7.ccCardMaterialize, 'the turn must materialise face down in its slot').toBe(80);
-    expect(b7.ccCardSqueeze, 'the turn must squeeze over through its edge').toBe(480);
+    expect(b7.ccCardMaterialize, 'the turn must materialise face down in its slot').toBe(50);
+    expect(b7.ccCardSqueeze, 'the turn must squeeze over through its edge').toBe(250);
 
     const b8 = await beat(page, squeezeCard('4', 'river'));
-    expect(b8.ccCardMaterialize, 'the river must materialise face down in its slot').toBe(80);
-    expect(b8.ccCardSqueeze, 'the river must squeeze over through its edge').toBe(480);
+    expect(b8.ccCardMaterialize, 'the river must materialise face down in its slot').toBe(50);
+    expect(b8.ccCardSqueeze, 'the river must squeeze over through its edge').toBe(250);
     // The edge spine and the shadow ride the same clock as the flip - a spine
     // that outlives the swap is a black bar sitting on a face-up card.
-    expect(b8.ccCardSpine, 'the card edge shows at the edge-on instant').toBe(480);
-    expect(b8.ccCardShadow, 'the shadow thins with the card').toBe(480);
+    expect(b8.ccCardSpine, 'the card edge shows at the edge-on instant').toBe(250);
+    expect(b8.ccCardShadow, 'the shadow thins with the card').toBe(250);
     // The JS mount window is the profile total + 100ms margin, and the board
-    // holds its newly-dealt window for at least 1400ms — both outlive 560ms.
-    expect(80 + 480).toBeLessThan(1400);
+    // holds its newly-dealt window for at least 1400ms — both outlive 300ms.
+    expect(50 + 250).toBeLessThan(1400);
 
     // ── BEAT 9 — SHOWDOWN: hands turn over ─────────────────────────────────
     const b9 = await beat(

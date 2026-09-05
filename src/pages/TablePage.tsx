@@ -20774,6 +20774,7 @@ export default function TablePage({
                           boardIndex={board.boardIndex}
                           gameMode={boardPresentationMode}
                           isFocused={isActive}
+                          isVisible={isActive}
                         />
                       </div>
                     ))
@@ -20818,6 +20819,7 @@ export default function TablePage({
                         boardIndex={0}
                         gameMode={boardPresentationMode}
                         isFocused={isActive}
+                        isVisible={isActive}
                       />
                       {/* DOUBLE-BOARD BOMB POT 2026-08-20: board 2, stacked
                           directly under board 1 like the reference — no label,
@@ -20851,6 +20853,7 @@ export default function TablePage({
                             boardIndex={1}
                             gameMode={boardPresentationMode}
                             isFocused={isActive}
+                            isVisible={isActive}
                           />
                         </div>
                       )}
@@ -20877,6 +20880,7 @@ export default function TablePage({
                             boardIndex={2}
                             gameMode={boardPresentationMode}
                             isFocused={isActive}
+                            isVisible={isActive}
                           />
                         </div>
                       )}

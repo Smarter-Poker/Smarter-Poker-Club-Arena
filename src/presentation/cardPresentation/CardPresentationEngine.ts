@@ -35,7 +35,7 @@ import {
   type FrameSample,
   type FrameSamplerStart,
 } from './frameSampler';
-import { MOUNT_WINDOW_MARGIN_MS } from './profiles';
+import { FLOP_FAN_TOTAL_MS, MOUNT_WINDOW_MARGIN_MS } from './profiles';
 import { resolveCardAnimationProfile } from './resolveProfile';
 import type {
   CardAnimationProfile,
@@ -71,6 +71,20 @@ interface ActivePresentation {
   readonly key: string;
   readonly event: CommunityCardDealPresentation;
   readonly profile: CardAnimationProfile;
+  /**
+   * AUDIT FIX 2026-09-05: the mode and platform THIS PRESENTATION resolved
+   * from, kept beside the profile it resolved to. `animation_started` used
+   * the caller's input and `animation_completed` used the profile constant,
+   * and those are different for most real sessions - a tournament all-in
+   * started as `tournament` and completed as `cash` (allIn.mode is 'cash'),
+   * a phone completed as `desktop`, and a tablet completed as desktop always
+   * because no profile carries `platform: 'tablet'`. Joining the two events
+   * on those dimensions gave incoherent totals.
+   */
+  readonly mode: CardAnimationProfile['mode'];
+  readonly platform: CardAnimationProfile['platform'];
+  /** What the animation on screen actually takes, which is not always the profile. */
+  readonly expectedMs: number;
   readonly startedAt: number;
   /** Speed-scaled phase end offsets, ms from startedAt. */
   readonly ends: { prepare: number; hold: number; squeeze: number; reveal: number; settle: number };
@@ -161,7 +175,7 @@ export class CardPresentationEngine {
       profile: profile.id,
       platform: input.platform,
       mode: input.mode,
-      durationExpected: profile.durationMs,
+      durationExpected: event.street === 'flop' ? FLOP_FAN_TOTAL_MS : profile.durationMs,
     } as const;
 
     if (this.processed.has(key)) {
@@ -182,8 +196,20 @@ export class CardPresentationEngine {
       this.telemetry({ ...base, event: 'animation_skipped', reason: 'out-of-order' });
       return { status: 'stale', key, profile, durationMs: 0 };
     }
-    this.latestHand.set(event.tableId, event.handId);
-    this.laneProgress.set(lane, { handId: event.handId, sequence: event.sequence });
+    /* AUDIT FIX 2026-09-05: BOUND THESE TWO.
+       `processed` was capped from the start; these were not, and they are the
+       ones that actually grow. `useCardSqueeze` gives every replayed hand its
+       OWN surface id, so a player who opens five hundred hands in the hand
+       history leaves five hundred `latestHand` entries and as many
+       `laneProgress` entries in a process-global singleton, for the life of
+       the tab. Evicting oldest-first is safe: the worst case for a table that
+       falls off the end is that one card animates which would have been
+       suppressed, and the board is correct either way. */
+    this.rememberIn(this.latestHand, event.tableId, event.handId);
+    this.rememberIn(this.laneProgress, lane, {
+      handId: event.handId,
+      sequence: event.sequence,
+    });
     this.remember(key);
 
     if (profile.intensity === 'off' || profile.durationMs <= 0) {
@@ -198,6 +224,9 @@ export class CardPresentationEngine {
 
     const s = this.speed();
     const startedAt = this.now();
+    // The flop runs its own fan, not the squeeze; the profile does not
+    // describe it (see FLOP_FAN_TOTAL_MS).
+    const expectedMs = event.street === 'flop' ? FLOP_FAN_TOTAL_MS : profile.durationMs;
     const prepare = profile.prepareMs * s;
     const hold = prepare + profile.holdMs * s;
     const squeeze = hold + profile.squeezeMs * s;
@@ -207,6 +236,9 @@ export class CardPresentationEngine {
       key,
       event,
       profile,
+      mode: input.mode,
+      platform: input.platform,
+      expectedMs,
       startedAt,
       ends: { prepare, hold, squeeze, reveal, settle },
       timer: null,
@@ -215,7 +247,7 @@ export class CardPresentationEngine {
     };
     entry.timer = setTimeout(
       () => this.complete(key),
-      Math.ceil(settle + MOUNT_WINDOW_MARGIN_MS * s)
+      Math.ceil(Math.max(settle, expectedMs * s) + MOUNT_WINDOW_MARGIN_MS * s)
     );
     // The face appears at the edge-on instant, which is the END of the
     // squeeze beat. Listeners (the board's sound cue) hang off this.
@@ -239,7 +271,7 @@ export class CardPresentationEngine {
       status: 'started',
       key,
       profile,
-      durationMs: profile.durationMs + MOUNT_WINDOW_MARGIN_MS,
+      durationMs: expectedMs + MOUNT_WINDOW_MARGIN_MS,
     };
   }
 
@@ -255,9 +287,9 @@ export class CardPresentationEngine {
       street: entry.event.street,
       boardIndex: entry.event.boardIndex,
       profile: entry.profile.id,
-      platform: entry.profile.platform,
-      mode: entry.profile.mode,
-      durationExpected: entry.profile.durationMs,
+      platform: entry.platform,
+      mode: entry.mode,
+      durationExpected: entry.expectedMs,
       durationActual: Math.round(elapsed),
     });
     this.notify(key, 'complete', elapsed);
@@ -275,9 +307,9 @@ export class CardPresentationEngine {
       street: entry.event.street,
       boardIndex: entry.event.boardIndex,
       profile: entry.profile.id,
-      platform: entry.profile.platform,
-      mode: entry.profile.mode,
-      durationExpected: entry.profile.durationMs,
+      platform: entry.platform,
+      mode: entry.mode,
+      durationExpected: entry.expectedMs,
       durationActual: Math.round(elapsed),
       reason,
     });
@@ -322,7 +354,6 @@ export class CardPresentationEngine {
     if (t < e.hold) return 'hold';
     if (t < e.squeeze) return 'squeeze';
     if (t < e.reveal) return 'reveal';
-    if (t < e.settle) return 'settle';
     return 'settle';
   }
 
@@ -406,12 +437,27 @@ export class CardPresentationEngine {
     return this.listeners.size;
   }
 
+  /**
+   * Lanes whose street progression is remembered. AUDIT FIX 2026-09-05: this
+   * had no counter, which is exactly why the soak could not see that the map
+   * had no bound - every other collection was measured and this one was not.
+   */
+  get laneProgressSize(): number {
+    return this.laneProgress.size;
+  }
+
   private remember(key: string): void {
-    this.processed.set(key, true);
-    while (this.processed.size > this.maxProcessed) {
-      const oldest = this.processed.keys().next().value;
+    this.rememberIn(this.processed, key, true);
+  }
+
+  /** Insertion-ordered set-with-a-ceiling; the oldest key falls off the end. */
+  private rememberIn<K, V>(map: Map<K, V>, key: K, value: V): void {
+    map.delete(key);
+    map.set(key, value);
+    while (map.size > this.maxProcessed) {
+      const oldest = map.keys().next().value;
       if (oldest === undefined) break;
-      this.processed.delete(oldest);
+      map.delete(oldest);
     }
   }
 
@@ -432,9 +478,9 @@ export class CardPresentationEngine {
       street: entry.event.street,
       boardIndex: entry.event.boardIndex,
       profile: entry.profile.id,
-      platform: entry.profile.platform,
-      mode: entry.profile.mode,
-      durationExpected: entry.profile.durationMs,
+      platform: entry.platform,
+      mode: entry.mode,
+      durationExpected: entry.expectedMs,
       durationActual: Math.round(sample.elapsedMs),
       reason: `fps=${sample.fps.toFixed(1)} frames=${sample.frames} dropped=${sample.droppedFrames}`,
     });

@@ -17,6 +17,7 @@ import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSp
 import {
   cardPresentationEngine,
   detectPlatform,
+  FLOP_FAN,
   preloadImage,
   SqueezeCard,
   squeezeHostProps,
@@ -233,7 +234,19 @@ function CardFace({
   const style = (
     host
       ? { ...host.style, '--card-index': index }
-      : { animationDelay: `${index * 100}ms`, '--card-index': index }
+      : {
+          /* AUDIT FIX 2026-09-05: SCALED. This delay staggers the three flop
+             cards as they land, and it was the one number in the fan that
+             `--animation-speed` did not touch - its duration was scaled, the
+             whole fan-open was scaled, this was not. Card i landed at
+             100i + 300s ms while its turn began at (520 + 140i)s ms, so below
+             a speed of 0.4 the second and third cards began turning over
+             while still in the air - the exact thing the stylesheet's own
+             comment says must never happen, at the fastest setting a player
+             is allowed to choose (ANIMATION_SPEED_MIN is 0.25). */
+          animationDelay: `calc(${index * FLOP_FAN.DEAL_STAGGER_MS}ms * var(--animation-speed, 1))`,
+          '--card-index': index,
+        }
   ) as React.CSSProperties;
 
   return (
@@ -398,7 +411,15 @@ function CommunityCardsComponent({
   const laneTableId = tableId ?? `local${instanceId}`;
   /** Counts hands locally when TablePage supplies no hand number. */
   const localHandRef = useRef(0);
-  /** The key of the squeeze in flight on this board, for interrupts. */
+  /**
+   * The key of the presentation in flight on this board, for interrupts.
+   *
+   * AUDIT FIX 2026-09-05: this used to be set only for a turn or a river.
+   * A flop created an engine entry with two live timers and a held lane and
+   * then stored its key NOWHERE, so unmounting a table mid-flop left both
+   * timers running against a destroyed component and reported a completed
+   * animation for a board that no longer existed. Every street registers now.
+   */
   const activeSqueezeRef = useRef<string | null>(null);
   /**
    * ROUND 2 2026-09-05 - THE SNAP LANDS WHEN THE CARD DOES.
@@ -544,13 +565,18 @@ function CommunityCardsComponent({
           }
           preloadImage(cardBackImageUrl(cardBack));
           windowMs = Math.max(windowMs, Math.round(result.durationMs * speed));
+          // EVERY street registers, so an interrupt can reach a flop too.
+          activeSqueezeRef.current = result.key;
           if (squeezes) {
-            activeSqueezeRef.current = result.key;
             // The stage effect below runs after this one on the same commit
             // and reads this key: a squeeze in flight owes its snap to the
             // reveal beat rather than to the street transition.
             pendingRevealKeyRef.current = result.key;
             setSqueeze({ key: result.key, profile: result.profile, index: slot });
+          } else {
+            // A flop pays its three snaps on the street, not on a reveal beat
+            // that does not describe its shape - nothing is owed to a key.
+            pendingRevealKeyRef.current = null;
           }
         } else if (squeezes) {
           // Duplicate / stale / hidden: the card is simply on screen, so the
@@ -636,6 +662,29 @@ function CommunityCardsComponent({
    */
   useEffect(() => {
     return cardPresentationEngine.subscribe(({ key, phase }) => {
+      if (key !== activeSqueezeRef.current && key !== pendingRevealKeyRef.current) return;
+      if (phase === 'cancelled') {
+        // AUDIT FIX 2026-09-05 - A CANCEL MUST REACH THE PIXELS.
+        //
+        // This listener used to do one thing: play the sound. So when the
+        // engine cancelled a presentation - a window resize, an orientation
+        // change, the tab backgrounded, all of which exist precisely to STOP
+        // an animation running against geometry that has moved - the engine
+        // dropped its entry and the browser carried on running the flip to
+        // completion on the old geometry. The interrupts were, visibly,
+        // inert. Worse, the cue was paid at that moment on the stated
+        // reasoning that "an interrupted squeeze renders the authoritative
+        // card immediately", which was not true: on an all-in river the snap
+        // landed up to 750ms before the face appeared - the exact defect the
+        // owed/paid mechanism was written to fix.
+        //
+        // Cancelling unmounts the temporary markup now, which drops the card
+        // to its authoritative face-up state on the next paint, and only then
+        // pays the cue. Clearing the newly-dealt set covers the FLOP too.
+        activeSqueezeRef.current = null;
+        setSqueeze(null);
+        setNewlyDealtIndices((prev) => (prev.size === 0 ? prev : new Set()));
+      }
       if (key !== pendingRevealKeyRef.current) return;
       if (phase !== 'reveal' && phase !== 'cancelled' && phase !== 'complete') return;
       pendingRevealKeyRef.current = null;

@@ -225,6 +225,29 @@
   }
 }
 
+/* THE HOST'S OWN DECORATION MUST NOT SIT ON TOP OF THE FLIP.
+   AUDIT FIX 2026-09-05. The host is somebody else's element and it brings its
+   own painting with it. On the felt `.community-cards__card` carries a
+   five-layer static box-shadow and two full-size pseudo-elements - a gloss at
+   z-index 3 and a specular sheen at z-index 2 - all positioned against the
+   host, none of them rotating. So at the edge-on instant the card was a 2px
+   spine sitting inside an unchanged, full-size translucent rectangle, and the
+   shadow layer that exists precisely so an edge-on card casts almost nothing
+   (spec 72) was composited on top of the host's full card-sized shadow.
+
+   While a squeeze is running the host lends its decoration to the card that
+   is actually turning: its own shadow and both pseudo-elements are
+   suppressed, and `.card-squeeze__shadow` is the only shadow on screen. They
+   all come back the moment the class is removed. */
+.card-squeeze-host.card-squeeze-host {
+  box-shadow: none;
+}
+
+.card-squeeze-host.card-squeeze-host::before,
+.card-squeeze-host.card-squeeze-host::after {
+  display: none;
+}
+
 /* Reduced motion: the global rule in src/styles/reducedMotion.css already
    collapses every duration to 1ms, and every resting state here is the
    final one - face up, spine hidden, shadow full. This block makes that

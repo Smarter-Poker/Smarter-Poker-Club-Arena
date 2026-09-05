@@ -251,6 +251,43 @@ export const SQUEEZE_KEYFRAME_SPLIT = Object.freeze({
  */
 export const MOUNT_WINDOW_MARGIN_MS = 100;
 
+/**
+ * THE FLOP IS NOT PROFILE-DRIVEN, AND ITS TELEMETRY HAS TO SAY SO.
+ *
+ * AUDIT FIX 2026-09-05. The flop presents through the engine (so it is
+ * deduped, profiled for focus, and reported) but it does NOT run the squeeze:
+ * it runs its own two-phase fan, whose timings live in CommunityCards.css and
+ * are the same for every profile. The engine was recording the resolved
+ * profile's `durationMs` for it - 560ms for a desktop cash flop - against an
+ * animation that takes 1220ms, and measuring `durationActual` on its own
+ * timer, so the two agreed with each other and both were wrong by half. An
+ * operator reading that data would conclude flops were the fastest thing on
+ * the felt.
+ *
+ * These four numbers ARE the stylesheet, and
+ * tests/unit/cardPresentation/profiles.test.ts reads them back out of it, so
+ * they cannot drift apart:
+ *
+ *   ccFlopLand      0.30s   each card slides in face down
+ *   deal stagger    0.10s   per card, inline animation-delay
+ *   fan delay       0.52s   before the first card turns (past the last land)
+ *   fan stagger     0.14s   per card
+ *   ccFlopFanOpen   0.42s   the turn itself
+ *
+ * Card 2 finishes at 0.52 + 2*0.14 + 0.42 = 1.22s.
+ */
+export const FLOP_FAN = Object.freeze({
+  LAND_MS: 300,
+  DEAL_STAGGER_MS: 100,
+  OPEN_DELAY_MS: 520,
+  OPEN_STAGGER_MS: 140,
+  OPEN_MS: 420,
+});
+
+/** What a three-card flop actually takes, end to end, at speed 1. */
+export const FLOP_FAN_TOTAL_MS =
+  FLOP_FAN.OPEN_DELAY_MS + 2 * FLOP_FAN.OPEN_STAGGER_MS + FLOP_FAN.OPEN_MS;
+
 /** The flip (squeeze + reveal + settle) is one CSS animation. */
 export function flipMs(p: CardAnimationProfile): number {
   return p.squeezeMs + p.revealMs + p.settleMs;

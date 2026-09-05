@@ -25,6 +25,7 @@ const USER_TABLE_SETTING_COLUMNS = [
   'multi_desktop_alerts',
   'multi_shared_socket',
   'rabbit_hunt_button',
+  'all_in_squeeze',
   'show_ticker',
   /* The Table Settings panel's own keys, moved onto this row 2026-08-28 (Dan:
      "THEY NEED TO SAVE GLOBALLY IN REAL TIME ON ALL TABLES, AND ALL PAGES").

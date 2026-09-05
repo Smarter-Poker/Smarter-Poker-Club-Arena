@@ -15,18 +15,48 @@ import { describe, expect, it } from 'vitest';
  * right, because zero is a number and the table renders it without complaint.
  * That is the failure this law exists to prevent recurring.
  *
- * The fix is the shape fn_agent_downline_rake already used:
+ * The shape is:
  *
  *   club_rake_rollup_complete   which (club, day) pairs are genuinely finished
  *   club_rake_daily_user        read ONLY for those days
- *   rake_records                the live tail, the live head, and any day in
- *                               the middle the rollup never wrote
- *   fn_rake_shares_for_record   the canonical allocator, so a live figure and
- *                               the rollup that eventually replaces it agree
+ *   ca_club_rake_daily_user     the live edge - every day the marker has not
+ *                               called complete, kept exact per player by
+ *                               statement-level triggers on rake_attributions
  *
- * The three live slices must stay disjoint from the rollup days or the window
+ * The live slice must stay disjoint from the rollup days or the window
  * double-counts, which is the mirror failure and reads as a club producing
  * more than it took.
+ *
+ * THE LIVE SOURCE CHANGED ON 2026-09-05 AND THE PINS MOVED WITH IT
+ * (20260905042000). The live edge used to be `rake_records` split through
+ * `fn_rake_shares_for_record`, the canonical allocator, called ONCE PER RAKED
+ * HAND - 61,156 lookups on the busiest club, 29.7 seconds, past every timeout,
+ * so `ca_rake_snapshot` answered 500 and the panel sat on dashes. It now reads
+ * `rake_attributions` grouped per player: the per-player credit the engine
+ * writes as the hand is raked, and THE VERY TABLE `fn_club_rake_rollup_day`
+ * builds `club_rake_daily_user` from.
+ *
+ * So the guarantee the old allocator pin protected - a live figure and the
+ * rollup that eventually replaces it agree - is now structural rather than
+ * procedural: the two are computed from the same rows with the same rounding,
+ * instead of by two code paths that had to be kept in step. The invariant is
+ * unchanged and the pins below assert it against the source that now carries
+ * it. Nothing here was weakened to let a change through; the pin that named
+ * `fn_rake_shares_for_record` had in fact stopped guarding anything, because
+ * the string still appears in the migration's own assertion that the function
+ * must NOT call it, and a substring pin cannot tell those apart.
+ *
+ * AND THE LIVE SOURCE MOVED ONCE MORE ON THE SAME DAY (20260905074228), for a
+ * reason that is the sharpest version of this law's own point. Reading the
+ * attributions directly measured 490ms at 03:55 and 3,402ms at 07:37 - the
+ * live edge is TODAY, and today gets bigger every hour, reaching a third of a
+ * million rows on a busy day. So the panel would have healed every morning and
+ * failed every evening: current, then not, then current again. The live half
+ * now reads `ca_club_rake_daily_user`, an incremental per-player rollup kept
+ * exact by statement-level triggers ON `rake_attributions` - the same rows,
+ * summed as they arrive instead of on every page load. The pins below check
+ * BOTH ends of that chain, because a rollup nothing maintains is exactly the
+ * silent zero this law exists to prevent.
  *
  * Verified numerically when written, against Deep Stack Society: for today the
  * direct column summed to exactly what rake_records held for the club over the
@@ -34,6 +64,15 @@ import { describe, expect, it } from 'vitest';
  */
 
 const MIGRATIONS = resolve(__dirname, '../supabase/migrations');
+
+/** Every migration that mentions a name, oldest first. */
+function migrationsMentioning(needle: string): string[] {
+  return readdirSync(MIGRATIONS)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+    .map((f) => readFileSync(resolve(MIGRATIONS, f), 'utf8'))
+    .filter((sql) => sql.includes(needle));
+}
 
 /** The newest definition wins at deploy time, so it is the one under test. */
 function latestDefining(fnName: string): string {
@@ -65,16 +104,51 @@ describe('the agent table is current, not merely complete', () => {
     expect(body('fn_ca_rake_by_agent')).toContain('club_rake_rollup_complete');
   });
 
-  it('reads rake_records for what the rollup has not finished', () => {
+  it('reads the incremental rollup for what the sealed rollup has not finished', () => {
     const sql = body('fn_ca_rake_by_agent');
-    expect(sql, 'a rollup-only read is always wrong for today').toContain('rake_records');
+    expect(sql, 'a sealed-days-only read is always wrong for today').toContain(
+      'public.ca_club_rake_daily_user du'
+    );
+    expect(sql, 'the live edge is per player, like the sealed days it stands in for').toContain(
+      'du.user_id'
+    );
   });
 
-  it('splits live rake with the canonical allocator, not a local formula', () => {
-    // If this function invented its own split, an agent's live figure and the
-    // figure they are eventually paid on would disagree, and only one of them
-    // would ever be shown.
-    expect(body('fn_ca_rake_by_agent')).toContain('fn_rake_shares_for_record');
+  it('and something keeps that live rollup current, from the attributions themselves', () => {
+    // The other end of the chain. A live edge that reads a table nothing
+    // writes is a rollup-only read wearing a disguise, and it reads as zero.
+    const writers = migrationsMentioning('ca_club_rake_daily_user');
+    expect(writers.length, 'the rollup is declared somewhere').toBeGreaterThan(0);
+    const all = writers.join('\n');
+    expect(all).toContain('AFTER INSERT ON public.rake_attributions');
+    expect(all).toContain('AFTER UPDATE ON public.rake_attributions');
+    expect(all).toContain('AFTER DELETE ON public.rake_attributions');
+    // And it can never fail the hand it is counting.
+    expect(all).toContain('EXCEPTION WHEN OTHERS THEN');
+  });
+
+  it('does not re-derive a share per raked hand to get there', () => {
+    // The open paren is the whole point: the migration's own assertion NAMES
+    // fn_rake_shares_for_record to check the body no longer calls it, so a
+    // bare substring pin passes on the guard rather than on the code. Only a
+    // CALL has a paren after it.
+    const sql = body('fn_ca_rake_by_agent');
+    expect(sql, 'the live edge is grouped, not allocated hand by hand').not.toContain(
+      'fn_rake_shares_for_record('
+    );
+  });
+
+  it('rounds the live edge the way the sealed days are rounded', () => {
+    // Same rounding as fn_club_rake_rollup_day: each row to a cent, then
+    // summed. Without this the live edge and the day that replaces it differ
+    // by fractions of a chip and the table appears to change its mind at
+    // midnight. It is accumulated now rather than summed in one pass, so the
+    // cents are stored as an integer and divided once - the same arithmetic in
+    // an order that cannot drift.
+    expect(body('fn_ca_rake_by_agent')).toContain('du.rake_cents::numeric / 100');
+    const writers = migrationsMentioning('ca_club_rake_daily_user').join('\n');
+    expect(writers).toContain('SUM(round(ra.rake_amount * 100))::bigint');
+    expect(writers).toContain('rake_cents  bigint');
   });
 
   it('covers a day the rollup skipped, so it is never silently zero', () => {

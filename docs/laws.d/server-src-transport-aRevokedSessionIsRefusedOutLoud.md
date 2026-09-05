@@ -1,0 +1,3 @@
+# server/src/transport/aRevokedSessionIsRefusedOutLoud.law.test.ts
+
+A revoked session is refused out loud: a token GoTrue definitively rejects completes the handshake and is closed with 4401 + auth:<code> on /ws/table, /ws/multi and /ws/channel (never a pre-handshake 401, which a browser reports as 1006 = network blip); a token that could not be checked (GoTrue down / 5xx / 429) is a pre-handshake 503 the client keeps retrying, never a sign-out; classifyGetUserError is the single classifier; every refusal counts in poker_ws_auth_refused_total and two alert rules watch it; poker_humans_seated is a gauge, not an alert, by measurement

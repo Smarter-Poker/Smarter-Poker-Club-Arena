@@ -804,6 +804,20 @@ const RIT_BOUNDARY_ACK_MS = 1500;
  * Dan's number, 2026-08-27: the Rabbit Hunt button stays up for "at least 2
  * full seconds" once it has appeared, even if the next hand starts inside that
  * window. Never extended past the server's own offer TTL.
+ *
+ * UNTIL 2026-09-05 THIS FLOOR WAS MEASURING A WINDOW NOBODY COULD SEE. The
+ * offer arrives at settlement and sets `isRabbitAvailable` immediately, so the
+ * floor started counting there - but the button RENDERS behind
+ * `!tableState.isHandInProgress`, and the engine did not broadcast a hand-free
+ * state until the entire completion hold had already elapsed. The button was
+ * therefore live and invisible for 4.5-7.4 seconds and then visible for
+ * whatever followed: boardClearMs, 500ms on a fold. Two guards, a 90-second
+ * server TTL and this floor, were both watching the wrong clock.
+ *
+ * The engine now rests HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS (1750ms) after
+ * the board clear, with the hand-free state already broadcast, so the visible
+ * window is 2250ms on a fold and 2650ms on a showdown and this floor finally
+ * fits inside the thing it was written to protect.
  */
 const RABBIT_MIN_VISIBLE_MS = 2000;
 
@@ -18528,9 +18542,19 @@ export default function TablePage({
     value: !!v8Settings[m.key as keyof typeof v8Settings],
   }));
 
+  /**
+   * Dan 2026-09-05: "IT NEEDS A DISABLE OR HIDE OPTION IN THE TABLE SETTINGS
+   * FOR USERS THAT DON'T WANT IT POPPING UP." `rabbit_hunt_button` defaults to
+   * ON, so nobody loses an offer they had yesterday, and turning it off hides
+   * the button and nothing else. It deliberately does NOT shorten the engine's
+   * post-hand rest (HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS): that beat belongs
+   * to the table, not to one seat, and a pause that came and went with one
+   * player's preference would change everybody's pace and leak, from rhythm
+   * alone, that the deck still had cards in it (CLAUDE.md 10.5).
+   */
   const hudSlotControl: 'timebank' | 'rabbit' | null = isHeroTurnContext
     ? 'timebank'
-    : !tableState.isHandInProgress && isRabbitAvailable
+    : !tableState.isHandInProgress && isRabbitAvailable && v8Settings.rabbit_hunt_button
       ? 'rabbit'
       : null;
 
@@ -20557,17 +20581,25 @@ export default function TablePage({
                 Fixed in RabbitHunt.css by reading --sp-hud-tile-size like its
                 two slot-mates do. Do not reintroduce a pixel square there.
 
-                ONE THING DELIBERATELY NOT CHANGED: the Rabbit Hunt branch keeps
-                `!tableState.isHandInProgress`. The 2-second minimum-visible
-                floor (RABBIT_MIN_VISIBLE_MS) defers the STATE, but this gate
-                still hides the button the instant the next hand starts, so on a
-                short inter-hand gap the floor buys less than its full two
-                seconds. That is the safe trade and not an oversight: a reveal
-                freezes the engine snapshot for 3s and paints cards onto the
-                board, so a button that outlives the hand boundary is a button
-                that can stall a live table. Lengthening the window means making
-                the reveal hand-safe first, which is a change to
-                handleRabbitReveal, not to this gate.
+                THE GATE STAYS; THE WINDOW MOVED (2026-09-05). This branch
+                still keeps `!tableState.isHandInProgress`, and for the reason
+                the previous note gave: a reveal freezes the engine snapshot
+                for 3s and paints cards onto the board, so a button that
+                outlives the hand boundary is a button that can stall a live
+                table. What that note got wrong was the conclusion - it treated
+                the short window as the price of the gate and pointed the next
+                agent at handleRabbitReveal.
+
+                The window was short because the ENGINE never left the player
+                any. The offer lands at settlement, but this gate cannot open
+                until the hand-free broadcast, which came only after the whole
+                completion hold; the button's entire visible life was
+                boardClearMs, half a second on a fold. Dan, 2026-09-05: "IT
+                CURRENTLY DOESN'T REALLY HAVE ENOUGH TIME TO CLICK AND USE."
+                The fix is HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS - 1750ms of
+                rest AFTER the board clear, so the time is given where this
+                gate is already open and where a snapshot freeze has no live
+                hand to starve. Nothing here had to become hand-unsafe.
 
                 `body.ca-raising` (TablePage.css) hides everything in this
                 corner while the raise overlay is open - checked, and it cannot

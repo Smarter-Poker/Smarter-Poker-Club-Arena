@@ -21,6 +21,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import {
+  ALL_IN_SQUEEZE_CEILING_MS,
   HAND_COMPLETION,
   handCompletionHoldMs,
   boardClearMs,
@@ -118,9 +119,14 @@ describe('the all-in run-out gap is Dan 2026-09-05', () => {
     // PokerStars' all-in pause) is 1500; Dan set ours past it deliberately.
     expect(HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS).toBe(1750);
     const p = CARD_PRESENTATION_PROFILES.allIn;
-    // The card profile derives its face-down hold from the constant, so the
-    // gap and the animation cannot drift apart.
-    expect(p.durationMs).toBe(HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS);
+    // The card profile derives its face-down hold from the server's pacing,
+    // so the gap and the animation cannot drift apart. VIP ALL-IN SQUEEZE
+    // 2026-09-05: the hold became the PLAYER'S ceiling and is now derived
+    // from this gate PLUS the shorter server pause after it (see
+    // ALL_IN_SQUEEZE_CEILING_MS); it is still a function of this constant,
+    // never a literal beside it.
+    expect(p.durationMs).toBe(ALL_IN_SQUEEZE_CEILING_MS);
+    expect(p.durationMs).toBeGreaterThan(HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS);
     // The FLIP is unchanged and still inside the 400ms ceiling the card-reveal
     // research established: a longer gap must buy more tension, not a slower
     // turn.

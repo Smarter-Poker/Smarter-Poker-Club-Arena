@@ -41,7 +41,6 @@ import { PageErrorBoundary } from './components/common/PageErrorBoundary';
 import { LoadingState } from './components/common/EmptyState';
 import OfflineQueueBadge from './components/common/OfflineQueueBadge';
 import NavigationProgress from './components/common/NavigationProgress';
-import ConnectionIndicator from './components/common/ConnectionIndicator';
 import ConnectionStatusBar from './components/ConnectionStatusBar';
 import PersistentTableLayer from './components/table/PersistentTableLayer';
 import BusToastBridge from './components/common/BusToastBridge';
@@ -531,8 +530,15 @@ function FullApp() {
         <TOSGuard>
           <GlobalWaitlistListener />
           <WaitlistBanner />
-          {/* Offline Banner — subtle amber bar, only for navigator.onLine === false */}
-          {isOffline && (
+          {/* Offline Banner — subtle amber bar, only for navigator.onLine === false.
+              2026-09-04 (disconnect audit item 7): NOT over a table. Dan: "all
+              disconnection, reconnecting messages should be on the table, not
+              at the top of the page." A table's felt already carries its own
+              banner for exactly this state (TableConnectionBanner, "Connection
+              Lost. Trying To Get You Back"), and this bar's promise - actions
+              saved and synced later - is about the offline queue, which
+              table actions never enter. Everywhere else it stays. */}
+          {isOffline && !/^\/(table|multi)/.test(location.pathname) && (
             <div
               role="status"
               aria-live="polite"
@@ -555,7 +561,6 @@ function FullApp() {
             </div>
           )}
           <OfflineQueueBadge />
-          <ConnectionIndicator />
           <Suspense
             fallback={
               <>

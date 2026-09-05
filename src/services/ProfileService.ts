@@ -8,6 +8,8 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
+import { resolveVipStatus, type VipStatus } from '../utils/vipStatus';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -20,6 +22,10 @@ export interface UserProfile {
   displayName?: string;
   avatarUrl?: string;
   bio?: string;
+  /** profiles.player_number (text). Present on public reads only. */
+  playerNumber?: string;
+  /** VIP / Lifetime VIP / none, resolved by utils/vipStatus. Public reads only. */
+  vipStatus?: VipStatus;
 
   // Leveling
   level: number;
@@ -106,20 +112,36 @@ class ProfileServiceClass {
    */
   async getPublicProfile(userId: string): Promise<UserProfile | null> {
     try {
+      /* 2026-09-04: this is what one player sees of ANOTHER inside the arena.
+         It used to hand back `display_name` (which can hold a legal name: see
+         playerDisplayName.ts) and the social photo. The arena is always the
+         alias, and the face at the table is the arena avatar, so the public
+         credential resolves both the way the felt does. The social photo is
+         only the fallback for a player who has never picked library art. */
       const { data, error } = await supabase
         .from('profiles')
         .select(
-          `
-          id, username, display_name, avatar_url, bio,
-          level, tier,
-          created_at, updated_at
-        `
+          `id, ${PLAYER_NAME_COLUMNS}, avatar_url, arena_avatar_url, bio, player_number, level, tier, is_vip, vip_tier, vip_expires_at, created_at, updated_at`
         )
         .eq('id', userId)
         .maybeSingle();
 
-      if (error || !data) return null;
-      return this.mapProfile(data);
+      if (error) {
+        reportError(error, 'ProfileService.getPublicProfile', { userId });
+        return null;
+      }
+      if (!data) return null;
+      const mapped = this.mapProfile(data);
+      return {
+        ...mapped,
+        displayName: playerDisplayName(data, 'arena'),
+        avatarUrl:
+          (data.arena_avatar_url as string | null) ||
+          (data.avatar_url as string | null) ||
+          undefined,
+        playerNumber: data.player_number ? String(data.player_number) : undefined,
+        vipStatus: resolveVipStatus(data),
+      };
     } catch (err: unknown) {
       reportError(err, 'ProfileService.getPublicProfile', { userId });
       return null;

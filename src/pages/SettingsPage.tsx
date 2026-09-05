@@ -39,7 +39,6 @@ import {
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useTableSettings } from '../hooks/useTableSettings';
-import { soundService } from '../services/SoundService';
 import {
   DEFAULT_SETTINGS,
   fromTableSettings,
@@ -306,6 +305,63 @@ export default function SettingsPage() {
     };
   }, [authUser?.id]);
 
+  /**
+   * CROSS-DEVICE HYDRATION (2026-09-04). Every save wrote profiles.settings and
+   * the three push columns, and NOTHING ever read them back: this page only
+   * ever read localStorage, so a second phone, a cleared browser or a fresh
+   * install showed factory defaults while the server held the player's real
+   * choices - and the next Save silently overwrote them with the defaults.
+   *
+   * Local wins for the table keys (the felt may have changed them while this
+   * page was closed); the server wins for the three push switches, because
+   * those columns are what the push sender actually consults. A device with
+   * no saved copy at all takes the whole server record.
+   */
+  useEffect(() => {
+    if (!authUser?.id) return;
+    let mounted = true;
+    const hasLocal = (() => {
+      try {
+        return !!localStorage.getItem(STORAGE_KEYS.SETTINGS);
+      } catch {
+        return false;
+      }
+    })();
+    Promise.all([
+      supabase.from('profiles').select('settings').eq('id', authUser.id).maybeSingle(),
+      supabase
+        .from('user_notification_preferences')
+        .select('tournament_reminders, friend_activity, club_updates')
+        .eq('user_id', authUser.id)
+        .maybeSingle(),
+    ]).then(([profileRes, prefsRes]) => {
+      if (!mounted) return;
+      if (profileRes.error) reportError(profileRes.error, 'SettingsPage.server_settings_read');
+      if (prefsRes.error) reportError(prefsRes.error, 'SettingsPage.notification_prefs_read');
+      const serverSettings =
+        !hasLocal && profileRes.data?.settings && typeof profileRes.data.settings === 'object'
+          ? validateSettings(profileRes.data.settings)
+          : null;
+      const prefs = prefsRes.data;
+      if (!serverSettings && !prefs) return;
+      setSettings((prev) => {
+        const base = serverSettings
+          ? fromTableSettings(tableSettingsRef.current, serverSettings)
+          : prev;
+        if (!prefs) return base;
+        return {
+          ...base,
+          tournamentReminders: prefs.tournament_reminders ?? base.tournamentReminders,
+          friendAlerts: prefs.friend_activity ?? base.friendAlerts,
+          clubActivity: prefs.club_updates ?? base.clubActivity,
+        };
+      });
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [authUser?.id]);
+
   // Bus listeners: re-read settings from localStorage when profile/settings change externally
   useEffect(() => {
     let isMounted = true;
@@ -402,7 +458,12 @@ export default function SettingsPage() {
       const {
         data: { user },
       } = await getAuthUser();
-      if (!user) return;
+      if (!user) {
+        // The old early return skipped setActionLoading(false), so a signed
+        // out tab kept every account button disabled behind "Exporting...".
+        toast.error('Sign in again to export your data.');
+        return;
+      }
 
       // Fetch user data from various tables
       const [profiles, wallets, achievements, handHistory] = await Promise.all([
@@ -477,8 +538,9 @@ export default function SettingsPage() {
     } catch (err) {
       reportError(err, 'SettingsPage.Export_failed');
       toast.error('Failed to export data. Please try again.');
+    } finally {
+      setActionLoading(false);
     }
-    setActionLoading(false);
   };
 
   // ── Confirm modal state ──
@@ -497,11 +559,30 @@ export default function SettingsPage() {
     if (actionType === 'delete-account') {
       setActionLoading(true);
       try {
-        // NOTE: True account deletion requires a server-side admin API call.
-        // For now, we sign out and clear local data. The user should contact
-        // support for full account deletion (GDPR compliance).
-        await identityDNA.logout();
-        // Clear all local caches
+        /* Until 2026-09-04 this button signed the player out, cleared two
+           local caches and toasted "contact support" - while its label read
+           "Permanently Delete Your Account And All Data". Nothing was deleted
+           and nothing was requested. The World Hub owns account deletion
+           (DELETE /api/auth/delete-account, same origin, bearer session, the
+           same shape NotificationsPage uses for the feed). Only a confirmed
+           server success signs the player out; a refusal is shown verbatim
+           and the account stays exactly as it was. */
+        const sessionRes = await supabase.auth.getSession();
+        const token = sessionRes.data?.session?.access_token;
+        if (!token) throw new Error('Sign in again before closing your account.');
+        const res = await fetch('/api/auth/delete-account', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ confirm: true }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || body?.success === false) {
+          throw new Error(
+            typeof body?.error === 'string' && body.error
+              ? body.error
+              : `The deletion request was refused (HTTP ${res.status}).`
+          );
+        }
         try {
           const keys = Object.keys(sessionStorage);
           keys.forEach((k) => {
@@ -511,13 +592,16 @@ export default function SettingsPage() {
         } catch {
           /* cleanup best-effort */
         }
-        toast.success(
-          'You have been logged out. Contact support@smarter.poker for full account deletion.'
-        );
+        toast.success('Your account has been closed. Signing you out.');
+        await identityDNA.logout();
         // AuthGuard will handle redirect to /auth
       } catch (err) {
         reportError(err, 'SettingsPage.Account_deletion_failed');
-        toast.error('Failed to process request. Please try again.');
+        toast.error(
+          err instanceof Error && err.message
+            ? err.message
+            : 'The account could not be closed. Please try again.'
+        );
       }
       setActionLoading(false);
     } else if (actionType === 'disable-2fa') {
@@ -542,11 +626,25 @@ export default function SettingsPage() {
   const handleDeleteAccount = () => {
     setConfirmAction({
       type: 'delete-account',
-      title: 'Delete Account',
+      title: 'Close Account',
       message:
-        'This will permanently delete all your data, chips, and history. This action is PERMANENT and cannot be undone.',
+        'This asks Smarter Poker to permanently delete your account, profile and history. Accounts still holding club chips or a seat are refused until they are settled. This cannot be undone.',
       variant: 'danger',
     });
+  };
+
+  const handleSignOut = async () => {
+    setActionLoading(true);
+    try {
+      // identityDNA owns the signOut lifecycle (see HamburgerMenu): it runs the
+      // auth listener and the store teardown that a bare supabase.auth.signOut
+      // would skip.
+      await identityDNA.logout();
+    } catch (err) {
+      reportError(err, 'SettingsPage.Sign_out_failed');
+      toast.error('Could not sign out. Please try again.');
+      setActionLoading(false);
+    }
   };
 
   // 2FA Handlers
@@ -753,21 +851,11 @@ export default function SettingsPage() {
          permanently disagreeing. setEnabled() updates the live engine AND
          persists BOTH gate keys (the HamburgerMenu path); volume is applied
          live for the same reason rather than waiting for a table mount. */
-      /* Volume is NOT applied here. `updateTableSettings` above commits it to
-         the store, which applies it in `applyGateChanges` — this line applied
-         the same number a second time. `setEnabled` stays because the gate keys
-         are a different owner from the store and this page has to write both. */
-
-      /* Dan 2026-08-28: the Sound Effects switch on this page never reached
-         the sound engine. It persisted soundEnabled into
-         club-arena-table-settings, but the gate that actually silences
-         playback (utils/soundGate, consulted by SoundService.shouldPlay)
-         reads 'club_arena_sounds' / 'ca_sound_enabled' — neither of which
-         this page wrote. So muting here said "Settings saved!", the felt
-         kept playing, and the in-table switch still read ON: two switches
-         permanently disagreeing. setEnabled() updates the live engine AND
-         persists BOTH gate keys (the HamburgerMenu path); volume is applied
-         live for the same reason rather than waiting for a table mount. */
+      /* Neither volume nor the sound gate is applied here any more.
+         `updateTableSettings` above commits both to the store, and the store's
+         `applyGateChanges` (useTableSettings.ts) is the one caller of
+         soundService.setEnabled and writes both gate keys. The second block
+         this comment used to sit beside was a byte-for-byte duplicate. */
 
       /* Sync theme to Zustand store so Shell.tsx applies it immediately.
          2026-08-26: "Auto (System)" was offered in the dropdown, accepted by
@@ -876,9 +964,10 @@ export default function SettingsPage() {
   return (
     <StandardContentLayout className={styles.page}>
       <AccountSurfaceHeader
+        artwork="images/account/control-room-hero-v1.webp"
         eyebrow="Account Control // Player Vault"
         title="Control Room"
-        description="One Authoritative Surface For Table Behavior, Alerts, Device Access, Identity Security, And Account Data. Changes Remain Wired To The Live Table And Player Record."
+        description="Sound, Table Display, Alerts, Device Access, Identity Security And Account Data. Every Control Here Is Live On The Felt The Moment You Save."
         status={hasChanges ? 'Changes Pending' : 'Systems Synced'}
       >
         <span className={styles.heroMetric}>
@@ -1248,6 +1337,23 @@ export default function SettingsPage() {
               </button>
             )}
           </div>
+
+          {/* The one door out. It was only in the hamburger; a security
+              section without a sign-out control sends a player hunting. */}
+          <div className={styles.settingRow}>
+            <div className={styles.settingInfo}>
+              <span className={styles.settingLabel}>Sign Out</span>
+              <span className={styles.settingDesc}>End This Session On This Device</span>
+            </div>
+            <button
+              type="button"
+              className={styles.actionButtonSecondary}
+              onClick={handleSignOut}
+              disabled={actionLoading}
+            >
+              Sign Out
+            </button>
+          </div>
         </section>
 
         {/* Danger Zone */}
@@ -1270,9 +1376,9 @@ export default function SettingsPage() {
 
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>Delete Account</span>
+              <span className={styles.settingLabel}>Close Account</span>
               <span className={styles.settingDesc}>
-                Permanently Delete Your Account And All Data
+                Permanently Delete Your Account. Settle Every Club Balance First
               </span>
             </div>
             <button
@@ -1280,7 +1386,7 @@ export default function SettingsPage() {
               onClick={handleDeleteAccount}
               disabled={actionLoading}
             >
-              Delete
+              {actionLoading ? 'Working...' : 'Close Account'}
             </button>
           </div>
         </section>
@@ -1342,7 +1448,7 @@ export default function SettingsPage() {
             aria-labelledby={passwordDialogTitleId}
           >
             <h3 id={passwordDialogTitleId}>Change Password</h3>
-            <p>Password Must Be At Least 8 Characters.</p>
+            <p>At Least 8 Characters, With One Uppercase Letter And One Number.</p>
             <label className={styles.fieldLabel} htmlFor="settings-new-password">
               New Password
             </label>
@@ -1469,7 +1575,7 @@ export default function SettingsPage() {
         title={confirmAction?.title || 'Confirm'}
         message={confirmAction?.message || ''}
         variant={confirmAction?.variant || 'default'}
-        confirmText={confirmAction?.type === 'delete-account' ? 'Delete My Account' : 'Confirm'}
+        confirmText={confirmAction?.type === 'delete-account' ? 'Close My Account' : 'Confirm'}
         onConfirm={handleConfirmAction}
         onCancel={() => setConfirmAction(null)}
         loading={actionLoading}

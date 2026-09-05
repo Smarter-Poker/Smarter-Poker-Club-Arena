@@ -3157,23 +3157,22 @@
 }
 
 /* ===========================================================================
-   THE PEEL - the pair tips up and the face arrives from the TOP (2026-09-05)
+   THE PEEL - the near edge lifts, the face comes up from the bottom
    ===========================================================================
-   Rebuilt from Dan's video of himself doing it with real cards, and this is
-   the second correction, not the first. v1 folded a CORNER diagonally,
-   page-curl style, with a dog-ear flap. v2 got the horizontal boundary right
-   but ran it the wrong way, revealing the face bottom-up - "THE CARDS ARE
-   STILL BACKWARDS".
+   THE DIRECTION IS DAN'S, NOT MY READING OF HIS VIDEO. Three versions shipped
+   before this one: a diagonal corner curl, a bottom-up boundary, and then a
+   top-down one that I "corrected" the bottom-up version into after a
+   frame-by-frame pass over a 220x480 handheld clip. He watched that last one
+   and said: "THE CARDS ARE 'PEELING BACKWARDS' TOP TO BOTTOM INSTEAD OF THE
+   WAY I SHOWED YOU IN THE PREVIOUS VIDEO."
 
-   In the video he tips the pair toward himself, pivoting on the near edge, and
-   the face appears from the TOP DOWN: the Q and J indices first, side by side,
-   right way up, then the court art filling in beneath them. Nothing is
-   mirrored, so nothing in here reflects.
+   So: the boundary starts at the BOTTOM edge and travels UP.
 
-   Two stacked layers, one boundary between them, driven by --peel-fold:
-     --cover  the BACK,  clipped to everything BELOW the boundary
-     --under  the FACE,  clipped to everything ABOVE it
-   plus a crease shadow sitting on the line itself. */
+     --cover  the BACK,  clipped to everything ABOVE the boundary
+     --under  the FACE,  clipped to everything BELOW it
+
+   plus a crease shadow sitting on the line itself and riding it up. The
+   reasoning, and why footage is not a spec here, is in cardPeel.ts. */
 
 .seat__squeeze-face--cover {
   z-index: 2;
@@ -3184,7 +3183,7 @@
 .seat__squeeze-face--under {
   z-index: 1;
   background: #fff;
-  clip-path: var(--peel-face-clip, inset(0 0 100% 0));
+  clip-path: var(--peel-face-clip, inset(100% 0 0 0));
   will-change: clip-path;
 }
 
@@ -3195,17 +3194,19 @@
   position: absolute;
   left: 0;
   right: 0;
-  top: var(--peel-fold, 0%);
+  top: var(--peel-fold, 100%);
   height: 10px;
   transform: translateY(-5px);
   z-index: 3;
   pointer-events: none;
   opacity: calc(var(--peel-progress, 0) * 1.6);
+  /* Card stock bending up toward the player is shadowed on the back side
+     (above the line) and catches the light on the face side (below it). */
   background: linear-gradient(
     to bottom,
     rgba(0, 0, 0, 0) 0%,
-    rgba(255, 255, 255, 0.5) 42%,
-    rgba(0, 0, 0, 0.42) 55%,
+    rgba(0, 0, 0, 0.42) 45%,
+    rgba(255, 255, 255, 0.5) 58%,
     rgba(0, 0, 0, 0) 100%
   );
 }

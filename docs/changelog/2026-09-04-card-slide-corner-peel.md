@@ -111,6 +111,59 @@ the hero's bottom-right, slid right and up:
   squeeze / card_slide green, plus the animation law, reduced-motion coverage,
   law registry and migration uniqueness.
 
+## 2026-09-05 follow-up (Dan picked 1, 3, 4, 5, 6; explicitly not 2)
+
+**A card you have not turned over does not tell you what it is.** The live
+hand-strength label under the hero's seat reads straight from the hole cards
+and was not gated on the slide, so with Card Slide on it printed "Pair Of
+Kings" under two face-down cards. The peel was decorative. Withheld until the
+peel commits.
+
+**Friction (1).** SoundService gains a sustained voice - looped noise through
+a bandpass whose centre rises with the bend, gain driven by DRAG SPEED so it
+falls silent the moment the finger stops, which is what makes it read as paper
+rather than a loop. Opened silent on touch-down (so the first millimetre has
+something to modulate), ramped never stepped, and closed on pointerup, on
+pointercancel AND on unmount. Plus `playPeelLift`: one soft tick and a light
+haptic as the corner leaves the felt.
+
+**PLO (3).** Verified on PLO6, the tightest case: six cards peel together,
+each turned-up corner sits in its own visible slice, and the ranks read left
+to right. `/sim?slide=1&cards=4|5|6` is the dev knob.
+
+**Tutorial (4).** The first face-down hand a browser ever sees peels ITSELF -
+twice, a third of the way, then settles - under one line: "Slide The Corner To
+Look". The demonstration is the instruction. A real touch cancels it and takes
+over mid-frame. Two failure modes found and fixed by measuring rather than
+reasoning: React StrictMode's double-invoke made a `hasStarted` ref guarantee
+the demo NEVER played (cleanup cancelled the loop, the second run returned
+early), so the effect is idempotent and "once ever" lives in localStorage
+where it belongs; and a background tab delivers no animation frames, so the
+demo would paint nothing, never end, never mark itself seen, and leave the
+caption welded to the row - it now waits for the tab to be looked at, and
+carries a timer backstop for a tab hidden mid-demo.
+
+**Telemetry + admin (5).** `card_slide_usage` is a DAILY PER-USER ROLLUP, not
+an event log: a peel happens on most hands and this platform deals ~221k hands
+a day, so an event row each would out-write hand_history for a number only ever
+read as a ratio. The client counts in memory and flushes at most once a minute
+(and on pagehide), fire-and-forget, every failure swallowed - a metric that can
+break a poker table is a defect. RLS on with no policy; the only ways in are
+`fn_record_card_slide_usage` (clamped, can only touch auth.uid()'s own row) and
+`fn_card_slide_adoption` (AGGREGATES ONLY - it can say whether the feature
+works and can never say what one player did with their cards). Surfaced in the
+admin Analytics tab: adoption, players peeling, peels started, completed share
+(amber under 50%, which would mean the commit threshold is too far) and
+keyboard opens.
+
+**Desktop (6).** On hover - `(hover: hover) and (pointer: fine)` only, so a tap
+can never leave it stuck - the bottom-left corner turns up a few pixels. A
+dog-ear that says: this corner lifts, grab it here. Suppressed while peeling,
+still shown under reduced motion because it is meaning, not motion.
+
+**Not done, by instruction:** peeling one card at a time (Dan: "2, DO NOT DO
+THIS").
+
 ## Not shipped
 
 An opt-in river "squeeze" presentation was built first from the same brief

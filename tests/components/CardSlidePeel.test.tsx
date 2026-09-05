@@ -73,11 +73,6 @@ function renderHero(props: Record<string, unknown> = {}) {
       {...props}
     />
   );
-  // jsdom has no layout: give every squeeze box a real rectangle.
-  for (const el of Array.from(view.container.querySelectorAll('.seat__card--squeeze'))) {
-    (el as HTMLElement).getBoundingClientRect = () =>
-      ({ left: 100, top: 200, width: W, height: H, right: 150, bottom: 270 }) as DOMRect;
-  }
   const row = view.container.querySelector('.seat__cards--squeeze') as HTMLElement;
   const card = view.container.querySelector('.seat__card--squeeze') as HTMLElement;
   return { ...view, row, card };
@@ -106,9 +101,24 @@ function pointer(
 
 const progressOf = (row: HTMLElement) => Number(row.style.getPropertyValue('--peel-progress') || 0);
 
+/**
+ * jsdom has no layout, and BOTH the gesture and the one-time demo measure the
+ * card before they will run. Stubbing the prototype (rather than the rendered
+ * nodes) is what puts a rectangle in place BEFORE the mount effect reads one.
+ */
+const realRect = Element.prototype.getBoundingClientRect;
 beforeEach(() => {
+  Element.prototype.getBoundingClientRect = function (this: Element) {
+    if (this.classList?.contains('seat__card--squeeze')) {
+      return { left: 100, top: 200, width: W, height: H, right: 150, bottom: 270 } as DOMRect;
+    }
+    return realRect.call(this);
+  };
   haptics.length = 0;
   sounds.length = 0;
+  // Most suites here are about the gesture, not the one-time demo: mark it
+  // seen so the coach mark is not in the way. The tutorial suite clears it.
+  localStorage.setItem('ca_card_slide_tutorial_v1', '1');
   vi.useFakeTimers({ shouldAdvanceTime: true });
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) =>
     window.setTimeout(() => cb(performance.now()), 16)
@@ -116,6 +126,7 @@ beforeEach(() => {
   vi.stubGlobal('cancelAnimationFrame', (id: number) => window.clearTimeout(id));
 });
 afterEach(() => {
+  Element.prototype.getBoundingClientRect = realRect;
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -278,6 +289,73 @@ describe('a card you have not turned over does not tell you what it is', () => {
   it('is unaffected when Card Slide is off', () => {
     const { container } = renderHero({ handStrength: 'Pair Of Kings', cardSqueezeActive: false });
     expect(container.querySelector('.seat__strength')?.textContent).toBe('Pair Of Kings');
+  });
+});
+
+describe('the tutorial teaches the gesture once', () => {
+  it('runs on the first face-down hand and says what to do', () => {
+    localStorage.clear();
+    const { container } = renderHero();
+    expect(container.querySelector('.seat__peel-coach')?.textContent).toBe(
+      'Slide The Corner To Look'
+    );
+  });
+
+  it('never runs again once it has been seen', () => {
+    localStorage.clear();
+    const first = renderHero();
+    act(() => {
+      vi.advanceTimersByTime(6000);
+    });
+    first.unmount();
+    const { container } = renderHero();
+    expect(container.querySelector('.seat__peel-coach')).toBeNull();
+  });
+
+  it('a real touch outranks the demonstration', () => {
+    localStorage.clear();
+    const { container, card, row } = renderHero();
+    expect(container.querySelector('.seat__peel-coach')).toBeTruthy();
+    pointer(card, 'pointerdown', 40, 64);
+    expect(container.querySelector('.seat__peel-coach')).toBeNull();
+    // ...and the peel that interrupted it still works.
+    pointer(row, 'pointermove', 70, 30);
+    expect(progressOf(row)).toBeGreaterThan(0);
+  });
+
+  it('waits for a background tab to be looked at before spending its one showing', () => {
+    localStorage.clear();
+    const spy = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    try {
+      const { container, row } = renderHero();
+      expect(container.querySelector('.seat__peel-coach')).toBeNull();
+      // Nothing is left welded to the row either.
+      expect(row.hasAttribute('data-peeling')).toBe(false);
+      expect(localStorage.getItem('ca_card_slide_tutorial_v1')).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('ends even if no animation frame ever arrives', () => {
+    localStorage.clear();
+    // A tab backgrounded mid-demo stops delivering frames. Without the timer
+    // backstop the caption would stay up for the rest of the session.
+    vi.stubGlobal('requestAnimationFrame', () => 1);
+    const { container, row } = renderHero();
+    expect(container.querySelector('.seat__peel-coach')).toBeTruthy();
+    act(() => {
+      vi.advanceTimersByTime(8000);
+    });
+    expect(container.querySelector('.seat__peel-coach')).toBeNull();
+    expect(row.hasAttribute('data-peeling')).toBe(false);
+    expect(localStorage.getItem('ca_card_slide_tutorial_v1')).toBe('1');
+  });
+
+  it('does not run when Card Slide is off', () => {
+    localStorage.clear();
+    const { container } = renderHero({ cardSqueezeActive: false });
+    expect(container.querySelector('.seat__peel-coach')).toBeNull();
   });
 });
 

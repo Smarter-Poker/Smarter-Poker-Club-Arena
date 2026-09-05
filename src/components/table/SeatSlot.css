@@ -4440,3 +4440,46 @@
    src/components/table/SitOutBadge.tsx). When this comment was first written on
    2026-08-29 it claimed that countdown already existed and it did not — the
    badge was a hardcoded string for another few hours. It exists now. */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CARD SLIDE TUTORIAL — the one line above the self-peeling cards
+   ═══════════════════════════════════════════════════════════════════════════════
+   Dan 2026-09-05: "A TUTORIAL WOULD BE COOL IF ITS ENABLED." It shows once per
+   browser, above the hero's own hand, while the corner demonstrates itself.
+   Absolutely positioned so it cannot move a single pixel of the felt, and
+   pointer-events:none so it can never eat the touch it is asking for. */
+.seat__peel-coach {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(10, 14, 20, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #f3efe4;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+  z-index: 6;
+  animation: peelCoachIn calc(0.3s * var(--animation-speed, 1)) ease-out both;
+}
+
+@keyframes peelCoachIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seat__peel-coach {
+    animation: none;
+  }
+}

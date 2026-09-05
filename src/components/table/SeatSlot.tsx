@@ -50,6 +50,7 @@ const PEEL_SUIT_GLYPH: Record<string, string> = {
   c: '\u2663\uFE0E',
 };
 
+import { cardSlideTelemetry } from '../../services/CardSlideTelemetry';
 import {
   computePeel,
   flatPeel,
@@ -1660,6 +1661,49 @@ export const SeatSlot = memo(
     // unmount (showdown / all-in force-reveal), and the stale >0.55 value made
     // the NEXT hand's first bare tap reveal the cards with no gesture at all.
     const heroCardCount = player?.isHero ? (player.holeCards?.length ?? 0) : 0;
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  THE TUTORIAL — the cards teach the gesture themselves, once
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Dan 2026-09-05: "A TUTORIAL WOULD BE COOL IF ITS ENABLED."
+     *
+     * A player who turns Card Slide on is shown two face-down cards and no
+     * instruction. Tapping only bounces them, so the most likely first move
+     * teaches nothing. The first time a face-down hand appears, the corner
+     * therefore PEELS ITSELF - twice, about a third of the way, then settles -
+     * under one line of text. Nothing to dismiss and nothing to read: the
+     * demonstration IS the instruction.
+     *
+     * It runs ONCE per browser, it is cancelled the instant the player
+     * touches the cards (they already understand), and it never blocks: the
+     * real gesture interrupts it mid-frame and takes over.
+     */
+    const TUTORIAL_SEEN_KEY = 'ca_card_slide_tutorial_v1';
+    /** Bumped when a hidden tab becomes visible, to re-enter the demo effect. */
+    const [tutorialRetry, setTutorialRetry] = useState(0);
+    const [tutorialRunning, setTutorialRunning] = useState(false);
+    const tutorialRafRef = useRef<number | null>(null);
+    const tutorialTimerRef = useRef<number | null>(null);
+    const markTutorialSeen = () => {
+      try {
+        localStorage.setItem(TUTORIAL_SEEN_KEY, '1');
+      } catch {
+        /* private mode: the demo simply plays again next session */
+      }
+    };
+    const stopTutorial = (seen: boolean) => {
+      if (tutorialRafRef.current != null) cancelAnimationFrame(tutorialRafRef.current);
+      if (tutorialTimerRef.current != null) clearTimeout(tutorialTimerRef.current);
+      tutorialRafRef.current = null;
+      tutorialTimerRef.current = null;
+      const row = squeezeRowRef.current;
+      if (row) row.removeAttribute('data-peeling');
+      clearPeelVars();
+      setTutorialRunning(false);
+      if (seen) markTutorialSeen();
+    };
+
     const resetSqueeze = () => {
       setSqueezeRevealed(false);
       peelRef.current = null;
@@ -1688,6 +1732,8 @@ export const SeatSlot = memo(
     const squeezeHandlers: React.HTMLAttributes<HTMLDivElement> = {
       onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => {
         if (peelRef.current) return; // a second finger does not start a second peel
+        // The player touched the cards: they do not need to be shown.
+        if (tutorialRunning) stopTutorial(true);
         if (peelTweenRef.current != null) {
           cancelAnimationFrame(peelTweenRef.current);
           peelTweenRef.current = null;
@@ -1756,7 +1802,10 @@ export const SeatSlot = memo(
         // finger's own offset from the corner at touch-down is not a peel.
         const dx = e.clientX - drag.left - drag.fx;
         const dy = e.clientY - drag.top - drag.fy;
-        if (!drag.moved && Math.hypot(dx, dy) > 4) drag.moved = true;
+        if (!drag.moved && Math.hypot(dx, dy) > 4) {
+          drag.moved = true;
+          cardSlideTelemetry.peelStarted();
+        }
         if (!drag.moved) return;
         drag.x = drag.cx + dx;
         drag.y = drag.cy + dy;
@@ -1816,9 +1865,13 @@ export const SeatSlot = memo(
         if (current.progress >= PEEL_COMMIT) {
           // Past the point of no return: the corner flies the rest of the way
           // and the hand opens.
+          cardSlideTelemetry.peelCommitted();
           tweenPeel(drag, 1, 140, completeSqueeze);
         } else {
-          // Let go early: the corner settles back onto the felt.
+          // Let go early: the corner settles back onto the felt. The ratio of
+          // this to the line above is the only measure of whether the commit
+          // threshold is set where a hand actually wants to let go.
+          cardSlideTelemetry.peelAbandoned();
           tweenPeel(drag, 0, 260, clearPeelVars);
         }
       },
@@ -1833,10 +1886,150 @@ export const SeatSlot = memo(
       onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
+          cardSlideTelemetry.keyboardOpen();
           completeSqueeze();
         }
       },
     };
+
+    /*
+     * The demo's own gate, spelled out here rather than reusing `squeezeDown`.
+     * `squeezeDown` is computed after the empty-seat early return, and a hook
+     * that depends on it would be a hook AFTER a return - which React forbids
+     * and eslint catches (rules-of-hooks, caught on this very file). Same
+     * inputs, read one screen earlier.
+     */
+    const tutorialEligible =
+      !!cardSqueezeActive &&
+      !squeezeRevealed &&
+      !!player &&
+      player.status !== 'all_in' &&
+      !player.showCards &&
+      !isWinner &&
+      !isMucking;
+
+    // Fire the demo on the first face-down hand this browser has ever seen.
+    /*
+     * IDEMPOTENT ON PURPOSE. The first version guarded entry with a
+     * `hasStarted` ref, which React 19's StrictMode turns into a demo that
+     * never plays: mount runs the effect, the double-invoke cleanup cancels
+     * the loop, and the second run sees the ref already set and returns.
+     * Measured in the dev server - the coach mark appeared over cards that
+     * never moved. So there is no entry ref: the effect cancels whatever is
+     * running and starts again, and "once ever" is enforced where it belongs,
+     * in localStorage, which the demo writes when it FINISHES.
+     */
+    useEffect(() => {
+      if (!tutorialEligible) return;
+      let seen = true;
+      try {
+        seen = localStorage.getItem(TUTORIAL_SEEN_KEY) === '1';
+      } catch {
+        seen = false;
+      }
+      if (seen) return;
+      const row = squeezeRowRef.current;
+      const cardEl = row?.querySelector('.seat__card--squeeze') as HTMLElement | null;
+      const rect = cardEl?.getBoundingClientRect();
+      if (!row || !rect || rect.width < 1) return;
+
+      /*
+       * NOT IN A BACKGROUND TAB. requestAnimationFrame does not fire on a
+       * hidden document, so a demo started there would paint nothing, never
+       * reach its own end, and never mark itself seen - leaving the caption
+       * and `data-peeling` welded to the row for the whole session, and
+       * spending the one showing on a tab nobody was looking at. Measured in
+       * the dev server with the pane hidden: the caption appeared over cards
+       * that never moved. Wait for the tab to be looked at instead.
+       */
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        const onVisible = () => {
+          if (document.visibilityState === 'visible') {
+            document.removeEventListener('visibilitychange', onVisible);
+            // Re-enter through the same path, which re-reads every guard.
+            setTutorialRetry((n) => n + 1);
+          }
+        };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => document.removeEventListener('visibilitychange', onVisible);
+      }
+
+      if (tutorialRafRef.current != null) cancelAnimationFrame(tutorialRafRef.current);
+      setTutorialRunning(true);
+
+      // Reduced motion: the line is shown, the cards do not move. The caption
+      // still says what to do, so meaning survives (CLAUDE.md 10.6).
+      if (prefersReducedMotion()) {
+        const t = window.setTimeout(() => stopTutorial(true), 4000);
+        return () => window.clearTimeout(t);
+      }
+
+      const corner = leftCorner(rect.width, rect.height, 4, rect.height - 4);
+      const speed = getAnimationSpeed();
+      const RISE = 900 * speed;
+      const HOLD = 420 * speed;
+      const FALL = 700 * speed;
+      const GAP = 380 * speed;
+      const CYCLE = RISE + HOLD + FALL + GAP;
+      const PEAK = 0.34;
+      const t0 = performance.now();
+      row.setAttribute('data-peeling', '');
+      row.setAttribute('data-peel-corner', corner);
+
+      const step = (now: number) => {
+        // A real finger outranks the demonstration, always.
+        if (peelRef.current) {
+          stopTutorial(true);
+          return;
+        }
+        const elapsed = now - t0;
+        if (elapsed >= CYCLE * 2) {
+          stopTutorial(true);
+          return;
+        }
+        const inCycle = elapsed % CYCLE;
+        let p: number;
+        if (inCycle < RISE) {
+          const k = inCycle / RISE;
+          p = PEAK * (1 - Math.pow(1 - k, 3));
+        } else if (inCycle < RISE + HOLD) {
+          p = PEAK;
+        } else if (inCycle < RISE + HOLD + FALL) {
+          const k = (inCycle - RISE - HOLD) / FALL;
+          p = PEAK * (1 - k * k);
+        } else {
+          p = 0;
+        }
+        const [x, y] = peelPointAtProgress(rect.width, rect.height, corner, p);
+        paintPeel(computePeel({ width: rect.width, height: rect.height, corner, x, y }));
+        tutorialRafRef.current = requestAnimationFrame(step);
+      };
+      tutorialRafRef.current = requestAnimationFrame(step);
+      /*
+       * THE BACKSTOP. Same reasoning as the commit tween: the demo ends in a
+       * STATE change (the caption goes away, the row is released, the once-
+       * ever flag is written), and a state change that only happens if frames
+       * arrive is a state change that can fail to happen - a tab backgrounded
+       * mid-demo would otherwise keep the caption forever.
+       */
+      tutorialTimerRef.current = window.setTimeout(() => stopTutorial(true), CYCLE * 2 + 600);
+      return () => {
+        if (tutorialRafRef.current != null) cancelAnimationFrame(tutorialRafRef.current);
+        if (tutorialTimerRef.current != null) clearTimeout(tutorialTimerRef.current);
+        tutorialRafRef.current = null;
+        tutorialTimerRef.current = null;
+        row.removeAttribute('data-peeling');
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tutorialEligible, tutorialRetry]);
+
+    useEffect(
+      () => () => {
+        if (tutorialRafRef.current != null) cancelAnimationFrame(tutorialRafRef.current);
+        if (tutorialTimerRef.current != null) clearTimeout(tutorialTimerRef.current);
+      },
+      []
+    );
 
     // Stack glow pulse — when the stack changes by >20%.
     // Same occupant guard as the delta above, and for the same reason: a chair
@@ -2900,6 +3093,11 @@ export const SeatSlot = memo(
                   },
                 })}
           >
+            {tutorialRunning && (
+              <div className="seat__peel-coach" aria-hidden="true">
+                Slide The Corner To Look
+              </div>
+            )}
             {player.holeCards.map((card, i) => (
               /* ── Dan 2026-08-18: click a card to show it after the hand ──
                  Wrapping rather than putting the handler on HoleCard keeps the

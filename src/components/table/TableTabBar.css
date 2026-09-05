@@ -643,10 +643,25 @@
      Only the active pill shows the X on a touch device (there is no hover), so
      this costs exactly one pill — and it is the one table whose pot is already
      printed across the felt in front of the player. */
+  /* THE 26px RESERVE IS GONE (Dan 2026-09-05: "THE ACTION PILL SHOULD NEVER
+     ABBRIEVATE LO.... IT NEEDS TO SAY Lobby SPELLED OUT"). Everything above
+     this rule describes a reserve held for the inline × close disc — and THAT ×
+     WAS DELETED ON 2026-08-26 (TableTabBar.tsx:479 and :866; the note further
+     down this file records it). The padding outlived the thing it was clearing,
+     and went on charging the label 26px of a pill only 55.25px wide.
+
+       Pill cap at 375px  = calc((100vw - 154px) / 4) = 55.25px
+       With the reserve   = 55.25 - 26 - 2 (borders)  = 27.25px for text
+       "Lobby" at 10px/800 Inter                      = ~30px  -> "Lo..."
+       At the base 3px padding                        = 47.25px, and it fits.
+
+     "PLO5", the widest game code at 26.13px, still fits with room over. Nothing
+     else in the 375px budget moves - min-width, max-width, borders and the gap
+     are untouched - so four pills still sum to 227 of the 231px available, and
+     min-width 55px keeps guaranteeing the code its own width below ~330px.
+     Do not reintroduce this padding unless an inline × comes back with it. */
   .table-tab-bar__tab--active:not(.table-tab-bar__tab--cards) {
     min-width: 55px;
-    padding-left: 13px;
-    padding-right: 13px;
   }
 
   .table-tab-bar__tab-sub {

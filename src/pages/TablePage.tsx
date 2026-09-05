@@ -4291,8 +4291,51 @@ export default function TablePage({
    * This is now ONE function, it clears the SEAT as well as the claim, and it
    * commits an object identity every time so the render cannot be skipped.
    */
+  /**
+   * ── A SEAT THIS DEVICE HAS ALREADY LEFT ──────────────────────────────────
+   *
+   * `left_at` is stamped only when the cash-out lands. Between the leave and
+   * settlement the row is still live, still `left_at IS NULL`, and the engine
+   * still carries the player in its roster - so EVERY path that claims a seat
+   * will re-adopt one the player has left:
+   *
+   *   - the mount restore reads the row and sets `heroSeat`
+   *   - the players[]/heroSeat invariant finds `p.id === userId` and sets it
+   *     straight back, one render later - this is what defeated the first
+   *     attempt at this fix
+   *   - the GAME_START resync recomputes it from the engine roster
+   *
+   * `heroSeat > 0` is the single predicate behind the fabricated "0.00 /
+   * SITTING OUT" hero and the "Seat Reserved, You'll Be Dealt In Next Hand"
+   * footer, which is exactly the felt Dan photographed on his phone after
+   * leaving the game on his desktop (2026-09-05).
+   *
+   * So the answer is not another guard at one of those sites; it is one fact
+   * all of them consult. Set when we observe our own row leaving, or when a
+   * seat_left names us; CLEARED only by deliberately taking a seat again, so
+   * it can never lock a player out of a seat they have just bought.
+   *
+   * DECLARED HERE, above applySeatRemoved, because that is its first reader and
+   * tests/no-tdz-in-table-route.law.test.ts does not allow a name to be read
+   * before its declaration on this route.
+   */
+  const leftSeatPendingRef = useRef(false);
+
   const applySeatRemoved = useCallback(
-    (reason?: string) => {
+    /* `announce` separates the two halves of this function, which used to be
+       welded together by the caller's `if (reason)` gate. Clearing the seat is
+       always right; SAYING something about it is only right when the player did
+       not ask for it. A voluntary leave seen from the player's OTHER device
+       must clear the seat (Dan 2026-09-05) and must not claim they "were
+       removed" — they left. Every existing caller keeps announcing, because
+       announcing is what they were doing before. */
+    (reason?: string, opts?: { announce?: boolean }) => {
+      const announce = opts?.announce !== false;
+      /* The seat is gone as far as this device is concerned. Latch it, or the
+         very next engine snapshot - which still carries this player until
+         settlement - walks it back in through the players[]/heroSeat
+         invariant. Cleared only by taking a seat again. */
+      leftSeatPendingRef.current = true;
       const heroId = String(userId ?? '');
       heroSeatRef.current = 0;
       sittingOutIdsRef.current.delete(heroId);
@@ -4313,7 +4356,7 @@ export default function TablePage({
       /* The notice, and the flag ONLY once it has actually gone out. It used to
          be set first, so any drop — a toast provider not yet mounted, a race on
          teardown — burned the one-shot and silenced the OTHER path too. */
-      if (!bootNoticeShownRef.current) {
+      if (announce && !bootNoticeShownRef.current) {
         const say = heartbeatToastRef.current?.info;
         if (typeof say === 'function') {
           const mapped = reason ? BOOT_EXPLANATIONS[reason] : undefined;
@@ -12532,7 +12575,7 @@ export default function TablePage({
         const { data: existingSeats, error: seatsRestoreErr } = await supabase
           .from('table_seats')
           .select(
-            'seat_number, user_id, stack, status, horse_id, is_sitting_out, time_bank_remaining, time_bank_uses_remaining'
+            'seat_number, user_id, stack, status, horse_id, is_sitting_out, leave_pending, time_bank_remaining, time_bank_uses_remaining'
           )
           .eq('table_id', table.id)
           .is('left_at', null);
@@ -12687,13 +12730,36 @@ export default function TablePage({
               // seat is cleaned up by the engine's sit-out sweep.
               if (isHero) {
                 const heroStack = Number(seat.stack || 0);
-                resolvedHeroSeat = seat.seat_number;
-                if (heroStack <= 0) {
-                  console.warn(
+                /* A SEAT ON ITS WAY OUT IS NOT A SEAT YOU HOLD (Dan 2026-09-05).
+                   `left_at` is stamped only when the cash-out lands, so a seat
+                   the player has already left — one carrying `leave_pending`
+                   while its hand finishes — still reads as live here. Adopting
+                   it set `heroSeat`, and `heroSeat > 0` is the single predicate
+                   behind the fabricated "0.00 / SITTING OUT" hero and the
+                   "Seat Reserved, You'll Be Dealt In Next Hand" footer. That is
+                   the whole of what Dan's phone was showing after he left the
+                   game on his desktop. The row is still rendered — the seat IS
+                   occupied until settlement — it is simply no longer treated as
+                   this device's own seat. */
+                if ((seat as { leave_pending?: boolean }).leave_pending) {
+                  /* Record it, do not merely skip it. Skipping only holds until
+                     the next render: the players[]/heroSeat invariant would find
+                     this same row and adopt the seat straight back. */
+                  leftSeatPendingRef.current = true;
+                  console.debug(
                     '[Seat] Hero seat at',
                     seat.seat_number,
-                    'has stack=0 - bust-rebuy flow will prompt rebuy or clean up on decline'
+                    'is leave_pending - not claiming it; the leave is already in flight'
                   );
+                } else {
+                  resolvedHeroSeat = seat.seat_number;
+                  if (heroStack <= 0) {
+                    console.warn(
+                      '[Seat] Hero seat at',
+                      seat.seat_number,
+                      'has stack=0 - bust-rebuy flow will prompt rebuy or clean up on decline'
+                    );
+                  }
                 }
               }
             }
@@ -13479,6 +13545,12 @@ export default function TablePage({
   // (seat stolen, snapshot without hero), so this can never fight them.
   useEffect(() => {
     if (!userId || userId === 'guest') return;
+    /* A SEAT WE HAVE ALREADY LEFT IS NOT A DISAGREEMENT TO HEAL (2026-09-05).
+       The row survives until settlement stamps `left_at`, and the engine keeps
+       the player in its roster until the same moment, so `players[]` legally
+       still holds a row with this user's id. Adopting it here is what undid the
+       mount-time guard and put "Seat Reserved" back on Dan's phone. */
+    if (leftSeatPendingRef.current) return;
     const idx = tableState.players.findIndex((p) => p && p.id === userId);
     if (idx < 0) return; // not seated — nothing to assert
     const seatNum = idx + 1;
@@ -13975,6 +14047,10 @@ export default function TablePage({
               (sp: { seat?: number; user_id?: string }) =>
                 sp?.seat === claimed && sp.user_id && sp.user_id !== userId
             );
+          /* Same rule as the invariant above: the engine's roster still names a
+             player who has left but not yet settled, so a resync must not hand
+             them back the seat (2026-09-05). */
+          if (leftSeatPendingRef.current) syncedHeroSeat = 0;
           if (syncedHeroSeat > 0) heroSeatRef.current = syncedHeroSeat;
           else if (seatStolen) {
             heroSeatRef.current = 0;
@@ -14019,7 +14095,13 @@ export default function TablePage({
             // AUDIT 2026-08-19: only surrender the seat on proof it was taken
             // (see the heroSeatRef note above) — a hero waiting to be dealt in
             // is deliberately absent from this hand-scoped player list.
-            heroSeat: syncedHeroSeat > 0 ? syncedHeroSeat : seatStolen ? 0 : prev.heroSeat,
+            heroSeat: leftSeatPendingRef.current
+              ? 0
+              : syncedHeroSeat > 0
+                ? syncedHeroSeat
+                : seatStolen
+                  ? 0
+                  : prev.heroSeat,
           };
         });
         break;
@@ -16637,15 +16719,31 @@ export default function TablePage({
         // being told is the part that reads as a bug even when the removal
         // was correct.
         //
-        // A voluntary leave carries no `reason` (the player knows why they
-        // left), so this only ever speaks for removals the player did not ask
-        // for, and only to the player it happened to.
+        // THE REASON GATE WAS THE BUG (Dan 2026-09-05). This used to read "a
+        // voluntary leave carries no `reason` (the player knows why they left),
+        // so this only ever speaks for removals the player did not ask for" —
+        // and that was true of the player's OWN device, which had already
+        // navigated to the lobby. It was false of every OTHER device signed in
+        // to the same account. Dan left a cash game on desktop; his phone,
+        // holding the same seat, never received a clearing signal because the
+        // event it needed arrived without a `reason` and was dropped here. The
+        // phone went on painting the last dealt hand, then a fabricated hero at
+        // "0.00" with a SITTING OUT badge and "Seat Reserved, You'll Be Dealt In
+        // Next Hand" over a seat he had already left.
+        //
+        // The seat is now cleared for ANY seat_left addressed to this user. The
+        // `reason` keeps its original job and only that job: deciding whether
+        // there is anything to TELL them. A voluntary leave needs no
+        // explanation, so it clears the seat silently.
         {
           const d = evt.data as { user_id?: string; reason?: string };
           const reason = d?.reason;
-          if (reason && userId && String(d?.user_id) === String(userId)) {
-            // Remembered for the poll fallback — see evictionReasonRef.
-            evictionReasonRef.current = reason;
+          if (userId && String(d?.user_id) === String(userId)) {
+            /* Remembered for the poll fallback — see evictionReasonRef. Only a
+               REAL reason is stored: now that this block runs for voluntary
+               leaves too (which carry none), assigning unconditionally would
+               wipe the reason a genuine eviction had just left here. */
+            if (reason) evictionReasonRef.current = reason;
 
             /* TELLING THEM IS HALF OF IT — THE SCREEN HAS TO AGREE (2026-08-28).
              *
@@ -16661,7 +16759,10 @@ export default function TablePage({
              * `heroSeat > 0` or on this id being in `sittingOutIdsRef`. The
              * ten-second seat read does the same thing for anyone who never
              * received this event; both are needed and they dedupe. */
-            applySeatRemoved(reason);
+            /* No reason means the player left of their own accord, so the seat
+               clears without a word. A reason means something happened TO them
+               and they are told what. */
+            applySeatRemoved(reason, { announce: Boolean(reason) });
           }
 
           /* ── THE TABLE LOSES THE BADGE TOO (2026-08-29) ──────────────────
@@ -17582,6 +17683,8 @@ export default function TablePage({
         // Paid. The seat is ours — paint it and close the sheet.
         const mySeat = res.seat_number ?? seatNumber;
         heroSeatRef.current = mySeat;
+        // Taking a seat is the one thing that clears the left-seat latch.
+        leftSeatPendingRef.current = false;
         seatAcquiredAtRef.current = Date.now();
         // A new seat is a clean slate: a later removal must be announced again.
         bootNoticeShownRef.current = false;
@@ -18234,7 +18337,7 @@ export default function TablePage({
       try {
         const { data, error } = await supabase
           .from('table_seats')
-          .select('user_id, is_sitting_out, sit_out_at')
+          .select('user_id, is_sitting_out, sit_out_at, leave_pending')
           .eq('table_id', tableId)
           .is('left_at', null);
         if (error || cancelled || !data) return;
@@ -18242,7 +18345,17 @@ export default function TablePage({
           user_id: string;
           is_sitting_out: boolean | null;
           sit_out_at: string | null;
+          leave_pending: boolean | null;
         }>;
+        /* `leave_pending` is read here for the same reason the mount restore
+           reads it: between the leave and settlement the row is still live and
+           `left_at IS NULL`, so this poll cannot otherwise tell a seat that is
+           LEAVING from one that is merely sitting out. Without it the engine's
+           new `is_sitting_out: true` on a departing seat paints the player a
+           full "You Are Sitting Out / I'm Back" bar with a five-minute eviction
+           countdown, on a seat they already left (Dan 2026-09-05). */
+        const heroRow = userId ? rows.find((r) => String(r.user_id) === String(userId)) : undefined;
+        if (heroRow?.leave_pending) leftSeatPendingRef.current = true;
         const stillSeated = new Set(rows.map((r) => String(r.user_id)).filter(Boolean));
 
         /**
@@ -18326,7 +18439,14 @@ export default function TablePage({
                of six lines and they had already drifted: this one carried no
                per-reason wording, so an eviction that arrived by poll rather
                than by socket said only the generic sentence. */
-            applySeatRemoved(evictionReasonRef.current);
+            /* …but it must not ANNOUNCE a removal that was a departure. If we
+               had already seen our own row carrying `leave_pending`, this seat
+               disappearing is our own completed leave, and "You Were Removed
+               From The Table" is simply untrue (Dan 2026-09-05). A real
+               eviction never sets that latch, so it still speaks. */
+            applySeatRemoved(evictionReasonRef.current, {
+              announce: !leftSeatPendingRef.current,
+            });
           }
         }
 
@@ -18343,7 +18463,12 @@ export default function TablePage({
             row.user_id === userId &&
             seatAcquiredAtRef.current != null &&
             Date.now() - seatAcquiredAtRef.current < 15_000;
-          if (row.is_sitting_out && !heroFreshJoin) sittingOutIdsRef.current.add(row.user_id);
+          /* A seat on its way out is not "sitting out" - the player left, and
+             telling them they are sitting out (with an I'm Back button and an
+             eviction clock) over a seat they left is the same false felt this
+             whole fix is about. */
+          if (row.is_sitting_out && !heroFreshJoin && !row.leave_pending)
+            sittingOutIdsRef.current.add(row.user_id);
           else sittingOutIdsRef.current.delete(row.user_id);
         }
 
@@ -23735,6 +23860,8 @@ export default function TablePage({
               return { ...prev, players: updatedPlayers, heroSeat: optimisticSeat };
             });
             heroSeatRef.current = optimisticSeat;
+            // Taking a seat is the one thing that clears the left-seat latch.
+            leftSeatPendingRef.current = false;
             setPendingSeat(null);
             seatedOptimistically = true;
           }
@@ -23861,6 +23988,8 @@ export default function TablePage({
                 // The seat + stack were already painted above, before this RPC
                 // was even sent. Nothing to do here but confirm the ref.
                 heroSeatRef.current = selectedSeat;
+                // Taking a seat is the one thing that clears the left-seat latch.
+                leftSeatPendingRef.current = false;
                 seatAcquiredAtRef.current = Date.now();
                 // A new seat is a clean slate: a later removal must be announced again.
                 bootNoticeShownRef.current = false;

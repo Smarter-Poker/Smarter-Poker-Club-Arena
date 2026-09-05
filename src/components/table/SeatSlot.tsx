@@ -3059,7 +3059,13 @@ export const SeatSlot = memo(
          * evaluates it — see TablePage's `heroHandStrength` — so the arithmetic
          * runs once per board change rather than once per seat render.
          */}
-        {player.isHero && handStrength && !(isWinner && winningHandName) && (
+        {/* CARD SLIDE 2026-09-05: ...and never while the hero's own cards are
+            still face down. This label reads "Pair Of Kings" straight from
+            the hole cards, so with Card Slide on it announced the hand the
+            player had not looked at yet - the peel became decorative and
+            nobody ever had to use it. A card you have not turned over does
+            not tell you what it is. */}
+        {player.isHero && handStrength && !squeezeDown && !(isWinner && winningHandName) && (
           <div className="seat__strength" aria-live="polite">
             {handStrength}
           </div>

@@ -256,6 +256,31 @@ describe('there is no click to reveal', () => {
   });
 });
 
+describe('a card you have not turned over does not tell you what it is', () => {
+  it('the live hand-strength label is withheld while the cards are face down', () => {
+    const { container } = renderHero({ handStrength: 'Pair Of Kings' });
+    expect(container.querySelector('.seat__strength')).toBeNull();
+    expect(container.textContent).not.toContain('Pair Of Kings');
+  });
+
+  it('and appears the moment the peel commits', () => {
+    const { row, card, container } = renderHero({ handStrength: 'Pair Of Kings' });
+    pointer(card, 'pointerdown', 40, 64);
+    pointer(row, 'pointermove', 70, 30);
+    pointer(row, 'pointermove', 90, 4);
+    pointer(row, 'pointerup', 90, 4);
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    expect(container.querySelector('.seat__strength')?.textContent).toBe('Pair Of Kings');
+  });
+
+  it('is unaffected when Card Slide is off', () => {
+    const { container } = renderHero({ handStrength: 'Pair Of Kings', cardSqueezeActive: false });
+    expect(container.querySelector('.seat__strength')?.textContent).toBe('Pair Of Kings');
+  });
+});
+
 describe('the markup', () => {
   it('carries face, cover, flap and both shade bands per card', () => {
     const { container } = renderHero();

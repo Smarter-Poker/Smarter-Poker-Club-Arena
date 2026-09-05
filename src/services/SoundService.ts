@@ -271,6 +271,8 @@ class SoundService {
   // playPotCollect bypasses the rank window (it accompanies the win fanfare
   // rather than competing with it) and dedupes itself with this stamp instead.
   private lastPotCollectMs = 0;
+  /** Per-cue clock for the spin reveal. See shouldPlaySpinCue. */
+  private lastSpinCueMs: Record<string, number> = {};
 
   /**
    * ═══════════════════════════════════════════════════════════════════════
@@ -570,6 +572,45 @@ class SoundService {
     return true;
   }
 
+  /* THE REVEAL IS A SEQUENCE, NOT A COMPETITOR (2026-09-05) ────────────────
+     The four spin cues went through `shouldPlay`, which is a winner-takes-the
+     frame gate: `rank <= currentFramePriority` rejects, and the winner holds
+     the frame for 50ms. That is right for a felt where a fold and an all in
+     land together and only one of them should be heard. It is wrong for a
+     reveal, because these four are consecutive movements of ONE animation and
+     10.6 owes every one of them, for its full duration, every time.
+
+     Three ways the gate silenced them, all reachable in production:
+
+       1. A CLIENT THAT ARRIVES MID REVEAL. `at()` in SpinWheel clamps every
+          beat already in the past to 0, so start, countdown, ticking and
+          result are scheduled into the SAME frame. playSpinStart (big_win,
+          95) went first and took the frame; the countdown and the ticking
+          (ui, 10) were rejected, and playSpinMultiplierResult was rejected
+          too, because it is also 95 and the comparison is `<=`. A late joiner
+          heard the lever and then nothing at all, including the result.
+       2. TWO `ui` CUES IN ONE WINDOW. `ui` is rank 10 and the gate is `<=`,
+          so the SECOND ui cue inside any 50ms window is rejected always. Any
+          unrelated ui cue landing beside a countdown light took the light.
+       3. THE WHEEL SILENCED THE TABLE. playSpinStart parked the frame at 95
+          for 50ms, so a deal, a chip or a fold arriving beside the lever was
+          eaten by the wheel.
+
+     `playPotCollect` hit exactly this and the answer recorded there is the
+     answer here: a companion cue leaves the rank window and dedupes on its
+     own clock (`tests/animations-always-play.law.test.ts` pins that it does).
+     These four now do the same. They suppress nothing and nothing suppresses
+     them; the only guard left is a short per cue throttle, which exists for a
+     double fire from a re-render and nothing else. It is keyed per cue, so
+     one movement of the reveal can never eat another. */
+  private shouldPlaySpinCue(cue: string, minGapMs: number): boolean {
+    if (!this.enabled || !isSoundAllowed()) return false;
+    const nowMs = Date.now();
+    if (nowMs - (this.lastSpinCueMs[cue] ?? 0) < minGapMs) return false;
+    this.lastSpinCueMs[cue] = nowMs;
+    return true;
+  }
+
   /** Get the priority rank for a sound type (for external callers) */
   getSoundPriority(priority: SoundPriority): number {
     return SOUND_PRIORITY_RANK[priority] ?? 0;
@@ -828,123 +869,19 @@ class SoundService {
     haptic.light();
   }
 
-  /**
-   * ═══════════════════════════════════════════════════════════════════════════
-   *  CARD SLIDE — the friction of a card bending under a finger
-   * ═══════════════════════════════════════════════════════════════════════════
-   *
-   * Dan 2026-09-05: a sound while you peel, not only when it opens.
-   *
-   * Every other cue in this file is a ONE-SHOT: it is fired and it decays on
-   * the AudioContext clock. Friction is not an event, it is a CONTINUOUS
-   * consequence of movement, and the thing that makes it read as paper rather
-   * than as a noise loop is that IT STOPS WHEN THE FINGER STOPS. So this is a
-   * sustained voice with a live gain: `startPeelFriction` opens it,
-   * `updatePeelFriction` is fed the drag speed on every pointer move, and
-   * `stopPeelFriction` closes it.
-   *
-   * The voice: looped white noise -> bandpass -> gain. The bandpass centre
-   * rises with peel progress (a card bent further is under more tension and
-   * speaks brighter), and Q stays low so it is breath rather than a whistle.
-   * Everything is ramped, never stepped: a `setValueAtTime` per pointer move
-   * is a staircase, and a staircase in a gain is heard as crackle.
-   *
-   * SAFETY. One voice at a time (`peelVoice`), `start` closes any voice still
-   * open, `stop` is idempotent, and the caller stops it on pointerup, on
-   * pointercancel and on unmount - three paths, because a noise loop that
-   * outlives the gesture is the worst bug this file could ship.
-   */
-  private peelVoice: {
-    source: AudioBufferSourceNode;
-    band: BiquadFilterNode;
-    gain: GainNode;
-  } | null = null;
+  /* ── THE PEEL IS SILENT ─────────────────────────────────────────────────
+     Dan 2026-09-05: "REMOVE THE SOUND EFFECT WHEN YOU ACTUALLY PEEL YOUR CARD,
+     ITS NOT NEEDED."
 
-  startPeelFriction() {
-    // NOT through shouldPlay(): that claims the 50ms priority window, and a
-    // sustained voice claiming it on every drag frame would mute the deal,
-    // the chips and the turn alert for as long as a finger was down.
-    if (!this.isEnabled() || !this.ensureContext() || !this.ctx) return;
-    this.stopPeelFriction();
-    const ctx = this.ctx;
-    const t = ctx.currentTime;
+     `startPeelFriction` / `updatePeelFriction` / `stopPeelFriction` (a sustained
+     looped-noise -> bandpass -> gain voice fed the drag speed on every pointer
+     move) and `playPeelLift` (a paper tick as the corner left the felt) lived
+     here and are DELETED, not left unreferenced: four public methods on a
+     singleton that nothing calls are four things the next agent has to prove
+     are dead before touching this file. The peel keeps its haptics.
 
-    // Two seconds of noise, looped. Long enough that the loop point is not
-    // heard as a pulse inside a gesture that rarely lasts one second.
-    const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 2), ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.loop = true;
-
-    const band = ctx.createBiquadFilter();
-    band.type = 'bandpass';
-    band.frequency.setValueAtTime(900, t);
-    band.Q.value = 0.9;
-
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0, t);
-
-    source.connect(band);
-    band.connect(gain);
-    gain.connect(this.out);
-    source.start(t);
-    this.peelVoice = { source, band, gain };
-  }
-
-  /**
-   * @param progress 0..1 - how far the corner has been peeled
-   * @param speed    card-widths per second, roughly; 0 = the finger is still
-   */
-  updatePeelFriction(progress: number, speed: number) {
-    const voice = this.peelVoice;
-    if (!voice || !this.ctx) return;
-    const t = this.ctx.currentTime;
-    const p = Math.max(0, Math.min(1, progress));
-    // Paper speaks only while it moves. Ceiling is deliberately low: this
-    // sound sits under every other cue at the table and plays on most hands.
-    const target = Math.min(0.055, speed * 0.03) * (0.45 + p * 0.55);
-    // Fast up (the finger's own movement), slower down (the card settling).
-    voice.gain.gain.cancelScheduledValues(t);
-    voice.gain.gain.setTargetAtTime(target, t, target > 0.004 ? 0.012 : 0.05);
-    // 900Hz flat -> 2.4kHz at full bend.
-    voice.band.frequency.cancelScheduledValues(t);
-    voice.band.frequency.setTargetAtTime(900 + p * 1500, t, 0.05);
-  }
-
-  stopPeelFriction() {
-    const voice = this.peelVoice;
-    if (!voice) return;
-    this.peelVoice = null;
-    if (!this.ctx) return;
-    const t = this.ctx.currentTime;
-    try {
-      voice.gain.gain.cancelScheduledValues(t);
-      voice.gain.gain.setTargetAtTime(0, t, 0.03);
-      voice.source.stop(t + 0.2);
-      voice.source.onended = () => {
-        voice.source.disconnect();
-        voice.band.disconnect();
-        voice.gain.disconnect();
-      };
-    } catch {
-      // Already stopped, or a context torn down under us. Nothing to release
-      // that garbage collection will not take.
-    }
-  }
-
-  /**
-   * The moment the corner leaves the felt: one soft paper tick. Distinct from
-   * playCardSqueeze, which is the card snapping fully open at the end.
-   */
-  playPeelLift() {
-    if (!this.shouldPlay('deal', 'action') || !this.ensureContext()) return;
-    const t = this.ctx!.currentTime;
-    this.createNoiseBurst(t, 0.07, 0.05, 2600);
-    haptic.light();
-  }
+     `playCardSqueeze` - the card snapping fully open at the end of a committed
+     peel - is a different cue and is still here and still fires. */
 
   /**
    * Dealer button move — one very soft felt 'tock' as the puck lands on the
@@ -2329,7 +2266,7 @@ class SoundService {
    * the whole first hand.
    */
   playSpinStart() {
-    if (!this.shouldPlay('big_win', 'event') || !this.ensureContext()) return;
+    if (!this.shouldPlaySpinCue('start', 250) || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // The lever: a dry mechanical thunk, no tail.
@@ -2380,7 +2317,8 @@ class SoundService {
    * engine blips underneath each one.
    */
   playSpinCountdownLight(step: number) {
-    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
+    // Keyed by step: three lights are three cues, never each other's duplicate.
+    if (!this.shouldPlaySpinCue(`countdown:${step}`, 250) || !this.ensureContext()) return;
     const f = [330, 392, 784][Math.max(0, Math.min(2, Math.floor(step)))];
     this.playTone(f, 0.22, 0.13, 'square', 0);
     this.playTone(f * 1.5, 0.16, 0.06, 'triangle', 0.01);
@@ -2436,7 +2374,7 @@ class SoundService {
    * progress: a peg struck by a slowing wheel is a heavier, louder knock.
    */
   playSpinTicking(durationMs: number, stepOffsetsMs?: number[]) {
-    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
+    if (!this.shouldPlaySpinCue('tick', 400) || !this.ensureContext()) return;
     const t0 = this.ctx!.currentTime;
     const dur = Math.max(0.4, durationMs / 1000);
 
@@ -2542,7 +2480,7 @@ class SoundService {
    * lesser noise teaches players that most of the format is a disappointment.
    */
   playSpinMultiplierResult(multiplier: number) {
-    if (!this.shouldPlay('big_win', 'event') || !this.ensureContext()) return;
+    if (!this.shouldPlaySpinCue('result', 400) || !this.ensureContext()) return;
     const ctx = this.ctx!;
     const t = ctx.currentTime;
 

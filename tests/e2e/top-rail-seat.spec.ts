@@ -58,6 +58,40 @@ function readTopCentreY(): number {
 
 const TOP_CENTRE_Y = readTopCentreY();
 
+/**
+ * The 9-max ring's TOP-CAP y, read the same way.
+ *
+ * Added 2026-09-05 because this spec had been measuring a pairing that ships
+ * nowhere. `TOP_CENTRE_Y` comes from `{ x: 50, y: 5 }`, which only exists on
+ * the rings of six seats or fewer - and since the canvas and the avatar cap
+ * became per-ring, those rings draw on a 960-unit canvas with a 56px cap,
+ * while 7/8/9-max draw at y 6 on 1000 with a 76px cap. Testing y 5 against
+ * the full-canvas cap combined the tightest seat position with the largest
+ * avatar, a combination the app cannot produce, and failed.
+ *
+ * Both real pairings are measured below instead.
+ */
+function readTopCapY(): number {
+  for (const rel of RING_SOURCES) {
+    const full = path.join(process.cwd(), rel);
+    if (!fs.existsSync(full)) continue;
+    const src = fs.readFileSync(full, 'utf8');
+    const m = /\{\s*x:\s*27,\s*y:\s*([\d.]+)\s*\}[^\n]*top-left/i.exec(src);
+    if (m) return Number(m[1]);
+  }
+  throw new Error(
+    'the 9-max top-cap seat position was not found in any of: ' +
+      RING_SOURCES.join(', ') +
+      ' - the seat rings moved again and this spec must be pointed at them.'
+  );
+}
+
+const TOP_CAP_Y = readTopCapY();
+
+/** The two pairings the app actually ships. Canvas heights: TablePage.css. */
+const SMALL_RING = { y: TOP_CENTRE_Y, canvas: 960, seats: 6, cap: 56 } as const;
+const FULL_RING = { y: TOP_CAP_Y, canvas: 1000, seats: 9, cap: 76 } as const;
+
 const SCALER_H = 1000;
 const FELT_TOP_PCT = 8.9;
 const RAIL_PCT = 8.5;
@@ -87,7 +121,7 @@ const harness = `
        proportional --seat-avatar-size (#1650) resolves from its 360px
        fallback and every full-size assertion below measures a felt that
        never ships at this scaler size. */
-    .table-scaler { position: relative; width: 605px; height: ${SCALER_H}px; margin: 0 auto; --table-w: 605px; }
+    .table-scaler { position: relative; width: 605px; height: var(--harness-h, ${SCALER_H}px); margin: 0 auto; --table-w: 605px; }
     .table-felt { position: absolute; inset: 0; }
     .table-surface { position: absolute; left: 13.3%; top: ${FELT_TOP_PCT}%;
                      width: 73.2%; height: 80.3%; z-index: 1; }
@@ -96,12 +130,27 @@ const harness = `
     .seat__info { width: 96px; height: 34px; background: #222; }
   </style>`;
 
-const page = (topPct: number, extraClass: string) => `
-  ${harness}<style>${seatCss}</style>
+/**
+ * `seats` puts the real `.table-page[data-seats=N]` ancestor around the scaler,
+ * because since 2026-09-05 that attribute is what selects the top row's avatar
+ * cap. Omit it to exercise the full-canvas rule directly.
+ */
+const page = (
+  topPct: number,
+  extraClass: string,
+  opts: { canvas?: number; seats?: number } = {}
+) => {
+  const canvas = opts.canvas ?? SCALER_H;
+  const open = opts.seats ? `<div class="table-page" data-seats="${opts.seats}">` : '';
+  const close = opts.seats ? '</div>' : '';
+  return `${harness}<style>:root { --harness-h: ${canvas}px; }</style><style>${seatCss}</style>
+  ${open}
   <div class="table-scaler">
     <div class="table-felt"><div class="table-surface"></div></div>
     ${seat(topPct, extraClass)}
-  </div>`;
+  </div>
+  ${close}`;
+};
 
 async function measure(p: import('@playwright/test').Page) {
   return p.evaluate(() => {
@@ -125,33 +174,67 @@ test('the shipped top-centre seat y is the one this spec measures', () => {
   expect(Number.isFinite(TOP_CENTRE_Y)).toBe(true);
 });
 
-test('the player box straddles the rail band', async ({ page: p }) => {
-  await p.setContent(page(TOP_CENTRE_Y, 'seat-wrapper--top'));
-  const m = await measure(p);
-  expect(m.boxTopPct).toBeLessThanOrEqual(RAIL_PCT);
-  expect(m.boxBottomPct).toBeGreaterThanOrEqual(RAIL_PCT);
-});
+/* ─────────────────────────────────────────────────────────────────────────
+   Every beat below runs against BOTH shipped pairings. Before 2026-09-05 they
+   ran against one invented pairing - the small ring's y on the full ring's
+   canvas and cap - and when the cap became per-canvas that combination put
+   the bust art inside the banner and failed, describing a table nobody can
+   open. A guard that measures an impossible layout protects nothing.
+   ───────────────────────────────────────────────────────────────────────── */
+const RINGS = [
+  {
+    label: `small ring (<=6 seats, y ${SMALL_RING.y}, canvas ${SMALL_RING.canvas})`,
+    ...SMALL_RING,
+  },
+  { label: `full ring (7-9 seats, y ${FULL_RING.y}, canvas ${FULL_RING.canvas})`, ...FULL_RING },
+];
 
-test('the box is not stranded on the felt', async ({ page: p }) => {
-  await p.setContent(page(TOP_CENTRE_Y, 'seat-wrapper--top'));
-  const m = await measure(p);
-  expect(m.boxTopPct).toBeLessThan(FELT_TOP_PCT);
-});
+for (const ring of RINGS) {
+  const content = () =>
+    page(ring.y, 'seat-wrapper--top', { canvas: ring.canvas, seats: ring.seats });
 
-test('the whole seat, bust art included, stays inside the table canvas', async ({ page: p }) => {
-  await p.setContent(page(TOP_CENTRE_Y, 'seat-wrapper--top'));
-  const m = await measure(p);
-  expect(m.artTopPct).toBeGreaterThanOrEqual(0);
-});
+  test(`${ring.label}: the player box straddles the rail band`, async ({ page: p }) => {
+    await p.setContent(content());
+    const m = await measure(p);
+    expect(m.boxTopPct).toBeLessThanOrEqual(RAIL_PCT);
+    expect(m.boxBottomPct).toBeGreaterThanOrEqual(RAIL_PCT);
+  });
 
-test('the top-centre avatar is the compact size', async ({ page: p }) => {
-  await p.setContent(page(TOP_CENTRE_Y, 'seat-wrapper--top'));
-  expect((await measure(p)).avatarPx).toBe(56);
-});
+  test(`${ring.label}: the box is not stranded on the felt`, async ({ page: p }) => {
+    await p.setContent(content());
+    expect((await measure(p)).boxTopPct).toBeLessThan(FELT_TOP_PCT);
+  });
+
+  test(`${ring.label}: the whole seat, bust art included, stays inside the canvas`, async ({
+    page: p,
+  }) => {
+    await p.setContent(content());
+    const m = await measure(p);
+    /* Two pixels, not zero. Measured clearances at 605px wide are 2.2px on the
+       small ring and 3.9px on the full one; a bare `>= 0` would call 0.2px
+       fine, and 0.2px is a rounding error away from the 2026-08-19 bug this
+       whole rule exists to prevent. */
+    expect(m.artTopPct * (ring.canvas / 100)).toBeGreaterThanOrEqual(2);
+  });
+
+  test(`${ring.label}: the top avatar is capped at ${ring.cap}px`, async ({ page: p }) => {
+    await p.setContent(content());
+    /* The cap belongs to the CANVAS. 76px on the full ring is a 36% larger
+       avatar than the flat 56 it replaced (that number was two-thirds of a
+       flat 84px slot, and the slot became proportional while the cap did not,
+       so a 720px table was halving its top row). The same 76 on the short
+       canvas measures 8.1px INSIDE the banner, which is why the small rings
+       keep 56. Both are measured, not reasoned. */
+    expect((await measure(p)).avatarPx).toBe(ring.cap);
+  });
+}
 
 test('CONTROL: a full-size seat at this height would leave the canvas', async ({ page: p }) => {
   // Proves the compact treatment is doing real work, not decorating a fix.
-  await p.setContent(page(TOP_CENTRE_Y, ''));
+  // No `seat-wrapper--top`, so no cap at all - the proportional slot in full.
+  await p.setContent(
+    page(SMALL_RING.y, '', { canvas: SMALL_RING.canvas, seats: SMALL_RING.seats })
+  );
   const m = await measure(p);
   // Full-size means the proportional law's answer, not the retired 84px rung.
   expect(Math.abs(m.avatarPx - Math.max(50, 605 * 0.158))).toBeLessThanOrEqual(1);
@@ -159,7 +242,9 @@ test('CONTROL: a full-size seat at this height would leave the canvas', async ({
 });
 
 test('CONTROL: the previous y=11 position stranded the box on the felt', async ({ page: p }) => {
-  await p.setContent(page(11, 'seat-wrapper--top'));
+  await p.setContent(
+    page(11, 'seat-wrapper--top', { canvas: FULL_RING.canvas, seats: FULL_RING.seats })
+  );
   const m = await measure(p);
   expect(m.boxTopPct).toBeGreaterThan(FELT_TOP_PCT);
 });

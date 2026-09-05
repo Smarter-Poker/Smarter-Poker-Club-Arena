@@ -14,11 +14,15 @@
  *
  *  - Send the FULL current selection every time, not a delta. The engine
  *    replaces the stored set, which is what makes un-clicking a card work.
- *  - There is no "clear" verb. An empty cardIndexes array is rejected by the
- *    engine ("no valid card indexes"), and omitting the field entirely falls
- *    through to the showdown-gated whole-hand path. So an empty selection is
- *    handled locally as a no-op: nothing is exposed until the hand ends, and
- *    the engine resets its picks every hand regardless.
+ *  - AN EMPTY ARRAY IS A CLEAR, and it must be sent (corrected 2026-09-05).
+ *    It used to be swallowed here as a local no-op, because the engine
+ *    answered "no valid card indexes" to it. That made the LAST pick of a hand
+ *    unrevokable: the badge came off in the UI while the engine kept the card
+ *    on its list and turned it face up at hand end anyway. Dan: "THE EYE BALL
+ *    STAYS LOCKED, YOU CAN NEVER UNLOCK IT OR UNSHOW." The engine now treats
+ *    an empty list as a deliberate "show nothing" and deletes the entry;
+ *    omitting the field entirely still falls through to the showdown-gated
+ *    whole-hand path, which is a different request.
  */
 
 import { reportError } from '../utils/errorReporter';
@@ -59,10 +63,6 @@ export async function setShownCards(
   cardIndexes: readonly number[]
 ): Promise<ShowCardsResult> {
   if (!tableId) return { success: false, error: 'Missing tableId' };
-  if (cardIndexes.length === 0) {
-    // Nothing to record - see the note above; intentionally a no-op.
-    return { success: true, shownCardIndexes: [] };
-  }
 
   try {
     const res = await fetch(`${ENGINE_BASE_URL}/showhand`, {

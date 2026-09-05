@@ -1,46 +1,80 @@
 /**
  * THE CLUSTER CONTROLLER is a clock around one SQL function. These tests pin
- * the clock: what it asks, what it passes, when it wakes a dealer, and that
- * the freeze stops it before any I/O (OPORD 1.4 s18.2, s18.4, s18.5).
+ * the clock: that a pass is ONE RPC carrying the fleet's whole census keyed by
+ * Main 1, what it does with each game's result, when it wakes a dealer, that a
+ * seat change wakes one game (debounced, coalesced, leader-only), and that the
+ * freeze stops it before any I/O (OPORD 1.4 s18.2, s18.4, s18.5).
+ *
+ * PINS MOVED 2026-09-05 (one tick RPC per pass): the first cut asked for a
+ * worklist and then ticked each game through an eight-wide pool. That shape
+ * was deliberately replaced by fn_cash_clusters_tick_all, so the pins on
+ * "asks for the worklist", "bounded pool" and "one game failing" now assert
+ * the new mechanism - one call, the SQL's per-game results, the SQL's caught
+ * errors - and the behaviour they guarded (every game once, one failure never
+ * stops the rest, the wake is never awaited) is asserted the same as before.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { ClusterController, type ClusterControllerDeps } from './ClusterController.js';
+import {
+  ClusterController,
+  CLUSTER_WAKE_DEBOUNCE_MS,
+  wakeCluster,
+  type ClusterControllerDeps,
+  type ClusterTickAllEntry,
+} from './ClusterController.js';
 
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 
 type Rpc = ClusterControllerDeps['rpc'];
 
-const worklist = (
-  rows: Array<Partial<{ game_id: string; main1_table_id: string | null; enabled: boolean }>>
-) =>
-  rows.map((r, i) => ({
-    game_id: r.game_id ?? `game-${i}`,
-    club_id: 'club',
-    main1_table_id: r.main1_table_id === undefined ? `main1-${i}` : r.main1_table_id,
-    state: 'live',
-    enabled: r.enabled ?? true,
-  }));
+/** What fn_cash_clusters_tick_all returns for a set of games. */
+const passOf = (
+  rows: Array<
+    Partial<{ game_id: string; main1_table_id: string | null; enabled: boolean }> & {
+      result?: unknown;
+      error?: { sqlstate?: string; message?: string };
+    }
+  >,
+  extra: Partial<{ rested: number; games: number }> = {}
+) => {
+  const results: ClusterTickAllEntry[] = rows.map((r, i) => {
+    const entry: ClusterTickAllEntry = {
+      game_id: r.game_id ?? `game-${i}`,
+      main1_table_id: r.main1_table_id === undefined ? `main1-${i}` : r.main1_table_id,
+      enabled: r.enabled ?? true,
+    };
+    if (r.error) entry.error = r.error;
+    else entry.result = (r.result ?? { ok: true, actions: [], seated_total: 2 }) as never;
+    return entry;
+  });
+  const errors = results.filter((r) => r.error).length;
+  return {
+    ok: true,
+    games: extra.games ?? results.length + (extra.rested ?? 0),
+    ticked: results.length - errors,
+    errors,
+    rested: extra.rested ?? 0,
+    results,
+  };
+};
 
 function build(
   over: Partial<ClusterControllerDeps> & {
-    rows?: ReturnType<typeof worklist>;
+    pass?: ReturnType<typeof passOf>;
     tickResult?: unknown;
   } = {}
 ) {
   const calls: Array<{ fn: string; args?: Record<string, unknown> }> = [];
   const rpc = vi.fn(async (fn: string, args?: Record<string, unknown>) => {
     calls.push({ fn, args });
-    if (fn === 'fn_cash_clusters_to_tick')
-      return { data: over.rows ?? worklist([{}]), error: null };
+    if (fn === 'fn_cash_clusters_tick_all') return { data: over.pass ?? passOf([{}]), error: null };
     if (fn === 'fn_cash_cluster_tick') {
-      // The SQL reports the game-wide seated count; the wake path reads it so
-      // an empty game costs no second query.
       return { data: over.tickResult ?? { ok: true, actions: [], seated_total: 2 }, error: null };
     }
     return { data: null, error: { message: `unexpected ${fn}` } };
   }) as unknown as Rpc;
   const deps: ClusterControllerDeps = {
     eligibleHorseCount: over.eligibleHorseCount ?? (() => 0),
+    eligibleCounts: over.eligibleCounts ?? (() => new Map()),
     ensureEngine: over.ensureEngine ?? vi.fn(async () => true),
     hasEngine: over.hasEngine ?? (() => false),
     seatedCount: over.seatedCount ?? (async () => 0),
@@ -50,37 +84,64 @@ function build(
   return { controller: new ClusterController(deps), calls, deps };
 }
 
-describe('the tick', () => {
-  it('asks for the worklist and ticks every game with the horse demand for its Main 1', async () => {
+describe('the pass is one RPC', () => {
+  it('makes exactly one call, fn_cash_clusters_tick_all, however many games there are', async () => {
     const { controller, calls } = build({
-      rows: worklist([
-        { game_id: 'g1', main1_table_id: 't1' },
-        { game_id: 'g2', main1_table_id: 't2' },
-      ]),
-      eligibleHorseCount: (tableId) => (tableId === 't1' ? 3 : 0),
+      pass: passOf(Array.from({ length: 120 }, (_, i) => ({ game_id: `g${i}` }))),
     });
     const s = await controller.tick();
-    expect(s.games).toBe(2);
-    expect(s.ticked).toBe(2);
-    expect(calls[0].fn).toBe('fn_cash_clusters_to_tick');
-    expect(calls.find((c) => c.args?.p_game_id === 'g1')?.args).toEqual({
-      p_game_id: 'g1',
-      p_eligible_horses: 3,
-    });
-    expect(calls.find((c) => c.args?.p_game_id === 'g2')?.args).toEqual({
-      p_game_id: 'g2',
-      p_eligible_horses: 0,
-    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].fn).toBe('fn_cash_clusters_tick_all');
+    expect(s.rpcs).toBe(1);
+    expect(s.games).toBe(120);
+    expect(s.ticked).toBe(120);
   });
 
-  it('a game with no Main 1 row is ticked with zero horses (the tick reopens it)', async () => {
+  it('never asks for the worklist or ticks a game itself during a pass', async () => {
+    const { controller, calls } = build({ pass: passOf([{}, {}, {}]) });
+    await controller.tick();
+    expect(calls.map((c) => c.fn)).not.toContain('fn_cash_clusters_to_tick');
+    expect(calls.map((c) => c.fn)).not.toContain('fn_cash_cluster_tick');
+  });
+
+  it('sends the fleet census keyed by Main 1 table id, zero counts omitted', async () => {
     const { controller, calls } = build({
-      rows: worklist([{ game_id: 'g1', main1_table_id: null }]),
+      eligibleCounts: () =>
+        new Map([
+          ['t1', 3],
+          ['t2', 0],
+          ['t3', 1],
+        ]),
     });
     await controller.tick();
-    expect(calls[1].args).toEqual({ p_game_id: 'g1', p_eligible_horses: 0 });
+    expect(calls[0].args).toEqual({ p_eligible: { t1: 3, t3: 1 } });
   });
 
+  it('sends an empty map when the fleet has counted nothing', async () => {
+    const { controller, calls } = build();
+    await controller.tick();
+    expect(calls[0].args).toEqual({ p_eligible: {} });
+  });
+
+  it('reports how many games the SQL let rest', async () => {
+    const { controller } = build({ pass: passOf([{}, {}], { rested: 39 }) });
+    const s = await controller.tick();
+    expect(s.games).toBe(41);
+    expect(s.ticked).toBe(2);
+    expect(s.rested).toBe(39);
+  });
+
+  it('a failed pass RPC is one error and no games', async () => {
+    const rpc = vi.fn(async () => ({ data: null, error: { message: 'boom' } })) as unknown as Rpc;
+    const { controller } = build({ rpc });
+    const s = await controller.tick();
+    expect(s.errors).toBe(1);
+    expect(s.games).toBe(0);
+    expect(s.rpcs).toBe(1);
+  });
+});
+
+describe('each game result is handled as before', () => {
   it('wakes a dealer for a Main 1 that has a seat and no engine (18.4)', async () => {
     const ensureEngine = vi.fn(async () => true);
     const { controller } = build({
@@ -106,52 +167,61 @@ describe('the tick', () => {
     const seatedCount = vi.fn(async () => 0);
     const { controller } = build({
       seatedCount,
-      tickResult: { ok: true, actions: [], seated_total: 0 },
+      pass: passOf([{ result: { ok: true, actions: [], seated_total: 0 } }]),
     });
     await controller.tick();
     expect(seatedCount).not.toHaveBeenCalled();
   });
 
-  it('ticks games in a bounded pool, every game exactly once', async () => {
-    let inFlight = 0;
-    let peak = 0;
-    const seen: string[] = [];
-    const rows = worklist(Array.from({ length: 30 }, (_, i) => ({ game_id: `g${i}` })));
-    const rpc = vi.fn(async (fn: string, args?: Record<string, unknown>) => {
-      if (fn === 'fn_cash_clusters_to_tick') return { data: rows, error: null };
-      inFlight++;
-      peak = Math.max(peak, inFlight);
-      seen.push(String(args?.p_game_id));
-      await new Promise((r) => setTimeout(r, 2));
-      inFlight--;
-      return { data: { ok: true, actions: [], seated_total: 0 }, error: null };
-    }) as unknown as Rpc;
-    const { controller } = build({ rpc });
+  it('a game with no Main 1 row is ticked (the SQL reopens it) and never woken', async () => {
+    const ensureEngine = vi.fn(async () => true);
+    const { controller } = build({
+      ensureEngine,
+      seatedCount: async () => 3,
+      pass: passOf([{ game_id: 'g1', main1_table_id: null }]),
+    });
     const s = await controller.tick();
-    expect(s.ticked).toBe(30);
-    expect(new Set(seen).size).toBe(30);
-    expect(peak).toBeGreaterThan(1);
-    expect(peak).toBeLessThanOrEqual(8);
-    expect(s.elapsedMs).toBeGreaterThanOrEqual(0);
+    expect(s.ticked).toBe(1);
+    expect(ensureEngine).not.toHaveBeenCalled();
   });
 
   it('a disabled game is ticked (its tables drain) but never woken', async () => {
     const ensureEngine = vi.fn(async () => true);
-    const { controller, calls } = build({
-      rows: worklist([{ game_id: 'g1', enabled: false }]),
+    const { controller } = build({
+      pass: passOf([{ game_id: 'g1', enabled: false }]),
       ensureEngine,
       seatedCount: async () => 3,
     });
     const s = await controller.tick();
     expect(s.ticked).toBe(1);
-    expect(calls.some((c) => c.fn === 'fn_cash_cluster_tick')).toBe(true);
     expect(ensureEngine).not.toHaveBeenCalled();
   });
 
   it('records the actions the SQL took, per game', async () => {
-    const { controller } = build({ tickResult: { ok: true, actions: [{ feeder: 'opened' }] } });
+    const { controller } = build({
+      pass: passOf([{ result: { ok: true, actions: [{ feeder: 'opened' }] } }]),
+    });
     const s = await controller.tick();
     expect(s.actions).toEqual([{ game_id: 'game-0', actions: [{ feeder: 'opened' }] }]);
+  });
+
+  it('a game the SQL caught an error for is counted as an error and the rest are ticked', async () => {
+    const { controller } = build({
+      pass: passOf([
+        { game_id: 'bad', error: { sqlstate: 'P0001', message: 'boom' } },
+        { game_id: 'good' },
+        { game_id: 'also-good' },
+      ]),
+    });
+    const s = await controller.tick();
+    expect(s.errors).toBe(1);
+    expect(s.ticked).toBe(2);
+    const { reportError } = await import('../services/errorReporter.js');
+    expect(reportError).toHaveBeenCalledWith(
+      expect.any(Error),
+      'ClusterController.tick_rpc_failed',
+      expect.objectContaining({ game_id: 'bad', sqlstate: 'P0001' })
+    );
   });
 });
 
@@ -162,55 +232,218 @@ describe('the freeze (CLAUDE.md 13, OPORD 1.4 18.5)', () => {
     expect(s.skippedFrozen).toBe(true);
     expect(calls).toHaveLength(0);
   });
+
+  it('the SQL seeing the freeze first is reported the same way', async () => {
+    const rpc = vi.fn(async () => ({
+      data: {
+        ok: false,
+        skipped: 'frozen',
+        games: 0,
+        ticked: 0,
+        errors: 0,
+        rested: 0,
+        results: [],
+      },
+      error: null,
+    })) as unknown as Rpc;
+    const { controller } = build({ rpc });
+    const s = await controller.tick();
+    expect(s.skippedFrozen).toBe(true);
+    expect(s.errors).toBe(0);
+  });
+});
+
+describe('a seat change wakes its game', () => {
+  it('wake() ticks ONE game through the per-game RPC with its Main 1 horse demand, after the debounce', async () => {
+    vi.useFakeTimers();
+    try {
+      const { controller, calls } = build({
+        pass: passOf([{ game_id: 'g1', main1_table_id: 't1' }]),
+        eligibleHorseCount: (t) => (t === 't1' ? 4 : 0),
+      });
+      controller.start();
+      await controller.tick(); // the pass teaches the controller g1's Main 1
+      calls.length = 0;
+      controller.wake('g1');
+      expect(calls).toHaveLength(0); // not yet
+      await vi.advanceTimersByTimeAsync(CLUSTER_WAKE_DEBOUNCE_MS - 1);
+      expect(calls).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(calls).toEqual([
+        { fn: 'fn_cash_cluster_tick', args: { p_game_id: 'g1', p_eligible_horses: 4 } },
+      ]);
+      expect(controller.wakeStats.fired).toBe(1);
+      controller.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('many wakes for one game inside the window are one tick', async () => {
+    vi.useFakeTimers();
+    try {
+      const { controller, calls } = build();
+      controller.start();
+      for (let i = 0; i < 25; i++) controller.wake('g1');
+      await vi.advanceTimersByTimeAsync(CLUSTER_WAKE_DEBOUNCE_MS + 5);
+      expect(calls.filter((c) => c.fn === 'fn_cash_cluster_tick')).toHaveLength(1);
+      expect(controller.wakeStats.coalesced).toBe(24);
+      expect(controller.wakeStats.pending).toBe(0);
+      controller.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('wakes for different games are separate ticks, each once', async () => {
+    vi.useFakeTimers();
+    try {
+      const { controller, calls } = build();
+      controller.start();
+      controller.wake('g1');
+      controller.wake('g2');
+      controller.wake('g1');
+      await vi.advanceTimersByTimeAsync(CLUSTER_WAKE_DEBOUNCE_MS + 5);
+      const ticks = calls.filter((c) => c.fn === 'fn_cash_cluster_tick');
+      expect(ticks.map((c) => c.args?.p_game_id).sort()).toEqual(['g1', 'g2']);
+      controller.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a wake is a no-op when the controller is not running (non-leader)', async () => {
+    vi.useFakeTimers();
+    try {
+      const { controller, calls } = build();
+      controller.wake('g1');
+      await vi.advanceTimersByTimeAsync(CLUSTER_WAKE_DEBOUNCE_MS * 4);
+      expect(calls).toHaveLength(0);
+      expect(controller.wakeStats.fired).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the module-level wakeCluster reaches the running controller and is a no-op without one', async () => {
+    vi.useFakeTimers();
+    try {
+      wakeCluster('nobody-home'); // no controller started: nothing happens, nothing throws
+      const { controller, calls } = build();
+      controller.start();
+      wakeCluster('g1');
+      await vi.advanceTimersByTimeAsync(CLUSTER_WAKE_DEBOUNCE_MS + 5);
+      expect(calls.filter((c) => c.fn === 'fn_cash_cluster_tick')).toHaveLength(1);
+      controller.stop();
+      calls.length = 0;
+      wakeCluster('g1'); // stopped: gone from the module slot
+      await vi.advanceTimersByTimeAsync(CLUSTER_WAKE_DEBOUNCE_MS + 5);
+      expect(calls).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a wake never throws into the caller, even when the RPC fails or the tick throws', async () => {
+    vi.useFakeTimers();
+    try {
+      const rpc = vi.fn(async (fn: string) => {
+        if (fn === 'fn_cash_cluster_tick') throw new Error('transport down');
+        return { data: passOf([{}]), error: null };
+      }) as unknown as Rpc;
+      const { controller } = build({ rpc });
+      controller.start();
+      expect(() => wakeCluster('g1')).not.toThrow();
+      await vi.advanceTimersByTimeAsync(CLUSTER_WAKE_DEBOUNCE_MS + 5);
+      const { reportError } = await import('../services/errorReporter.js');
+      expect(reportError).toHaveBeenCalledWith(
+        expect.any(Error),
+        'ClusterController.wake_tick_error',
+        expect.objectContaining({ game_id: 'g1' })
+      );
+      controller.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a wake is skipped while frozen', async () => {
+    vi.useFakeTimers();
+    try {
+      let frozen = false;
+      const { controller, calls } = build({ frozen: () => frozen });
+      controller.start();
+      controller.wake('g1');
+      frozen = true;
+      await vi.advanceTimersByTimeAsync(CLUSTER_WAKE_DEBOUNCE_MS + 5);
+      expect(calls).toHaveLength(0);
+      controller.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a wake wakes the dealer too (18.4), never awaited', async () => {
+    vi.useFakeTimers();
+    try {
+      let released = false;
+      const ensureEngine = vi.fn(
+        () => new Promise<boolean>((r) => setTimeout(() => ((released = true), r(true)), 50_000))
+      );
+      const { controller } = build({
+        ensureEngine,
+        seatedCount: async () => 1,
+        pass: passOf([{ game_id: 'g1', main1_table_id: 't1' }]),
+        tickResult: { ok: true, actions: [], seated_total: 1 },
+      });
+      controller.start();
+      await controller.tick();
+      ensureEngine.mockClear();
+      controller.wake('g1');
+      await vi.advanceTimersByTimeAsync(CLUSTER_WAKE_DEBOUNCE_MS + 5);
+      expect(ensureEngine).toHaveBeenCalledWith('t1');
+      expect(released).toBe(false);
+      controller.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stop() drops pending wakes', async () => {
+    vi.useFakeTimers();
+    try {
+      const { controller, calls } = build();
+      controller.start();
+      controller.wake('g1');
+      controller.stop();
+      await vi.advanceTimersByTimeAsync(CLUSTER_WAKE_DEBOUNCE_MS * 2);
+      expect(calls).toHaveLength(0);
+      expect(controller.wakeStats.pending).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('no memory, no overlap, no cascade', () => {
-  it('one game failing does not stop the others', async () => {
-    const rpc = vi.fn(async (fn: string, args?: Record<string, unknown>) => {
-      if (fn === 'fn_cash_clusters_to_tick') {
-        return { data: worklist([{ game_id: 'bad' }, { game_id: 'good' }]), error: null };
-      }
-      if (args?.p_game_id === 'bad') return { data: null, error: { message: 'boom' } };
-      return { data: { ok: true, actions: [] }, error: null };
-    }) as unknown as Rpc;
-    const controller = new ClusterController({
-      eligibleHorseCount: () => 0,
-      ensureEngine: async () => true,
-      hasEngine: () => true,
-      seatedCount: async () => 0,
-      frozen: () => false,
-      rpc,
-    });
-    const s = await controller.tick();
-    expect(s.errors).toBe(1);
-    expect(s.ticked).toBe(1);
-  });
-
   it('a tick still running when the next fires is not run twice', async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
     const rpc = vi.fn(async (fn: string) => {
-      if (fn === 'fn_cash_clusters_to_tick') {
+      if (fn === 'fn_cash_clusters_tick_all') {
         await gate;
-        return { data: worklist([{}]), error: null };
+        return { data: passOf([{}]), error: null };
       }
       return { data: { ok: true, actions: [] }, error: null };
     }) as unknown as Rpc;
-    const controller = new ClusterController({
-      eligibleHorseCount: () => 0,
-      ensureEngine: async () => true,
-      hasEngine: () => true,
-      seatedCount: async () => 0,
-      frozen: () => false,
-      rpc,
-    });
+    const { controller } = build({ rpc, hasEngine: () => true });
     const first = controller.tick();
     const second = await controller.tick();
     expect(second.games).toBe(0);
     release();
     const done = await first;
     expect(done.games).toBe(1);
-    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(rpc).toHaveBeenCalledTimes(1);
   });
 
   it('a wake that takes the life of the table does not take the pass with it', async () => {
@@ -225,7 +458,7 @@ describe('no memory, no overlap, no cascade', () => {
     const { controller, calls } = build({
       ensureEngine,
       seatedCount: async () => 1,
-      rows: worklist([{}, {}, {}]),
+      pass: passOf([{}, {}, {}]),
     });
     const s = await controller.tick();
     expect(ensureEngine).toHaveBeenCalledTimes(3);
@@ -235,7 +468,7 @@ describe('no memory, no overlap, no cascade', () => {
     // ...and the next pass is not blocked either.
     const again = await controller.tick();
     expect(again.ticked).toBe(3);
-    expect(calls.filter((c) => c.fn === 'fn_cash_cluster_tick')).toHaveLength(6);
+    expect(calls.filter((c) => c.fn === 'fn_cash_clusters_tick_all')).toHaveLength(2);
   });
 
   it('a pass stuck past the stall ceiling is reported and the latch released', async () => {
@@ -245,23 +478,16 @@ describe('no memory, no overlap, no cascade', () => {
       const gate = new Promise<void>((r) => (releaseGate = r));
       let firstCall = true;
       const rpc = vi.fn(async (fn: string) => {
-        if (fn === 'fn_cash_clusters_to_tick') {
+        if (fn === 'fn_cash_clusters_tick_all') {
           if (firstCall) {
             firstCall = false;
             await gate; // a pass that never comes back on its own
           }
-          return { data: worklist([{}]), error: null };
+          return { data: passOf([{}]), error: null };
         }
         return { data: { ok: true, actions: [] }, error: null };
       }) as unknown as Rpc;
-      const controller = new ClusterController({
-        eligibleHorseCount: () => 0,
-        ensureEngine: async () => true,
-        hasEngine: () => true,
-        seatedCount: async () => 0,
-        frozen: () => false,
-        rpc,
-      });
+      const { controller } = build({ rpc, hasEngine: () => true });
       const stuck = controller.tick();
       // Under the ceiling: still guarded, nothing runs twice.
       vi.setSystemTime(Date.now() + 60_000);

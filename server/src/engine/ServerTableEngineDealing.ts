@@ -277,6 +277,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // a chance to look at the seat before the deal. On the very first
         // iteration — cold start OR crash recovery — all seated players are
         // treated as the initial roster and none of that applies.
+        // A SEAT CHANGED (2026-09-05): an arrival or a departure seen in the
+        // rows this iteration wakes the game's ClusterController tick.
+        let rosterChanged = false;
         if (this.dealingLoopFirstIteration) {
           // Dan 2026-08-30: BEFORE the veteran seeding below, because that
           // seeding is what used to destroy the hold. Both halves of the fix
@@ -307,6 +310,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         } else {
           for (const p of this.seatedPlayers) {
             if (!this.knownPlayerIds.has(p.user_id)) {
+              rosterChanged = true;
               // CHIP CONTINUITY: a fresh arrival is a fresh session, even if
               // the mirror wrote this player off a moment ago.
               this.chipContinuity.welcome(p.user_id);
@@ -354,6 +358,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         const currentIds = new Set(this.seatedPlayers.map((p) => p.user_id));
         for (const id of this.knownPlayerIds) {
           if (!currentIds.has(id)) {
+            rosterChanged = true;
             this.knownPlayerIds.delete(id);
             this.waitingForBB.delete(id);
             // A held swap side that is gone from the roster: the other table
@@ -364,6 +369,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             this.mustPostBB.delete(id);
           }
         }
+        if (rosterChanged) this.wakeClusterGame('seat_change');
         // POST-TO-ENTER RACE FIX 2026-08-27: a queued intent from someone no
         // longer seated (or never seated) is dead weight - drop it.
         for (const id of this.pendingPostToEnter) {

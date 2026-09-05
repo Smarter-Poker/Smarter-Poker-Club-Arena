@@ -784,6 +784,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         teardown();
         emitSeatLeft();
         this.broadcastCurrentState();
+        this.wakeClusterGame('seat_left');
         return { success: true, immediate: true };
       }
 
@@ -795,6 +796,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         teardown();
         emitSeatLeft();
         this.broadcastCurrentState();
+        this.wakeClusterGame('seat_left');
         return { success: true, immediate: true };
       }
       if (res.code === 'LEAVE_LOCKED') {

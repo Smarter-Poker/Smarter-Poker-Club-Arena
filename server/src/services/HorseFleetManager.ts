@@ -371,6 +371,14 @@ export class HorseFleetManager {
   eligibleHorseCount(tableId: string): number {
     return this.lastEligibleByTable.get(tableId) ?? 0;
   }
+
+  /** The whole census, table id -> eligible horses, as of the last cycle.
+   *  The ClusterController sends it with every pass (one RPC, keyed by
+   *  Main 1) so the SQL can look each game's horse demand up itself. The map
+   *  is swapped whole per cycle, never mutated, so handing it out is safe. */
+  eligibleCounts(): ReadonlyMap<string, number> {
+    return this.lastEligibleByTable;
+  }
   private overrunTicks = 0; // 30s ticks dropped because the previous cycle was still running
   private clubIndex = 0;
   /* Last time a failed fleet-state publish was reported. The engine can ship

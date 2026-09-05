@@ -665,6 +665,14 @@ export interface HandFactsInput {
    * not the same measurement as one taken where the horse chose its own width.
    */
   nitGame?: boolean;
+  /**
+   * BOMB POTS COUNT (Dan 2026-09-05): "VPIP NEEDS TO WORK FOR EVERY HAND, BOMB
+   * POTS COUNT AS A HAND. ANY HAND YOU VOLUNTARILY PUT IN POT BUT INCLUDING
+   * ALL BOMB POTS." A bomb hand has no preflop street - everyone antes and
+   * sees the flop - so the action-log rule below could never mark anyone as
+   * having put money in. In a bomb hand every player dealt in did.
+   */
+  isBombPot?: boolean;
 }
 
 /**
@@ -822,6 +830,9 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
         returned,
         nonFoldedCount,
       });
+      // A bomb pot is a voluntary pot for everyone dealt into it (Dan
+      // 2026-09-05). The hand row was always written; the flag was not.
+      if (input.isBombPot) flags.vpip = true;
 
       // All-in EV. Outside an all-in the EV series equals the actual series by
       // construction, which is the correct behaviour for a luck graph: the only

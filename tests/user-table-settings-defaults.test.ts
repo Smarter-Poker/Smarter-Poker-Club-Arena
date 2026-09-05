@@ -57,6 +57,12 @@ const DB_COLUMN_DEFAULTS = {
   // The switch HIDES an offer the player already had, so a row that predates
   // the column has to behave exactly as it did the day before.
   rabbit_hunt_button: true,
+  // 2026-09-05: ON, NOT NULL DEFAULT true
+  // (20260905195426_user_table_settings_gain_the_all_in_squeeze_toggle).
+  // The VIP all-in squeeze is "turned on by default" (Dan); for a non-VIP the
+  // stored true is inert behind the VIP check, so a member who becomes a VIP
+  // finds the perk on without touching settings.
+  all_in_squeeze: true,
   // 2026-09-04: false since 20260905001550_card_slide_is_the_river_squeeze_
   // default_off.sql. Card Slide is the hole-card corner peel and Dan wants it
   // OFF by default. (card_squeeze is retired; its column default stays false.)

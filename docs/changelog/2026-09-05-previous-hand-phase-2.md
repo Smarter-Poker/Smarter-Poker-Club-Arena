@@ -37,3 +37,17 @@ so the list of fifty hands pays nothing until a hand is opened.
 duplicated card, Omaha and hi-lo labelling, the 36-card deck; the model's
 contenders and made hands; the rendered all-in block and per-street facts, and
 that an unknown contender prices nothing.
+
+## Deep-dive review before Phase 3 (same day)
+
+- The replayer's Rundown tab rendered `HandDetailView` without the viewer's
+  facts, so the All-In block appeared on the panel, the modal and the archive
+  but not on the replay of the same hand. Wired; a pin now checks all four
+  surfaces pass `viewerFacts`.
+- `all_in_street` can be `pineapple_discard` (the engine's own stage name);
+  the block now reads "All In At The Discard" instead of "All In".
+- Reviewed and unchanged: `equity.ts` dedupes on `cardKey` after
+  `toDeckCards` normalises "10" to "T", so a ten cannot be double-counted;
+  contenders are frozen at street start and folds accumulate across streets;
+  the viewer's own folded cards ARE priced on the street they folded (that is
+  the point), and excluded from the next.

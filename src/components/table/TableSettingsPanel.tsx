@@ -16,7 +16,42 @@
 
 import React, { useState } from 'react';
 import { type UserTableSettings, TABLE_SETTINGS_META } from '../../hooks/useUserTableSettings';
+import { useVIPStatus } from '../../hooks/useVIP';
+import { masterBus } from '../../core/MasterBus';
+import { ALL_IN_SQUEEZE_VIP_REQUIRED_MESSAGE } from '../../presentation/cardPresentation/squeezeEligibility';
 import './TableSettingsPanel.css';
+
+/**
+ * VIP ALL-IN SQUEEZE 2026-09-05: what a VIP-gated switch SHOWS. The stored
+ * preference defaults to true for everyone so a new VIP finds the perk on;
+ * for a non-VIP it is inert and the switch must say so. While the VIP check
+ * is still in flight the stored value is shown, so a VIP never sees their
+ * switch flash off and on when the panel opens.
+ */
+export function effectiveSettingValue(
+  stored: boolean,
+  vipGated: boolean | undefined,
+  isVIP: boolean,
+  vipLoading: boolean
+): boolean {
+  if (!vipGated) return stored;
+  return stored && (isVIP || vipLoading);
+}
+
+/**
+ * Dan: "IF A NONE VIP MEMBER TRIES TO TURN IT ON THEY SHOULD BE INSTRUCTED
+ * THAT THEY NEED A VIP CARD TO USE THIS FEATURE." Through the bus, like the
+ * hook's own save-failure toast, so both settings surfaces (gear overlay and
+ * hamburger inline) say it without needing a Toast provider in scope. The
+ * Toast layer applies the house Title Case transform (popupStyle.ts).
+ */
+export function announceVipRequired(): void {
+  masterBus.emit('SHOW_TOAST', {
+    severity: 'info',
+    message: ALL_IN_SQUEEZE_VIP_REQUIRED_MESSAGE,
+    source: 'TableSettingsPanel',
+  });
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -44,6 +79,7 @@ export function TableSettingsPanel({
   onClose,
 }: TableSettingsPanelProps) {
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const { isVIP, isLoading: vipLoading } = useVIPStatus();
 
   // Stagger animation on mount
   React.useEffect(() => {
@@ -91,8 +127,25 @@ export function TableSettingsPanel({
       <div className="tsp-list">
         {TABLE_SETTINGS_META.filter((m) => typeof settings[m.key] === 'boolean').map(
           (meta, idx) => {
-            const isEnabled = !!settings[meta.key];
+            const isEnabled = effectiveSettingValue(
+              !!settings[meta.key],
+              meta.vip,
+              isVIP,
+              vipLoading
+            );
             const isVisible = visibleItems.has(idx);
+            const onClick = () => {
+              if (!meta.vip) {
+                onToggle(meta.key);
+                return;
+              }
+              if (vipLoading) return;
+              if (!isVIP) {
+                announceVipRequired();
+                return;
+              }
+              onToggle(meta.key);
+            };
             const labelId = `table-setting-${String(meta.key)}-label`;
             const descriptionId = `table-setting-${String(meta.key)}-description`;
 
@@ -101,9 +154,10 @@ export function TableSettingsPanel({
                 type="button"
                 key={meta.key}
                 className={`tsp-item ${isEnabled ? 'tsp-item--active' : ''}`}
-                onClick={() => onToggle(meta.key)}
+                onClick={onClick}
                 role="switch"
                 aria-checked={isEnabled}
+                data-vip-gated={meta.vip ? 'true' : undefined}
                 aria-labelledby={labelId}
                 aria-describedby={descriptionId}
                 style={{

@@ -212,6 +212,8 @@ export const CARD_PRESENTATION_PROFILES = Object.freeze({
     audioEnabled: true,
     lightSweepEnabled: true,
     threeD: true,
+    // The only profile the SERVER times. See serverPaced in types.ts.
+    serverPaced: true,
   }),
   /** A visible but unfocused multi-table slot. Compact. ~280ms. */
   background: profile({

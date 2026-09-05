@@ -85,7 +85,22 @@ async function engineFetch(url: string, init: RequestInit = {}): Promise<Respons
   try {
     const refreshed = await supabase.auth.refreshSession();
     const token = refreshed.data.session?.access_token ?? null;
-    if (!token) return resp;
+    if (!token) {
+      // 2026-09-05: the engine refused us and the refresh could not produce a
+      // token either. That is the 2026-09-03 shape - a session revoked out
+      // from under a live tab - and it is the point at which retrying is
+      // pointless. Ask GoTrue once (throttled inside the handler); a
+      // definitively dead session ends in a prompt and a sign-in rather than
+      // a table that spins forever. 'unknown' changes nothing.
+      // Lazy: this module is only needed once a request has already been
+      // refused, and a static import puts it in the entry chunk (CI, 2026-09-05).
+      void import('../lib/sessionRevoked')
+        .then((m) => m.handleEngineAuthRejection('http:401'))
+        .catch(() => {
+          /* a chunk that will not load must never sign anyone out */
+        });
+      return resp;
+    }
     const headers = {
       ...((init.headers as Record<string, string> | undefined) ?? {}),
       Authorization: `Bearer ${token}`,

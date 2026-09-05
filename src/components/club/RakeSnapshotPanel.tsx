@@ -219,6 +219,8 @@ export default function RakeSnapshotPanel({
 
   const version = useRef(0);
   const cancelled = useRef(false);
+  /** Whether the last head read failed - see the bus subscription below. */
+  const lastReadFailed = useRef(false);
   /**
    * How many rows the SERVER has handed over, which is not how many are on
    * screen. Rows are deduped on append, so paging on rows.length walks the
@@ -359,6 +361,7 @@ export default function RakeSnapshotPanel({
           sort,
         });
         if (cancelled.current || mine !== version.current) return;
+        lastReadFailed.current = false;
         setSnapshot(next);
         // THE HEAD ALWAYS REFRESHES. The rows only refresh if the operator has
         // not opened past page one.
@@ -380,6 +383,7 @@ export default function RakeSnapshotPanel({
         if (cancelled.current || mine !== version.current) return;
         // The previous snapshot stays on screen. A refusal for one scope must not
         // wipe the figure the operator was already reading.
+        lastReadFailed.current = true;
         setError(describeRakeSnapshotError(e));
         reportError(e, 'RakeSnapshotPanel.load');
       } finally {
@@ -491,6 +495,15 @@ export default function RakeSnapshotPanel({
       // moves when ANY of its clubs does - so the filter only applies when
       // this panel is actually pinned to one club.
       if (focusClubId && eventClubId && eventClubId !== focusClubId) return;
+      // A READ THAT IS FAILING IS NOT RETRIED BY THE FIREHOSE (2026-09-04).
+      // These events fire on every chip movement in the club, and a busy club
+      // moves chips constantly - so when the read itself was failing, this
+      // subscription re-issued it seven times in fourteen seconds, each one an
+      // eight-second query that the database then had to run and abandon.
+      // Measured on the club data page while ca_rake_snapshot was timing out.
+      // The sixty-second poll and the operator's own Refresh still retry; the
+      // firehose does not.
+      if (lastReadFailed.current) return;
       void load(true);
     },
     { debounce: 750 }

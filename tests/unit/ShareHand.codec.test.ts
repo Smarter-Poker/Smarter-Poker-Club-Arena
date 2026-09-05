@@ -13,7 +13,11 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { encodeHand, decodeHandFromUrl, type ShareableHand } from '../../src/components/table/ShareHand';
+import {
+  encodeHand,
+  decodeHandFromUrl,
+  type ShareableHand,
+} from '../../src/components/table/ShareHand';
 
 const HAND: ShareableHand = {
   id: 'h1',
@@ -143,5 +147,101 @@ describe('ShareHand codec', () => {
     expect(short!.turn).toBeUndefined();
     expect(short!.river).toBeUndefined();
     expect(short!.preflop).toHaveLength(3);
+  });
+});
+
+/**
+ * v3 (2026-09-05): money in cents, forced money on the wire.
+ *
+ * Every amount used to be `Math.round(chips)` in base36, so on a 0.02/0.05
+ * table a shared hand read "RAISE" with no number, pot 0, winners 0. And the
+ * six chosen verbs were the only ones the link could carry, so the recipient's
+ * pot began at the first voluntary action with no blinds in it.
+ */
+describe('ShareHand codec v3', () => {
+  const PENNY: ShareableHand = {
+    ...HAND,
+    stakes: '0.02/0.05',
+    players: HAND.players.map((p) => ({ ...p, stack: 4.37 })),
+    preflop: [
+      { seat: 1, action: 'SB', amount: 0.02 },
+      { seat: 4, action: 'BB', amount: 0.05 },
+      { seat: 1, action: 'RAISE', amount: 0.13 },
+      { seat: 4, action: 'CALL', amount: 0.1 },
+    ],
+    flop: {
+      cards: HAND.flop!.cards,
+      actions: [
+        { seat: 4, action: 'BET', amount: 0.2 },
+        { seat: 1, action: 'FOLD' },
+        { seat: 4, action: 'RETURN', amount: 0.2 },
+      ],
+    },
+    turn: undefined,
+    river: undefined,
+    potTotal: 0.3,
+    winners: [{ seat: 4, amount: 0.3 }],
+  };
+
+  it('keeps every cent', () => {
+    const d = decodeHandFromUrl(encodeHand(PENNY))!;
+    expect(d.preflop.map((a) => a.amount)).toEqual([0.02, 0.05, 0.13, 0.1]);
+    expect(d.flop!.actions.map((a) => a.amount)).toEqual([0.2, undefined, 0.2]);
+    expect(d.potTotal).toBe(0.3);
+    expect(d.winners).toEqual([{ seat: 4, amount: 0.3 }]);
+    expect(d.players.every((p) => p.stack === 4.37)).toBe(true);
+  });
+
+  it('carries the blinds and the returned bet, so the recipient sees the whole pot', () => {
+    const d = decodeHandFromUrl(encodeHand(PENNY))!;
+    expect(d.preflop.map((a) => a.action)).toEqual(['SB', 'BB', 'RAISE', 'CALL']);
+    expect(d.flop!.actions.map((a) => a.action)).toEqual(['BET', 'FOLD', 'RETURN']);
+  });
+
+  it('still decodes a v2 link as the whole chips it was written as', () => {
+    // A v2 payload, built by hand the way the v2 encoder wrote it.
+    const v2 = [
+      'v2',
+      'NLH',
+      '1-2',
+      '1',
+      (1_700_000_000_000).toString(36),
+      `1:${btoa('A')}:${(1000).toString(36)}::h;4:${btoa('B')}:${(1000).toString(36)}::w`,
+      `1R${(30).toString(36)},4C${(30).toString(36)}`,
+      '',
+      '',
+      '',
+      (60).toString(36),
+      `4:${(60).toString(36)}`,
+      btoa('Old Table'),
+    ].join('~');
+    const encoded = btoa(v2).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+    const d = decodeHandFromUrl(encoded)!;
+    expect(d).not.toBeNull();
+    expect(d.preflop.map((a) => a.amount)).toEqual([30, 30]);
+    expect(d.potTotal).toBe(60);
+    expect(d.players[0].stack).toBe(1000);
+    expect(d.tableName).toBe('Old Table');
+  });
+
+  it('skips an unknown verb rather than inventing a CHECK', () => {
+    const v3 = [
+      'v3',
+      'NLH',
+      '1-2',
+      '1',
+      '0',
+      `1:${btoa('A')}:0::h`,
+      '1Q,1X',
+      '',
+      '',
+      '',
+      '0',
+      '',
+      '',
+    ].join('~');
+    const encoded = btoa(v3).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+    const d = decodeHandFromUrl(encoded)!;
+    expect(d.preflop.map((a) => a.action)).toEqual(['CHECK']);
   });
 });

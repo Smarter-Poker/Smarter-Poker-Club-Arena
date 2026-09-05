@@ -133,9 +133,7 @@ describe('Hand Detail and Hand History agree about one hand', () => {
   const hand = adaptServiceHandToPanel(workedExample(), HERO);
 
   const heroDetailRow = () =>
-    Array.from(document.querySelectorAll('.hdm-showdown')).find((r) =>
-      r.textContent?.includes('Hero')
-    );
+    Array.from(document.querySelectorAll('.hdm-sd')).find((r) => r.textContent?.includes('Hero'));
 
   /**
    * 2026-08-27: the per-player money block now lives on HAND SUMMARY.
@@ -158,20 +156,22 @@ describe('Hand Detail and Hand History agree about one hand', () => {
     render(<HandDetailModal isOpen onClose={() => {}} hands={[hand]} heroId={HERO} />);
     openSummary();
     expect(heroDetailRow()).toBeTruthy();
-    expect(heroDetailRow()?.querySelector('.hdm-net')?.textContent).toBe('Net +12');
+    expect(heroDetailRow()?.querySelector('.hdm-sd__net')?.textContent).toBe('+12.00');
   });
 
   it('Hand Detail no longer prints the double-subtracted 0', () => {
     render(<HandDetailModal isOpen onClose={() => {}} hands={[hand]} heroId={HERO} />);
     openSummary();
     // 24 - 12 - 12 = 0 was the old answer, and the exact shape of the bug.
-    expect(heroDetailRow()?.querySelector('.hdm-net')?.textContent).not.toBe('Net 0');
+    expect(heroDetailRow()?.querySelector('.hdm-sd__net')?.textContent).not.toBe('0.00');
   });
 
   it('Hand Detail names the gross separately, so 24 and 12 cannot be confused', () => {
     render(<HandDetailModal isOpen onClose={() => {}} hands={[hand]} heroId={HERO} />);
     openSummary();
-    expect(heroDetailRow()?.querySelector('.hdm-collected')?.textContent).toBe('Collected 24');
+    expect(heroDetailRow()?.querySelector('.hdm-sd__collected')?.textContent).toBe(
+      'Collected 24.00'
+    );
   });
 
   /* Correcting the adapter alone makes the OLD arithmetic land on +12 too,
@@ -188,8 +188,8 @@ describe('Hand Detail and Hand History agree about one hand', () => {
     };
     render(<HandDetailModal isOpen onClose={() => {}} hands={[stripped]} heroId={HERO} />);
     openSummary();
-    expect(heroDetailRow()?.querySelector('.hdm-net')?.textContent).toBe('Net +12');
-    expect(heroDetailRow()?.querySelector('.hdm-net')?.textContent).not.toBe('Net +24');
+    expect(heroDetailRow()?.querySelector('.hdm-sd__net')?.textContent).toBe('+12.00');
+    expect(heroDetailRow()?.querySelector('.hdm-sd__net')?.textContent).not.toBe('+24.00');
   });
 
   it('Hand History shows the same +12 in its summary row', () => {
@@ -200,11 +200,13 @@ describe('Hand Detail and Hand History agree about one hand', () => {
   it('Hand History shows the same labelled pair once expanded', () => {
     render(<HandHistoryPanel isOpen onClose={() => {}} hands={[hand]} heroId={HERO} />);
     fireEvent.click(document.querySelector('.hh-entry__summary') as Element);
-    const shown = Array.from(document.querySelectorAll('.hh-entry__shown')).find((r) =>
+    // The expanded entry IS the shared rundown: the same showdown row, the
+    // same net, the pot line above it carrying the 24 the pot paid.
+    const shown = Array.from(document.querySelectorAll('.hh-entry .hdv__sd')).find((r) =>
       r.textContent?.includes('Hero')
     );
-    expect(shown?.querySelector('.hh-entry__won')?.textContent).toBe('Collected 24');
-    expect(shown?.querySelector('.hh-entry__net')?.textContent).toBe('Net +12');
+    expect(shown?.querySelector('.hdv__sd-net')?.textContent).toBe('+12.00');
+    expect(document.querySelector('.hh-entry .hdv__potline')?.textContent).toContain('24.00');
   });
 });
 
@@ -228,7 +230,7 @@ describe('the exported text says what the screen says', () => {
          it is the pot's, not the player's. It said "won 12" over the net, so a
          tracker importing this file booked the hero's own bets as chips that
          had never been in the pot. */
-      expect(text).toContain('Hero collected 24 from pot');
+      expect(text).toContain('Hero collected 24.00 from pot');
       expect(text).toContain('Hero net result: +12');
       expect(text).not.toContain('Hero won 12');
     } finally {

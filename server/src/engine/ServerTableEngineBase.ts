@@ -71,6 +71,7 @@ import {
 } from '../services/supabase/seatMoves.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { ChipContinuityTracker } from './ChipContinuity.js';
+import { claimMovedPresence, depositMovedPresence } from './SeatMovePresence.js';
 import { deadlineScheduler } from './DeadlineScheduler.js';
 import type {
   SeatPlayer,
@@ -884,11 +885,21 @@ export abstract class ServerTableEngineBase {
    * run-it-twice/three-times hand populates this with the RUN index (1..3),
    * the same axis the double-board bomb pot uses for its two boards.
    */
+  /**
+   * userId -> the last heartbeat that said the bust-rebuy dialog was open for
+   * this player (2026-09-04). Written by heartbeat() in Turns, read by
+   * standUpBustedCashPlayers() in Dealing, which will not release a seat
+   * whose owner is at the cashier.
+   */
+  protected rebuyPromptOpenAt: Map<string, number> = new Map();
+
   protected currentHandWinnersByBoard: Array<{
     board: number;
     userId: string;
     amount: number;
     handName?: string;
+    /** HI-LO: the low half's entry (2026-09-04). */
+    low?: boolean;
   }> = [];
   /**
    * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the unmerged per-pot(-half)
@@ -2099,6 +2110,9 @@ export abstract class ServerTableEngineBase {
           await this.sleep(5000);
           continue;
         }
+        // BEFORE the sit-out restore, always: registering a player first would
+        // block the adoption (restoreFsmStates never clobbers a live entry).
+        this.adoptMovedPresence();
         this.restoreSitOutsFromSeats();
         // Dan 2026-08-30: and the cash entry holds, for the same reason the
         // sit-out restore is here rather than only in the dealing loop — a
@@ -2415,6 +2429,13 @@ export abstract class ServerTableEngineBase {
     }
     const fresh: string[] = [];
     for (const m of pending) {
+      /* PRESENCE FOLLOWS THE PLAYER (2026-09-05). Stamped here, once per
+         hand, for EVERY pending move rather than only for the ones this
+         engine executes - because a SWAP is landed by the OTHER table's
+         transaction, so the partner's own engine never runs an executor and
+         this is its only chance to hand its player's presence over. Harmless
+         for a move that never lands: an unclaimed deposit expires. */
+      this.depositPresenceForMove(m.player_id, m.to_table_id);
       if (m.announced_at == null) fresh.push(m.move_id);
       if (this.announcedSeatMoves.has(m.move_id)) continue;
       this.announcedSeatMoves.add(m.move_id);
@@ -2460,6 +2481,10 @@ export abstract class ServerTableEngineBase {
     // The first side of a swap to reach its boundary: held out of the deal
     // until the other table lands both chairs. Told once.
     for (const h of held) {
+      // A held side is still seated HERE and will be moved by the other
+      // table's transaction: refresh its deposit while this engine still has
+      // its presence to give.
+      this.depositPresenceForMove(h.player_id, h.to_table_id);
       if (this.heldForSwap.has(h.player_id)) continue;
       this.heldForSwap.add(h.player_id);
       this.hub?.emitEvent(this.tableId, {
@@ -2477,6 +2502,11 @@ export abstract class ServerTableEngineBase {
       this.announcedSeatMoves.delete(m.move_id);
       this.heldForSwap.delete(m.player_id);
       const seated = this.seatedPlayers.find((sp) => sp.user_id === m.player_id);
+      /* PRESENCE FOLLOWS THE PLAYER. The freshest possible stamp: taken
+         immediately before this engine forgets them, so the destination
+         adopts what they were half a second ago rather than what they were at
+         the start of the hand. */
+      this.depositPresenceForMove(m.player_id, m.to_table_id);
       this.disconnectEngine.unregisterPlayer(this.tableId, m.player_id);
       this.timeBankEngine.removePlayer(this.tableId, m.player_id);
       this.straddleEngine.removePlayer(this.tableId, m.player_id);
@@ -2527,6 +2557,84 @@ export abstract class ServerTableEngineBase {
       void this.broadcastCurrentState();
     }
     return movedIds;
+  }
+
+  /**
+   * Hand this player's presence to the table they are moving to.
+   *
+   * The FSM entry is exactly what a restart persists to
+   * `engine_presence_parked` - `getFsmState` is the one function that answers
+   * "what is this seat's presence right now", so the move and the restart
+   * carry the same thing and can never drift apart. A player this engine has
+   * never registered (a chair created mid-buy-in, or a move planned before the
+   * first deal) has no entry and nothing is deposited: the destination then
+   * registers them the ordinary way, which is what happened before any of
+   * this existed.
+   */
+  protected depositPresenceForMove(playerId: string, toTableId: string): void {
+    if (!playerId || !toTableId || toTableId === this.tableId) return;
+    const fsm = this.disconnectEngine.getFsmState(this.tableId, playerId);
+    if (!fsm) return;
+    const bank = this.timeBankEngine.getPlayerBank(this.tableId, playerId);
+    const meta = this.timeBankMeta.get(playerId);
+    depositMovedPresence(playerId, toTableId, {
+      fsm,
+      fromTableId: this.tableId,
+      timeBank: bank
+        ? {
+            remainingSeconds: bank.remainingSeconds,
+            usesRemaining: bank.usesRemaining,
+            initialSeconds: meta?.initialSeconds ?? bank.remainingSeconds,
+            baseSeconds: meta?.baseSeconds ?? this.timeBankBaseSeconds,
+            dbConsumedSeconds: meta?.dbConsumedSeconds ?? 0,
+          }
+        : null,
+    });
+  }
+
+  /**
+   * ADOPT WHAT ARRIVED WITH THE PLAYER (2026-09-05).
+   *
+   * Called on every seat sweep, from BOTH the start-up wait loop and the
+   * dealing loop, for the same reason `restoreSitOutsFromSeats` is called from
+   * both: a table below the minimum to deal never reaches the dealing loop,
+   * and a feeder's mover often lands on exactly such a table.
+   *
+   * IT MUST RUN BEFORE `restoreSitOutsFromSeats`, and the order is load-
+   * bearing rather than tidy. `restoreSitOutsFromSeats` calls
+   * `registerPlayer`, and `restoreFsmStates` refuses - correctly - to clobber
+   * a live entry, so registering first would leave the arriving player with a
+   * fresh CONNECTED state and throw the strikes, the away-blind budget and the
+   * sit-out clock away, which is the whole bug this closes.
+   *
+   * The time bank is seeded here too, and only here: the dealing loop's own
+   * seeding is guarded on `!getPlayerBank(...)`, so a bank adopted now is the
+   * one the player keeps and the free refill never happens for a mover.
+   */
+  protected adoptMovedPresence(): void {
+    for (const p of this.seatedPlayers) {
+      const carried = claimMovedPresence(p.user_id, this.tableId);
+      if (!carried) continue;
+      const restored = this.disconnectEngine.restoreFsmStates(this.tableId, {
+        [p.user_id]: carried.fsm,
+      });
+      if (carried.timeBank && !this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)) {
+        this.timeBankEngine.initializePlayer(this.tableId, p.user_id, {
+          remainingSeconds: carried.timeBank.remainingSeconds,
+          usesRemaining: carried.timeBank.usesRemaining,
+        });
+        this.timeBankMeta.set(p.user_id, {
+          initialSeconds: carried.timeBank.initialSeconds,
+          baseSeconds: carried.timeBank.baseSeconds,
+          dbConsumedSeconds: carried.timeBank.dbConsumedSeconds,
+        });
+      }
+      console.log(
+        `[ServerTableEngine:${this.tableId}] presence followed ${p.user_id} from ` +
+          `${carried.fromTableId}: ${carried.fsm.state}` +
+          (restored ? '' : ' (a live observation already won)')
+      );
+    }
   }
 
   /** Last time the empty-cluster-table check read the row. See below. */

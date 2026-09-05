@@ -1186,6 +1186,16 @@ export default function DynamicWallet({
               clubBank: Number(p.new.chip_treasury) || 0,
             }));
           }
+          /* The club Promo Wallet is live too (2026-09-05): a union promo send
+             lands in clubs.promo_balance, and the row a Club Bank role reads
+             is that account, so it moves with the payload rather than waiting
+             for the next full refetch. */
+          if (p.new?.promo_balance !== undefined) {
+            setData((prev) => ({
+              ...prev,
+              clubPromoWallet: Number(p.new.promo_balance) || 0,
+            }));
+          }
           /* Compare against what we already know, not against `p.old`.
              Postgres logical replication only fills old_record with the
              replica-identity columns - the primary key, by default - so
@@ -1333,7 +1343,14 @@ export default function DynamicWallet({
       // few minutes, so a club's promo balance steps rather than streams.
       // Saying so stops it reading as "not being funded" - which is exactly
       // how it read while the row was showing the wrong account entirely.
-      hint: clubPromoIsClubMoney ? '25% BBJ Slice · Swept Every 5 Min' : undefined,
+      // A club inside a union banks its BBJ slice in the UNION wallet; its own
+      // pot is what the union promo wallet pays into (Dan 2026-09-05). Only a
+      // standalone club's pot is fed by the sweep.
+      hint: clubPromoIsClubMoney
+        ? isClubInUnion
+          ? 'Funded By The Union Promo Wallet'
+          : '25% BBJ Slice · Swept Every 5 Min'
+        : undefined,
       onOpen: onOpenPromoWallet,
     },
     club_bank: {

@@ -351,8 +351,24 @@ describe('the fleet keeps its hands off cluster tables', () => {
        to fill and never cleared, so a FULL Main 1 - the one state in which
        the open rule needs it - reported a stale number for ever. Built fresh
        per cycle and swapped whole; a cluster table that has nothing to fill
-       still runs the candidate filter (countOnly) and answers. */
+       still runs the candidate filter (countOnly) and answers.
+
+       PIN MOVED 2026-09-05 (a buyer is counted once). The answer for a
+       cluster table is no longer `pool.length` - the same two free horses
+       were counted as buyers for every full Main 1 on the host at once, and
+       eleven of twelve feeders opened in an hour were abandoned empty. The
+       pool is KEPT per cluster table and `allocateBuyers` hands each horse
+       out once, in seeding order, after the loop; a full table asks for the
+       open rule's two and no more. Non-cluster tables still report the pool
+       size. See HorseBuyerAllocation.test.ts for the allocation itself. */
     expect(FLEET).toMatch(
+      /clusterPools\.push\(clusterPool\);\s*\} else \{\s*nextEligible\.set\(table\.id, pool\.length\);\s*\}\s*if \(countOnly\) continue;/
+    );
+    expect(FLEET).toMatch(/seatsWanted: countOnly\s*\?\s*FULL_TABLE_BUYER_PROBE/);
+    expect(FLEET).toMatch(
+      /for \(const \[tableId, n\] of allocateBuyers\(clusterPools, capacityByHorse\)\) \{\s*nextEligible\.set\(tableId, n\);\s*\}\s*this\.lastEligibleByTable = nextEligible;/
+    );
+    expect(FLEET).not.toMatch(
       /nextEligible\.set\(table\.id, pool\.length\);\s*if \(countOnly\) continue;/
     );
     expect(FLEET).toMatch(/this\.lastEligibleByTable = nextEligible;/);

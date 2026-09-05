@@ -346,8 +346,9 @@ describe('2. a table over the cap drains through the engine, never a mid-hand cu
     // chair is on Main 1, which has no seat change, and whether the table is
     // closing. The columns this pin was written for (settings, for
     // isRetiringTable, and cluster_id, for the drain below) are still there.
+    // 2026-09-05 (no lone horse): and created_at, for the opening-feeder grace.
     expect(ROTATOR).toMatch(
-      /tables!inner\(id, big_blind, tournament_id, status, settings, cluster_id, role, main_index, lifecycle\)/
+      /tables!inner\(id, big_blind, tournament_id, status, settings, cluster_id, role, main_index, lifecycle, created_at\)/
     );
     // 2026-09-05: and the drain never touches a cluster table.
     expect(ROTATOR).toMatch(

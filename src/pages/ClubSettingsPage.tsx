@@ -89,10 +89,7 @@ interface ClubSettings {
   requires_approval: boolean;
   default_rake_percent: number;
   rake_cap: number;
-  bbj_rake_enabled: boolean;
   spins_enabled: boolean;
-  spins_preseed_amount: number;
-  spins_wallet_funding: string;
 }
 
 export default function ClubSettingsPage() {
@@ -115,10 +112,7 @@ export default function ClubSettingsPage() {
     requires_approval: false,
     default_rake_percent: RAKE_INHERIT,
     rake_cap: RAKE_INHERIT,
-    bbj_rake_enabled: true,
     spins_enabled: false,
-    spins_preseed_amount: 0,
-    spins_wallet_funding: 'PROMO',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -167,10 +161,6 @@ export default function ClubSettingsPage() {
     if (settings.requires_approval !== orig.requires_approval) changes.push('Approval');
     if (settings.default_rake_percent !== orig.default_rake_percent) changes.push('Rake %');
     if (settings.rake_cap !== orig.rake_cap) changes.push('Rake Cap');
-    if (settings.bbj_rake_enabled !== orig.bbj_rake_enabled) changes.push('BBJ Rake');
-    if (settings.spins_enabled !== orig.spins_enabled) changes.push('Spins Enabled');
-    if (settings.spins_preseed_amount !== orig.spins_preseed_amount) changes.push('Spins Pre-seed');
-    if (settings.spins_wallet_funding !== orig.spins_wallet_funding) changes.push('Spins Wallet');
     return changes;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings, baselineVersion]);
@@ -692,7 +682,7 @@ export default function ClubSettingsPage() {
           supabase
             .from('clubs')
             .select(
-              'id, owner_id, club_id, logo_url, name, description, tagline, lobby_message, is_public, requires_approval, default_rake_percent, rake_cap, bbj_rake_enabled, spins_enabled, spins_preseed_amount, spins_wallet_funding, union_id'
+              'id, owner_id, club_id, logo_url, name, description, tagline, lobby_message, is_public, requires_approval, default_rake_percent, rake_cap, spins_enabled, union_id'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -719,11 +709,17 @@ export default function ClubSettingsPage() {
           requires_approval: data.requires_approval ?? false,
           default_rake_percent: data.default_rake_percent ?? RAKE_INHERIT,
           rake_cap: data.rake_cap ?? RAKE_INHERIT,
-          bbj_rake_enabled: data.bbj_rake_enabled ?? true,
           spins_enabled: data.spins_enabled ?? false,
-          spins_preseed_amount: data.spins_preseed_amount ?? 0,
-          spins_wallet_funding: data.spins_wallet_funding || 'PROMO',
         };
+
+        /* THE UNION FLAG IS SET FROM THE ROW, WHICH IT NEVER WAS (phase 8).
+           `setInUnion` had no caller anywhere in this file, so `inUnion` was
+           permanently false and the Rake & BBJ section below - the one it
+           guards - was shown to every club, including clubs whose rake their
+           UNION governs. An owner could set a rake percentage the union then
+           overrode, with nothing on screen saying so. `union_id` was already
+           in the select; it was simply never read. */
+        setInUnion(Boolean(data.union_id));
 
         // A background refresh must never overwrite edits the owner has typed
         // and not saved. Three paths land here without the user asking —
@@ -877,10 +873,26 @@ export default function ClubSettingsPage() {
               requires_approval: toSave.requires_approval,
               default_rake_percent: toSave.default_rake_percent,
               rake_cap: toSave.rake_cap,
-              bbj_rake_enabled: toSave.bbj_rake_enabled,
-              spins_enabled: toSave.spins_enabled,
-              spins_preseed_amount: toSave.spins_preseed_amount,
-              spins_wallet_funding: toSave.spins_wallet_funding,
+              /* FOUR COLUMNS USED TO BE WRITTEN FROM HERE AND ARE NOT ANY MORE
+                 (phase 8, 2026-09-05). `tests/settings-only-write-what-they-offer.test.ts`
+                 already states the rule for the other settings surface: a page
+                 writes what it OFFERS, and nothing else. This page offered a
+                 switch for one of them and no control at all for three, yet
+                 blind-wrote whatever it happened to have loaded on every save.
+
+                 - `spins_enabled` IS READ, by the lobby (ClubHomePage). There
+                   was no control for it here, so a save carrying a stale copy
+                   could turn Spins off for a club that had just turned it on
+                   somewhere else. That is the live one.
+                 - `spins_preseed_amount` and `spins_wallet_funding` have no
+                   control and no reader anywhere in src/ or server/.
+                 - `bbj_rake_enabled` HAD a visible switch here and no reader at
+                   all - the BBJ engine reads the separate `bbj_enabled`. The
+                   switch is gone with this change rather than wired up,
+                   because whether a club takes BBJ rake sets what players pay,
+                   and CLAUDE.md 10.9 reserves that to Dan. A switch that does
+                   nothing is worse than no switch: it tells an operator they
+                   have turned something off. */
             })
             .eq(resolveClubIdFilter(clubId!).column, resolveClubIdFilter(clubId!).value)
             // .select() is what makes a rejected write observable. Without it
@@ -1698,22 +1710,14 @@ export default function ClubSettingsPage() {
               ever read — an owner could set it to 15 or to 120 and every table
               behaved identically. A time bank is a flat 20-second grant, 2 per
               street (Bible V8 s6.2); there is nothing per-club left to set. */}
-            <div className="toggle-row">
-              <div className="toggle-info">
-                <span className="toggle-label">BBJ Rake</span>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={settings.bbj_rake_enabled}
-                aria-label="BBJ Rake"
-                className={`toggle-btn ${settings.bbj_rake_enabled ? 'on' : ''}`}
-                onClick={() => updateSetting('bbj_rake_enabled', !settings.bbj_rake_enabled)}
-                disabled={!isOwner}
-              >
-                {settings.bbj_rake_enabled ? 'ON' : 'OFF'}
-              </button>
-            </div>
+            {/* 2026-09-05, phase 8: the "BBJ Rake" switch was removed, for the
+              same reason as the Time Bank field above it. It wrote
+              clubs.bbj_rake_enabled, which NOTHING reads - the bad beat jackpot
+              engine reads the separate `bbj_enabled` column - so an owner could
+              turn it off and every table went on taking BBJ rake. Wiring it
+              would decide what players pay, which CLAUDE.md 10.9 reserves to
+              Dan; showing it did the one thing worse than not offering the
+              control, which is to say it had been used. */}
           </section>
         )}
         {/* Spins — the owner's switch and the wallet behind it.

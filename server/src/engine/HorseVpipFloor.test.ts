@@ -63,9 +63,41 @@ describe('the wiring', () => {
   );
 
   it('the brain scales preflop tightness by the floor, last', () => {
-    expect(LOGIC).toMatch(/params\.tightness \*= vpipFloorMul\(gs\);/);
+    // 2026-09-05: the multiply moved inside a scoped block so the same
+    // multiplier can be counted into horse_brain_telemetry (the layer shipped
+    // dark, and the daily audit could not tell it had ever run). Still one
+    // call, still applied to params.tightness, still last.
+    expect(LOGIC).toMatch(/const vfMul = vpipFloorMul\(gs\);/);
+    expect(LOGIC).toMatch(/params\.tightness \*= vfMul;/);
     expect(LOGIC).toMatch(/vpipFloor\?: number;/);
     expect(LOGIC).toMatch(/ownVpip\?: \{ hands: number; vpip: number \| null \};/);
+  });
+
+  it('the layer is not dark - it counts itself into horse_brain_telemetry', () => {
+    /**
+     * WHY THIS PIN EXISTS. The VPIP floor shipped in #3034 with no telemetry
+     * at all. On 2026-09-05 the daily audit could see `decide` firing
+     * 6,950,276 times over three days and could not answer whether this layer
+     * had ever run once - the telemetry_dark case the audit calls top
+     * priority. Establishing that it worked took an outcome measurement
+     * against ca_hand_facts instead, which is not a receipt anybody can run
+     * on a schedule.
+     *
+     * The four sub-counters are the ones that distinguish the failures worth
+     * distinguishing: `_prior` (no sample yet), `_closing` (reading the
+     * horse's own judged VPIP and still widening), `_satisfied` (over the
+     * floor, own style back), `_clamped` (pinned at the 0.35 limit, so the
+     * floor is unreachable and the table churns). A floored table showing
+     * only `_prior` for ever means ownVpip never reaches the brain.
+     */
+    expect(LOGIC).toMatch(/noteFire\('vpip_floor'\)/);
+    expect(LOGIC).toMatch(/noteFire\('vpip_floor_prior'\)/);
+    expect(LOGIC).toMatch(/noteFire\('vpip_floor_closing'\)/);
+    expect(LOGIC).toMatch(/noteFire\('vpip_floor_satisfied'\)/);
+    expect(LOGIC).toMatch(/noteFire\('vpip_floor_clamped'\)/);
+    // Only on floored tables: counting every decision on every table would
+    // make the counter a copy of `decide` and tell nobody anything.
+    expect(LOGIC).toMatch(/Number\(gs\.vpipFloor \?\? 0\) > 0/);
   });
 
   it("the engine hands the brain the floor and the seat's own judged figure", () => {

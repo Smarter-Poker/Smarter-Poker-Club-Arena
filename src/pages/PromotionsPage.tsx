@@ -69,12 +69,22 @@ export default function PromotionsPage() {
     if (!user?.id) return;
     (async () => {
       try {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('profiles')
           .select('player_number')
           .eq('id', user.id)
           .maybeSingle();
         if (!isMounted.current) return;
+        /* THE ERROR IS READ, because the fallback below is the exact bug the
+           comment on this block describes. `error` was never destructured, so
+           a failed read left `playerNumber` null and `referralCode` fell back
+           to `user.id` - which is what used to be shared, matched no player,
+           and made redemption refuse the inviter. A failed read now leaves the
+           link unbuilt rather than building a wrong one. */
+        if (error) {
+          reportError(error, 'PromotionsPage.referral_code_lookup');
+          return;
+        }
         setPlayerNumber(data?.player_number ?? null);
       } catch (e) {
         reportError(e, 'PromotionsPage.referral_code_lookup');
@@ -82,7 +92,10 @@ export default function PromotionsPage() {
     })();
   }, [user?.id, isMounted]);
 
-  const referralCode = playerNumber || user?.id || '';
+  /* NO user.id FALLBACK. A player number is the only thing redemption
+     recognises; sharing an account id produced a link that always refused. If
+     the number is not known the link is simply not offered. */
+  const referralCode = playerNumber || '';
   const referralLink =
     clubId && referralCode
       ? `${window.location.origin}/hub/club-arena/invite/${clubId}?ref=${referralCode}`
@@ -109,8 +122,15 @@ export default function PromotionsPage() {
       await promotionService.claimPromotion(promoId, user.id);
       if (!isMounted.current) return;
       setClaimedIds((prev) => new Set(prev).add(promoId));
-      masterBus.emit('BALANCE_UPDATED', { source: 'promotion_claim', userId: user.id });
-      toast.success('Promotion claimed!');
+      /* NO BALANCE_UPDATED HERE, AND THE MESSAGE SAYS WHAT HAPPENED.
+         Claiming records a `promotion_claims` row; it credits no wallet. Only
+         the deposit-match path calls `add_to_promo_wallet`, and that path
+         filters on a promotion type the table's own check constraint forbids
+         (`promotions_type_check` allows leaderboard, rake_race, milestone,
+         mystery, high_hand), so it can never match. Emitting BALANCE_UPDATED
+         made every surface re-read a balance that had not moved, and
+         "Promotion claimed!" beside it read as "you have been paid". */
+      toast.success('Promotion Claimed. Your Reward Is Recorded Against This Offer.');
     } catch (err: any) {
       if (isMounted.current) toast.error(err?.message || 'Failed to claim promotion');
       reportError(err, 'PromotionsPage.claim');

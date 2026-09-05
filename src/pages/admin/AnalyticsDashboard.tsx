@@ -208,13 +208,25 @@ export default function AnalyticsDashboard() {
         )
       );
 
-      // Enhancement #9: Live active player count from table_seats
+      /* Enhancement #9: Live active player count from table_seats.
+
+         NO `.is('horse_id', null)` (removed 2026-09-05, CLAUDE.md 10.5).
+         It was written when `table_seats.horse_id` was NULL on every row, so
+         it matched everything and the count included the whole fleet. The
+         2026-09-05 backfill stamped 1,285 live horse seats, at which point the
+         same untouched line would have started silently dropping every one of
+         them from an operator's "live players now".
+
+         10.5: horses "COUNT everywhere a human counts" and are "NEVER silently
+         filtered out of a report, a total, or a ledger". A dormant filter that
+         wakes up when its column is populated is exactly the shape that law is
+         about - the invented `is_horse` exclusion in fn_settle_tournament_rake
+         is the same bug and it cost 39 events their rake attribution. */
       const { count: liveCount } = await supabase
         .from('table_seats')
         .select('id', { count: 'exact', head: true })
         .eq('status', 'active')
-        .is('left_at', null)
-        .is('horse_id', null);
+        .is('left_at', null);
 
       if (mountedRef.current) {
         setAggregate({

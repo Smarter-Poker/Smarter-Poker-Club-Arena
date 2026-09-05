@@ -59,7 +59,13 @@ const base: ResolveProfileInput = {
 };
 
 describe('who may squeeze (R1, R2, R3, R4, R6, R8)', () => {
-  const yes = { heroAllIn: true, isVip: true, settingOn: true, runItMultiple: false };
+  const yes = {
+    heroAllIn: true,
+    isVip: true,
+    settingOn: true,
+    runItMultiple: false,
+    bombPot: false,
+  };
   it('an all-in VIP with the perk on, running it once', () => {
     expect(viewerMaySqueeze(yes)).toBe(true);
   });
@@ -68,12 +74,18 @@ describe('who may squeeze (R1, R2, R3, R4, R6, R8)', () => {
     expect(viewerMaySqueeze({ ...yes, isVip: false }), 'no VIP card (R3)').toBe(false);
     expect(viewerMaySqueeze({ ...yes, settingOn: false }), 'perk off (R8)').toBe(false);
     expect(viewerMaySqueeze({ ...yes, runItMultiple: true }), 'run it twice (R2)').toBe(false);
+    // Dan 2026-09-05: "THIS ISN'T ALLOWED ON BOMB POTS OR ANY RUN IT 2 OR 3
+    // TIMES RUN OUTS."
+    expect(viewerMaySqueeze({ ...yes, bombPot: true }), 'bomb pot').toBe(false);
   });
-  it('a re-run board never squeezes, whatever the viewer is owed (R2, explicit)', () => {
+  it('a re-run board or a second board never squeezes, whatever the viewer is owed', () => {
     expect(boardMaySqueeze(true, 1)).toBe(true);
     expect(boardMaySqueeze(true, undefined)).toBe(true);
+    expect(boardMaySqueeze(true, 1, 0)).toBe(true);
     expect(boardMaySqueeze(true, 2)).toBe(false);
     expect(boardMaySqueeze(true, 3)).toBe(false);
+    expect(boardMaySqueeze(true, 1, 1), 'bomb pot board 2').toBe(false);
+    expect(boardMaySqueeze(true, 1, 2), 'bomb pot board 3').toBe(false);
     expect(boardMaySqueeze(false, 1)).toBe(false);
     expect(boardMaySqueeze(undefined, 1)).toBe(false);
   });
@@ -297,7 +309,7 @@ describe('the markup carries the hold, and the pixels follow the hand', () => {
   });
   it('the board hands the engine both halves of the rule and releases through it', () => {
     const tsx = read('src/components/table/CommunityCards.tsx');
-    expect(tsx).toContain('squeeze: boardMaySqueeze(squeezeEligible, runs)');
+    expect(tsx).toContain('squeeze: boardMaySqueeze(squeezeEligible, runs, boardIndex)');
     expect(tsx).toContain('cardPresentationEngine.releaseHold(key)');
     expect(tsx).toContain("if (phase === 'squeeze' && key === activeSqueezeRef.current)");
     // The memo must not swallow the inputs.
@@ -312,17 +324,13 @@ describe('the equity the squeezer sees waits for the card (Dan 2026-08-28)', () 
     expect(page).toContain(
       'const displayedEquities = useHeldValue(allInEquities, squeezeHolding);'
     );
-    // AUDIT 2026-09-05: every board squeezes and the hold is the UNION of
-    // the boards still face down (a bomb pot deals two or three in lockstep).
-    expect(page).toContain('const squeezeHolding = holdingBoards.size > 0;');
-    for (const b of [0, 1, 2]) {
-      expect(page, `board ${b} reports its hold`).toContain(
-        `onSqueezeHold={onSqueezeHoldBoard${b}}`
-      );
-    }
-    expect(page.match(/squeezeEligible=\{heroSqueezeEligible\}/g), 'all three boards').toHaveLength(
-      3
-    );
+    expect(page).toContain('onSqueezeHold={setSqueezeHolding}');
+    // Dan 2026-09-05: "THIS ISN'T ALLOWED ON BOMB POTS". ONE board carries the
+    // right (the bomb pot's boards 2 and 3 are handed nothing), and the page
+    // refuses the whole hand when it is a bomb pot.
+    expect(page.match(/squeezeEligible=\{heroSqueezeEligible\}/g), 'board 1 only').toHaveLength(1);
+    expect(page).toContain('bombPot: bombPotActive || tableState.communityCards2.length > 0,');
+    expect(page).not.toContain('onSqueezeHoldBoard');
     // AUDIT 2026-09-05: "all in" is run-out PARTICIPATION. The engine's
     // ALL_IN_RUNOUT carries getActivePlayers(), which includes the player who
     // called the shove with chips behind; status alone would have denied the

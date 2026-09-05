@@ -72,13 +72,23 @@
   border-right: 1px solid rgba(159, 184, 203, 0.2);
 }
 
+/* A STATUS LIGHT IS ROUND (Dan, 2026-09-05: "the broken square next to
+     community").
+     This was a 6px box with `border-radius: 1px` and a 1px near-white ring, so
+     at its actual size the ring is a third of the width and it renders as a
+     hard-edged little square sitting next to a word - a broken glyph, not an
+     indicator. A light reads as a light when it is round, when the brightest
+     part is its centre rather than its outline, and when the glow does the
+     work. Same shape in both rails, so it is fixed in both. */
 .statusLight {
   width: 7px;
   height: 7px;
-  background: #75beff;
-  border: 1px solid #d7efff;
-  border-radius: 1px;
-  box-shadow: 0 0 10px rgba(76, 170, 250, 0.7);
+  background: radial-gradient(circle at 50% 38%, #eaf6ff, #75beff 58%, #2f8fd8);
+  border: 0;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 1px rgba(117, 190, 255, 0.38),
+    0 0 10px rgba(76, 170, 250, 0.7);
 }
 
 .items {

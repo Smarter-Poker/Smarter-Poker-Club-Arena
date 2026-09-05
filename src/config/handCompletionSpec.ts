@@ -234,6 +234,53 @@ export const HAND_COMPLETION = {
    * at the 400ms ceiling the same research established.
    */
   ALL_IN_STREET_REVEAL_MS: 1750,
+  /**
+   * ── THE VIP ALL-IN SQUEEZE (Dan 2026-09-05) ──
+   *
+   * Dan, verbatim: "THIS FEATURE SHOULD ONLY BE PRESENTED AS AN OPTION AND
+   * DISPLAYED ON 'ALL INS' (BEFORE THE RIVER OBVIOUSLY) AND SHOULD NEVER
+   * APPEAR ON RUN IT 2X OR 3X. AND THIS SHOULD BE A VIP GATED PERK AND
+   * 'TURNED ON' BY DEFAULT ... ONLY TO THE USERS THAT ARE 'ALL IN'." And, asked
+   * whether the board squeeze should be interactive like the hole-card peel:
+   * yes - the all-in VIP drags (desktop) or touch-squeezes (mobile) each
+   * run-out card open, and it opens on its own if they do not.
+   *
+   * That "opens on its own" is the number below, and it is bounded by the
+   * SERVER, which is why it lives in this file rather than in the profile
+   * table. The engine (ServerTableEngineRunout) sends a run-out street, holds
+   * ALL_IN_STREET_REVEAL_MS, broadcasts the new equity, then holds
+   * allInStreetPauseMs before the next card - or allInPreShowdownPauseMs
+   * after the river before the pot ships. The squeezer's card must be face
+   * up before whichever of those comes next, or the next street lands on a
+   * card still being squeezed (the lane pre-empts it and the face just
+   * appears, which is the interrupt path doing its job, not the perk).
+   *
+   * Two things follow, and both are deliberate:
+   *
+   *   1. The squeeze MAY outlive the equity gate. A player squeezing at their
+   *      own pace can still be holding the card when the server's equity for
+   *      that street arrives. For THAT viewer, and only that viewer, the
+   *      equity overlay keeps showing the previous street's numbers until
+   *      their card is open (TablePage holds the displayed value; nothing on
+   *      the wire changes). Dan 2026-08-28 stands: the numbers never move
+   *      before the card is seen. Everyone else at the table sees the normal
+   *      reveal on the normal rhythm, so nothing about who is squeezing, or
+   *      who is a VIP, leaks through timing.
+   *   2. The ceiling is derived from the SHORTER of the two server pauses,
+   *      so one number serves every street including the river, less the
+   *      time the snap itself needs to finish (the all-in profile's
+   *      prepare + squeeze + reveal + settle is 400ms; the reserve is that).
+   *
+   * The two pauses are the engine's own literals (ServerTableEngineRunout
+   * `allInStreetPauseMs` / `allInPreShowdownPauseMs`), copied here and pinned
+   * equal by tests/unit/vipAllInSqueeze.test.ts so they cannot drift apart
+   * silently. They are not read by the engine from here: the engine's pacing
+   * tests grep those fields as literals, and a value is a value.
+   */
+  ALL_IN_STREET_PAUSE_MS: 1400,
+  ALL_IN_PRE_SHOWDOWN_PAUSE_MS: 1200,
+  /** prepare + squeeze + reveal + settle of the all-in card profile. */
+  ALL_IN_SQUEEZE_SNAP_RESERVE_MS: 400,
   /** Beat after the consent panel closes before the first card turns. */
   RIT_REVEAL_LEAD_MS: 600,
   /** One street landing on a RIT board (matches allInStreetPauseMs). */
@@ -251,6 +298,17 @@ export const HAND_COMPLETION = {
    */
   RIT_RESULT_RUN_MS: 2600,
 } as const;
+
+/**
+ * How long an all-in VIP's squeezed card may stay face down before it opens
+ * on its own: the reveal gate plus the shorter server pause that follows it,
+ * less the snap the card still has to perform. 1750 + 1200 - 400 = 2550ms at
+ * speed 1, on every street. See ALL_IN_STREET_PAUSE_MS above for why.
+ */
+export const ALL_IN_SQUEEZE_CEILING_MS: number =
+  HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS +
+  Math.min(HAND_COMPLETION.ALL_IN_STREET_PAUSE_MS, HAND_COMPLETION.ALL_IN_PRE_SHOWDOWN_PAUSE_MS) -
+  HAND_COMPLETION.ALL_IN_SQUEEZE_SNAP_RESERVE_MS;
 
 export interface HandCompletionOpts {
   /** Did the hand reach a showdown (cards shown), or end on a fold? */

@@ -438,9 +438,17 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   table(
     'horse_daily_nets',
     'nightly',
-    'HorseSelfTuner (real bb/100); fn_run_horse_daily_audit',
-    'exact settlement nets per horse per day',
+    'HorseSelfTuner (real bb/100 and, since 2026-09-05, rake_bb -> the rake-adjusted regression rule); fn_run_horse_daily_audit',
+    'exact settlement nets + weighted-contributed rake per horse per day',
     'V16',
+    { dayColumn: 'day', freshnessDays: 1 }
+  ),
+  table(
+    'horse_daily_play',
+    'nightly',
+    'HorseSelfTuner (loadPlayRows: every horse studied from its own rows; HorseHandReview compiles them at settlement with HorsePlayStats)',
+    'per horse/day/format VPIP, PFR, 3-bet, fold-to-3-bet, saw flop, WWSF, postflop aggression',
+    '2026-09-05',
     { dayColumn: 'day', freshnessDays: 1 }
   ),
   table(

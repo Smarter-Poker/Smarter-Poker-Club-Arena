@@ -109,3 +109,88 @@ export function hubTabTitle(pathAndSearch: string): string {
  * into Club Arena is converted before the second app has finished booting.
  */
 export const HUB_FRAME_POLL_MS = 250;
+
+/**
+ * A frame that has sat behind other tabs this long is unloaded: its page is
+ * remembered (`hubUrl`) and reloaded the moment its tab is opened again.
+ * Every hub tab is a whole running Next.js app with its own realtime socket,
+ * and four of them behind a live felt is memory the felt needs; this is what
+ * a phone browser does to background tabs, for the same reason. Fifteen
+ * minutes is long enough that switching between a table and a page you are
+ * actually reading never trips it.
+ */
+export const HUB_FRAME_IDLE_SUSPEND_MS = 15 * 60 * 1000;
+
+/**
+ * Is this destination somewhere other than smarter.poker? Off-site pages
+ * open in a real browser tab, never inside the frame: Stripe Checkout and
+ * OAuth providers refuse to render framed (X-Frame-Options: DENY), so
+ * letting the frame follow them would show the player a blank tab at the
+ * exact moment they are trying to pay or sign in.
+ */
+export function isOffSite(url: URL, origin: string): boolean {
+  return url.origin !== origin;
+}
+
+/* ─── HUB TABS SURVIVE A RELOAD ───────────────────────────────────────────────
+ *
+ * Same reasoning as the lobby drill-in (`ca_lobby_drill_in`): a hub tab holds
+ * no seat, no chips and no engine socket, so restoring one can never claim a
+ * seat the player may have left - the worst case is a page they had open half
+ * an hour ago. The deleted table persistence stored SEATS, which is why it
+ * was deleted; this stores URLs. Thirty-minute TTL, because "what you were
+ * reading" goes stale fast. */
+export const HUB_TABS_KEY = 'ca_hub_tabs';
+export const HUB_TABS_TTL_MS = 30 * 60 * 1000;
+
+export interface SavedHubTab {
+  hubUrl: string;
+}
+
+export function saveHubTabs(
+  urls: readonly string[],
+  storage: Pick<Storage, 'setItem' | 'removeItem'> | null = safeSession(),
+  now = Date.now()
+): void {
+  if (!storage) return;
+  try {
+    if (urls.length === 0) {
+      storage.removeItem(HUB_TABS_KEY);
+      return;
+    }
+    storage.setItem(HUB_TABS_KEY, JSON.stringify({ at: now, urls }));
+  } catch {
+    /* private-mode storage throws; a hub tab is a convenience, not a seat */
+  }
+}
+
+export function readHubTabs(
+  storage: Pick<Storage, 'getItem' | 'removeItem'> | null = safeSession(),
+  now = Date.now()
+): string[] {
+  if (!storage) return [];
+  try {
+    const raw = storage.getItem(HUB_TABS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as { at?: unknown; urls?: unknown };
+    if (typeof parsed?.at !== 'number' || now - parsed.at > HUB_TABS_TTL_MS) {
+      storage.removeItem(HUB_TABS_KEY);
+      return [];
+    }
+    // Parsed JSON from storage: validate every entry rather than trusting it,
+    // and only ever restore a World Hub path - never Club Arena, never
+    // another origin.
+    const urls = Array.isArray(parsed.urls) ? parsed.urls : [];
+    return urls.filter((u): u is string => typeof u === 'string' && isHubPath(u));
+  } catch {
+    return [];
+  }
+}
+
+function safeSession(): Storage | null {
+  try {
+    return typeof sessionStorage === 'undefined' ? null : sessionStorage;
+  } catch {
+    return null;
+  }
+}

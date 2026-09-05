@@ -111,8 +111,8 @@ Both CLAUDE.md sections now name the exception, and
   never Club Arena itself and never another origin; a link the player follows
   off smarter.poker inside the frame is cross-origin, the location read
   throws, and the tab keeps its last name. Nothing breaks; nothing is bridged.
-- Keyboard tab-switching (`1`..`6`, Tab) does not reach the container while
-  focus is inside the frame - the same as a real browser tab.
+- (Round 1 only: keyboard tab-switching did not reach the container while
+  focus was inside the frame. Round 2 below forwards it.)
 - Off-route with no table open, a hub tab is as unreachable as a lobby tab was
   (nothing to borrow a URL from). Unchanged.
 
@@ -133,3 +133,61 @@ Both CLAUDE.md sections now name the exception, and
 - `src/components/table/TableTabBar.tsx`: `hub:` ids.
 - `tests/unit/hubTab.test.ts`, `tests/hub-tab-is-a-browser-tab.law.test.ts`,
   `docs/laws.d/hub-tab-is-a-browser-tab.md`, CLAUDE.md 1.3 and 7.
+
+## Round 2 (2026-09-05): what a hub tab does when you are not looking, and every way in
+
+Dan: "GO AHEAD AND FULLY BUILD ALL OF THESE AND MAKE SURE THEY ARE FULLY
+WIRED IN AND TESTED BEFORE CLAIMING SUCCESS. IF THERE ARE ANY THAT YOU
+CONSIDER 'HIGH RISK' FOR DAMAGING CODE OR OTHER PAGES, DO NOT BUILD THEM."
+
+Built, each exercised in `tests/unit/hubFrame.test.tsx` (the frame mounted
+for real with its own document) or `tests/unit/hubTab.test.ts`:
+
+- **Off-site links open a real browser tab.** Stripe Checkout and OAuth
+  providers send `X-Frame-Options: DENY`; a frame following one would go blank
+  at the moment the player is paying. Every anchor to another origin is caught
+  in the capture phase and handed to `window.open(_, '_blank', 'noopener')`.
+  A programmatic redirect off-site is still the hub page's own to break out of.
+- **Inactive frames are quiet.** When a hub tab leaves the screen every
+  playing `<video>`/`<audio>` in it is paused (`pauseMediaIn`). Not resumed on
+  return; the player presses play.
+- **Idle frames are unloaded.** Fifteen minutes behind other tabs
+  (`HUB_FRAME_IDLE_SUSPEND_MS`) and the frame goes to `about:blank`, its last
+  page remembered; opening the tab reloads it there. Each hub tab is a whole
+  running Next.js app with its own realtime socket, and the felt needs that
+  memory more than a page nobody has read for a quarter of an hour.
+- **Keyboard reaches the strip from inside a frame.** 1-6, Tab and Alt+Arrows
+  are forwarded from the frame document through `hubKeysRef`, the same shape
+  as the swipe ref.
+- **Hub tabs survive a reload.** `ca_hub_tabs` in sessionStorage, 30-minute
+  TTL, URLs only (validated with `isHubPath` on the way back in), restored
+  after the seat rebuild, never past the cap, never duplicating a page already
+  open. The mirror is suppressed until the restore has read storage, or the
+  first empty render would erase the list it was about to restore.
+- **`OPEN_HUB_TAB` bus event.** Browser-tab semantics: a hub tab already on
+  that page is focused, any other page gets its own tab. Two callers today:
+  the felt's Club Marketplace button (was `window.open('/hub/marketplace')`,
+  a browser tab the felt could not see) and the strip's new "+" menu.
+- **"+" long-press / right-click menu**: Open Lobby, Open Hub, Social,
+  Messages, each in a new tab, so a player on a felt reaches Social in one
+  gesture instead of "+" then Hub. A tap on "+" is unchanged (Quick Join), and
+  the click that follows a long-press release is swallowed so one gesture is
+  never two.
+
+Not built, and why:
+
+- **Page tabs outside the table cap.** The cap is threaded through nine code
+  paths and the tile grid is a fixed 2x2 on mobile; changing what counts is a
+  multi-table core change I cannot verify on a felt from here. Server
+  correctness does not need it (the server caps seats, not tabs). Dan's call,
+  separately.
+- **Frames surviving tile view.** Needs a persistent layer wrapping the felt
+  container; a layout change around `position:fixed` descendants of TablePage
+  with no way to verify the felt locally. The frame comes back at its page.
+- **World Hub chrome inside the frame** and **hub-side analytics**: other
+  repo.
+- **`document.title` for pill names**: the hub's titles are generic
+  ("Smarter.Poker Feature | Smarter.Poker", measured on /hub/social); the path
+  segment is the better name.
+- **Prefetching `/hub`**: SSR HTML is served no-cache; a prefetch buys nothing
+  measurable.

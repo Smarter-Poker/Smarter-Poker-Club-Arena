@@ -17,10 +17,16 @@
 import { describe, it, expect } from 'vitest';
 import {
   CLUB_ARENA_PREFIX,
+  HUB_FRAME_IDLE_SUSPEND_MS,
   HUB_FRAME_POLL_MS,
+  HUB_TABS_KEY,
+  HUB_TABS_TTL_MS,
   clubArenaPathFromHubUrl,
   hubTabTitle,
   isHubPath,
+  isOffSite,
+  readHubTabs,
+  saveHubTabs,
 } from '../../src/utils/hubTab';
 import {
   HUB_TAB_PREFIX,
@@ -142,5 +148,81 @@ describe('a hub tab in the slot model', () => {
 describe('the poll is fast enough to beat a second app boot', () => {
   it('reads the frame at least four times a second', () => {
     expect(HUB_FRAME_POLL_MS).toBeLessThanOrEqual(250);
+  });
+});
+
+describe('isOffSite: anything not smarter.poker opens in a real browser tab', () => {
+  const origin = 'https://smarter.poker';
+  it('is false for our own pages and true for everyone else', () => {
+    expect(isOffSite(new URL('https://smarter.poker/hub/social'), origin)).toBe(false);
+    expect(isOffSite(new URL('https://smarter.poker/hub/club-arena'), origin)).toBe(false);
+    expect(isOffSite(new URL('https://checkout.stripe.com/pay/x'), origin)).toBe(true);
+    expect(isOffSite(new URL('https://accounts.google.com/o/oauth2'), origin)).toBe(true);
+    // A different scheme or port is a different origin too.
+    expect(isOffSite(new URL('http://smarter.poker/hub'), origin)).toBe(true);
+    expect(isOffSite(new URL('https://www.smarter.poker/hub'), origin)).toBe(true);
+  });
+});
+
+describe('hub tabs survive a reload (URLs, never seats)', () => {
+  const fakeStorage = () => {
+    const m = new Map<string, string>();
+    return {
+      getItem: (k: string) => m.get(k) ?? null,
+      setItem: (k: string, v: string) => void m.set(k, v),
+      removeItem: (k: string) => void m.delete(k),
+      raw: m,
+    };
+  };
+
+  it('round-trips the open pages in order', () => {
+    const st = fakeStorage();
+    saveHubTabs(['/hub/social', '/hub/training?x=1'], st, 1000);
+    expect(readHubTabs(st, 2000)).toEqual(['/hub/social', '/hub/training?x=1']);
+  });
+
+  it('clears the record when the last hub tab closes', () => {
+    const st = fakeStorage();
+    saveHubTabs(['/hub/social'], st, 1000);
+    saveHubTabs([], st, 1000);
+    expect(st.raw.has(HUB_TABS_KEY)).toBe(false);
+    expect(readHubTabs(st, 1000)).toEqual([]);
+  });
+
+  it('expires: what you were reading half an hour ago is clutter, not continuity', () => {
+    const st = fakeStorage();
+    saveHubTabs(['/hub/social'], st, 1000);
+    expect(readHubTabs(st, 1000 + HUB_TABS_TTL_MS)).toEqual(['/hub/social']);
+    expect(readHubTabs(st, 1000 + HUB_TABS_TTL_MS + 1)).toEqual([]);
+    expect(st.raw.has(HUB_TABS_KEY)).toBe(false);
+  });
+
+  it('restores only World Hub paths, whatever storage claims', () => {
+    const st = fakeStorage();
+    st.setItem(
+      HUB_TABS_KEY,
+      JSON.stringify({
+        at: 5000,
+        urls: ['/hub/social', '/hub/club-arena/clubs/x', 'https://evil.example/hub', 42, null, '/'],
+      })
+    );
+    expect(readHubTabs(st, 5000)).toEqual(['/hub/social']);
+  });
+
+  it('a malformed or missing record is an empty list, never a throw', () => {
+    const st = fakeStorage();
+    expect(readHubTabs(st)).toEqual([]);
+    st.setItem(HUB_TABS_KEY, '{not json');
+    expect(readHubTabs(st)).toEqual([]);
+    st.setItem(HUB_TABS_KEY, JSON.stringify({ urls: ['/hub/social'] })); // no `at`
+    expect(readHubTabs(st, 1)).toEqual([]);
+    expect(readHubTabs(null)).toEqual([]);
+    expect(() => saveHubTabs(['/hub'], null)).not.toThrow();
+  });
+});
+
+describe('an idle frame is unloaded, but not so soon it trips on a table switch', () => {
+  it('waits at least ten minutes', () => {
+    expect(HUB_FRAME_IDLE_SUSPEND_MS).toBeGreaterThanOrEqual(10 * 60 * 1000);
   });
 });

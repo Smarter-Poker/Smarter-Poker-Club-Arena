@@ -160,6 +160,72 @@ describe('a hub tab is not a table, and not a lobby', () => {
   });
 });
 
+/**
+ * ROUND 2 (Dan 2026-09-05: "FULLY BUILD ALL OF THESE"). What a hub tab does
+ * when the player is not looking at it, and every way into one. The frame's
+ * own behaviour is exercised for real in tests/unit/hubFrame.test.tsx; these
+ * pin that the container and the other surfaces are wired to it.
+ */
+describe('round 2: every way into a hub tab goes through OPEN_HUB_TAB', () => {
+  const BUS = read('src/core/MasterBus.ts');
+  const TABLE = read('src/pages/TablePage.tsx');
+
+  it('the bus event exists and the container answers it', () => {
+    expect(BUS).toContain("| 'OPEN_HUB_TAB'");
+    expect(BUS).toContain('OPEN_HUB_TAB: { path: string; requestedBy?: string };');
+    expect(MULTI).toContain("useMasterBusSubscription('OPEN_HUB_TAB'");
+    // Browser-tab semantics: same page focuses, a different page gets its own tab.
+    expect(MULTI).toContain('prev.findIndex((t) => isHubTab(t) && t.hubUrl === path)');
+  });
+
+  it('the felt Marketplace button opens a hub tab, not a browser tab the felt cannot see', () => {
+    expect(TABLE).not.toContain("window.open('/hub/marketplace'");
+    expect(TABLE).toContain("path: '/hub/marketplace'");
+  });
+
+  it('the "+" long-press menu offers the lobby and hub pages in a new tab', () => {
+    expect(STRIP).toContain('onOpenLobby?: () => void;');
+    expect(STRIP).toContain('onOpenHub?: (path: string) => void;');
+    expect(STRIP).toContain('onContextMenu={handleAddContextMenu}');
+    expect(STRIP).toContain('aria-label="Open A New Tab"');
+    // A long-press must not ALSO fire the tap's Quick Join on release.
+    expect(STRIP).toContain('if (a.fired) {');
+    expect(MULTI).toContain('onOpenLobby={handleOpenLobbyTab}');
+    expect(MULTI).toContain('onOpenHub={handleOpenHubTab}');
+  });
+});
+
+describe('round 2: a hub tab the player is not looking at', () => {
+  it('the container tells each frame whether it is on screen', () => {
+    expect(MULTI).toContain('active={idx === activeIndex && !hidden}');
+  });
+
+  it('keystrokes inside the frame reach the strip through the same kind of ref as swipe', () => {
+    expect(MULTI).toContain('hubKeysRef.current = handleKeyDown;');
+    expect(MULTI).toContain('keys={hubKeysRef}');
+    expect(FRAME).toContain("doc.addEventListener('keydown', onKey)");
+  });
+
+  it('off-site links leave through window.open, never through the frame', () => {
+    expect(FRAME).toContain("window.open(url.href, '_blank', 'noopener,noreferrer')");
+    expect(FRAME).toContain('isOffSite(url, window.location.origin)');
+  });
+
+  it('inactive frames are quiet, then unloaded, and come back at their page', () => {
+    expect(FRAME).toContain('pauseMediaIn(doc)');
+    expect(FRAME).toContain("iframe.src = 'about:blank';");
+    expect(FRAME).toContain('iframe.src = lastPathRef.current;');
+  });
+
+  it('hub tabs are mirrored to storage after restore, and restored after the seat rebuild', () => {
+    expect(MULTI).toContain('if (!hubTabsRestoredRef.current) return;');
+    expect(MULTI).toContain('const saved = readHubTabs();');
+    // Never past the cap, never a duplicate of a page already open.
+    expect(MULTI).toContain('if (next.length >= MAX_TABLES) break;');
+    expect(MULTI).toContain('if (open.has(url)) continue;');
+  });
+});
+
 describe('the exception is written where the next agent will read it', () => {
   it('CLAUDE.md names HubFrame as the one sanctioned iframe', () => {
     expect(CLAUDE_MD).toContain('HubFrame');

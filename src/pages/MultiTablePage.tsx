@@ -53,7 +53,7 @@ import {
   pickObserveSlot,
   pruneStaleSeatedTabs,
 } from '../utils/tabSlots';
-import { hubTabTitle, isHubPath } from '../utils/hubTab';
+import { hubTabTitle, isHubPath, readHubTabs, saveHubTabs } from '../utils/hubTab';
 import { HubFrame, type HubFrameSwipeHandlers } from '../components/table/HubFrame';
 import GlobalHeader from '../components/navigation/GlobalHeader';
 import { soundService, haptic } from '../services/SoundService';
@@ -1277,6 +1277,33 @@ export default function MultiTablePage() {
         kind: 'lobby',
       },
     ]);
+    setActiveIndex(prev.length);
+  });
+
+  /**
+   * OPEN_HUB_TAB (Dan 2026-09-04): a World Hub page in a hub tab, from
+   * anywhere - the "+" long-press menu, the felt's Marketplace button, any
+   * surface that used to leave with window.location or window.open.
+   *
+   * Browser-tab semantics, so unlike OPEN_LOBBY_TAB this does not fold every
+   * request into one tab: a hub tab already on THAT page is focused, any
+   * other page gets its own tab. Same cap and same cap toast as everything
+   * else that opens a slot.
+   */
+  useMasterBusSubscription('OPEN_HUB_TAB', (payload: { path?: string }) => {
+    const path = payload?.path ?? '';
+    if (!isHubPath(path)) return;
+    const prev = tablesRef.current;
+    const existing = prev.findIndex((t) => isHubTab(t) && t.hubUrl === path);
+    if (existing !== -1) {
+      setActiveIndex(existing);
+      return;
+    }
+    if (prev.length >= MAX_TABLES) {
+      notifyCapReached('add');
+      return;
+    }
+    setTables([...prev, makeHubTab(path)]);
     setActiveIndex(prev.length);
   });
 
@@ -2775,6 +2802,20 @@ export default function MultiTablePage() {
     window.history.back();
   }, []);
 
+  /* The "+" long-press menu (TableTabBar): straight to the lobby, or straight
+     to a hub page, in a NEW tab - so a player on a felt reaches Social or
+     Messages in one gesture rather than "+" then Hub. Both go through the bus
+     so they are the same paths every other caller uses. */
+  const handleOpenLobbyTab = useCallback(() => {
+    masterBus.emit('OPEN_LOBBY_TAB', { requestedBy: user?.id });
+  }, [user?.id]);
+  const handleOpenHubTab = useCallback(
+    (path: string) => {
+      masterBus.emit('OPEN_HUB_TAB', { path, requestedBy: user?.id });
+    },
+    [user?.id]
+  );
+
   /* The swipe handlers, reachable from inside a hub frame's document. A ref
      rather than the callbacks themselves so HubFrame's one-time listener
      attachment never goes stale as `tables` and `activeIndex` change. */
@@ -2783,6 +2824,7 @@ export default function MultiTablePage() {
     move: () => {},
     end: () => {},
   });
+  const hubKeysRef = useRef<((e: KeyboardEvent) => void) | null>(null);
 
   const inTabLobbyNav = useMemo<InTabLobbyNav>(
     () => ({ openTournament: openTournamentTab, openHub: openHubTab, goBack: goBackInTab }),
@@ -3138,7 +3180,13 @@ export default function MultiTablePage() {
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    // A hub frame's document forwards its keystrokes here too (HubFrame 2):
+    // with focus inside Social, 1-6 and Tab still switch tabs.
+    hubKeysRef.current = handleKeyDown;
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      hubKeysRef.current = null;
+    };
   }, [tables.length, hidden, handleReorder, quickJoin.open, showSessionAgg]);
 
   // ─── Swipe Gesture Handling ──────────────────────────────────────────
@@ -3440,6 +3488,44 @@ export default function MultiTablePage() {
     }
   }, [tablesReady, openTournamentTab]);
 
+  /**
+   * HUB TABS SURVIVE A RELOAD (Dan 2026-09-04), the same way the drill-in
+   * does and for the same reason it is safe: a hub tab is a URL, not a seat.
+   * Mirrored on every change; restored once, after the server-truth rebuild,
+   * so the restored pages land BESIDE the player's real seats. Restored tabs
+   * are appended in their saved order and never past the cap.
+   */
+  const hubTabsRestoredRef = useRef(false);
+  useEffect(() => {
+    // Not before the restore has read storage: the first render has no hub
+    // tabs, and mirroring THAT would erase the very list about to be restored.
+    if (!hubTabsRestoredRef.current) return;
+    saveHubTabs(tables.filter(isHubTab).map((t) => t.hubUrl ?? '/hub'));
+  }, [tables]);
+
+  useEffect(() => {
+    if (hubTabsRestoredRef.current) return;
+    if (!tablesReady) return;
+    hubTabsRestoredRef.current = true;
+    const saved = readHubTabs();
+    if (saved.length === 0) return;
+    setTables((cur) => {
+      // Live state wins: a page already open (a fast OPEN_HUB_TAB) is not
+      // duplicated, and nothing is restored into a slot a seat needs.
+      const open = new Set(cur.filter(isHubTab).map((t) => t.hubUrl));
+      const next = [...cur];
+      for (const url of saved) {
+        if (next.length >= MAX_TABLES) break;
+        if (open.has(url)) continue;
+        open.add(url);
+        // Distinct ids for tabs made in one tick: Date.now() alone would
+        // collide and React would key two slots the same.
+        next.push({ ...makeHubTab(url), id: `${HUB_TAB_PREFIX}${Date.now()}-${next.length}` });
+      }
+      return next.length === cur.length ? cur : next;
+    });
+  }, [tablesReady]);
+
   const pinnedBarVisible = hidden && tables.length >= 1;
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -3575,6 +3661,8 @@ export default function MultiTablePage() {
             activeTabId={activeTableId}
             onTabSelect={handleTabSelect}
             onAddTable={handleAddTable}
+            onOpenLobby={handleOpenLobbyTab}
+            onOpenHub={handleOpenHubTab}
             maxTables={MAX_TABLES}
             realtimeDown={realtimeDown}
             onReorder={handleReorder}
@@ -3622,6 +3710,8 @@ export default function MultiTablePage() {
               activeTabId={activeTableId}
               onTabSelect={handleTabSelect}
               onAddTable={handleAddTable}
+              onOpenLobby={handleOpenLobbyTab}
+              onOpenHub={handleOpenHubTab}
               maxTables={MAX_TABLES}
               realtimeDown={realtimeDown}
               /* jackpotAmount removed 2026-08-23 with TableTabBar's JACKPOT
@@ -4141,7 +4231,9 @@ export default function MultiTablePage() {
                         tabId={table.id}
                         src={table.hubUrl ?? '/hub'}
                         title={table.name}
+                        active={idx === activeIndex && !hidden}
                         swipe={hubSwipeRef}
+                        keys={hubKeysRef}
                         onLocationChange={handleHubLocationChange}
                         onClubArenaTarget={handleHubClubArenaTarget}
                       />

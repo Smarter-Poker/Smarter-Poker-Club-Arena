@@ -185,6 +185,14 @@ export interface TableTabBarProps {
   activeTabId: string;
   onTabSelect: (tabId: string) => void;
   onAddTable: () => void;
+  /**
+   * Dan 2026-09-04: the "+" long-press / right-click menu. A tap on "+" is
+   * still the Quick Join sheet; holding it offers the lobby and World Hub
+   * pages directly, in a NEW tab, so a player on a felt reaches Social or
+   * Messages in one gesture. Both optional: without them "+" is only a tap.
+   */
+  onOpenLobby?: () => void;
+  onOpenHub?: (path: string) => void;
   maxTables?: number;
   /** Batch 3: reorder a tab to a new index (drag on desktop, long-press
    *  menu Move Left/Right everywhere). */
@@ -216,6 +224,8 @@ export function TableTabBar({
   activeTabId,
   onTabSelect,
   onAddTable,
+  onOpenLobby,
+  onOpenHub,
   maxTables = 4,
   realtimeDown = false,
   onReorder,
@@ -363,6 +373,61 @@ export function TableTabBar({
     const left = Math.max(8, Math.min(anchor.left, window.innerWidth - MENU_W - 8));
     setQuickMenu({ tabId, left, top: anchor.bottom + 6 });
   }, []);
+
+  /* The "+" button's own menu (Dan 2026-09-04): long-press or right-click.
+     Separate from the pill gesture above because "+" is not a pill - it does
+     not drag, it does not reorder, and its tap already has a meaning. */
+  const [addMenu, setAddMenu] = useState<{ left: number; top: number } | null>(null);
+  const addPressRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean }>({
+    timer: null,
+    fired: false,
+  });
+  const hasAddMenu = !!(onOpenLobby || onOpenHub);
+  const openAddMenu = useCallback((anchor: DOMRect) => {
+    const MENU_W = 200;
+    const left = Math.max(8, Math.min(anchor.left, window.innerWidth - MENU_W - 8));
+    setAddMenu({ left, top: anchor.bottom + 6 });
+  }, []);
+  const handleAddPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      if (!hasAddMenu || e.button !== 0) return;
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const a = addPressRef.current;
+      if (a.timer) clearTimeout(a.timer);
+      a.fired = false;
+      a.timer = setTimeout(() => {
+        a.timer = null;
+        a.fired = true;
+        openAddMenu(rect);
+      }, 500);
+    },
+    [hasAddMenu, openAddMenu]
+  );
+  const cancelAddPress = useCallback(() => {
+    const a = addPressRef.current;
+    if (a.timer) clearTimeout(a.timer);
+    a.timer = null;
+  }, []);
+  const handleAddClick = useCallback(() => {
+    const a = addPressRef.current;
+    cancelAddPress();
+    // The long-press opened the menu; the click that follows the release is
+    // the same gesture, not a second request for Quick Join.
+    if (a.fired) {
+      a.fired = false;
+      return;
+    }
+    onAddTable();
+  }, [cancelAddPress, onAddTable]);
+  const handleAddContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      if (!hasAddMenu) return;
+      e.preventDefault();
+      cancelAddPress();
+      openAddMenu((e.currentTarget as HTMLElement).getBoundingClientRect());
+    },
+    [hasAddMenu, cancelAddPress, openAddMenu]
+  );
 
   const endGesture = useCallback(() => {
     const g = gestureRef.current;
@@ -890,8 +955,13 @@ export function TableTabBar({
           <button
             key={`add-${i}`}
             className="table-tab-bar__add"
-            onClick={onAddTable}
-            title="Add Table"
+            onClick={handleAddClick}
+            onPointerDown={handleAddPointerDown}
+            onPointerUp={cancelAddPress}
+            onPointerLeave={cancelAddPress}
+            onPointerCancel={cancelAddPress}
+            onContextMenu={handleAddContextMenu}
+            title={hasAddMenu ? 'Add Table (Hold For Lobby, Hub And Messages)' : 'Add Table'}
             // Dan 2026-08-20: the only accessible name these had was their
             // text content, "+". Screen readers announced a bare plus sign,
             // and nothing could address them by name. Matches the in-table
@@ -980,6 +1050,42 @@ export function TableTabBar({
           is one too many, and the header is the copy with less room. */}
 
       {/* Batch 3: long-press / right-click quick menu */}
+      {addMenu && (
+        <>
+          <div className="table-tab-bar__qmenu-backdrop" onClick={() => setAddMenu(null)} />
+          <div
+            className="table-tab-bar__qmenu"
+            style={{ left: addMenu.left, top: addMenu.top }}
+            role="menu"
+            aria-label="Open A New Tab"
+          >
+            <div className="table-tab-bar__qmenu-title">Open A New Tab</div>
+            {(
+              [
+                ['Open Lobby', onOpenLobby ? () => onOpenLobby() : null],
+                ['Open Hub', onOpenHub ? () => onOpenHub('/hub') : null],
+                ['Social', onOpenHub ? () => onOpenHub('/hub/social') : null],
+                ['Messages', onOpenHub ? () => onOpenHub('/hub/messenger') : null],
+              ] as const
+            ).map(([label, fn]) =>
+              fn ? (
+                <button
+                  key={label}
+                  type="button"
+                  className="table-tab-bar__qmenu-item"
+                  onClick={() => {
+                    setAddMenu(null);
+                    fn();
+                  }}
+                >
+                  {label}
+                </button>
+              ) : null
+            )}
+          </div>
+        </>
+      )}
+
       {quickMenu &&
         (() => {
           const tab = tabs.find((t) => t.id === quickMenu.tabId);

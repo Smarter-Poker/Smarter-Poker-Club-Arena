@@ -18,6 +18,7 @@
 
 import { supabase } from '../lib/supabase';
 import { retryAsync } from '../utils/retryAsync';
+import { resolveVipStatus } from '../utils/vipStatus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import {
@@ -59,7 +60,12 @@ interface ProfileRow extends NameableProfile {
   username: string;
   avatar_url?: string;
   level?: number;
-  tier?: string;
+  /* The three columns VIP actually lives in. `tier` is gone from this row:
+     it is 'Newcomer' on every profile and was the source of both leaderboard
+     VIP defects (2026-09-05). */
+  is_vip?: boolean | null;
+  vip_tier?: string | null;
+  vip_expires_at?: string | null;
 }
 
 export type LeaderboardPeriod = 'daily' | 'weekly' | 'monthly' | 'all_time';
@@ -299,7 +305,9 @@ async function decorateWithProfiles(
   const userIds = rows.map((s) => s.user_id);
   const { data: profiles } = await supabase
     .from('profiles')
-    .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, level, tier`)
+    .select(
+      `id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, level, is_vip, vip_tier, vip_expires_at`
+    )
     .in('id', userIds);
 
   const profileMap = new Map((profiles || []).map((p: ProfileRow) => [p.id, p]));
@@ -319,8 +327,19 @@ async function decorateWithProfiles(
       qualified: row.qualified !== false,
       totalRanked: row.total_ranked != null ? Number(row.total_ranked) : undefined,
       baselineDate: row.baseline_date,
-      isVIP: profile.tier === 'gold' || profile.tier === 'platinum' || profile.tier === 'diamond',
-      vipTier: profile.tier || 'bronze',
+      /**
+       * 2026-09-05: this asked `profile.tier === 'gold' | 'platinum' |
+       * 'diamond'`. `profiles.tier` is 'Newcomer' on all 1,310 rows, so the
+       * VIP badge on the leaderboard was structurally unreachable - 0 of
+       * 1,032 real VIP members ever saw it. And `vipTier: profile.tier`
+       * handed PlayerAvatar the string 'Newcomer', which its
+       * `vipTier !== 'bronze'` gate reads as truthy, so it rendered a
+       * `tier-Newcomer` ring for EVERY player - a class with no rule in
+       * PlayerAvatar.css, i.e. an invisible element on every row. One column
+       * produced both a badge nobody could earn and a ring everybody got.
+       */
+      isVIP: resolveVipStatus(profile) !== 'none',
+      vipTier: 'bronze',
       level: profile.level || 1,
     };
   });

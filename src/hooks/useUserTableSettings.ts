@@ -75,6 +75,18 @@ export interface UserTableSettings {
    *  instead of one socket per table. Mirrors to the ca_ws_mux localStorage
    *  flag that EngineStateClient reads at (re)connect time. */
   multi_shared_socket: boolean;
+  /**
+   * Rabbit Hunt button (Dan 2026-09-05): "IT NEEDS A DISABLE OR HIDE OPTION IN
+   * THE TABLE SETTINGS FOR USERS THAT DON'T WANT IT POPPING UP."
+   *
+   * ON by default, because the feature is a paid one a player has to opt OUT
+   * of noticing rather than opt in to owning. Off hides the button only. It
+   * does not shorten HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS, which is table
+   * rhythm every seat shares (CLAUDE.md 10.5) and would otherwise let one
+   * player's preference change the pace of everybody else's game - and tell
+   * the table something about the deck while it did.
+   */
+  rabbit_hunt_button: boolean;
 }
 
 export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
@@ -120,6 +132,7 @@ export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
   // day). The toggle remains the kill switch: turning it OFF writes
   // ca_ws_mux='0' and EngineStateClient falls back to per-table sockets.
   multi_shared_socket: true,
+  rabbit_hunt_button: true,
 };
 
 // Metadata for rendering toggles
@@ -189,6 +202,12 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
     key: 'card_slide',
     label: 'Card Slide',
     description: 'Deal Your Cards Face Down And Peel A Corner Back To Look, Like A Live Game',
+    quick: true,
+  },
+  {
+    key: 'rabbit_hunt_button',
+    label: 'Rabbit Hunt Button',
+    description: 'Offer To Show The Cards That Would Have Come After A Hand Ends',
     quick: true,
   },
   {
@@ -564,6 +583,8 @@ export function useUserTableSettings(userId: string | null | undefined) {
               data.multi_desktop_alerts ?? DEFAULT_USER_TABLE_SETTINGS.multi_desktop_alerts,
             multi_shared_socket:
               data.multi_shared_socket ?? DEFAULT_USER_TABLE_SETTINGS.multi_shared_socket,
+            rabbit_hunt_button:
+              data.rabbit_hunt_button ?? DEFAULT_USER_TABLE_SETTINGS.rabbit_hunt_button,
           };
           /* A LIVE EDIT OUTRANKS A STALE READ. Anything the user changed while
              this row was in flight keeps the value they chose — see the note on

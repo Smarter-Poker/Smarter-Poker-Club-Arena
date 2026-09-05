@@ -233,7 +233,7 @@ serial scan in `from_live` - 573,468 heap rows to keep 14,091, measured at
 
 ### And it shipped behind the wrong grant for twelve minutes
 
-`20260905042000` carried
+`20260905042100` carried
 
 ```sql
 GRANT EXECUTE ON FUNCTION public.fn_ca_rake_by_agent(...)
@@ -311,6 +311,93 @@ programme, and the small set that is missing is now missing consistently rather
 than only after midnight. If those hands matter, the fix is to write the
 attributions, not to reconstruct them differently in one report.
 
+## The bomb pot report was never role-dependent, and it had been forgetting its own history
+
+The phase 6 gate handed this over as a mystery, honestly labelled: the report
+was **684ms called as `postgres` and 9.7 and 17.3 seconds called as
+`authenticated`**, with the index, RLS, a second overload and the `safeupdate`
+preload all ruled out by measurement, and no explanation for what was left.
+
+**The 684ms baseline was the function refusing.** Its first statement is
+
+```sql
+v_uid uuid := auth.uid();
+IF v_uid IS NULL THEN RAISE EXCEPTION 'not_authenticated' ...
+```
+
+and a psql session as `postgres` carries no `request.jwt.claims`, so
+`auth.uid()` is NULL and the call raised 28000 in 88ms without reading a single
+hand. Every "fast as postgres" figure in that report was the timing of an
+error. Holding the ROLE constant and changing only the claims:
+
+```
+postgres, no claims                 ERROR not_authenticated       88ms
+postgres, the owner's claims          50 rows              31,715ms
+postgres, same claims, called again   50 rows                   384ms
+```
+
+Same role, same session, same data: 31.7 seconds, then 384ms. Across sessions
+the same call has measured 0.4s, 1.8s, 3.5s, 5.1s and 31.7s depending only on
+what happened to be resident. It is a **cold cache**, and this is precisely the
+read that is never warm: ~20,200 bomb pot hands, each a wide `hand_history` row
+whose `players` jsonb is TOASTed and is read only to count seats, for a report
+an operator opens perhaps once a day. Through PostgREST the 8s statement
+timeout killed the cold call - so the read that would have warmed the cache
+could never finish. It could not bootstrap itself out of the cold state, which
+is why it looked permanent.
+
+### And a second defect, found while measuring the first
+
+The report reads `hand_history`, and `sp_prune_hand_history` deletes horse-only
+hands after seven days - Dan's ruling, the one sanctioned asymmetry in CLAUDE.md
+10.5, and a storage decision rather than a player one. So **asking this report
+for 365 days returned seven**, and said so with a number rather than a gap: a
+quarter that contained bomb pots read as a quarter that did not. Today the table
+holds bomb pot hands for 2026-08-29, 08-30, 09-01, 09-02, 09-03, 09-04 and
+09-05, and nothing else.
+
+### One rollup fixes both
+
+`ca_club_bomb_pot_daily` holds one row per club, day, table and bomb pot shape -
+which is exactly how the report already grouped - with sums rather than
+averages, so a range averages over the range instead of over the daily averages.
+`ca_club_bomb_pot_complete` marks which days are sealed, including days that
+held no bomb pots at all, because a day with none is a fact and without the
+marker it would be re-scanned live for ever. The rollup is a few hundred rows
+where the hands are twenty thousand wide ones, so it stays resident, and it
+outlives the pruning, so the history stops disappearing.
+
+**Nothing new is attached to `hand_history`** - 221,000 inserts a day on the
+engine's hottest path - and there is no new scheduler: World Hub CLAUDE.md 10.9
+and 11.3 send scheduled application logic to Open Claw, which a Club Arena agent
+may not deploy to. The rollup catches itself up lazily from inside the report,
+the way `fn_club_table_daily_catchup` already does. The first read after
+midnight seals one day (~700 hands); every read after that is the rollup plus
+today.
+
+**A day is sealed fifteen minutes after it ends, never at midnight.**
+`bomb_pot_award_units` is written as the pot is awarded and a sealed day is
+never recomputed, so a unit landing late from 23:59:59 would otherwise write a
+wrong scoop/split count permanently.
+
+Proved before applying, inside a transaction that was rolled back: the report's
+fifty rows captured before and after the rewrite, `EXCEPT` in both directions,
+zero rows either way. The migration then re-checks the rollup against the hands
+for the newest sealed day and aborts if they disagree (they agreed:
+425,485.80 chips for 2026-09-04).
+
+Measured through PostgREST as the club owner, after:
+
+```
+before   fn_club_bomb_pot_report   500 after ~8,200ms   (57014)
+after    p_days=30    200 in 1,916ms then 1,165ms
+         p_days=90    200 in 1,320ms
+         p_days=365   200 in 1,268ms
+```
+
+The range no longer changes the cost, which is the point: a year costs what a
+month costs, because only the unsealed days are read from the hands.
+
 ## Two things measured and deliberately left
 
 - **`fn_club_cashier_members_page_v3` really does re-run the recursive downline
@@ -325,8 +412,9 @@ attributions, not to reconstruct them differently in one report.
 
 ## Verified
 
-- Migrations `20260905040100`, `20260905041000` and `20260905042000`, one
-  transaction each, applied and recorded. `20260905042500` - the index alone -
+- Migrations `20260905040100`, `20260905041500`, `20260905042100`,
+  `20260905043000` and `20260905051000`, one transaction each, applied and
+  recorded. `20260905042500` - the index alone -
   is queued for the `:55` freeze, because it is the only statement here that
   takes a lock on a table the engine writes on every raked hand.
 - `ca_rake_snapshot` read live through PostgREST as the club owner after the
@@ -343,9 +431,9 @@ attributions, not to reconstruct them differently in one report.
 ## Still open in this phase
 
 `fn_club_cashier_members_page_v3` re-running the recursive downline walk on
-every page (measured, deliberately left, above), and the bomb pot report's
-role-dependent slowness carried from phase 6 - still unexplained, and recorded
-as unexplained rather than guessed at.
+every page (measured, deliberately left, above). The bomb pot report carried
+from phase 6 is closed - it was never role-dependent, and both of its defects
+are fixed above.
 
 Two smaller things measured here and not changed:
 

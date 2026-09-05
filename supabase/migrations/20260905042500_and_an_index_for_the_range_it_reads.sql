@@ -1,6 +1,6 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 --  AND AN INDEX FOR THE RANGE IT READS
---  Club Operations upgrade, phase 7 of 8. Companion to 20260905042000.
+--  Club Operations upgrade, phase 7 of 8. Companion to 20260905042100.
 -- ═══════════════════════════════════════════════════════════════════════════
 --
 -- `fn_ca_rake_by_agent` now reads `rake_attributions` grouped by player for

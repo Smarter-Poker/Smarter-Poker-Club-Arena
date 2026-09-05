@@ -1,9 +1,9 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 --  AND THE HELPER GOES BACK BEHIND ITS ONE DOOR
---  Club Operations upgrade, phase 7 of 8. Correction to 20260905042000.
+--  Club Operations upgrade, phase 7 of 8. Correction to 20260905042100.
 -- ═══════════════════════════════════════════════════════════════════════════
 --
--- 20260905042000 shipped the right query behind the WRONG GRANT. It carried
+-- 20260905042100 shipped the right query behind the WRONG GRANT. It carried
 --
 --     GRANT EXECUTE ON FUNCTION public.fn_ca_rake_by_agent(...)
 --       TO authenticated, service_role;
@@ -28,7 +28,7 @@
 -- than the one that first defined it. That is the whole value of the pattern:
 -- a law that only checked the original grant would have passed here.
 --
--- The body below is byte-identical to 20260905042000's - re-issued, not
+-- The body below is byte-identical to 20260905042100's - re-issued, not
 -- edited, because an applied migration is never changed (AGENT-PLAYBOOK) and
 -- because the law reads the newest file that names the function, so a
 -- grants-only correction would have left it reading a file with no body in it.

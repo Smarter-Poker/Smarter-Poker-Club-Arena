@@ -559,6 +559,38 @@ executed, and the honest position is that I do not yet know what. It needs a
 plan captured from inside the function as the real caller (`auto_explain`, or
 an `EXPLAIN` executed inside the body), not another guess.
 
+**DONE, 2026-09-05** - `20260905051000_the_bomb_pot_report_remembers_and_stops_reading_the_hands.sql`.
+**The paragraph above is wrong and the way it is wrong is worth keeping.** It
+was never role-dependent: the 684ms baseline was the function REFUSING. Its
+first statement raises `not_authenticated` when `auth.uid()` is NULL, and a
+psql session as `postgres` carries no `request.jwt.claims` - so that figure was
+the timing of an error, not of a report. Holding the role constant and changing
+only the claims: no claims, `ERROR not_authenticated` in 88ms; the owner's
+claims, 50 rows in **31,715ms**; the same call again, **384ms**. It is a cold
+cache. Across sessions the same call has measured 0.4s, 1.8s, 3.5s, 5.1s and
+31.7s depending only on what was resident, and the 8s PostgREST timeout meant
+the read that would have warmed it could never finish.
+
+A second defect turned up while measuring: the report reads `hand_history`, and
+`sp_prune_hand_history` removes horse-only hands after seven days, so **asking
+for 365 days returned seven** - silently, as a number rather than a gap.
+
+Both are fixed by one rollup, `ca_club_bomb_pot_daily` plus a
+`ca_club_bomb_pot_complete` marker, grouped exactly as the report already
+grouped, storing sums rather than averages, sealed fifteen minutes after a day
+ends (an award unit can land late and a sealed day is never recomputed), and
+caught up lazily from inside the report - no trigger on `hand_history`, no new
+scheduler. Proved equivalent before applying: the report's fifty rows captured
+before and after inside one rolled-back transaction, `EXCEPT` both ways, zero
+rows. Measured through PostgREST as the owner after: **200 in 1.2-1.9s** where
+it was 500 after 8.2s, and 365 days now costs what 30 days costs.
+
+THE LESSON THAT GENERALISES: a probe run as `postgres` against a
+`SECURITY DEFINER` function that gates on `auth.uid()` is not a faster version
+of the real call, it is a DIFFERENT call - usually a refusal. Set
+`request.jwt.claims` and hold the role constant before concluding anything is
+role-dependent.
+
 **(b) The rake-by-agent breakdown cannot be read at this club's volume, and
 the page retried it into the ground.** Opening `/clubs/<slug>/data` in a browser:
 
@@ -591,7 +623,7 @@ The retry storm itself is already fixed (`RakeSnapshotPanel` no longer lets the
 money-event firehose re-issue a read that is failing), so the page now fails
 once a minute instead of seven times in fourteen seconds - but it still fails.
 
-**DONE, 2026-09-05** - `20260905042000_the_agent_breakdown_reads_the_attributions.sql`.
+**DONE, 2026-09-05** - `20260905042100_the_agent_breakdown_reads_the_attributions.sql`.
 `from_live` is one grouped read of `rake_attributions` for the days not yet
 complete. Measured through PostgREST as the club owner, with the function
 changed and the index NOT yet built: `ca_rake_snapshot` 200 in 2,128ms and
@@ -614,7 +646,7 @@ from `prosrc` before the check now. Third occurrence of that class in this
 programme.
 
 It also shipped behind the WRONG GRANT for twelve minutes:
-`20260905042000` granted `fn_ca_rake_by_agent` to `authenticated`, and that
+`20260905042100` granted `fn_ca_rake_by_agent` to `authenticated`, and that
 helper is ungated - its gate is `ca_rake_snapshot`, one level up, which is why
 all four of its siblings are `service_role` only. Any signed-in user could have
 read any club's per-agent rake and commission totals in that window. Caught by

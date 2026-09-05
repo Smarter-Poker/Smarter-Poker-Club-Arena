@@ -59,11 +59,11 @@ const MIGRATION = readFileSync(
 const SETTLEMENT = readFileSync('src/pages/SettlementPage.tsx', 'utf8');
 const SETTLEMENT_SERVICE = readFileSync('src/services/SettlementService.ts', 'utf8');
 const PERIOD_MIGRATION = readFileSync(
-  'supabase/migrations/20260905041000_a_settlement_period_belongs_to_a_club.sql',
+  'supabase/migrations/20260905041500_a_settlement_period_belongs_to_a_club.sql',
   'utf8'
 );
 const AGENT_MIGRATION = readFileSync(
-  'supabase/migrations/20260905042000_the_agent_breakdown_reads_the_attributions.sql',
+  'supabase/migrations/20260905042100_the_agent_breakdown_reads_the_attributions.sql',
   'utf8'
 );
 const INDEX_MIGRATION = readFileSync(

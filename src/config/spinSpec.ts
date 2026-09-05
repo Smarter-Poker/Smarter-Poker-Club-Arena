@@ -83,7 +83,8 @@ export const SPIN_SEATS = 3;
  *
  * is an EQUALITY. At three seats it is satisfied at 8% and at no other rate.
  * Lowering the booked rate to 7, 6 or 5% never changed a single frequency, so
- * the player's expected return stayed 92.13% at every stake while the ledger
+ * the player's expected return stayed 92.13% at every stake (92.00% since the
+ * 2026-09-05 rebalance) while the ledger
  * recorded a smaller cut. Measured on 2026-08-27, booked against actually
  * charged: 8.00%/8.74%, 7%/8.50%, 6%/8.04%, 5%/8.03%. A player at a 100 stake
  * was told 5% and charged 8.03%.
@@ -269,8 +270,8 @@ export const SPIN_TIERS: SpinTierSpec[] = [
  * 10,000,099 (this file's own 500x-retirement note said so in as many words).
  * Since the 2026-09-05 rebalance they sum to exactly 10,000,000 - which is
  * precisely why this constant is DERIVED: the literal would have been wrong
- * twice now. Anything dividing a `freq` by a literal
- * literal therefore described a distribution totalling 100.00099%, and the
+ * twice now. Anything dividing a `freq` by a hand-written literal would have
+ * described a distribution totalling 100.00099%, and the
  * only reason no money moved is that the one real consumer
  * (TournamentService's SPEC_TOTAL_FREQ) re-totals the array itself and treats
  * this as a fallback it never reaches.

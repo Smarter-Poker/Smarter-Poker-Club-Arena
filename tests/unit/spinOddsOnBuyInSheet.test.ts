@@ -26,7 +26,6 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SPIN_TIERS, SPIN_FREQ_DENOMINATOR, spinOddsTable } from '../../src/config/spinSpec';
-import { SPIN_TIERS } from '../../src/config/spinSpec';
 
 const SRC_DIR = join(__dirname, '..', '..', 'src');
 const TABLE_PAGE = readFileSync(join(SRC_DIR, 'pages', 'TablePage.tsx'), 'utf8');

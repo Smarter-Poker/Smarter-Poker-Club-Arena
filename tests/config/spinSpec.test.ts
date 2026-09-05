@@ -71,7 +71,7 @@ describe('THE central invariant: the table implies the advertised rake', () => {
 
   it('PROVES the buy-in carries no fee on top', () => {
     // If a player paid B plus 8% on top, collected would be 3 x 1.08B = 3.24B
-    // against an expected payout of 2.7638B — a true edge of 14.7%, which is
+    // against an expected payout of 2.76B — a true edge of 14.8%, which is
     // nearly double what any room advertises. The only pricing consistent with
     // both the table and an 8% headline is: the buy-in IS the whole charge.
     const withFeeOnTop = (3 * 1.08 - 2.76) / (3 * 1.08);
@@ -85,14 +85,19 @@ describe('THE central invariant: the table implies the advertised rake', () => {
 
   it('frequencies land on the stated denominator', () => {
     const total = SPIN_TIERS.reduce((s, t) => s + t.freq, 0);
-    // Dan's table sums to 10,000,099; the drift is rounding in the source and
-    // is immaterial (1 part in 100k). Pinned so a real edit cannot hide in it.
     /* EXACT, not within 200 (2026-08-28). The slack existed because the
        denominator was a hand-written literal that had drifted 99 off the
        ladder's real total; it is derived from the ladder now, so the only
        honest assertion is equality — and a tolerance that hides a real
-       mismatch is how the drift survived in the first place. */
+       mismatch is how the drift survived in the first place.
+
+       BUT `total === SPIN_FREQ_DENOMINATOR` is now TAUTOLOGICAL: the constant
+       IS this reduce. It can never fail, so on its own it is a test that
+       reassures without checking anything. The literal below is what actually
+       pins the ladder - it moved from 10,000,099 to 10,000,000 in the
+       2026-09-05 rebalance, and a future retune has to come here and say so. */
     expect(total).toBe(SPIN_FREQ_DENOMINATOR);
+    expect(total).toBe(10_000_000);
   });
 });
 

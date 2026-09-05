@@ -1045,7 +1045,7 @@ export default function ProfilePage() {
           { label: 'Challenges', meta: 'Missions And Progress', path: '/challenges' },
           { label: 'Leaderboards', meta: 'Circuit Rankings', path: '/leaderboard' },
           { label: 'Promotions', meta: 'Live Offers And Eligibility', path: '/promotions' },
-          { label: 'VIP Status', meta: 'Tier Progress And Benefits', path: '/vip' },
+          { label: 'VIP Status', meta: 'Membership And Benefits', path: '/vip' },
           { label: 'Wallet', meta: 'Balances And Cashier Access', path: '/wallet' },
           { label: 'Settings', meta: 'Table, Alerts And Security', path: '/settings' },
           { label: 'Notifications', meta: 'Seat Calls And Signals', path: '/notifications' },

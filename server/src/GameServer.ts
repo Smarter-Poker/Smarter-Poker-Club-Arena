@@ -4995,8 +4995,25 @@ export class GameServer {
       .finally(() => {
         this.tableEngineStartPromises.delete(tableId);
       });
-    this.tableEngineStartPromises.set(tableId, startPromise);
-    return startPromise;
+    /* ═══ READY IS NOT DEALING (2026-09-05) ═══
+       `start()` resolves when the dealing loop begins, i.e. once the table has
+       its AutoStart figure of players. Returning THAT here meant every
+       on-demand caller - GET /state, GET /actions, the WS ensureTable, the
+       cluster wake (its BUG 4 of 2026-09-05: one lone-seated Main 1 parked
+       the whole controller) - waited for a second player before it could
+       serve the first. What they need is `engine.ready`: row loaded,
+       sub-engines configured, waiting snapshot publishable. The start chain
+       above keeps running for its failure handling; only the promise the
+       caller gets has changed. `ready` settles false when start fails before
+       `waiting`, and true means the engine is in the map and publishing. */
+    void startPromise;
+    const readyPromise: Promise<boolean> = engine.ready.finally(() => {
+      if (this.tableEngineStartPromises.get(tableId) === readyPromise) {
+        this.tableEngineStartPromises.delete(tableId);
+      }
+    });
+    this.tableEngineStartPromises.set(tableId, readyPromise);
+    return readyPromise;
   }
 
   /**

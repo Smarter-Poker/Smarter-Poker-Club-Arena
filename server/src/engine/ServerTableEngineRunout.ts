@@ -56,7 +56,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * The reveal gate: how long a run-out street is given to actually appear
    * before its new equity is allowed to change. See
    * HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS for the full reasoning and where
-   * the 1250ms comes from. Instance field, like its neighbours, so a test can
+   * the 1750ms comes from. Instance field, like its neighbours, so a test can
    * drive the ORDERING without spending the seconds.
    */
   protected allInStreetRevealMs = HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS;

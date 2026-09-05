@@ -25,6 +25,7 @@ groups:
         for: 1m
         labels:
           severity: critical
+          page: sms
           component: engine
         annotations:
           summary: "Poker engine unreachable on {{ $labels.instance }}"
@@ -105,6 +106,7 @@ groups:
         for: 30m
         labels:
           severity: critical
+          page: sms
           component: cron
         annotations:
           summary: "An Open Claw job has been silent for {{ $value | humanizeDuration }}"
@@ -294,6 +296,7 @@ groups:
         for: 10m
         labels:
           severity: critical
+          page: sms
           component: database
         annotations:
           summary: "Realtime slot {{ $labels.slot }} is >1GB behind"
@@ -368,6 +371,7 @@ groups:
         for: 5m
         labels:
           severity: critical
+          page: sms
           component: money
         annotations:
           summary: "{{ $value | humanizePercentage }} of hands are failing to settle"
@@ -456,6 +460,7 @@ groups:
         for: 2m
         labels:
           severity: critical
+          page: sms
           component: money
         annotations:
           summary: "{{ $value }} undeclared trigger(s) on a money or seat table"

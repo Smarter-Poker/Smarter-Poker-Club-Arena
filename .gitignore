@@ -189,3 +189,9 @@ __pycache__/
 # Written by the entry-module-manifest plugin in vite.config.ts each build;
 # read by scripts/ci/entry-chunk-delta.mjs. Build output, never committed.
 .entry-modules.json
+
+# infra/monitoring secrets, mounted into containers from files beside the
+# compose. Only the .example copies are tracked. (Found unignored 2026-09-04 -
+# resend_key had simply never been added; one `git add -A` on the host away.)
+infra/monitoring/resend_key
+infra/monitoring/cron_secret

@@ -74,6 +74,7 @@ services:
     volumes:
       - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - ./resend_key:/etc/alertmanager/resend_key:ro
+      - ./cron_secret:/etc/alertmanager/cron_secret:ro
       - alertmanager-data:/alertmanager
     env_file: .env
     networks:

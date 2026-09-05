@@ -79,6 +79,15 @@ for f in docker-compose.yml prometheus.yml alert-rules.yml alertmanager.yml \
   ln -sfn "$SRC_DIR/infra/monitoring/$f" "$RUN_DIR/$f"
 done
 
+# The 3am pager (2026-09-04): Alertmanager posts page=sms alerts to the World
+# Hub with CRON_SECRET as a bearer, read from this file. Without it the pager
+# receiver fails every notification and the six alerts Dan asked to be woken
+# for reach email only. Refuse to proceed rather than deploy a silent pager.
+if [[ ! -s "$RUN_DIR/cron_secret" ]]; then
+  echo "   ❌ $RUN_DIR/cron_secret is missing or empty. Write the World Hub CRON_SECRET to it (chmod 600) - the pager receiver reads it."
+  exit 1
+fi
+
 # First-run: seed .env from the example. Re-runs leave it alone.
 if [[ ! -f "$RUN_DIR/.env" ]]; then
   cp "$SRC_DIR/infra/monitoring/.env.example" "$RUN_DIR/.env"

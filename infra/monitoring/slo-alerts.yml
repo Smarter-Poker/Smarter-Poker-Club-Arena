@@ -47,6 +47,7 @@ groups:
         for: 10m
         labels:
           severity: critical
+          page: sms
           component: slo
           objective: dealing
         annotations:

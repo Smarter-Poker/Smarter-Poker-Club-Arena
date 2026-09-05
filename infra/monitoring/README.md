@@ -122,10 +122,28 @@ so the container starts and then fails to read its own credentials — or refuse
 to start at all — with an error that does not mention the real problem. On a
 rebuilt host, create them before `docker compose up`:
 
-| file | what it is | how to create |
-|---|---|---|
+| file         | what it is                                                                                                                           | how to create                                                                                   |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
 | `resend_key` | Resend SMTP API key, read by Alertmanager via `smtp_auth_password_file`. Without it every alert is generated and then fails to send. | `printf '%s' "$RESEND_API_KEY" > resend_key && chmod 600 resend_key` (see `resend_key.example`) |
-| `.env` | Grafana admin password and friends | `cp .env.example .env && $EDITOR .env` |
+| `.env`       | Grafana admin password and friends                                                                                                   | `cp .env.example .env && $EDITOR .env`                                                          |
 
 There is no newline in `resend_key` on purpose — Alertmanager sends the file
 contents verbatim as the SMTP password, and a trailing newline fails auth.
+
+## The 3am pager (2026-09-04)
+
+Six alerts carry the label `page: sms` (pinned by
+`tests/the-pager-list-is-exactly-six.test.ts`). Alertmanager posts them to
+`https://smarter.poker/api/internal/alertmanager-page`, which texts the phone
+`deploy-monitor.js` already pages. Everything else goes to email only.
+
+The receiver authenticates with the World Hub `CRON_SECRET`, read from
+**`cron_secret`** beside this README - a plain file, mode 600, no trailing
+newline, mounted read-only into the Alertmanager container next to
+`resend_key`. It is gitignored; `cron_secret.example` is the placeholder.
+`deploy.sh` refuses to run if it is missing or empty, because a pager that
+silently fails every notification is worse than none. On a rebuilt host, write
+it BEFORE `docker compose up` or Docker will create a directory at that path
+and Alertmanager will fail without naming the cause.
+
+Route: `page="sms"` -> `pager-sms` with `continue: true`, `repeat_interval 4h`.

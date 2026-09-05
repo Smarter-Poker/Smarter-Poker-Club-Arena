@@ -157,30 +157,36 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
     // The JS collect window is 700ms — it MUST outlive the 550ms keyframe.
     expect(b6.cpCollect).toBeLessThan(700);
 
-    // ── BEAT 7 — THE TURN ──────────────────────────────────────────────────
-    const b7 = await beat(
-      page,
-      `const d=document.createElement('div');d.className='community-cards__card community-cards__card--turn';
-       d.style.setProperty('--card-index','3');$('bc').appendChild(d);`
-    );
-    expect(b7.ccTurnReveal).toBe(550);
+    // ── BEATS 7 & 8 — THE TURN AND THE RIVER, BOTH SQUEEZE ────────────────
+    // ROUND 2 2026-09-05: the turn and the river are the SAME animation now
+    // (spec 123 - one visual language), so they are one beat with two cards.
+    // Each materialises FACE DOWN in its slot (ccCardMaterialize, the prepare
+    // beat) and then snaps over through its edge (ccCardSqueeze = squeeze +
+    // reveal + settle), with the edge spine and the shadow layer running on
+    // the same clock. Built exactly as SqueezeCard renders it: the host card
+    // carries the desktop-cash defaults from :root, and the inner
+    // .card-squeeze is what turns. 80 + 480 = the 560ms cash profile.
+    const squeezeCard = (slot: string, marker: string) =>
+      `const d=document.createElement('div');
+       d.className='community-cards__card community-cards__card--${marker} card-squeeze-host';
+       d.style.setProperty('--card-index','${slot}');
+       d.innerHTML='<div class="card-squeeze__shadow"></div>' +
+                   '<div class="card-squeeze"><div class="card-squeeze__face card-squeeze__face--back"></div>' +
+                   '<div class="card-squeeze__face card-squeeze__face--front"></div></div>' +
+                   '<div class="card-squeeze__spine"></div>';
+       $('bc').appendChild(d);`;
 
-    // ── BEAT 8 — THE RIVER SQUEEZE ─────────────────────────────────────────
-    // RIVER SQUEEZE 2026-09-04: the river materialises FACE DOWN in its slot
-    // (ccRiverMaterialize, the prepare beat) and then snaps over through its
-    // edge on the two-surface flip (ccRiverSqueeze = squeeze + reveal +
-    // settle). Built exactly as CommunityCards renders it: the --squeeze
-    // card carries the desktop-cash defaults from :root, and the inner
-    // .community-cards__flip is what turns. 80 + 480 = the 560ms cash profile.
-    const b8 = await beat(
-      page,
-      `const d=document.createElement('div');d.className='community-cards__card community-cards__card--river community-cards__card--squeeze';
-       d.style.setProperty('--card-index','4');
-       const f=document.createElement('div');f.className='community-cards__flip';d.appendChild(f);
-       $('bc').appendChild(d);`
-    );
-    expect(b8.ccRiverMaterialize, 'the river must materialise face down in its slot').toBe(80);
-    expect(b8.ccRiverSqueeze, 'the river must squeeze over through its edge').toBe(480);
+    const b7 = await beat(page, squeezeCard('3', 'turn'));
+    expect(b7.ccCardMaterialize, 'the turn must materialise face down in its slot').toBe(80);
+    expect(b7.ccCardSqueeze, 'the turn must squeeze over through its edge').toBe(480);
+
+    const b8 = await beat(page, squeezeCard('4', 'river'));
+    expect(b8.ccCardMaterialize, 'the river must materialise face down in its slot').toBe(80);
+    expect(b8.ccCardSqueeze, 'the river must squeeze over through its edge').toBe(480);
+    // The edge spine and the shadow ride the same clock as the flip - a spine
+    // that outlives the swap is a black bar sitting on a face-up card.
+    expect(b8.ccCardSpine, 'the card edge shows at the edge-on instant').toBe(480);
+    expect(b8.ccCardShadow, 'the shadow thins with the card').toBe(480);
     // The JS mount window is the profile total + 100ms margin, and the board
     // holds its newly-dealt window for at least 1400ms — both outlive 560ms.
     expect(80 + 480).toBeLessThan(1400);

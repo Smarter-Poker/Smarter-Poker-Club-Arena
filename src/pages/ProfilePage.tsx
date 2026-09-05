@@ -24,7 +24,6 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { masterBus } from '../core/MasterBus';
 import { StreakFire } from '../components/gamification/StreakFire';
 import StreakMultiplier from '../components/gamification/StreakMultiplier';
-import FinancialAchievementBadge from '../components/gamification/FinancialAchievementBadge';
 import CircularGauge from '../components/common/CircularGauge';
 import DiamondRainEffect from '../components/effects/DiamondRainEffect';
 import PlayerActivityFeed from '../components/social/PlayerActivityFeed';
@@ -45,6 +44,17 @@ import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayNa
 import { resolveHeaderPortrait } from '../stores/useHeaderDataStore';
 import { resolveVipStatus, vipStatusLabel, type VipStatus } from '../utils/vipStatus';
 import { VIP_GOLD_LIMITS } from '../services/VIPService';
+import {
+  achievementService,
+  type Achievement as AchievementDef,
+} from '../services/AchievementService';
+import { streakMultiplier } from '../utils/streakMultiplier';
+import { ordinal, relativeTimeTitle } from '../utils/format';
+import {
+  EMPTY_STATS as DEFAULT_STATS,
+  profileStatsFromV2,
+  type PokerStats,
+} from '../utils/profileStats';
 
 // #5: Lazy-load Recharts (387KB) — only imported when History tab is opened
 const LazyProfitChart = lazyWithRetry(() => import('../components/profile/ProfitChart'));
@@ -82,27 +92,12 @@ interface UserProfile {
   player_tags?: string[];
 }
 
-interface PokerStats {
-  totalHands: number;
-  vpip: number;
-  pfr: number;
-  threeBet: number;
-  aggression: number;
-  bbPer100: number;
-  biggestPot: number;
-  totalProfit: number;
-  winRate: number;
-  tournamentsPlayed: number;
-  tournamentsWon: number;
-  bountyKOs: number;
-  roi: number;
-}
-
 interface Achievement {
   id: string;
   name: string;
   description: string;
   icon: string;
+  rarity?: AchievementDef['rarity'];
   unlockedAt?: string;
   progress?: number;
   maxProgress?: number;
@@ -111,22 +106,6 @@ interface Achievement {
 // ═══════════════════════════════════════════════════════════════════════════════
 // DEFAULT VALUES (for new users with no data)
 // ═══════════════════════════════════════════════════════════════════════════════
-
-const DEFAULT_STATS: PokerStats = {
-  totalHands: 0,
-  vpip: 0,
-  pfr: 0,
-  threeBet: 0,
-  aggression: 0,
-  bbPer100: 0,
-  biggestPot: 0,
-  totalProfit: 0,
-  winRate: 0,
-  tournamentsPlayed: 0,
-  tournamentsWon: 0,
-  bountyKOs: 0,
-  roi: 0,
-};
 
 const finiteStat = (value: unknown): number => {
   const parsed = typeof value === 'number' ? value : Number(value);
@@ -138,7 +117,12 @@ const finiteStat = (value: unknown): number => {
  * on this page is truncated, never rounded — `toFixed` was used in three
  * places and each one could print a number the ledger never produced.
  */
-const truncTo = (value: number, decimals: number): number => {
+const truncTo = (raw: number, decimals: number): number => {
+  /* Binary floats: 2183.7 * 100 is 218369.99999999997, and a bare trunc
+     prints -2,183.69 for a ledger row that says -2,183.70. A nudge of one
+     part in a billion toward the sign keeps exact decimals exact and cannot
+     lift a genuinely lower figure over a boundary. */
+  const value = raw + Math.sign(raw) * 1e-9;
   const factor = 10 ** decimals;
   return Math.trunc(value * factor) / factor;
 };
@@ -153,28 +137,16 @@ const signed = (formatted: string, value: number): string =>
    the truthful 'no figure yet' glyph. */
 const NO_DATA = '-';
 
-function profileStatsFromV2(payload: any): PokerStats | null {
-  if (payload?.contract_version !== 2 || !payload?.overall) return null;
-  const overall = payload.overall;
-  const tournaments = payload.tournaments ?? {};
-  const totalHands = finiteStat(overall.total_hands);
-  const handsWon = finiteStat(overall.hands_won);
-  return {
-    totalHands,
-    vpip: finiteStat(overall.vpip) * 100,
-    pfr: finiteStat(overall.pfr) * 100,
-    threeBet: finiteStat(overall.three_bet_percent) * 100,
-    aggression: finiteStat(overall.aggression_factor),
-    bbPer100: finiteStat(overall.bb_per_100),
-    biggestPot: finiteStat(overall.biggest_pot_won),
-    totalProfit: finiteStat(overall.total_profit),
-    winRate: totalHands > 0 ? (handsWon / totalHands) * 100 : 0,
-    tournamentsPlayed: finiteStat(tournaments.entries),
-    tournamentsWon: finiteStat(tournaments.wins),
-    bountyKOs: finiteStat(tournaments.total_bounties),
-    roi: finiteStat(tournaments.roi) * 100,
-  };
-}
+const VARIANT_LABEL: Record<string, string> = {
+  nlh: "Hold'em",
+  plo4: 'PLO4',
+  plo5: 'PLO5',
+  plo6: 'PLO6',
+  pineapple: 'Pineapple',
+  ofc: 'OFC',
+  short_deck: 'Short Deck',
+};
+const variantLabel = (v: string) => VARIANT_LABEL[v] || v.toUpperCase();
 
 /** The columns the credential needs. One string, used by every reader here. */
 const PROFILE_COLUMNS = `id, ${PLAYER_NAME_COLUMNS}, player_number, avatar_url, arena_avatar_url, use_avatar_as_profile_pic, created_at, diamonds, is_vip, vip_tier, vip_expires_at, login_streak, bio, player_tags`;
@@ -295,11 +267,15 @@ export default function ProfilePage() {
       data: { user: au },
     } = await getAuthUser();
     if (!au) return;
-    const { data: p } = await supabase
+    const { data: p, error } = await supabase
       .from('profiles')
       .select('diamonds, login_streak, is_vip')
       .eq('id', au.id)
       .maybeSingle();
+    if (error) {
+      reportError(error, 'ProfilePage.visibilityRefresh');
+      return;
+    }
     if (p) {
       setDiamonds(p.diamonds || 0);
       setDailyStreak(p.login_streak || 0);
@@ -385,7 +361,7 @@ export default function ProfilePage() {
       setVisibleStats(new Set());
       // Three gauges plus ten stat cards. The old count stopped at index 10,
       // leaving Bounty KOs and tournament Win Rate permanently at opacity 0.
-      const statCount = 13;
+      const statCount = 21;
       for (let i = 0; i < statCount; i++) {
         timers.push(setTimeout(() => setVisibleStats((prev) => new Set(prev).add(i)), i * 50));
       }
@@ -443,41 +419,13 @@ export default function ProfilePage() {
         // original, moved verbatim; only where it is AWAITED changed, so
         // the order of state updates is untouched.
         const secondaryDataPromise = Promise.allSettled([
-          // Achievements
-          retryFetch(
-            () =>
-              supabase
-                .from('training_user_achievements')
-                /* `achievement:achievements(*)` 400'd on every profile load,
-                   for every user, since it was written: there is no
-                   `achievements` table in this schema. PostgREST said so in
-                   the response body — PGRST200, "Perhaps you meant
-                   'training_achievement_definitions' instead" — and the FK
-                   confirms it (training_user_achievements.achievement_id ->
-                   training_achievement_definitions). Nothing surfaced it,
-                   because the result is read through Promise.allSettled and a
-                   rejected fetch just renders an empty achievement list, and
-                   retryFetch dutifully retried the impossible query 3x a load.
-
-                   The aliases matter too: the definitions table has `icon_url`
-                   and `threshold`, not `icon` and `max_progress`, so the
-                   consumer below would have rendered a blank icon and an
-                   undefined progress cap even once the embed resolved.
-
-                   Explicit columns rather than `*` for the same reason
-                   `select('*')` was removed from the profile readers in
-                   August: a star-select touching one ungranted column makes
-                   Postgres reject the whole statement. */
-                .select(
-                  'id, achievement_id, user_id, progress, unlocked_at, ' +
-                    'achievement:training_achievement_definitions(' +
-                    'id, name, description, icon:icon_url, max_progress:threshold)'
-                )
-                .eq('user_id', authUser.id)
-                .limit(200)
-                .then((r) => r),
-            { maxRetries: 2, isMountedRef: isMountedRef }
-          ),
+          // Distinctions: the SAME definitions /achievements renders. The old
+          // embed read `threshold` from training_achievement_definitions,
+          // which is 0 on every row, so every progress bar divided by zero.
+          retryFetch(() => achievementService.getUserAchievements(authUser.id), {
+            maxRetries: 2,
+            isMountedRef: isMountedRef,
+          }),
           // Transaction history
           retryFetch(
             () =>
@@ -552,19 +500,28 @@ export default function ProfilePage() {
         if (!isMounted) return;
 
         // Process achievements
-        if (achievementsResult.status === 'fulfilled' && achievementsResult.value.data) {
+        if (achievementsResult.status === 'fulfilled') {
           setAchievements(
-            achievementsResult.value.data.map((ua: any) => ({
-              id: ua.achievement?.id || ua.id,
-              name: ua.achievement?.name || 'Achievement',
-              description: ua.achievement?.description || '',
-              icon: ua.achievement?.icon || '',
-              unlockedAt: ua.unlocked_at,
-              progress: ua.progress,
-              maxProgress: ua.achievement?.max_progress,
-            }))
+            achievementsResult.value.flatMap((ua): Achievement[] => {
+              const def = ua.achievement ?? achievementService.getById(ua.achievementId);
+              if (!def) return [];
+              return [
+                {
+                  id: def.id,
+                  name: def.name,
+                  description: def.description,
+                  icon: def.icon,
+                  rarity: def.rarity,
+                  unlockedAt: ua.unlockedAt,
+                  progress: finiteStat(ua.progress),
+                  maxProgress:
+                    finiteStat(def.requirement) > 0 ? finiteStat(def.requirement) : undefined,
+                },
+              ];
+            })
           );
         } else {
+          reportError(achievementsResult.reason, 'ProfilePage.achievements');
           setAchievements([]);
         }
 
@@ -838,6 +795,7 @@ export default function ProfilePage() {
   const unlockedAchievements = achievements.filter((a) => a.unlockedAt);
   const tourneyWinRate =
     stats.tournamentsPlayed > 0 ? (stats.tournamentsWon / stats.tournamentsPlayed) * 100 : 0;
+  const lastHandLabel = relativeTimeTitle(stats.lastHandAt);
   const memberSinceLabel = new Date(user.memberSince).toLocaleDateString('en-US', {
     month: 'short',
     year: '2-digit',
@@ -855,7 +813,8 @@ export default function ProfilePage() {
         <div className={styles.heroCopy}>
           <span className={styles.heroEyebrow}>Player Identity // Live Credential</span>
           <span className={styles.heroStatus} role="status">
-            <span aria-hidden="true" /> Profile Synced
+            <span aria-hidden="true" />{' '}
+            {lastHandLabel ? `Last Hand ${lastHandLabel}` : 'No Hands Recorded Yet'}
           </span>
         </div>
 
@@ -885,16 +844,13 @@ export default function ProfilePage() {
           <h1 id="profile-heading" className={styles.displayName}>
             {user.displayName}
             {dailyStreak > 0 && <StreakFire streakCount={dailyStreak} size="sm" showLabel />}
-            {/* 2026-09-05: this passed `multiplier={1 + dailyStreak * 0.1}`, so an
-                8-day streak printed "1.8x Earnings" beside the player's name.
-                NOTHING PAYS THAT. The only multiplier in the codebase is the
-                Spin & Go prize ladder (src/config/spinSpec.ts), which is
-                unrelated; AchievementTriggerService.onLogin maintains
-                login_streak and awards fixed chip amounts at 7/30/100 days.
-                Same class as the random player_number this page used to
-                invent - a figure made up in the JSX and rendered as fact. The
-                streak itself is real, so the day count stays. */}
-            {dailyStreak > 0 && <StreakMultiplier streak={dailyStreak} size="sm" />}
+            {dailyStreak > 0 && (
+              <StreakMultiplier
+                streak={dailyStreak}
+                multiplier={streakMultiplier(dailyStreak)}
+                size="sm"
+              />
+            )}
           </h1>
           {/* 2026-08-20: this was `profile.player_number || Math.floor(Math.random() * 9999) + 1`
               in three separate places in this file. When a profile had no
@@ -951,7 +907,7 @@ export default function ProfilePage() {
           </div>
           <div className={styles.telemetryCell}>
             <dt>Hands</dt>
-            <dd>{statsAvailable ? stats.totalHands.toLocaleString() : NO_DATA}</dd>
+            <dd>{statsAvailable ? stats.lifetimeHands.toLocaleString() : NO_DATA}</dd>
           </div>
           <div className={styles.telemetryCell}>
             <dt>VPIP</dt>
@@ -1169,7 +1125,7 @@ export default function ProfilePage() {
                   <div className={styles.statsGrid}>
                     <StatCard
                       value={stats.totalHands.toLocaleString()}
-                      label="Hands Played"
+                      label={stats.analysisCapped ? 'Hands Analyzed' : 'Hands Played'}
                       isVisible={visibleStats.has(3)}
                     />
                     <StatCard
@@ -1181,6 +1137,21 @@ export default function ProfilePage() {
                       value={fixedTrunc(stats.aggression, 2)}
                       label="Aggression"
                       isVisible={visibleStats.has(5)}
+                    />
+                    <StatCard
+                      value={`${fixedTrunc(stats.wtsd, 1)}%`}
+                      label="WTSD"
+                      isVisible={visibleStats.has(13)}
+                    />
+                    <StatCard
+                      value={`${fixedTrunc(stats.showdownWinRate, 1)}%`}
+                      label="Won At SD"
+                      isVisible={visibleStats.has(14)}
+                    />
+                    <StatCard
+                      value={fixedTrunc(stats.hoursPlayed, 1)}
+                      label="Hours"
+                      isVisible={visibleStats.has(15)}
                     />
                   </div>
                 </div>
@@ -1204,6 +1175,12 @@ export default function ProfilePage() {
                       label="Total Profit"
                       positive={stats.totalProfit > 0 ? true : stats.totalProfit < 0 ? false : null}
                       isVisible={visibleStats.has(8)}
+                    />
+                    <StatCard
+                      value={signed(fixedTrunc(stats.biggestLoss, 2), stats.biggestLoss)}
+                      label="Worst Hand"
+                      positive={stats.biggestLoss < 0 ? false : null}
+                      isVisible={visibleStats.has(16)}
                     />
                   </div>
                 </div>
@@ -1231,8 +1208,56 @@ export default function ProfilePage() {
                       label="Win Rate"
                       isVisible={visibleStats.has(12)}
                     />
+                    <StatCard
+                      value={`${fixedTrunc(stats.itmPercent, 1)}%`}
+                      label="ITM"
+                      isVisible={visibleStats.has(17)}
+                    />
+                    <StatCard
+                      value={stats.bestFinish > 0 ? ordinal(stats.bestFinish) : NO_DATA}
+                      label="Best Finish"
+                      isVisible={visibleStats.has(18)}
+                    />
+                    <StatCard
+                      value={stats.tournamentCashes}
+                      label="Cashes"
+                      isVisible={visibleStats.has(19)}
+                    />
+                    <StatCard
+                      value={signed(fixedTrunc(stats.tournamentNet, 2), stats.tournamentNet)}
+                      label="Net Result"
+                      positive={
+                        stats.tournamentNet > 0 ? true : stats.tournamentNet < 0 ? false : null
+                      }
+                      isVisible={visibleStats.has(20)}
+                    />
                   </div>
                 </div>
+
+                {stats.variants.length > 0 && (
+                  <div className={styles.statsGroup}>
+                    <h3>By Variant</h3>
+                    <ul className={styles.variantList}>
+                      {[...stats.variants]
+                        .sort((a, b) => b.hands - a.hands)
+                        .slice(0, 5)
+                        .map((v) => (
+                          <li key={v.variant}>
+                            <span>{variantLabel(v.variant)}</span>
+                            <span>{v.hands.toLocaleString()} Hands</span>
+                            <span
+                              className={
+                                v.profit > 0 ? styles.positive : v.profit < 0 ? styles.negative : ''
+                              }
+                            >
+                              {signed(fixedTrunc(v.profit, 2), v.profit)}
+                            </span>
+                            <span>{signed(fixedTrunc(v.bb100, 1), v.bb100)} BB/100</span>
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                )}
               </>
             ) : (
               <div className={styles.statsGroup} role="status">
@@ -1273,32 +1298,6 @@ export default function ProfilePage() {
               </div>
             )}
 
-            {/* Financial Achievement Badges */}
-            <div className={styles.milestones}>
-              <h3>Financial Milestones</h3>
-              <div className={styles.milestoneGrid}>
-                <FinancialAchievementBadge
-                  type="first_cashout"
-                  unlocked={stats.totalProfit > 0}
-                  size="sm"
-                />
-                <FinancialAchievementBadge
-                  type="thousand_club"
-                  unlocked={stats.totalProfit >= 1000}
-                  size="sm"
-                />
-                <FinancialAchievementBadge
-                  type="perfect_settlement"
-                  unlocked={stats.totalHands >= 500}
-                  size="sm"
-                />
-                <FinancialAchievementBadge
-                  type="diamond_whale"
-                  unlocked={diamonds >= 10000}
-                  size="sm"
-                />
-              </div>
-            </div>
             <button
               type="button"
               className={styles.workspaceCta}
@@ -1311,13 +1310,59 @@ export default function ProfilePage() {
 
         {activeTab === 'history' && (
           <div className={styles.historyContainer}>
+            {/* Cumulative P/L from settled hand results (the stats payload's
+                daily series), never from wallet flow: a buy-in is not a loss
+                and a diamond purchase is not a session. */}
+            <div className={styles.statsGroup}>
+              <div className={styles.groupHeading}>
+                <h3>Cumulative P/L</h3>
+                <small>Settled Hand Results By Day</small>
+              </div>
+              <Suspense fallback={<div className={styles.chartLoading}>Loading Chart...</div>}>
+                <LazyProfitChart series={stats.daily} />
+              </Suspense>
+            </div>
+
+            {stats.sessions.length > 0 && (
+              <div className={styles.statsGroup}>
+                <div className={styles.groupHeading}>
+                  <h3>Recent Sessions</h3>
+                </div>
+                <ul className={styles.sessionList}>
+                  {stats.sessions.slice(0, 5).map((session) => (
+                    <li key={session.id}>
+                      <div>
+                        <strong>
+                          {new Date(session.date).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </strong>
+                        <small>
+                          {session.hands.toLocaleString()} Hands // {Math.trunc(session.minutes)}{' '}
+                          Min // In {fixedTrunc(session.buyIn, 2)} Out{' '}
+                          {fixedTrunc(session.cashOut, 2)}
+                        </small>
+                      </div>
+                      <span
+                        className={
+                          session.profit > 0
+                            ? styles.transactionCredit
+                            : session.profit < 0
+                              ? styles.transactionDebit
+                              : ''
+                        }
+                      >
+                        {signed(fixedTrunc(session.profit, 2), session.profit)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {transactions.length > 0 ? (
               <>
-                {/* #5: Lazy-loaded Profit Graph */}
-                <Suspense fallback={<div className={styles.chartLoading}>Loading Chart...</div>}>
-                  <LazyProfitChart transactions={transactions} />
-                </Suspense>
-
                 {/* Transaction List */}
                 <h3 className={styles.historyHeading}>Recent Transactions</h3>
                 <div className={styles.transactionList}>

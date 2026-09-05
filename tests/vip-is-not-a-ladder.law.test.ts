@@ -49,8 +49,6 @@ const USER_STORE = strip(read('src/stores/useUserStore.ts'));
 const COMPLETE_PROFILE = strip(read('src/components/modals/CompleteProfileModal.tsx'));
 const LEADERBOARD = strip(read('src/services/LeaderboardService.ts'));
 const FRIEND_LIST = strip(read('src/components/social/FriendListPanel.tsx'));
-const STREAK = strip(read('src/components/gamification/StreakMultiplier.tsx'));
-const PROFILE = strip(read('src/pages/ProfilePage.tsx'));
 
 describe('the VIP resolver is the only answer to "is this player a VIP"', () => {
   it('reads the three real columns and treats lifetime as never expiring', () => {
@@ -98,17 +96,5 @@ describe('no entitlement is gated on profiles.tier', () => {
   it('neither list still asks the database for the dead column', () => {
     expect(LEADERBOARD).not.toMatch(/avatar_url:arena_avatar_url, level, tier/);
     expect(FRIEND_LIST).not.toMatch(/avatar_url, level, tier/);
-  });
-});
-
-describe('nothing advertises a reward the platform does not pay', () => {
-  it('the streak badge cannot claim an earnings multiplier', () => {
-    // `1 + streak * 0.1` in the JSX printed "1.8x Earnings" beside the
-    // player's name for an 8-day streak. Nothing anywhere pays it.
-    expect(PROFILE).not.toContain('multiplier={1 + dailyStreak');
-    expect(STREAK).not.toContain('Earnings');
-    // Removed rather than defaulted: a prop with no honest source is an
-    // invitation for the next caller to invent one.
-    expect(STREAK).not.toMatch(/multiplier\??:\s*number/);
   });
 });

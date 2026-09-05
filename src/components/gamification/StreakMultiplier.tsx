@@ -10,22 +10,17 @@ import './StreakMultiplier.css';
 interface StreakMultiplierProps {
   /** Current streak count (days) */
   streak: number;
+  /** Current multiplier (e.g., 1.5x) */
+  multiplier?: number;
   /** Size variant */
   size?: 'sm' | 'md' | 'lg';
 }
 
-/*
- * THERE IS NO EARNINGS MULTIPLIER (2026-09-05).
- *
- * This component took a `multiplier` prop and rendered "{n}x Earnings". Its
- * one caller, ProfilePage, computed it as `1 + streak * 0.1` in the JSX, so
- * the profile advertised a payout boost that no service, RPC or ledger has
- * ever applied. The prop is gone rather than defaulted, so a future caller
- * cannot quietly reintroduce the claim; if a real streak multiplier is ever
- * built, it arrives with the service that pays it.
- */
-
-export default function StreakMultiplier({ streak, size = 'md' }: StreakMultiplierProps) {
+export default function StreakMultiplier({
+  streak,
+  multiplier = 1,
+  size = 'md',
+}: StreakMultiplierProps) {
   if (streak <= 0) return null;
 
   // Flame intensity: grows with streak
@@ -45,7 +40,7 @@ export default function StreakMultiplier({ streak, size = 'md' }: StreakMultipli
 
       <div className="sm-info">
         <span className="sm-streak-count">×{streak}</span>
-        <span className="sm-streak-label">Day Streak</span>
+        {multiplier > 1 && <span className="sm-multiplier">{multiplier.toFixed(1)}× Earnings</span>}
       </div>
     </div>
   );

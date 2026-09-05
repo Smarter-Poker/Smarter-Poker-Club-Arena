@@ -93,6 +93,7 @@ import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cache
 import { formatGameTitle } from '../utils/formatGameTitle';
 import { SeatSlot } from '../components/table/SeatSlot';
 import { PotDisplay } from '../components/table/PotDisplay';
+import type { CardPresentationMode } from '../presentation/cardPresentation';
 import { CommunityCards } from '../components/table/CommunityCards';
 import { DealerButton } from '../components/table/DealerButton';
 import { DealAnimation } from '../components/table/DealAnimation';
@@ -248,7 +249,7 @@ import SpinWheel, {
   parseLockedTiers,
   type SpinWheelData,
 } from '../components/tournament/SpinWheel';
-import { spinRevealTotalMs, spinOddsTable } from '../config/spinSpec';
+import { spinRevealTotalMs } from '../config/spinSpec';
 import { isSpinTournament, type SpinRevealSubject } from '../utils/spinReveal';
 // RealtimeChannelService imported if needed for future use
 import { tournamentService } from '../services/TournamentService';
@@ -622,6 +623,18 @@ interface TableState {
   bountyMap: Record<string, number>; // userId → current bounty value (for KO/PKO display)
   isBountyTournament: boolean;
   spinMultiplier?: number;
+  /**
+   * THE PRIZE THE WHEEL DREW (Dan 2026-09-05): "THE TOTAL PRIZE OR MULTIPLIER
+   * FOR THE SPIN NEEDS TO BE PRESENT ON THE FELT AFTER THE SPIN RUNS."
+   *
+   * The multiplier alone is an abstraction — it is the prize that a player
+   * actually wants on screen for the rest of the game. The engine already
+   * computes it, writes it to `tournaments.prize_pool` and puts it on the
+   * `spin_reveal` packet as `prize_pool`; nothing on the client had ever read
+   * either. Both are wired now, so the badge survives the wheel on the live
+   * path and is there on a rejoin.
+   */
+  spinPrizePool?: number;
   handForHand?: boolean;
   bubbleInfo?: { playersRemaining: number; paidPositions: number };
   /** Authoritative MTT milestone; activates the event-only broadcast skin. */
@@ -1178,6 +1191,9 @@ interface SpinDrawRow {
   spin_locked_tiers?: unknown;
   buy_in_amount?: number | string | null;
   started_at?: string | null;
+  /** The engine's own reveal anchor - see buildSpinDrawFromRow. */
+  spin_reveal_at?: string | null;
+  prize_pool?: number | string | null;
 }
 
 /**
@@ -1188,8 +1204,30 @@ interface SpinDrawRow {
 function buildSpinDrawFromRow(row: SpinDrawRow | null | undefined): SpinWheelData | null {
   const multiplier = Number(row?.spin_multiplier) || 0;
   if (multiplier <= 0) return null;
+  /* ── ANCHOR ON THE INSTANT THE ENGINE CHOSE (Dan 2026-09-05) ─────────────
+     Dan: "THERE IS NO SOUND EFFECT OR COUNT DOWN FOR THE SPIN ANIMATION."
+
+     This read `started_at`, and started_at is not the reveal anchor. The
+     engine anchors the wheel to the third payment plus the lead-in and
+     re-anchors to `now` whenever that has already passed
+     (spinRevealWouldSkipABeat), so what it broadcasts is always playable in
+     full. `started_at` is the row's own start stamp, and the engine's
+     telemetry measures the gap between them at a 4.2s p50 - against a 1000ms
+     lead-in and a 3000ms countdown. SpinWheel fires every beat behind
+     `elapsed` at once, so on this path the countdown and all three of its
+     beeps collapsed into one millisecond, every time. A silent spinner.
+
+     `spin_reveal_at` is that anchor, written by the engine on the same row
+     write that already carried `spin_reveal_lag_ms`. started_at stays as the
+     fallback for rows drawn before the column existed - the old behaviour,
+     for the games that already have it. */
+  const anchorMs = row?.spin_reveal_at ? Date.parse(row.spin_reveal_at) : NaN;
   const startedAtMs = row?.started_at ? Date.parse(row.started_at) : NaN;
-  const revealAtMs = Number.isFinite(startedAtMs) ? startedAtMs : null;
+  const revealAtMs = Number.isFinite(anchorMs)
+    ? anchorMs
+    : Number.isFinite(startedAtMs)
+      ? startedAtMs
+      : null;
   if (!spinRevealStillLive(revealAtMs)) return null;
   return {
     multiplier,
@@ -4480,16 +4518,6 @@ export default function TablePage({
    * until the player confirms the price, and nothing is charged until they do.
    */
   const [seatFirstConfirm, setSeatFirstConfirm] = useState<number | null>(null);
-  /* ENHANCEMENT 2026-08-29: the multiplier odds ladder on the Spin buy-in
-     sheet. Collapsed by default (the sheet has to fit 375px with the Buy In
-     button above the fold); resets closed whenever the sheet closes so the
-     next open starts compact. Derived from spinOddsTable - the one ladder -
-     so a retuned tier reprices this display by itself. */
-  const [spinOddsOpen, setSpinOddsOpen] = useState(false);
-  useEffect(() => {
-    if (seatFirstConfirm === null) setSpinOddsOpen(false);
-  }, [seatFirstConfirm]);
-
   /* ── THE DUPLICATE BUY-IN TIMER IS DELETED (2026-08-29, round 14) ─────────
    *
    * A second 60-second timer used to live here, and it is the "never registers
@@ -6985,6 +7013,21 @@ export default function TablePage({
 
   // All-in dramatic mode
   const [isAllInMode, setIsAllInMode] = useState(false);
+
+  /**
+   * PHASE 2 2026-09-05 (spec 36, 94, 115): which timing profile the board's
+   * reveals resolve to. A SPECTATOR is watching and nothing else - there is
+   * no action cadence to stay out of the way of - so they get the full
+   * presentation under their own profile id, which also keeps watched hands
+   * and played hands apart in the telemetry (their device mixes differ, and
+   * averaging them hides both).
+   *
+   * This is the ONLY thing the presentation layer is allowed to learn about
+   * the game (spec 28, 115): a mode name. No payout, blind level or wallet
+   * reaches it.
+   */
+  const boardPresentationMode: CardPresentationMode =
+    tableState.heroSeat > 0 ? (tableState.isTournament ? 'tournament' : 'cash') : 'spectator';
 
   // FIX 89: All-in equity display — shows equity percentages for all all-in players
   // Populated by server's 'all_in_equity' Realtime event, visible to all players/observers
@@ -10780,7 +10823,7 @@ export default function TablePage({
           const { data: tournData, error: tournError } = await supabase
             .from('tournaments')
             .select(
-              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, final_table_triggered'
+              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, final_table_triggered'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -10954,6 +10997,23 @@ export default function TablePage({
               } else {
                 setSeatFirstBuyIn(null);
               }
+              /* ── THE ROW SAYS WHETHER PLAY HAS BEGUN (Dan 2026-09-05) ─────
+                 The `players.some(stack > 0)` clause was removed from the
+                 begun-latch today, because a seat has held its chips from the
+                 moment it was paid for since 2026-09-01 and the clause was
+                 reading a bought seat as a started game (see the latch effect
+                 for the whole account).
+                 That clause was also how a player ARRIVING at a game already
+                 in progress latched — a running table's seats hold chips. The
+                 button and the hand number cover it once a snapshot lands, but
+                 the tournament row answers it here, on the mount read, before
+                 any of that: a game out of the selling states has begun, full
+                 stop. Without this the bust watcher and `exitIfBusted` would
+                 stay disarmed on a rejoin until the first snapshot arrived. */
+              if (!openForSeats) {
+                playHasBegunRef.current = true;
+                setPlayHasBegun(true);
+              }
             }
             /**
              * ═════════════════════════════════════════════════════════════════
@@ -11095,6 +11155,7 @@ export default function TablePage({
               bountyMap: bountyErr ? prev.bountyMap : bMap,
               isBountyTournament: true,
               spinMultiplier: tournData.spin_multiplier || undefined,
+              spinPrizePool: Number(tournData.prize_pool) || undefined,
             }));
 
             // Subscribe to real-time bounty updates (store in ref for cleanup)
@@ -11137,6 +11198,7 @@ export default function TablePage({
             setTableState((prev) => ({
               ...prev,
               spinMultiplier: tournData.spin_multiplier,
+              spinPrizePool: Number(tournData.prize_pool) || undefined,
             }));
           }
 
@@ -13443,9 +13505,36 @@ export default function TablePage({
           locked_tiers?: unknown;
           reveal_at?: number;
           hold_until?: number;
+          prize_pool?: number;
         };
         const mult = Number(d?.multiplier) || 0;
         if (!mult) break;
+        /* ── THE BADGE OUTLIVES THE WHEEL (Dan 2026-09-05) ──────────────────
+           "THE TOTAL PRIZE OR MULTIPLIER FOR THE SPIN NEEDS TO BE PRESENT ON
+           THE FELT AFTER THE SPIN RUNS."
+
+           The felt badge is gated on `tableState.spinMultiplier`, and this
+           handler — the LIVE path, the one every seated player takes — never
+           wrote it. Only the mount read did. So the badge appeared for someone
+           who refreshed into a running spin and never for the three players
+           who actually watched the wheel: `spinDraw` cleared on the wheel's
+           own onDone and the felt went back to saying nothing at all.
+
+           Written BEFORE the still-live check below on purpose. A reconnect
+           that arrives after the sequence is over must not re-open the wheel,
+           but it is still telling us what this table is playing for, and that
+           is precisely when the persistent badge is the only thing left to
+           carry it. */
+        setTableState((prev) =>
+          prev.spinMultiplier === mult &&
+          prev.spinPrizePool === (Number(d?.prize_pool) || undefined)
+            ? prev
+            : {
+                ...prev,
+                spinMultiplier: mult,
+                spinPrizePool: Number(d?.prize_pool) || prev.spinPrizePool,
+              }
+        );
         const revealTournamentId =
           (evt.data as { tournament_id?: string })?.tournament_id ||
           tableState.tournamentId ||
@@ -14748,6 +14837,10 @@ export default function TablePage({
                 potSize: outcome.potWon,
                 handRank: outcome.handRank || undefined,
                 showdown: outcome.showdown,
+                /* player_stats is keyed (user_id, club_id). Without the club
+                   the counter cannot be incremented truthfully - see the note
+                   in AchievementTriggerService.updateUserStats. */
+                clubId: actualClubIdRef.current || undefined,
               })
               .catch((e) => reportError(e, 'TablePage.achievementOnHandComplete'));
           }
@@ -17255,22 +17348,49 @@ export default function TablePage({
    * noticed the moment a seat-first game stopped being a seat-first game.
    *
    * The signals are all state this page ALREADY receives, so no new socket, no
-   * new poll: the button has been drawn (SPIN_BUTTON), a hand has started
-   * (HAND_STARTED / GAME_START), or a seat that was bought at zero chips now
-   * holds a stack. That last one is decisive for a Spin specifically - a
-   * seat-first seat is a RESERVATION until the multiplier is known, because
-   * the starting stack is a property of the tier that has not been drawn yet,
-   * so a non-zero stack means the draw resolved and the game is running.
+   * new poll: the button has been drawn (SPIN_BUTTON) or a hand has started
+   * (HAND_STARTED / GAME_START). The tournament leaving REGISTERING is the
+   * third, and it arrives on the seat-first channel and the mount read.
+   *
+   * ── A PAID SEAT IS NOT A STARTED GAME (Dan 2026-09-05) ───────────────────
+   *
+   * Dan: "WHEN I TRY TO JOIN A SPIN THAT ALREADY HAS HORSES REGISTERED, I
+   * DON'T GET OR HAVE A 'SIT +' BUTTON AVAILABLE. BUT WHEN I SIT AT A SPIN
+   * FIRST ON AN EMPTY TABLE THE SPIN STARTS."
+   *
+   * A third signal used to sit here — `players.some(stack > 0)` — and its own
+   * comment explained why it was decisive: "a seat-first seat is a RESERVATION
+   * until the multiplier is known ... so a non-zero stack means the draw
+   * resolved". That was true when it was written on 2026-08-25. It stopped
+   * being true on 2026-09-01, when Dan asked for the opposite ("as soon as
+   * they buy in 300 chips should appear in their action box, not 0") and
+   * migration 20260901154500 made BOTH seating paths write
+   * `stack = starting_chips` at purchase — `fn_take_seat_and_buy_in` for a
+   * human and `fn_seat_horse_in_seat_first_game` for a horse, the same number
+   * in the same breath, because CLAUDE.md 10.5 requires it.
+   *
+   * So from that day a seat has held chips BEFORE the game starts, and this
+   * clause read the first bought seat as "play has begun". On a Spin the fleet
+   * usually buys the first seats, so the latch was already set before Dan ever
+   * opened the table: the D8 effect below cleared `seatFirstBuyIn`, `canSit`
+   * went false, and every open chair rendered as an inert EMPTY plate. Exactly
+   * the symptom he reports, and exactly why sitting FIRST at an empty table
+   * still worked — nothing had been bought yet at the moment he tapped.
+   *
+   * It cost more than the button. The D2 fallback that re-opens the wheel on a
+   * missed SPIN_REVEAL is gated on this latch too, so it burned all three of
+   * its attempts against a NULL multiplier while the game was still
+   * REGISTERING, and never ran again.
+   *
+   * A stack is no longer evidence of anything. The button, the hand and the
+   * tournament's own status are, and they are all still here.
    *
    * It latches. Play does not un-begin, and a latched boolean means the two
    * effects below run once rather than on every snapshot.
    */
   useEffect(() => {
     if (playHasBegun) return;
-    const begun =
-      tableState.dealerSeat > 0 ||
-      (tableState.handNumber ?? 0) > 0 ||
-      tableState.players.some((p) => p && Number(p.stack ?? 0) > 0);
+    const begun = tableState.dealerSeat > 0 || (tableState.handNumber ?? 0) > 0;
     if (begun) {
       /* The ref first, and synchronously: `exitIfBusted` reads it from a timer
          callback and must never see a stale false after play has started
@@ -17459,7 +17579,7 @@ export default function TablePage({
       attempts += 1;
       const { data, error } = await supabase
         .from('tournaments')
-        .select('spin_multiplier, spin_locked_tiers, buy_in_amount, started_at')
+        .select('spin_multiplier, spin_locked_tiers, buy_in_amount, started_at, spin_reveal_at')
         .eq('id', tournId)
         .maybeSingle();
       if (cancelled) return;
@@ -19634,6 +19754,24 @@ export default function TablePage({
          scaler, so the --sp-hero-clear bottom reserve is dead space for them.
          CSS collapses it via [data-hero='false'] (see TablePage.css). */
       data-hero={tableState.players.some((p) => p?.isHero) ? 'true' : 'false'}
+      /* ── HOW MANY CHAIRS THIS TABLE HAS (Dan 2026-09-05) ──────────────────
+         "THE 6 HANDED TABLE SHOULDN'T BE AS TALL AS THE 9 HANDED TABLE, IT
+         SHOULD BE SHORTER SO THE AVATARS AT THE TOP DON'T HAVE TO BE SHRUNK
+         OR SQUISHED DOWN."
+
+         `.table-scaler` carried ONE `aspect-ratio: 605/1000` for every table
+         in the app, so a 6-max oval was drawn on exactly the 9-max canvas -
+         the same height, the same top-cap band, the same 56px avatar ceiling
+         under the BBJ banner, for a ring that has one seat up there instead
+         of three. CSS cannot count seats, so the count is published here and
+         TablePage.css shortens the canvas (and lifts the ceiling) for the
+         small rings. Clamped to the range the seat layouts actually cover so
+         an absent or nonsense cap degrades to the 9-max canvas, which is the
+         one every measurement in this file was taken on. */
+      data-seats={Math.min(
+        MAX_SUPPORTED_SEATS,
+        Math.max(2, Number(tableState.maxPlayers) || MAX_SUPPORTED_SEATS)
+      )}
       /* PUBLISHED CONTRACT — "none" | "waiting" | "active". See the
          heroActionState memo above for what each one means and why it is
          derived from the render conditions rather than restated. CSS collapses
@@ -20634,7 +20772,7 @@ export default function TablePage({
                           tableId={tableId}
                           handId={tableState.handNumber}
                           boardIndex={board.boardIndex}
-                          gameMode={tableState.isTournament ? 'tournament' : 'cash'}
+                          gameMode={boardPresentationMode}
                           isFocused={isActive}
                         />
                       </div>
@@ -20678,7 +20816,7 @@ export default function TablePage({
                         tableId={tableId}
                         handId={tableState.handNumber}
                         boardIndex={0}
-                        gameMode={tableState.isTournament ? 'tournament' : 'cash'}
+                        gameMode={boardPresentationMode}
                         isFocused={isActive}
                       />
                       {/* DOUBLE-BOARD BOMB POT 2026-08-20: board 2, stacked
@@ -20711,7 +20849,7 @@ export default function TablePage({
                             tableId={tableId}
                             handId={tableState.handNumber}
                             boardIndex={1}
-                            gameMode={tableState.isTournament ? 'tournament' : 'cash'}
+                            gameMode={boardPresentationMode}
                             isFocused={isActive}
                           />
                         </div>
@@ -20737,7 +20875,7 @@ export default function TablePage({
                             tableId={tableId}
                             handId={tableState.handNumber}
                             boardIndex={2}
-                            gameMode={tableState.isTournament ? 'tournament' : 'cash'}
+                            gameMode={boardPresentationMode}
                             isFocused={isActive}
                           />
                         </div>
@@ -20875,6 +21013,18 @@ export default function TablePage({
                     >
                       <span className="spinMultiplierIcon">X</span>
                       <span className="spinMultiplierValue">{tableState.spinMultiplier}x</span>
+                      {/* Dan 2026-09-05: "THE TOTAL PRIZE OR MULTIPLIER FOR THE
+                          SPIN NEEDS TO BE PRESENT ON THE FELT AFTER THE SPIN
+                          RUNS." The multiplier is the abstraction; the prize is
+                          the number a player is actually playing for, so both
+                          ride the badge. Only when it is known — an older row
+                          with no prize_pool keeps the multiplier alone rather
+                          than printing a confident 0. */}
+                      {(tableState.spinPrizePool ?? 0) > 0 && (
+                        <span className="spinMultiplierPrize">
+                          {Math.round(tableState.spinPrizePool as number).toLocaleString()}
+                        </span>
+                      )}
                     </div>
                   )}
 
@@ -21598,12 +21748,13 @@ export default function TablePage({
                   }}
                   isDealing={isSeatDealing}
                   isMucking={muckingSeats[idx] || false}
-                  /* COMPETITOR-PARITY 2026-08-19: Card Squeeze — hero only.
+                  /* CARD SLIDE (Dan 2026-09-04): the corner peel — hero only.
                      Force-reveal conditions (showdown stage) are folded in
-                     here; SeatSlot adds the per-seat ones (all-in, winner). */
+                     here; SeatSlot adds the per-seat ones (all-in, winner).
+                     Reads card_slide; card_squeeze is retired. */
                   cardSqueezeActive={
                     !!displayPlayer?.isHero &&
-                    v8Settings.card_squeeze &&
+                    v8Settings.card_slide &&
                     tableState.boardStage !== 'showdown'
                   }
                   handNumber={tableState.handNumber ?? 0}
@@ -21808,45 +21959,23 @@ export default function TablePage({
                 Seat Held For {buyInSecondsLeft}s
               </div>
             )}
-            {/* ENHANCEMENT 2026-08-29: the multiplier ladder, priced at THIS
-                stake. Spins only - a Heads-Up has no wheel. Every number is
-                derived from the one canonical ladder (spinOddsTable), so the
-                sheet can never advertise odds the draw does not use. The
-                prize is cost x multiplier: spin fee is 0 by construction
-                (rake lives inside the multiplier distribution), so cost IS
-                the buy-in the pool multiplies. */}
-            {seatFirstBuyIn.label === 'Spin' && (
-              <div className="seat-buyin-confirm__odds">
-                <button
-                  type="button"
-                  className="seat-buyin-confirm__odds-toggle"
-                  aria-expanded={spinOddsOpen}
-                  onClick={() => setSpinOddsOpen((v) => !v)}
-                >
-                  {spinOddsOpen ? 'Hide Multiplier Odds' : 'Show Multiplier Odds'}
-                </button>
-                {spinOddsOpen && (
-                  <div className="seat-buyin-confirm__odds-table" role="table">
-                    <div className="seat-buyin-confirm__odds-row seat-buyin-confirm__odds-row--head">
-                      <span>Wheel</span>
-                      <span>Prize Pool</span>
-                      <span>Odds</span>
-                      <span>Payout</span>
-                    </div>
-                    {spinOddsTable().map((row) => (
-                      <div className="seat-buyin-confirm__odds-row" key={row.multiplier}>
-                        <span>{row.multiplier}x</span>
-                        <span>
-                          {Math.round(seatFirstBuyIn.cost * row.multiplier).toLocaleString()}
-                        </span>
-                        <span>1 In {row.oneIn.toLocaleString()}</span>
-                        <span>{row.payoutLabel}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            {/* ── NOBODY EVER SEES THE ODDS (Dan 2026-09-05, binding) ──────
+                Dan, verbatim: "HIDE THE MULTIPLIER ODDS, GET RIDE OF THAT ALL
+                TOGETHER, NOBODY SHOULD EVER VISIBLY SEE THAT."
+
+                A show/hide disclosure lived here from 2026-08-29 and printed
+                the whole ladder - every tier, its prize at this stake, its
+                frequency and its payout shape. It is gone, not collapsed and
+                not defaulted-closed: a toggle is still something a player can
+                see. (The retired strings are named in the spec, not here: a
+                comment quoting them verbatim defeats the grep that keeps them
+                out, and trips the guard itself.)
+
+                The ladder helper itself survives in src/config/spinSpec.ts,
+                because the fairness and ladder guards derive from it - it is
+                how the platform checks ITSELF. What it no longer has is a
+                render path, and tests/unit/spinOddsOnBuyInSheet.test.ts is
+                what stops it getting one back. */}
             <div className="seat-buyin-confirm__actions">
               <button
                 type="button"

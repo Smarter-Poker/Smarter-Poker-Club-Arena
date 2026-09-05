@@ -28,6 +28,12 @@
  *      'fresh', so it is pinned rather than assumed.
  *   9. Memory is bounded: a TTL and a hard ceiling, like every other in-engine
  *      map on the one core this runs on.
+ *  10. Neither published series can be moved by a player on demand. The lookup
+ *      sits above the rate limiter by design, so nothing downstream absorbs a
+ *      loop; replay and conflict are therefore counted once per KEY, not once
+ *      per request. `conflict` is documented as "flat zero forever", which is
+ *      exactly the number a player-triggerable signal would ruin - the Phase 2
+ *      self-alarm defect, in a second place.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -45,6 +51,13 @@ import {
 import { blankNonCode, sliceMethod } from '../testHelpers/sourceWindow.js';
 import { handleAction } from '../handlers/action.js';
 import { __resetRateLimiterForTests } from './rateLimit.js';
+import { actionIdempotencyTotal } from '../observability/engineInstruments.js';
+
+/** Current value of one outcome series, for the "cannot be inflated" pins. */
+function counterValue(outcome: 'stored' | 'replay' | 'conflict'): number {
+  const line = actionIdempotencyTotal.snapshot().find((s) => s.labels.outcome === outcome);
+  return line ? line.value : 0;
+}
 
 const ROOT = join(__dirname, '..', '..', '..');
 const HANDLER_SRC = readFileSync(join(ROOT, 'server', 'src', 'handlers', 'action.ts'), 'utf8');
@@ -239,6 +252,43 @@ describe('LAW 6 - one key, one intent', () => {
   it('the amount is part of the intent, so 50 and 500 are not the same raise', () => {
     expect(actionFingerprint('raise', 50)).not.toBe(actionFingerprint('raise', 500));
     expect(actionFingerprint('RAISE', 50)).toBe(actionFingerprint('raise', 50));
+  });
+
+  it('an amount that is not a number is still part of the intent', () => {
+    /* The first version folded every non-number to '', so "50" and "500"
+       shared a fingerprint and a retry carrying a different raise would have
+       been answered with the first one's result. The point of this file is to
+       stop depending on the caller's types. */
+    expect(actionFingerprint('raise', '50')).not.toBe(actionFingerprint('raise', '500'));
+    expect(actionFingerprint('raise', '50')).toBe(actionFingerprint('raise', 50));
+    expect(actionFingerprint('check', undefined)).toBe(actionFingerprint('check', null));
+  });
+});
+
+describe('LAW 10 - neither series can be moved by a player on demand', () => {
+  it('counts one replay per KEY, however many times the key is posted', () => {
+    const before = counterValue('replay');
+    const fp = actionFingerprint('call', undefined);
+    rememberAction('u1', 't1', 'key-11111111', fp, 200, { success: true });
+    for (let i = 0; i < 25; i++) lookupAction('u1', 't1', 'key-11111111', fp);
+    expect(counterValue('replay') - before).toBe(1);
+  });
+
+  it('counts one conflict per KEY, and conflict is the series that must stay at zero', () => {
+    const before = counterValue('conflict');
+    rememberAction('u1', 't1', 'key-22222222', actionFingerprint('fold', undefined), 200, {
+      success: true,
+    });
+    const other = actionFingerprint('raise', 999);
+    for (let i = 0; i < 25; i++) lookupAction('u1', 't1', 'key-22222222', other);
+    expect(counterValue('conflict') - before).toBe(1);
+  });
+
+  it('the lookup is above the rate limiter, so nothing else bounds a repeat', () => {
+    // This is WHY the counting has to be bounded here: the limiter that would
+    // otherwise absorb a loop is deliberately downstream of the lookup.
+    const fn = blankNonCode(sliceMethod(HANDLER_SRC, 'export async function handleAction('));
+    expect(fn.indexOf('lookupAction(')).toBeLessThan(fn.indexOf('checkRateLimit('));
   });
 });
 

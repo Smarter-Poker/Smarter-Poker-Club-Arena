@@ -43,7 +43,10 @@ describe('the clock comes from the row, not from this browser', () => {
     /* One column on a query that already runs every ten seconds and on every
        realtime change. Without it there is no authoritative clock anywhere on
        the client. */
-    expect(TABLE_PAGE).toMatch(/select\('user_id, is_sitting_out, sit_out_at'\)/);
+    /* `leave_pending` joined this select on 2026-09-05: the poll could not
+       otherwise tell a seat that is LEAVING from one that is merely sitting
+       out, and painted a departing player their own sit-out bar. */
+    expect(TABLE_PAGE).toMatch(/select\('user_id, is_sitting_out, sit_out_at, leave_pending'\)/);
   });
 
   it('parses it into a per-user map the surfaces can read', () => {

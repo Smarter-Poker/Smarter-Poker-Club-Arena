@@ -22,6 +22,18 @@ interface PopoverPosition {
 export function HelpPopover({ label, children }: HelpPopoverProps) {
   const id = useId();
   const buttonRef = useRef<HTMLButtonElement>(null);
+  /* The popover body is portaled to <body>, so it is NOT a descendant of the
+     button - and the outside-tap test below used to ask the button alone, so a
+     pointerdown inside the popover counted as "outside" and closed it. That is
+     the same defect that made the lobby's Stakes and Variant menus unclickable
+     (LobbyTable.tsx, 2026-09-05).
+
+     IT CANNOT FIRE TODAY: TableConfigPage.css sets `pointer-events: none` on
+     `.config-help__popover`, so the body is never a pointer target, and the
+     content is static text in any case. This is wiring ahead of the first
+     interactive child, not a fix for a live symptom - if that rule is ever
+     relaxed, containment is already correct rather than newly broken. */
+  const popoverRef = useRef<HTMLSpanElement>(null);
   const pinnedRef = useRef(false);
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<PopoverPosition | null>(null);
@@ -58,7 +70,9 @@ export function HelpPopover({ label, children }: HelpPopoverProps) {
     if (!open) return;
 
     const handlePointerDown = (event: PointerEvent) => {
-      if (!buttonRef.current?.contains(event.target as Node)) close();
+      const target = event.target as Node;
+      const inside = buttonRef.current?.contains(target) || popoverRef.current?.contains(target);
+      if (!inside) close();
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -111,6 +125,7 @@ export function HelpPopover({ label, children }: HelpPopoverProps) {
         createPortal(
           <span
             id={id}
+            ref={popoverRef}
             role="tooltip"
             className={`config-help__popover config-help__popover--${position.placement}`}
             style={{ left: position.left, top: position.top }}

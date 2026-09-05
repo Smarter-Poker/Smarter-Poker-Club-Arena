@@ -1,0 +1,9 @@
+{
+  "_owner": "agent/cw-wallet/fix/wallet-vault-audit (one Mint for diamonds: the register follows the diamond journal, 2026-09-05). Applied as 20260905041033.",
+  "functions": [
+    "fn_ca_diamond_journal_origin",
+    "fn_ca_register_diamond_journal_row",
+    "fn_ca_diamond_register_follows_journal",
+    "fn_ca_diamond_register_vs_supply"
+  ]
+}

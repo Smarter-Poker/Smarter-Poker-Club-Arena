@@ -113,7 +113,9 @@ describe('GlobalHeader Component', () => {
     );
 
     expect(screen.getByRole('button', { name: /My Profile/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Diamond Wallet/i })).toBeInTheDocument();
+    // "My Wallet" since 2026-09-04: the button opens /wallet, not the diamond
+    // store tab, so it is no longer labelled as the "Diamond Wallet" store.
+    expect(screen.getByRole('button', { name: /My Wallet/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /VIP Member/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Messages/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Notifications/i })).toBeInTheDocument();

@@ -45,8 +45,14 @@ describe('DisconnectToast lives on the felt', () => {
   });
 
   it('is mounted inside .table-surface beside TableConnectionBanner, gated on isActive and the socket', () => {
-    const banner = PAGE.indexOf(
-      '<TableConnectionBanner status={engineWsStatus} isActive={isActive} />'
+    /* Whitespace-insensitive since 2026-09-05: the banner gained a third prop
+       in Realtime Phase 3 (`authRefused`, so it can say a sign-in was refused
+       rather than blaming the connection), which pushes Prettier to wrap the
+       element. A literal one-line match found nothing and failed a pin about
+       ADJACENCY, which had not changed. Both props this test cares about are
+       still asserted, on the element itself. */
+    const banner = PAGE.search(
+      /<TableConnectionBanner\s+status=\{engineWsStatus\}\s+isActive=\{isActive\}/
     );
     const toast = PAGE.indexOf('<DisconnectToast');
     expect(banner).toBeGreaterThan(-1);

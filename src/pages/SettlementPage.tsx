@@ -190,7 +190,12 @@ interface SettlementPeriod {
   totalRake: number;
   totalBBJ: number;
   totalHands: number;
-  totalPlayers: number;
+  /* NULL, NOT ZERO. `settlement_periods` carries no player count - there is no
+     such column - and this was hardcoded 0 at all three construction sites, so
+     the "Active Players" tile read a confident nought for every club and every
+     period. A figure the row does not carry is unknown, and unknown renders as
+     a dash. */
+  totalPlayers: number | null;
   /** When the ledger says it was settled. Absent means it has not been. */
   settledAt?: string;
 }
@@ -215,7 +220,9 @@ interface AgentPayout {
   rakeGenerated: number;
   commissionRate: number;
   grossCommission: number;
-  playerRakeback: number;
+  /* NULL when the agent's own rate is unknown. It used to be a flat tenth of
+     rake generated, computed in the browser. */
+  playerRakeback: number | null;
   netPayout: number;
   status: 'pending' | 'approved' | 'paid';
 }
@@ -330,7 +337,7 @@ export default function SettlementPage() {
                 totalRake: currentPeriod.totalRakeCollected,
                 totalBBJ: currentPeriod.totalBBJContributions,
                 totalHands: currentPeriod.totalHandsDealt,
-                totalPlayers: 0, // Not in service type
+                totalPlayers: null,
               },
             ]
           : []),
@@ -344,7 +351,7 @@ export default function SettlementPage() {
           totalRake: p.totalRakeCollected,
           totalBBJ: p.totalBBJContributions,
           totalHands: p.totalHandsDealt,
-          totalPlayers: 0,
+          totalPlayers: null,
           settledAt: p.settledAt,
         })),
       ];
@@ -419,7 +426,14 @@ export default function SettlementPage() {
             rakeGenerated: a.totalRakeGenerated,
             commissionRate: a.commissionRate,
             grossCommission: a.commissionEarned,
-            playerRakeback: a.totalRakeGenerated * 0.1,
+            /* THE AGENT'S OWN RATE, NOT A FLAT TENTH. This was
+               `a.totalRakeGenerated * 0.1` - a number invented in the browser
+               and rendered per agent as though the platform had computed it.
+               `commissionRate` is the rate this agent actually holds and is on
+               the same object. Where it is missing the figure is unknown, and
+               unknown is null rather than a plausible-looking guess. */
+            playerRakeback:
+              typeof a.commissionRate === 'number' ? a.totalRakeGenerated * a.commissionRate : null,
             netPayout: a.netSettlement,
             status: a.status as 'pending' | 'approved' | 'paid',
           }));
@@ -515,9 +529,21 @@ export default function SettlementPage() {
           ...periodScope,
         },
         () => {
-          // Reload — inline since loadSettlementData is scoped to another useEffect
-          SettlementService.getCurrentPeriod()
+          /* THIS CLUB'S PERIOD, NOT THE PLATFORM'S. The initial load uses
+             getCurrentPeriodForClub for the reason its own comment gives - the
+             unscoped call returns the newest OPEN period on the platform,
+             which on 2026-09-05 belonged to no club at all - and this handler
+             still called the unscoped one, so the first settlement_periods
+             event re-headed the page with somebody else's week. */
+          (resolvedClubId
+            ? SettlementService.getCurrentPeriodForClub(resolvedClubId)
+            : SettlementService.getCurrentPeriod()
+          )
             .then((cp) => {
+              // getCurrentPeriodForClub answers null for a club that has never
+              // been settled. That is a fact, not a failure: leave the header
+              // exactly as it is rather than replacing it with somebody else's.
+              if (!cp) return;
               const mapped: SettlementPeriod = {
                 id: cp.id,
                 periodNumber: cp.periodNumber,
@@ -528,7 +554,7 @@ export default function SettlementPage() {
                 totalRake: cp.totalRakeCollected,
                 totalBBJ: cp.totalBBJContributions,
                 totalHands: cp.totalHandsDealt,
-                totalPlayers: 0,
+                totalPlayers: null,
               };
               if (isMounted.current) setSelectedPeriod(mapped);
             })
@@ -943,7 +969,9 @@ export default function SettlementPage() {
           <span className={styles.metricIcon}></span>
           <div>
             <span className={styles.metricValue}>
-              {selectedPeriod.totalPlayers.toLocaleString()}
+              {selectedPeriod.totalPlayers === null
+                ? '-'
+                : selectedPeriod.totalPlayers.toLocaleString()}
             </span>
             <span className={styles.metricLabel}>Active Players</span>
           </div>
@@ -1160,7 +1188,11 @@ export default function SettlementPage() {
                     <td>{formatMoney(payout.rakeGenerated)}</td>
                     <td>{(payout.commissionRate * 100).toFixed(0)}%</td>
                     <td>{formatMoney(payout.grossCommission)}</td>
-                    <td className={styles.muted}>-{formatMoney(payout.playerRakeback)}</td>
+                    <td className={styles.muted}>
+                      {payout.playerRakeback === null
+                        ? '-'
+                        : `-${formatMoney(payout.playerRakeback)}`}
+                    </td>
                     <td className={`${styles.netAmount} ${styles.positive}`}>
                       {formatMoney(payout.netPayout)}
                     </td>

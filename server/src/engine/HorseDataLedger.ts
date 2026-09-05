@@ -420,9 +420,17 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   table(
     'horse_daily_nets',
     'nightly',
-    'HorseSelfTuner (real bb/100); fn_run_horse_daily_audit',
-    'exact settlement nets per horse per day',
+    'HorseSelfTuner (real bb/100 and, since 2026-09-05, rake_bb -> the rake-adjusted regression rule); fn_run_horse_daily_audit',
+    'exact settlement nets + weighted-contributed rake per horse per day',
     'V16',
+    { dayColumn: 'day', freshnessDays: 1 }
+  ),
+  table(
+    'horse_daily_play',
+    'nightly',
+    'HorseSelfTuner (loadPlayRows: every horse studied from its own rows; HorseHandReview compiles them at settlement with HorsePlayStats)',
+    'per horse/day/format VPIP, PFR, 3-bet, fold-to-3-bet, saw flop, WWSF, postflop aggression',
+    '2026-09-05',
     { dayColumn: 'day', freshnessDays: 1 }
   ),
   table(
@@ -611,6 +619,41 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic (solver lookups)',
     'gto_miss_* / gto_skip_too_deep / gto_depth_fallback; NLH solver misses by reason',
     'V27'
+  ),
+  receipt(
+    'vpip_floor',
+    'HorseLogic (VPIP floor)',
+    'a floored table steered this decision (Dan 2026-09-04)',
+    'VPIP',
+    'decide'
+  ),
+  receipt(
+    'vpip_floor_prior',
+    'HorseLogic (VPIP floor)',
+    'steering on the prior - under three hands, no judged sample yet',
+    'VPIP',
+    'vpip_floor'
+  ),
+  receipt(
+    'vpip_floor_closing',
+    'HorseLogic (VPIP floor)',
+    'closing the loop on the judged VPIP and still widening',
+    'VPIP',
+    'vpip_floor'
+  ),
+  receipt(
+    'vpip_floor_satisfied',
+    'HorseLogic (VPIP floor)',
+    'over the floor; the horse own style is back in charge',
+    'VPIP',
+    'vpip_floor'
+  ),
+  receipt(
+    'vpip_floor_clamped',
+    'HorseLogic (VPIP floor)',
+    'pinned at the 0.35 widening limit - the floor cannot be reached by widening, so the table churns',
+    'VPIP',
+    'vpip_floor'
   ),
   receipt(
     'v15_nut_status',

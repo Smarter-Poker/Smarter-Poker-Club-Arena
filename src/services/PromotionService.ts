@@ -225,18 +225,28 @@ class PromotionServiceClass {
       throw new Error('Promotion is not active');
     }
 
-    // Create claim
+    /* THE ROW SAYS WHAT THE PROMOTION SAYS (20260905084034).
+     *
+     * This used to send `bonus_amount`, `wager_required` and `status` from
+     * here. The only INSERT policy on `promotion_claims` is
+     * `user_id = auth.uid()` - it checks WHO is claiming and nothing about
+     * WHAT, so any signed-in caller could post a claim carrying any figure it
+     * liked into a money column. A BEFORE INSERT trigger now derives all three
+     * from the `promotions` row and discards whatever arrives, so sending them
+     * would be theatre. Proved against production, then rolled back: a claim
+     * asking for 999,999.99 on a 1,000 pool over 40 claims was recorded as
+     * 25.00.
+     *
+     * The claim still credits NOTHING. Only the deposit-match path calls
+     * `add_to_promo_wallet`, and what a claim on a leaderboard or milestone
+     * promotion should pay is Dan's to set (CLAUDE.md 10.9), so this records
+     * the claim honestly and says so rather than implying money moved. */
     const { data, error } = await supabase
       .from('promotion_claims')
       .insert({
         promotion_id: promotionId,
         user_id: userId,
-        status: promo.wagerRequirement ? 'active' : 'completed',
-        bonus_amount: promo.prizePool
-          ? Math.trunc((promo.prizePool * 100) / (promo.maxClaims || 100)) / 100
-          : 0,
         wager_progress: 0,
-        wager_required: promo.wagerRequirement || 0,
       })
       .select()
       .maybeSingle();

@@ -94,6 +94,9 @@ import { formatGameTitle } from '../utils/formatGameTitle';
 import { SeatSlot } from '../components/table/SeatSlot';
 import { PotDisplay } from '../components/table/PotDisplay';
 import type { CardPresentationMode } from '../presentation/cardPresentation';
+import { viewerMaySqueeze } from '../presentation/cardPresentation/squeezeEligibility';
+import { useHeldValue } from '../hooks/useHeldValue';
+import { useVIPStatus } from '../hooks/useVIP';
 import { CommunityCards } from '../components/table/CommunityCards';
 import { DealerButton } from '../components/table/DealerButton';
 import { DealAnimation } from '../components/table/DealAnimation';
@@ -3538,10 +3541,57 @@ export default function TablePage({
     // refreshMaintenanceBreak is a stable useCallback, so this still runs once
     // per error rather than on every break countdown tick.
   }, [engineLastError, refreshMaintenanceBreak]);
+  /* ═══ A RELOAD CANNOT FIX A SIGN-IN (Realtime Phase 3, 2026-09-05) ════════
+     Why this flag has to exist at all: `auth_failed` is a status the client
+     passes THROUGH, not one it rests in. EngineStateClient sets it on a 4401
+     and then calls scheduleReconnect(), which immediately sets 'reconnecting'
+     and, at maxRetries, 'failed'. So by the time the auto-reload failsafe
+     twenty seconds below looks at the status, an auth refusal and a dead
+     Wi-Fi link are the same word: 'failed'.
+
+     That is how a browser ends up reloading itself every two minutes forever
+     against a socket that will refuse it every time - the 2026-09-03 shape,
+     and it is worse than useless: each reload throws away the felt, the
+     buy-in overlay and any pre-action the player had armed, then arrives at
+     exactly the same refusal.
+
+     Two distinct cases sit under one close code, and both are answered here:
+       - the session is genuinely dead: lib/sessionRevoked already probes
+         GoTrue, prompts and redirects, so this page must simply not reload
+         out from under that prompt;
+       - the session is ALIVE and the ENGINE is refusing it (its own auth
+         path broken, a rotated key, GoTrue unreachable from the box): the
+         ladder underneath keeps retrying and will reconnect the moment the
+         engine recovers. A reload adds nothing and costs the player their
+         table. This is the case nothing handled before today.
+
+     The flag is sticky for the outage and cleared only by a socket that
+     actually opens: an auth refusal followed by nine 1006s is still an auth
+     outage, and reading only the most recent close would forget that. */
+  const [engineRefusedAuth, setEngineRefusedAuth] = useState(false);
+  const engineRefusedAuthRef = useRef(false);
+  engineRefusedAuthRef.current = engineRefusedAuth;
+  useEffect(() => {
+    if (!engineLastError) return;
+    // Same predicate as lib/sessionRevoked.isEngineAuthClose. Inlined rather
+    // than imported so this page does not pull that module into the entry
+    // chunk every player downloads before first paint; the law pins the two
+    // copies as identical.
+    const isAuth =
+      engineLastError.code === 4401 || /^auth:/.test(String(engineLastError.reason || ''));
+    if (isAuth) setEngineRefusedAuth(true);
+  }, [engineLastError]);
+  useEffect(() => {
+    if (engineWsStatus === 'auth_failed') setEngineRefusedAuth(true);
+  }, [engineWsStatus]);
+
   useEffect(() => {
     if (engineWsStatus === 'connected') {
       notFoundCountRef.current = 0;
       tableClosedToastShownRef.current = false;
+      // A socket that reached OPEN is proof the engine accepted this token.
+      // Nothing weaker clears it (see the comment above).
+      setEngineRefusedAuth(false);
     }
   }, [engineWsStatus]);
 
@@ -3612,6 +3662,28 @@ export default function TablePage({
       // it every ~30s yanked the page out from under players choosing a seat
       // (observed live 2026-08-28). The socket connects when the game starts.
       if (seatFirstOpenRef.current) return;
+      /* DO NO HARM (Realtime Phase 3, 2026-09-05). The socket died for auth,
+         so a fresh page would present the same token to the same refusal and
+         land here again in twenty seconds - having discarded the felt, the
+         overlays and any armed pre-action on the way. Whichever of the two
+         auth cases this is, the reload is the wrong move: a dead session is
+         already being prompted and redirected by lib/sessionRevoked, and a
+         live session refused by the engine is recovered by the reconnect
+         ladder that is still running underneath.
+
+         Not silent, on either side. The player has the banner, which says
+         this is a sign-in problem rather than a lost connection, and the
+         platform gets `reload_suppressed` - the series that tells an on-call
+         engineer "these players cannot authenticate to a table", which is
+         the sentence nobody could say for twenty-two hours on 2026-09-03. */
+      if (engineRefusedAuthRef.current) {
+        void import('../services/clientConnectionBeacon')
+          .then((m) => m.reportConnectionEvent('reload_suppressed'))
+          .catch(() => {
+            /* telemetry never disturbs the table */
+          });
+        return;
+      }
       const KEY = 'ca_ws_autoreload_at';
       const last = Number(sessionStorage.getItem(KEY) || 0);
       if (Date.now() - last < 120_000) return;
@@ -5211,6 +5283,16 @@ export default function TablePage({
    * runout that has not been drawn yet.
    */
   const ritExpectedRunsRef = useRef(0);
+  /**
+   * VIP ALL-IN SQUEEZE 2026-09-05: the same fact as ritExpectedRunsRef, as
+   * STATE, because the board's squeeze eligibility is a render-time input and
+   * a ref does not re-render. Dan: the squeeze "SHOULD NEVER APPEAR ON RUN IT
+   * 2X OR 3X" - this is the explicit rule, set the instant the table agrees
+   * to run it more than once (rit_all_accepted / rit_mandatory) and cleared
+   * at the hand boundary with the rest of the RIT state. It does not rely on
+   * the RIT boards happening to render through a branch with no slowReveal.
+   */
+  const [ritRunsThisHand, setRitRunsThisHand] = useState(1);
   /** Deferred hand-boundary teardown for a reveal that is still on screen. */
   const ritBoundaryClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearRitRevealTimers = useCallback(() => {
@@ -5278,6 +5360,7 @@ export default function TablePage({
     ritTimelineEndsAtRef.current = 0;
     ritRevealEndsAtRef.current = 0;
     ritExpectedRunsRef.current = 0;
+    setRitRunsThisHand(1);
     if (ritBoundaryClearTimerRef.current) {
       clearTimeout(ritBoundaryClearTimerRef.current);
       ritBoundaryClearTimerRef.current = null;
@@ -7325,6 +7408,61 @@ export default function TablePage({
     toggleSetting: toggleV8Setting,
     setAlias: setV8TableAlias,
   } = useUserTableSettings(userId !== 'guest' ? userId : null);
+
+  /**
+   * ═══ THE VIP ALL-IN SQUEEZE (Dan 2026-09-05) ═════════════════════════════
+   *
+   * Whether THIS viewer squeezes the run-out cards open themselves. Every
+   * clause is Dan's: all-in in this hand, a VIP card, the perk on, and not a
+   * Run It Twice hand. Computed here from what this client already knows -
+   * nothing is broadcast, so no other seat can learn who is a VIP from the
+   * felt. Everyone for whom this is false sees the ordinary reveal on the
+   * ordinary rhythm, which is exactly what they saw yesterday.
+   *
+   * The VIP check is src/utils/vipStatus.ts through useVIPStatus (VIP or
+   * Lifetime VIP; there is no other rung - docs/laws.d/vip-is-not-a-ladder.md).
+   */
+  const { isVIP: viewerIsVip } = useVIPStatus();
+  /**
+   * "ALL IN" MEANS IN THE RUN-OUT, NOT ONLY OUT OF CHIPS (audit 2026-09-05).
+   * The engine's ALL_IN_RUNOUT carries `getActivePlayers()` - every live
+   * hand, including the player who CALLED the shove with chips behind. That
+   * player has no more decisions and their money is in the middle exactly
+   * like the shover's, and they are in the equity list the server sends. A
+   * check on `status === 'all_in'` alone would have denied the perk to the
+   * covering player in every heads-up all-in, which is half of them. So:
+   * the hero is a run-out participant if the equity broadcast names them
+   * (by id, or by seat where the entry has no id), or their status says so.
+   */
+  const heroInRunout =
+    tableState.heroSeat > 0 &&
+    (tableState.players[tableState.heroSeat - 1]?.status === 'all_in' ||
+      allInEquities.some((e) => (e.userId ? e.userId === userId : e.seat === tableState.heroSeat)));
+  const heroSqueezeEligible = viewerMaySqueeze({
+    heroAllIn: heroInRunout,
+    isVip: viewerIsVip,
+    settingOn: v8Settings.all_in_squeeze,
+    runItMultiple: ritRunsThisHand > 1 || (ritResult?.boards?.length ?? 0) > 1,
+    /* Dan 2026-09-05: "THIS ISN'T ALLOWED ON BOMB POTS". bombPotActive is the
+       hand-level flag (BOMB_POT_TRIGGERED -> next HAND_STARTED); a second
+       board on the felt is the same fact from the other side. */
+    bombPot: bombPotActive || tableState.communityCards2.length > 0,
+  });
+  /**
+   * While this viewer's squeezed card is still face down under their hand,
+   * the equity they SEE stays at the previous street's numbers. The server's
+   * equity for the new street arrives ALL_IN_STREET_REVEAL_MS after the card
+   * and a squeeze may take longer (its ceiling is ALL_IN_SQUEEZE_CEILING_MS);
+   * without this the percentages would flip to the outcome while the card
+   * that caused it was still in their fingers - the spoiler Dan banned on
+   * 2026-08-28 ("EQUITY CHANGES ONLY AFTER THE FLOP IS DISPLAYED, (NOT BEFORE
+   * OR DURING)"). Local only: `allInEquities` itself is untouched, the banner
+   * and the RIT panel still read the live value, and nobody else's display
+   * is involved. The hold lifts on the engine's reveal beat, when the face is
+   * on screen.
+   */
+  const [squeezeHolding, setSqueezeHolding] = useState(false);
+  const displayedEquities = useHeldValue(allInEquities, squeezeHolding);
 
   // FIX-232: Ref for cards_pre_sort to avoid stale closure in hole card callbacks
   const cardsPreSortRef = useRef(v8Settings.cards_pre_sort);
@@ -9859,6 +9997,7 @@ export default function TablePage({
         // rit_result onto the wire, and without this it would ship the pot
         // over a runout the client has not drawn yet (see POT_WIN's ritHold).
         ritExpectedRunsRef.current = runs;
+        setRitRunsThisHand(runs);
         // RUN IT 3X recording: when the FINAL accept's named banner just
         // fired, the table goes straight into the runout under that banner —
         // the collective line only shows when completion arrived without one
@@ -9879,6 +10018,7 @@ export default function TablePage({
       if (eventType === 'rit_mandatory') {
         const runs = (handState.runs as number) || 2;
         ritExpectedRunsRef.current = runs;
+        setRitRunsThisHand(runs);
         // No offer was ever open, but a stale one from this hand's arming
         // must not keep a clock or a waiting strip alive (see rit_all_accepted).
         ritDeadlineRef.current = 0;
@@ -20946,7 +21086,11 @@ export default function TablePage({
                 {/* Sits directly above the wordmark, in felt coordinates, and
                     paints over everything on the surface. See the note in
                     .table-container above for why it moved off the top rail. */}
-                <TableConnectionBanner status={engineWsStatus} isActive={isActive} />
+                <TableConnectionBanner
+                  status={engineWsStatus}
+                  isActive={isActive}
+                  authRefused={engineRefusedAuth}
+                />
                 {/* The engine's verdict on THIS seat's presence, on the same
                     line. Defers to the socket banner whenever the socket is
                     down (Dan 2026-09-04: every connection message lives on
@@ -21241,6 +21385,10 @@ export default function TablePage({
                           tableId={tableId}
                           handId={tableState.handNumber}
                           boardIndex={board.boardIndex}
+                          /* VIP ALL-IN SQUEEZE 2026-09-05: a re-run board is
+                             told it is one of several, so it can never
+                             squeeze whatever else it is handed. */
+                          runs={Math.max(2, ritBoardsView.length)}
                           gameMode={boardPresentationMode}
                           isFocused={isActive}
                           isVisible={isVisible}
@@ -21279,6 +21427,12 @@ export default function TablePage({
                            runout (equity overlay live) the turn/river land
                            face down and flip - the reference slowed reveal. */
                         slowReveal={allInEquities.length > 0}
+                        /* VIP ALL-IN SQUEEZE 2026-09-05: this viewer's right
+                           to squeeze, and the run count so a re-run never
+                           does (see heroSqueezeEligible). */
+                        squeezeEligible={heroSqueezeEligible}
+                        runs={ritRunsThisHand}
+                        onSqueezeHold={setSqueezeHolding}
                         /* RIVER SQUEEZE 2026-09-04: presentation identity and
                            focus. The engine keys the river by table + hand +
                            board so a duplicate snapshot never replays it and
@@ -21975,10 +22129,10 @@ export default function TablePage({
                      an all-in equity badge lifts above the neighbouring
                      wrappers (z 28, under --showing's 30) so the badge is
                      never sealed beneath a DOM-later neighbour's avatar. */
-                  allInEquities.length > 0 &&
+                  displayedEquities.length > 0 &&
                   player &&
-                  (allInEquities.some((e) => e.userId === player.id) ||
-                    allInEquities.some((e) => !e.userId && e.seat === seatNumber))
+                  (displayedEquities.some((e) => e.userId === player.id) ||
+                    displayedEquities.some((e) => !e.userId && e.seat === seatNumber))
                     ? ' seat-wrapper--equity'
                     : ''
                 }`}
@@ -22291,8 +22445,11 @@ export default function TablePage({
                   );
                 })()}
 
-                {/* FIX 89: All-In Equity Overlay — shown per seat during all-in */}
-                {allInEquities.length > 0 &&
+                {/* FIX 89: All-In Equity Overlay — shown per seat during all-in.
+                    VIP ALL-IN SQUEEZE 2026-09-05: reads displayedEquities, which
+                    is allInEquities except while THIS viewer's squeezed card is
+                    still face down (see squeezeHolding). */}
+                {displayedEquities.length > 0 &&
                   player &&
                   (() => {
                     // AUDIT-2 FIX 2026-08-20: this was `seat === seatNumber ||
@@ -22302,8 +22459,8 @@ export default function TablePage({
                     // equity on this seat. userId is authoritative; seat is
                     // only a fallback for entries with no userId.
                     const eq =
-                      allInEquities.find((e) => e.userId === player.id) ??
-                      allInEquities.find((e) => !e.userId && e.seat === seatNumber);
+                      displayedEquities.find((e) => e.userId === player.id) ??
+                      displayedEquities.find((e) => !e.userId && e.seat === seatNumber);
                     if (!eq) return null;
                     const isAhead = eq.equity >= 50;
                     /* Dan 2026-08-28 (smart placement): "PERCENTAGES SHOULD

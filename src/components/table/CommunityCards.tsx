@@ -22,9 +22,11 @@ import {
   preloadImage,
   SqueezeCard,
   squeezeHostProps,
+  boardMaySqueeze,
   type CardAnimationProfile,
   type CardPresentationMode,
   type CommunityStreet,
+  type SqueezeHoldState,
 } from '../../presentation/cardPresentation';
 import {
   CardPresentationDebug,
@@ -94,11 +96,35 @@ export interface CommunityCardsProps {
    * flow's slowed reveal - instead of the normal one-sided spin-in. Normal
    * (non-all-in) streets keep their existing animation.
    *
-   * RIVER SQUEEZE 2026-09-04: both all-in streets now run the squeeze with
-   * the `all-in` profile (face down, hold to the server's reveal gate, snap
-   * over) - see src/presentation/cardPresentation.
+   * RIVER SQUEEZE 2026-09-04: both all-in streets ran the squeeze with the
+   * `all-in` profile for every seat. VIP ALL-IN SQUEEZE 2026-09-05: no
+   * longer on its own. This flag says "the server is pacing a run-out"; the
+   * `all-in` profile is chosen only when `squeezeEligible` (below) is also
+   * true. With `slowReveal` alone the street resolves the ORDINARY profile,
+   * which is what every non-squeezing seat sees.
    */
   slowReveal?: boolean;
+  /**
+   * VIP ALL-IN SQUEEZE 2026-09-05 (Dan): THIS viewer may squeeze the run-out
+   * open themselves - they are all-in in this hand, hold a VIP card, have
+   * the perk on. Computed by the page (viewerMaySqueeze); combined here with
+   * `runs` so a Run It Twice board never squeezes whatever the page says.
+   * With it false or absent, an all-in runout gets the ordinary street
+   * reveal - identical to what every non-squeezing seat sees.
+   */
+  squeezeEligible?: boolean;
+  /** How many times this hand is being run. 1 (default) is the only value that squeezes. */
+  runs?: number;
+  /**
+   * True while THIS viewer's squeezed card is face down under their hand,
+   * false the instant the face appears (the engine's reveal beat) or the
+   * presentation is interrupted. The page uses it to hold the DISPLAYED
+   * equity at the previous street's numbers for this viewer only, so a slow
+   * squeeze can outlive the server's equity gate without the percentages
+   * spoiling the card (Dan 2026-08-28: the numbers move only after the card
+   * is displayed). Nothing on the wire changes.
+   */
+  onSqueezeHold?: (holding: boolean) => void;
   /**
    * RIVER SQUEEZE 2026-09-04 - presentation identity (spec 14, 31). The
    * engine keys every animation by table + hand + board + street so a
@@ -209,6 +235,26 @@ interface CardFaceProps {
    * promoted compositor layer. See cardSqueeze.css.
    */
   animating: boolean;
+  /** VIP ALL-IN SQUEEZE 2026-09-05: the player's hold on the squeeze, if it is theirs. */
+  hold: SqueezeHoldState | null;
+  /** The player let go past the threshold: open it. */
+  onRelease: () => void;
+}
+
+/**
+ * How far a drag must travel, as a fraction of the card's own width, to be
+ * edge-on (--rs-drag = 1). Under a card width the whole squeeze fits under a
+ * thumb without leaving the card, which is what a squeeze feels like.
+ */
+export const SQUEEZE_DRAG_TRAVEL = 0.9;
+/** --rs-drag at which letting go opens the card instead of springing it flat. */
+export const SQUEEZE_RELEASE_THRESHOLD = 0.6;
+
+/** Pointer travel -> --rs-drag, clamped. Exported so the arithmetic is pinned. */
+export function squeezeDragProgress(dx: number, dy: number, cardWidth: number): number {
+  const travel = Math.max(1, cardWidth * SQUEEZE_DRAG_TRAVEL);
+  const p = Math.hypot(dx, dy) / travel;
+  return p < 0 ? 0 : p > 1 ? 1 : p;
 }
 
 function CardFace({
@@ -223,7 +269,84 @@ function CardFace({
   squeeze,
   boardIndex,
   animating,
+  hold,
+  onRelease,
 }: CardFaceProps) {
+  /* VIP ALL-IN SQUEEZE 2026-09-05: the drag is written straight onto the
+     host as --rs-drag (and data-rs-dragging), never through React state - a
+     squeeze is a pointermove stream and a re-render per move is a jank
+     generator on the phones 95% of players are holding. The engine hears
+     exactly one thing from all this: releaseHold(), via onRelease. */
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{ id: number; x: number; y: number; width: number } | null>(null);
+  const progressRef = useRef(0);
+  const writeDrag = (value: number) => {
+    progressRef.current = value;
+    const el = hostRef.current;
+    if (el) el.style.setProperty('--rs-drag', value.toFixed(3));
+  };
+  const setDragging = (on: boolean) => {
+    const el = hostRef.current;
+    if (el) el.setAttribute('data-rs-dragging', on ? 'on' : 'off');
+  };
+  const interactiveHold = hold === 'drag';
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!interactiveHold || dragRef.current) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const el = e.currentTarget;
+    dragRef.current = {
+      id: e.pointerId,
+      x: e.clientX,
+      y: e.clientY,
+      width: el.getBoundingClientRect().width,
+    };
+    try {
+      el.setPointerCapture(e.pointerId);
+    } catch {
+      /* capture is a nicety; the move handler still works on the element */
+    }
+    setDragging(true);
+    e.preventDefault();
+  };
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current;
+    if (!d || d.id !== e.pointerId) return;
+    writeDrag(squeezeDragProgress(e.clientX - d.x, e.clientY - d.y, d.width));
+  };
+  const endDrag = (e: React.PointerEvent<HTMLDivElement>, cancelled: boolean) => {
+    const d = dragRef.current;
+    if (!d || d.id !== e.pointerId) return;
+    dragRef.current = null;
+    setDragging(false);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released */
+    }
+    if (!cancelled && interactiveHold && progressRef.current >= SQUEEZE_RELEASE_THRESHOLD) {
+      onRelease();
+      return;
+    }
+    // Below the threshold (or a cancelled pointer): the card springs flat.
+    writeDrag(0);
+  };
+  // A keyboard user has no squeeze to perform, but the card is theirs to
+  // open all the same: Enter or Space opens it from flat.
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!interactiveHold) return;
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    writeDrag(1);
+    onRelease();
+  };
+  // A card whose hold ended (released, or the presentation is over) forgets
+  // any drag in flight, so the next hand's card starts flat.
+  useEffect(() => {
+    if (hold !== 'drag') {
+      dragRef.current = null;
+      setDragging(false);
+    }
+  }, [hold]);
   // Only apply animation classes to NEWLY DEALT cards — existing cards stay still
   const isTurnCard = isNewlyDealt && stage === 'turn' && index === 3;
   const isRiverCard = isNewlyDealt && (stage === 'river' || stage === 'showdown') && index === 4;
@@ -239,7 +362,9 @@ function CardFace({
   // turn had no profile: it ignored the player's table focus and platform.
   // Both streets are the same mechanism now, sized by the same table.
   const isSqueeze = isNewlyDealt && squeeze !== null && squeeze.index === index;
-  const host = isSqueeze ? squeezeHostProps(squeeze.profile, boardIndex, animating) : null;
+  const host = isSqueeze
+    ? squeezeHostProps(squeeze.profile, boardIndex, animating, hold ?? undefined)
+    : null;
   const style = (
     host
       ? { ...host.style, '--card-index': index }
@@ -275,10 +400,20 @@ function CardFace({
         .filter(Boolean)
         .join(' ')}
       style={style}
+      ref={hostRef}
       data-rs-profile={host ? host['data-rs-profile'] : undefined}
       data-rs-sweep={host ? host['data-rs-sweep'] : undefined}
       data-rs-3d={host ? host['data-rs-3d'] : undefined}
       data-rs-animating={host ? host['data-rs-animating'] : undefined}
+      data-rs-hold={host ? host['data-rs-hold'] : undefined}
+      onPointerDown={host && interactiveHold ? onPointerDown : undefined}
+      onPointerMove={host && interactiveHold ? onPointerMove : undefined}
+      onPointerUp={host && interactiveHold ? (e) => endDrag(e, false) : undefined}
+      onPointerCancel={host && interactiveHold ? (e) => endDrag(e, true) : undefined}
+      onKeyDown={host && interactiveHold ? onKeyDown : undefined}
+      role={host && interactiveHold ? 'button' : undefined}
+      tabIndex={host && interactiveHold ? 0 : undefined}
+      aria-label={host && interactiveHold ? 'Squeeze To Reveal' : undefined}
     >
       {isSqueeze ? (
         /* ROUND 2 2026-09-05: the turn and river share ONE piece of markup
@@ -408,6 +543,9 @@ function CommunityCardsComponent({
   cardBack,
   playSounds = true,
   slowReveal = false,
+  squeezeEligible = false,
+  runs = 1,
+  onSqueezeHold,
   tableId,
   handId,
   boardIndex = 0,
@@ -472,6 +610,29 @@ function CommunityCardsComponent({
     if (soundService.isEnabled()) soundService.playCommunityCard();
   };
   const [squeeze, setSqueeze] = useState<SqueezePresentation | null>(null);
+  /**
+   * VIP ALL-IN SQUEEZE 2026-09-05: the player's hold on the squeeze in
+   * flight. `drag` from the moment an interactive presentation starts,
+   * `released` when they open it or the ceiling does, null otherwise.
+   */
+  const [squeezeHold, setSqueezeHold] = useState<SqueezeHoldState | null>(null);
+  const onSqueezeHoldRef = useRef(onSqueezeHold);
+  onSqueezeHoldRef.current = onSqueezeHold;
+  const holdingRef = useRef(false);
+  /** Tell the page once per edge, never twice for the same state. */
+  const announceHold = (holding: boolean) => {
+    if (holdingRef.current === holding) return;
+    holdingRef.current = holding;
+    onSqueezeHoldRef.current?.(holding);
+  };
+  const releaseSqueeze = () => {
+    const key = activeSqueezeRef.current;
+    if (!key) return;
+    // The engine re-bases its clock; the `squeeze` beat it announces flips
+    // the host to 'released' in the listener below, on the same path the
+    // ceiling takes, so there is exactly one way the snap starts.
+    cardPresentationEngine.releaseHold(key);
+  };
   /** The profile the stage effect must read - state has not committed yet. */
   const squeezeProfileRef = useRef<CardAnimationProfile | null>(null);
   /**
@@ -532,8 +693,10 @@ function CommunityCardsComponent({
     const closeWindow = () => {
       setNewlyDealtIndices(new Set());
       setSqueeze(null);
+      setSqueezeHold(null);
       setAnimating(false);
       activeSqueezeRef.current = null;
+      announceHold(false);
     };
     if (visibleCount > prevCount) {
       // New cards appeared — mark them as newly dealt
@@ -577,6 +740,11 @@ function CommunityCardsComponent({
             focus: !isVisible ? 'hidden' : isFocused ? 'focused' : 'visible',
             reducedMotion: prefersReducedMotion(),
             allIn: slowReveal,
+            // VIP ALL-IN SQUEEZE 2026-09-05: the viewer's right, AND the
+            // board's - a re-run board or a second/third board never
+            // squeezes (Dan: "NEVER APPEAR ON RUN IT 2X OR 3X", and "NOT
+            // ALLOWED ON BOMB POTS"), whatever the page computed.
+            squeeze: boardMaySqueeze(squeezeEligible, runs, boardIndex),
           }
         );
         if (result.status === 'started') {
@@ -603,6 +771,12 @@ function CommunityCardsComponent({
             squeezeProfileRef.current = result.profile;
             setAnimating(true);
             setSqueeze({ key: result.key, profile: result.profile, index: slot });
+            if (result.profile.interactive) {
+              setSqueezeHold('drag');
+              announceHold(true);
+            } else {
+              setSqueezeHold(null);
+            }
           } else {
             // A flop pays its three snaps on the street, not on a reveal beat
             // that does not describe its shape - nothing is owed to a key.
@@ -653,6 +827,8 @@ function CommunityCardsComponent({
       // the last hand is interrupted; the new board is the authoritative one.
       cancelActiveSqueeze('new-hand');
       setSqueeze(null);
+      setSqueezeHold(null);
+      announceHold(false);
       localHandRef.current += 1;
       prevVisibleCountRef.current = visibleCount;
       if (visibleCount > 0) {
@@ -718,9 +894,19 @@ function CommunityCardsComponent({
         // pays the cue. Clearing the newly-dealt set covers the FLOP too.
         activeSqueezeRef.current = null;
         setSqueeze(null);
+        setSqueezeHold(null);
         setAnimating(false);
         setNewlyDealtIndices((prev) => (prev.size === 0 ? prev : new Set()));
       }
+      // VIP ALL-IN SQUEEZE 2026-09-05: the hold ended - by the player's hand
+      // (releaseHold) or by the ceiling (the engine's hold timer). Either way
+      // the host swaps the drag transform for the snap keyframes here, and
+      // the page's equity hold lifts on the reveal beat that follows, when
+      // the face is actually on screen.
+      if (phase === 'squeeze' && key === activeSqueezeRef.current) {
+        setSqueezeHold((h) => (h === 'drag' ? 'released' : h));
+      }
+      if (phase === 'reveal' || phase === 'complete' || phase === 'cancelled') announceHold(false);
       // The flip is over: stop paying for a compositor layer (see above).
       if (phase === 'complete' || phase === 'cancelled') setAnimating(false);
       if (key !== pendingRevealKeyRef.current) return;
@@ -875,6 +1061,8 @@ function CommunityCardsComponent({
               squeeze={squeeze}
               boardIndex={boardIndex}
               animating={animating}
+              hold={squeezeHold}
+              onRelease={releaseSqueeze}
             />
           ) : (
             /* Dan 2026-08-26: "remove the ghost placeholders for the turn
@@ -960,6 +1148,11 @@ export const CommunityCards = memo(CommunityCardsComponent, (prev, next) => {
   // POKERBROS PARITY 2026-08-26: the all-in mode changes which
   // animation the next street gets - it must invalidate the memo.
   if (prev.slowReveal !== next.slowReveal) return false;
+  // VIP ALL-IN SQUEEZE 2026-09-05: the viewer's right and the run count feed
+  // the engine's decision for the NEXT street; the hold callback is read
+  // through a ref and needs no invalidation.
+  if (prev.squeezeEligible !== next.squeezeEligible) return false;
+  if (prev.runs !== next.runs) return false;
   // RIVER SQUEEZE 2026-09-04: identity and focus feed the engine's decision.
   if (prev.tableId !== next.tableId) return false;
   if (prev.handId !== next.handId) return false;

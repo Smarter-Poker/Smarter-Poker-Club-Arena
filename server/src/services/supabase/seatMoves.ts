@@ -7,11 +7,18 @@
  * the player's next hand boundary through fn_cash_seat_move_execute, which
  * moves the chair, the chips and the chip-continuity session in one
  * transaction and touches no wallet. A move the engine does not reach within
- * 60 s expires and is planned again; nothing is lost either way.
+ * three minutes expires and is planned again; nothing is lost either way.
  *
  * A player is never asked anything. They are told once, at the start of the
  * hand they will move after ("Seat Open On Main 2. Moving After This Hand."),
- * and then they are at the new table.
+ * and then they are at the new table. THE PROMISE IS KEPT (2026-09-05): the
+ * announcement stamps the row (`announced_at`) and extends its life to cover
+ * the hand, and settlement executes ANNOUNCED moves only - a move planned
+ * mid-hand waits for the next deal to be announced, never lands unannounced
+ * at the end of a hand the player was not told about. A table with no hand
+ * running (below the minimum to deal) executes any pending move at once:
+ * there is no hand to finish, and a lone player on a feeder has nothing to
+ * wait for.
  */
 
 import { supabase } from './client.js';
@@ -25,6 +32,8 @@ export interface PendingSeatMove {
   to_role: string | null;
   to_main_index: number | null;
   reason: 'must_move' | 'break';
+  /** Set by fn_cash_seat_move_announce when the from-table engine told the player. */
+  announced_at: string | null;
 }
 
 export interface ExecutedSeatMove {
@@ -48,14 +57,45 @@ export async function pendingSeatMoves(tableId: string): Promise<PendingSeatMove
 }
 
 /**
- * Execute every pending move for this table. Returns the ones that landed;
- * a refused move (destination filled, player already gone, frozen) is left
- * for the controller to re-plan and is not an error here.
+ * Record that these moves were announced to their players at the start of a
+ * hand: stamps announced_at and extends expiry to cover the hand. Returns the
+ * number of rows stamped; 0 on error (the move then simply waits for the next
+ * announcement, it is never lost).
  */
-export async function executePendingSeatMoves(tableId: string): Promise<ExecutedSeatMove[]> {
+export async function announceSeatMoves(moveIds: string[]): Promise<number> {
+  if (moveIds.length === 0) return 0;
+  const { data, error } = await supabase.rpc('fn_cash_seat_move_announce', {
+    p_move_ids: moveIds,
+  });
+  if (error) {
+    reportError(error, 'seatMoves.announce_failed', { moveIds });
+    return 0;
+  }
+  return Number(data ?? 0);
+}
+
+export interface ExecuteSeatMovesOptions {
+  /**
+   * Execute only moves that were announced (settlement: the hand the player
+   * was told about has ended). An idle table passes false: nothing is
+   * running, every pending move lands now.
+   */
+  announcedOnly: boolean;
+}
+
+/**
+ * Execute the pending moves for this table. Returns the ones that landed;
+ * a refused move (destination filled, player already gone, busted, frozen)
+ * is left for the controller to re-plan and is not an error here.
+ */
+export async function executePendingSeatMoves(
+  tableId: string,
+  opts: ExecuteSeatMovesOptions = { announcedOnly: false }
+): Promise<ExecutedSeatMove[]> {
   const pending = await pendingSeatMoves(tableId);
+  const due = opts.announcedOnly ? pending.filter((m) => m.announced_at != null) : pending;
   const done: ExecutedSeatMove[] = [];
-  for (const m of pending) {
+  for (const m of due) {
     const { data, error } = await supabase.rpc('fn_cash_seat_move_execute', {
       p_move_id: m.move_id,
     });

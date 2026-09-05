@@ -129,3 +129,76 @@ its own piece of work.
 - The discarded-error ratchet caught three improvements and their baselines came
   down in the same commit: `ClubRulesPage` 2 to 0, `ClubAnnouncementsPage` 2 to
   1, `PromotionsPage` 1 to 0.
+
+## And one more, found by asking the same question with a bigger number
+
+The bomb pot report was measured at 1.8 to 3.2 seconds in phase 7 and signed
+off. It was measured at `p_days=7`, which is the window the page opens with.
+Asked for the ranges the page also offers:
+
+    p_days=1     200 in    608ms
+    p_days=7     200 in  1,204ms
+    p_days=30    500 after 8,730ms
+
+The cost scaled with the requested WINDOW, which is precisely what the rollup
+was built to stop, so the rollup was not doing its job for any range but the
+default one.
+
+The cause is a correct refusal reached through an incorrect floor. The live
+scan starts at the earliest unsealed day, and `fn_ca_bomb_pot_catchup` will not
+seal a day whose hands pruning has already removed - sealing it would write
+zeroes over history that really happened, and the rollup exists to be believed.
+So every pruned day stays unsealed for ever, and the earliest unsealed day
+inside a thirty-day window is thirty days ago. The bound was reaching back over
+exactly the hands the rollup was meant to replace.
+
+`20260905204436_the_bomb_pot_live_floor_cannot_reach_past_the_oldest_hand.sql`
+bounds the floor at the oldest bomb-pot hand that still exists:
+
+    SELECT MIN(h.created_at)::date INTO v_oldest
+      FROM public.hand_history h
+     WHERE h.bomb_pot IS NOT NULL;
+
+with a club that has no bomb-pot hands at all scanning today only, rather than
+a year. The sealed-day anti-join is untouched, so a day the rollup skipped and
+later filled is still not counted twice; this narrows where the scan STARTS,
+not what it keeps.
+
+Measured through PostgREST as the club owner, after:
+
+    p_days=30    200 in   876ms
+    p_days=30    200 in   958ms
+    p_days=365   200 in 1,423ms   (71 rows)
+
+A year now costs less than a week did, and the number that used to be a 500 is
+under a second. Applied through the Supabase MCP - direct psql was refusing
+connections on 5432 while PostgREST kept answering.
+
+**A performance number is a number for the range it was taken over.** Phase 7's
+1.8 to 3.2 seconds was true, and it was true only of the default window. The
+range the operator reaches for second is the one that had never been asked.
+
+## A door the sweep found by running the estate's own audit one last time
+
+`audit-live-definer-exposure` went red on the final pass, on a function this
+repository has never contained: `ca_horse_tournament_card(integer)` exists in
+production, is SECURITY DEFINER owned by `postgres`, and carried EXECUTE for
+`anon`. It arrived from some other surface; there is no migration for it here.
+
+It was not open. Its first statement is `if not fn_is_horse_admin() then raise
+exception 'admin only'`, so an unauthenticated caller got a refusal rather than
+a card, and the audit's heuristic reads a function body for `auth.uid()` and
+does not follow the call into the helper asking on its behalf. That makes it a
+reachability defect rather than a leak, and it is still worth closing: a grant
+that is harmless because of one line inside the function is one edit away from
+not being harmless.
+
+`20260905205053` takes EXECUTE from PUBLIC and anon and leaves it with
+`authenticated` and `service_role`. Nobody who could read the card loses it -
+every horse admin is signed in - and the migration asserts the resulting ACL,
+naming PUBLIC as well as anon, because revoking anon while leaving the bare
+PUBLIC grant reads as a fix and does nothing. It does not touch the body and
+does not claim to have created a function it did not create.
+
+    anon-readable functions: 8 (1 new)   before
+    anon-readable functions: 7 (0 new)   after

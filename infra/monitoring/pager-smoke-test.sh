@@ -3,13 +3,23 @@
 # World Hub /api/internal/alertmanager-page -> Twilio -> phone - and let it
 # resolve so a RESOLVED text follows. Two texts, then silence.
 #
-# THE ALERT LIVES 7 MINUTES, NOT 2. The pager receiver has group_interval: 5m,
-# so Alertmanager will not look at this group again for five minutes. The first
-# version of this script used endsAt +2m: the [PAGE] text sent immediately and
-# correctly, then the alert EXPIRED out of the pipeline before the next tick,
-# so no RESOLVED notification was ever generated and the second half of the
-# test silently proved nothing. Measured 2026-09-05 - webhook counter went 1 ->
-# 2 for the page and stayed at 2. endsAt must outlive group_interval.
+# THE ALERT LIVES 7 MINUTES. It used to be 2, and 2 WORKED FINE - the longer
+# window is margin, not a fix. The commit that changed it claimed the RESOLVED
+# text had never fired and blamed the 2-minute expiry. THAT WAS WRONG, and how
+# it was wrong is the useful part:
+#
+#   03:27:13  firing    200  [alertmanager-page] paged
+#   03:32:13  resolved  200  [alertmanager-page] paged   <- five minutes later
+#
+# The resolve fired exactly on the pager receiver's group_interval: 5m tick.
+# Alertmanager RETAINS a resolved alert and notifies on the next tick even
+# after endsAt has passed. The counter was read at ~03:30 - two minutes before
+# that tick - saw no increment, and the absence was written up as a failure.
+# A not-yet was recorded as a never, which is the same mistake as reading an
+# empty log as success, wearing the opposite coat.
+#
+# So: give the alert margin past group_interval if you like, but if you see no
+# RESOLVED, WAIT ONE FULL group_interval BEFORE CONCLUDING ANYTHING.
 #
 # Run ON engine-01 (Alertmanager listens on 127.0.0.1:9093 only):
 #     bash /opt/smarter-poker-monitoring/pager-smoke-test.sh

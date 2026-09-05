@@ -4,6 +4,11 @@
  * User profile with DNA, VIP status, and achievements
  *
  * NO HARDCODED DATA - All data comes from Supabase
+ *
+ * 2026-09-04 #SmarterCasinoRealism audit. The page is the player's identity
+ * credential: a machined plate with the portrait, the arena handle, the
+ * player number, the live telemetry rail, and the access plates into the
+ * dedicated workspaces. Every number on it is either real or a hyphen.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -12,9 +17,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { LoadingState } from '../components/common/EmptyState';
 import FriendListPanel from '../components/social/FriendListPanel';
-import { VIPStatusCard } from '../components/vip/VIPStatusCard';
-import { VIPProgressRing } from '../components/vip/VIPProgressRing';
 import UserProfileEdit, { UserProfileData } from '../components/social/UserProfileEdit';
+import { AvatarGallery } from '../components/customization/AvatarGallery';
 import { DiamondService } from '../services/DiamondService';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { masterBus } from '../core/MasterBus';
@@ -36,7 +40,11 @@ import { generateDefaultAvatar } from '../utils/avatarGenerator';
 import { reportError } from '../utils/errorReporter';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { formatPopupText } from '../utils/popupStyle';
+import { mediaUrl } from '../utils/mediaBase';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
+import { resolveHeaderPortrait } from '../stores/useHeaderDataStore';
+import { resolveVipStatus, vipStatusLabel, type VipStatus } from '../utils/vipStatus';
+import { VIP_GOLD_LIMITS } from '../services/VIPService';
 
 // #5: Lazy-load Recharts (387KB) — only imported when History tab is opened
 const LazyProfitChart = lazyWithRetry(() => import('../components/profile/ProfitChart'));
@@ -48,6 +56,9 @@ function isProfileTab(value: string | null): value is ProfileTab {
   return PROFILE_TABS.includes(value as ProfileTab);
 }
 
+/** Purpose-built hero for this route (public/images/account). */
+const HERO_ART = mediaUrl('images/account/identity-vault-hero-v1.webp');
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -56,9 +67,16 @@ interface UserProfile {
   id: string;
   username: string;
   displayName: string;
-  playerNumber: number;
+  playerNumber: string;
+  /** The portrait the global header shows: the social photo unless the
+   *  player opted to use the arena avatar everywhere. */
   avatarUrl: string;
-  vipLevel: 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond';
+  /** The library art opponents see at the table. */
+  arenaAvatarUrl: string;
+  /** VIP / Lifetime VIP / none. There is no tier ladder (utils/vipStatus). */
+  vipStatus: VipStatus;
+  /** Monthly membership renewal/expiry, ISO. Null for lifetime and non-VIP. */
+  vipExpiresAt: string | null;
   memberSince: string;
   bio?: string;
   player_tags?: string[];
@@ -115,6 +133,26 @@ const finiteStat = (value: unknown): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+/**
+ * STANDING DIRECTIVE: "ABSOLUTELY ZERO ROUNDING ANYWHERE EVER". Every figure
+ * on this page is truncated, never rounded — `toFixed` was used in three
+ * places and each one could print a number the ledger never produced.
+ */
+const truncTo = (value: number, decimals: number): number => {
+  const factor = 10 ** decimals;
+  return Math.trunc(value * factor) / factor;
+};
+const fixedTrunc = (value: number, decimals: number): string =>
+  truncTo(value, decimals).toLocaleString('en-US', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+const signed = (formatted: string, value: number): string =>
+  value > 0 ? `+${formatted}` : formatted;
+/* Player copy carries no em dashes (check-ui-text gate). A plain hyphen is
+   the truthful 'no figure yet' glyph. */
+const NO_DATA = '-';
+
 function profileStatsFromV2(payload: any): PokerStats | null {
   if (payload?.contract_version !== 2 || !payload?.overall) return null;
   const overall = payload.overall;
@@ -138,32 +176,40 @@ function profileStatsFromV2(payload: any): PokerStats | null {
   };
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// HELPER FUNCTIONS
-// ═══════════════════════════════════════════════════════════════════════════════
+/** The columns the credential needs. One string, used by every reader here. */
+const PROFILE_COLUMNS = `id, ${PLAYER_NAME_COLUMNS}, player_number, avatar_url, arena_avatar_url, use_avatar_as_profile_pic, created_at, diamonds, is_vip, vip_tier, vip_expires_at, login_streak, bio, player_tags`;
+
+function toUserProfile(profile: any): UserProfile {
+  const photo = profile.avatar_url || '';
+  const arena = profile.arena_avatar_url || '';
+  return {
+    id: profile.id,
+    username: profile.username || 'Player',
+    displayName: playerDisplayName(profile),
+    playerNumber: profile.player_number ? String(profile.player_number) : '',
+    avatarUrl:
+      resolveHeaderPortrait(photo, arena, profile.use_avatar_as_profile_pic === true) || '',
+    arenaAvatarUrl: arena,
+    vipStatus: resolveVipStatus(profile),
+    vipExpiresAt:
+      resolveVipStatus(profile) === 'vip' && profile.vip_expires_at ? profile.vip_expires_at : null,
+    memberSince: profile.created_at,
+    bio: profile.bio || '',
+    player_tags: profile.player_tags || [],
+  };
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const VIPBadge = ({ level }: { level: string }) => {
-  const colors: Record<string, string> = {
-    bronze: 'linear-gradient(135deg, #cd7f32 0%, #8b4513 100%)',
-    silver: 'linear-gradient(135deg, #c0c0c0 0%, #808080 100%)',
-    gold: 'linear-gradient(135deg, #ffd700 0%, #b8860b 100%)',
-    platinum: 'linear-gradient(135deg, #e5e4e2 0%, #a0a0a0 100%)',
-    diamond: 'linear-gradient(135deg, #b9f2ff 0%, #7df9ff 50%, #00bfff 100%)',
-  };
-
-  // Don't render badge for invalid/empty/none levels
-  const validLevels = ['bronze', 'silver', 'gold', 'platinum', 'diamond'];
-  if (!level || !validLevels.includes(level.toLowerCase())) {
-    return null;
-  }
-
+/* Brass for lifetime, chrome-blue for a monthly membership, nothing for
+   non-members. There is no bronze/silver/gold ladder to draw. */
+const VIPBadge = ({ status }: { status: VipStatus }) => {
+  if (status === 'none') return null;
   return (
-    <span className={styles.vipBadge} style={{ background: colors[level] || colors.bronze }}>
-      {level.toUpperCase()}
+    <span className={`${styles.vipBadge} ${status === 'lifetime' ? styles.vipBadgeLifetime : ''}`}>
+      {status === 'lifetime' ? 'LIFETIME VIP' : 'VIP'}
     </span>
   );
 };
@@ -179,14 +225,7 @@ const StatCard = ({
   positive?: boolean | null;
   isVisible?: boolean;
 }) => (
-  <div
-    className={styles.statCard}
-    style={{
-      opacity: isVisible ? 1 : 0,
-      transform: isVisible ? 'translateY(0)' : 'translateY(8px)',
-      transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-    }}
-  >
+  <div className={`${styles.statCard} ${isVisible ? styles.visible : styles.hidden}`}>
     <span
       className={`${styles.statValue} ${positive === true ? styles.positive : positive === false ? styles.negative : ''}`}
     >
@@ -205,7 +244,9 @@ const AchievementCard = ({ achievement }: { achievement: Achievement }) => {
 
   return (
     <div className={`${styles.achievementCard} ${isUnlocked ? styles.unlocked : styles.locked}`}>
-      <span className={styles.achievementIcon}>{achievement.icon}</span>
+      <span className={styles.achievementIcon} aria-hidden="true">
+        {achievement.icon || '★'}
+      </span>
       <div className={styles.achievementInfo}>
         <h4>{achievement.name}</h4>
         <p>{achievement.description}</p>
@@ -228,7 +269,7 @@ const AchievementCard = ({ achievement }: { achievement: Achievement }) => {
           {new Date(achievement.unlockedAt!).toLocaleDateString()}
         </span>
       )}
-      {isComplete && <span className={styles.achievementComplete}></span>}
+      {isComplete && <span className={styles.achievementComplete} aria-label="Complete" />}
     </div>
   );
 };
@@ -248,6 +289,7 @@ export default function ProfilePage() {
 
   const toast = useToast();
   const [showProfileEdit, setShowProfileEdit] = useState(false);
+  const [showAvatarGallery, setShowAvatarGallery] = useState(false);
   useVisibilityRefresh(async () => {
     const {
       data: { user: au },
@@ -381,15 +423,14 @@ export default function ProfilePage() {
           const cached = sessionStorage.getItem(swrKey);
           if (cached) {
             const cp = JSON.parse(cached);
-            if (cp.user) setUser(cp.user);
-            if (cp.stats) {
-              setStats(cp.stats);
-              setStatsAvailable(true);
-            }
+            // v2 cache shape carries arenaAvatarUrl; an older entry (a tab
+            // opened before this build) is ignored rather than painted with a
+            // missing field.
+            if (cp.v === 2 && cp.user) setUser(cp.user);
             if (cp.diamonds != null) setDiamonds(cp.diamonds);
             if (cp.isVIP != null) setIsVIP(cp.isVIP);
             if (cp.dailyStreak != null) setDailyStreak(cp.dailyStreak);
-            setIsLoading(false); // Show cached UI instantly
+            if (cp.v === 2 && cp.user) setIsLoading(false); // Show cached UI instantly
           }
         } catch (e) {
           reportError(e, 'ProfilePage.loadProfile');
@@ -466,9 +507,7 @@ export default function ProfilePage() {
           () =>
             supabase
               .from('profiles')
-              .select(
-                `id, ${PLAYER_NAME_COLUMNS}, player_number, avatar_url, tier, created_at, diamonds, is_vip, login_streak, bio, player_tags`
-              )
+              .select(PROFILE_COLUMNS)
               .eq('id', authUser.id)
               .maybeSingle()
               .then((r) => r),
@@ -478,22 +517,10 @@ export default function ProfilePage() {
         if (profileError) throw profileError;
 
         if (profile && isMounted) {
-          setUser({
-            id: profile.id,
-            username: profile.username || 'Player',
-            displayName: playerDisplayName(profile),
-            playerNumber: profile.player_number || 0,
-            avatarUrl: profile.avatar_url || '',
-            vipLevel: profile.tier || 'bronze',
-            memberSince: profile.created_at,
-            bio: profile.bio || '',
-            player_tags: profile.player_tags || [],
-          });
-
+          setUser(toUserProfile(profile));
           setDiamonds(profile.diamonds || 0);
           setIsVIP(profile.is_vip || false);
           setDailyStreak(profile.login_streak || 0);
-
           // stats not available from profiles table — loaded separately
         }
 
@@ -503,16 +530,8 @@ export default function ProfilePage() {
             sessionStorage.setItem(
               swrKey,
               JSON.stringify({
-                user: {
-                  id: profile.id,
-                  username: profile.username || 'Player',
-                  displayName: playerDisplayName(profile),
-                  playerNumber: profile.player_number || 0,
-                  avatarUrl: profile.avatar_url || '',
-                  vipLevel: profile.tier || 'bronze',
-                  memberSince: profile.created_at,
-                },
-                stats: null, // Stats loaded separately from poker_session_stats
+                v: 2,
+                user: toUserProfile(profile),
                 diamonds: profile.diamonds || 0,
                 isVIP: profile.is_vip || false,
                 dailyStreak: profile.login_streak || 0,
@@ -619,26 +638,15 @@ export default function ProfilePage() {
             if (authUser && isMounted) {
               supabase
                 .from('profiles')
-                .select(
-                  `id, ${PLAYER_NAME_COLUMNS}, player_number, avatar_url, tier, created_at, diamonds, is_vip, login_streak, bio, player_tags`
-                )
+                .select(PROFILE_COLUMNS)
                 .eq('id', authUser.id)
                 .maybeSingle()
                 .then(({ data: profile }) => {
                   if (profile && isMounted) {
-                    setUser({
-                      id: profile.id,
-                      username: profile.username || 'Player',
-                      displayName: playerDisplayName(profile),
-                      playerNumber: profile.player_number || 0,
-                      avatarUrl: profile.avatar_url || '',
-                      vipLevel: profile.tier || 'bronze',
-                      memberSince: profile.created_at,
-                      bio: profile.bio || '',
-                      player_tags: profile.player_tags || [],
-                    });
+                    setUser(toUserProfile(profile));
                     setDiamonds(profile.diamonds || 0);
                     setIsVIP(profile.is_vip || false);
+                    setDailyStreak(profile.login_streak || 0);
                   }
                 });
             }
@@ -671,39 +679,27 @@ export default function ProfilePage() {
       },
       2000
     );
+    const refreshDiamondBalance = () => {
+      invalidateProfileCache();
+      supabase.auth
+        .getUser()
+        .then(({ data: { user: authUser } }) => {
+          if (authUser && isMounted) {
+            DiamondService.getBalance(authUser.id).then((dw) => {
+              if (dw && isMounted) setDiamonds(dw.balance || 0);
+            });
+          }
+        })
+        .catch((e) => console.warn('[Profile] Refreshing diamond balance failed:', e));
+    };
     const unsubBalance = masterBus.subscribeDebounced(
       'BALANCE_UPDATED',
-      () => {
-        invalidateProfileCache();
-        // Refresh diamond balance when balance changes on other pages
-        supabase.auth
-          .getUser()
-          .then(({ data: { user: authUser } }) => {
-            if (authUser && isMounted) {
-              DiamondService.getBalance(authUser.id).then((dw) => {
-                if (dw && isMounted) setDiamonds(dw.balance || 0);
-              });
-            }
-          })
-          .catch((e) => console.warn('[Profile] Refreshing diamond balance failed:', e));
-      },
+      refreshDiamondBalance,
       500
     );
     const unsubDiamond = masterBus.subscribeDebounced(
       'DIAMOND_BALANCE_CHANGED',
-      () => {
-        invalidateProfileCache();
-        supabase.auth
-          .getUser()
-          .then(({ data: { user: authUser } }) => {
-            if (authUser && isMounted) {
-              DiamondService.getBalance(authUser.id).then((dw) => {
-                if (dw && isMounted) setDiamonds(dw.balance || 0);
-              });
-            }
-          })
-          .catch((e) => console.warn('[Profile] Refreshing diamond balance failed:', e));
-      },
+      refreshDiamondBalance,
       500
     );
 
@@ -839,37 +835,55 @@ export default function ProfilePage() {
     );
   }
 
+  const unlockedAchievements = achievements.filter((a) => a.unlockedAt);
+  const tourneyWinRate =
+    stats.tournamentsPlayed > 0 ? (stats.tournamentsWon / stats.tournamentsPlayed) * 100 : 0;
+  const memberSinceLabel = new Date(user.memberSince).toLocaleDateString('en-US', {
+    month: 'short',
+    year: '2-digit',
+  });
+
   return (
     <StandardContentLayout className={styles.page}>
-      {/* Profile Header */}
-      <section className={styles.profileHeader}>
-        <div className={styles.heroArtwork} aria-hidden="true" />
+      {/* Profile Header — the credential plate */}
+      <section className={styles.profileHeader} aria-labelledby="profile-heading">
+        <div
+          className={styles.heroArtwork}
+          style={{ backgroundImage: `url("${HERO_ART}")` }}
+          aria-hidden="true"
+        />
         <div className={styles.heroCopy}>
           <span className={styles.heroEyebrow}>Player Identity // Live Credential</span>
           <span className={styles.heroStatus} role="status">
             <span aria-hidden="true" /> Profile Synced
           </span>
         </div>
+
         <div className={styles.avatarContainer}>
           {user.avatarUrl ? (
             <img
               src={user.avatarUrl}
-              alt={user.username}
+              alt={user.displayName}
               className={styles.avatar}
-              loading="lazy"
+              width={116}
+              height={116}
+              decoding="async"
+              fetchPriority="high"
               onError={(e) => {
                 (e.target as HTMLImageElement).src = generateDefaultAvatar();
               }}
             />
           ) : (
-            <div className={styles.avatarDefault}>{user.username.charAt(0).toUpperCase()}</div>
+            <div className={styles.avatarDefault} aria-hidden="true">
+              {user.displayName.charAt(0).toUpperCase()}
+            </div>
           )}
-          <VIPBadge level={user.vipLevel} />
+          <VIPBadge status={user.vipStatus} />
         </div>
 
         <div className={styles.userInfo}>
-          <h1 className={styles.displayName}>
-            {user.username}
+          <h1 id="profile-heading" className={styles.displayName}>
+            {user.displayName}
             {dailyStreak > 0 && <StreakFire streakCount={dailyStreak} size="sm" showLabel />}
             {dailyStreak > 0 && (
               <StreakMultiplier streak={dailyStreak} multiplier={1 + dailyStreak * 0.1} size="sm" />
@@ -882,9 +896,7 @@ export default function ProfilePage() {
               produced it. A player's own ID visibly changing between refreshes is
               not a cosmetic issue in a card room. Show nothing when there is no
               number rather than something untrue. */}
-          {user.playerNumber > 0 && (
-            <p className={styles.playerNumber}>Player #{user.playerNumber}</p>
-          )}
+          {user.playerNumber && <p className={styles.playerNumber}>Player #{user.playerNumber}</p>}
           {user.bio && <p className={styles.bio}>{user.bio}</p>}
           {user.player_tags && user.player_tags.length > 0 && (
             <div className={styles.tagsContainer}>
@@ -895,99 +907,126 @@ export default function ProfilePage() {
               ))}
             </div>
           )}
-          <div className={styles.statChipsContainer}>
-            <div className={styles.statChip}>
-              <span className={styles.chipLabel}>Member</span>
-              <span className={styles.chipValue}>
-                {new Date(user.memberSince).toLocaleDateString('en-US', {
-                  month: 'short',
-                  year: '2-digit',
-                })}
-              </span>
-            </div>
-            <div className={styles.statChip}>
-              <span className={styles.chipLabel}>Hands</span>
-              <span className={styles.chipValue}>{stats.totalHands.toLocaleString()}</span>
-            </div>
-            <div className={styles.statChip}>
-              <span className={styles.chipLabel}>VPIP</span>
-              <span className={styles.chipValue}>{stats.vpip}%</span>
-            </div>
-            <div className={styles.statChip}>
-              <span className={styles.chipLabel}>ROI</span>
-              <span className={styles.chipValue}>
-                {stats.roi > 0 ? `+${stats.roi}` : stats.roi}%
-              </span>
-            </div>
-          </div>
         </div>
 
         <div className={styles.headerActions}>
           <button
+            type="button"
             className={styles.editButton}
-            onClick={() => {
-              const url = 'https://smarter.poker/hub/avatars';
-              window.open(url, '_blank');
-            }}
+            onClick={() => setShowAvatarGallery(true)}
           >
             Change Avatar
           </button>
-          <button className={styles.editButton} onClick={() => setShowProfileEdit(true)}>
+          <button
+            type="button"
+            className={styles.editButton}
+            onClick={() => setShowProfileEdit(true)}
+          >
             Edit Profile
           </button>
-          <button className={styles.editButton} onClick={() => navigate('/vip')}>
-            {diamonds.toLocaleString()} DIA {isVIP && <span className={styles.vipAction}>VIP</span>}
+          <button
+            type="button"
+            className={`${styles.editButton} ${styles.diamondButton}`}
+            onClick={() => navigate('/vip')}
+            aria-label={`${diamonds.toLocaleString()} Diamonds. Open VIP Status`}
+          >
+            {diamonds.toLocaleString()} DIA{' '}
+            {user.vipStatus !== 'none' && <span className={styles.vipAction}>VIP</span>}
+          </button>
+        </div>
+
+        {/* Telemetry rail. Real figures or a hyphen, never a fabricated zero
+            while the Stats contract has not answered. */}
+        <dl className={styles.telemetry} aria-label="Player Telemetry">
+          <div className={styles.telemetryCell}>
+            <dt>Member</dt>
+            <dd>{memberSinceLabel}</dd>
+          </div>
+          <div className={styles.telemetryCell}>
+            <dt>Hands</dt>
+            <dd>{statsAvailable ? stats.totalHands.toLocaleString() : NO_DATA}</dd>
+          </div>
+          <div className={styles.telemetryCell}>
+            <dt>VPIP</dt>
+            <dd>{statsAvailable ? `${fixedTrunc(stats.vpip, 1)}%` : NO_DATA}</dd>
+          </div>
+          <div className={styles.telemetryCell}>
+            <dt>ROI</dt>
+            <dd>{statsAvailable ? `${signed(fixedTrunc(stats.roi, 1), stats.roi)}%` : NO_DATA}</dd>
+          </div>
+          <div className={styles.telemetryCell}>
+            <dt>Streak</dt>
+            <dd>{dailyStreak > 0 ? `${dailyStreak}D` : NO_DATA}</dd>
+          </div>
+          <div className={styles.telemetryCell}>
+            <dt>Table Avatar</dt>
+            <dd className={styles.telemetryAvatar}>
+              {user.arenaAvatarUrl ? (
+                <img src={user.arenaAvatarUrl} alt="" width={28} height={28} loading="lazy" />
+              ) : (
+                <span>Not Set</span>
+              )}
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      {/* VIP ledger plate. Reads the same constants the VIP page quotes
+          (VIP_GOLD_LIMITS), so this can never promise something /vip does not.
+          Dan 2026-09-04: no tiers, nothing "unlimited". */}
+      <section className={`${styles.contentSection} ${styles.vipSection}`} aria-label="VIP Status">
+        <div className={styles.vipRow}>
+          <div className={styles.vipIdentity}>
+            <span className={styles.vipEyebrow}>Membership</span>
+            <strong
+              className={`${styles.vipTitle} ${user.vipStatus === 'none' ? styles.vipTitleOff : ''}`}
+            >
+              {vipStatusLabel(user.vipStatus)}
+            </strong>
+            <span className={styles.vipMeta}>
+              {user.vipStatus === 'lifetime'
+                ? 'Never Expires'
+                : user.vipStatus === 'vip'
+                  ? user.vipExpiresAt
+                    ? `Renews ${new Date(user.vipExpiresAt).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}`
+                    : 'Active'
+                  : 'Membership Benefits Are Open On The VIP Page'}
+            </span>
+          </div>
+          {user.vipStatus !== 'none' && (
+            <ul className={styles.vipBenefits} aria-label="Included Each Month">
+              <li>
+                <strong>{VIP_GOLD_LIMITS.rabbitHunts}</strong>
+                <span>Rabbit Hunts / Mo</span>
+              </li>
+              <li>
+                <strong>{VIP_GOLD_LIMITS.timeBankSeconds}s</strong>
+                <span>Time Bank / Mo</span>
+              </li>
+              <li>
+                <strong>{VIP_GOLD_LIMITS.themes}</strong>
+                <span>Premium Themes</span>
+              </li>
+              <li>
+                <strong>+{Math.trunc(VIP_GOLD_LIMITS.leaderboardBoost * 100)}%</strong>
+                <span>Leaderboard Boost</span>
+              </li>
+            </ul>
+          )}
+          <button
+            type="button"
+            className={`${styles.editButton} ${styles.vipCta}`}
+            onClick={() => navigate('/vip')}
+          >
+            {user.vipStatus === 'none' ? 'See VIP Benefits' : 'Open VIP Ledger'}{' '}
+            <span aria-hidden="true">→</span>
           </button>
         </div>
       </section>
-
-      {/* VIP Status Section (for VIP users) */}
-      {isVIP &&
-        (() => {
-          const VIP_TIERS = [
-            { tier: 'bronze' as const, threshold: 0 },
-            { tier: 'silver' as const, threshold: 1000 },
-            { tier: 'gold' as const, threshold: 5000 },
-            { tier: 'platinum' as const, threshold: 50000 },
-            { tier: 'diamond' as const, threshold: 500000 },
-          ];
-          const currentTierIndex = VIP_TIERS.reduce(
-            (acc, t, i) => (diamonds >= t.threshold ? i : acc),
-            0
-          );
-          const currentTier = VIP_TIERS[currentTierIndex];
-          const nextTierData = VIP_TIERS[currentTierIndex + 1];
-          const nextTierPoints = nextTierData?.threshold;
-          const nextTierName = nextTierData?.tier;
-
-          return (
-            <section className={`${styles.contentSection} ${styles.vipSection}`}>
-              <div className={styles.vipContent}>
-                <VIPProgressRing
-                  current={diamonds}
-                  total={nextTierPoints || diamonds}
-                  tier={currentTier.tier}
-                  nextTier={nextTierName || currentTier.tier}
-                  size={72}
-                  strokeWidth={6}
-                />
-                <VIPStatusCard
-                  tier={currentTier.tier}
-                  currentPoints={diamonds}
-                  pointsLabel="Diamonds"
-                  nextTierPoints={nextTierPoints}
-                  benefits={[
-                    '6% Leaderboard Boost',
-                    'Unlimited Throwables',
-                    'Auto Time Bank',
-                    'Premium Themes',
-                  ]}
-                  memberSince={user?.memberSince ? new Date(user.memberSince) : undefined}
-                />
-              </div>
-            </section>
-          );
-        })()}
 
       {/* Dedicated workspaces own reward claims, deep analytics, promotions,
           and ranking. Profile is their identity index, not a second copy of
@@ -1000,6 +1039,9 @@ export default function ProfilePage() {
           { label: 'Leaderboards', meta: 'Circuit Rankings', path: '/leaderboard' },
           { label: 'Promotions', meta: 'Live Offers And Eligibility', path: '/promotions' },
           { label: 'VIP Status', meta: 'Tier Progress And Benefits', path: '/vip' },
+          { label: 'Wallet', meta: 'Balances And Cashier Access', path: '/wallet' },
+          { label: 'Settings', meta: 'Table, Alerts And Security', path: '/settings' },
+          { label: 'Notifications', meta: 'Seat Calls And Signals', path: '/notifications' },
         ].map((destination) => (
           <button
             type="button"
@@ -1015,7 +1057,7 @@ export default function ProfilePage() {
       </nav>
 
       {/* Achievement Showcase — always visible */}
-      {achievements.filter((a) => a.unlockedAt).length > 0 && (
+      {unlockedAchievements.length > 0 && (
         <section className={styles.contentSection}>
           <div className={styles.sectionHeading}>
             <h3>Recent Distinctions</h3>
@@ -1028,8 +1070,7 @@ export default function ProfilePage() {
             </button>
           </div>
           <div className={styles.achievementStrip}>
-            {achievements
-              .filter((a) => a.unlockedAt)
+            {[...unlockedAchievements]
               .sort((a, b) => new Date(b.unlockedAt!).getTime() - new Date(a.unlockedAt!).getTime())
               .slice(0, 5)
               .map((a) => (
@@ -1091,7 +1132,7 @@ export default function ProfilePage() {
                         value={stats.vpip}
                         label="VPIP"
                         sublabel="Volun. Put In Pot"
-                        accent="#00d4ff"
+                        accent="#3aa8ff"
                         size={gaugeSize}
                       />
                     </div>
@@ -1102,7 +1143,7 @@ export default function ProfilePage() {
                         value={stats.pfr}
                         label="PFR"
                         sublabel="Pre-Flop Raise"
-                        accent="#fbbf24"
+                        accent="#d6ad52"
                         size={gaugeSize}
                       />
                     </div>
@@ -1113,7 +1154,7 @@ export default function ProfilePage() {
                         value={stats.winRate}
                         label="Win Rate"
                         sublabel="Hands Won"
-                        accent="#10b981"
+                        accent="#65d89b"
                         size={gaugeSize}
                       />
                     </div>
@@ -1125,12 +1166,12 @@ export default function ProfilePage() {
                       isVisible={visibleStats.has(3)}
                     />
                     <StatCard
-                      value={`${stats.threeBet}%`}
+                      value={`${fixedTrunc(stats.threeBet, 1)}%`}
                       label="3-Bet"
                       isVisible={visibleStats.has(4)}
                     />
                     <StatCard
-                      value={stats.aggression.toFixed(1)}
+                      value={fixedTrunc(stats.aggression, 2)}
                       label="Aggression"
                       isVisible={visibleStats.has(5)}
                     />
@@ -1141,20 +1182,20 @@ export default function ProfilePage() {
                   <h3>Financial</h3>
                   <div className={styles.statsGrid}>
                     <StatCard
-                      value={`${stats.bbPer100 > 0 ? '+' : ''}${stats.bbPer100}`}
+                      value={signed(fixedTrunc(stats.bbPer100, 2), stats.bbPer100)}
                       label="BB/100"
                       positive={stats.bbPer100 > 0 ? true : stats.bbPer100 < 0 ? false : null}
                       isVisible={visibleStats.has(6)}
                     />
                     <StatCard
-                      value={stats.biggestPot.toLocaleString()}
+                      value={fixedTrunc(stats.biggestPot, 2)}
                       label="Biggest Pot"
                       isVisible={visibleStats.has(7)}
                     />
                     <StatCard
-                      value={`${stats.totalProfit > 0 ? '+' : ''}${stats.totalProfit.toLocaleString()}`}
+                      value={signed(fixedTrunc(stats.totalProfit, 2), stats.totalProfit)}
                       label="Total Profit"
-                      positive={stats.totalProfit > 0}
+                      positive={stats.totalProfit > 0 ? true : stats.totalProfit < 0 ? false : null}
                       isVisible={visibleStats.has(8)}
                     />
                   </div>
@@ -1179,11 +1220,7 @@ export default function ProfilePage() {
                       isVisible={visibleStats.has(11)}
                     />
                     <StatCard
-                      value={
-                        stats.tournamentsPlayed > 0
-                          ? `${((stats.tournamentsWon / stats.tournamentsPlayed) * 100).toFixed(1)}%`
-                          : '0%'
-                      }
+                      value={`${fixedTrunc(tourneyWinRate, 1)}%`}
                       label="Win Rate"
                       isVisible={visibleStats.has(12)}
                     />
@@ -1214,7 +1251,7 @@ export default function ProfilePage() {
             {achievements.length > 0 ? (
               <>
                 <div className={styles.achievementsSummary}>
-                  <span>{achievements.filter((a) => a.unlockedAt).length}</span>
+                  <span>{unlockedAchievements.length}</span>
                   <span>/ {achievements.length} Unlocked</span>
                 </div>
                 <div className={styles.achievementsGrid}>
@@ -1284,7 +1321,7 @@ export default function ProfilePage() {
                       <div key={tx.id} className={styles.transactionRow}>
                         <div>
                           <span>{formatPopupText(tx.description || tx.type)}</span>
-                          <small>{new Date(tx.created_at).toLocaleDateString()}</small>
+                          <small>{new Date(tx.created_at).toLocaleString()}</small>
                         </div>
                         <span
                           className={
@@ -1294,7 +1331,7 @@ export default function ProfilePage() {
                           }
                         >
                           {tx.type === 'credit' ? '+' : '-'}
-                          {(tx.amount || 0).toLocaleString()}
+                          {fixedTrunc(Math.abs(finiteStat(tx.amount)), 2)}
                         </span>
                       </div>
                     ))}
@@ -1309,9 +1346,9 @@ export default function ProfilePage() {
               </>
             ) : (
               <div className={styles.emptyHistory}>
-                <span className={styles.emptyIcon}></span>
+                <span className={styles.emptyIcon} aria-hidden="true" />
                 <p>No Recent Transactions To Display.</p>
-                <button className={styles.playButton} onClick={() => navigate('/')}>
+                <button type="button" className={styles.playButton} onClick={() => navigate('/')}>
                   Start Playing
                 </button>
               </div>
@@ -1331,49 +1368,94 @@ export default function ProfilePage() {
       {/* Diamond Rain Gamification Effect */}
       <DiamondRainEffect active={showDiamondRain} onComplete={() => setShowDiamondRain(false)} />
 
+      {/* The arena avatar picker — the same library gallery the hamburger and
+          first-run flow use, so the profile writes arena_avatar_url through
+          AvatarService and never touches the social photo. */}
+      <AvatarGallery
+        isOpen={showAvatarGallery}
+        onClose={() => setShowAvatarGallery(false)}
+        userId={user.id}
+        currentAvatarUrl={user.arenaAvatarUrl || generateDefaultAvatar()}
+        isVip={isVIP}
+        onAvatarChanged={(newUrl) => {
+          // The gallery also emits PLAYER_APPEARANCE_CHANGED, which the
+          // header store consumes; this keeps the credential in step.
+          setUser((prev) => (prev ? { ...prev, arenaAvatarUrl: newUrl } : prev));
+        }}
+      />
+
       {showProfileEdit && user && (
         <UserProfileEdit
           isOpen={showProfileEdit}
           onClose={() => setShowProfileEdit(false)}
+          onChangeAvatar={() => {
+            setShowProfileEdit(false);
+            setShowAvatarGallery(true);
+          }}
           initialData={{
             id: user.id || '',
-            username: user.username || '',
-            displayName: '',
+            username: user.displayName || user.username || '',
+            displayName: user.displayName,
             avatarUrl: user.avatarUrl || '',
-            bio: (user as any).bio || '',
-            tags: (user as any).player_tags || [],
+            bio: user.bio || '',
+            tags: user.player_tags || [],
           }}
           onSave={async (data: UserProfileData) => {
             try {
+              /* The field is labelled Poker Alias, and playerDisplayName
+                 resolves alias -> username. Writing only `username` (as this
+                 did until 2026-09-04) left every player with an `alias` row
+                 value seeing their old handle after a "successful" save. Both
+                 columns now carry the handle, so the resolver, the table and
+                 the header all agree. */
               const { error } = await supabase
                 .from('profiles')
                 .update({
                   username: data.username,
+                  alias: data.username,
                   bio: data.bio,
                   player_tags: data.tags,
                 })
                 .eq('id', user.id);
 
-              if (error) throw error;
+              if (error) {
+                if (error.code === '23505') {
+                  throw new Error('That Poker Alias is already taken. Choose another.');
+                }
+                throw error;
+              }
 
+              /* Legacy mirror. `users` still exists (id, username, email,
+                 avatar_url) and AuthPage upserts it on sign-up; a stale copy
+                 there is a rendering bug for anything that still reads it,
+                 but it is not the record of truth, so a refused write is
+                 reported and does not fail the save the player was told about. */
               const { error: userError } = await supabase
                 .from('users')
                 .update({ username: data.username })
                 .eq('id', user.id);
-
-              if (userError) throw userError;
+              if (userError) reportError(userError, 'ProfilePage.users_mirror_update_failed');
 
               setUser({
                 ...user,
                 username: data.username,
+                displayName: data.username,
                 bio: data.bio,
                 player_tags: data.tags,
+              });
+              masterBus.emit('PROFILE_UPDATED', {
+                userId: user.id,
+                updates: { username: data.username, alias: data.username, bio: data.bio },
               });
               toast.success('Profile saved');
             } catch (err) {
               reportError(err, 'ProfilePage.Profile_update_failed');
-              toast.error('Profile could not be saved. Please try again.');
-              throw err;
+              const message =
+                err instanceof Error && err.message.includes('Poker Alias')
+                  ? err.message
+                  : 'Profile could not be saved. Please try again.';
+              toast.error(message);
+              throw new Error(message);
             }
           }}
         />

@@ -125,8 +125,9 @@ describe('CardPresentationEngine', () => {
     const turn = engine.presentCard(river({ street: 'turn', slotIndex: 3, sequence: 4 }), {
       ...focused,
       allIn: true,
+      squeeze: true,
     });
-    const riv = engine.presentCard(river(), { ...focused, allIn: true });
+    const riv = engine.presentCard(river(), { ...focused, allIn: true, squeeze: true });
     expect(engine.isActive(turn.key)).toBe(false);
     expect(engine.isActive(riv.key)).toBe(true);
     expect(events.find((e) => e.event === 'animation_cancelled')).toMatchObject({
@@ -168,7 +169,7 @@ describe('CardPresentationEngine', () => {
 
   it('phases follow the monotonic clock, not five timers (spec 13, 104)', () => {
     const p = CARD_PRESENTATION_PROFILES.allIn;
-    const r = engine.presentCard(river(), { ...focused, allIn: true });
+    const r = engine.presentCard(river(), { ...focused, allIn: true, squeeze: true });
     expect(engine.phaseAt(r.key, now)).toBe('prepare');
     expect(engine.phaseAt(r.key, now + p.prepareMs)).toBe('hold');
     expect(engine.phaseAt(r.key, now + p.prepareMs + p.holdMs)).toBe('squeeze');
@@ -267,7 +268,7 @@ describe('the reveal beat and the frame sampler (ROUND 2)', () => {
     const seen: Array<{ phase: string; at: number }> = [];
     engine.subscribe((c) => seen.push({ phase: c.phase, at: now }));
     const p = CARD_PRESENTATION_PROFILES.allIn;
-    const r = engine.presentCard(river(), { ...focused, allIn: true });
+    const r = engine.presentCard(river(), { ...focused, allIn: true, squeeze: true });
     expect(seen.map((s) => s.phase)).toEqual(['prepare']);
 
     // Still face down through prepare + hold: no reveal yet.

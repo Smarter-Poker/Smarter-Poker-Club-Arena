@@ -240,6 +240,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Omaha is not hold em: tiered sampler, pressure cap, small ball, tag loop',
     'V40'
   ),
+  flag(
+    'v43Tempo',
+    'tempo reads: a river big bet priced by how fast it was made against what this player shows down at that tempo',
+    'V43'
+  ),
+  flag(
+    'v41Leaks',
+    'the rest of the tag table reaches a decision: hold em stack-off load, river-war load, limp-bloat load, by variant family',
+    'V41'
+  ),
 
   // ─────────────────────────────────────────────────────────────────────────
   // STYLE PARAMS. base style x profile dials x variant overlay x persona.
@@ -259,6 +269,13 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
         'ploStackoffLoad',
         'V40: this horse own Omaha stack-off tag rate (profile leaks / leaksHands)',
       ],
+      ['nlhStackoffLoad', 'V41: this horse own hold em stack-off tag rate (leaksHoldem)'],
+      ['riverWarLoad', 'V41: river raise-war / paid-off tag rate for this hand family'],
+      ['limpBloatLoad', 'V41: limped-pot bloat tag rate for this hand family'],
+      [
+        'tourneyLeakPremium',
+        'V41: extra ICM survival premium for a horse tagged for event stack-offs (leaksTournament)',
+      ],
     ] as const
   ).map(
     ([key, note]): LedgerEntry => ({
@@ -268,7 +285,17 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
       cadence: 'per_action',
       consumer: 'HorseLogic.decide / HorsePreflop.decidePreflopV7',
       note,
-      since: key === 'ploStackoffLoad' ? 'V40' : key === 'familyBias' ? 'V18' : 'V2',
+      since:
+        key === 'ploStackoffLoad'
+          ? 'V40'
+          : key === 'nlhStackoffLoad' ||
+              key === 'riverWarLoad' ||
+              key === 'limpBloatLoad' ||
+              key === 'tourneyLeakPremium'
+            ? 'V41'
+            : key === 'familyBias'
+              ? 'V18'
+              : 'V2',
     })
   ),
 
@@ -290,6 +317,16 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
       ['sizingMultiplier', 'dial, clamped [0.6, 1.5] (sizing_multiplier accepted)', 'V8'],
       ['leaks', 'V40: this horse leak-tag counts over the tuner window (review verdicts)', 'V40'],
       ['leaksHands', 'V40: reviewed hands the counts were taken over (the denominator)', 'V40'],
+      ['leaksOmaha', 'V41: the Omaha-family share of the counts', 'V41'],
+      ['leaksHandsOmaha', 'V41: reviewed Omaha hands (the denominator)', 'V41'],
+      ['leaksHoldem', 'V41: the hold em-family share of the counts', 'V41'],
+      ['leaksHandsHoldem', 'V41: reviewed hold em hands (the denominator)', 'V41'],
+      [
+        'leaksTournament',
+        'V41: the tournament-format share, from fn_horse_tournament_leaks',
+        'V41',
+      ],
+      ['leaksHandsTournament', 'V41: reviewed tournament hands (the denominator)', 'V41'],
     ] as const
   ).map(
     ([key, note, since]): LedgerEntry => ({
@@ -297,10 +334,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
       kind: 'profile',
       source: 'profiles.horse_profile (jsonb) via resolveHorseStyle',
       cadence: 'per_sit',
-      consumer:
-        key === 'leaks' || key === 'leaksHands'
-          ? 'HorseLogic.ploStackoffLoad'
-          : 'HorseLogic.decide',
+      consumer: key.startsWith('leaks') ? 'HorseLogic.leakLoad' : 'HorseLogic.decide',
       note,
       since,
     })
@@ -323,6 +357,26 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   mind('f3bOpps', 'their open got 3-bet', 'HorseMind.foldTo3BetOf (V16)'),
   mind('f3bFolds', '... and they folded', 'HorseMind.foldTo3BetOf (V16)'),
   mind('bigBetSD', 'big bets that reached showdown', 'HorseMind.bigBetValueTendency (V16)'),
+  mind(
+    'snapBetSD',
+    'V43: river big bets made within 1.5s that reached showdown',
+    'HorseMind.snapBetValueTendency (V43)'
+  ),
+  mind(
+    'snapBetSDStrong',
+    'V43: ... shown as two pair or better',
+    'HorseMind.snapBetValueTendency (V43)'
+  ),
+  mind(
+    'tankBetSD',
+    'V43: river big bets made after 8s or more that reached showdown',
+    'HorseMind.tankBetValueTendency (V43)'
+  ),
+  mind(
+    'tankBetSDStrong',
+    'V43: ... shown as two pair or better',
+    'HorseMind.tankBetValueTendency (V43)'
+  ),
   mind('bigBetSDStrong', '... that showed real strength', 'HorseMind.bigBetValueTendency (V16)'),
   mind('riverBetOpps', 'river bet opportunities', 'HorseMind.tableExploit (river reads)'),
   mind('riverBetFolds', 'river bets folded to', 'HorseMind.tableExploit (river reads)'),
@@ -418,11 +472,27 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     { dayColumn: 'day', freshnessDays: 2 }
   ),
   table(
+    'horse_tournament_daily',
+    'nightly',
+    'fn_audit_tournament_results (the daily audit); ca_horse_tournament_card (the panel); compiled by fn_horse_tournament_daily_compile from fn_run_horse_daily_audit',
+    'per horse/day/type/variant tournament results: entries, invested, won, ITM, finish percentile',
+    '2026-09-05',
+    { dayColumn: 'day', freshnessDays: 2 }
+  ),
+  table(
     'horse_daily_nets',
     'nightly',
-    'HorseSelfTuner (real bb/100); fn_run_horse_daily_audit',
-    'exact settlement nets per horse per day',
+    'HorseSelfTuner (real bb/100 and, since 2026-09-05, rake_bb -> the rake-adjusted regression rule); fn_run_horse_daily_audit',
+    'exact settlement nets + weighted-contributed rake per horse per day',
     'V16',
+    { dayColumn: 'day', freshnessDays: 1 }
+  ),
+  table(
+    'horse_daily_play',
+    'nightly',
+    'HorseSelfTuner (loadPlayRows: every horse studied from its own rows; HorseHandReview compiles them at settlement with HorsePlayStats)',
+    'per horse/day/format VPIP, PFR, 3-bet, fold-to-3-bet, saw flop, WWSF, postflop aggression',
+    '2026-09-05',
     { dayColumn: 'day', freshnessDays: 1 }
   ),
   table(
@@ -611,6 +681,41 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic (solver lookups)',
     'gto_miss_* / gto_skip_too_deep / gto_depth_fallback; NLH solver misses by reason',
     'V27'
+  ),
+  receipt(
+    'vpip_floor',
+    'HorseLogic (VPIP floor)',
+    'a floored table steered this decision (Dan 2026-09-04)',
+    'VPIP',
+    'decide'
+  ),
+  receipt(
+    'vpip_floor_prior',
+    'HorseLogic (VPIP floor)',
+    'steering on the prior - under three hands, no judged sample yet',
+    'VPIP',
+    'vpip_floor'
+  ),
+  receipt(
+    'vpip_floor_closing',
+    'HorseLogic (VPIP floor)',
+    'closing the loop on the judged VPIP and still widening',
+    'VPIP',
+    'vpip_floor'
+  ),
+  receipt(
+    'vpip_floor_satisfied',
+    'HorseLogic (VPIP floor)',
+    'over the floor; the horse own style is back in charge',
+    'VPIP',
+    'vpip_floor'
+  ),
+  receipt(
+    'vpip_floor_clamped',
+    'HorseLogic (VPIP floor)',
+    'pinned at the 0.35 widening limit - the floor cannot be reached by widening, so the table churns',
+    'VPIP',
+    'vpip_floor'
   ),
   receipt(
     'v15_nut_status',
@@ -973,6 +1078,36 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic (V40)',
     'the horse own review tags changed a decision; needs tuner-written leaks',
     'V40'
+  ),
+  receipt(
+    'v41_nlh_leak_read',
+    'HorseLogic (V41)',
+    'a hold em horse tagged for stack-offs read a single big bet as pressure; needs tuner-written leaksHoldem',
+    'V41'
+  ),
+  receipt(
+    'v41_river_war_read',
+    'HorseLogic (V41)',
+    'a horse tagged for river raise wars gave a river raise more respect; needs tuner-written leaks',
+    'V41'
+  ),
+  receipt(
+    'v43_tempo_read',
+    'HorseLogic (V43)',
+    'a river big bet was priced by its tempo; needs a player with five snap or tank showdowns',
+    'V43'
+  ),
+  receipt(
+    'v41_tourney_leak_read',
+    'HorseLogic (V41)',
+    'a horse tagged for event stack-offs paid extra ICM premium; tournament volume only, needs tuner-written leaksTournament',
+    'V41'
+  ),
+  receipt(
+    'v41_limp_bloat_*',
+    'HorseLogic (V41)',
+    'read / cap: a horse tagged for limped-pot bloat, in a limped pot, facing a big bet; needs tuner-written leaks',
+    'V41'
   ),
 ];
 

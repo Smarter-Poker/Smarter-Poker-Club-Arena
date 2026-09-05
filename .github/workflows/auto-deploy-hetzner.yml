@@ -803,6 +803,7 @@ jobs:
           # break genuinely stops firing that is an engine bug and it should be
           # loud, not routed around.
           echo "skip=true" >> $GITHUB_OUTPUT
+          echo "gate_reason=the maintenance break never opened for a restart" >> $GITHUB_OUTPUT
           echo "::warning title=BREAK NEVER OPENED::The engine never reported maintenance.readyForRestart within 14 minutes, so nothing was deployed. Production is ${BEHIND_MIN}m behind main. A break was ${BREAK_RUNNING} running during the wait. If it was NOT, the engine's break scheduler is not firing (check the engine log for '[MaintenanceBreak]') - that is an engine bug and no deploy will land until it is fixed. The next window retries automatically, and engine-watchdog.sh raises a tracked issue once a window has passed without the engine catching up."
           exit 0
 
@@ -1022,11 +1023,21 @@ jobs:
           # warning goes and investigates the spacing gate, and the spacing
           # gate is fine. A wrong reason costs more than no reason, because it
           # is confidently wrong and it is the first thing anybody reads.
+          # 2026-09-05: THE BREAK GATE NOW HAS TWO ANSWERS AND THIS KNEW ONLY
+          # THE OLD ONE. `steps.drain` used to be a hands-in-flight drain gate,
+          # and the line below still said so - but it has not had a
+          # hands-in-flight skip path since the maintenance break landed. Its
+          # two skips today are "the break never opened" and "the next break is
+          # further away than this run's budget", and run 33991470437 reported
+          # the second of those as "hands are still in flight" while the
+          # database, three steps later, recorded a third story. That is the
+          # exact failure the comment above is about, so the step now exports
+          # `gate_reason` on BOTH paths and this reads it instead of guessing.
           REASON="already serving this commit"
           if [ "${{ steps.window.outputs.open }}" = "false" ]; then
             REASON="outside the 7am/7pm America/Chicago restart window — dispatch with force=true to land it now"
           elif [ "${{ steps.drain.outputs.skip }}" = "true" ]; then
-            REASON="drain gate — hands are still in flight"
+            REASON="${{ steps.drain.outputs.gate_reason || 'the break gate held; see the step log for which half' }}"
           elif [ "${{ steps.dedupe.outputs.skip }}" = "true" ]; then
             REASON="coalescing — the engine restarted too recently, or it is already on this commit"
           fi
@@ -1096,7 +1107,7 @@ jobs:
           RUN_ACTOR: ${{ github.event_name }}
           REASON: >-
             ${{ steps.dedupe.outputs.skip == 'true' && 'coalesced or already serving this commit'
-             || steps.drain.outputs.skip == 'true' && 'the maintenance break never opened for a restart'
+             || steps.drain.outputs.skip == 'true' && (steps.drain.outputs.gate_reason || 'the maintenance break never opened for a restart')
              || steps.prove.outcome == 'failure' && 'cutover verified over HTTP but engine_leader never reported the new version: the version did not move'
              || steps.health.outputs.verified == 'true' && 'deployed and verified serving this commit'
              || 'run ended without a verified cutover' }}

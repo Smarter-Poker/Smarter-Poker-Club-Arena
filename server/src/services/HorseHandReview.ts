@@ -26,6 +26,8 @@
 
 import { supabase } from './supabase/client.js';
 import { reportError } from './errorReporter.js';
+import { allocateWeightedShareCents } from './rakeAllocation.js';
+import { accumulatePlayStats, type HandRow, type PlayStats } from './HorsePlayStats.js';
 import {
   variantInfo,
   omahaNutStatus,
@@ -62,6 +64,15 @@ export interface HorseReviewInput {
     isFullRaise?: boolean;
   }>;
   roster: Array<{ userId: string; isHorse: boolean }>;
+  /** Rake taken from this hand's pot, in chips. Shared to each horse by the
+   *  same weighted-contribution allocator the money pipeline uses, so
+   *  horse_daily_nets.rake_bb agrees with rake_attributions to the cent.
+   *  Absent = 0 (older callers, tests); the tuner then falls back to the
+   *  fleet-relative rule, which needs no rake at all. */
+  rakeAmount?: number;
+  /** Button seat, so HorsePlayStats can place the blinds the way the tuner's
+   *  hand_history path always has. Absent = no blind reconstruction. */
+  buttonSeat?: number | null;
 }
 
 const FLAG_BB = 20;
@@ -719,6 +730,8 @@ const enabled = (): boolean => process.env.HORSE_HAND_REVIEW_ENABLED !== 'false'
 interface NetAcc {
   hands: number;
   netBB: number;
+  /** weighted-contributed rake paid, in bb (2026-09-05) */
+  rakeBB: number;
 }
 
 const netAcc = new Map<string, NetAcc>();
@@ -743,17 +756,27 @@ export function accumulateHorseNets(input: HorseReviewInput): void {
       if (!w?.userId) continue;
       returnedBy.set(w.userId, (returnedBy.get(w.userId) ?? 0) + (w.amount ?? 0));
     }
+    // THE RAKE IS PART OF THE RESULT (2026-09-05). The fleet's -32 bb/100 on
+    // 2026-09-04 was the day's rake plus BBJ drop to within one percent, and
+    // the tuner read it as 221 horses with broken dials. Same allocator as
+    // rake_attributions / ca_hand_facts.rake_paid, so every ledger agrees.
+    const rakeShares = allocateWeightedShareCents(Number(input.rakeAmount ?? 0), [
+      ...input.contributions.entries(),
+    ]);
     for (const p of input.roster) {
       if (!p.isHorse || !p.userId) continue;
       const invested = input.contributions.get(p.userId) ?? 0;
       const returned = returnedBy.get(p.userId) ?? 0;
       if (invested === 0 && returned === 0) continue; // dealt in but never posted
       const key = `${p.userId}|${day}|${input.gameVariant}|${format}`;
-      const acc = netAcc.get(key) ?? { hands: 0, netBB: 0 };
+      const acc = netAcc.get(key) ?? { hands: 0, netBB: 0, rakeBB: 0 };
       acc.hands += 1;
       acc.netBB += (returned - invested) / bb;
+      acc.rakeBB += (rakeShares.get(p.userId) ?? 0) / bb;
       netAcc.set(key, acc);
     }
+    accumulateHorsePlay(input, day, format);
+    touchHorseSeats(input);
     if (netAcc.size > NET_ACC_MAX_KEYS) {
       // An outage has backed us up far beyond a realistic key space
       // (584 horses x variants x formats x a few days). Drop oldest-first
@@ -780,22 +803,18 @@ export function accumulateHorseNets(input: HorseReviewInput): void {
 }
 
 /** Drain up to `max` accumulated keys into RPC row shapes (exported for tests). */
-export function drainHorseNets(max: number = NET_BATCH_MAX): Array<{
+export interface HorseNetRow {
   horse_user_id: string;
   day: string;
   game_variant: string;
   format: string;
   hands: number;
   net_bb: number;
-}> {
-  const rows: Array<{
-    horse_user_id: string;
-    day: string;
-    game_variant: string;
-    format: string;
-    hands: number;
-    net_bb: number;
-  }> = [];
+  rake_bb: number;
+}
+
+export function drainHorseNets(max: number = NET_BATCH_MAX): HorseNetRow[] {
+  const rows: HorseNetRow[] = [];
   for (const [key, acc] of netAcc) {
     if (rows.length >= max) break;
     const [horse, day, variant, format] = key.split('|');
@@ -806,6 +825,7 @@ export function drainHorseNets(max: number = NET_BATCH_MAX): Array<{
       format,
       hands: acc.hands,
       net_bb: r2(acc.netBB),
+      rake_bb: r2(acc.rakeBB),
     });
     netAcc.delete(key);
   }
@@ -813,6 +833,12 @@ export function drainHorseNets(max: number = NET_BATCH_MAX): Array<{
 }
 
 async function flushHorseNets(): Promise<void> {
+  // The aggregates ride one timer; a quiet minute on one must not starve
+  // the others.
+  await flushHorsePlay().catch((err: unknown) => reportError(err, 'HorseHandReview.playFlush'));
+  await flushSeatTouches().catch((err: unknown) =>
+    reportError(err, 'HorseHandReview.seatTouchFlush')
+  );
   const rows = drainHorseNets();
   if (rows.length === 0) return;
   const { error } = await supabase.rpc('fn_horse_daily_nets_add', { p_rows: rows });
@@ -822,10 +848,167 @@ async function flushHorseNets(): Promise<void> {
     // upsert makes the eventual retry safe.
     for (const row of rows) {
       const key = `${row.horse_user_id}|${row.day}|${row.game_variant}|${row.format}`;
-      const acc = netAcc.get(key) ?? { hands: 0, netBB: 0 };
+      const acc = netAcc.get(key) ?? { hands: 0, netBB: 0, rakeBB: 0 };
       acc.hands += row.hands;
       acc.netBB += row.net_bb;
+      acc.rakeBB += row.rake_bb;
       netAcc.set(key, acc);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HORSE DAILY PLAY (2026-09-05) - the tuner's frequencies, compiled here
+// ═══════════════════════════════════════════════════════════════════════════
+// HorseSelfTuner used to stream the newest 120,000 hand_history rows a night
+// and re-derive VPIP / PFR / 3-bet / fold-to-3-bet / WWSF / postflop AF from
+// the JSON. On a 263,000-hand day that is eleven hours, so only 383 of 1,000
+// horses reached the 300-hand bar. The same accumulator (HorsePlayStats, the
+// tuner's own code) now runs on every settled hand and the counts flush
+// additively into horse_daily_play, keyed (horse, day, format). The tuner
+// reads seven days of a horse in a handful of rows.
+
+const playAcc = new Map<string, PlayStats>();
+
+const playEnabled = (): boolean => process.env.HORSE_PLAY_ROLLUP_ENABLED !== 'false';
+
+function accumulateHorsePlay(input: HorseReviewInput, day: string, format: string): void {
+  try {
+    if (!playEnabled()) return;
+    const tracked = new Set<string>();
+    for (const p of input.roster) if (p.isHorse && p.userId) tracked.add(p.userId);
+    if (tracked.size === 0) return;
+    const players: HandRow['players'] = [];
+    for (const [userId, seat] of input.holeCardsAll) players.push({ userId, seat: seat.seat });
+    if (players.length === 0) for (const p of input.roster) players.push({ userId: p.userId });
+    const row: HandRow = {
+      actions: input.actions.map((a) => ({
+        userId: a.userId,
+        action: a.action,
+        amount: a.amount,
+        stage: a.stage,
+        seat: a.seat,
+        isFullRaise: a.isFullRaise,
+      })),
+      players,
+      winners: input.winners,
+      big_blind: input.bigBlind,
+      button_seat: typeof input.buttonSeat === 'number' ? input.buttonSeat : null,
+    };
+    const delta = accumulatePlayStats([row], tracked, new Map());
+    for (const [horse, d] of delta) {
+      if (d.hands === 0) continue;
+      const key = `${horse}|${day}|${format}`;
+      const acc = playAcc.get(key);
+      if (!acc) {
+        playAcc.set(key, { ...d });
+        continue;
+      }
+      acc.hands += d.hands;
+      acc.vpip += d.vpip;
+      acc.pfr += d.pfr;
+      acc.threeBets += d.threeBets;
+      acc.threeBetOpps += d.threeBetOpps;
+      acc.openRaises += d.openRaises;
+      acc.faced3Bets += d.faced3Bets;
+      acc.foldTo3Bets += d.foldTo3Bets;
+      acc.sawFlop += d.sawFlop;
+      acc.wonWhenSawFlop += d.wonWhenSawFlop;
+      acc.postAggr += d.postAggr;
+      acc.postPassive += d.postPassive;
+      acc.netBB += d.netBB;
+    }
+    if (playAcc.size > NET_ACC_MAX_KEYS) {
+      let toDrop = playAcc.size - NET_ACC_MAX_KEYS;
+      for (const k of playAcc.keys()) {
+        if (toDrop-- <= 0) break;
+        playAcc.delete(k);
+      }
+      reportError(
+        new Error(`play accumulator overflow - dropped oldest keys (cap ${NET_ACC_MAX_KEYS})`),
+        'HorseHandReview.playOverflow'
+      );
+    }
+  } catch (err) {
+    reportError(err, 'HorseHandReview.accumulatePlay');
+  }
+}
+
+export interface HorsePlayRow {
+  horse_user_id: string;
+  day: string;
+  format: string;
+  hands: number;
+  vpip: number;
+  pfr: number;
+  three_bets: number;
+  three_bet_opps: number;
+  open_raises: number;
+  faced_3bets: number;
+  fold_to_3bets: number;
+  saw_flop: number;
+  won_when_saw_flop: number;
+  post_aggr: number;
+  post_passive: number;
+}
+
+/** Drain accumulated play counts into RPC row shapes (exported for tests). */
+export function drainHorsePlay(max: number = NET_BATCH_MAX): HorsePlayRow[] {
+  const rows: HorsePlayRow[] = [];
+  for (const [key, s] of playAcc) {
+    if (rows.length >= max) break;
+    const [horse, day, format] = key.split('|');
+    rows.push({
+      horse_user_id: horse,
+      day,
+      format,
+      hands: s.hands,
+      vpip: s.vpip,
+      pfr: s.pfr,
+      three_bets: s.threeBets,
+      three_bet_opps: s.threeBetOpps,
+      open_raises: s.openRaises,
+      faced_3bets: s.faced3Bets,
+      fold_to_3bets: s.foldTo3Bets,
+      saw_flop: s.sawFlop,
+      won_when_saw_flop: s.wonWhenSawFlop,
+      post_aggr: s.postAggr,
+      post_passive: s.postPassive,
+    });
+    playAcc.delete(key);
+  }
+  return rows;
+}
+
+async function flushHorsePlay(): Promise<void> {
+  const rows = drainHorsePlay();
+  if (rows.length === 0) return;
+  const { error } = await supabase.rpc('fn_horse_daily_play_add', { p_rows: rows });
+  if (error) {
+    reportError(new Error(error.message), 'HorseHandReview.playFlushRpc');
+    for (const row of rows) {
+      const key = `${row.horse_user_id}|${row.day}|${row.format}`;
+      const acc = playAcc.get(key);
+      const back: PlayStats = {
+        hands: row.hands,
+        vpip: row.vpip,
+        pfr: row.pfr,
+        threeBets: row.three_bets,
+        threeBetOpps: row.three_bet_opps,
+        openRaises: row.open_raises,
+        faced3Bets: row.faced_3bets,
+        foldTo3Bets: row.fold_to_3bets,
+        sawFlop: row.saw_flop,
+        wonWhenSawFlop: row.won_when_saw_flop,
+        postAggr: row.post_aggr,
+        postPassive: row.post_passive,
+        netBB: 0,
+      };
+      if (!acc) {
+        playAcc.set(key, back);
+        continue;
+      }
+      for (const k of Object.keys(back) as Array<keyof PlayStats>) acc[k] += back[k];
     }
   }
 }
@@ -896,5 +1079,83 @@ export async function recordHorseHandReviews(input: HorseReviewInput): Promise<v
     }
   } catch (err) {
     reportError(err, 'HorseHandReview.record');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SEAT TOUCH (2026-09-05) - the fleet state says when a horse last acted
+// ═══════════════════════════════════════════════════════════════════════════
+// ca_horse_fleet_state.last_action_at was NULL on all 1,000 rows, and
+// hands_this_session 0 on all, while 564 rows said "seated": the fleet
+// manager's minute upsert never carried them and overwrote them with
+// nothing. Settlement is the one place that sees every horse-hand, so it
+// touches the seat here: one small row per horse per table per flush,
+// through fn_ca_fleet_seat_touch, which adds hands and keeps the newest
+// timestamp. The upsert now preserves what the touch wrote.
+
+interface SeatTouch {
+  hands: number;
+  at: string;
+}
+
+const touchAcc = new Map<string, SeatTouch>();
+
+const touchEnabled = (): boolean => process.env.HORSE_SEAT_TOUCH_ENABLED !== 'false';
+
+function touchHorseSeats(input: HorseReviewInput): void {
+  try {
+    if (!touchEnabled() || !input.tableId) return;
+    for (const p of input.roster) {
+      if (!p.isHorse || !p.userId) continue;
+      const key = `${p.userId}|${input.tableId}`;
+      const acc = touchAcc.get(key) ?? { hands: 0, at: input.playedAt };
+      acc.hands += 1;
+      if (input.playedAt > acc.at) acc.at = input.playedAt;
+      touchAcc.set(key, acc);
+    }
+    if (touchAcc.size > NET_ACC_MAX_KEYS) {
+      let toDrop = touchAcc.size - NET_ACC_MAX_KEYS;
+      for (const k of touchAcc.keys()) {
+        if (toDrop-- <= 0) break;
+        touchAcc.delete(k);
+      }
+    }
+  } catch (err) {
+    reportError(err, 'HorseHandReview.touchSeats');
+  }
+}
+
+export interface SeatTouchRow {
+  horse_id: string;
+  table_id: string;
+  hands: number;
+  at: string;
+}
+
+/** Drain accumulated seat touches into RPC row shapes (exported for tests). */
+export function drainSeatTouches(max: number = NET_BATCH_MAX): SeatTouchRow[] {
+  const rows: SeatTouchRow[] = [];
+  for (const [key, acc] of touchAcc) {
+    if (rows.length >= max) break;
+    const [horse, table] = key.split('|');
+    rows.push({ horse_id: horse, table_id: table, hands: acc.hands, at: acc.at });
+    touchAcc.delete(key);
+  }
+  return rows;
+}
+
+async function flushSeatTouches(): Promise<void> {
+  const rows = drainSeatTouches();
+  if (rows.length === 0) return;
+  const { error } = await supabase.rpc('fn_ca_fleet_seat_touch', { p_rows: rows });
+  if (error) {
+    reportError(new Error(error.message), 'HorseHandReview.seatTouchRpc');
+    for (const row of rows) {
+      const key = `${row.horse_id}|${row.table_id}`;
+      const acc = touchAcc.get(key) ?? { hands: 0, at: row.at };
+      acc.hands += row.hands;
+      if (row.at > acc.at) acc.at = row.at;
+      touchAcc.set(key, acc);
+    }
   }
 }

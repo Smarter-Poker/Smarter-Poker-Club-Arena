@@ -103,6 +103,24 @@ export interface CardAnimationProfile {
    * The animation still plays in full, so 10.6 is untouched.
    */
   readonly serverPaced?: boolean;
+  /**
+   * THE PLAYER HOLDS THE CARD (VIP all-in squeeze, Dan 2026-09-05).
+   *
+   * On an interactive profile the HOLD phase is not a timer the card waits
+   * out but a window the player acts in: the face-down card takes pointer
+   * input, a drag compresses it toward its edge, and releasing past the
+   * threshold calls CardPresentationEngine.releaseHold(), which ends the hold
+   * THERE and runs squeeze -> reveal -> settle from that instant - so the
+   * reveal beat (and the sound the board pays on it) follows the player's
+   * hand rather than a clock. If the player never opens it, holdMs is the
+   * ceiling and the card snaps over on its own, exactly as before.
+   *
+   * The profile does not know why it is interactive; the resolver decides
+   * who gets it (all-in, VIP, perk on, not a re-run). The engine still never
+   * touches the DOM: the pointer handling is the board's, the phase clock is
+   * the engine's, and releaseHold is the one word between them.
+   */
+  readonly interactive?: boolean;
 }
 
 export interface ResolveProfileInput {
@@ -110,8 +128,18 @@ export interface ResolveProfileInput {
   readonly platform: CardPresentationPlatform;
   readonly focus: CardPresentationFocus;
   readonly reducedMotion: boolean;
-  /** An all-in runout: the server paces the streets, the card holds face down. */
+  /** An all-in runout: the server paces the streets. */
   readonly allIn: boolean;
+  /**
+   * THIS VIEWER may squeeze the run-out (VIP all-in squeeze, Dan 2026-09-05):
+   * they are themselves all-in in this hand, hold a VIP card, have the perk
+   * on, and the board is not a Run It Twice re-run. Computed by the page from
+   * what the client already knows - NOTHING new is broadcast for it, because
+   * a field on the wire saying who is squeezing would be a tell. Without it
+   * an all-in runout resolves the ordinary profile for the platform and
+   * mode, which is precisely what every other seat at the table sees.
+   */
+  readonly squeeze?: boolean;
 }
 
 /**

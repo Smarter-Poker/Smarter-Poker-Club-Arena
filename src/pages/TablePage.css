@@ -1294,6 +1294,22 @@
   font-weight: 700;
 }
 
+/* Dan 2026-09-05: "THE GAME NAME AND BLINDS ARE WAY TOO SMALL FONT. WE NEED
+   TO MAKE THAT LARGER." On a CASH table line 2 is the game and the blinds
+   alone (the hand number has its own row below), at twice the club line and
+   brighter: it is the one fact a player glances at to know where they are.
+   Still under the wordmark's opacity so it sits on the felt, not over the
+   cards; the masthead is centred on --sp-brand-top, so the extra height
+   spreads evenly above and below. Tournament tables keep the level row as it
+   was: their line 2 carries level + blinds + clock and has no room to grow. */
+.table-page:not(.table-page--tournament) .table-brand__line--level {
+  font-size: 0.98rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: rgba(232, 238, 250, 0.72);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+
 /* Dan 2026-08-26 mobile pass, item 5: the hand number can NEVER be cut off.
    Line 2 is a flex row: the game label is the flexible part that ellipsizes,
    the hand-number span refuses to shrink. */
@@ -1315,6 +1331,58 @@
 .table-brand__hand {
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+/* THE REGULAR ANTE (Dan 2026-09-04): beside the blinds, same weight. */
+.table-brand__ante {
+  white-space: nowrap;
+}
+
+/* THE GAME STYLE (Dan 2026-09-04): Classic / Action / Madness under the
+   blinds - the one word that says what kind of game this is. Gold like the
+   club name, spaced wider so it reads as a badge and not a fourth fact. */
+.table-brand__line--style {
+  margin-top: 0;
+  letter-spacing: 0.26em;
+  /* Dan 2026-09-05: "ALL TABLES NEED TO SEE IF THEY ARE CLASSIC, ACTION OR
+     MADNESS ON THEM." A badge, not a footnote: bigger than the club line,
+     under the now-large blinds. */
+  font-size: 0.62rem;
+}
+
+.table-brand__style {
+  color: rgba(255, 215, 0, 0.7);
+  font-weight: 800;
+}
+
+/* THE RULES OF THE GAME (Dan 2026-09-05: "IF THEY HAVE AN ANTE OR VPIP
+   REQUIREMENT THAT SHOULD ALSO BE ON THE TABLE"). One row under the style:
+   "Ante 1 · VPIP 40% Min · 10 Hands". A shade brighter than the club line
+   because it is a rule you are being held to, not a caption. */
+.table-brand__line--rules {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 5px;
+  font-size: 0.54rem;
+  color: rgba(214, 224, 240, 0.6);
+  font-weight: 700;
+}
+
+.table-brand__vpip,
+.table-brand__rules-sep {
+  white-space: nowrap;
+}
+
+.table-brand__rules-sep {
+  color: rgba(214, 224, 240, 0.35);
+}
+
+/* The hand number, its own row at the foot of the masthead (2026-08-26 item
+   5: never cut off - a row of its own cannot be). */
+.table-brand__line--hand {
+  font-size: 0.44rem;
+  color: rgba(198, 210, 228, 0.38);
 }
 
 .table-brand__clock {

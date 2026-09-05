@@ -718,6 +718,18 @@ export interface HorseGameStateV2 extends HorseGameState {
   gameMode?: 'cash' | 'tournament';
   /** V11: table ante (0/undefined = no ante). Antes widen preflop ranges. */
   ante?: number;
+  /**
+   * THE VPIP FLOOR (Dan 2026-09-04). The table's maintain_percent_min when
+   * it runs the rule, else 0. A seat under it after ten hands is stood up,
+   * horses included (10.5), so the brain plays to it - see vpipFloorMul.
+   */
+  vpipFloor?: number;
+  /**
+   * This horse's OWN judged figure at this table, this sitting - the same
+   * query the eviction reads (fn_nit_status). `vpip` is null until the
+   * first hand is on file. Absent when the engine could not read it.
+   */
+  ownVpip?: { hands: number; vpip: number | null };
   /** ALL-IN-OR-FOLD table: preflop is fold or shove and nothing else. */
   allInOrFold?: boolean;
   /** The ante is a BIG BLIND ANTE: the big blind posts it once for the whole
@@ -1387,6 +1399,49 @@ function moodOf(userId: string): number {
 }
 
 /**
+ * THE VPIP FLOOR MULTIPLIER (Dan 2026-09-04) - a multiplier on preflop
+ * tightness (<1 = looser) so a horse at a floored table keeps its VPIP above
+ * the floor the way a human regular at that table would.
+ *
+ * WHY. Action tables carry a 30-40% floor and Madness 60-70%, judged over ten
+ * hands and every hand after; a seat under it is stood up. The fleet is tuned
+ * to 19-32% VPIP (HorseSelfTuner), so without this every horse at a Madness
+ * table was stood up at hand eleven, the fleet reseeded, and the game churned
+ * instead of ran. Measured 2026-09-04 23:0x UTC before the window moved to
+ * ten: 18 of 56 seats under their floor, all horses.
+ *
+ * HOW. The target is the floor plus a ten-point cushion, capped at 95%. With
+ * no sample yet (under three hands) the multiplier is a PRIOR: the fleet's
+ * base width over the target, so a horse arrives already loose enough. From
+ * three hands the loop closes on the JUDGED figure: under target by g points
+ * loosens by 1.5g, floored at 0.35 (a bar at a third of its height plays
+ * nearly everything); at or over target the multiplier is 1 - being above a
+ * floor is fine, and the horse's own style resumes. Never above 1: this layer
+ * only widens.
+ *
+ * It scales the same `tightness` every preflop bar is built from (t() in
+ * HorsePreflop), so open, call, defend and 3-bet ranges all widen together -
+ * VPIP is voluntary money in preflop by any route.
+ */
+export function vpipFloorMul(gs: {
+  vpipFloor?: number;
+  ownVpip?: { hands: number; vpip: number | null };
+}): number {
+  const floor = Number(gs.vpipFloor ?? 0);
+  if (!(floor > 0)) return 1;
+  const target = Math.min(0.95, floor / 100 + 0.1);
+  const BASE_VPIP = 0.28;
+  const FLOOR_MUL = 0.35;
+  const own = gs.ownVpip;
+  if (!own || own.hands < 3 || own.vpip === null || !Number.isFinite(own.vpip)) {
+    return Math.max(FLOOR_MUL, Math.min(1, BASE_VPIP / target));
+  }
+  const gap = target - own.vpip / 100;
+  if (gap <= 0) return 1;
+  return Math.max(FLOOR_MUL, 1 - 1.5 * gap);
+}
+
+/**
  * V9 TIMING — decision-difficulty hint. decidePostflop records how close the
  * MC equity landed to the nearest strategy threshold; computeThinkTime turns
  * closeness into a TANK (humans agonize over close spots and snap the easy
@@ -1528,6 +1583,9 @@ export class HorseLogic {
         params.slowplayFreq = Math.min(params.slowplayFreq, 0.14);
       }
     }
+    // THE VPIP FLOOR (Dan 2026-09-04): widen toward the table's floor. Last,
+    // so it scales whatever style, mood and variant already decided.
+    params.tightness *= vpipFloorMul(gs);
 
     // V18: per-horse sizing-family personality, hashed from the id.
     if (opts.v18Families !== false) {

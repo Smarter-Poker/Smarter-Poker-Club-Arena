@@ -52,4 +52,12 @@ registry renders both instruments with only the audience label, GameServer
 renders it on the always-on path, the engine observes the twin, and both
 rules read the human series and carry the break guard.
 
-**Verification.** Recorded below when the engine deploy lands.
+**Found on deploy.** The first engine (77a2443f, 21:55 UTC) rendered both
+instruments with zero samples while 267 tables dealt: horse actions call
+`handController.performAction` directly and bypass the method that starts
+the act-to-broadcast clock, so only human HTTP actions had ever been timed -
+and no human was seated. Fixed in the same phase: the horse path starts the
+same clock and counts on the same instrument (CLAUDE.md 10.5), which also
+makes the engine's own baseline latency visible whenever no human sits.
+
+**Verification.** Recorded below when the second engine deploy lands.

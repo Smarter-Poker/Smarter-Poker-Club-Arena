@@ -45,6 +45,14 @@ describe('LAW 1/2/4 - the always-on registry', () => {
     expect(gs).toContain('...alwaysOnPrometheusLines()');
   });
 
+  it('a hand ending disarms the clock: the gap between hands is not latency', () => {
+    const eng = readFileSync(join(ROOT, 'server', 'src', 'engine', 'ServerTableEngine.ts'), 'utf8');
+    const idleAt = eng.indexOf('if (!this.handController) {');
+    expect(idleAt).toBeGreaterThan(0);
+    const idleBlock = eng.slice(idleAt, eng.indexOf('this.publishIdleState();', idleAt));
+    expect(idleBlock).toContain('this.lastActionAcceptedAtMs = 0;');
+  });
+
   it('the engine observes the fleet twin wherever it observes the gated one', () => {
     const eng = readFileSync(join(ROOT, 'server', 'src', 'engine', 'ServerTableEngine.ts'), 'utf8');
     const turns = readFileSync(

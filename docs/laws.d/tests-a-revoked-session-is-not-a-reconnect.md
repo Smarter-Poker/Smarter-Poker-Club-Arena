@@ -1,0 +1,3 @@
+# tests/a-revoked-session-is-not-a-reconnect.law.test.ts
+
+A revoked session is not a reconnect (Dan 2026-09-04, 22 hours of "Reconnecting To The Table"): an engine auth close (4401 / auth: reason), three failed handshakes in a row, or a 401 from any engine HTTP call asks GoTrue whether the session is alive; "could not ask" keeps the reconnect ladder running forever; a definitively dead session stops it, clears the local session (scope local only), shows a full-screen prompt that says why with a Sign In Now button, and sends the player to sign in with a return path; the threshold is exported and pinned at three; the auth_failed banner no longer claims to be signing in

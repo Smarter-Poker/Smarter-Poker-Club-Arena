@@ -442,7 +442,10 @@ async function cleanupTemporaryCustomizationAccountOnce(
     throw new Error(`Refusing to clean non-certification account ${account.email}.`);
   }
 
-  await account.client.auth.signOut().catch(() => undefined);
+  // 2026-09-04: scope local. A bare signOut() is global and would revoke
+  // every session this account has; on a throwaway account that is harmless,
+  // but the law (a-script-never-wears-a-persons-face) allows no exceptions.
+  await account.client.auth.signOut({ scope: 'local' }).catch(() => undefined);
   const failures: string[] = [];
   const userTables = [
     // Daily Missions certification state. Child/outbox rows are removed before

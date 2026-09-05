@@ -33,6 +33,7 @@
 import { useState, useEffect, memo, useCallback, useMemo, useRef } from 'react';
 import HandDetailView from '../handdetail/HandDetailView';
 import type { ReplayModel } from '../../utils/handReplay';
+import type { HeroHandFacts } from '../../services/HandHistoryService';
 import { gameTypeLabel, money, stamp } from '../../utils/handFormat';
 import { formatTableChips } from '../../utils/format';
 import './HandHistoryPanel.css';
@@ -133,6 +134,8 @@ export interface HandRecord {
     board_count?: number;
     variant?: string;
   } | null;
+  /** Phase 2: the viewer's own all-in equity / EV facts (ca_hand_facts), when recorded. */
+  heroFacts?: HeroHandFacts;
   /** THE model. Built once by HandHistoryService; every surface draws this. */
   replay: ReplayModel;
 }
@@ -356,7 +359,12 @@ function HandEntry({
           {hand.bombPot && <BombPotFacts facts={hand.bombPot} />}
           {/* THE rundown: the same component and the same model as the Previous
               Hand modal and the jackpot popup. Nothing here is computed twice. */}
-          <HandDetailView model={hand.replay} currentUserId={heroId} badge={variant} />
+          <HandDetailView
+            model={hand.replay}
+            currentUserId={heroId}
+            badge={variant}
+            viewerFacts={hand.heroFacts}
+          />
           {(onReplay || onOpenDetail) && (
             <div className="hh-entry__actions-row">
               {onOpenDetail && (

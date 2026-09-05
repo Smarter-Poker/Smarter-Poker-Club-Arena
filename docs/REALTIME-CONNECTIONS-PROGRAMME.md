@@ -53,6 +53,38 @@ plus a check that the box's rules match the repo's) is added to **Phase 7 -
 Guardrails**. Until then, an alert rule is not live because it merged; it is
 live when `/api/v1/rules` says so.
 
+## Phase 1 audit (2026-09-05) - what a deep pass found after "done"
+
+Three real defects, all shipped, none of which any test would have caught:
+
+1. **A degraded horse action was invisible.** The horse instrumentation sat
+   ABOVE the check/fold fallback, so a horse whose intended action was
+   rejected still reached the felt through the degrade and was neither counted
+   nor timed. It keys on the same `applied` that `markProgress()` uses now -
+   the one place that already means "this seat acted", whichever of the three
+   attempts landed. The law pins the ordering and is red against the shipped
+   code.
+
+2. **Nine money alerts existed only on the monitoring box.** `settlement` and
+   `money-health` - HandsAreFailingToSettle, NoHandsAreSettling,
+   MoneyAlertsGoingUnread and six more - were in no repository. Since
+   `deploy.sh` SYMLINKS the repo's `alert-rules.yml` over the live one, the
+   first person to run it would have silently deleted every one of them.
+
+3. **The SLO files in this repo said `groups: []`** while `slo-objectives` and
+   `slo-recording` ran 14 healthy rules on the box. Same symlink, same
+   deletion, same silence.
+
+All three groups are recovered into `infra/monitoring/` verbatim, so the repo
+is now a SUPERSET of what is live and a deploy can only ever add. Every one of
+the seven rule files validates against the live Prometheus (73 rules).
+`tests/an-alert-that-is-live-is-in-the-repo.law.test.ts` names all sixteen
+live groups; it found defect 3 by itself, one minute after being written.
+
+This is the same disease as the outage that started the programme - a monitor
+that is not what everyone believes it is - and it is why Phase 7 gets a
+reconciler that compares `/api/v1/rules` against these files continuously.
+
 ## Phase 1 - Measure (2026-09-04)
 
 **Why first.** Every later phase changes how a table behaves under stress,

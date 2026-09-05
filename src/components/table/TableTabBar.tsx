@@ -598,17 +598,24 @@ export function TableTabBar({
     <div className="table-tab-bar">
       {/* Realtime link warning — one honest global chip. WS_* events describe
           the Supabase realtime connection, not any single table, so this is
-          deliberately not rendered per-tab. */}
+          deliberately not rendered per-tab.
+
+          2026-09-04 (disconnect audit item 7): NAMED. This chip said
+          "Reconnecting..." while the felt's own banner said "Reconnecting To
+          The Table" for a different socket - a player could read one green
+          and one orange and not know which was lying. The game socket has its
+          banner on every felt; this one is about the lobby/chat/notification
+          feed and now says so. */}
       {realtimeDown && (
         <div
           className="table-tab-bar__offline"
           role="status"
-          title="Reconnecting To The Live Feed - Your Seats And Chips Are Safe On The Server."
+          title="Reconnecting To The Live Feed (Lobby, Chat And Notifications). Your Table And Chips Are Not Affected."
         >
           <span className="table-tab-bar__offline-dot" aria-hidden="true">
             ●
           </span>
-          <span className="table-tab-bar__offline-label">Reconnecting…</span>
+          <span className="table-tab-bar__offline-label">Live Feed Reconnecting</span>
         </div>
       )}
 

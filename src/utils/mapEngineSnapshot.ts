@@ -77,6 +77,13 @@ export interface DisconnectFsmEntry {
   state: DisconnectFsmState;
   sinceMs: number;
   graceDeadlineMs: number | null;
+  /**
+   * 2026-09-04 (disconnect audit item 3): WHY a SAT_OUT seat is sat out.
+   * 'forced' is three consecutive timeouts; 'voluntary' is the player's own
+   * Sit Out. Optional - an engine without it (or any other state) sends
+   * nothing, and the client words the bar as it always did.
+   */
+  sitOutReason?: 'voluntary' | 'forced' | null;
 }
 
 export interface EnginePublishedState {

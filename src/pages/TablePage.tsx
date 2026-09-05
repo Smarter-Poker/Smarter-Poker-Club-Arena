@@ -1903,6 +1903,7 @@ export default function TablePage({
     status: engineWsStatus,
     lastEvent: rawEngineLastEvent,
     lastError: engineLastError,
+    lastUserEvent: engineLastUserEvent,
   } = useEngineTableState(tableId || undefined, { enabled: USE_ENGINE_WS });
 
   // RABBIT HUNT FREEZE 2026-08-25
@@ -2815,8 +2816,11 @@ export default function TablePage({
   const [isSeatDealing, setIsSeatDealing] = useState(false);
 
   // BOMB POT 2026-08-20: true from BOMB_POT_TRIGGERED until the next
-  // HAND_STARTED. Drives the magenta "BOMB" pill on every live seat
-  // (SeatSlot bombPotAnte) for the duration of the bomb-pot hand.
+  // HAND_STARTED. It used to drive a magenta "BOMB" pill on every live seat
+  // (SeatSlot bombPotAnte). Dan 2026-09-04: "THERE SHOULDN'T BE 'BOMB POT
+  // PILL BUTTONS' UNDER THE PLAYERS. THERE SHOULD JUST BE SOMETHING ON THE
+  // TABLE THAT SAYS 'BOMB POT'." So it now drives the ONE on-felt pill
+  // (.bomb-pot-eta--live below), which reads "BOMB POT" for the hand.
   const [bombPotActive, setBombPotActive] = useState(false);
   // IMPROVEMENT PASS 2026-08-20: in the reference capture the flop is dealt
   // only AFTER the bomb's explosion finishes — the engine, which skips
@@ -8671,6 +8675,53 @@ export default function TablePage({
     },
     [userId, tableId, ambientSoundsAllowed]
   );
+
+  /* ═══ THE ENGINE SOCKET CARRIES THE PLAYER'S OWN FACTS (2026-09-04) ═════════
+     Disconnect audit items 11 and 12. Two things a seat cannot play without
+     used to reach it by a SECOND transport: hole cards by a Supabase Realtime
+     subscription on table_hole_cards (with the bounded poll behind it), and
+     the pre-action by nothing at all - the client pushed it and never read the
+     engine's copy back, so a reconnect could leave the bar dark while the
+     engine was armed, or lit while the engine had invalidated it.
+
+     Both now arrive as private USER_EVENT frames on the socket the felt is
+     already drawn from, and the engine re-sends both on RESYNC. The Realtime
+     row and the poll stay as the belt; this is the braces.
+
+     Hole cards go through handleHoleCardPayload in the row shape it already
+     accepts, so every guard on that path (heroHoleCardsAreForThisHand, the
+     board-collision refusal, the recovery re-arm) applies unchanged. The
+     pre-action reconciles the bar to the engine's copy: setting the same
+     value is a no-op, a different one re-arms through the normal effect and
+     converges on the next frame, and an engine "nothing armed" clears the bar
+     without a round trip (hadPreActionRef is dropped first so the clear
+     effect does not send a clear for something the engine never held). */
+  useEffect(() => {
+    const ev = engineLastUserEvent;
+    if (!ev) return;
+    if (ev.kind === 'hole_cards' && ev.row && typeof ev.row === 'object') {
+      handleHoleCardPayload({ new: ev.row });
+      return;
+    }
+    if (ev.kind === 'pre_action') {
+      const a = typeof ev.action === 'string' ? ev.action : null;
+      const mapped =
+        a === 'auto_fold' || a === 'auto_check_fold'
+          ? 'fold'
+          : a === 'auto_check'
+            ? 'check'
+            : a === 'auto_call'
+              ? 'call'
+              : a === 'auto_call_any'
+                ? 'callAny'
+                : null;
+      if (typeof ev.to_call_at_set === 'number' && Number.isFinite(ev.to_call_at_set)) {
+        preActionCallAmountRef.current = ev.to_call_at_set;
+      }
+      if (mapped === null) hadPreActionRef.current = false;
+      setPreAction((cur) => (cur === mapped ? cur : mapped));
+    }
+  }, [engineLastUserEvent, handleHoleCardPayload]);
 
   /* ═══ 'INSERT' MISSED EVERY PINEAPPLE DISCARD (2026-08-31) ═════════════
      `insert_hole_cards` is an upsert - `ON CONFLICT (table_id, hand_number,
@@ -20310,46 +20361,57 @@ export default function TablePage({
 
                 {/* ROUND 3 (2026-08-20): bomb pot countdown — players see the
                     forced ante coming instead of being ambushed by it. Server
-                    truth (tableState.bombPotIn from the snapshot), hidden
-                    while the bomb sequence itself is playing. */}
+                    truth (tableState.bombPotIn from the snapshot).
+
+                    AND THE HAND ITSELF (Dan 2026-09-04): "THERE SHOULDN'T BE
+                    'BOMB POT PILL BUTTONS' UNDER THE PLAYERS. THERE SHOULD
+                    JUST BE SOMETHING ON THE TABLE THAT SAYS 'BOMB POT'." This
+                    pill used to hide while the bomb hand played and every seat
+                    grew a magenta "BOMB" pill instead. Those are gone; this
+                    ONE pill stays up through the hand and reads "BOMB POT"
+                    (with its board count), in the live colour. */}
                 {/* Gate on the SNAPSHOT value only — it is server truth and
                     goes non-null the moment an owner enables bomb pots, while
                     bombPotRules is a one-shot fetch that would hold the pill
                     hostage until a page reload. */}
-                {(tableState.bombPotIn != null ||
+                {(bombPotActive ||
+                  tableState.bombPotIn != null ||
                   bombClockLabel != null ||
-                  tableState.bombPotWaitingFor != null) &&
-                  !bombPotActive && (
-                    <div
-                      className={`bomb-pot-eta ${
-                        // URGENCY IS NOT A STEADY STATE (2026-08-29). The pulse
-                        // marks "the next hand is the bomb". On a bomb_pot_only
-                        // table the scheduler reports 1 forever, because every
-                        // hand is a bomb — so this pill pulsed for the entire
-                        // session on the one table where the fact is ordinary
-                        // rather than urgent, and the animation stopped meaning
-                        // anything on every other table by association.
-                        bombPotRules?.triggerMode !== 'bomb_pot_only' &&
-                        tableState.bombPotWaitingFor == null &&
-                        (tableState.bombPotIn === 1 || bombClockLabel === 'NEXT HAND')
+                  tableState.bombPotWaitingFor != null) && (
+                  <div
+                    className={`bomb-pot-eta ${
+                      bombPotActive
+                        ? 'bomb-pot-eta--live'
+                        : // URGENCY IS NOT A STEADY STATE (2026-08-29). The pulse
+                          // marks "the next hand is the bomb". On a bomb_pot_only
+                          // table the scheduler reports 1 forever, because every
+                          // hand is a bomb — so this pill pulsed for the entire
+                          // session on the one table where the fact is ordinary
+                          // rather than urgent, and the animation stopped meaning
+                          // anything on every other table by association.
+                          bombPotRules?.triggerMode !== 'bomb_pot_only' &&
+                            tableState.bombPotWaitingFor == null &&
+                            (tableState.bombPotIn === 1 || bombClockLabel === 'NEXT HAND')
                           ? 'bomb-pot-eta--next'
                           : ''
-                      }`}
-                    >
-                      <span className="bomb-pot-eta__dot" />
-                      {/* BOMB POT STANDARDIZATION 2026-08-27: badge names the
+                    }`}
+                  >
+                    <span className="bomb-pot-eta__dot" />
+                    {/* BOMB POT STANDARDIZATION 2026-08-27: badge names the
                         board count (spec §15.2); bomb-only tables show a
                         permanent identity pill rather than a countdown.
                         TIMED CLOCK 2026-08-28: timed tables count down in
                         m:ss to the engine's bomb_pot_next_at. */}
-                      {/* WHY THE BOMB HAS NOT COME (2026-08-29). A due bomb waits
+                    {/* WHY THE BOMB HAS NOT COME (2026-08-29). A due bomb waits
                         for bomb_pot_min_players, and the engine held it in
                         silence — the pill said BOMB POT NEXT HAND and then the
                         table dealt ordinary hands, indefinitely, with no
                         explanation available anywhere in the product. This
                         branch is first because it is the truest thing the pill
                         can say when it applies. */}
-                      {tableState.bombPotWaitingFor != null
+                    {bombPotActive
+                      ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT`
+                      : tableState.bombPotWaitingFor != null
                         ? `BOMB POT WAITING FOR ${tableState.bombPotWaitingFor} PLAYERS`
                         : bombPotRules?.triggerMode === 'bomb_pot_only'
                           ? `${bombPotRules.boardCount >= 3 ? 'TRIPLE BOARD ' : bombPotRules.boardCount === 2 ? 'DOUBLE BOARD ' : ''}BOMB POT ONLY`
@@ -20360,8 +20422,8 @@ export default function TablePage({
                             : tableState.bombPotIn === 1
                               ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
                               : `BOMB POT IN ${tableState.bombPotIn}`}
-                    </div>
-                  )}
+                  </div>
+                )}
 
                 {/* Dan 2026-08-15: the "Game Info Strip" that lived here is
                     gone. It printed the stakes a second and third time
@@ -20943,7 +21005,6 @@ export default function TablePage({
                       ? tableState.bountyMap[player.id]
                       : undefined
                   }
-                  bombPotAnte={bombPotActive}
                   isWinner={player ? winnerInfo.playerIds.includes(player.id) : false}
                   /* POKERBROS PARITY 2026-08-26: table-wide dim flag — while
                      any winner is on display, every face-up card outside the
@@ -21673,7 +21734,12 @@ export default function TablePage({
                   isTournament: tableState.isTournament,
                   now: sitOutTick,
                 }),
-                'You Are Sitting Out'
+                /* 2026-09-04 (audit item 3): the engine says whether this
+                   sit-out was forced (three timeouts) or chosen, and the bar
+                   says so too. Same I'm Back either way. */
+                disconnectStates[userId ?? '']?.sitOutReason === 'forced'
+                  ? 'You Timed Out Three Times, So You Are Sitting Out'
+                  : 'You Are Sitting Out'
               )}
             </span>
             <button
@@ -21893,6 +21959,9 @@ export default function TablePage({
                            printed chips. Same setting the seats and pot read. */
                         showStackInBB={v8Settings.show_stack_in_bb}
                         isMyTurn={true}
+                        /* 2026-09-04 (audit item 6): the row is marked while
+                           the socket is down. See ActionPanel.connectionStale. */
+                        connectionStale={engineWsStatus !== 'connected'}
                         isPreflop={tableState.boardStage === 'preflop'}
                         /* Dan 2026-08-26: cash sliders step by whole dollars,
                            tournament sliders by the level's chip unit. */

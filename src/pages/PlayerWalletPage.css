@@ -657,20 +657,29 @@
   line-height: 1.4;
 }
 
-.message {
+/* SCOPED, because `.message` is not a name this page can own.
+   ChipTransferModal.css declares `.message` bare too, with different padding
+   (0.875rem 1rem), weight (500) and a different error red (#ef4444 against this
+   sheet's #ff8a8a). Both are plain .css, so both are global the moment their
+   chunk loads, and the winner was whichever route the player visited last:
+   open the agent chip-transfer modal and then the wallet, and the wallet's send
+   banner came out in the modal's metrics - or the reverse.
+   Two lines, exactly as tests/global-css-does-not-leak-across-pages.law.test.ts
+   prescribes. */
+.wallet-page .message {
   padding: 10px 12px;
   border-radius: 6px;
   font-size: 0.85rem;
   font-weight: 600;
 }
 
-.message.success {
+.wallet-page .message.success {
   border: 1px solid rgba(53, 212, 138, 0.35);
   background: rgba(53, 212, 138, 0.1);
   color: var(--vault-green);
 }
 
-.message.error {
+.wallet-page .message.error {
   border: 1px solid rgba(255, 99, 99, 0.35);
   background: rgba(255, 99, 99, 0.1);
   color: #ff8a8a;

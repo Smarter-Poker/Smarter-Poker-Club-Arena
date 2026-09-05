@@ -83,7 +83,7 @@ describe('the union modal routes a club send by the wallet that is open', () => 
   it('the rake wallet has no club route and says so, never drawing on the bank in silence', () => {
     const r = clubSendRoute('rake', 'chips');
     expect(r.kind).toBe('refused');
-    expect(r.kind === 'refused' && r.reason).toMatch(/Rake Wallet/);
+    expect(r.kind === 'refused' && r.reason).toMatch(/Rake Treasury Is Held In Trust/);
   });
 
   it('diamonds never go to a club', () => {
@@ -101,7 +101,7 @@ describe('the union modal routes a club send by the wallet that is open', () => 
     expect(unionModal).toMatch(/unionApi\.sendToClub\(\s*unionId,\s*target\.data\.id,\s*amt/);
     const clubBranch = unionModal.slice(
       unionModal.indexOf('const r = clubSendRoute(walletKey, kind);'),
-      unionModal.indexOf('setLiveBalance((prev) => prev - amt);')
+      unionModal.indexOf('Member Clawbacks Must Be Performed By The Club Owner')
     );
     expect(clubBranch).toContain("if (r.kind === 'refused') throw new Error(r.reason);");
     expect(clubBranch.indexOf('promoSend')).toBeLessThan(clubBranch.indexOf('sendToClub'));
@@ -208,7 +208,15 @@ describe('every promo wallet carries a ledger', () => {
   });
 
   it('fn_promo_wallet_ledger knows all three promo accounts', () => {
-    const b = fnBody(LANDING, 'fn_promo_wallet_ledger');
+    // The definition production runs is the newest one (the verification
+    // pass re-shaped it so a million-row rake wallet is not re-summed).
+    const LEDGER = migration('the_union_ledger_totals_do_not_rescan_a_million_rake_rows');
+    // ...and the body production runs is the one after it: a sweep has no actor.
+    const CURRENT = migration('a_sweep_has_no_actor');
+    expect(fnBody(CURRENT, 'fn_promo_wallet_ledger')).toContain(
+      'case when t.created_by is null then null else'
+    );
+    const b = fnBody(LEDGER, 'fn_promo_wallet_ledger');
     expect(b).toContain("if p_scope = 'union' then");
     expect(b).toContain("if p_scope = 'club' then");
     expect(b).toContain("elsif p_scope = 'agent' then");
@@ -216,6 +224,18 @@ describe('every promo wallet carries a ledger', () => {
     expect(b).toContain('from chip_ledger l');
     // the club scope is gated on the Club Bank roles; the agent scope on membership
     expect(b).toContain('fn_can_use_club_bank(p_scope_id)');
+    // the rake wallet's totals ride the reconciliation checkpoint, and only
+    // the first page pays for totals at all
+    expect(b).toContain('from union_rake_ledger_checkpoint c');
+    expect(b).toMatch(/if v_offset = 0 then/);
+    expect(LEDGER).toContain("SET plan_cache_mode = 'force_custom_plan'");
+    expect(LEDGER).toContain('idx_uwt_union_wallet_created');
+    expect(LEDGER).toContain('idx_chip_ledger_promo_to');
+  });
+
+  it('a Load More page never wipes the totals the first page put on screen', () => {
+    expect(unionModal).toMatch(/if \(offset === 0 \|\| res\.totals\) setLedgerTotals/);
+    expect(cashier).toMatch(/if \(offset === 0 \|\| res\.totals\) setPromoLedgerTotals/);
   });
 });
 

@@ -23,7 +23,7 @@ import {
   actionsFleetTotal,
   alwaysOnPrometheusLines,
 } from './engineInstruments.js';
-import { sliceYamlEntry } from '../testHelpers/sourceWindow.js';
+import { sliceYamlEntry, sliceMethod } from '../testHelpers/sourceWindow.js';
 import { deriveContext, seatsAtOneTable } from '../services/TournamentBrainContext.js';
 
 const ROOT = join(__dirname, '..', '..', '..');
@@ -93,6 +93,62 @@ describe('LAW 1/2/4 - the always-on registry', () => {
   });
 });
 
+describe('LAW 7 - the clock measures action-to-broadcast, not the gap between actions', () => {
+  // THE BUG THIS PINS (2026-09-05). performAction emits PLAYER_ACTION
+  // synchronously and its handler calls broadcastCurrentState, so the
+  // broadcast for an action happens INSIDE performAction. The clock used to
+  // be armed AFTER that call, so every broadcast observed the clock left by
+  // the PREVIOUS action and the histogram recorded the interval between two
+  // actions. Production reported "median 808ms act-to-broadcast" for a day;
+  // it was really the median turn pacing, and the event loop was healthy the
+  // whole time (p99 54ms), which is what made the number look like a mystery.
+  const turns = readFileSync(
+    join(ROOT, 'server', 'src', 'engine', 'ServerTableEngineTurns.ts'),
+    'utf8'
+  );
+
+  it('the human path arms the clock BEFORE performAction', () => {
+    const seg = sliceMethod(turns, 'protected _handlePlayerActionInner');
+    const arm = seg.indexOf('this.lastActionAcceptedAtMs = Date.now();');
+    const act = seg.indexOf('const actionApplied = this.handController.performAction(');
+    expect(arm).toBeGreaterThan(0);
+    expect(act).toBeGreaterThan(0);
+    expect(
+      arm,
+      'arming must precede performAction, or the sample is the previous action'
+    ).toBeLessThan(act);
+  });
+
+  it('a rejected action does not leave a live clock behind', () => {
+    const seg = sliceMethod(turns, 'protected _handlePlayerActionInner');
+    expect(seg).toContain('if (!actionApplied) {');
+    expect(seg).toMatch(/this\.lastActionAcceptedAtMs = actClockWasArmed;/);
+  });
+
+  it('the horse path arms before its action and restores when nothing lands', () => {
+    const seg = sliceMethod(turns, 'protected scheduleHorseAction(');
+    expect(seg).toContain('const horseClockWasArmed');
+    const arm = seg.indexOf('this.lastActionAcceptedAtMs = Date.now();');
+    const act = seg.indexOf('handControllerRef.performAction(seat, action as any, amount)');
+    expect(arm).toBeLessThan(act);
+    // the degrade re-arms, and total failure restores
+    expect(seg).toContain("performAction(seat, 'fold' as any)");
+    expect(turns).toMatch(/this\.lastActionAcceptedAtMs = horseClockWasArmed;/);
+  });
+
+  it('the counter blocks no longer re-arm the clock after the broadcast', () => {
+    // Both counter sites sit after the broadcast has gone out. If either one
+    // arms the clock, the bug is back.
+    // Bound by the method, not a byte count: within the human action method,
+    // the ONLY arming may be the one before performAction.
+    const human = sliceMethod(turns, 'protected _handlePlayerActionInner');
+    expect(human.split('this.lastActionAcceptedAtMs = Date.now();').length - 1).toBe(1);
+    const horse = sliceMethod(turns, 'protected scheduleHorseAction(');
+    // Horse arms once before the action and once before the check/fold degrade.
+    expect(horse.split('this.lastActionAcceptedAtMs = Date.now();').length - 1).toBe(2);
+  });
+});
+
 describe('LAW 5 - every format is measured, not just cash (Dan 2026-09-05)', () => {
   it('both instruments carry a format label at every observation site', () => {
     const eng = readFileSync(join(ROOT, 'server', 'src', 'engine', 'ServerTableEngine.ts'), 'utf8');
@@ -152,6 +208,40 @@ describe('LAW 5 - every format is measured, not just cash (Dan 2026-09-05)', () 
       expect(block, name).toContain('sum by (le, format)');
       expect(block, name).toContain('sum by (format)');
       expect(block, name).toContain('{{ $labels.format }}');
+    }
+  });
+});
+
+describe('LAW 6 - the thresholds come from the measurement, and one action cannot alarm', () => {
+  // Measured on production 2026-09-05, first hour of real data, 24.3 actions/s:
+  //   p50 808ms   p90 1541ms   p95 1843ms   p99 3755ms
+  // The first version of these rules guessed 500ms/1500ms before any data
+  // existed - below the MEDIAN and below the normal p95 respectively, so both
+  // would have fired permanently and been muted, which is the exact failure
+  // this programme keeps finding in other people's monitors.
+  const rules = readFileSync(join(ROOT, 'infra', 'monitoring', 'alert-rules.yml'), 'utf8');
+
+  it('warning sits above the normal p95, critical is unambiguous', () => {
+    const deg = sliceYamlEntry(rules, 'alert: ActionLatencyDegraded');
+    const crit = sliceYamlEntry(rules, 'alert: ActionLatencyCritical');
+    const degMs = Number(deg.match(/\)\s*>\s*(\d+)/)![1]);
+    const critMs = Number(crit.match(/\)\s*>\s*(\d+)/)![1]);
+    expect(degMs, 'warning must sit above the measured p95 of 1843ms').toBeGreaterThan(1843);
+    expect(critMs, 'critical must sit above the measured p99 of 3755ms').toBeGreaterThan(3755);
+    expect(critMs).toBeGreaterThan(degMs);
+  });
+
+  it('a single human action cannot raise a p95 alarm', () => {
+    // Humans are rare here: 15 hours with a human seat in 14 days. With a
+    // `> 0` guard, ONE action in the window produced a p95 from a sample of
+    // one and could page on it.
+    for (const name of ['ActionLatencyDegraded', 'ActionLatencyCritical']) {
+      const block = sliceYamlEntry(rules, `alert: ${name}`);
+      const guard = block.match(/ms_count\{audience="human"\}\[10m\]\)\)\s*>\s*([\d.]+)/);
+      expect(guard, `${name} must guard on a minimum action rate`).not.toBeNull();
+      expect(Number(guard![1]), `${name} guard must be more than a single sample`).toBeGreaterThan(
+        0
+      );
     }
   });
 });

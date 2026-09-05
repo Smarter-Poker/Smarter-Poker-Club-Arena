@@ -371,6 +371,8 @@ BEGIN
             'position', (SELECT count(*) + 1 FROM public.cash_seat_change_requests q
                           WHERE q.game_id = g.id AND q.status = 'requested' AND q.created_at < v_req.created_at
                             AND (v_req.to_table_id IS NULL OR q.to_table_id IS NULL OR q.to_table_id = v_req.to_table_id))) END),
+      -- Not seated: their place on the game's waitlist, if any (Gate 4).
+      'waitlist', CASE WHEN me.table_id IS NULL THEN public.fn_cash_game_waitlist_position(g.id) ELSE NULL END,
       'pending_move', CASE WHEN v_move.id IS NULL THEN NULL ELSE jsonb_build_object(
          'id', v_move.id, 'to_table_id', v_move.to_table_id, 'to_table_name', v_move.to_table_name,
          'to_role', v_move.to_role, 'to_main_index', v_move.to_main_index, 'reason', v_move.reason,

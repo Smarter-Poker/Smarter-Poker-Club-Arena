@@ -19,6 +19,8 @@ const summary = (over: Partial<ClusterTickSummary> = {}): ClusterTickSummary => 
   games: 3,
   ticked: 3,
   woken: 1,
+  rested: 0,
+  rpcs: 0,
   errors: 0,
   skippedFrozen: false,
   elapsedMs: 1200,

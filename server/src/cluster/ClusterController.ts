@@ -392,7 +392,7 @@ export class ClusterController {
           `[ClusterController] pass over ${summary.games} games took ${summary.elapsedMs}ms (cadence ${CLUSTER_TICK_MS}ms)`
         );
       }
-      clusterMetrics.recordPass(summary, games);
+      clusterMetrics.recordPass(summary);
       this.lastSummary = summary;
       return summary;
     } finally {

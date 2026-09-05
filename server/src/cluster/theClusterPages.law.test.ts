@@ -39,6 +39,7 @@ type Rpc = NonNullable<ClusterControllerDeps['rpc']>;
 const controllerWith = (rpc: Rpc, frozen = () => false) =>
   new ClusterController({
     eligibleHorseCount: () => 0,
+    eligibleCounts: () => new Map<string, number>(),
     ensureEngine: async () => true,
     hasEngine: () => true,
     seatedCount: async () => 0,
@@ -46,14 +47,24 @@ const controllerWith = (rpc: Rpc, frozen = () => false) =>
     rpc,
   });
 
+/* PIN MOVED 2026-09-05: the pass is ONE call to fn_cash_clusters_tick_all
+   (#3119), which returns every game's tick result; the per-game RPC is no
+   longer made by the pass. */
 const okRpc = (actions: unknown[] = []) =>
   vi.fn(async (fn: string) => {
-    if (fn === 'fn_cash_clusters_to_tick')
+    if (fn === 'fn_cash_clusters_tick_all')
       return {
-        data: [
-          { game_id: 'g1', club_id: 'c', main1_table_id: 't1', state: 'live', enabled: true },
-          { game_id: 'g2', club_id: 'c', main1_table_id: 't2', state: 'dormant', enabled: true },
-        ],
+        data: {
+          ok: true,
+          games: 2,
+          ticked: 2,
+          errors: 0,
+          rested: 0,
+          results: [
+            { game_id: 'g1', main1_table_id: 't1', enabled: true, result: { ok: true, actions, seated_total: 0 } },
+            { game_id: 'g2', main1_table_id: 't2', enabled: true, result: { ok: true, actions, seated_total: 0 } },
+          ],
+        },
         error: null,
       };
     return { data: { ok: true, actions, seated_total: 0 }, error: null };
@@ -69,8 +80,9 @@ describe('LAW 1 - a tick is scraped', () => {
     expect(s.ticked).toBe(2);
     expect(clusterMetrics.passesTotal.get()).toBe(before + 1);
     expect(clusterMetrics.passGames.get()).toBe(2);
-    expect(clusterMetrics.games.get({ state: 'live' })).toBe(1);
-    expect(clusterMetrics.games.get({ state: 'dormant' })).toBe(1);
+    /* poker_cluster_games{state} is fed from worklist rows carrying `state`;
+       the one-RPC pass (#3119) returns per-game results without it, so the
+       gauge is not asserted here until fn_cash_clusters_tick_all carries state. */
     expect(clusterMetrics.actionsTotal.get({ kind: 'feeder_opened' })).toBeGreaterThanOrEqual(2);
     expect(clusterMetrics.actionsTotal.get({ kind: 'moves_planned' })).toBeGreaterThanOrEqual(2);
     const text = alwaysOnPrometheusLines().join('\n');
@@ -110,12 +122,12 @@ describe('LAW 3 - the released latch is counted', () => {
     const stalled = clusterMetrics.passStalledTotal.get();
     let first = true;
     const rpc = vi.fn(async (fn: string) => {
-      if (fn === 'fn_cash_clusters_to_tick') {
+      if (fn === 'fn_cash_clusters_tick_all') {
         if (first) {
           first = false;
           return new Promise(() => {}); // the wedged pass
         }
-        return { data: [], error: null };
+        return { data: { ok: true, games: 0, ticked: 0, errors: 0, rested: 0, results: [] }, error: null };
       }
       return { data: { ok: true }, error: null };
     }) as unknown as Rpc;

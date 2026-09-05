@@ -20,7 +20,7 @@
  * right tier by tier and still carry a materially wrong mean, because a
  * handful of extra 100x draws move E further than a thousand extra 2x draws.
  * Only the mean tests the equality, and only a z-score tests the mean, since
- * "is it 2.7638" is unanswerable and any fixed tolerance is simultaneously too
+ * "is it 2.76" is unanswerable and any fixed tolerance is simultaneously too
  * tight at 22,000 draws and far too loose at 200.
  *
  * ── WHAT ELSE RIDES ALONG ────────────────────────────────────────────────
@@ -238,7 +238,7 @@ export class SpinMetrics {
       this.reportedBlind = true;
       reportError(
         new Error(
-          `[SpinMetrics] ${this.consecutiveFailures} consecutive refresh failures (${reason}) - spin gauges are STALE. poker_spin_metrics_stale_seconds is climbing, and nothing is checking that E[multiplier] still equals the 2.7638 the format is sold on.`
+          `[SpinMetrics] ${this.consecutiveFailures} consecutive refresh failures (${reason}) - spin gauges are STALE. poker_spin_metrics_stale_seconds is climbing, and nothing is checking that E[multiplier] still equals the 2.76 the format is sold on.`
         ),
         'SpinMetrics.refresh_failed'
       );

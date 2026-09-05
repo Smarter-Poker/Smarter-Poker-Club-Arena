@@ -1,5 +1,5 @@
 {
-  "entry_gz_kb": 155,
+  "entry_gz_kb": 156,
   "modules": [
     "src/App.tsx",
     "src/components/ConnectionStatusBar.tsx",
@@ -205,6 +205,7 @@
     "src/utils/titleCase.ts",
     "src/utils/tournamentFilters.ts",
     "src/utils/uuid.ts",
-    "src/utils/vibrationGate.ts"
+    "src/utils/vibrationGate.ts",
+    "src/utils/vipStatus.ts"
   ]
 }

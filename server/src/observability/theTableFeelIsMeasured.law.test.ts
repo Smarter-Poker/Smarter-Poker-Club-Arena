@@ -24,6 +24,7 @@ import {
   alwaysOnPrometheusLines,
 } from './engineInstruments.js';
 import { sliceYamlEntry } from '../testHelpers/sourceWindow.js';
+import { deriveContext, seatsAtOneTable } from '../services/TournamentBrainContext.js';
 
 const ROOT = join(__dirname, '..', '..', '..');
 
@@ -89,6 +90,69 @@ describe('LAW 1/2/4 - the always-on registry', () => {
     // And it must be in the same block that marks progress.
     const progressAt = afterHorse.indexOf('this.markProgress();');
     expect(Math.abs(progressAt - countAt)).toBeLessThan(900);
+  });
+});
+
+describe('LAW 5 - every format is measured, not just cash (Dan 2026-09-05)', () => {
+  it('both instruments carry a format label at every observation site', () => {
+    const eng = readFileSync(join(ROOT, 'server', 'src', 'engine', 'ServerTableEngine.ts'), 'utf8');
+    const turns = readFileSync(
+      join(ROOT, 'server', 'src', 'engine', 'ServerTableEngineTurns.ts'),
+      'utf8'
+    );
+    // The human HTTP path, the horse path, and the latency observation.
+    expect(turns.split('format: this.tableFormat()').length - 1).toBe(2);
+    expect(eng.split('format: this.tableFormat()').length - 1).toBe(1);
+  });
+
+  it('tableFormat derives cash, spin, heads-up and mtt - and never guesses cash', () => {
+    const base = readFileSync(
+      join(ROOT, 'server', 'src', 'engine', 'ServerTableEngineBase.ts'),
+      'utf8'
+    );
+    expect(base).toMatch(/protected tableFormat\(\): 'cash' \| 'spin' \| 'hu_sng' \| 'mtt'/);
+    // A tournament whose context has not loaded must NOT fall back to 'cash' -
+    // that would file Spins and MTTs under cash and hide exactly what Dan
+    // asked to be able to see.
+    const fn = base.slice(
+      base.indexOf('protected tableFormat()'),
+      base.indexOf('protected isTournamentTable()')
+    );
+    expect(fn).toContain("return 'cash';");
+    expect(fn).toMatch(/ctx\?\.format \?\? 'mtt'/);
+    expect(fn.split("return 'cash'").length - 1).toBe(1);
+  });
+
+  it('the shared derivation really does separate spin, heads-up and mtt', () => {
+    const row = (o: Record<string, unknown>) =>
+      ({
+        id: 't',
+        tournament_type: null,
+        variant: null,
+        starting_stack: 1000,
+        ...o,
+      }) as never;
+    expect(deriveContext(row({ tournament_type: 'SPIN' }), 2, 3, 3000).format).toBe('spin');
+    expect(deriveContext(row({ variant: 'spin' }), 2, 3, 3000).format).toBe('spin');
+    // Heads-up is derived from seats at one table, not from a type string.
+    expect(seatsAtOneTable({ table_size: 2 })).toBe(2);
+    expect(seatsAtOneTable({})).toBe(9);
+    expect(deriveContext(row({ tournament_type: 'SNG', table_size: 2 }), 2, 2, 2000).format).toBe(
+      'hu_sng'
+    );
+    expect(
+      deriveContext(row({ tournament_type: 'MTT', table_size: 9 }), 50, 200, 200000).format
+    ).toBe('mtt');
+  });
+
+  it('the alerts group by format, so a slow Spin cannot hide inside a cash average', () => {
+    const rules = readFileSync(join(ROOT, 'infra', 'monitoring', 'alert-rules.yml'), 'utf8');
+    for (const name of ['ActionLatencyDegraded', 'ActionLatencyCritical']) {
+      const block = sliceYamlEntry(rules, `alert: ${name}`);
+      expect(block, name).toContain('sum by (le, format)');
+      expect(block, name).toContain('sum by (format)');
+      expect(block, name).toContain('{{ $labels.format }}');
+    }
   });
 });
 

@@ -29,6 +29,7 @@ import { handleAction } from './handlers/action.js';
 import { handleTimebank } from './handlers/timebank.js';
 import { handleRabbitHunt } from './handlers/rabbithunt.js';
 import { handleHeartbeat } from './handlers/heartbeat.js';
+import { handleClientEvent } from './handlers/clientEvent.js';
 import { handleAway } from './handlers/away.js';
 import { handlePreaction } from './handlers/preaction.js';
 import { handleAddchips } from './handlers/addchips.js';
@@ -204,6 +205,13 @@ export function createRouter(
     if (method === 'POST' && url === '/rabbit-hunt')
       return handleRabbitHunt(req, res, { gameServer });
     if (method === 'POST' && url === '/heartbeat') return handleHeartbeat(req, res, { gameServer });
+
+    // Realtime programme Phase 2 (2026-09-05): what the player's browser saw.
+    // Authenticated, in-memory, 204. See handlers/clientEvent.ts.
+    if (method === 'POST' && url === '/client-event') {
+      const body = await readBody(req);
+      return handleClientEvent(req, res, body);
+    }
     // Dan 2026-08-23: pagehide/app-freeze beacon. Marks the player AWAY (blind
     // cap armed) without removing them — see handlers/away.ts.
     if (method === 'POST' && url === '/away') return handleAway(req, res, { gameServer });

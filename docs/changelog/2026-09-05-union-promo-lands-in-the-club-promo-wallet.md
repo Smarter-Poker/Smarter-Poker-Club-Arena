@@ -151,6 +151,75 @@ role authenticated` + jwt claims): club scope for Club JAQK returns the
   his float credit; union scope for the promo wallet returns the two
   `promo_to_club` rows and the sweeps, net 32,482.58 = the wallet.
 
+## Verification Pass (Dan: "check for any and all bugs, gaps, stubs, errors, regressions or wiring issues")
+
+Found and fixed in the same branch, before calling it done:
+
+- **The World Hub contract floors a club amount** (`PositiveChipAmount`
+  `.transform(Math.floor)`). 250.5 would have gone as 250 while the modal
+  subtracted 250.5. A club send is refused as "Club Sends Move In Whole
+  Chips." before it leaves; member sends still take hundredths.
+- **`SafeNotes` refuses `; ' " \`.** A club called "Dan's Room" would have
+  400ed every promo send with nothing on screen to say why. Notes to the
+  API are stripped (`apiNote`).
+- **The success notice vanished on send.** `onSent` reloads the dashboard,
+  which passes a fresh `balance`; the open/reset effect had `balance` as a
+  dependency and wiped the notice and the target the moment the send
+  landed. `balance` is no longer a dependency; the live figure comes from
+  the send's own response (`promoAfter` / `unionBalanceAfter`).
+- **The lobby Promo Wallet row did not move on a union promo send.**
+  DynamicWallet's clubs realtime handler applied `chip_treasury` only; it
+  now applies `promo_balance` too, and a union club's row says "Funded By
+  The Union Promo Wallet" instead of promising a BBJ sweep it does not get.
+- **The union rake wallet's Ledger tab cost 3.5 s of the one core**
+  (1,205,483 rows summed on open and on every Load More).
+  `20260905034640_the_union_ledger_totals_do_not_rescan_a_million_rake_rows.sql`:
+  rake totals from `union_rake_ledger_checkpoint` plus rows since `as_of`;
+  totals and count on the first page only; `plan_cache_mode =
+force_custom_plan` (the generic plan skipped the index: 580 ms in the
+  function vs 21 ms by hand); index `(union_id, wallet, created_at DESC)`
+  on `union_wallet_transactions` and two partial promo indexes on
+  `chip_ledger`, all created CONCURRENTLY first. Measured after: rake 166
+  ms, promo 49 ms, club pot 30 ms (was 3,535 / 580 / 223).
+- **Money functions probed in self-aborting `DO` blocks** (11.5 section 2),
+  both `PROBE_OK rolled back` and balances read back unchanged:
+  `fn_union_promo_send` as service_role (send 12.50 into JAQK, duplicate
+  op refused, one ledger + one union + one club row each);
+  `fn_club_promo_wallet_send` as KingFish (7 to a player as cash, replay
+  returns the first receipt and moves nothing, 5 into his own float,
+  overdraft refused, player-into-agent-wallet refused, pot 5,000 -> 4,988
+  = exactly 7 + 5).
+- `react-refresh` warning from re-exporting rules out of the component file:
+  `clubSendRoute` lives in `unionWalletRoutes.ts` only.
+- Full client suite: 967 files / 13,296 tests green; the one red file
+  (`the-media-optimizer-remembers-and-is-idempotent`) needs `sharp`, which
+  this worktree's node_modules copy lacks - CI runners have it. `vite build`
+  8.4 s clean.
+- Not mine, noted: the non-required `Telemetry Exposure` check is red on
+  every branch because `fn_cash_game_must_move_list` (the must-move lobby,
+  PR #3055) is a browser-callable definer with no allowlist row.
+
+## Follow-Up (Dan: "fully build all of these ... if any are high risk, do not build them")
+
+- **Rake wallet -> club: NOT BUILT, deliberately.** The Rake Treasury is held
+  in trust for the member clubs until the weekly close
+  (`20260820b_rake_only_to_treasury`,
+  `20260903161443_the_weekly_union_close_pays_from_the_rake_treasury_and_only_from_it`;
+  `fn_union_move_rake_to_chips_atomic` is retired for exactly this reason). A
+  manual rake -> club send would spend money that belongs to the clubs, which
+  is the high-risk case. The modal's refusal now states that reason and points
+  at the Union Bank. The pre-existing rake -> MEMBER chip send
+  (`fn_union_send_to_member`, source `rake`) is untouched here and worth a
+  look by whoever owns the weekly close.
+- **Telemetry Exposure red: closed.** `fn_cash_game_must_move_list` had an
+  `authenticated` grant nothing in the client used (the lobby reads
+  `fn_cash_game_lobby`, a definer that calls it as owner).
+  `20260905074022_the_must_move_list_is_read_through_the_lobby_not_by_the_brow.sql`
+  revokes it; `fn_cash_game_lobby` re-read as an authenticated caller after,
+  and `check-telemetry-exposure.mjs` against production: "no unscoped
+  operator routine is reachable from a browser."
+- **World Hub wording: done** (#1372, live as `efba06e8`).
+
 ## Still Open
 
 - The World Hub route `pages/api/club-arena/union-wallet.js` still words its
@@ -158,5 +227,5 @@ role authenticated` + jwt claims): club scope for Club JAQK returns the
   `club_treasury_after` (now null). The Club Arena modal ignores that message
   and prints its own. A one-line World Hub follow-up will change the wording
   and read `club_promo_after`.
-- The rake wallet has no route into a club. The modal now says so instead of
-  drawing on the union bank; whether one should exist is Dan's call.
+- Whether the rake -> MEMBER chip send should also be closed while the rake is
+  in trust. Pre-existing; not touched here.

@@ -94,6 +94,9 @@ import { formatGameTitle } from '../utils/formatGameTitle';
 import { SeatSlot } from '../components/table/SeatSlot';
 import { PotDisplay } from '../components/table/PotDisplay';
 import type { CardPresentationMode } from '../presentation/cardPresentation';
+import { viewerMaySqueeze } from '../presentation/cardPresentation/squeezeEligibility';
+import { useHeldValue } from '../hooks/useHeldValue';
+import { useVIPStatus } from '../hooks/useVIP';
 import { CommunityCards } from '../components/table/CommunityCards';
 import { DealerButton } from '../components/table/DealerButton';
 import { DealAnimation } from '../components/table/DealAnimation';
@@ -5211,6 +5214,16 @@ export default function TablePage({
    * runout that has not been drawn yet.
    */
   const ritExpectedRunsRef = useRef(0);
+  /**
+   * VIP ALL-IN SQUEEZE 2026-09-05: the same fact as ritExpectedRunsRef, as
+   * STATE, because the board's squeeze eligibility is a render-time input and
+   * a ref does not re-render. Dan: the squeeze "SHOULD NEVER APPEAR ON RUN IT
+   * 2X OR 3X" - this is the explicit rule, set the instant the table agrees
+   * to run it more than once (rit_all_accepted / rit_mandatory) and cleared
+   * at the hand boundary with the rest of the RIT state. It does not rely on
+   * the RIT boards happening to render through a branch with no slowReveal.
+   */
+  const [ritRunsThisHand, setRitRunsThisHand] = useState(1);
   /** Deferred hand-boundary teardown for a reveal that is still on screen. */
   const ritBoundaryClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearRitRevealTimers = useCallback(() => {
@@ -5278,6 +5291,7 @@ export default function TablePage({
     ritTimelineEndsAtRef.current = 0;
     ritRevealEndsAtRef.current = 0;
     ritExpectedRunsRef.current = 0;
+    setRitRunsThisHand(1);
     if (ritBoundaryClearTimerRef.current) {
       clearTimeout(ritBoundaryClearTimerRef.current);
       ritBoundaryClearTimerRef.current = null;
@@ -7325,6 +7339,43 @@ export default function TablePage({
     toggleSetting: toggleV8Setting,
     setAlias: setV8TableAlias,
   } = useUserTableSettings(userId !== 'guest' ? userId : null);
+
+  /**
+   * ═══ THE VIP ALL-IN SQUEEZE (Dan 2026-09-05) ═════════════════════════════
+   *
+   * Whether THIS viewer squeezes the run-out cards open themselves. Every
+   * clause is Dan's: all-in in this hand, a VIP card, the perk on, and not a
+   * Run It Twice hand. Computed here from what this client already knows -
+   * nothing is broadcast, so no other seat can learn who is a VIP from the
+   * felt. Everyone for whom this is false sees the ordinary reveal on the
+   * ordinary rhythm, which is exactly what they saw yesterday.
+   *
+   * The VIP check is src/utils/vipStatus.ts through useVIPStatus (VIP or
+   * Lifetime VIP; there is no other rung - docs/laws.d/vip-is-not-a-ladder.md).
+   */
+  const { isVIP: viewerIsVip } = useVIPStatus();
+  const heroSqueezeEligible = viewerMaySqueeze({
+    heroAllIn:
+      tableState.heroSeat > 0 && tableState.players[tableState.heroSeat - 1]?.status === 'all_in',
+    isVip: viewerIsVip,
+    settingOn: v8Settings.all_in_squeeze,
+    runItMultiple: ritRunsThisHand > 1 || (ritResult?.boards?.length ?? 0) > 1,
+  });
+  /**
+   * While this viewer's squeezed card is still face down under their hand,
+   * the equity they SEE stays at the previous street's numbers. The server's
+   * equity for the new street arrives ALL_IN_STREET_REVEAL_MS after the card
+   * and a squeeze may take longer (its ceiling is ALL_IN_SQUEEZE_CEILING_MS);
+   * without this the percentages would flip to the outcome while the card
+   * that caused it was still in their fingers - the spoiler Dan banned on
+   * 2026-08-28 ("EQUITY CHANGES ONLY AFTER THE FLOP IS DISPLAYED, (NOT BEFORE
+   * OR DURING)"). Local only: `allInEquities` itself is untouched, the banner
+   * and the RIT panel still read the live value, and nobody else's display
+   * is involved. The hold lifts on the engine's reveal beat, when the face is
+   * on screen.
+   */
+  const [squeezeHolding, setSqueezeHolding] = useState(false);
+  const displayedEquities = useHeldValue(allInEquities, squeezeHolding);
 
   // FIX-232: Ref for cards_pre_sort to avoid stale closure in hole card callbacks
   const cardsPreSortRef = useRef(v8Settings.cards_pre_sort);
@@ -9859,6 +9910,7 @@ export default function TablePage({
         // rit_result onto the wire, and without this it would ship the pot
         // over a runout the client has not drawn yet (see POT_WIN's ritHold).
         ritExpectedRunsRef.current = runs;
+        setRitRunsThisHand(runs);
         // RUN IT 3X recording: when the FINAL accept's named banner just
         // fired, the table goes straight into the runout under that banner —
         // the collective line only shows when completion arrived without one
@@ -9879,6 +9931,7 @@ export default function TablePage({
       if (eventType === 'rit_mandatory') {
         const runs = (handState.runs as number) || 2;
         ritExpectedRunsRef.current = runs;
+        setRitRunsThisHand(runs);
         // No offer was ever open, but a stale one from this hand's arming
         // must not keep a clock or a waiting strip alive (see rit_all_accepted).
         ritDeadlineRef.current = 0;
@@ -21241,6 +21294,10 @@ export default function TablePage({
                           tableId={tableId}
                           handId={tableState.handNumber}
                           boardIndex={board.boardIndex}
+                          /* VIP ALL-IN SQUEEZE 2026-09-05: a re-run board is
+                             told it is one of several, so it can never
+                             squeeze whatever else it is handed. */
+                          runs={Math.max(2, ritBoardsView.length)}
                           gameMode={boardPresentationMode}
                           isFocused={isActive}
                           isVisible={isVisible}
@@ -21279,6 +21336,12 @@ export default function TablePage({
                            runout (equity overlay live) the turn/river land
                            face down and flip - the reference slowed reveal. */
                         slowReveal={allInEquities.length > 0}
+                        /* VIP ALL-IN SQUEEZE 2026-09-05: this viewer's right
+                           to squeeze, and the run count so a re-run never
+                           does (see heroSqueezeEligible). */
+                        squeezeEligible={heroSqueezeEligible}
+                        runs={ritRunsThisHand}
+                        onSqueezeHold={setSqueezeHolding}
                         /* RIVER SQUEEZE 2026-09-04: presentation identity and
                            focus. The engine keys the river by table + hand +
                            board so a duplicate snapshot never replays it and
@@ -21975,10 +22038,10 @@ export default function TablePage({
                      an all-in equity badge lifts above the neighbouring
                      wrappers (z 28, under --showing's 30) so the badge is
                      never sealed beneath a DOM-later neighbour's avatar. */
-                  allInEquities.length > 0 &&
+                  displayedEquities.length > 0 &&
                   player &&
-                  (allInEquities.some((e) => e.userId === player.id) ||
-                    allInEquities.some((e) => !e.userId && e.seat === seatNumber))
+                  (displayedEquities.some((e) => e.userId === player.id) ||
+                    displayedEquities.some((e) => !e.userId && e.seat === seatNumber))
                     ? ' seat-wrapper--equity'
                     : ''
                 }`}
@@ -22291,8 +22354,11 @@ export default function TablePage({
                   );
                 })()}
 
-                {/* FIX 89: All-In Equity Overlay — shown per seat during all-in */}
-                {allInEquities.length > 0 &&
+                {/* FIX 89: All-In Equity Overlay — shown per seat during all-in.
+                    VIP ALL-IN SQUEEZE 2026-09-05: reads displayedEquities, which
+                    is allInEquities except while THIS viewer's squeezed card is
+                    still face down (see squeezeHolding). */}
+                {displayedEquities.length > 0 &&
                   player &&
                   (() => {
                     // AUDIT-2 FIX 2026-08-20: this was `seat === seatNumber ||
@@ -22302,8 +22368,8 @@ export default function TablePage({
                     // equity on this seat. userId is authoritative; seat is
                     // only a fallback for entries with no userId.
                     const eq =
-                      allInEquities.find((e) => e.userId === player.id) ??
-                      allInEquities.find((e) => !e.userId && e.seat === seatNumber);
+                      displayedEquities.find((e) => e.userId === player.id) ??
+                      displayedEquities.find((e) => !e.userId && e.seat === seatNumber);
                     if (!eq) return null;
                     const isAhead = eq.equity >= 50;
                     /* Dan 2026-08-28 (smart placement): "PERCENTAGES SHOULD

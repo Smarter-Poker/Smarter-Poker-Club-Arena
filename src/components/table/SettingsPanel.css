@@ -66,11 +66,17 @@
    HEADER
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* SAFE AREA (Dan 2026-09-05, with a screenshot): on an iPhone this panel is
+   full-height, so its header sat UNDER the status bar and the Dynamic Island -
+   the title collided with the clock and the X could not be tapped at all. The
+   panel had no `env(safe-area-inset-*)` anywhere in the file. A full-bleed
+   sheet has to pay the inset itself; nothing above it will. */
 .settings-panel__header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 20px;
+  padding-top: calc(20px + env(safe-area-inset-top, 0px));
   background: rgba(0, 0, 0, 0.3);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   position: relative;
@@ -93,7 +99,11 @@
   margin: 0;
 }
 
+/* 44x44 is the smallest reliable touch target on iOS; the X was smaller and
+   sitting in the inset, which is two reasons it could not be hit. */
 .settings-panel__close {
+  min-width: 44px;
+  min-height: 44px;
   width: 36px;
   height: 36px;
   display: flex;
@@ -278,8 +288,11 @@
    FOOTER
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* Same reason as the header: the home indicator sits over the last ~34px, so
+   Reset To Defaults was flush against it and hard to press. */
 .settings-panel__footer {
   padding: 16px 20px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   background: rgba(0, 0, 0, 0.25);
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   position: relative;

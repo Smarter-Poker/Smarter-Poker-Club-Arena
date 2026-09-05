@@ -17,6 +17,8 @@ import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSp
 import {
   cardPresentationEngine,
   detectPlatform,
+  FLOP_FAN,
+  MOUNT_WINDOW_MARGIN_MS,
   preloadImage,
   SqueezeCard,
   squeezeHostProps,
@@ -200,6 +202,13 @@ interface CardFaceProps {
    */
   squeeze: SqueezePresentation | null;
   boardIndex: number;
+  /**
+   * MOBILE PASS 2026-09-05: still inside the profile's own duration. The
+   * mount window outlives the animation by design (so the markup is never
+   * torn out mid-flip), and for that remainder the card must stop being a
+   * promoted compositor layer. See cardSqueeze.css.
+   */
+  animating: boolean;
 }
 
 function CardFace({
@@ -213,6 +222,7 @@ function CardFace({
   cardBack,
   squeeze,
   boardIndex,
+  animating,
 }: CardFaceProps) {
   // Only apply animation classes to NEWLY DEALT cards — existing cards stay still
   const isTurnCard = isNewlyDealt && stage === 'turn' && index === 3;
@@ -229,11 +239,23 @@ function CardFace({
   // turn had no profile: it ignored the player's table focus and platform.
   // Both streets are the same mechanism now, sized by the same table.
   const isSqueeze = isNewlyDealt && squeeze !== null && squeeze.index === index;
-  const host = isSqueeze ? squeezeHostProps(squeeze.profile, boardIndex) : null;
+  const host = isSqueeze ? squeezeHostProps(squeeze.profile, boardIndex, animating) : null;
   const style = (
     host
       ? { ...host.style, '--card-index': index }
-      : { animationDelay: `${index * 100}ms`, '--card-index': index }
+      : {
+          /* AUDIT FIX 2026-09-05: SCALED. This delay staggers the three flop
+             cards as they land, and it was the one number in the fan that
+             `--animation-speed` did not touch - its duration was scaled, the
+             whole fan-open was scaled, this was not. Card i landed at
+             100i + 300s ms while its turn began at (520 + 140i)s ms, so below
+             a speed of 0.4 the second and third cards began turning over
+             while still in the air - the exact thing the stylesheet's own
+             comment says must never happen, at the fastest setting a player
+             is allowed to choose (ANIMATION_SPEED_MIN is 0.25). */
+          animationDelay: `calc(${index * FLOP_FAN.DEAL_STAGGER_MS}ms * var(--animation-speed, 1))`,
+          '--card-index': index,
+        }
   ) as React.CSSProperties;
 
   return (
@@ -255,6 +277,8 @@ function CardFace({
       style={style}
       data-rs-profile={host ? host['data-rs-profile'] : undefined}
       data-rs-sweep={host ? host['data-rs-sweep'] : undefined}
+      data-rs-3d={host ? host['data-rs-3d'] : undefined}
+      data-rs-animating={host ? host['data-rs-animating'] : undefined}
     >
       {isSqueeze ? (
         /* ROUND 2 2026-09-05: the turn and river share ONE piece of markup
@@ -398,7 +422,15 @@ function CommunityCardsComponent({
   const laneTableId = tableId ?? `local${instanceId}`;
   /** Counts hands locally when TablePage supplies no hand number. */
   const localHandRef = useRef(0);
-  /** The key of the squeeze in flight on this board, for interrupts. */
+  /**
+   * The key of the presentation in flight on this board, for interrupts.
+   *
+   * AUDIT FIX 2026-09-05: this used to be set only for a turn or a river.
+   * A flop created an engine entry with two live timers and a held lane and
+   * then stored its key NOWHERE, so unmounting a table mid-flop left both
+   * timers running against a destroyed component and reported a completed
+   * animation for a board that no longer existed. Every street registers now.
+   */
   const activeSqueezeRef = useRef<string | null>(null);
   /**
    * ROUND 2 2026-09-05 - THE SNAP LANDS WHEN THE CARD DOES.
@@ -416,7 +448,16 @@ function CommunityCardsComponent({
    * cancelled or interrupted squeeze still pays it (the card is on screen by
    * then, and the law is that every cue plays every time it is owed).
    */
-  const snapOwedRef = useRef<{ key: string | null; strength: 'light' | 'medium' } | null>(null);
+  const snapOwedRef = useRef<{
+    key: string | null;
+    strength: 'light' | 'medium';
+    /* AUDIT FIX 2026-09-05: the resolved profile's own say on audio. It was
+       declared on every profile and read by nothing, so
+       `background.audioEnabled: false` claimed an unfocused tile was silent
+       when only the `playSounds` prop made it so. Both gates apply now, and
+       the field is no longer a claim nothing has to honour. */
+    audioEnabled: boolean;
+  } | null>(null);
   /** The squeeze whose reveal beat the owed snap is waiting on, if any. */
   const pendingRevealKeyRef = useRef<string | null>(null);
   const playSoundsRef = useRef(playSounds);
@@ -425,12 +466,23 @@ function CommunityCardsComponent({
     const owed = snapOwedRef.current;
     if (!owed) return;
     snapOwedRef.current = null;
-    if (!playSoundsRef.current) return;
+    if (!playSoundsRef.current || !owed.audioEnabled) return;
     if (owed.strength === 'medium') haptic.medium();
     else haptic.light();
     if (soundService.isEnabled()) soundService.playCommunityCard();
   };
   const [squeeze, setSqueeze] = useState<SqueezePresentation | null>(null);
+  /** The profile the stage effect must read - state has not committed yet. */
+  const squeezeProfileRef = useRef<CardAnimationProfile | null>(null);
+  /**
+   * MOBILE PASS 2026-09-05: true only while the flip is actually running.
+   * The mount window deliberately OUTLIVES the animation so the markup is
+   * never torn out mid-flip - but for that remainder the card should not go
+   * on being a promoted compositor layer. This flips false on the engine's
+   * `complete` beat, which is the earliest moment anything can know the
+   * animation is finished, and the CSS drops `will-change` with it.
+   */
+  const [animating, setAnimating] = useState(false);
   const cancelActiveSqueeze = (reason: string) => {
     if (activeSqueezeRef.current) {
       cardPresentationEngine.cancel(activeSqueezeRef.current, reason);
@@ -445,7 +497,6 @@ function CommunityCardsComponent({
    */
   const rabbitCount = Math.max(0, Math.min(rabbitCards.length, 5 - visibleCount));
   const prevStageRef = useRef(stage);
-  const prevCardCountRef = useRef(cards.length);
   const prevVisibleCountRef = useRef(visibleCount);
   const [showdownMode, setShowdownMode] = useState(false);
   const [newlyDealtIndices, setNewlyDealtIndices] = useState<Set<number>>(new Set());
@@ -453,12 +504,9 @@ function CommunityCardsComponent({
   const dealtAtRef = useRef(0);
   const [stageLabel, setStageLabel] = useState<string | null>(null);
 
-  // FIX 184: Removed duplicate haptic here — stage transition useEffect below already
-  // fires haptic on flop/turn/river. Having both caused double-haptic on every deal.
-  // Track card count for reference only (no haptic).
-  useEffect(() => {
-    prevCardCountRef.current = cards.length;
-  }, [cards.length]);
+  /* FIX 184 removed a duplicate haptic here; what it left behind was an
+     effect whose whole body wrote `prevCardCountRef`, which nothing ever
+     read. AUDIT 2026-09-05: both are gone. */
 
   // Track newly dealt cards — only new cards get deal animation, existing cards stay still
   useEffect(() => {
@@ -484,6 +532,7 @@ function CommunityCardsComponent({
     const closeWindow = () => {
       setNewlyDealtIndices(new Set());
       setSqueeze(null);
+      setAnimating(false);
       activeSqueezeRef.current = null;
     };
     if (visibleCount > prevCount) {
@@ -544,18 +593,27 @@ function CommunityCardsComponent({
           }
           preloadImage(cardBackImageUrl(cardBack));
           windowMs = Math.max(windowMs, Math.round(result.durationMs * speed));
+          // EVERY street registers, so an interrupt can reach a flop too.
+          activeSqueezeRef.current = result.key;
           if (squeezes) {
-            activeSqueezeRef.current = result.key;
             // The stage effect below runs after this one on the same commit
             // and reads this key: a squeeze in flight owes its snap to the
             // reveal beat rather than to the street transition.
             pendingRevealKeyRef.current = result.key;
+            squeezeProfileRef.current = result.profile;
+            setAnimating(true);
             setSqueeze({ key: result.key, profile: result.profile, index: slot });
+          } else {
+            // A flop pays its three snaps on the street, not on a reveal beat
+            // that does not describe its shape - nothing is owed to a key.
+            pendingRevealKeyRef.current = null;
+            squeezeProfileRef.current = result.profile;
           }
         } else if (squeezes) {
           // Duplicate / stale / hidden: the card is simply on screen, so the
           // cue has nothing to wait for.
           pendingRevealKeyRef.current = null;
+          squeezeProfileRef.current = null;
           newIndices.delete(slot);
           setSqueeze(null);
         } else {
@@ -580,7 +638,10 @@ function CommunityCardsComponent({
     if (visibleCount === prevCount && newlyDealtIndices.size > 0) {
       // A squeeze in flight keeps its own, possibly longer, window.
       if (squeeze) {
-        windowMs = Math.max(windowMs, Math.round((squeeze.profile.durationMs + 100) * speed));
+        windowMs = Math.max(
+          windowMs,
+          Math.round((squeeze.profile.durationMs + MOUNT_WINDOW_MARGIN_MS) * speed)
+        );
       }
       const remaining = Math.max(50, dealtAtRef.current + windowMs - Date.now());
       const timer = setTimeout(closeWindow, remaining);
@@ -636,6 +697,32 @@ function CommunityCardsComponent({
    */
   useEffect(() => {
     return cardPresentationEngine.subscribe(({ key, phase }) => {
+      if (key !== activeSqueezeRef.current && key !== pendingRevealKeyRef.current) return;
+      if (phase === 'cancelled') {
+        // AUDIT FIX 2026-09-05 - A CANCEL MUST REACH THE PIXELS.
+        //
+        // This listener used to do one thing: play the sound. So when the
+        // engine cancelled a presentation - a window resize, an orientation
+        // change, the tab backgrounded, all of which exist precisely to STOP
+        // an animation running against geometry that has moved - the engine
+        // dropped its entry and the browser carried on running the flip to
+        // completion on the old geometry. The interrupts were, visibly,
+        // inert. Worse, the cue was paid at that moment on the stated
+        // reasoning that "an interrupted squeeze renders the authoritative
+        // card immediately", which was not true: on an all-in river the snap
+        // landed up to 750ms before the face appeared - the exact defect the
+        // owed/paid mechanism was written to fix.
+        //
+        // Cancelling unmounts the temporary markup now, which drops the card
+        // to its authoritative face-up state on the next paint, and only then
+        // pays the cue. Clearing the newly-dealt set covers the FLOP too.
+        activeSqueezeRef.current = null;
+        setSqueeze(null);
+        setAnimating(false);
+        setNewlyDealtIndices((prev) => (prev.size === 0 ? prev : new Set()));
+      }
+      // The flip is over: stop paying for a compositor layer (see above).
+      if (phase === 'complete' || phase === 'cancelled') setAnimating(false);
       if (key !== pendingRevealKeyRef.current) return;
       if (phase !== 'reveal' && phase !== 'cancelled' && phase !== 'complete') return;
       pendingRevealKeyRef.current = null;
@@ -676,6 +763,7 @@ function CommunityCardsComponent({
         snapOwedRef.current = {
           key: pendingRevealKeyRef.current,
           strength: stage === 'river' ? 'medium' : 'light',
+          audioEnabled: squeezeProfileRef.current?.audioEnabled ?? true,
         };
         if (!pendingRevealKeyRef.current) payStreetSnap();
       } else if (stage === 'showdown') {
@@ -786,6 +874,7 @@ function CommunityCardsComponent({
               cardBack={cardBack}
               squeeze={squeeze}
               boardIndex={boardIndex}
+              animating={animating}
             />
           ) : (
             /* Dan 2026-08-26: "remove the ghost placeholders for the turn

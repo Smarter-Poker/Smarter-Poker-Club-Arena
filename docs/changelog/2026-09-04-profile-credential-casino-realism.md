@@ -75,6 +75,46 @@ measured centre) that this branch built against its own renders is NOT carried
 over: #3041's renders are different geometry and the technique would need
 re-measuring against them. Recorded under "What is left" below.
 
+## The dossier's class names were global, and one of them broke it (2026-09-05)
+
+`PublicProfilePage.css` was a plain stylesheet, so all 37 of its class names
+were global. Ten of them are ALSO defined, bare, in 30+ other stylesheets.
+Its own rules are scoped (`.public-profile-page .action-btn`) and so win any
+property they DECLARE - but a property they do not declare is won outright by
+whichever foreign rule loaded last.
+
+Measured on the built bundle, not reasoned about. `src/components/admin/
+PlayerSearch.css` declares a bare `.action-btn { width: 32px; height: 32px }`
+for a 32px admin icon button. The dossier never declares `width`. Result, in
+production:
+
+    grid tracks   123px 123px 123px 123px 123px
+    the buttons    36px  36px  36px  36px  36px   <- "Add Friend" wrapping
+
+Worse under the worst case (every route chunk loaded, which is any session
+that visited the hand replayer first): `.share-btn` there is
+`position: absolute; bottom; left; z-index: 10`, so Share LEFT THE GRID:
+
+    before  156px 156px 156px 156px 0px   Share: 680px, position absolute
+    after   123px 123px 123px 123px 123px Share: 123px, position static
+
+Fixes, in order of root-ness:
+
+1. `PlayerSearch.css` scoped to `.player-search .action-btn` - the leak at
+   source. The admin buttons are unchanged.
+2. `PublicProfilePage.css` -> `PublicProfilePage.module.css`, all 37 class
+   names hashed, TSX switched to `styles.*`. No foreign stylesheet can match
+   them again. `share-btn` is deleted rather than renamed: the page never
+   styled it, so it was purely a socket for other people's CSS.
+3. Five text rules qualified with the page class, because the app shell styles
+   `h1`/`h3` through descendant rules of equal weight that were winning on
+   load order and drifting the player's name from 800/-0.03em to 500/+0.03em.
+
+Verification is a computed-style diff of all 41 elements, clean vs every
+stylesheet in the app force-loaded: **52 property diffs before, 25 after**, and
+every remaining one belongs to the shared `PlayerAvatar` component (its level
+badge and portrait sizing), which is not this page's to own - recorded below.
+
 ## What is left
 
 - Set the portrait INTO #3041's credential plate ring and the dossier folio
@@ -91,6 +131,15 @@ re-measuring against them. Recorded under "What is left" below.
 - The mutual-friend chips still print social usernames on an arena surface.
 - `training_achievement_definitions` (threshold 0, icon_url null on every
   row) is a dead mirror of the client `ACHIEVEMENTS`; pick one source.
+- `PlayerAvatar` still carries bare global class names (`level-badge`,
+  and the portrait wrappers). Under the worst-case load its badge gains a
+  2px ring, a 50% radius and an orange glow, and the portrait shrinks 78px ->
+  74px. It is a shared component on many surfaces, so it wants its own module
+  conversion rather than a change made from this page.
+- Nine other bare `.action-btn` definitions remain across the app
+  (AgentCashoutPanel, ActionCard, ShareableHighlight, HandReplay,
+  DisputeManagementPage). Each is a live collision for whatever page loads it
+  next; the same two-line scoping fix applies to each.
 
 ## Design direction
 

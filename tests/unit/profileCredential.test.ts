@@ -36,7 +36,7 @@ const read = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
 const PROFILE = read('src/pages/ProfilePage.tsx');
 const PUBLIC_PROFILE = read('src/pages/PublicProfilePage.tsx');
 const PROFIT_CHART = read('src/components/profile/ProfitChart.tsx');
-const PUBLIC_CSS = read('src/pages/PublicProfilePage.css');
+const PUBLIC_CSS = read('src/pages/PublicProfilePage.module.css');
 
 describe('no stat reaches the DOM unrounded', () => {
   it('ROI is not 1.6500000000000001% any more, and nothing is rounded up', () => {
@@ -258,14 +258,24 @@ describe('the public dossier', () => {
   it('shows the public arena record and no meaningless level badge', () => {
     expect(PUBLIC_PROFILE).toContain("from('player_stats')");
     expect(PUBLIC_PROFILE).toContain('aggregateArenaRecord(data)');
-    expect(PUBLIC_PROFILE).toContain('className="public-profile-record"');
+    expect(PUBLIC_PROFILE).toContain('className={styles.publicProfileRecord}');
     expect(PUBLIC_PROFILE).not.toContain('Level {profile.level}');
-    expect(PUBLIC_CSS).toContain('.public-profile-record');
+    expect(PUBLIC_CSS).toContain('.publicProfileRecord');
   });
 
   it('keeps Report reachable while a player is blocked', () => {
-    const reportAt = PUBLIC_PROFILE.indexOf('className="action-btn report-btn"');
+    const reportAt = PUBLIC_PROFILE.indexOf('${styles.reportBtn}');
     const ternaryEnd = PUBLIC_PROFILE.indexOf('</>', PUBLIC_PROFILE.indexOf('{isBlocked ? ('));
+    expect(reportAt).toBeGreaterThan(-1);
+    expect(ternaryEnd).toBeGreaterThan(-1);
     expect(reportAt).toBeGreaterThan(ternaryEnd);
+  });
+
+  it('carries no bare global class names that another stylesheet can win', () => {
+    // Ten of this page's class names were also defined bare in 30+ other
+    // stylesheets. With those chunks loaded, `.share-btn { position:absolute }`
+    // took Share out of the action grid entirely. Hashed names end the class.
+    expect(PUBLIC_PROFILE).not.toMatch(/className="/);
+    expect(PUBLIC_PROFILE).toContain("from './PublicProfilePage.module.css'");
   });
 });

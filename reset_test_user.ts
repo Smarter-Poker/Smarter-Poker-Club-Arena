@@ -4,10 +4,19 @@ dotenv.config();
 
 const supabase = createClient(process.env.VITE_SUPABASE_URL!, process.env.VITE_SUPABASE_ANON_KEY!);
 
+function requireTestUserEmail(): string {
+  const email = process.env.TEST_USER_EMAIL;
+  if (!email) throw new Error('TEST_USER_EMAIL is not set - refusing to guess an account');
+  return email;
+}
+
 async function run() {
   console.log('Signing in...');
   const { data, error } = await supabase.auth.signInWithPassword({
-    email: 'daniel@bekavactrading.com',
+    // 2026-09-04: this reset a hardcoded PERSONAL account's profile to
+    // 'New Player'. It reads TEST_USER_EMAIL from .env.local now and refuses
+    // to run without it.
+    email: requireTestUserEmail(),
     password: process.env.TEST_USER_PASSWORD,
   });
 

@@ -41,7 +41,14 @@ import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import type { IncomingMessage } from 'http';
 import type { Server as HttpServer } from 'http';
 import { supabase } from '../services/supabase.js';
-import { extractBearerToken } from './wsHelpers.js';
+import {
+  extractBearerToken,
+  verifySupabaseToken,
+  authRejectionReason,
+  tokenDenial,
+  recordWsAuthRefusal,
+  type TokenVerdict,
+} from './wsHelpers.js';
 import { channelHub } from '../hub/ChannelHub.js';
 
 /** B13: how long a club-membership verdict may be reused. */
@@ -99,15 +106,11 @@ type InboundMessage =
 
 // ─── Default JWT verification ─────────────────────────────────────────────────
 
-async function verifyToken(token: string): Promise<{ userId: string } | null> {
-  if (!token) return null;
-  try {
-    const { data, error } = await supabase.auth.getUser(token);
-    if (error || !data?.user) return null;
-    return { userId: data.user.id };
-  } catch {
-    return null;
-  }
+// 2026-09-04: the verdict says WHY (see wsHelpers) so a revoked session can
+// be refused with a close code the browser can read, and an auth outage can
+// be told apart from it.
+async function verifyToken(token: string): Promise<TokenVerdict> {
+  return verifySupabaseToken(supabase.auth, token);
 }
 
 // ─── ChannelWebSocketServer ───────────────────────────────────────────────────
@@ -141,16 +144,32 @@ export class ChannelWebSocketServer {
 
       verifyToken(token)
         .then((auth) => {
-          if (!auth) {
-            socket.write(
-              'HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
-            );
-            socket.destroy();
+          const denial = tokenDenial(auth);
+          if (denial || !auth.userId) {
+            recordWsAuthRefusal('channel', denial?.denied ?? 'invalid');
+            // 2026-09-04: same rule as EngineWebSocketServer. A pre-handshake
+            // 401 reaches the browser as 1006 and was retried as a network
+            // blip for 22 hours; an invalid token is now closed with 4401 and
+            // an auth:<code> reason, an auth outage stays a retryable 503.
+            if (denial?.denied === 'unavailable') {
+              socket.write(
+                'HTTP/1.1 503 Service Unavailable\r\nRetry-After: 5\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+              );
+              socket.destroy();
+              return;
+            }
+            this.wss.handleUpgrade(req, socket, head, (ws) => {
+              try {
+                ws.close(CLOSE_AUTH_FAILED, authRejectionReason(denial?.code ?? 'invalid'));
+              } catch {
+                ws.terminate();
+              }
+            });
             return;
           }
-
+          const userId = auth.userId;
           this.wss.handleUpgrade(req, socket, head, (ws) => {
-            this.onUpgraded(ws, auth.userId);
+            this.onUpgraded(ws, userId);
           });
         })
         .catch(() => {

@@ -414,6 +414,11 @@
   color: var(--hh-brass);
 }
 
+.hh-entry__facts-body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .hh-entry__actions-row {
   display: flex;
   justify-content: flex-end;

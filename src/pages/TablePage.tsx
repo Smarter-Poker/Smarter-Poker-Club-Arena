@@ -3541,10 +3541,57 @@ export default function TablePage({
     // refreshMaintenanceBreak is a stable useCallback, so this still runs once
     // per error rather than on every break countdown tick.
   }, [engineLastError, refreshMaintenanceBreak]);
+  /* ═══ A RELOAD CANNOT FIX A SIGN-IN (Realtime Phase 3, 2026-09-05) ════════
+     Why this flag has to exist at all: `auth_failed` is a status the client
+     passes THROUGH, not one it rests in. EngineStateClient sets it on a 4401
+     and then calls scheduleReconnect(), which immediately sets 'reconnecting'
+     and, at maxRetries, 'failed'. So by the time the auto-reload failsafe
+     twenty seconds below looks at the status, an auth refusal and a dead
+     Wi-Fi link are the same word: 'failed'.
+
+     That is how a browser ends up reloading itself every two minutes forever
+     against a socket that will refuse it every time - the 2026-09-03 shape,
+     and it is worse than useless: each reload throws away the felt, the
+     buy-in overlay and any pre-action the player had armed, then arrives at
+     exactly the same refusal.
+
+     Two distinct cases sit under one close code, and both are answered here:
+       - the session is genuinely dead: lib/sessionRevoked already probes
+         GoTrue, prompts and redirects, so this page must simply not reload
+         out from under that prompt;
+       - the session is ALIVE and the ENGINE is refusing it (its own auth
+         path broken, a rotated key, GoTrue unreachable from the box): the
+         ladder underneath keeps retrying and will reconnect the moment the
+         engine recovers. A reload adds nothing and costs the player their
+         table. This is the case nothing handled before today.
+
+     The flag is sticky for the outage and cleared only by a socket that
+     actually opens: an auth refusal followed by nine 1006s is still an auth
+     outage, and reading only the most recent close would forget that. */
+  const [engineRefusedAuth, setEngineRefusedAuth] = useState(false);
+  const engineRefusedAuthRef = useRef(false);
+  engineRefusedAuthRef.current = engineRefusedAuth;
+  useEffect(() => {
+    if (!engineLastError) return;
+    // Same predicate as lib/sessionRevoked.isEngineAuthClose. Inlined rather
+    // than imported so this page does not pull that module into the entry
+    // chunk every player downloads before first paint; the law pins the two
+    // copies as identical.
+    const isAuth =
+      engineLastError.code === 4401 || /^auth:/.test(String(engineLastError.reason || ''));
+    if (isAuth) setEngineRefusedAuth(true);
+  }, [engineLastError]);
+  useEffect(() => {
+    if (engineWsStatus === 'auth_failed') setEngineRefusedAuth(true);
+  }, [engineWsStatus]);
+
   useEffect(() => {
     if (engineWsStatus === 'connected') {
       notFoundCountRef.current = 0;
       tableClosedToastShownRef.current = false;
+      // A socket that reached OPEN is proof the engine accepted this token.
+      // Nothing weaker clears it (see the comment above).
+      setEngineRefusedAuth(false);
     }
   }, [engineWsStatus]);
 
@@ -3615,6 +3662,28 @@ export default function TablePage({
       // it every ~30s yanked the page out from under players choosing a seat
       // (observed live 2026-08-28). The socket connects when the game starts.
       if (seatFirstOpenRef.current) return;
+      /* DO NO HARM (Realtime Phase 3, 2026-09-05). The socket died for auth,
+         so a fresh page would present the same token to the same refusal and
+         land here again in twenty seconds - having discarded the felt, the
+         overlays and any armed pre-action on the way. Whichever of the two
+         auth cases this is, the reload is the wrong move: a dead session is
+         already being prompted and redirected by lib/sessionRevoked, and a
+         live session refused by the engine is recovered by the reconnect
+         ladder that is still running underneath.
+
+         Not silent, on either side. The player has the banner, which says
+         this is a sign-in problem rather than a lost connection, and the
+         platform gets `reload_suppressed` - the series that tells an on-call
+         engineer "these players cannot authenticate to a table", which is
+         the sentence nobody could say for twenty-two hours on 2026-09-03. */
+      if (engineRefusedAuthRef.current) {
+        void import('../services/clientConnectionBeacon')
+          .then((m) => m.reportConnectionEvent('reload_suppressed'))
+          .catch(() => {
+            /* telemetry never disturbs the table */
+          });
+        return;
+      }
       const KEY = 'ca_ws_autoreload_at';
       const last = Number(sessionStorage.getItem(KEY) || 0);
       if (Date.now() - last < 120_000) return;
@@ -20999,7 +21068,11 @@ export default function TablePage({
                 {/* Sits directly above the wordmark, in felt coordinates, and
                     paints over everything on the surface. See the note in
                     .table-container above for why it moved off the top rail. */}
-                <TableConnectionBanner status={engineWsStatus} isActive={isActive} />
+                <TableConnectionBanner
+                  status={engineWsStatus}
+                  isActive={isActive}
+                  authRefused={engineRefusedAuth}
+                />
                 {/* The engine's verdict on THIS seat's presence, on the same
                     line. Defers to the socket banner whenever the socket is
                     down (Dan 2026-09-04: every connection message lives on

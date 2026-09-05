@@ -56,6 +56,23 @@ count would double-report the same failure.
 
 Both carry the maintenance-break guard.
 
+## Two things CI caught, both mine
+
+**The beacon entered the entry chunk.** A static import pulled it and the
+auth-token module it needs into the bundle every player downloads _before
+first paint_ - `2 module(s) entered the entry chunk`. Telemetry about a
+broken socket must never be part of what a player waits for to see their
+first frame. It is a dynamic import now, loaded only when something has
+actually gone wrong. Verified with the real gate after a local build:
+205 modules, 155kB gz, **drift +0kB**.
+
+**Two law windows were byte counts.** `slice(i, i + 700)` and friends are
+exactly what `noFixedSizeSourceWindows` forbids - a window that goes stale
+the moment the file gains a line. They are bounded by `sliceMethod` now, and
+the strongest pin got stronger for it: within the human action method there
+may be exactly ONE arming, and within the horse method exactly two (the
+action and the check/fold degrade).
+
 ## Laws
 
 - `theClientIsHeard` - bounded cardinality and no user id in the exposition,

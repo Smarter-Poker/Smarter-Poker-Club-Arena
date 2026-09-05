@@ -23,7 +23,7 @@ import {
   actionsFleetTotal,
   alwaysOnPrometheusLines,
 } from './engineInstruments.js';
-import { sliceYamlEntry } from '../testHelpers/sourceWindow.js';
+import { sliceYamlEntry, sliceMethod } from '../testHelpers/sourceWindow.js';
 import { deriveContext, seatsAtOneTable } from '../services/TournamentBrainContext.js';
 
 const ROOT = join(__dirname, '..', '..', '..');
@@ -108,8 +108,7 @@ describe('LAW 7 - the clock measures action-to-broadcast, not the gap between ac
   );
 
   it('the human path arms the clock BEFORE performAction', () => {
-    const m = turns.indexOf('protected _handlePlayerActionInner');
-    const seg = turns.slice(m, m + 20000);
+    const seg = sliceMethod(turns, 'protected _handlePlayerActionInner');
     const arm = seg.indexOf('this.lastActionAcceptedAtMs = Date.now();');
     const act = seg.indexOf('const actionApplied = this.handController.performAction(');
     expect(arm).toBeGreaterThan(0);
@@ -121,16 +120,14 @@ describe('LAW 7 - the clock measures action-to-broadcast, not the gap between ac
   });
 
   it('a rejected action does not leave a live clock behind', () => {
-    const m = turns.indexOf('protected _handlePlayerActionInner');
-    const seg = turns.slice(m, m + 20000);
+    const seg = sliceMethod(turns, 'protected _handlePlayerActionInner');
     expect(seg).toContain('if (!actionApplied) {');
     expect(seg).toMatch(/this\.lastActionAcceptedAtMs = actClockWasArmed;/);
   });
 
   it('the horse path arms before its action and restores when nothing lands', () => {
-    const h = turns.indexOf('const horseClockWasArmed');
-    expect(h).toBeGreaterThan(0);
-    const seg = turns.slice(h, h + 4000);
+    const seg = sliceMethod(turns, 'protected scheduleHorseAction(');
+    expect(seg).toContain('const horseClockWasArmed');
     const arm = seg.indexOf('this.lastActionAcceptedAtMs = Date.now();');
     const act = seg.indexOf('handControllerRef.performAction(seat, action as any, amount)');
     expect(arm).toBeLessThan(act);
@@ -142,12 +139,13 @@ describe('LAW 7 - the clock measures action-to-broadcast, not the gap between ac
   it('the counter blocks no longer re-arm the clock after the broadcast', () => {
     // Both counter sites sit after the broadcast has gone out. If either one
     // arms the clock, the bug is back.
-    for (const marker of ['actionsTotal.inc(1, { table_id: this.tableId });']) {
-      const i = turns.indexOf(marker);
-      expect(i).toBeGreaterThan(0);
-      const after = turns.slice(i, i + 700);
-      expect(after).not.toContain('this.lastActionAcceptedAtMs = Date.now();');
-    }
+    // Bound by the method, not a byte count: within the human action method,
+    // the ONLY arming may be the one before performAction.
+    const human = sliceMethod(turns, 'protected _handlePlayerActionInner');
+    expect(human.split('this.lastActionAcceptedAtMs = Date.now();').length - 1).toBe(1);
+    const horse = sliceMethod(turns, 'protected scheduleHorseAction(');
+    // Horse arms once before the action and once before the check/fold degrade.
+    expect(horse.split('this.lastActionAcceptedAtMs = Date.now();').length - 1).toBe(2);
   });
 });
 

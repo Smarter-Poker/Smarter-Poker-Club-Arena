@@ -1,5 +1,4 @@
 import { TableLoadFailureOverlay } from '../components/table/TableLoadFailureOverlay';
-import { reportConnectionEvent } from '../services/clientConnectionBeacon';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -3527,7 +3526,11 @@ export default function TablePage({
       );
       // Phase 2 (2026-09-05): this failsafe fired all night on 2026-09-03 and
       // the platform never knew. Tell the server before the page goes.
-      reportConnectionEvent('auto_reload');
+      void import('../services/clientConnectionBeacon')
+        .then((m) => m.reportConnectionEvent('auto_reload'))
+        .catch(() => {
+          /* the page is leaving; telemetry must not hold it up */
+        });
       window.location.reload();
     }, 20_000);
     return () => window.clearTimeout(t);

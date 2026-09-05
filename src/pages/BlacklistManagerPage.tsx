@@ -220,8 +220,21 @@ export default function BlacklistManagerPage() {
     setError(null);
     try {
       const ids = expiredEntries.map((entry) => entry.id);
-      const { error: deleteError } = await supabase.from('blacklists').delete().in('id', ids);
+      /* `.select('id')` IS WHAT MAKES A REFUSAL VISIBLE. Under RLS a DELETE
+         that matches no row returns 204 with `error` null, so this button
+         reported nothing and appeared simply not to work. The row count is the
+         only evidence the exclusions actually went. */
+      const { data: cleared, error: deleteError } = await supabase
+        .from('blacklists')
+        .delete()
+        .in('id', ids)
+        .select('id');
       if (deleteError) throw deleteError;
+      if (!cleared || cleared.length === 0) {
+        throw new Error(
+          'Those exclusions were not cleared - you may not have permission to remove them.'
+        );
+      }
       await loadEntries();
     } catch (clearError) {
       setError(safeErrorMessage(clearError, 'The expired exclusions could not be cleared.'));
@@ -264,8 +277,21 @@ export default function BlacklistManagerPage() {
     setError(null);
     setLoadFailed(false);
     try {
-      const { error: deleteError } = await supabase.from('blacklists').delete().eq('id', entryId);
+      /* THE WORST SHAPE ON THIS PAGE, BEFORE THIS CHANGE. A DELETE with no
+         `.select()` returns 204 and no error when RLS matches nothing, and the
+         line below then removed the row from local state - so the exclusion
+         disappeared from the operator's screen while the player stayed excluded
+         in the database, and the optimistic filter replaced the read that would
+         have corrected it. The returned row is now the proof. */
+      const { data: removed, error: deleteError } = await supabase
+        .from('blacklists')
+        .delete()
+        .eq('id', entryId)
+        .select('id');
       if (deleteError) throw deleteError;
+      if (!removed || removed.length === 0) {
+        throw new Error('That exclusion was not removed - you may not have permission to lift it.');
+      }
       setEntries((current) => current.filter((entry) => entry.id !== entryId));
       setConfirmingRemoval(null);
     } catch (removeError) {

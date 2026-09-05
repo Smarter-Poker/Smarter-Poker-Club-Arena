@@ -1,0 +1,3 @@
+# tests/a-reward-is-paid-in-diamonds.law.test.ts
+
+Dan 2026-09-05: "NOTHING EVER 'EARNS CHIPS' ONLY EVER DIAMONDS. MAKE SURE THATS THE CASE GLOBALLY!" No reward path on the platform may credit chips. This law covers Daily Missions - the largest such path, which promised 695,783,800 chips across 32,793 assigned rows (425,819,000 of them one "claim all" from being minted, against ~121M chips in every member wallet combined) and had never paid a single one. Chips remain chips where chips are the OBJECTIVE ("Win 2,500 Chips In Pots Today") or the COST (a reroll); this law guards the crediting, not the felt.

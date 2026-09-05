@@ -141,10 +141,11 @@ describe('what the latch actually means', () => {
        latched, which is what arms the two guards at the top of this file. The
        mount read answers it directly, and earlier: a game out of the selling
        states has begun. */
-    const i = CODE.indexOf('if (!openForSeats) {');
-    expect(i, 'the mount-read latch is missing').toBeGreaterThan(-1);
-    const window = CODE.slice(i, i + 200);
-    expect(window).toContain('playHasBegunRef.current = true');
-    expect(window).toContain('setPlayHasBegun(true)');
+    expect(CODE.indexOf('if (!openForSeats) {'), 'the mount-read latch is missing').toBeGreaterThan(
+      -1
+    );
+    const latch = sliceEnclosingBlock(CODE, 'if (!openForSeats) {', 0, 1);
+    expect(latch).toContain('playHasBegunRef.current = true');
+    expect(latch).toContain('setPlayHasBegun(true)');
   });
 });

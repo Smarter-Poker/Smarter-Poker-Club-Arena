@@ -16,6 +16,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const ROOT = join(__dirname, '..', '..');
 const read = (...p: string[]) => readFileSync(join(ROOT, ...p), 'utf8');
@@ -50,13 +51,17 @@ describe('a paid seat is not a started game', () => {
   });
 
   it('the mount read latches it from the tournament row instead', () => {
-    // A player arriving at a game already in progress used to latch off the
-    // stacks. The row says it directly, and earlier.
+    /* A player arriving at a game already in progress used to latch off the
+       stacks. The row says it directly, and earlier.
+
+       Bounded by the `if` block itself, never by a byte count - a comment
+       added inside it would walk the assertions off the end of a fixed
+       window, silently, which is what tests/helpers/sourceWindow exists to
+       prevent (and what noFixedSizeSourceWindows caught me doing). */
     expect(TABLE_PAGE).toContain('if (!openForSeats) {');
-    const i = TABLE_PAGE.indexOf('if (!openForSeats) {');
-    const window = TABLE_PAGE.slice(i, i + 200);
-    expect(window).toContain('playHasBegunRef.current = true');
-    expect(window).toContain('setPlayHasBegun(true)');
+    const latch = sliceEnclosingBlock(TABLE_PAGE, 'if (!openForSeats) {', 0, 1);
+    expect(latch).toContain('playHasBegunRef.current = true');
+    expect(latch).toContain('setPlayHasBegun(true)');
   });
 
   it('canSit still opens the seat for a seat-first game', () => {

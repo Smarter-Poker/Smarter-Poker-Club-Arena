@@ -96,10 +96,10 @@ describe('a global class name has exactly one owner', () => {
 
   it('does not grow the number of class names that can leak between pages', () => {
     // A collision only MATTERS when one file declares a property another does
-    // not: that property is the one that crosses pages. 252 such classes remain
+    // not: that property is the one that crosses pages. 243 such classes remain
     // app-wide (measured 2026-09-05 on this branch merged with main - 256
     // before the scoping below, 254 after it, and 252 once main's own
-    // casino-realism rewrites landed). This is a ratchet, not a target: it may
+    // casino-realism rewrites landed; 243 once the rest of main caught up). This is a ratchet, not a target: it may
     // fall, never rise. Fixing one is two lines - scope it to its container.
     // LOWER THIS NUMBER when you fix some; never raise it to make CI pass.
     let leakable = 0;
@@ -109,6 +109,6 @@ describe('a global class name has exactly one owner', () => {
       const union = new Set(declared.flatMap((s) => [...s]));
       if ([...union].some((p) => declared.some((s) => !s.has(p)))) leakable += 1;
     }
-    expect(leakable).toBeLessThanOrEqual(252);
+    expect(leakable).toBeLessThanOrEqual(243);
   });
 });

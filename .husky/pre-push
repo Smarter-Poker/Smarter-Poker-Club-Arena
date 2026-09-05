@@ -290,9 +290,17 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   fi
 
   # 1. Merge conflict markers
+  #
+  # EXACTLY SEVEN EQUALS, NOT SEVEN OR MORE (2026-09-05). git writes the
+  # middle marker as exactly `=======`; `={7,}` also matches an ASCII rule,
+  # and docs/changelog/2026-09-05-the-cluster-boards-are-a-rolled-back-probe-
+  # harness.md landed on main carrying four 64-character rules. Every agent
+  # who merged main after it was refused a push for a conflict that does not
+  # exist, on a file they did not write. The open and close markers keep
+  # their trailing space, which is also git's exact format.
   for f in $FILES; do
     if [ -f "$f" ]; then
-      if grep -nE '^(<<<<<<< |>>>>>>> |={7,}$)' "$f" >/dev/null 2>&1; then
+      if grep -nE '^(<<<<<<< |>>>>>>> |={7}$)' "$f" >/dev/null 2>&1; then
         echo "[club-arena pre-push] BLOCKED: $f contains a merge-conflict marker"
         FAIL=1
       fi

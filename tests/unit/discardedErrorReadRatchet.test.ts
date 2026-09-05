@@ -90,7 +90,7 @@ const BASELINE = new Map<string, number>([
   ['src/services/VoiceSignalService.ts', 3],
   ['src/services/FinancialCronService.ts', 3],
   ['src/services/DisputeService.ts', 3],
-  ['src/services/DiamondService.ts', 3],
+  ['src/services/DiamondService.ts', 1],
   // 3 -> 2 on 2026-09-01: executePayout is gone, and with it the discarded
   // read it did on agent_commissions after calling execute_commission_payout.
   ['src/services/CommissionService.ts', 2],
@@ -170,7 +170,7 @@ const BASELINE = new Map<string, number>([
   ['src/pages/ProfilePage.tsx', 1],
   ['src/pages/PlayerStatsPage.tsx', 0],
   ['src/pages/MemberManagementPage.tsx', 1],
-  ['src/pages/MarketplacePage.tsx', 1],
+  ['src/pages/MarketplacePage.tsx', 0],
   ['src/pages/InvitePage.tsx', 1],
   ['src/pages/CreateUnionPage.tsx', 1],
   ['src/lib/authToken.ts', 1],

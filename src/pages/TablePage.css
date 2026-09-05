@@ -1181,6 +1181,13 @@
   z-index: 1;
   pointer-events: none;
   user-select: none;
+  /* THE BIG LINE FITS THE BOX (2026-09-05). The game + blinds row is sized in
+     container units against THIS box (see .table-brand__line--level), so a
+     narrow portrait felt (the box was 127px wide on a 1280x720 window and
+     "NLH 0.10/0.25" at 0.98rem ellipsized to "NLH 0.10/0....") shrinks the
+     type instead of cutting the blinds off. Inline-size containment only:
+     the width is explicit above, the height stays content-driven. */
+  container-type: inline-size;
 }
 
 .table-brand__logo {
@@ -1303,9 +1310,12 @@
    spreads evenly above and below. Tournament tables keep the level row as it
    was: their line 2 carries level + blinds + clock and has no room to grow. */
 .table-page:not(.table-page--tournament) .table-brand__line--level {
-  font-size: 0.98rem;
+  /* 0.98rem when the box allows it; on a narrow box the row scales with the
+     box (10.5cqw fits "NLH 0.10/0.25" with its spacing in ~95% of the width)
+     and never below 0.6rem, which is still 25% over the club line. */
+  font-size: clamp(0.6rem, 10.5cqw, 0.98rem);
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.05em;
   color: rgba(232, 238, 250, 0.72);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
 }
@@ -1436,7 +1446,7 @@
      to 7 px with the club line - the one screen Dan reads the felt on. Each
      row keeps its own step here, ~8% under its base size. */
   .table-page:not(.table-page--tournament) .table-brand__line--level {
-    font-size: 0.9rem;
+    font-size: clamp(0.6rem, 10.5cqw, 0.9rem);
   }
 
   .table-brand__line--style {

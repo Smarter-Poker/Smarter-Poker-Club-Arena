@@ -211,7 +211,7 @@ describe('the two gaps in how work reaches production', () => {
     // this repo's scheduled runs, so extra ticks only deepened the throttle.
     // A dropped tick is now caught by publish-watchdog's schedule-liveness
     // check, which dispatches the deploy directly off workflow_run.
-    expect(DEPLOY).toContain("- cron: '45 * * * *'");
+    expect(DEPLOY).toContain("- cron: '35 * * * *'"); // :35 since #3070; see deployAndPublishAreHonest
   });
 
   it('a deploy that shipped nothing is a warning, not a notice', () => {

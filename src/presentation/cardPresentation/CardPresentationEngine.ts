@@ -222,7 +222,10 @@ export class CardPresentationEngine {
     const previous = this.lanes.get(lane);
     if (previous && previous !== key) this.cancel(previous, 'superseded');
 
-    const s = this.speed();
+    // A server-paced reveal may run FASTER than spec but never slower: the
+    // engine's equity gate is a fixed wall-clock hold that does not know this
+    // client's speed. See serverPaced in types.ts.
+    const s = profile.serverPaced ? Math.min(1, this.speed()) : this.speed();
     const startedAt = this.now();
     // The flop runs its own fan, not the squeeze; the profile does not
     // describe it (see FLOP_FAN_TOTAL_MS).

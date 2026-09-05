@@ -1,18 +1,36 @@
 /**
- * RUN IT TWICE — three-run pot splitting (A9, 2026-08-20).
+ * RUN IT TWICE — resolve() closes the offer and MOVES NO MONEY (2026-09-05).
  *
- * resolve() used to gate the three-way split on `runs === 3 && board3Winner`.
- * A three-run hand whose third winner was falsy fell into the TWO-way branch
- * and divided the WHOLE pot between boards 1 and 2 — the board-three winner got
- * nothing and the other two shared a third that was never theirs. It was
- * reachable by design, not just by accident: the offer path initialises
- * `board3Winner = ''`, which is falsy.
+ * ── WHAT THIS FILE USED TO BE, AND WHY IT CHANGED ──
  *
- * The invariant these pin: however many boards resolve, the distributed parts
- * sum to the pot EXACTLY, and they go to the players who actually won a board.
+ * It pinned the A9 fix (2026-08-20): `resolve()` returned a distribution Map
+ * built by splitting `state.pot` evenly across the runs, and it had gated the
+ * three-way split on `runs === 3 && board3Winner`, so a three-run hand whose
+ * third winner was falsy paid two players a third of the pot each and the
+ * board-three winner nothing.
+ *
+ * That was a real bug in real code — and the code was never reachable. The
+ * only caller, `ServerTableEngineRunout.dealAndResolveRIT`, has always thrown
+ * the return value away, because by the time it calls `resolve()` it has
+ * already settled the hand properly: `determineWinners` per board against the
+ * LIVE pot structure, rake and BBJ deducted once, cent-exact scaling. The
+ * deleted math also said in its own comment that it treated `state.pot` as a
+ * single number and therefore could not handle side pots at all.
+ *
+ * So eight tests guarded arithmetic that could not pay anyone. They are
+ * replaced by the invariant that actually protects players: this function is
+ * not a money path, and must never become one again. If someone reinstates a
+ * distribution here, these fail.
+ *
+ * The pot-splitting laws that DO matter are pinned where the money really
+ * moves — RunItTwice.money.test.ts (conservation, single rake/BBJ across runs)
+ * and RunItTwice.parity.test.ts (per-(run, pot) shares summing to each
+ * player's credited total).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { RunItTwiceEngine } from './RunItTwiceEngine.js';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { RunItTwiceEngine, type RITEvent } from './RunItTwiceEngine.js';
 import type { DeadlineScheduler } from './DeadlineScheduler.js';
 
 const stubScheduler = {
@@ -21,16 +39,6 @@ const stubScheduler = {
   cancel() {},
 } as unknown as DeadlineScheduler;
 
-function mkEngine(maxRuns: 2 | 3 = 3) {
-  const engine = new RunItTwiceEngine(undefined, stubScheduler);
-  engine.configure('t1', { enabled: true, autoDeclineTimeout: 10, maxRuns });
-  return engine;
-}
-
-function total(d: Map<string, number>): number {
-  return Math.round([...d.values()].reduce((a, b) => a + b, 0) * 100) / 100;
-}
-
 function armThreeRun(engine: RunItTwiceEngine, pot: number) {
   engine.offer('t1', 't1:1', 'A', ['A', 'B', 'C'], pot);
   engine.chooserDecides('t1', 'A', 3);
@@ -38,92 +46,76 @@ function armThreeRun(engine: RunItTwiceEngine, pot: number) {
   engine.accept('t1', 'C');
 }
 
-describe('RIT three-run split (A9)', () => {
+describe('resolve() closes the offer', () => {
   let engine: RunItTwiceEngine;
+  let events: RITEvent[];
+
   beforeEach(() => {
-    engine = mkEngine(3);
+    events = [];
+    engine = new RunItTwiceEngine((e) => events.push(e), stubScheduler);
+    engine.configure('t1', { enabled: true, autoDeclineTimeout: 10, maxRuns: 3 });
   });
 
-  it('splits three ways when all three boards resolve', () => {
+  it('records who took each run', () => {
     armThreeRun(engine, 300);
-    const d = engine.resolve('t1', 'A', 'B', 'C');
-    expect(d.get('A')).toBe(100);
-    expect(d.get('B')).toBe(100);
-    expect(d.get('C')).toBe(100);
-    expect(total(d)).toBe(300);
+    engine.resolve('t1', 'A', 'B', 'C');
+    const resolved = events.find((e) => e.type === 'RIT_RESOLVED');
+    expect(resolved, 'resolving must announce RIT_RESOLVED').toBeTruthy();
+    expect(resolved!.board1Winner).toBe('A');
+    expect(resolved!.board2Winner).toBe('B');
+    expect(resolved!.board3Winner).toBe('C');
   });
 
-  it('THE A9 BUG: a missing third winner no longer becomes a two-way split', () => {
+  it('releases the offer so it cannot outlive its hand', () => {
     armThreeRun(engine, 300);
-    // board3Winner falsy — the old code silently paid A and B 150 each, handing
-    // them a third of the pot they had not won. Each board is now worth its own
-    // third, and the undecidable third is chopped among the contenders instead.
-    const d = engine.resolve('t1', 'A', 'B', '');
-    expect(d.get('A')).not.toBe(150);
-    expect(d.get('B')).not.toBe(150);
-    expect(total(d)).toBe(300);
-    // A and B keep their own board's third, plus an equal chop of board 3's.
-    // C contested board 3 and so shares that chop — but wins nothing else.
-    expect(d.get('A')).toBeCloseTo(100 + 100 / 3, 1);
-    expect(d.get('C')).toBeCloseTo(100 / 3, 1);
+    expect(engine.getState('t1'), 'the offer is live before resolving').toBeTruthy();
+    engine.resolve('t1', 'A', 'B', 'C');
+    expect(engine.getState('t1'), 'the offer must be cleared by resolve').toBeNull();
+    // getChosenRuns falls back to 1 once there is no accepted offer, which is
+    // what stops a stale offer from claiming consent it no longer has.
+    expect(engine.getChosenRuns('t1')).toBe(1);
   });
 
-  it('conserves the pot exactly when it does not divide evenly', () => {
-    armThreeRun(engine, 100);
-    const d = engine.resolve('t1', 'A', 'B', 'C');
-    expect(total(d)).toBe(100);
-    // 100/3 = 33.33 each, remainder rides on the last share.
-    expect(d.get('A')).toBe(33.33);
-    expect(d.get('B')).toBe(33.33);
-    expect(d.get('C')).toBe(33.34);
+  it('is safe on a table with no offer', () => {
+    expect(() => engine.resolve('nope', 'A', 'B')).not.toThrow();
+    expect(events.find((e) => e.type === 'RIT_RESOLVED')).toBeFalsy();
   });
 
-  it('accumulates when one player wins more than one board', () => {
+  /**
+   * THE LAW. Everything above is bookkeeping; this is the part that protects
+   * players. `resolve()` returns nothing, hands out nothing, and knows nothing
+   * about pots — because the settlement has already happened by the time it
+   * runs, and a second opinion about who gets paid is not a safety net, it is
+   * a disagreement waiting to be shipped.
+   */
+  it('returns nothing and pays nobody', () => {
     armThreeRun(engine, 300);
-    const d = engine.resolve('t1', 'A', 'A', 'C');
-    expect(d.get('A')).toBe(200);
-    expect(d.get('C')).toBe(100);
-    expect(total(d)).toBe(300);
+    const returned = engine.resolve('t1', 'A', 'B', 'C') as unknown;
+    expect(returned, 'resolve must not hand back a distribution').toBeUndefined();
+
+    const resolved = events.find((e) => e.type === 'RIT_RESOLVED')!;
+    expect(
+      Object.keys(resolved).some((k) => /distribution|payout|award|pot\d/i.test(k)),
+      'RIT_RESOLVED must not carry money'
+    ).toBe(false);
   });
 
-  it('gives the whole pot to a player who wins all three', () => {
-    armThreeRun(engine, 300);
-    const d = engine.resolve('t1', 'A', 'A', 'A');
-    expect(d.get('A')).toBe(300);
-    expect(total(d)).toBe(300);
-  });
-
-  it('chops the whole pot among contenders when NO board resolves', () => {
-    armThreeRun(engine, 300);
-    const d = engine.resolve('t1', '', '', '');
-    // Nobody won a board, so nobody is paid for one — but the chips still
-    // belong to the three players who were all-in for them.
-    expect(total(d)).toBe(300);
-    expect(d.get('A')).toBe(100);
-    expect(d.get('B')).toBe(100);
-    expect(d.get('C')).toBe(100);
-  });
-});
-
-describe('RIT two-run split is unchanged', () => {
-  it('halves the pot between two different winners', () => {
-    const engine = mkEngine(2);
-    engine.offer('t1', 't1:1', 'A', ['A', 'B'], 101);
-    engine.chooserDecides('t1', 'A', 2);
-    engine.accept('t1', 'B');
-    const d = engine.resolve('t1', 'A', 'B');
-    expect(total(d)).toBe(101);
-    expect(d.get('A')).toBe(50.5);
-    expect(d.get('B')).toBe(50.5);
-  });
-
-  it('gives the whole pot to a player who wins both boards', () => {
-    const engine = mkEngine(2);
-    engine.offer('t1', 't1:1', 'A', ['A', 'B'], 300);
-    engine.chooserDecides('t1', 'A', 2);
-    engine.accept('t1', 'B');
-    const d = engine.resolve('t1', 'A', 'A');
-    expect(d.get('A')).toBe(300);
-    expect(total(d)).toBe(300);
+  it('the engine holds no pot-splitting arithmetic at all', () => {
+    /**
+     * A source law, deliberately. The runtime assertions above pass just as
+     * well against a function that computes a distribution and forgets to
+     * return it — which is exactly the shape this file exists to keep out.
+     * Money for a run-it-twice hand has ONE source (dealAndResolveRIT); this
+     * file must not grow a second.
+     */
+    const src = readFileSync(join(__dirname, 'RunItTwiceEngine.ts'), 'utf8');
+    const code = src
+      .replace(/\/\*[\s\S]*?\*\//g, '') // block comments
+      .replace(/\/\/.*$/gm, ''); // line comments
+    expect(code, 'no pot division in the offer engine').not.toMatch(/state\.pot\s*\//);
+    expect(code, 'no per-board pot arithmetic in the offer engine').not.toMatch(
+      /pot1|pot2|pot3|dealDualBoards/
+    );
+    expect(code, 'the offer engine builds no distribution').not.toMatch(/const\s+distribution\s*=/);
   });
 });

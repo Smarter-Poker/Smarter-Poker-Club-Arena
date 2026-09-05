@@ -49,7 +49,8 @@
  *         rebuilds until break_ends_at. This is the part that cannot be done
  *         in memory and is the entire reason the break is persisted.
  *
- *   :00   end(). Every engine resumes on the hour, together.
+ *   :00   end(). The clocks are thawed, then every engine resumes on the
+ *         hour - in waves across the first ~10s, see RESUME_WAVES.
  *
  * ─── WHY :55, AND WHY EVERY HOUR ───────────────────────────────────────────
  *
@@ -119,6 +120,13 @@ export interface PausableTableEngine {
    */
   isBetweenHands(): boolean;
   isRunning(): boolean;
+  /**
+   * Cash or tournament. Optional: an engine that does not say is treated as
+   * cash. Read ONLY to interleave the two kinds across the resume waves
+   * (2026-09-05) so that no wave is 90 tournament tables and the next 90
+   * cash tables - never to give either kind a different deal.
+   */
+  isTournament?(): boolean;
 }
 
 export type MaintenanceBreakPhase = 'last_hand' | 'counting_down';
@@ -160,6 +168,22 @@ export interface MaintenanceBreakOutcome {
   readyForRestartAtMs: number | null;
   tablesResumed: number;
   thawOk: boolean | null;
+}
+
+/** /health: `maintenance.resumeWaves`. Null when no rollout has run since the last announcement. */
+export interface ResumeWavesProgress {
+  /** Waves in this rollout. */
+  total: number;
+  /** Waves fired so far (wave 0 counts as soon as end() has run it). */
+  done: number;
+  /** Epoch ms when wave 0 fired. */
+  startedAt: number;
+  /** Epoch ms when the last wave fired, or null while waves are still due. */
+  finishedAt: number | null;
+  /** Tables in the rollout, and how many have received their resume. */
+  tables: number;
+  tablesResumed: number;
+  gapMs: number;
 }
 
 export interface MaintenanceBreakDeps {
@@ -238,20 +262,55 @@ export class MaintenanceBreak {
   static readonly MIN_REMAINING_FOR_RESTART_MS = 3 * 60 * 1000;
 
   /**
-   * PHASE 3 (2026-09-02): the resume is staggered, not a single burst.
+   * THE RESUME ARRIVES IN INSTALLMENTS (2026-09-05; supersedes the phase 3
+   * 25-per-750ms stagger of 2026-09-02).
    *
-   * resumeEveryEngine used to wake every table in one synchronous loop, so at
-   * :00 all ~250 dealing loops hit a 2-core database in the same instant -
-   * loading seats, blinds and stacks - which is a large part of the 10-20
-   * minute recovery Dan watched ("100% of the time says reconnecting to the
-   * table"). The first batch resumes immediately (so a small fleet, and every
-   * test fleet, is fully up at once); the rest roll out RESUME_STAGGER_MS
-   * apart. Every table still receives exactly one resumeFromMaintenance; the
-   * only change is that some wake a few seconds later, gentler on the database
-   * than the herd, never harsher.
+   * The engine is ONE core, and horse Monte Carlo was 90% of it when it was
+   * profiled (EquityLoadGovernor.ts). At 04:00 UTC on 2026-09-05 the break
+   * ended with 318 cash and 402 tournament tables parked; the core went from
+   * 8% to saturated inside thirty seconds of :00 and stayed there, /health
+   * stopped answering, and the container was replaced at 04:07 (instance
+   * 1-40d0cff4 -> 1-c3b8997e, same build, MemAvailable +700MB the moment
+   * the process died). The DATABASE thaw (fn_thaw_platform, phase 4) is
+   * already in installments and was fine; the ENGINE side still woke the
+   * fleet in a fixed 25-table batch every 750ms, in Map insertion order -
+   * which after a restart is adoption order, tournaments first.
+   *
+   * Now the fleet is dealt into RESUME_WAVES waves, each about
+   * ceil(total / RESUME_WAVES) tables, RESUME_WAVE_GAP_MS apart. The whole
+   * spread is (RESUME_WAVES - 1) * RESUME_WAVE_GAP_MS = 10.5s, well inside
+   * the :00 minute. Wave 0 fires synchronously inside end().
+   *
+   * "TOGETHER" (CLAUDE.md 13: "every table resumes together at :00") is read
+   * as "within the same few seconds of the same minute", not "in the same
+   * event-loop tick". The same-tick reading is what saturated the core; the
+   * clocks are unaffected either way because fn_thaw_platform shifted every
+   * deadline by the frozen duration BEFORE wave 0, so a table woken in wave
+   * 7 has lost nothing it could be judged on (see resumeEveryEngine).
+   *
+   * ORDER. Within each kind (cash, tournament) tables are sorted by a stable
+   * hash of the table id, and the two kinds are dealt round-robin into the
+   * waves, so every wave carries its share of each. The hash makes the order
+   * independent of adoption order and of anything about who is seated.
+   * "Humans first" was considered and REJECTED under CLAUDE.md 10.5: ordering
+   * a queue by is_horse gives a horse-only table a later wake, and a
+   * spectator watching two tables would learn which one is horses from
+   * which came back first - the same tell 10.5 names for the rebuy pause,
+   * and the same shape as the humansSeatedTotal drain gate Dan had replaced
+   * with handsInFlightTotal. Timing is part of the treatment.
+   *
+   * A wave never carries fewer than RESUME_WAVE_MIN_TABLES, so a small
+   * fleet (and every test fleet) is fully up before end() returns, exactly
+   * as under phase 3. tests/the-break-clocks-agree.law.test.ts pins the
+   * spread; MaintenanceBreak.test.ts pins the order, the gap, the /health
+   * block and that one throwing table never holds a wave.
    */
-  static readonly RESUME_BATCH_SIZE = 25;
-  static readonly RESUME_STAGGER_MS = 750;
+  static readonly RESUME_WAVES = 8;
+  static readonly RESUME_WAVE_GAP_MS = 1500;
+  static readonly RESUME_WAVE_MIN_TABLES = 25;
+  /** The whole rollout, first wave to last, for the law pin and /health. */
+  static readonly RESUME_SPREAD_MS =
+    (MaintenanceBreak.RESUME_WAVES - 1) * MaintenanceBreak.RESUME_WAVE_GAP_MS;
 
   private phase: MaintenanceBreakPhase | 'idle' = 'idle';
   private announcedAt = 0;
@@ -261,8 +320,14 @@ export class MaintenanceBreak {
   private unparkedAtCountdown = 0;
   private peakUnparked = 0;
   private readyForRestartAtMs: number | null = null;
-  /** Bumped each break; a scheduled resume batch from a superseded break is dropped. */
+  /** Bumped each break; a scheduled resume wave from a superseded break is dropped. */
   private resumeToken = 0;
+  /**
+   * The rollout in progress (or the last one, until the next break is
+   * announced), published on /health as `maintenance.resumeWaves` so a
+   * :00:05 curl can say which wave the fleet is on.
+   */
+  private resumeWaves: ResumeWavesProgress | null = null;
   private breakEndsAt = 0;
   private reason = 'Scheduled Engine Maintenance';
 
@@ -506,6 +571,9 @@ export class MaintenanceBreak {
     this.phase = 'last_hand';
     this.announcedAt = this.now();
     this.breakEndsAt = 0;
+    // The previous rollout's record has been readable on /health for an
+    // hour; the next one starts from nothing.
+    this.resumeWaves = null;
     // Freeze the engine's own sweeps from the announcement, not the countdown:
     // a horse standing up at :54 under a "Last Hand" banner is the same tell
     // as one standing up at :56, and nothing these sweeps do cannot wait.
@@ -655,15 +723,15 @@ export class MaintenanceBreak {
     /**
      * THE BREAK IS OVER BEFORE THE FIRST TABLE WAKES (review fix, 2026-09-03).
      *
-     * The staggered batches (phase 3) fire RESUME_STAGGER_MS apart and each
-     * one checks `this.phase === 'idle'` so a batch left over from a break
+     * The resume waves fire RESUME_WAVE_GAP_MS apart and each
+     * one checks `this.phase === 'idle'` so a wave left over from a break
      * that has since been superseded cannot wake a table the next break is
      * holding. That check used to be satisfied only AFTER `recordOutcome`
      * resolved, and recordOutcome is a database insert made at :00 - the one
      * instant the database is guaranteed to be at its slowest (statement
      * timeouts of up to 8s are routine there). An insert slower than 750ms
-     * would have dropped batch 1; one slower than 10s would have dropped all
-     * fourteen batches of a 355-table fleet, and a dropped table cannot
+     * would have dropped the second wave; one slower than 10s would have dropped
+     * every later wave of a 355-table fleet, and a dropped table cannot
      * recover: the pause safety timeout wakes it, the loop's own gate sees
      * `maintenancePaused` still set and parks it again, forever. The 23:55
      * restart's insert took 170ms, which is why 355 tables came back; that
@@ -680,8 +748,8 @@ export class MaintenanceBreak {
     const resumed = this.resumeEveryEngine();
     outcome.tablesResumed = resumed;
     // The break's own scorecard line. Never allowed to delay or fail the
-    // resume: the first batch is already running and the rest are scheduled
-    // by the time this is awaited, and nothing below gates them.
+    // resume: wave 0 has already fired and the rest are scheduled by the
+    // time this is awaited, and nothing below gates them.
     if (this.deps.recordOutcome) {
       try {
         await this.deps.recordOutcome(outcome);
@@ -722,7 +790,7 @@ export class MaintenanceBreak {
   }
 
   private resumeEveryEngine(): number {
-    // Collect the tables this break is responsible for resuming, in order.
+    // Collect the tables this break is responsible for resuming.
     // EVERY table gets resumeFromMaintenance(), including one another
     // authority is still holding. This used to `continue` past those, and
     // that stranded them PERMANENTLY (2026-09-03):
@@ -761,43 +829,124 @@ export class MaintenanceBreak {
       }
     }
 
+    const waves = MaintenanceBreak.planResumeWaves(resumable);
     const token = ++this.resumeToken;
-    const B = MaintenanceBreak.RESUME_BATCH_SIZE;
+    const progress: ResumeWavesProgress = {
+      total: waves.length,
+      done: 0,
+      startedAt: this.now(),
+      finishedAt: null,
+      tables: resumable.length,
+      tablesResumed: 0,
+      gapMs: MaintenanceBreak.RESUME_WAVE_GAP_MS,
+    };
+    this.resumeWaves = progress;
 
-    const resumeOne = (tableId: string, engine: PausableTableEngine): void => {
-      try {
-        engine.resumeFromMaintenance();
-      } catch (err) {
-        // One table that refuses to resume must not strand the rest.
-        console.warn(`[MaintenanceBreak] could not resume table ${tableId}`, err);
+    const fireWave = (index: number): void => {
+      for (const [tableId, engine] of waves[index]) {
+        try {
+          engine.resumeFromMaintenance();
+        } catch (err) {
+          // One table that refuses to resume must not strand the rest of its
+          // wave, and never the waves behind it.
+          console.warn(`[MaintenanceBreak] could not resume table ${tableId}`, err);
+        }
+        progress.tablesResumed++;
       }
+      progress.done = index + 1;
+      if (progress.done === progress.total) progress.finishedAt = this.now();
     };
 
-    // Batch 0 resumes NOW, synchronously: a small fleet (and every test fleet)
-    // is fully up before end() returns, and there is no visible stagger below
-    // the batch size.
-    for (const [id, engine] of resumable.slice(0, B)) resumeOne(id, engine);
+    // Wave 0 resumes NOW, synchronously: a small fleet (and every test fleet)
+    // is fully up before end() returns, and there is no visible spread below
+    // RESUME_WAVE_MIN_TABLES.
+    if (waves.length > 0) fireWave(0);
 
-    // The remaining batches roll out RESUME_STAGGER_MS apart, in the
-    // background. A batch from a superseded break (resumeToken changed) is
+    // The remaining waves roll out RESUME_WAVE_GAP_MS apart, in the
+    // background. A wave from a superseded break (resumeToken changed) is
     // dropped rather than waking a table the next break is holding.
-    const rest = resumable.slice(B);
-    for (let i = 0; i < rest.length; i += B) {
-      const batch = rest.slice(i, i + B);
-      const delay = (i / B + 1) * MaintenanceBreak.RESUME_STAGGER_MS;
+    for (let w = 1; w < waves.length; w++) {
       this.setTimer(() => {
-        // Drop a stale batch: a newer break has superseded this rollout
+        // Drop a stale wave: a newer break has superseded this rollout
         // (resumeToken bumped), or a break is once again active and holding
         // these tables (phase left idle). Waking them now would deal a table
         // back into a break it is supposed to be paused in.
         if (this.resumeToken !== token || this.phase !== 'idle') return;
-        for (const [id, engine] of batch) resumeOne(id, engine);
-      }, delay);
+        fireWave(w);
+      }, w * MaintenanceBreak.RESUME_WAVE_GAP_MS);
+    }
+
+    if (waves.length > 1) {
+      console.log(
+        `[MaintenanceBreak] resuming ${resumable.length} table(s) in ${waves.length} wave(s), ` +
+          `${MaintenanceBreak.RESUME_WAVE_GAP_MS}ms apart (${
+            (waves.length - 1) * MaintenanceBreak.RESUME_WAVE_GAP_MS
+          }ms first to last).`
+      );
     }
 
     // Every table in `resumable` receives exactly one resume; the count is
-    // honest at call time even though the later batches wake shortly after.
+    // honest at call time even though the later waves wake shortly after.
     return resumable.length;
+  }
+
+  /**
+   * Deal the fleet into waves. Pure and exported for the tests.
+   *
+   * - Wave count: ceil(total / RESUME_WAVE_MIN_TABLES), capped at
+   *   RESUME_WAVES. 3 tables = 1 wave; 60 = 3; 720 = 8 (90 per wave).
+   * - Order: within each kind (cash / tournament), by a stable FNV-1a hash of
+   *   the table id, ties by id. Nothing about the seats is consulted.
+   * - Interleave: table k of each kind goes to wave k mod waves, so every
+   *   wave carries its share of both kinds and no wave is all tournaments.
+   *
+   * THE ORDER DOES NOT BURN A CLOCK. `end()` computes frozenSeconds as
+   * now - breakStartedAt and awaits fn_thaw_platform BEFORE wave 0. That
+   * shift is uniform and keyed to the freeze start, so it is the same
+   * whether a table wakes in wave 0 or wave 7. Every deadline it moves
+   * (sit_out_at, waitlist holds, add-on and rebuy windows, bounty reveals,
+   * bomb-pot due, tournament level_started_at) is judged at minute scale;
+   * the extra 0-10.5s a late wave adds is the same order as the loop's own
+   * between-hand sleep and smaller than the 21s the phase 3 stagger already
+   * imposed on a 720-table fleet without a per-table shift. A per-table
+   * second shift would be one database write per table at :00 - the herd
+   * this whole module exists to avoid - so it is deliberately not done.
+   */
+  static planResumeWaves<E extends Pick<PausableTableEngine, 'isTournament'>>(
+    tables: ReadonlyArray<[string, E]>
+  ): Array<Array<[string, E]>> {
+    if (tables.length === 0) return [];
+    const waves = Math.max(
+      1,
+      Math.min(
+        MaintenanceBreak.RESUME_WAVES,
+        Math.ceil(tables.length / MaintenanceBreak.RESUME_WAVE_MIN_TABLES)
+      )
+    );
+    const byKey = (a: [string, E], b: [string, E]) => {
+      const ha = fnv1a(a[0]);
+      const hb = fnv1a(b[0]);
+      if (ha !== hb) return ha - hb;
+      return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;
+    };
+    const cash: Array<[string, E]> = [];
+    const tournament: Array<[string, E]> = [];
+    for (const t of tables) {
+      let isTournament = false;
+      try {
+        isTournament = t[1].isTournament?.() === true;
+      } catch {
+        /* an engine that cannot say is cash for ordering purposes */
+      }
+      (isTournament ? tournament : cash).push(t);
+    }
+    cash.sort(byKey);
+    tournament.sort(byKey);
+    const out: Array<Array<[string, E]>> = Array.from({ length: waves }, () => []);
+    for (const kind of [cash, tournament]) {
+      kind.forEach((t, k) => out[k % waves].push(t));
+    }
+    return out;
   }
 
   /**
@@ -982,8 +1131,19 @@ export class MaintenanceBreak {
       unparkedTables: unparked.length,
       readyForRestart: this.readyForRestart(),
       reason: this.reason,
+      resumeWaves: this.resumeWaves,
     };
   }
+}
+
+/** FNV-1a, 32-bit. A stable key for the resume order that owes nothing to adoption order. */
+function fnv1a(str: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
 }
 
 /**

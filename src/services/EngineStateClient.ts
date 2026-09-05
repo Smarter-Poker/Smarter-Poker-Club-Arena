@@ -20,6 +20,7 @@
  * tested with jsdom. The React binding lives in hooks/useEngineTableState.
  */
 
+import { noteServerTime } from '../lib/serverClock';
 import jsonPatch from 'fast-json-patch';
 import { engineSocketMux, isMuxEnabled, CLOSE_MUX_SUPERSEDED } from './EngineSocketMux';
 import type { Operation } from 'fast-json-patch';
@@ -61,6 +62,8 @@ export interface ServerEventMessage {
    * and recorded fixtures omit it.
    */
   seq?: number;
+  /** Engine clock at send time (live or replay). See lib/serverClock. */
+  ts?: number;
   payload: Record<string, unknown>;
 }
 /**
@@ -595,6 +598,8 @@ export class EngineStateClient {
       return;
     }
     if (msg.type === 'PING') {
+      // The engine's clock rides the keepalive; see lib/serverClock.
+      noteServerTime(msg.ts);
       // Keepalive never queues — answering late defeats its purpose.
       try {
         this.ws?.send(JSON.stringify({ type: 'PONG', ts: msg.ts }));
@@ -626,6 +631,10 @@ export class EngineStateClient {
     while (this.inbox.length > 0) {
       const msg = this.inbox.shift()!;
       if (msg.type === 'EVENT') {
+        // BBJ build plan phase 1: every EVENT envelope carries the engine's
+        // clock at send time. Noted BEFORE dispatch so a listener that
+        // judges freshness (the jackpot gate) compares engine to engine.
+        noteServerTime((msg as { ts?: number }).ts);
         // Seq-based de-duplication (0/absent = legacy frame, always passes).
         const seq = (msg as { seq?: number }).seq;
         if (typeof seq === 'number' && seq > 0) {

@@ -164,10 +164,10 @@ import { roomService, type RoomMessage } from '../services/RoomService';
 import { HydraService } from '../services/HydraService';
 import TableChat from '../components/table/TableChat';
 import { ChatBubble, bubbleForSeat, useSeatChatBubbles } from '../components/table/ChatBubble';
+import { useSeatAddOnBubbles } from '../components/table/AddOnBubble';
 import { useTableVoice } from '../hooks/useTableVoice';
 import { holeCardCountFor } from '../lib/holeCardCount';
 import { shouldAnnounceBbjHit } from '../lib/bbjHitOnce';
-import BBJHitNotification from '../components/bbj/BBJHitNotification';
 import { type InsuranceOffer } from '../components/table/InsuranceModal';
 import { ThrowAnimationContainer } from '../components/table/ThrowAnimation';
 import { useTableEnvironment } from '../hooks/useTableEnvironment';
@@ -312,8 +312,12 @@ import { useFrameBudgetMonitor } from '../hooks/useFrameBudgetMonitor';
 // Bible V8 §11: 4-Corner Table HUD Components
 import { TableHUD } from '../components/table/TableHUD';
 import { TournamentLobbyModal } from '../components/table/TournamentLobbyModal';
+import { MustMoveLobbyModal } from '../components/table/MustMoveLobbyModal';
+import { CashClusterHUD } from '../components/table/CashClusterHUD';
 import TournamentInfoPanel from '../components/tournament/TournamentInfoPanel';
 import HeroHubPanel from '../components/table/HeroHubPanel';
+import { CASH_TEMPLATES } from '../config/cashGames';
+import HeroVpipTracker from '../components/table/HeroVpipTracker';
 import { TournamentHUD } from '../components/tournament/TournamentHUD';
 import { PreviousHandCard } from '../components/table/PreviousHandCard';
 import { HandDetailModal } from '../components/table/HandDetailModal';
@@ -373,6 +377,8 @@ const RANK_WORD = (r: string): string =>
   })[String(r).toUpperCase()] ?? String(r).toUpperCase();
 import { normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
 import { getAnimationSpeed } from '../utils/animationSpeed';
+import { formatChipAward } from '../utils/format';
+import { bountyWinnersOf } from '../utils/bountyBroadcast';
 import { formatPopupText } from '../utils/popupStyle';
 import { ActionErrorToast, ActionErrorData } from '../components/table/ActionErrorToast';
 import { TableModalsLayer } from '../components/table/TableModalsLayer';
@@ -551,6 +557,33 @@ interface TableState {
   bombPotNextAt: number | null;
   /** 2026-08-29: seats a due-but-held bomb is waiting for. Null = not waiting. */
   bombPotWaitingFor: number | null;
+  /**
+   * THE REGULAR ANTE (Dan 2026-09-04): chips per posting, 0 when the table
+   * runs none, and who posts it. Printed on the felt beside the blinds.
+   */
+  ante: number;
+  anteMode: 'per_player' | 'big_blind' | null;
+  /**
+   * THE GAME STYLE (Dan 2026-09-04): Classic / Action / Madness for a table
+   * that belongs to a templated cash game, printed under the blinds. Null for
+   * a hand-made table, a fleet table and every tournament.
+   */
+  gameStyle: string | null;
+  /**
+   * THE MUST-MOVE GAME this table belongs to (Operation Table Stakes), or
+   * null. Drives the Must Move box in the upper-right corner and the lobby
+   * behind it (Dan 2026-09-05).
+   */
+  clusterId: string | null;
+  /**
+   * THE VPIP FLOOR (Dan 2026-09-05): "IF THEY HAVE AN ANTE OR VPIP
+   * REQUIREMENT THAT SHOULD ALSO BE ON THE TABLE." The career VPIP a seat must
+   * keep (tables.maintain_percent_min) on a nit-game table, and the window it
+   * is judged over. Null when the table has no floor. Printed for everyone -
+   * the hero's tracker shows their own number; this is the rule of the game.
+   */
+  vpipFloor: number | null;
+  vpipWindow: number | null;
   /**
    * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant THIS hand is played
    * as — differs from gameType on a variant-override bomb pot (e.g. a PLO4
@@ -843,6 +876,15 @@ interface TablePageProps {
     raiseBounds?: string;
     /** Hero's current stack, for the aggregated session view. */
     heroStack?: number;
+    /**
+     * MUST-MOVE (Dan 2026-09-05): the hero's chair went to another table of
+     * the same game. An embedded instance cannot navigate - that opened a
+     * SECOND tab for the new table and left the old one behind - so it
+     * reports the destination and the container re-points THIS tab at it.
+     * Never a table switch: the hero's own table moved under them (the
+     * no-auto-table-switch law is about activeIndex, which this leaves alone).
+     */
+    movedToTableId?: string;
     /** Hero is sitting out at this table (drives the long-press menu's
      *  Sit Out / I'm Back label and the sit-out-everywhere control). */
     sittingOut?: boolean;
@@ -1052,11 +1094,13 @@ const ASK_TO_SHOW_ON_UNCONTESTED_WIN = false;
  * is cosmetic, "NaN/NaN" reads as a broken table.
  */
 function formatBlindPair(small: unknown, big: unknown): string {
-  const one = (v: unknown): string => {
-    const n = Number(v);
-    return Number.isFinite(n) ? String(n) : String(v ?? '?');
-  };
-  return `${one(small)}/${one(big)}`;
+  return `${formatChipFigure(small)}/${formatChipFigure(big)}`;
+}
+
+/** One blind-sized figure, printed the way the blinds are (see formatBlindPair). */
+function formatChipFigure(v: unknown): string {
+  const n = Number(v);
+  return Number.isFinite(n) ? String(n) : String(v ?? '?');
 }
 
 /**
@@ -1348,6 +1392,10 @@ export default function TablePage({
    * see the pre-broadcast snapshot and stamp the same seat twice.
    */
   const koSeenRef = useRef<Set<string>>(new Set());
+  /** Who was in the roster on the previous roster change. Only used to spot
+   *  a player COMING BACK (absent, then present), which is the one event that
+   *  releases their `koSeenRef` key. See the roster effect below. */
+  const rosterIdsRef = useRef<Set<string>>(new Set());
   /**
    * WHERE EVERY PLAYER LAST SAT, and the reason this exists.
    *
@@ -2012,6 +2060,12 @@ export default function TablePage({
       bombPotIn: null,
       bombPotNextAt: null,
       bombPotWaitingFor: null,
+      ante: 0,
+      anteMode: null,
+      gameStyle: null,
+      clusterId: null,
+      vpipFloor: null,
+      vpipWindow: null,
       handVariant: null,
       boardStage: 'preflop',
       engineStage: 'preflop',
@@ -2385,6 +2439,8 @@ export default function TablePage({
         bombPotIn: mapped.bombPotIn,
         bombPotNextAt: mapped.bombPotNextAt,
         bombPotWaitingFor: mapped.bombPotWaitingFor,
+        ante: mapped.ante,
+        anteMode: mapped.anteMode,
         handVariant: mapped.handVariant,
         boardStage: nextStage,
         engineStage: mapped.boardStage,
@@ -2861,8 +2917,10 @@ export default function TablePage({
   const spawnPotWinFloat = useCallback(
     (fromX: number, fromY: number, toX: number, toY: number, amount: number) => {
       if (!(amount > 0)) return;
-      const label =
-        '+' + (amount >= 1 ? Math.round(amount).toLocaleString('en-US') : amount.toFixed(2));
+      // EXACT TO THE CENT (knockout audit 2026-09-04). This used to be
+      // Math.round() for anything >= 1, so a 7.50 bounty floated up as "+8"
+      // beside a seat delta that said "+7.50". One formatter for both now.
+      const label = formatChipAward(amount);
       const id = ++potWinFloatIdRef.current;
       setPotWinFloats((prev) => [...prev, { id, fromX, fromY, toX, toY, label }]);
       // Self-clean after the CSS animation (2.2s) has fully played out.
@@ -5537,17 +5595,15 @@ export default function TablePage({
   // (tableSessionDate removed 2026-08-26 — item 5 dropped the date from the
   // felt masthead, and nothing else read it.)
 
-  /* The bottom-right hit notification (Dan 2026-08-26). Null when nothing is
-     celebrating. `key` remounts the card if a second jackpot lands while the
-     first is still up, so the new one plays its own intro instead of
-     inheriting a card mid-outro. */
-  const [bbjHitNotice, setBbjHitNotice] = useState<{
-    key: string;
-    winnerName: string;
-    amount: number;
-    tableName: string;
-    tableId: string;
-  } | null>(null);
+  /* The bottom-right hit notification (Dan 2026-08-26) no longer lives here.
+     BBJ audit 2026-09-05: with up to four TablePages mounted and the inactive
+     ones display:none, the first instance to consume BBJ_HIT_GLOBAL marked the
+     hit seen and rendered the card into a hidden slot - the visible table
+     showed nothing. The card is now rendered ONCE by BBJHitAnnouncer, mounted
+     in PersistentTableLayer beside the container (the same reasoning that put
+     PortraitLock there). This page still PRODUCES the event: from the pool-row
+     Realtime subscription below and from the engine's bbj_hit_global socket
+     event. */
 
   // FIX 128: BBJ Celebration overlay state — triggered by server bbj_hit + bbj_payout_complete events
   const [showBBJCelebration, setShowBBJCelebration] = useState(false);
@@ -6298,13 +6354,31 @@ export default function TablePage({
         reportError(error, 'TablePage.effective_buyin_reread');
         return;
       }
-      const d = (data ?? null) as { min?: unknown; floor_applied?: unknown } | null;
+      const d = (data ?? null) as {
+        min?: unknown;
+        floor_applied?: unknown;
+        barred_seconds?: unknown;
+      } | null;
+      /* BOOTED FOR LOW VPIP (Dan 2026-09-05): "THEY CAN'T JOIN THAT GAME
+         AGAIN FOR 2 HOURS." The door would refuse the buy-in anyway; the
+         sheet closes and says so first, so nobody drags a slider for nothing. */
+      const barredSecs = Number(d?.barred_seconds ?? 0);
+      if (barredSecs > 0) {
+        setShowBuyInModal(false);
+        toast.warning(
+          cashBuyInRefusalText(`VPIP_BARRED:${Math.ceil(barredSecs)}`) ??
+            'You Cannot Rejoin This Game Yet'
+        );
+        return;
+      }
       const floorMin = Number(d?.min ?? 0);
       setCashoutMinBuyIn(d?.floor_applied === true && floorMin > 0 ? floorMin : 0);
     })();
     return () => {
       live = false;
     };
+    // `toast` is the provider's stable object; the law test pins these three.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showBuyInModal, tableId, userId]);
 
   // Handle cashier add chips (deducts from wallet, adds to table stack)
@@ -6989,6 +7063,13 @@ export default function TablePage({
   const seatChatBubbles = useSeatChatBubbles(chatMessages, seatOwnerIds, {
     enabled: socialFeaturesAllowed && !isChatMuted,
     speakingPlayerIds,
+  });
+  /* Dan 2026-09-04: "HAS ADDED ON FOR XX.XX" above the head of whoever added
+     on. NOT behind the social gate: it is a fact about the stack, not a line
+     from the player, so heads-up tables and muted chat still show it. Fed by
+     the engine's `add_on_applied` event — the moment the sweep lands the chips. */
+  const seatAddOnBubbles = useSeatAddOnBubbles(engineLastEvent, seatOwnerIds, {
+    nameForSeat: (seatNumber) => tableState.players[seatNumber - 1]?.name || '',
   });
   cardsPreSortRef.current = v8Settings.cards_pre_sort;
 
@@ -9717,6 +9798,30 @@ export default function TablePage({
         return;
       }
 
+      /* A JACKPOT AT ANOTHER TABLE IN THIS CLUB OR UNION (BBJ audit 2026-09-05).
+         The engine fans `bbj_hit_global` out over the socket to every sibling
+         cash table the moment the payout lands - the Realtime pool-row path
+         below still exists as a fallback, but it rides a WAL stream measured
+         a minute or more behind at peak and then met a 90-second freshness
+         gate, so it could lose the race silently. Both paths emit the same
+         bus event with the same identity (table + hand + stamp); BBJHitAnnouncer
+         announces whichever arrives first and drops the other. */
+      if (eventType === 'bbj_hit_global') {
+        const hitTableId = (handState.table_id as string) || '';
+        if (!hitTableId || hitTableId === tableId) return;
+        masterBus.emit('BBJ_HIT_GLOBAL', {
+          tableId: hitTableId,
+          tableName: (handState.table_name as string) || 'a table',
+          gameVariant: (handState.game_variant as string) || 'Poker',
+          bigBlind: Number(handState.big_blind) || 0,
+          winnerName: (handState.winner_name as string) || 'A player',
+          amount: Number(handState.amount) || Number(handState.total_payout) || 0,
+          handNumber: Number(handState.hand_number) || 0,
+          emittedAt: typeof handState.emitted_at === 'number' ? handState.emitted_at : undefined,
+        });
+        return;
+      }
+
       if (eventType === 'bbj_payout_complete') {
         /* Dan 2026-08-26 — THE REPLAY GATE, and this is the path the bug was
            actually reported on: refresh the table and the jackpot celebrated
@@ -9984,6 +10089,12 @@ export default function TablePage({
      (Dan 2026-08-28). Distinct from showTournamentInfo, which is the smaller
      four-tab summary now reached only from the hero hub's Stats tab. */
   const [showTournamentLobby, setShowTournamentLobby] = useState(false);
+  /* THE MUST MOVE LOBBY (Dan 2026-09-05): the cash counterpart, opened from
+     the Must Move box in the upper-right corner or the SEAT CHANGE button.
+     The refresh key is bumped by every seat-move event so the box re-reads
+     at once rather than on its next poll. */
+  const [showMustMoveLobby, setShowMustMoveLobby] = useState(false);
+  const [clusterRefreshKey, setClusterRefreshKey] = useState(0);
   const [standUpNextBB, setStandUpNextBB] = useState(false);
 
   const [sharedHandData, setSharedHandData] = useState<any>(null);
@@ -10128,6 +10239,12 @@ export default function TablePage({
         bomb_pot_ante_fixed: number | null;
         bomb_pot_min_players: number | null;
         bomb_pot_button_policy: string | null;
+        /** The must-move game this table belongs to (Operation Table Stakes), or null. */
+        cluster_id: string | null;
+        /** THE VPIP FLOOR (Dan 2026-09-05): the rule the felt prints. */
+        nit_game: boolean | null;
+        maintain_percent_min: number | null;
+        maintain_hands: number | null;
       };
       let table: TableBootstrapRow | null = null;
       let error: unknown = null;
@@ -10139,7 +10256,7 @@ export default function TablePage({
         const res = await supabase
           .from('tables')
           .select(
-            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_announce_seconds, bomb_pot_ante_fixed, bomb_pot_min_players, bomb_pot_button_policy'
+            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_announce_seconds, bomb_pot_ante_fixed, bomb_pot_min_players, bomb_pot_button_policy, cluster_id, nit_game, maintain_percent_min, maintain_hands'
           )
           .eq('id', tableId)
           .maybeSingle();
@@ -10237,6 +10354,16 @@ export default function TablePage({
                   ? formatBlindPair(table.small_blind, table.big_blind)
                   : '?/?',
           maxPlayers: table.max_players || 6,
+          /* THE VPIP FLOOR (Dan 2026-09-05): only a nit-game table has one;
+             a floor of 0 is no floor. Same columns fn_nit_evictions judges by. */
+          vpipFloor:
+            table.nit_game === true && Number(table.maintain_percent_min) > 0
+              ? Number(table.maintain_percent_min)
+              : null,
+          vpipWindow:
+            table.nit_game === true && Number(table.maintain_hands) > 0
+              ? Number(table.maintain_hands)
+              : null,
           players: createEmptySeats(table.max_players || 6),
           positions: Array(table.max_players || 6).fill(null),
           lastActions: Array(table.max_players || 6).fill(null),
@@ -10349,6 +10476,38 @@ export default function TablePage({
         setActionTimeSeconds(settings.time_bank_seconds || settings.action_time_seconds || 15);
 
         // Fetch club name (and the union it belongs to) for the felt masthead.
+        // THE GAME STYLE (Dan 2026-09-04): "IF THE GAME IS CLASSIC, ACTION OR
+        // MADNESS, IT MUST SAY IT ON THE TABLE UNDER THE BLINDS." A table of a
+        // templated game carries the game's id; the game carries the template.
+        // One small read, fire-and-forget: the masthead prints it when it
+        // lands and nothing waits on it.
+        if (table.cluster_id) {
+          const clusterId = table.cluster_id;
+          setTableState((prev) => (prev.clusterId === clusterId ? prev : { ...prev, clusterId }));
+          void (async () => {
+            try {
+              const { data: game, error: gameError } = await supabase
+                .from('cash_games')
+                .select('template_name')
+                .eq('id', table.cluster_id)
+                .maybeSingle();
+              if (!isMounted) return;
+              if (gameError) {
+                reportError(gameError, 'TablePage.gameStyleLookup', { tableId });
+                return;
+              }
+              const template = String(game?.template_name ?? '').toLowerCase();
+              const label = CASH_TEMPLATES.find((t) => t.id === template)?.label ?? null;
+              if (!label) return;
+              setTableState((prev) =>
+                prev.gameStyle === label ? prev : { ...prev, gameStyle: label }
+              );
+            } catch {
+              /* a missing style prints nothing; it never blocks the felt */
+            }
+          })();
+        }
+
         // Dan 2026-08-18: the union name must sit next to the club name when
         // the club is attached to one. Joined in the same query rather than a
         // follow-up round trip.
@@ -11738,8 +11897,17 @@ export default function TablePage({
                   if (b.tableId && b.tableId !== tableId) return;
 
                   const eliminatedUserId = String(b.eliminatedUserId || '');
-                  const knockerUserId = String(b.knockerUserId || '');
-                  const koIsHero = !!knockerUserId && knockerUserId === userId;
+                  /* EVERY WINNER OF THE POT (knockout audit 2026-09-04). On a
+                     tied pot the engine now sends `shares`, one row per
+                     winner with that winner's own cash and head increment;
+                     otherwise the flat knocker fields are the one winner.
+                     `bountyWinnersOf` is the single reader of both shapes so
+                     the glove, the money and the head badge cannot disagree
+                     about who won. Before this, a split knockout flew the
+                     WHOLE bounty to one of the two winners and nothing to the
+                     other (55 such knockouts in production, 08-30..09-04). */
+                  const koWinners = bountyWinnersOf(b);
+                  const koIsHero = koWinners.some((w) => w.userId === userId);
 
                   /* ONE STAMP PER BUSTED PLAYER. A reconnect replays the
                      broadcast and the 5s elimination sweep can re-emit it;
@@ -11776,48 +11944,62 @@ export default function TablePage({
                     }
                   }
 
-                  /* THE MONEY, SUMMED. Busting two players in one hand pays
-                     two bounties and the reference shows ONE number for them.
-                     Accumulate under the knocker and let the first one's timer
-                     ship the total; anything that arrives inside that window
-                     joins it rather than opening a second float on the same
-                     seat. The window IS the stamp beat, so the chips leave as
-                     the KO lands rather than on an unrelated schedule. */
-                  const koAmount = Number(b.amount) || 0;
-                  if (knockerUserId && koAmount > 0) {
-                    const acc = bountyAwardAccRef.current.get(knockerUserId) || {
+                  /* THE MONEY, SUMMED PER WINNER. Busting two players in one
+                     hand pays two bounties and the reference shows ONE number
+                     for them. Accumulate under each winner and let the first
+                     arrival's timer ship that winner's total; anything that
+                     arrives inside that window joins it rather than opening a
+                     second float on the same seat. The window IS the stamp
+                     beat, so the chips leave as the KO lands rather than on
+                     an unrelated schedule.
+
+                     Keyed by WINNER, which is what makes a split knockout
+                     right: two winners of one tied pot are two accumulators,
+                     two chip streams and two floats at two seats, each for
+                     that winner's own share. */
+                  for (const w of koWinners) {
+                    const winnerId = w.userId;
+                    if (!(w.amount > 0)) continue;
+                    const acc = bountyAwardAccRef.current.get(winnerId) || {
                       amount: 0,
                       fromUserIds: [] as string[],
                     };
-                    acc.amount += koAmount;
+                    acc.amount += w.amount;
                     if (eliminatedUserId && !acc.fromUserIds.includes(eliminatedUserId)) {
                       acc.fromUserIds.push(eliminatedUserId);
                     }
-                    bountyAwardAccRef.current.set(knockerUserId, acc);
+                    bountyAwardAccRef.current.set(winnerId, acc);
 
-                    if (!bountyAwardTimersRef.current.has(knockerUserId)) {
+                    if (!bountyAwardTimersRef.current.has(winnerId)) {
                       const t = setTimeout(() => {
-                        bountyAwardTimersRef.current.delete(knockerUserId);
-                        const pending = bountyAwardAccRef.current.get(knockerUserId);
-                        bountyAwardAccRef.current.delete(knockerUserId);
+                        bountyAwardTimersRef.current.delete(winnerId);
+                        const pending = bountyAwardAccRef.current.get(winnerId);
+                        bountyAwardAccRef.current.delete(winnerId);
                         if (!pending || !(pending.amount > 0)) return;
                         setBountyAwardFly({
                           nonce: ++bountyAwardNonceRef.current,
-                          knockerUserId,
+                          knockerUserId: winnerId,
                           amount: pending.amount,
                           fromUserIds: pending.fromUserIds,
-                          isHero: knockerUserId === userId,
+                          isHero: winnerId === userId,
                         });
                       }, SKO_STAMP_AT_MS * getAnimationSpeed());
-                      bountyAwardTimersRef.current.set(knockerUserId, t);
+                      bountyAwardTimersRef.current.set(winnerId, t);
                     }
                   }
                 }
+                /* HEAD BADGES. The busted head is gone; in a PKO each winner's
+                   own share of it lands on their own head. Read through the
+                   same winners list as the money, never the flat field, so a
+                   split knockout cannot put the whole head on one badge. */
+                const headWinners = bountyWinnersOf(b);
                 setTableState((prev) => {
                   const next = { ...prev.bountyMap };
                   if (b.eliminatedUserId) delete next[b.eliminatedUserId];
-                  if (b.knockerUserId && b.addedToHead > 0) {
-                    next[b.knockerUserId] = (next[b.knockerUserId] || 0) + Number(b.addedToHead);
+                  for (const w of headWinners) {
+                    if (w.addedToHead > 0) {
+                      next[w.userId] = (next[w.userId] || 0) + w.addedToHead;
+                    }
                   }
                   return { ...prev, bountyMap: next };
                 });
@@ -12362,50 +12544,11 @@ export default function TablePage({
   // The subscribeToHandState callback handles 'insurance_offers' events.
   // Legacy MasterBus handler removed — server is the single source of truth.
 
-  useMasterBusSubscription('BBJ_HIT_GLOBAL', (payload: any) => {
-    // Show an in-game pop-up on all cash game tables when BBJ is hit globally.
-    // Skip if the hit happened on THIS table — they already saw the massive animation.
-    if (payload.tableId === tableId) return;
-    if (tableState.isTournament) return;
-
-    /* Dan 2026-08-26: "it should only display once, and at the actual time it
-       happens." The gate owns both halves — see lib/bbjHitOnce for why a
-       connection-scoped seq could never have covered a page refresh.
-
-       Dan 2026-08-28: `requireStamp` — this is the login-path banner about a
-       hit SOMEWHERE ELSE, and an event with no timestamp cannot be proven
-       live. Both emitters now stamp their events (the ledger's awarded_at,
-       or Date.now() on the detail-less fallback), so the only thing this
-       refuses is exactly the unprovable case that was replaying Valentina's
-       days-old jackpot on every login. */
-    if (
-      !shouldAnnounceBbjHit({
-        tableId: payload.tableId,
-        handNumber: payload.handNumber,
-        emittedAt: payload.emittedAt,
-        requireStamp: true,
-      })
-    ) {
-      return;
-    }
-
-    if (soundService.isEnabled()) soundService.playBadBeatJackpot();
-
-    /* Was a 10-second text toast in the shared stack (and before that, one
-       carrying a siren emoji, which CLAUDE.md §5.3 forbids outright). Dan
-       2026-08-26 replaced it: three seconds, bottom-right, exploding. The
-       card is its own fixed-position layer rather than a toast because the
-       toast stack QUEUES — a routine notice could push the rarest event on
-       the platform down the screen. Amount keeps .toLocaleString() (§5.5)
-       and the component capitalises its own labels (§5.7). */
-    setBbjHitNotice({
-      key: `${payload.tableId}:${payload.handNumber ?? 0}:${Date.now()}`,
-      winnerName: payload.winnerName,
-      amount: payload.amount,
-      tableName: payload.tableName,
-      tableId: payload.tableId,
-    });
-  });
+  /* BBJ_HIT_GLOBAL is CONSUMED by BBJHitAnnouncer (mounted once in
+     PersistentTableLayer), not here - see the note at bbjHitDataRef. The
+     subscription that used to sit here marked the hit as seen in whichever
+     TablePage ran first, hidden slots included, and the visible table showed
+     nothing (BBJ audit 2026-09-05). This page only produces the event. */
 
   useMasterBusSubscription('TIME_BANK_ACTIVATED', (payload: any) => {
     /* Two transports publish this - the supabase channel (camelCase, via
@@ -13186,6 +13329,7 @@ export default function TablePage({
        */
       case 'SEAT_MOVE_PENDING': {
         const d = evt.data as { user_id?: string; message?: string };
+        setClusterRefreshKey((k) => k + 1);
         if (d?.user_id !== userId || !d?.message) break;
         toast.info(d.message);
         break;
@@ -13197,8 +13341,26 @@ export default function TablePage({
        */
       case 'SEAT_MOVED': {
         const d = evt.data as { user_id?: string; to_table_id?: string };
+        setClusterRefreshKey((k) => k + 1);
         if (d?.user_id !== userId || !d?.to_table_id) break;
+        if (embeddedTableId) {
+          // The tab follows the chair; the container swaps the id.
+          onTableInfoUpdate?.({ movedToTableId: d.to_table_id });
+          break;
+        }
         navigate(`/table/${d.to_table_id}`, { replace: true });
+        break;
+      }
+      /**
+       * A SWAP SIDE HOLDING (Dan 2026-09-05): the hero's seat change is a
+       * swap, this table reached its hand boundary first, and they sit out
+       * of the deal until the other table finishes its hand.
+       */
+      case 'SEAT_MOVE_HELD': {
+        const d = evt.data as { user_id?: string; message?: string };
+        setClusterRefreshKey((k) => k + 1);
+        if (d?.user_id !== userId || !d?.message) break;
+        toast.info(d.message);
         break;
       }
 
@@ -16194,15 +16356,44 @@ export default function TablePage({
    */
   useEffect(() => {
     const seen = lastSeatOfUserRef.current;
+    const present = new Set<string>();
     tableState.players.forEach((p, i) => {
-      if (p?.id) seen.set(p.id, i);
+      if (p?.id) {
+        seen.set(p.id, i);
+        present.add(p.id);
+      }
     });
+
+    /* A PLAYER WHO COMES BACK CAN BE KNOCKED OUT AGAIN (knockout audit
+       2026-09-04). `koSeenRef` is the one-stamp-per-bust guard and it used to
+       be released only when the table changed, so a player who busted, was
+       stamped, re-entered and sat back down at THIS table could never be
+       stamped again: the second bust arrived, matched the old key, and the
+       glove stayed in its bag. Release the key on the transition that means
+       "they left and came back": absent from the previous roster, present in
+       this one. Only a transition counts. Two things this must NOT do, and
+       the guards for each:
+         - release on an ordinary roster update while the busted player is
+           still seated (the bounty broadcast precedes `player_eliminated`,
+           so they ARE still seated when the key is written) - hence the
+           previous-roster check rather than a plain "is present";
+         - release on a reconnect that rebuilds the roster from empty - hence
+           `prevRoster.size > 0`: an empty previous roster is a snapshot gap,
+           not an exit. */
+    const prevRoster = rosterIdsRef.current;
+    if (prevRoster.size > 0) {
+      present.forEach((id) => {
+        if (!prevRoster.has(id)) koSeenRef.current.delete(id);
+      });
+    }
+    rosterIdsRef.current = present;
   }, [tableState.players]);
 
   /** A different table is a different set of chairs, and a different event. */
   useEffect(() => {
     lastSeatOfUserRef.current.clear();
     koSeenRef.current.clear();
+    rosterIdsRef.current = new Set();
     setKoHits([]);
   }, [tableId]);
 
@@ -19664,6 +19855,27 @@ export default function TablePage({
                 onOpen={() => setShowTournamentLobby(true)}
               />
             )}
+            {/* THE MUST MOVE BOX (Dan 2026-09-05): "JUST LIKE THE TOURNAMENTS
+                WITH A BOX IN THE RIGHT CORNER TO CLICK TO SEE ALL TABLES, CHIP
+                STACKS, HOW MANY PLAYERS ETC." Every must-move table carries
+                it; the SEAT CHANGE button under it appears only while the
+                database says the change is available. */}
+            {!tableState.isTournament && tableState.clusterId && (
+              <CashClusterHUD
+                gameId={tableState.clusterId}
+                refreshKey={clusterRefreshKey}
+                onOpenLobby={() => setShowMustMoveLobby(true)}
+                onSeatChange={() => setShowMustMoveLobby(true)}
+                onGoToTable={(dest) => {
+                  if (dest === tableId) return;
+                  if (embeddedTableId) {
+                    onTableInfoUpdate?.({ movedToTableId: dest });
+                    return;
+                  }
+                  navigate(`/table/${dest}`);
+                }}
+              />
+            )}
             {/* The MiniStatsCard stats icon that used to sit under the bar is
                 REMOVED (Dan 2026-08-30): the level bar itself opens the
                 tournament lobby, so a second button here was a duplicate. */}
@@ -20005,16 +20217,57 @@ export default function TablePage({
                               </span>
                             </span>
                           )}
+                          {/* Dan 2026-09-05: "THE GAME NAME AND BLINDS ARE WAY
+                              TOO SMALL FONT." Line 2 is now the game and the
+                              blinds alone, twice the size of the club line;
+                              the hand number moves to its own row below so it
+                              still can never be cut off (2026-08-26 item 5). */}
                           <span className="table-brand__line table-brand__line--level">
                             <span className="table-brand__game">
                               {gameShort} {tableState.blinds || '1/2'}
                             </span>
-                            {(tableState.handNumber ?? 0) > 0 && (
-                              <span className="table-brand__hand">
-                                {'\u00B7 '}Hand #{tableState.handNumber}
-                              </span>
-                            )}
                           </span>
+                          {/* THE GAME STYLE (Dan 2026-09-04): "IF THE GAME IS
+                              CLASSIC, ACTION OR MADNESS, IT MUST SAY IT ON THE
+                              TABLE UNDER THE BLINDS." */}
+                          {tableState.gameStyle && (
+                            <span className="table-brand__line table-brand__line--style">
+                              <span className="table-brand__style">{tableState.gameStyle}</span>
+                            </span>
+                          )}
+                          {/* THE RULES OF THE GAME (Dan 2026-09-04/05: "ANTES
+                              ... ARE NOT DISPLAYING"; "IF THEY HAVE AN ANTE OR
+                              VPIP REQUIREMENT THAT SHOULD ALSO BE ON THE
+                              TABLE"). One row, in chips and percent, the way a
+                              card room's placard prints it. Absent on a table
+                              with neither. */}
+                          {(tableState.ante > 0 || tableState.vpipFloor != null) && (
+                            <span className="table-brand__line table-brand__line--rules">
+                              {tableState.ante > 0 && (
+                                <span className="table-brand__ante">
+                                  Ante {formatChipFigure(tableState.ante)}
+                                </span>
+                              )}
+                              {tableState.ante > 0 && tableState.vpipFloor != null && (
+                                <span className="table-brand__rules-sep">{'\u00B7'}</span>
+                              )}
+                              {tableState.vpipFloor != null && (
+                                <span className="table-brand__vpip">
+                                  VPIP {tableState.vpipFloor}% Min
+                                  {tableState.vpipWindow
+                                    ? ` \u00B7 ${tableState.vpipWindow} Hands`
+                                    : ''}
+                                </span>
+                              )}
+                            </span>
+                          )}
+                          {(tableState.handNumber ?? 0) > 0 && (
+                            <span className="table-brand__line table-brand__line--hand">
+                              <span className="table-brand__hand">
+                                Hand #{tableState.handNumber}
+                              </span>
+                            </span>
+                          )}
                         </>
                       );
                     })()}
@@ -20294,7 +20547,10 @@ export default function TablePage({
                               : `BOMB POT IN ${bombClockLabel}`
                             : tableState.bombPotIn === 1
                               ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
-                              : `BOMB POT IN ${tableState.bombPotIn}`}
+                              : /* Hands, said so (Dan 2026-09-05: inside the
+                                   last three minutes a timed bomb is "IN 1-5
+                                   HANDS" and the clock is gone). */
+                                `BOMB POT IN ${tableState.bombPotIn} HANDS`}
                   </div>
                 )}
 
@@ -21068,7 +21324,12 @@ export default function TablePage({
                     positioned, so the bubble follows the seat with no coordinate
                     maths and SeatSlot needs no knowledge of chat at all. */}
                 {(() => {
-                  const bubble = bubbleForSeat(seatChatBubbles, seatNumber);
+                  /* The add-on notice takes the slot over a chat line: it is
+                     the newer fact, it lives 4s, and two boxes over one plate
+                     is how you cover the seat above. */
+                  const bubble =
+                    bubbleForSeat(seatAddOnBubbles, seatNumber) ??
+                    bubbleForSeat(seatChatBubbles, seatNumber);
                   if (!bubble) return null;
                   return (
                     <ChatBubble
@@ -21177,6 +21438,19 @@ export default function TablePage({
               </div>
             );
           })}
+          {/* THE HERO'S VPIP TRACKER (Dan 2026-09-04): to the left of the
+              hero, hero only, the judged figure. A sibling of the seats at
+              the hero seat's own point; HeroVpipTracker.css pushes it left of
+              the pod. Nothing renders for a spectator or on a tournament. */}
+          <HeroVpipTracker
+            tableId={tableId}
+            heroSeated={tableState.heroSeat > 0}
+            isTournament={tableState.isTournament}
+            handNumber={tableState.handNumber ?? 0}
+            heroPos={
+              tableState.heroSeat > 0 ? (seatPositions[tableState.heroSeat - 1] ?? null) : null
+            }
+          />
         </div>
 
         {/* AUDIT FIX 2026-07-19: mount the chip-flight layer. Every wager
@@ -23150,6 +23424,12 @@ export default function TablePage({
           alike, since `isTournament` is one test covering all of them. Mounted
           only while open, so a cash table pays nothing for it and the lobby's
           own realtime subscriptions do not exist until somebody asks. */}
+      <MustMoveLobbyModal
+        isOpen={showMustMoveLobby}
+        gameId={tableState.clusterId}
+        currentTableId={tableId}
+        onClose={() => setShowMustMoveLobby(false)}
+      />
       <TournamentLobbyModal
         isOpen={showTournamentLobby}
         tournamentId={tableState.tournamentId}
@@ -23234,27 +23514,10 @@ export default function TablePage({
         soundEnabled={isSoundEnabled && ambientSoundsAllowed}
       />
 
-      {/* BAD BEAT JACKPOT HIT — bottom-right, three seconds, then it leaves on
-          its own (Dan 2026-08-26). Whether it appears at all is decided by
-          `shouldAnnounceBbjHit` at the subscription, never here; this only
-          draws what was already ruled announceable, and clears itself when
-          the card's own outro finishes. */}
-      {bbjHitNotice && (
-        <BBJHitNotification
-          key={bbjHitNotice.key}
-          winnerName={bbjHitNotice.winnerName}
-          amount={bbjHitNotice.amount}
-          tableName={bbjHitNotice.tableName}
-          onObserve={() => {
-            masterBus.emit('OPEN_OBSERVE_TABLE', {
-              tableId: bbjHitNotice.tableId,
-              tableName: bbjHitNotice.tableName,
-            });
-            setBbjHitNotice(null);
-          }}
-          onDone={() => setBbjHitNotice(null)}
-        />
-      )}
+      {/* BAD BEAT JACKPOT HIT (bottom-right, three seconds, Dan 2026-08-26) is
+          rendered ONCE by BBJHitAnnouncer in PersistentTableLayer, never per
+          table - a card drawn inside a display:none slot is a card nobody
+          sees (BBJ audit 2026-09-05). */}
     </div>
   );
 }

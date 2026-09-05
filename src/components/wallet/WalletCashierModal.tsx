@@ -102,9 +102,15 @@ import {
   cashierRefusesSelfSend,
   secondsLeftFromServer,
   DEFAULT_CASHIER_WALLET,
+  promoSourceFor,
+  promoSendRpc,
+  promoLedgerScope,
+  promoBalanceLabel,
+  promoSourceBlurb,
   type CashierTab,
   type CashierDestination,
   type CashierWalletType,
+  type PromoSource,
 } from './cashierModes';
 import { cashierRecipientBlock } from '../../lib/cashierRoster';
 import ChipMintModal from './ChipMintModal';
@@ -167,6 +173,30 @@ interface LedgerRow {
 interface LedgerTotals {
   into_bank: number;
   out_of_bank: number;
+  net: number;
+}
+
+/**
+ * One movement on a promo wallet, straight off fn_promo_wallet_ledger. The
+ * same shape for the club pot and for an agent's own float, so one renderer
+ * serves both; `direction` is relative to the wallet being looked at.
+ */
+interface PromoLedgerRow {
+  id: string;
+  created_at: string;
+  amount: number;
+  direction: 'in' | 'out';
+  category: string;
+  notes: string | null;
+  balance_after: number | null;
+  counterparty_type: string | null;
+  counterparty_name: string | null;
+  actor_name: string | null;
+}
+
+interface PromoLedgerTotals {
+  in: number;
+  out: number;
   net: number;
 }
 
@@ -301,6 +331,19 @@ export default function WalletCashierModal({
   /** Ticks once a second so each countdown on that list re-renders. */
   const [, setNowTick] = useState(0);
 
+  /**
+   * WHICH PROMO ACCOUNT THIS CASHIER SPENDS (2026-09-05). A Club Bank role
+   * stands at the CLUB'S promo pot by default; an agent at their own float.
+   * A bank role who also holds a float may switch, because the union can pay
+   * promo into either one and both have to be reachable from this screen.
+   */
+  const [promoSource, setPromoSource] = useState<PromoSource>(() => promoSourceFor(role));
+  const [promoPot, setPromoPot] = useState<number | null>(null);
+  const [promoFloat, setPromoFloat] = useState<number | null>(null);
+  const [promoLedger, setPromoLedger] = useState<PromoLedgerRow[]>([]);
+  const [promoLedgerTotal, setPromoLedgerTotal] = useState(0);
+  const [promoLedgerTotals, setPromoLedgerTotals] = useState<PromoLedgerTotals | null>(null);
+
   const [ledger, setLedger] = useState<LedgerRow[]>([]);
   const [ledgerTotal, setLedgerTotal] = useState(0);
   const [ledgerTotals, setLedgerTotals] = useState<LedgerTotals | null>(null);
@@ -400,7 +443,7 @@ export default function WalletCashierModal({
     setClubUuid(uuid);
     const { data: club, error: clubReadError } = await supabase
       .from('clubs')
-      .select('id, name, union_id, chip_treasury')
+      .select('id, name, union_id, chip_treasury, promo_balance')
       .eq('id', uuid)
       .maybeSingle();
     if (!isMounted.current) return;
@@ -420,6 +463,16 @@ export default function WalletCashierModal({
     setInUnion(club ? Boolean(club.union_id) : null);
 
     if (walletType === 'promo_wallet') {
+      /* BOTH promo accounts are read, every time. The pot came off the club
+         row above; the float is the viewer's own agents row. `bank` - the
+         figure this cashier spends against - is derived from whichever source
+         is selected, below, so a source switch never waits on a refetch. A
+         bank role with no agents row has no float: null, never 0.00. */
+      setPromoPot(
+        club?.promo_balance !== undefined && club?.promo_balance !== null
+          ? Number(club?.promo_balance)
+          : null
+      );
       const { data: agent, error: agentReadError } = await supabase
         .from('agents')
         .select('promo_wallet_balance')
@@ -428,9 +481,9 @@ export default function WalletCashierModal({
         .maybeSingle();
       if (agentReadError) {
         reportError(agentReadError, 'WalletCashierModal.loadClub_promo_wallet');
-        setBank(null);
+        setPromoFloat(null);
       } else {
-        setBank(
+        setPromoFloat(
           agent?.promo_wallet_balance !== undefined && agent?.promo_wallet_balance !== null
             ? Number(agent?.promo_wallet_balance)
             : null
@@ -595,10 +648,69 @@ export default function WalletCashierModal({
     [isMounted]
   );
 
+  /**
+   * THE LEDGER ATTACHED TO THE PROMO WALLET (Dan 2026-09-05). One RPC,
+   * fn_promo_wallet_ledger, scoped to the account on screen: 'club' reads the
+   * club pot's rows off chip_ledger, 'agent' reads the viewer's own float in
+   * this club. Same newest-request-wins guard as the bank ledger above.
+   */
+  const promoLedgerSeqRef = useRef(0);
+  const loadPromoLedger = useCallback(
+    async (uuid: string, offset: number, source: PromoSource) => {
+      const seq = ++promoLedgerSeqRef.current;
+      const current = () => isMounted.current && seq === promoLedgerSeqRef.current;
+      setLedgerLoading(true);
+      setLedgerError(null);
+      try {
+        const { data, error } = await supabase.rpc('fn_promo_wallet_ledger', {
+          p_scope: promoLedgerScope(source),
+          p_scope_id: uuid,
+          p_limit: LEDGER_PAGE,
+          p_offset: offset,
+        });
+        if (error) throw error;
+        const res = (Array.isArray(data) ? data[0] : data) as {
+          authorized?: boolean;
+          error?: string;
+          total?: number;
+          totals?: PromoLedgerTotals;
+          rows?: PromoLedgerRow[];
+        } | null;
+        if (!current()) return;
+        if (!res?.authorized) {
+          setLedgerError(res?.error || 'The Promo Wallet Ledger Is Not Available To You');
+          setPromoLedger([]);
+          return;
+        }
+        setPromoLedgerTotal(Number(res.total) || 0);
+        setPromoLedgerTotals(res.totals ?? null);
+        setPromoLedger((prev) => (offset === 0 ? res.rows || [] : [...prev, ...(res.rows || [])]));
+      } catch (e) {
+        reportError(e, 'WalletCashierModal.loadPromoLedger');
+        if (current()) setLedgerError('Could Not Load The Ledger');
+      } finally {
+        if (current()) setLedgerLoading(false);
+      }
+    },
+    [isMounted]
+  );
+
+  /* The figure this cashier spends against, for the promo wallet, is the
+     selected account. Kept in `bank` so every cap, warning, confirm threshold
+     and "would hold afterwards" sentence below reads one variable. */
+  useEffect(() => {
+    if (walletType !== 'promo_wallet') return;
+    setBank(promoSource === 'club_pot' ? promoPot : promoFloat);
+  }, [walletType, promoSource, promoPot, promoFloat]);
+
   // ── Open / reset ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!isOpen || !user?.id) return;
     setTab('send');
+    setPromoSource(promoSourceFor(role));
+    setPromoPot(null);
+    setPromoFloat(null);
+    setPromoLedger([]);
     if (walletType === 'club_bank') setDestination('agent_wallet');
     else setDestination('player_wallet');
 
@@ -621,7 +733,7 @@ export default function WalletCashierModal({
     opIdRef.current = newOpId();
     busyRef.current = false;
     loadClub();
-  }, [isOpen, user?.id, loadClub, walletType]);
+  }, [isOpen, user?.id, loadClub, walletType, role]);
 
   // Escape closes, and the page behind stops scrolling. Both are what a person
   // expects of a modal and neither was here.
@@ -646,12 +758,28 @@ export default function WalletCashierModal({
 
   useEffect(() => {
     if (!isOpen || !clubUuid || !allowed || tab !== 'ledger') return;
+    if (walletType === 'promo_wallet') {
+      // The promo ledger follows the SOURCE switch: flip from the club pot to
+      // your own float and the list re-reads from offset 0 for that account.
+      loadPromoLedger(clubUuid, 0, promoSource);
+      return;
+    }
     loadLedger(clubUuid, 0, typeFilter);
     // typeFilter is a dependency on purpose: changing the filter re-reads from
     // offset 0 rather than appending a differently-filtered page onto the old
     // list, which is how a ledger comes to show rows that do not match its own
     // filter chip.
-  }, [isOpen, clubUuid, allowed, tab, typeFilter, loadLedger]);
+  }, [
+    isOpen,
+    clubUuid,
+    allowed,
+    tab,
+    typeFilter,
+    loadLedger,
+    walletType,
+    promoSource,
+    loadPromoLedger,
+  ]);
 
   // The agent wallet's Claim Back list, and a one-second tick so the countdown
   // on each row is the truth rather than the value it had when the tab opened.
@@ -738,9 +866,13 @@ export default function WalletCashierModal({
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'clubs', filter: `id=eq.${clubUuid}` },
         (p) => {
-          if (!isMounted.current || walletType !== 'club_bank') return;
-          if (p.new?.chip_treasury !== undefined)
+          if (!isMounted.current) return;
+          if (walletType === 'club_bank' && p.new?.chip_treasury !== undefined)
             setBank(p.new.chip_treasury !== null ? Number(p.new.chip_treasury) : null);
+          // The club promo pot is live too: a union promo send lands while
+          // the cashier is open and the header moves without a reopen.
+          if (walletType === 'promo_wallet' && p.new?.promo_balance !== undefined)
+            setPromoPot(p.new.promo_balance !== null ? Number(p.new.promo_balance) : null);
         }
       )
       .on(
@@ -749,7 +881,7 @@ export default function WalletCashierModal({
         (p) => {
           if (!isMounted.current || p.new?.club_id !== clubUuid) return;
           if (walletType === 'promo_wallet' && p.new?.promo_wallet_balance !== undefined)
-            setBank(
+            setPromoFloat(
               p.new.promo_wallet_balance !== null ? Number(p.new.promo_wallet_balance) : null
             );
           if (walletType === 'agent_wallet' && p.new?.agent_wallet_balance !== undefined)
@@ -773,9 +905,25 @@ export default function WalletCashierModal({
     if (!clubUuid) return;
     loadMembers(clubUuid);
     if (walletType === 'agent_wallet') loadReversible(clubUuid);
-    if (tab === 'ledger') loadLedger(clubUuid, 0, typeFilter);
-    else setLedger([]);
-  }, [loadClub, loadMembers, loadLedger, loadReversible, clubUuid, tab, typeFilter, walletType]);
+    if (tab === 'ledger') {
+      if (walletType === 'promo_wallet') loadPromoLedger(clubUuid, 0, promoSource);
+      else loadLedger(clubUuid, 0, typeFilter);
+    } else {
+      setLedger([]);
+      setPromoLedger([]);
+    }
+  }, [
+    loadClub,
+    loadMembers,
+    loadLedger,
+    loadPromoLedger,
+    loadReversible,
+    clubUuid,
+    tab,
+    typeFilter,
+    walletType,
+    promoSource,
+  ]);
 
   const { recentIds, addRecipient } = useRecentRecipients(user?.id, clubUuid, walletType);
 
@@ -793,7 +941,7 @@ export default function WalletCashierModal({
    * normal way an owner gets a float at all. Removing themselves from that list
    * would break the funding route the whole hierarchy hangs off.
    */
-  const excludeSelf = cashierRefusesSelfSend(walletType);
+  const excludeSelf = cashierRefusesSelfSend(walletType, promoSource);
 
   /**
    * ONE RULE FOR EVERY CASHIER SURFACE (Dan 2026-09-04 round 2, see
@@ -921,7 +1069,10 @@ export default function WalletCashierModal({
       } else if (walletType === 'promo_wallet') {
         // Dan 2026-08-24: the promo wallet sends to a player wallet (as cash)
         // or to another agent's promo wallet. One RPC, one ledger row, keyed.
-        const { data, error } = await supabase.rpc('fn_promo_wallet_send', {
+        // 2026-09-05: WHICH promo wallet is the source switch's decision -
+        // fn_club_promo_wallet_send spends the club pot, fn_promo_wallet_send
+        // the caller's own float. Same arguments, same receipt shape.
+        const { data, error } = await supabase.rpc(promoSendRpc(promoSource), {
           p_club_id: clubUuid,
           p_to_user_id: recipient.user_id,
           p_amount: amt,
@@ -1095,6 +1246,49 @@ export default function WalletCashierModal({
     }
   };
 
+  /** One download path for both ledgers, so the Safari/Firefox revoke timing
+      below is written once. */
+  const downloadCsv = (name: string, header: string[], body: string[]) => {
+    const blob = new Blob([[header.map(csvCell).join(','), ...body].join('\r\n')], {
+      type: 'text/csv;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${name}-${clubName.replace(/\W+/g, '-').toLowerCase()}-${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  /** The promo ledger rows on screen, as a spreadsheet. */
+  const exportPromoCsv = () => {
+    const rows = promoLedger.slice(0, EXPORT_MAX);
+    if (rows.length === 0) return;
+    downloadCsv(
+      promoSource === 'club_pot' ? 'club-promo-wallet-ledger' : 'promo-float-ledger',
+      ['When', 'Direction', 'Category', 'Amount', 'Counterparty', 'By', 'Wallet After', 'Note'],
+      rows.map((r) =>
+        [
+          new Date(r.created_at).toISOString(),
+          r.direction,
+          r.category,
+          r.amount,
+          r.counterparty_name ?? r.counterparty_type ?? '',
+          r.actor_name ?? '',
+          r.balance_after ?? '',
+          r.notes ?? '',
+        ]
+          .map(csvCell)
+          .join(',')
+      )
+    );
+    toast?.success?.(`Exported ${rows.length.toLocaleString('en-US')} Ledger Entries`);
+  };
+
   /** The rows on screen, as a spreadsheet. Nothing leaves that is not shown. */
   const exportCsv = () => {
     const rows = ledger.slice(0, EXPORT_MAX);
@@ -1125,24 +1319,12 @@ export default function WalletCashierModal({
         .map(csvCell)
         .join(',')
     );
-    const blob = new Blob([[header.map(csvCell).join(','), ...body].join('\r\n')], {
-      type: 'text/csv;charset=utf-8',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `club-bank-ledger-${clubName.replace(/\W+/g, '-').toLowerCase()}-${new Date()
-      .toISOString()
-      .slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
     /* REVOKE AFTER THE DOWNLOAD HAS STARTED, not in the same tick. Safari and
        Firefox read the blob asynchronously once the click is dispatched, so a
        synchronous revoke cancelled the save and the Export button did nothing
        at all on those browsers. One second is long enough for the fetch to be
-       issued and short enough that the blob is not held. */
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+       issued and short enough that the blob is not held. (downloadCsv above.) */
+    downloadCsv('club-bank-ledger', header, body);
     toast?.success?.(`Exported ${rows.length.toLocaleString('en-US')} Ledger Entries`);
   };
 
@@ -1218,13 +1400,57 @@ export default function WalletCashierModal({
           <div className="cbc-bank">
             <span>
               {walletType === 'promo_wallet'
-                ? 'Promo Wallet Balance'
+                ? promoBalanceLabel(promoSource)
                 : walletType === 'agent_wallet'
                   ? 'Agent Wallet Balance'
                   : 'Club Bank Balance'}
             </span>
             <strong aria-live="polite">{bank === null ? '...' : fmt(bank)}</strong>
+            {walletType === 'promo_wallet' && clubName && (
+              <em className="cbc-bank-sub">
+                {promoSource === 'club_pot' ? clubName : `${clubName} Agent Float`}
+              </em>
+            )}
           </div>
+
+          {/* TWO PROMO ACCOUNTS, ONE SWITCH (2026-09-05). Offered only when the
+              viewer can stand at both: a Club Bank role who also holds a
+              personal float. An agent sees their float alone; a bank role with
+              no float sees the pot alone. Both balances are printed on the
+              switch so the one you are NOT looking at is never a mystery. */}
+          {walletType === 'promo_wallet' &&
+            promoSourceFor(viewerRole) === 'club_pot' &&
+            promoFloat !== null && (
+              <div className="cbc-source" role="radiogroup" aria-label="Promo Wallet Source">
+                <button
+                  role="radio"
+                  aria-checked={promoSource === 'club_pot'}
+                  className={promoSource === 'club_pot' ? 'cbc-source-on' : ''}
+                  onClick={() => {
+                    setPromoSource('club_pot');
+                    setRecipient(null);
+                  }}
+                >
+                  <span>Club Promo Wallet</span>
+                  <strong>{promoPot === null ? '...' : fmt(promoPot)}</strong>
+                </button>
+                <button
+                  role="radio"
+                  aria-checked={promoSource === 'own_float'}
+                  className={promoSource === 'own_float' ? 'cbc-source-on' : ''}
+                  onClick={() => {
+                    setPromoSource('own_float');
+                    setRecipient(null);
+                  }}
+                >
+                  <span>My Promo Float</span>
+                  <strong>{fmt(promoFloat)}</strong>
+                </button>
+              </div>
+            )}
+          {walletType === 'promo_wallet' && (
+            <div className="cbc-note">{promoSourceBlurb(promoSource)}</div>
+          )}
 
           {clubUuid === null && !clubLoading && (
             <div className="cbc-note cbc-note--bad">
@@ -1501,6 +1727,107 @@ export default function WalletCashierModal({
                           : 'Send Chips'}
                   </button>
                 </div>
+              </>
+            ) : walletType === 'promo_wallet' ? (
+              /* THE PROMO WALLET LEDGER. Every movement on the account the
+                 viewer is standing at, newest first, with the other side of
+                 each one named: the union that funded it, the player it was
+                 handed to, the agent float it topped up. */
+              <>
+                {ledgerError && <div className="cbc-empty cbc-empty--bad">{ledgerError}</div>}
+
+                {!ledgerError && promoLedgerTotals && (
+                  <div className="cbc-totals">
+                    <div>
+                      <span>Received</span>
+                      <strong className="cbc-in">{fmt(promoLedgerTotals.in)}</strong>
+                    </div>
+                    <div>
+                      <span>Handed Out</span>
+                      <strong className="cbc-out">{fmt(promoLedgerTotals.out)}</strong>
+                    </div>
+                    <div>
+                      <span>Net</span>
+                      <strong>{fmt(promoLedgerTotals.net)}</strong>
+                    </div>
+                  </div>
+                )}
+
+                {!ledgerError && (
+                  <div className="cbc-ledger-head">
+                    <span>
+                      {promoLedgerTotal.toLocaleString('en-US')} Entries
+                      {' · '}
+                      {promoSource === 'club_pot' ? 'Club Promo Wallet' : 'Your Promo Float'}
+                    </span>
+                    <button
+                      className="cbc-export"
+                      onClick={exportPromoCsv}
+                      disabled={promoLedger.length === 0}
+                    >
+                      Export CSV
+                    </button>
+                  </div>
+                )}
+
+                {!ledgerError &&
+                  promoLedger.map((row) => {
+                    const inbound = row.direction === 'in';
+                    const other =
+                      row.counterparty_name ||
+                      (row.counterparty_type ? titleCase(row.counterparty_type) : 'Ledger');
+                    const note =
+                      row.notes && !row.notes.startsWith('auto-ledgered') ? row.notes : null;
+                    return (
+                      <div key={row.id} className={inbound ? 'cbc-tx cbc-tx--in' : 'cbc-tx'}>
+                        <div className="cbc-tx-top">
+                          <span className="cbc-tx-type">{titleCase(row.category)}</span>
+                          <span
+                            className={inbound ? 'cbc-tx-amount cbc-in' : 'cbc-tx-amount cbc-out'}
+                          >
+                            {inbound ? '+' : '-'}
+                            {fmt(row.amount)}
+                          </span>
+                        </div>
+                        <div className="cbc-tx-mid">
+                          <span>{inbound ? `From ${other}` : `To ${other}`}</span>
+                          <span className="cbc-tx-when">
+                            {new Date(row.created_at).toLocaleString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: 'numeric',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </div>
+                        <div className="cbc-tx-foot">
+                          {note && <span>{note}</span>}
+                          {row.actor_name && <span>By {row.actor_name}</span>}
+                          {row.balance_after !== null && row.balance_after !== undefined && (
+                            <span>Wallet After {fmt(Number(row.balance_after))}</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                {!ledgerError && !ledgerLoading && promoLedger.length === 0 && (
+                  <div className="cbc-empty">
+                    Nothing Has Moved Through This Promo Wallet Yet. A Union Promo Send, A Jackpot
+                    Promo Sweep Or A Hand Out Writes A Row Here.
+                  </div>
+                )}
+                {ledgerLoading && <div className="cbc-empty">Loading Ledger...</div>}
+                {!ledgerError && !ledgerLoading && promoLedger.length < promoLedgerTotal && (
+                  <button
+                    className="cbc-more"
+                    onClick={() =>
+                      clubUuid && loadPromoLedger(clubUuid, promoLedger.length, promoSource)
+                    }
+                  >
+                    Load More
+                  </button>
+                )}
               </>
             ) : (
               <>

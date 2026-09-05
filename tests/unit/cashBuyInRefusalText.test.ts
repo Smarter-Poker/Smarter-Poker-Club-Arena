@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { cashBuyInRefusalText } from '../../src/lib/cashBuyIn';
 
@@ -90,5 +92,37 @@ describe('cashBuyInRefusalText', () => {
     expect(cashBuyInRefusalText('')).toBeNull();
     expect(cashBuyInRefusalText(undefined)).toBeNull();
     expect(cashBuyInRefusalText(null)).toBeNull();
+  });
+});
+
+describe('booted for low VPIP is barred for two hours (Dan 2026-09-05)', () => {
+  it('reads the bar in minutes, from either door', () => {
+    expect(cashBuyInRefusalText({ message: 'VPIP_BARRED:7200' })).toBe(
+      'You Were Removed For Low VPIP. You May Rejoin This Game In 120 Minutes'
+    );
+    expect(cashBuyInRefusalText({ message: 'GAME_BARRED:59' })).toBe(
+      'You Were Removed For Low VPIP. You May Rejoin This Game In 1 Minute'
+    );
+    expect(cashBuyInRefusalText({ message: 'VPIP_BARRED' })).toBe(
+      'You Were Removed For Low VPIP And Cannot Rejoin This Game Yet'
+    );
+  });
+
+  it('the eviction passes the leave mode the database writes the bar from', () => {
+    const base = readFileSync(
+      resolve(__dirname, '../../server/src/engine/ServerTableEngineBase.ts'),
+      'utf8'
+    );
+    expect(base).toMatch(/nitEvict \? \{ leaveMode: 'vpip_evicted' \} : undefined/);
+    const mig = readFileSync(
+      resolve(
+        __dirname,
+        '../../supabase/migrations/20260905064000_booted_for_low_vpip_is_barred_for_two_hours.sql'
+      ),
+      'utf8'
+    );
+    expect(mig).toMatch(/RAISE EXCEPTION 'VPIP_BARRED:%'/);
+    expect(mig).toMatch(/GAME_BARRED:%/);
+    expect(mig).toMatch(/IF p_reason = 'vpip_evicted'/);
   });
 });

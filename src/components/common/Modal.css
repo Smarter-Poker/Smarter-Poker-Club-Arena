@@ -1,12 +1,41 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
- * 🪟 MODAL — CSS Styles
- * ═══════════════════════════════════════════════════════════════════════════════ */
+ * MODAL — CSS Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * EVERY CLASS IN THIS FILE IS NAMESPACED `ca-modal`, AND THAT IS LOAD-BEARING
+ * (Dan, 2026-09-04: "THE CLUB POP UP IS STILL BROKEN... IT BLOCKS THE ENTIRE
+ * PAGE, EVEN WHEN ITS 'SMALL'. YOU CAN SEE IT SLIGHTLY STILL.")
+ *
+ * This component used to paint its backdrop as `.modal-overlay` and its card
+ * as `.modal`. Nine other stylesheets in this repo ALSO define `.modal-overlay`
+ * (CashoutRequestModal.css, TournamentPage.css, ClubSettingsPage.css,
+ * ReportReviewPage.css, ...), sixteen define `.modal`, and five define
+ * `.modal-content`. They are all plain global class names, so whichever chunk
+ * the browser loaded last owned this component's backdrop.
+ *
+ * Measured on the live Midway Union lobby with the club greeting open: the
+ * backdrop computed to `position: fixed; z-index: 1000` - somebody else's
+ * rule, not the `position: absolute; z-index: auto` written here - and inside
+ * the portal's stacking context a z-index of 1000 sits ABOVE the card, which
+ * has none. `document.elementsFromPoint` on the club name returned the
+ * backdrop first. So the 82% black, 9px-blur sheet that is meant to sit behind
+ * the card sat on top of it, and the "small" popup was a faint smear under a
+ * full-screen sheet. That is the screenshot.
+ *
+ * Two fixes, and the second is the one that keeps it fixed:
+ *   1. The card carries an explicit `z-index: 1` and the backdrop `z-index: 0`,
+ *      so the order is stated rather than left to DOM order.
+ *   2. No class here shares a name with anything else in `src/`.
+ *      `tests/the-shared-modal-owns-its-class-names.law.test.ts` fails CI if
+ *      any other stylesheet ever defines one of these names, or if a class in
+ *      this file ever drops the namespace.
+ */
 
 /* ═══════════════════════════════════════════════════════════════════════════════
  * PORTAL
  * ═══════════════════════════════════════════════════════════════════════════════ */
 
-.modal-portal {
+.ca-modal-portal {
   position: fixed;
   inset: 0;
   z-index: 1000;
@@ -20,16 +49,20 @@
  * OVERLAY
  * ═══════════════════════════════════════════════════════════════════════════════ */
 
-.modal-overlay {
+.ca-modal-overlay {
   position: absolute;
   inset: 0;
+  /* 0, explicitly. The card below is 1. Both live inside the portal's own
+     stacking context, so these two numbers - and nothing outside this file -
+     decide which of them is on top. */
+  z-index: 0;
   background: rgba(0, 0, 0, 0.65);
   backdrop-filter: blur(12px) saturate(1.2);
   -webkit-backdrop-filter: blur(12px) saturate(1.2);
-  animation: modalOverlayIn 0.2s ease;
+  animation: caModalOverlayIn 0.2s ease;
 }
 
-@keyframes modalOverlayIn {
+@keyframes caModalOverlayIn {
   from {
     opacity: 0;
   }
@@ -42,8 +75,10 @@
  * MODAL
  * ═══════════════════════════════════════════════════════════════════════════════ */
 
-.modal {
+.ca-modal {
   position: relative;
+  /* Above the overlay. See the note on `.ca-modal-overlay`. */
+  z-index: 1;
   background: linear-gradient(180deg, rgba(28, 28, 48, 0.95) 0%, rgba(15, 15, 26, 0.98) 100%);
   backdrop-filter: blur(20px) saturate(1.3);
   -webkit-backdrop-filter: blur(20px) saturate(1.3);
@@ -61,10 +96,10 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: modalModalSlideUp 0.35s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  animation: caModalSlideUp 0.35s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-@keyframes modalModalSlideUp {
+@keyframes caModalSlideUp {
   from {
     opacity: 0;
     transform: translateY(30px) scale(0.92);
@@ -76,22 +111,22 @@
 }
 
 /* Sizes */
-.modal-small {
+.ca-modal--small {
   width: 400px;
   max-width: 100%;
 }
 
-.modal-medium {
+.ca-modal--medium {
   width: 560px;
   max-width: 100%;
 }
 
-.modal-large {
+.ca-modal--large {
   width: 800px;
   max-width: 100%;
 }
 
-.modal-fullscreen {
+.ca-modal--fullscreen {
   width: calc(100vw - 40px);
   height: calc(100vh - 40px);
   height: calc(
@@ -103,7 +138,7 @@
  * MODAL HEADER
  * ═══════════════════════════════════════════════════════════════════════════════ */
 
-.modal-header {
+.ca-modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -112,14 +147,14 @@
   flex-shrink: 0;
 }
 
-.modal-title {
+.ca-modal-title {
   margin: 0;
   font-size: 1.25rem;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.95);
 }
 
-.modal-close {
+.ca-modal-close {
   margin-left: auto;
 }
 
@@ -127,7 +162,7 @@
  * MODAL CONTENT
  * ═══════════════════════════════════════════════════════════════════════════════ */
 
-.modal-content {
+.ca-modal-content {
   padding: 24px;
   overflow-y: auto;
   flex: 1;
@@ -137,7 +172,7 @@
  * MODAL FOOTER
  * ═══════════════════════════════════════════════════════════════════════════════ */
 
-.modal-footer {
+.ca-modal-footer {
   display: flex;
   gap: 12px;
   padding: 20px 24px;
@@ -145,19 +180,19 @@
   flex-shrink: 0;
 }
 
-.modal-footer-left {
+.ca-modal-footer--left {
   justify-content: flex-start;
 }
 
-.modal-footer-center {
+.ca-modal-footer--center {
   justify-content: center;
 }
 
-.modal-footer-right {
+.ca-modal-footer--right {
   justify-content: flex-end;
 }
 
-.modal-footer-space-between {
+.ca-modal-footer--space-between {
   justify-content: space-between;
 }
 
@@ -165,11 +200,11 @@
  * ALERT DIALOG
  * ═══════════════════════════════════════════════════════════════════════════════ */
 
-.alert-dialog-content {
+.ca-modal-alert-content {
   margin-bottom: 20px;
 }
 
-.alert-dialog-message {
+.ca-modal-alert-message {
   margin: 0;
   color: rgba(255, 255, 255, 0.7);
   line-height: 1.6;
@@ -179,21 +214,23 @@
  * DRAWER
  * ═══════════════════════════════════════════════════════════════════════════════ */
 
-.drawer-portal {
+.ca-modal-drawer-portal {
   position: fixed;
   inset: 0;
   z-index: 1000;
 }
 
-.drawer-overlay {
+.ca-modal-drawer-overlay {
   position: absolute;
   inset: 0;
+  z-index: 0;
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(2px);
 }
 
-.drawer {
+.ca-modal-drawer {
   position: absolute;
+  z-index: 1;
   background: linear-gradient(180deg, rgba(28, 28, 48, 0.95) 0%, rgba(15, 15, 26, 0.98) 100%);
   backdrop-filter: blur(20px) saturate(1.3);
   -webkit-backdrop-filter: blur(20px) saturate(1.3);
@@ -205,28 +242,28 @@
 }
 
 /* Position */
-.drawer-right {
+.ca-modal-drawer--right {
   right: 0;
   top: 0;
   bottom: 0;
   border-radius: 16px 0 0 16px;
 }
 
-.drawer-left {
+.ca-modal-drawer--left {
   left: 0;
   top: 0;
   bottom: 0;
   border-radius: 0 16px 16px 0;
 }
 
-.drawer-top {
+.ca-modal-drawer--top {
   top: 0;
   left: 0;
   right: 0;
   border-radius: 0 0 16px 16px;
 }
 
-.drawer-bottom {
+.ca-modal-drawer--bottom {
   bottom: 0;
   left: 0;
   right: 0;
@@ -234,38 +271,38 @@
 }
 
 /* Sizes for left/right */
-.drawer-right.drawer-small,
-.drawer-left.drawer-small {
+.ca-modal-drawer--right.ca-modal-drawer--small,
+.ca-modal-drawer--left.ca-modal-drawer--small {
   width: 320px;
 }
 
-.drawer-right.drawer-medium,
-.drawer-left.drawer-medium {
+.ca-modal-drawer--right.ca-modal-drawer--medium,
+.ca-modal-drawer--left.ca-modal-drawer--medium {
   width: 400px;
 }
 
-.drawer-right.drawer-large,
-.drawer-left.drawer-large {
+.ca-modal-drawer--right.ca-modal-drawer--large,
+.ca-modal-drawer--left.ca-modal-drawer--large {
   width: 560px;
 }
 
 /* Sizes for top/bottom */
-.drawer-top.drawer-small,
-.drawer-bottom.drawer-small {
+.ca-modal-drawer--top.ca-modal-drawer--small,
+.ca-modal-drawer--bottom.ca-modal-drawer--small {
   height: 300px;
 }
 
-.drawer-top.drawer-medium,
-.drawer-bottom.drawer-medium {
+.ca-modal-drawer--top.ca-modal-drawer--medium,
+.ca-modal-drawer--bottom.ca-modal-drawer--medium {
   height: 400px;
 }
 
-.drawer-top.drawer-large,
-.drawer-bottom.drawer-large {
+.ca-modal-drawer--top.ca-modal-drawer--large,
+.ca-modal-drawer--bottom.ca-modal-drawer--large {
   height: 60vh;
 }
 
-.drawer-header {
+.ca-modal-drawer-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -274,14 +311,14 @@
   flex-shrink: 0;
 }
 
-.drawer-title {
+.ca-modal-drawer-title {
   margin: 0;
   font-size: 1.1rem;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.95);
 }
 
-.drawer-content {
+.ca-modal-drawer-content {
   padding: 20px;
   overflow-y: auto;
   flex: 1;
@@ -292,19 +329,19 @@
  * ═══════════════════════════════════════════════════════════════════════════════ */
 
 @media (max-width: 768px) {
-  .modal-portal {
+  .ca-modal-portal {
     padding: 10px;
   }
 
-  .modal-medium,
-  .modal-large {
+  .ca-modal--medium,
+  .ca-modal--large {
     width: 100%;
   }
 
-  .drawer-right.drawer-medium,
-  .drawer-left.drawer-medium,
-  .drawer-right.drawer-large,
-  .drawer-left.drawer-large {
+  .ca-modal-drawer--right.ca-modal-drawer--medium,
+  .ca-modal-drawer--left.ca-modal-drawer--medium,
+  .ca-modal-drawer--right.ca-modal-drawer--large,
+  .ca-modal-drawer--left.ca-modal-drawer--large {
     width: 100%;
   }
 }

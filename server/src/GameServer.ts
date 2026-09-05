@@ -2711,6 +2711,21 @@ export class GameServer {
           if (!(await claimTable(row.table_id))) continue;
 
           if (startedThisSweep > 0) await this.sleep(ENGINE_START_STAGGER_MS);
+
+          // RE-CHECKED AFTER THE AWAITS (2026-09-05). The ClusterController
+          // wakes a seated Main 1 through ensureCashTableEngine on the same
+          // 5 s cadence this sweep runs on, and on the same trigger (a seat
+          // appeared). Between the `has` check above and this line are a
+          // lease round trip and the stagger sleep; a wake that lands inside
+          // that window put a second engine on the same table, and the `set`
+          // below overwrote the first, which kept dealing unreferenced. The
+          // on-demand door re-checks after its claim; so does this one now.
+          if (
+            this.tableEngines.has(row.table_id) ||
+            this.tableEngineStartPromises.has(row.table_id)
+          ) {
+            continue;
+          }
           startedThisSweep++;
 
           console.log(

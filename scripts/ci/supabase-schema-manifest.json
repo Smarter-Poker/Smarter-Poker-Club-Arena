@@ -1731,6 +1731,7 @@
     "fn_ca_fleet_pnl",
     "fn_ca_fleet_policy_effective",
     "fn_ca_fleet_register_sync",
+    "fn_ca_fleet_seat_touch",
     "fn_ca_fleet_set_policy",
     "fn_ca_fleet_state_upsert",
     "fn_ca_fund_club",

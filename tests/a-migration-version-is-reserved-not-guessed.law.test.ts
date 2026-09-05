@@ -134,6 +134,47 @@ describe('a migration version is reserved, not guessed', () => {
     }
   });
 
+  it('a version is exactly 14 digits, and later work sorts later', { timeout: 90_000 }, () => {
+    /**
+     * ADDED 2026-09-05 after this script handed out a SIXTEEN digit version.
+     * The collision path built %Y%m%d%H%M plus four random digits, which is
+     * both too wide and randomly ordered inside a minute - and Supabase
+     * applies migrations in string order, so a version that does not sort by
+     * time can run a migration before the one it depends on. It now walks the
+     * clock forward instead, which keeps the width and the order.
+     *
+     * The estate already carries the scars of hand-made versions:
+     * 20260831235992 is a 92nd second and 20260831b is not a number at all.
+     */
+    mkdirSync(MIG_DIR, { recursive: true });
+    const squatted: string[] = [];
+    const now = Date.now();
+    for (let d = -5_000; d <= 20_000; d += 1000) {
+      const t = new Date(now + d);
+      const v =
+        t.getUTCFullYear().toString() +
+        String(t.getUTCMonth() + 1).padStart(2, '0') +
+        String(t.getUTCDate()).padStart(2, '0') +
+        String(t.getUTCHours()).padStart(2, '0') +
+        String(t.getUTCMinutes()).padStart(2, '0') +
+        String(t.getUTCSeconds()).padStart(2, '0');
+      const f = resolve(MIG_DIR, `${v}_squatter_holding_this_second.sql`);
+      writeFileSync(f, '-- squatter\n');
+      squatted.push(f);
+    }
+    try {
+      const a = reserve('a_version_that_is_fourteen_digits_wide');
+      const b = reserve('a_later_version_that_sorts_after_it');
+      for (const p of [a, b]) {
+        expect(versionOf(p), `${p} is not 14 digits`).toMatch(/^\d{14}$/);
+      }
+      // String order is the order Supabase applies them in.
+      expect(versionOf(b) > versionOf(a)).toBe(true);
+    } finally {
+      for (const f of squatted) rmSync(f, { force: true });
+    }
+  });
+
   it('two consecutive reservations never collide', { timeout: 30_000 }, () => {
     const a = reserve('the_first_agent_reserves_a_name');
     const b = reserve('the_second_agent_reserves_a_name');

@@ -508,53 +508,32 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'leader/standby heartbeat',
     'fleet'
   ),
-  // Legacy: no reader in server/src. Registered so the test fails the day
-  // something starts reading one without moving it above (a datum with a
-  // reader is not legacy) and so the panel can show them as what they are.
+  // RETIRED 2026-09-05. These sixteen were registered here as `legacy_unused`
+  // and described as "zero rows, zero writes". Half of that was wrong, and
+  // checking it is what retired them. Exact counts, not reltuples estimates:
   //
-  // CORRECTED 2026-09-05. This block said "zero rows, zero writes" and that
-  // was not true of all of them. Measured against production:
+  //   horse_opponent_journals 858   horse_sports_source_assignments 200
+  //   horse_memory            104   ai_horses                       100
+  //   horse_personality       100   horse_source_assignments        100
+  //   horse_topic_cooldowns    37   horse_hand_history                4
+  //   horse_analytics           1   (the other eight genuinely empty)
   //
-  //   horse_opponent_journals   858 rows, newest 2026-08-16, ZERO reads ever
-  //   horse_session_stats         0 rows, 114 sequential scans
-  //   horses                      0 rows,  51 scans, 1 SQL reader
-  //                               (get_available_horses, which nothing calls -
-  //                                HydraService notes the RPC "doesn't exist")
+  // Dan: "IF ITS DEAD, ITS DEAD." So the eight empty ones were dropped and the
+  // nine holding rows were MOVED to `zz_archive` - out of `public`, off the
+  // PostgREST surface, out of the RLS advisor reports, with 1,404 rows that
+  // cannot be regenerated still readable by service_role. Dropping data to win
+  // a lint is not a trade worth making.
   //
-  // horse_opponent_journals is the one worth naming: fifty columns of
-  // per-opponent history - steal attempts, barrel counts, tank times,
-  // showdown bluffs - written until 2026-08-16 and read by nothing, ever. It
-  // is a second, richer opponent model that lost to HorseMind
-  // (horse_mind_stats / horse_mind_pairs), which IS live and took 1,595,965
-  // reads over the same period. Two models were built; one won; the loser was
-  // left holding data. Do not "revive" it without deciding which model owns
-  // opponent memory - that is the decision, not the wiring.
-  ...[
-    'horse_analytics',
-    'horse_error_log',
-    'horse_hand_history',
-    'horse_memory',
-    'horse_opponent_journals',
-    'horse_opponent_reads',
-    'horse_personality',
-    'horse_relationships',
-    'horse_session_analytics',
-    'horse_session_stats',
-    'horse_source_assignments',
-    'horse_sports_source_assignments',
-    'horse_table_presence',
-    'horse_threat_intel',
-    'horse_topic_cooldowns',
-    'horses',
-  ].map((t) =>
-    table(
-      t,
-      'legacy_unused',
-      'none',
-      'no reader in server/src as of 2026-09-05; see the note above - some of these hold rows',
-      'legacy'
-    )
-  ),
+  // horse_opponent_journals is the one worth remembering: fifty columns of
+  // per-opponent history, last written 2026-08-16, read ZERO times ever. It is
+  // a second opponent model that lost to HorseMind - horse_mind_stats and
+  // horse_mind_pairs took 1,595,965 reads over the same period. Do not revive
+  // it without first deciding which model owns opponent memory; that is the
+  // decision, not the wiring.
+  //
+  // Nothing is registered for them any more, deliberately: a ledger row for a
+  // table that no longer exists in `public` is the same class of untruth the
+  // "zero rows" note was.
 
   // ─────────────────────────────────────────────────────────────────────────
   // RECEIPTS. Telemetry keys, with the ratio the daily audit expects on a

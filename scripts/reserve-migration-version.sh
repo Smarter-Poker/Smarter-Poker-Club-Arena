@@ -98,17 +98,41 @@ used_versions() {
 taken="$(used_versions | sort -u)"
 is_taken() { printf '%s\n' "$taken" | grep -qx "$1"; }
 
+# A version is EXACTLY 14 digits, YYYYMMDDHHMMSS, and later work sorts after
+# earlier work. Both of those are load-bearing:
+#
+#   * Supabase orders migrations by this string, so a version that does not
+#     sort by time can apply a migration before the one it depends on.
+#   * The estate's own history is 14 digits. 20260831235992 (a 92nd second)
+#     and 20260831b are what earlier agents produced by hand when the obvious
+#     name was taken, and both are already awkward to read in a listing.
+#
+# THE FIRST DRAFT OF THIS SCRIPT GOT IT WRONG, on 2026-09-05: the collision
+# path built %Y%m%d%H%M plus four random digits, which is SIXTEEN digits, and
+# it randomised the ordering inside a minute. Walking the clock forward instead
+# keeps the width and keeps the order - a later reservation is always a later
+# version - and the free-slot check below is what makes it safe.
 version="$(date -u +%Y%m%d%H%M%S)"
 if is_taken "$version"; then
-  for _ in $(seq 1 40); do
-    candidate="$(date -u +%Y%m%d%H%M)$(printf '%04d' $(( RANDOM % 10000 )))"
-    if ! is_taken "$candidate"; then version="$candidate"; break; fi
+  base=$(date -u +%s)
+  found=0
+  for offset in $(seq 1 600); do
+    candidate="$(date -u -r $(( base + offset )) +%Y%m%d%H%M%S 2>/dev/null \
+                 || date -u -d "@$(( base + offset ))" +%Y%m%d%H%M%S)"
+    if ! is_taken "$candidate"; then version="$candidate"; found=1; break; fi
   done
-  if is_taken "$version"; then
-    echo "could not find a free migration version in 40 draws - something is wrong." >&2
+  if [ "$found" != "1" ]; then
+    echo "no free migration version in the next 600 seconds - something is wrong." >&2
     exit 1
   fi
 fi
+
+# Width is the invariant, so assert it rather than trust the arithmetic above.
+case "$version" in
+  [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) : ;;
+  *) echo "refusing to hand out '$version': a version must be exactly 14 digits." >&2
+     exit 1 ;;
+esac
 
 path="$mig_dir/${version}_${slug}.sql"
 

@@ -20,6 +20,26 @@
 
 import React, { useMemo } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
+
+/** The word a reader expects for each wire verb (v3 adds the forced money). */
+const ACTION_LABEL: Record<string, string> = {
+  FOLD: 'Fold',
+  CHECK: 'Check',
+  CALL: 'Call',
+  BET: 'Bet',
+  RAISE: 'Raise',
+  ALL_IN: 'All In',
+  SB: 'Posts SB',
+  BB: 'Posts BB',
+  ANTE: 'Posts Ante',
+  STRADDLE: 'Straddles',
+  POST: 'Posts',
+  RETURN: 'Uncalled, Returned',
+  DISCARD: 'Discards',
+};
+function actionLabel(action: string): string {
+  return ACTION_LABEL[action] || action;
+}
 import { decodeHandFromUrl, type ShareableHand } from '../../components/table/ShareHand';
 
 const SUIT_GLYPH: Record<string, string> = { h: '♥', d: '♦', c: '♣', s: '♠' };
@@ -73,8 +93,8 @@ function Street({
       )}
       {actions?.map((a, i) => (
         <div key={i} style={{ fontSize: '0.85rem', opacity: 0.9 }}>
-          Seat {a.seat} - {a.action}
-          {a.amount ? ` ${a.amount.toLocaleString()}` : ''}
+          Seat {a.seat} - {actionLabel(a.action)}
+          {a.amount ? ` ${a.amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : ''}
         </div>
       ))}
     </section>

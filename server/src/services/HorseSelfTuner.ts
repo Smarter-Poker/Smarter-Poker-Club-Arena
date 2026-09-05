@@ -36,6 +36,9 @@ import { reportError } from './errorReporter.js';
 import { claimNightlyJob } from '../benchmark/HorseLeague.js';
 import type { HorseProfileMods, LeakFamily } from '../engine/HorseLogic.js';
 
+/** The two VARIANT families the rollup splits by; 'tournament' is a format. */
+type VariantFamily = Exclude<LeakFamily, 'tournament'>;
+
 import { accumulatePlayStats, freshPlay, type HandRow, type PlayStats } from './HorsePlayStats.js';
 
 // Re-exported so existing readers (tests, the panel scripts) keep their import path.
@@ -321,7 +324,7 @@ export function diagnoseAndNudge(
 }
 
 /** V41: which family a review-rollup variant belongs to. Exported for tests. */
-export function leakFamilyOf(variant: string | null | undefined): LeakFamily {
+export function leakFamilyOf(variant: string | null | undefined): Exclude<LeakFamily, 'tournament'> {
   const v = (variant || 'nlh').toLowerCase();
   return v.startsWith('plo') || v === 'flo8' || v.includes('omaha') ? 'omaha' : 'holdem';
 }
@@ -668,8 +671,12 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
     // let an NLH non-nut-flush tag inflate a horse's OMAHA stack-off load
     // (PLO_STACKOFF_TAGS reads nonnut_flush_stackoff) and vice versa; the
     // brain reads its own family first (HorseLogic.leakLoad).
-    const leaksByFamily = new Map<string, Record<LeakFamily, Record<string, number>>>();
-    const leakHandsByFamily = new Map<string, Record<LeakFamily, number>>();
+    const leaksByFamily = new Map<string, Record<VariantFamily, Record<string, number>>>();
+    const leakHandsByFamily = new Map<string, Record<VariantFamily, number>>();
+    // V41: the tournament FORMAT share, read straight from the review rows
+    // (the rollup has no format column). The cash-only tuner never looked at
+    // these: 61,955 rows a week, 23,921 tagged, read by nobody.
+    const tourneyLeaks = new Map<string, { reviewed: number; counts: Record<string, number> }>();
     try {
       const sinceDay = new Date(Date.now() - STUDY_WINDOW_DAYS * 86400_000)
         .toISOString()
@@ -727,6 +734,31 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
       leaksByHorse.clear();
       leaksByFamily.clear();
       leakHandsByFamily.clear();
+    }
+    try {
+      const sinceDay = new Date(Date.now() - STUDY_WINDOW_DAYS * 86400_000)
+        .toISOString()
+        .slice(0, 10);
+      const { data, error } = await supabase.rpc('fn_horse_tournament_leaks', {
+        p_since: sinceDay,
+      });
+      if (error) throw new Error(error.message);
+      for (const row of (data ?? []) as Array<{
+        horse_user_id: string;
+        reviewed: number | string;
+        leak_counts: Record<string, number> | null;
+      }>) {
+        const counts: Record<string, number> = {};
+        for (const [k, v] of Object.entries(row.leak_counts ?? {})) {
+          const n = Number(v) || 0;
+          if (n > 0) counts[k] = n;
+        }
+        tourneyLeaks.set(row.horse_user_id, { reviewed: Number(row.reviewed) || 0, counts });
+      }
+    } catch (err) {
+      // An upgrade, not a dependency: the night tunes without it.
+      reportError(err, 'HorseSelfTuner.tournamentLeaks');
+      tourneyLeaks.clear();
     }
 
     // ── 2026-09-05: EVERY HORSE, FROM ITS OWN ROWS ───────────────────────
@@ -821,11 +853,14 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
         for (const [k, v] of Object.entries(m)) if ((Number(v) || 0) > 0) out[k] = Number(v);
         return out;
       };
+      const tl = tourneyLeaks.get(horseId);
       const familyProfile = {
         leaksOmaha: positive(fams.omaha),
         leaksHandsOmaha: famHands.omaha,
         leaksHoldem: positive(fams.holdem),
         leaksHandsHoldem: famHands.holdem,
+        leaksTournament: tl ? positive(tl.counts) : {},
+        leaksHandsTournament: tl?.reviewed ?? 0,
       };
       const prev = prevMods as Record<string, unknown>;
       const prevLeaks = (prevMods as { leaks?: Record<string, number> }).leaks ?? {};
@@ -835,7 +870,10 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
         JSON.stringify(prev.leaksOmaha ?? {}) !== JSON.stringify(familyProfile.leaksOmaha) ||
         JSON.stringify(prev.leaksHoldem ?? {}) !== JSON.stringify(familyProfile.leaksHoldem) ||
         (prev.leaksHandsOmaha ?? 0) !== familyProfile.leaksHandsOmaha ||
-        (prev.leaksHandsHoldem ?? 0) !== familyProfile.leaksHandsHoldem;
+        (prev.leaksHandsHoldem ?? 0) !== familyProfile.leaksHandsHoldem ||
+        JSON.stringify(prev.leaksTournament ?? {}) !==
+          JSON.stringify(familyProfile.leaksTournament) ||
+        (prev.leaksHandsTournament ?? 0) !== familyProfile.leaksHandsTournament;
       const changed =
         mods.tightness !== (prevMods.tightness ?? 1) ||
         mods.aggression !== (prevMods.aggression ?? 1) ||
@@ -853,6 +891,8 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
             leaksHandsOmaha: familyProfile.leaksHandsOmaha,
             leaksHoldem: familyProfile.leaksHoldem,
             leaksHandsHoldem: familyProfile.leaksHandsHoldem,
+            leaksTournament: familyProfile.leaksTournament,
+            leaksHandsTournament: familyProfile.leaksHandsTournament,
           };
           const { error: upErr } = await supabase
             .from('profiles')

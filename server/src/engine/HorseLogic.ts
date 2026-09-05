@@ -222,6 +222,8 @@ interface StyleParams {
   riverWarLoad?: number;
   /** V41: limped-pot bloat rate for this variant family. */
   limpBloatLoad?: number;
+  /** V41: extra ICM survival premium for a horse tagged for event stack-offs. */
+  tourneyLeakPremium?: number;
 }
 
 const STYLE_PARAMS: Record<HorseStyle, StyleParams> = {
@@ -295,6 +297,12 @@ export interface HorseProfileMods {
   leaksHandsOmaha?: number;
   leaksHoldem?: Record<string, number>;
   leaksHandsHoldem?: number;
+  /** V41 (2026-09-05): the tournament-FORMAT share, from
+   *  fn_horse_tournament_leaks (the rollup has no format column). Read by
+   *  the ICM premium: a horse the tagger keeps catching stacking off in
+   *  events pays a little more survival premium. */
+  leaksTournament?: Record<string, number>;
+  leaksHandsTournament?: number;
 }
 
 /**
@@ -317,7 +325,7 @@ export const PLO_STACKOFF_TAGS = [
  * one and from the pooled map otherwise. Under 40 reviewed hands it is 0: a
  * rate on a handful of hands is noise, and noise must never move a decision.
  */
-export type LeakFamily = 'omaha' | 'holdem';
+export type LeakFamily = 'omaha' | 'holdem' | 'tournament';
 
 export function leakLoad(
   mods: HorseProfileMods | undefined,
@@ -325,8 +333,21 @@ export function leakLoad(
   family: LeakFamily
 ): number {
   if (!mods) return 0;
-  const scoped = family === 'omaha' ? mods.leaksOmaha : mods.leaksHoldem;
-  const scopedHands = family === 'omaha' ? mods.leaksHandsOmaha : mods.leaksHandsHoldem;
+  const scoped =
+    family === 'omaha'
+      ? mods.leaksOmaha
+      : family === 'holdem'
+        ? mods.leaksHoldem
+        : mods.leaksTournament;
+  const scopedHands =
+    family === 'omaha'
+      ? mods.leaksHandsOmaha
+      : family === 'holdem'
+        ? mods.leaksHandsHoldem
+        : mods.leaksHandsTournament;
+  // The tournament family never falls back to the pooled map: the pooled
+  // map is mostly cash, and cash verdicts are not event verdicts.
+  if (family === 'tournament' && !scoped) return 0;
   const counts = scoped ?? mods.leaks;
   const hands = scoped ? (scopedHands ?? 0) : (mods.leaksHands ?? 0);
   if (!counts || hands < 40) return 0;
@@ -383,6 +404,35 @@ export const LIMP_BLOAT_TAGS = ['limped_pot_bloat'] as const;
 
 export function limpBloatLoad(mods: HorseProfileMods | undefined, family: LeakFamily): number {
   return leakLoad(mods, LIMP_BLOAT_TAGS, family);
+}
+
+/**
+ * V41: the stack-off tags a tournament horse can earn, either family. 61,955
+ * tournament review rows a week (23,921 tagged) reached nothing before this;
+ * the cash-only tuner never read them. Read by the ICM premium: a tagged
+ * horse pays up to 0.03 more survival premium - it calls off less, jams less
+ * light, and bluffs less - in exactly the format where the verdicts came from.
+ */
+export const TOURNEY_STACKOFF_TAGS = [
+  'preflop_stackoff',
+  'coldcall_stackoff',
+  'top_pair_weak_kicker_stackoff',
+  'weak_kicker_trips_stackoff',
+  'nonnut_flush_stackoff',
+  'second_nut_flush_stackoff',
+  'dominated_straight_stackoff',
+  'plo_naked_trips_stackoff',
+  'plo_toppair_no_redraw_stackoff',
+] as const;
+
+export function tourneyStackoffLoad(mods: HorseProfileMods | undefined): number {
+  return leakLoad(mods, TOURNEY_STACKOFF_TAGS, 'tournament');
+}
+
+/** V41: the survival premium a tagged tournament horse adds (0 untagged). */
+export function tourneyLeakPremium(mods: HorseProfileMods | undefined): number {
+  const load = tourneyStackoffLoad(mods);
+  return load >= LEAK_LOAD_TAGGED ? Math.min(0.03, load * 0.25) : 0;
 }
 
 /** V41: a load at or above this is "the tagger keeps catching this horse". */
@@ -473,6 +523,12 @@ export function resolveHorseStyle(
     if (holdem && holdemHands !== undefined) {
       mods.leaksHoldem = holdem;
       mods.leaksHandsHoldem = holdemHands;
+    }
+    const tourney = counts(obj.leaksTournament);
+    const tourneyHands = hands(obj.leaksHandsTournament);
+    if (tourney && tourneyHands !== undefined) {
+      mods.leaksTournament = tourney;
+      mods.leaksHandsTournament = tourneyHands;
     }
   }
 
@@ -1133,6 +1189,19 @@ function icmRisk(
   gs: HorseGameStateV2,
   stackBB: number,
   useV16Icm: boolean = true,
+  useV23End: boolean = true,
+  /** V41: the horse's own event verdicts, as extra premium (0 untagged). */
+  leakPremium: number = 0
+): number {
+  const base = icmRiskBase(gs, stackBB, useV16Icm, useV23End);
+  if (leakPremium > 0 && isTournamentMode(gs)) return base + leakPremium;
+  return base;
+}
+
+function icmRiskBase(
+  gs: HorseGameStateV2,
+  stackBB: number,
+  useV16Icm: boolean = true,
   useV23End: boolean = true
 ): number {
   lastIcmPath = 'legacy';
@@ -1677,6 +1746,12 @@ export class HorseLogic {
       params.nlhStackoffLoad = nlhStackoffLoad(mods);
       params.riverWarLoad = riverWarLoad(mods, fam41);
       params.limpBloatLoad = limpBloatLoad(mods, fam41);
+      params.tourneyLeakPremium = (opts.v41Leaks ?? true) !== false ? tourneyLeakPremium(mods) : 0;
+      // PROOF OF RECEIPT: once per decision, preflop or postflop, only where
+      // the premium can reach a price (a tournament).
+      if (telemetryOn(opts) && params.tourneyLeakPremium > 0 && isTournamentMode(gs)) {
+        noteFire('v41_tourney_leak_read');
+      }
     }
     const toCall = Math.max(0, gs.currentBet - player.bet);
 
@@ -2105,7 +2180,13 @@ export class HorseLogic {
           );
           const uncallable38 = Math.max(0, toCall - effCall38);
           const pot38 = Math.max(0.01, gs.pot - uncallable38);
-          const riskAdd38 = icmRisk(gs, stackBB, opts.v16Icm !== false, opts.v23Endgame !== false);
+          const riskAdd38 = icmRisk(
+            gs,
+            stackBB,
+            opts.v16Icm !== false,
+            opts.v23Endgame !== false,
+            params.tourneyLeakPremium ?? 0
+          );
           const share38 = Math.min(1, effCall38 / Math.max(1, player.stack));
           const rake38 =
             (opts.v10Rake ?? opts.v10) !== false && !isTournamentMode(gs) ? rakeDrag(pot38, bb) : 0;
@@ -2191,7 +2272,13 @@ export class HorseLogic {
       sizingMultiplier: params.sizingMultiplier,
       isOmaha: vi.isOmaha,
       isPotLimit: vi.isPotLimit,
-      riskAdd: icmRisk(gs, stackBB, opts.v16Icm !== false, opts.v23Endgame !== false),
+      riskAdd: icmRisk(
+        gs,
+        stackBB,
+        opts.v16Icm !== false,
+        opts.v23Endgame !== false,
+        params.tourneyLeakPremium ?? 0
+      ),
       // NLH only: widening the iso range vs limpers is an NLH edge; PLO limped
       // pots play multiway/postflop where a wide iso bloats pots out of line.
       isoWiden: (opts.v10Iso ?? opts.v10) !== false && !vi.isOmaha ? 0.06 : 0,
@@ -2959,10 +3046,12 @@ export class HorseLogic {
           gs,
           gs.bigBlind > 0 ? stack / gs.bigBlind : 100,
           opts.v16Icm !== false,
-          opts.v23Endgame !== false
+          opts.v23Endgame !== false,
+          params.tourneyLeakPremium ?? 0
         )
       : 0;
     if (tele15 && useV7 && isTournamentMode(gs)) noteFire(`icm_${lastIcmPath}`);
+
     // V15: equities cluster tighter still with 5 and 6 hole cards, so the
     // per-opponent multiway tightening scales with hole count.
     const useV15 = opts.v15 !== false;

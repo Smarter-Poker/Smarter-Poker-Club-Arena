@@ -607,6 +607,38 @@ export abstract class ServerTableEngineBase {
   }
 
   /**
+   * BBJ AUDIT 2026-09-05: every live CASH table whose club is in `clubIds`,
+   * other than `excludeTableId`.
+   *
+   * A Bad Beat Jackpot hit is announced to "everyone currently playing in the
+   * club or union" (Dan). The client used to learn about a hit at another
+   * table only through a Supabase Realtime subscription on the pool row - a
+   * stream this platform has measured a minute or more behind at peak - and
+   * then refused anything older than 90 seconds as a replay. So at other
+   * tables the announcement raced its own freshness gate and could lose.
+   *
+   * The engine already holds a socket to every one of those tables. This is
+   * the fan-out list for `bbj_hit_global`, read from the same registry that
+   * decides which engine instance is authoritative, so a zombie engine mid
+   * teardown is never on it. Tournament tables are excluded: a jackpot is a
+   * cash-game feature and a tournament table's players are not in the pool.
+   */
+  protected static liveCashTableIdsInClubs(
+    clubIds: ReadonlySet<string>,
+    excludeTableId: string
+  ): string[] {
+    const out: string[] = [];
+    for (const [tableId, engine] of ServerTableEngineBase.liveEngines) {
+      if (tableId === excludeTableId) continue;
+      const info = engine.tableInfo;
+      if (!info?.club_id || !clubIds.has(info.club_id)) continue;
+      if (info.tournament_id) continue;
+      out.push(tableId);
+    }
+    return out;
+  }
+
+  /**
    * FIX 2026-08-22: the 10-minute hand-void timer is a raw setTimeout held per
    * hand. It was never cleared by stop()/killForRestart(), so it could fire
    * up to 10 minutes later — against a SUCCESSOR engine happily dealing on the

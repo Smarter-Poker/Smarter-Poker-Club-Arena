@@ -211,6 +211,11 @@ describe('every promo wallet carries a ledger', () => {
     // The definition production runs is the newest one (the verification
     // pass re-shaped it so a million-row rake wallet is not re-summed).
     const LEDGER = migration('the_union_ledger_totals_do_not_rescan_a_million_rake_rows');
+    // ...and the body production runs is the one after it: a sweep has no actor.
+    const CURRENT = migration('a_sweep_has_no_actor');
+    expect(fnBody(CURRENT, 'fn_promo_wallet_ledger')).toContain(
+      'case when t.created_by is null then null else'
+    );
     const b = fnBody(LEDGER, 'fn_promo_wallet_ledger');
     expect(b).toContain("if p_scope = 'union' then");
     expect(b).toContain("if p_scope = 'club' then");

@@ -203,3 +203,10 @@ ready_for_restart_at 23:55:28` (the gate opened - first time ever on a live
   except that Phase 4's sit-out acceptance (a sampled deadline actually
   moved) is proven by rolled-back probe and by `sit_out_at: 6` under the
   fixed trigger, not yet by a before/after sample on a live seat.
+- **2026-09-05 the resume arrives in installments (engine side of phase 3,
+  revisited).** Prometheus: the 04:00 UTC break ended with 720 tables parked,
+  the one core saturated within 30s and the container was replaced at 04:07.
+  `resumeEveryEngine` now deals the fleet into 8 waves 1.5s apart (10.5s
+  first to last), stable-hash order, cash and tournaments interleaved,
+  `/health maintenance.resumeWaves` while it runs. Humans-first ordering was
+  rejected under 10.5. `docs/changelog/2026-09-05-the-resume-arrives-in-installments.md`.

@@ -63,8 +63,37 @@ describe('one recovery, shared by both paths', () => {
     const calls = (TABLE_PAGE.match(/applySeatRemoved\(/g) || []).length;
     expect(calls, 'the websocket path and the poll path').toBe(2);
     // …and each is in the right place.
-    expect(TABLE_PAGE).toMatch(/applySeatRemoved\(reason\)/);
-    expect(TABLE_PAGE).toMatch(/applySeatRemoved\(evictionReasonRef\.current\)/);
+    /* Both now carry an `announce` decision: clearing the seat is always right,
+       SAYING the player "was removed" is only right when they did not ask to
+       leave (2026-09-05). */
+    expect(TABLE_PAGE).toMatch(/applySeatRemoved\(reason,/);
+    expect(TABLE_PAGE).toMatch(/applySeatRemoved\(evictionReasonRef\.current,/);
+  });
+
+  /*
+   * CLEARING THE SEAT AND SAYING SO ARE TWO DIFFERENT JOBS (Dan 2026-09-05).
+   *
+   * The websocket path used to be gated `if (reason && ...)`, on the reasoning
+   * that "a voluntary leave carries no reason, so this only ever speaks for
+   * removals the player did not ask for". True of the leaver's own device,
+   * which had already navigated away. False of their SECOND device, which held
+   * the same seat and never heard anything: Dan left a cash game on desktop and
+   * his phone went on showing the last dealt hand, then a "0.00 / SITTING OUT"
+   * hero and "Seat Reserved, You'll Be Dealt In Next Hand" over a seat he had
+   * already left.
+   *
+   * So the seat now clears for ANY seat_left addressed to this user, and
+   * `reason` decides only whether there is anything to TELL them.
+   */
+  it('clears the seat for a voluntary leave too, and says nothing about it', () => {
+    const start = TABLE_PAGE.indexOf('const d = evt.data as { user_id?: string; reason?: string }');
+    expect(start, 'the seat_left handler has moved or gone').toBeGreaterThan(-1);
+    const handler = TABLE_PAGE.slice(start, TABLE_PAGE.indexOf('applySeatRemoved(reason,') + 120);
+    // The recovery must NOT be conditional on a reason being present.
+    expect(handler).not.toMatch(/if \(reason && userId/);
+    expect(handler).toMatch(/if \(userId && String\(d\?\.user_id\) === String\(userId\)\)/);
+    // A voluntary leave clears the seat silently; a removal still explains itself.
+    expect(handler).toMatch(/announce: Boolean\(reason\)/);
   });
 
   it('neither path still inlines the old six lines', () => {

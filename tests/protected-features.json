@@ -202,14 +202,18 @@
         "src/presentation/cardPresentation/frameSampler.ts",
         "src/presentation/cardPresentation/SqueezeCard.tsx",
         "src/presentation/cardPresentation/cardSqueeze.css",
-        "src/presentation/cardPresentation/index.ts"
+        "src/presentation/cardPresentation/index.ts",
+        "src/presentation/cardPresentation/environmentInterrupts.ts",
+        "src/presentation/cardPresentation/preload.ts",
+        "src/presentation/cardPresentation/useCardSqueeze.tsx"
       ],
       "contains": {
         "src/components/table/CommunityCards.tsx": [
           "cardPresentationEngine.presentCard(",
           "squeezeHostProps(",
           "community-cards__slot-reserve",
-          "pendingRevealKeyRef"
+          "pendingRevealKeyRef",
+          "preloadImage("
         ],
         "src/presentation/cardPresentation/cardSqueeze.css": [
           "@keyframes ccCardSqueeze",
@@ -221,7 +225,11 @@
         "src/presentation/cardPresentation/SqueezeCard.tsx": [
           "card-squeeze__spine",
           "card-squeeze__shadow"
-        ]
+        ],
+        "src/presentation/cardPresentation/engineSingleton.ts": [
+          "installEnvironmentInterrupts(cardPresentationEngine)"
+        ],
+        "src/components/replay/HandReplay.tsx": ["useCardSqueeze({", "<SqueezeCard"]
       },
       "absent": {
         "src/components/table/CommunityCards.css": [

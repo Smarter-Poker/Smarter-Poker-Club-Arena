@@ -330,6 +330,65 @@ describe('the squeeze on the board', () => {
     expect(cardPresentationEngine.activeCount).toBe(0);
   });
 
+  it('a hidden table does not fan the flop either (spec 47)', () => {
+    const { container, rerender } = render(
+      <CommunityCards {...props({ isVisible: false })} cards={[]} stage="preflop" />
+    );
+    act(() => {
+      rerender(
+        <CommunityCards {...props({ isVisible: false })} cards={BOARD.slice(0, 3)} stage="flop" />
+      );
+    });
+    expect(container.querySelectorAll('.community-cards__card--flop-deal')).toHaveLength(0);
+    // and the board is still correct: three faces on the felt
+    expect(container.querySelectorAll('.community-cards__card')).toHaveLength(3);
+  });
+
+  it('a re-delivered flop does not fan a second time (spec 15)', () => {
+    const { container, rerender } = render(
+      <CommunityCards {...props()} cards={[]} stage="preflop" />
+    );
+    act(() => {
+      rerender(<CommunityCards {...props()} cards={BOARD.slice(0, 3)} stage="flop" />);
+    });
+    expect(container.querySelectorAll('.community-cards__card--flop-deal')).toHaveLength(3);
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    // a resync drops back to preflop and re-delivers the same flop
+    act(() => {
+      rerender(<CommunityCards {...props()} cards={[]} stage="preflop" />);
+    });
+    act(() => {
+      rerender(<CommunityCards {...props()} cards={BOARD.slice(0, 3)} stage="flop" />);
+    });
+    expect(container.querySelectorAll('.community-cards__card--flop-deal')).toHaveLength(0);
+    expect(container.querySelectorAll('.community-cards__card')).toHaveLength(3);
+  });
+
+  it('a turn arriving after the river never turns a face-up card over', () => {
+    const { container, rerender } = render(
+      <CommunityCards {...props()} cards={BOARD.slice(0, 4)} stage="turn" />
+    );
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    act(() => {
+      rerender(<CommunityCards {...props()} cards={BOARD} stage="river" />);
+    });
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    // an out-of-order resync: the same hand, back to the turn
+    act(() => {
+      rerender(<CommunityCards {...props()} cards={BOARD.slice(0, 3)} stage="flop" />);
+    });
+    act(() => {
+      rerender(<CommunityCards {...props()} cards={BOARD.slice(0, 4)} stage="turn" />);
+    });
+    expect(squeezing(container)).toBeNull();
+  });
+
   it('the flop keeps its own three-card fan, not the squeeze', () => {
     const { container, rerender } = render(
       <CommunityCards {...props()} cards={[]} stage="preflop" />

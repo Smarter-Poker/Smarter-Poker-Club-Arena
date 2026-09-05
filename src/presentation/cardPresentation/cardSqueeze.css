@@ -40,9 +40,18 @@
   --rs-flip: 0.48s;
   --rs-overshoot: 1.03;
   --rs-stagger: 0s;
-  /* Theme tokens (spec 51/53). Overridable by a table theme. */
-  --rs-edge: rgba(14, 14, 18, 0.88);
-  --rs-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.25);
+  /* THEME TOKENS (spec 51, 53). Neither is a hard-coded colour a theme
+     cannot reach: both indirect through a token a table theme may set
+     (src/lib/tableTheme.ts writes custom properties on the root the same
+     way), falling back to the felt's default card treatment when no theme
+     has an opinion. A theme wanting a lighter card edge sets
+     `--table-card-edge` and this follows it. */
+  --rs-edge: var(--table-card-edge, rgba(14, 14, 18, 0.88));
+  --rs-shadow: var(
+    --table-card-shadow,
+    0 4px 16px rgba(0, 0, 0, 0.4),
+    0 1px 4px rgba(0, 0, 0, 0.25)
+  );
 }
 
 /* The host is the card's slot element. It materialises IN PLACE (spec 69):

@@ -122,6 +122,15 @@ export class CardPresentationEngine {
   private readonly lanes = new Map<string, string>();
   /** table -> newest hand seen; an older hand's card is stale (spec 16, 31). */
   private readonly latestHand = new Map<string, string | number>();
+  /**
+   * lane -> the furthest street presented on it, for THIS hand (spec 16, 84,
+   * 103). Hand-level staleness alone cannot catch a late turn arriving after
+   * the river: same hand, same board, and the registry only knows the turn was
+   * not presented BEFORE - not that the board has since moved past it. A
+   * reconnect replays exactly that shape, and animating it would turn a card
+   * over that is already face up.
+   */
+  private readonly laneProgress = new Map<string, { handId: string | number; sequence: number }>();
   private readonly listeners = new Set<PhaseListener>();
 
   constructor(opts: CardPresentationEngineOptions = {}) {
@@ -166,7 +175,15 @@ export class CardPresentationEngine {
       this.telemetry({ ...base, event: 'animation_skipped', reason: 'stale-hand' });
       return { status: 'stale', key, profile, durationMs: 0 };
     }
+    const lane = laneKey(event);
+    const progress = this.laneProgress.get(lane);
+    if (progress && progress.handId === event.handId && event.sequence < progress.sequence) {
+      this.remember(key);
+      this.telemetry({ ...base, event: 'animation_skipped', reason: 'out-of-order' });
+      return { status: 'stale', key, profile, durationMs: 0 };
+    }
     this.latestHand.set(event.tableId, event.handId);
+    this.laneProgress.set(lane, { handId: event.handId, sequence: event.sequence });
     this.remember(key);
 
     if (profile.intensity === 'off' || profile.durationMs <= 0) {
@@ -176,7 +193,6 @@ export class CardPresentationEngine {
 
     // One presentation per lane: a newer card on the same board pre-empts an
     // older one still mid-flight, and that one renders its final state.
-    const lane = laneKey(event);
     const previous = this.lanes.get(lane);
     if (previous && previous !== key) this.cancel(previous, 'superseded');
 
@@ -279,6 +295,19 @@ export class CardPresentationEngine {
     }
   }
 
+  /**
+   * Cancel every presentation on every surface (spec 39, 40, 66, 76, 77).
+   *
+   * The environment interrupts use this: a window resize, an orientation
+   * change or the tab being backgrounded all invalidate the geometry a flip
+   * is running against, and correctness beats visual continuation - every
+   * card renders its authoritative final state instead of finishing a turn
+   * against a board that has moved underneath it.
+   */
+  cancelAll(reason: string): void {
+    for (const entry of Array.from(this.active.values())) this.cancel(entry.key, reason);
+  }
+
   isActive(key: string): boolean {
     return this.active.has(key);
   }
@@ -325,6 +354,9 @@ export class CardPresentationEngine {
     for (const key of Array.from(this.processed.keys())) {
       if (key.startsWith(prefix)) this.processed.delete(key);
     }
+    for (const lane of Array.from(this.laneProgress.keys())) {
+      if (lane.startsWith(prefix)) this.laneProgress.delete(lane);
+    }
   }
 
   /** Cancel everything and drop every listener (spec 99, 100). */
@@ -332,6 +364,7 @@ export class CardPresentationEngine {
     for (const entry of Array.from(this.active.values())) this.cancel(entry.key, 'disposed');
     this.listeners.clear();
     this.lanes.clear();
+    this.laneProgress.clear();
     this.processed.clear();
     this.latestHand.clear();
   }

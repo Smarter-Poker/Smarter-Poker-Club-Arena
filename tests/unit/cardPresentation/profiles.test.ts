@@ -40,6 +40,14 @@ describe('profile table', () => {
     expect(Object.isFrozen(P)).toBe(true);
   });
 
+  it('the spectator profile is cash-shaped but separately identified', () => {
+    const { id: _s, mode: _sm, ...spectator } = P.spectatorDesktop;
+    const { id: _c, mode: _cm, ...cash } = P.cashDesktop;
+    expect(spectator).toEqual(cash);
+    expect(P.spectatorDesktop.id).not.toBe(P.cashDesktop.id);
+    expect(P.spectatorDesktop.mode).toBe('spectator');
+  });
+
   it('matches the spec starting values (spec 8, 118)', () => {
     expect(P.cashDesktop.durationMs).toBe(560);
     expect(P.tournamentDesktop.durationMs).toBe(640);
@@ -149,7 +157,10 @@ describe('resolver priority (spec 46)', () => {
     expect(resolveCardAnimationProfile({ ...base, mode: 'tournament' })).toBe(P.tournamentDesktop);
     expect(resolveCardAnimationProfile({ ...base, mode: 'lightning' })).toBe(P.lightningDesktop);
     expect(resolveCardAnimationProfile({ ...base, mode: 'replay' })).toBe(P.replayDesktop);
-    expect(resolveCardAnimationProfile({ ...base, mode: 'spectator' })).toBe(P.cashDesktop);
+    // PHASE 2 2026-09-05: a spectator has their own profile now - same shape
+    // as cash, its own id, so watched hands and played hands stay separable
+    // in the telemetry (spec 36, 94, 118).
+    expect(resolveCardAnimationProfile({ ...base, mode: 'spectator' })).toBe(P.spectatorDesktop);
     expect(resolveCardAnimationProfile({ ...base, platform: 'tablet' })).toBe(P.cashDesktop);
   });
   it('never returns OFF for a table a player can see - there is no off toggle (10.6)', () => {

@@ -12,8 +12,18 @@
 import { CardPresentationEngine } from './CardPresentationEngine';
 import { createAnalyticsTelemetrySink } from './telemetry';
 import { getAnimationSpeed } from '../../utils/animationSpeed';
+import { installEnvironmentInterrupts } from './environmentInterrupts';
 
 export const cardPresentationEngine = new CardPresentationEngine({
   telemetry: createAnalyticsTelemetrySink(),
   speed: getAnimationSpeed,
 });
+
+/**
+ * PHASE 2 2026-09-05: a resize, an orientation change or the tab going into
+ * the background all invalidate a flip already in flight. Installed once,
+ * here, beside the singleton it protects - a per-board listener would add one
+ * resize handler per table on a multi-tabling client and they would all do the
+ * same thing. Guarded for SSR and for the test environment.
+ */
+installEnvironmentInterrupts(cardPresentationEngine);

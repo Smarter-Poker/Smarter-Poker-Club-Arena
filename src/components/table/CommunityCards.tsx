@@ -11,12 +11,13 @@
  */
 
 import React, { useMemo, useEffect, useRef, useState, useId, memo } from 'react';
-import { CardImage, CardBack, type Card } from './CardImage';
+import { CardImage, CardBack, cardBackImageUrl, getCardImagePath, type Card } from './CardImage';
 import { haptic, soundService } from '../../services/SoundService';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import {
   cardPresentationEngine,
   detectPlatform,
+  preloadImage,
   SqueezeCard,
   squeezeHostProps,
   type CardAnimationProfile,
@@ -498,8 +499,19 @@ function CommunityCardsComponent({
         visibleCount >= 5 ? 'river' : visibleCount === 4 ? 'turn' : 'flop';
       // ROUND 2 2026-09-05: the TURN squeezes too, on every hand and not only
       // an all-in runout. The flop keeps its own three-card fan.
+      //
+      // PHASE 2 2026-09-05: but EVERY street is presented through the engine
+      // now, the flop included. The flop's fan is unchanged - it is still its
+      // own two-phase land-and-open, and it still sounds its three staggered
+      // snaps on the street rather than on a reveal beat that does not match
+      // its shape. What it gains is everything the engine owns and the flop
+      // never had: an identity (so a resync cannot re-fan a flop that is
+      // already on the felt), the hidden-table rule (spec 47 - a board nobody
+      // can see does not animate), the out-of-order guard, and telemetry.
+      // Spec 58 asked for exactly this: the pipeline is street-generic, and
+      // the river was only the first animation to use it.
       const squeezes = street === 'river' || street === 'turn';
-      if (squeezes) {
+      {
         const slot = visibleCount - 1;
         const result = cardPresentationEngine.presentCard(
           {
@@ -519,19 +531,38 @@ function CommunityCardsComponent({
           }
         );
         if (result.status === 'started') {
-          activeSqueezeRef.current = result.key;
-          // The stage effect below runs after this one on the same commit and
-          // reads this key: a squeeze in flight owes its snap to the reveal
-          // beat rather than to the street transition.
-          pendingRevealKeyRef.current = result.key;
-          setSqueeze({ key: result.key, profile: result.profile, index: slot });
+          /* PHASE 2 2026-09-05 (spec 41, 42): decode the faces this reveal is
+             about to show, NOW, off to the side. A card face is behind
+             `backface-visibility: hidden` for the first half of a turn, so a
+             warm cache never notices - but a cold one (a deck the player has
+             never been dealt, the first hand after a deploy rehashed every
+             asset) can deliver the bitmap AFTER the surfaces swap, and the
+             card turns over to an empty box. Fire and forget: nothing waits
+             on it, least of all the hand. */
+          for (let i = prevCount; i < visibleCount; i++) {
+            if (cards[i]) preloadImage(getCardImagePath(cards[i], deckStyle));
+          }
+          preloadImage(cardBackImageUrl(cardBack));
           windowMs = Math.max(windowMs, Math.round(result.durationMs * speed));
-        } else {
+          if (squeezes) {
+            activeSqueezeRef.current = result.key;
+            // The stage effect below runs after this one on the same commit
+            // and reads this key: a squeeze in flight owes its snap to the
+            // reveal beat rather than to the street transition.
+            pendingRevealKeyRef.current = result.key;
+            setSqueeze({ key: result.key, profile: result.profile, index: slot });
+          }
+        } else if (squeezes) {
           // Duplicate / stale / hidden: the card is simply on screen, so the
           // cue has nothing to wait for.
           pendingRevealKeyRef.current = null;
           newIndices.delete(slot);
           setSqueeze(null);
+        } else {
+          // The FLOP was refused. Every one of its three cards renders
+          // statically - a fan that plays for a board nobody can see, or
+          // twice for one deal, is the thing the engine exists to stop.
+          newIndices.clear();
         }
       }
       dealtAtRef.current = Date.now();

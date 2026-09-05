@@ -14,6 +14,8 @@ export type { ActivePresentationView } from './CardPresentationEngine';
 export { createAnalyticsTelemetrySink, TELEMETRY_SAMPLE_RATE } from './telemetry';
 export { SqueezeCard, squeezeHostProps, squeezeVars, type SqueezeCardProps } from './SqueezeCard';
 export { useCardSqueeze, streetForCount, type CardSqueezeState } from './useCardSqueeze';
+export { installEnvironmentInterrupts, RESIZE_SETTLE_MS } from './environmentInterrupts';
+export { preloadImage, resetPreloadCache, preloadCount } from './preload';
 export {
   DEGRADED_FPS_THRESHOLD,
   rafFrameSampler,

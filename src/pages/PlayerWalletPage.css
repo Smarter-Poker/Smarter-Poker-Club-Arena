@@ -257,13 +257,10 @@
     box-shadow 0.15s ease;
 }
 
-.vault-btn:hover {
-  border-color: #4d5c6d;
-  transform: translateY(-1px);
-}
-
+/* No hover anywhere in Club Arena (Dan 2026-08-29): a press is the feedback. */
 .vault-btn:active {
-  transform: translateY(0);
+  border-color: #4d5c6d;
+  transform: translateY(1px);
 }
 
 .vault-btn:focus-visible {
@@ -351,7 +348,7 @@
     color 0.15s ease;
 }
 
-.wallet-tabs button:hover {
+.wallet-tabs button:active {
   color: var(--vault-chrome);
 }
 
@@ -889,9 +886,9 @@
     transform 0.15s ease;
 }
 
-.earn-door:hover {
+.earn-door:active {
   border-color: rgba(0, 212, 255, 0.45);
-  transform: translateY(-1px);
+  transform: translateY(1px);
 }
 
 .earn-door:focus-visible {
@@ -980,8 +977,8 @@
     animation-iteration-count: 1 !important;
   }
 
-  .vault-btn:hover,
-  .earn-door:hover {
+  .vault-btn:active,
+  .earn-door:active {
     transform: none;
   }
 }

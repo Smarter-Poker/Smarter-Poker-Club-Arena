@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceBetween } from './helpers/sourceWindow';
 
 const ROOT = resolve(__dirname, '..');
 const PAGE = readFileSync(resolve(ROOT, 'src/pages/PlayerWalletPage.tsx'), 'utf8');
@@ -92,8 +93,8 @@ describe('the header wallet button opens the wallet', () => {
   it('navigates to /wallet, not the diamond store tab', () => {
     // Dan 2026-09-04: "when you click the wallet from the global header it
     // takes you to marketplace. It's supposed to take you to the wallet."
-    const at = HEADER.indexOf('styles.walletBtn');
-    const walletBtn = HEADER.slice(at, at + 400);
+    // The wallet button element: from its class token to its closing tag.
+    const walletBtn = sliceBetween(HEADER, 'styles.walletBtn', '</button>');
     expect(walletBtn).toContain("navigate('/wallet')");
     expect(walletBtn).not.toContain('marketplace?tab=diamonds');
   });

@@ -293,10 +293,11 @@ export default function MarketplacePage() {
          * Order of preference: the club the player is currently inside; then
          * the club with the most active stock; then any membership at all.
          */
-        const { data: mems } = await supabase
+        const { data: mems, error: memsError } = await supabase
           .from('club_members')
           .select('club_id')
           .eq('user_id', user.id);
+        if (memsError) reportError(memsError, 'MarketplacePage.resolveClub.memberships');
         const memberClubIds = (mems || [])
           .map((m) => m.club_id as string)
           .filter((id): id is string => Boolean(id));
@@ -304,11 +305,15 @@ export default function MarketplacePage() {
         if (insideClub && memberClubIds.includes(insideClub)) {
           targetClub = insideClub;
         } else if (memberClubIds.length > 0) {
-          const { data: stock } = await supabase
+          const { data: stock, error: stockError } = await supabase
             .from('club_shop_items')
             .select('club_id')
             .in('club_id', memberClubIds)
             .eq('is_active', true);
+          // A failed stock read is not a reason to have no shop: report it and
+          // fall through to the first membership, which is what the page did
+          // before it learned to prefer stock.
+          if (stockError) reportError(stockError, 'MarketplacePage.resolveClub.stock');
           const counts = new Map<string, number>();
           for (const row of stock || []) {
             const id = row.club_id as string;

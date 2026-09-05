@@ -56,7 +56,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * The reveal gate: how long a run-out street is given to actually appear
    * before its new equity is allowed to change. See
    * HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS for the full reasoning and where
-   * the 1250ms comes from. Instance field, like its neighbours, so a test can
+   * the 1750ms comes from. Instance field, like its neighbours, so a test can
    * drive the ORDERING without spending the seconds.
    */
   protected allInStreetRevealMs = HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS;
@@ -1382,6 +1382,46 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       amount: number;
       hand?: import('../types.js').EvaluatedHand;
     }> = [];
+    /**
+     * ── EACH BOARD SETTLES A REAL SLICE OF EVERY POT (2026-09-05) ──
+     *
+     * This used to evaluate every board against the FULL pots and then divide
+     * the winner's entitlement by `runs` — `w.amount / runs`, in floating
+     * point, with no rule for the odd cent. Nothing was lost (credited totals
+     * are repaired downstream by scaleWinnerCentsForRake, display shares by
+     * the per-player penny repair below), but two things were true that
+     * should not have been:
+     *
+     *   • float dust entered the pre-rake distribution, so the repair was
+     *     covering for arithmetic rather than only for rake;
+     *   • WHICH run carried the odd cent was whatever the rounding happened
+     *     to do — not a rule anyone could state, reproduce, or defend to a
+     *     player asking why board 2 paid a cent more than board 3.
+     *
+     * The split now happens ONCE, up front, in integer cents: every pot is cut
+     * into `runs` slices and the leftover cents go to the EARLIEST runs — the
+     * first board carries the odd chip, which is the live-poker convention and
+     * the one thing about it a player can actually be told.
+     *
+     * Each board then settles its own slice through the ordinary path, so
+     * `determineWinners` still handles hi-lo halves and `distributePot` still
+     * hands an odd chip inside a chop to the first seat clockwise of the
+     * button, exactly as on a single-board hand. No division survives in the
+     * loop below.
+     *
+     * Conservation is exact by construction: a pot's slices sum to
+     * `base * runs + remainder`, which is the pot, to the cent.
+     */
+    const potSlicesByBoard: Array<typeof pots> = Array.from({ length: runs }, () => []);
+    for (const p of pots) {
+      const cents = Math.round((Number(p.amount) || 0) * 100);
+      const base = Math.floor(cents / runs);
+      const remainder = cents - base * runs;
+      for (let b = 0; b < runs; b++) {
+        potSlicesByBoard[b].push({ ...p, amount: (base + (b < remainder ? 1 : 0)) / 100 });
+      }
+    }
+
     for (let boardIdx = 0; boardIdx < runs; boardIdx++) {
       const board = boards[boardIdx];
       // determineWinners handles hi-lo split, short-deck, ties/odd-chip.
@@ -1393,14 +1433,14 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
       const boardWinnersFull = determineWinners(
         state.players,
         board,
-        pots,
+        potSlicesByBoard[boardIdx],
         variant,
         dealerSeat,
         perPotOut
       );
       perBoardWinners.push([...new Set(boardWinnersFull.map((w) => w.userId))]);
       for (const w of boardWinnersFull) {
-        rawDistribution.set(w.userId, (rawDistribution.get(w.userId) || 0) + w.amount / runs);
+        rawDistribution.set(w.userId, (rawDistribution.get(w.userId) || 0) + w.amount);
       }
       for (const a of perPotOut) {
         perBoardPotAwards.push({
@@ -1408,7 +1448,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
           userId: a.userId,
           potIndex: a.potIndex,
           low: a.low,
-          amount: a.amount / runs,
+          amount: a.amount,
           hand: a.hand,
         });
       }

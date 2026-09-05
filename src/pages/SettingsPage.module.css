@@ -1,3 +1,9 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SETTINGS — Control Room  (#SmarterCasinoRealism, 2026-09-04)
+   Obsidian console, machined section index, chrome toggles with a blue core.
+   Light mode is brushed silver.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 .page {
   --control-bg: #030609;
   --control-panel: #080d12;
@@ -506,6 +512,107 @@
   justify-content: flex-end;
   gap: 0.5rem;
   margin-top: 1rem;
+}
+
+/* ── Light mode: brushed silver ──────────────────────────────────────── */
+
+:global([data-theme='light']) .page {
+  --control-bg: #e6ebef;
+  --control-panel: #f3f6f8;
+  --control-raised: #fbfcfd;
+  --control-line: #b7c3cc;
+  --control-steel: #3f5261;
+  --control-blue: #1878c8;
+  background:
+    radial-gradient(circle at 50% 0, rgba(24, 120, 200, 0.12), transparent 33rem), var(--control-bg);
+  color: #0d161d;
+}
+
+:global([data-theme='light']) .heroMetric {
+  color: #0d161d;
+  background: rgba(255, 255, 255, 0.78);
+  border-color: #aab8c3;
+}
+
+:global([data-theme='light']) .controlIndex,
+:global([data-theme='light']) .headerActions {
+  background: linear-gradient(145deg, #ffffff, #e9eef2);
+}
+
+:global([data-theme='light']) .controlIndex button {
+  color: #4d6272;
+}
+
+:global([data-theme='light']) .controlIndex button:focus-visible,
+:global([data-theme='light']) .controlIndexActive {
+  color: #0d161d !important;
+}
+
+:global([data-theme='light']) .changeState,
+:global([data-theme='light']) .settingDesc {
+  color: #55697a;
+}
+
+:global([data-theme='light']) .settingLabel,
+:global([data-theme='light']) .modal h3 {
+  color: #0d161d;
+}
+
+:global([data-theme='light']) .section h2,
+:global([data-theme='light']) .settingEyebrow,
+:global([data-theme='light']) .sliderValue,
+:global([data-theme='light']) .heroMetric small {
+  color: #146bb3;
+}
+
+:global([data-theme='light']) .settingRow {
+  border-bottom-color: #d5dde3;
+}
+
+:global([data-theme='light']) .resetButton,
+:global([data-theme='light']) .actionButton,
+:global([data-theme='light']) .actionButtonSecondary,
+:global([data-theme='light']) .cancelBtn {
+  border-color: #9fb0bc;
+  background: linear-gradient(180deg, #ffffff, #dfe6eb);
+  color: #1c2a35;
+}
+
+:global([data-theme='light']) .studioRow {
+  background: linear-gradient(105deg, rgba(24, 120, 200, 0.12), transparent 46%), #fbfcfd;
+}
+
+:global([data-theme='light']) .toggleSlider {
+  border-color: #9fb0bc;
+  background: #dfe6eb;
+}
+
+:global([data-theme='light']) .select,
+:global([data-theme='light']) .input {
+  border-color: #9fb0bc;
+  background: #ffffff;
+  color: #0d161d;
+}
+
+:global([data-theme='light']) .slider {
+  border-color: #9fb0bc;
+  background: #dfe6eb;
+}
+
+:global([data-theme='light']) .dangerZone {
+  background:
+    linear-gradient(115deg, rgba(194, 61, 61, 0.08), transparent 42%),
+    linear-gradient(145deg, #fbf5f5, #f3eeee);
+}
+
+:global([data-theme='light']) .modal {
+  background: linear-gradient(145deg, #ffffff, #eef2f5);
+  color: #0d161d;
+}
+
+:global([data-theme='light']) .modal p,
+:global([data-theme='light']) .fieldLabel {
+  color: #3f5261;
 }
 
 @media (max-width: 768px) {

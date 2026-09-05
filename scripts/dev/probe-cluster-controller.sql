@@ -4,6 +4,15 @@
 -- dormant / disabled / R3-reopen / thaw, RAISES its report so nothing
 -- commits. Placeholders (double-underscored): MIGRATION, OWNER, CLUB.
 -- Substitute ONLY inside the DO block.
+--
+-- Production RPCs run in a PostgREST session (`authenticator` preloads the
+-- `safeupdate` extension), which refuses any UPDATE or DELETE without a WHERE
+-- clause, inside SECURITY DEFINER functions included. This probe runs as
+-- `postgres` on a direct connection where safeupdate cannot be loaded
+-- ("access to library is not allowed"), so it passed 23/23 on 2026-09-05
+-- while every production tick failed. The SAFEUPDATE step below is the
+-- stand-in: it reads every fn_cash_% body and fails on a statement that
+-- session would refuse.
 DO $probe$
 DECLARE
   r text := E'PROBE-S2 REPORT\n';
@@ -17,6 +26,22 @@ BEGIN
 __MIGRATION__
 $mig$;
   r := r || E'migration applied inside the probe transaction\n';
+
+  -- SAFEUPDATE: no UPDATE / DELETE without WHERE in any cash-cluster function.
+  n := 0;
+  FOR x IN
+    SELECT p.proname, m[1] AS stmt
+      FROM pg_proc p
+      CROSS JOIN LATERAL regexp_matches(
+        regexp_replace(regexp_replace(p.prosrc, '\mFOR UPDATE\M', 'FOR_UPD', 'g'), '\mDO UPDATE\M', 'DO_UPD', 'g'),
+        '(\m(?:UPDATE|DELETE FROM)\s+[^;]*;)', 'g') AS m
+     WHERE p.pronamespace = 'public'::regnamespace AND p.proname LIKE 'fn_cash\_%'
+       AND m[1] !~* '\sWHERE\s'
+  LOOP
+    n := n + 1;
+    r := r || format(E'SAFEUPDATE would refuse in %s: %s\n', x.proname, left(regexp_replace(x.stmt, '\s+', ' ', 'g'), 90));
+  END LOOP;
+  r := r || format(E'SAFEUPDATE statements without WHERE in fn_cash_*: %s %s\n', n, CASE WHEN n = 0 THEN 'PASS' ELSE 'FAIL' END);
 
   -- A club owner creates a must-move Classic NLH 3/6 6-max game (an unusual key).
   INSERT INTO auth.sessions (id, user_id, created_at, updated_at) VALUES (sid, owner, now(), now());

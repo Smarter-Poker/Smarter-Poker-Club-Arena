@@ -517,3 +517,82 @@ describe('SOURCE LAW: the stay clock is respected, never forced', () => {
     expect(src).toContain('Math.max(0, Number(result.stay_remaining_ms) || 0)');
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   EVERY CYCLE STEP IS CALLED, NOT MERELY IMPORTED
+
+   This suite exists because of a real, shipped, four-hour outage of the very
+   feature built to notice outages. A refactor on 2026-09-04 rewrote the block
+   around the stands and took the heartbeat write and the bank check out with
+   it. The imports stayed. `checkBanks` stayed defined. Typecheck stayed clean.
+   5,371 tests stayed green. And `stable_hand_beats` held ZERO rows through
+   four hours of live running while every other order executed normally - the
+   silence watch was itself silent, and nothing said so.
+
+   An import is not a call, and a defined method is not a called one.
+   ══════════════════════════════════════════════════════════════════════════ */
+describe('SOURCE LAW: the cycle actually performs every step it imports', () => {
+  const raw = readFileSync(resolve(__dirname, 'StableHandExecutor.ts'), 'utf8');
+  const src = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  /** Just the body of cycle(), so a call somewhere else does not satisfy it. */
+  const cycle = (() => {
+    const start = src.indexOf('async cycle(): Promise<number> {');
+    expect(start, 'cycle() not found').toBeGreaterThan(-1);
+    return src.slice(start, src.indexOf('\n  }', src.indexOf('return stood;')));
+  })();
+
+  it('WRITES THE HEARTBEAT - the call that went missing', () => {
+    expect(cycle).toContain('await writeBeats(');
+    expect(cycle).toContain('buildBeats(snap, orders.plan');
+  });
+
+  it('CHECKS THE BANKS - the other call that went missing', () => {
+    expect(cycle).toContain('await this.checkBanks(snap, now);');
+  });
+
+  it('applies the table flags', () => {
+    expect(cycle).toContain('await this.applyTableFlags(');
+  });
+
+  it('publishes the plan for the seeder', () => {
+    expect(cycle).toContain('publishPlan(orders.plan, now);');
+  });
+
+  it('clears the executed counters AFTER the beat, or every beat double-counts', () => {
+    const beat = cycle.indexOf('await writeBeats(');
+    const clear = cycle.indexOf('this.executedYields.clear();');
+    expect(clear).toBeGreaterThan(beat);
+    expect(cycle).toContain('this.executedWindDowns.clear();');
+  });
+
+  it('the beat is written AFTER the work, so it records what was done', () => {
+    // A beat written before the stands would record intentions, and the gap
+    // between planned and executed is the whole reason both are stored.
+    expect(cycle.indexOf('await this.stand(')).toBeLessThan(cycle.indexOf('await writeBeats('));
+  });
+
+  it('leaves nothing imported-but-uncalled from the beats module', () => {
+    // The generalised version of the bug: anything pulled in from
+    // StableHandBeats must be used somewhere in this file's code.
+    const imported =
+      (src.match(/import \{([^}]*)\} from '\.\/StableHandBeats\.js'/) ?? [])[1] ?? '';
+    const names = imported
+      .split(',')
+      .map((n) => n.trim().replace(/^type\s+/, ''))
+      .filter(Boolean);
+    expect(names.length).toBeGreaterThan(0);
+    for (const n of names) {
+      const uses = src.split(new RegExp(`\\b${n}\\b`)).length - 1;
+      expect(uses, `${n} is imported but never used`).toBeGreaterThan(1);
+    }
+  });
+
+  it('leaves no private method defined and never called', () => {
+    const defined = [...src.matchAll(/private (?:async )?(\w+)\(/g)].map((m) => m[1]);
+    expect(defined.length).toBeGreaterThan(0);
+    for (const name of defined) {
+      const called = src.includes(`this.${name}(`);
+      expect(called, `${name}() is defined and never called`).toBe(true);
+    }
+  });
+});

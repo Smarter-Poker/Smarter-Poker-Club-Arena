@@ -241,8 +241,12 @@ describe('the stats RPC is asked for once per event, not five times', () => {
 
   it('lets a real change bypass the per-range memo', () => {
     // The memo makes the range pills instant; it must never make a bus event,
-    // a tab return or an explicit retry serve a stale number.
+    // a tab return or an explicit retry serve a stale number. The tab return
+    // is owned by the pulse hook since phase 3 (it replaced
+    // useVisibilityRefresh on this page so a return costs one refetch), and
+    // its onChange lands in the shared debouncer, which loads with fresh: true.
     expect(CODE).toMatch(/clearStatsRangeMemo\(\)/);
-    expect(CODE).toMatch(/useVisibilityRefresh\(\(\) => loadAllData\(\{ fresh: true \}\)\)/);
+    expect(CODE).toMatch(/useStatsPulse\(\{[\s\S]{0,200}onChange: scheduleRefresh/);
+    expect(CODE).not.toMatch(/useVisibilityRefresh/);
   });
 });

@@ -180,7 +180,14 @@ const SUIT_CHAR: Record<string, string> = {
   spades: '♠',
 };
 
-const SUIT_COLOR: Record<string, string> = {
+/**
+ * The suit palette, and the SOURCE OF TRUTH for it - asserted by
+ * `tests/gameplay-wears-the-house-colours.test.ts` ("the four-colour deck
+ * agrees with itself"). Exported since 2026-09-05 so the Card Slide peel index
+ * can draw a corner rank in the same colour the deck draws the suit, instead
+ * of a second set of literals in a stylesheet that could drift.
+ */
+export const SUIT_COLOR: Record<string, string> = {
   h: '#ef4444',
   d: '#3b82f6',
   c: '#22c55e',

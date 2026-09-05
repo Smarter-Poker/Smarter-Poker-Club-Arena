@@ -58,15 +58,11 @@
   /* -- Timing -- */
   --cc-flop-stagger: 100ms;
   --cc-deal-duration: 0.65s;
-  --cc-turn-duration: 0.55s;
-  /* RIVER SQUEEZE 2026-09-04: desktop-cash DEFAULTS only. The component sets
-     these inline per resolved profile (src/presentation/cardPresentation/
-     profiles.ts is the single source of truth; tests pin these to it). */
-  --rs-prepare: 0.08s;
-  --rs-hold: 0s;
-  --rs-flip: 0.48s;
-  --rs-overshoot: 1.03;
-  --rs-stagger: 0s;
+  /* RIVER SQUEEZE 2026-09-04 / ROUND 2 2026-09-05: the turn duration and the
+     `--rs-*` timing variables that lived here moved to
+     src/presentation/cardPresentation/cardSqueeze.css with the squeeze
+     itself. They belong beside the keyframes that read them, and the hand
+     replay squeezes without ever loading this stylesheet. */
   --cc-sheen-period: 4s;
 
   /* -- Colors -- */
@@ -395,148 +391,35 @@
   }
 }
 
-/* ---- Turn Card (4th) -- Dramatic side reveal ---- */
-.community-cards__card--turn {
-  animation: ccTurnReveal calc(var(--cc-turn-duration) * var(--animation-speed, 1))
-    var(--cc-ease-spring) forwards !important;
-  /* IMPROVEMENT PASS 2026-08-19: promote the 3D reveal to its own layer —
-     the rotateY flip was rasterizing mid-animation on mobile GPUs. */
-  will-change: transform, opacity;
-}
+/* THE TURN'S OWN ANIMATION IS RETIRED (ROUND 2 2026-09-05).
+
+   The turn's old keyframe flew a ONE-SIDED face in from a 40/45px offset,
+   spun it mirrored through rotateY(180 -> 0) and flashed it to brightness
+   1.3 - the generic travel-and-scale the river lost when the reference
+   recording was measured. Keeping it meant two streets of the same hand
+   arriving in two different visual languages (spec 123), and it also meant
+   the turn had no profile: it ignored table focus, platform and the all-in
+   pacing the river respected. The turn runs the SAME squeeze as the river
+   now, through the same engine, sized by the same profile table.
+
+   `.community-cards__card--turn` survives as a MARKER only - the felt's
+   all-in styling and the e2e beat look for it - and carries no animation. */
 .community-cards__card--flop-deal {
   will-change: transform, opacity;
 }
 
-@keyframes ccTurnReveal {
-  0% {
-    opacity: 0;
-    transform: rotateY(180deg) translateX(40px) translateY(-45px) scale(0.5);
-    filter: brightness(0.1);
-    box-shadow: 0 0 0 rgba(0, 0, 0, 0);
-  }
-  20% {
-    opacity: 0.6;
-    filter: brightness(0.5);
-  }
-  42% {
-    transform: rotateY(60deg) translateX(10px) translateY(-10px) scale(0.92);
-    opacity: 0.9;
-    filter: brightness(0.8);
-  }
-  62% {
-    transform: rotateY(-10deg) translateX(-4px) translateY(4px) scale(1.08);
-    opacity: 1;
-    filter: brightness(1.3);
-    /* Flash of light as card face catches overhead lamp */
-  }
-  78% {
-    transform: rotateY(4deg) translateX(1px) translateY(-1px) scale(1.02);
-    filter: brightness(1.08);
-  }
-  90% {
-    transform: rotateY(-1deg) translateX(0) scale(1.005);
-    filter: brightness(1.02);
-  }
-  100% {
-    opacity: 1;
-    transform: rotateY(0deg) translateX(0) translateY(0) scale(1);
-    filter: brightness(1);
-  }
-}
+/* THE SQUEEZE ITSELF LIVES IN THE PRESENTATION LAYER (ROUND 2 2026-09-05).
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   RIVER SQUEEZE — the reveal, measured from RIVER SQUEEZE ANIMATION.MOV
-   ═══════════════════════════════════════════════════════════════════════════
-   Dan 2026-09-04: "REVIEW THE VIDEO FRAME BY FRAME AND WATCH HOW THE RIVER
-   CARD." At 30fps the reference does this:
+   `.card-squeeze-host` / `.card-squeeze` / `ccCardMaterialize` /
+   `ccCardSqueeze`, the edge spine and the shadow layer are in
+   src/presentation/cardPresentation/cardSqueeze.css, imported by the
+   SqueezeCard component that renders them. The felt is no longer the only
+   surface that squeezes a card - the hand replay does too - and a reveal
+   defined in the board's stylesheet could never have reached it.
 
-     frames 155-288  the river ARRIVES FACE DOWN in the already-reserved fifth
-                     slot and sits there. Nothing on the felt moves.
-     frame 289  +0   the back starts compressing horizontally; a dark edge
-                     shows on the left - a rotateY flip, not a scaleX squash.
-     frame 290  +33  the back is a ~25%-wide sliver, still the back.
-     frame 291  +66  the FACE is at ~100% width already.
-     292-293   +130  a slight settle, then static.
-
-   So: MATERIALISE face down (prepare) -> HOLD -> SQUEEZE the back to its
-   edge -> the face EXPANDS from the edge (reveal) -> a micro overshoot and
-   SETTLE. The old ccRiverReveal that lived here flew a ONE-SIDED face in from
-   an offset, spun it mirrored and flashed brightness 1.4 - the generic
-   travel-and-scale the video does not have. Gone.
-
-   Two real surfaces (.community-cards__flip, the flop's markup) so the back
-   is a back and the face is a face; resting transform FACE UP, so a player
-   with reduced motion - or an interrupted animation - simply sees the card.
-   Compositor-only: transform and opacity. scaleY is never touched, so the
-   final frame is the CardImage's own aspect ratio. No screen shake, no flash
-   past the card's bounds: this plays thousands of times a session.
-
-   Durations come from the resolved profile as inline custom properties;
-   the :root values are the desktop-cash defaults only. Everything is scaled
-   by --animation-speed, the one sanctioned control (CLAUDE.md 10.6). The
-   keyframe split (37.5% squeeze / 37.5% reveal / 25% settle) is pinned to the
-   profile table by tests/unit/cardPresentation/profiles.test.ts.
-
-   Street-generic: the class is --squeeze; the river also carries --river as
-   a marker (it is what the e2e beat and the simulation test look for). */
-.community-cards__card--squeeze {
-  animation: ccRiverMaterialize calc(var(--rs-prepare, 0.08s) * var(--animation-speed, 1))
-    var(--cc-ease-smooth) both;
-  animation-delay: calc(var(--rs-stagger, 0s) * var(--animation-speed, 1));
-  /* The flip needs depth, and a clipped box flattens it. */
-  overflow: visible;
-  will-change: transform, opacity;
-}
-
-/* The face-down card materialises IN ITS SLOT (spec 69): no travel. */
-@keyframes ccRiverMaterialize {
-  0% {
-    opacity: 0;
-    transform: scaleX(0.9);
-  }
-  100% {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-.community-cards__card--squeeze .community-cards__flip {
-  animation: ccRiverSqueeze calc(var(--rs-flip, 0.48s) * var(--animation-speed, 1))
-    cubic-bezier(0.16, 1, 0.3, 1) both;
-  animation-delay: calc(
-    (var(--rs-prepare, 0.08s) + var(--rs-hold, 0s) + var(--rs-stagger, 0s)) *
-      var(--animation-speed, 1)
-  );
-}
-
-@keyframes ccRiverSqueeze {
-  /* SQUEEZE: the back accelerates to its edge. */
-  0% {
-    transform: rotateY(0deg) scale(1);
-    animation-timing-function: cubic-bezier(0.55, 0, 1, 0.45);
-  }
-  /* Edge-on. The two backface-hidden surfaces swap here. */
-  37.5% {
-    transform: rotateY(90deg) scale(0.985);
-    animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  /* REVEAL: the face expands out of the edge - readable by ~60% width. */
-  75% {
-    transform: rotateY(180deg) scale(1);
-    animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
-  }
-  /* Micro overshoot (spec 20): subtle enough for the thousandth hand. */
-  90% {
-    transform: rotateY(180deg) scale(var(--rs-overshoot, 1.03));
-    animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0);
-  }
-  100% {
-    transform: rotateY(180deg) scale(1);
-  }
-}
-
-/* A compact/background profile turns the card-local sheen off for its card. */
-.community-cards__card--squeeze[data-rs-sweep='off']::after {
+   What stays here is the board's own business: the flop's three-card fan
+   above, and the sheen suppression below for a profile that turns it off. */
+.community-cards__card[data-rs-sweep='off']::after {
   animation: none;
   display: none;
 }
@@ -1023,9 +906,6 @@
   .community-cards__flip,
   .community-cards__rabbit-flip,
   .community-cards__card--dealing,
-  .community-cards__card--turn,
-  .community-cards__card--squeeze,
-  .community-cards__card--squeeze .community-cards__flip,
   .community-cards__card--highlighted,
   .community-cards__highlight-glow,
   .community-cards__stage-label,
@@ -1040,9 +920,7 @@
   }
 
   .community-cards__card--flop-deal,
-  .community-cards__card--dealing,
-  .community-cards__card--turn,
-  .community-cards__card--squeeze {
+  .community-cards__card--dealing {
     opacity: 1;
     transform: none;
     filter: none;

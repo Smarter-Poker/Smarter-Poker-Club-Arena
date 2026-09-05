@@ -60,6 +60,7 @@ import { tournamentService } from '../services/TournamentService';
 import { tableService } from '../services/TableService';
 import { getClubLevelInfoFromMembers, ClubLevelInfo } from '../utils/clubLevels';
 import { useToast } from '../components/common/Toast';
+import { joinCashGame, joinGameRefusalText, waitlistedText } from '../services/cashGameLobby';
 import { applyClubScope, inClubScope, type ClubScope } from '../utils/clubScope';
 import { waitlistService } from '../services/WaitlistService';
 import ConfirmModal from '../components/common/ConfirmModal';
@@ -3467,6 +3468,39 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     (tableId: string) => {
       haptic.medium();
       setPanelOpen(false);
+      /* JOIN GAME (Gate 4, 2026-09-05). A must-move game is one row on the
+         board (R10) and its row is Main 1 - but JOIN must never simply open
+         Main 1, which is full whenever the game is busy. The game door,
+         fn_cash_game_join, picks the shortest live Main with an unreserved
+         chair, then the feeder; with none open it holds the player's place on
+         the GAME's waitlist (a buyer for the OPEN rule) and says so. The
+         table it names is opened exactly as any table is; the buy-in itself
+         is still the table's own door. */
+      const row = tablesRef.current.find((t) => t.id === tableId);
+      if (row?.cluster_id && row.cluster_must_move !== false) {
+        const gameId = row.cluster_id;
+        void (async () => {
+          try {
+            const r = await joinCashGame(gameId);
+            if (r.action === 'waitlisted') {
+              toast.info(waitlistedText(r));
+              // Watch from Main 1 while the place is held; the Must Move box
+              // on that table shows the list place and offers the chair when
+              // one opens.
+              warmTable(tableId);
+              navigate(`/table/${tableId}`);
+              return;
+            }
+            const dest = r.table_id || tableId;
+            warmTable(dest);
+            navigate(`/table/${dest}`);
+          } catch (err) {
+            reportError(err, 'ClubHomePage.joinCashGame', { gameId });
+            toast.warning(joinGameRefusalText(err));
+          }
+        })();
+        return;
+      }
       // Execute navigate in the next tick to ensure the panel unmounts safely
       // without interrupting React Router transition internals
       // The card is closing and TablePage is one tick away - warm the table so
@@ -3491,7 +3525,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         });
       }, 0);
     },
-    [navigate]
+    [navigate, toast]
   );
 
   const handleRegister = useCallback(

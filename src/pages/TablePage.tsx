@@ -3541,10 +3541,57 @@ export default function TablePage({
     // refreshMaintenanceBreak is a stable useCallback, so this still runs once
     // per error rather than on every break countdown tick.
   }, [engineLastError, refreshMaintenanceBreak]);
+  /* ═══ A RELOAD CANNOT FIX A SIGN-IN (Realtime Phase 3, 2026-09-05) ════════
+     Why this flag has to exist at all: `auth_failed` is a status the client
+     passes THROUGH, not one it rests in. EngineStateClient sets it on a 4401
+     and then calls scheduleReconnect(), which immediately sets 'reconnecting'
+     and, at maxRetries, 'failed'. So by the time the auto-reload failsafe
+     twenty seconds below looks at the status, an auth refusal and a dead
+     Wi-Fi link are the same word: 'failed'.
+
+     That is how a browser ends up reloading itself every two minutes forever
+     against a socket that will refuse it every time - the 2026-09-03 shape,
+     and it is worse than useless: each reload throws away the felt, the
+     buy-in overlay and any pre-action the player had armed, then arrives at
+     exactly the same refusal.
+
+     Two distinct cases sit under one close code, and both are answered here:
+       - the session is genuinely dead: lib/sessionRevoked already probes
+         GoTrue, prompts and redirects, so this page must simply not reload
+         out from under that prompt;
+       - the session is ALIVE and the ENGINE is refusing it (its own auth
+         path broken, a rotated key, GoTrue unreachable from the box): the
+         ladder underneath keeps retrying and will reconnect the moment the
+         engine recovers. A reload adds nothing and costs the player their
+         table. This is the case nothing handled before today.
+
+     The flag is sticky for the outage and cleared only by a socket that
+     actually opens: an auth refusal followed by nine 1006s is still an auth
+     outage, and reading only the most recent close would forget that. */
+  const [engineRefusedAuth, setEngineRefusedAuth] = useState(false);
+  const engineRefusedAuthRef = useRef(false);
+  engineRefusedAuthRef.current = engineRefusedAuth;
+  useEffect(() => {
+    if (!engineLastError) return;
+    // Same predicate as lib/sessionRevoked.isEngineAuthClose. Inlined rather
+    // than imported so this page does not pull that module into the entry
+    // chunk every player downloads before first paint; the law pins the two
+    // copies as identical.
+    const isAuth =
+      engineLastError.code === 4401 || /^auth:/.test(String(engineLastError.reason || ''));
+    if (isAuth) setEngineRefusedAuth(true);
+  }, [engineLastError]);
+  useEffect(() => {
+    if (engineWsStatus === 'auth_failed') setEngineRefusedAuth(true);
+  }, [engineWsStatus]);
+
   useEffect(() => {
     if (engineWsStatus === 'connected') {
       notFoundCountRef.current = 0;
       tableClosedToastShownRef.current = false;
+      // A socket that reached OPEN is proof the engine accepted this token.
+      // Nothing weaker clears it (see the comment above).
+      setEngineRefusedAuth(false);
     }
   }, [engineWsStatus]);
 
@@ -3615,6 +3662,28 @@ export default function TablePage({
       // it every ~30s yanked the page out from under players choosing a seat
       // (observed live 2026-08-28). The socket connects when the game starts.
       if (seatFirstOpenRef.current) return;
+      /* DO NO HARM (Realtime Phase 3, 2026-09-05). The socket died for auth,
+         so a fresh page would present the same token to the same refusal and
+         land here again in twenty seconds - having discarded the felt, the
+         overlays and any armed pre-action on the way. Whichever of the two
+         auth cases this is, the reload is the wrong move: a dead session is
+         already being prompted and redirected by lib/sessionRevoked, and a
+         live session refused by the engine is recovered by the reconnect
+         ladder that is still running underneath.
+
+         Not silent, on either side. The player has the banner, which says
+         this is a sign-in problem rather than a lost connection, and the
+         platform gets `reload_suppressed` - the series that tells an on-call
+         engineer "these players cannot authenticate to a table", which is
+         the sentence nobody could say for twenty-two hours on 2026-09-03. */
+      if (engineRefusedAuthRef.current) {
+        void import('../services/clientConnectionBeacon')
+          .then((m) => m.reportConnectionEvent('reload_suppressed'))
+          .catch(() => {
+            /* telemetry never disturbs the table */
+          });
+        return;
+      }
       const KEY = 'ca_ws_autoreload_at';
       const last = Number(sessionStorage.getItem(KEY) || 0);
       if (Date.now() - last < 120_000) return;
@@ -7030,6 +7099,11 @@ export default function TablePage({
   /** Live diamond price from feature_pricing, sent with the offer. */
   const [rabbitDiamondCost, setRabbitDiamondCost] = useState<number | null>(null);
   const rabbitHandNumberRef = useRef<number | null>(null);
+  /** P4 2026-09-05: the tile's reveal handler while an offer is up; B runs it. */
+  const rabbitHotkeyRef = useRef<(() => void) | null>(null);
+  const registerRabbitHotkey = useCallback((handler: (() => void) | null) => {
+    rabbitHotkeyRef.current = handler;
+  }, []);
   /** Takes the Rabbit Hunt button down when the server's offer TTL runs out. */
   const rabbitExpiryTimerRef = useRef<number | null>(null);
   /** Dan 2026-08-26: the reveal itself must ALWAYS come down. Hand boundaries
@@ -7374,6 +7448,10 @@ export default function TablePage({
     isVip: viewerIsVip,
     settingOn: v8Settings.all_in_squeeze,
     runItMultiple: ritRunsThisHand > 1 || (ritResult?.boards?.length ?? 0) > 1,
+    /* Dan 2026-09-05: "THIS ISN'T ALLOWED ON BOMB POTS". bombPotActive is the
+       hand-level flag (BOMB_POT_TRIGGERED -> next HAND_STARTED); a second
+       board on the felt is the same fact from the other side. */
+    bombPot: bombPotActive || tableState.communityCards2.length > 0,
   });
   /**
    * While this viewer's squeezed card is still face down under their hand,
@@ -7388,22 +7466,7 @@ export default function TablePage({
    * is involved. The hold lifts on the engine's reveal beat, when the face is
    * on screen.
    */
-  const [holdingBoards, setHoldingBoards] = useState<ReadonlySet<number>>(() => new Set());
-  const setBoardHolding = useCallback((boardIndex: number, holding: boolean) => {
-    setHoldingBoards((prev) => {
-      if (prev.has(boardIndex) === holding) return prev;
-      const next = new Set(prev);
-      if (holding) next.add(boardIndex);
-      else next.delete(boardIndex);
-      return next;
-    });
-  }, []);
-  /* A double or triple board bomb pot deals its boards in lockstep and
-     squeezes each one; the numbers wait until EVERY squeezed card is open. */
-  const onSqueezeHoldBoard0 = useCallback((h: boolean) => setBoardHolding(0, h), [setBoardHolding]);
-  const onSqueezeHoldBoard1 = useCallback((h: boolean) => setBoardHolding(1, h), [setBoardHolding]);
-  const onSqueezeHoldBoard2 = useCallback((h: boolean) => setBoardHolding(2, h), [setBoardHolding]);
-  const squeezeHolding = holdingBoards.size > 0;
+  const [squeezeHolding, setSqueezeHolding] = useState(false);
   const displayedEquities = useHeldValue(allInEquities, squeezeHolding);
 
   // FIX-232: Ref for cards_pre_sort to avoid stale closure in hole card callbacks
@@ -19903,6 +19966,9 @@ export default function TablePage({
       void handleActionPanelAction(canCheckRightNow() ? 'check' : 'call');
     },
     onRaise: handleRaise,
+    /* P4 2026-09-05: B = Rabbit Hunt. The tile registers its handler only
+       while an offer is up, so this is a no-op the rest of the time. */
+    onRabbitHunt: () => rabbitHotkeyRef.current?.(),
     /* The SAME function the ALL IN button runs. Until 2026-08-28 this was
        `handleAllIn`, a second implementation that skipped VPIP/PFR counting and
        armed a legacy client-side RIT prompt the button never armed — so a shove
@@ -20960,6 +21026,7 @@ export default function TablePage({
                 rabbitDiamondCost={rabbitDiamondCost}
                 userId={userId === 'guest' ? null : userId}
                 onReveal={handleRabbitReveal}
+                registerHotkey={registerRabbitHotkey}
               />
             )}
             <PreviousHandCard
@@ -21057,7 +21124,11 @@ export default function TablePage({
                 {/* Sits directly above the wordmark, in felt coordinates, and
                     paints over everything on the surface. See the note in
                     .table-container above for why it moved off the top rail. */}
-                <TableConnectionBanner status={engineWsStatus} isActive={isActive} />
+                <TableConnectionBanner
+                  status={engineWsStatus}
+                  isActive={isActive}
+                  authRefused={engineRefusedAuth}
+                />
                 {/* The engine's verdict on THIS seat's presence, on the same
                     line. Defers to the socket banner whenever the socket is
                     down (Dan 2026-09-04: every connection message lives on
@@ -21403,7 +21474,7 @@ export default function TablePage({
                            does (see heroSqueezeEligible). */
                         squeezeEligible={heroSqueezeEligible}
                         runs={ritRunsThisHand}
-                        onSqueezeHold={onSqueezeHoldBoard0}
+                        onSqueezeHold={setSqueezeHolding}
                         /* RIVER SQUEEZE 2026-09-04: presentation identity and
                            focus. The engine keys the river by table + hand +
                            board so a duplicate snapshot never replays it and
@@ -21442,11 +21513,6 @@ export default function TablePage({
                             cardBack={activeCardBack}
                             playSounds={false}
                             slowReveal={allInEquities.length > 0}
-                            /* VIP ALL-IN SQUEEZE 2026-09-05 (audit): every run-out card
-                               squeezes, on every board. */
-                            squeezeEligible={heroSqueezeEligible}
-                            runs={ritRunsThisHand}
-                            onSqueezeHold={onSqueezeHoldBoard1}
                             tableId={tableId}
                             handId={tableState.handNumber}
                             boardIndex={1}
@@ -21474,11 +21540,6 @@ export default function TablePage({
                             cardBack={activeCardBack}
                             playSounds={false}
                             slowReveal={allInEquities.length > 0}
-                            /* VIP ALL-IN SQUEEZE 2026-09-05 (audit): every run-out card
-                               squeezes, on every board. */
-                            squeezeEligible={heroSqueezeEligible}
-                            runs={ritRunsThisHand}
-                            onSqueezeHold={onSqueezeHoldBoard2}
                             tableId={tableId}
                             handId={tableState.handNumber}
                             boardIndex={2}

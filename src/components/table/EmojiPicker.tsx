@@ -5,7 +5,7 @@
  */
 
 import React, { useState } from 'react';
-import { vipService, VIP_GOLD_LIMITS, FEATURE_PRICING } from '../../services/VIPService';
+import { vipService, VIP_MONTHLY_ALLOWANCES, FEATURE_PRICING } from '../../services/VIPService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import { masterBus } from '../../core/MasterBus';

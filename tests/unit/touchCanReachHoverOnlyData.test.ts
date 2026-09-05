@@ -101,19 +101,13 @@ describe('dead assets and dead columns', () => {
     expect(settings).not.toContain('streak_days');
   });
 
-  it('the VIP lock overlay is visible at rest, not only under a pointer', () => {
-    // opacity 0 lifted to 1 only by `.benefit-card.locked:hover`, so the lock
-    // icon had never appeared on a phone and, after the hover removal, could
-    // never appear anywhere.
-    // strip(): the comment explaining the fix quotes the old `opacity: 0`, and
-    // the first draft of this case matched that instead of the rule. A test
-    // that reads a comment is testing prose.
-    const css = strip(read('components/vip/VIPBenefitsGrid.css'));
-    const at = css.indexOf('.lock-overlay {');
-    expect(at).toBeGreaterThan(-1);
-    const body = css.slice(at, css.indexOf('}', at));
-    const opacity = body.match(/opacity:\s*([0-9.]+)/);
-    expect(opacity, '.lock-overlay has no opacity').not.toBeNull();
-    expect(Number(opacity![1])).toBeGreaterThan(0);
-  });
+  /* REMOVED 2026-09-05 with the component it guarded.
+     `.lock-overlay` lived in VIPBenefitsGrid.css, which drew the six-rung VIP
+     ladder - bronze through an invented "royal" - with a padlock on every rung
+     the player had not reached. Nothing implemented any rung, so the grid, its
+     stylesheet and this case were deleted together (see
+     tests/vip-is-not-a-ladder.law.test.ts, which now pins their absence).
+     The bug this case recorded is still worth knowing: the overlay's opacity
+     was 0, lifted to 1 only by `.benefit-card.locked:hover`, so the padlock had
+     never once appeared on a phone. */
 });

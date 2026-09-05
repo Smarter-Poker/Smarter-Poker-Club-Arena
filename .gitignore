@@ -205,3 +205,8 @@ supabase/migrations/*_squatter_holding_this_second.sql
 supabase/migrations/*_the_first_agent_reserves_a_name.sql
 supabase/migrations/*_the_second_agent_reserves_a_name.sql
 supabase/migrations/*_a_second_agent_wants_the_same_second.sql
+
+# The migration-reservation law test writes its fixtures here instead of
+# supabase/migrations/, so they cannot race the dozen test files that scan that
+# directory. See tests/a-migration-version-is-reserved-not-guessed.law.test.ts.
+.tmp-migration-reservation-probe/

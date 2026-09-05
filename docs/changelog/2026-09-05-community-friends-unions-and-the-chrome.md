@@ -228,6 +228,25 @@ in the database. They are gone, `.gitignore` now refuses them, and the test
 sweeps stale ones before it runs - proven by leaving 121 behind on purpose and
 watching the next run clear them.
 
+**The reservation law test was randomly failing everyone else's tests.** It
+writes real files into `supabase/migrations/` - the only way the script under
+test can see a version as taken - and a dozen other test files scan that same
+directory. Vitest runs files in parallel, so one would list the directory, this
+one would delete a fixture, and the reader died on ENOENT: measured in one run,
+**44 failures across 7 files**, every one of them
+`no such file or directory .../20260905155440_the_first_agent_reserves_a_name.sql`
+and none of them about migrations. The fixtures now go to a gitignored
+`.tmp-migration-reservation-probe/` via a `RESERVE_MIGRATION_DIR` override that
+only this test sets; the law pins that an unset override is still the real
+directory, so it cannot hide a regression. Two consecutive full runs green
+afterwards, 1010 files / 13,920 tests each.
+
+That override also exposed a real fragility in the script: `used_versions()`
+runs under `set -euo pipefail`, so any source with nothing to say - a sibling
+worktree mid-checkout, a pruned one, a fresh clone with no
+`supabase/migrations` yet - exited the whole reservation with status 1 and no
+message. Each of the three sources is best-effort now. Missing is not failing.
+
 **The Title Case guard caught a split word.** The plural fix had been written
 as `{n} Relationship{n === 1 ? ' Needs' : 's Need'}`, which paints a fragment
 starting lower-case. Each branch is a whole phrase now.

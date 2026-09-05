@@ -51,7 +51,16 @@ fi
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
-mig_dir="supabase/migrations"
+# RESERVE_MIGRATION_DIR exists for ONE caller: the law test that proves this
+# script works. That test has to create real files to make a version look
+# taken, and supabase/migrations/ is read concurrently by a dozen other test
+# files - so its fixtures appearing and vanishing mid-scan made THEM fail with
+# ENOENT, at random, on work that had nothing to do with migrations. Measured
+# 2026-09-05: 44 failures across 7 files in one run, all of them
+# "no such file or directory .../20260905155440_the_first_agent_reserves_a_name.sql".
+# Unset - which is every real invocation - this is the real directory, and the
+# law test asserts that default so the override cannot hide a regression.
+mig_dir="${RESERVE_MIGRATION_DIR:-supabase/migrations}"
 mkdir -p "$mig_dir"
 
 # A lock so two agents on THIS machine cannot draw in the same instant. The
@@ -80,18 +89,27 @@ if [ "${RESERVE_MIGRATION_SKIP_FETCH:-0}" != "1" ]; then
   [ "$fetch_needed" = "1" ] && git fetch --quiet origin main 2>/dev/null || true
 fi
 
+# EVERY SOURCE IS BEST-EFFORT (`|| true` on each).
+# This runs under `set -euo pipefail`, so a source that simply has nothing to
+# say used to kill the whole reservation: `ls` on a directory that is not there
+# exits 1, pipefail promotes that to the pipeline, and the `taken=$(...)`
+# assignment below inherits it. A sibling worktree mid-checkout, one that has
+# been pruned, or a fresh clone whose supabase/migrations does not exist yet
+# would each have taken the script down with "exit 1" and no message. Missing
+# is not the same as failing: an absent source contributes no versions, which
+# is exactly what an empty line does.
 used_versions() {
   # 1. this tree
-  ls "$mig_dir" 2>/dev/null | sed 's/_.*//;s/\.sql$//'
+  { ls "$mig_dir" 2>/dev/null || true; } | sed 's/_.*//;s/\.sql$//'
   # 2. origin/main without checking anything out
-  git ls-tree -r --name-only origin/main -- "$mig_dir" 2>/dev/null \
+  { git ls-tree -r --name-only origin/main -- "$mig_dir" 2>/dev/null || true; } \
     | sed "s|.*/||;s/_.*//;s/\.sql$//"
   # 3. every other worktree of this repo on this machine
-  git worktree list --porcelain 2>/dev/null \
+  { git worktree list --porcelain 2>/dev/null || true; } \
     | awk '/^worktree /{print $2}' \
     | while read -r wt; do
         [ "$wt" = "$repo_root" ] && continue
-        ls "$wt/$mig_dir" 2>/dev/null | sed 's/_.*//;s/\.sql$//'
+        { ls "$wt/$mig_dir" 2>/dev/null || true; } | sed 's/_.*//;s/\.sql$//'
       done
 }
 

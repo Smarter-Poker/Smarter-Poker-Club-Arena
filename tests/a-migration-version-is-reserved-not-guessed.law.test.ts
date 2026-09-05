@@ -49,18 +49,39 @@ import { resolve } from 'node:path';
 
 const ROOT = resolve(__dirname, '..');
 const SCRIPT = resolve(ROOT, 'scripts/reserve-migration-version.sh');
-const MIG_DIR = resolve(ROOT, 'supabase/migrations');
+const MIG_DIR = resolve(ROOT, '.tmp-migration-reservation-probe');
 /** The fixture names this file creates. Matched by .gitignore too. */
 const DEBRIS =
   /_(squatter_holding_this_second|the_first_agent_reserves_a_name|the_second_agent_reserves_a_name|a_second_agent_wants_the_same_second)\.sql$/;
 
 const created: string[] = [];
 
+/* THIS TEST'S FIXTURES DO NOT GO IN supabase/migrations/ (2026-09-05).
+   They used to. A dozen other test files scan that directory and read every
+   .sql in it, vitest runs test files in parallel, and these fixtures are
+   created and deleted inside single `it` blocks - so another file would list
+   the directory, this one would delete a fixture, and the reader would die on
+   ENOENT. Measured in one run: 44 failures across 7 files, every one of them
+   "no such file or directory .../20260905155440_the_first_agent_reserves_a_name.sql",
+   none of them about migrations at all. A test fixture must not be visible to
+   tests that did not ask for it.
+   The path stays relative and inside the repo so the script's own sibling-
+   worktree and origin/main lookups still behave; `defaults to the real
+   migrations directory` below pins that an unset override is the real path, so
+   this cannot hide a regression. */
+const PROBE_DIR = '.tmp-migration-reservation-probe';
+
+const probeEnv = {
+  ...process.env,
+  RESERVE_MIGRATION_SKIP_FETCH: '1',
+  RESERVE_MIGRATION_DIR: PROBE_DIR,
+};
+
 function reserve(slug: string): string {
   const out = execFileSync('bash', [SCRIPT, slug], {
     cwd: ROOT,
     encoding: 'utf8',
-    env: { ...process.env, RESERVE_MIGRATION_SKIP_FETCH: '1' },
+    env: probeEnv,
   }).trim();
   created.push(resolve(ROOT, out));
   return out;
@@ -78,6 +99,13 @@ afterEach(() => {
 });
 
 describe('a migration version is reserved, not guessed', () => {
+  it('defaults to the real migrations directory when nothing overrides it', () => {
+    // The override above exists only so this file's fixtures stay out of a
+    // directory other tests read. What every real invocation does is this.
+    const script = readFileSync(SCRIPT, 'utf8');
+    expect(script).toContain('mig_dir="${RESERVE_MIGRATION_DIR:-supabase/migrations}"');
+  });
+
   it('the script is present and executable', () => {
     // A hook or script committed 644 is skipped and says nothing about it -
     // see AGENT-PLAYBOOK 5b. Same failure shape, so pin the mode.
@@ -91,7 +119,7 @@ describe('a migration version is reserved, not guessed', () => {
         execFileSync('bash', [SCRIPT, bad], {
           cwd: ROOT,
           stdio: 'pipe',
-          env: { ...process.env, RESERVE_MIGRATION_SKIP_FETCH: '1' },
+          env: probeEnv,
         })
       ).toThrow();
     }

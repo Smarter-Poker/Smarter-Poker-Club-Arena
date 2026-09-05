@@ -974,8 +974,8 @@ describe('LAW: a Crazy Pineapple discard is seen and heard', () => {
 
     // Both in-table surfaces draw it - through the one shared rundown, which
     // draws the thrown card face up on the viewer's own discard row.
-    expect(read('src/components/table/HandHistoryPanel.tsx')).toContain(
-      '<HandDetailView model={hand.replay}'
+    expect(read('src/components/table/HandHistoryPanel.tsx')).toMatch(
+      /<HandDetailView\s+model=\{hand\.replay\}/
     );
     expect(read('src/components/table/HandDetailModal.tsx')).toContain('<HandDetailView');
     expect(read('src/components/handdetail/HandDetailView.tsx')).toContain(

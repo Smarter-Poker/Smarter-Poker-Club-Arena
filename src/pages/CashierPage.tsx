@@ -593,7 +593,12 @@ export default function CashierPage() {
       if (detectedUnionId) {
         setIsInUnion(true);
         // Only need 1 more query: union owner check
-        const { data: unionData } = await retryFetch(
+        /* `retryFetch` RETURNS the Supabase result with `error` set rather
+           than throwing, so reading only `data` made a failed union lookup
+           indistinguishable from "you are not the union owner" - the operator
+           silently lost Mint gating and the distribute path with nothing said.
+           Refusing is still the safe default; being told is the difference. */
+        const { data: unionData, error: unionErr } = await retryFetch(
           () =>
             supabase
               .from('unions')
@@ -604,7 +609,16 @@ export default function CashierPage() {
           { maxRetries: 2, isMountedRef: isMounted }
         );
         if (!isMounted.current || stale()) return;
-        setIsUnionOwner(unionData?.owner_id === user.id);
+        if (unionErr) {
+          reportError(unionErr, 'CashierPage.union_owner_lookup_failed');
+          setIsUnionOwner(false);
+          setMessage({
+            type: 'error',
+            text: 'Your Union Role Could Not Be Read, So Union Actions Are Hidden. Refresh To Try Again.',
+          });
+        } else {
+          setIsUnionOwner(unionData?.owner_id === user.id);
+        }
       } else {
         setIsInUnion(false);
         setIsUnionOwner(false);
@@ -762,11 +776,21 @@ export default function CashierPage() {
             .order('user_id', { ascending: true })
             .range(from, from + PAGE - 1);
 
-          const { data: page } = await retryFetch(() => query.then((r) => r), {
+          /* A FAILED PAGE IS NOT THE END OF THE LIST. Reading only `data` made
+             an error look like "that was the last page", so the recipient list
+             for a chip send ended early - or empty - and a member simply was
+             not there to send to, with nothing on screen saying why. */
+          const { data: page, error: pageErr } = await retryFetch(() => query.then((r) => r), {
             maxRetries: 2,
             isMountedRef: isMounted,
           });
           if (!isMounted.current || stale()) return;
+          if (pageErr) {
+            reportError(pageErr, 'CashierPage.recipient_page_failed');
+            throw new Error(
+              'The member list could not be loaded in full. Refresh before sending, so you are not choosing from a partial list.'
+            );
+          }
           collected.push(...((page || []) as Array<Record<string, unknown>>));
           if (!page || page.length < PAGE) break;
         }

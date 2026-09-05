@@ -643,6 +643,15 @@ export default function ClubMembersPage() {
         { search: debouncedSearch, filter, sort: sortKey },
         selected.size ? [...selected] : null
       );
+      /* AN EMPTY ROSTER PRODUCES NO FILE. `exportToCSV` returns early when the
+         row array is empty (src/lib/export.ts), so "0 Players Exported" was a
+         success message for a download that never started. ClubFinancialsPage
+         already checks its export's return value; this one now says which of
+         the two happened. */
+      if (result.rows.length === 0) {
+        toast.error('There Are No Players To Export For That Filter.');
+        return;
+      }
       exportToCSV(
         result.rows.map((row) => ({ ...row, role: roleLabel(row.role as any) })),
         `club-roster-${new Date().toISOString().slice(0, 10)}.csv`

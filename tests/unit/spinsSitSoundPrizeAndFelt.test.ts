@@ -268,12 +268,24 @@ describe('a six-handed table is shorter than a nine-handed one', () => {
        eight pixels inside the banner. So the cap is two rules, not one
        literal. */
     expect(SEAT_CSS).toContain('--seat-avatar-base: min(var(--seat-avatar-full), 76px)');
+    /* MOVED 2026-09-05 with the selector it guards (CLAUDE.md 5.8). This asked
+       for five literal `.table-page[data-seats='N'] ...` selectors, which is
+       what shipped - and which is 0-4-0, so it out-specified BOTH the
+       tournament exemption and the empty-seat exemption and capped every Spin
+       at 56px. The ring list is inside `:where()` now, contributing zero
+       specificity.
+
+       This pin can only ever see TEXT. What actually decides the cap is
+       arithmetic over the three selectors, so that lives in
+       tests/unit/topRailCapCascade.test.ts and this one stays a text pin about
+       the ring list. */
     for (const n of [2, 3, 4, 5, 6]) {
-      expect(SEAT_CSS).toContain(`.table-page[data-seats='${n}'] .seat-wrapper--top .seat`);
+      expect(SEAT_CSS).toContain(`[data-seats='${n}']`);
     }
-    const shortRule = SEAT_CSS.slice(
-      SEAT_CSS.indexOf(".table-page[data-seats='2'] .seat-wrapper--top .seat")
-    );
+    // Prettier breaks the :where() list across lines, so the pin is on the
+    // construct rather than on one formatting of it.
+    expect(SEAT_CSS).toMatch(/\.table-page:where\(\s*\[data-seats='2'\]/);
+    const shortRule = SEAT_CSS.slice(SEAT_CSS.indexOf('.table-page:where('));
     expect(shortRule.slice(0, shortRule.indexOf('}'))).toContain(
       '--seat-avatar-base: min(var(--seat-avatar-full), 56px)'
     );

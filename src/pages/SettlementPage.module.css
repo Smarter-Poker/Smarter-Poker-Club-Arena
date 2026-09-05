@@ -1,6 +1,16 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  SETTLEMENT PAGE — Styles
+ *
+ *  #SMARTERCASINOREALISM - the material layer. The tokens are defined once on
+ *  :root in src/styles/club-engine.css, which main.tsx loads; this sheet only
+ *  consumes them. The page settles a union period: the metric tiles, the win
+ *  and loss summary, the wire table between clubs, the agent payout table and
+ *  the period history. Its colours are money, so they keep their meaning - a
+ *  negative stays red, a pending wire stays amber, and every status chip whose
+ *  background is an alpha of its own text colour is left as the matched pair it
+ *  is. What moves onto the shared vocabulary is the material: the surfaces, the
+ *  neutral text, and the greens that read as money in the black.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -53,7 +63,7 @@
 .header h1 {
   margin: 0;
   font-size: 1.5rem;
-  color: #fff;
+  color: var(--realism-chrome-hot);
 }
 
 .subtitle {
@@ -92,17 +102,19 @@
   margin-bottom: 2rem;
 }
 
+/* A tile sits IN its frame, not on the page: lit top edge, cavity beneath it,
+   and the drop that separates it from the black. */
 .metricCard {
   display: flex;
   align-items: center;
   gap: 1rem;
   padding: 1.25rem;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border-radius: var(--realism-radius);
+  border: 1px solid var(--realism-gunmetal);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
   transition: transform 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 .metricIcon {
@@ -113,7 +125,7 @@
   display: block;
   font-size: 1.25rem;
   font-weight: 700;
-  color: #fff;
+  color: var(--realism-chrome-hot);
 }
 
 .metricLabel {
@@ -129,9 +141,10 @@
   justify-content: center;
   gap: 1.5rem;
   padding: 1.5rem;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border-radius: var(--realism-radius);
+  border: 1px solid var(--realism-gunmetal);
+  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
   margin-bottom: 2rem;
 }
 
@@ -153,7 +166,7 @@
 }
 
 .summaryValue.positive {
-  color: #10b981;
+  color: var(--realism-green);
 }
 
 .summaryValue.negative {
@@ -170,7 +183,7 @@
   display: flex;
   gap: 0.5rem;
   margin-bottom: 2rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--realism-gunmetal);
   padding-bottom: 0.5rem;
 }
 
@@ -195,6 +208,17 @@
   color: var(--accent);
 }
 
+/* There is no hover in Club Arena (tests/no-hover-effects.law.test.ts), so the
+   press is the confirmation the control took the tap, and :focus-visible is how
+   a keyboard finds it. */
+.backButton:focus-visible,
+.tabButton:focus-visible,
+.executeButton:focus-visible,
+.periodCard:focus-visible {
+  outline: 2px solid var(--realism-cyan);
+  outline-offset: 2px;
+}
+
 /* Content */
 .content {
   min-height: 400px;
@@ -209,17 +233,19 @@
 .formulaCard {
   background: rgba(139, 92, 246, 0.1);
   border: 1px solid rgba(139, 92, 246, 0.3);
-  border-radius: 1rem;
+  border-radius: var(--realism-radius);
   padding: 1.5rem;
 }
 
 .formulaCard h3 {
   margin: 0 0 1rem;
-  color: #fff;
+  color: var(--realism-chrome-hot);
 }
 
+/* The inverse of a panel: a slot cut into the card, holding the rake formula. */
 .formula {
   background: rgba(0, 0, 0, 0.3);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.65);
   padding: 1rem;
   border-radius: 0.5rem;
   margin-bottom: 1rem;
@@ -238,15 +264,16 @@
 }
 
 .timelineCard {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border-radius: var(--realism-radius);
+  border: 1px solid var(--realism-gunmetal);
+  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
   padding: 1.5rem;
 }
 
 .timelineCard h3 {
   margin: 0 0 1.5rem;
-  color: #fff;
+  color: var(--realism-chrome-hot);
 }
 
 .timeline {
@@ -264,7 +291,7 @@
   top: 0;
   bottom: 0;
   width: 2px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--realism-gunmetal);
 }
 
 .timelineItem {
@@ -286,7 +313,7 @@
 }
 
 .timelineItem.completed .timelineDot {
-  color: #10b981;
+  color: var(--realism-green);
 }
 
 .timelineItem.active .timelineDot {
@@ -295,7 +322,7 @@
 
 .timelineItem strong {
   display: block;
-  color: #fff;
+  color: var(--realism-chrome-hot);
   margin-bottom: 0.25rem;
 }
 
@@ -310,7 +337,7 @@
   padding: 2rem;
   background: rgba(16, 185, 129, 0.1);
   border: 1px solid rgba(16, 185, 129, 0.3);
-  border-radius: 1rem;
+  border-radius: var(--realism-radius);
 }
 
 .executeButton {
@@ -319,6 +346,9 @@
   border: none;
   border-radius: 0.75rem;
   color: #fff;
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
   font-size: 1.1rem;
   font-weight: 600;
   cursor: pointer;
@@ -329,6 +359,10 @@
 .executeButton:disabled {
   opacity: 0.7;
   cursor: not-allowed;
+}
+.executeButton:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
 }
 
 .actionNote {
@@ -350,8 +384,9 @@
 .wireTable {
   width: 100%;
   border-collapse: collapse;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 1rem;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border-radius: var(--realism-radius);
+  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
   overflow: hidden;
 }
 
@@ -369,17 +404,17 @@
 }
 
 .wireTable td {
-  color: rgba(255, 255, 255, 0.8);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--realism-chrome);
+  border-top: 1px solid var(--realism-gunmetal);
 }
 
 .clubCell {
   font-weight: 600;
-  color: #fff !important;
+  color: var(--realism-chrome-hot) !important;
 }
 
 .positive {
-  color: #10b981 !important;
+  color: var(--realism-green) !important;
 }
 
 .negative {
@@ -444,7 +479,7 @@
   padding: 1rem 1.5rem;
   background: rgba(16, 185, 129, 0.1);
   border: 1px solid rgba(16, 185, 129, 0.3);
-  border-radius: 1rem;
+  border-radius: var(--realism-radius);
   margin-bottom: 1.5rem;
 }
 
@@ -459,8 +494,9 @@
 .payoutTable {
   width: 100%;
   border-collapse: collapse;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 1rem;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border-radius: var(--realism-radius);
+  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
   overflow: hidden;
 }
 
@@ -478,13 +514,13 @@
 }
 
 .payoutTable td {
-  color: rgba(255, 255, 255, 0.8);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--realism-chrome);
+  border-top: 1px solid var(--realism-gunmetal);
 }
 
 .agentCell {
   font-weight: 600;
-  color: #fff !important;
+  color: var(--realism-chrome-hot) !important;
 }
 
 .netAmount {
@@ -494,8 +530,10 @@
 .payoutNote {
   margin-top: 1.5rem;
   padding: 1rem;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 0.75rem;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border: 1px solid var(--realism-gunmetal);
+  border-radius: var(--realism-radius);
+  box-shadow: var(--realism-bevel), var(--realism-cavity);
 }
 
 .payoutNote p {
@@ -516,12 +554,18 @@
 }
 
 .periodCard {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 1rem;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border: 1px solid var(--realism-gunmetal);
+  border-radius: var(--realism-radius);
+  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
   padding: 1.25rem;
   cursor: pointer;
   transition: all 0.2s;
+}
+
+.periodCard:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
 }
 
 .periodCard.selected {
@@ -538,7 +582,7 @@
 
 .periodNumber {
   font-weight: 600;
-  color: #fff;
+  color: var(--realism-chrome-hot);
 }
 
 .periodDates {
@@ -637,9 +681,36 @@
   text-align: center;
   font-size: 0.95rem;
   color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 1rem;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border: 1px solid var(--realism-gunmetal);
+  border-radius: var(--realism-radius);
+  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+}
+
+/* Motion collapses under the OS setting, meaning never does (CLAUDE.md 10.6).
+   Listed selector by selector rather than through a descendant wildcard, so
+   this block can only reach what this sheet owns and never an animation another
+   stylesheet is responsible for. fadeInUp still runs and still fills forwards,
+   so the content it reveals is on screen; it simply arrives without the travel.
+   Every border, bevel and colour above survives untouched. */
+@media (prefers-reduced-motion: reduce) {
+  .backButton,
+  .metricCard,
+  .tabButton,
+  .executeButton,
+  .periodCard {
+    transition: none;
+  }
+
+  .executeButton:active:not(:disabled),
+  .periodCard:active {
+    transform: none;
+  }
+
+  .fadeInUp {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+  }
 }

@@ -1,5 +1,3 @@
-import nodeFs from 'node:fs';
-import nodePath from 'node:path';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  THE INTERRUPTS, AT THE DOM (audit fix 2026-09-05)
@@ -17,6 +15,8 @@ import nodePath from 'node:path';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, act } from '@testing-library/react';
 import React from 'react';
+import fs from 'node:fs';
+import path from 'node:path';
 
 const played: string[] = [];
 vi.mock('../../src/services/SoundService', () => {
@@ -100,20 +100,36 @@ describe('a cancel reaches the pixels, not just the engine', () => {
   it('the snap is paid AT the cancel, with the card now face up - never before it', () => {
     const p = CARD_PRESENTATION_PROFILES.allIn;
     const { container, rerender } = render(
-      <CommunityCards {...props()} cards={BOARD.slice(0, 3)} stage="flop" slowReveal />
+      <CommunityCards
+        {...props()}
+        cards={BOARD.slice(0, 3)}
+        stage="flop"
+        slowReveal
+        squeezeEligible
+      />
     );
     act(() => {
       vi.advanceTimersByTime(3000);
     });
     act(() => {
-      rerender(<CommunityCards {...props()} cards={BOARD.slice(0, 4)} stage="turn" slowReveal />);
+      rerender(
+        <CommunityCards
+          {...props()}
+          cards={BOARD.slice(0, 4)}
+          stage="turn"
+          slowReveal
+          squeezeEligible
+        />
+      );
     });
     act(() => {
       vi.advanceTimersByTime(3000);
     });
     played.length = 0;
     act(() => {
-      rerender(<CommunityCards {...props()} cards={BOARD} stage="river" slowReveal />);
+      rerender(
+        <CommunityCards {...props()} cards={BOARD} stage="river" slowReveal squeezeEligible />
+      );
     });
     // deep inside the face-down hold: silent, and still face down
     act(() => {
@@ -205,13 +221,6 @@ describe('a table nobody can see does not animate (spec 47)', () => {
     // only one is active, so `isVisible={isActive}` would have given three
     // visible tables the `off` profile. MultiTablePage decides which is which
     // and TablePage forwards it (see tests/unit/cardPresentation/auditFixes).
-    /* STATIC IMPORTS, NOT require(). `@typescript-eslint/no-require-imports`
-       is an ERROR in this repo's eslint config, so these two lines failed
-       `eslint --fix` in the pre-commit hook and blocked every branch that
-       merged main - not just the one that wrote them. Same behaviour, same
-       file reads, no rule disabled. */
-    const fs = nodeFs;
-    const path = nodePath;
     const tablePage = fs.readFileSync(
       path.resolve(__dirname, '../../src/pages/TablePage.tsx'),
       'utf8'

@@ -655,7 +655,23 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'hu_mind_layer', seats: 2, pairs: 6000, a: {}, b: { mind: false } },
   // ── V16 strategy matchups (2026-08-26) ──
   { name: 'hu_v16_overlay', seats: 2, pairs: 6000, a: {}, b: { v16Hu: false } },
-  { name: 'v16_ratio_rescale', pairs: 6000, a: { v16Ratio: true }, b: {} },
+  /*
+   * v16_ratio_rescale is NOT on the card (2026-09-05). Measured 2026-09-04:
+   * 0.00 bb100 with 0.00 stderr over 12,000 hands - the flag changed no
+   * decision at all (08-31, before V38, it read +0.35 +/- 0.24, unresolved).
+   * The flag rescales two thresholds in HorseLogic: the OOP check-raise
+   * bluff gate (betRatio <= 0.6 vs 1.5, which on the bet/(pot+bet) scale is
+   * "bet at most 1.5x pot" either way and never binds) and the heads-up river
+   * bluff-catch gate (0.4 vs 0.667). V38 - opts.v38Ev, default ON since
+   * 2026-09-03 - returns a call or a fold for EVERY river spot and every
+   * solverless flop/turn spot before that second gate is reached, so no hand
+   * can differ between the arms. Same shape as v18_exploit_size and
+   * v31_gto_suit_aware above: a matchup that always reports 0.00 +/- 0.00
+   * spends 12,000 hands a night measuring nothing. The default stays OFF;
+   * the promotion rule (three significant positive runs) cannot be met by a
+   * flag that no longer reaches code.
+   */
+  // { name: 'v16_ratio_rescale', pairs: 6000, a: { v16Ratio: true }, b: {} },
   { name: 'v16_sizecond', pairs: 6000, a: {}, b: { v16SizeCond: false } },
   { name: 'plo4_v16_polarity', variant: 'plo4', pairs: 6000, a: {}, b: { v16PloPolar: false } },
   // Measurable because playHand's sandbox settlement now feeds

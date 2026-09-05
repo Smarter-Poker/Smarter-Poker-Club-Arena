@@ -191,11 +191,13 @@ export default function StoreTab({
 
   const modalImg = buyTarget ? safeImageUrl(buyTarget.image_url) : null;
 
+  const mintPurchaseKey = () =>
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
   const openBuy = (item: MarketplaceItem) => {
-    purchaseKeyRef.current =
-      typeof crypto !== 'undefined' && 'randomUUID' in crypto
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    purchaseKeyRef.current = mintPurchaseKey();
     setBuyTargetId(item.id);
   };
 
@@ -255,6 +257,17 @@ export default function StoreTab({
       onPurchased(typeof data.newBalance === 'number' ? data.newBalance : null);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Purchase failed');
+      /*
+       * ONE KEY PER ATTEMPT, NOT ONE KEY PER MODAL. The server's durable
+       * idempotency cache (durableIdempotency.js) stores whatever status the
+       * first request produced under this key for five minutes. The modal
+       * stays open after a refusal such as "Insufficient diamonds", so a
+       * player who topped up and pressed Confirm again sent the SAME key and
+       * got the SAME cached 400 back - a purchase that could now succeed was
+       * told, again, that it could not. A refused attempt is finished; the
+       * next press is a new attempt and carries a new key.
+       */
+      purchaseKeyRef.current = mintPurchaseKey();
       // A stale card (sold out, or already owned in another tab) must not leave
       // the confirm modal sitting open over data we now know is wrong.
       const flags = (

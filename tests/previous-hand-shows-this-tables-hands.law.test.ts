@@ -125,7 +125,7 @@ describe('the correct data', () => {
     expect(svc).toContain('replayInputFromRow(row, {');
     expect(svc).toContain('replay,\n    };');
     const panel = read('src/components/table/HandHistoryPanel.tsx');
-    expect(panel).toContain('<HandDetailView model={hand.replay}');
+    expect(panel).toMatch(/<HandDetailView\s+model=\{hand\.replay\}/);
     expect(panel).not.toMatch(/getActionColor|getActionLabel|showdownRows/);
     const modal = read('src/components/table/HandDetailModal.tsx');
     expect(modal).toContain('const model = hand.replay;');

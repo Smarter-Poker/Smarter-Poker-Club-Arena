@@ -1,29 +1,35 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- *  THE SPIN BUY-IN SHEET SHOWS THE ODDS THE DRAW ACTUALLY USES (2026-08-29)
+ *  THE LADDER IS THE PLATFORM'S OWN CHECK, AND NO PLAYER EVER SEES IT
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * Enhancement from the round-9 sweep: the seat-first confirmation sheet for a
- * Spin now carries the multiplier ladder - prize at this stake, odds as
- * "1 In N", payout split - behind a toggle so the 375px sheet keeps Buy In
- * above the fold.
+ * This file used to pin the OPPOSITE of what it pins now, and the flip is
+ * Dan's, verbatim (2026-09-05, binding):
  *
- * The invariant that matters: every displayed number is DERIVED from
- * SPIN_TIERS through spinOddsTable. A hand-written odds table beside the real
- * ladder is how a wheel change quietly turns into false advertising, which on
- * a money product is worse than no table at all.
+ *   "HIDE THE MULTIPLIER ODDS, GET RIDE OF THAT ALL TOGETHER, NOBODY SHOULD
+ *    EVER VISIBLY SEE THAT."
+ *
+ * From 2026-08-29 the seat-first buy-in sheet carried a "Show Multiplier Odds"
+ * disclosure listing every tier, its prize at that stake, its 1-in frequency
+ * and its payout split. It is deleted - markup, state and CSS - and this spec
+ * is what stops it coming back, because a deleted surface with a passing test
+ * still asserting it should exist is how the next agent decides it is missing
+ * and rebuilds it.
+ *
+ * `spinOddsTable()` itself STAYS, and so does every derivation check below.
+ * It is not a display helper; it is how the fairness guard and the ladder law
+ * measure the draw against the spec. What changed is that it has no render
+ * path, and that is now the assertion.
  */
 
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SPIN_TIERS, SPIN_FREQ_DENOMINATOR, spinOddsTable } from '../../src/config/spinSpec';
-import { sliceEnclosingBlock } from '../helpers/sourceWindow';
 
-const TABLE_PAGE = readFileSync(
-  join(__dirname, '..', '..', 'src', 'pages', 'TablePage.tsx'),
-  'utf8'
-);
+const SRC_DIR = join(__dirname, '..', '..', 'src');
+const TABLE_PAGE = readFileSync(join(SRC_DIR, 'pages', 'TablePage.tsx'), 'utf8');
+const TABLE_CSS = readFileSync(join(SRC_DIR, 'pages', 'TablePage.css'), 'utf8');
 
 describe('spinOddsTable derives entirely from the ladder', () => {
   const rows = spinOddsTable();
@@ -53,27 +59,44 @@ describe('spinOddsTable derives entirely from the ladder', () => {
   });
 });
 
-describe('the sheet renders the ladder from the spec, spins only', () => {
-  const odds = sliceEnclosingBlock(TABLE_PAGE, 'seat-buyin-confirm__odds-table', 0, 4);
-
-  it('is gated to Spins - a Heads-Up has no wheel', () => {
-    const gate = sliceEnclosingBlock(TABLE_PAGE, "seatFirstBuyIn.label === 'Spin'", 0, 1);
-    expect(gate).toContain('seat-buyin-confirm__odds');
+describe('no player-facing surface shows the odds (Dan 2026-09-05)', () => {
+  it('the buy-in sheet does not call spinOddsTable', () => {
+    expect(TABLE_PAGE).not.toContain('spinOddsTable()');
+    // The import went with the call site. A live import is a render path
+    // waiting to be re-used.
+    expect(/import\s*\{[^}]*\bspinOddsTable\b[^}]*\}\s*from/.test(TABLE_PAGE)).toBe(false);
   });
 
-  it('maps spinOddsTable() - never a hand-written copy of the tiers', () => {
-    expect(odds).toContain('spinOddsTable().map');
-    // No literal frequency from the ladder may appear in the page.
+  it('the odds toggle and its table are gone from the markup', () => {
+    for (const gone of [
+      'Show Multiplier Odds',
+      'Hide Multiplier Odds',
+      'seat-buyin-confirm__odds-table',
+      'seat-buyin-confirm__odds-toggle',
+      'seat-buyin-confirm__odds-row',
+      'spinOddsOpen',
+      'setSpinOddsOpen',
+    ]) {
+      expect(TABLE_PAGE).not.toContain(gone);
+    }
+  });
+
+  it('the styling went with the markup, so nothing looks unfinished', () => {
+    for (const gone of [
+      '.seat-buyin-confirm__odds-table',
+      '.seat-buyin-confirm__odds-toggle',
+      '.seat-buyin-confirm__odds-row',
+    ]) {
+      expect(TABLE_CSS).not.toContain(gone);
+    }
+  });
+
+  it('no frequency from the ladder is printed anywhere on the page', () => {
+    // The two the previous version of this spec already guarded, plus the
+    // human-readable phrasing the ladder rendered.
     expect(TABLE_PAGE).not.toContain('4_772_073');
     expect(TABLE_PAGE).not.toContain('3_968_518');
-  });
-
-  it('prices the prize at this stake from the sheet cost', () => {
-    expect(odds).toContain('seatFirstBuyIn.cost * row.multiplier');
-  });
-
-  it('collapses when the sheet closes', () => {
-    const reset = sliceEnclosingBlock(TABLE_PAGE, 'setSpinOddsOpen(false)', 0, 2);
-    expect(reset).toContain('seatFirstConfirm === null');
+    expect(TABLE_PAGE).not.toContain('1 In ');
+    expect(TABLE_PAGE).not.toContain('oneIn');
   });
 });

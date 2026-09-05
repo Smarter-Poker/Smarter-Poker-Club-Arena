@@ -91,11 +91,60 @@ describe('and the exit itself carries the same guard', () => {
   });
 });
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE THIRD SIGNAL WAS RETIRED ON 2026-09-05, AND THIS SAYS WHY
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * This block used to require `players.some(p => p.stack > 0)` in the latch,
+ * and the header above explains what made it decisive: a seat-first seat was a
+ * RESERVATION at zero chips until the draw resolved, so a non-zero stack meant
+ * the game was running.
+ *
+ * That invariant was reversed on 2026-09-01. Dan: "as soon as they buy in 300
+ * chips should appear in their action box (not 0)". Migration
+ * 20260901154500_the_seat_holds_its_chips_from_the_moment_it_is_paid_for made
+ * BOTH seating paths write `stack = starting_chips` at purchase -
+ * `fn_take_seat_and_buy_in` for a human, `fn_seat_horse_in_seat_first_game`
+ * for a horse, the same number in the same breath (CLAUDE.md 10.5).
+ *
+ * So from that day the clause read the first seat SOLD as "play has begun",
+ * and on a Spin the fleet usually buys first. Dan, 2026-09-05: "WHEN I TRY TO
+ * JOIN A SPIN THAT ALREADY HAS HORSES REGISTERED, I DON'T GET OR HAVE A
+ * 'SIT +' BUTTON AVAILABLE." The latch cleared `seatFirstBuyIn`, `canSit` went
+ * false, and every open chair rendered as an inert EMPTY plate.
+ *
+ * ── THE PROTECTION THIS FILE EXISTS FOR IS UNAFFECTED, AND IS NOW STRONGER ──
+ *
+ * Removing a signal can only make the latch HARDER to set, so the bust watcher
+ * and `exitIfBusted` stay disarmed for longer - which is the safe direction for
+ * the round-17 bug, where a premature latch is what ejected Dan from a live
+ * seat. Every guard above this block still passes unchanged, and the zero-stack
+ * window they were written about no longer exists at all: a seat holds its
+ * chips from the moment it is paid for.
+ */
 describe('what the latch actually means', () => {
-  it('play has begun when a dealer is drawn, a hand starts, or chips land', () => {
+  it('play has begun when a dealer is drawn or a hand starts', () => {
     const latch = sliceEnclosingBlock(CODE, 'const begun =', 0, 1);
     expect(latch).toContain('tableState.dealerSeat > 0');
     expect(latch).toContain('(tableState.handNumber ?? 0) > 0');
-    expect(latch).toMatch(/players\.some\(\(p\) => p && Number\(p\.stack \?\? 0\) > 0\)/);
+  });
+
+  it('a bought seat is NOT one of those signals any more', () => {
+    const latch = sliceEnclosingBlock(CODE, 'const begun =', 0, 1);
+    expect(latch).not.toMatch(/players\.some\(\(p\) => p && Number\(p\.stack \?\? 0\) > 0\)/);
+    expect(latch, 'a stack cannot latch this - see the note above').not.toContain('stack');
+  });
+
+  it('the tournament row carries the signal the stacks used to carry', () => {
+    /* The stack clause was also how a player ARRIVING at a running game
+       latched, which is what arms the two guards at the top of this file. The
+       mount read answers it directly, and earlier: a game out of the selling
+       states has begun. */
+    const i = CODE.indexOf('if (!openForSeats) {');
+    expect(i, 'the mount-read latch is missing').toBeGreaterThan(-1);
+    const window = CODE.slice(i, i + 200);
+    expect(window).toContain('playHasBegunRef.current = true');
+    expect(window).toContain('setPlayHasBegun(true)');
   });
 });

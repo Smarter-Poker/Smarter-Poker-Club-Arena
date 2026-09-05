@@ -20170,6 +20170,27 @@ export default function TablePage({
 
   // Guards the auto top-up against re-entry while a debit is still in flight.
   const autoTopUpInFlightRef = useRef(false);
+  /* ONE IDEMPOTENCY KEY PER AUTO TOP-UP, REUSED ACROSS RETRIES (Realtime
+     Phase 3 audit, 2026-09-05). Same shape as `bustRebuyKeyRef` above and as
+     CashierModal's `opIdRef`, and it was the one top-up path without it.
+
+     The Cashier audit (2026-08-27, P0-1) built the whole mechanism for the
+     lost-response case: `/addchips` keys the debit on `opId`, and the engine
+     falls back to `opId || randomUUID()` - so a caller that sends NOTHING gets
+     a fresh key on every attempt and no de-duplication at all. The MANUAL
+     cashier holds one; this automatic path did not.
+
+     `autoTopUpInFlightRef` below is not the same guard. It stops two attempts
+     OVERLAPPING; it cannot stop the case this key exists for - the debit
+     committed, the response was lost, the client threw, the flag was released,
+     and the very next snapshot still shows the stack short, so the effect
+     tops up again for the same shortfall. Without a key that is a second
+     debit for a shortfall the first one already covered.
+
+     Keyed by amount, exactly like the two siblings: a retry for the same
+     shortfall is the same purchase and de-duplicates; a genuinely different
+     shortfall is a different purchase and gets its own key. */
+  const autoTopUpKeyRef = useRef<{ amount: number; key: string } | null>(null);
 
   // --- NEW: Fully Functional Auto Top Up & Stand Up Next Big Blind ---
   useEffect(() => {
@@ -20256,9 +20277,15 @@ export default function TablePage({
           const topUpAmount = Math.min(maxBuyIn - currentStack, accountBalance ?? 0);
           if (topUpAmount > 0) {
             autoTopUpInFlightRef.current = true;
-            handleAddChips(topUpAmount)
+            if (!autoTopUpKeyRef.current || autoTopUpKeyRef.current.amount !== topUpAmount) {
+              autoTopUpKeyRef.current = { amount: topUpAmount, key: crypto.randomUUID() };
+            }
+            handleAddChips(topUpAmount, autoTopUpKeyRef.current.key)
               .then((res) => {
                 if (res && typeof window !== 'undefined') {
+                  // Spent: a later shortfall is a new purchase and needs a new
+                  // key, or a second top-up would replay the first one's.
+                  autoTopUpKeyRef.current = null;
                   toast?.success?.(`Auto Top Up: Added ${topUpAmount.toLocaleString()} Chips`);
                 }
               })

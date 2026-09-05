@@ -58,7 +58,7 @@ export default function PublicProfilePage() {
      dossier folds them into one line. Null until it answers, never zeroes. */
   const [record, setRecord] = useState<ArenaRecord | null>(null);
   const [mutualFriends, setMutualFriends] = useState<
-    { id: string; username: string; avatarUrl?: string }[]
+    { id: string; arenaName: string; avatarUrl?: string }[]
   >([]);
   const [friendStatus, setFriendStatus] = useState<
     'none' | 'pending_sent' | 'pending_received' | 'friends'
@@ -73,7 +73,7 @@ export default function PublicProfilePage() {
 
   useEffect(() => {
     document.title = profile
-      ? `${profile.displayName || profile.username} | Smarter Poker`
+      ? `${profile.displayName || 'Player'} | Smarter Poker`
       : 'Player Profile | Smarter Poker';
   }, [profile]);
 
@@ -369,7 +369,11 @@ export default function PublicProfilePage() {
      formatted the same join date differently - "October 2025" here, "Oct 25"
      there - and neither guarded a null created_at. */
   const memberSince = formatMemberSince(profile.createdAt);
-  const arenaName = profile.displayName || profile.username;
+  /* `getPublicProfile` resolves this through playerDisplayName(data,'arena'),
+     which never returns an empty string - it falls back to 'Player'. The
+     `|| profile.username` that used to sit here was therefore unreachable, and
+     a raw username is not the arena name: it skips the alias. */
+  const arenaName = profile.displayName || 'Player';
   const profileLink = userId ? playerStatusService.generateProfileLink(userId) : '';
 
   return (
@@ -571,7 +575,7 @@ export default function PublicProfilePage() {
                     (e.target as HTMLImageElement).src = generateDefaultAvatar();
                   }}
                 />
-                <span>{friend.username}</span>
+                <span>{friend.arenaName}</span>
               </button>
             ))}
           </div>

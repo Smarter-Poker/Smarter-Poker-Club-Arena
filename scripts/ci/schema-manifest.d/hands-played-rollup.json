@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/hands-played-is-the-number-you-played",
+  "functions": ["fn_sync_profile_total_hands"]
+}

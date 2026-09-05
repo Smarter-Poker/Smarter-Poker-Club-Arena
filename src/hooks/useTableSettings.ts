@@ -288,6 +288,33 @@ let hydratedUserId: string | null = null;
  */
 const locallyTouched = new Set<keyof TableUserSettings>();
 
+/**
+ * The felt palettes design-tokens.css actually defines. `theme` is typed as a
+ * bare `string`, and an unvalidated string is how an INTERFACE MODE got into
+ * the FELT setting.
+ *
+ * Measured on production 2026-09-05, signed in:
+ * `club-arena-table-settings.theme === "light"`, which `applySideEffects`
+ * stamped onto `<html data-color-theme="light">` on every page load, which
+ * design-tokens.css then matched - it listed `[data-color-theme='light']`
+ * beside `[data-theme='light']` - flipping --bg-primary to #f0f4f0 and every
+ * text token to a dark-on-light pairing. On a platform whose standing rule is
+ * "THE WHOLE BACKGROUND SHOULD BE SOLID BLACK" (Dan 2026-08-30). The same
+ * player's interface setting said "dark".
+ *
+ * The value is residue from the era described above DOM_ATTR_THEME, when the
+ * felt colour and the light/dark mode shared `data-theme` and the last writer
+ * won. Splitting the attributes stopped the fight, but nothing ever cleaned or
+ * guarded what was ALREADY stored, so the contaminated value kept being
+ * stamped on every page, forever.
+ */
+const FELT_THEMES = new Set(['black', 'blue', 'gold', 'purple', 'red']);
+
+/** A felt colour, or the default. Never an interface mode. */
+function coerceFeltTheme(value: unknown): string {
+  return typeof value === 'string' && FELT_THEMES.has(value) ? value : DEFAULT_SETTINGS.theme;
+}
+
 function loadFromStorage(): TableUserSettings {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -305,6 +332,10 @@ function loadFromStorage(): TableUserSettings {
       if (merged.autoMuckExplicit !== true) {
         merged.autoMuck = true;
       }
+      // 2026-09-05 — the same shape of hostile state, one field over. A theme
+      // that is not a felt palette is not a preference this setting can hold;
+      // FELT_THEMES above records what was found live and what it did.
+      merged.theme = coerceFeltTheme(merged.theme);
       return merged;
     }
     return DEFAULT_SETTINGS;
@@ -325,7 +356,11 @@ function loadFromStorage(): TableUserSettings {
  */
 function applySideEffects(next: TableUserSettings): void {
   if (typeof document !== 'undefined') {
-    document.documentElement.setAttribute(DOM_ATTR_THEME, next.theme);
+    // Coerced at the door as well as on load, because this runs for values that
+    // never went through loadFromStorage: a bus message from another tab, a
+    // server settings row, a caller passing a whole object. The felt attribute
+    // is the one that must never carry an interface mode - see FELT_THEMES.
+    document.documentElement.setAttribute(DOM_ATTR_THEME, coerceFeltTheme(next.theme));
     document.documentElement.style.setProperty(
       CSS_VAR_ANIMATION_SPEED,
       String(next.animationSpeed)

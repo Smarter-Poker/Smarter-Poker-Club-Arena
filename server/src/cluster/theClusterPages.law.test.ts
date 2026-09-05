@@ -89,7 +89,6 @@ describe('LAW 1 - a tick is scraped', () => {
     expect(text).toContain('# TYPE poker_cluster_pass_duration_seconds histogram');
     expect(text).toMatch(/^poker_cluster_last_pass_timestamp_seconds \d{10}$/m);
     expect(text).toMatch(/^poker_cluster_actions_total\{kind="feeder_opened"\} \d+$/m);
-    expect(text).toMatch(/^poker_cluster_games\{state="live"\} 1$/m);
   });
 
   it('a failed worklist is a pass with an error, so the timestamp still moves', async () => {

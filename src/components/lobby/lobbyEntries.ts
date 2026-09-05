@@ -28,6 +28,7 @@ import { cashBuyInLabel, cashBuyInRange } from '../../lib/cashBuyIn';
 import { spinMultiplierLabel } from '../../utils/spinReveal';
 import { lateRegEndMs } from './lateRegWindow';
 import { SPIN_TIERS } from '../../config/spinSpec';
+import { CASH_TEMPLATES } from '../../config/cashGames';
 
 // ─── Raw row shapes (subset the lobby queries actually select) ─────────────
 /* Extends CashFeatureSource so the medallion columns travel on the same row
@@ -1391,10 +1392,32 @@ export function seatsTakenLabel(entry: LobbyEntry): string {
  */
 const VARIANT_HEAD =
   /^\s*(nlhe?|no[\s-]?limit[\s-]?hold(?:'|’)?em|plo[4568]?|pot[\s-]?limit[\s-]?omaha|flh|flo8?|limit[_\s-]?(?:holdem|omaha)|pineapple|short[\s_-]?deck|6\+)(?!\w)/i;
-const STAKES_HEAD = /^\s*\$?\d+(?:\.\d+)?\s*\/\s*\$?\d+(?:\.\d+)?/;
+/**
+ * A stake is `1/2`, `$1/$2`, `0.10/0.25` - or `.10/.25`, because `entry.name`
+ * has already been through formatGameTitle, which drops the leading zero of
+ * every sub-dollar blind. `\d+` required that zero, so on the desktop board
+ * every micro table's second line began with the stakes its first line had
+ * just given: "NLH 0.10/0.25" over ".10/.25 Classic" (Dan, 2026-09-04).
+ */
+const STAKES_HEAD = /^\s*\$?(?:\d+(?:\.\d+)?|\.\d+)\s*\/\s*\$?(?:\d+(?:\.\d+)?|\.\d+)/;
+
+/** The template's display name; the vocabulary is `src/config/cashGames.ts`. */
+function cashTemplateLabel(template: string | null | undefined): string | null {
+  if (!template) return null;
+  return CASH_TEMPLATES.find((t) => t.id === template)?.label ?? null;
+}
 
 export function cashTitleLines(entry: LobbyEntry): { headline: string; subtitle: string | null } {
   const headline = [entry.gameLabel, entry.stakesLabel].filter(Boolean).join(' ').trim();
+  /* A templated game (Operation Table Stakes) says what KIND of game it is on
+     line two - Classic, Action or Madness - straight from the game row, not
+     parsed back out of a table name. Dan 2026-09-04: "UNDER ALL THE GAMES
+     TITLES INSTEAD OF REPEATING THE STAKES AGAIN, SHOULD JUST SAY 'CLASSIC'
+     'ACTION' OR 'MADNESS'." */
+  const templateLabel = cashTemplateLabel(entry.game?.template);
+  if (templateLabel) {
+    return { headline: headline || String(entry.name || ''), subtitle: templateLabel };
+  }
   /* Strip in BOTH orders. A host may type "NLH 1/2 Late Night" or
      "1/2 NLH Late Night", and stripping only variant-then-stakes left the
      variant in the subtitle for the second one, so the card said NLH twice. */

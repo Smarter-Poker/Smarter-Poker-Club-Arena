@@ -2,7 +2,7 @@
  *  CLUB ENTRY MESSAGE — the full-screen greeting (Dan, 2026-09-03)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Dan asked for padding around all edges, top and bottom included. `.modal-
+ * Dan asked for padding around all edges, top and bottom included. `.ca-modal--
  * fullscreen` already insets by 20px, and on a desktop that is the whole job.
  * On a phone it is not: 20px of margin still leaves the panel underneath the
  * notch and behind the home indicator, so the eyebrow is clipped at the top
@@ -12,7 +12,7 @@
  * works in a hand.
  */
 
-.club-entry-message-modal.modal-fullscreen {
+.club-entry-message-modal.ca-modal--fullscreen {
   /* A CONTAINED POPUP WITH A 20px GUTTER (Dan, 2026-09-04: "IT NEEDS TO BE
      INSIDE THE SCREEN, AND HAVE 20 PIXEL MARGIN ON ALL SIDES, NOT COVER THE
      ENTIRE FUCKING SCREEN").
@@ -56,11 +56,22 @@
 }
 
 /* The card still has to fill whatever height it ends up with, and the shared
-   Modal wraps its children in `.modal-content`, so `flex: 1` on
+   Modal wraps its children in `.ca-modal-content`, so `flex: 1` on
    `.club-entry-message` has no flex parent without this (#2899). `min-height:
    0` lets it shrink beside the wrapper's `overflow-y: auto`, which is what
-   makes a long message scroll rather than push the card off screen. */
-.club-entry-message-modal.modal-fullscreen > .modal-content {
+   makes a long message scroll rather than push the card off screen.
+
+   WHY THE SHARED MODAL'S CLASSES ARE `ca-modal-*` NOW (2026-09-04). Dan: "THE
+   CLUB POP UP IS STILL BROKEN... IT BLOCKS THE ENTIRE PAGE, EVEN WHEN ITS
+   'SMALL'." The card WAS small after #2902; what covered the page was the
+   modal's own backdrop, painted on top of the card instead of behind it.
+   The backdrop was `.modal-overlay`, a name nine other stylesheets also
+   define, and the one that won on the live lobby gave it `position: fixed;
+   z-index: 1000` - above a card with no z-index. Measured with
+   elementsFromPoint on the club name: the overlay came back first. The
+   shared Modal owns unique names now and a law test keeps them unique; see
+   Modal.css. This file follows the rename and pins nothing else. */
+.club-entry-message-modal.ca-modal--fullscreen > .ca-modal-content {
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -76,15 +87,15 @@
  * It was not a crash and it was not a blank render - it was this panel. The
  * rule above makes the modal fill the viewport and `display: flex` is there so
  * `.club-entry-message` (`flex: 1`) fills it back. But the shared Modal wraps
- * whatever it is given in `.modal-content`, so that flex parent is NOT the
+ * whatever it is given in `.ca-modal-content`, so that flex parent is NOT the
  * greeting's parent, and the chain broke at the wrapper: measured live on the
- * Midway Union lobby, the panel was 1,195px tall, `.modal-content` 1,192, and
+ * Midway Union lobby, the panel was 1,195px tall, `.ca-modal-content` 1,192, and
  * `.club-entry-message` collapsed to its own content at 338. The greeting sat
  * in the top quarter and the other ~850px was empty dark panel over the whole
  * lobby - which is exactly what "the page goes black" looks like.
  *
  * `.club-entry-message__body` already asks for `justify-content: center`; it
- * simply never had the height to centre anything in. Handing `.modal-content`
+ * simply never had the height to centre anything in. Handing `.ca-modal-content`
  * the same column stretch fixes it at the one link that was missing: measured
  * again with this rule, the wrapper fills 1,144px, the body 952, and the club
  * name lands at y=535 instead of y=132 - centred, as the body always intended.
@@ -94,12 +105,8 @@
  * content and would let a long message push the panel past the viewport it was
  * just told to fit inside.
  */
-.club-entry-message-modal.modal-fullscreen > .modal-content {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-}
+/* (The rule the paragraph above describes is the `> .ca-modal-content` block
+   higher up; it used to be repeated verbatim here.) */
 
 .club-entry-message {
   position: relative;

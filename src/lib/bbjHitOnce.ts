@@ -48,6 +48,8 @@
  * page, which is the same protection the module-level guards gave before.
  */
 
+import { serverNow } from './serverClock';
+
 /**
  * How recent an emission has to be to count as "now".
  *
@@ -59,6 +61,17 @@
  * old by the time they are replayed, so there is no near-miss band here.
  */
 export const BBJ_FRESH_MS = 90_000;
+
+/**
+ * BBJ build plan phase 1 (2026-09-05): "now" is the ENGINE'S now. Every
+ * emitter stamps `emittedAt` from the engine's clock (or the database's,
+ * which the skew monitor keeps within seconds of it), so comparing it
+ * against the device clock made the gate hostage to the phone's settings: a
+ * clock two minutes fast refused every live jackpot as a replay, silently
+ * and forever. lib/serverClock learns the engine's clock from every EVENT
+ * and PING frame; until the engine has spoken it IS the device clock, so
+ * nothing is worse than before.
+ */
 
 /** Only this many ids are remembered; a jackpot is rare, the cap is a seatbelt. */
 const MAX_REMEMBERED = 50;
@@ -137,7 +150,7 @@ export interface BbjAnnounceInput {
  * never worse. Once the engine carries the stamp, both gates apply.
  */
 export function shouldAnnounceBbjHit(input: BbjAnnounceInput): boolean {
-  const now = input.now ?? Date.now();
+  const now = input.now ?? serverNow();
 
   if (typeof input.emittedAt === 'number' && input.emittedAt > 0) {
     const age = now - input.emittedAt;

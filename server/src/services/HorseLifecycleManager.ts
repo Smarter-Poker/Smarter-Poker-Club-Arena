@@ -512,10 +512,17 @@ export class HorseLifecycleManager {
           // Skip tournament seats entirely — never cash tournament chips to wallets here.
           const { data: tableRow } = await supabase
             .from('tables')
-            .select('tournament_id')
+            .select('tournament_id, cluster_id')
             .eq('id', seat.table_id)
             .maybeSingle();
           if (tableRow?.tournament_id) continue;
+          // A CLUSTER TABLE'S SEATS ARE THE CONTROLLER'S (2026-09-05). A
+          // must-move carries `joined_at` with the player (seniority travels,
+          // OPORD 1.3 s9.8), so a four-hour player moved onto a quiet feeder
+          // looked, to this sweep, like a four-hour orphan on a dead table
+          // and was cashed out mid-session. The game moves its own players
+          // and breaks its own tables; nothing here is orphaned.
+          if (tableRow?.cluster_id) continue;
 
           // Skip tables with recent hand activity — those are live sessions, not orphans.
           const { data: recentHand } = await supabase

@@ -1,5 +1,5 @@
 {
-  "entry_gz_kb": 153,
+  "entry_gz_kb": 155,
   "modules": [
     "src/App.tsx",
     "src/components/ConnectionStatusBar.tsx",
@@ -26,7 +26,6 @@
     "src/components/common/Card.css",
     "src/components/common/ConfirmModal.css",
     "src/components/common/ConfirmModal.tsx",
-    "src/components/common/ConnectionIndicator.tsx",
     "src/components/common/Dropdown.css",
     "src/components/common/EmptyState.module.css",
     "src/components/common/EmptyState.tsx",
@@ -133,6 +132,7 @@
     "src/lib/membershipWarmState.ts",
     "src/lib/pushClient.ts",
     "src/lib/rosterCache.ts",
+    "src/lib/serverClock.ts",
     "src/lib/statsCache.ts",
     "src/lib/storage.ts",
     "src/lib/supabase.ts",

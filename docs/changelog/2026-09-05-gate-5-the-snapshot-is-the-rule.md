@@ -40,3 +40,16 @@ the VPIP rule reads the row live. `TheTablesOpenAndCloseThemselves`
 
 Which floors and clocks the templates carry (`fn_cash_template_defaults`)
 is his: this gate makes whatever they say true on every table.
+
+## Gate 6, the copy (same branch)
+
+OPORD 1.4 s2.9 / A3.6: a must-move game is joined, viewed and watched as a
+GAME, because the platform picks the table. Every cash action surface -
+the lobby row (`LobbyTable`), the pre-commit panel (`GameLobbyPanel`), the
+premium card (`ArenaLobbyGameCard`) - now says Join Game / View Game /
+Watch Game / Return To Game / Game Closed for a cluster entry and keeps
+Join Table / View Table / Watch Table for a manual table.
+`tests/a-game-is-joined-as-a-game.law.test.ts` renders both and greps
+the game path. Straddles: R2 already holds (every cluster table is
+written false, and the applier re-writes false every tick); the override
+control's removal from the create flow is a Gate 7 item with the cutover.

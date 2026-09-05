@@ -132,12 +132,24 @@
 
 /* ---- Specular Light Sweep ----
    Simulates overhead spotlight sweeping across glossy card surface.
-   Staggered per card-index for realistic sequential reflection. */
+   Staggered per card-index for realistic sequential reflection.
+
+   MOBILE PASS 2026-09-05: this used to travel by animating `left`, on an
+   infinite four-second loop, on every board card - five per table and twenty
+   in a four-up tile view, forever, on a phone. `left` is a layout property,
+   and it is web.dev's own worked example of the cost: the identical animation
+   dropped 50% of frames via `left`/`top` and 1% via `transform`. It travels
+   by `transform: translateX` now and the visual is unchanged.
+
+   The percentages had to be rebased. `left` is a percentage of the CONTAINING
+   BLOCK (the card); `translateX` is a percentage of the ELEMENT (70% of the
+   card). So the old -120% and 160% of the card become -171.43% and 228.57% of
+   this element, which is the same two positions on screen. */
 .community-cards__card::after {
   content: '';
   position: absolute;
   top: 0;
-  left: -120%;
+  left: 0;
   width: 70%;
   height: 100%;
   background: linear-gradient(
@@ -160,14 +172,14 @@
   0%,
   75%,
   100% {
-    left: -120%;
+    transform: translateX(-171.43%);
     opacity: 0;
   }
   5% {
     opacity: 1;
   }
   35% {
-    left: 160%;
+    transform: translateX(228.57%);
     opacity: 0;
   }
 }
@@ -336,60 +348,15 @@
    snap over - which is the same beat measured from the reference recording,
    sized to HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS instead of hand-tuned. */
 
-/* ---- 3D Flip Deal (primary flop animation) ---- */
-.community-cards__card--dealing {
-  animation: ccCardFlip3D calc(var(--cc-deal-duration) * var(--animation-speed, 1))
-    var(--cc-ease-spring) forwards;
-  will-change: transform, opacity;
-  transform-style: preserve-3d;
-}
+/* THE 3D FLIP DEAL IS GONE (mobile pass 2026-09-05).
 
-/* Stagger flop cards: 100ms apart per PokerBros spec */
-.community-cards__card--dealing:nth-of-type(1) {
-  animation-delay: 0ms;
-}
-.community-cards__card--dealing:nth-of-type(2) {
-  animation-delay: var(--cc-flop-stagger);
-}
-.community-cards__card--dealing:nth-of-type(3) {
-  animation-delay: calc(var(--cc-flop-stagger) * 2);
-}
-
-@keyframes ccCardFlip3D {
-  0% {
-    transform: rotateY(180deg) translateY(-75px) translateX(30px) scale(0.4);
-    opacity: 0;
-    filter: brightness(0.15);
-    box-shadow: 0 0 0 rgba(0, 0, 0, 0);
-  }
-  20% {
-    opacity: 0.5;
-    filter: brightness(0.5);
-  }
-  40% {
-    transform: rotateY(80deg) translateY(-20px) translateX(8px) scale(0.88);
-    opacity: 0.8;
-    filter: brightness(0.75);
-  }
-  60% {
-    transform: rotateY(10deg) translateY(4px) translateX(-3px) scale(1.06);
-    opacity: 1;
-    filter: brightness(1.25);
-  }
-  75% {
-    transform: rotateY(-6deg) translateY(-2px) translateX(1px) scale(1.02);
-    filter: brightness(1.1);
-  }
-  88% {
-    transform: rotateY(2deg) translateY(0.5px) scale(1.005);
-    filter: brightness(1.03);
-  }
-  100% {
-    transform: rotateY(0deg) translateY(0) translateX(0) scale(1);
-    opacity: 1;
-    filter: brightness(1);
-  }
-}
+   `.community-cards__card--dealing` and its `ccCardFlip3D` keyframe were dead:
+   no component has emitted that class since the two-phase flop landed, and a
+   grep across src/ and tests/ finds it nowhere. It was also the one keyframe
+   in this file that animated a non-compositor property, which is how it was
+   found - tests/e2e/card-squeeze-mobile.spec.ts asserts that every `ccCard*`
+   keyframe touches transform and opacity only, and this one failed it while
+   being unreachable. */
 
 /* THE TURN'S OWN ANIMATION IS RETIRED (ROUND 2 2026-09-05).
 
@@ -905,7 +872,6 @@
   .community-cards__card--flop-deal,
   .community-cards__flip,
   .community-cards__rabbit-flip,
-  .community-cards__card--dealing,
   .community-cards__card--highlighted,
   .community-cards__highlight-glow,
   .community-cards__stage-label,
@@ -919,8 +885,7 @@
     transition: none !important;
   }
 
-  .community-cards__card--flop-deal,
-  .community-cards__card--dealing {
+  .community-cards__card--flop-deal {
     opacity: 1;
     transform: none;
     filter: none;

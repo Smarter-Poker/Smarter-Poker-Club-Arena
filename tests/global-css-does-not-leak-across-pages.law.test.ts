@@ -139,8 +139,17 @@ describe('a global class name has exactly one owner', () => {
     // layout. It reads 164 with the wallet's two fixes included; it was 242 on
     // the old basis and 256 when this law was written.
     //
+    // 2026-09-05, fourth pass: 161. Two came off by DELETING rather than
+    // scoping - VIPUpgradeModal.css and VIPProgressRing.css were exported from
+    // the vip barrel and rendered nowhere, so half of each collision was a
+    // stylesheet no page ever loaded. A dead stylesheet is still a live
+    // collision, because the bundler ships whatever the barrel re-exports.
+    // The number also had 2 of slack against reality when it was last set;
+    // this closes that, so the next regression is caught by one, not three.
+    //
     // This is a ratchet, not a target: it may fall, never rise. Fixing one is
-    // two lines - scope it to its container.
+    // two lines - scope it to its container, or delete the sheet if nothing
+    // renders it.
     // LOWER THIS NUMBER when you fix some; never raise it to make CI pass.
     let leakable = 0;
     for (const byFile of owners.values()) {
@@ -149,10 +158,15 @@ describe('a global class name has exactly one owner', () => {
       const union = new Set(declared.flatMap((s) => [...s]));
       if ([...union].some((p) => declared.some((s) => !s.has(p)))) leakable += 1;
     }
-    // 2026-09-05, fourth pass: 162. Main set 164 on the new basis while the
-    // wallet's two fixes were still on a branch; with them merged the tree
-    // measures 162, so the ceiling follows it down. Nothing new was fixed here
-    // - this is the same two leaks being counted where they belong.
-    expect(leakable).toBeLessThanOrEqual(162);
+    // 2026-09-05, fourth pass: 161, MEASURED after the merge rather than
+    // inferred from it. The branch had ratcheted to 162 and main to 161, and
+    // subtracting the wallet's two fixes from main's number would have given
+    // 159 - wrong, because main already counted them. A ratchet resolved by
+    // arithmetic is a ratchet set below what the tree can actually hold, and
+    // it fails on somebody else's commit.
+    //
+    // The merge rule, either way: take the LOWER of the two sides. Both only
+    // ever move down, so picking the higher hands back ceiling already earned.
+    expect(leakable).toBeLessThanOrEqual(161);
   });
 });

@@ -88,13 +88,6 @@ export function leftCorner(width: number, height: number, x: number, y: number):
   return y < height / 2 ? 'tl' : 'bl';
 }
 
-/** The corner nearest a point (kept for callers that want a free peel). */
-export function nearestCorner(width: number, height: number, x: number, y: number): PeelCorner {
-  const left = x < width / 2;
-  const top = y < height / 2;
-  return top ? (left ? 'tl' : 'tr') : left ? 'bl' : 'br';
-}
-
 function cornerPoint(width: number, height: number, corner: PeelCorner): [number, number] {
   switch (corner) {
     case 'tl':

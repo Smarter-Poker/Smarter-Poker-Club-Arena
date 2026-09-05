@@ -119,7 +119,13 @@
   gap: 12px;
 }
 
-.player-avatar {
+/* SCOPED 2026-09-05. This was a bare selector, and the same class name is
+   defined bare in several other stylesheets. Every stylesheet here is global
+   once imported, so whichever file loaded last won any property the owning
+   page did not itself declare - which is how a 32px admin icon button ended
+   up sizing the public dossier's player actions in production. Scoped to
+   this component's own container; its own appearance is unchanged. */
+.agent-cashout-panel .player-avatar {
   width: 44px;
   height: 44px;
   border-radius: 50%;
@@ -177,7 +183,13 @@
   gap: 12px;
 }
 
-.action-btn {
+/* SCOPED 2026-09-05. This was a bare selector, and the same class name is
+   defined bare in several other stylesheets. Every stylesheet here is global
+   once imported, so whichever file loaded last won any property the owning
+   page did not itself declare - which is how a 32px admin icon button ended
+   up sizing the public dossier's player actions in production. Scoped to
+   this component's own container; its own appearance is unchanged. */
+.agent-cashout-panel .action-btn {
   flex: 1;
   padding: 12px 16px;
   border-radius: 8px;
@@ -189,19 +201,19 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.action-btn.approve {
+.agent-cashout-panel .action-btn.approve {
   background: linear-gradient(135deg, #00c853 0%, #2e7d32 100%);
   color: #fff;
   box-shadow: 0 4px 16px rgba(0, 200, 83, 0.25);
 }
 
-.action-btn.reject {
+.agent-cashout-panel .action-btn.reject {
   background: transparent;
   border: 1px solid #ef5350;
   color: #ef5350;
 }
 
-.action-btn:disabled {
+.agent-cashout-panel .action-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

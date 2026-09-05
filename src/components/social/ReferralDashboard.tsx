@@ -24,7 +24,7 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
   const [stats, setStats] = useState<ReferralStats>({
     code: '',
     totalReferrals: 0,
-    totalChipsEarned: 0,
+    totalDiamondsEarned: 0,
   });
   const [milestones, setMilestones] = useState<ReferralMilestone[]>([]);
   const [loading, setLoading] = useState(true);
@@ -114,7 +114,9 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
 
   const handleShare = async () => {
     const url = referralUrl();
-    const shareText = `Join me on Club Arena! Use my referral code ${stats.code} to get 250 bonus chips!`;
+    /* Diamonds, and the number the server actually pays a new player. Dan
+       2026-09-05: nothing on this platform earns chips. */
+    const shareText = `Join me on Club Arena. Use my referral code ${stats.code} to start with bonus diamonds.`;
     try {
       if (navigator.share) {
         await navigator.share({
@@ -148,7 +150,7 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
   return (
     <div className="refd-container">
       <h3 className="refd-title">Referral Program</h3>
-      <p className="refd-subtitle">Invite Friends And Earn Chips Together!</p>
+      <p className="refd-subtitle">Invite Friends And Earn Diamonds Together</p>
 
       {/* Code Display */}
       <div className="refd-code-box">
@@ -165,8 +167,8 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
           <span className="refd-stat-label">Referrals</span>
         </div>
         <div className="refd-stat">
-          <span className="refd-stat-value">{stats.totalChipsEarned.toLocaleString()}</span>
-          <span className="refd-stat-label">Chips Earned</span>
+          <span className="refd-stat-value">{stats.totalDiamondsEarned.toLocaleString()}</span>
+          <span className="refd-stat-label">Diamonds Earned</span>
         </div>
       </div>
 
@@ -176,7 +178,7 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
           <div key={m.count} className={`refd-milestone ${m.unlocked ? 'refd-unlocked' : ''}`}>
             <span className="refd-ms-icon">{m.unlocked ? '✓' : '◈'}</span>
             <span className="refd-ms-label">{m.label}</span>
-            <span className="refd-ms-reward">{m.reward.toLocaleString()} Chips</span>
+            <span className="refd-ms-reward">{m.reward.toLocaleString()} Diamonds</span>
           </div>
         ))}
       </div>

@@ -111,6 +111,29 @@ export const CARD_PRESENTATION_PROFILES = Object.freeze({
     lightSweepEnabled: true,
     threeD: true,
   }),
+  /**
+   * A spectator (spec 36, 94, 118). Same shape as cash and deliberately not
+   * faster: somebody watching is doing nothing BUT watching, so there is no
+   * action cadence to keep out of the way of. Its own id so telemetry can
+   * separate watched hands from played ones - the two populations have very
+   * different device mixes and averaging them hides both.
+   */
+  spectatorDesktop: profile({
+    id: 'spectator-desktop',
+    mode: 'spectator',
+    platform: 'desktop',
+    intensity: 'full',
+    prepareMs: 80,
+    holdMs: 0,
+    squeezeMs: 180,
+    revealMs: 180,
+    settleMs: 120,
+    overshoot: 1.03,
+    staggerMs: 60,
+    audioEnabled: true,
+    lightSweepEnabled: true,
+    threeD: true,
+  }),
   /** Any mode on a phone. Fast and clean. ~360ms. */
   mobile: profile({
     id: 'mobile',

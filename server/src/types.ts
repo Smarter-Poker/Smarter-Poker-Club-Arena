@@ -574,6 +574,14 @@ export type HandEvent =
         userId: string;
         amount: number;
         handName?: string;
+        /**
+         * HI-LO (2026-09-04): true on the entry for the LOW half of a split
+         * pot. One entry per (board, winner, half); `handName` is then the
+         * qualifying low ("Low: 8-6-4-3-2"). Present on every PLO8 / FLO8
+         * hand, single board included, so the record can say who took which
+         * half - `winners` merges the halves and names only the high hand.
+         */
+        low?: boolean;
       }>;
       /**
        * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the unmerged per-pot(-half)

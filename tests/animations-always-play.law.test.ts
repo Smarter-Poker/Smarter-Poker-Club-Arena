@@ -972,11 +972,17 @@ describe('LAW: a Crazy Pineapple discard is seen and heard', () => {
     const adapter = read('src/lib/handHistoryAdapter.ts');
     expect(adapter).toContain('discardedCard: a.discarded_card ? toCardCode(a.discarded_card)');
 
-    // Both in-table surfaces draw it.
+    // Both in-table surfaces draw it - through the one shared rundown, which
+    // draws the thrown card face up on the viewer's own discard row.
     expect(read('src/components/table/HandHistoryPanel.tsx')).toContain(
-      '<CardChip code={a.discardedCard} />'
+      '<HandDetailView model={hand.replay}'
     );
-    expect(read('src/components/table/HandDetailModal.tsx')).toContain('a.discardedCard');
+    expect(read('src/components/table/HandDetailModal.tsx')).toContain('<HandDetailView');
+    expect(read('src/components/handdetail/HandDetailView.tsx')).toContain(
+      '{row.discardedCard && <CardImage key={`d-${row.key}`} card={row.discardedCard} size="xs" />}'
+    );
+    // and the model receives it from the service's own map, keyed by user id.
+    expect(svc).toContain('discardedCards,\n        privateHoleCards,');
   });
 
   it('nothing about the discard can be switched off', () => {

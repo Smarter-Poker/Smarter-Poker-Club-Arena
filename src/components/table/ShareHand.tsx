@@ -27,7 +27,27 @@ export interface ShareableCard {
 
 export interface ShareableAction {
   seat: number;
-  action: 'FOLD' | 'CHECK' | 'CALL' | 'BET' | 'RAISE' | 'ALL_IN';
+  /**
+   * v3 (2026-09-05) adds the FORCED money and the returned bet. A shared hand
+   * used to carry only the six chosen verbs, so every recipient saw a pot that
+   * began at the first voluntary action with no blinds in it, and a returned
+   * uncalled bet stayed in the pot. `DISCARD` is Crazy Pineapple's thrown card
+   * (the card itself is never shared - it is the viewer's own).
+   */
+  action:
+    | 'FOLD'
+    | 'CHECK'
+    | 'CALL'
+    | 'BET'
+    | 'RAISE'
+    | 'ALL_IN'
+    | 'SB'
+    | 'BB'
+    | 'ANTE'
+    | 'STRADDLE'
+    | 'POST'
+    | 'RETURN'
+    | 'DISCARD';
   amount?: number;
 }
 
@@ -129,21 +149,40 @@ const ACTION_CODE: Record<ShareableAction['action'], string> = {
   BET: 'B',
   RAISE: 'R',
   ALL_IN: 'A',
+  // v3
+  SB: 'S',
+  BB: 'G',
+  ANTE: 'N',
+  STRADDLE: 'T',
+  POST: 'P',
+  RETURN: 'U',
+  DISCARD: 'I',
 };
 
-const CODE_ACTION: Record<string, ShareableAction['action']> = {
-  F: 'FOLD',
-  C: 'CALL',
-  X: 'CHECK',
-  B: 'BET',
-  R: 'RAISE',
-  A: 'ALL_IN',
+const CODE_ACTION: Record<string, ShareableAction['action']> = Object.fromEntries(
+  Object.entries(ACTION_CODE).map(([k, v]) => [v, k as ShareableAction['action']])
+);
+
+/**
+ * MONEY IS IN CENTS ON THE WIRE (v3, 2026-09-05). Every amount, stack, pot and
+ * winner share used to be `Math.round(chips)` in base36, so on a 0.02/0.05
+ * table every figure in a shared hand rounded to 0 or 1 - a recipient saw
+ * "Seat 3 RAISE" with no number, a pot of 0 and winners of 0. v1/v2 payloads
+ * still decode as the whole chips they were written as.
+ */
+const CENTS = 100;
+const encodeMoney = (n: number | undefined): string =>
+  Math.max(0, Math.round((Number(n) || 0) * CENTS)).toString(36);
+const decodeMoney = (s: string | undefined, version: string): number => {
+  const raw = parseInt(s || '', 36);
+  if (!Number.isFinite(raw)) return 0;
+  return version === 'v3' ? raw / CENTS : raw;
 };
 
 function encodeAction(action: ShareableAction): string {
   let str = `${action.seat}${ACTION_CODE[action.action] || 'X'}`;
   if (action.amount !== undefined) {
-    str += Math.max(0, Math.round(action.amount)).toString(36); // Base36 for compact numbers
+    str += encodeMoney(action.amount);
   }
   return str;
 }
@@ -154,16 +193,20 @@ function encodeActions(actions: ShareableAction[]): string {
 
 /** Shared action-list parser — the old decoder inlined this three times and
  *  still never called it for the turn or the river. */
-function decodeActions(str: string | undefined): ShareableAction[] {
+function decodeActions(str: string | undefined, version: string): ShareableAction[] {
   const out: ShareableAction[] = [];
   if (!str) return out;
   for (const token of str.split(',')) {
     if (token.length < 2) continue;
     const seat = parseInt(token[0], 10);
     if (!Number.isFinite(seat)) continue;
-    const action: ShareableAction = { seat, action: CODE_ACTION[token[1]] || 'CHECK' };
+    /* An unknown code is skipped, not read as CHECK. It used to default to
+       CHECK, which invented an action the player never took. */
+    const verb = CODE_ACTION[token[1]];
+    if (!verb) continue;
+    const action: ShareableAction = { seat, action: verb };
     if (token.length > 2) {
-      const amt = parseInt(token.substring(2), 36);
+      const amt = decodeMoney(token.substring(2), version);
       if (Number.isFinite(amt)) action.amount = amt;
     }
     out.push(action);
@@ -218,7 +261,8 @@ export function encodeHand(hand: ShareableHand): string {
   // winners, the table name and the hero/winner flags on the way back out —
   // see decodeHandFromUrl. v1 payloads still decode (there are none in the
   // wild: the /replay route did not exist until today).
-  parts.push('v2');
+  // v3 (2026-09-05): money in cents, forced-money verbs. v1/v2 still decode.
+  parts.push('v3');
   parts.push(hand.variant);
   parts.push(hand.stakes.replace('/', '-'));
   parts.push(hand.buttonSeat.toString());
@@ -232,7 +276,7 @@ export function encodeHand(hand: ShareableHand): string {
     .map((p) => {
       const flags = `${p.isHero ? 'h' : ''}${p.isWinner ? 'w' : ''}`;
       const cards = p.cards?.length ? encodeCards(p.cards) : '';
-      return `${p.seat}:${b64utf8((p.name || '').slice(0, 24))}:${Math.max(0, Math.round(p.stack || 0)).toString(36)}:${cards}:${flags}`;
+      return `${p.seat}:${b64utf8((p.name || '').slice(0, 24))}:${encodeMoney(p.stack)}:${cards}:${flags}`;
     })
     .join(';');
   parts.push(playerStr);
@@ -259,12 +303,8 @@ export function encodeHand(hand: ShareableHand): string {
   }
 
   // Pot and winners
-  parts.push(Math.max(0, Math.round(hand.potTotal || 0)).toString(36));
-  parts.push(
-    (hand.winners || [])
-      .map((w) => `${w.seat}:${Math.max(0, Math.round(w.amount || 0)).toString(36)}`)
-      .join(';')
-  );
+  parts.push(encodeMoney(hand.potTotal));
+  parts.push((hand.winners || []).map((w) => `${w.seat}:${encodeMoney(w.amount)}`).join(';'));
   // v2 field — the table name. v1 hard-coded "Shared Hand" on decode, so the
   // recipient never saw which table the hand came from.
   parts.push(b64utf8((hand.tableName || '').slice(0, 40)));
@@ -288,7 +328,7 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
     // payloads genuinely do not carry the turn, the river, the winners, the
     // table name or the hero/winner flags — they were never encoded as
     // recoverable fields. v2 does.
-    if (version !== 'v1' && version !== 'v2') return null;
+    if (version !== 'v1' && version !== 'v2' && version !== 'v3') return null;
 
     // Parse basic info
     const variant = parts[1] as ShareableHand['variant'];
@@ -305,7 +345,7 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
         const player: ShareablePlayer = {
           seat: parseInt(seat, 10) || 0,
           name: unb64utf8(nameB64) || `Seat ${seat}`,
-          stack: parseInt(stackB36, 36) || 0,
+          stack: decodeMoney(stackB36, version),
         };
         if (cardsStr) player.cards = decodeCards(cardsStr, cardsStr.length);
         if (flags) {
@@ -320,24 +360,33 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
     // (river) were read by nothing, so every shared hand ended on the flop no
     // matter how it actually played, and parts[11] (winners) was discarded in
     // favour of a hard-coded empty array.
-    const preflop = decodeActions(parts[6]);
+    const preflop = decodeActions(parts[6], version);
 
     let flop: ShareableHand['flop'];
     const flopSeg = splitStreet(parts[7]);
     if (flopSeg) {
-      flop = { cards: decodeCards(flopSeg.cards, 3), actions: decodeActions(flopSeg.actions) };
+      flop = {
+        cards: decodeCards(flopSeg.cards, 3),
+        actions: decodeActions(flopSeg.actions, version),
+      };
     }
 
     let turn: ShareableHand['turn'];
     const turnSeg = splitStreet(parts[8]);
     if (turnSeg && turnSeg.cards) {
-      turn = { card: decodeCard(turnSeg.cards[0]), actions: decodeActions(turnSeg.actions) };
+      turn = {
+        card: decodeCard(turnSeg.cards[0]),
+        actions: decodeActions(turnSeg.actions, version),
+      };
     }
 
     let river: ShareableHand['river'];
     const riverSeg = splitStreet(parts[9]);
     if (riverSeg && riverSeg.cards) {
-      river = { card: decodeCard(riverSeg.cards[0]), actions: decodeActions(riverSeg.actions) };
+      river = {
+        card: decodeCard(riverSeg.cards[0]),
+        actions: decodeActions(riverSeg.actions, version),
+      };
     }
 
     const winners = (parts[11] || '')
@@ -345,7 +394,7 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
       .filter(Boolean)
       .map((w) => {
         const [seat, amt] = w.split(':');
-        return { seat: parseInt(seat, 10) || 0, amount: parseInt(amt, 36) || 0 };
+        return { seat: parseInt(seat, 10) || 0, amount: decodeMoney(amt, version) };
       });
 
     // Build hand object
@@ -361,7 +410,7 @@ export function decodeHandFromUrl(encoded: string): ShareableHand | null {
       flop,
       turn,
       river,
-      potTotal: parseInt(parts[10], 36) || 0,
+      potTotal: decodeMoney(parts[10], version),
       winners,
     };
 

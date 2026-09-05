@@ -32,14 +32,20 @@ export interface UserTableSettings {
   show_badges: boolean;
   cards_pre_sort: boolean;
   gestures_enabled: boolean;
-  card_slide: boolean;
   /**
-   * Card Squeeze (competitor-parity 2026-08-19, GG-style marquee feature):
-   * hero hole cards are dealt FACE DOWN; drag upward on them to bend/peel
-   * them open like a live squeeze. Tap bounces a gesture hint. Auto-reveals
-   * at showdown / when the hero is all-in so the hero never sees less than
-   * the table does.
+   * CARD SLIDE (Dan 2026-09-04): hero hole cards are dealt FACE DOWN and the
+   * player looks at them by pinching a corner and peeling it back, exactly as
+   * at a live table - the corner tracks the finger, the hand lifts off the
+   * felt, and letting go early drops it flat again. Off by default. Auto-
+   * reveals at showdown / all-in so the hero never sees less than the table.
+   *
+   * This is the ONE switch for the feature. `card_squeeze` (competitor-parity
+   * 2026-08-19) was the same feature under a second name with a hinge
+   * animation; migration 20260905050000 carried every `card_squeeze = true`
+   * into `card_slide` and the column is no longer read or shown.
    */
+  card_slide: boolean;
+  /** Retired 2026-09-04 in favour of card_slide; column kept, never read. */
   card_squeeze: boolean;
   show_stack_in_bb: boolean;
   auto_time_bank: boolean;
@@ -77,7 +83,7 @@ export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
   show_badges: false,
   cards_pre_sort: true,
   gestures_enabled: false,
-  card_slide: true,
+  card_slide: false, // 2026-09-04: the corner peel, OFF by default (Dan); 20260905001550
   card_squeeze: false,
   show_stack_in_bb: false,
   auto_time_bank: false,
@@ -182,12 +188,7 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
   {
     key: 'card_slide',
     label: 'Card Slide',
-    description: 'Enable Card Peek/Slide Reveal Animation',
-  },
-  {
-    key: 'card_squeeze',
-    label: 'Card Squeeze',
-    description: 'Deal Your Cards Face Down - Drag Up To Squeeze Them Open Like A Live Game',
+    description: 'Deal Your Cards Face Down And Peel A Corner Back To Look, Like A Live Game',
     quick: true,
   },
   {

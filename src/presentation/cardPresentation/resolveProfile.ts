@@ -43,6 +43,7 @@ export function resolveCardAnimationProfile(input: ResolveProfileInput): CardAni
     case 'replay':
       return P.replayDesktop;
     case 'spectator':
+      return P.spectatorDesktop;
     case 'cash':
     default:
       return P.cashDesktop;

@@ -341,9 +341,38 @@
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    THEME: Light Mode (Day Table)
+   ═══════════════════════════════════════════════════════════════════════════════
+
+   `data-theme` ONLY. This is the one palette in this file that must not answer
+   to `data-color-theme`, and leaving it dual-homed was live on production.
+
+   The two attributes exist because they had been one, and fought: the table
+   FELT colour ('black'/'blue'/'gold'/'purple'/'red') and the interface MODE
+   ('light'/'dark') were both written into `data-theme`, last writer winning -
+   the "Light mode doesn't stick until reload" symptom recorded at length in
+   useTableSettings.ts. The fix split them, and that file states the intent:
+   "`data-theme` itself now belongs exclusively to the light/dark interface
+   mode."
+
+   Every FELT palette below keeps both attributes, which is what made the split
+   invisible to skins. But `light` is not a felt palette, and keeping it on
+   `data-color-theme` as well meant a stale felt setting of "light" - left in
+   localStorage by the very bug the split repaired - kept stamping
+   `<html data-color-theme="light">` on every page and flipping --bg-primary to
+   #f0f4f0, --bg-secondary to #e8ede8 and every text token to a dark-on-light
+   pairing. That is against the standing rule "THE WHOLE BACKGROUND SHOULD BE
+   SOLID BLACK AND ALL THE SAME COLOR" (Dan 2026-08-30).
+
+   Measured on production 2026-09-05, signed in: `data-color-theme="light"`,
+   `data-theme` UNSET, `club-arena-table-settings.theme === "light"` while
+   `club-arena-user-settings.theme === "dark"`. The player had asked for dark
+   and the felt attribute was serving them the light token palette.
+
+   useTableSettings now refuses to write a non-felt value, which stops new
+   contamination. Dropping the selector here is what heals the players who are
+   already carrying it, without touching their stored settings.
    ═══════════════════════════════════════════════════════════════════════════════ */
-[data-theme='light'],
-[data-color-theme='light'] {
+[data-theme='light'] {
   --bg-primary: #f0f4f0;
   --bg-secondary: #e8ede8;
   --bg-surface: #ffffff;

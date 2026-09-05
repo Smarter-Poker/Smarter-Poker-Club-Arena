@@ -45,6 +45,7 @@ export default function VIPPage() {
     timeBankSeconds: { used: 0, limit: 0 },
     emojis: { used: 0, limit: 0 },
     tags: { used: 0, limit: 0 },
+    throwables: { used: 0, limit: 0 },
   });
   const [diamonds, setDiamonds] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -381,16 +382,23 @@ export default function VIPPage() {
           gold-glow card - three names for a membership that has two (Dan
           2026-09-04), in a colour outside the schema (Dan 2026-09-05).
 
-          Four of the eight perks it listed were not implemented anywhere,
-          checked against feature_pricing, fn_purchase_feature and the engine on
-          2026-09-05:
+          Three of the eight perks it listed did not say a true thing, checked
+          against feature_pricing, fn_purchase_feature and the engine:
 
-            "500 Free Throws Per Month"   `throwable` costs 1 diamond a throw
-                                          and has no VIP branch in any code path
-            "Unlimited" offline protection  the word Dan struck; it is included,
-                                          which is a different claim
+            "+6% Score Boost"             nothing in either repo applies a
+                                          scoring boost of any kind
             "All Packs" emojis            the allowance is 1,200 a month
-            "+6% Score Boost"             LeaderboardService applies no boost
+            "Unlimited" offline protection  the word Dan struck; it is
+                                          included, which is a different claim
+
+          A FOURTH WAS TRUE AND I CUT IT ANYWAY. "500 Free Throws Per Month" is
+          real: fn_use_throwable counts this calendar month's rows in
+          `throw_usage` and charges the 1-diamond price only from the 501st. I
+          removed it on the strength of `feature_pricing.throwable
+          .vip_tiers_included` being empty - a column that is read by NOTHING.
+          Restored the same day, and metered on the plate above rather than
+          asserted here. The lesson is in the law: an empty column is not an
+          absent feature, and the enforcement is whatever the function does.
 
           What is left is what the server meters, and it now comes from the same
           VIPMembershipPlate above rather than a second hand-written list that
@@ -479,6 +487,15 @@ export default function VIPPage() {
                 title: 'Player Tags',
                 description: `${VIP_MONTHLY_ALLOWANCES.tags.toLocaleString()} Free Per Month`,
                 value: VIP_MONTHLY_ALLOWANCES.tags.toLocaleString(),
+              },
+              {
+                id: 'throwable',
+                icon: '\u25C6',
+                title: 'Throwables',
+                /* fn_use_throwable: 500 free per calendar month, counted in
+                   throw_usage, 1 diamond from the 501st. */
+                description: `${VIP_MONTHLY_ALLOWANCES.throwables} Free Per Month`,
+                value: `${VIP_MONTHLY_ALLOWANCES.throwables}`,
               },
               {
                 id: 'stack',

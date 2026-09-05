@@ -508,10 +508,27 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'leader/standby heartbeat',
     'fleet'
   ),
-  // Legacy: exist in the schema, zero rows, zero writes, no reader in
-  // server/src. Registered so the test fails the day something starts
-  // reading one without moving it above (a datum with a reader is not
-  // legacy) and so the panel can show them as what they are.
+  // Legacy: no reader in server/src. Registered so the test fails the day
+  // something starts reading one without moving it above (a datum with a
+  // reader is not legacy) and so the panel can show them as what they are.
+  //
+  // CORRECTED 2026-09-05. This block said "zero rows, zero writes" and that
+  // was not true of all of them. Measured against production:
+  //
+  //   horse_opponent_journals   858 rows, newest 2026-08-16, ZERO reads ever
+  //   horse_session_stats         0 rows, 114 sequential scans
+  //   horses                      0 rows,  51 scans, 1 SQL reader
+  //                               (get_available_horses, which nothing calls -
+  //                                HydraService notes the RPC "doesn't exist")
+  //
+  // horse_opponent_journals is the one worth naming: fifty columns of
+  // per-opponent history - steal attempts, barrel counts, tank times,
+  // showdown bluffs - written until 2026-08-16 and read by nothing, ever. It
+  // is a second, richer opponent model that lost to HorseMind
+  // (horse_mind_stats / horse_mind_pairs), which IS live and took 1,595,965
+  // reads over the same period. Two models were built; one won; the loser was
+  // left holding data. Do not "revive" it without deciding which model owns
+  // opponent memory - that is the decision, not the wiring.
   ...[
     'horse_analytics',
     'horse_error_log',
@@ -534,7 +551,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
       t,
       'legacy_unused',
       'none',
-      'zero rows, zero writes, no reader in server/src as of 2026-09-04',
+      'no reader in server/src as of 2026-09-05; see the note above - some of these hold rows',
       'legacy'
     )
   ),

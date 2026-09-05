@@ -169,6 +169,122 @@ describe('decision wiring', () => {
     return bets / trials;
   }
 
+  /**
+   * 3-BET FREQUENCY AGAINST A NAMED OPENER.
+   *
+   * Mirrors cbetFreq, for the read that HorsePreflop actually consumes:
+   * `ctx.raiserFoldTo3Bet` -> f3bScale = clamp(0.6 + f3b, 0.7, 1.45), applied
+   * to the V7 3-bet bluff frequency. Hero holds a mid-strength hand in the
+   * bluff window (not a value 3-bet), heads-up, in position, no callers -
+   * the exact branch f3bScale gates.
+   *
+   * WHY THIS TEST EXISTS. Production telemetry shows v16_reads_f3b firing
+   * 929,664 times in two days, which proves the read is CONSULTED and proves
+   * nothing about whether it changes anything. Aggregating horse_mind_pairs
+   * against each victim's current fold-to-3-bet showed a flat ~9.9% 3-bet rate
+   * across every bucket from 9% folders to 71% folders - 351,758 opportunities
+   * and no visible differentiation. That measurement is confounded (pair
+   * counts accumulate for weeks while the f3b snapshot is current), so it
+   * cannot convict on its own. This can: same seed, same cards, same spot,
+   * only the opener's history differs.
+   */
+  function threeBetFreq(openerId: string, trials: number): number {
+    let threeBets = 0;
+    for (let seed = 1; seed <= trials; seed++) {
+      seedFastRandom(seed * 7919);
+      // KJo: comfortably inside the bluff band - too weak to be a value
+      // 3-bet, too strong to be folded outright.
+      const hero = mkPlayer({
+        seat: 1,
+        user_id: 'hero',
+        cards: [c('K', 'hearts'), c('J', 'diamonds')],
+        stack: 200,
+        bet: 0,
+        totalInvested: 0,
+      });
+      const opener = {
+        seat: 3,
+        user_id: openerId,
+        username: openerId,
+        stack: 194,
+        bet: 6,
+        totalInvested: 6,
+        is_folded: false,
+        is_all_in: false,
+        is_sitting_out: false,
+        is_horse: true,
+        cards: [],
+      } as never as SeatPlayer;
+      const history: ActionRecord[] = [
+        { seat: 3, userId: openerId, action: 'raise', amount: 6, timestamp: 1, stage: 'preflop' },
+      ] as ActionRecord[];
+      const gs: HorseGameStateV2 = {
+        players: [hero, opener],
+        communityCards: [],
+        pot: 9,
+        currentBet: 6,
+        minRaise: 6,
+        stage: 'preflop',
+        gameVariant: 'nlh',
+        bigBlind: 2,
+        dealerSeat: 1,
+        actionHistory: history,
+        gameMode: 'cash',
+        format: 'cash',
+      } as HorseGameStateV2;
+      const dec = HorseLogic.decide(hero, gs, 'balanced', {}, {});
+      // A 3-bet is an aggressive action putting in more than the 6 open.
+      // NOTE the cast: at preflop the engine returns action 'raise' with an
+      // amount (measured: 39 of 800 trials, amounts 23-24), but 'raise' is
+      // NOT in the declared HorseDecision action union - which is
+      // "fold" | "check" | "call" | "bet" | "all_in" | "discard". The runtime
+      // is right and the type is wrong; typing to the union here would make
+      // this test silently count zero. Worth fixing at the type, separately.
+      const act = String((dec as unknown as { action: string }).action);
+      const amt = Number((dec as unknown as { amount?: number }).amount ?? 0);
+      if (act !== 'fold' && act !== 'call' && act !== 'check' && amt > 6) threeBets++;
+    }
+    return threeBets / trials;
+  }
+
+  /** Teach the mind that `id` folds to 3-bets `folds` times out of `outOf`. */
+  function teachFoldTo3Bet(id: string, folds: number, outOf: number): void {
+    for (let i = 0; i < outOf; i++) {
+      feed(
+        [
+          { userId: id, action: 'raise', amount: 6, stage: 'preflop' },
+          { userId: 'the-3bettor', action: 'raise', amount: 20, stage: 'preflop' },
+          i < folds
+            ? { userId: id, action: 'fold', stage: 'preflop' }
+            : { userId: id, action: 'call', amount: 14, stage: 'preflop' },
+        ],
+        null
+      );
+    }
+  }
+
+  it('3-bets a proven fold-to-3-bet opener more than one who never folds', () => {
+    teachFoldTo3Bet('nit-opener', 24, 30); // folds 80%
+    teachFoldTo3Bet('rock-opener', 3, 30); // folds 10%
+
+    expect(HorseMind.foldTo3BetOf('nit-opener')).toBeCloseTo(24 / 30, 5);
+    expect(HorseMind.foldTo3BetOf('rock-opener')).toBeCloseTo(3 / 30, 5);
+
+    const vsNit = threeBetFreq('nit-opener', 400);
+    const vsRock = threeBetFreq('rock-opener', 400);
+    // Measured 2026-09-05: 7.5% against the 80% folder, 2.3% against the 10%
+    // folder - a 3.33x differentiation from the read alone, same seed, same
+    // cards, same spot. This is the assertion telemetry cannot make.
+
+    // f3bScale is 1.40 against the 80% folder and 0.70 against the 10% folder
+    // - a 2x swing on the bluff branch. If these come back equal, the read is
+    // consulted and discarded, which is the failure telemetry cannot see.
+    expect(
+      vsNit,
+      `3-bet vs 80% folder ${(vsNit * 100).toFixed(1)}% must exceed vs 10% folder ${(vsRock * 100).toFixed(1)}%`
+    ).toBeGreaterThan(vsRock);
+  });
+
   it('c-bets a proven folder more than a proven station', () => {
     // Build the reads through real observation.
     for (let i = 0; i < 30; i++) {

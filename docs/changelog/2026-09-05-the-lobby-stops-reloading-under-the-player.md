@@ -58,3 +58,17 @@ the union's). The club shown is now the viewer's own club INSIDE the union,
 read from their memberships when the store cannot say; only a viewer with no
 club in the union sees the hub's name, once. Club and union are the size of
 the CLASSIC badge (0.62rem), no longer the smallest text on the felt.
+
+## 5. The Must Move Lobby in #SmarterCasinoRealism, and the felt's colours
+
+Dan's screenshot of the first lobby: the game name, the four figures and
+every seat name painted near-black on black. Every value read
+`var(--text-primary)`, and on the felt that token resolves DARK. Rebuilt
+(`MustMoveLobbyModal.css`, `CashClusterHUD.css`) with every colour explicit,
+on the house palette (Obsidian / Carbon / Gunmetal / Chrome / Energy Cyan /
+Club Blue), Rajdhani figures, Roboto Condensed labels, machined plates with
+stacked borders and inset highlights, no gradient art. Pinned: no non-`mml`
+token, no gradient.
+
+Felt colours (Dan 2026-09-05): CLASSIC teal, ACTION green, MADNESS red;
+club names blue, union names silver.

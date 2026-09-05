@@ -463,3 +463,38 @@ describe('the tab follows the chair', () => {
     expect(TABLE_PAGE).toMatch(/case 'SEAT_MOVE_HELD': \{/);
   });
 });
+
+describe('#SmarterCasinoRealism on the felt (Dan 2026-09-05)', () => {
+  it('the lobby and the box read no theme token - every colour is explicit', () => {
+    for (const p of [
+      '../src/components/table/MustMoveLobbyModal.css',
+      '../src/components/table/CashClusterHUD.css',
+    ]) {
+      const css = readFileSync(resolve(__dirname, p), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+      // Dan's screenshot: --text-primary resolves dark on the felt and every
+      // value painted near-black. Only the sheet's own --mml-* tokens remain.
+      expect(css, p).not.toMatch(/var\(--(?!mml-)/);
+      expect(css, p).not.toMatch(/gradient\(/);
+    }
+    const mml = readFileSync(
+      resolve(__dirname, '../src/components/table/MustMoveLobbyModal.css'),
+      'utf8'
+    );
+    for (const c of ['#05070a', '#0d1218', '#b8c3cd', '#00d4ff', '#4169e1'])
+      expect(mml).toContain(c);
+    expect(mml).toMatch(/--mml-head: 'Rajdhani'/);
+  });
+
+  it('the style is teal / green / red on the felt; club blue, union silver', () => {
+    const css = readFileSync(resolve(__dirname, '../src/pages/TablePage.css'), 'utf8');
+    expect(css).toMatch(/\.table-brand__style--classic \{\s*color: #2dd4bf;/);
+    expect(css).toMatch(/\.table-brand__style--action \{\s*color: #4ade80;/);
+    expect(css).toMatch(/\.table-brand__style--madness \{\s*color: #ff5a5a;/);
+    expect(css).toMatch(/\.table-brand__club \{[^}]*color: #79b4ff;/);
+    expect(css).toMatch(/\.table-brand__union \{[^}]*color: #b8c3cd;/);
+    const page = readFileSync(resolve(__dirname, '../src/pages/TablePage.tsx'), 'utf8');
+    expect(page).toMatch(
+      /table-brand__style table-brand__style--\$\{tableState\.gameStyle\.toLowerCase\(\)\}/
+    );
+  });
+});

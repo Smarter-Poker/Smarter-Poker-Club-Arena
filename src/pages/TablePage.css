@@ -1283,7 +1283,8 @@
    corner. .table-brand__meta is already flex-column + align-items:center, so
    both rows centre under the wordmark with no extra work. */
 .table-brand__club {
-  color: rgba(255, 215, 0, 0.5);
+  /* Dan 2026-09-05: "CLUB NAMES ALWAYS BLUE". Club Blue, lifted for the felt. */
+  color: #79b4ff;
   /* Dan 2026-09-05: "THE CLUB AND UNION SHOULD BE THE SAME SIZE AS 'CLASSIC'"
      (the style badge below the blinds, .table-brand__line--style). The club
      line used to be the smallest text on the felt. */
@@ -1360,6 +1361,22 @@
   font-weight: 800;
 }
 
+/* Dan 2026-09-05: "'CLASSIC' ON THE FELT SHOULD BE TEAL. 'ACTION' ON THE FELT
+   SHOULD BE GREEN AND 'MADNESS' ON THE FELT SHOULD BE RED." The style is the
+   one word that says what kind of game this is, and it carries its own
+   colour so the three read apart at a glance. */
+.table-brand__style--classic {
+  color: #2dd4bf;
+}
+
+.table-brand__style--action {
+  color: #4ade80;
+}
+
+.table-brand__style--madness {
+  color: #ff5a5a;
+}
+
 /* THE RULES OF THE GAME (Dan 2026-09-05: "IF THEY HAVE AN ANTE OR VPIP
    REQUIREMENT THAT SHOULD ALSO BE ON THE TABLE"). One row under the style:
    "Ante 1 · VPIP 40% Min · 10 Hands". A shade brighter than the club line
@@ -1417,7 +1434,8 @@
 /* Union name after the club on masthead line 1 — cooler tone than the club's
    gold so the two read as different things at a glance. */
 .table-brand__union {
-  color: rgba(148, 197, 255, 0.45);
+  /* Dan 2026-09-05: "UNION NAMES ALWAYS SILVER". Chrome from the house palette. */
+  color: #b8c3cd;
   /* Same size as the club and the CLASSIC badge (Dan 2026-09-05). */
   font-size: 0.62rem;
   letter-spacing: 0.18em;
@@ -3997,8 +4015,7 @@ button.post-bb-overlay-button {
    Slightly dimmer than the club so the hierarchy reads club-then-union at a
    glance, and it never wraps the line on a 375px felt. */
 .table-brand__union {
-  opacity: 0.72;
-  font-weight: 500;
+  font-weight: 600;
   white-space: nowrap;
 }
 

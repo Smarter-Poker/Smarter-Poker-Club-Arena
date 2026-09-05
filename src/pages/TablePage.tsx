@@ -20243,7 +20243,11 @@ export default function TablePage({
                               TABLE UNDER THE BLINDS." */}
                           {tableState.gameStyle && (
                             <span className="table-brand__line table-brand__line--style">
-                              <span className="table-brand__style">{tableState.gameStyle}</span>
+                              <span
+                                className={`table-brand__style table-brand__style--${tableState.gameStyle.toLowerCase()}`}
+                              >
+                                {tableState.gameStyle}
+                              </span>
                             </span>
                           )}
                           {/* THE RULES OF THE GAME (Dan 2026-09-04/05: "ANTES

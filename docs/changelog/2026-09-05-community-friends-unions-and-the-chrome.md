@@ -247,6 +247,27 @@ worktree mid-checkout, a pruned one, a fresh clone with no
 `supabase/migrations` yet - exited the whole reservation with status 1 and no
 message. Each of the three sources is best-effort now. Missing is not failing.
 
+**A club could not be deleted, and it was nobody's branch.** The
+`A Club Stays Deletable` invariant reads PRODUCTION rather than a manifest, so
+it goes red the moment a new table lands with a `club_id` and no index -
+without any pull request having done anything wrong. It found **27 inbound
+foreign keys to `public.clubs` with no usable index**, confirmed independently
+against the live catalogue before touching anything. Each one makes
+`DELETE FROM clubs` scan a child table sequentially, and the retirement RPC
+runs inside a PostgREST request that is cancelled after a few seconds - when it
+is, the fixture and its 100,000 chips stay in Club Arena. The guard's own note
+says that has already happened once. One migration, 27 indexes, one
+transaction; 73 inbound keys, 0 unindexed afterwards. Two of them are not
+called `club_id` (`stable_hand_horse_state.active_club_id` and
+`.active_host_id`).
+
+**The new hook was landing in the entry chunk.** `entry-chunk-delta` refused it
+at 207 modules against a baseline of 206: `ArenaSectionRail` and
+`HamburgerMenu` both paint first and both import it. Raising the baseline would
+have been the wrong answer - both hooks ask the SAME allowlist, so they now
+share one module, and `useCanCreateUnion.ts` was already in the entry for the
+same reason. Back to 206, drift +0kB.
+
 **The Title Case guard caught a split word.** The plural fix had been written
 as `{n} Relationship{n === 1 ? ' Needs' : 's Need'}`, which paints a fragment
 starting lower-case. Each branch is a whole phrase now.

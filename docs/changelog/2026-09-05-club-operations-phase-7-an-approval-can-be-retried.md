@@ -185,6 +185,132 @@ that banner now pass the text through `formatPopupText` - the one function the
 law names - so every one of those messages is Title Cased and em-dash free
 without touching a single caller.
 
+## The agent breakdown stopped re-deriving what the engine already wrote
+
+This is the item phase 6's gate handed over, and it is why
+`/clubs/<slug>/data` showed dashes where the rake panel should be:
+
+```
+ca_club_data_snapshot   200 in   300-1,000ms
+ca_rake_snapshot        500 in  ~8,200ms   (57014 statement timeout)
+```
+
+Inside `ca_rake_snapshot`, `fn_ca_rake_window` is 0.6s and
+`fn_ca_rake_series` 0.13s. **`fn_ca_rake_by_agent` is 29.7 seconds.** Its
+`from_live` CTE covers the days not yet in `club_rake_rollup_complete` - which
+always includes today - by calling `fn_rake_shares_for_record` **once per raked
+hand**: 61,156 index lookups plus a `NOT EXISTS` each, every time an operator
+opened the page. Expanding the same rows set-based from `player_contributions`
+instead still cost 11.5 seconds, so this was never a query to tune.
+
+It did not need a new rollup, because the rollup already existed one layer
+down. `rake_attributions` **is** the per-player credit, written by the engine
+as the hand is raked, and `club_rake_daily_user` - the completed-day rollup
+this function already trusts - is built from it. So the live edge now reads
+that same table, grouped.
+
+Measured through PostgREST as the club owner, with the function changed and
+**no index yet**:
+
+```
+before   ca_rake_snapshot   500 in ~8,200ms   (57014 statement timeout)
+after    ca_rake_snapshot   200 in  2,128ms / 2,577ms  (month, the page default)
+         ca_rake_snapshot   200 in  2,554ms / 2,362ms  (year)
+```
+
+and the panel renders: 5 daily series points, 34 agent rows, 351,310.13 of
+direct rake and 183,266.92 of commission where it showed dashes.
+
+**The index ships separately, in `20260905042500`, and it is the only part
+that waits for the `:55` freeze.** `rake_attributions` takes a row per player
+per raked hand, so a plain `CREATE INDEX` on 1,131,048 rows / 456 MB blocks
+the engine's writers for the length of its scan, and `CREATE INDEX
+CONCURRENTLY` cannot run inside the single transaction a migration must be.
+The function change needs no lock at all, so holding it back until the freeze
+would have left the panel failing for no reason. With the index the remaining
+serial scan in `from_live` - 573,468 heap rows to keep 14,091, measured at
+2.8s of the total - becomes an index-only read of the same range.
+
+### And it shipped behind the wrong grant for twelve minutes
+
+`20260905042000` carried
+
+```sql
+GRANT EXECUTE ON FUNCTION public.fn_ca_rake_by_agent(...)
+  TO authenticated, service_role;
+```
+
+which is the shape every GATED RPC in this programme uses, applied to the one
+family where it is wrong. **`fn_ca_rake_by_agent` is not gated.** It computes
+`v_cost` and `v_over` to decide which COLUMNS a caller may see and then reads
+the club's whole agent breakdown regardless of who asked; its gate lives one
+level up in `ca_rake_snapshot`, which is why all four of its siblings are
+granted to `service_role` alone. For the twelve minutes between the two
+applies, any signed-in user could have called it with any club id and read that
+club's per-agent rake, hands and commission totals.
+
+`tests/the-rake-snapshot-denominator-is-not-double-counted.law.test.ts` caught
+it in the full-suite run before the commit - not in review, not in a browser.
+The grant was closed against production immediately (a grant change fires no
+PostgREST schema reload, CLAUDE.md section 2), and `20260905043000` re-issues
+the function with the correct grant so the repo matches. Verified after:
+
+```
+fn_ca_rake_by_agent  called directly as a signed-in user   403  42501
+ca_rake_snapshot     the gated door, same user             200  1.5-3.6s
+```
+
+The law itself moved one step, and the direction matters. It used to say _no
+migration may ever contain that grant_, which an applied migration can never
+satisfy again - the bad line stays in the tree forever, because an applied
+migration is never edited. It now says _a helper opened to `authenticated` must
+be closed again by a LATER migration_. An uncorrected mistake still fails it,
+which is the case it exists for; a corrected-forward one does not.
+
+### The law that pinned the old mechanism moved with it, and one of its pins had stopped guarding anything
+
+`tests/the-agent-table-is-current-not-merely-complete.law.test.ts` exists
+because `fn_ca_rake_by_agent` first shipped reading `club_rake_daily_user` and
+nothing else, so on the Day period the agent table showed 0.00 under a
+five-figure headline. Its invariant - **a rollup-only read is always wrong for
+today, and always looks right** - is untouched by this work and is exactly what
+the new `from_live` upholds. Two of its pins named the OLD mechanism and moved,
+in this commit, as CLAUDE.md 5.8 requires:
+
+- `rake_records` becomes `FROM public.rake_attributions ra` plus
+  `GROUP BY ra.player_id`.
+- `fn_rake_shares_for_record` - "the canonical allocator, so a live figure and
+  the rollup that eventually replaces it agree" - becomes a pin on the rounding
+  the rollup itself uses. The guarantee is now structural rather than
+  procedural: both sides read the same rows, so they cannot drift apart, where
+  before two code paths had to be kept in step.
+
+That second pin **had already stopped guarding anything**, which is worth
+saying out loud rather than quietly fixing. It asserted the body CONTAINS
+`fn_rake_shares_for_record`, and the new migration's own assertion names that
+function in order to check the body no longer calls it - so the pin passed on
+the guard instead of on the code. It now asserts the absence of
+`fn_rake_shares_for_record(`, with the paren, because only a call has one. A
+third pin was added for the rounding. The law came out of this with nine tests
+where it had eight; nothing in it was relaxed.
+
+### Why the first apply failed
+
+This is worth writing down twice: the
+migration asserted that the new body no longer names `fn_rake_shares_for_record`,
+and the new body NAMES it in the comment explaining what it replaced. The
+assertion strips `--` lines from `prosrc` before looking now. It is the third
+time in this programme that a definer assertion has fired on its own prose.
+
+**One consequence stated plainly.** The old path could also reconstruct a share
+for a raked hand that has no attribution rows at all - 191 hands of 93,465 on
+2026-09-03, 0.2%. Those hands are already absent from every completed day,
+because the rollup they feed is built from attributions too. So today stops
+being counted on a different basis from yesterday, which is the point of this
+programme, and the small set that is missing is now missing consistently rather
+than only after midnight. If those hands matter, the fix is to write the
+attributions, not to reconstruct them differently in one report.
+
 ## Two things measured and deliberately left
 
 - **`fn_club_cashier_members_page_v3` really does re-run the recursive downline
@@ -199,10 +325,14 @@ without touching a single caller.
 
 ## Verified
 
-- Migrations `20260905040100` and `20260905041000`, one transaction each,
-  applied and recorded.
+- Migrations `20260905040100`, `20260905041000` and `20260905042000`, one
+  transaction each, applied and recorded. `20260905042500` - the index alone -
+  is queued for the `:55` freeze, because it is the only statement here that
+  takes a lock on a table the engine writes on every raked hand.
+- `ca_rake_snapshot` read live through PostgREST as the club owner after the
+  change: 200 in 2.1-2.6s where it was 500 after 8.2s.
 - Every behaviour above proved live inside a rolled-back transaction.
-- 23 pins in `tests/unit/anApprovalCanBeRetried.test.ts`; the amount pins
+- 27 pins in `tests/unit/anApprovalCanBeRetried.test.ts`; the amount pins
   in `CashierAmountValidation.test.ts` moved to the new rule with the measured
   reason, in the same commit.
 - The discarded-error ratchet caught the improvement it should:
@@ -212,7 +342,22 @@ without touching a single caller.
 
 ## Still open in this phase
 
-The rest of section 9 -
 `fn_club_cashier_members_page_v3` re-running the recursive downline walk on
-every page - plus the two items carried from phase 6 (`fn_ca_rake_by_agent` at
-29.7s, and the bomb pot report's role-dependent slowness).
+every page (measured, deliberately left, above), and the bomb pot report's
+role-dependent slowness carried from phase 6 - still unexplained, and recorded
+as unexplained rather than guessed at.
+
+Two smaller things measured here and not changed:
+
+- **`agent_commissions` has no `(club_id, created_at)` index either.** The
+  `commission` CTE bitmap-scans 694,941 rows for a seven-day window and costs
+  1.14s of what remains. It is a second index on a second hot table and belongs
+  in a freeze of its own, once the first one has been observed landing.
+- **`ca_rake_snapshot` emits `rake_complete_through` as a hardcoded NULL** in
+  both of its branches, and that turns out to be correct rather than a stub:
+  the breakdown reads live now, so there is no complete-through day to name,
+  and the client type says exactly that. Nothing renders it - the panel uses
+  `breakdown_live`, and the identically named field the Club Data foot note
+  DOES render comes from `ca_club_player_breakdown`, which computes it. Checked
+  because a hardcoded NULL usually is a stub; this one is a retired field kept
+  for older payloads.

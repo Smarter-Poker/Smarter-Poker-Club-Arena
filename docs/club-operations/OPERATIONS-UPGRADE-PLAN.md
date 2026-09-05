@@ -591,6 +591,43 @@ The retry storm itself is already fixed (`RakeSnapshotPanel` no longer lets the
 money-event firehose re-issue a read that is failing), so the page now fails
 once a minute instead of seven times in fourteen seconds - but it still fails.
 
+**DONE, 2026-09-05** - `20260905042000_the_agent_breakdown_reads_the_attributions.sql`.
+`from_live` is one grouped read of `rake_attributions` for the days not yet
+complete. Measured through PostgREST as the club owner, with the function
+changed and the index NOT yet built: `ca_rake_snapshot` 200 in 2,128ms and
+2,577ms for the page's default month range, 2,554ms and 2,362ms for the year -
+where it was 500 after 8,200ms. The panel renders 5 daily series points, 34
+agent rows, 351,310.13 of direct rake and 183,266.92 of commission.
+
+The index is a second migration, `20260905042500_and_an_index_for_the_range_it_reads.sql`,
+QUEUED FOR THE NEXT `:55` FREEZE and not yet applied. It is the only statement
+of the two that takes a lock (1,131,048 rows / 456 MB, written on every raked
+hand), and the function change needed none - holding the fix back until the
+freeze would have left the panel failing for no reason. With the index, the
+remaining serial scan in `from_live` (573,468 heap rows to keep 14,091, 2.8s of
+what is left) becomes an index-only read of the same range.
+
+The first apply FAILED and the reason is worth carrying forward: the migration
+asserted the new body no longer names `fn_rake_shares_for_record`, and the new
+body names it in the comment explaining what it replaced. It strips `--` lines
+from `prosrc` before the check now. Third occurrence of that class in this
+programme.
+
+It also shipped behind the WRONG GRANT for twelve minutes:
+`20260905042000` granted `fn_ca_rake_by_agent` to `authenticated`, and that
+helper is ungated - its gate is `ca_rake_snapshot`, one level up, which is why
+all four of its siblings are `service_role` only. Any signed-in user could have
+read any club's per-agent rake and commission totals in that window. Caught by
+`the-rake-snapshot-denominator-is-not-double-counted.law.test.ts` in the
+full-suite run before the commit, closed against production at once, and
+re-issued correctly in `20260905043000`. Verified after: 403/42501 calling the
+helper directly as a signed-in user, 200 through `ca_rake_snapshot`.
+
+One thing measured on the way and deliberately left: `agent_commissions` has no
+`(club_id, created_at)` index either, and its CTE bitmap-scans 694,941 rows for
+a seven-day window at 1.14s. That is a second index on a second hot table; it
+belongs in a freeze of its own, after the first one has been observed landing.
+
 The write paths are the best-defended code in the workspace and this phase must
 not "improve" them: `fn_agent_wallet_send` and its claim-back take a mandatory
 `p_op_id`, take an advisory lock, replay on the op id, and refuse a retry key

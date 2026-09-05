@@ -62,6 +62,14 @@ const PERIOD_MIGRATION = readFileSync(
   'supabase/migrations/20260905041000_a_settlement_period_belongs_to_a_club.sql',
   'utf8'
 );
+const AGENT_MIGRATION = readFileSync(
+  'supabase/migrations/20260905042000_the_agent_breakdown_reads_the_attributions.sql',
+  'utf8'
+);
+const INDEX_MIGRATION = readFileSync(
+  'supabase/migrations/20260905042500_and_an_index_for_the_range_it_reads.sql',
+  'utf8'
+);
 const CASHIER = readFileSync('src/pages/CashierPage.tsx', 'utf8');
 
 const fn = (name: string) => {
@@ -270,5 +278,63 @@ describe('the cashier stops contradicting itself', () => {
     const banners = CASHIER.match(/\{formatPopupText\(message\.text\)\}/g) ?? [];
     expect(banners.length).toBe(3);
     expect(CASHIER).not.toContain('{message.text}');
+  });
+});
+
+describe('the agent breakdown reads the attributions instead of re-deriving them', () => {
+  /**
+   * Measured in a browser on /clubs/<slug>/data: ca_rake_snapshot 500 after
+   * ~8.2s (57014), while ca_club_data_snapshot answered in under a second.
+   * Inside it, fn_ca_rake_window is 0.6s, fn_ca_rake_series 0.13s, and
+   * fn_ca_rake_by_agent is 29.7 SECONDS - it called fn_rake_shares_for_record
+   * once per raked hand for every day not yet rolled up, which is 61,156
+   * lookups on the busiest club, every time an operator opened the page.
+   * Expanding the same rows set-based from player_contributions still cost
+   * 11.5s, so the live edge had to stop being re-derived at all.
+   */
+  it('groups the attributions the completed-day rollup is built from', () => {
+    expect(AGENT_MIGRATION).toContain('FROM public.rake_attributions ra');
+    expect(AGENT_MIGRATION).toContain('GROUP BY ra.player_id');
+    // Same column and rounding as fn_club_rake_rollup_day, so the live edge
+    // and the completed days are one number rather than two definitions.
+    expect(AGENT_MIGRATION).toContain('SUM(round(ra.rake_amount * 100)::bigint)::numeric / 100');
+    expect(AGENT_MIGRATION).toContain(
+      'the agent breakdown still re-derives a share per raked hand'
+    );
+  });
+
+  /**
+   * The index is a SEPARATE migration on purpose. `rake_attributions` takes a
+   * row per player per raked hand, so a plain CREATE INDEX blocks the engine's
+   * writers for the length of its scan and has to wait for the :55 freeze -
+   * and the function change needs no lock at all. Measured with the function
+   * changed and NO index yet, ca_rake_snapshot went from 500 after ~8.2s to
+   * 200 in 2.1-2.6s through PostgREST as the club owner, so holding the fix
+   * back until the freeze would have left the panel failing for no reason.
+   */
+  it('has an index for the range it now reads, shipped where the lock belongs', () => {
+    // Named, not the words "CREATE INDEX": the header of that file EXPLAINS
+    // why a plain CREATE INDEX cannot ship with it, and a pin that cannot tell
+    // code from the prose beside it fails on the explanation. That exact
+    // mistake cost this migration its first apply.
+    expect(AGENT_MIGRATION).not.toContain('idx_rake_attributions_club_created');
+    expect(AGENT_MIGRATION).toContain('20260905042500');
+    expect(INDEX_MIGRATION).toContain('idx_rake_attributions_club_created');
+    expect(INDEX_MIGRATION).toContain('ON public.rake_attributions (club_id, created_at)');
+    expect(INDEX_MIGRATION).toContain('INCLUDE (player_id, rake_amount)');
+    expect(INDEX_MIGRATION).toContain(':55 MAINTENANCE FREEZE');
+  });
+
+  it('still only rolls up the days that are complete, live-reading the rest', () => {
+    expect(AGENT_MIGRATION).toContain('FROM public.club_rake_daily_user rd');
+    expect(AGENT_MIGRATION).toContain('NOT EXISTS (SELECT 1 FROM ok_days o');
+  });
+
+  it('keeps every guard the breakdown already had', () => {
+    // The denominator is the club, not the search result; the count is
+    // counted rather than windowed; the drill-down keeps its three conditions.
+    expect(AGENT_MIGRATION).toContain('The denominator is the club, not the search result.');
+    expect(AGENT_MIGRATION).toContain("'total', (SELECT count(*) FROM filtered)");
+    expect(AGENT_MIGRATION).toContain('fn_is_agent_ancestor(v_uid, ca.user_id, p_club_id)');
   });
 });

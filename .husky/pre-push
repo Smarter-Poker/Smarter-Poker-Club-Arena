@@ -291,13 +291,13 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
 
   # 1. Merge conflict markers
   #
-  # EXACTLY SEVEN EQUALS, NOT SEVEN OR MORE (2026-09-05). git writes the
-  # middle marker as exactly `=======`; `={7,}` also matches an ASCII rule,
-  # and docs/changelog/2026-09-05-the-cluster-boards-are-a-rolled-back-probe-
-  # harness.md landed on main carrying four 64-character rules. Every agent
-  # who merged main after it was refused a push for a conflict that does not
-  # exist, on a file they did not write. The open and close markers keep
-  # their trailing space, which is also git's exact format.
+  # The separator git writes is EXACTLY seven equals signs on its own line, so
+  # that is what this matches. It used to accept seven OR MORE, which also
+  # matched an ASCII rule inside a fenced code block: the verbatim probe output
+  # in docs/changelog/2026-09-05-the-cluster-boards-are-a-rolled-back-probe-harness.md
+  # underlines its sections with 64 of them, so after that file landed on main
+  # every branch that merged main was refused a push for a conflict it did not
+  # have. Exactly seven still catches every real marker.
   for f in $FILES; do
     if [ -f "$f" ]; then
       if grep -nE '^(<<<<<<< |>>>>>>> |={7}$)' "$f" >/dev/null 2>&1; then

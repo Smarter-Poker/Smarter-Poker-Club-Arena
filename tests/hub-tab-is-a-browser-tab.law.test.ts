@@ -262,6 +262,38 @@ describe('round 2: a hub tab the player is not looking at', () => {
   });
 });
 
+describe('round 3: browser-tab parity', () => {
+  it('the quick menu offers Reload Page and Open In Browser on a hub tab', () => {
+    expect(STRIP).toContain("item('Reload Page', () => onQuickAction(tab.id, 'reload'))");
+    expect(STRIP).toContain("item('Open In Browser', () => onQuickAction(tab.id, 'open-browser'))");
+    expect(MULTI).toContain("case 'reload': {");
+    expect(MULTI).toContain("case 'open-browser': {");
+  });
+
+  it('a page that is still coming says so, and a stalled one offers Reload', () => {
+    expect(FRAME).toContain('className="hub-frame__overlay"');
+    expect(FRAME).toContain('HUB_FRAME_STALL_MS');
+    expect(FRAME).toContain('className="hub-frame__reload"');
+  });
+
+  it('the pill sub-line carries the page within the section', () => {
+    expect(MULTI).toContain('stakes: hubTabSubtitle(path),');
+  });
+
+  it('with a live table open, the real Hub button and Jarvis open hub tabs, never window.location', () => {
+    expect(MULTI).toContain("body.setAttribute('data-ca-live-tables', String(liveTableCount));");
+    expect(HEADER).toContain('if (liveTablesOpen()) {');
+    // Twice: the Hub/VIP path and the Messages path.
+    expect(HEADER.split('if (liveTablesOpen()) {').length - 1).toBe(2);
+    const HANDS = read('src/pages/HandHistoryPage.tsx');
+    expect(HANDS).toContain(
+      "masterBus.emit('OPEN_HUB_TAB', { path, requestedBy: userId ?? undefined });"
+    );
+    // The helper stays inline: the header is in the entry chunk.
+    expect(HEADER).not.toMatch(/from '\.\.\/\.\.\/utils\/hubTab'/);
+  });
+});
+
 describe('the exception is written where the next agent will read it', () => {
   it('CLAUDE.md names HubFrame as the one sanctioned iframe', () => {
     expect(CLAUDE_MD).toContain('HubFrame');

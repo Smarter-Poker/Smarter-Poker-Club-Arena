@@ -44,6 +44,10 @@ const LIFECYCLE = read('server/src/services/HorseLifecycleManager.ts');
 const DEEP_DIVE = read(
   'supabase/migrations/20260905050000_the_move_survives_the_hand_and_a_game_seats_you_once.sql'
 );
+const SEATING = read('server/src/engine/ServerTableEngineSeating.ts');
+const TICK_ALL = read(
+  'supabase/migrations/20260905091025_one_tick_rpc_per_pass_and_dormant_games_rest.sql'
+);
 
 describe('the controller is wired on the leader, beside the fleet', () => {
   it('is constructed with the fleet census, the engine door and the engine map', () => {
@@ -51,6 +55,9 @@ describe('the controller is wired on the leader, beside the fleet', () => {
     expect(GAME_SERVER).toMatch(
       /eligibleHorseCount: \(tableId\) => this\.horseFleet\.eligibleHorseCount\(tableId\)/
     );
+    // The whole census goes with every pass (one RPC, keyed by Main 1).
+    expect(GAME_SERVER).toMatch(/eligibleCounts: \(\) => this\.horseFleet\.eligibleCounts\(\)/);
+    expect(FLEET).toMatch(/eligibleCounts\(\): ReadonlyMap<string, number>/);
     expect(GAME_SERVER).toMatch(
       /ensureEngine: \(tableId\) => this\.ensureCashTableEngine\(tableId\)/
     );
@@ -75,6 +82,10 @@ describe('the controller is wired on the leader, beside the fleet', () => {
 
   it('ticks every 5 seconds and passes the horse demand for Main 1', () => {
     expect(CONTROLLER).toMatch(/export const CLUSTER_TICK_MS = 5000;/);
+    // PIN MOVED 2026-09-05 (one tick RPC per pass): the pass sends the whole
+    // census keyed by Main 1 table id; the per-game demand is still passed by
+    // the wake, through the per-game RPC.
+    expect(CONTROLLER).toMatch(/rpc\('fn_cash_clusters_tick_all', \{ p_eligible: eligible \}\)/);
     expect(CONTROLLER).toMatch(/p_eligible_horses: eligible/);
   });
 });
@@ -479,9 +490,24 @@ describe('the tick survives the PostgREST session (safeupdate)', () => {
     expect(probe).toMatch(/SAFEUPDATE statements without WHERE in fn_cash_\*/);
   });
 
-  it('ticks games in a bounded pool, not one after another', () => {
-    expect(CONTROLLER).toMatch(/export const CLUSTER_TICK_CONCURRENCY = 8;/);
-    expect(CONTROLLER).toMatch(/await Promise\.all\(workers\);/);
+  it('ticks every game in ONE call, not one after another and not eight at a time', () => {
+    /* PIN MOVED 2026-09-05. This pin used to require the eight-wide pool
+       (CLUSTER_TICK_CONCURRENCY = 8, Promise.all(workers)) that kept a 78-game
+       pass at ~10 s instead of 66 s. The mechanism it guarded was deliberately
+       replaced: the pass is one RPC, fn_cash_clusters_tick_all, and the pool
+       is gone because there is nothing left to pool. The behaviour it guarded
+       - a pass that finishes inside the cadence however many games there are
+       - is what the new shape delivers (~0.7 s server-side for 120 games,
+       measured on production before the migration was applied). */
+    const pass = CONTROLLER.slice(
+      CONTROLLER.indexOf('async tick(): Promise<ClusterTickSummary>'),
+      CONTROLLER.indexOf('private async afterGameTick(')
+    );
+    expect(pass).toMatch(/rpc\('fn_cash_clusters_tick_all'/);
+    expect(pass).not.toMatch(/rpc\('fn_cash_cluster_tick'/);
+    expect(pass).not.toMatch(/rpc\('fn_cash_clusters_to_tick'/);
+    expect(CONTROLLER).not.toMatch(/CLUSTER_TICK_CONCURRENCY/);
+    expect(CONTROLLER).not.toMatch(/Promise\.all\(workers\)/);
   });
 });
 
@@ -809,5 +835,145 @@ describe('gate 5: the snapshot is the rule on every table', () => {
     expect(fn).toMatch(
       /straddle_enabled = false, auto_utg_straddle = false, voluntary_straddle = false/
     );
+  });
+});
+
+/**
+ * ONE TICK RPC PER PASS, DORMANT GAMES REST, A SEAT CHANGE WAKES ITS GAME
+ * (2026-09-05, 20260905091025). 149 games x 12 passes a minute was ~86,000
+ * PostgREST round trips an hour, nearly all of them reading rows and changing
+ * nothing. The pass is one call; the SQL decides who is due; the engine wakes
+ * the game whose seats it just saw change. The law: the controller never makes
+ * N RPCs for N games again.
+ */
+describe('one tick RPC per pass, a rest for dormant games, and a wake on seat change', () => {
+  const fn = TICK_ALL.slice(
+    TICK_ALL.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_clusters_tick_all'),
+    TICK_ALL.indexOf('REVOKE ALL ON FUNCTION public.fn_cash_clusters_tick_all')
+  );
+
+  it('the SQL runs the worklist itself and calls the per-game tick for each due game', () => {
+    expect(fn).toMatch(/FROM public\.fn_cash_clusters_to_tick\(\) l/);
+    expect(fn).toMatch(/v_res := public\.fn_cash_cluster_tick\(w\.game_id, v_eligible\);/);
+    // The eligible map is keyed by Main 1 TABLE id, so the controller sends
+    // the fleet census as it is and the pass needs no second call.
+    expect(fn).toMatch(
+      /coalesce\(\(p_eligible ->> \(l\.main1_table_id::text\)\)::integer, 0\) AS eligible/
+    );
+    // It wraps the per-game tick; it does not redeclare it.
+    expect(TICK_ALL).not.toMatch(/CREATE OR REPLACE FUNCTION public\.fn_cash_cluster_tick\(/);
+  });
+
+  it('one game failing is caught, recorded as a row, and the pass continues', () => {
+    expect(fn).toMatch(/EXCEPTION WHEN OTHERS THEN/);
+    expect(fn).toMatch(
+      /GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;/
+    );
+    expect(fn).toMatch(/'controller_tick_error'/);
+    expect(fn).toMatch(/jsonb_build_object\('sqlstate', v_sqlstate, 'message', v_message/);
+  });
+
+  it('a dormant, empty, unwanted game rests 30 s; anything seated, wanted, live or disabled ticks every pass', () => {
+    expect(fn).toMatch(/w\.state = 'live'/);
+    expect(fn).toMatch(/OR NOT w\.enabled/);
+    expect(fn).toMatch(/OR w\.anyone_seated/);
+    expect(fn).toMatch(/OR w\.eligible > 0/);
+    expect(fn).toMatch(/OR w\.last_tick_at IS NULL/);
+    expect(fn).toMatch(/OR w\.last_tick_at < v_now - interval '30 seconds'/);
+    // A seat anywhere in the game, not only at Main 1. Law 10.5: a horse's
+    // seat counts exactly like a human's here; the EXISTS reads every seat.
+    expect(fn).toMatch(
+      /JOIN public\.table_seats ts ON ts\.table_id = t\.id AND ts\.left_at IS NULL\s*WHERE t\.cluster_id = l\.game_id/
+    );
+    expect(fn).not.toMatch(/is_horse/);
+    // The documented constant agrees with the SQL.
+    expect(CONTROLLER).toMatch(/export const CLUSTER_DORMANT_REST_S = 30;/);
+  });
+
+  it('honours the freeze, is SECURITY DEFINER with a pinned search_path, and only the engine may call it', () => {
+    expect(fn).toMatch(
+      /IF public\.fn_platform_frozen\(\) THEN\s*RETURN jsonb_build_object\('ok', false, 'skipped', 'frozen'/
+    );
+    expect(fn).toMatch(/SECURITY DEFINER\s*SET search_path TO 'public', 'pg_temp'/);
+    expect(TICK_ALL).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_cash_clusters_tick_all\(jsonb\) FROM PUBLIC, anon, authenticated;/
+    );
+    expect(TICK_ALL).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.fn_cash_clusters_tick_all\(jsonb\) TO service_role;/
+    );
+    // One transaction (production DDL policy).
+    expect((TICK_ALL.match(/^BEGIN;$/gm) ?? []).length).toBe(1);
+    expect((TICK_ALL.match(/^COMMIT;$/gm) ?? []).length).toBe(1);
+  });
+
+  it('no temp table and no bare UPDATE or DELETE in the body (safeupdate)', () => {
+    const code = fn.replace(/--.*$/gm, '');
+    expect(code).not.toMatch(/CREATE TEMP TABLE/);
+    for (const stmt of code.match(/\b(UPDATE|DELETE FROM) public\.\w+[\s\S]*?;/g) ?? []) {
+      expect(stmt, stmt.slice(0, 80)).toMatch(/\bWHERE\b/);
+    }
+  });
+
+  it('the controller never makes N RPCs for N games: one pass, one call, and the summary counts it', () => {
+    expect(CONTROLLER).toMatch(/rpcs: number;/);
+    const pass = CONTROLLER.slice(
+      CONTROLLER.indexOf('async tick(): Promise<ClusterTickSummary>'),
+      CONTROLLER.indexOf('private async afterGameTick(')
+    );
+    expect((pass.match(/await rpc\(/g) ?? []).length).toBe(1);
+    expect(pass).toMatch(
+      /summary\.rpcs\+\+;\s*const \{ data, error \} = await rpc\('fn_cash_clusters_tick_all'/
+    );
+    // No loop in the pass body awaits an RPC per result.
+    const loop = pass.slice(pass.indexOf('for (const entry of results)'));
+    expect(loop).not.toMatch(/await rpc\(/);
+  });
+
+  it('the 18.4 dealer wake is unchanged: read from the result, never awaited', () => {
+    expect(CONTROLLER).toMatch(
+      /Number\(result\.seated_total \?\? 0\) > 0 &&\s*!this\.deps\.hasEngine\(g\.main1_table_id\)/
+    );
+    expect(CONTROLLER).toMatch(
+      /const seated = await this\.deps\.seatedCount\(g\.main1_table_id\);/
+    );
+    expect(CONTROLLER).toMatch(/void this\.deps\s*\.ensureEngine\(tableId\)/);
+  });
+
+  it('a wake is debounced per game, leader-only, and cannot throw into the engine', () => {
+    expect(CONTROLLER).toMatch(/export const CLUSTER_WAKE_DEBOUNCE_MS = 500;/);
+    expect(CONTROLLER).toMatch(
+      /wake\(gameId: string\): void \{\s*if \(!this\.running \|\| !gameId\) return;/
+    );
+    expect(CONTROLLER).toMatch(
+      /if \(this\.wakeTimers\.has\(gameId\)\) \{\s*this\.wakesCoalescedCount\+\+;\s*return;/
+    );
+    expect(CONTROLLER).toMatch(
+      /export function wakeCluster\(gameId: string\): void \{\s*try \{\s*activeController\?\.wake\(gameId\);\s*\} catch/
+    );
+    // The wake ticks ONE game through the per-game RPC with its Main 1 demand.
+    const wake = CONTROLLER.slice(
+      CONTROLLER.indexOf('private async tickGame(gameId: string)'),
+      CONTROLLER.indexOf('private emptySummary()')
+    );
+    expect(wake).toMatch(
+      /rpc\('fn_cash_cluster_tick', \{\s*p_game_id: gameId,\s*p_eligible_horses: eligible,/
+    );
+    expect(wake).not.toMatch(/fn_cash_clusters_tick_all/);
+  });
+
+  it('the engine wakes the game when a seat changes or a hand ends on a cluster table', () => {
+    expect(BASE).toMatch(/import \{ wakeCluster \} from '\.\.\/cluster\/ClusterController\.js';/);
+    expect(BASE).toMatch(
+      /protected wakeClusterGame\(_reason: string\): void \{\s*const gameId = this\.tableInfo\?\.cluster_id;\s*if \(!gameId \|\| this\.isTournamentTable\(\)\) return;/
+    );
+    // An arrival or departure seen in the rows (the load_seats roster diff).
+    expect(DEALING).toMatch(/let rosterChanged = false;/);
+    expect(DEALING).toMatch(/if \(rosterChanged\) this\.wakeClusterGame\('seat_change'\);/);
+    // The end of every hand, after the recount.
+    expect(SETTLEMENT).toMatch(/this\.wakeClusterGame\('hand_complete'\);/);
+    // A move that landed.
+    expect(BASE).toMatch(/this\.wakeClusterGame\('seat_move'\);/);
+    // A leave that cashed out between hands (both doors).
+    expect((SEATING.match(/this\.wakeClusterGame\('seat_left'\);/g) ?? []).length).toBe(2);
   });
 });

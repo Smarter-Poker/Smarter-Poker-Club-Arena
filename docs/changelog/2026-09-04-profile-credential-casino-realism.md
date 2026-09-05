@@ -115,6 +115,73 @@ stylesheet in the app force-loaded: **52 property diffs before, 25 after**, and
 every remaining one belongs to the shared `PlayerAvatar` component (its level
 badge and portrait sizing), which is not this page's to own - recorded below.
 
+## The same leak class, everywhere (2026-09-05)
+
+The `.action-btn` collision above was not one bad rule, it was one instance of
+a shape. A scanner over all 486 plain stylesheets - a class is "bare" when the
+whole selector is a single compound, so `.a .b` and `.page .a` do not count -
+found **256 class names defined bare in more than one file with a property
+gap**, meaning one file declares something another does not and that property
+crosses pages on chunk load order.
+
+Two of the 256 were the ones sitting under this audit's own surfaces:
+
+| class            | bare definitions                                                                                                     | what it cost                                          |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `.action-btn`    | 6 (PlayerSearch, AgentCashoutPanel, ActionCard, ShareableHighlight, HandReplay, DisputeManagementPage)               | 36px action buttons on the dossier                    |
+| `.player-avatar` | 7 (PlayerAvatar + PlayerCard, PlayerSearch, AgentCashoutPanel, InviteToTable, SuperAgentDashboard, HandReplayerPage) | portrait 78px -> 74px, badge gained a ring and a glow |
+
+All six foreign `.player-avatar` definitions style their OWN markup - none of
+them renders `<PlayerAvatar>`, verified per file - so each was pure collision
+with the shared component. Scoping each to the container it belongs to is
+behaviour-preserving for the owner and removes the leak for everyone else.
+
+**256 -> 254.** The remaining 254 are logged, not fixed: they belong to
+surfaces outside this audit and each is the same two-line change.
+`tests/global-css-does-not-leak-across-pages.law.test.ts` pins `.action-btn`
+at zero bare definitions, pins `.player-avatar` to its one owner, and ratchets
+the total so the count can fall but never rise. It immediately earned its keep
+by catching two indented `.action-btn` rules inside media queries that a
+line-anchored grep had missed.
+
+## The VIP ring nobody has ever seen (2026-09-05)
+
+`FriendListPanel` selected `profiles.tier` and passed it to `PlayerAvatar` as
+`(p?.tier as VipTier) || 'bronze'`. `profiles.tier` is a RANK label: it reads
+`'Newcomer'` on **1,310 of 1,310** production rows. It is not the VIP column -
+VIP is `is_vip` / `vip_tier` / `vip_expires_at`, which `utils/vipStatus`
+already resolves and which this branch's credential already uses.
+
+`'Newcomer'` is truthy, so the `|| 'bronze'` fallback never fired, and
+`'Newcomer' !== 'bronze'` is true, so the ring element always rendered - as
+`class="vip-status-ring tier-Newcomer"`. The base rule carries only geometry;
+every colour lives on a `.tier-*` class. So the ring was in the DOM and
+invisible, for every player, and an actual Lifetime VIP got no ring either.
+The `as VipTier` cast is what kept the compiler quiet about all of it.
+
+Three fixes, and a check that was already written down:
+
+1. `PlayerAvatar` validates the tier against the five its stylesheet paints
+   before rendering the ring. This is CLAUDE.md section 5 rule 4 - "VIP levels
+   must be validated before rendering badges" - applied where it was missing.
+2. `FriendListPanel` selects the three real VIP columns and resolves them with
+   `resolveVipStatus`. Lifetime renders the diamond ring, VIP the gold ring,
+   everyone else none. That is a presentation of a two-state fact in the ring
+   vocabulary that already exists, not a revived ladder.
+3. `LeaderboardPage` was left alone: it passes gold/silver/bronze for ranks
+   1/2/3 deliberately, as a podium medal, and every value it passes is valid.
+
+`ProfileService.addVIPPoints` and its `VIP_THRESHOLDS` are DELETED rather than
+corrected. It had no callers in `src/`, `server/` or `tests/`, and it was
+wrong three ways over: it started from `profile.vipPoints`, which `getProfile`
+hardcodes to 0 because `profiles` has no `vip_points` column; it derived a
+bronze -> diamond tier that Dan's 2026-09-04 ruling says does not exist ("JUST
+VIP, AND LIFETIME VIP"); and it wrote the result to `tier`, the rank column,
+not to any VIP column. Its thresholds also disagreed with
+`src/constants/vipTiers.ts` at every rung above 5,000 - platinum at 25,000 vs
+15,000, diamond at 100,000 vs 50,000, and no `royal` at all. A dead ladder left
+in a service file is how the next agent revives one.
+
 ## What is left
 
 - Set the portrait INTO #3041's credential plate ring and the dossier folio
@@ -123,23 +190,14 @@ badge and portrait sizing), which is not this page's to own - recorded below.
   this branch's history (commit 62f49ffd9, `PublicProfilePage.css`).
 - One RPC for the credential (`profiles` + `vip` flags + stats + achievements
   - ledger) to replace five round trips on a cold mobile load.
-- `ProfileService.addVIPPoints` still writes a bronze/silver/gold `tier`
-  against `VIP_THRESHOLDS` that nothing reads and that contradicts Dan's
-  ruling; retire it.
 - `BonusService.getWheelStats` carries a third streak ladder (1.5x at 3-6,
   2x at 7+) that matches neither the SQL nor the profile.
 - The mutual-friend chips still print social usernames on an arena surface.
 - `training_achievement_definitions` (threshold 0, icon_url null on every
   row) is a dead mirror of the client `ACHIEVEMENTS`; pick one source.
-- `PlayerAvatar` still carries bare global class names (`level-badge`,
-  and the portrait wrappers). Under the worst-case load its badge gains a
-  2px ring, a 50% radius and an orange glow, and the portrait shrinks 78px ->
-  74px. It is a shared component on many surfaces, so it wants its own module
-  conversion rather than a change made from this page.
-- Nine other bare `.action-btn` definitions remain across the app
-  (AgentCashoutPanel, ActionCard, ShareableHighlight, HandReplay,
-  DisputeManagementPage). Each is a live collision for whatever page loads it
-  next; the same two-line scoping fix applies to each.
+- 254 class names are still defined bare in more than one stylesheet with a
+  property gap between them (down from 256). Each is a live cross-page
+  collision and each is the same two-line fix; the law ratchets the count.
 
 ## Design direction
 

@@ -10,15 +10,15 @@ Club Arena `build-info.json` showing the sha), and verified on production by
 reading, not assuming. The list below is the order; each phase records its
 verification when it lands.
 
-| Phase | Name                       | Delivers                                                                                                                                                             | Status |
-| ----- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| 1     | Measure                    | `poker_act_to_broadcast_ms{audience}` and `poker_actions_fleet_total` on the always-on `/metrics`; `ActionLatencyDegraded` / `ActionLatencyCritical` alert rules     | done   |
-| 2     | See the client             | `ws_client_events` beacon (code, reason, attempt, ms) from EngineStateClient; storage + `/ws-events` endpoint; "one player reconnecting > N/h" alert                 |        |
-| 3     | Do no harm                 | Auto-reload failsafe skips auth closes; idempotency key on `/action` (client + handler)                                                                              |        |
-| 4     | Restart handoff + protocol | `restart_in_ms` frame at :53 and a ladder that waits it out; `v` on subscribe and `4426 upgrade_required`                                                            |        |
-| 5     | Trust and limits           | Server clock offset for turn timers; periodic re-auth of live sockets (5 min, cached); per-user socket cap with `4429`; explicit Caddy WS timeouts in the clocks law |        |
-| 6     | Prove it from outside      | Synthetic table probe on Open Claw (real socket to a horse-only table, wait for SNAPSHOT, close); runbook `docs/runbooks/tables-say-reconnecting.md`                 |        |
-| 7     | Guardrails                 | Vercel env-var change audit (names + updatedAt, never values); CLAUDE.md rules (agents never set credentials; never hand-write what a monitor reads); alert canary   |        |
+| Phase | Name                       | Delivers                                                                                                                                                                                  | Status |
+| ----- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| 1     | Measure                    | `poker_act_to_broadcast_ms{audience}` and `poker_actions_fleet_total` on the always-on `/metrics`; `ActionLatencyDegraded` / `ActionLatencyCritical` alert rules                          | done   |
+| 2     | See the client             | Beacon from four client failure sites -> `POST /client-event`; bounded per-user counting in the engine; `PlayersReconnectingRepeatedly` + `TablesAreReloadingThemselves` alerts; two laws | done   |
+| 3     | Do no harm                 | Auto-reload failsafe skips auth closes; idempotency key on `/action` (client + handler)                                                                                                   |        |
+| 4     | Restart handoff + protocol | `restart_in_ms` frame at :53 and a ladder that waits it out; `v` on subscribe and `4426 upgrade_required`                                                                                 |        |
+| 5     | Trust and limits           | Server clock offset for turn timers; periodic re-auth of live sockets (5 min, cached); per-user socket cap with `4429`; explicit Caddy WS timeouts in the clocks law                      |        |
+| 6     | Prove it from outside      | Synthetic table probe on Open Claw (real socket to a horse-only table, wait for SNAPSHOT, close); runbook `docs/runbooks/tables-say-reconnecting.md`                                      |        |
+| 7     | Guardrails                 | Vercel env-var change audit (names + updatedAt, never values); CLAUDE.md rules (agents never set credentials; never hand-write what a monitor reads); alert canary                        |        |
 
 Not in the programme, because they are Dan's decisions, recorded so they are
 not lost: Log Out scope (global today; local by default with an explicit
@@ -124,6 +124,42 @@ live groups; it found defect 3 by itself, one minute after being written.
 This is the same disease as the outage that started the programme - a monitor
 that is not what everyone believes it is - and it is why Phase 7 gets a
 reconciler that compares `/api/v1/rules` against these files continuously.
+
+## Phase 2 - See the client (2026-09-05)
+
+**Why.** Phase 1 measured what the engine does. On 2026-09-03 the engine was
+perfect - 5,700 hands per ten minutes - while nobody could play, because the
+broken half was the browser's and nothing it saw reached this platform.
+
+**What.** `clientConnectionBeacon` posts one word to `POST /client-event`
+from the four sites a client actually loses a socket: `auth_failed`,
+`stale`, `handshake_timeout`, `auto_reload`. Per-user counting happens in the
+engine over a bounded rolling hour, so the alert Dan asked for ("one player
+reconnecting more than N times an hour") exists without putting 1,300 user
+ids into Prometheus. Two alerts, two laws, both registered. Full reasoning:
+`docs/changelog/2026-09-05-realtime-phase-2-see-the-client.md`.
+
+### Carried out of Phase 2, deliberately not built: the tournament channel
+
+`TOURNAMENT_EVENT` is dead end to end, and it was worth proving rather than
+assuming:
+
+- nothing calls `subscribeToTournament` - no page, anywhere;
+- its only emitter is `RealtimeChannelService.broadcastTournamentEvent`, a
+  BROWSER method sending a player's Supabase JWT to
+  `POST /channels/tournament/:id/event`, which requires `INTERNAL_API_KEY`
+  and therefore always rejects it;
+- nothing server-side calls that route either;
+- tournament pages poll every 30 seconds instead (`XMTTPage`).
+
+So `JOIN_TOURNAMENT` subscribes to a channel that has never delivered a
+message. This is a FEATURE GAP, not a correctness bug - MTT and Spin players
+at a table are served by the table socket, which Phase 1 measures and Phase 2
+now watches. Building the channel properly (server-side emission from
+`TournamentManagerBase`, pages subscribing, polling retired) is a feature and
+belongs in its own phase with Dan's sign-off, not smuggled into an
+observability phase. It is recorded here so nobody reads the existing code as
+a working path.
 
 ## Phase 1 - Measure (2026-09-04)
 

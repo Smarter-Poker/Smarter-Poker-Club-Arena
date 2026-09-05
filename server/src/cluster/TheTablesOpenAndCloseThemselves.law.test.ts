@@ -698,3 +698,44 @@ describe('the must move lobby: the roster is the order, the seat change is once,
     }
   });
 });
+
+/**
+ * GATE 5 - THE SNAPSHOT IS THE RULE (2026-09-05). A game's ruleset_snapshot
+ * is written onto every open table by the tick, every tick; a table can
+ * never carry a rule its game does not have.
+ */
+const GATE5 = read('supabase/migrations/20260905033729_the_snapshot_is_the_rule.sql');
+
+describe('gate 5: the snapshot is the rule on every table', () => {
+  it('the tick reconciles the ruleset before it plans anything', () => {
+    const tick = GATE5.slice(
+      GATE5.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_cluster_tick')
+    );
+    const apply = tick.indexOf('v_n := public.fn_cash_apply_ruleset(g.id);');
+    expect(apply).toBeGreaterThan(0);
+    expect(apply).toBeLessThan(tick.indexOf('MUST-MOVE (1.3 s9.5)'));
+  });
+
+  it('the applier maps the snapshot exactly as the opener does, and touches only rows that differ', () => {
+    const fn = GATE5.slice(
+      GATE5.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_apply_ruleset'),
+      GATE5.indexOf('REVOKE ALL ON FUNCTION public.fn_cash_apply_ruleset')
+    );
+    for (const line of [
+      "v_ante_chips := CASE v_ante WHEN 'sb' THEN g.sb WHEN 'bb' THEN g.bb ELSE 0 END;",
+      "v_vpip_window := coalesce((s->>'vpip_window')::integer, 40);",
+      "WHEN v_bomb_on AND v_bomb_trigger = 'timed_15m' THEN 'timed'",
+      "big_blind_ante_enabled = (v_ante = 'bb')",
+      'maintain_percent_min = v_vpip',
+      "AND t.lifecycle <> 'closed'",
+      't.maintain_percent_min IS DISTINCT FROM v_vpip',
+      "'ruleset_applied'",
+    ]) {
+      expect(fn).toContain(line);
+    }
+    // Never a straddle on a cash game (R2), even if a row somehow got one.
+    expect(fn).toMatch(
+      /straddle_enabled = false, auto_utg_straddle = false, voluntary_straddle = false/
+    );
+  });
+});

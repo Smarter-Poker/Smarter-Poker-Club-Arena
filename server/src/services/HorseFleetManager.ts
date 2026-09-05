@@ -1052,10 +1052,13 @@ export class HorseFleetManager {
          with N pending arrivals has N fewer seats to fill. */
       const pendingMovesByTable = new Map<string, number>();
       {
+        // A SWAP IS NOT A RESERVATION (2026-09-05): two linked seat-change
+        // moves exchange two occupied chairs and change no table's headcount.
         const { data: pm, error: pmErr } = await supabase
           .from('cash_seat_moves')
           .select('to_table_id')
-          .eq('state', 'pending');
+          .eq('state', 'pending')
+          .is('swap_move_id', null);
         if (pmErr) {
           reportError(pmErr, 'HorseFleet.pending_moves_read_failed');
         } else {
@@ -1518,11 +1521,29 @@ export class HorseFleetManager {
       /* Inside a game, the mains before the feeder and Main 1 before Main 2:
          a horse seated on a feeder while a main has a seat open is a horse
          the controller must then move (2026-09-05). */
+      /* AN OPENING FEEDER COMES BEFORE EVERYTHING (2026-09-05). The
+         controller opens a feeder only when Main 1 is full AND this fleet has
+         just reported two or more horses that could sit in the game. Ranked
+         last, that feeder waited behind ~140 cluster tables for a budget the
+         cycle spends in 1-5 seats, took at most one horse (a sparse table's
+         target can be 1), never reached the two it needs to go live, and was
+         abandoned at three minutes: 36 feeders opened in two hours, 2 went
+         live, 31 abandoned. The fleet promised the buyers; it seats them
+         first. A LIVE feeder ranks after the mains as before, because a horse
+         on it while a main has a chair is a horse the controller must move. */
       const clusterRank = (t: {
         cluster_id?: string | null;
         role?: string | null;
         main_index?: number | null;
-      }) => (!t.cluster_id ? 0 : t.role === 'feeder' ? 1000 : Number(t.main_index ?? 999));
+        lifecycle?: string | null;
+      }) =>
+        !t.cluster_id
+          ? 0
+          : t.lifecycle === 'opening'
+            ? -1
+            : t.role === 'feeder'
+              ? 1000
+              : Number(t.main_index ?? 999);
       const orderedTables = [...tables].sort(
         (a, b) =>
           Number(humanShort(b)) - Number(humanShort(a)) ||
@@ -1807,6 +1828,18 @@ export class HorseFleetManager {
           if (boost !== undefined && boost > 0) {
             seatTarget = Math.min(table.max_players, Math.max(seatTarget, currentCount + boost));
           }
+          /* AN OPENING FEEDER IS SEEDED TO TWO, NOW (2026-09-05). The
+             controller promotes a feeder to live at two seated (18.3) and
+             abandons an empty one at three minutes. A sparse table's vibe
+             target can be 1, and the 1-2 trickle below could leave it at 1
+             for a cycle - one horse alone on a table that cannot deal, then
+             moved to the next Main chair, then an empty feeder abandoned. The
+             feeder exists because this fleet said two horses could sit; two
+             sit, in this cycle, and the vibe takes over once it is live. */
+          const openingFeeder = !!table.cluster_id && table.lifecycle === 'opening';
+          if (openingFeeder) {
+            seatTarget = Math.min(table.max_players, Math.max(seatTarget, 2));
+          }
           const seatsAllowed = capBySeatedCount(seatTarget, currentCount, policy.maxPerTable);
           if (seatsAllowed <= 0) {
             if (!table.cluster_id) continue;
@@ -1826,6 +1859,10 @@ export class HorseFleetManager {
           const humanNeedsRescue = humanAtTable && currentCount < 4;
           if (fill !== 'full' && !humanNeedsRescue) {
             seatsNeeded = Math.min(seatsNeeded, 1 + Math.floor(Math.random() * 2));
+            /* ...except the two that make an opening feeder live (see above). */
+            if (openingFeeder) {
+              seatsNeeded = Math.max(seatsNeeded, Math.min(seatsAllowed, 2 - currentCount));
+            }
           }
           /* The fleet-wide cap, spent down as the floor fills. Last, so it
              cannot be undone by anything above it. */

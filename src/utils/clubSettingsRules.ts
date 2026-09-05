@@ -47,18 +47,32 @@ export function validateBuyinRange(min: number, max: number): string | null {
  * rewritten on hot paths), and kept in step with the audit trigger's watched
  * list in supabase/migrations/20260819c_*.sql.
  */
+/**
+ * The columns a realtime UPDATE has to touch before the settings form is
+ * refreshed from it.
+ *
+ * IT IS EXACTLY WHAT THE PAGE RENDERS AND SAVES, and keeping it that way is
+ * the whole point. Until 2026-09-05 it listed five fields the page had stopped
+ * rendering (`allow_straddle`, `allow_run_it_twice`, `allow_rabbit_hunt`,
+ * `min_buyin_bb`, `max_buyin_bb` - buy-in bounds moved into `settings` and the
+ * three table flags moved to table settings) and OMITTED `tagline` and
+ * `lobby_message`, which it does render and does save. So a co-owner setting
+ * the day's message from the lobby left this form showing the old one, with
+ * nothing to say it was stale, while a change to a field the form no longer
+ * has would have refreshed it for no reason.
+ *
+ * A column belongs here when the form both SHOWS it and WRITES it. Adding one
+ * the page cannot show makes the form jump; leaving one out makes it lie.
+ */
 export const WATCHED_COLUMNS = [
   'name',
   'description',
+  'tagline',
+  'lobby_message',
   'is_public',
   'requires_approval',
   'default_rake_percent',
   'rake_cap',
-  'allow_straddle',
-  'allow_run_it_twice',
-  'allow_rabbit_hunt',
-  'min_buyin_bb',
-  'max_buyin_bb',
 ] as const;
 
 /**

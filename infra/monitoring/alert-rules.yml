@@ -534,6 +534,32 @@ groups:
             without the platform knowing. Repeated firing means players are
             being thrown out of tables, not recovering in them.
           runbook: 'docs/REALTIME-CONNECTIONS-PROGRAMME.md'
+
+      # Phase 3 (2026-09-05). The failsafe above NOT firing, because the socket
+      # died for auth and a reload cannot fix that. This is the series that
+      # says, in one line, the sentence nobody could say for twenty-two hours:
+      # these players cannot authenticate to a table. Distinct from
+      # EngineRefusingSessions below - that counts what the ENGINE refused,
+      # this counts browsers that gave up on reloading themselves over it, so
+      # it also fires when the refusal happens somewhere the engine never sees
+      # (an edge, a proxy, a token the socket never carried).
+      - alert: PlayersCannotAuthenticateToTables
+        expr: |
+          increase(poker_ws_client_reconnects_total{reason="reload_suppressed"}[30m]) >= 3
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 5m
+        labels:
+          severity: critical
+          component: engine
+        annotations:
+          summary: 'Table reloads suppressed {{ $value }} times in 30 minutes: sign-in is being refused'
+          description: |
+            A player's table socket was refused for auth (4401, or an `auth:`
+            close reason), so the client held back its twenty-second reload -
+            a fresh page would present the same token to the same refusal.
+            Cross-check poker_ws_auth_refused_total: if that is flat while
+            this climbs, the refusal is happening in front of the engine.
+          runbook: 'docs/REALTIME-CONNECTIONS-PROGRAMME.md'
   # ── Session refusals (2026-09-04) ────────────────────────────────────────
   # Dan's every table socket was refused with 401 for 22 hours - a World Hub
   # cron was signing his account out globally every 15 minutes - and nothing

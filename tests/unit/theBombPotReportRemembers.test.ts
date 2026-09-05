@@ -63,6 +63,27 @@ const CORRECTION = readFileSync(
   'utf8'
 );
 
+/**
+ * And a SECOND correction, from the all-phase sweep. Bounding the live scan to
+ * the unsealed days is only a bound if the unsealed days are recent - and the
+ * catchup deliberately refuses to seal a day the hands can no longer answer
+ * for, because sealing a pruned day would write zeroes over real history. So a
+ * thirty-day window reached back to days that hold no bomb pots, were never
+ * sealed, and became the earliest unsealed day:
+ *
+ *     p_days=1     200 in   608ms
+ *     p_days=7     200 in 1,204ms
+ *     p_days=30    500 after 8,730ms
+ *
+ * The cost scaled with the WINDOW, which is the thing the rollup was built to
+ * stop. The floor is bounded by the oldest surviving hand now: 875ms for
+ * thirty days and 1,423ms for a year.
+ */
+const FLOOR = readFileSync(
+  'supabase/migrations/20260905204436_the_bomb_pot_live_floor_cannot_reach_past_the_oldest_hand.sql',
+  'utf8'
+);
+
 const fnIn = (sql: string, name: string) => {
   const start = sql.indexOf(`FUNCTION public.${name}(`);
   expect(start, `${name} is defined`).toBeGreaterThan(-1);
@@ -167,6 +188,20 @@ describe('the bomb pot report reads a rollup, not twenty thousand hands', () => 
     expect(CORRECTION).toContain(
       'the live scan is still bounded by the requested window, not by the unsealed days'
     );
+  });
+
+  it('never scans further back than the oldest surviving hand', () => {
+    // The catchup will not seal a day pruning has emptied, so those days stay
+    // unsealed for ever. Without this floor they pulled the live scan back to
+    // the start of whatever window was asked for.
+    const body = blankNonCode(fnIn(FLOOR, 'fn_club_bomb_pot_report'));
+    expect(body).toContain('MIN(h.created_at)::date INTO v_oldest');
+    expect(body).toContain('v_live_from := v_oldest');
+    // And a club with no bomb pots at all scans nothing, rather than a year.
+    expect(body).toContain('IF v_oldest IS NULL THEN');
+    expect(FLOOR).toContain('the live floor can still reach past the oldest surviving hand');
+    // The sealed days are still excluded: this narrows where the scan STARTS.
+    expect(body).toMatch(/NOT EXISTS \(SELECT 1 FROM ok_days o2/);
   });
 
   it('the report still returns the fourteen columns the page reads', () => {

@@ -158,10 +158,15 @@ describe('the shipped wiring - the rule is worthless if the seater does not cons
     // band-filtered, so the rescue can pull an off-hours horse of the RIGHT
     // stake and never a nosebleed regular into a micro game. If someone ever
     // makes the rescue reach past candidateHorses, this pin is the alarm.
+    /* 2026-09-05: the rescue reaches to `sittable`, which is candidateHorses
+       narrowed by the sit verdict for a cluster table and candidateHorses
+       itself otherwise - still band-filtered, still never validHorses. */
+    expect(src).toContain('let sittable = candidateHorses;');
     expect(src).toContain(
-      'if (pool.length < emptySeats.length && humanNeedsRescue) pool = candidateHorses;'
+      'if (pool.length < emptySeats.length && humanNeedsRescue) pool = sittable;'
     );
     expect(src).not.toContain('humanNeedsRescue) pool = validHorses');
+    expect(src).not.toContain('humanNeedsRescue) pool = candidateHorses');
   });
 
   it('the loader hydrates bands from the same page scan as lanes', async () => {

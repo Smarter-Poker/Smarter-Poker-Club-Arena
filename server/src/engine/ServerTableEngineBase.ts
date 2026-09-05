@@ -3419,6 +3419,37 @@ export abstract class ServerTableEngineBase {
     }
   }
 
+  /**
+   * Which FORMAT this table is, for metrics. Dan, 2026-09-05: "you need to fix
+   * the real time connection to the spins, heads up and mtt's as well. not
+   * just the cash game tables."
+   *
+   * Every format already shares one ServerTableEngine and one table socket, so
+   * the act-to-broadcast instrument covered them from the start - but it was
+   * labelled only by audience, so a Spin's latency, an MTT final table's and a
+   * cash table's were one indistinguishable number and nobody could answer
+   * "are Spins slow?". This is the label that makes each answerable.
+   *
+   * Derived from the tournament brain context, which is a SYNCHRONOUS cached
+   * read and already warmed for every tournament table this engine owns, so
+   * this is safe on the broadcast path. A tournament whose context has not
+   * landed yet reports 'mtt' rather than guessing - it is the majority shape
+   * and it never silently becomes 'cash'.
+   *
+   * Four values, so at most eight series with the audience label. Never a
+   * table_id: that is the cardinality the gated registry exists to avoid.
+   */
+  protected tableFormat(): 'cash' | 'spin' | 'hu_sng' | 'mtt' {
+    if (!this.isTournamentTable()) return 'cash';
+    try {
+      const id = this.tableInfo?.tournament_id;
+      const ctx = id ? getTournamentBrainContext(String(id)) : null;
+      return ctx?.format ?? 'mtt';
+    } catch {
+      return 'mtt';
+    }
+  }
+
   protected isTournamentTable(): boolean {
     return !!(this.tableInfo?.tournament_id || this.tableInfo?.game_type === 'tournament');
   }

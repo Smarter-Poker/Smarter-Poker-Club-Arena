@@ -10,10 +10,22 @@
  * - Uses CardImage component for custom deck rendering
  */
 
-import React, { useMemo, useEffect, useRef, useState, memo } from 'react';
+import React, { useMemo, useEffect, useRef, useState, useId, memo } from 'react';
 import { CardImage, CardBack, type Card } from './CardImage';
 import { haptic, soundService } from '../../services/SoundService';
-import { getAnimationSpeed } from '../../utils/animationSpeed';
+import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
+import {
+  cardPresentationEngine,
+  detectPlatform,
+  flipMs,
+  type CardAnimationProfile,
+  type CardPresentationMode,
+  type CommunityStreet,
+} from '../../presentation/cardPresentation';
+import {
+  CardPresentationDebug,
+  isCardPresentationDebugRequested,
+} from '../../presentation/cardPresentation/CardPresentationDebug';
 import { formatPopupText } from '../../utils/popupStyle';
 import './CommunityCards.css';
 
@@ -77,8 +89,57 @@ export interface CommunityCardsProps {
    * cards then land FACE DOWN, hold a beat, and flip over - the reference
    * flow's slowed reveal - instead of the normal one-sided spin-in. Normal
    * (non-all-in) streets keep their existing animation.
+   *
+   * RIVER SQUEEZE 2026-09-04: both all-in streets now run the squeeze with
+   * the `all-in` profile (face down, hold to the server's reveal gate, snap
+   * over) - see src/presentation/cardPresentation.
    */
   slowReveal?: boolean;
+  /**
+   * RIVER SQUEEZE 2026-09-04 - presentation identity (spec 14, 31). The
+   * engine keys every animation by table + hand + board + street so a
+   * duplicate snapshot never animates twice and a stale hand's river never
+   * plays on the next hand's board. When TablePage cannot supply these (the
+   * sim page, tests) the board falls back to a per-instance lane and a local
+   * hand counter, so dedupe still works within the mount.
+   */
+  tableId?: string;
+  handId?: string | number;
+  /** 0 = board 1; 1 and 2 for double/triple-board bomb pots; the RIT run index. */
+  boardIndex?: number;
+  /** Chooses the timing profile. Never inspects tournament economics (spec 28). */
+  gameMode?: CardPresentationMode;
+  /**
+   * Multi-table focus (spec 47): the focused table gets the full profile, a
+   * visible background table the compact one. Focus is owned by the
+   * multi-table manager; this is only asked, never decided here.
+   */
+  isFocused?: boolean;
+  /** False when the table is mounted but not on screen: the card renders instantly. */
+  isVisible?: boolean;
+}
+
+/** The engine's answer for one slot: mount the squeeze markup with this profile. */
+export interface SqueezePresentation {
+  key: string;
+  profile: CardAnimationProfile;
+  /** Board slot the squeeze belongs to (4 for the river, 3 for the all-in turn). */
+  index: number;
+}
+
+/**
+ * The profile as inline custom properties. This is the ONLY bridge between
+ * the profile table and the stylesheet: the keyframes read these and the
+ * :root values in CommunityCards.css are just the desktop-cash defaults.
+ */
+function squeezeVars(p: CardAnimationProfile, boardIndex: number): React.CSSProperties {
+  return {
+    '--rs-prepare': `${p.prepareMs}ms`,
+    '--rs-hold': `${p.holdMs}ms`,
+    '--rs-flip': `${flipMs(p)}ms`,
+    '--rs-overshoot': String(p.overshoot),
+    '--rs-stagger': `${boardIndex * p.staggerMs}ms`,
+  } as React.CSSProperties;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -138,8 +199,14 @@ interface CardFaceProps {
   stage: BoardStage;
   deckStyle?: '4color' | '2color';
   cardBack?: string;
-  /** All-in runout: turn/river land face down and flip (see the prop note). */
-  slowReveal?: boolean;
+  /**
+   * RIVER SQUEEZE 2026-09-04: the engine's decision for this board. Set when
+   * the river (or the all-in turn) was accepted for presentation; null when
+   * the engine ruled it a duplicate, stale, or instant - in which case the
+   * slot renders its final face with no animation at all (spec 15, 16).
+   */
+  squeeze: SqueezePresentation | null;
+  boardIndex: number;
 }
 
 function CardFace({
@@ -151,17 +218,24 @@ function CardFace({
   stage,
   deckStyle,
   cardBack,
-  slowReveal = false,
+  squeeze,
+  boardIndex,
 }: CardFaceProps) {
   // Only apply animation classes to NEWLY DEALT cards — existing cards stay still
   const isTurnCard = isNewlyDealt && stage === 'turn' && index === 3;
   const isRiverCard = isNewlyDealt && (stage === 'river' || stage === 'showdown') && index === 4;
   const isFlopDeal = isNewlyDealt && stage === 'flop' && index < 3;
-  // POKERBROS PARITY 2026-08-26: the slowed all-in reveal replaces the normal
-  // turn/river spin with the two-surface land-then-flip the flop already has.
-  // Both use the .community-cards__flip markup; the slow-reveal class retimes
-  // it (land face down, hold, flip) - see the stylesheet.
-  const isSlowFlip = slowReveal && (isTurnCard || isRiverCard);
+  // RIVER SQUEEZE 2026-09-04: the river - and the all-in turn - squeeze. The
+  // card materialises FACE DOWN in its slot, holds, and snaps over through
+  // its edge (the reference recording, frame by frame - see the stylesheet).
+  // The old one-sided ccRiverReveal spin and the slow-reveal land-then-flip
+  // are both replaced by this one path; the profile supplies the timing.
+  const isSqueeze = isNewlyDealt && squeeze !== null && squeeze.index === index;
+  const style = (
+    isSqueeze
+      ? { ...squeezeVars(squeeze.profile, boardIndex), '--card-index': index }
+      : { animationDelay: `${index * 100}ms`, '--card-index': index }
+  ) as React.CSSProperties;
 
   return (
     <div
@@ -170,15 +244,19 @@ function CardFace({
         isHighlighted ? 'community-cards__card--highlighted' : '',
         isDimmed ? 'community-cards__card--dimmed' : '',
         isFlopDeal ? 'community-cards__card--flop-deal' : '',
-        isTurnCard && !isSlowFlip ? 'community-cards__card--turn' : '',
-        isRiverCard && !isSlowFlip ? 'community-cards__card--river' : '',
-        isSlowFlip ? 'community-cards__card--slow-reveal' : '',
+        isTurnCard && !isSqueeze ? 'community-cards__card--turn' : '',
+        // --river is a MARKER (the e2e beat and the simulation test look for
+        // it); --squeeze is the animation, present only when the engine said so.
+        isRiverCard ? 'community-cards__card--river' : '',
+        isSqueeze ? 'community-cards__card--squeeze' : '',
       ]
         .filter(Boolean)
         .join(' ')}
-      style={{ animationDelay: `${index * 100}ms`, '--card-index': index } as React.CSSProperties}
+      style={style}
+      data-rs-profile={isSqueeze ? squeeze.profile.id : undefined}
+      data-rs-sweep={isSqueeze ? (squeeze.profile.lightSweepEnabled ? 'on' : 'off') : undefined}
     >
-      {isFlopDeal || isSlowFlip ? (
+      {isFlopDeal || isSqueeze ? (
         /*
          * Dan 2026-08-19, bug list item 5: "flops must deal 3 cards face down
          * then fan open (animation), not just appear."
@@ -284,8 +362,29 @@ function CommunityCardsComponent({
   cardBack,
   playSounds = true,
   slowReveal = false,
+  tableId,
+  handId,
+  boardIndex = 0,
+  gameMode = 'cash',
+  isFocused = true,
+  isVisible = true,
 }: CommunityCardsProps) {
   const visibleCount = useMemo(() => getVisibleCardCount(stage), [stage]);
+  // RIVER SQUEEZE 2026-09-04: a board without a real table id (sim page,
+  // tests) still needs a lane of its own so two boards never share keys.
+  const instanceId = useId();
+  const laneTableId = tableId ?? `local${instanceId}`;
+  /** Counts hands locally when TablePage supplies no hand number. */
+  const localHandRef = useRef(0);
+  /** The key of the squeeze in flight on this board, for interrupts. */
+  const activeSqueezeRef = useRef<string | null>(null);
+  const [squeeze, setSqueeze] = useState<SqueezePresentation | null>(null);
+  const cancelActiveSqueeze = (reason: string) => {
+    if (activeSqueezeRef.current) {
+      cardPresentationEngine.cancel(activeSqueezeRef.current, reason);
+      activeSqueezeRef.current = null;
+    }
+  };
   /**
    * RABBIT HUNT 2026-08-26: how many reveal cards fit in the undealt slots.
    * Before the explicit prop, the reveal was appended into `cards` — and since
@@ -324,16 +423,61 @@ function CommunityCardsComponent({
     // face down 0.75s hold, then a 0.5s turn) outlives the normal 1.4s
     // window; tearing its markup out mid-flip snaps the card face-up, the
     // exact defect the longer flop window fixed.
-    const windowMs = Math.round((slowReveal ? 1800 : 1400) * getAnimationSpeed());
+    // RIVER SQUEEZE 2026-09-04: the 1.8s slow-reveal window is gone with the
+    // slow-reveal class. The squeeze asks the engine for its own window below
+    // and takes the larger of the two, so the flip markup always outlives the
+    // CSS (the profile total plus MOUNT_WINDOW_MARGIN_MS, times the speed).
+    const speed = getAnimationSpeed();
+    let windowMs = Math.round(1400 * speed);
+    const closeWindow = () => {
+      setNewlyDealtIndices(new Set());
+      setSqueeze(null);
+      activeSqueezeRef.current = null;
+    };
     if (visibleCount > prevCount) {
       // New cards appeared — mark them as newly dealt
       const newIndices = new Set<number>();
       for (let i = prevCount; i < visibleCount; i++) {
         newIndices.add(i);
       }
+      // RIVER SQUEEZE 2026-09-04: the river squeezes; so does the turn on an
+      // all-in runout. The engine decides whether THIS card animates at all
+      // (duplicate / stale / hidden table -> the slot renders its final face)
+      // and which profile it gets. It never decides anything about the hand.
+      const street: CommunityStreet =
+        visibleCount >= 5 ? 'river' : visibleCount === 4 ? 'turn' : 'flop';
+      const squeezes = street === 'river' || (street === 'turn' && slowReveal);
+      if (squeezes) {
+        const slot = visibleCount - 1;
+        const result = cardPresentationEngine.presentCard(
+          {
+            tableId: laneTableId,
+            handId: handId ?? localHandRef.current,
+            boardIndex,
+            street,
+            slotIndex: slot,
+            sequence: visibleCount,
+          },
+          {
+            mode: gameMode,
+            platform: detectPlatform(),
+            focus: !isVisible ? 'hidden' : isFocused ? 'focused' : 'visible',
+            reducedMotion: prefersReducedMotion(),
+            allIn: slowReveal,
+          }
+        );
+        if (result.status === 'started') {
+          activeSqueezeRef.current = result.key;
+          setSqueeze({ key: result.key, profile: result.profile, index: slot });
+          windowMs = Math.max(windowMs, Math.round(result.durationMs * speed));
+        } else {
+          newIndices.delete(slot);
+          setSqueeze(null);
+        }
+      }
       dealtAtRef.current = Date.now();
       setNewlyDealtIndices(newIndices);
-      const timer = setTimeout(() => setNewlyDealtIndices(new Set()), windowMs);
+      const timer = setTimeout(closeWindow, windowMs);
       prevVisibleCountRef.current = visibleCount;
       return () => clearTimeout(timer);
     }
@@ -344,12 +488,21 @@ function CommunityCardsComponent({
     // the deal-in class stayed welded to those board cards until the next
     // street. Re-arm the clear for the REMAINDER of the window.
     if (visibleCount === prevCount && newlyDealtIndices.size > 0) {
+      // A squeeze in flight keeps its own, possibly longer, window.
+      if (squeeze) {
+        windowMs = Math.max(windowMs, Math.round((squeeze.profile.durationMs + 100) * speed));
+      }
       const remaining = Math.max(50, dealtAtRef.current + windowMs - Date.now());
-      const timer = setTimeout(() => setNewlyDealtIndices(new Set()), remaining);
+      const timer = setTimeout(closeWindow, remaining);
       return () => clearTimeout(timer);
     }
     if (visibleCount < prevCount) {
       // New hand started — all visible cards are new
+      // RIVER SQUEEZE 2026-09-04 (spec 66): a squeeze still in flight from
+      // the last hand is interrupted; the new board is the authoritative one.
+      cancelActiveSqueeze('new-hand');
+      setSqueeze(null);
+      localHandRef.current += 1;
       prevVisibleCountRef.current = visibleCount;
       if (visibleCount > 0) {
         const newIndices = new Set<number>();
@@ -358,7 +511,7 @@ function CommunityCardsComponent({
         }
         dealtAtRef.current = Date.now();
         setNewlyDealtIndices(newIndices);
-        const timer = setTimeout(() => setNewlyDealtIndices(new Set()), windowMs);
+        const timer = setTimeout(closeWindow, windowMs);
         return () => clearTimeout(timer);
       }
     }
@@ -366,7 +519,25 @@ function CommunityCardsComponent({
     // newlyDealtIndices is in the deps ONLY so the re-arm branch above runs
     // after a mid-window dep change; the set-then-clear cycle terminates
     // because the clear writes an empty set (size 0 skips the branch).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleCount, slowReveal, newlyDealtIndices]);
+
+  // RIVER SQUEEZE 2026-09-04 (spec 66): a table that leaves the screen mid
+  // squeeze renders its final card; nothing half-flipped is ever left behind.
+  useEffect(() => {
+    if (!isVisible && activeSqueezeRef.current) {
+      cancelActiveSqueeze('hidden');
+      setSqueeze(null);
+    }
+  }, [isVisible]);
+
+  // Unmount: release the engine's timer and reference (spec 99, 100).
+  useEffect(() => {
+    return () => {
+      cancelActiveSqueeze('unmount');
+    };
+     
+  }, []);
 
   // Bible V8 §5.1: Stage label + haptic feedback on stage transitions
   useEffect(() => {
@@ -505,27 +676,35 @@ function CommunityCardsComponent({
               stage={stage}
               deckStyle={deckStyle}
               cardBack={cardBack}
-              slowReveal={slowReveal}
+              squeeze={squeeze}
+              boardIndex={boardIndex}
             />
-          ) : /* Dan 2026-08-26: "remove the ghost placeholders for the turn
-                 and river that appear after the flop."
+          ) : (
+            /* Dan 2026-08-26: "remove the ghost placeholders for the turn
+               and river that appear after the flop." They stay removed: an
+               undealt slot DRAWS nothing - no dashed outline, no card shape.
 
-                 An undealt slot now renders NOTHING at any stage. The dashed
-                 outlines were meant to keep the board visually centred before
-                 the turn and river land, but the row is centred by its own
-                 flex layout, so they bought nothing and read as two empty
-                 card-shaped holes sitting on the felt — on a phone, where the
-                 board is already small, they were the loudest thing on it.
-
-                 The preflop suppression this replaces (Phase 2 T1-07) was the
-                 same instinct applied to one street; this is it applied to
-                 all of them. `PlaceholderCard` and its `.community-cards__
-                 placeholder` styles were deleted with it rather than left
-                 behind — a component nothing renders is how a stylesheet ends
-                 up full of rules for markup that no longer exists. */
-          null
+               RIVER SQUEEZE 2026-09-04 (spec 11): it does keep its GEOMETRY.
+               With nothing at all in the slot the centred row slid left by
+               half a card when the turn landed and again on the river, the
+               stage separators (60% / 80% of the row) only lined up once all
+               five were out, and the community area's own height changed
+               street to street. The reserve is visibility:hidden, so the
+               river materialises in a slot that was always there and nothing
+               else on the felt moves to make room. */
+            <div
+              key={`reserve-${i}`}
+              className="community-cards__slot-reserve"
+              aria-hidden="true"
+            />
+          )
         )}
       </div>
+
+      {/* RIVER SQUEEZE 2026-09-04 (spec 111): dev-only overlay, ?rsDebug. */}
+      {import.meta.env.DEV && isCardPresentationDebugRequested() && (
+        <CardPresentationDebug boardIndex={boardIndex} />
+      )}
 
       {/* Separator Lines */}
       {visibleCount >= 3 && (
@@ -581,9 +760,16 @@ export const CommunityCards = memo(CommunityCardsComponent, (prev, next) => {
   if (prev.lowWinnerLabel !== next.lowWinnerLabel) return false;
   if (prev.deckStyle !== next.deckStyle) return false;
   if (prev.playSounds !== next.playSounds) return false;
-  // POKERBROS PARITY 2026-08-26: the all-in slow-reveal mode changes which
+  // POKERBROS PARITY 2026-08-26: the all-in mode changes which
   // animation the next street gets - it must invalidate the memo.
   if (prev.slowReveal !== next.slowReveal) return false;
+  // RIVER SQUEEZE 2026-09-04: identity and focus feed the engine's decision.
+  if (prev.tableId !== next.tableId) return false;
+  if (prev.handId !== next.handId) return false;
+  if (prev.boardIndex !== next.boardIndex) return false;
+  if (prev.gameMode !== next.gameMode) return false;
+  if (prev.isFocused !== next.isFocused) return false;
+  if (prev.isVisible !== next.isVisible) return false;
   // AUDIT-2 FIX 2026-08-20: cardBack was missing — it was added as a prop
   // specifically to stop mismatched backs, but changing the deck in settings
   // left the board's placeholders and the face-down flop on the OLD back

@@ -27,7 +27,7 @@ type Row = { job: string; run_date: string; claimed_at: string; claimed_by: stri
 
 const state: {
   jobRuns: Row[];
-  leagueRows: Array<{ run_date: string; matchup: string }>;
+  leagueRows: Array<{ run_date: string; matchup: string; created_at: string }>;
   // 2026-08-30: the evidence tables for the two jobs that used to be
   // unjudgeable. Same shape as leagueRows - a date column and a payload
   // column - because that is all claimProducedRows ever asks for.
@@ -172,16 +172,73 @@ describe('claimNightlyJob - the 2026-08-28 crash', () => {
     expect(state.jobRuns[0].claimed_by).toBe('container-A');
   });
 
-  it('an OLD claim that DID produce rows is left alone', async () => {
+  /*
+   * ── 2026-09-04: for LEAGUE, a row is partial progress, not delivery ──
+   * This test used to push one league row and assert the claim was left
+   * alone. That was right while a run got its whole 90-minute budget, and
+   * became wrong on 2026-09-01 when the engine started restarting at :55 of
+   * every hour: the 04:04 run is now always killed mid-card, and the single
+   * matchup it managed made the claim permanently untakeable. 2026-09-02 and
+   * 2026-09-03 both recorded exactly one matchup and a `nightly_job_lost`
+   * finding. The question for a partial-output job is not "did anything
+   * land" but "is this claim STILL producing", so the row's age decides.
+   */
+  it('an OLD league claim whose newest row is FRESH is left alone', async () => {
     state.jobRuns.push({
       job: 'league',
       run_date: DAY,
       claimed_at: new Date(Date.now() - 2 * HOUR).toISOString(),
       claimed_by: 'container-B',
     });
-    state.leagueRows.push({ run_date: DAY, matchup: 'v20_multiway' });
+    // A live run wrote a matchup four minutes ago - it is working, not dead.
+    state.leagueRows.push({
+      run_date: DAY,
+      matchup: 'v20_multiway',
+      created_at: new Date(Date.now() - 4 * 60_000).toISOString(),
+    });
     expect(await claimNightlyJob('league', DAY)).toBe(false);
     expect(state.jobRuns[0].claimed_by).toBe('container-B');
+  });
+
+  it('an OLD league claim whose newest row is STALE is taken over mid-card', async () => {
+    state.jobRuns.push({
+      job: 'league',
+      run_date: DAY,
+      claimed_at: new Date(Date.now() - 2 * HOUR).toISOString(),
+      claimed_by: 'container-B',
+    });
+    // One matchup, written 50 minutes ago, then the hourly restart killed it.
+    state.leagueRows.push({
+      run_date: DAY,
+      matchup: 'v20_multiway',
+      created_at: new Date(Date.now() - 50 * 60_000).toISOString(),
+    });
+    expect(await claimNightlyJob('league', DAY)).toBe(true);
+    expect(state.jobRuns[0].claimed_by).not.toBe('container-B');
+  });
+
+  it('a league claim with NO rows at all is still a plain corpse', async () => {
+    state.jobRuns.push({
+      job: 'league',
+      run_date: DAY,
+      claimed_at: new Date(Date.now() - 2 * HOUR).toISOString(),
+      claimed_by: 'container-B',
+    });
+    expect(await claimNightlyJob('league', DAY)).toBe(true);
+  });
+
+  it('daily_audit is NOT partial - one row is the whole night, freshness is irrelevant', () => {
+    // The partial-evidence rule must not leak onto the jobs whose single row
+    // IS the output, or a slow-but-alive audit would be run twice.
+    const src = readFileSync(join(__dirname, 'HorseLeague.ts'), 'utf8');
+    const block = src.slice(
+      src.indexOf('CLAIM_EVIDENCE_IS_PARTIAL: Record'),
+      src.indexOf('/** Rows already written for this job+date')
+    );
+    expect(block).toContain('league');
+    expect(block).toContain('league_pm');
+    expect(block).not.toContain('daily_audit');
+    expect(block).not.toContain('self_tuner');
   });
 
   it('an unknown job with no evidence table keeps the all-or-nothing claim', async () => {

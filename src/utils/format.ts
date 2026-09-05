@@ -147,3 +147,98 @@ export const formatDateTime = (ts: string | null | undefined): string => {
  */
 export const pct = (n: number | null | undefined): string =>
   `${((Number(n) || 0) * 100).toFixed(1)}%`;
+
+/* ── Player identity surfaces (added 2026-09-04) ────────────────────────────
+   Every stat the profile renders arrives as a raw ratio or float from
+   `ca_player_stats_overview_v2`. Multiplying a ratio by 100 in JavaScript
+   yields 1.6500000000000001, and that exact string was on the live profile
+   hero next to "ROI". Nothing below lets a float reach the DOM unrounded. */
+
+const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/** "32.9%" from a value that is ALREADY a percentage (x100). */
+export const formatPct = (value: unknown, digits = 1): string =>
+  finite(value) ? `${value.toFixed(digits)}%` : '0%';
+
+/** "+1.7%" / "-3.2%" / "0.0%" - explicit sign because the reader is a P/L. */
+export const formatSignedPct = (value: unknown, digits = 1): string => {
+  if (!finite(value)) return '0.0%';
+  const fixed = value.toFixed(digits);
+  return value > 0 ? `+${fixed}%` : `${fixed}%`;
+};
+
+/** "+1,711.50" / "-2,183.70" / "0.00" - chips, signed, thousands separators. */
+export const formatSignedChips = (value: unknown, digits = 2): string => {
+  if (!finite(value)) return '0.00';
+  const fixed = Math.abs(value).toLocaleString('en-US', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+  if (value > 0) return `+${fixed}`;
+  if (value < 0) return `-${fixed}`;
+  return fixed;
+};
+
+/** "1,711.50" - chips, unsigned. */
+export const formatChips = (value: unknown, digits = 2): string =>
+  finite(value)
+    ? value.toLocaleString('en-US', {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits,
+      })
+    : '0.00';
+
+/** "1,412" - whole counts. */
+export const formatCount = (value: unknown): string =>
+  finite(value) ? Math.round(value).toLocaleString('en-US') : '0';
+
+/** "-305.6" - BB/100, aggression factor and other ratios at fixed precision. */
+export const formatRatio = (value: unknown, digits = 1): string =>
+  finite(value) ? value.toFixed(digits) : (0).toFixed(digits);
+
+/** "9.9h" / "48m" - hours played, compact. */
+export const formatHours = (hours: unknown): string => {
+  if (!finite(hours) || hours <= 0) return '0h';
+  if (hours < 1) return `${Math.round(hours * 60)}m`;
+  return `${hours.toFixed(1)}h`;
+};
+
+/**
+ * "Just Now" / "12m Ago" / "3h Ago" / "2d Ago" / "Aug 30". Title Case because
+ * it sits beside Title Case labels on the credential; null when unknown so
+ * the caller can omit the plate instead of printing "Never".
+ */
+export const relativeTimeTitle = (
+  iso: string | null | undefined,
+  now = Date.now()
+): string | null => {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  const m = Math.floor(Math.max(0, now - t) / 60000);
+  if (m < 1) return 'Just Now';
+  if (m < 60) return `${m}m Ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h Ago`;
+  const d = Math.floor(h / 24);
+  if (d < 14) return `${d}d Ago`;
+  return new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+
+/** "Oct 2025" - one member-since format for every identity surface. */
+export const formatMemberSince = (iso: string | null | undefined): string => {
+  if (!iso) return 'Unknown';
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return 'Unknown';
+  return new Date(t).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+};
+
+/** 1 -> "1st", 22 -> "22nd", 113 -> "113th"; "-" when there is no finish. */
+export const ordinal = (n: unknown): string => {
+  if (!finite(n) || n <= 0) return '-';
+  const v = Math.round(n);
+  const mod100 = v % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${v}th`;
+  const suffix = ({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[v % 10] ?? 'th';
+  return `${v}${suffix}`;
+};

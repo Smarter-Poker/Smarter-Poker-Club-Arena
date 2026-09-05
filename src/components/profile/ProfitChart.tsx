@@ -1,136 +1,134 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  PROFIT CHART — Lazy-loaded Recharts component (#5 Performance, v1.1)
+ *  PROFIT CHART — Lazy-loaded Recharts component
  * ═══════════════════════════════════════════════════════════════════════════════
- * Extracted from ProfilePage to enable React.lazy() code-splitting.
- * The 387KB Recharts bundle is only downloaded when the user opens the History tab.
+ * Loaded through lazyWithRetry from ProfilePage so the Recharts bundle is only
+ * fetched when the Activity panel opens. Sole caller: ProfilePage.
  *
- * v1.1: Added premium empty state when no transactions exist.
+ * 2026-09-04: this used to draw a "P/L" line from `wallet_transactions` -
+ * every buy-in, add-on, cash-out, diamond purchase and VIP charge netted by
+ * day. That is wallet flow, not poker results: a 400-chip buy-in followed by a
+ * 3.96 cash-out read as a 396-chip "loss" the moment you sat down, and a
+ * diamond purchase read as a losing session. The real daily P/L series was
+ * already in the stats payload the page fetches (`daily[]` from
+ * ca_player_stats_overview_v2, settled from hand results), so the chart now
+ * draws that and nothing else.
  */
 
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { useMemo } from 'react';
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceLine,
+} from 'recharts';
+import { formatSignedChips } from '../../utils/format';
 
-interface ProfitChartProps {
-  transactions: Array<{
-    id: string;
-    type: string;
-    amount: number;
-    created_at: string;
-    description?: string;
-  }>;
+export interface DailyProfitPoint {
+  /** ISO date, YYYY-MM-DD, in the payload's window timezone. */
+  date: string;
+  hands: number;
+  profit: number;
 }
 
-export default function ProfitChart({ transactions }: ProfitChartProps) {
-  // #12: Empty state
-  if (!transactions || transactions.length === 0) {
+interface ProfitChartProps {
+  series: DailyProfitPoint[];
+}
+
+const CYAN = '#00d4ff';
+const RED = '#ff5d6c';
+
+export default function ProfitChart({ series }: ProfitChartProps) {
+  const data = useMemo(() => {
+    let cumulative = 0;
+    return [...(series || [])]
+      .filter((p) => p && typeof p.date === 'string')
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map((p) => {
+        const profit = Number.isFinite(Number(p.profit)) ? Number(p.profit) : 0;
+        cumulative += profit;
+        const d = new Date(`${p.date}T12:00:00Z`);
+        return {
+          date: p.date,
+          day: Number.isNaN(d.getTime())
+            ? p.date
+            : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }),
+          hands: Number(p.hands) || 0,
+          profit,
+          cumulative: Math.round(cumulative * 100) / 100,
+        };
+      });
+  }, [series]);
+
+  if (data.length === 0) {
     return (
-      <div
-        style={{
-          width: '100%',
-          height: 200,
-          marginBottom: 16,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: 'rgba(0, 20, 40, 0.4)',
-          borderRadius: 12,
-          border: '1px solid rgba(255, 255, 255, 0.05)',
-        }}
-      >
-        <div
-          style={{
-            fontSize: '2rem',
-            opacity: 0.3,
-            marginBottom: 8,
-            animation: 'animationsProfitChartPulse 3s ease-in-out infinite',
-          }}
-        >
-          ▦
-        </div>
-        <div
-          style={{
-            fontSize: '0.75rem',
-            color: '#5a6a7a',
-            fontWeight: 600,
-          }}
-        >
-          No Transaction History Yet
-        </div>
-        <div
-          style={{
-            fontSize: '0.65rem',
-            color: '#3a4a5a',
-            marginTop: 4,
-          }}
-        >
-          Start Playing To See Your P/L Chart
-        </div>
-        <style>{`
-                    @keyframes profitChartPulse {
-                        0%, 100% { opacity: 0.3; transform: scale(1); }
-                        50% { opacity: 0.5; transform: scale(1.05); }
-                    }
-                `}</style>
+      <div className="profit-chart-empty" role="status">
+        <span aria-hidden="true">▦</span>
+        <strong>No Settled Sessions In This Window</strong>
+        <small>The Cumulative P/L Curve Draws Itself From Hand Results, Not Wallet Flow.</small>
       </div>
     );
   }
 
-  const data = (() => {
-    let cumulative = 0;
-    const grouped: Record<string, number> = {};
-    transactions.forEach((tx) => {
-      const day = new Date(tx.created_at).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-      });
-      const amt = tx.type === 'credit' ? tx.amount || 0 : -(tx.amount || 0);
-      grouped[day] = (grouped[day] || 0) + amt;
-    });
-    return Object.entries(grouped).map(([day, net]) => {
-      cumulative += net;
-      return { day, profit: Math.round(cumulative) };
-    });
-  })();
+  const last = data[data.length - 1];
+  const stroke = last.cumulative < 0 ? RED : CYAN;
+  const gradientId = `profitGrad-${last.cumulative < 0 ? 'neg' : 'pos'}`;
 
   return (
-    <div style={{ width: '100%', height: 200, marginBottom: 16 }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data}>
+    <div className="profit-chart" aria-label="Cumulative Profit And Loss By Day">
+      <ResponsiveContainer width="100%" height={220}>
+        <AreaChart data={data} margin={{ top: 12, right: 8, bottom: 0, left: 0 }}>
           <defs>
-            <linearGradient id="profitGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#00d4ff" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="#00d4ff" stopOpacity={0} />
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={stroke} stopOpacity={0.32} />
+              <stop offset="95%" stopColor={stroke} stopOpacity={0} />
             </linearGradient>
           </defs>
+          <ReferenceLine y={0} stroke="rgba(184, 195, 205, 0.28)" strokeDasharray="4 4" />
           <XAxis
             dataKey="day"
-            tick={{ fill: '#6a7a8a', fontSize: 10 }}
+            tick={{ fill: '#7f8f9d', fontSize: 10 }}
             axisLine={false}
             tickLine={false}
+            minTickGap={24}
           />
           <YAxis
-            tick={{ fill: '#6a7a8a', fontSize: 10 }}
+            tick={{ fill: '#7f8f9d', fontSize: 10 }}
             axisLine={false}
             tickLine={false}
-            width={50}
+            width={54}
+            tickFormatter={(v: number) => formatSignedChips(v, 0)}
           />
           <Tooltip
             contentStyle={{
-              background: '#1a2332',
-              border: '1px solid #2a3a4a',
-              borderRadius: 8,
-              color: '#fff',
+              background: '#0d1218',
+              border: '1px solid #27313c',
+              borderRadius: 3,
+              color: '#f2f6f9',
               fontSize: 12,
             }}
-            formatter={(value: any) => [Number(value).toLocaleString(), 'Cumulative P/L']}
+            labelStyle={{ color: '#b8c3cd', fontWeight: 700 }}
+            formatter={(value: unknown, name: unknown, item: unknown) => {
+              const day = (item as { payload?: { profit?: number; hands?: number } })?.payload;
+              return [
+                `${formatSignedChips(Number(value))} Cumulative | ${formatSignedChips(day?.profit)} Day | ${day?.hands ?? 0} Hands`,
+                'P/L',
+              ];
+            }}
           />
           <Area
             type="monotone"
-            dataKey="profit"
-            stroke="#00d4ff"
-            fill="url(#profitGrad)"
+            dataKey="cumulative"
+            stroke={stroke}
+            fill={`url(#${gradientId})`}
             strokeWidth={2}
+            isAnimationActive
+            animationDuration={700}
+            dot={false}
+            activeDot={{ r: 4, fill: stroke, stroke: '#05070a', strokeWidth: 2 }}
           />
         </AreaChart>
       </ResponsiveContainer>

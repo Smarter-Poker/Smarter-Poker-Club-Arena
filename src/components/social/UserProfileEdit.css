@@ -111,42 +111,17 @@
   color: #77c9ff;
 }
 
-.profile-overlay .avatar-picker {
-  display: grid;
-  width: 100%;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 0.5rem;
-  padding: 0.7rem;
-  border: 1px solid #26333d;
-  border-radius: 3px;
-  background: #05090c;
+.profile-overlay .avatar-note,
+.profile-overlay .field-hint {
+  margin: 0;
+  color: #7f8f9d;
+  font-size: 0.68rem;
+  line-height: 1.45;
+  text-align: center;
 }
 
-.profile-overlay .avatar-choice {
-  width: 100%;
-  aspect-ratio: 1;
-  min-height: 44px;
-  overflow: hidden;
-  padding: 0;
-  border: 1px solid #344650;
-  border-radius: 2px;
-  background: #080d12;
-  cursor: pointer;
-}
-
-.profile-overlay .avatar-choice img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.profile-overlay .avatar-choice.selected,
-.profile-overlay .avatar-choice:focus-visible {
-  border-color: #77c9ff;
-  outline: 2px solid rgba(119, 201, 255, 0.38);
-  outline-offset: 2px;
-  box-shadow: 0 0 14px rgba(58, 168, 255, 0.22);
+.profile-overlay .field-hint {
+  text-align: left;
 }
 
 .profile-overlay .profile-form,
@@ -272,10 +247,6 @@
     border-bottom: 0;
     border-left: 0;
     border-radius: 0;
-  }
-
-  .profile-overlay .avatar-picker {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 

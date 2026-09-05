@@ -1,13 +1,24 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  USER PROFILE EDIT — Customization
+ *  USER PROFILE EDIT — Arena Identity
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Deep profile customization.
- * - Change Avatar (uses dicebear.com API for avatars)
- * - Update Display Name
- * - Edit Bio / About Me
- * - Manage Player Tags (e.g., "Aggressive", "Grinder")
+ * - Arena handle (profiles.alias - the name the tables call you)
+ * - Bio / about me
+ * - Player tags (e.g. "Aggressive", "Grinder"), up to three
+ *
+ * 2026-09-04: the avatar picker that lived here is gone. It offered six
+ * dicebear.com URLs that the production CSP (img-src) does not allow, so every
+ * choice rendered as a broken image, and the page that opened this dialog
+ * never wrote `avatarUrl` back anyway - a control that showed nothing and
+ * saved nothing. Avatars are library art on `arena_avatar_url`, chosen in the
+ * World Hub avatar studio the profile's "Change Avatar" button opens.
+ *
+ * The name field used to write `profiles.username`. That column carries a
+ * case-insensitive unique index, so a taken name failed with a generic "could
+ * not be saved", and the tables do not even read it first: the arena resolver
+ * (`playerDisplayName`) reads `alias` before `username`. The field is the
+ * alias now, and the caller checks availability before it writes.
  */
 
 import React, { useState, useEffect, useId, useRef } from 'react';
@@ -17,8 +28,8 @@ import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 export interface UserProfileData {
   id: string;
-  username: string;
-  displayName: string;
+  /** Arena handle: profiles.alias. What the felt calls this player. */
+  handle: string;
   avatarUrl: string;
   bio: string;
   tags: string[];
@@ -29,16 +40,21 @@ export interface UserProfileEditProps {
   onClose: () => void;
   initialData: UserProfileData;
   onSave: (data: UserProfileData) => void | Promise<void>;
+  /** Opens the avatar studio; rendered as a real control beside the portrait. */
+  onChangeAvatar?: () => void;
 }
 
-const AVAILABLE_AVATARS = [
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Aneka',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Bob',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Molly',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Jack',
-  'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah',
-];
+export const HANDLE_MIN = 3;
+export const HANDLE_MAX = 16;
+export const HANDLE_PATTERN = /^[A-Za-z0-9_.-]+$/;
+
+export function validateHandle(raw: string): string | null {
+  const value = raw.trim();
+  if (value.length < HANDLE_MIN) return `Handle Needs At Least ${HANDLE_MIN} Characters`;
+  if (value.length > HANDLE_MAX) return `Handle Is Limited To ${HANDLE_MAX} Characters`;
+  if (!HANDLE_PATTERN.test(value)) return 'Letters, Numbers, Dot, Dash And Underscore Only';
+  return null;
+}
 
 const AVAILABLE_TAGS = [
   'Aggressive',
@@ -51,9 +67,14 @@ const AVAILABLE_TAGS = [
   'Nit',
 ];
 
-export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserProfileEditProps) {
+export function UserProfileEdit({
+  isOpen,
+  onClose,
+  initialData,
+  onSave,
+  onChangeAvatar,
+}: UserProfileEditProps) {
   const [formData, setFormData] = useState<UserProfileData>(initialData);
-  const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -71,7 +92,6 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
   useEffect(() => {
     if (isOpen) {
       setFormData(initialDataRef.current);
-      setShowAvatarPicker(false);
       setSaving(false);
       setSaveError('');
       if (mountTimerRef.current) clearTimeout(mountTimerRef.current);
@@ -130,13 +150,19 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    const handle = sanitizeInput(formData.handle).trim();
+    const handleProblem = validateHandle(handle);
+    if (handleProblem) {
+      setSaveError(handleProblem);
+      return;
+    }
     setSaving(true);
     setSaveError('');
     try {
       await onSave({
         ...formData,
-        username: sanitizeInput(formData.username),
-        bio: sanitizeInput(formData.bio),
+        handle,
+        bio: sanitizeInput(formData.bio).trim(),
         tags: formData.tags,
       });
       onClose();
@@ -189,57 +215,52 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
           <div className="avatar-section">
             <div className="current-avatar">
               <img
-                loading="lazy"
                 decoding="async"
-                src={formData.avatarUrl}
-                alt="Avatar"
+                src={formData.avatarUrl || generateDefaultAvatar()}
+                alt="Current Arena Avatar"
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = generateDefaultAvatar();
                 }}
               />
-              <button
-                type="button"
-                className="edit-avatar-btn"
-                onClick={() => setShowAvatarPicker(!showAvatarPicker)}
-                aria-expanded={showAvatarPicker}
-                aria-label="Choose Profile Avatar"
-              >
-                Edit
-              </button>
+              {onChangeAvatar && (
+                <button
+                  type="button"
+                  className="edit-avatar-btn"
+                  onClick={onChangeAvatar}
+                  aria-label="Open The Avatar Studio"
+                >
+                  Studio
+                </button>
+              )}
             </div>
-            {showAvatarPicker && (
-              <div className="avatar-picker">
-                {AVAILABLE_AVATARS.map((url) => (
-                  <button
-                    type="button"
-                    key={url}
-                    className={`avatar-choice ${formData.avatarUrl === url ? 'selected' : ''}`}
-                    aria-label="Select This Avatar"
-                    aria-pressed={formData.avatarUrl === url}
-                    onClick={() => {
-                      setFormData({ ...formData, avatarUrl: url });
-                      setShowAvatarPicker(false);
-                    }}
-                  >
-                    <img loading="lazy" decoding="async" src={url} alt="" />
-                  </button>
-                ))}
-              </div>
-            )}
+            <p className="avatar-note">
+              Arena Avatars Are Library Art, Chosen In The Avatar Studio. Your Social Photo Is Never
+              Shown At The Tables.
+            </p>
           </div>
 
           <form onSubmit={handleSave} className="profile-form">
             <div className="form-group">
-              <label htmlFor={aliasId}>Poker Alias</label>
+              <label htmlFor={aliasId}>Arena Handle</label>
               <input
                 id={aliasId}
-                value={formData.username || ''}
-                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                maxLength={16}
+                value={formData.handle || ''}
+                onChange={(e) => {
+                  setSaveError('');
+                  setFormData({ ...formData, handle: e.target.value });
+                }}
+                minLength={HANDLE_MIN}
+                maxLength={HANDLE_MAX}
+                pattern="[A-Za-z0-9_.\-]+"
                 required
                 autoFocus
                 autoComplete="nickname"
+                spellCheck={false}
+                aria-describedby={`${aliasId}-hint`}
               />
+              <small id={`${aliasId}-hint`} className="field-hint">
+                The Name Every Table Shows. {HANDLE_MIN}-{HANDLE_MAX} Characters, No Spaces.
+              </small>
             </div>
 
             <div className="form-group">

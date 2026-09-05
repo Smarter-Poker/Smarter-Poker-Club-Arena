@@ -34,6 +34,10 @@
  *                           transaction as the two balance updates;
  *   fn_club_bank_claim_back — the same, in the other direction;
  *   fn_promo_wallet_send  — spends only the CALLER's own promo float;
+ *   fn_club_promo_wallet_send — spends the CLUB's promo pot (clubs.promo_balance),
+ *                           Club Bank roles only; which of the two this cashier
+ *                           stands at is promoSourceFor(role) in cashierModes.ts
+ *                           (Dan 2026-09-05, see docs/LAWS.md Resolved conflicts);
  *   fn_club_bank_reverse  — puts the chips back and writes a MATCHING ROW;
  *   fn_mint_chips_from_diamonds — refuses any club that is in a union.
  * Closing this modal with devtools buys nothing.

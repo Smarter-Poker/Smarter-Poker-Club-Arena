@@ -49,6 +49,8 @@ export default function SuperAgentDashboard() {
   const [players, setPlayers] = useState<AgentPlayer[]>([]);
   const [spread, setSpread] = useState<CommissionSpread | null>(null);
   const [loading, setLoading] = useState(true);
+  /* Told apart from "you hold no agency here": see the catch in the loader. */
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const [transferPlayerId, setTransferPlayerId] = useState('');
   const [transferAmount, setTransferAmount] = useState('');
@@ -242,7 +244,14 @@ export default function SuperAgentDashboard() {
       }
     } catch (error) {
       reportError(error, 'SuperAgentDashboard.Failed_to_load_dashboard');
-      if (isMounted.current) toast.error('Failed to load dashboard data');
+      /* A FAILED READ IS NOT A VERDICT ON WHO YOU ARE. `agent` stays null when
+         this throws, and the empty state below renders "You Are Not An Agent
+         In This Club" - an accusation, for what is usually a network blip.
+         The two are separated now. */
+      if (isMounted.current) {
+        setLoadFailed(true);
+        toast.error('Failed to load dashboard data');
+      }
     } finally {
       loadingRef.current = false;
       if (isMounted.current) setLoading(false);
@@ -285,7 +294,11 @@ export default function SuperAgentDashboard() {
       <div className="super-agent-dashboard">
         <div className="empty-state">
           <span className="empty-icon">♠</span>
-          <p>You Are Not An Agent In This Club</p>
+          <p>
+            {loadFailed
+              ? 'Your Agent Details Could Not Be Loaded. This Is Not The Same As Holding No Agency Here.'
+              : 'You Are Not An Agent In This Club'}
+          </p>
           <button className="btn btn-primary" onClick={() => navigate(-1)}>
             Go Back
           </button>

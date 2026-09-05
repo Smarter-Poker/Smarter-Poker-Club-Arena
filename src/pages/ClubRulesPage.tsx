@@ -142,13 +142,18 @@ export default function ClubRulesPage() {
       }
 
       // Rules live in the clubs.settings jsonb (there is no clubs.rules_text column).
-      const { data: club } = await supabase
+      /* THE ERROR IS READ. Without it a failed club read was identical to "this
+         club has published no rules": the page rendered empty (or a stale
+         sessionStorage copy), set no loadError, said nothing, and the owner
+         lost the Edit button at the same time. */
+      const { data: club, error: clubErr } = await supabase
         .from('clubs')
         .select('name, settings, owner_id')
         .eq(clubCol, clubVal)
         .maybeSingle();
 
       if (getIsMounted && !getIsMounted()) return;
+      if (clubErr) throw clubErr;
 
       let adminFromOwner = false;
       if (club) {
@@ -176,7 +181,7 @@ export default function ClubRulesPage() {
       // Check if admin via club_members (only if not already owner)
       if (!adminFromOwner) {
         const resolvedId = await resolveClubUUID(clubId!);
-        const { data: membership } = await supabase
+        const { data: membership, error: membershipErr } = await supabase
           .from('club_members')
           .select('role')
           .eq('club_id', resolvedId)
@@ -184,6 +189,9 @@ export default function ClubRulesPage() {
           .maybeSingle();
 
         if (getIsMounted && !getIsMounted()) return;
+        /* Fails closed either way, but a staff member who is told nothing about
+           why their Edit button vanished will try again and again. */
+        if (membershipErr) reportError(membershipErr, 'ClubRulesPage.role_lookup_failed');
 
         if (isClubStaff(membership?.role)) {
           setIsAdmin(true);

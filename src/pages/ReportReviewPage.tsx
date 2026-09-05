@@ -13,6 +13,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import { useToast } from '../components/common/Toast';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { supabase } from '../lib/supabase';
+import { resolveClubUUIDStrict } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import './ReportReviewPage.css';
@@ -62,8 +63,17 @@ export default function ReportReviewPage() {
       setLoading(true);
       setLoadError(false);
       try {
-        // This SECURITY DEFINER RPC returns only reports the caller may moderate.
-        const { data, error } = await supabase.rpc('fn_list_player_reports', { p_status: filter });
+        /* SCOPED TO THIS CLUB (20260905194441). The RPC returns only reports
+           the caller may moderate - that gate is unchanged - but it took no
+           club argument, so this page pooled every club an operator runs under
+           whichever club header they happened to open, and the three counts
+           above described the pool. `clubId` was previously used only as an
+           `if` gate before this call. */
+        const resolvedForReports = await resolveClubUUIDStrict(clubId!);
+        const { data, error } = await supabase.rpc('fn_list_player_reports', {
+          p_status: filter,
+          p_club_id: resolvedForReports,
+        });
         if (getIsMounted && !getIsMounted()) return;
         if (error) throw error;
         setReports((data as PlayerReport[]) || []);
@@ -77,7 +87,7 @@ export default function ReportReviewPage() {
         if (!getIsMounted || getIsMounted()) setLoading(false);
       }
     },
-    [filter, toast]
+    [filter, toast, clubId]
   );
 
   useEffect(() => {
@@ -175,7 +185,12 @@ export default function ReportReviewPage() {
     );
     setSelectedReport(null);
     setAdminNotes('');
-    toast.success(action === 'actioned' ? 'Player action taken' : 'Report dismissed');
+    /* THE SUCCESS MESSAGE MOVED BELOW THE WRITE (2026-09-05 sweep). It used to
+       fire here, before the RPC had even been issued, so a refusal showed the
+       operator "Player action taken" and then "Failed to update report" - and
+       the first one is the one they act on. The optimistic ROW update above is
+       fine and stays: it is rolled back on the refusal path. A toast cannot be
+       rolled back, so it waits for the answer. */
 
     void Promise.resolve(
       supabase.rpc('fn_action_player_report', {
@@ -192,6 +207,8 @@ export default function ReportReviewPage() {
           setAdminNotes(previousNotes);
           toast.error(result?.error || 'Failed to update report');
           reportError(error || result?.error, 'ReportReviewPage.Failed_to_update_report');
+        } else {
+          toast.success(action === 'actioned' ? 'Player Action Taken' : 'Report Dismissed');
         }
         setProcessing(false);
       })

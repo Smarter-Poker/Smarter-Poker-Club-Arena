@@ -26,6 +26,65 @@ not lost: Log Out scope (global today; local by default with an explicit
 today; 1 hour surfaces a revoked session within the hour); a second engine
 upstream (the standby was collapsed on 2026-08-23 and there is no failover).
 
+## Found during Phase 1: the alert rules on the box are not the ones in this repo
+
+**This is the biggest single finding of the phase and it is not a Phase 1
+deliverable.** Discovered 2026-09-05 03:0x while verifying that the
+ActionLatency rules were live: they were gone, four hours after being loaded
+and confirmed healthy.
+
+- `deploy.sh` symlinks `/opt/smarter-poker-monitoring/alert-rules.yml` to
+  `/opt/smarter-poker-monitoring-src/infra/monitoring/alert-rules.yml`, a
+  clone of this repo. **That directory does not exist on engine-01.**
+- The live file is a plain 24,963-byte file, last written 2026-09-04 21:41,
+  carrying groups (`money-health`, `settlement`) that this repo's
+  `infra/monitoring/alert-rules.yml` does not contain - and missing groups it
+  does contain (`vercel-health`, `action-latency`).
+
+So the two directions both fail: **a rule added to the repo never reaches
+production**, and **a rule added on the box is erased by the next write**.
+Every alert-rule change in this incident - EngineRefusingSessions,
+EngineCannotReachAuth, both ActionLatency rules - was lost this way and had
+to be re-applied by hand.
+
+That is the same shape as the outage that started this programme: a monitor
+that is not what everyone believes it is. Fixing it (one source of truth,
+plus a check that the box's rules match the repo's) is added to **Phase 7 -
+Guardrails**. Until then, an alert rule is not live because it merged; it is
+live when `/api/v1/rules` says so.
+
+## Phase 1 audit (2026-09-05) - what a deep pass found after "done"
+
+Three real defects, all shipped, none of which any test would have caught:
+
+1. **A degraded horse action was invisible.** The horse instrumentation sat
+   ABOVE the check/fold fallback, so a horse whose intended action was
+   rejected still reached the felt through the degrade and was neither counted
+   nor timed. It keys on the same `applied` that `markProgress()` uses now -
+   the one place that already means "this seat acted", whichever of the three
+   attempts landed. The law pins the ordering and is red against the shipped
+   code.
+
+2. **Nine money alerts existed only on the monitoring box.** `settlement` and
+   `money-health` - HandsAreFailingToSettle, NoHandsAreSettling,
+   MoneyAlertsGoingUnread and six more - were in no repository. Since
+   `deploy.sh` SYMLINKS the repo's `alert-rules.yml` over the live one, the
+   first person to run it would have silently deleted every one of them.
+
+3. **The SLO files in this repo said `groups: []`** while `slo-objectives` and
+   `slo-recording` ran 14 healthy rules on the box. Same symlink, same
+   deletion, same silence.
+
+All three groups are recovered into `infra/monitoring/` verbatim, so the repo
+is now a SUPERSET of what is live and a deploy can only ever add. Every one of
+the seven rule files validates against the live Prometheus (73 rules).
+`tests/an-alert-that-is-live-is-in-the-repo.law.test.ts` names all sixteen
+live groups; it found defect 3 by itself, one minute after being written.
+
+This is the same disease as the outage that started the programme - a monitor
+that is not what everyone believes it is - and it is why Phase 7 gets a
+reconciler that compares `/api/v1/rules` against these files continuously.
+
 ## Phase 1 - Measure (2026-09-04)
 
 **Why first.** Every later phase changes how a table behaves under stress,

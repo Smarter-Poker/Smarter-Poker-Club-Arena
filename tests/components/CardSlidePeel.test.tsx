@@ -41,6 +41,8 @@ vi.mock('../../src/services/SoundService', () => ({
 }));
 
 import { SeatSlot, type SeatPlayer } from '../../src/components/table/SeatSlot';
+import { SUIT_COLOR } from '../../src/components/table/CardImage';
+
 import { computePeel } from '../../src/components/table/cardPeel';
 
 const W = 50;
@@ -379,13 +381,28 @@ describe('the markup', () => {
     const idx = Array.from(container.querySelectorAll('.seat__peel-index'));
     expect(idx.length).toBe(2);
     expect(idx[0].querySelector('.seat__peel-index-rank')?.textContent).toBe('A');
-    expect(idx[0].className).toContain('seat__peel-index--black');
     expect(idx[1].querySelector('.seat__peel-index-rank')?.textContent).toBe('K');
-    expect(idx[1].className).toContain('seat__peel-index--red');
+    // The colour comes from the DECK, not from a literal in a stylesheet:
+    // a second set of hex values is a second source of truth, and the first
+    // version of this invented #16a34a for clubs when the deck's club green
+    // is #22c55e (caught by gameplay-wears-the-house-colours). Two-colour
+    // decks paint hearts and diamonds red and everything else black.
+    expect((idx[0] as HTMLElement).style.color).toBe(SUIT_COLOR.s);
+    expect((idx[1] as HTMLElement).style.color).toBe(SUIT_COLOR.h);
     // Inside the face layer (revealed by the peel), never on the cover.
     for (const el of idx) {
       expect(el.closest('.seat__squeeze-face--under')).toBeTruthy();
     }
+  });
+
+  it('takes the four-colour deck club green from the deck itself', () => {
+    const { container } = renderHero({
+      deckStyle: '4color',
+      player: { ...hero, holeCards: [{ rank: '9', suit: 'c' }] },
+    });
+    const idx = container.querySelector('.seat__peel-index') as HTMLElement;
+    expect(idx.style.color).toBe(SUIT_COLOR.c);
+    expect(SUIT_COLOR.c).toBe('#22c55e');
   });
 
   it('spells ten as 10', () => {

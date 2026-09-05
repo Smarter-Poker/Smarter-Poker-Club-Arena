@@ -15,6 +15,7 @@
  *    Removing a link is not hiding a page and hiding a page is not removing the
  *    link; both have to hold, and both have to read the same server answer.
  */
+import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -116,5 +117,49 @@ describe('the union directory is offered only where the server says yes', () => 
     const unionLink = page.indexOf("label: 'Union Network'");
     expect(unionLink).toBeGreaterThan(-1);
     expect(page.slice(Math.max(0, unionLink - 200), unionLink)).toContain('canOperateUnionNetwork');
+  });
+
+  /**
+   * EVERY DOOR, NOT THE ONES SOMEBODY REMEMBERED (2026-09-05).
+   *
+   * The first pass gated the route, the section rail and the Community Center
+   * and called the page hidden. It was not: `config/clubArenaNavigation.ts`
+   * feeds the HAMBURGER MENU, which is on every page in the app, and it went on
+   * listing Unions for everybody. The guard bounced them to /community, so
+   * nothing leaked - but a link that throws you straight back out is exactly
+   * what UnionNetworkGuard's own comment calls worse than no link.
+   *
+   * This sweeps the source for every literal '/unions' destination rather than
+   * naming the ones already known, so the next surface to add one has to gate
+   * it or turn this red.
+   */
+  it('leaves no ungated /unions destination anywhere in the app', () => {
+    const offenders: string[] = [];
+    const files = execSync('git ls-files "src/*.ts" "src/*.tsx" "src/**/*.ts" "src/**/*.tsx"', {
+      cwd: ROOT,
+      encoding: 'utf8',
+    })
+      .split('\n')
+      .filter(Boolean);
+
+    for (const file of files) {
+      // Dead code cannot offer anything; nothing imports Shell.tsx.
+      if (file.endsWith('src/components/Shell.tsx')) continue;
+      const source = readFileSync(join(ROOT, file), 'utf8');
+      const hits = [...source.matchAll(/(?:to=|path:\s*|navigate\()['"`]\/unions['"`]/g)];
+      for (const hit of hits) {
+        // A <Navigate> is a redirect target for an already-refused page, not an
+        // offer of one.
+        if (/<Navigate[^>]*$/.test(source.slice(Math.max(0, hit.index! - 60), hit.index!)))
+          continue;
+        const window = source.slice(Math.max(0, hit.index! - 400), hit.index!);
+        if (!window.includes('canOperateUnionNetwork')) offenders.push(`${file}: ${hit[0]}`);
+      }
+    }
+
+    expect(
+      offenders,
+      'these offer /unions without asking fn_can_i_operate_the_union_network first'
+    ).toEqual([]);
   });
 });

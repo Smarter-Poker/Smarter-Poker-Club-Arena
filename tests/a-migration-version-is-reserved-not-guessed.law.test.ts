@@ -33,13 +33,14 @@
  * Registry: docs/laws.d/a-migration-version-is-reserved-not-guessed.md
  */
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import {
   accessSync,
   constants,
   mkdirSync,
   readFileSync,
+  readdirSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -49,6 +50,9 @@ import { resolve } from 'node:path';
 const ROOT = resolve(__dirname, '..');
 const SCRIPT = resolve(ROOT, 'scripts/reserve-migration-version.sh');
 const MIG_DIR = resolve(ROOT, 'supabase/migrations');
+/** The fixture names this file creates. Matched by .gitignore too. */
+const DEBRIS =
+  /_(squatter_holding_this_second|the_first_agent_reserves_a_name|the_second_agent_reserves_a_name|a_second_agent_wants_the_same_second)\.sql$/;
 
 const created: string[] = [];
 
@@ -104,6 +108,21 @@ describe('a migration version is reserved, not guessed', () => {
       expect(readFileSync(abs, 'utf8')).toMatch(/CLAUDE\.md 10\.9/);
     }
   );
+
+  /* SWEEP WHAT AN INTERRUPTED RUN LEFT BEHIND (2026-09-05).
+     The squatters below are removed in a `finally`, which a killed process
+     never reaches - and the next `git add -A` commits them. 197 reached main
+     that way through three separate pull requests, and one took the exact
+     version another agent's real migration had reserved: CI went red for work
+     that was correct when it was written, and Supabase would have skipped one
+     of the two files silently. They are in .gitignore now; this makes a tree
+     that already has them heal itself rather than carrying them forever. */
+  beforeEach(() => {
+    mkdirSync(MIG_DIR, { recursive: true });
+    for (const file of readdirSync(MIG_DIR)) {
+      if (DEBRIS.test(file)) rmSync(resolve(MIG_DIR, file), { force: true });
+    }
+  });
 
   it('never hands out a version this tree already holds', { timeout: 30_000 }, () => {
     // Squat every second in a two-minute band around now, so whatever the

@@ -961,7 +961,12 @@ export default function UnionDashboardPage() {
             tone="permission"
             title="No Union Workspace Is Available"
             description="Union Treasury, Clubs, Agents, And Settlement Controls Are Available Only To A Union Owner Or Appointed Administrator."
-            action={{ label: 'Browse Unions', onClick: () => navigate('/unions') }}
+            /* Not /unions. This empty state exists BECAUSE the person was
+               refused a union workspace, and since 2026-09-05 the directory is
+               allowlisted too - so the old CTA offered a refused person a
+               second refusal. /community is the section both live under, and an
+               allowlisted operator still finds the Unions card there. */
+            action={{ label: 'Back To Community', onClick: () => navigate('/community') }}
             secondaryAction={{ label: 'Return To Arena', onClick: () => navigate('/') }}
           />
         ) : (

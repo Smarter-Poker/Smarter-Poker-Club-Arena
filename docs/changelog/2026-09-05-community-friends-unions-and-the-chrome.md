@@ -188,6 +188,50 @@ own. A number from the wrong table is worse than no number.
 
 ---
 
+## What the verification pass found afterwards
+
+Everything above was written before checking that the branch was actually
+green. It was not, and the pass turned up four things worth recording.
+
+**The union page was not hidden.** The route, the section rail and the
+Community Center card were gated; `config/clubArenaNavigation.ts` was not, and
+it feeds the HAMBURGER MENU on every page in the app. The guard bounced anyone
+who clicked, so nothing leaked - but a link that throws you straight back out
+is what UnionNetworkGuard's own comment calls worse than no link. Two
+permission-gate empty states (`UnionDashboardPage`, `UnionDetailPage`) also
+offered "Browse Unions" to people who had just been refused a union workspace;
+both now go to /community. The law no longer names the surfaces it checks - it
+sweeps every `/unions` destination in `src`, so the next one has to be gated or
+turn it red.
+
+**The footer's E2E contract required the distortion.**
+`tests/e2e/footer-visual-regression.spec.ts` asserted the artwork overhangs
+both viewport edges at all seven viewports, which is only meaningful while the
+frame is full-bleed - and it pasted `clamp(44px, 13.72vw, 132px)` into its own
+`:root`, so it had been asserting a constant the app no longer used and could
+never have noticed. Rewritten around the thing a visual regression test should
+guard: the drawn frame must match the asset's 8.113:1 within 1%, full-bleed
+below the ceiling and centred above it. It now reads the constant from
+`globals.css` instead of restating it. Verified by reverting the CSS locally:
+the new assertion fails with "frame distorted at 320px: drawn 7.273:1 against
+the asset's 8.113:1".
+
+**197 test-fixture migrations were sitting on main.**
+`a-migration-version-is-reserved-not-guessed.law.test.ts` writes real files
+into `supabase/migrations/` - the only way the reservation script can see those
+seconds as taken - and removes them in a `finally` an interrupted run never
+reaches. Three separate pull requests had committed the leftovers with
+`git add -A`, and one of them held `20260905070223`, the exact version this
+branch's own migration had reserved. That is what turned CI red here. None was
+ever applied (`schema_migrations` has zero), so deleting them changes nothing
+in the database. They are gone, `.gitignore` now refuses them, and the test
+sweeps stale ones before it runs - proven by leaving 121 behind on purpose and
+watching the next run clear them.
+
+**The Title Case guard caught a split word.** The plural fix had been written
+as `{n} Relationship{n === 1 ? ' Needs' : 's Need'}`, which paints a fragment
+starting lower-case. Each branch is a whole phrase now.
+
 ## Still open
 
 `/friends` still fetches every friendship and every profile before it renders,

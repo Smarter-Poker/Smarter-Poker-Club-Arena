@@ -184,6 +184,64 @@ not to any VIP column. Its thresholds also disagreed with
 15,000, diamond at 100,000 vs 50,000, and no `royal` at all. A dead ladder left
 in a service file is how the next agent revives one.
 
+## Verification pass: the pins were green and the helpers were unreachable (2026-09-05)
+
+PR #3077 merged (squash `c685464f5`) and PR #3124 merged (`e73856439`);
+production serves `7a6580eff`, which contains both. A post-merge audit of every
+export this work added asked one question per symbol - "does a player-reachable
+surface call this?" - and five answered no:
+
+| symbol                 | only caller was | what shipped instead                           |
+| ---------------------- | --------------- | ---------------------------------------------- |
+| `formatMemberSince`    | this test file  | two hand-rolled `toLocaleDateString` calls     |
+| `formatSignedPct`      | this test file  | `signed(fixedTrunc(roi, 1))` on the credential |
+| `formatHours`          | this test file  | `fixedTrunc(hoursPlayed, 1)`                   |
+| `formatRatio`          | nothing at all  | `signed(fixedTrunc(...))`                      |
+| `daysToNextStreakStep` | this test file  | nothing; no countdown was ever rendered        |
+
+The cause was the #3041 reconciliation: their `ProfilePage` became the base and
+only non-overlapping work was layered on, so the page kept its private
+`fixedTrunc` / `signed` / inline date while the shared helpers - and their 24
+pins - came along beside it. Nothing was red, because every pin tested the
+helper directly. **A pin on an unreachable helper reports coverage for code no
+player can execute**, which is why this went unnoticed through two merges.
+
+Three of the five were live defects, not just duplication:
+
+1. **The same join date rendered two ways.** The owner's credential used
+   `{ month: 'short', year: '2-digit' }` and the public dossier used
+   `{ month: 'long', year: 'numeric' }`, so one player's profile read
+   **"Oct 25"** to themselves and **"October 2025"** to everyone else. "Oct 25"
+   is also ambiguous - it reads as a day of the month. All 1,310 players.
+2. **Neither guarded null.** `new Date(null)` is the epoch, so a profile with
+   no `created_at` would have printed **"Dec 69"**. Measured: 0 of 1,310 rows
+   are null today, so this was latent, not live - but it is CLAUDE.md section 5
+   rule 2, and `formatMemberSince` already returned "Unknown".
+3. **A short session read as none.** `fixedTrunc(0.03, 1)` prints "0.0" under a
+   "Hours" label. Two minutes on the felt looked like zero. `formatHours`
+   carries its own unit, so the tile is "1m" now, and "On Felt" is the label.
+
+Fixed by wiring, not by rewriting: both surfaces call `formatMemberSince`, the
+credential's ROI calls `formatSignedPct`, and the felt tile calls `formatHours`.
+`formatRatio` and `daysToNextStreakStep` are DELETED with their pins - every
+ratio on this page needs a leading sign that `formatRatio` never added, and the
+countdown had no surface. `STREAK_MULTIPLIER_STEPS` is module-local now.
+
+The pin that stops the shape returning is in `profileCredential.test.ts`: every
+formatter this file asserts must be imported AND called by one of the three
+real surfaces (`ProfilePage`, `PublicProfilePage`, `ProfitChart`). It caught an
+error in its own first draft - `formatSignedChips` is called by the chart, not
+by either page - which is exactly the reachability question it exists to ask.
+
+Full-suite state on the deployed tree: **1,005 of 1,006 test files pass.** The
+one failure is `the-media-optimizer-remembers-and-is-idempotent.law.test.ts`,
+which cannot resolve `sharp`: it is a declared devDependency (`^0.34.5`, section
+1.1.6) that is absent from this machine's shared `node_modules`. This branch
+touches nothing that test covers, and CI installs with `npm ci`.
+
+The leak ratchet is tightened 252 -> **243**, its measured value on current
+main, so the nine that main's own rewrites removed cannot silently come back.
+
 ## What is left
 
 - Set the portrait INTO #3041's credential plate ring and the dossier folio

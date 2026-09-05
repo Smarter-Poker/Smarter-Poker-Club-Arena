@@ -54,9 +54,27 @@
  *
  * What a VIP gets is now exactly what the server meters: 100 rabbit hunts
  * (fn_consume_rabbit_hunt), 120 time-bank seconds (fn_time_bank_allowance),
- * 1,200 emojis and 1,000 tags (fn_increment_vip_usage), and three per-use
- * charges waived. VIP points remain real - 1,005 holders, 5.1M ledger rows -
- * they are simply not a tier.
+ * 1,200 emojis and 1,000 tags (fn_increment_vip_usage), 500 throwables
+ * (fn_use_throwable), and three per-use charges waived. VIP points remain real
+ * - 1,005 holders, 5.1M ledger rows - they are simply not a tier.
+ *
+ * ───────────────────────────────────────────────────────────────────────────
+ * AND THE OTHER HALF OF THE LAW: AN EMPTY COLUMN IS NOT AN ABSENT FEATURE
+ *
+ * The 2026-09-05 sweep above cut "500 Free Throws Per Month" along with the
+ * ladder, on the strength of `feature_pricing.throwable.vip_tiers_included`
+ * being an empty array. That column is read by NOTHING - no function, no view,
+ * no client code. The enforcement was `fn_use_throwable` the whole time:
+ *
+ *     v_free constant integer := 500;  -- VIP free throws per calendar month
+ *
+ * counted against `throw_usage`, charging 1 diamond only from the 501st, with
+ * 95 throws by 5 players on the board and every one of them free. A true
+ * benefit was taken off the page for half a day.
+ *
+ * So this law now pins BOTH directions. Nothing may advertise what the server
+ * does not do, AND the five metered allowances may not quietly shrink: if a
+ * benefit is removed, the function that enforced it has to be gone too.
  */
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
@@ -161,6 +179,26 @@ describe('there is no tier ladder, and no rung of one survives', () => {
     for (const unbacked of ['leaderboardBoost', 'clubCreation']) {
       expect(VIP_SERVICE, `${unbacked} is back`).not.toContain(unbacked);
     }
+  });
+
+  it('and it keeps ALL FIVE of them - a real benefit may not go quiet', () => {
+    /* The other direction, added the day a true one was removed by mistake.
+       Each name below has a function behind it; if you are deleting one, the
+       enforcement has to be gone first. */
+    for (const [allowance, enforcedBy] of [
+      ['rabbitHunts', 'fn_consume_rabbit_hunt'],
+      ['timeBankSeconds', 'fn_time_bank_allowance'],
+      ['emojis', 'fn_increment_vip_usage under emoji_pack'],
+      ['tags', 'fn_increment_vip_usage under tag_pack'],
+      ['throwables', 'fn_use_throwable, 500 a month against throw_usage'],
+    ] as const) {
+      expect(VIP_SERVICE, `${allowance} is gone, but ${enforcedBy} still pays it`).toContain(
+        `${allowance}:`
+      );
+    }
+    // It is metered on the plate, not merely declared in the constant.
+    const plate = strip(read('src/components/vip/VIPMembershipPlate.tsx'));
+    expect(plate).toContain('limits.throwables.used');
   });
 
   it('nothing promises an unlimited allowance', () => {

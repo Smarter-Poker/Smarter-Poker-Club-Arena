@@ -376,6 +376,131 @@ export function wantsTableChange(
   return roll < base * restless;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// THE SEAT CHANGE IS A BUTTON EVERY PLAYER HAS (CLAUDE.md 10.5, 2026-09-05)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// The must-move lobby gave every player on a feeder table a SEAT CHANGE they
+// may use once per stay in a game (`fn_cash_seat_change_request`). Horses got
+// the button drawn for nobody: the door read `auth.uid()`, the engine has
+// none, and so a feature a human gets was denied to a horse by construction.
+// That is exactly what 10.5 forbids, and on a floor where the feeders are
+// nearly all horses it is also visible - a lobby whose seat-change queue is
+// permanently empty says which seats are which.
+//
+// This is the DECISION half: when would a player ask? The request itself goes
+// through the same RPC the client calls (services/supabase/seatChange.ts), and
+// the once-per-stay budget is the database's `cash_game_roster.seat_change_
+// used_at` - the same row a human spends - so nothing here can hand a horse a
+// second change.
+//
+// The shape follows `wantsTableChange` above, because it is the same instinct
+// one step short of leaving: a player who does not like this table asks to be
+// moved before they give up on the game entirely.
+
+/**
+ * Nobody asks for a seat change in the first half hour.
+ *
+ * `wantsTableChange` waits 12 minutes before a player walks out of a game, and
+ * this waits longer on purpose: asking the floor to move you is a considered
+ * request about THIS table, and a player who does it ten minutes after sitting
+ * down reads as a script rather than as somebody who has watched a few orbits.
+ * It is also past MIN_SESSION_MINUTES (20) in HorseSessionRotator, so a horse
+ * that will not be around long enough to enjoy the new seat never asks.
+ */
+export const SEAT_CHANGE_MIN_MINUTES = 25;
+
+/** Everything the decision needs. Pure data: no clients, no queries. */
+export interface SeatChangeSituation {
+  horseId: string;
+  tableId: string;
+  /** The must-move game this table belongs to; null when it is not in one. */
+  gameId: string | null;
+  /** `tables.role` - 'feeder' or 'main'. */
+  role: string | null;
+  /** `tables.main_index` - 1 is the main game, which has no seat change. */
+  mainIndex: number | null;
+  /** `tables.lifecycle` - a 'breaking' table is already moving everyone. */
+  lifecycle: string | null;
+  seatedCount: number;
+  minutesAtTable: number;
+  /** How many OTHER tables of this game a change could go to (never Main 1). */
+  otherTables: number;
+  /**
+   * This horse is on its way out - leaving, on a short break, already being
+   * moved, or sat at a table that is draining. A player halfway out of the
+   * door does not ask the floor to reseat them.
+   */
+  leaving: boolean;
+  /** The once-per-stay change is already spent, listed, or was refused once. */
+  changeUsed: boolean;
+  nowMs?: number;
+}
+
+export type SeatChangeVerdict =
+  | 'ask'
+  | 'not_in_game'
+  | 'main_one'
+  | 'table_closing'
+  | 'no_other_table'
+  | 'too_new'
+  | 'leaving'
+  | 'used'
+  | 'not_this_cycle';
+
+/**
+ * Would this horse ask for a seat change right now, and if not, why not?
+ *
+ * A VERDICT rather than a boolean because every refusal below is one the
+ * database would also give (`SEAT_CHANGE_NOT_FROM_MAIN`,
+ * `SEAT_CHANGE_TABLE_CLOSING`, `SEAT_CHANGE_NO_OTHER_TABLE`,
+ * `SEAT_CHANGE_USED`), and a caller that can name the reason can decline
+ * BEFORE spending a round trip on a refusal it could have predicted. Horses
+ * are refused for the same reasons humans are; they simply do not need to be
+ * told twice.
+ *
+ * The order matters: the structural refusals come first, so a horse on Main 1
+ * reads 'main_one' rather than 'too_new' and the caller's log says something
+ * true.
+ */
+export function seatChangeVerdict(s: SeatChangeSituation): SeatChangeVerdict {
+  if (!s.gameId) return 'not_in_game';
+  if (s.role === 'main' && s.mainIndex === 1) return 'main_one';
+  if (s.lifecycle === 'breaking' || s.lifecycle === 'closed') return 'table_closing';
+  if (s.otherTables <= 0) return 'no_other_table';
+  if (s.changeUsed) return 'used';
+  if (s.leaving) return 'leaving';
+  if (s.minutesAtTable < SEAT_CHANGE_MIN_MINUTES) return 'too_new';
+
+  /* THE RATE LIMIT. Deterministic in (horse, table, minute) exactly like
+     wantsTableChange, so two passes inside the same minute cannot roll twice
+     and a restart cannot re-roll a horse into asking immediately.
+
+     A short-handed feeder is where a real player asks to be moved - the game
+     is dying and the other table is not - so the base rises as the table
+     empties. At a full table it is rare, because a full table is the game
+     they wanted.
+
+     Per 90-second cycle, over the ~35 eligible cycles of an average session:
+     roughly 6% of horses on a full feeder ask, 18% on a middling one, 33% on
+     a short-handed one. A minority, which is what the human number looks
+     like - most players never touch the button. */
+  const base = s.seatedCount <= 3 ? 0.012 : s.seatedCount <= 5 ? 0.006 : 0.002;
+  /* The same restlessness trait `wantsTableChange` reads, and deliberately
+     the same one rather than an independent salt: a player who fancies a
+     change of table is the player who asks for a change of seat. */
+  const restless = 0.5 + ((horseHash(s.horseId) >>> 9) % 1000) / 1000;
+  const minute = Math.floor((s.nowMs ?? Date.now()) / 60_000);
+  const h = horseHash(`${s.horseId}:${s.tableId}:seatchange:${minute}`);
+  const roll = (h % 10_000) / 10_000;
+  return roll < base * restless ? 'ask' : 'not_this_cycle';
+}
+
+/** The boolean form, for a caller that does not care why not. */
+export function wantsSeatChange(s: SeatChangeSituation): boolean {
+  return seatChangeVerdict(s) === 'ask';
+}
+
 /**
  * `tables.settings.retire_when_empty` - the row is being wound down: nobody is
  * seated there any more and every horse on it is walked out. Set by the

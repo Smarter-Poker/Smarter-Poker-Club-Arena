@@ -34,13 +34,33 @@
  *
  *   X            close it now. Nothing is written. The message is still the
  *                club's current message, so it greets them again next visit -
- *                that is what a day's message is for.
+ *                that is what a day's message is for. A tap beside the card is
+ *                the same promise by a different gesture.
  *   Do Not Show  writes the dismissal. Silent until staff write a NEW message,
  *                at which point the club has something else to say and says it.
  *
  * Collapsing those two into one control was the tempting simplification and it
  * would have been wrong: an X that silences a club forever is a trap, and a
  * greeting with no quick way out is an obstacle.
+ *
+ * ONE RULE, ONE DOOR (Dan, 2026-09-04): "THE CLUB MESSAGE DOESN'T POP UP AT
+ * ALL NOW... FIX IT AT ITS CORE. THEN FIX IT SO IT ACTUALLY WORKS, NEVER
+ * BLOCKS ENTIRE PAGES, AND CAN BE MANAGED FROM THE TABLE MANEGEMENT PAGE BY
+ * CLUB OR UNION OWNERS."
+ *
+ * The popup went silent because the server's should_show had been tied to a
+ * column only some writers maintained. That rule now lives in one place
+ * (migration 20260905000730: a trigger on clubs, one predicate for who may
+ * write). Two things changed HERE as a result:
+ *
+ *   can_manage     the reply now says whether THIS person may write the
+ *                  message - the club's owner or staff, or an overseer of the
+ *                  club's union. The lobby page cannot tell a union owner from
+ *                  a player on its own, so the server's word is what offers
+ *                  the editor, alongside the page's own role read.
+ *   closeOnOverlay a backdrop that swallows taps is the piece of "blocks the
+ *                  page" that a small card does not fix by being small.
+ *                  Tapping beside the card closes it and writes nothing.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -71,12 +91,14 @@ export interface ClubEntryMessageProps {
 interface EntryMessageState {
   message: string;
   revision: number;
+  /** The server's answer to "may this person write it", union ownership included. */
+  canManage: boolean;
 }
 
 export default function ClubEntryMessage({
   clubId,
   clubName,
-  canEdit,
+  canEdit: canEditByRole,
   onMessageSaved,
   onOpenAnnouncements,
   onToast,
@@ -108,11 +130,16 @@ export default function ClubEntryMessage({
           message?: string | null;
           revision?: number | null;
           should_show?: boolean;
+          can_manage?: boolean;
         };
         if (!result.ok || !result.should_show) return;
         const text = result.message?.trim();
         if (!text) return;
-        setEntry({ message: text, revision: Number(result.revision ?? 0) });
+        setEntry({
+          message: text,
+          revision: Number(result.revision ?? 0),
+          canManage: result.can_manage === true,
+        });
         setOpen(true);
       } catch (e) {
         /* The greeting is the least important thing on this page. A failed
@@ -182,7 +209,7 @@ export default function ClubEntryMessage({
         setOpen(false);
         return;
       }
-      setEntry({ message: saved, revision: Number(result.revision ?? 0) });
+      setEntry({ message: saved, revision: Number(result.revision ?? 0), canManage: true });
       setEditing(false);
     } catch (e) {
       reportError(e, 'ClubEntryMessage.save');
@@ -194,13 +221,21 @@ export default function ClubEntryMessage({
 
   if (!entry) return null;
 
+  /* The page's role read OR the server's word. The page knows club staff; only
+     the server knows the union that oversees this club. */
+  const canEdit = canEditByRole || entry.canManage;
+
   return (
     <Modal
       isOpen={open}
       onClose={close}
+      /* Still the `fullscreen` size class: ClubEntryMessage.css keys the
+         contained 480px card to it and theGreetingFillsThePanel pins that. */
       size="fullscreen"
       showCloseButton={false}
-      closeOnOverlay={false}
+      /* Tapping beside the card closes it and writes nothing - the same
+         promise the X makes. A backdrop that swallows taps is a wall. */
+      closeOnOverlay
       className="club-entry-message-modal"
       ariaLabel={`Club Message From ${clubName}`}
     >

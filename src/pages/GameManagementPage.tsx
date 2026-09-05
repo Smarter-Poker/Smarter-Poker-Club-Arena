@@ -596,6 +596,21 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const requestedGameType =
     requestedCreate === 'table' && isCreateTableGameType(gameParam) ? gameParam : null;
   const [allowed, setAllowed] = useState<boolean | null>(null);
+  /*
+    THE CLUB MESSAGE HAS ITS OWN KEY (Dan, 2026-09-04): "[the club message]
+    CAN BE MANAGED FROM THE TABLE MANEGEMENT PAGE BY CLUB OR UNION OWNERS."
+
+    `allowed` answers for the GAMES, and on a member club the answer is no:
+    games are run from the union console, and that stays. The club MESSAGE is
+    not a game. Its rule is the server's fn_can_manage_club_message - the club's
+    owner or staff, or the union that oversees the club - so this page asks
+    that question separately and opens ONLY the Club Messages section on it.
+
+    No host switching is involved (the law from the same day). A union owner
+    who wants to write a member club's message opens that club's own page and
+    finds the message section open and the game board locked.
+  */
+  const [messagesAllowed, setMessagesAllowed] = useState<boolean | null>(null);
   const [scopeId, setScopeId] = useState<string | null>(null);
   const [scopeName, setScopeName] = useState(scope === 'union' ? 'Union' : 'Club');
   const [hosts, setHosts] = useState<HostClub[]>([]);
@@ -716,6 +731,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       if (routeChanged) {
         loadedRouteRef.current = routeKey;
         setAllowed(null);
+        setMessagesAllowed(null);
         setScopeId(null);
         setHosts([]);
         setHostClubId('');
@@ -745,21 +761,36 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         let nextMemberNames: Record<string, string> = {};
         if (scope === 'club') {
           resolvedScopeId = await resolveClubUUID(clubId || '');
-          const [access, clubResult] = await Promise.all([
+          const [access, clubResult, messageAccess] = await Promise.all([
             fetchGameCreationAccess(resolvedScopeId),
             supabase.from('clubs').select('id,name').eq('id', resolvedScopeId).maybeSingle(),
+            supabase.rpc('fn_can_manage_club_message_uid', { p_club_id: resolvedScopeId }),
           ]);
           if (!isCurrent()) return;
           // A member club is operated from its union console, even for a union
           // owner who technically has authority over the underlying rows.
           const standaloneAccess = access.allowed && !access.unionId;
+          /* The message answers to its own key. A failed read is a locked
+             section, never an open one. */
+          const canWriteMessage = !messageAccess.error && messageAccess.data === true;
           setAllowed(standaloneAccess);
+          setMessagesAllowed(canWriteMessage);
           if (!standaloneAccess) {
             setScopeId(resolvedScopeId);
-            setHosts([]);
             setGames([]);
             setHealth(null);
             setSurfaceDirty(false);
+            if (canWriteMessage && clubResult.data) {
+              /* Games locked, message open. The page renders with the Club
+                 Messages section and the game sections disabled beside it. The
+                 host is the club you opened - never chosen, never switched. */
+              setScopeName(clubResult.data.name);
+              setHosts([{ id: resolvedScopeId, name: clubResult.data.name }]);
+              setHostClubId(resolvedScopeId);
+              setSurface('messages');
+            } else {
+              setHosts([]);
+            }
             setLoading(false);
             return;
           }
@@ -774,6 +805,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           const canManage = await unionService.isUnionAdmin(unionId, user.id);
           if (!isCurrent()) return;
           setAllowed(canManage);
+          // On the union console the union's own house message is managed by
+          // the same people who run its games.
+          setMessagesAllowed(canManage);
           if (!canManage) {
             setScopeId(unionId);
             setHosts([]);
@@ -1232,6 +1266,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
 
   const changeSurface = async (nextSurface: ManagementSurface) => {
     if (nextSurface === surface) return;
+    // A member club's game sections are the union's. The buttons are disabled;
+    // this is the same rule for a keyboard or a stale click.
+    if (allowed === false && nextSurface !== 'messages') return;
     if (
       surfaceDirty &&
       !(await confirmDialog({
@@ -1297,7 +1334,10 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     );
   }
 
-  if (allowed === false) {
+  /* Locked only when NEITHER the games nor the message are this person's. A
+     member club's own staff, and its union's overseers, get the page with the
+     game sections disabled and the Club Messages section open. */
+  if (allowed === false && !messagesAllowed) {
     return (
       <main className={styles.page}>
         <section className={styles.denied}>
@@ -1325,74 +1365,88 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       <header className={styles.commandHeader}>
         <div className={styles.heroCopy}>
           <span className={styles.eyebrow}>
-            {scope === 'union' ? 'Union Command' : 'Standalone Club Command'}
+            {scope === 'union'
+              ? 'Union Command'
+              : allowed
+                ? 'Standalone Club Command'
+                : 'Union Member Club'}
           </span>
           <h1>Table Management</h1>
-          <p>{scopeName} · One Governed Command Surface For Games, Ticker, And Club Messages.</p>
-          <span className={styles.safetyLine}>Live Contract · Occupied Games Stay Locked</span>
+          <p>
+            {allowed
+              ? `${scopeName} · One Governed Command Surface For Games, Ticker, And Club Messages.`
+              : `${scopeName} · Games Run From The Union Console · Club Message Managed Here.`}
+          </p>
+          <span className={styles.safetyLine}>
+            {allowed
+              ? 'Live Contract · Occupied Games Stay Locked'
+              : 'Club Or Union Owners May Write The Club Message'}
+          </span>
         </div>
-        <div className={styles.headerRight}>
-          <div className={styles.countRail}>
-            <span
-              className={realtimeStatus === 'live' ? styles.healthGood : styles.healthWarn}
-              role="status"
-              aria-live="polite"
-            >
-              <strong>{realtimeStatus === 'live' ? 'Live' : 'Recovering'}</strong> Realtime
-            </span>
-            <span>
-              <strong>{liveCount}</strong> Live
-            </span>
-            <span>
-              <strong>{scheduledCount}</strong> Scheduled
-            </span>
-            <span
-              title={
-                archivedBeyondHorizon
-                  ? `${archivedBeyondHorizon} More Closed Games Are Older Than The ${counts.closedHorizonDays}-Day Board Horizon And Are Not Listed`
-                  : countsAreKnown
-                    ? 'Every Game In This Scope Is On The Board'
-                    : undefined
-              }
-            >
-              <strong>{reachableTotal}</strong> Total
-            </span>
-          </div>
-          <div className={styles.healthRail} aria-label="Management Health">
-            {/*
+        {allowed && (
+          <div className={styles.headerRight}>
+            <div className={styles.countRail}>
+              <span
+                className={realtimeStatus === 'live' ? styles.healthGood : styles.healthWarn}
+                role="status"
+                aria-live="polite"
+              >
+                <strong>{realtimeStatus === 'live' ? 'Live' : 'Recovering'}</strong> Realtime
+              </span>
+              <span>
+                <strong>{liveCount}</strong> Live
+              </span>
+              <span>
+                <strong>{scheduledCount}</strong> Scheduled
+              </span>
+              <span
+                title={
+                  archivedBeyondHorizon
+                    ? `${archivedBeyondHorizon} More Closed Games Are Older Than The ${counts.closedHorizonDays}-Day Board Horizon And Are Not Listed`
+                    : countsAreKnown
+                      ? 'Every Game In This Scope Is On The Board'
+                      : undefined
+                }
+              >
+                <strong>{reachableTotal}</strong> Total
+              </span>
+            </div>
+            <div className={styles.healthRail} aria-label="Management Health">
+              {/*
               A health read that FAILED must not render as zeros. `?? 0` used to
               paint "0 Integrity Alerts" whether the answer was zero or whether
               nobody could be asked - and the operator has no way to tell those
               apart. Health is telemetry, so a failed read still never blocks the
               board; it just says so instead of impersonating an all-clear.
             */}
-            {healthFailed ? (
-              <span className={styles.healthAlert}>Management Health Unavailable</span>
-            ) : health === null ? (
-              /* Still in flight. Not an alarm, and not a row of zeros either. */
-              <span>Reading Management Health</span>
-            ) : (
-              <>
-                <span>{health.commandsLast24h} Commands / 24h</span>
-                <span>{health.rejectedLast24h} Rejected</span>
-                <span className={health.integrityAlerts ? styles.healthAlert : undefined}>
-                  {health.integrityAlerts} Integrity Alerts
-                </span>
-                <span>{health.scheduledPending} Pending Schedules</span>
-                <span className={health.scheduledRejected24h ? styles.healthAlert : undefined}>
-                  {health.scheduledRejected24h} Schedule Rejects
-                </span>
-                <span title={formatEventClock(health.lastEventAt)}>
-                  {health.eventsLastHour} Events / Hour
-                </span>
-                <span title={`${health.retentionDays}-Day Realtime Retention`}>
-                  {health.eventRows} Realtime Events
-                </span>
-              </>
-            )}
+              {healthFailed ? (
+                <span className={styles.healthAlert}>Management Health Unavailable</span>
+              ) : health === null ? (
+                /* Still in flight. Not an alarm, and not a row of zeros either. */
+                <span>Reading Management Health</span>
+              ) : (
+                <>
+                  <span>{health.commandsLast24h} Commands / 24h</span>
+                  <span>{health.rejectedLast24h} Rejected</span>
+                  <span className={health.integrityAlerts ? styles.healthAlert : undefined}>
+                    {health.integrityAlerts} Integrity Alerts
+                  </span>
+                  <span>{health.scheduledPending} Pending Schedules</span>
+                  <span className={health.scheduledRejected24h ? styles.healthAlert : undefined}>
+                    {health.scheduledRejected24h} Schedule Rejects
+                  </span>
+                  <span title={formatEventClock(health.lastEventAt)}>
+                    {health.eventsLastHour} Events / Hour
+                  </span>
+                  <span title={`${health.retentionDays}-Day Realtime Retention`}>
+                    {health.eventRows} Realtime Events
+                  </span>
+                </>
+              )}
+            </div>
+            <GameCreationActions managementPath={managementPath} />
           </div>
-          <GameCreationActions managementPath={managementPath} />
-        </div>
+        )}
       </header>
 
       <nav className={styles.surfaceNav} aria-label="Management Sections">
@@ -1409,8 +1463,13 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
             className={surface === key ? styles.surfaceActive : ''}
             aria-current={surface === key ? 'page' : undefined}
             onClick={() => void changeSurface(key)}
+            disabled={allowed === false && key !== 'messages'}
             title={
-              surfaceDirty && surface !== key ? 'Unsaved Changes Will Need Confirmation' : undefined
+              allowed === false && key !== 'messages'
+                ? 'Games On A Member Club Are Run From Its Union Console'
+                : surfaceDirty && surface !== key
+                  ? 'Unsaved Changes Will Need Confirmation'
+                  : undefined
             }
           >
             <span>0{index + 1}</span>
@@ -1749,7 +1808,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         <TickerManagementPanel scope={scope} scopeId={scopeId} onDirtyChange={setSurfaceDirty} />
       )}
 
-      {surface === 'messages' && allowed && hostClubId && (
+      {surface === 'messages' && messagesAllowed && hostClubId && (
         <ClubMessageManagementPanel
           clubId={hostClubId}
           clubName={hosts.find((host) => host.id === hostClubId)?.name || scopeName}

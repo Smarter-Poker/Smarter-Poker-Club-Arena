@@ -121,6 +121,20 @@ describe('the club message meets you at the door', () => {
     expect(mocks.dismissCalls, 'the X must never write a dismissal').toEqual([]);
   });
 
+  /**
+   * A tap beside the card is the X by another gesture (Dan, 2026-09-04:
+   * "NEVER BLOCKS ENTIRE PAGES"). It closes, and it writes nothing.
+   */
+  it('closes on a tap beside the card without silencing the club', async () => {
+    renderGreeting();
+    await screen.findByText(SHOWING.message);
+    const overlay = document.querySelector('.modal-overlay') as HTMLElement | null;
+    expect(overlay, 'the backdrop must exist').not.toBeNull();
+    await act(async () => overlay!.click());
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(mocks.dismissCalls, 'a backdrop tap must never write a dismissal').toEqual([]);
+  });
+
   /** The other control is the one that writes. */
   it('records the dismissal when asked not to show it again', async () => {
     renderGreeting();
@@ -146,6 +160,18 @@ describe('the club message meets you at the door', () => {
     renderGreeting(false);
     await screen.findByText(SHOWING.message);
     expect(screen.queryByRole('button', { name: /edit message/i })).toBeNull();
+  });
+
+  /**
+   * The page knows club staff; only the server knows the union that oversees
+   * this club. When the server says can_manage, the editor is offered even
+   * though the page's own role read said no (migration 20260905000730).
+   */
+  it('offers the editor when the server says this person may manage the message', async () => {
+    mocks.entry = { ...SHOWING, can_manage: true };
+    renderGreeting(false);
+    await screen.findByText(SHOWING.message);
+    expect(screen.getByRole('button', { name: /edit message/i })).toBeInTheDocument();
   });
 
   it('saves a staff edit through the guarded writer', async () => {

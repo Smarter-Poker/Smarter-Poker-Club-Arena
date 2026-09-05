@@ -525,62 +525,203 @@ describe('the end of the break', () => {
   });
 });
 
-describe('the resume is staggered, not a burst (phase 3)', () => {
+describe('the resume arrives in installments (2026-09-05)', () => {
   /**
-   * At :00 every table used to resume in one synchronous loop, so all ~250
-   * dealing loops hit a 2-core database in the same instant. The first batch
-   * resumes immediately; the rest roll out RESUME_STAGGER_MS apart. Uses a
-   * controllable setTimer so the batches can be driven by hand.
+   * At 04:00 UTC on 2026-09-05 the break ended with 318 cash and 402
+   * tournament tables parked; the one core the engine has saturated inside
+   * thirty seconds and the container was replaced at 04:07. The fleet is now
+   * dealt into RESUME_WAVES waves, RESUME_WAVE_GAP_MS apart, cash and
+   * tournament interleaved, in a stable hash order that owes nothing to who
+   * is seated. Uses a controllable setTimer so the waves can be driven by
+   * hand, and a controllable clock so /health's timestamps are checkable.
    */
-  function buildBig(engineCount: number) {
-    const engines = new Map<string, FakeEngine>();
-    for (let i = 0; i < engineCount; i++) engines.set(`t${i}`, new FakeEngine());
+  class KindedEngine extends FakeEngine {
+    constructor(private readonly tournament: boolean) {
+      super();
+    }
+    isTournament(): boolean {
+      return this.tournament;
+    }
+  }
+
+  function buildFleet(cash: number, tournaments: number) {
+    const engines = new Map<string, KindedEngine>();
+    // Tournament tables are adopted FIRST after a restart, and this is the
+    // insertion order the old stagger followed. The waves must not.
+    for (let i = 0; i < tournaments; i++) engines.set(`mtt-${i}`, new KindedEngine(true));
+    for (let i = 0; i < cash; i++) engines.set(`cash-${i}`, new KindedEngine(false));
     const store = new FakeStore();
     const timers: Array<{ fn: () => void; ms: number }> = [];
+    let clock = 1_800_000_000_000;
     const mb = new MaintenanceBreak({
       engines: () => engines.entries() as any,
       isRunning: () => true,
       emit: () => {},
       store,
+      now: () => clock,
       setTimer: ((fn: () => void, ms: number) => {
         timers.push({ fn, ms });
         return 0 as unknown as NodeJS.Timeout;
       }) as any,
     });
-    return { mb, engines, timers };
+    const tick = (ms: number) => {
+      clock += ms;
+    };
+    return { mb, engines, timers, tick };
   }
 
-  it('resumes the first batch immediately and schedules the rest in batches', async () => {
-    const N = MaintenanceBreak.RESUME_BATCH_SIZE * 3; // three batches
-    const { mb, engines, timers } = buildBig(N);
-    await mb.announceLastHand();
-    await mb.beginCountdown();
-    vi.advanceTimersByTime(MaintenanceBreak.BREAK_DURATION_MS + 1000);
-    const beforeEnd = timers.length;
-    await mb.end();
+  /** Run a break to its end and return the timers end() scheduled. */
+  async function runBreak(f: ReturnType<typeof buildFleet>) {
+    await f.mb.announceLastHand();
+    // The countdown timer is the first one scheduled; fire it by hand.
+    const countdown = f.timers.shift()!;
+    f.tick(countdown.ms);
+    countdown.fn();
+    await Promise.resolve();
+    await Promise.resolve();
+    // The end timer.
+    const endTimer = f.timers.shift()!;
+    f.tick(endTimer.ms);
+    const before = f.timers.length;
+    await f.mb.end();
+    return f.timers.slice(before);
+  }
 
-    const list = [...engines.values()];
-    const resumedNow = list.filter((e) => e.resumeCount > 0).length;
-    // Exactly the first batch is up synchronously.
-    expect(resumedNow).toBe(MaintenanceBreak.RESUME_BATCH_SIZE);
-    // The other two batches are scheduled by end(), at increasing delays.
-    const resumeTimers = timers.slice(beforeEnd);
-    expect(resumeTimers).toHaveLength(2);
-    expect(resumeTimers[0].ms).toBeLessThan(resumeTimers[1].ms);
+  it('deals 720 tables into 8 waves of ~90, 1.5s apart, and the whole spread is inside the minute', async () => {
+    const f = buildFleet(318, 402);
+    const waveTimers = await runBreak(f);
+    const list = [...f.engines.values()];
 
-    // Firing the scheduled batches brings the whole fleet up.
-    for (const t of resumeTimers) t.fn();
-    expect(list.every((e) => e.resumeCount > 0)).toBe(true);
+    expect(MaintenanceBreak.RESUME_WAVES).toBe(8);
+    // Wave 0 fired synchronously inside end(); seven are scheduled.
+    expect(waveTimers).toHaveLength(MaintenanceBreak.RESUME_WAVES - 1);
+    const wave0 = list.filter((e) => e.resumeCount > 0).length;
+    expect(wave0).toBeGreaterThanOrEqual(Math.floor(720 / 8));
+    expect(wave0).toBeLessThanOrEqual(Math.ceil(318 / 8) + Math.ceil(402 / 8));
+
+    // Evenly spaced, RESUME_WAVE_GAP_MS apart, last one at RESUME_SPREAD_MS.
+    waveTimers.forEach((t, i) => expect(t.ms).toBe((i + 1) * MaintenanceBreak.RESUME_WAVE_GAP_MS));
+    expect(waveTimers[waveTimers.length - 1].ms).toBe(MaintenanceBreak.RESUME_SPREAD_MS);
+    expect(MaintenanceBreak.RESUME_SPREAD_MS).toBeLessThanOrEqual(15_000);
+
+    for (const t of waveTimers) {
+      f.tick(MaintenanceBreak.RESUME_WAVE_GAP_MS);
+      t.fn();
+    }
+    // Every table exactly once.
+    expect(list.every((e) => e.resumeCount === 1)).toBe(true);
   });
 
-  it('does not drop a batch because the outcome insert is slow at :00', async () => {
-    // Review fix 2026-09-03. The staggered batches check phase === 'idle'.
-    // end() used to reach 'idle' only after `await recordOutcome(...)` - a
-    // database insert made at :00, the slowest instant of the hour. A batch
-    // firing during that await was silently dropped, and a dropped table
-    // parks itself again forever. The break must be idle before any table is
-    // woken, so a batch can fire at any point during the insert.
-    const N = MaintenanceBreak.RESUME_BATCH_SIZE * 3;
+  it('interleaves cash and tournament tables: no wave is all tournaments', async () => {
+    const f = buildFleet(318, 402);
+    const waveTimers = await runBreak(f);
+    const kinds = (): { cash: number; mtt: number } => {
+      let cash = 0;
+      let mtt = 0;
+      for (const [id, e] of f.engines) {
+        if (e.resumeCount === 0) continue;
+        if (id.startsWith('mtt-')) mtt++;
+        else cash++;
+        e.resumeCount = 0; // consume, so each wave is measured alone
+      }
+      return { cash, mtt };
+    };
+    const w0 = kinds();
+    // The old stagger's first batch was 25 tournaments, because they were
+    // adopted first. Each wave now carries its share of BOTH kinds.
+    expect(w0.cash).toBeGreaterThanOrEqual(Math.floor(318 / 8));
+    expect(w0.mtt).toBeGreaterThanOrEqual(Math.floor(402 / 8));
+    for (const t of waveTimers) {
+      t.fn();
+      const w = kinds();
+      expect(w.cash, 'a wave with no cash table').toBeGreaterThan(0);
+      expect(w.mtt, 'a wave with no tournament table').toBeGreaterThan(0);
+    }
+  });
+
+  it('orders by a stable hash of the table id, not by adoption order and not by who is seated', () => {
+    const mk = (ids: string[], tournament = false) =>
+      ids.map((id) => [id, new KindedEngine(tournament)] as [string, KindedEngine]);
+    const ids = Array.from({ length: 60 }, (_, i) => `t-${i}`);
+    const a = MaintenanceBreak.planResumeWaves(mk(ids));
+    const b = MaintenanceBreak.planResumeWaves(mk([...ids].reverse()));
+    const flat = (w: Array<Array<[string, unknown]>>) => w.map((x) => x.map((t) => t[0]));
+    // Same fleet in the opposite insertion order: identical plan.
+    expect(flat(a)).toEqual(flat(b));
+    // ...and not simply insertion order.
+    expect(flat(a).flat()).not.toEqual(ids);
+    // 60 tables at a 25-table minimum: 3 waves of 20.
+    expect(a).toHaveLength(3);
+    expect(a.map((w) => w.length)).toEqual([20, 20, 20]);
+    // CLAUDE.md 10.5: nothing about the seats is read. The plan for a fleet
+    // where every table reports humans is the plan for one where none does -
+    // the planner has no way to ask, and must never get one.
+    const src = MaintenanceBreak.planResumeWaves.toString();
+    expect(src).not.toMatch(/humansSeated|is_horse|isHorse/);
+  });
+
+  it('brings a small fleet up in one wave, synchronously, as before', async () => {
+    const f = buildFleet(10, 10);
+    const waveTimers = await runBreak(f);
+    expect(waveTimers).toHaveLength(0);
+    expect([...f.engines.values()].every((e) => e.resumeCount === 1)).toBe(true);
+    expect((f.mb.snapshot().resumeWaves as any).total).toBe(1);
+  });
+
+  it('one table that throws on resume does not hold its wave or the waves behind it', async () => {
+    const f = buildFleet(60, 60);
+    const bad = [...f.engines.values()].filter((_, i) => i % 7 === 0);
+    for (const e of bad) {
+      e.resumeFromMaintenance = () => {
+        e.resumeCount++;
+        throw new Error('refuses to resume');
+      };
+    }
+    const waveTimers = await runBreak(f);
+    for (const t of waveTimers) t.fn();
+    const list = [...f.engines.values()];
+    expect(
+      list.every((e) => e.resumeCount === 1),
+      'every table was offered its resume'
+    ).toBe(true);
+    expect(list.filter((e) => !bad.includes(e)).every((e) => e.paused === false)).toBe(true);
+  });
+
+  it('publishes resumeWaves {total, done, startedAt} on /health while the waves run', async () => {
+    const f = buildFleet(318, 402);
+    expect(f.mb.snapshot().resumeWaves).toBeNull();
+    const waveTimers = await runBreak(f);
+    const startedAt = (f.mb.snapshot().resumeWaves as any).startedAt;
+    let snap = f.mb.snapshot().resumeWaves as any;
+    expect(snap).toMatchObject({
+      total: 8,
+      done: 1,
+      tables: 720,
+      finishedAt: null,
+      gapMs: MaintenanceBreak.RESUME_WAVE_GAP_MS,
+    });
+    expect(snap.tablesResumed).toBeGreaterThan(0);
+    waveTimers.forEach((t, i) => {
+      f.tick(MaintenanceBreak.RESUME_WAVE_GAP_MS);
+      t.fn();
+      snap = f.mb.snapshot().resumeWaves;
+      expect(snap.done).toBe(i + 2);
+    });
+    expect(snap).toMatchObject({ total: 8, done: 8, tables: 720, tablesResumed: 720 });
+    expect(snap.finishedAt).toBe(startedAt + MaintenanceBreak.RESUME_SPREAD_MS);
+    // The record stays readable until the next break is announced.
+    await f.mb.announceLastHand();
+    expect(f.mb.snapshot().resumeWaves).toBeNull();
+  });
+
+  it('does not drop a wave because the outcome insert is slow at :00', async () => {
+    // Review fix 2026-09-03. The waves check phase === 'idle'. end() used to
+    // reach 'idle' only after `await recordOutcome(...)` - a database insert
+    // made at :00, the slowest instant of the hour. A wave firing during that
+    // await was silently dropped, and a dropped table parks itself again
+    // forever. The break must be idle before any table is woken, so a wave
+    // can fire at any point during the insert.
+    const N = MaintenanceBreak.RESUME_WAVE_MIN_TABLES * 3;
     const engines = new Map<string, FakeEngine>();
     for (let i = 0; i < N; i++) engines.set(`t${i}`, new FakeEngine());
     const timers: Array<{ fn: () => void; ms: number }> = [];
@@ -606,12 +747,10 @@ describe('the resume is staggered, not a burst (phase 3)', () => {
     const ending = mb.end(); // parks on the slow insert
     await Promise.resolve();
     await Promise.resolve();
-    const resumeTimers = timers.slice(beforeEnd);
-    expect(resumeTimers, 'the later batches are scheduled before the insert resolves').toHaveLength(
-      2
-    );
-    // The insert is still pending. Fire the staggered batches NOW.
-    for (const t of resumeTimers) t.fn();
+    const waveTimers = timers.slice(beforeEnd);
+    expect(waveTimers, 'the later waves are scheduled before the insert resolves').toHaveLength(2);
+    // The insert is still pending. Fire the waves NOW.
+    for (const t of waveTimers) t.fn();
     const list = [...engines.values()];
     expect(
       list.filter((e) => e.resumeCount > 0).length,
@@ -622,20 +761,15 @@ describe('the resume is staggered, not a burst (phase 3)', () => {
     expect(list.every((e) => e.resumeCount === 1)).toBe(true);
   });
 
-  it('drops a scheduled batch from a superseded break', async () => {
-    const N = MaintenanceBreak.RESUME_BATCH_SIZE * 2;
-    const { mb, engines, timers } = buildBig(N);
-    await mb.announceLastHand();
-    await mb.beginCountdown();
-    vi.advanceTimersByTime(MaintenanceBreak.BREAK_DURATION_MS + 1000);
-    const beforeEnd = timers.length;
-    await mb.end();
-    const resumeTimers = timers.slice(beforeEnd);
-    // A new break begins (bumps the resume token) before the stale batch fires.
-    await mb.announceLastHand();
-    const before = [...engines.values()].map((e) => e.resumeCount);
-    for (const t of resumeTimers) t.fn(); // stale batch - must be dropped
-    const after = [...engines.values()].map((e) => e.resumeCount);
+  it('drops a scheduled wave from a superseded break', async () => {
+    const f = buildFleet(25, 25);
+    const waveTimers = await runBreak(f);
+    expect(waveTimers).toHaveLength(1);
+    // A new break begins (bumps the resume token) before the stale wave fires.
+    await f.mb.announceLastHand();
+    const before = [...f.engines.values()].map((e) => e.resumeCount);
+    for (const t of waveTimers) t.fn(); // stale wave - must be dropped
+    const after = [...f.engines.values()].map((e) => e.resumeCount);
     expect(after).toEqual(before);
   });
 });

@@ -124,6 +124,40 @@ export const HAND_COMPLETION = {
    */
   BUTTON_MOVE_MS: 700,
   /**
+   * ── THE HAND RESTS BEFORE THE NEXT ONE (Dan 2026-09-05) ──
+   *
+   * Verbatim: "THIS SAME 1.75MS PAUSE SHOULD BE DONE ON ALL HANDS UPON
+   * COMPLETION, GIVE USERS A CHANCE TO USE THE RABBIT HUNT. IT CURRENTLY
+   * DOESN'T REALLY HAVE ENOUGH TIME TO CLICK AND USE."
+   *
+   * He is describing a real defect, and it is not the one it looks like. The
+   * Rabbit Hunt offer reaches the client at SETTLEMENT, near the start of the
+   * post-hand hold, and the button's own guards are generous - a 90s server
+   * offer TTL and a 2s client minimum-visible floor. But the button is
+   * RENDERED behind `!tableState.isHandInProgress`, and the engine does not
+   * broadcast a hand-free state until the whole completion hold has already
+   * elapsed. So the button was invisible for the 4.5-7.4s it was live and
+   * then appeared for whatever came after: boardClearMs, and nothing else.
+   * That is 500ms on a fold and 900ms on a showdown. Both guards were
+   * measuring a window the player could not see.
+   *
+   * This is that window, and it is deliberately NOT part of
+   * handCompletionHoldMs. That function has one job - be at least as long as
+   * the animations it is holding for - and every number in it is derived from
+   * an animation length. This one is derived from a HUMAN: it is reaction
+   * time plus a tap. Mixing it in would make the hold's arithmetic stop
+   * meaning what its header says it means.
+   *
+   * UNCONDITIONAL, on every hand, and that is a correctness requirement
+   * rather than a nicety. A rest that appeared only when a rabbit hunt was
+   * purchasable would itself announce that cards remained in the deck -
+   * every player at the table would learn from the table's RHYTHM that the
+   * hand had ended early. The same reasoning as the rebuy pause under
+   * CLAUDE.md 10.5: a beat that happens sometimes is a tell. It is also why
+   * the per-user "hide the button" setting does not shorten it.
+   */
+  RABBIT_HUNT_WINDOW_MS: 1750,
+  /**
    * ── THE DISCARD IS AN ACT, AND IT NEEDS A BEAT (Phase 3, 2026-08-31) ──
    *
    * A Crazy Pineapple discard is the only decision the variant adds, and every
@@ -187,8 +221,19 @@ export const HAND_COMPLETION = {
    * This is the REVEAL gate and is separate from allInStreetPauseMs, the beat
    * AFTER the equity settles and before the next card. Both are needed: the
    * first stops the spoiler, the second gives the player time to read it.
+   *
+   * 1250 -> 1750, Dan 2026-09-05, verbatim: "GOT TO 1.75MS". This number had
+   * never been anything but a guess. The 2026-09-05 research into how other
+   * rooms pace a run-out found exactly one sourced value in the whole
+   * industry - PokerStars' all-in pause, which they trialled at 2000ms,
+   * dropped to 1000ms, and settled on 1500ms - and Dan set ours a quarter of
+   * a second past their landing point. Every consequence is derived rather
+   * than re-typed: the all-in card profile takes its face-down HOLD from this
+   * constant (src/presentation/cardPresentation/profiles.ts), so the extra
+   * 500ms lands entirely on the tension beat and the flip itself is unchanged
+   * at the 400ms ceiling the same research established.
    */
-  ALL_IN_STREET_REVEAL_MS: 1250,
+  ALL_IN_STREET_REVEAL_MS: 1750,
   /** Beat after the consent panel closes before the first card turns. */
   RIT_REVEAL_LEAD_MS: 600,
   /** One street landing on a RIT board (matches allInStreetPauseMs). */

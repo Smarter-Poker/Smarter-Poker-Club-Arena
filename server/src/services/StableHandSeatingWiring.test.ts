@@ -67,9 +67,13 @@ describe('EVERY TAG GATE FAILS OPEN', () => {
 
 describe('A WAITING HUMAN OUTRANKS EVERY TEXTURE RULE', () => {
   it('variant, stake, rest day and daily cap are all bypassed on rescue', () => {
+    /* The two TEXTURE guards also carry `&& !relaxPreferences` since
+       2026-09-05 (Dan: a preference may never leave a seat empty), so they are
+       matched by prefix. A waiting human still bypasses both, which is the
+       thing this test exists to protect. */
     for (const guard of [
-      'if (variantOk === false && !humanNeedsRescue)',
-      'if (stakeOk === false && !humanNeedsRescue)',
+      'if (variantOk === false && !humanNeedsRescue',
+      'if (stakeOk === false && !humanNeedsRescue',
       'if (!humanNeedsRescue && isRestDayFor(st, chicagoWeekday))',
       'if (!humanNeedsRescue && dailyCapReached(st, todayKey))',
     ]) {

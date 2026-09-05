@@ -22,6 +22,7 @@ import {
   stableHandHostCaps,
 } from './StableHandController.js';
 import {
+  STAKE_LADDER,
   WALLETS_FOR_HOST,
   controllerEnabled,
   isNightWindow,
@@ -66,6 +67,7 @@ import { reportError } from './errorReporter.js';
 import { clampSeatsForVariant, maxSeatsForVariant } from '../config/tableSeating.js';
 import {
   bankrollBuyIn,
+  bankrollAllowsStake,
   bankrollPolicyFor,
   canOpenAnotherTable,
   canSit,
@@ -313,6 +315,15 @@ const DEFAULT_TABLES: TableConfig[] = [
     gameVariant: 'pineapple',
   },
 ];
+
+/* THE RUNGS THE BANKROLL MAY CLIMB (Dan 2026-09-05).
+   `STAKE_LADDER` already carries the platform's stake rungs and already stops
+   at the section 8.3 phase clamp (`PHASE_MAX_BB`, currently 2) - "NOTHING sits
+   above 1/2 this phase, however rich the wallet". So the bankroll window is
+   clamped by construction and no second copy of that rule belongs here. It is
+   also why the 5.00 tables on the floor have never seated anybody and cannot
+   while the clamp stands: no rung maps to them. */
+const STAKE_LADDER_BBS: readonly number[] = STAKE_LADDER.map((x) => x.bb);
 
 /* MAX_TABLES_PER_CONFIG is GONE (Gate 7, 2026-09-05): the cap on a game's
    tables is cash_games.cap_mains, read by the controller. */
@@ -1310,12 +1321,25 @@ export class HorseFleetManager {
          cycle rather than trusted by it. */
       const activeClubOf = new Map<string, string>();
       const activeHostOf = new Map<string, string>();
+      /* WHERE EACH HORSE ALREADY SITS, for the move-up cushion: stepping ABOVE
+         the rung it is playing needs canMoveUp, not merely canSit. Built from
+         the live seat map, like activeClubOf and activeHostOf below. */
+      const currentStakeOf = new Map<string, number>();
+      const bbOfTable = new Map<string, number>();
+      for (const t of tables) bbOfTable.set(String(t.id), Number((t as any).big_blind) || 0);
       for (const seat of allActiveSeats) {
         if (!horseIdSet.has(seat.user_id)) continue;
         const club = (seat as { club_id?: string | null }).club_id;
         if (club && !activeClubOf.has(seat.user_id)) activeClubOf.set(seat.user_id, String(club));
         const host = hostOfTable.get(String(seat.table_id));
         if (host && !activeHostOf.has(seat.user_id)) activeHostOf.set(seat.user_id, host);
+        /* The HIGHEST rung it is currently at: the move-up cushion should be
+           asked about a genuine step up, and a horse sitting 1/2 and 0.10/0.25
+           at once is already at 1/2 for that purpose. */
+        const bb = bbOfTable.get(String(seat.table_id)) ?? 0;
+        if (bb > 0 && bb > (currentStakeOf.get(seat.user_id) ?? 0)) {
+          currentStakeOf.set(seat.user_id, bb);
+        }
       }
       /* WHAT THE SHAPE ASKED FOR. Empty when the controller is off or its plan
          has expired, which puts every table back on its own per-table target -
@@ -1466,6 +1490,14 @@ export class HorseFleetManager {
          clubDropped, because the silent version of this number is what hid the
          Midway floor for a day. */
       let tagDropped = 0;
+      /* THE BANKROLL SAID NO, which is a different fact from "the tag said no"
+         and has to be countable on its own or the two are indistinguishable in
+         the logs - which is how a dead bankroll law went unnoticed. */
+      let stakeOutOfRollDropped = 0;
+      /* How many extra candidates the relaxed pass found. A floor that never
+         relaxes is healthy; one that relaxes every cycle is telling you the
+         tag supply for that variant and rung is too thin. */
+      let preferenceRelaxed = 0;
       /* Refusals from the Stable Hand mutex, by reason, for the cycle log.
          A gate whose refusals are invisible is a gate nobody can tune. */
       const mutexRefused = new Map<SitRejection, number>();
@@ -1752,8 +1784,27 @@ export class HorseFleetManager {
           /* The game key the door rules are written against (club, variant,
              sb, bb), formatted once per table. See rejoinTableKey. */
           const constraintTableKey = rejoinTableKey(table);
-          const candidateHorses = validHorses.filter((h) => {
-            /* A HORSE PLAYS INSIDE ITS OWN CLUB (Dan 2026-09-02): only a horse
+          /* ── A PREFERENCE NEVER LEAVES A SEAT EMPTY (Dan 2026-09-05) ────
+             `relaxPreferences` is the second pass. Every HARD gate below -
+             club, door, bankroll, rest day, daily cap, host occupancy, the
+             table ceiling, one-seat-per-game - is unchanged in both passes.
+             What relaxes is the TEXTURE: the tagged variant and the tagged
+             stake rung, which exist to stop a thousand identical horses and
+             not to hold a table at zero.
+
+             Measured before this existed. Every open cash table's tag-eligible
+             pool, counting variant AND exact blind, out of 1,000 horses:
+             short_deck 2.00 -> 11, plo6 2.00 -> 16, short_deck 1.00 -> 16,
+             plo5 2.00 -> 18, flo8 0.50 -> 26, pineapple 1.00 -> 26 ... and
+             every 5.00 table -> ZERO. Those counts are BEFORE the rest day
+             (142 horses today), the daily cap, the activity window, the host
+             occupancy curve and the four-table limit, so a cell nominally
+             holding 16 candidates realistically offered two or three against
+             24 seats. The log said "No available horses" on 1/2, 0.50/1 and
+             0.25/0.50 tables, not merely on the 2/5 tier. */
+          const passFilter = (relaxPreferences: boolean) =>
+            validHorses.filter((h) => {
+              /* A HORSE PLAYS INSIDE ITS OWN CLUB (Dan 2026-09-02): only a horse
                whose membership can pay for this table is a candidate for it.
                `null` is "no such membership" and excludes; `undefined` is
                "the map did not load" and lets the database decide, exactly as
@@ -1763,25 +1814,25 @@ export class HorseFleetManager {
                a horse holds a JAQK tag and a Shark tag independently, and
                which one applies is decided by which wallet pays for this
                seat. */
-            const seatClub = this.resolveSeatClub(membership, table, h.id);
-            if (seatClub === null) {
-              clubDropped++;
-              return false;
-            }
+              const seatClub = this.resolveSeatClub(membership, table, h.id);
+              if (seatClub === null) {
+                clubDropped++;
+                return false;
+              }
 
-            /* ── THE DOOR (2026-09-05). A horse barred from THIS game for low
+              /* ── THE DOOR (2026-09-05). A horse barred from THIS game for low
                VPIP is not a candidate for it - the database would refuse the
                seat (VPIP_BARRED) and, until today, did, 341 times an hour,
                after the fleet had already counted the horse as a buyer. A
                human sees GAME_BARRED in the lobby and does not try; neither
                does the fleet. Every table, cluster or not. */
-            const doorKey = rejoinPlayerKey(h.id, constraintTableKey);
-            if (rejoin.barred.has(doorKey)) {
-              barredDropped++;
-              return false;
-            }
+              const doorKey = rejoinPlayerKey(h.id, constraintTableKey);
+              if (rejoin.barred.has(doorKey)) {
+                barredDropped++;
+                return false;
+              }
 
-            /* ── THE TAG DECIDES, AND WHERE THERE IS NO TAG THE OLD HASH DOES
+              /* ── THE TAG DECIDES, AND WHERE THERE IS NO TAG THE OLD HASH DOES
                ────────────────────────────────────────────────────────────────
                `horses:tag` wrote 1,580 of these on 2026-09-04 and nothing read
                one until today: mode, variants, preferred stakes and the table
@@ -1794,94 +1845,140 @@ export class HorseFleetManager {
                same fail-open contract as the bankroll gate two blocks down,
                and for the same reason: a tag we could not read is not a horse
                with no tag. See StableHandTags. */
-            /* `undefined` seatClub is the membership map failing to load. No
+              /* `undefined` seatClub is the membership map failing to load. No
                scope means no tag, which every gate below reads as "no
                opinion" - the same fail-open answer the club gate itself
                gives on that branch. */
-            const tag = seatClub ? book?.tags.get(tagKey(h.id, seatClub)) : undefined;
+              const tag = seatClub ? book?.tags.get(tagKey(h.id, seatClub)) : undefined;
 
-            // Dan 2026-08-26 game lanes: a third of the stable plays events
-            // only (tournaments / spins / heads-up) and never sits at cash.
-            const cashOk = tagAllowsCash(tag);
-            if (cashOk === false) {
-              tagDropped++;
-              return false;
-            }
-            if (cashOk === undefined && gameLaneFor(h.id) === 'events') return false;
+              // Dan 2026-08-26 game lanes: a third of the stable plays events
+              // only (tournaments / spins / heads-up) and never sits at cash.
+              const cashOk = tagAllowsCash(tag);
+              if (cashOk === false) {
+                tagDropped++;
+                return false;
+              }
+              if (cashOk === undefined && gameLaneFor(h.id) === 'events') return false;
 
-            /* THE VARIANT. Nothing before this restricted it at all, so one
+              /* THE VARIANT. Nothing before this restricted it at all, so one
                horse played Omaha-8, short deck and pineapple interchangeably.
                Measured supply before switching it on, so the floor cannot
                starve: Midway Union carries 438 NLH horses, 110 PLO4 and 45 of
                the thinnest limit variant, against 20 NLH tables and a limit
                board trimmed to two. */
-            const variantOk = tagAllowsVariant(tag, String(table.game_variant ?? ''));
-            if (variantOk === false && !humanNeedsRescue) {
-              tagDropped++;
-              return false;
-            }
+              const variantOk = tagAllowsVariant(tag, String(table.game_variant ?? ''));
+              if (variantOk === false && !humanNeedsRescue && !relaxPreferences) {
+                tagDropped++;
+                return false;
+              }
 
-            /* THE STAKE. Dan 2026-08-29: a horse plays ONE stake level. The
-               tag names the exact blinds rather than a band - before any of
-               this, blinds were read solely to size a buy-in, and 64 of 210
-               horses sat across multiple stakes in 48 hours, one at 0.10/0.20
-               and 25.00/50.00 both. */
-            const stakeOk = tagAllowsStake(tag, Number(table.big_blind));
-            if (stakeOk === false && !humanNeedsRescue) {
-              tagDropped++;
-              return false;
-            }
-            if (stakeOk === undefined && !stakeBandAllows(h.id, table.big_blind)) return false;
+              /* ── THE STAKE COMES FROM THE BANKROLL (Dan, 2026-09-05) ──────
+               "horses aren't supposed to have 'preferred game types' they are
+               supposed to play off of there 'bankroll management laws' and
+               rules first and foremost. THATS THE STARTING POINT."
 
-            /* ── THE HORSE'S OWN DAY ────────────────────────────────────────
+               It did not. `assignPreferredStakes` is
+               `shHash(horseId, 'stake-band', seed) % 100`, and it decided the
+               stake HERE, before the bankroll gate below was ever consulted -
+               so money could veto a hash's choice and never make one of its
+               own. `bestAffordableGame`, `canMoveUp`, `shouldMoveDown` and
+               `topUpDecision` - the whole written law - had ZERO callers
+               outside their unit test on the morning this changed.
+
+               What that cost, live: `venom` held 4,759,025 chips and played
+               0.25/0.50, which its roll covers 95,180 times over; `foldto3b`
+               held 3,843,526 and played 0.10/0.25. Across the 116 seated
+               horses above 20,980 chips the mean big blind was 0.535.
+
+               Now `affordableStakeWindow` names the rungs, from the roll, with
+               the move-up cushion when the step is upward. Dan's 2026-08-29
+               ruling is intact: it is still a TWO-RUNG window, so a horse
+               still plays one stake level rather than 0.10/0.20 and 25.00/50.00
+               inside the same 48 hours - the difference is that the two rungs
+               now follow money that moves instead of a hash that cannot.
+
+               UNKNOWN ROLL STILL FAILS OPEN, the same contract as the gate
+               below and for the same reason: an unreadable bankroll is not a
+               broke horse, and reading it as one emptied the cash floor for
+               forty minutes on 2026-08-31. */
+              const stakeClub = this.resolveSeatClub(membership, table, h.id);
+              const stakeRoll = stakeClub ? bankrolls.get(`${stakeClub}:${h.id}`) : undefined;
+              const tableBb = Number(table.big_blind);
+              if (stakeRoll !== undefined) {
+                const currentBb = currentStakeOf.get(h.id);
+                if (
+                  !humanNeedsRescue &&
+                  !bankrollAllowsStake(
+                    stakeRoll,
+                    tableBb,
+                    STAKE_LADDER_BBS,
+                    bankrollPolicyFor(h.id),
+                    currentBb
+                  )
+                ) {
+                  stakeOutOfRollDropped++;
+                  return false;
+                }
+              } else {
+                /* No roll to reason from: the tag keeps its old authority, and
+                 where there is no tag either, the old band rule decides. */
+                const stakeOk = tagAllowsStake(tag, tableBb);
+                if (stakeOk === false && !humanNeedsRescue && !relaxPreferences) {
+                  tagDropped++;
+                  return false;
+                }
+                if (stakeOk === undefined && !stakeBandAllows(h.id, table.big_blind)) return false;
+              }
+
+              /* ── THE HORSE'S OWN DAY ────────────────────────────────────────
                A rest day and a daily cap are what stop a thousand horses
                playing identical 24-hour shifts, and both were written by the
                tagger and read by nobody. A human short-handed at this table
                outranks both: a rest day is a texture, a person waiting is not. */
-            const st = book?.states.get(h.id);
-            if (!humanNeedsRescue && isRestDayFor(st, chicagoWeekday)) {
-              restDayDropped++;
-              return false;
-            }
-            if (!humanNeedsRescue && dailyCapReached(st, todayKey)) {
-              dailyCapDropped++;
-              return false;
-            }
-            /**
-             * BANKROLL GATE (Dan 2026-08-31). A stake band says which games a
-             * horse has EARNED; the bankroll says which it can AFFORD. Both
-             * must agree, and this is the second one.
-             *
-             * The rule is denominated in buy-ins of THIS game, because a
-             * chip figure means nothing across a ladder — 10,000 is fifty
-             * buy-ins at 1/2 and twenty at 2/5. A horse under its policy's
-             * buy-in requirement simply is not a candidate: it moves down,
-             * and if nothing is left it goes to the freerolls.
-             */
-            if (bankrollsLoaded) {
+              const st = book?.states.get(h.id);
+              if (!humanNeedsRescue && isRestDayFor(st, chicagoWeekday)) {
+                restDayDropped++;
+                return false;
+              }
+              if (!humanNeedsRescue && dailyCapReached(st, todayKey)) {
+                dailyCapDropped++;
+                return false;
+              }
               /**
-               * AN UNKNOWN ROLL IS UNKNOWN, NOT ZERO — 2026-08-31, and this
-               * line emptied the entire cash floor for 40 minutes.
+               * BANKROLL GATE (Dan 2026-08-31). A stake band says which games a
+               * horse has EARNED; the bankroll says which it can AFFORD. Both
+               * must agree, and this is the second one.
                *
-               * It used to `return false`, which reads as "no membership, no
-               * seat" and is wrong twice over. The doctrine of this whole
-               * layer, stated in the comment above the loader, is that a
-               * bankroll we cannot read means NO BANKROLL OPINION — because
-               * `atomic_table_buyin` still refuses a seat the balance cannot
-               * cover, so this gate decides which games are SENSIBLE, never
-               * which are possible. A refusal here is the one failure mode
-               * the loader was carefully written to avoid, re-introduced one
-               * line below it.
-               *
-               * And it is not hypothetical. The map was keyed on two
-               * hard-coded club ids that own ZERO cash tables, so every
-               * lookup for a real table missed and every horse was refused,
-               * at every table, every cycle. See the loader for the rest.
+               * The rule is denominated in buy-ins of THIS game, because a
+               * chip figure means nothing across a ladder — 10,000 is fifty
+               * buy-ins at 1/2 and twenty at 2/5. A horse under its policy's
+               * buy-in requirement simply is not a candidate: it moves down,
+               * and if nothing is left it goes to the freerolls.
                */
-              const roll = seatClub ? bankrolls.get(`${seatClub}:${h.id}`) : undefined;
-              if (roll === undefined) {
-                rollUnknown++;
-                /* THE COUNTER SPLITS; THE DECISION DOES NOT.
+              if (bankrollsLoaded) {
+                /**
+                 * AN UNKNOWN ROLL IS UNKNOWN, NOT ZERO — 2026-08-31, and this
+                 * line emptied the entire cash floor for 40 minutes.
+                 *
+                 * It used to `return false`, which reads as "no membership, no
+                 * seat" and is wrong twice over. The doctrine of this whole
+                 * layer, stated in the comment above the loader, is that a
+                 * bankroll we cannot read means NO BANKROLL OPINION — because
+                 * `atomic_table_buyin` still refuses a seat the balance cannot
+                 * cover, so this gate decides which games are SENSIBLE, never
+                 * which are possible. A refusal here is the one failure mode
+                 * the loader was carefully written to avoid, re-introduced one
+                 * line below it.
+                 *
+                 * And it is not hypothetical. The map was keyed on two
+                 * hard-coded club ids that own ZERO cash tables, so every
+                 * lookup for a real table missed and every horse was refused,
+                 * at every table, every cycle. See the loader for the rest.
+                 */
+                const roll = seatClub ? bankrolls.get(`${seatClub}:${h.id}`) : undefined;
+                if (roll === undefined) {
+                  rollUnknown++;
+                  /* THE COUNTER SPLITS; THE DECISION DOES NOT.
                    Both branches below seat the horse, and both must. This
                    fail-open is the line that kept the cash floor up for forty
                    minutes on 2026-08-31, and a 2026-09-04 change that turned
@@ -1895,87 +1992,101 @@ export class HorseFleetManager {
                    that owns the open cash tables. An unreadable roll for a club
                    the map DOES cover is a data fault. One number for both hid
                    that. */
-                bankrollEvent(
-                  seatClub && clubsWithRolls.has(seatClub)
-                    ? 'seat_fail_open_roll_faulty'
-                    : 'seat_fail_open_roll_unknown'
+                  bankrollEvent(
+                    seatClub && clubsWithRolls.has(seatClub)
+                      ? 'seat_fail_open_roll_faulty'
+                      : 'seat_fail_open_roll_unknown'
+                  );
+                  return true;
+                }
+                const ref = referenceBuyIn(
+                  table.big_blind,
+                  Number((table as any).min_buy_in) || undefined,
+                  Number((table as any).max_buy_in) || undefined
                 );
-                return true;
-              }
-              const ref = referenceBuyIn(
-                table.big_blind,
-                Number((table as any).min_buy_in) || undefined,
-                Number((table as any).max_buy_in) || undefined
-              );
-              if (!canSit(roll, ref, bankrollPolicyFor(h.id))) {
-                bankrollEvent('seat_refused_underrolled');
-                return false;
-              }
-              /* THE REJOIN FLOOR MUST BE AFFORDABLE. A horse that left this
+                if (!canSit(roll, ref, bankrollPolicyFor(h.id))) {
+                  bankrollEvent('seat_refused_underrolled');
+                  return false;
+                }
+                /* THE REJOIN FLOOR MUST BE AFFORDABLE. A horse that left this
                  game with more than its roll now holds cannot meet the floor
                  the door will demand (fn_cash_effective_buyin clamps it to
                  the table max, so that is the most it can be asked for). The
                  database would refuse the buy-in; the fleet does not try, and
                  does not count the horse as a buyer. Only when the roll is
                  KNOWN - an unknown roll fails open, as above. */
-              const rejoinFloorForPair = rejoin.rejoinFloor.get(doorKey);
-              if (rejoinFloorForPair !== undefined) {
-                const tableMax = Number((table as any).max_buy_in) || table.big_blind * 200;
-                const effectiveFloor =
-                  tableMax > 0 ? Math.min(rejoinFloorForPair, tableMax) : rejoinFloorForPair;
-                if (effectiveFloor > roll) {
-                  floorUnaffordableDropped++;
-                  return false;
+                const rejoinFloorForPair = rejoin.rejoinFloor.get(doorKey);
+                if (rejoinFloorForPair !== undefined) {
+                  const tableMax = Number((table as any).max_buy_in) || table.big_blind * 200;
+                  const effectiveFloor =
+                    tableMax > 0 ? Math.min(rejoinFloorForPair, tableMax) : rejoinFloorForPair;
+                  if (effectiveFloor > roll) {
+                    floorUnaffordableDropped++;
+                    return false;
+                  }
                 }
               }
-            }
-            /* THE PER-HOST CAP (Operation Stable Hand). Last of the
+              /* THE PER-HOST CAP (Operation Stable Hand). Last of the
                candidate gates, and the only one that reasons about the FLOOR
                rather than about this horse: a body already seated on this host
                is already counted and may open another table, a new body may
                not once the host is at its curve. Bypassed entirely when a
                human at this table needs the game rescued. */
-            if (
-              !hostAllowsNewBody({
-                hostId: String((table as any).club_id ?? ''),
-                horseId: h.id,
-                caps: stableHandCaps,
-                bodiesOnHost,
-                humanNeedsRescue,
-              })
-            ) {
-              hostCapRefused++;
-              return false;
-            }
-            const tablesForHorse = horseTables.get(h.id);
-            /* THE HORSE'S REMAINING CAPACITY, for the buyer allocation after
+              if (
+                !hostAllowsNewBody({
+                  hostId: String((table as any).club_id ?? ''),
+                  horseId: h.id,
+                  caps: stableHandCaps,
+                  bodiesOnHost,
+                  humanNeedsRescue,
+                })
+              ) {
+                hostCapRefused++;
+                return false;
+              }
+              const tablesForHorse = horseTables.get(h.id);
+              /* THE HORSE'S REMAINING CAPACITY, for the buyer allocation after
                the loop. Recorded the FIRST time this cycle sees the horse, so
                the allocator replays the cycle from the position it started in
                (horseTables grows as this cycle seats; a later table's view is
                already net of those seats, which the allocator counts itself). */
-            if (!capacityByHorse.has(h.id)) {
-              capacityByHorse.set(
-                h.id,
-                Math.max(0, tagMaxTables(tag, MAX_TABLES_PER_HORSE) - (tablesForHorse?.size ?? 0))
-              );
-            }
-            if (!tablesForHorse) return true;
-            /* THE HORSE'S OWN CEILING, never above the platform's four. A
+              if (!capacityByHorse.has(h.id)) {
+                capacityByHorse.set(
+                  h.id,
+                  Math.max(0, tagMaxTables(tag, MAX_TABLES_PER_HORSE) - (tablesForHorse?.size ?? 0))
+                );
+              }
+              if (!tablesForHorse) return true;
+              /* THE HORSE'S OWN CEILING, never above the platform's four. A
                grinder carries four, a mixer one; before the tag was read every
                horse carried four. */
-            if (tablesForHorse.size >= tagMaxTables(tag, MAX_TABLES_PER_HORSE)) return false;
-            if (tablesForHorse.has(table.id)) return false;
-            /* ONE SEAT PER GAME (2026-09-05). A must-move game is one game
+              if (tablesForHorse.size >= tagMaxTables(tag, MAX_TABLES_PER_HORSE)) return false;
+              if (tablesForHorse.has(table.id)) return false;
+              /* ONE SEAT PER GAME (2026-09-05). A must-move game is one game
                however many tables it has. A horse already at any of its
                tables is not a candidate for another of them - the controller
                moves players between a game's tables; the fleet never does. */
-            if (table.cluster_id) {
-              for (const tid of tablesForHorse) {
-                if (clusterByTableId.get(tid) === table.cluster_id) return false;
+              if (table.cluster_id) {
+                for (const tid of tablesForHorse) {
+                  if (clusterByTableId.get(tid) === table.cluster_id) return false;
+                }
               }
+              return true;
+            });
+
+          /* ONE PASS WITH THE TEXTURE ON, A SECOND WITHOUT IT IF SEATS REMAIN.
+             The relaxed pass is not a wider net thrown by default - it runs
+             only when the strict pool cannot fill the empty seats, so a
+             healthy floor keeps every horse on its own variant and its own
+             rung, and a starved one gets bodies instead of a log line. */
+          let candidateHorses = passFilter(false);
+          if (candidateHorses.length < emptySeats.length) {
+            const relaxed = passFilter(true);
+            if (relaxed.length > candidateHorses.length) {
+              preferenceRelaxed += relaxed.length - candidateHorses.length;
+              candidateHorses = relaxed;
             }
-            return true;
-          });
+          }
 
           // V8 ACTIVITY WINDOWS: only horses inside their daily window sit
           // down (falls back to the full pool if a human needs a game NOW and
@@ -2290,6 +2401,19 @@ export class HorseFleetManager {
           `[HorseFleet] tags: ${tagDropped} horse/table pair(s) excluded by the horse's own ` +
             `game, stake or lane; ${restDayDropped} on a rest day; ${dailyCapDropped} at their ` +
             `daily cap. A human short-handed at the table bypasses all three.`
+        );
+      }
+      /* THE BANKROLL'S OWN LINE. Counted apart from `tagDropped` on purpose:
+         "the tag said no" and "the roll cannot cover it" are different facts,
+         and a single number for both is how a bankroll law with zero callers
+         went a week without anybody noticing. `relaxed` says how often the
+         floor had to drop the texture to fill a seat - a healthy floor should
+         mostly read zero. */
+      if (stakeOutOfRollDropped > 0 || preferenceRelaxed > 0) {
+        console.log(
+          `[HorseFleet] bankroll: ${stakeOutOfRollDropped} horse/table pair(s) outside the ` +
+            `roll's stake window; ${preferenceRelaxed} extra candidate(s) admitted by relaxing ` +
+            `the tagged variant/rung so a seat would not sit empty.`
         );
       }
       if (barredDropped > 0 || floorUnaffordableDropped > 0) {

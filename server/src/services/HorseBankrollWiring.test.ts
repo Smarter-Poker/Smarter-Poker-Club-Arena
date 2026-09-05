@@ -44,8 +44,13 @@ describe('the seeding cycle knows every horse bankroll', () => {
 
 describe('both decision points consult it', () => {
   it('the CANDIDATE filter refuses a horse that cannot cover the stake', () => {
+    /* The candidate filter became `passFilter(relaxPreferences)` on
+       2026-09-05 so a tagged preference can be dropped when a seat would
+       otherwise sit empty. The bankroll gate is INSIDE it and is not
+       relaxable - that is the point of slicing here rather than trusting the
+       whole file. */
     const filter = SRC.slice(
-      SRC.indexOf('const candidateHorses'),
+      SRC.indexOf('const passFilter = (relaxPreferences: boolean) =>'),
       SRC.indexOf('const tablesForHorse')
     );
     expect(filter).toContain('canSit(');

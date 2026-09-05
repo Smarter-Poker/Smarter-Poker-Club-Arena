@@ -116,7 +116,7 @@ describe('a horse plays inside its own club', () => {
 
   it('a horse with no membership that can pay for the table is NOT a candidate', () => {
     const filter = SRC.slice(
-      SRC.indexOf('const candidateHorses'),
+      SRC.indexOf('const passFilter = (relaxPreferences: boolean) =>'),
       SRC.indexOf('const tablesForHorse')
     );
     expect(filter).toMatch(

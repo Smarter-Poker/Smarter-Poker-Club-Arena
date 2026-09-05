@@ -265,6 +265,81 @@ export function bestAffordableGame(
 }
 
 /**
+ * ── THE BANKROLL CHOOSES THE STAKE (Dan, 2026-09-05, BINDING) ─────────────
+ *
+ * Dan, verbatim: "horses aren't supposed to have 'preferred game types' they
+ * are supposed to play off of there 'bankroll management laws' and rules
+ * first and foremost. THATS THE STARTING POINT."
+ *
+ * WHAT WAS TRUE BEFORE THIS FUNCTION EXISTED. `bestAffordableGame`,
+ * `canMoveUp`, `shouldMoveDown` and `topUpDecision` are the bankroll law of
+ * this platform, and on 2026-09-05 a grep for their callers outside this file
+ * and its own test returned **zero for all four**. Only `canSit` ran, and it
+ * ran as a VETO applied AFTER the stake had already been chosen - by
+ * `assignPreferredStakes`, which is `shHash(horseId, 'stake-band', seed) % 100`.
+ * A hash picked the stake; the bankroll was allowed to object and never did.
+ *
+ * Measured the same hour, live:
+ *
+ *   venom          4,759,025 chips   playing 0.25/0.50   95,180 buy-ins deep
+ *   foldto3b f3b   3,843,526 chips   playing 0.10/0.25  153,741 buy-ins deep
+ *   falcon           755,647 chips   playing 0.05/0.10   75,565 buy-ins deep
+ *
+ * and across the 116 seated horses holding more than 20,980 chips, the mean
+ * big blind played was 0.535. That is not a bankroll management system with a
+ * bug in it. It is a bankroll management system that was never connected.
+ *
+ * WHAT THIS RETURNS, and why it is a WINDOW rather than a single rung. Dan's
+ * earlier ruling (2026-08-29) still stands - "a horse plays ONE stake level",
+ * written after 64 of 210 horses sat at 0.10/0.20 and 25.00/50.00 inside the
+ * same 48 hours. A window of the top affordable rung and the one below it is
+ * the same two-rung shape `assignPreferredStakes` produced, so the discipline
+ * is unchanged; what changes is that the two rungs are now derived from money
+ * that moves, instead of from a hash that never does. A horse that runs its
+ * roll up climbs; one that runs it down drops, which is `shouldMoveDown`
+ * finally having somewhere to be read.
+ *
+ * The move-up cushion is applied honestly: stepping ABOVE the rung the horse
+ * is currently playing needs `canMoveUp`, not merely `canSit`.
+ */
+export function affordableStakeWindow(
+  bankroll: number,
+  ladder: readonly number[],
+  policy: BankrollPolicy,
+  currentBigBlind?: number
+): number[] {
+  const rungs = [...ladder].filter((bb) => Number.isFinite(bb) && bb > 0).sort((a, b) => a - b);
+  if (rungs.length === 0) return [];
+
+  let topIdx = -1;
+  for (let i = 0; i < rungs.length; i++) {
+    const ref = referenceBuyIn(rungs[i]);
+    const movingUp = currentBigBlind !== undefined && rungs[i] > currentBigBlind;
+    const ok = movingUp ? canMoveUp(bankroll, ref, policy) : canSit(bankroll, ref, policy);
+    if (ok) topIdx = i;
+    else break; // the ladder is ordered, so the first refusal is the ceiling
+  }
+
+  /* BROKE IS NOT A CRASH. Nothing affordable returns an empty window and the
+     caller sends the horse to the freerolls - the same path `bestAffordableGame`
+     already documents. It must never silently fall through to "play anything". */
+  if (topIdx < 0) return [];
+  return topIdx === 0 ? [rungs[0]] : [rungs[topIdx - 1], rungs[topIdx]];
+}
+
+/** Is this big blind inside the window the bankroll licenses? */
+export function bankrollAllowsStake(
+  bankroll: number,
+  bigBlind: number,
+  ladder: readonly number[],
+  policy: BankrollPolicy,
+  currentBigBlind?: number
+): boolean {
+  const w = affordableStakeWindow(bankroll, ladder, policy, currentBigBlind);
+  return w.some((bb) => Math.abs(bb - Number(bigBlind)) < 1e-9);
+}
+
+/**
  * TOP-UP DISCIPLINE (2026-08-31).
  *
  * Reloading a short stack is the single easiest way to lose a bankroll, and

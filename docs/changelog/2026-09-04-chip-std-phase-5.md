@@ -1,6 +1,6 @@
 # 2026-09-04 - chip standard Phase 5: escrow becomes a balance
 
-**Branch** `fix/chip-std-phase-5`. Two migrations, applied to production, probed rolled-back first, mirrored byte-exact: `20260904220932_phase_5_1_the_escrow_becomes_a_balance` (22:09 UTC) and `PART_TWO_VERSION_phase_5_1_part_two_the_escrow_goes_live` (inside the 22:55 platform freeze). Law test `tests/the-escrow-is-a-balance.law.test.ts`. Every figure read from production between 21:50 and 23:05 UTC. The epoch reset gate sits between Phase 4 and this phase in the roadmap; it is Dan's event (one-word calls on the historic write-offs) and this phase does not need it: the escrow opens each event from what it really holds.
+**Branch** `fix/chip-std-phase-5`. Two migrations, applied to production, probed rolled-back first, mirrored byte-exact: `20260904220932_phase_5_1_the_escrow_becomes_a_balance` (22:09 UTC) and `20260905025630_phase_5_1_part_two_the_escrow_goes_live` (02:56:30 UTC, inside the 02:55 platform freeze) and `20260905025642_phase_5_1_part_three_the_supply_meter_reads_the_escrow` (02:56:42 UTC). Law test `tests/the-escrow-is-a-balance.law.test.ts`. Every figure read from production between 21:50 and 23:05 UTC. The epoch reset gate sits between Phase 4 and this phase in the roadmap; it is Dan's event (one-word calls on the historic write-offs) and this phase does not need it: the escrow opens each event from what it really holds.
 
 ## What was true
 
@@ -12,7 +12,7 @@ A tournament's money was three counters on the `tournaments` row (`prize_pool`, 
 
 **An event pays only what it holds.** An outflow that would take a bank below zero is refused inside the write that paid it, so the wallet credit and the escrow debit stand or fall together (R1 at the constraint, `P0403 escrow_short`). `fn_settle_tournament_obligation` reads the balance before it credits (`fn_ca_escrow_can_pay`: places and seats from the prize bank, bounties from the bounty bank, a refund from all three) and refuses with `escrow_short` and the balances in the alert; the old counter cap survives only for an event the balance has never seen, which after part two is no event at all, since the first row of any event opens it.
 
-**First sight opens from the shadow.** An event that began before the balance existed is opened from `fn_ca_tournament_escrow` on its first row (the row included, so nothing is counted twice). The live events were opened together with the triggers inside the 22:55 freeze, when the money tables are quiet: creating six triggers on busy tables in one transaction outside the freeze deadlocked against live multi-table writers twice (22:04, 22:09 UTC), which is why the phase is two migrations.
+**First sight opens from the shadow.** An event that began before the balance existed is opened from `fn_ca_tournament_escrow` on its first row (the row included, so nothing is counted twice). The live events were opened together with the triggers inside the 02:55 freeze (422 events, 251 enforced, the rest spins), when the money tables are quiet: creating six triggers on busy tables in one transaction outside the freeze deadlocked against live multi-table writers twice (22:04, 22:09 UTC), which is why the phase is two migrations.
 
 **The close is judged (R5, reported).** Reaching COMPLETED with prize or bounty left files a `settlement_error` incident with the banks; the fee bank settles after close and is not judged there. Holding an event in COMPLETING until it is at zero is engine work, named below. The hourly shadow keeps running and now compares itself to the balance for every event touched in the last hour (`fn_ca_escrow_balance_drift`, appended to the shadow's own cron command), filing on disagreement, so a rule the triggers and the shadow disagree on is an incident, not a silent drift.
 
@@ -22,7 +22,11 @@ Probed, rolled back (22:0x UTC, on a live RUNNING event and a completed spin): o
 
 ## Live after part two
 
-FILLED_AFTER_PART_TWO
+Part two waited for a quiet freeze: the 22:55 attempt fired early on a loose freeze test and its probe tripped on its own test row (`rake_method`), the 02:55 attempt tripped on an assertion that counted other agents' undeclared triggers, and the corrected probe then passed every step inside the same freeze (opened at prize 1,512.00 = shadow; an entry of 10.00 with a 1.00 fee moved prize +9.00 and fee +1.00 through the triggers; an over-balance prize refused inside the write; the settle function refused 1,517.00 with `escrow_short`; a refund apportioned; a spin tracked and never refused; the R3 guard, correctly, refused the probe's bare prize insert until it named the settle door). Applied 02:56:30, mirrored byte-exact.
+
+**Part three (02:56:42)**: the supply meter's `tournament_liability` read the counters, which is where the whole hourly residual sat since Phase 4 landed (trial balance: +696.14 in 20:05-21:05, +326.40 in 01:05-02:05, every other account within a few chips; 835.01 since the Mint baseline). The meter now sums `tournament_escrow` banks for every event the balance knows and the counters only for one it does not; the trial balance reads the meter's snapshots, so it follows. The six open `supply-unexplained` incidents since 21:00 are resolved with this migration as the correction; the 03:05 snapshot is the first read.
+
+**First minutes after the thaw (03:00-03:02 UTC)**: 81 escrow rows touched, 28 prizes paid through the balance, 13 events closed at zero, 0 non-zero closes, 0 refusals, 0 ledger write failures, 0 alerts. Two 5,000 union-bank-to-treasury moves at 02:55 landed in `settlement_suspense` (another agent's path; the suspense watcher filed it).
 
 ## 5.2 and 5.3, named
 

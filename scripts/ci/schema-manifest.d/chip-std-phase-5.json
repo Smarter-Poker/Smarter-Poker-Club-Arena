@@ -1,5 +1,5 @@
 {
-  "_owner": "fix/chip-std-phase-5 (chip standard Phase 5.1, escrow becomes a balance, 2026-09-04). Applied as 20260904220932 (part one) and the part-two version recorded in the changelog.",
+  "_owner": "fix/chip-std-phase-5 (chip standard Phase 5.1, escrow becomes a balance, 2026-09-04/05). Applied as 20260904220932 (part one), 20260905025630 (part two, inside the freeze), 20260905025642 (part three, the meter reads the escrow).",
   "tables": ["tournament_escrow"],
   "functions": [
     "fn_ca_escrow_apply",

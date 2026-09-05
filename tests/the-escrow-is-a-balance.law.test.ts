@@ -125,6 +125,14 @@ describe('LAW 4: the close is judged, the shadow keeps checking', () => {
   });
 });
 
+describe('LAW 4b: the supply meter reads the escrow', () => {
+  const c = find(/^\d{14}_phase_5_1_part_three_the_supply_meter_reads_the_escrow\.sql$/);
+  it('tournament_liability is the escrow banks where the balance knows the event, the counters only where it does not', () => {
+    expect(c).toMatch(/LEFT JOIN public\.tournament_escrow e ON e\.tournament_id = t\.id/);
+    expect(c).toMatch(/COALESCE\(e\.prize_balance \+ e\.bounty_balance \+ e\.fee_balance,/);
+  });
+});
+
 describe('LAW 5: spins are tracked, not refused', () => {
   it('a spin opens with enforced = false', () => {
     expect(a).toMatch(

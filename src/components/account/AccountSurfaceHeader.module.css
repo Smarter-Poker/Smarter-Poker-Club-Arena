@@ -146,6 +146,50 @@
   margin-top: 1.3rem;
 }
 
+/* ── Light mode: brushed silver ──────────────────────────────────────── */
+
+:global([data-theme='light']) .hero {
+  border-color: #b7c3cc;
+  background: #e6ebef;
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 18px 40px rgba(20, 35, 50, 0.18);
+}
+
+:global([data-theme='light']) .image {
+  filter: saturate(0.7) contrast(1.02) brightness(1.05);
+}
+
+:global([data-theme='light']) .hero::before {
+  background:
+    linear-gradient(
+      90deg,
+      rgba(230, 235, 239, 0.98) 0%,
+      rgba(230, 235, 239, 0.84) 45%,
+      rgba(230, 235, 239, 0.2) 100%
+    ),
+    linear-gradient(0deg, rgba(230, 235, 239, 0.94), transparent 62%);
+}
+
+:global([data-theme='light']) .copy h1 {
+  color: #0d161d;
+  text-shadow: 0 2px 14px rgba(255, 255, 255, 0.9);
+}
+
+:global([data-theme='light']) .copy p {
+  color: #3f5261;
+}
+
+:global([data-theme='light']) .eyebrow {
+  color: #146bb3;
+}
+
+:global([data-theme='light']) .status {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: #aab8c3;
+  color: #1c2a35;
+}
+
 @media (max-width: 600px) {
   .hero {
     min-height: 214px;

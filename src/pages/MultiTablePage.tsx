@@ -53,7 +53,14 @@ import {
   pickObserveSlot,
   pruneStaleSeatedTabs,
 } from '../utils/tabSlots';
-import { hubTabTitle, isHubPath, readHubTabs, sameHubPage, saveHubTabs } from '../utils/hubTab';
+import {
+  hubTabSubtitle,
+  hubTabTitle,
+  isHubPath,
+  readHubTabs,
+  sameHubPage,
+  saveHubTabs,
+} from '../utils/hubTab';
 import { HubFrame, type HubFrameSwipeHandlers } from '../components/table/HubFrame';
 import GlobalHeader from '../components/navigation/GlobalHeader';
 import { soundService, haptic } from '../services/SoundService';
@@ -381,7 +388,9 @@ const isHubTab = (t: TableInstance): boolean => t.kind === 'hub';
 const makeHubTab = (path: string): TableInstance => ({
   id: `${HUB_TAB_PREFIX}${Date.now()}`,
   name: hubTabTitle(path),
-  stakes: '',
+  // The pill's sub-line, where the stakes go on a table: the page WITHIN the
+  // section, so two Training tabs on different drills read differently.
+  stakes: hubTabSubtitle(path),
   isMyTurn: false,
   pot: 0,
   kind: 'hub',
@@ -1805,8 +1814,29 @@ export default function MultiTablePage() {
 
   // ─── Batch 3: tab quick actions (long-press menu in the tab bar) ──────
   const handleQuickAction = useCallback(
-    async (tabId: string, action: 'sitout' | 'back' | 'leave' | 'mute') => {
+    async (
+      tabId: string,
+      action: 'sitout' | 'back' | 'leave' | 'mute' | 'reload' | 'open-browser'
+    ) => {
       switch (action) {
+        /* Hub tabs only (Dan 2026-09-05, browser-tab parity). RELOAD remounts
+           the frame at its last known page by giving the tab a fresh id - the
+           frame reads `src` once at mount, so a new key is the reload. OPEN IN
+           BROWSER hands the same page to a real tab, for anything a frame
+           cannot do (checkout, downloads, a page the player wants to keep). */
+        case 'reload': {
+          setTables((prev) =>
+            prev.map((t) =>
+              t.id === tabId && isHubTab(t) ? { ...t, id: `${HUB_TAB_PREFIX}${Date.now()}` } : t
+            )
+          );
+          break;
+        }
+        case 'open-browser': {
+          const t = tablesRef.current.find((x) => x.id === tabId);
+          if (t && isHubTab(t)) window.open(t.hubUrl ?? '/hub', '_blank', 'noopener,noreferrer');
+          break;
+        }
         case 'mute':
           setMutedIds((prev) =>
             prev.includes(tabId) ? prev.filter((id) => id !== tabId) : [...prev, tabId]
@@ -2824,7 +2854,12 @@ export default function MultiTablePage() {
       const idx = tabs.findIndex((t) => t.id === tabId);
       if (idx === -1 || tabs[idx].hubUrl === path) return tabs; // same identity: no re-render
       const next = [...tabs];
-      next[idx] = { ...tabs[idx], hubUrl: path, name: hubTabTitle(path) };
+      next[idx] = {
+        ...tabs[idx],
+        hubUrl: path,
+        name: hubTabTitle(path),
+        stakes: hubTabSubtitle(path),
+      };
       return next;
     });
   }, []);
@@ -3644,6 +3679,29 @@ export default function MultiTablePage() {
       return next.length === cur.length ? cur : next;
     });
   }, [tablesReady]);
+
+  /**
+   * HOW MANY LIVE TABLES ARE OPEN, told to the document (Dan 2026-09-05).
+   *
+   * The real GlobalHeader (off-route, above the pinned strip) and pages such
+   * as HandHistory send the player to World Hub URLs with `window.location`
+   * or `window.open`. With a table open the first unmounts every felt and the
+   * second opens a browser tab the strip cannot see. They ask this attribute:
+   * with a live table open they emit OPEN_HUB_TAB instead and the page lands
+   * in a hub tab beside the game; with none open they leave exactly as before.
+   * Counted on TABLE tabs only, because a hub tab opened off-route is shown
+   * by borrowing a real table's URL (revealPageTabOffRoute) - with no table
+   * there is nothing to borrow and the button would appear dead.
+   */
+  const liveTableCount = tables.filter(isTableTab).length;
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const { body } = document;
+    if (!body) return;
+    if (liveTableCount > 0) body.setAttribute('data-ca-live-tables', String(liveTableCount));
+    else body.removeAttribute('data-ca-live-tables');
+    return () => body.removeAttribute('data-ca-live-tables');
+  }, [liveTableCount]);
 
   const pinnedBarVisible = hidden && tables.length >= 1;
   useEffect(() => {

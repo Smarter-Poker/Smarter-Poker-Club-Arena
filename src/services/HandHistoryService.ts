@@ -294,6 +294,12 @@ class HandHistoryServiceClass {
        * nothing; a live table always passes its own id.
        */
       tableId?: string | null;
+      /**
+       * PAGING (2026-09-04). The archive used to ask for `PAGE_SIZE * page`
+       * rows and re-download every earlier page with each Load More. Rows
+       * `offset .. offset + limit - 1`, in play order.
+       */
+      offset?: number;
     } = {}
   ): Promise<HandRecord[]> {
     // BUG 021 Layer D (2026-04-16): Supabase JS `.contains('column', [{key: val}])` serializes
@@ -306,14 +312,16 @@ class HandHistoryServiceClass {
       .select(HAND_HISTORY_COLUMNS)
       .contains('players', containmentJson);
     if (opts.tableId) query = query.eq('table_id', opts.tableId);
-    const { data, error } = await query
-      /* PLAY ORDER, NOT INSERT ORDER (Dan 2026-09-04: "un organized"). This
-         sorted by created_at, which is when the ROW landed: the writer's retry
-         queue drains failed inserts minutes later, so during any database
-         blip hands landed out of order and stayed that way. hand_number is
-         globally monotonic (GLOBAL_HAND_NUMBER_FLOOR) and is the play order. */
-      .order('hand_number', { ascending: false })
-      .limit(limit);
+    /* PLAY ORDER, NOT INSERT ORDER (Dan 2026-09-04: "un organized"). This
+       sorted by created_at, which is when the ROW landed: the writer's retry
+       queue drains failed inserts minutes later, so during any database
+       blip hands landed out of order and stayed that way. hand_number is
+       globally monotonic (GLOBAL_HAND_NUMBER_FLOOR) and is the play order. */
+    query = query.order('hand_number', { ascending: false });
+    const offset = Math.max(0, Math.floor(opts.offset ?? 0));
+    const { data, error } = await (offset > 0
+      ? query.range(offset, offset + limit - 1)
+      : query.limit(limit));
 
     if (error || !data) {
       if (error) reportError(error, 'HandHistoryService.getPlayerHands_hand_history_query');

@@ -1,637 +1,592 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  HAND HISTORY PAGE — Metal UI Theme
- *  Brushed Steel + Cyan Glow Replay Interface
- * ═══════════════════════════════════════════════════════════════════════════════
+ * Hand Archive  #SMARTERCASINOREALISM
+ *
+ * The hand-archive vault: obsidian and gunmetal structure, chrome type,
+ * restrained broadcast blue for the active filter, brass for what is yours.
+ * Rajdhani display figures, monospace eyebrows, Inter body. Light mode is
+ * brushed-silver hardware with the same hierarchy. The class names the play
+ * circuit's shared sheet (PlayCircuitSurfaces.css) already frames are kept -
+ * .hand-card, .summary-stat, .hh-filters - so the page sits inside the same
+ * chassis as Session History.
+ *
+ * No hover effects; motion scales with --animation-speed and collapses under
+ * prefers-reduced-motion.
  */
 
 .hand-history-page {
-  max-width: 680px;
-  margin: 0 auto;
-  width: 100%;
-  box-sizing: border-box;
-  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
-     one axis computes the other to `auto`, which makes this a scroll container,
-     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
-     viewport. The bar leaves the bottom of the screen and rides up the page. */
-  overflow-x: hidden;
-  overflow-x: clip;
-  padding-bottom: var(--bottom-nav-clearance, 74px);
-  color: #e2e8f0;
-  font-family: 'Rajdhani', 'Rajdhani', 'Exo 2', sans-serif;
+  --hha-void: #030609;
+  --hha-black: #080d12;
+  --hha-panel: #0c1118;
+  --hha-panel-raised: #111823;
+  --hha-gunmetal: #26333d;
+  --hha-chrome: #dce8f0;
+  --hha-steel: #b9cad7;
+  --hha-blue: #3aa8ff;
+  --hha-blue-hot: #8ad2ff;
+  --hha-brass: #d6ad52;
+  --hha-muted: #8391a1;
+  --hha-up: #4cd07d;
+  --hha-down: #ff6b6b;
+  --hha-line: rgba(185, 202, 215, 0.12);
+  --hha-display: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
+  --hha-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+  --hha-body: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  min-height: 100vh;
   min-height: 100dvh;
-  position: relative;
-  z-index: 1;
+  padding-bottom: calc(var(--bottom-nav-clearance, 96px) + env(safe-area-inset-bottom, 0px));
+  color: var(--hha-chrome);
+  font-family: var(--hha-body);
+  background: linear-gradient(180deg, var(--hha-black) 0%, var(--hha-void) 100%);
 }
 
-@media (max-width: 768px) {
-  .hand-history-page {
-    width: 100%;
-    max-width: 100%;
-  }
-}
-
-.hand-history-page::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  background-image: url('/hub/club-arena/images/bg_digital_matrix.jpg');
-  background-size: cover;
-  background-position: center;
-  background-color: rgba(10, 10, 21, 0.85);
-  background-blend-mode: multiply;
-  pointer-events: none;
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   HEADER — Metal Frame
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.hh-header {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1rem;
-  background: linear-gradient(180deg, #3d4f5f 0%, #1a2332 50%, #0d1117 100%);
-  border: 3px solid #3d4f5f;
-  border-radius: 12px;
-  margin: 1rem;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
-    0 4px 20px rgba(0, 0, 0, 0.5);
-  position: relative;
-}
-
-.hh-header::before,
-.hh-header::after {
-  content: '';
-  position: absolute;
-  width: 4px;
-  top: 20%;
-  bottom: 20%;
-  background: #00d4ff;
-  box-shadow:
-    0 0 10px #00d4ff,
-    0 0 20px rgba(0, 212, 255, 0.6);
-  border-radius: 2px;
-}
-
-.hh-header::before {
-  left: 8px;
-}
-
-.hh-header::after {
-  right: 8px;
-}
-
-.hh-header .back-btn {
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
-  border: 2px solid #3a4a5a;
-  border-radius: 10px;
-  font-size: 1.25rem;
-  color: #8a9aaa;
-  cursor: pointer;
-  padding: 0.5rem 0.75rem;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.hh-header h1 {
-  font-size: 1.5rem;
-  margin: 0 0 0 12px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  color: #ffffff;
-  text-shadow: 0 0 10px rgba(0, 212, 255, 0.6);
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   FILTERS — Metal Chips
-   ───────────────────────────────────────────────────────────────────────────── */
-
+/* ── Filters ────────────────────────────────────────────────────────────── */
 .hh-filters {
   display: flex;
-  gap: 0.5rem;
-  padding: 1rem;
+  gap: 8px;
+  margin: 12px 16px 8px;
+  padding: 8px;
   overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--hha-gunmetal);
+  border-radius: 4px;
+  background: var(--hha-black);
   scrollbar-width: none;
 }
+
 .hh-filters::-webkit-scrollbar {
   display: none;
 }
 
-.filter-btn {
-  padding: 0.5rem 1rem;
-  border: 2px solid #2a3a4a;
-  border-radius: 20px;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.04) 0%, rgba(100, 100, 100, 0.02) 100%);
-  color: #6a7a8a;
-  font-size: 0.85rem;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.filter-btn.active {
-  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
-  border-color: #00d4ff;
-  color: #fff;
-  box-shadow: 0 0 15px rgba(0, 212, 255, 0.6);
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   HANDS LIST
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.hands-list {
-  padding: 0 1rem;
-}
-
-.loading-state,
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 3rem;
-  text-align: center;
-  color: #6a7a8a;
-}
-
-.empty-icon {
-  font-size: 3rem;
-  margin-bottom: 1rem;
-  opacity: 0.4;
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   HAND CARD — Metal Panel
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.hand-card {
-  position: relative;
-  background: linear-gradient(180deg, #3d4f5f 0%, #1a2332 50%, #0d1117 100%);
-  border: 3px solid #3d4f5f;
-  border-radius: 12px;
-  padding: 1rem;
-  margin-bottom: 0.75rem;
-  cursor: pointer;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 4px 20px rgba(0, 0, 0, 0.5);
-  transition: all 0.3s ease;
-}
-
-.hand-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.75rem;
-}
-
-.table-name {
-  font-weight: 600;
-  color: #fff;
-}
-
-.hand-date {
-  font-size: 0.85rem;
-  color: #6a7a8a;
-}
-
-.hand-body {
-  display: flex;
-  justify-content: space-between;
-  padding: 0.75rem 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.pot-info,
-.result-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.pot-label,
-.result-label {
-  font-size: 0.7rem;
-  color: #6a7a8a;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.pot-value {
-  font-size: 1.125rem;
-  font-weight: 700;
-  color: #00d4ff;
-  font-family: 'Rajdhani', monospace;
-  text-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
-}
-
-.result-value {
-  font-size: 1.125rem;
-  font-weight: 700;
-  font-family: 'Rajdhani', monospace;
-}
-
-.result-info.positive .result-value {
-  color: #10b981;
-  text-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
-}
-
-.result-info.negative .result-value {
-  color: #ef4444;
-  text-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
-}
-
-.hand-footer {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-top: 0.75rem;
-  /* Mobile-fit sweep (2026-08-22): stakes + player count + three buttons in
-     one non-wrapping row measured 402px at a 375px viewport — the Replay
-     button ran off the felt edge. Wrapping is the social-page behaviour: the
-     buttons drop to their own line instead of leaving the screen. */
-  flex-wrap: wrap;
-}
-
-.stakes {
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.04) 0%, rgba(100, 100, 100, 0.02) 100%);
-  border: 1px solid #2a3a4a;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-  font-size: 0.75rem;
-  color: #6a7a8a;
-}
-
-.players {
-  font-size: 0.85rem;
-  color: #6a7a8a;
-}
-
-.replay-btn,
-.analyze-btn,
-.share-btn {
-  margin-left: 0.25rem;
-  padding: 0.375rem 0.75rem;
-  border: none;
-  border-radius: 6px;
-  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
-  color: white;
-  font-size: 0.85rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.25s ease;
-  box-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
-}
-
-.replay-btn {
-  margin-left: auto;
-}
-
-.analyze-btn {
-  /* Dan, verbatim: "REMOVE THE YELLOW AND PURPLE." This was
-     `linear-gradient(135deg, #a855f7 0%, #7e22ce 100%)` — the last live purple
-     left in the hand-history surfaces after the 2026-08-23 sweep, which
-     corrected the panel and the detail modal but never reached this page.
-     Replaced with the house blue the rest of the platform uses (--fb-blue
-     #1877f2 -> #0d5dc7), kept as a gradient so the button still reads as the
-     primary action beside the plain REPLAY button next to it. */
-  background: linear-gradient(135deg, #1877f2 0%, #0d5dc7 100%);
-  /* The GLOW was purple too — rgba(168, 85, 247) is #a855f7 written the other
-     way, which is why a hex sweep for the colour missed it and left the button
-     ringed in the exact shade the background had just stopped being. Any
-     future colour sweep has to read rgb()/rgba() as well as hex. */
-  box-shadow: 0 0 10px rgba(24, 119, 242, 0.5);
-}
-
-.share-btn {
-  background: linear-gradient(135deg, #10b981 0%, #047857 100%);
-  box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   REPLAY MODAL
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.replay-modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.85);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 1rem;
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-}
-
-.replay-modal-content {
-  position: relative;
-  background: linear-gradient(180deg, #3d4f5f 0%, #1a2332 50%, #0d1117 100%);
-  border: 3px solid #3d4f5f;
-  border-radius: 12px;
-  max-width: 600px;
-  width: 100%;
-  max-height: 90vh;
-  overflow-y: auto;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
-    0 4px 40px rgba(0, 212, 255, 0.3);
-}
-
-.modal-close {
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
-  border: 2px solid #3a4a5a;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  touch-action: manipulation;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 10;
-  color: #8a9aaa;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   STATS SUMMARY
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.hh-summary {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  margin: 0 1rem 1rem;
-  background: linear-gradient(180deg, #3d4f5f 0%, #1a2332 50%, #0d1117 100%);
-  border: 3px solid #3d4f5f;
-  border-radius: 12px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
-    0 4px 20px rgba(0, 0, 0, 0.5);
-}
-
-/* Scope caption under the summary. The figures above cover the hands LOADED,
-   not the account lifetime, and "Biggest Pot" in particular reads as an
-   all-time record when it is the biggest of the 25 on screen. */
-.hh-summary-scope {
-  margin: -0.5rem 1rem 1rem;
-  padding: 0 0.25rem;
-  font-size: 0.7rem;
-  line-height: 1.4;
-  letter-spacing: 0.02em;
-  color: rgba(255, 255, 255, 0.45);
-  text-align: center;
-}
-
-.hh-summary .summary-stat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  min-width: 50px;
-}
-
-.hh-summary .stat-value {
-  font-size: 1.125rem;
-  font-weight: 700;
-  color: #00d4ff;
-  font-family: 'Rajdhani', monospace;
-}
-
-.hh-summary .summary-stat.positive .stat-value {
-  color: #10b981;
-}
-
-.hh-summary .summary-stat.negative .stat-value {
-  color: #ef4444;
-}
-
-.hh-summary .stat-label {
-  font-size: 0.625rem;
-  text-transform: uppercase;
-  color: #6a7a8a;
-  letter-spacing: 0.5px;
-}
-
-.export-btn {
-  margin-left: auto;
-  padding: 0.5rem 1rem;
-  border: 2px solid #2a3a4a;
-  border-radius: 8px;
-  background: transparent;
-  color: #8a9aaa;
-  font-size: 0.85rem;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   LOAD MORE
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.load-more-btn {
-  display: block;
-  width: calc(100% - 2rem);
-  margin: 1rem;
-  padding: 0.875rem;
-  border: 2px solid #3d4f5f;
-  border-radius: 8px;
-  background: linear-gradient(180deg, #3d4f5f 0%, #1a2332 50%, #0d1117 100%);
-  color: #e2e8f0;
-  font-size: 0.85rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 4px 10px rgba(0, 0, 0, 0.5);
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.load-more-btn:disabled {
-  cursor: wait;
-  opacity: 0.6;
-}
-/* ─────────────────────────────────────────────────────────────────────────────
-   MOBILE RESPONSIVE
-   ───────────────────────────────────────────────────────────────────────────── */
-
-@media (max-width: 480px) {
-  .hh-header {
-    padding: 0.75rem;
-    gap: 0.75rem;
-  }
-  .hh-header h1 {
-    font-size: 1rem;
-  }
-  .hh-filters {
-    padding: 0.75rem;
-  }
-  .filter-btn {
-    padding: 0.375rem 0.75rem;
-    font-size: 0.8rem;
-  }
-  .hands-list {
-    padding: 0 0.75rem;
-  }
-  .hand-card {
-    padding: 0.75rem;
-  }
-  .table-name {
-    font-size: 0.9rem;
-  }
-  .hand-date {
-    font-size: 0.75rem;
-  }
-  .pot-value {
-    font-size: 1.125rem;
-  }
-  .result-value {
-    font-size: 1.125rem;
-  }
-  .hh-summary {
-    margin: 0 0.75rem 0.75rem;
-    padding: 0.5rem 0.75rem;
-    gap: 0.5rem;
-  }
-  .hh-summary .stat-value {
-    font-size: 0.95rem;
-  }
-  .replay-modal-content {
-    border-radius: 12px;
-  }
-  .hand-footer {
-    gap: 0.5rem;
-  }
-  .replay-btn {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.8rem;
-  }
-  .replay-btn,
-  .analyze-btn,
-  .share-btn,
-  .filter-btn,
-  .hh-filter-chip,
-  .export-btn {
-    min-height: 44px;
-    touch-action: manipulation;
-  }
-}
-
-@media (max-width: 380px) {
-  .hand-body {
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  .result-badge {
-    align-self: flex-start;
-  }
-  .hh-summary {
-    flex-wrap: wrap;
-  }
-  .hh-summary .summary-stat {
-    min-width: 40px;
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   FILTER PILL CHIPS (Initiative 5)
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
 .hh-filter-chip {
-  padding: 6px 14px;
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.05);
-  color: #e2e8f0;
-  font-size: 0.8rem;
-  font-weight: 600;
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border-radius: 4px;
+  border: 1px solid var(--hha-gunmetal);
+  background: linear-gradient(180deg, var(--hha-panel-raised), var(--hha-panel));
+  color: var(--hha-steel);
+  font-family: var(--hha-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   cursor: pointer;
-  transition: all 0.25s ease;
-  white-space: nowrap;
+  box-shadow: inset 0 1px 0 rgba(185, 202, 215, 0.12);
 }
 
 .hh-filter-chip.active {
-  border-color: #00d4ff;
-  color: #fff;
-  background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(0, 153, 204, 0.15));
-  box-shadow: 0 0 10px rgba(0, 212, 255, 0.2);
+  background: linear-gradient(180deg, #1f7fd6, #145ea3);
+  border-color: rgba(58, 168, 255, 0.6);
+  color: #f4f9ff;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   RESULT BADGE (Initiative 4)
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.result-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 12px;
-  border-radius: 8px;
-  font-size: 0.9rem;
-  font-weight: 700;
-  font-family: 'Rajdhani', monospace;
-  white-space: nowrap;
+.hh-filter-chip:active,
+.export-btn:active,
+.load-more-btn:active,
+.replay-btn:active,
+.analyze-btn:active,
+.share-btn:active {
+  transform: translateY(1px);
 }
 
-.result-badge.win {
-  color: #10b981;
-  background: rgba(16, 185, 129, 0.12);
-  border: 1px solid rgba(16, 185, 129, 0.25);
-  text-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
+.hh-filter-chip:focus-visible,
+.export-btn:focus-visible,
+.load-more-btn:focus-visible,
+.replay-btn:focus-visible,
+.analyze-btn:focus-visible,
+.share-btn:focus-visible,
+.hand-card__summary:focus-visible,
+.hh-stats-drilldown button:focus-visible {
+  outline: 2px solid var(--hha-blue);
+  outline-offset: 2px;
 }
 
-.result-badge.loss {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.12);
-  border: 1px solid rgba(239, 68, 68, 0.25);
-  text-shadow: 0 0 8px rgba(239, 68, 68, 0.3);
-}
+/* ── Stats evidence banner ──────────────────────────────────────────────── */
 .hh-stats-drilldown {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin: 0 0 16px;
-  padding: 11px 13px;
-  border: 1px solid rgba(64, 169, 255, 0.35);
+  margin: 0 16px 8px;
+  padding: 8px 12px;
+  border: 1px solid rgba(214, 173, 82, 0.4);
   border-radius: 4px;
-  background: rgba(4, 18, 31, 0.9);
-  color: #b9d9f4;
-  font-size: 0.78rem;
+  background: rgba(214, 173, 82, 0.08);
+  font-family: var(--hha-mono);
+  font-size: 11px;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
+  color: var(--hha-brass);
 }
 
 .hh-stats-drilldown button {
-  min-height: 44px;
-  border: 1px solid rgba(143, 196, 238, 0.38);
-  border-radius: 3px;
-  background: #07111b;
-  color: #dcefff;
+  padding: 6px 10px;
+  border-radius: 4px;
+  border: 1px solid rgba(214, 173, 82, 0.5);
+  background: transparent;
+  color: var(--hha-brass);
+  font-family: var(--hha-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
 }
 
-@media (max-width: 620px) {
-  .hh-stats-drilldown {
-    align-items: stretch;
-    flex-direction: column;
+/* ── Summary strip ──────────────────────────────────────────────────────── */
+.hh-summary {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin: 0 16px 4px;
+  flex-wrap: wrap;
+}
+
+.hh-summary .summary-stat {
+  flex: 1 1 88px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  min-width: 0;
+}
+
+.hh-summary .stat-value {
+  font-family: var(--hha-display);
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--hha-chrome);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hh-summary .summary-stat.positive .stat-value {
+  color: var(--hha-up);
+}
+
+.hh-summary .summary-stat.negative .stat-value {
+  color: var(--hha-down);
+}
+
+.hh-summary .stat-label {
+  font-family: var(--hha-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--hha-muted);
+}
+
+.hh-summary-scope {
+  margin: 0 16px 12px;
+  font-family: var(--hha-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--hha-muted);
+}
+
+.export-btn {
+  align-self: center;
+  padding: 10px 14px;
+  border-radius: 4px;
+  border: 1px solid var(--hha-gunmetal);
+  background: linear-gradient(180deg, var(--hha-panel-raised), var(--hha-panel));
+  color: var(--hha-chrome);
+  font-family: var(--hha-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(185, 202, 215, 0.12);
+}
+
+/* ── The list ───────────────────────────────────────────────────────────── */
+.hands-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px;
+}
+
+.hh-empty {
+  padding: 48px 24px;
+  text-align: center;
+  border: 1px solid var(--hha-line);
+  border-radius: 4px;
+  background: var(--hha-panel);
+}
+
+.hh-empty__suits {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 40px;
+  color: var(--hha-gunmetal);
+}
+
+.hh-empty__title {
+  margin: 0 0 4px;
+  font-family: var(--hha-display);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--hha-chrome);
+}
+
+.hh-empty__body {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--hha-muted);
+}
+
+.hand-card {
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity calc(0.3s * var(--animation-speed, 1)) ease,
+    transform calc(0.3s * var(--animation-speed, 1)) ease;
+}
+
+.hand-card--in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.hand-card--expanded {
+  box-shadow:
+    inset 0 0 0 1px rgba(58, 168, 255, 0.35),
+    0 14px 34px rgba(0, 0, 0, 0.24) !important;
+}
+
+.hand-card__summary {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.hand-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.table-name {
+  font-family: var(--hha-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--hha-chrome);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.hand-num {
+  font-family: var(--hha-mono);
+  font-size: 10px;
+  color: var(--hha-blue);
+  letter-spacing: 0.06em;
+}
+
+.hand-date {
+  margin-left: auto;
+  font-family: var(--hha-mono);
+  font-size: 10px;
+  color: var(--hha-muted);
+  white-space: nowrap;
+}
+
+.hand-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pot-info {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pot-label {
+  font-family: var(--hha-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--hha-muted);
+}
+
+.pot-value {
+  font-family: var(--hha-display);
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--hha-chrome);
+}
+
+.pot-rake {
+  font-family: var(--hha-mono);
+  font-size: 9px;
+  color: var(--hha-muted);
+  white-space: nowrap;
+}
+
+.hand-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.hand-tag {
+  font-family: var(--hha-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 5px;
+  border-radius: 3px;
+  border: 1px solid rgba(58, 168, 255, 0.35);
+  color: var(--hha-blue-hot);
+  background: rgba(58, 168, 255, 0.1);
+  white-space: nowrap;
+}
+
+.hand-tag--quiet {
+  border-color: var(--hha-line);
+  color: var(--hha-muted);
+  background: transparent;
+}
+
+.result-badge {
+  margin-left: auto;
+  font-family: var(--hha-display);
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--hha-steel);
+}
+
+.result-badge.win {
+  color: var(--hha-up);
+}
+
+.result-badge.loss {
+  color: var(--hha-down);
+}
+
+.hand-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  font-family: var(--hha-mono);
+  font-size: 10px;
+  color: var(--hha-muted);
+}
+
+.hand-card__chevron {
+  margin-left: auto;
+  color: var(--hha-muted);
+}
+
+.hand-card__detail {
+  padding: 4px 8px 10px;
+  border-top: 1px solid var(--hha-line);
+  background: var(--hha-black);
+  animation: hhaFadeIn calc(0.25s * var(--animation-speed, 1)) ease;
+}
+
+@keyframes hhaFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.hand-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 2px 0;
+}
+
+.replay-btn,
+.analyze-btn,
+.share-btn,
+.load-more-btn {
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--hha-gunmetal);
+  background: linear-gradient(180deg, var(--hha-panel-raised), var(--hha-panel));
+  color: var(--hha-chrome);
+  font-family: var(--hha-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(185, 202, 215, 0.12);
+}
+
+.replay-btn {
+  border-color: rgba(58, 168, 255, 0.6);
+  background: linear-gradient(180deg, #1f7fd6, #145ea3);
+  color: #f4f9ff;
+}
+
+.load-more-btn {
+  display: block;
+  margin: 12px 16px 0;
+  width: calc(100% - 32px);
+  padding: 12px;
+}
+
+.load-more-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── Replay modal ───────────────────────────────────────────────────────── */
+.replay-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(2, 4, 7, 0.78);
+}
+
+.replay-modal-content {
+  position: relative;
+  width: 100%;
+  max-width: 720px;
+  max-height: 90vh;
+  max-height: 90dvh;
+  overflow-y: auto;
+  border: 1px solid var(--hha-gunmetal, #26333d);
+  border-radius: 8px;
+  background: var(--hha-black, #080d12);
+  box-shadow:
+    inset 0 1px 0 rgba(185, 202, 215, 0.12),
+    0 28px 70px rgba(0, 0, 0, 0.5);
+}
+
+.modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  border: 1px solid var(--hha-gunmetal, #26333d);
+  background: var(--hha-panel, #0c1118);
+  color: var(--hha-steel, #b9cad7);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* ── 375px first ────────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .hh-filters,
+  .hh-summary,
+  .hh-summary-scope,
+  .hh-stats-drilldown,
+  .hands-list {
+    margin-left: 12px;
+    margin-right: 12px;
+  }
+
+  .hands-list {
+    padding: 0;
+  }
+
+  .hh-summary .summary-stat {
+    flex-basis: 30%;
+  }
+
+  .export-btn {
+    flex: 1 1 100%;
+  }
+
+  .hand-body {
+    flex-wrap: wrap;
+  }
+
+  .hand-tags {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .replay-modal-overlay {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .replay-modal-content {
+    max-height: 92dvh;
+    border-radius: 12px 12px 0 0;
+  }
+}
+
+/* ── Light mode: brushed silver, same hierarchy ─────────────────────────── */
+[data-theme='light'] .hand-history-page {
+  --hha-void: #d9e0e6;
+  --hha-black: #e6ebef;
+  --hha-panel: #f1f4f7;
+  --hha-panel-raised: #ffffff;
+  --hha-gunmetal: #aab8c3;
+  --hha-chrome: #0d161d;
+  --hha-steel: #3f5261;
+  --hha-blue: #146bb3;
+  --hha-blue-hot: #0f5a99;
+  --hha-brass: #8a6a24;
+  --hha-muted: #5f7181;
+  --hha-up: #1f8a4c;
+  --hha-down: #c0392b;
+  --hha-line: rgba(20, 35, 50, 0.14);
+}
+
+[data-theme='light'] .hand-history-page .hh-filter-chip.active,
+[data-theme='light'] .hand-history-page .replay-btn {
+  background: linear-gradient(180deg, #2a8ae0, #1b6cb5);
+}
+
+[data-theme='light'] .hand-history-page .hand-tag {
+  background: rgba(20, 107, 179, 0.08);
+  border-color: rgba(20, 107, 179, 0.3);
+}
+
+[data-theme='light'] .replay-modal-overlay {
+  background: rgba(20, 35, 50, 0.4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hand-card {
+    transition: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .hand-card__detail {
+    animation: none;
   }
 }

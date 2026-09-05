@@ -1,374 +1,657 @@
 /**
- * ♠ CLUB ARENA — Hand Replay Styles
+ * Hand Replay  #SMARTERCASINOREALISM
+ *
+ * The replay felt and its controls. Obsidian and gunmetal around a felt that
+ * stays a felt; chrome type; broadcast blue for the active control and the
+ * acting seat; brass for what is the viewer's own. Rajdhani display figures,
+ * monospace eyebrows, Inter body. Light mode is the same hierarchy in brushed
+ * silver. No hover effects; motion scales with --animation-speed and
+ * collapses under prefers-reduced-motion.
  */
 
 .hand-replay {
-  min-height: 100vh;
-  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
-  background: linear-gradient(180deg, #0a0e1a 0%, #141828 100%);
-  padding-bottom: var(--space-10);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-}
+  --hr-void: #030609;
+  --hr-black: #080d12;
+  --hr-panel: #0c1118;
+  --hr-panel-raised: #111823;
+  --hr-gunmetal: #26333d;
+  --hr-chrome: #dce8f0;
+  --hr-steel: #b9cad7;
+  --hr-blue: #3aa8ff;
+  --hr-blue-hot: #8ad2ff;
+  --hr-brass: #d6ad52;
+  --hr-muted: #8391a1;
+  --hr-up: #4cd07d;
+  --hr-down: #ff6b6b;
+  --hr-felt: #0f4d33;
+  --hr-felt-deep: #08301f;
+  --hr-line: rgba(185, 202, 215, 0.12);
+  --hr-display: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
+  --hr-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+  --hr-body: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
-.hand-replay.loading,
-.hand-replay.error {
   display: flex;
   flex-direction: column;
+  width: 100%;
+  min-height: 100%;
+  color: var(--hr-chrome);
+  font-family: var(--hr-body);
+  background: linear-gradient(180deg, var(--hr-black) 0%, var(--hr-void) 100%);
+  outline: none;
+}
+
+.hand-replay:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--hr-blue);
+}
+
+.hand-replay--empty {
   align-items: center;
   justify-content: center;
-  gap: var(--space-4);
-}
-
-/* Header */
-.replay-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-4);
-  background: rgba(0, 0, 0, 0.3);
-}
-
-.replay-header h1 {
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-bold);
-}
-
-.header-actions {
-  display: flex;
-  gap: var(--space-2);
-}
-
-.action-btn {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-tertiary);
-  border: none;
-  border-radius: var(--radius-md);
-  font-size: var(--fs-lg);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.action-btn.play {
-  background: var(--accent-green);
-  color: white;
-}
-
-/* Meta Info */
-.replay-meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-2) var(--space-4);
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-}
-
-.meta-date {
-  flex: 1;
-}
-
-/* Share Row */
-.share-row {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0 var(--space-4);
-  margin-bottom: var(--space-2);
-}
-
-.share-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  background: var(--accent-green);
-  color: white;
-  border: none;
-  border-radius: var(--radius-md);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-}
-
-/* Main Pot */
-.main-pot {
+  gap: 8px;
+  padding: 48px 24px;
   text-align: center;
-  padding: var(--space-3);
-  font-size: var(--fs-lg);
-  color: var(--text-secondary);
+  min-height: 320px;
 }
 
-.pot-amount {
-  color: var(--accent-gold);
-  font-weight: var(--fw-bold);
+.hand-replay__spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--hr-gunmetal);
+  border-top-color: var(--hr-blue);
+  animation: hrSpin calc(0.9s * var(--animation-speed, 1)) linear infinite;
 }
 
-/* Players Table */
-.players-table {
-  padding: 0 var(--space-4);
+@keyframes hrSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-.player-row {
-  display: grid;
-  grid-template-columns: 100px 70px auto 60px 80px;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  background: var(--bg-card);
-  border-radius: var(--radius-md);
-  margin-bottom: var(--space-2);
-  border-left: 3px solid transparent;
+.hand-replay__empty-title {
+  margin: 0;
+  font-family: var(--hr-display);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
-.player-row.winner {
-  border-left-color: var(--accent-green);
-  background: linear-gradient(90deg, rgba(49, 162, 76, 0.1) 0%, transparent 50%);
+.hand-replay__empty-body {
+  margin: 0;
+  font-size: 13px;
+  color: var(--hr-muted);
 }
 
-.player-info {
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.hand-replay__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--hr-gunmetal);
+  background: linear-gradient(180deg, rgba(185, 202, 215, 0.06), transparent 70%);
+  box-shadow: inset 0 1px 0 rgba(185, 202, 215, 0.14);
+}
+
+.hand-replay__titles {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
-.player-name {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--text-primary);
+.hand-replay__eyebrow {
+  font-family: var(--hr-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--hr-blue);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.player-position {
-  display: inline-block;
-  width: fit-content;
-  padding: 2px 6px;
+.hand-replay__title {
+  margin: 0;
+  font-family: var(--hr-display);
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.hand-replay__when {
+  font-family: var(--hr-mono);
   font-size: 10px;
-  font-weight: var(--fw-bold);
-  color: white;
-  border-radius: var(--radius-sm);
+  color: var(--hr-muted);
 }
 
-/* Hole Cards */
-.player-hole-cards {
+.hand-replay__tabs {
   display: flex;
-  gap: 4px;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
-.card {
-  width: 28px;
-  height: 38px;
-  background: white;
+.hr-tab {
+  padding: 8px 14px;
   border-radius: 4px;
+  border: 1px solid var(--hr-gunmetal);
+  background: linear-gradient(180deg, var(--hr-panel-raised), var(--hr-panel));
+  color: var(--hr-steel);
+  font-family: var(--hr-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(185, 202, 215, 0.12);
+}
+
+.hr-tab--active {
+  background: linear-gradient(180deg, #1f7fd6, #145ea3);
+  border-color: rgba(58, 168, 255, 0.6);
+  color: #f4f9ff;
+}
+
+.hr-tab:focus-visible,
+.hr-btn:focus-visible {
+  outline: 2px solid var(--hr-blue);
+  outline-offset: 2px;
+}
+
+.hr-tab:active,
+.hr-btn:active {
+  transform: translateY(1px);
+}
+
+/* ── Stage ──────────────────────────────────────────────────────────────── */
+.hand-replay__stage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 12px calc(16px + env(safe-area-inset-bottom, 0px));
+}
+
+.hand-replay__rundown {
+  padding: 12px 12px calc(16px + env(safe-area-inset-bottom, 0px));
+}
+
+.hr-felt {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  min-height: 300px;
+  border-radius: 8px;
+  border: 1px solid var(--hr-gunmetal);
+  background: var(--hr-black);
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.hr-felt__oval {
+  position: absolute;
+  inset: 14% 12%;
+  border-radius: 50% / 50%;
+  background: radial-gradient(ellipse at center, var(--hr-felt) 0%, var(--hr-felt-deep) 78%);
+  box-shadow:
+    inset 0 0 0 10px #1c2430,
+    inset 0 0 0 12px rgba(214, 173, 82, 0.35),
+    inset 0 0 60px rgba(0, 0, 0, 0.55),
+    0 18px 40px rgba(0, 0, 0, 0.5);
+}
+
+.hr-felt__centre {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-bold);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  gap: 6px;
+  z-index: 2;
 }
 
-.card.red {
-  color: #e74c3c;
+.hr-felt__pot {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(3, 6, 9, 0.7);
+  border: 1px solid rgba(214, 173, 82, 0.4);
 }
 
-.card.black {
-  color: #2c3e50;
-}
-
-.card.back {
-  background: linear-gradient(135deg, #1e3a5f 0%, #0f2540 100%);
-  border: 1px solid #2d4a6f;
-}
-
-.card.back::before {
-  content: '♠';
-  font-size: 14px;
-  color: #3d6a9f;
-}
-
-.card.small {
-  width: 22px;
-  height: 30px;
-  font-size: 10px;
-}
-
-.card-rank {
-  font-size: inherit;
-  line-height: 1;
-}
-
-.card-suit {
-  font-size: 10px;
-  line-height: 1;
-}
-
-/* Hand Ranking */
-.player-hand-ranking {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-}
-
-/* SHOWDOWN POLISH 2026-08-25: the persisted reveal record in replays. */
-.player-hand-ranking--mucked {
-  color: rgba(255, 255, 255, 0.45);
+.hr-felt__pot-label {
+  font-family: var(--hr-mono);
+  font-size: 9px;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  color: var(--hr-brass);
 }
 
-.player-hand-description {
-  color: rgba(255, 255, 255, 0.55);
+.hr-felt__pot-value {
+  font-family: var(--hr-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--hr-chrome);
+  font-variant-numeric: tabular-nums;
+}
+
+.hr-felt__boards {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+}
+
+.hr-felt__board {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 34px;
+}
+
+.hr-felt__board-badge {
+  font-family: var(--hr-mono);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--hr-blue-hot);
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(3, 6, 9, 0.6);
+  border: 1px solid rgba(58, 168, 255, 0.35);
+}
+
+.hr-felt__board-empty {
+  font-family: var(--hr-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(220, 232, 240, 0.45);
+}
+
+/* Seats */
+.hr-seat {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  z-index: 3;
+  width: 96px;
+}
+
+.hr-seat__cards {
+  display: flex;
+  gap: 2px;
+  min-height: 30px;
+}
+
+.hr-seat__plate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding: 3px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--hr-gunmetal);
+  background: linear-gradient(180deg, var(--hr-panel-raised), var(--hr-panel));
+  box-shadow: inset 0 1px 0 rgba(185, 202, 215, 0.12);
+}
+
+.hr-seat.is-hero .hr-seat__plate {
+  border-color: rgba(214, 173, 82, 0.6);
+}
+
+.hr-seat.is-active .hr-seat__plate {
+  border-color: var(--hr-blue);
+  box-shadow:
+    inset 0 1px 0 rgba(185, 202, 215, 0.12),
+    0 0 0 2px rgba(58, 168, 255, 0.35);
+}
+
+.hr-seat.is-winner .hr-seat__plate {
+  border-color: var(--hr-up);
+  box-shadow:
+    inset 0 1px 0 rgba(185, 202, 215, 0.12),
+    0 0 0 2px rgba(76, 208, 125, 0.35);
+}
+
+.hr-seat.is-folded {
+  opacity: 0.5;
+}
+
+.hr-seat__name {
+  font-family: var(--hr-display);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--hr-chrome);
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hr-seat__meta {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  font-family: var(--hr-mono);
+  font-size: 9px;
+  color: var(--hr-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.hr-seat__stack {
+  color: var(--hr-steel);
+}
+
+.hr-seat__act {
+  position: absolute;
+  top: -10px;
+  right: -6px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: var(--hr-mono);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: rgba(58, 168, 255, 0.2);
+  color: var(--hr-blue-hot);
+  border: 1px solid rgba(58, 168, 255, 0.4);
+}
+
+.hr-seat__act--fold,
+.hr-seat__act--muck {
+  background: rgba(131, 145, 161, 0.18);
+  color: var(--hr-muted);
+  border-color: var(--hr-line);
+}
+
+.hr-seat__act--all_in {
+  background: rgba(255, 107, 107, 0.2);
+  color: var(--hr-down);
+  border-color: rgba(255, 107, 107, 0.45);
+}
+
+.hr-seat__private {
+  position: absolute;
+  top: -10px;
+  left: -6px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: var(--hr-mono);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: rgba(214, 173, 82, 0.18);
+  color: var(--hr-brass);
+}
+
+.hr-seat__cards .hr-private {
+  outline: 1px dashed rgba(214, 173, 82, 0.6);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+
+.hr-bet {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(3, 6, 9, 0.78);
+  border: 1px solid rgba(58, 168, 255, 0.45);
+  color: var(--hr-blue-hot);
+  font-family: var(--hr-display);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Caption and controls */
+.hand-replay__caption {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--hr-line);
+  background: var(--hr-panel);
+  min-height: 36px;
+}
+
+.hand-replay__caption-street {
+  font-family: var(--hr-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--hr-blue);
+  flex-shrink: 0;
+}
+
+.hand-replay__caption-text {
+  font-family: var(--hr-display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--hr-chrome);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hand-replay__controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.hr-btn {
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--hr-gunmetal);
+  background: linear-gradient(180deg, var(--hr-panel-raised), var(--hr-panel));
+  color: var(--hr-chrome);
+  font-family: var(--hr-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(185, 202, 215, 0.12);
+}
+
+.hr-btn--icon {
+  width: 38px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+}
+
+.hr-btn--play {
+  width: 48px;
+  background: linear-gradient(180deg, #1f7fd6, #145ea3);
+  border-color: rgba(58, 168, 255, 0.6);
+  color: #f4f9ff;
+}
+
+.hr-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.hand-replay__scrub {
+  flex: 1 1 160px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hand-replay__scrub input[type='range'] {
+  flex: 1;
+  accent-color: var(--hr-blue);
+  min-width: 0;
+}
+
+.hand-replay__scrub-label {
+  font-family: var(--hr-mono);
+  font-size: 10px;
+  color: var(--hr-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Who was in it */
+.hand-replay__seats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.player-hand-ranking {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--hr-line);
+  background: var(--hr-panel);
+  font-size: 12px;
+}
+
+.player-hand-ranking--won {
+  border-color: rgba(76, 208, 125, 0.4);
+  box-shadow: inset 3px 0 0 var(--hr-up);
+}
+
+.player-hand-ranking--mucked .player-hand-ranking__hand {
+  color: var(--hr-muted);
   font-style: italic;
 }
 
-/* Community Cards Row */
-.community-cards-row {
-  display: flex;
-  gap: 3px;
+.player-hand-ranking--hero .player-hand-ranking__name {
+  color: var(--hr-brass);
 }
 
-/* Result */
-.player-result {
-  text-align: right;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-bold);
-}
-
-.player-result.positive {
-  color: var(--accent-green);
-}
-
-.player-result.negative {
-  color: var(--accent-red);
-}
-
-.result-label {
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-normal);
-  color: var(--text-muted);
-}
-
-/* Playback Controls */
-.playback-controls {
+.player-hand-ranking__seat {
+  font-family: var(--hr-mono);
+  font-size: 10px;
+  color: var(--hr-muted);
   text-align: center;
-  padding: var(--space-3);
 }
 
-.step-display {
-  font-size: var(--fs-sm);
-  color: var(--text-muted);
-}
-
-.playback-slider-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 0 var(--space-4) var(--space-4);
-}
-
-.nav-arrow {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-tertiary);
-  border: none;
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  font-size: var(--fs-lg);
-  cursor: pointer;
-}
-
-.nav-arrow:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-.playback-slider {
-  flex: 1;
-  height: 8px;
-  background: var(--bg-tertiary);
-  border-radius: 4px;
-  outline: none;
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-.playback-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 24px;
-  height: 24px;
-  background: var(--accent-gold);
-  border-radius: var(--radius-full);
-  cursor: pointer;
-}
-
-/* Tabs */
-.replay-tabs {
-  display: flex;
-  margin: 0 var(--space-4);
-  background: var(--bg-tertiary);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-}
-
-.replay-tab {
-  flex: 1;
-  padding: var(--space-3);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--text-secondary);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition: all var(--transition-base);
-}
-
-.replay-tab.active {
-  background: linear-gradient(180deg, #e74c3c 0%, #c0392b 100%);
-  color: white;
-}
-
-/* Responsive */
-@media (max-width: 480px) {
-  .player-row {
-    grid-template-columns: 80px 60px auto 70px;
-  }
-
-  .community-cards-row {
-    display: none;
-  }
-
-  .player-hand-ranking {
-    grid-column: 3;
-  }
-
-  .player-result {
-    grid-column: 4;
-  }
-}
-
-/* COMPLETENESS PASS 2026-08-26: Run It Twice board rows in replay. */
-.replay-run-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 6px;
-  margin-right: 4px;
-  border-radius: 4px;
-  background: rgba(255, 184, 0, 0.15);
-  border: 1px solid rgba(255, 184, 0, 0.4);
-  color: #ffb800;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
+.player-hand-ranking__name {
+  font-family: var(--hr-display);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--hr-chrome);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-hand-ranking__hand {
+  color: var(--hr-steel);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-hand-ranking__net {
+  font-family: var(--hr-display);
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--hr-steel);
+}
+
+.player-hand-ranking__net.is-up {
+  color: var(--hr-up);
+}
+
+.player-hand-ranking__net.is-down {
+  color: var(--hr-down);
+}
+
+/* ── 375px first ────────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .hand-replay__header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hand-replay__tabs .hr-tab {
+    flex: 1;
+  }
+
+  .hr-felt {
+    aspect-ratio: 4 / 5;
+    min-height: 360px;
+  }
+
+  .hr-felt__oval {
+    inset: 10% 8%;
+  }
+
+  .hr-seat {
+    width: 82px;
+  }
+
+  .hr-seat__name {
+    font-size: 11px;
+  }
+}
+
+/* ── Light mode: brushed silver, the felt stays a felt ─────────────────── */
+[data-theme='light'] .hand-replay {
+  --hr-void: #d9e0e6;
+  --hr-black: #e6ebef;
+  --hr-panel: #f1f4f7;
+  --hr-panel-raised: #ffffff;
+  --hr-gunmetal: #aab8c3;
+  --hr-chrome: #0d161d;
+  --hr-steel: #3f5261;
+  --hr-blue: #146bb3;
+  --hr-blue-hot: #0f5a99;
+  --hr-brass: #8a6a24;
+  --hr-muted: #5f7181;
+  --hr-up: #1f8a4c;
+  --hr-down: #c0392b;
+  --hr-line: rgba(20, 35, 50, 0.14);
+}
+
+[data-theme='light'] .hr-felt {
+  background: #cfd8df;
+}
+
+[data-theme='light'] .hr-felt__pot,
+[data-theme='light'] .hr-bet,
+[data-theme='light'] .hr-felt__board-badge {
+  background: rgba(255, 255, 255, 0.85);
+}
+
+[data-theme='light'] .hr-felt__board-empty {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+[data-theme='light'] .hr-tab--active,
+[data-theme='light'] .hr-btn--play {
+  background: linear-gradient(180deg, #2a8ae0, #1b6cb5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hand-replay__spinner {
+    animation: none;
+  }
 }

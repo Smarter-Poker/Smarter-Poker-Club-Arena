@@ -83,7 +83,7 @@ describe('share variant covers the whole live catalogue', () => {
   it('offers no OFC variant at all', () => {
     const share = readSrc('src/components/table/ShareHand.tsx');
     expect(share).not.toContain("'OFC Pineapple'");
-    const page = readSrc('src/pages/HandHistoryPage.tsx');
+    const page = readSrc('src/lib/handHistoryAdapter.ts');
     expect(page).not.toContain("includes('OFC')");
     // A legacy ofc_pineapple row still contains "PINEAPPLE", so it lands on
     // Pineapple - which is what those tables always actually were.
@@ -102,8 +102,14 @@ describe('share variant covers the whole live catalogue', () => {
     }
   });
 
-  it('the page still uses these ordered rules', () => {
-    const page = readSrc('src/pages/HandHistoryPage.tsx');
+  it('the one share mapping still uses these ordered rules, and the page uses it', () => {
+    /* 2026-09-04: the page kept a weaker private copy of this mapping (no
+       separator stripping, no OMAHA8 / HILO). It shares through the adapter's
+       `panelHandToShareable`, which calls the adapter's `toShareVariant`. */
+    const pageSrc = readSrc('src/pages/HandHistoryPage.tsx');
+    expect(pageSrc).toContain('panelHandToShareable(hand,');
+    expect(pageSrc).not.toMatch(/function toShareVariant/);
+    const page = readSrc('src/lib/handHistoryAdapter.ts');
     const order = ['PINEAPPLE', 'SHORT', 'PLO8', 'PLO6', 'PLO5'];
     const positions = order.map((t) => page.indexOf(`includes('${t}')`));
     expect(positions.every((p) => p > -1)).toBe(true);
@@ -111,7 +117,7 @@ describe('share variant covers the whole live catalogue', () => {
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
     // The bare PLO catch-all must come last of the PLO rules; PLO8 landing
     // after it is the original bug in its exact form.
-    const barePlo = page.indexOf("includes('PLO'))");
+    const barePlo = page.indexOf("includes('PLO') ||");
     expect(barePlo).toBeGreaterThan(-1);
     expect(page.indexOf("includes('PLO8')")).toBeLessThan(barePlo);
   });

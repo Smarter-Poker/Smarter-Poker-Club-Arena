@@ -84,7 +84,67 @@ export type ServerMessage =
   | ServerUserEventMessage;
 
 // WS close codes the server emits (mirrors CLOSE_* constants on server).
+/**
+ * Report a client-side connection failure to the engine.
+ *
+ * DYNAMICALLY IMPORTED ON PURPOSE (2026-09-05). A static import pulled the
+ * beacon - and the auth-token module it needs - into the ENTRY CHUNK, which
+ * every player downloads before first paint. CI caught it
+ * ("2 module(s) entered the entry chunk"). Telemetry about a broken socket
+ * must never be part of what a player waits for to see their first frame, so
+ * it loads only when something has actually gone wrong.
+ */
+function beacon(reason: 'auth_failed' | 'stale' | 'handshake_timeout' | 'closed'): void {
+  void import('./clientConnectionBeacon')
+    .then((m) => m.reportConnectionEvent(reason))
+    .catch(() => {
+      /* telemetry never disturbs the table */
+    });
+}
+
 export const CLOSE_AUTH_FAILED = 4401;
+
+/**
+ * Does this close frame say "auth", as opposed to "gone"?
+ *
+ * INLINED, NOT IMPORTED (2026-09-05). Importing it pulled all of
+ * `lib/sessionRevoked` into the ENTRY CHUNK every player downloads before
+ * first paint - CI caught it at +1kB, and the module is only ever needed
+ * AFTER a socket has already failed. The predicate itself is two comparisons;
+ * the module behind it loads lazily in `askWhetherTheSessionIsAlive` below.
+ * Kept byte-identical to the exported version, which the law pins.
+ */
+function closeMeansAuth(code: number | undefined, reason: string | undefined): boolean {
+  return code === 4401 || /^auth:/.test(String(reason || ''));
+}
+
+/**
+ * Ask GoTrue whether the session is still alive, loading the prober lazily.
+ * Resolves 'unknown' if the module cannot be loaded, so a chunk that fails to
+ * arrive can never sign a player out.
+ */
+function askWhetherTheSessionIsAlive(source: string): Promise<'alive' | 'revoked' | 'unknown'> {
+  return import('../lib/sessionRevoked')
+    .then((m) => m.handleEngineAuthRejection(source))
+    .catch(() => 'unknown' as const);
+}
+
+/**
+ * 2026-09-04 - A REVOKED SESSION IS NOT A RECONNECT (see lib/sessionRevoked).
+ *
+ * A pre-handshake HTTP refusal reaches JavaScript as close code 1006, the same
+ * code as a dropped link, so an engine that still answers a dead token with a
+ * bare 401 is indistinguishable from Wi-Fi going out - until it has done it
+ * this many times in a row without ever opening. At that point we stop
+ * assuming and ask GoTrue whether the session is alive. The engine itself now
+ * closes an invalid token with 4401 + `auth:<code>`, which asks immediately.
+ *
+ * Three, not one: a single 1006 is a normal engine restart or a phone
+ * changing networks, and asking GoTrue on every blip would be a reconnect
+ * storm against auth. Three consecutive failed handshakes is ~7s on the
+ * ladder - long enough to be sure, short enough that nobody waits.
+ */
+export const HANDSHAKE_FAILURES_BEFORE_SESSION_CHECK = 3;
 export const CLOSE_TABLE_NOT_FOUND = 4404;
 export const CLOSE_RATE_LIMITED = 4429;
 export const CLOSE_SERVER_ERROR = 4500;
@@ -137,6 +197,8 @@ export class EngineStateClient {
   private ws: WebSocket | null = null;
   private status: EngineConnectionStatus = 'idle';
   private retryCount = 0;
+  /** 2026-09-04: closes since the last successful open (see the constant above). */
+  private handshakeFailures = 0;
   /**
    * 2026-09-04: the engine said 4404 for this table and we are on the slow
    * ladder. While this is true the ladder announces 'idle', not
@@ -383,6 +445,7 @@ export class EngineStateClient {
       this.handshakeTimer = null;
       if (this.ws !== ws) return;
       if (ws.readyState === 0 /* CONNECTING */) {
+        beacon('handshake_timeout');
         try {
           ws.close();
         } catch {
@@ -410,6 +473,7 @@ export class EngineStateClient {
       // frames must not precede (or dedupe against) this connection's.
       this.resetInbox();
       this.retryCount = 0;
+      this.handshakeFailures = 0;
       this.unansweredResyncs = 0;
       this.setStatus('connected');
       // Dan 2026-08-15 (item 6): arm the staleness watchdog for this socket.
@@ -453,11 +517,16 @@ export class EngineStateClient {
       if (this.intentionalClose) return;
 
       // Auth failure — bubble up to the host; do not retry with the same token
-      if (e.code === CLOSE_AUTH_FAILED) {
+      if (e.code === CLOSE_AUTH_FAILED || closeMeansAuth(e.code, e.reason)) {
         this.setStatus('auth_failed');
+        // Phase 2 (2026-09-05): the server counts what the browser saw.
+        // Throttled and fire-and-forget - it cannot delay the reconnect.
+        beacon('auth_failed');
         this.opts.onError({ code: e.code, reason: e.reason });
-        // Still schedule a reconnect — getToken may return a refreshed token next
-        this.scheduleReconnect();
+        // 2026-09-04: ask GoTrue whether the session is alive. 'revoked'
+        // ends in a redirect to sign in (the page is leaving); anything else
+        // keeps the ladder running - getToken may return a refreshed token.
+        this.checkSessionThenReconnect('table:4401');
         return;
       }
 
@@ -497,6 +566,18 @@ export class EngineStateClient {
       // rejoining the thundering herd at the fast end of the ladder.
       if (e.code === CLOSE_RATE_LIMITED) {
         this.retryCount = Math.max(this.retryCount, 4);
+      }
+
+      // 2026-09-04: an engine that still writes a bare 401 before the
+      // handshake shows up here as 1006, over and over, never opening.
+      // After HANDSHAKE_FAILURES_BEFORE_SESSION_CHECK of those, stop
+      // assuming the network and ask GoTrue. Sits below the coded branches
+      // on purpose: 4404 / 4901 / 4429 each mean something specific and
+      // keep their own handling.
+      this.handshakeFailures++;
+      if (this.handshakeFailures >= HANDSHAKE_FAILURES_BEFORE_SESSION_CHECK) {
+        this.checkSessionThenReconnect(`table:${e.code}x${this.handshakeFailures}`);
+        return;
       }
 
       // Anything else (transient server/network issue) → reconnect
@@ -779,6 +860,7 @@ export class EngineStateClient {
         this.opts.onError({
           reason: `engine silent for ${Math.round(silentFor / 1000)}s (${this.unansweredResyncs} unanswered resyncs) - forcing reconnect`,
         });
+        beacon('stale');
         this.lastInboundAt = Date.now(); // don't re-fire while the close lands
         this.unansweredResyncs = 0;
         // 2026-08-22: announce the truth. This path used to leave status at
@@ -838,6 +920,27 @@ export class EngineStateClient {
       document.removeEventListener('visibilitychange', this.onVisibility);
       this.onVisibility = null;
     }
+  }
+
+  /**
+   * 2026-09-04: probe the session, then keep reconnecting unless it is
+   * revoked (in which case lib/sessionRevoked is already sending the player
+   * to sign in and there is nothing left to reconnect with). The probe can
+   * never reject - it resolves 'unknown' on any doubt - and 'unknown' keeps
+   * the ladder alive, so "the games can never freeze or die" still holds for
+   * a player whose session is fine and whose link is not.
+   */
+  private checkSessionThenReconnect(source: string): void {
+    void askWhetherTheSessionIsAlive(source)
+      .catch(() => 'unknown' as const)
+      .then((verdict) => {
+        if (this.intentionalClose) return;
+        if (verdict === 'revoked') {
+          this.setStatus('auth_failed');
+          return;
+        }
+        this.scheduleReconnect();
+      });
   }
 
   private scheduleReconnect(): void {
@@ -1043,6 +1146,8 @@ export class EngineChannelClient {
   private ws: WebSocket | null = null;
   private status: EngineConnectionStatus = 'idle';
   private retryCount = 0;
+  /** 2026-09-04: closes since the last successful open (see the constant above). */
+  private handshakeFailures = 0;
   private reconnectTimer: number | null = null;
   private intentionalClose = false;
 
@@ -1385,6 +1490,7 @@ export class EngineChannelClient {
     ws.onopen = () => {
       if (this.ws !== ws) return;
       this.retryCount = 0;
+      this.handshakeFailures = 0;
       // 2026-08-24: on a RECONNECT, replay the desired subscription state
       // BEFORE flushing the queue — the fresh connection has no server-side
       // subscriptions, and the queue only holds messages sent while offline.
@@ -1426,9 +1532,15 @@ export class EngineChannelClient {
     ws.onclose = (e) => {
       if (this.ws !== null && this.ws !== ws) return;
       if (this.intentionalClose) return;
-      if (e.code === CLOSE_AUTH_FAILED) {
+      if (e.code === CLOSE_AUTH_FAILED || closeMeansAuth(e.code, e.reason)) {
         this.setStatus('auth_failed');
-        this.scheduleReconnect();
+        // 2026-09-04: see EngineStateClient.checkSessionThenReconnect.
+        this.checkSessionThenReconnect('channel:4401');
+        return;
+      }
+      this.handshakeFailures++;
+      if (this.handshakeFailures >= HANDSHAKE_FAILURES_BEFORE_SESSION_CHECK) {
+        this.checkSessionThenReconnect(`channel:${e.code}x${this.handshakeFailures}`);
         return;
       }
       this.scheduleReconnect();
@@ -1573,6 +1685,20 @@ export class EngineChannelClient {
       document.removeEventListener('visibilitychange', this.onVisibility);
       this.onVisibility = null;
     }
+  }
+
+  /** 2026-09-04: see EngineStateClient.checkSessionThenReconnect. */
+  private checkSessionThenReconnect(source: string): void {
+    void askWhetherTheSessionIsAlive(source)
+      .catch(() => 'unknown' as const)
+      .then((verdict) => {
+        if (this.intentionalClose) return;
+        if (verdict === 'revoked') {
+          this.setStatus('auth_failed');
+          return;
+        }
+        this.scheduleReconnect();
+      });
   }
 
   private scheduleReconnect(): void {

@@ -40,7 +40,12 @@ export type LedgerKind =
   /** a database table with a reader and a cadence (or a legacy one nobody reads) */
   | 'table'
   /** a telemetry key; `*` suffix = a family sharing a prefix */
-  | 'receipt';
+  | 'receipt'
+  /** a leak tag the review system emits, with the code that READS it
+   *  (2026-09-05). A tag with consumer 'measurement' is counted and read by
+   *  nobody, on purpose, and says why. The daily audit raises tag_unread for
+   *  any tag that is neither. */
+  | 'tag';
 
 export type LedgerCadence =
   | 'per_action'
@@ -144,6 +149,163 @@ const table = (
   since,
   ...(fresh ?? {}),
 });
+
+/**
+ * TAG CONSUMERS (2026-09-05). Dan: "there is absolutely no point to keep
+ * upgrading and enhancing the logic of the horses if nothing reads the tags."
+ * Every tag HorseHandReview.detectLeaks can emit is a row here with the code
+ * that reads it. EveryTagHasAConsumer.law.test.ts reads the detector source
+ * and fails on a tag with no row; the daily audit (fn_audit_tag_consumers)
+ * reads this table and raises tag_unread on a tag with rows this week whose
+ * consumer is 'measurement'. A measurement row must say why it is one.
+ *
+ * `_won` twins are the win side of the same detector (see the note over
+ * `flag` in HorseHandReview); they are registered once, as the loss tag,
+ * and the law test knows the twin rule.
+ */
+const tag = (key: string, consumer: string, note: string, since: string): LedgerEntry => ({
+  key,
+  kind: 'tag',
+  source:
+    'horse_hand_reviews.leak_tags (HorseHandReview.detectLeaks at settlement); horse_review_rollup.leak_counts nightly',
+  cadence: 'per_hand',
+  consumer,
+  note,
+  since,
+});
+
+export const TAG_CONSUMERS: LedgerEntry[] = [
+  // Omaha stack-offs -> V40 pressure cap (PLO_STACKOFF_TAGS) + tuner dials
+  tag(
+    'nonnut_flush_stackoff',
+    'HorseLogic.ploStackoffLoad / nlhStackoffLoad; HorseSelfTuner (stackoff gate)',
+    'Omaha: cat-6 with two better flushes live; hold em: any better flush live',
+    'V13'
+  ),
+  tag(
+    'second_nut_flush_stackoff',
+    'HorseLogic.ploStackoffLoad; HorseSelfTuner (stackoff gate)',
+    'Omaha cat-6 with one better flush live',
+    'V13'
+  ),
+  tag(
+    'dominated_straight_stackoff',
+    'HorseLogic.ploStackoffLoad; HorseSelfTuner (stackoff gate)',
+    'Omaha non-nut straight at showdown',
+    'V13'
+  ),
+  tag(
+    'coldcall_stackoff',
+    'HorseLogic.ploStackoffLoad / nlhStackoffLoad / tourneyStackoffLoad',
+    'cold-called a raise, lost 40bb+',
+    'V23'
+  ),
+  tag(
+    'plo_naked_trips_stackoff',
+    'HorseLogic.ploStackoffLoad / tourneyStackoffLoad',
+    'trips on a paired board, no redraw, 100bb+',
+    'V38'
+  ),
+  tag(
+    'plo_toppair_no_redraw_stackoff',
+    'HorseLogic.ploStackoffLoad / tourneyStackoffLoad',
+    'top pair no redraw, 100bb+',
+    'V38'
+  ),
+  // hold em stack-offs -> V41 heat into the V20 cap (NLH_STACKOFF_TAGS)
+  tag(
+    'top_pair_weak_kicker_stackoff',
+    'HorseLogic.nlhStackoffLoad / tourneyStackoffLoad',
+    'top pair, kicker nine or worse, 40bb+',
+    'V24'
+  ),
+  tag(
+    'weak_kicker_trips_stackoff',
+    'HorseLogic.nlhStackoffLoad / tourneyStackoffLoad',
+    'board trips, dominated kicker, 40bb+',
+    'V24'
+  ),
+  tag(
+    'straight_into_flush_stackoff',
+    'HorseLogic.nlhStackoffLoad',
+    'straight on a three-flush board',
+    'V21'
+  ),
+  tag(
+    'nonnut_straight_stackoff',
+    'HorseLogic.nlhStackoffLoad',
+    'non-nut straight at showdown',
+    'V21'
+  ),
+  tag('underfull_stackoff', 'HorseLogic.nlhStackoffLoad', 'bottom boat', 'V21'),
+  // river wars -> V41 respect + war gate (RIVER_WAR_TAGS)
+  tag(
+    'river_raise_war',
+    'HorseLogic.riverWarLoad',
+    'two or more aggressive river actions, lost',
+    'V21'
+  ),
+  tag(
+    'river_raise_paidoff',
+    'HorseLogic.riverWarLoad',
+    'bet the river, called a raise, lost',
+    'V23'
+  ),
+  // limped pots -> V41 limped-pot cap (LIMP_BLOAT_TAGS)
+  tag('limped_pot_bloat', 'HorseLogic.limpBloatLoad', 'entered for one blind, lost 40bb+', 'V23'),
+  // preflop -> tuner tightness + V41 tournament premium
+  tag(
+    'preflop_stackoff',
+    'HorseSelfTuner (preflop gate); HorseLogic.tourneyStackoffLoad',
+    '40bb+ in with no postflop action',
+    'V13'
+  ),
+  // fold family -> tuner bluff dial
+  tag('big_bet_fold', 'HorseSelfTuner (big-bet-fold gate)', 'invested 20bb+ then folded', 'V13'),
+  // measurement-only, with the reason
+  tag(
+    'big_fold_river',
+    'measurement',
+    'a river fold after a big investment: whether the fold was right is unknowable without the folded-to hand, so it steers nothing (the V23 split exists to keep it out of big_bet_fold)',
+    'V23'
+  ),
+  tag(
+    'big_fold_early',
+    'measurement',
+    'the early-street twin of big_fold_river; same reason',
+    'V23'
+  ),
+  tag(
+    'bet_fold_line',
+    'measurement',
+    'bet then folded the same street; a sizing/line study, no consumer yet',
+    'V23'
+  ),
+  tag(
+    'river_aggr_lost',
+    'measurement',
+    'ordinary value bets that ran into the top of the range; judged on EV with river_aggr_won by fn_audit_river_aggression_ev, not as a leak',
+    'V13'
+  ),
+  tag(
+    'river_aggr_won',
+    'measurement',
+    'the win side of river aggression (fn_audit_river_aggression_ev)',
+    'V33'
+  ),
+  tag(
+    'plo_underfull_stackoff',
+    'measurement',
+    'Omaha bottom boat, 100bb+; three baseline days then a V40 decision (2026-09-04 analysis)',
+    'V40'
+  ),
+  tag(
+    'plo_set_stackoff',
+    'measurement',
+    'split from plo_naked_trips on an unpaired board; measurement until the baseline says whether it belongs in the V40 loop',
+    'V40'
+  ),
+];
 
 export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   // ─────────────────────────────────────────────────────────────────────────
@@ -1102,7 +1264,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'a close call/fold/all-in was replayed at 6x the equity sample inside the think time',
     'V44',
     'decide',
-    0.005
+    0.001
   ),
   receipt(
     'v44_second_look_flipped',
@@ -1128,6 +1290,8 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'read / cap: a horse tagged for limped-pot bloat, in a limped pot, facing a big bet; needs tuner-written leaks',
     'V41'
   ),
+  // TAGS. Every leak tag the review system emits, with its reader.
+  ...TAG_CONSUMERS,
 ];
 
 /** Receipt families: `prefix_*` entries cover every telemetry key sharing the prefix. */

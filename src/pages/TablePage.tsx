@@ -21051,12 +21051,13 @@ export default function TablePage({
                   }}
                   isDealing={isSeatDealing}
                   isMucking={muckingSeats[idx] || false}
-                  /* COMPETITOR-PARITY 2026-08-19: Card Squeeze — hero only.
+                  /* CARD SLIDE (Dan 2026-09-04): the corner peel — hero only.
                      Force-reveal conditions (showdown stage) are folded in
-                     here; SeatSlot adds the per-seat ones (all-in, winner). */
+                     here; SeatSlot adds the per-seat ones (all-in, winner).
+                     Reads card_slide; card_squeeze is retired. */
                   cardSqueezeActive={
                     !!displayPlayer?.isHero &&
-                    v8Settings.card_squeeze &&
+                    v8Settings.card_slide &&
                     tableState.boardStage !== 'showdown'
                   }
                   handNumber={tableState.handNumber ?? 0}

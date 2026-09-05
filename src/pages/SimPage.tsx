@@ -40,6 +40,15 @@ const SimPage: React.FC = () => {
   const [stepIdx, setStepIdx] = useState(0);
 
   const scenario: Scenario = ALL_SCENARIOS[scenarioIdx];
+  /* CARD SLIDE 2026-09-04: `?slide=1` deals the hero face down on the sim
+     felt so the corner peel can be exercised without a live table. A dev knob
+     only - the real table reads user_table_settings.card_slide. */
+  const cardSlide = useMemo(
+    () =>
+      typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('slide') === '1',
+    []
+  );
   const step: SimStep = scenario.steps[stepIdx];
   const state: SimViewState = step.state;
 
@@ -180,6 +189,10 @@ const SimPage: React.FC = () => {
                   winningHandName={isWinner ? state.winningHandName : undefined}
                   showAvatar={true}
                   showBadges={true}
+                  cardSqueezeActive={
+                    cardSlide && !!player?.isHero && state.boardStage !== 'showdown'
+                  }
+                  handNumber={1}
                 />
               </div>
             );

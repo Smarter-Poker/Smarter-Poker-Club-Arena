@@ -191,3 +191,48 @@ Not built, and why:
   segment is the better name.
 - **Prefetching `/hub`**: SSR HTML is served no-cache; a prefetch buys nothing
   measurable.
+
+## Audit (2026-09-05): what an independent review found, and what changed
+
+Dan: "do a deep dive and verify that every thing you've built in the previous
+phase is 100% fully built, coded, wired in and tested." A second reviewer read
+the whole branch diff cold. Fixed in the same PR:
+
+1. **Two headers in the "+" tab.** `HomePage` (the fallback when no home club
+   is resolved yet, which is every fresh "+" tab for a moment) renders its own
+   `GlobalHeader` unconditionally - a second copy that claimed `#global-header`,
+   published the root height variable, and whose Hub button still did
+   `window.location`. It now skips its header when `useInTabLobby()` is set.
+2. **Two lobby tabs after a hub tab linked back into Club Arena.** The
+   conversion made a NEW lobby tab even when one existed, and everything that
+   finds "the lobby tab" finds the first, so the route effect converted the
+   wrong slot and left a dead "Lobby" pill. Now: if another lobby tab exists the
+   hub tab closes and the destination lands on it (drill-in pushed, or focus);
+   only with no lobby open does it convert in place.
+3. **A page tab opened from the pinned strip was invisible.** Off-route the
+   container is `display:none`, so "+" menu -> Social appended a pill and no
+   page. Both OPEN_LOBBY_TAB and OPEN_HUB_TAB now use the round-3 mechanism
+   (`revealPageTabOffRoute`: borrow a real table's URL, `pendingTabIndexRef`).
+4. **The in-tab hamburger was clipped.** `HamburgerMenu` is `position: fixed`
+   and the tab is `contain: layout paint`, so the drawer was sized to the tab
+   and scrolled away with the lobby. Portaled to `<body>` in `inTab` mode only.
+5. **The Take Seat bar vanished on scroll.** It and the in-tab header are both
+   `sticky; top: 0` in the same scroller and the header is above it in z-order.
+   The bar now sits at `--ca-in-tab-header-height`.
+6. **Tab and digits were stolen from the hub page.** Only Alt+Arrow (reorder)
+   crosses the frame boundary now; Tab moves focus and a digit may answer a
+   Trivia question, and a browser tab does not take those from the page.
+7. **Restored hub tabs booted three apps behind a live hand.** A frame now has
+   no `src` until its tab has been on screen once (`armed`), and the idle unload
+   ignores a frame that never loaded.
+8. **`/clubs/<other club>` rendered the home club.** Only the SPA root, its
+   aliases and the player's own home club count as "the lobby itself"; any
+   other club navigates for real.
+9. Smaller: same-page detection ignores a trailing slash (`sameHubPage`); the
+   location tracker returns the same array when nothing changed (no re-render
+   per poll); the storage mirror is keyed on the hub URLs, not on `tables`
+   (which changes every pot tick); dead `SavedHubTab` type removed.
+
+Still true and unchanged: tile view remounts frames (documented cost), and the
+merge with main resolved one conflict in the urgency-alert loop (kept both
+sides: `isTableTab` and main's expired-decision guard).

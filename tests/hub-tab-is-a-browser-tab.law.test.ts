@@ -78,7 +78,7 @@ describe('the hub frame is the one sanctioned iframe, and it talks to nobody', (
 
   it('reads src ONCE, at mount - a re-render must never reload the page the player is on', () => {
     expect(FRAME).toContain('const initialSrc = useRef(src).current;');
-    expect(FRAME).toMatch(/src=\{initialSrc\}/);
+    expect(FRAME).toMatch(/src=\{armed \? initialSrc : undefined\}/);
   });
 });
 
@@ -175,7 +175,9 @@ describe('round 2: every way into a hub tab goes through OPEN_HUB_TAB', () => {
     expect(BUS).toContain('OPEN_HUB_TAB: { path: string; requestedBy?: string };');
     expect(MULTI).toContain("useMasterBusSubscription('OPEN_HUB_TAB'");
     // Browser-tab semantics: same page focuses, a different page gets its own tab.
-    expect(MULTI).toContain('prev.findIndex((t) => isHubTab(t) && t.hubUrl === path)');
+    expect(MULTI).toContain(
+      "prev.findIndex((t) => isHubTab(t) && sameHubPage(t.hubUrl ?? '', path))"
+    );
   });
 
   it('the felt Marketplace button opens a hub tab, not a browser tab the felt cannot see', () => {
@@ -200,10 +202,39 @@ describe('round 2: a hub tab the player is not looking at', () => {
     expect(MULTI).toContain('active={idx === activeIndex && !hidden}');
   });
 
-  it('keystrokes inside the frame reach the strip through the same kind of ref as swipe', () => {
+  it('Alt+Arrow inside the frame reaches the strip; Tab and digits stay with the page', () => {
     expect(MULTI).toContain('hubKeysRef.current = handleKeyDown;');
     expect(MULTI).toContain('keys={hubKeysRef}');
     expect(FRAME).toContain("doc.addEventListener('keydown', onKey)");
+    expect(FRAME).toContain('if (!e.altKey) return;');
+  });
+
+  it('a frame never loads until its tab has been on screen once', () => {
+    expect(FRAME).toContain('const [armed, setArmed] = useState(active);');
+    expect(FRAME).toContain('if (!armed) return;');
+  });
+
+  it('the hamburger menu is portaled to <body> in a tab (contain: paint would clip it)', () => {
+    expect(HEADER).toContain('createPortal(');
+    expect(HEADER).toContain('document.body');
+  });
+
+  it('HomePage does not render a second header inside a tab', () => {
+    const HOME = read('src/pages/HomePage.tsx');
+    expect(HOME).toContain('const renderedInTab = useInTabLobby() !== null;');
+    expect(HOME).toContain('{!renderedInTab && <GlobalHeader />}');
+  });
+
+  it('a hub tab heading into Club Arena never leaves two lobby tabs behind', () => {
+    expect(MULTI).toContain(
+      'const otherLobbyIdx = prev.findIndex((t) => isLobbyTab(t) && t.id !== tabId);'
+    );
+  });
+
+  it('a page tab opened from the pinned strip is revealed, not just appended', () => {
+    expect(MULTI).toContain('const revealPageTabOffRoute = useCallback');
+    // Both OPEN_LOBBY_TAB branches and both OPEN_HUB_TAB branches.
+    expect(MULTI.split('revealPageTabOffRoute(').length - 1).toBe(4);
   });
 
   it('off-site links leave through window.open, never through the frame', () => {

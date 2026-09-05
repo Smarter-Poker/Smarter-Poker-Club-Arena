@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, Suspense } from 'react';
+import { createPortal } from 'react-dom';
 import { MEDIA_BASE } from '../../utils/mediaBase';
 const HamburgerMenu = lazyWithRetry(() => import('./HamburgerMenu'));
 import { Link, useNavigate } from 'react-router-dom';
@@ -287,9 +288,24 @@ export default function GlobalHeader({ inTab = false }: { inTab?: boolean } = {}
 
   return (
     <>
-      <Suspense fallback={null}>
-        <HamburgerMenu isOpen={menuOpen} onClose={handleMenuClose} />
-      </Suspense>
+      {/* In a "+" tab this header lives inside `.multi-table-page__lobby-tab`,
+          which is `contain: layout paint` + `overflow-y: auto`: a fixed
+          backdrop/drawer rendered in place would be clipped to the tab and
+          scroll away with the lobby (the same trap the tab's CSS documents for
+          ClubBottomNav). The menu is portaled to <body> there; the real header
+          is untouched. */}
+      {inTab && typeof document !== 'undefined' ? (
+        createPortal(
+          <Suspense fallback={null}>
+            <HamburgerMenu isOpen={menuOpen} onClose={handleMenuClose} />
+          </Suspense>,
+          document.body
+        )
+      ) : (
+        <Suspense fallback={null}>
+          <HamburgerMenu isOpen={menuOpen} onClose={handleMenuClose} />
+        </Suspense>
+      )}
 
       <header
         ref={headerRef}

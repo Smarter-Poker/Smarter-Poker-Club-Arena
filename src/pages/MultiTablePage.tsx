@@ -53,7 +53,7 @@ import {
   pickObserveSlot,
   pruneStaleSeatedTabs,
 } from '../utils/tabSlots';
-import { hubTabTitle, isHubPath, readHubTabs, saveHubTabs } from '../utils/hubTab';
+import { hubTabTitle, isHubPath, readHubTabs, sameHubPage, saveHubTabs } from '../utils/hubTab';
 import { HubFrame, type HubFrameSwipeHandlers } from '../components/table/HubFrame';
 import GlobalHeader from '../components/navigation/GlobalHeader';
 import { soundService, haptic } from '../services/SoundService';
@@ -1248,6 +1248,31 @@ export default function MultiTablePage() {
     }
   );
 
+  /**
+   * A PAGE TAB OPENED OFF-ROUTE HAS TO BE SHOWN (Dan 2026-09-05 audit).
+   *
+   * The pinned strip renders while the container is display:none, and its
+   * "+" menu can now open a lobby or hub tab from there. Appending the tab
+   * and focusing it is not enough off-route: the container only un-hides for
+   * a /table/:id URL, so the player would get a new pill and no page. Same
+   * mechanism as handleTabSelect round 3: borrow a real open table's URL and
+   * tell the route effect to focus the tab the player actually asked for.
+   * With no table to borrow from there is nothing to show - the same limit a
+   * lobby tab has always had off-route.
+   */
+  const revealPageTabOffRoute = useCallback(
+    (idx: number, tabsAfter: readonly TableInstance[]) => {
+      if (!hidden) return;
+      const host =
+        tabsAfter.find((t) => t.id === lastActiveTableIdRef.current && isTableTab(t)) ??
+        tabsAfter.find(isTableTab);
+      if (!host) return;
+      pendingTabIndexRef.current = idx;
+      navigate(`/table/${host.id}${tableQuery(host)}`, { replace: true });
+    },
+    [hidden, navigate]
+  );
+
   useMasterBusSubscription('OPEN_LOBBY_TAB', () => {
     const prev = tablesRef.current;
     const existingLobby = prev.findIndex(isLobbyTab);
@@ -1265,13 +1290,14 @@ export default function MultiTablePage() {
        */
       setTables((cur) => cur.map((t) => (isLobbyTab(t) ? clearLobbyTournaments(t) : t)));
       setActiveIndex(existingLobby);
+      revealPageTabOffRoute(existingLobby, prev);
       return;
     }
     if (prev.length >= MAX_TABLES) {
       notifyCapReached('add');
       return;
     }
-    setTables([
+    const next = [
       ...prev,
       {
         id: `${LOBBY_TAB_PREFIX}${Date.now()}`,
@@ -1279,10 +1305,12 @@ export default function MultiTablePage() {
         stakes: '',
         isMyTurn: false,
         pot: 0,
-        kind: 'lobby',
+        kind: 'lobby' as const,
       },
-    ]);
+    ];
+    setTables(next);
     setActiveIndex(prev.length);
+    revealPageTabOffRoute(prev.length, next);
   });
 
   /**
@@ -1299,17 +1327,20 @@ export default function MultiTablePage() {
     const path = payload?.path ?? '';
     if (!isHubPath(path)) return;
     const prev = tablesRef.current;
-    const existing = prev.findIndex((t) => isHubTab(t) && t.hubUrl === path);
+    const existing = prev.findIndex((t) => isHubTab(t) && sameHubPage(t.hubUrl ?? '', path));
     if (existing !== -1) {
       setActiveIndex(existing);
+      revealPageTabOffRoute(existing, prev);
       return;
     }
     if (prev.length >= MAX_TABLES) {
       notifyCapReached('add');
       return;
     }
-    setTables([...prev, makeHubTab(path)]);
+    const next = [...prev, makeHubTab(path)];
+    setTables(next);
     setActiveIndex(prev.length);
+    revealPageTabOffRoute(prev.length, next);
   });
 
   /**
@@ -2776,11 +2807,13 @@ export default function MultiTablePage() {
    * frame is NOT remounted by this - HubFrame reads `hubUrl` once, at mount.
    */
   const handleHubLocationChange = useCallback((tabId: string, path: string) => {
-    setTables((tabs) =>
-      tabs.map((t) =>
-        t.id === tabId && t.hubUrl !== path ? { ...t, hubUrl: path, name: hubTabTitle(path) } : t
-      )
-    );
+    setTables((tabs) => {
+      const idx = tabs.findIndex((t) => t.id === tabId);
+      if (idx === -1 || tabs[idx].hubUrl === path) return tabs; // same identity: no re-render
+      const next = [...tabs];
+      next[idx] = { ...tabs[idx], hubUrl: path, name: hubTabTitle(path) };
+      return next;
+    });
   }, []);
 
   /**
@@ -2805,23 +2838,50 @@ export default function MultiTablePage() {
       const idx = prev.findIndex((t) => t.id === tabId);
       if (idx === -1) return;
       const tournament = tournamentTargetFromTo(caPath);
-      const lobby: TableInstance = tournament
-        ? {
-            ...makeLobbyTab(),
-            lobbyTournamentId: tournament.tournamentId,
-            lobbyTournamentStack: [tournament],
-          }
-        : makeLobbyTab();
-      setTables((tabs) => tabs.map((t) => (t.id === tabId ? lobby : t)));
-      if (tournament) return;
       const pathname = caPath.split('?')[0] ?? '/';
+      /* The lobby ITSELF: the SPA root, the aliases, or the player's own home
+         club. Another club's page is a real destination and navigates for
+         real - the lobby tab only ever renders the home club. */
+      const home = homeClubIdRef.current;
       const isLobbyItself =
         pathname === '/' ||
         pathname === '' ||
-        /^\/clubs\/[^/]+\/?$/.test(pathname) ||
         pathname === '/lobby' ||
-        pathname === '/home';
-      if (isLobbyItself) return;
+        pathname === '/home' ||
+        (!!home && new RegExp(`^/clubs/${home}/?$`).test(pathname));
+
+      /* ONE LOBBY TAB. Everything that reuses "the lobby tab" - the route
+         effect converting it into the table you picked, TABLE_SEATED, "+",
+         the drill-in mirror - finds the FIRST one, so a second would leave a
+         dead "Lobby" pill and send the conversion to the wrong slot. When a
+         lobby tab already exists, this hub tab CLOSES and the target lands on
+         that lobby; only with no lobby open does it convert in place. */
+      const otherLobbyIdx = prev.findIndex((t) => isLobbyTab(t) && t.id !== tabId);
+      if (otherLobbyIdx !== -1) {
+        const lobbyId = prev[otherLobbyIdx].id;
+        setTables((tabs) =>
+          tabs
+            .filter((t) => t.id !== tabId)
+            .map((t) =>
+              t.id === lobbyId
+                ? tournament
+                  ? pushLobbyTournament(t, tournament)
+                  : clearLobbyTournaments(t)
+                : t
+            )
+        );
+        setActiveIndex(otherLobbyIdx > idx ? otherLobbyIdx - 1 : otherLobbyIdx);
+      } else {
+        const lobby: TableInstance = tournament
+          ? {
+              ...makeLobbyTab(),
+              lobbyTournamentId: tournament.tournamentId,
+              lobbyTournamentStack: [tournament],
+            }
+          : makeLobbyTab();
+        setTables((tabs) => tabs.map((t) => (t.id === tabId ? lobby : t)));
+      }
+      if (tournament || isLobbyItself) return;
       navigate(caPath);
     },
     [navigate]
@@ -3218,8 +3278,9 @@ export default function MultiTablePage() {
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    // A hub frame's document forwards its keystrokes here too (HubFrame 2):
-    // with focus inside Social, 1-6 and Tab still switch tabs.
+    // A hub frame's document forwards Alt+Arrow here too (HubFrame 2), so the
+    // reorder shortcut works with focus inside Social. Tab and digits stay
+    // with the page: a browser tab does not steal them.
     hubKeysRef.current = handleKeyDown;
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
@@ -3534,12 +3595,19 @@ export default function MultiTablePage() {
    * are appended in their saved order and never past the cap.
    */
   const hubTabsRestoredRef = useRef(false);
+  /* Keyed on the hub URLs themselves, not on `tables`: that array changes on
+     every pot and clock update, and a storage write per tick is not a mirror,
+     it is a leak. */
+  const hubUrlsKey = tables
+    .filter(isHubTab)
+    .map((t) => t.hubUrl ?? '/hub')
+    .join('\u0001');
   useEffect(() => {
     // Not before the restore has read storage: the first render has no hub
     // tabs, and mirroring THAT would erase the very list about to be restored.
     if (!hubTabsRestoredRef.current) return;
-    saveHubTabs(tables.filter(isHubTab).map((t) => t.hubUrl ?? '/hub'));
-  }, [tables]);
+    saveHubTabs(hubUrlsKey ? hubUrlsKey.split('\u0001') : []);
+  }, [hubUrlsKey]);
 
   useEffect(() => {
     if (hubTabsRestoredRef.current) return;

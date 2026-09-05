@@ -21,6 +21,7 @@ import {
   pauseMediaIn,
   type HubFrameSwipeHandlers,
 } from '../../src/components/table/HubFrame';
+import { HUB_FRAME_IDLE_SUSPEND_MS } from '../../src/utils/hubTab';
 
 const swipe = createRef<HubFrameSwipeHandlers>() as React.RefObject<HubFrameSwipeHandlers>;
 (swipe as { current: HubFrameSwipeHandlers }).current = {
@@ -176,13 +177,16 @@ describe('links inside the frame', () => {
 });
 
 describe('input inside the frame reaches the strip', () => {
-  it('forwards keydown to the keys ref', () => {
+  it('forwards Alt+Arrow to the keys ref, and leaves Tab and digits to the page', () => {
     const { iframe, keys } = mount();
     const doc = docOf(iframe);
     const KE = doc.defaultView?.KeyboardEvent ?? KeyboardEvent;
     doc.dispatchEvent(new KE('keydown', { key: '2', bubbles: true }));
+    doc.dispatchEvent(new KE('keydown', { key: 'Tab', bubbles: true }));
+    expect(keys.current).not.toHaveBeenCalled();
+    doc.dispatchEvent(new KE('keydown', { key: 'ArrowRight', altKey: true, bubbles: true }));
     expect(keys.current).toHaveBeenCalledTimes(1);
-    expect((keys.current as ReturnType<typeof vi.fn>).mock.calls[0][0].key).toBe('2');
+    expect((keys.current as ReturnType<typeof vi.fn>).mock.calls[0][0].key).toBe('ArrowRight');
   });
 
   it('forwards touches to the swipe ref', () => {
@@ -193,6 +197,29 @@ describe('input inside the frame reaches the strip', () => {
     doc.dispatchEvent(new TE('touchend', { bubbles: true }));
     expect(swipe.current.start).toHaveBeenCalled();
     expect(swipe.current.end).toHaveBeenCalled();
+  });
+});
+
+describe('a frame nobody has looked at yet', () => {
+  it('does not load until its tab is on screen once, then stays loaded', () => {
+    const props = {
+      tabId: 'hub:1',
+      src: '/hub/social',
+      title: 'Social',
+      swipe,
+      onLocationChange: vi.fn(),
+      onClubArenaTarget: vi.fn(),
+    };
+    const { iframe, rerender } = mount({ active: false });
+    expect(iframe.hasAttribute('src')).toBe(false);
+    // Nothing to unload either: the idle timer must not blank a frame that
+    // was never loaded (it would then "restore" it on return and boot it).
+    vi.advanceTimersByTime(HUB_FRAME_IDLE_SUSPEND_MS + 1);
+    expect(iframe.hasAttribute('src')).toBe(false);
+    rerender(<HubFrame {...props} active />);
+    expect(iframe.getAttribute('src')).toBe('/hub/social');
+    rerender(<HubFrame {...props} active={false} />);
+    expect(iframe.getAttribute('src')).toBe('/hub/social');
   });
 });
 
@@ -246,7 +273,9 @@ describe('a frame the player is not looking at', () => {
       onClubArenaTarget: vi.fn(),
       idleSuspendMs: 1000,
     };
-    const { iframe, rerender } = mount({ active: false, idleSuspendMs: 1000 });
+    // Seen once (so it loaded), then left behind another tab.
+    const { iframe, rerender } = mount({ active: true, idleSuspendMs: 1000 });
+    rerender(<HubFrame {...props} active={false} />);
     // Not yet: the window has not elapsed.
     vi.advanceTimersByTime(999);
     expect(iframe.src.endsWith('about:blank')).toBe(false);
@@ -267,7 +296,8 @@ describe('a frame the player is not looking at', () => {
       onClubArenaTarget: vi.fn(),
       idleSuspendMs: 1000,
     };
-    const { iframe, rerender } = mount({ active: false, idleSuspendMs: 1000 });
+    const { iframe, rerender } = mount({ active: true, idleSuspendMs: 1000 });
+    rerender(<HubFrame {...props} active={false} />);
     vi.advanceTimersByTime(500);
     rerender(<HubFrame {...props} active />);
     vi.advanceTimersByTime(5000);

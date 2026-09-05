@@ -103,6 +103,17 @@ export function hubTabTitle(pathAndSearch: string): string {
 }
 
 /**
+ * Are these two URLs the same World Hub page? Pathname only, trailing slash
+ * ignored: the frame reports its LIVE location, which Next.js may normalise
+ * (a trailing slash, a default query), and a second press of the same button
+ * must focus the tab that is already there rather than open a twin.
+ */
+export function sameHubPage(a: string, b: string): boolean {
+  const norm = (p: string) => splitPath(p).pathname.replace(/\/+$/, '') || '/';
+  return norm(a) === norm(b);
+}
+
+/**
  * How often the container reads the frame's location. Next.js moves between
  * pages with pushState, which fires no event a parent can hear, so polling is
  * the honest mechanism - and 250ms is fast enough that a frame heading back
@@ -142,10 +153,6 @@ export function isOffSite(url: URL, origin: string): boolean {
  * reading" goes stale fast. */
 export const HUB_TABS_KEY = 'ca_hub_tabs';
 export const HUB_TABS_TTL_MS = 30 * 60 * 1000;
-
-export interface SavedHubTab {
-  hubUrl: string;
-}
 
 export function saveHubTabs(
   urls: readonly string[],

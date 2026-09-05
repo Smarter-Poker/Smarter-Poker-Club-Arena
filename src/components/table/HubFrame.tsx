@@ -28,10 +28,10 @@
  *     exactly as a swipe over the felt does. Re-attached on every `load`,
  *     because a full navigation inside the frame is a new document.
  *
- *  2. KEYS. Same story for the keyboard: 1-6 and Tab switch tabs from the
- *     felt, and with focus inside the frame those keystrokes never reached
- *     the window. The frame document forwards them through the same kind of
- *     ref.
+ *  2. KEYS. The strip's Alt+Arrow reorder is forwarded from the frame
+ *     document through the same kind of ref. Tab and the digits are NOT: inside
+ *     a web page Tab moves focus and a digit may answer a Trivia question, and
+ *     a real browser tab does not steal those from the page.
  *
  *  3. LOCATION. Next.js moves between pages with pushState, which no parent
  *     can hear, so the frame's location is polled (HUB_FRAME_POLL_MS). A change
@@ -68,7 +68,7 @@
  * `iframe.src` imperatively for exactly that reason.
  */
 
-import { useEffect, useRef, type RefObject } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import {
   HUB_FRAME_IDLE_SUSPEND_MS,
   HUB_FRAME_POLL_MS,
@@ -92,7 +92,7 @@ export interface HubFrameProps {
   /** Is this tab the one on screen (and the container visible)? */
   active: boolean;
   swipe: RefObject<HubFrameSwipeHandlers>;
-  /** The strip's keyboard handler (1-6, Tab, Alt+Arrows). Optional. */
+  /** The strip's keyboard handler; only Alt+Arrow (reorder) is forwarded. Optional. */
   keys?: RefObject<((e: KeyboardEvent) => void) | null>;
   /** The frame is on a different World Hub page now (path + search). */
   onLocationChange: (tabId: string, path: string) => void;
@@ -137,6 +137,12 @@ export function HubFrame({
   /* The last same-origin page the frame was on: what an idle unload restores. */
   const lastPathRef = useRef(src);
   const suspendedRef = useRef(false);
+  /* A frame does not LOAD until its tab has been on screen once. Tabs restored
+     after a reload arrive inactive, and three Next.js apps booting behind a
+     live hand on a phone is exactly the cost the idle unload exists to avoid.
+     Latches true on first activation and never resets. */
+  const [armed, setArmed] = useState(active);
+  if (active && !armed) setArmed(true);
 
   useEffect(() => {
     const iframe = ref.current;
@@ -177,7 +183,14 @@ export function HubFrame({
       const onStart = (e: TouchEvent) => swipe.current?.start(e);
       const onMove = (e: TouchEvent) => swipe.current?.move(e);
       const onEnd = () => swipe.current?.end();
-      const onKey = (e: KeyboardEvent) => keys?.current?.(e);
+      /* Only the strip's MODIFIED shortcuts (Alt+Arrow reorder) cross the
+         frame boundary. Tab and the digits are ordinary keys inside a web
+         page - Tab moves focus, digits answer a Trivia question - and a real
+         browser tab does not steal them from the page (Dan 2026-09-05 audit). */
+      const onKey = (e: KeyboardEvent) => {
+        if (!e.altKey) return;
+        keys?.current?.(e);
+      };
       const onClick = (e: MouseEvent) => {
         const target = e.target as Element | null;
         const anchor = target?.closest?.('a[href]') as HTMLAnchorElement | null;
@@ -265,6 +278,8 @@ export function HubFrame({
       }
       return;
     }
+    // Never loaded: nothing to quiet and nothing to unload.
+    if (!armed) return;
 
     try {
       const doc = iframe.contentDocument;
@@ -279,13 +294,13 @@ export function HubFrame({
       iframe.src = 'about:blank';
     }, idleSuspendMs);
     return () => window.clearTimeout(timer);
-  }, [active, idleSuspendMs]);
+  }, [active, armed, idleSuspendMs]);
 
   return (
     <iframe
       ref={ref}
       className="multi-table-page__hub-frame"
-      src={initialSrc}
+      src={armed ? initialSrc : undefined}
       title={title}
       data-hub-active={active ? 'true' : 'false'}
       /* Same-origin, no sandbox: the World Hub is our own app and needs its

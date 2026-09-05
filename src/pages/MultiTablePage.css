@@ -145,6 +145,15 @@
   color-scheme: dark;
 }
 
+/* The take-seat bar is sticky at top:0 in the same scroller as the in-tab
+   GlobalHeader (also sticky, z-index 390, first child). Both at 0 means the
+   header covers the bar after one header-height of scroll; the bar sits at
+   the header's measured bottom instead (the header publishes the variable on
+   the tab element). 0px outside a tab, so nothing else moves. */
+.multi-table-page__lobby-tab .multi-table-page__take-seat {
+  top: var(--ca-in-tab-header-height, 0px);
+}
+
 /* Tile view shows a card for a hub tab rather than a scaled-down web page;
    tapping the cell (the grid's own handler) opens the tab full-size. */
 .multi-table-page__hub-tile {

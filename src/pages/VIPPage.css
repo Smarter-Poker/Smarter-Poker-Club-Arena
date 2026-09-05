@@ -158,71 +158,20 @@
   color: var(--text-primary);
 }
 
-.tiers-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
+/* THE TIER LADDER'S STYLESHEET, DELETED 2026-09-05.
+   `.tiers-list`, `.tier-card`, `.tier-header`, `.tier-info`, `.tier-rakeback`
+   and `.current-badge` dressed the six-rung ladder - bronze through an invented
+   "royal" - that came out of the app earlier today with src/constants/vipTiers.ts
+   (Dan: "THERE IS NO SUCH THING AS 'PLATINUM VIP'. JUST VIP, AND LIFETIME
+   VIP"). Not one of them is referenced by any .tsx any more, and `.tier-rakeback`
+   styled a rakeback percentage nothing has ever paid.
 
-.tier-card {
-  padding: 1rem;
-  background: var(--bg-secondary);
-  border-radius: 12px;
-  border: 2px solid transparent;
-  position: relative;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-.tier-card.current {
-  border-color: #ffd700;
-  background: linear-gradient(135deg, rgba(255, 215, 0, 0.1), var(--bg-secondary));
-}
-
-.tier-card.locked {
-  opacity: 0.5;
-}
-
-.tier-header {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.tier-header .tier-icon {
-  font-size: 1.5rem;
-}
-
-.tier-info {
-  flex: 1;
-}
-
-.tier-info .tier-name {
-  display: block;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.tier-info .tier-points {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-}
-
-.tier-rakeback {
-  font-weight: 700;
-  color: var(--accent-success);
-}
-
-.current-badge {
-  position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
-  font-size: 0.625rem;
-  background: #ffd700;
-  color: #000;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-  font-weight: 700;
-}
+   Two of them were doing harm while dead. `.tier-card` was declared BARE here
+   and bare again in components/vip/VIPUpgradeModal.css with a different
+   background, border and padding - a cross-page collision decided by route
+   chunk order (tests/global-css-does-not-leak-across-pages.law.test.ts). And
+   `.tier-card.current` and `.current-badge` both painted #ffd700, which is
+   outside the colour schema. */
 
 .loading-state {
   display: flex;

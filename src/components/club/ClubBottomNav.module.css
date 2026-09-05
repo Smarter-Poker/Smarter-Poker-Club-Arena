@@ -10,6 +10,9 @@
   max-width: 100vw;
   margin: 0;
   box-sizing: border-box;
+  /* A floor for the touch targets only. The artwork sets the real height from
+     its own aspect ratio; a min-height taller than that would reopen the gap
+     this file spent 2026-09-04 closing. */
   min-height: var(--bottom-nav-height, 44px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   overflow: hidden;
@@ -34,11 +37,29 @@
   overflow: hidden;
 }
 
+/* THE BOX IS THE FRAME'S SHAPE, NOT A GUESS AT IT (2026-09-05).
+   `width: 100%` + `height: var(--bottom-nav-height)` let the box take any
+   aspect the viewport happened to produce, and the image below stretches to
+   fill it - so above the 132px ceiling the frame was squashed (11.7% at a
+   1204px viewport, where the frame's own shape asks for 147.4px) and below it
+   the old 13.72vw stretched it 11.3% the other way. Dan, 2026-09-05: the
+   footer "IS DISTORTED".
+   `aspect-ratio` takes the shape from the asset instead of restating it:
+   1866 x 230 is the measured opaque frame inside the 1916 x 256 canvas. The
+   height now follows whatever width this box actually gets, so a scrollbar,
+   a zoom level or a future ceiling cannot reintroduce the stretch.
+   The width cap is the other half: the ceiling has to stop BOTH dimensions or
+   stopping one of them is itself the distortion. 132 x (1866/230) = 1070.9px
+   is the widest this frame can be while standing 132px tall, and past that the
+   bar centres. Nothing paints behind it - `.bottomNav` is transparent by the
+   2026-09-04 clipping rule - so the page simply shows through beside it, the
+   same way it already shows through the frame's rounded corners. */
 .artwork {
   position: relative;
-  width: 100%;
-  height: var(--bottom-nav-height, 44px);
-  margin: 0;
+  width: min(100%, calc(var(--bottom-nav-height, 44px) * 1866 / 230));
+  aspect-ratio: 1866 / 230;
+  height: auto;
+  margin-inline: auto;
   background: transparent;
 }
 

@@ -58,13 +58,39 @@ export const rafFrameSampler: FrameSamplerStart = (durationMs, done) => {
   let frames = 0;
   let handle = 0;
   let live = true;
+  /**
+   * MOBILE PASS 2026-09-05: requestAnimationFrame is PAUSED in a background
+   * tab and in a hidden iframe - MDN says so plainly, and it is the single
+   * most likely thing to happen to a phone mid-hand: the player takes a call,
+   * checks a message, locks the screen. The wall clock keeps running while
+   * the frame callbacks do not, so a sample that spans a backgrounding
+   * measures a handful of frames across several seconds and reports a
+   * perfectly healthy device as catastrophically degraded.
+   *
+   * A sample that was interrupted is not a slow sample. It is no sample.
+   */
+  const abandonIfHidden = () => {
+    if (typeof document !== 'undefined' && document.hidden) live = false;
+  };
+  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener('visibilitychange', abandonIfHidden);
+  }
+  const detach = () => {
+    if (typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
+      document.removeEventListener('visibilitychange', abandonIfHidden);
+    }
+  };
 
   const tick = () => {
-    if (!live) return;
+    if (!live) {
+      detach();
+      return;
+    }
     frames += 1;
     const elapsedMs = clock() - startedAt;
     if (elapsedMs >= durationMs) {
       live = false;
+      detach();
       const fps = elapsedMs > 0 ? (frames * 1000) / elapsedMs : 0;
       done({
         frames,
@@ -80,6 +106,7 @@ export const rafFrameSampler: FrameSamplerStart = (durationMs, done) => {
 
   return () => {
     live = false;
+    detach();
     if (handle) cancelAnimationFrame(handle);
   };
 };

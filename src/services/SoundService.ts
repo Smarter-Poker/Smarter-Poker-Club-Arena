@@ -2400,16 +2400,40 @@ class SoundService {
     noise.start(t0);
     noise.stop(t0 + dur + 0.4);
 
-    // One click per peg the light actually crosses.
-    const offsets =
-      stepOffsetsMs && stepOffsetsMs.length > 0
-        ? stepOffsetsMs
-        : Array.from({ length: 46 }, (_, i) => durationMs * Math.pow((i + 1) / 46, 2.35));
+    /* One click per peg the light actually crosses.
 
-    const last = Math.max(1, offsets.length - 1);
-    offsets.forEach((ms, i) => {
-      this.spinPegClick(t0 + ms / 1000, 0.5 + 0.5 * (i / last));
-    });
+       AN EMPTY SCHEDULE IS AN ANSWER, NOT A MISSING ARGUMENT (2026-09-05).
+       This read `stepOffsetsMs && stepOffsetsMs.length > 0`, so an empty ARRAY
+       fell through to the 46-click fallback. SpinWheel hands over the
+       CAUGHT-UP schedule, and a client that arrives after the chase has ended -
+       during the multi-second result hold, a common window - has no pegs left
+       to cross, so it passes `[]` with a duration of 0. Every fallback offset
+       then computed `0 * anything = 0` and all 46 clicks fired on the same
+       millisecond at velocities ramping to 1.0: one loud crack instead of a
+       chase.
+
+       It was unreachable until today only because playSpinTicking was rank
+       `ui` (10) and always lost the frame to playSpinStart's 95. Taking the
+       cues off that gate unmasked it, which is the honest cost of that change
+       and why it is fixed here rather than noted.
+
+       `undefined` still means "caller has no schedule, improvise one"; `[]`
+       means "nothing left to strike", and the two are no longer the same
+       sentence. */
+    const offsets =
+      stepOffsetsMs === undefined
+        ? Array.from(
+            { length: 46 },
+            (_, i) => Math.max(0, durationMs) * Math.pow((i + 1) / 46, 2.35)
+          )
+        : stepOffsetsMs;
+
+    if (offsets.length > 0) {
+      const last = Math.max(1, offsets.length - 1);
+      offsets.forEach((ms, i) => {
+        this.spinPegClick(t0 + Math.max(0, ms) / 1000, 0.5 + 0.5 * (i / last));
+      });
+    }
   }
 
   /** A single peg strike: noise transient + a short randomised ring. */

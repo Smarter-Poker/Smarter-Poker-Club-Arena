@@ -10,14 +10,14 @@ kept, deliberately, and so were 10 horses that live on a `.test` domain.
 Identified by address shape only - never by a name that merely reads like a
 test:
 
-| pattern | what it is |
-| --- | --- |
-| `%@probe.smarter.poker` | websocket probes |
-| `%@smarter-poker.invalid`, `%@example.invalid` | certification markers |
-| `%@yopmail.com` | disposable mailboxes |
-| `club-arena-%e2e%@smarter.poker` | end-to-end suite accounts |
-| `tester_<uuid>@test.com`, `god_<uuid>@test.com`, `logotest_<n>@example.com` | generated fixtures |
-| `test@example.com`, `jetski_test_123@example.com` | named fixtures |
+| pattern                                                                     | what it is                |
+| --------------------------------------------------------------------------- | ------------------------- |
+| `%@probe.smarter.poker`                                                     | websocket probes          |
+| `%@smarter-poker.invalid`, `%@example.invalid`                              | certification markers     |
+| `%@yopmail.com`                                                             | disposable mailboxes      |
+| `club-arena-%e2e%@smarter.poker`                                            | end-to-end suite accounts |
+| `tester_<uuid>@test.com`, `god_<uuid>@test.com`, `logotest_<n>@example.com` | generated fixtures        |
+| `test@example.com`, `jetski_test_123@example.com`                           | named fixtures            |
 
 ```
 matched the patterns                     130
@@ -44,7 +44,7 @@ horse outright, so the pattern list cannot reach one even by accident.
 those rows while removing the account - the only way through would be to delete
 the ledger and audit rows themselves. That is not a tidy-up, it is erasing the
 record of 1.6M chips moving, and those nine accounts are the answer to "who
-moved them". CLAUDE.md 10.9: *never edit history quiet.* An account that has
+moved them". CLAUDE.md 10.9: _never edit history quiet._ An account that has
 acted on the chip ledger has stopped being disposable.
 
 ## What the probe found
@@ -69,8 +69,8 @@ rows - 7 rows, 3,500 diamonds, every one a house credit (`bonus` /
 `app.ledger_maintenance` set to an incident reference it copies each deleted row
 whole into `ca_diamond_journal_archive` with the reason attached, logs the
 bypass in `ca_ledger_mutation_log`, and raises a DR5 incident per row. Its own
-comment names this exact caller - *"The diamond journal is deleted from on an
-hourly cadence by the certification fleet."* Taking that path is following the
+comment names this exact caller - _"The diamond journal is deleted from on an
+hourly cadence by the certification fleet."_ Taking that path is following the
 rule, not routing around it: nothing is destroyed, and the rows come out with
 better provenance than they went in with.
 
@@ -79,11 +79,11 @@ better provenance than they went in with.
 `wallets` (120 rows for this set), `club_members`, `chip_transactions`,
 `wallet_transactions` and `table_seats`. The probe ran at 17:56 UTC, inside the
 `:55` maintenance break (CLAUDE.md 13), and every one of those deletes would
-have been refused as the *next* failure - after 121 accounts had already been
+have been refused as the _next_ failure - after 121 accounts had already been
 removed. The migration now refuses to start while `fn_platform_frozen()` is
 true rather than half-completing, and says to re-run between `:00` and `:53`.
 
-**3. Two AFTER DELETE triggers emit a row *about* the account.**
+**3. Two AFTER DELETE triggers emit a row _about_ the account.**
 
 ```
 23503: insert or update on table "daily_challenge_dashboard_revisions"
@@ -179,7 +179,6 @@ sweepable accounts may remain, and the horse fleet must still read exactly
 1,000. If either fails the whole thing aborts.
 
 Migration: `supabase/migrations/20260905174801_the_test_accounts_are_swept.sql`
-
 
 ## What the apply returned
 

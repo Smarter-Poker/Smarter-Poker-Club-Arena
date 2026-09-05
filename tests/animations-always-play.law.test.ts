@@ -693,6 +693,36 @@ describe('LAW: reduced motion removes motion, never meaning', () => {
   });
 });
 
+describe('LAW: the hand replayer moves, at the player speed, never switched off', () => {
+  /* PHASE 3 OF THE PREVIOUS HAND PLAN (2026-09-05). The replayer stepped
+     between still frames until today. Now chips slide, streets sweep, shows
+     flip, folds go to the muck and the pot travels - and every one of those
+     durations is `--hr-move`, the player's Animation Speed divided by the
+     replay's own rate. The rate control offers half, normal and double: all
+     three are motion. A literal millisecond in this block would ignore the
+     player's setting; `animation: none` would be the retired skip toggle by
+     another name. The full behaviour pins live in
+     tests/unit/previousHandPhase3.test.tsx; this is the law's own line. */
+  const HR_CSS = read('src/components/replay/HandReplay.css');
+  const HR_TSX = read('src/components/replay/HandReplay.tsx');
+  const MOVES = HR_CSS.slice(HR_CSS.indexOf('THE REPLAYER MOVES'));
+
+  it('every replay motion derives its duration from --animation-speed', () => {
+    expect(MOVES).toContain('--hr-move: calc(var(--animation-speed, 1) / var(--hr-rate, 1))');
+    const literal = MOVES.match(/animation:[^;]*\b\d+ms\b(?![^;]*var\(--hr-move\))/g) ?? [];
+    expect(literal).toEqual([]);
+    expect(MOVES).not.toMatch(/animation:\s*none/);
+  });
+
+  it('the rate control only offers rates, and the cues are the felt sounds', () => {
+    expect(HR_TSX).toContain("import { soundService } from '../../services/SoundService';");
+    expect(HR_TSX).not.toMatch(/skip_animations|reduce_motion|muteReplay/);
+    expect(read('src/utils/replayMotion.ts')).toContain(
+      'export const REPLAY_RATES = [0.5, 1, 2] as const;'
+    );
+  });
+});
+
 describe('LAW: no toggle may quietly turn the product animation-free or mute', () => {
   it('skip_animations has no consumer', () => {
     // The toggle was retired by Dan's directive; a revived consumer would
@@ -974,8 +1004,8 @@ describe('LAW: a Crazy Pineapple discard is seen and heard', () => {
 
     // Both in-table surfaces draw it - through the one shared rundown, which
     // draws the thrown card face up on the viewer's own discard row.
-    expect(read('src/components/table/HandHistoryPanel.tsx')).toContain(
-      '<HandDetailView model={hand.replay}'
+    expect(read('src/components/table/HandHistoryPanel.tsx')).toMatch(
+      /<HandDetailView\s+model=\{hand\.replay\}/
     );
     expect(read('src/components/table/HandDetailModal.tsx')).toContain('<HandDetailView');
     expect(read('src/components/handdetail/HandDetailView.tsx')).toContain(

@@ -1,15 +1,27 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  PROMO VAULT - smarter.poker palette
+ *  PROMO VAULT - #SMARTERCASINOREALISM
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Same token block as ClubMembersPage, deliberately duplicated at the page root
- * rather than imported, so the two screens sit side by side in the club and a
- * palette change is one edit per page instead of a cascade nobody can trace.
+ * The club's stock of promo items: a grid of tiles the operator buys with
+ * diamonds and grants to a member, plus the record of every purchase, grant and
+ * revoke underneath.
  *
- * NO GREEN AND NO PURPLE. Dan had both removed from this area on 2026-08-23.
- * Features are arena cyan; the three VIP tiers are bronze, club blue and gold,
- * carried per tile as --tile-color so the grid needs no per-tier classes.
+ * The page-root token block below is now an ALIAS LAYER over the --realism-*
+ * tokens on :root in src/styles/club-engine.css, which main.tsx already loads.
+ * The names stay because every rule in this file and the markup's --tile-color
+ * read them; the values come from one definition instead of a ninth private
+ * palette. A tile, a record and the dialog are panel gradients in a gunmetal
+ * frame with a lit top edge and a cavity under them; controls press on
+ * :active. No :hover rules here and none may be added
+ * (tests/no-hover-effects.law.test.ts).
+ *
+ * NO GREEN AND NO PURPLE. Dan had both removed from this area on 2026-08-23,
+ * and that survives the realism pass: --realism-green appears nowhere in this
+ * file. Features are arena cyan; the three VIP tiers are bronze, club blue and
+ * gold, carried per tile as --tile-color so the grid needs no per-tier classes.
+ * Bronze (#C88A4A) has no token and is set in the page component; sapphire is
+ * --realism-blue and gold is --realism-gold.
  *
  * MOBILE-FIRST, 375px FIRST. Both grids are two tiles wide at 375px and three
  * from 480px up. A tile is square-ish and its face is the tap target, with the
@@ -18,20 +30,23 @@
  */
 
 .promo-vault-page {
-  --ca-cyan: var(--info-cyan, #00d4ff);
-  --ca-blue: var(--club-blue, #4169e1);
+  --ca-cyan: var(--realism-cyan);
+  --ca-blue: var(--realism-blue);
   --ca-royal: #1877f2;
-  --ca-gold: var(--vip-gold, #ffc93c);
+  --ca-gold: var(--realism-gold);
 
-  --ca-bg-0: #0a0a14;
-  --ca-bg-1: #0d1520;
+  --ca-bg-0: var(--realism-obsidian);
+  --ca-bg-1: var(--realism-carbon);
   --ca-surface: rgba(255, 255, 255, 0.05);
   --ca-surface-hi: rgba(255, 255, 255, 0.08);
-  --ca-border: #2a3a4a;
-  --ca-border-hi: #3a4a5a;
-  --ca-text: #ffffff;
-  --ca-text-dim: #8a9aaa;
-  --ca-text-faint: #6a7a8a;
+  --ca-border: var(--realism-gunmetal);
+  --ca-border-hi: var(--realism-gunmetal-lit);
+  --ca-text: var(--realism-chrome-hot);
+  --ca-text-dim: var(--realism-chrome);
+  --ca-text-faint: var(--realism-muted);
+
+  /* The milled face every control on this page is cut from. */
+  --ca-face: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
 
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone */
@@ -66,9 +81,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(145deg, var(--ca-surface) 0%, rgba(100, 100, 100, 0.02) 100%);
+  background: var(--ca-face);
   border: 1px solid var(--ca-border);
   border-radius: 10px;
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
   color: var(--ca-text-dim);
   font-size: 1.5rem;
   line-height: 1;
@@ -80,6 +98,16 @@
   border-color: var(--ca-cyan);
   color: var(--ca-cyan);
   outline: none;
+}
+
+/* The press. On a phone there is no hover, so this is the confirmation. */
+.pv-back:active,
+.pv-help-button:active,
+.pv-stepper button:active:not(:disabled),
+.pv-tile__plus:active,
+.pv-chosen__change:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
 }
 
 .pv-title {
@@ -111,6 +139,7 @@
   border-radius: 999px;
   border: 1px solid rgba(0, 212, 255, 0.4);
   background: rgba(0, 212, 255, 0.1);
+  box-shadow: var(--realism-bevel);
   font-family: 'Rajdhani', monospace;
   font-weight: 700;
   font-size: 0.9rem;
@@ -131,7 +160,10 @@
   height: 32px;
   border-radius: 50%;
   border: 1px solid var(--ca-border);
-  background: var(--ca-surface);
+  background: var(--ca-face);
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
   color: var(--ca-text-dim);
   font-weight: 700;
   font-size: 0.95rem;
@@ -160,9 +192,12 @@
   min-height: 44px;
   touch-action: manipulation;
   padding: 0.55rem 1rem;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.04) 0%, rgba(100, 100, 100, 0.02) 100%);
-  border: 2px solid var(--ca-border);
+  background: var(--ca-face);
+  border: 1px solid var(--ca-border);
   border-radius: 20px;
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
   color: var(--ca-text-faint);
   font-size: 0.88rem;
   font-weight: 600;
@@ -178,6 +213,16 @@
   box-shadow:
     0 0 12px rgba(0, 212, 255, 0.55),
     inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.pv-tabs button:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
+}
+
+.pv-tabs button:focus-visible {
+  outline: 2px solid var(--ca-cyan);
+  outline-offset: 2px;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -201,6 +246,7 @@
   border-radius: 10px;
   border: 1px solid rgba(65, 105, 225, 0.4);
   background: rgba(65, 105, 225, 0.12);
+  box-shadow: var(--realism-bevel);
   color: #a9c0ff;
   font-size: 0.78rem;
 }
@@ -234,9 +280,10 @@
 .pv-tile {
   display: flex;
   flex-direction: column;
-  background: linear-gradient(145deg, var(--ca-surface) 0%, rgba(100, 100, 100, 0.02) 100%);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
   border: 1px solid var(--ca-border);
-  border-radius: 12px;
+  border-radius: var(--realism-radius);
+  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
   overflow: hidden;
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
@@ -247,7 +294,10 @@
    cannot, so it is the one thing the border colour is spent on. */
 .pv-tile--held {
   border-color: color-mix(in srgb, var(--tile-color) 55%, transparent);
-  box-shadow: 0 0 12px color-mix(in srgb, var(--tile-color) 25%, transparent);
+  box-shadow:
+    var(--realism-bevel),
+    var(--realism-cavity),
+    0 0 12px color-mix(in srgb, var(--tile-color) 25%, transparent);
 }
 
 .pv-tile:focus-within {
@@ -268,6 +318,10 @@
   color: inherit;
   text-align: center;
   cursor: pointer;
+}
+
+.pv-tile__face:active {
+  transform: translateY(1px);
 }
 
 .pv-tile__icon {
@@ -314,6 +368,7 @@
   padding: 0.4rem 0.5rem;
   border-top: 1px solid var(--ca-border);
   background: rgba(0, 0, 0, 0.2);
+  box-shadow: var(--realism-bevel);
 }
 
 .pv-tile__cost {
@@ -340,6 +395,7 @@
   border-radius: 8px;
   border: 1px solid rgba(0, 212, 255, 0.45);
   background: rgba(0, 212, 255, 0.14);
+  box-shadow: var(--realism-bevel);
   color: var(--ca-cyan);
   font-size: 1rem;
   font-weight: 700;
@@ -368,8 +424,9 @@
   padding: 0.7rem 0.8rem;
   border: 1px solid var(--ca-border);
   border-left-width: 3px;
-  border-radius: 10px;
-  background: linear-gradient(145deg, var(--ca-surface) 0%, rgba(100, 100, 100, 0.02) 100%);
+  border-radius: var(--realism-radius);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
 }
 
 /* Bought in, sent out, taken back: cyan, club blue, gold. Never a red/green
@@ -522,10 +579,13 @@
   -webkit-overflow-scrolling: touch;
   padding: 1.1rem;
   border: 1px solid var(--ca-border-hi, #3a4a5a);
-  border-radius: 16px;
-  background: linear-gradient(180deg, #101a26 0%, #0a0f18 100%);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.6);
-  color: #ffffff;
+  border-radius: var(--realism-radius);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  box-shadow:
+    var(--realism-bevel),
+    var(--realism-cavity),
+    0 18px 48px rgba(0, 0, 0, 0.6);
+  color: var(--realism-chrome-hot);
 }
 
 .pv-dialog__title {
@@ -539,14 +599,14 @@
 .pv-dialog__sub {
   margin: 0 0 0.9rem;
   font-size: 0.75rem;
-  color: #8a9aaa;
+  color: var(--realism-chrome);
   font-family: 'Rajdhani', monospace;
 }
 
 .pv-dialog__body {
   margin: 0 0 1rem;
   font-size: 0.85rem;
-  color: #b6c4d2;
+  color: var(--realism-chrome);
   line-height: 1.5;
 }
 
@@ -557,30 +617,30 @@
   gap: 0.5rem;
   padding: 0.4rem 0;
   font-size: 0.82rem;
-  color: #8a9aaa;
+  color: var(--realism-chrome);
 }
 
 .pv-dialog__totals--quiet {
   font-size: 0.74rem;
-  color: #6a7a8a;
+  color: var(--realism-muted);
 }
 
 .pv-total {
   font-family: 'Rajdhani', monospace;
   font-weight: 700;
   font-size: 1rem;
-  color: #00d4ff;
+  color: var(--realism-cyan);
 }
 
 /* Short of diamonds is gold, not red: this is a limit, not a failure. */
 .pv-total--short {
-  color: #ffc93c;
+  color: var(--realism-gold);
 }
 
 .pv-dialog__warn {
   margin: 0.5rem 0 0;
   font-size: 0.75rem;
-  color: #ffc93c;
+  color: var(--realism-gold);
 }
 
 .pv-dialog__actions {
@@ -602,22 +662,37 @@
 }
 
 .pv-btn--ghost {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid #2a3a4a;
-  color: #8a9aaa;
+  background: var(--ca-face);
+  border: 1px solid var(--realism-gunmetal);
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
+  color: var(--realism-chrome);
 }
 
 .pv-btn--primary {
-  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
-  border: 1px solid #00d4ff;
+  background: linear-gradient(135deg, var(--realism-cyan) 0%, #0099cc 100%);
+  border: 1px solid var(--realism-cyan);
   color: #04121a;
-  box-shadow: 0 0 14px rgba(0, 212, 255, 0.4);
+  box-shadow:
+    var(--realism-bevel),
+    0 0 14px rgba(0, 212, 255, 0.4);
 }
 
 .pv-btn--primary:disabled {
   opacity: 0.45;
   cursor: not-allowed;
   box-shadow: none;
+}
+
+.pv-btn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
+}
+
+.pv-btn:focus-visible {
+  outline: 2px solid var(--realism-cyan);
+  outline-offset: 2px;
 }
 
 /* ── Stepper ──────────────────────────────────────────────────────────────── */
@@ -633,9 +708,12 @@
   width: 44px;
   height: 44px; /* a real thumb target at 375px */
   border-radius: 10px;
-  border: 1px solid #2a3a4a;
-  background: rgba(255, 255, 255, 0.05);
-  color: #ffffff;
+  border: 1px solid var(--realism-gunmetal);
+  background: var(--ca-face);
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
+  color: var(--realism-chrome-hot);
   font-size: 1.2rem;
   font-weight: 700;
   line-height: 1;
@@ -647,15 +725,22 @@
   cursor: not-allowed;
 }
 
+.pv-stepper button:focus-visible {
+  outline: 2px solid var(--realism-cyan);
+  outline-offset: 2px;
+}
+
+/* A field is a cavity, not a panel: the light falls INTO it. */
 .pv-stepper input {
   flex: 1;
   min-width: 0;
   height: 44px;
   text-align: center;
   border-radius: 10px;
-  border: 1px solid #2a3a4a;
-  background: linear-gradient(180deg, #0d1520 0%, #1a2332 100%);
-  color: #ffffff;
+  border: 1px solid var(--realism-gunmetal);
+  background: linear-gradient(180deg, var(--realism-panel) 0%, var(--realism-panel-raised) 100%);
+  box-shadow: inset 0 1px 8px rgba(0, 0, 0, 0.5);
+  color: var(--realism-chrome-hot);
   font-family: 'Rajdhani', monospace;
   font-weight: 700;
   font-size: 16px; /* under 16px makes iOS zoom the page on focus */
@@ -663,7 +748,7 @@
 
 .pv-stepper input:focus {
   outline: none;
-  border-color: #00d4ff;
+  border-color: var(--realism-cyan);
 }
 
 /* ── Recipient picker ─────────────────────────────────────────────────────── */
@@ -673,19 +758,20 @@
   padding: 0.65rem 0.85rem;
   margin-bottom: 0.6rem;
   border-radius: 10px;
-  border: 1px solid #2a3a4a;
-  background: linear-gradient(180deg, #0d1520 0%, #1a2332 100%);
-  color: #ffffff;
+  border: 1px solid var(--realism-gunmetal);
+  background: linear-gradient(180deg, var(--realism-panel) 0%, var(--realism-panel-raised) 100%);
+  box-shadow: inset 0 1px 8px rgba(0, 0, 0, 0.5);
+  color: var(--realism-chrome-hot);
   font-size: 16px;
 }
 
 .pv-search:focus {
   outline: none;
-  border-color: #00d4ff;
+  border-color: var(--realism-cyan);
 }
 
 .pv-search::placeholder {
-  color: #55677a;
+  color: var(--realism-muted);
 }
 
 .pv-picker {
@@ -705,16 +791,22 @@
   padding: 0.6rem;
   text-align: left;
   font: inherit;
-  border-radius: 10px;
-  border: 1px solid #2a3a4a;
-  background: rgba(255, 255, 255, 0.04);
-  color: #ffffff;
+  border-radius: var(--realism-radius);
+  border: 1px solid var(--realism-gunmetal);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  box-shadow: var(--realism-bevel), var(--realism-cavity);
+  color: var(--realism-chrome-hot);
   cursor: pointer;
 }
 
 .pv-picker__row:focus-visible {
-  border-color: #00d4ff;
+  border-color: var(--realism-cyan);
   outline: none;
+}
+
+.pv-picker__row:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
 }
 
 .pv-picker__names {
@@ -734,7 +826,7 @@
 
 .pv-picker__username {
   font-size: 0.7rem;
-  color: #6a7a8a;
+  color: var(--realism-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -744,14 +836,14 @@
   flex: 0 0 auto;
   font-family: 'Rajdhani', monospace;
   font-size: 0.72rem;
-  color: #8a9aaa;
+  color: var(--realism-chrome);
   white-space: nowrap;
 }
 
 .pv-picker__empty {
   padding: 1.2rem 0.5rem;
   text-align: center;
-  color: #6a7a8a;
+  color: var(--realism-muted);
   font-size: 0.82rem;
 }
 
@@ -761,9 +853,10 @@
   gap: 0.5rem;
   padding: 0.6rem;
   margin-bottom: 0.4rem;
-  border-radius: 10px;
+  border-radius: var(--realism-radius);
   border: 1px solid rgba(0, 212, 255, 0.4);
   background: rgba(0, 212, 255, 0.1);
+  box-shadow: var(--realism-bevel), var(--realism-cavity);
 }
 
 .pv-chosen__alias {
@@ -779,7 +872,7 @@
 .pv-chosen__number {
   font-family: 'Rajdhani', monospace;
   font-size: 0.72rem;
-  color: #8a9aaa;
+  color: var(--realism-chrome);
   white-space: nowrap;
 }
 
@@ -787,12 +880,20 @@
   flex: 0 0 auto;
   padding: 0.25rem 0.55rem;
   border-radius: 8px;
-  border: 1px solid #2a3a4a;
-  background: rgba(255, 255, 255, 0.06);
-  color: #8a9aaa;
+  border: 1px solid var(--realism-gunmetal);
+  background: var(--ca-face);
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
+  color: var(--realism-chrome);
   font-size: 0.7rem;
   font-weight: 600;
   cursor: pointer;
+}
+
+.pv-chosen__change:focus-visible {
+  outline: 2px solid var(--realism-cyan);
+  outline-offset: 2px;
 }
 
 /* ── Help ─────────────────────────────────────────────────────────────────── */
@@ -803,14 +904,14 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.8px;
-  color: #00d4ff;
+  color: var(--realism-cyan);
 }
 
 .pv-help__body {
   margin: 0;
   font-size: 0.82rem;
   line-height: 1.55;
-  color: #b6c4d2;
+  color: var(--realism-chrome);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -849,6 +950,8 @@
   .pv-tile,
   .pv-tabs button,
   .pv-back,
+  .pv-help-button,
+  .pv-tile__plus,
   .pv-btn {
     transition: none;
   }

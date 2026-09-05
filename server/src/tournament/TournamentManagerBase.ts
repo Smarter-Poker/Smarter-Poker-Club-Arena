@@ -2274,6 +2274,48 @@ export abstract class TournamentManagerBase {
        * reported for the event. Stamp the moment the cards are actually allowed
        * to fly, which is what every reader already believes this column means.
        */
+      /* ═══════════════════════════════════════════════════════════════════
+         A GUARDED UPDATE THAT MATCHES NOTHING IS NOT AN ERROR (2026-09-05)
+         ═══════════════════════════════════════════════════════════════════
+
+         The flip below is guarded `.eq('status', 'REGISTERING')`, and start()
+         has no status gate at the top - it reads the row and proceeds - so it
+         genuinely runs against rows that are already past REGISTERING. When
+         that happens PostgREST updates ZERO rows and returns NO ERROR, and the
+         confirm below only ever asked about `status`. A row that was already
+         RUNNING answered "not REGISTERING", the code declared the flip a
+         success, and `started_at` was never written by anybody.
+
+         WHAT IS PROVEN AND WHAT IS NOT, because a comment that names the wrong
+         cause is worse than one that admits it does not know. PROVEN: the
+         confirmation cannot distinguish "I wrote the start" from "somebody else
+         moved the status and left it empty", and 53 rows across four variants
+         played hands, ended, and carry a NULL start with zero
+         `running_flip_failed` reports. NOT PROVEN: which writer produced them.
+         Every RUNNING writer in server/src was read - this flip and
+         GameServer both write both columns, and tournamentRecovery's two
+         COMPLETING -> RUNNING revivals act on rows that already have a start -
+         so the mass producer of 2026-09-01 is still unidentified. This is a
+         correct backstop, not a demonstrated root cause; do not delete it on
+         the grounds that the writer it describes was never found.
+
+         It is silent and it is permanent. Measured 2026-09-05: 53 tournaments
+         across FOUR variants (30 sng, 21 spin, 1 satellite, 1 freezeout) that
+         played hands and ended, every one of them carrying started_at NULL,
+         and not one `running_flip_failed` report between them. 47 of the 53
+         landed on 2026-09-01 alone.
+
+         A null start is not cosmetic. `late_reg_mins` is arithmetic ON this
+         column (`started_at + mins`, in the footer countdown AND server side),
+         every duration ever reported comes from it, and the sweeps that repair
+         a spin bounded themselves on it - `NULL > now() - interval` is NULL,
+         which is not true, so the row is invisible to the very jobs written to
+         rescue it. That is how four spins sat un-stamped for four days.
+
+         So the confirmation now asks the question it always meant to ask: is
+         there a start on this row. If the flip lost the race but the row is
+         live and unstamped, the stamp is written on its own, guarded
+         `.is('started_at', null)` so it can never overwrite a real one. */
       const startedAtIso = new Date(Date.now() + Math.max(0, this.preStartLeadMs)).toISOString();
       let runningFlipped = false;
       for (let attempt = 1; attempt <= 3 && !runningFlipped; attempt++) {
@@ -2284,11 +2326,41 @@ export abstract class TournamentManagerBase {
           .eq('status', 'REGISTERING');
         const { data: confirmRow } = await supabase
           .from('tournaments')
-          .select('status')
+          .select('status, started_at')
           .eq('id', this.tournamentId)
           .maybeSingle(); // FIX 168
         const confirmed = String(confirmRow?.status ?? '');
         if (!flipErr && confirmed !== 'REGISTERING' && confirmed !== '') {
+          if (!confirmRow?.started_at) {
+            /* Live and unstamped: somebody else moved the status and left the
+               column empty. Stamp it. Only ever fills a hole - the `.is null`
+               guard means a real start already on the row wins.
+
+               NOT on a finished row. A COMPLETED or CANCELLED tournament is a
+               settled record and the only honest start for it is the one
+               nobody wrote; inventing one to tidy a column is what 10.9
+               forbids. Those are reported instead. */
+            if (confirmed === 'RUNNING') {
+              const { error: stampErr } = await supabase
+                .from('tournaments')
+                .update({ started_at: startedAtIso })
+                .eq('id', this.tournamentId)
+                .is('started_at', null);
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] RUNNING flip matched no row (already ${confirmed}) and started_at was empty - stamped it here${stampErr ? ` (STAMP FAILED: ${stampErr.message})` : ''}`
+                ),
+                'Tournament.started_at_stamped_after_lost_flip'
+              );
+            } else {
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] RUNNING flip matched no row and the tournament is already ${confirmed} with started_at empty - not inventing a start on a finished row`
+                ),
+                'Tournament.started_at_missing_on_finished_row'
+              );
+            }
+          }
           runningFlipped = true;
           break;
         }

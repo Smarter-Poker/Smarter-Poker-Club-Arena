@@ -1866,7 +1866,8 @@
    flop card is exactly the size it will be when the river lands and the
    board stops breathing between streets. flex-grow 0 is the fix; flex-shrink
    1 keeps six-card double boards from overflowing. */
-.table-surface .community-cards__card {
+.table-surface .community-cards__card,
+.table-surface .community-cards__slot-reserve {
   width: auto;
   height: auto;
   flex: 0 1 calc((100% - 4 * var(--cc-card-gap, 6px)) / 5);
@@ -2746,12 +2747,11 @@
    BEFORE it landed. The server's paced runout (1s + 1.4s/street) provides
    the drama now; the flop keeps its normal, internally-consistent timing.
    The dead --dealing override (class no component emits) is gone too. */
-.table-page--allin-mode .community-cards__card--turn {
-  animation-duration: calc(1s * var(--animation-speed, 1)) !important;
-}
-.table-page--allin-mode .community-cards__card--river {
-  animation-duration: calc(1.3s * var(--animation-speed, 1)) !important;
-}
+/* RIVER SQUEEZE 2026-09-04: the all-in turn/river duration overrides that
+   sat here (1s / 1.3s, !important) are gone. Both streets now run the squeeze
+   with the `all-in` profile, whose hold is sized from
+   HAND_COMPLETION.ALL_IN_STREET_REVEAL_MS - an !important duration here would
+   have clobbered the profile's prepare beat and desynced the flip. */
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    ALL-IN EQUITY BADGE — per-seat win percentage during a runout

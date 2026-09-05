@@ -20111,6 +20111,14 @@ export default function TablePage({
                           deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                           cardBack={activeCardBack}
                           playSounds={board.boardIndex === 0 && ambientSoundsAllowed}
+                          /* RIVER SQUEEZE 2026-09-04: presentation identity
+                             and focus for the card presentation engine. Each
+                             run is its own board lane. */
+                          tableId={tableId}
+                          handId={tableState.handNumber}
+                          boardIndex={board.boardIndex}
+                          gameMode={tableState.isTournament ? 'tournament' : 'cash'}
+                          isFocused={isActive}
                         />
                       </div>
                     ))
@@ -20146,6 +20154,15 @@ export default function TablePage({
                            runout (equity overlay live) the turn/river land
                            face down and flip - the reference slowed reveal. */
                         slowReveal={allInEquities.length > 0}
+                        /* RIVER SQUEEZE 2026-09-04: presentation identity and
+                           focus. The engine keys the river by table + hand +
+                           board so a duplicate snapshot never replays it and
+                           a background table gets the compact profile. */
+                        tableId={tableId}
+                        handId={tableState.handNumber}
+                        boardIndex={0}
+                        gameMode={tableState.isTournament ? 'tournament' : 'cash'}
+                        isFocused={isActive}
                       />
                       {/* DOUBLE-BOARD BOMB POT 2026-08-20: board 2, stacked
                           directly under board 1 like the reference — no label,
@@ -20174,6 +20191,11 @@ export default function TablePage({
                             cardBack={activeCardBack}
                             playSounds={false}
                             slowReveal={allInEquities.length > 0}
+                            tableId={tableId}
+                            handId={tableState.handNumber}
+                            boardIndex={1}
+                            gameMode={tableState.isTournament ? 'tournament' : 'cash'}
+                            isFocused={isActive}
                           />
                         </div>
                       )}
@@ -20195,6 +20217,11 @@ export default function TablePage({
                             cardBack={activeCardBack}
                             playSounds={false}
                             slowReveal={allInEquities.length > 0}
+                            tableId={tableId}
+                            handId={tableState.handNumber}
+                            boardIndex={2}
+                            gameMode={tableState.isTournament ? 'tournament' : 'cash'}
+                            isFocused={isActive}
                           />
                         </div>
                       )}

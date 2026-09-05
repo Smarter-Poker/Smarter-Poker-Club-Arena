@@ -229,4 +229,22 @@ BEGIN
 END;
 $function$;
 
+-- ── THE DOOR STAYS SHUT (restored 2026-09-05) ──────────────────────────────
+-- 20260903171736 carried this pair and this file dropped it, and
+-- scripts/ci/check-definer-authorization.mjs refused the push - correctly.
+--
+-- `CREATE OR REPLACE` preserves existing grants, so the live database was
+-- never actually exposed (verified: anon and authenticated cannot execute it,
+-- only service_role). But the checker reads the MIGRATION, not the database,
+-- and it is right to: a migration replayed onto a fresh database creates the
+-- function with Postgres's default PUBLIC EXECUTE, and this one is SECURITY
+-- DEFINER, it writes, and it never asks auth.uid() who is calling. A browser
+-- role reaching it could seat the fleet and rewrite start times at will.
+--
+-- So the grant is restated rather than inherited. A migration that only works
+-- because of what a previous migration happened to leave behind is a migration
+-- that stops working the first time somebody rebuilds from scratch.
+REVOKE ALL ON FUNCTION public.fn_repair_seat_first_games(integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_repair_seat_first_games(integer) TO service_role;
+
 COMMIT;

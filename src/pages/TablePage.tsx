@@ -7374,6 +7374,10 @@ export default function TablePage({
     isVip: viewerIsVip,
     settingOn: v8Settings.all_in_squeeze,
     runItMultiple: ritRunsThisHand > 1 || (ritResult?.boards?.length ?? 0) > 1,
+    /* Dan 2026-09-05: "THIS ISN'T ALLOWED ON BOMB POTS". bombPotActive is the
+       hand-level flag (BOMB_POT_TRIGGERED -> next HAND_STARTED); a second
+       board on the felt is the same fact from the other side. */
+    bombPot: bombPotActive || tableState.communityCards2.length > 0,
   });
   /**
    * While this viewer's squeezed card is still face down under their hand,
@@ -7388,22 +7392,7 @@ export default function TablePage({
    * is involved. The hold lifts on the engine's reveal beat, when the face is
    * on screen.
    */
-  const [holdingBoards, setHoldingBoards] = useState<ReadonlySet<number>>(() => new Set());
-  const setBoardHolding = useCallback((boardIndex: number, holding: boolean) => {
-    setHoldingBoards((prev) => {
-      if (prev.has(boardIndex) === holding) return prev;
-      const next = new Set(prev);
-      if (holding) next.add(boardIndex);
-      else next.delete(boardIndex);
-      return next;
-    });
-  }, []);
-  /* A double or triple board bomb pot deals its boards in lockstep and
-     squeezes each one; the numbers wait until EVERY squeezed card is open. */
-  const onSqueezeHoldBoard0 = useCallback((h: boolean) => setBoardHolding(0, h), [setBoardHolding]);
-  const onSqueezeHoldBoard1 = useCallback((h: boolean) => setBoardHolding(1, h), [setBoardHolding]);
-  const onSqueezeHoldBoard2 = useCallback((h: boolean) => setBoardHolding(2, h), [setBoardHolding]);
-  const squeezeHolding = holdingBoards.size > 0;
+  const [squeezeHolding, setSqueezeHolding] = useState(false);
   const displayedEquities = useHeldValue(allInEquities, squeezeHolding);
 
   // FIX-232: Ref for cards_pre_sort to avoid stale closure in hole card callbacks
@@ -21370,7 +21359,7 @@ export default function TablePage({
                            does (see heroSqueezeEligible). */
                         squeezeEligible={heroSqueezeEligible}
                         runs={ritRunsThisHand}
-                        onSqueezeHold={onSqueezeHoldBoard0}
+                        onSqueezeHold={setSqueezeHolding}
                         /* RIVER SQUEEZE 2026-09-04: presentation identity and
                            focus. The engine keys the river by table + hand +
                            board so a duplicate snapshot never replays it and
@@ -21409,11 +21398,6 @@ export default function TablePage({
                             cardBack={activeCardBack}
                             playSounds={false}
                             slowReveal={allInEquities.length > 0}
-                            /* VIP ALL-IN SQUEEZE 2026-09-05 (audit): every run-out card
-                               squeezes, on every board. */
-                            squeezeEligible={heroSqueezeEligible}
-                            runs={ritRunsThisHand}
-                            onSqueezeHold={onSqueezeHoldBoard1}
                             tableId={tableId}
                             handId={tableState.handNumber}
                             boardIndex={1}
@@ -21441,11 +21425,6 @@ export default function TablePage({
                             cardBack={activeCardBack}
                             playSounds={false}
                             slowReveal={allInEquities.length > 0}
-                            /* VIP ALL-IN SQUEEZE 2026-09-05 (audit): every run-out card
-                               squeezes, on every board. */
-                            squeezeEligible={heroSqueezeEligible}
-                            runs={ritRunsThisHand}
-                            onSqueezeHold={onSqueezeHoldBoard2}
                             tableId={tableId}
                             handId={tableState.handNumber}
                             boardIndex={2}

@@ -13,6 +13,9 @@
  * VIP, OR HAVE IT 'TURNED OFF' IT SHOULD ONLY DISPLAY FOR THE USERS WHO HAVE
  * ACCESS TO IS, AND HAVE IT ENABLED."
  *
+ * And, after the audit had wired the bomb pot's extra boards: "THIS ISN'T
+ * ALLOWED ON BOMB POTS OR ANY RUN IT 2 OR 3 TIMES RUN OUTS."
+ *
  * Every clause is one input below, and the answer is PER VIEWER: it is
  * computed on the client from what that client already knows about itself
  * and its own hand. Nothing is broadcast for it (a wire field naming who is
@@ -35,11 +38,17 @@ export interface SqueezeEligibilityInput {
   readonly settingOn: boolean;
   /** The hand is being run more than once (Run It Twice / three times). */
   readonly runItMultiple: boolean;
+  /**
+   * The hand is a bomb pot - single or multi board. Dan 2026-09-05, after the
+   * audit had wired boards 2 and 3: "THIS ISN'T ALLOWED ON BOMB POTS OR ANY
+   * RUN IT 2 OR 3 TIMES RUN OUTS." A bomb pot is not a squeeze hand at all.
+   */
+  readonly bombPot: boolean;
 }
 
 /** True when THIS viewer may squeeze the run-out cards of THIS hand. */
 export function viewerMaySqueeze(i: SqueezeEligibilityInput): boolean {
-  return i.heroAllIn && i.isVip && i.settingOn && !i.runItMultiple;
+  return i.heroAllIn && i.isVip && i.settingOn && !i.runItMultiple && !i.bombPot;
 }
 
 /**
@@ -49,8 +58,14 @@ export function viewerMaySqueeze(i: SqueezeEligibilityInput): boolean {
  * branch of the felt that does not carry the page's eligibility at all, and a
  * rule that lives in one place is only enforced in one place.
  */
-export function boardMaySqueeze(eligible: boolean | undefined, runs: number | undefined): boolean {
-  return eligible === true && (runs ?? 1) === 1;
+export function boardMaySqueeze(
+  eligible: boolean | undefined,
+  runs: number | undefined,
+  boardIndex: number | undefined = 0
+): boolean {
+  // Board 1 of a single run, and nothing else: a second or third board is a
+  // bomb pot or a re-run by definition, and neither squeezes (Dan 2026-09-05).
+  return eligible === true && (runs ?? 1) === 1 && (boardIndex ?? 0) === 0;
 }
 
 /**

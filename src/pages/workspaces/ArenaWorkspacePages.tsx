@@ -6,6 +6,7 @@ import {
   type ClubOperationGroupId,
 } from '../../config/clubOperationsNavigation';
 import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
+import { useCommunityOverview } from '../../hooks/useCommunityOverview';
 import {
   useClubOperationsOverview,
   type ClubOperationsAlert,
@@ -220,13 +221,78 @@ export function RewardsWorkspacePage() {
   );
 }
 
+/**
+ * THE COMMUNITY CENTER READS ITS OWN SECTION (2026-09-05).
+ *
+ * It used to be seven static links under a line that read "Live Systems Remain
+ * Authoritative" - true of the destinations, and true of nothing on the page.
+ * Nothing here knew whether a connection request was waiting. Dan asked for the
+ * sub pages to be done; a map of a section with no readings on it is a list.
+ *
+ * `fn_community_overview()` supplies every number in one server-side call
+ * (see useCommunityOverview). Two rules it follows:
+ *
+ *  - A count that could not be read renders as a dash, never as zero. Telling
+ *    somebody with 1,309 friends that they have none is the exact failure the
+ *    /friends page shipped for months, and it is worse than saying nothing.
+ *  - The Union Network entry is not merely hidden, it is not built. Dan
+ *    2026-09-05: "(AND THIS PAGE SHOULD BE HIDDEN TO EVERYONE EXECPT ME:
+ *    .../unions)". The answer comes from the same allowlist the route guard
+ *    and the section rail read, so all three agree by construction.
+ */
 export function CommunityWorkspacePage() {
+  const { data, loading, error } = useCommunityOverview();
+
+  const reading = (value: number | null | undefined): string =>
+    loading ? '--' : typeof value === 'number' ? formatInt(value) : '--';
+
+  const readings: WorkspaceReading[] = [
+    { label: 'Friends', value: reading(data?.friends) },
+    { label: 'Online Now', value: reading(data?.online) },
+    { label: 'Requests', value: reading(data?.requests) },
+    { label: 'Challenges', value: reading(data?.challenges) },
+    { label: 'Clubs', value: reading(data?.clubs) },
+    ...(data?.canOperateUnionNetwork ? [{ label: 'Unions', value: reading(data?.unions) }] : []),
+  ];
+
+  /* Only things a person can act on. A zero-count row is not "work waiting",
+     it is noise, so the section renders empty and disappears on its own. */
+  const alerts: WorkspaceAlert[] = [
+    ...(data && data.requests > 0
+      ? [
+          {
+            id: 'community-requests',
+            tool: 'friends',
+            severity: 'warning' as const,
+            title: 'Connection Requests To Review',
+            count: data.requests,
+            path: '/friends?tab=requests',
+          },
+        ]
+      : []),
+    ...(data && data.challenges > 0
+      ? [
+          {
+            id: 'community-challenges',
+            tool: 'friends',
+            severity: 'info' as const,
+            title: 'Challenges Awaiting Your Answer',
+            count: data.challenges,
+            path: '/friends?tab=challenges',
+          },
+        ]
+      : []),
+  ];
+
   return (
     <WorkspacePage
       eyebrow="Community Network"
       title="Community Center"
       description="Discover Players And Clubs, Manage Trusted Connections, Follow Shared Activity, And Move Into Conversation From One Network Map."
       art="images/community/community-network-v1.webp"
+      liveLine={error ?? 'Live Systems Remain Authoritative'}
+      readings={readings}
+      alerts={alerts}
       links={[
         {
           label: 'Discover',
@@ -238,11 +304,13 @@ export function CommunityWorkspacePage() {
           label: 'Friends',
           description: 'Trusted Connections, Presence, And Direct Actions',
           path: '/friends',
+          signal: data && data.online > 0 ? `${formatInt(data.online)} Online` : undefined,
         },
         {
           label: 'Requests',
           description: 'Review Incoming Connection Requests',
           path: '/friends?tab=requests',
+          signal: data && data.requests > 0 ? formatInt(data.requests) : undefined,
         },
         {
           label: 'Activity',
@@ -253,17 +321,22 @@ export function CommunityWorkspacePage() {
           label: 'Challenges',
           description: 'Head-To-Head Social Missions And Progress',
           path: '/friends?tab=challenges',
+          signal: data && data.challenges > 0 ? formatInt(data.challenges) : undefined,
         },
         {
           label: 'Messages',
           description: 'Continue In Smarter.Poker Messenger',
           path: '/messages',
         },
-        {
-          label: 'Union Network',
-          description: 'Browse And Operate Connected Club Networks',
-          path: '/unions',
-        },
+        ...(data?.canOperateUnionNetwork
+          ? [
+              {
+                label: 'Union Network',
+                description: 'Browse And Operate Connected Club Networks',
+                path: '/unions',
+              },
+            ]
+          : []),
       ]}
     />
   );

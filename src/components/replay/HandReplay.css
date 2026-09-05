@@ -660,12 +660,37 @@
   }
 }
 
-/* PHASE 2 2026-09-05: the wrapper the squeeze needs (see ReplayBoard).
-   `inline-flex` hugs the CardImage exactly, so the board row measures the
-   same whether a card is squeezing or not - a wrapper that only appeared
-   for the duration of the reveal would reflow the board mid-animation. */
+/* PHASE 2 2026-09-05, CORRECTED 2026-09-05 (audit): the wrapper the squeeze
+   needs (see ReplayBoard).
+
+   THE FIRST VERSION OF THIS RULE MADE THE CARD DISAPPEAR. It was
+   `display: inline-flex` with no size, on the reasoning that it would "hug
+   the CardImage exactly". That is true only while the card is NOT squeezing:
+   every element SqueezeCard renders is `position: absolute` (the two faces,
+   the spine, the shadow), so during a reveal the wrapper had no in-flow
+   child, collapsed to 0x0, and took its absolutely-positioned children with
+   it. The card vanished for the whole reveal and the row reflowed around the
+   hole - on the one surface a player is deliberately studying.
+
+   It carries the card's own size now. `--hr-card-w/h` match the `sm` size
+   class the board renders (CardImage.css), so the box is identical whether
+   the card is squeezing or not, and `flex: none` stops the row stretching
+   it. The felt never had this bug because `.community-cards__card` has
+   always carried an explicit width and height. */
 .hr-felt__card {
+  --hr-card-w: 35px;
+  --hr-card-h: 49px;
   display: inline-flex;
+  flex: none;
   position: relative;
+  width: var(--hr-card-w);
+  height: var(--hr-card-h);
   border-radius: 3px;
+}
+
+/* The face inside fills the wrapper, so nothing depends on which of the two
+   renderings is currently mounted. */
+.hr-felt__card > .card-image {
+  width: 100% !important;
+  height: 100% !important;
 }

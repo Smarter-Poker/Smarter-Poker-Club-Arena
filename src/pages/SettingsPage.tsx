@@ -618,7 +618,16 @@ export default function SettingsPage() {
       }
       setActionLoading(false);
     } else if (actionType === 'reset-settings') {
-      setSettings(DEFAULT_SETTINGS);
+      /* A RESET DOES NOT REACH INTO WHAT THE PLAYER BOUGHT (2026-09-05).
+         This was `setSettings(DEFAULT_SETTINGS)`, and DEFAULT_SETTINGS.cardBack
+         is 'classic_blue'. Card backs are a real purchase - feature_pricing
+         sells them at 75 to 300 diamonds - so resetting silently put a paying
+         player back on the free deck with nothing in the dialog that said so.
+         Ownership was never lost, but the selection was, and re-picking it
+         means going and finding it again.
+
+         Everything else genuinely is a preference and resets. */
+      setSettings((current) => ({ ...DEFAULT_SETTINGS, cardBack: current.cardBack }));
       setHasChanges(true);
     }
   };
@@ -879,7 +888,20 @@ export default function SettingsPage() {
         data: { user },
       } = await getAuthUser();
 
-      if (user) {
+      /* A SAVE THAT PERSISTED NOTHING MUST NOT SAY "SAVED" (2026-09-05).
+         Everything below was inside `if (user)`, and `setHasChanges(false)`
+         plus the success toast were outside it. So a session whose auth had
+         lapsed - the exact case where a save fails - skipped every write,
+         cleared the unsaved-changes flag and reported "Settings saved!". The
+         player then navigated away believing their controls were stored.
+         Local state (the theme store and the table settings above) is real and
+         survives, so this is not a bare throw: it says what actually happened. */
+      if (!user) {
+        toast.error('Your Session Expired. Sign In Again To Save These Settings.');
+        return;
+      }
+
+      {
         const { error: profileErr } = await supabase
           .from('profiles')
           .update({ settings: settingsToPersist })
@@ -956,7 +978,7 @@ export default function SettingsPage() {
       type: 'reset-settings',
       title: 'Reset Settings',
       message:
-        'Reset all settings to their default values? You will still need to save for changes to take effect.',
+        'Reset every setting to its default? Your card back is left alone, because you may have paid for it. You will still need to save for this to take effect.',
       variant: 'default',
     });
   };

@@ -239,6 +239,29 @@
   min-width: 190px;
 }
 
+/* THE COUNTS (Dan 2026-09-05): "Classic 12 / Action 4 / Madness 2" under the
+   Game Style eyebrow, and the figure on the right of each item. */
+.lt-stakes-menu__counts {
+  display: block;
+  padding: 0 12px 4px;
+  color: #b8c2cf;
+  font-family: var(--font-primary, 'Inter', sans-serif);
+  font-size: 0.7rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.lt-variant-menu__count {
+  margin-left: auto;
+  padding-left: 12px;
+  color: #8b95a3;
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 .lt-variant-menu__check {
   flex: 0 0 auto;
   width: 14px;

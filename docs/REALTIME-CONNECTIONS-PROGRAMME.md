@@ -193,7 +193,27 @@ In. Still Trying` instead of blaming the connection, and the server gets a
 `server/src/http/theSameActionAppliesOnce.law.test.ts`. Full reasoning:
 `docs/changelog/2026-09-05-realtime-phase-3-do-no-harm.md`.
 
-**Verification.** Recorded below when the engine deploy lands.
+**Verification (2026-09-05, read from production).** The client half published
+at 21:15 and was checked by DOWNLOADING THE BYTES PLAYERS GET, not by matching
+a sha: the entry chunk carries `idempotencyKey`, and the TablePage chunk
+carries `reload_suppressed`, `4401` and the banner sentence verbatim. The
+engine cut over inside the 21:55 break, and at 22:26 engine-01's `/metrics`
+showed `poker_ws_client_reconnects_total{reason="reload_suppressed"} 0` (the
+reason accepted, not folded into `other`) and
+`poker_action_idempotency_total{outcome="stored"} 11` with `replay` and
+`conflict` both at zero - **eleven real human actions stamped with a key and
+de-duplicated end to end, no duplicates and no key collisions.** The alert
+`PlayersCannotAuthenticateToTables` is loaded and `health=ok`.
+
+One run before that shipped nothing and said so three different ways; the
+reason ladder is fixed in #3194 and pinned.
+
+**Phase 3 audit (2026-09-05)** found four more defects; see the changelog. The
+one that mattered most was not in Phase 3 code at all: `/addchips` has carried
+an `opId` since the Cashier audit of 2026-08-27, the engine falls back to a
+fresh `randomUUID()` when a caller omits it, and the AUTOMATIC top-up omitted
+it - so the one top-up path that retries without a human deciding to was the
+one with no de-duplication.
 
 ## Phase 1 - Measure (2026-09-04)
 

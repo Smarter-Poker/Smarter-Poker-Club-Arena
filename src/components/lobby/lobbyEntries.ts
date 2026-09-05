@@ -1402,9 +1402,42 @@ const VARIANT_HEAD =
 const STAKES_HEAD = /^\s*\$?(?:\d+(?:\.\d+)?|\.\d+)\s*\/\s*\$?(?:\d+(?:\.\d+)?|\.\d+)/;
 
 /** The template's display name; the vocabulary is `src/config/cashGames.ts`. */
-function cashTemplateLabel(template: string | null | undefined): string | null {
+export function cashTemplateLabel(template: string | null | undefined): string | null {
   if (!template) return null;
-  return CASH_TEMPLATES.find((t) => t.id === template)?.label ?? null;
+  return CASH_TEMPLATES.find((t) => t.id === String(template).toLowerCase())?.label ?? null;
+}
+
+/**
+ * THE STAKES MENU COUNTS STYLES (Dan 2026-09-05). How many GAMES of each
+ * style the board holds - one per cluster front (R10: a must-move game is one
+ * row, its Main 1), so a game with three tables counts once. Keys are the
+ * template ids (`classic` / `action` / `madness`); a table with no template
+ * is not a style and is not counted. Derived from rows already loaded; it
+ * costs no network call.
+ */
+export function countStylesOnBoard(
+  rows: ReadonlyArray<
+    Pick<LobbyTableRow, 'cluster_id' | 'role' | 'main_index'> & { cluster_template?: string | null }
+  >
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const r of rows) {
+    if (!r.cluster_id || !isClusterFront(r)) continue;
+    const key = String(r.cluster_template ?? '')
+      .trim()
+      .toLowerCase();
+    if (!key) continue;
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
+}
+
+/** "Classic 12 / Action 4 / Madness 2", in the menu's own order; zero is printed, not hidden. */
+export function styleCountsLine(
+  choices: ReadonlyArray<{ key: string; label: string }>,
+  counts: Readonly<Record<string, number>>
+): string {
+  return choices.map((c) => `${c.label} ${counts[c.key] ?? 0}`).join(' / ');
 }
 
 export function cashTitleLines(entry: LobbyEntry): { headline: string; subtitle: string | null } {

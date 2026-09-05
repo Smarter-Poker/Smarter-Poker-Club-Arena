@@ -32,6 +32,8 @@ import {
   fetchCashGameLobby,
   isMainOne,
   lobbyTableLabel,
+  mustMoveListRows,
+  pendingMoveNotice,
   requestSeatChange,
   seatChangeOutcomeText,
   seatChangeRefusalText,
@@ -240,16 +242,11 @@ export function MustMoveLobbyModal({
                     </div>
                   ) : null}
 
+                  {/* The same sentence the felt shows (CashClusterHUD), from
+                      one helper, so the lobby and the table can never
+                      disagree about where the player is going. */}
                   {me.pending_move && (
-                    <div className="mml-me-move">
-                      {me.pending_move.reason === 'break'
-                        ? `This Table Is Closing. Moving To ${labelFor(me.pending_move.to_table_id) ?? 'Your New Table'} After This Hand.`
-                        : me.pending_move.reason === 'seat_change'
-                          ? me.pending_move.held
-                            ? 'Seat Change: Waiting For The Other Table To Finish Its Hand.'
-                            : `Seat Change Granted. ${me.pending_move.swap ? 'Swapping' : 'Moving'} To ${labelFor(me.pending_move.to_table_id) ?? 'Your New Table'} After This Hand.`
-                          : `Seat Open On ${labelFor(me.pending_move.to_table_id) ?? 'Your New Table'}. Moving After This Hand.`}
-                    </div>
+                    <div className="mml-me-move">{pendingMoveNotice(me.pending_move)}</div>
                   )}
 
                   {/* The seat change: once per stay, never from or to Main 1. */}
@@ -364,21 +361,19 @@ export function MustMoveLobbyModal({
                 {lobby.must_move_list.length === 0 ? (
                   <div className="mml-me-note">Everyone Is In The Main Game.</div>
                 ) : (
-                  <ol className="mml-list-rows">
-                    {lobby.must_move_list.map((e) => (
+                  <ol className="mml-list-rows" aria-label="Must Move List, In Join Order">
+                    {mustMoveListRows(lobby.must_move_list, me?.user_id).map((row) => (
                       <li
-                        key={e.user_id}
-                        className={`mml-list-row${me?.user_id === e.user_id ? ' mml-list-row--me' : ''}`}
+                        key={row.key}
+                        className={`mml-list-row${row.me ? ' mml-list-row--me' : ''}`}
+                        aria-current={row.me ? 'true' : undefined}
                       >
-                        <span className="mml-list-pos">{e.position}</span>
-                        <span className="mml-list-name">{e.alias ?? 'Player'}</span>
-                        <span className="mml-list-table">
-                          {lobbyTableLabel({
-                            role: e.role,
-                            main_index: e.main_index,
-                            name: e.table_name,
-                          })}
+                        <span className="mml-list-pos">{row.position}</span>
+                        <span className="mml-list-name">
+                          {row.name}
+                          {row.me && <span className="mml-list-you">You</span>}
                         </span>
+                        <span className="mml-list-table">{row.tableLabel}</span>
                       </li>
                     ))}
                   </ol>

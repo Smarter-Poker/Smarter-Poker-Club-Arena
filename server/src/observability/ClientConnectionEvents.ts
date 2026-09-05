@@ -40,6 +40,12 @@ export const CLIENT_EVENT_REASONS = [
   'handshake_timeout', // never reached OPEN
   'closed', // any other close code
   'auto_reload', // TablePage's 20s failsafe actually fired
+  // Phase 3 (2026-09-05): the failsafe was DUE and was held back because the
+  // socket died for auth, which a reload cannot fix. This is the series that
+  // separates "the network is bad" from "this player cannot authenticate to a
+  // table" - the distinction nobody could make for twenty-two hours on
+  // 2026-09-03, when the reload loop looked like flaky Wi-Fi to everyone.
+  'reload_suppressed',
   'other',
 ] as const;
 export type ClientEventReason = (typeof CLIENT_EVENT_REASONS)[number];
@@ -125,9 +131,12 @@ export function recordClientConnectionEvent(
   }
   counts.set(reason, (counts.get(reason) ?? 0) + 1);
 
-  // 'auto_reload' is a symptom report, not a reconnect; it must not inflate
-  // the per-user reconnect count the alert reads.
-  if (reason === 'auto_reload') return;
+  // These two are symptom reports, not reconnects; they must not inflate the
+  // per-user reconnect count the alert reads. The socket loss that caused
+  // them was already counted under its own reason when it happened, and
+  // counting it twice would put a player over BADLY_THRESHOLD at half the
+  // real rate.
+  if (reason === 'auto_reload' || reason === 'reload_suppressed') return;
 
   if (!userId) return;
   let arr = perUser.get(userId);

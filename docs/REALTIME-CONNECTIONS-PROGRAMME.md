@@ -14,7 +14,7 @@ verification when it lands.
 | ----- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
 | 1     | Measure                    | `poker_act_to_broadcast_ms{audience}` and `poker_actions_fleet_total` on the always-on `/metrics`; `ActionLatencyDegraded` / `ActionLatencyCritical` alert rules                          | done   |
 | 2     | See the client             | Beacon from four client failure sites -> `POST /client-event`; bounded per-user counting in the engine; `PlayersReconnectingRepeatedly` + `TablesAreReloadingThemselves` alerts; two laws | done   |
-| 3     | Do no harm                 | Auto-reload failsafe skips auth closes; idempotency key on `/action` (client + handler)                                                                                                   |        |
+| 3     | Do no harm                 | Auto-reload failsafe skips auth closes; idempotency key on `/action` (client + handler)                                                                                                   | done   |
 | 4     | Restart handoff + protocol | `restart_in_ms` frame at :53 and a ladder that waits it out; `v` on subscribe and `4426 upgrade_required`                                                                                 |        |
 | 5     | Trust and limits           | Server clock offset for turn timers; periodic re-auth of live sockets (5 min, cached); per-user socket cap with `4429`; explicit Caddy WS timeouts in the clocks law                      |        |
 | 6     | Prove it from outside      | Synthetic table probe on Open Claw (real socket to a horse-only table, wait for SNAPSHOT, close); runbook `docs/runbooks/tables-say-reconnecting.md`                                      |        |
@@ -160,6 +160,60 @@ now watches. Building the channel properly (server-side emission from
 belongs in its own phase with Dan's sign-off, not smuggled into an
 observability phase. It is recorded here so nobody reads the existing code as
 a working path.
+
+## Phase 3 - Do no harm (2026-09-05)
+
+**Why.** Phases 1 and 2 made a broken table visible. Neither changed what the
+client DOES when a table breaks, and in two places what it does is make things
+worse. Both are the same mistake: a recovery mechanism that fires without
+checking whether it can possibly help.
+
+**What.**
+
+1. **The auto-reload failsafe no longer reloads an auth refusal.** Twenty
+   seconds of a dead socket used to reload the page; against a 4401 the fresh
+   page presents the same token to the same refusal and comes back in another
+   twenty seconds, having discarded the felt, the overlays and any armed
+   pre-action. The status alone cannot tell you it is auth - `auth_failed` is
+   passed THROUGH on the way to `reconnecting` and then `failed` - so the cause
+   is remembered separately and stays sticky until a socket actually opens.
+   Not silent either way: the banner says `The Table Cannot Verify Your Sign
+In. Still Trying` instead of blaming the connection, and the server gets a
+   new `reload_suppressed` beacon reason with its own alert,
+   `PlayersCannotAuthenticateToTables`.
+2. **An action applies once.** One idempotency key per intent, generated in
+   `submitAction` and carried by every retry inside it (the 429 ladder and
+   `engineFetch`'s 401 retry). In the body, not a header - the engine is a
+   different origin and its CORS allows only `Content-Type, Authorization`. A
+   repeat never reaches the engine; a refusal (401 / 404 / 429) is never
+   cached, so a retry after a restart still runs for real. Published as
+   `poker_action_idempotency_total{outcome}`.
+
+**Laws.** `tests/a-reload-cannot-fix-a-sign-in.law.test.ts` and
+`server/src/http/theSameActionAppliesOnce.law.test.ts`. Full reasoning:
+`docs/changelog/2026-09-05-realtime-phase-3-do-no-harm.md`.
+
+**Verification (2026-09-05, read from production).** The client half published
+at 21:15 and was checked by DOWNLOADING THE BYTES PLAYERS GET, not by matching
+a sha: the entry chunk carries `idempotencyKey`, and the TablePage chunk
+carries `reload_suppressed`, `4401` and the banner sentence verbatim. The
+engine cut over inside the 21:55 break, and at 22:26 engine-01's `/metrics`
+showed `poker_ws_client_reconnects_total{reason="reload_suppressed"} 0` (the
+reason accepted, not folded into `other`) and
+`poker_action_idempotency_total{outcome="stored"} 11` with `replay` and
+`conflict` both at zero - **eleven real human actions stamped with a key and
+de-duplicated end to end, no duplicates and no key collisions.** The alert
+`PlayersCannotAuthenticateToTables` is loaded and `health=ok`.
+
+One run before that shipped nothing and said so three different ways; the
+reason ladder is fixed in #3194 and pinned.
+
+**Phase 3 audit (2026-09-05)** found four more defects; see the changelog. The
+one that mattered most was not in Phase 3 code at all: `/addchips` has carried
+an `opId` since the Cashier audit of 2026-08-27, the engine falls back to a
+fresh `randomUUID()` when a caller omits it, and the AUTOMATIC top-up omitted
+it - so the one top-up path that retries without a human deciding to was the
+one with no de-duplication.
 
 ## Phase 1 - Measure (2026-09-04)
 

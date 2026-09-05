@@ -140,6 +140,66 @@ export function isMainOne(t: Pick<LobbyTable, 'role' | 'main_index'>): boolean {
   return t.role === 'main' && t.main_index === 1;
 }
 
+/**
+ * THE FELT SAYS A MOVE IS COMING (Dan 2026-09-05). The sentence a player with
+ * a pending move reads on the table until the move executes, in the engine's
+ * own words (seatMoves.ts): "Seat Open On Main 2. Moving After This Hand."
+ * A move always executes at the player's NEXT hand boundary - cash_seat_moves
+ * carries no hands-until - so there is never an N to count down; the copy is
+ * "After This Hand" and it stays up until the chair is at the other table.
+ * Title Case, no em dash (the popup law in src/utils/popupStyle.ts).
+ */
+export function pendingMoveDestination(
+  move: Pick<LobbyPendingMove, 'to_role' | 'to_main_index' | 'to_table_name'>
+): string {
+  if (move.to_role === 'main' && move.to_main_index) return `Main ${move.to_main_index}`;
+  if (move.to_role === 'feeder') return 'Feeder';
+  return move.to_table_name || 'Your New Table';
+}
+
+export function pendingMoveNotice(move: LobbyPendingMove | null | undefined): string | null {
+  if (!move) return null;
+  const where = pendingMoveDestination(move);
+  if (move.reason === 'break') {
+    return `This Table Is Closing. Moving To ${where} After This Hand.`;
+  }
+  if (move.reason === 'seat_change') {
+    if (move.held) return 'Seat Change: Waiting For The Other Table To Finish Its Hand.';
+    return `Seat Change Granted. ${move.swap ? 'Swapping' : 'Moving'} To ${where} After This Hand.`;
+  }
+  return `Seat Open On ${where}. Moving After This Hand.`;
+}
+
+/**
+ * THE LIST HAS NAMES (Dan 2026-09-05). One row per player on the must-move
+ * list, in the order the database posted (position ascending, whatever order
+ * the JSON arrived in), with the name the lobby read for them, the table they
+ * sit at, and whether the row is the viewer's own. A missing alias reads
+ * "Player", never blank and never a uuid.
+ */
+export interface MustMoveListRow {
+  key: string;
+  position: number;
+  name: string;
+  tableLabel: string;
+  me: boolean;
+}
+
+export function mustMoveListRows(
+  list: ReadonlyArray<LobbyListEntry> | null | undefined,
+  viewerId: string | null | undefined
+): MustMoveListRow[] {
+  return [...(list ?? [])]
+    .sort((a, b) => Number(a.position) - Number(b.position))
+    .map((e) => ({
+      key: e.user_id,
+      position: Number(e.position),
+      name: (e.alias ?? '').trim() || 'Player',
+      tableLabel: lobbyTableLabel({ role: e.role, main_index: e.main_index, name: e.table_name }),
+      me: Boolean(viewerId && e.user_id === viewerId),
+    }));
+}
+
 export async function fetchCashGameLobby(gameId: string): Promise<CashGameLobby> {
   const { data, error } = await supabase.rpc('fn_cash_game_lobby', { p_game_id: gameId });
   if (error) throw error;

@@ -32,11 +32,31 @@ describe('a horse leaves the same evidence a human does', () => {
     expect(FACTS).not.toMatch(/humans only/);
   });
 
-  it('includes horses when the table runs NIT Game', () => {
-    expect(FACTS).toMatch(/!p\.isHorse \|\| input\.nitGame === true/);
+  it('includes horses EVERYWHERE, not only where a rule already judges them', () => {
+    /**
+     * STRENGTHENED 2026-09-05 (Dan: "YES PLATFORM WIDE"). This used to pin
+     * `!p.isHorse || input.nitGame === true` - horses got fact rows only at
+     * NIT tables, where fn_nit_check needs the evidence.
+     *
+     * That scoping was defensible as a storage decision and indefensible as a
+     * measurement one: 163 of 153,658 tables run NIT Game, so 99.9% of horse
+     * play left no per-hand trace and the question "do horses play a
+     * realistic spread on an ordinary table" could not be answered at all.
+     * The bill is real - ~2.23M rows a day, ~1.28 GB - which is why the
+     * migration that turned this on also gave ca_hand_facts the retention it
+     * had never had.
+     *
+     * The law now is the simple one: every seat leaves the same evidence.
+     */
+    expect(FACTS).toMatch(/input\.roster\.map\(\(p\) => p\.userId\)/);
+    // And the old exclusion cannot come back.
+    expect(FACTS).not.toMatch(/\.filter\([^)]*isHorse/);
   });
 
-  it('takes the table setting as an input rather than guessing', () => {
+  it('still takes the table setting as an input, now as context not as a gate', () => {
+    // A VPIP measured where a floor is enforced is not the same measurement as
+    // one taken where the horse chose its own width, so the flag still travels
+    // with the row - it just no longer decides whether the row exists.
     expect(FACTS).toMatch(/nitGame\?: boolean/);
   });
 

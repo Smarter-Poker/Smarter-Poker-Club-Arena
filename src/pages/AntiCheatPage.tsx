@@ -324,6 +324,17 @@ export default function AntiCheatPage() {
           err instanceof Error ? err.message : String(err)
         );
         if (mountedRef.current) {
+          /* A FAILED READ IS NOT AN EMPTY QUEUE. This page already carries
+             `loadError` for exactly this reason - the comment on its
+             declaration says "'Nothing found' and 'the read failed' used to
+             render identically here, and the second one printed the words
+             'Club Is Clean'" - but only `init` ever set it, so a failed FLAGS
+             read went on painting a clean screen. It sets it now. */
+          setLoadError(
+            err instanceof Error
+              ? err.message
+              : 'The integrity flags could not be read. This is not the same as a clean club.'
+          );
           setFlags([]);
           setFlagsLoaded(true);
         }
@@ -383,6 +394,12 @@ export default function AntiCheatPage() {
         err instanceof Error ? err.message : String(err)
       );
       if (mountedRef.current) {
+        // Same reason as the flags read above: silence is not a clean result.
+        setLoadError(
+          err instanceof Error
+            ? err.message
+            : 'The integrity events could not be read. This is not the same as a clean club.'
+        );
         setEvents([]);
         setEventsLoaded(true);
       }

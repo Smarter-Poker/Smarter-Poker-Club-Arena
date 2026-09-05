@@ -211,12 +211,13 @@ export const HAND_COMPLETION = {
    * face up, which tells the player how the hand ends and then shows them the
    * card as a formality.
    *
-   * Sized from the board animation itself: the all-in turn and river run the
-   * RIVER SQUEEZE (CommunityCards.css, 2026-09-04) with the `all-in` profile -
-   * the card materialises face down, holds, and snaps over through its edge.
-   * The profile (src/presentation/cardPresentation/profiles.ts) derives its
-   * hold FROM this number, so the face is up exactly when this gate opens;
-   * the flop's land-and-fan (~1.22s) fits inside it too.
+   * Sized from the board animation itself: an ordinary street reveal (300-
+   * 350ms) and the flop's land-and-fan (~1.22s) both finish well inside it,
+   * so for every seat that is NOT squeezing the face is up before the gate
+   * opens. VIP ALL-IN SQUEEZE 2026-09-05: the one viewer who IS squeezing
+   * may still be holding the card when this gate opens - their client holds
+   * the DISPLAYED equity until the face appears (see ALL_IN_STREET_PAUSE_MS
+   * below), so the rule this constant exists for still holds for them too.
    *
    * This is the REVEAL gate and is separate from allInStreetPauseMs, the beat
    * AFTER the equity settles and before the next card. Both are needed: the
@@ -228,10 +229,9 @@ export const HAND_COMPLETION = {
    * industry - PokerStars' all-in pause, which they trialled at 2000ms,
    * dropped to 1000ms, and settled on 1500ms - and Dan set ours a quarter of
    * a second past their landing point. Every consequence is derived rather
-   * than re-typed: the all-in card profile takes its face-down HOLD from this
-   * constant (src/presentation/cardPresentation/profiles.ts), so the extra
-   * 500ms lands entirely on the tension beat and the flip itself is unchanged
-   * at the 400ms ceiling the same research established.
+   * than re-typed: the all-in card profile's hold ceiling
+   * (ALL_IN_SQUEEZE_CEILING_MS) is a function of this constant, so the flip
+   * itself is unchanged at the 400ms ceiling the same research established.
    */
   ALL_IN_STREET_REVEAL_MS: 1750,
   /**

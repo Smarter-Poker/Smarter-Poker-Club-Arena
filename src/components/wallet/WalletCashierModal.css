@@ -284,6 +284,26 @@
   background: rgba(0, 180, 230, 0.12);
 }
 
+/* Listed, findable, not a recipient (Dan 2026-09-04): a member the server
+   would refuse for THIS destination stays on the list wearing the reason,
+   because a removed row reads as "not in this club". */
+.cbc-member--blocked {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.cbc-member-block {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid #4a5f72;
+  border-radius: 3px;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #a9bccb;
+}
+
 .cbc-member-role {
   flex-shrink: 0;
   font-size: 0.62rem;
@@ -663,4 +683,68 @@
   white-space: nowrap;
   font-weight: 600;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Promo wallet: which account, and its ledger (2026-09-05) ─────────────── */
+.cbc-bank-sub {
+  font-style: normal;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6b7686;
+}
+
+/* Two promo accounts wear one name on a club surface. The switch prints both
+   balances, so the one you are not looking at is never a mystery. */
+.cbc-source {
+  display: flex;
+  gap: 8px;
+  margin: 10px 18px 0;
+}
+
+.cbc-source button {
+  flex: 1;
+  min-width: 0;
+  min-height: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #8892a4;
+  cursor: pointer;
+  text-align: left;
+}
+
+.cbc-source button span {
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.cbc-source button strong {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.92rem;
+  color: #e8eaf0;
+}
+
+.cbc-source .cbc-source-on {
+  color: #6fdcff;
+  background: rgba(0, 180, 230, 0.14);
+  border-color: rgba(0, 180, 230, 0.45);
+}
+
+.cbc-source .cbc-source-on strong {
+  color: #6fdcff;
+}
+
+/* An inbound row carries a cyan edge; an outbound one the plain edge. The
+   sign on the amount says the same thing for anyone who cannot see colour. */
+.cbc-tx--in {
+  border-left: 2px solid rgba(0, 180, 230, 0.55);
 }

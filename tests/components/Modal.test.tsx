@@ -40,11 +40,12 @@ describe('Modal Component', () => {
       </Modal>
     );
 
-    const overlay = container.querySelector('.modal-overlay');
-    if (overlay) {
-      await user.click(overlay);
-      expect(handleClose).toHaveBeenCalled();
-    }
+    // `if (overlay)` used to guard this click, so a renamed or missing
+    // backdrop passed the test by never clicking anything. Assert it exists.
+    const overlay = container.querySelector('.ca-modal-overlay');
+    expect(overlay).not.toBeNull();
+    await user.click(overlay as Element);
+    expect(handleClose).toHaveBeenCalled();
   });
 
   it('does not call onClose when clicking overlay if closeOnOverlay is false', async () => {
@@ -56,11 +57,10 @@ describe('Modal Component', () => {
       </Modal>
     );
 
-    const overlay = container.querySelector('.modal-overlay');
-    if (overlay) {
-      await user.click(overlay);
-      expect(handleClose).not.toHaveBeenCalled();
-    }
+    const overlay = container.querySelector('.ca-modal-overlay');
+    expect(overlay).not.toBeNull();
+    await user.click(overlay as Element);
+    expect(handleClose).not.toHaveBeenCalled();
   });
 
   it('calls onClose when pressing Escape', async () => {
@@ -154,7 +154,7 @@ describe('Modal Component', () => {
         </Modal>
       );
 
-      const modal = container.querySelector(`.modal-${size}`);
+      const modal = container.querySelector(`.ca-modal--${size}`);
       expect(modal).toBeInTheDocument();
       unmount();
     });
@@ -196,7 +196,7 @@ describe('ModalFooter Component', () => {
         </ModalFooter>
       );
 
-      const footer = container.querySelector(`.modal-footer-${align}`);
+      const footer = container.querySelector(`.ca-modal-footer--${align}`);
       expect(footer).toBeInTheDocument();
       unmount();
     });
@@ -280,7 +280,7 @@ describe('AlertDialog Component', () => {
   });
 
   it('renders custom button text', () => {
-    const { container } = render(
+    render(
       <AlertDialog
         isOpen={true}
         onClose={vi.fn()}
@@ -297,7 +297,7 @@ describe('AlertDialog Component', () => {
   });
 
   it('applies variant class to confirm button', () => {
-    const { container } = render(
+    render(
       <AlertDialog
         isOpen={true}
         onClose={vi.fn()}
@@ -342,11 +342,10 @@ describe('Drawer Component', () => {
       </Drawer>
     );
 
-    const overlay = container.querySelector('.drawer-overlay');
-    if (overlay) {
-      await user.click(overlay);
-      expect(handleClose).toHaveBeenCalled();
-    }
+    const overlay = container.querySelector('.ca-modal-drawer-overlay');
+    expect(overlay).not.toBeNull();
+    await user.click(overlay as Element);
+    expect(handleClose).toHaveBeenCalled();
   });
 
   it('renders with title', () => {
@@ -384,7 +383,7 @@ describe('Drawer Component', () => {
         </Drawer>
       );
 
-      const drawer = container.querySelector(`.drawer-${position}`);
+      const drawer = container.querySelector(`.ca-modal-drawer--${position}`);
       expect(drawer).toBeInTheDocument();
       unmount();
     });

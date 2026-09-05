@@ -240,6 +240,84 @@ describe('planFloor - exotics and limit games', () => {
   });
 });
 
+describe('planFloor - a cluster table belongs to its ClusterController (R9)', () => {
+  /* Found live 2026-09-05: Dan's ladder puts six must-move games on each
+     exotic and limit variant (two rungs x Classic/Action/Madness), and the
+     cap of two here marked 25 of their Main 1s retire_when_empty. The fleet
+     then refused to seed them, drained them, closed them, and the controller
+     reopened them (R3) - every tick, forever. */
+  const clusterTables = (variant: string) =>
+    ['classic', 'action', 'madness'].flatMap((tpl) =>
+      [0.5, 1].map((bb) =>
+        table({
+          tableId: `${variant}-${tpl}-${bb}`,
+          variant,
+          sb: bb / 2,
+          bb,
+          occupied: 1,
+          seatedHorses: [horse(`${variant}-${tpl}-${bb}-h`)],
+          clusterId: `game-${variant}-${tpl}-${bb}`,
+        })
+      )
+    );
+
+  it('never closes a cluster table, whatever the per-variant cap says', () => {
+    const tables = [
+      ...clusterTables('pineapple'),
+      ...clusterTables('plo8'),
+      ...clusterTables('short_deck'),
+      ...clusterTables('flh'),
+      ...clusterTables('flo8'),
+    ];
+    const p = planFloor(
+      snap({ hosts: [{ hostId: MIDWAY_UNION_ID, n: 584, uniqueLive: 100, tables }] })
+    );
+    expect(p.close).toEqual([]);
+  });
+
+  it('a cluster is the variant supply: the fleet opens nothing of its own beside it', () => {
+    const tables = [...clusterTables('flh'), ...clusterTables('pineapple')];
+    const p = planFloor(
+      snap({ hosts: [{ hostId: MIDWAY_UNION_ID, n: 584, uniqueLive: 100, tables }] })
+    );
+    expect(p.open.filter((o) => o.variant === 'flh' || o.variant === 'pineapple')).toEqual([]);
+  });
+
+  it('the fleet tables of a variant are still trimmed beside a cluster', () => {
+    const tables = [
+      ...clusterTables('plo8'),
+      table({ tableId: 'fleet-plo8-1', variant: 'plo8', occupied: 6 }),
+      table({ tableId: 'fleet-plo8-2', variant: 'plo8', occupied: 5 }),
+      table({ tableId: 'fleet-plo8-3', variant: 'plo8', occupied: 1, seatedHorses: [horse('z')] }),
+    ];
+    const p = planFloor(
+      snap({ hosts: [{ hostId: MIDWAY_UNION_ID, n: 584, uniqueLive: 100, tables }] })
+    );
+    expect(p.close).toEqual(['fleet-plo8-3']);
+  });
+
+  it('never parks a cluster table for the night', () => {
+    const thin = [
+      ...clusterTables('nlh'),
+      table({
+        tableId: 'fleet-thin',
+        variant: 'nlh',
+        occupied: 2,
+        seatedHorses: [horse('a'), horse('b')],
+      }),
+      ...Array.from({ length: 8 }, (_, i) => table({ tableId: `fleet-full-${i}`, occupied: 6 })),
+    ];
+    const p = planFloor(
+      snap({
+        chicagoHour: 3,
+        hosts: [{ hostId: MIDWAY_UNION_ID, n: 584, uniqueLive: 30, tables: thin }],
+      })
+    );
+    expect(p.park.some((id) => id.startsWith('nlh-'))).toBe(false);
+    expect(p.park).toContain('fleet-thin');
+  });
+});
+
 describe('chicagoNow', () => {
   it('returns a legal wall clock', () => {
     const c = chicagoNow(new Date('2026-09-04T18:30:00Z'));

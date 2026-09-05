@@ -30,6 +30,13 @@ import PortraitLock from './PortraitLock';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
 const MultiTablePage = lazyWithRetry(() => import('../../pages/MultiTablePage'));
+/* Lazy for the same reason MultiTablePage is: this layer is imported by
+   App.tsx, so a static import here lands in the ENTRY chunk that every
+   player downloads before first paint (the CI entry-chunk guard refused six
+   modules - the card, its CSS, the gate, the formatters - on 2026-09-05).
+   The announcer mounts the moment a user is signed in, long before any
+   jackpot could need it. */
+const BBJHitAnnouncer = lazyWithRetry(() => import('../bbj/BBJHitAnnouncer'));
 
 export default function PersistentTableLayer() {
   const { user } = useAuthUser();
@@ -50,6 +57,17 @@ export default function PersistentTableLayer() {
           deliberately: if the table layer crashes while the phone is sideways,
           the instruction to turn it back is the last thing that should go. */}
       <PortraitLock active={onTableRoute} />
+      {/* THE BAD BEAT JACKPOT POP-UP (BBJ audit 2026-09-05). Same argument as
+          PortraitLock, one line up: it must appear exactly once, on top of
+          whatever the player is looking at, and this is the component that is
+          mounted exactly once. Inside a TablePage it was drawn four times over
+          and, worse, consumed by whichever slot ran first - a hidden one, as
+          often as not - so the visible table showed nothing. Outside the
+          ErrorBoundary for the same reason PortraitLock is: a crash in the
+          table layer must not take the jackpot announcement with it. */}
+      <Suspense fallback={null}>
+        <BBJHitAnnouncer />
+      </Suspense>
       <ErrorBoundary
         // A crash in the (hidden) table layer must never paint a full-screen
         // error over whatever page the player is actually browsing; on /table/*

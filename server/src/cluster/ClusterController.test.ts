@@ -33,7 +33,9 @@ function build(
     if (fn === 'fn_cash_clusters_to_tick')
       return { data: over.rows ?? worklist([{}]), error: null };
     if (fn === 'fn_cash_cluster_tick') {
-      return { data: over.tickResult ?? { ok: true, actions: [] }, error: null };
+      // The SQL reports the game-wide seated count; the wake path reads it so
+      // an empty game costs no second query.
+      return { data: over.tickResult ?? { ok: true, actions: [], seated_total: 2 }, error: null };
     }
     return { data: null, error: { message: `unexpected ${fn}` } };
   }) as unknown as Rpc;
@@ -43,7 +45,7 @@ function build(
     hasEngine: over.hasEngine ?? (() => false),
     seatedCount: over.seatedCount ?? (async () => 0),
     frozen: over.frozen ?? (() => false),
-    rpc,
+    rpc: over.rpc ?? rpc,
   };
   return { controller: new ClusterController(deps), calls, deps };
 }
@@ -98,6 +100,39 @@ describe('the tick', () => {
     const owned = build({ ensureEngine, seatedCount: async () => 4, hasEngine: () => true });
     await owned.controller.tick();
     expect(ensureEngine).not.toHaveBeenCalled();
+  });
+
+  it('an empty game is not even asked about its Main 1 (the tick said nobody is seated)', async () => {
+    const seatedCount = vi.fn(async () => 0);
+    const { controller } = build({
+      seatedCount,
+      tickResult: { ok: true, actions: [], seated_total: 0 },
+    });
+    await controller.tick();
+    expect(seatedCount).not.toHaveBeenCalled();
+  });
+
+  it('ticks games in a bounded pool, every game exactly once', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const seen: string[] = [];
+    const rows = worklist(Array.from({ length: 30 }, (_, i) => ({ game_id: `g${i}` })));
+    const rpc = vi.fn(async (fn: string, args?: Record<string, unknown>) => {
+      if (fn === 'fn_cash_clusters_to_tick') return { data: rows, error: null };
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      seen.push(String(args?.p_game_id));
+      await new Promise((r) => setTimeout(r, 2));
+      inFlight--;
+      return { data: { ok: true, actions: [], seated_total: 0 }, error: null };
+    }) as unknown as Rpc;
+    const { controller } = build({ rpc });
+    const s = await controller.tick();
+    expect(s.ticked).toBe(30);
+    expect(new Set(seen).size).toBe(30);
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(8);
+    expect(s.elapsedMs).toBeGreaterThanOrEqual(0);
   });
 
   it('a disabled game is ticked (its tables drain) but never woken', async () => {
@@ -176,6 +211,73 @@ describe('no memory, no overlap, no cascade', () => {
     const done = await first;
     expect(done.games).toBe(1);
     expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it('a wake that takes the life of the table does not take the pass with it', async () => {
+    /* Live 2026-09-04 22:10 UTC: ensureEngine resolves when engine.start()
+       resolves, and start() waits for a second player. One Main 1 with one
+       player seated held a worker open, the pass never ended, and the latch
+       silenced the controller for 11 minutes. */
+    let released = false;
+    const ensureEngine = vi.fn(
+      () => new Promise<boolean>((r) => setTimeout(() => ((released = true), r(true)), 50))
+    );
+    const { controller, calls } = build({
+      ensureEngine,
+      seatedCount: async () => 1,
+      rows: worklist([{}, {}, {}]),
+    });
+    const s = await controller.tick();
+    expect(ensureEngine).toHaveBeenCalledTimes(3);
+    expect(released).toBe(false); // the pass finished before any wake did
+    expect(s.woken).toBe(3);
+    expect(s.ticked).toBe(3);
+    // ...and the next pass is not blocked either.
+    const again = await controller.tick();
+    expect(again.ticked).toBe(3);
+    expect(calls.filter((c) => c.fn === 'fn_cash_cluster_tick')).toHaveLength(6);
+  });
+
+  it('a pass stuck past the stall ceiling is reported and the latch released', async () => {
+    vi.useFakeTimers();
+    try {
+      let releaseGate!: () => void;
+      const gate = new Promise<void>((r) => (releaseGate = r));
+      let firstCall = true;
+      const rpc = vi.fn(async (fn: string) => {
+        if (fn === 'fn_cash_clusters_to_tick') {
+          if (firstCall) {
+            firstCall = false;
+            await gate; // a pass that never comes back on its own
+          }
+          return { data: worklist([{}]), error: null };
+        }
+        return { data: { ok: true, actions: [] }, error: null };
+      }) as unknown as Rpc;
+      const controller = new ClusterController({
+        eligibleHorseCount: () => 0,
+        ensureEngine: async () => true,
+        hasEngine: () => true,
+        seatedCount: async () => 0,
+        frozen: () => false,
+        rpc,
+      });
+      const stuck = controller.tick();
+      // Under the ceiling: still guarded, nothing runs twice.
+      vi.setSystemTime(Date.now() + 60_000);
+      expect((await controller.tick()).games).toBe(0);
+      // Over it: the latch is released and a fresh pass runs to completion.
+      vi.setSystemTime(Date.now() + 120_000);
+      const fresh = await controller.tick();
+      expect(fresh.games).toBe(1);
+      expect(fresh.ticked).toBe(1);
+      const { reportError } = await import('../services/errorReporter.js');
+      expect(reportError).toHaveBeenCalledWith(expect.any(Error), 'ClusterController.tick_stalled');
+      releaseGate();
+      await stuck;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('start is idempotent and stop clears the clock', () => {

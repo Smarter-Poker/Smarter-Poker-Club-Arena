@@ -72,10 +72,36 @@ export interface EventMessage {
    * Optional so recorded fixtures and older payloads stay valid.
    */
   seq?: number;
+  /**
+   * BBJ build plan phase 1 (2026-09-05): the engine's clock at the moment
+   * this frame was SENT - the live emission, or the replay. A client that
+   * judges an event's freshness (a jackpot celebration must play only for a
+   * hit that just happened, never for a replayed one hours old) used to
+   * compare the event's `emitted_at` against the DEVICE clock, so a phone
+   * running a few minutes fast silently refused every celebration, forever,
+   * with nothing to report. With the engine's own "now" on the envelope the
+   * comparison is engine-clock to engine-clock and the device clock is out
+   * of the decision. Optional so recorded fixtures stay valid.
+   */
+  ts?: number;
   payload: Record<string, unknown>;
 }
 
-export type HubMessage = SnapshotMessage | DeltaMessage | EventMessage;
+/**
+ * 2026-09-04 (disconnect audit items 11 + 12): a frame for ONE player at a
+ * table, outside the public seq chain. Hole cards and the armed pre-action
+ * are per-player facts; the shared snapshot cannot carry them and the
+ * Supabase Realtime + poll path they used to travel by is a second transport
+ * for the one thing a seat cannot play without. Never retained, never
+ * replayed: the engine re-sends on RESYNC.
+ */
+export interface UserEventMessage {
+  type: 'USER_EVENT';
+  tableId: string;
+  payload: Record<string, unknown>;
+}
+
+export type HubMessage = SnapshotMessage | DeltaMessage | EventMessage | UserEventMessage;
 
 /**
  * Minimal interface a subscriber must satisfy.
@@ -85,6 +111,8 @@ export type HubMessage = SnapshotMessage | DeltaMessage | EventMessage;
 export interface HubSubscriber {
   readonly id: string;
   readonly readyState: number; // ws.OPEN === 1
+  /** 2026-09-04: who is behind this socket, so sendToUser can find them. */
+  readonly userId?: string;
   /**
    * B12: bytes queued in the socket's send buffer but not yet flushed to the
    * network. `ws.WebSocket` exposes this natively; it is optional here so test
@@ -307,11 +335,40 @@ export class TableStateHub {
     this.eventSeqs.set(tableId, seq);
     // The delivered set records who actually got it live, so a later resync
     // from the SAME socket does not replay a beat it already animated.
-    this.broadcast(room, { type: 'EVENT', tableId, seq, payload }, retention?.delivered);
+    this.broadcast(
+      room,
+      { type: 'EVENT', tableId, seq, ts: Date.now(), payload },
+      retention?.delivered
+    );
   }
 
   /** SHOWDOWN POLISH 2026-08-25: per-table monotonic EVENT sequence. */
   private eventSeqs = new Map<string, number>();
+
+  /**
+   * Deliver a private frame to every open socket ONE user holds on a table
+   * (a player may have the table open in two tabs). Returns how many sockets
+   * took it; 0 means the player is not subscribed right now, and the caller
+   * relies on the RESYNC re-send when they are.
+   */
+  sendToUser(tableId: string, userId: string, payload: Record<string, unknown>): number {
+    const room = this.rooms.get(tableId);
+    if (!room || !userId) return 0;
+    const message: UserEventMessage = { type: 'USER_EVENT', tableId, payload };
+    const data = JSON.stringify(message);
+    let delivered = 0;
+    for (const sub of room.subscribers) {
+      if (sub.userId !== userId) continue;
+      if (sub.readyState !== 1 /* ws.OPEN */) continue;
+      try {
+        sub.send(data);
+        delivered++;
+      } catch {
+        /* the dead-subscriber sweep in broadcast() collects it */
+      }
+    }
+    return delivered;
+  }
 
   /**
    * Re-send the latest snapshot to a single subscriber. Used when the client
@@ -469,6 +526,9 @@ export class TableStateHub {
       const message: EventMessage = {
         type: 'EVENT',
         tableId,
+        // `ts` is the REPLAY instant, so a freshness check on the client sees
+        // the event's true age rather than believing a retained hit is new.
+        ts: Date.now(),
         payload: { ...entry.payload, replayed: true },
       };
       if (this.safeSend(sub, JSON.stringify(message))) this.replayedEvents++;

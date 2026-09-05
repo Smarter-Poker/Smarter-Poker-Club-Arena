@@ -190,9 +190,50 @@ describe('EngineSocketMux', () => {
     // 2026-08-24: linger raised 5s -> 60s. With the mux default-ON this socket
     // is the lobby connection; a player browsing between tables inside a
     // minute reuses it instead of paying a fresh TLS handshake.
-    vi.advanceTimersByTime(59_000);
-    expect(ws.readyState).toBe(1); // still lingering inside the window
-    vi.advanceTimersByTime(1_100);
+    // 2026-09-04: 60s -> 10 minutes, now that the socket can outlive 60s at
+    // all (it answers its own PINGs; see the next case).
+    // The server pings every 25s; feed those in, or the mux's own 60s
+    // staleness watchdog (correctly) tears down a socket that has gone silent.
+    for (let t = 0; t < 9.5 * 60_000; t += 25_000) {
+      vi.advanceTimersByTime(25_000);
+      ws._frame({ type: 'PING', ts: t });
+    }
+    expect(ws.readyState).toBe(1); // still lingering inside the window (9.5 min)
+    vi.advanceTimersByTime(40_000);
     expect(ws.readyState).toBe(3); // closed after the linger window
+  });
+
+  /* ═══ THE SOCKET ANSWERS ITS OWN PINGS (2026-09-04) ══════════════════════
+     The server closes any connection silent for 60s (heartbeatSweep, 1001).
+     PONGs used to come only from facades' clients, so a pre-warmed socket
+     with no facade - the lobby socket, which exists to be warm for the next
+     table - was killed 60s after boot, and if a table had been opened on it
+     in the meantime, that table went "Reconnecting To The Table" twenty
+     seconds in. Measured in Dan's browser against production. */
+  it('answers a PING itself, with no facade attached (the pre-warmed lobby socket)', () => {
+    engineSocketMux.prewarm('https://e', 'jwt');
+    const ws = lastSocket();
+    ws._open();
+    ws._frame({ type: 'PING', ts: 555 });
+    const pongs = ws.sent.map((s) => JSON.parse(s)).filter((m) => m.type === 'PONG');
+    expect(pongs).toEqual([{ type: 'PONG', ts: 555 }]);
+  });
+
+  it('answers a PING exactly once however many facades are attached, and drops their duplicates', () => {
+    const f1 = engineSocketMux.acquire('https://e', T1, 'jwt');
+    const f2 = engineSocketMux.acquire('https://e', T2, 'jwt');
+    // Each facade's client answers PING with PONG, as EngineStateClient does.
+    f1.onmessage = (e) => {
+      if (JSON.parse(e.data).type === 'PING') f1.send(JSON.stringify({ type: 'PONG', ts: 1 }));
+    };
+    f2.onmessage = (e) => {
+      if (JSON.parse(e.data).type === 'PING') f2.send(JSON.stringify({ type: 'PONG', ts: 1 }));
+    };
+    const ws = lastSocket();
+    ws._open();
+    ws._frame({ type: 'PING', ts: 1 });
+    const pongs = ws.sent.map((s) => JSON.parse(s)).filter((m) => m.type === 'PONG');
+    expect(pongs).toHaveLength(1);
+    // and the facades still saw the PING (their staleness watchdogs stamp it)
   });
 });

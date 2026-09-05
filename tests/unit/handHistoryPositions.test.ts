@@ -37,11 +37,18 @@ const CODE = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 
 describe('hand history reads the real button', () => {
   it('selects button_seat on every hand_history query', () => {
-    const selects = [
-      ...SRC.matchAll(/\.select\(\s*'([^']*hand_history[^']*|[^']*players[^']*)'/g),
-    ].map((m) => m[1]);
-    expect(selects.length).toBeGreaterThan(0);
-    for (const s of selects) expect(s).toContain('button_seat');
+    // One select list for every hand_history read (2026-09-04), and it carries
+    // the column.
+    const list = SRC.slice(
+      SRC.indexOf('export const HAND_HISTORY_COLUMNS'),
+      SRC.indexOf('].join(')
+    );
+    expect(list).toContain("'button_seat'");
+    const reads = [...SRC.matchAll(/from\('hand_history'\)\s*\.select\(([^)]*)\)/g)].map((m) =>
+      m[1].trim()
+    );
+    expect(reads.length).toBeGreaterThan(0);
+    for (const r of reads) expect(r).toBe('HAND_HISTORY_COLUMNS');
   });
 
   it('never derives the button from isButton alone', () => {

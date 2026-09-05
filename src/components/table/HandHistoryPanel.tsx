@@ -1,16 +1,41 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CLUB ARENA — Hand History Panel
+ *  CLUB ARENA — Hand History Panel  #SMARTERCASINOREALISM
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Slide-out panel showing recent hand history with expandable details,
- * street-by-street action replay, and export/share functionality.
+ * The slide-out record of the hands played AT THIS TABLE, newest first. One row
+ * per hand; an expanded row is the full rundown.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * 2026-09-04 — ONE RECONSTRUCTION (Dan: "the previous hand functionality is
+ * completely broken, unorganized, doesn't display the correct data, doesn't
+ * display the correct hands. Needs a full audit, enhancement and upgrade.")
+ *
+ * This panel used to walk the action log itself: its own street list, its own
+ * showdown roster, its own "who won" logic, its own export text - a FOURTH
+ * reconstruction of the hand beside `buildReplay`, the modal's Summary
+ * adapter and the modal's degraded walk, each wrong in a different place. It
+ * now renders `hand.replay`, the model `HandHistoryService` builds ONCE from the
+ * raw row, through the same `HandDetailView` the Previous Hand modal and the
+ * jackpot rundown use. There is nothing here that can disagree with them.
+ *
+ * What the record carries that the old walk could not show:
+ *   - the viewer's own cards on hands they folded or mucked (private, marked);
+ *   - the low half of a PLO8 / FLO8 pot, as its own row;
+ *   - who won each run of a run-it-twice, with the hand on THAT run;
+ *   - the stack after every action, when the rebuild reconciles;
+ *   - rake and the jackpot drop, beside the pot they came out of.
+ *
+ * The stats strip says what it counts: the last N hands loaded for this table,
+ * not "the session".
  */
 
 import { useState, useEffect, memo, useCallback, useMemo, useRef } from 'react';
-import { toCardCodes } from '../../utils/cardCode';
-import './HandHistoryPanel.css';
+import HandDetailView from '../handdetail/HandDetailView';
+import type { ReplayModel } from '../../utils/handReplay';
+import { gameTypeLabel, money, stamp } from '../../utils/handFormat';
 import { formatTableChips } from '../../utils/format';
+import './HandHistoryPanel.css';
 
 export interface HandHistoryAction {
   playerName: string;
@@ -18,9 +43,7 @@ export interface HandHistoryAction {
   /**
    * Every verb the engine writes. `sb`/`bb`/`ante`/`straddle`/`post` are the
    * forced money that opens a hand; `return` is an uncalled bet handed BACK
-   * (its amount comes OUT of the pot). Until 2026-09-04 the adapter's union
-   * stopped at the six voluntary verbs, so these printed as raw database
-   * tokens and `return` was ADDED to the pot.
+   * (its amount comes OUT of the pot).
    */
   action:
     | 'fold'
@@ -37,32 +60,21 @@ export interface HandHistoryAction {
     | 'post'
     | 'return';
   amount?: number;
-  /**
-   * PHASE 4 COMPLETION 2026-09-01 — the card this player threw, as a canonical
-   * code, and only ever present on the VIEWER'S OWN discard.
-   *
-   * Crazy Pineapple's one extra decision was the one thing this panel could
-   * not tell you: it printed "discard" and stopped. Phase 4 fixed that on the
-   * standalone replay only, which is not the surface anybody uses mid-session.
-   *
-   * The privacy is enforced in Postgres, not here: `hand_discards` is read
-   * through `hand_discards_read_own`, so the adapter can only ever fill this
-   * for the viewer. Undefined on every opponent's discard, on every hand
-   * played before 2026-09-01, and on every non-discard action.
-   */
+  /** The card this player threw, canonical code, only ever the VIEWER'S OWN. */
   discardedCard?: string;
 }
 
 export interface HandHistoryStreet {
-  /* `pineapple_discard` is a real street the engine writes. Measured on
-     2026-08-23 over 31 consecutive pineapple hands: it falls after preflop
-     and before the flop in 31 of 31, with no counterexample. */
   name: 'preflop' | 'pineapple_discard' | 'flop' | 'turn' | 'river';
-  cards?: string[]; // Board cards dealt this street
+  cards?: string[];
   actions: HandHistoryAction[];
   pot: number;
 }
 
+/**
+ * The panel's view of a hand. The per-street / per-player fields are the
+ * legacy flat shape the share link is built from; `replay` is what is drawn.
+ */
 export interface HandRecord {
   id: string;
   handNumber: number;
@@ -74,134 +86,70 @@ export interface HandRecord {
     name: string;
     seat: number;
     stack: number;
-    position: string; // 'D', 'SB', 'BB', 'UTG', etc.
-    holeCards?: string[]; // Only for hero or showdown
-    /** This player's NET for the hand: collected minus invested, as stored.
-        Optional only because a record cached in localStorage by a build older
-        than 2026-08-23 predates the field; every record the adapter produces
-        carries it. */
+    position: string;
+    /** Showdown-revealed holdings only: what the table saw. */
+    holeCards?: string[];
+    /** The viewer's own cards on a hand they did not show. Viewer's row only. */
+    privateHoleCards?: string[];
+    /** This player's NET for the hand: collected minus invested. */
     result?: number;
   }>;
   streets: HandHistoryStreet[];
   winners: Array<{
     playerId: string;
     playerName: string;
-    /** GROSS chips pushed from the pot to this winner, NOT their net result.
-        This field held the net until 2026-08-23, which is what let Hand Detail
-        subtract the same investment twice and print a different figure from
-        Hand History for one hand. Net lives in `players[].result`. */
+    /** GROSS chips pushed from the pot to this winner, NOT their net result. */
     amount: number;
-    hand?: string; // "Full House, Aces over Kings"
+    hand?: string;
   }>;
   heroId: string;
-  heroResult: number; // +/- amount, the hero's `players[].result`
+  heroResult: number;
   potTotal: number;
-  /**
-   * RUN IT TWICE — boards 2..N, in run order. Board 1 is the ordinary board and
-   * stays in `streets[].cards`.
-   *
-   * Filled by `adaptServiceHandToPanel` from the `hand_history.rit_boards`
-   * column. Absent on an ordinary single-run hand, which is the overwhelming
-   * majority of rows.
-   */
+  /** Run-it-twice boards 2..N. Board 1 stays in `streets[].cards`. */
   ritBoards?: string[][];
-  /**
-   * DOUBLE / TRIPLE-BOARD BOMB POT: boards 2 and 3 (hand_history.
-   * community_cards2/3). Absent on ordinary hands. Rendered with the same
-   * per-board block as run-it-twice, because to the reader they are the same
-   * thing: more than one board, each with its own winner.
-   */
+  /** Bomb-pot boards 2 and 3. */
   bombBoards?: string[][];
-  /**
-   * WHO WON EACH BOARD (hand_history.winners_by_board, 2026-09-04). Per
-   * (board, winner): the board's own hand name and the pre-rake share. Absent
-   * on single-board hands and on rows written before the column existed -
-   * then the surfaces fall back to the aggregate `winners` and SAY so.
-   */
+  /** Who won each board, with the hand ON THAT board; `low` on a hi-lo low half. */
   winnersByBoard?: Array<{
     board: number;
     playerId: string;
     playerName: string;
     amount: number;
     hand?: string;
+    low?: boolean;
   }>;
   /** Did any card get turned over at the end? False on a fold-around. */
   wentToShowdown: boolean;
-  /** Players who reached showdown and mucked (backs, never a hand name). */
+  /** Players who reached showdown and mucked. */
   muckedIds: string[];
-  /** Taken from the pot. Shown beside the pot, never silently netted. */
   rake: number;
   bbjFee: number;
+  /** The table's name, for the export header. */
+  tableName?: string;
+  /** Bomb-pot facts, when the hand was one. */
+  bombPot?: {
+    trigger_reason?: string;
+    ante_amount?: number;
+    board_count?: number;
+    variant?: string;
+  } | null;
+  /** THE model. Built once by HandHistoryService; every surface draws this. */
+  replay: ReplayModel;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   RUN-IT-TWICE BOARDS — how they reach these two screens
-   ═══════════════════════════════════════════════════════════════════════════
-
-   Verified on production hand #3046089 (2026-08-27): it ran THREE boards, the
-   server stored all three, and both hand-history screens showed one. The board
-   the player was shown was not the board that decided most of the pot.
-
-   Where it was lost: `hand_history.rit_boards` is read correctly by
-   HandHistoryService (mapHandHistoryRow) and lands on the SERVICE record as
-   `rit_boards` — and then `adaptServiceHandToPanel` built the view model this
-   file describes and did not carry the field across. The service knew; the
-   screen never heard.
-
-   The adapter carries it now (`ritBoards` above), which is the whole path: one
-   producer, one field, one reader below. A registry keyed by hand id briefly
-   bridged the gap while the adapter was owned by another agent; it was deleted
-   in the same commit that fixed the adapter, exactly as its own note said it
-   should be. Do not reintroduce a second source for this — two of them can
-   disagree about which boards a hand ran. */
-
-export interface RunBoards {
-  /** Board 1 first, then every extra run, in run order. */
-  boards: string[][];
-  /**
-   * How many leading cards every run shares — the cards that were already on
-   * the felt when the players agreed to run it again. Everything from this
-   * index on is where the runs diverge, and that is the only part of a
-   * run-it-twice board a player is actually reading.
-   */
-  sharedCount: number;
-}
-
-/**
- * Board 1 plus every extra run, normalised to canonical card codes.
- *
- * Returns null for an ordinary single-run hand, so a caller can render nothing
- * without a length check of its own.
- */
-export function runBoardsFor(hand: HandRecord): RunBoards | null {
-  /* Run-it-twice boards 2..N, or a bomb pot's boards 2..3: to the reader both
-     are "more than one board, each with its own winner". */
-  const extra = hand.ritBoards?.length ? hand.ritBoards : hand.bombBoards;
-  if (!extra || extra.length === 0) return null;
-
-  /* Board 1 is stored per street by the adapter, so it is read back the same
-     way rather than re-sliced from a flat list. */
-  const boardOne = hand.streets
-    .filter((s) => s.name === 'flop' || s.name === 'turn' || s.name === 'river')
-    .flatMap((s) => s.cards || []);
-
-  const boards = [boardOne, ...extra].map((b) => toCardCodes(b)).filter((b) => b.length > 0);
-  if (boards.length < 2) return null;
-
-  const shortest = Math.min(...boards.map((b) => b.length));
-  let sharedCount = 0;
-  while (sharedCount < shortest && boards.every((b) => b[sharedCount] === boards[0][sharedCount])) {
-    sharedCount += 1;
-  }
-  return { boards, sharedCount };
-}
+export type HandHistoryLoadState = 'idle' | 'loading' | 'ready' | 'failed';
 
 export interface HandHistoryPanelProps {
   isOpen: boolean;
   onClose: () => void;
   hands: HandRecord[];
   heroId: string;
+  /** Where the list is in its fetch, so an empty list can say why it is empty. */
+  loadState?: HandHistoryLoadState;
+  /** Open the animated replay of THE HAND PASSED IN. */
   onReplay?: (hand: HandRecord) => void;
+  /** Open the Hand Detail modal AT the hand passed in. */
+  onOpenDetail?: (hand: HandRecord) => void;
 }
 
 function formatTime(ts: number): string {
@@ -210,232 +158,128 @@ function formatTime(ts: number): string {
 }
 
 function formatAmount(amount: number): string {
-  // Dan 2026-08-28: hand history is a record — it shows the real number.
+  // Dan 2026-08-28: hand history is a record. It shows the real number.
   return formatTableChips(amount);
 }
 
-/**
- * Dan 2026-08-23, verbatim: "REMOVE THE YELLOW AND PURPLE."
- *
- * bet/raise were amber #f59e0b and all-in was violet #7c3aed — two colours that
- * appear nowhere else on smarter.poker, so the one panel a player opens to
- * check what just happened looked like a different product from the table
- * behind it. The replacements are the same chip palette HandDetailModal.css
- * already uses for the identical actions (house blue for aggression, red for
- * all-in, grey for the passive ones), so the two hand-history surfaces finally
- * agree with each other and with the rest of the app.
- *
- * Kept as inline colours rather than CSS vars because these are handed to a
- * `style` prop; `--club-*` tokens are used in the stylesheet beside this.
- */
-const HOUSE_BLUE = '#1877f2';
-
-function getActionColor(action: string): string {
-  switch (action) {
-    case 'fold':
-      return '#9ca3af';
-    case 'check':
-      return '#3fb950';
-    case 'call':
-      return '#3fb950';
-    case 'bet':
-      return HOUSE_BLUE;
-    case 'raise':
-      return HOUSE_BLUE;
-    case 'discard':
-      return '#94a3b8';
-    case 'allin':
-      return '#ef4444';
-    case 'return':
-      return '#60a5fa';
-    default:
-      return '#9ca3af';
-  }
+function signed(n: number): string {
+  return `${n > 0 ? '+' : n < 0 ? '-' : ''}${formatAmount(Math.abs(n))}`;
 }
 
-/** The word a reader expects, not the database token (Dan 2026-09-04). */
-function getActionLabel(action: string): string {
-  switch (action) {
-    case 'sb':
-      return 'Posts SB';
-    case 'bb':
-      return 'Posts BB';
-    case 'ante':
-      return 'Posts Ante';
-    case 'straddle':
-      return 'Straddles';
-    case 'post':
-      return 'Posts';
-    case 'return':
-      return 'Uncalled, Returned';
-    case 'allin':
-      return 'All In';
-    default:
-      return action.charAt(0).toUpperCase() + action.slice(1);
-  }
-}
+/* Voluntary money preflop: the VPIP definition. A blind is not voluntary; a
+   check is not money. */
+const VPIP_VERBS = new Set(['call', 'bet', 'raise', 'all_in']);
 
-const SUIT_GLYPH: Record<string, string> = { s: '♠', h: '♥', d: '♦', c: '♣' };
-
-/**
- * Render a canonical 2-char card code ("Jd") as rank + suit glyph.
- *
- * The Showdown block used to name the winner and the amount and stop there, so
- * the panel that exists to answer "what did he have?" was the one place that
- * would not say — even though handToText below has always written the holdings
- * into the clipboard export. Same data, now on screen.
- */
-function CardChip({ code, shared = false }: { code: string; shared?: boolean }) {
-  const suit = code.slice(-1).toLowerCase();
-  const rank = code.slice(0, -1).toUpperCase().replace('T', '10');
-  const red = suit === 'h' || suit === 'd';
-  return (
-    <span className={`hh-card${red ? ' hh-card--red' : ''}${shared ? ' hh-card--shared' : ''}`}>
-      {rank}
-      {SUIT_GLYPH[suit] || '?'}
-    </span>
-  );
-}
-
-function HoleCards({ cards }: { cards: string[] }) {
-  return (
-    <span className="hh-entry__holecards">
-      {cards.map((c, i) => (
-        <CardChip key={i} code={c} />
-      ))}
-    </span>
-  );
+function heroVpip(model: ReplayModel, heroId: string): boolean {
+  const preflop = model.streets.find((s) => s.key === 'preflop');
+  if (!preflop) return false;
+  return preflop.rows.some((r) => r.userId === heroId && VPIP_VERBS.has(r.verb));
 }
 
 /**
- * Every board a hand ran, one row per run.
- *
- * The runs share a prefix by construction — the cards already dealt when the
- * players agreed to run it again — so those are dimmed and only the diverging
- * cards carry full contrast. A player reading three near-identical rows of
- * five cards otherwise has to diff them by eye.
+ * The hand as text, from the model - so the file a player exports carries the
+ * same verbs, the same incremental amounts and the same boards the screen
+ * shows. It used to print the raw database token (`sb`, `return`, `allin`),
+ * drop every zero, and know nothing about run-it-twice, the low half, rake
+ * or the jackpot drop.
  */
-function RunBoards({ runs, hand }: { runs: RunBoards; hand: HandRecord }) {
-  const isBomb = !hand.ritBoards?.length && !!hand.bombBoards?.length;
-  const byBoard = new Map<number, NonNullable<HandRecord['winnersByBoard']>>();
-  for (const w of hand.winnersByBoard || []) {
-    if (!byBoard.has(w.board)) byBoard.set(w.board, []);
-    byBoard.get(w.board)!.push(w);
-  }
-  const hasPerBoard = byBoard.size > 0;
-  return (
-    <div className="hh-entry__street hh-runs">
-      <div className="hh-entry__street-header">
-        <span className="hh-entry__street-name">
-          {isBomb ? 'Bomb Pot Boards' : runs.boards.length >= 3 ? 'Run It 3 Times' : 'Run It Twice'}
-        </span>
-        <span className="hh-runs__count">{runs.boards.length} Boards</span>
-      </div>
-      {runs.boards.map((board, bi) => {
-        const winners = byBoard.get(bi + 1) || [];
-        return (
-          <div className="hh-run" key={bi}>
-            <span className="hh-run__badge">
-              {isBomb ? 'BOARD' : 'RUN'} {bi + 1}
-            </span>
-            <span className="hh-run__cards">
-              {board.map((c, ci) => (
-                <CardChip key={ci} code={c} shared={ci < runs.sharedCount} />
-              ))}
-            </span>
-            {/* WHO WON THIS BOARD, WITH WHAT (Dan 2026-09-04: "results that
-                weren't accurate"). Read from hand_history.winners_by_board;
-                until that column existed the panel could only say "covers
-                every run", which is the note kept below for older rows. */}
-            {winners.length > 0 && (
-              <span className="hh-run__winner">
-                {winners.map((w, wi) => (
-                  <span key={wi} className="hh-run__winner-item">
-                    <span className="hh-entry__player-name">{w.playerName}</span>
-                    {w.hand && <span className="hh-entry__hand">{w.hand}</span>}
-                    <span className="hh-entry__won">{formatAmount(w.amount)}</span>
-                  </span>
-                ))}
-              </span>
-            )}
-          </div>
-        );
-      })}
-      {!hasPerBoard && (
-        /* Rows written before winners_by_board (2026-09-04) carry one aggregate
-           amount and one hand name per player for the WHOLE hand. Say so
-           rather than invent a split. */
-        <div className="hh-runs__note">
-          Boards Share The Cards Dealt Before The All In. Collected Totals Below Cover Every Run.
-        </div>
-      )}
-    </div>
-  );
-}
-
-function getStreetLabel(name: string): string {
-  switch (name) {
-    case 'preflop':
-      return 'Pre-Flop';
-    case 'pineapple_discard':
-      return 'Discard';
-    case 'flop':
-      return 'Flop';
-    case 'turn':
-      return 'Turn';
-    case 'river':
-      return 'River';
-    default:
-      return name;
-  }
-}
-
-/** Convert hand record to PokerStars-compatible text format */
-function handToText(hand: HandRecord): string {
+export function handToText(hand: HandRecord): string {
+  const m = hand.replay;
   const lines: string[] = [];
-  lines.push(`Club Arena Hand #${hand.handNumber} - ${hand.gameType} (${hand.blinds})`);
-  lines.push(`Time: ${new Date(hand.timestamp).toLocaleString()}`);
+  lines.push(
+    `Club Arena Hand #${hand.handNumber} - ${gameTypeLabel(m.gameVariant) || hand.gameType} (${hand.blinds})` +
+      (hand.tableName ? ` - ${hand.tableName}` : '')
+  );
+  lines.push(`Time: ${stamp(m.playedAt) || new Date(hand.timestamp).toLocaleString()}`);
   lines.push('');
 
-  // Players
-  hand.players.forEach((p) => {
-    const cards = p.holeCards?.length ? ` [${p.holeCards.join(' ')}]` : '';
-    lines.push(`Seat ${p.seat}: ${p.name} (${formatAmount(p.stack)})${cards} ${p.position}`);
-  });
+  for (const p of m.players) {
+    const cards = p.hole?.length
+      ? ` [${p.hole.map((c) => `${c.rank}${String(c.suit).charAt(0)}`).join(' ')}]`
+      : p.privateHole?.length
+        ? ` [${p.privateHole.map((c) => `${c.rank}${String(c.suit).charAt(0)}`).join(' ')}] (Yours, Not Shown)`
+        : '';
+    const stack = p.startStack === null ? '' : ` (${money(p.startStack)})`;
+    lines.push(`Seat ${p.seat}: ${p.username}${stack}${cards} ${p.position}`.trimEnd());
+  }
   lines.push('');
 
-  // Streets
-  hand.streets.forEach((street) => {
-    const boardCards = street.cards?.length ? ` [${street.cards.join(' ')}]` : '';
-    lines.push(`*** ${getStreetLabel(street.name).toUpperCase()} ***${boardCards}`);
-    street.actions.forEach((a) => {
-      const amt = a.amount ? ` ${formatAmount(a.amount)}` : '';
-      lines.push(`${a.playerName}: ${a.action}${amt}`);
+  for (const s of m.streets) {
+    const board = s.board.length
+      ? ` [${s.board.map((c) => `${c.rank}${String(c.suit).charAt(0)}`).join(' ')}]`
+      : '';
+    lines.push(`*** ${s.label.toUpperCase()} ***${board}`);
+    s.extraBoards.forEach((b, i) => {
+      if (b.length)
+        lines.push(
+          `    Run ${i + 2}: [${b.map((c) => `${c.rank}${String(c.suit).charAt(0)}`).join(' ')}]`
+        );
     });
+    for (const r of s.rows) {
+      const amt = r.amount !== 0 ? ` ${money(r.amount)}` : '';
+      const extra = r.discardedCard
+        ? ` [${r.discardedCard.rank}${String(r.discardedCard.suit).charAt(0)}]`
+        : r.shownCards?.length
+          ? ` [${r.shownCards.map((c) => `${c.rank}${String(c.suit).charAt(0)}`).join(' ')}]`
+          : '';
+      lines.push(`${r.name}: ${r.label}${amt}${extra}`);
+    }
+    if (s.isFinal)
+      lines.push(`Pot: ${m.pots.map((p) => `${p.label}(${money(p.amount)})`).join(' ')}`);
     lines.push('');
-  });
+  }
 
-  // Winners
   lines.push('*** SUMMARY ***');
-  lines.push(`Total pot: ${formatAmount(hand.potTotal)}`);
-  /* "collected N from pot" is the PokerStars wording for the GROSS the pot paid
-     out, which is what `winners[].amount` holds. This line used to read "won"
-     over a figure that was the player's NET, so a tracker importing the file
-     booked the winner's own bets as chips that had never been in the pot. The
-     net is printed on its own line rather than folded into this one, so the
-     two numbers on screen each have a line here that matches them. */
-  hand.winners.forEach((w) => {
-    const handStr = w.hand ? ` with ${w.hand}` : '';
-    lines.push(`${w.playerName} collected ${formatAmount(w.amount)} from pot${handStr}`);
-  });
-  const heroName = hand.players.find((p) => p.id === hand.heroId)?.name;
-  if (heroName) {
+  lines.push(`Total pot: ${money(m.potTotal)}`);
+  if (m.rake > 0) lines.push(`Rake: ${money(m.rake)}`);
+  if (m.bbjFee > 0) lines.push(`Jackpot fee: ${money(m.bbjFee)}`);
+  /* "collected N from pot" is the PokerStars wording for the GROSS the pot
+     paid out; the net is its own line below. */
+  for (const w of hand.winners) {
+    const rows = m.showdown.filter((r) => r.userId === w.playerId && r.isWinner);
+    const withWhat = rows.length
+      ? ` with ${rows
+          .map(
+            (r) =>
+              `${r.handName}${r.low ? ' (low)' : ''}${r.boardLabel ? ` on ${r.boardLabel}` : ''}`
+          )
+          .join(', ')}`
+      : m.showdown.length === 0
+        ? ' without a showdown'
+        : '';
+    lines.push(`${w.playerName} collected ${money(w.amount)} from pot${withWhat}`);
+  }
+  const winnerIds = new Set(hand.winners.map((w) => w.playerId));
+  const said = new Set<string>();
+  for (const r of m.showdown) {
+    if (winnerIds.has(r.userId) || said.has(r.userId)) continue;
+    said.add(r.userId);
     lines.push(
-      `${heroName} net result: ${hand.heroResult > 0 ? '+' : ''}${formatAmount(hand.heroResult)}`
+      r.hole
+        ? `${r.name} showed ${r.handName}${r.holePrivate ? ' (yours, not shown)' : ''}`
+        : `${r.name} mucked`
     );
   }
-
+  const hero = m.players.find((p) => p.userId === hand.heroId);
+  if (hero) lines.push(`${hero.username} net result: ${signed(hero.net)}`);
   return lines.join('\n');
+}
+
+function BombPotFacts({ facts }: { facts: NonNullable<HandRecord['bombPot']> }) {
+  const bits: string[] = [];
+  if (facts.trigger_reason) bits.push(String(facts.trigger_reason).replace(/_/g, ' '));
+  if (typeof facts.ante_amount === 'number' && facts.ante_amount > 0)
+    bits.push(`Ante ${money(facts.ante_amount)}`);
+  if (typeof facts.board_count === 'number' && facts.board_count > 1)
+    bits.push(`${facts.board_count} Boards`);
+  if (facts.variant) bits.push(gameTypeLabel(facts.variant) || String(facts.variant));
+  if (bits.length === 0) return null;
+  return (
+    <div className="hh-entry__facts">
+      <span className="hh-entry__facts-label">Bomb Pot</span>
+      <span className="hh-entry__facts-body">{bits.join(' · ')}</span>
+    </div>
+  );
 }
 
 function HandEntry({
@@ -443,68 +287,54 @@ function HandEntry({
   heroId,
   isExpanded,
   onToggle,
+  onReplay,
+  onOpenDetail,
 }: {
   hand: HandRecord;
   heroId: string;
   isExpanded: boolean;
   onToggle: () => void;
   onReplay?: (hand: HandRecord) => void;
+  onOpenDetail?: (hand: HandRecord) => void;
 }) {
-  const resultColor = hand.heroResult > 0 ? '#3fb950' : hand.heroResult < 0 ? '#ef4444' : '#9ca3af';
-
-  /* Everyone whose cards the table saw, plus anyone who took a pot. A player
-     is in `holeCards` only because the server persisted a SHOWDOWN-revealed
-     holding (mucked hands are never written), so this list is exactly the set
-     of hands that were public — no client-side guessing about who showed. */
-  const showdownRows = useMemo(() => {
-    const winnerById = new Map(hand.winners.map((w) => [w.playerId, w]));
-    const mucked = new Set(hand.muckedIds || []);
-    /* A SHOWDOWN IS A CARD TURNING OVER (Dan 2026-09-04). This used to admit
-       any winner, so a fold-around hand filed its taker under "Showdown" with
-       "Not Shown" beside them. Rows here are players whose cards were shown,
-       or who reached showdown and mucked. A hand with no showdown gets no
-       showdown section - see the render. */
-    return hand.players
-      .filter((p) => (p.holeCards && p.holeCards.length > 0) || mucked.has(p.id))
-      .map((p) => ({
-        id: p.id,
-        name: p.name,
-        mucked: mucked.has(p.id) && !(p.holeCards && p.holeCards.length > 0),
-        cards: p.holeCards || [],
-        /* `collected` is the gross the pot paid this seat; `net` is what they
-           are up or down on the hand. Both are shown, and labelled, because
-           showing only one of them beside the other surface's choice of the
-           other is precisely how Hand History and Hand Detail came to print
-           two different numbers for the same hand. */
-        collected: winnerById.get(p.id)?.amount,
-        net: p.result,
-        handName: winnerById.get(p.id)?.hand,
-      }));
-  }, [hand]);
-
-  /* Null on an ordinary hand, so nothing about a single-run hand changes. */
-  const runs = useMemo(() => runBoardsFor(hand), [hand]);
+  const heroNet = hand.replay.players.find((p) => p.userId === heroId)?.net ?? hand.heroResult;
+  const tone = heroNet > 0 ? 'up' : heroNet < 0 ? 'down' : 'flat';
+  const variant = gameTypeLabel(hand.replay.gameVariant) || hand.gameType;
+  const runs = hand.replay.boards.length;
+  const isHero = hand.players.some((p) => p.id === heroId);
 
   return (
-    <div className={`hh-entry ${isExpanded ? 'hh-entry--expanded' : ''}`}>
-      {/* Summary row */}
-      <button className="hh-entry__summary" onClick={onToggle}>
+    <div
+      className={`hh-entry${isExpanded ? ' hh-entry--expanded' : ''}${isHero ? '' : ' hh-entry--observer'}`}
+    >
+      <button
+        type="button"
+        className="hh-entry__summary"
+        onClick={onToggle}
+        aria-expanded={isExpanded}
+      >
         <span className="hh-entry__num">#{hand.handNumber}</span>
         <span className="hh-entry__time">{formatTime(hand.timestamp)}</span>
         <span className="hh-entry__pot">
-          Pot: {formatAmount(hand.potTotal)}
-          {/* Rake was invisible on this surface; the pre-rake pot sat beside a
-              post-rake Collected with nothing saying why they differ. */}
+          Pot {formatAmount(hand.replay.potTotal || hand.potTotal)}
           {hand.rake > 0 && (
             <span className="hh-entry__rake"> · Rake {formatAmount(hand.rake)}</span>
           )}
         </span>
-        <span className="hh-entry__result" style={{ color: resultColor }}>
-          {hand.heroResult > 0 ? '+' : ''}
-          {formatAmount(hand.heroResult)}
+        <span className="hh-entry__tags">
+          {runs > 1 && (
+            <span className="hh-entry__tag">
+              {hand.bombPot ? 'Bomb' : runs >= 3 ? 'Run 3x' : 'Run 2x'}
+            </span>
+          )}
+          {hand.replay.hiLo && <span className="hh-entry__tag">Hi-Lo</span>}
+          {!hand.wentToShowdown && (
+            <span className="hh-entry__tag hh-entry__tag--quiet">No Showdown</span>
+          )}
         </span>
-        <span className={`hh-entry__chevron ${isExpanded ? 'hh-entry__chevron--open' : ''}`}>
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <span className={`hh-entry__result hh-entry__result--${tone}`}>{signed(heroNet)}</span>
+        <span className={`hh-entry__chevron${isExpanded ? ' hh-entry__chevron--open' : ''}`}>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
             <path
               d="M3 4.5l3 3 3-3"
               stroke="currentColor"
@@ -515,99 +345,28 @@ function HandEntry({
         </span>
       </button>
 
-      {/* Expanded detail */}
       {isExpanded && (
         <div className="hh-entry__detail">
-          {/* Street actions — grouped by street per spec §10.4 */}
-          {hand.streets.map((street, si) => (
-            <div key={si} className="hh-entry__street">
-              <div className="hh-entry__street-header">
-                <span className="hh-entry__street-name">{getStreetLabel(street.name)}</span>
-                {street.cards && street.cards.length > 0 && (
-                  <span className="hh-entry__street-cards">{street.cards.join(' ')}</span>
-                )}
-              </div>
-              <div className="hh-entry__actions">
-                {street.actions.map((a, ai) => (
-                  <div key={ai} className="hh-entry__action">
-                    <span className="hh-entry__player-name">{a.playerName}</span>
-                    <span
-                      className="hh-entry__action-type"
-                      style={{ color: getActionColor(a.action) }}
-                    >
-                      {getActionLabel(a.action)}
-                    </span>
-                    {a.amount != null && (
-                      <span className="hh-entry__action-amount">{formatAmount(a.amount)}</span>
-                    )}
-                    {/* Only ever yours - see HandHistoryAction.discardedCard. */}
-                    {a.discardedCard && <CardChip code={a.discardedCard} />}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-
-          {/* Run It Twice: every board the hand actually ran, board 1 first. */}
-          {runs && <RunBoards runs={runs} hand={hand} />}
-
-          {/* No showdown: one honest line, not a roster of card backs. */}
-          {!hand.wentToShowdown && hand.winners.length > 0 && (
-            <div className="hh-entry__street">
-              <div className="hh-entry__street-header">
-                <span className="hh-entry__street-name">No Showdown</span>
-                <span className="hh-entry__street-cards">
-                  Pot Taken By {hand.winners.map((w) => w.playerName).join(', ')}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* X6.2g: Showdown section header per spec §10.4 */}
-          {hand.wentToShowdown && showdownRows.length > 0 && (
-            <div className="hh-entry__street">
-              <div className="hh-entry__street-header">
-                <span className="hh-entry__street-name">Showdown</span>
-              </div>
-              <div className="hh-entry__showdown">
-                {showdownRows.map((r) => (
-                  <div
-                    key={r.id}
-                    className={`hh-entry__shown${
-                      r.collected != null ? ' hh-entry__shown--won' : ''
-                    }`}
-                  >
-                    <span className="hh-entry__player-name">{r.name}</span>
-                    {r.cards.length > 0 ? (
-                      <HoleCards cards={r.cards} />
-                    ) : (
-                      /* Reached showdown and mucked: the row holds nothing for
-                         this seat by design. Say which, because an empty gap
-                         reads as a load failure. */
-                      <span className="hh-entry__notshown">
-                        {r.mucked ? 'Mucked' : 'Not Shown'}
-                      </span>
-                    )}
-                    {r.handName && <span className="hh-entry__hand">{r.handName}</span>}
-                    <span className="hh-entry__tail">
-                      {r.collected != null && (
-                        <span className="hh-entry__won">Collected {formatAmount(r.collected)}</span>
-                      )}
-                      {r.net != null && (
-                        <span
-                          className="hh-entry__net"
-                          style={{
-                            color: r.net > 0 ? '#3fb950' : r.net < 0 ? '#ef4444' : '#9ca3af',
-                          }}
-                        >
-                          Net {r.net > 0 ? '+' : ''}
-                          {formatAmount(r.net)}
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                ))}
-              </div>
+          {hand.bombPot && <BombPotFacts facts={hand.bombPot} />}
+          {/* THE rundown: the same component and the same model as the Previous
+              Hand modal and the jackpot popup. Nothing here is computed twice. */}
+          <HandDetailView model={hand.replay} currentUserId={heroId} badge={variant} />
+          {(onReplay || onOpenDetail) && (
+            <div className="hh-entry__actions-row">
+              {onOpenDetail && (
+                <button type="button" className="hh-entry__btn" onClick={() => onOpenDetail(hand)}>
+                  Open Hand Detail
+                </button>
+              )}
+              {onReplay && (
+                <button
+                  type="button"
+                  className="hh-entry__btn hh-entry__btn--primary"
+                  onClick={() => onReplay(hand)}
+                >
+                  Replay
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -621,13 +380,17 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
   onClose,
   hands,
   heroId,
+  loadState = 'ready',
+  onReplay,
+  onOpenDetail,
 }: HandHistoryPanelProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [visibleHands, setVisibleHands] = useState<boolean[]>([]);
-  // CA-6 BUG FIX: stagger timers for hand entry animation had no cleanup return.
-  // When the panel closes (isOpen=false) mid-animation, all pending setVisibleHands
-  // calls would fire on the now-unmounted component.
+  /* Index-keyed, not appended: an out-of-order timer used to mark the wrong
+     row visible, and the effect re-ran (and reset every row to hidden) on any
+     new array identity. Keyed by the ids the list holds instead. */
+  const [visible, setVisible] = useState<Record<string, boolean>>({});
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const idSignature = hands.map((h) => h.id).join('|');
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedId((prev) => (prev === id ? null : id));
@@ -640,46 +403,72 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
     const a = document.createElement('a');
     a.href = url;
     a.download = `club-arena-hands-${Date.now()}.txt`;
+    /* Attached, clicked, then detached; the URL is revoked on the next tick.
+       Revoking synchronously after click() cancels the download on Firefox
+       and some WebKit builds. */
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1_000);
   }, [hands]);
 
-  const sessionStats = useMemo(() => {
-    if (!hands.length) return null;
-    const totalResult = hands.reduce((sum, h) => sum + h.heroResult, 0);
-    const wins = hands.filter((h) => h.heroResult > 0).length;
-    const biggestWin = Math.max(0, ...hands.map((h) => h.heroResult));
-    const biggestLoss = Math.min(0, ...hands.map((h) => h.heroResult));
-    return { totalResult, wins, handsPlayed: hands.length, biggestWin, biggestLoss };
-  }, [hands]);
+  /**
+   * WHAT THE STRIP COUNTS, SAID OUT LOUD. These are the hands LOADED for this
+   * table (newest 50 at most), not a session. `Won` counts pots the viewer
+   * took - a walk is a pot taken, even at net zero - and VPIP is the
+   * preflop-voluntary rate over hands the viewer was dealt into.
+   */
+  const stats = useMemo(() => {
+    const mine = hands.filter((h) => h.replay.players.some((p) => p.userId === heroId));
+    if (!mine.length) return null;
+    let net = 0;
+    let won = 0;
+    let vpip = 0;
+    let best = -Infinity;
+    let worst = Infinity;
+    for (const h of mine) {
+      const me = h.replay.players.find((p) => p.userId === heroId)!;
+      net += me.net;
+      if (me.won > 0) won += 1;
+      if (heroVpip(h.replay, heroId)) vpip += 1;
+      if (me.net > best) best = me.net;
+      if (me.net < worst) worst = me.net;
+    }
+    return {
+      hands: mine.length,
+      net: Math.round(net * 100) / 100,
+      won,
+      vpipPct: Math.round((vpip / mine.length) * 100),
+      best: best === -Infinity ? 0 : best,
+      worst: worst === Infinity ? 0 : worst,
+    };
+  }, [hands, heroId]);
 
   useEffect(() => {
-    if (isOpen) {
-      // Cancel any in-flight stagger timers from a previous open
+    if (!isOpen) return;
+    staggerTimersRef.current.forEach(clearTimeout);
+    staggerTimersRef.current = [];
+    const ids = idSignature ? idSignature.split('|') : [];
+    setVisible((prev) => {
+      // Rows already on screen stay; only new ids animate in.
+      const next: Record<string, boolean> = {};
+      for (const id of ids) if (prev[id]) next[id] = true;
+      return next;
+    });
+    ids.forEach((id, i) => {
+      staggerTimersRef.current.push(
+        setTimeout(
+          () => setVisible((prev) => (prev[id] ? prev : { ...prev, [id]: true })),
+          Math.min(i, 12) * 40
+        )
+      );
+    });
+    return () => {
       staggerTimersRef.current.forEach(clearTimeout);
       staggerTimersRef.current = [];
-      setVisibleHands([]);
-      hands.forEach((_, i) => {
-        staggerTimersRef.current.push(
-          setTimeout(() => {
-            setVisibleHands((prev) => [...prev, true]);
-          }, i * 50)
-        );
-      });
-      return () => {
-        staggerTimersRef.current.forEach(clearTimeout);
-        staggerTimersRef.current = [];
-      };
-    }
-  }, [isOpen, hands]);
+    };
+  }, [isOpen, idSignature]);
 
-  /* Escape closes the panel from the panel itself.
-   *
-   * It had no key handler of its own and no backdrop, so on a phone the only
-   * way out was the 32px X in the corner — and in the installed app that X can
-   * sit under the status bar. TableChat's pair (outside-click + Escape) is the
-   * established shape in this repo; here the backdrop below IS the outside
-   * click, so this is the other half. */
   useEffect(() => {
     if (!isOpen) return;
     const handleEscape = (e: KeyboardEvent) => {
@@ -691,24 +480,36 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
 
   if (!isOpen) return null;
 
+  const busy = loadState === 'loading' && hands.length === 0;
+
   return (
     <>
-      {/* A real, tappable backdrop. There was none: the panel was a lone fixed
-          div, so "tap anywhere else to close" — the gesture every other sheet
-          in Club Arena answers — did nothing at all here. */}
       <div className="hh-backdrop" onClick={onClose} aria-hidden="true" />
-      <div className="hh-panel" role="dialog" aria-label="Hand History">
-        {/* Bottom-sheet grab handle. CSS shows it only where the panel IS a
-            bottom sheet (<=640px); on the desktop drawer it stays hidden. */}
+      <div
+        className="hh-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Hand History"
+        aria-busy={busy}
+      >
         <div className="hh-panel__grab" aria-hidden="true">
           <span />
         </div>
-        {/* Header */}
         <div className="hh-panel__header">
-          <h3 className="hh-panel__title">Hand History</h3>
+          <div className="hh-panel__titles">
+            <span className="hh-panel__eyebrow">This Table</span>
+            <h3 className="hh-panel__title">Hand History</h3>
+          </div>
           <div className="hh-panel__header-actions">
-            <button className="hh-panel__export" onClick={exportAll} title="Export All Hands">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <button
+              type="button"
+              className="hh-panel__iconbtn"
+              onClick={exportAll}
+              disabled={hands.length === 0}
+              title="Export All Hands"
+              aria-label="Export All Hands"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <path
                   d="M8 2v8M4 7l4 4 4-4M2 12h12"
                   stroke="currentColor"
@@ -718,8 +519,13 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
                 />
               </svg>
             </button>
-            <button className="hh-panel__close" onClick={onClose} aria-label="Close">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <button
+              type="button"
+              className="hh-panel__iconbtn"
+              onClick={onClose}
+              aria-label="Close"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <path
                   d="M4 4l8 8M12 4l-8 8"
                   stroke="currentColor"
@@ -731,58 +537,68 @@ const HandHistoryPanel = memo(function HandHistoryPanel({
           </div>
         </div>
 
-        {/* Session stats */}
-        {sessionStats && (
-          <div className="hh-panel__stats">
-            <div className="hh-panel__stat">
-              <span className="hh-panel__stat-label">Hands</span>
-              <span className="hh-panel__stat-value">{sessionStats.handsPlayed}</span>
-            </div>
-            <div className="hh-panel__stat">
-              <span className="hh-panel__stat-label">Result</span>
-              <span
-                className="hh-panel__stat-value"
-                style={{
-                  color:
-                    sessionStats.totalResult > 0
-                      ? '#3fb950'
-                      : sessionStats.totalResult < 0
-                        ? '#ef4444'
-                        : '#9ca3af',
-                }}
-              >
-                {sessionStats.totalResult > 0 ? '+' : ''}
-                {formatAmount(sessionStats.totalResult)}
-              </span>
-            </div>
-            <div className="hh-panel__stat">
-              <span className="hh-panel__stat-label">Wins</span>
-              <span className="hh-panel__stat-value">
-                {sessionStats.wins}/{sessionStats.handsPlayed}
-              </span>
+        {stats && (
+          <div className="hh-panel__stats" aria-label={`Last ${stats.hands} Hands At This Table`}>
+            <div className="hh-panel__stats-scope">Last {stats.hands} Hands At This Table</div>
+            <div className="hh-panel__stats-grid">
+              <div className="hh-panel__stat">
+                <span className="hh-panel__stat-label">Net</span>
+                <span
+                  className={`hh-panel__stat-value hh-panel__stat-value--${
+                    stats.net > 0 ? 'up' : stats.net < 0 ? 'down' : 'flat'
+                  }`}
+                >
+                  {signed(stats.net)}
+                </span>
+              </div>
+              <div className="hh-panel__stat">
+                <span className="hh-panel__stat-label">Pots Won</span>
+                <span className="hh-panel__stat-value">
+                  {stats.won}/{stats.hands}
+                </span>
+              </div>
+              <div className="hh-panel__stat">
+                <span className="hh-panel__stat-label">VPIP</span>
+                <span className="hh-panel__stat-value">{stats.vpipPct}%</span>
+              </div>
+              <div className="hh-panel__stat">
+                <span className="hh-panel__stat-label">Best</span>
+                <span className="hh-panel__stat-value hh-panel__stat-value--up">
+                  {signed(stats.best)}
+                </span>
+              </div>
+              <div className="hh-panel__stat">
+                <span className="hh-panel__stat-label">Worst</span>
+                <span className="hh-panel__stat-value hh-panel__stat-value--down">
+                  {signed(stats.worst)}
+                </span>
+              </div>
             </div>
           </div>
         )}
 
-        {/* Hand list */}
         <div className="hh-panel__list">
           {hands.length === 0 ? (
-            <div className="hh-panel__empty">No Hands Played Yet</div>
+            <div className="hh-panel__empty">
+              {loadState === 'loading'
+                ? 'Loading Hands'
+                : loadState === 'failed'
+                  ? 'Could Not Load The Hands For This Table'
+                  : 'No Hands Recorded At This Table Yet'}
+            </div>
           ) : (
-            hands.map((hand, idx) => (
+            hands.map((hand) => (
               <div
                 key={hand.id}
-                style={{
-                  opacity: visibleHands[idx] ? 1 : 0,
-                  transform: visibleHands[idx] ? 'translateY(0)' : 'translateY(8px)',
-                  transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                }}
+                className={`hh-panel__item${visible[hand.id] ? ' hh-panel__item--in' : ''}`}
               >
                 <HandEntry
                   hand={hand}
                   heroId={heroId}
                   isExpanded={expandedId === hand.id}
                   onToggle={() => toggleExpand(hand.id)}
+                  onReplay={onReplay}
+                  onOpenDetail={onOpenDetail}
                 />
               </div>
             ))

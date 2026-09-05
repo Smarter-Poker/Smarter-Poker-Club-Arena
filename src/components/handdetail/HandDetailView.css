@@ -497,3 +497,35 @@
   color: rgba(255, 255, 255, 0.55);
   font-style: italic;
 }
+
+/* HI-LO (2026-09-04): the low half of a split pot is its own row, tagged. */
+.hdv__sd.is-low {
+  background: rgba(58, 168, 255, 0.05);
+}
+
+.hdv__sd-tag--low {
+  background: rgba(58, 168, 255, 0.18);
+  color: #8ad2ff;
+}
+
+/* The viewer's own cards on a hand the table never saw - a fold, or a muck.
+   Face-up for the viewer alone, and marked so the face-up hand is never read
+   as a reveal. */
+.hdv__private-tag {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(214, 173, 82, 0.16);
+  color: #d6ad52;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  align-self: center;
+}
+
+.hdv__cards .hdv-private {
+  outline: 1px dashed rgba(214, 173, 82, 0.55);
+  outline-offset: 1px;
+  border-radius: 3px;
+}

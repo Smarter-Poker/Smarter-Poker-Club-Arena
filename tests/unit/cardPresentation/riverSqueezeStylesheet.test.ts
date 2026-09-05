@@ -30,6 +30,9 @@ const tsx = read('src/components/table/CommunityCards.tsx');
 const squeezeCard = read('src/presentation/cardPresentation/SqueezeCard.tsx');
 const tablePageCss = stripComments(read('src/pages/TablePage.css'));
 
+/** Prettier wraps long shorthands, so pins compare on collapsed whitespace. */
+const flat = (t: string) => t.replace(/\s+/g, ' ').trim();
+
 function rule(css: string, selector: string): string {
   const i = css.indexOf(selector + ' {');
   expect(i, `rule ${selector}`).toBeGreaterThan(-1);
@@ -45,8 +48,8 @@ function keyframeBody(css: string, name: string): string {
 describe('the squeeze is compositor-only and speed-scaled', () => {
   it('the card materialises in place, scaled by --animation-speed, no travel (spec 69)', () => {
     const r = rule(squeezeCode, '.card-squeeze-host.card-squeeze-host');
-    expect(r).toContain(`ccCardMaterialize calc(var(--rs-prepare, 0.05s) * ${SPEED})`);
-    expect(r).toContain(`animation-delay: calc(var(--rs-stagger, 0s) * ${SPEED})`);
+    expect(flat(r)).toContain(`ccCardMaterialize calc(var(--rs-prepare, 0.05s) * ${SPEED})`);
+    expect(flat(r)).toContain(`animation-delay: calc(var(--rs-stagger, 0s) * ${SPEED})`);
     expect(keyframeBody(squeezeCode, 'ccCardMaterialize')).not.toMatch(/translate/);
   });
 
@@ -56,7 +59,7 @@ describe('the squeeze is compositor-only and speed-scaled', () => {
       expect(r, sel).toMatch(
         /var\(--rs-prepare, 0\.05s\) \+ var\(--rs-hold, 0s\) \+ var\(--rs-stagger, 0s\)/
       );
-      expect(r, sel).toContain(`var(--rs-flip, 0.25s) * ${SPEED}`);
+      expect(flat(r), sel).toContain(`var(--rs-flip, 0.25s) * ${SPEED}`);
     }
     expect(rule(squeezeCode, '.card-squeeze')).toContain('cubic-bezier(0.16, 1, 0.3, 1)');
     expect(rule(squeezeCode, '.card-squeeze')).not.toContain('linear');

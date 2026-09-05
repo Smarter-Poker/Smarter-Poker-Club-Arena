@@ -67,6 +67,61 @@ onto Main 1 (`must_move`). The function body is the live one (md5
 `d5603c58…`, byte-identical to `20260905030000`) plus exactly those edits;
 the migration's assertions pin all three.
 
+## What the self-heal showed next (00:00–00:10 UTC)
+
+At the 00:00 thaw the tick turned the closed feeder into `breaking` and
+planned its player onto Main 1 at 00:00:06. The engine executed at once and
+the seat was refused - fourteen times in seventy seconds:
+
+    FOUR TABLE LIMIT: user a7bdfc35-… is already committed to 4 games
+
+## BUG 7 — a move within one game counted as a fifth game (SQL, applied)
+
+`fn_enforce_four_table_limit` counts live seats and tournament bookings and
+never asks whether the insert is a MOVE. This horse held two seats and three
+bookings (5 - already over the cap, which is its own question), so even
+subtracting the chair being left refused him. A player who already holds a
+live seat elsewhere in the destination's cluster is changing chairs; the cap
+does not apply to a move at all, because refusing one strands them on a
+breaking table. `20260905041000_a_move_within_one_game_is_not_a_fifth_game.sql`.
+
+## BUG 7b — a refused move was re-planned every five seconds (SQL, applied)
+
+The planner skipped only PENDING moves; a refused one is `cancelled`, so the
+same player was planned again on every tick - ~17,000 rows a day per stuck
+player. Both planners (must-move and break) now leave a player alone for
+60 s after a cancelled move. Measured: one plan per minute from 00:06:06.
+Same migration.
+
+## BUG 7c — the closed-table door had a revive hole (SQL, applied)
+
+`table_seats` keeps departed rows and (table_id, seat_number) is unique, so
+most sit-downs are an UPDATE setting `left_at` back to NULL. 040000's guard
+was BEFORE INSERT only. A second trigger now covers the revive, same shape as
+`zz_restriction_seat_revive_guard`. Same migration.
+
+## BUG 8 — the executor emptied the old chair before taking the new one (SQL, applied)
+
+With BUG 7 fixed the move was still refused once a minute: `fn_cash_seat_move_execute`
+set `left_at` on the source seat BEFORE writing the destination, so at the
+instant the cap trigger ran the player held no live seat in the game and the
+move exemption could never be true. Order is now new chair, then old, in the
+same sub-transaction with the same stack-to-zero-before-leave.
+`20260905042000_the_new_chair_first_then_the_old.sql`. Probed rolled-back on
+the real move (25.93 landed on Main 1 seat 1), then applied; production then
+did it on its own at 00:10:15–00:10:21: `move_planned → seat_moved →
+table_break_completed`. Feeder closed empty, Main 1 at 2.
+
+Two more seats on closed tables were on Main 1s of DISABLED duplicate ladder
+rows (`FLO8 0.50/1 Action` ×2, `FLO8 1/2 Action`), which the controller never
+ticks; cashed out through `fn_cashout_seats_for_closing_table` (59.78 and
+90.00 returned to the horses' wallets). Zero seats on closed cluster tables
+at 00:12 UTC.
+
+Every live-tick function body applied tonight is byte-identical to its
+migration file (md5 checked after each apply): tick `d2d98f17…`, executor
+`f45f6f09…`.
+
 ## Still owed
 
 - Break hysteresis by orbit, not five minutes (OPORD intent).

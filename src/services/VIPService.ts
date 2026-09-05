@@ -10,6 +10,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { resolveVipStatus, type VipStatus } from '../utils/vipStatus';
 import { retryAsync } from '../utils/retryAsync';
 import { reportError } from '../utils/errorReporter';
 
@@ -19,6 +20,13 @@ import { reportError } from '../utils/errorReporter';
 
 export interface VIPStatus {
   isVIP: boolean;
+  /**
+   * Which membership, resolved by `utils/vipStatus`. There are exactly two,
+   * plus none - Dan 2026-09-04: "THERE IS NO SUCH THING AS 'PLATINUM VIP' BTW.
+   * JUST VIP, AND LIFETIME VIP."
+   */
+  status: VipStatus;
+  /** Null for a lifetime membership: it does not expire, so it has no date. */
   expiresAt: Date | null;
   monthlyLimits: VIPMonthlyLimits;
 }
@@ -51,25 +59,54 @@ export type VIPFeature =
   | 'tag_pack';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// VIP GOLD LIMITS (Monthly)
+// WHAT A VIP ACTUALLY GETS (MONTHLY)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const VIP_GOLD_LIMITS = {
-  // Dan 2026-08-25: "VIP members get 100 rabbit hunts a month for free, and
-  // they cost 5 diamonds each after that." This was Infinity. The number that
-  // actually bills is the cap inside fn_consume_rabbit_hunt — this constant is
-  // what the UI quotes, so leaving it at Infinity would have had the client
-  // promising unlimited free hunts that the server starts charging for at 101.
+/**
+ * EVERY NUMBER HERE IS ONE THE SERVER ENFORCES. NOTHING ELSE BELONGS IN IT.
+ *
+ * Renamed from `VIP_GOLD_LIMITS` on 2026-09-05. There is no Gold. Dan, verbatim
+ * on 2026-09-04: "THERE IS NO SUCH THING AS 'PLATINUM VIP' BTW. JUST VIP, AND
+ * LIFETIME VIP." The name was the last survivor of a six-rung ladder
+ * (bronze / silver / gold / platinum / diamond / royal) that lived in
+ * src/constants/vipTiers.ts and was deleted with it.
+ *
+ * Three entries were removed at the same time because nothing on the platform
+ * implemented them, checked against the live database and the engine:
+ *
+ *   leaderboardBoost: 0.06   LeaderboardService applies no boost of any kind.
+ *                            The page advertised "+6% Score Boost" to every
+ *                            member.
+ *   themes: 3                Nothing reads it. `theme_unlock` is not metered,
+ *                            and Table Studio sells themes individually.
+ *   clubCreation: 3          The real rule is fn_get_club_creation_eligibility,
+ *                            which caps EVERYONE - VIP or not - at 4 club
+ *                            memberships. It is not a VIP benefit and the
+ *                            number was not 3.
+ *
+ * What is left, and where each one is actually enforced:
+ *
+ *   rabbitHunts 100/mo   fn_consume_rabbit_hunt (v_vip_monthly_cap = 100),
+ *                        server-authoritative, charges 5 diamonds from the
+ *                        101st. Dan 2026-08-25.
+ *   timeBankSeconds 120  fn_time_bank_allowance returns 120 minus the month's
+ *                        use, and the engine seeds the bank from it.
+ *   emojis 1200/mo       counted by fn_increment_vip_usage under 'emoji_pack'.
+ *   tags 1000/mo         counted by fn_increment_vip_usage under 'tag_pack'.
+ *
+ * The three booleans are features a non-VIP pays for per session or per use
+ * (5, 10 and 5 diamonds) and a VIP does not. "Included" - never "Unlimited",
+ * which is the word Dan struck: "THERE IS NOTHING UNLIMITED LIKE THROWABLES OR
+ * TIME BANKS."
+ */
+export const VIP_MONTHLY_ALLOWANCES = {
   rabbitHunts: 100,
-  showStackBB: true, // Always available
-  offlineProtection: true, // Always available
-  autoTimeBank: true, // Always available
-  timeBankSeconds: 120, // 120 seconds free per month
-  themes: 3, // 3 themes unlocked
-  clubCreation: 3, // Can create 3 clubs
-  emojis: 1200, // 1200 free emojis
-  tags: 1000, // 1000 player tags
-  leaderboardBoost: 0.06, // 6% score boost
+  timeBankSeconds: 120,
+  emojis: 1200,
+  tags: 1000,
+  showStackBB: true,
+  offlineProtection: true,
+  autoTimeBank: true,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -244,13 +281,22 @@ export function __resetFeaturePricingCache(): void {
 
 class VIPServiceClass {
   /**
-   * Check if user has VIP (Gold) membership
-   * VIP status comes from Club Arena subscription (stored in profiles or external check)
+   * Is this player a VIP, and which kind.
+   *
+   * 2026-09-05: this selected `is_vip, vip_expires_at` and derived the answer
+   * itself, so a LIFETIME member whose `vip_expires_at` was ever set into the
+   * past would have been read as expired - the whole point of a lifetime
+   * membership is that the date does not decide. Production stores the sentinel
+   * 2099-12-31 on 692 of those rows and NULL on 329, so nobody was harmed; the
+   * resolver removes the possibility rather than the coincidence.
+   *
+   * `resolveVipStatus` is the ONE place that answers this question
+   * (tests/vip-is-not-a-ladder.law.test.ts).
    */
   async checkVIPStatus(userId: string): Promise<VIPStatus> {
     const { data, error } = await supabase
       .from('profiles')
-      .select('is_vip, vip_expires_at')
+      .select('is_vip, vip_tier, vip_expires_at')
       .eq('id', userId)
       .maybeSingle();
 
@@ -278,17 +324,19 @@ class VIPServiceClass {
     if (!data) {
       return {
         isVIP: false,
+        status: 'none',
         expiresAt: null,
         monthlyLimits: this.getEmptyLimits(),
       };
     }
 
-    const isVIP =
-      data.is_vip && (!data.vip_expires_at || new Date(data.vip_expires_at) > new Date());
+    const vipStatus = resolveVipStatus(data);
+    const isVIP = vipStatus !== 'none';
 
     if (!isVIP) {
       return {
         isVIP: false,
+        status: 'none',
         expiresAt: null,
         monthlyLimits: this.getEmptyLimits(),
       };
@@ -299,7 +347,11 @@ class VIPServiceClass {
 
     return {
       isVIP: true,
-      expiresAt: data.vip_expires_at ? new Date(data.vip_expires_at) : null,
+      // A lifetime membership has no expiry to show, whatever sentinel date the
+      // row happens to carry.
+      status: vipStatus,
+      expiresAt:
+        vipStatus === 'lifetime' || !data.vip_expires_at ? null : new Date(data.vip_expires_at),
       monthlyLimits: limits,
     };
   }
@@ -446,10 +498,10 @@ class VIPServiceClass {
       }
 
       return {
-        rabbitHunts: { used: usage['rabbit_hunt'] || 0, limit: VIP_GOLD_LIMITS.rabbitHunts },
+        rabbitHunts: { used: usage['rabbit_hunt'] || 0, limit: VIP_MONTHLY_ALLOWANCES.rabbitHunts },
         timeBankSeconds: {
           used: usage['time_bank_seconds'] || 0,
-          limit: VIP_GOLD_LIMITS.timeBankSeconds,
+          limit: VIP_MONTHLY_ALLOWANCES.timeBankSeconds,
         },
         /* WH issue #771 item 3 (2026-08-27): these read usage under 'emojis'
            and 'tags' while fn_increment_vip_usage writes the VIPFeature keys
@@ -459,8 +511,8 @@ class VIPServiceClass {
            writer writes, which is the whole fix: the quota machinery agrees
            with itself, and the moment the VIP page re-advertises the lines
            the enforcement is already real. */
-        emojis: { used: usage['emoji_pack'] || 0, limit: VIP_GOLD_LIMITS.emojis },
-        tags: { used: usage['tag_pack'] || 0, limit: VIP_GOLD_LIMITS.tags },
+        emojis: { used: usage['emoji_pack'] || 0, limit: VIP_MONTHLY_ALLOWANCES.emojis },
+        tags: { used: usage['tag_pack'] || 0, limit: VIP_MONTHLY_ALLOWANCES.tags },
       };
     } catch (err) {
       console.warn('[VIPService] getMonthlyUsage unexpected error:', err);
@@ -602,10 +654,10 @@ class VIPServiceClass {
   }
 
   /**
-   * Get VIP Gold benefits for display
+   * Get the monthly allowances for display
    */
   getGoldBenefits() {
-    return VIP_GOLD_LIMITS;
+    return VIP_MONTHLY_ALLOWANCES;
   }
 }
 

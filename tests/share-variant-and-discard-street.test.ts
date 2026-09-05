@@ -129,8 +129,10 @@ describe('pineapple_discard is a street, not a dropped action', () => {
   });
 
   it('the panel can name it', () => {
+    // The panel renders the shared model, whose street table names the street.
+    const replay = readSrc('src/utils/handReplay.ts');
+    expect(replay).toMatch(/key: 'pineapple_discard', label: 'Discard'/);
     const panel = readSrc('src/components/table/HandHistoryPanel.tsx');
-    expect(panel).toContain("case 'pineapple_discard':");
     expect(panel).toContain("'preflop' | 'pineapple_discard' | 'flop'");
   });
 });

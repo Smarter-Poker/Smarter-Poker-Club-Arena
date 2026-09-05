@@ -53,7 +53,7 @@ import RebuyModal from './RebuyModal';
 import TournamentBreakScreen from './TournamentBreakScreen';
 import TournamentAnnouncementOverlay from './TournamentAnnouncementOverlay';
 import TournamentWinnerOverlay from './TournamentWinnerOverlay';
-import HandHistoryPanel, { type HandRecord } from './HandHistoryPanel';
+import HandHistoryPanel, { type HandRecord, type HandHistoryLoadState } from './HandHistoryPanel';
 import { ConfettiCanvas } from './ConfettiCanvas';
 import { ParticleSystem } from './ParticleSystem';
 // ChipAnimationManager is inline in TablePage — imported via parent
@@ -450,8 +450,11 @@ export interface TableModalsLayerProps {
   // Hand History Panel
   showHandHistory: boolean;
   handHistory: HandRecord[];
+  handHistoryState?: HandHistoryLoadState;
   onCloseHandHistory: () => void;
   onReplay?: (hand: HandRecord) => void;
+  /** Open the Hand Detail modal at the hand passed in. */
+  onOpenHandDetail?: (hand: HandRecord) => void;
 
   /* Session Summary props REMOVED (Phase 2 audit 2026-08-22): the in-table
      SessionSummary modal was dead code — `showSessionSummary` was never set
@@ -656,8 +659,10 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     // Hand History
     showHandHistory,
     handHistory,
+    handHistoryState,
     onCloseHandHistory,
     onReplay,
+    onOpenHandDetail,
     // Session HUD
     showSessionHUD,
     onCloseSessionHUD,
@@ -1283,7 +1288,9 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         onClose={onCloseHandHistory}
         hands={handHistory}
         heroId={userId || ''}
+        loadState={handHistoryState}
         onReplay={onReplay}
+        onOpenDetail={onOpenHandDetail}
       />
 
       {/* Session Summary modal REMOVED (Phase 2 audit 2026-08-22). It could

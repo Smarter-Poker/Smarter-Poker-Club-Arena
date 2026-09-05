@@ -14,6 +14,7 @@ import type { HandRecord as ServiceHandRecord } from '../services/HandHistorySer
 import type { HandRecord as PanelHandRecord } from '../components/table/HandHistoryPanel';
 import type { ShareableHand, ShareableCard, ShareableAction } from '../components/table/ShareHand';
 import { toCardCodes, toCardCode } from '../utils/cardCode';
+import { buildReplay, type ReplayModel } from '../utils/handReplay';
 
 /**
  * Dan 2026-08-15 — HandRecord adapter (build fix).
@@ -29,7 +30,95 @@ import { toCardCodes, toCardCode } from '../utils/cardCode';
  * stack at time of hand. Everything the panel actually displays — players,
  * positions, hole cards, actions by street, winners, hero result — is real.
  */
+/**
+ * A model for a service record that arrived WITHOUT one - a fixture, or a
+ * record shaped by an older producer. Built by the same `buildReplay` from
+ * the record's own fields, so there is still exactly one algorithm; this is
+ * only a second way of feeding it. `HandHistoryService` attaches the model
+ * built from the raw row, which is richer (stacks, showdown order, pots).
+ */
+export function replayFromServiceRecord(h: ServiceHandRecord): ReplayModel {
+  const [sbRaw, bbRaw] = String(h.stakes || '').split('/');
+  const seatOf = new Map((h.players || []).map((p) => [p.user_id, p.seat]));
+  const holeCards: Record<string, { rank: string; suit: string }[]> = {};
+  const showdown: {
+    user_id: string;
+    mucked: boolean;
+    hand_name?: string;
+    reveal_order?: number;
+  }[] = [];
+  for (const p of h.players || []) {
+    if (p.hole_cards && p.hole_cards.length) holeCards[p.user_id] = p.hole_cards as never;
+    if (p.showdown_reveal) {
+      showdown.push({
+        user_id: p.user_id,
+        mucked: !!p.showdown_reveal.mucked,
+        hand_name: p.showdown_reveal.hand_name,
+        reveal_order: p.showdown_reveal.reveal_order,
+      });
+    }
+  }
+  const privateHoleCards: Record<string, { rank: string; suit: string }[]> = {};
+  for (const p of h.players || []) {
+    if (p.private_hole_cards?.length) privateHoleCards[p.user_id] = p.private_hole_cards as never;
+  }
+  return buildReplay({
+    handNumber: h.hand_number ?? null,
+    playedAt: h.played_at ?? null,
+    gameVariant: h.game_type ?? null,
+    smallBlind: Number(sbRaw) || 0,
+    bigBlind: Number(bbRaw) || 0,
+    potSize:
+      (Number(h.main_pot) || 0) + (h.side_pots || []).reduce((a, b) => a + (Number(b) || 0), 0),
+    rakeAmount: Number(h.rake) || 0,
+    bbjAmount: Number(h.bbj_fee) || 0,
+    buttonSeat: (h.players || []).find((p) => p.position === 'BTN')?.seat ?? null,
+    board: (h.community_cards || []) as never,
+    extraBoards: [
+      ...((h.rit_boards || []) as never[]),
+      ...(h.community_cards2?.length ? [h.community_cards2 as never] : []),
+      ...(h.community_cards3?.length ? [h.community_cards3 as never] : []),
+    ],
+    players: (h.players || []).map((p) => ({
+      userId: p.user_id,
+      username: p.username,
+      seat: p.seat,
+      stack: null,
+    })),
+    actions: (h.actions || []).map((a) => ({
+      seat: seatOf.get(a.player_id) ?? 0,
+      userId: a.player_id,
+      action: a.action,
+      amount: a.amount ?? 0,
+      stage: a.street,
+    })),
+    winners: (h.winners || []).map((w) => ({
+      userId: w.user_id,
+      amount: w.amount,
+      potIndex: w.pot_index,
+      hand: w.hand_name ? { name: w.hand_name } : null,
+    })),
+    winnersByBoard: (h.winners_by_board || []).map((w) => ({
+      board: w.board,
+      userId: w.user_id,
+      amount: w.amount,
+      handName: w.hand_name,
+      low: w.low === true,
+    })),
+    holeCards,
+    privateHoleCards,
+    showdown,
+    pots: null,
+    discardedCards: Object.fromEntries(
+      (h.actions || [])
+        .filter((a) => a.discarded_card)
+        .map((a) => [a.player_id, a.discarded_card as { rank: string; suit: string }])
+    ),
+  });
+}
+
 export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): PanelHandRecord {
+  const replay: ReplayModel = h.replay ?? replayFromServiceRecord(h);
   /* 2026-08-23: this used to be a local
    *   `(c: { rank, suit }) => `${c.rank}${c.suit.charAt(0)}``
    * applied to community_cards, which production stores as STRINGS with the
@@ -49,7 +138,9 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
   };
 
   const nameFor = (uid: string) =>
-    (h.players || []).find((p) => p.user_id === uid)?.username || 'Player';
+    (h.players || []).find((p) => p.user_id === uid)?.username ||
+    replay.players.find((p) => p.userId === uid)?.username ||
+    'Player';
 
   /* `pineapple_discard` was missing from this list, so every discard action
      in a pineapple hand was filtered out and simply never appeared in the
@@ -129,22 +220,20 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
 
      Side pots arrive as one winner entry per pot for the same user, so they
      are summed rather than overwritten. */
-  const investedBy = new Map<string, number>();
-  for (const a of h.actions || []) {
-    if (typeof a.amount === 'number' && a.amount > 0) {
-      investedBy.set(a.player_id, (investedBy.get(a.player_id) || 0) + a.amount);
-    }
-  }
+  /* THE GROSS COMES FROM THE MODEL (2026-09-04 second sweep). This used to
+     keep a legacy fallback that summed `actions[].amount` for what a player
+     invested - the raise-TO bug handReplay.ts names this file for - so a row
+     without a `winners` array over-stated every gross. `buildReplay` already
+     differenced the same log correctly to produce `players[].won`; read that. */
   const collectedBy = new Map<string, number>();
   for (const w of h.winners || []) {
     if (!w?.user_id) continue;
     collectedBy.set(w.user_id, (collectedBy.get(w.user_id) || 0) + (Number(w.amount) || 0));
   }
   /* A row stored before `winners` was persisted still pins the gross exactly:
-     the service defines result as `won - invested`, which rearranges to
-     `won = result + invested`. That is a reconstruction from the same inputs,
-     not an estimate, so a legacy hand shows the same figure a current one does
-     rather than quietly falling back to the net and reopening this bug. */
+     result is `won - invested`, so `won = result + invested`, with `invested`
+     taken from the model's differenced walk rather than a naive sum. */
+  const investedBy = new Map<string, number>(replay.players.map((p) => [p.userId, p.invested]));
   const collectedFor = (uid: string, result: number): number =>
     collectedBy.has(uid)
       ? (collectedBy.get(uid) as number)
@@ -163,20 +252,50 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
       stack: 0, // not stored per hand in hand_history
       position: p.position,
       holeCards: toCardCodes(p.hole_cards).length ? toCardCodes(p.hole_cards) : undefined,
+      /* Your own cards on a hand you did not show - only ever on the viewer's
+         row (RLS), kept apart from `holeCards` because presence THERE is the
+         table's reveal record. */
+      privateHoleCards: toCardCodes(p.private_hole_cards || []).length
+        ? toCardCodes(p.private_hole_cards || [])
+        : undefined,
       /* The stored net, carried through instead of being re-derived downstream.
          HandDetailModal used to rebuild it from the action log and the winner
          amount, which is where the double subtraction lived. */
       result: Number(p.result) || 0,
     })),
     streets,
-    winners: (h.players || [])
-      .filter((p) => p.is_winner)
-      .map((p) => ({
-        playerId: p.user_id,
-        playerName: p.username,
-        amount: collectedFor(p.user_id, p.result),
-        hand: p.final_hand,
-      })),
+    /* From `h.winners` (the row's own list), not from `players[].is_winner`:
+       a winner the roster does not carry (the settlement writer's own repair
+       path logs exactly that case) used to be dropped here, and the pot index
+       was lost. One entry per winner; side pots are summed. */
+    winners: (() => {
+      const seen = new Set<string>();
+      const out: PanelHandRecord['winners'] = [];
+      const resultOf = (uid: string) =>
+        Number((h.players || []).find((p) => p.user_id === uid)?.result) || 0;
+      for (const w of h.winners || []) {
+        if (!w?.user_id || seen.has(w.user_id)) continue;
+        seen.add(w.user_id);
+        out.push({
+          playerId: w.user_id,
+          playerName: nameFor(w.user_id),
+          amount: collectedFor(w.user_id, resultOf(w.user_id)),
+          hand: (h.players || []).find((p) => p.user_id === w.user_id)?.final_hand ?? w.hand_name,
+        });
+      }
+      // The roster flag covers rows written before `winners` was persisted.
+      for (const p of h.players || []) {
+        if (!p.is_winner || seen.has(p.user_id)) continue;
+        seen.add(p.user_id);
+        out.push({
+          playerId: p.user_id,
+          playerName: p.username,
+          amount: collectedFor(p.user_id, p.result),
+          hand: p.final_hand,
+        });
+      }
+      return out;
+    })(),
     heroId,
     heroResult: (h.players || []).find((p) => p.user_id === heroId)?.result ?? 0,
     potTotal,
@@ -191,6 +310,7 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
           playerName: nameFor(w.user_id),
           amount: w.amount,
           hand: w.hand_name,
+          low: w.low === true,
         }))
       : undefined,
     /* A showdown is a card turning over. The persisted `showdown` record is
@@ -204,6 +324,9 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
       .map((p) => p.user_id),
     rake: Number(h.rake) || 0,
     bbjFee: Number(h.bbj_fee) || 0,
+    tableName: h.table_name,
+    bombPot: h.bomb_pot ?? null,
+    replay,
   };
 }
 

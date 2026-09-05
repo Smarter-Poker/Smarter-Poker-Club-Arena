@@ -7211,27 +7211,25 @@ export default function TablePage({
      why it survived; the comment two files away claiming volume has ONE owner
      was simply not true while it existed. */
 
-  // Hand history state — load from localStorage for session continuity
-  const [handHistory, setHandHistory] = useState<HandRecord[]>(() => {
-    try {
-      const saved = localStorage.getItem(`hand_history_v2_${tableId || 'default'}`);
-      if (!saved) return [];
-      /* AUDIT 2026-08-25: this returned `JSON.parse(saved)` straight out. The
-         catch only covers a SYNTAX error — valid JSON that is not an array
-         (an object, a number, `null` from an old writer or another tab) sailed
-         through and became `handHistory`, and the first `.map()` over it threw
-         inside render, which takes the whole table down rather than one panel.
-         localStorage is the definition of hostile input here: it survives
-         deploys, so a shape this build stopped writing months ago is still
-         sitting in real browsers. Anything that is not an array of objects is
-         treated as absent. */
-      const parsed = JSON.parse(saved);
-      if (!Array.isArray(parsed)) return [];
-      return parsed.filter((h): h is HandRecord => !!h && typeof h === 'object');
-    } catch {
-      return [];
-    }
-  });
+  /**
+   * HAND HISTORY IS READ, NEVER CACHED (2026-09-04, Previous Hand second sweep).
+   *
+   * This list used to be seeded from a localStorage cache keyed by table and
+   * only REPLACED when a fetch returned at least one row, so a fresh sit-down
+   * opened on the previous visit's hands (days old) with a stats strip
+   * labelled as if they were tonight's, and a table with no hands yet showed
+   * somebody else's cache from the same key. The record of a hand is the
+   * database's; this is a view of it, and an empty view while it loads is the
+   * honest one. `handHistoryState` says which of empty-loading, empty-none and
+   * empty-failed the surfaces are looking at.
+   */
+  const [handHistory, setHandHistory] = useState<HandRecord[]>([]);
+  const [handHistoryState, setHandHistoryState] = useState<'idle' | 'loading' | 'ready' | 'failed'>(
+    'idle'
+  );
+  /* The hand the detail modal should open ON (from a Hand History row). Null
+     means the newest. */
+  const [handDetailFocusId, setHandDetailFocusId] = useState<string | null>(null);
   const [showHandHistory, setShowHandHistory] = useState(false);
 
   /**
@@ -7272,22 +7270,31 @@ export default function TablePage({
   useEffect(() => {
     if ((!showHandHistory && !showHandDetail) || !userId || userId === 'guest') return;
     let cancelled = false;
+    setHandHistoryState('loading');
     (async () => {
       try {
         // THIS table's hands, in play order (Dan 2026-09-04). See
         // HandHistoryService.getPlayerHands for what the missing tableId did.
         const hands = await handHistoryService.getPlayerHands(userId, 50, { tableId });
-        if (!cancelled && hands && hands.length > 0) {
-          setHandHistory(hands.map((h) => adaptServiceHandToPanel(h, userId)));
-        }
+        if (cancelled) return;
+        /* An empty answer is an answer. `hands.length > 0` used to gate this,
+           which left whatever was on screen (a cache, another table's list) in
+           place when the truth was "no hands here yet". */
+        setHandHistory((hands || []).map((h) => adaptServiceHandToPanel(h, userId)));
+        setHandHistoryState('ready');
       } catch (e) {
-        if (!cancelled) reportError(e, 'TablePage.loadHandHistoryPanel');
+        if (cancelled) return;
+        setHandHistoryState('failed');
+        reportError(e, 'TablePage.loadHandHistoryPanel');
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [showHandHistory, showHandDetail, userId]);
+    /* `tableId` IS a dependency: a TablePage instance in the multi-table
+       container can change table, and a closure over the old id fetched the
+       previous table's hands into this one. */
+  }, [showHandHistory, showHandDetail, userId, tableId]);
 
   // Hand replay — resolve the most recent hand id lazily when the panel opens
   // rather than paying a lookup on every completed hand.
@@ -7309,57 +7316,19 @@ export default function TablePage({
     };
   }, [showHandReplay, lastHandId, userId]);
 
-  // Persist hand history to localStorage (debounced to prevent rapid-fire writes)
-  const localStorageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (handHistory.length > 0 && tableId) {
-      if (localStorageTimerRef.current) clearTimeout(localStorageTimerRef.current);
-      localStorageTimerRef.current = setTimeout(() => {
-        try {
-          localStorage.setItem(
-            `hand_history_v2_${tableId}`,
-            JSON.stringify(handHistory.slice(0, 50))
-          );
-        } catch {
-          /* localStorage full — ignore */
-        }
-      }, 500);
-    }
-    return () => {
-      if (localStorageTimerRef.current) clearTimeout(localStorageTimerRef.current);
-    };
-  }, [handHistory, tableId]);
-
-  // Clean up stale hand history keys older than 7 days on mount
+  /* The per-table hand cache is gone (see `handHistory` above). Keys written
+     by earlier builds are removed once so they stop taking storage; nothing
+     reads them any more. */
   useEffect(() => {
     try {
-      const now = Date.now();
-      const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
-        /* v2 (2026-09-04): every v1 key held the CROSS-TABLE list under a
-           table's name, so a table opened with another table's hands as its
-           own. v1 keys are all stale by definition and go regardless of age. */
-        if (key?.startsWith('hand_history_') && key !== `hand_history_v2_${tableId}`) {
-          if (!key.startsWith('hand_history_v2_')) {
-            localStorage.removeItem(key);
-            continue;
-          }
-          try {
-            const data = JSON.parse(localStorage.getItem(key) || '[]');
-            const lastTimestamp = data[0]?.timestamp || 0;
-            if (lastTimestamp && now - lastTimestamp > MAX_AGE_MS) {
-              localStorage.removeItem(key);
-            }
-          } catch {
-            localStorage.removeItem(key!);
-          } // Corrupt data — remove
-        }
+        if (key?.startsWith('hand_history_')) localStorage.removeItem(key);
       }
     } catch {
       /* localStorage not available */
     }
-  }, [tableId]);
+  }, []);
 
   // Hand history recording refs — accumulate actions during a hand
   const handActionsRef = useRef<
@@ -22814,9 +22783,14 @@ export default function TablePage({
       <HandDetailModal
         currentUserName={username || null}
         isOpen={showHandDetail}
-        onClose={() => setShowHandDetail(false)}
+        onClose={() => {
+          setShowHandDetail(false);
+          setHandDetailFocusId(null);
+        }}
         hands={handHistory}
         heroId={userId || ''}
+        loadState={handHistoryState}
+        initialHandId={handDetailFocusId}
         /* Take the hand you are LOOKING AT. This was `onReplay={() => {...}}`
            — no parameter — and the replay modal resolves its own subject from
            `lastHandId`, which is filled by `getPlayerHands(userId, 1)`: the
@@ -23498,12 +23472,18 @@ export default function TablePage({
         // Hand History
         showHandHistory={showHandHistory}
         handHistory={handHistory}
+        handHistoryState={handHistoryState}
         onCloseHandHistory={handleCloseHandHistory}
         onReplay={(hand) => {
           setLastHandId(hand.id);
           setShowHandDetail(false);
           setShowHandHistory(false);
           setShowHandReplay(true);
+        }}
+        onOpenHandDetail={(hand) => {
+          setHandDetailFocusId(hand.id);
+          setShowHandHistory(false);
+          setShowHandDetail(true);
         }}
         // Session Summary props removed (Phase 2 2026-08-22): the in-table
         // modal was dead — SessionSummaryHost at the app root owns the card.

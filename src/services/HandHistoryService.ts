@@ -10,8 +10,42 @@ import { supabase } from '../lib/supabase';
 import type { Card } from '../types/database.types';
 import { derivePositions } from '../utils/pokerPositions';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
-import { buildReplay } from '../utils/handReplay';
+import { buildReplay, replayInputFromRow, type ReplayModel } from '../utils/handReplay';
 import { reportError } from '../utils/errorReporter';
+
+/**
+ * ONE SELECT LIST (2026-09-04). `getHand` and `getPlayerHands` each carried
+ * their own, and they had drifted: `getHand` never selected `winners_by_board`
+ * (so the replay could never show who won which run) and `getPlayerHands`
+ * never selected `bomb_pot` (so the bomb-pot facts never reached the table's
+ * Previous Hand). Every reader of a row selects this.
+ */
+export const HAND_HISTORY_COLUMNS = [
+  'id',
+  'created_at',
+  'started_at',
+  'table_id',
+  'hand_number',
+  'pot_size',
+  'community_cards',
+  'community_cards2',
+  'community_cards3',
+  'rit_boards',
+  'players',
+  'actions',
+  'winners',
+  'winners_by_board',
+  'game_variant',
+  'small_blind',
+  'big_blind',
+  'rake_amount',
+  'bbj_amount',
+  'button_seat',
+  'hole_cards',
+  'showdown',
+  'pots',
+  'bomb_pot',
+].join(', ');
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -38,6 +72,13 @@ export interface HandPlayer {
    */
   position: 'UTG' | 'UTG+1' | 'UTG+2' | 'MP' | 'MP+1' | 'HJ' | 'CO' | 'BTN' | 'SB' | 'BB' | '';
   hole_cards: Card[];
+  /**
+   * YOUR OWN CARDS ON A HAND YOU DID NOT SHOW (2026-09-04). Read from
+   * `ca_hand_facts.hole_cards` through its own-rows RLS policy, so it is only
+   * ever filled on the viewer's row and only on hands they paid into. Never
+   * merged into `hole_cards`: presence THERE is the table's reveal record.
+   */
+  private_hole_cards?: Card[];
   final_hand?: string;
   result: number;
   is_winner: boolean;
@@ -165,12 +206,27 @@ export interface HandRecord {
    * that predate the column, in which case the surfaces fall back to the
    * aggregate `winners` and say so.
    */
-  winners_by_board: { board: number; user_id: string; amount: number; hand_name?: string }[];
+  winners_by_board: {
+    board: number;
+    user_id: string;
+    amount: number;
+    hand_name?: string;
+    /** HI-LO: the entry for the low half of a split pot (PLO8 / FLO8). */
+    low?: boolean;
+  }[];
   /** Rake taken from the pot, and the jackpot drop. Shown, not hidden. */
   rake: number;
   bbj_fee: number;
   game_type: string;
   stakes: string;
+  /**
+   * THE ONE RECONSTRUCTION (2026-09-04, Previous Hand second sweep). Every
+   * surface that draws this hand - the table's Previous Hand list and modal,
+   * the standalone archive, the replay - renders from this model, built once
+   * here from the raw row by `buildReplay`. There is no second walk of the
+   * action log anywhere downstream; the figures a player reads are these.
+   */
+  replay: ReplayModel;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -194,9 +250,7 @@ class HandHistoryServiceClass {
   async getHand(handId: string): Promise<HandRecord | null> {
     const { data, error } = await supabase
       .from('hand_history')
-      .select(
-        'id, created_at, started_at, table_id, hand_number, pot_size, community_cards, community_cards2, community_cards3, rit_boards, players, actions, winners, game_variant, small_blind, big_blind, rake_amount, bbj_amount, button_seat, hole_cards, showdown, pots, bomb_pot'
-      )
+      .select(HAND_HISTORY_COLUMNS)
       .eq('id', handId)
       .maybeSingle();
 
@@ -208,9 +262,15 @@ class HandHistoryServiceClass {
     const userIds: string[] = [];
     for (const p of (data as any).players || []) if (p?.userId) userIds.push(p.userId);
     for (const w of (data as any).winners || []) if (w?.userId) userIds.push(w.userId);
-    const profileMap = await this.fetchProfileMap(userIds);
+    const rowAny = data as any;
+    const [profileMap, discards, privateCards, tableNames] = await Promise.all([
+      this.fetchProfileMap(userIds),
+      this.fetchOwnDiscards([rowAny]),
+      this.fetchOwnHoleCards([rowAny]),
+      this.fetchTableNames([rowAny]),
+    ]);
 
-    return this.mapHandHistoryRow(data, profileMap, await this.fetchOwnDiscards([data]));
+    return this.mapHandHistoryRow(data, profileMap, discards, privateCards, tableNames);
   }
 
   /**
@@ -243,9 +303,7 @@ class HandHistoryServiceClass {
     const containmentJson = JSON.stringify([{ userId }]);
     let query = supabase
       .from('hand_history')
-      .select(
-        'id, created_at, started_at, table_id, hand_number, pot_size, community_cards, community_cards2, community_cards3, rit_boards, players, actions, winners, winners_by_board, game_variant, small_blind, big_blind, rake_amount, bbj_amount, button_seat, hole_cards, showdown, pots'
-      )
+      .select(HAND_HISTORY_COLUMNS)
       .contains('players', containmentJson);
     if (opts.tableId) query = query.eq('table_id', opts.tableId);
     const { data, error } = await query
@@ -268,15 +326,96 @@ class HandHistoryServiceClass {
       for (const p of row.players || []) if (p?.userId) allUserIds.push(p.userId);
       for (const w of row.winners || []) if (w?.userId) allUserIds.push(w.userId);
     }
-    const profileMap = await this.fetchProfileMap(allUserIds);
-    /* One query for the whole page of hands. RLS narrows it to this viewer's
-       own rows, so the size of the result is bounded by how many of THEIR
-       hands are on screen, not by how many players were in them. */
-    const discardsByHand = await this.fetchOwnDiscards(data as any[]);
+    /* One query each for the whole page of hands. RLS narrows the discards
+       and the private cards to this viewer's own rows, so the size of the
+       result is bounded by how many of THEIR hands are on screen, not by how
+       many players were in them. */
+    const [profileMap, discardsByHand, privateByHand, tableNames] = await Promise.all([
+      this.fetchProfileMap(allUserIds),
+      this.fetchOwnDiscards(data as any[]),
+      this.fetchOwnHoleCards(data as any[]),
+      this.fetchTableNames(data as any[]),
+    ]);
 
     return data
-      .map((d: any) => this.mapHandHistoryRow(d, profileMap, discardsByHand))
+      .map((d: any) =>
+        this.mapHandHistoryRow(d, profileMap, discardsByHand, privateByHand, tableNames)
+      )
       .filter((h: HandRecord | null): h is HandRecord => h !== null);
+  }
+
+  /**
+   * THE VIEWER'S OWN CARDS ON EVERY HAND THEY PAID INTO (2026-09-04).
+   *
+   * `hand_history.hole_cards` is showdown-only by the server's design (a
+   * mucked hand is never written there, so nobody can mine an opponent's
+   * folded range). `ca_hand_facts.hole_cards` is the store built for the
+   * other question - "what did I have?" - and it is read here the same way
+   * `fetchOwnDiscards` reads `hand_discards`: NO USER ID IN THE QUERY. The
+   * table's RLS policy (`ca_hand_facts_own_read`, user_id = auth.uid()) is what
+   * narrows the result to the caller, so a bug here cannot widen it.
+   *
+   * Keyed by hand_history id (`ca_hand_facts.hand_id` IS that id). Absent for
+   * hands before the facts table existed (2026-08-21, no backfill) and for
+   * hands the viewer folded for free (the writer NULLs cards nobody paid into).
+   */
+  private async fetchOwnHoleCards(
+    rows: Array<{ id?: string | null }>
+  ): Promise<Map<string, { user_id: string; cards: Card[] }>> {
+    const out = new Map<string, { user_id: string; cards: Card[] }>();
+    const ids = [...new Set(rows.map((r) => r?.id).filter(Boolean))] as string[];
+    if (ids.length === 0) return out;
+    try {
+      const { data, error } = await supabase
+        .from('ca_hand_facts')
+        .select('hand_id, user_id, hole_cards')
+        .in('hand_id', ids);
+      if (error) {
+        // A rundown without your own folded cards is the pre-2026-09-04 rundown,
+        // which is complete and correct about the table. Never fail history for it.
+        reportError(error, 'HandHistoryService.fetchOwnHoleCards');
+        return out;
+      }
+      for (const d of data || []) {
+        const row = d as any;
+        if (!row?.hand_id || !row?.user_id || !Array.isArray(row.hole_cards)) continue;
+        const cards = (row.hole_cards as any[]).filter((c) => c && c.rank && c.suit) as Card[];
+        if (cards.length === 0) continue;
+        out.set(String(row.hand_id), { user_id: String(row.user_id), cards });
+      }
+    } catch (e) {
+      reportError(e, 'HandHistoryService.fetchOwnHoleCards_threw');
+    }
+    return out;
+  }
+
+  /**
+   * THE TABLE'S NAME (2026-09-04). `table_name` was the literal string
+   * 'Table' on every record, and the archive printed it as every card's
+   * title. One query for the page's distinct tables.
+   */
+  private async fetchTableNames(
+    rows: Array<{ table_id?: string | null }>
+  ): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const ids = [...new Set(rows.map((r) => r?.table_id).filter(Boolean))] as string[];
+    if (ids.length === 0) return out;
+    try {
+      const { data, error } = await supabase.from('tables').select('id, name').in('id', ids);
+      if (error) {
+        reportError(error, 'HandHistoryService.fetchTableNames');
+        return out;
+      }
+      for (const t of data || []) {
+        const row = t as any;
+        if (row?.id && typeof row.name === 'string' && row.name.trim()) {
+          out.set(String(row.id), row.name.trim());
+        }
+      }
+    } catch (e) {
+      reportError(e, 'HandHistoryService.fetchTableNames_threw');
+    }
+    return out;
   }
 
   // Round 38 RE-RUN cleanup: deleted 3 dead methods that queried the empty
@@ -339,10 +478,16 @@ class HandHistoryServiceClass {
         reportError(error, 'HandHistoryService.fetchOwnDiscards');
         return out;
       }
+      /* `.in(table).in(hand_number)` is the cross product of the page; only
+         the exact (table, hand) pairs that are ON the page are kept, so a
+         same-numbered hand at another of the viewer's tables cannot land on
+         the wrong hand. */
+      const wanted = new Set(rows.map((r) => `${r?.table_id}:${Number(r?.hand_number)}`));
       for (const d of data || []) {
         const row = d as any;
         const card = row?.discarded_card;
         if (!card?.rank || !card?.suit) continue;
+        if (!wanted.has(`${row.table_id}:${Number(row.hand_number)}`)) continue;
         out.set(`${row.table_id}:${row.hand_number}`, {
           seat: Number(row.seat_number) || 0,
           card,
@@ -357,7 +502,9 @@ class HandHistoryServiceClass {
   private mapHandHistoryRow(
     row: any,
     profileMap: Map<string, { username: string; avatar_url: string | null }>,
-    discardsByHand?: Map<string, { seat: number; card: { rank: string; suit: string } }>
+    discardsByHand?: Map<string, { seat: number; card: { rank: string; suit: string } }>,
+    privateByHand?: Map<string, { user_id: string; cards: Card[] }>,
+    tableNames?: Map<string, string>
   ): HandRecord | null {
     if (!row?.id) return null;
     const jsonbPlayers: any[] = Array.isArray(row.players) ? row.players : [];
@@ -426,37 +573,29 @@ class HandHistoryServiceClass {
       if (seated?.userId) discardedCards[String(seated.userId)] = ownDiscard.card;
     }
 
-    const replay = buildReplay({
-      discardedCards,
-      handNumber: row.hand_number ?? null,
-      playedAt: row.started_at ?? row.created_at ?? null,
-      gameVariant: row.game_variant ?? null,
-      smallBlind: Number(row.small_blind) || 0,
-      bigBlind: Number(row.big_blind) || 0,
-      potSize: Number(row.pot_size) || 0,
-      rakeAmount: Number(row.rake_amount) || 0,
-      buttonSeat,
-      board: row.community_cards ?? [],
-      players: jsonbPlayers.map((p) => ({
-        userId: String(p?.userId ?? ''),
-        username: String(p?.username ?? ''),
-        seat: Number(p?.seat) || 0,
-        stack: p?.stack === undefined || p?.stack === null ? null : Number(p.stack),
-      })),
-      actions: jsonbActions.map((a) => ({
-        seat: Number(a?.seat) || 0,
-        userId: String(a?.userId ?? ''),
-        action: String(a?.action ?? ''),
-        amount: Number(a?.amount) || 0,
-        stage: a?.stage ?? null,
-      })),
-      winners: jsonbWinners.map((w) => ({
-        userId: String(w?.userId ?? ''),
-        amount: Number(w?.amount) || 0,
-      })),
-      holeCards: (row?.hole_cards as Record<string, never[]>) ?? {},
-    });
+    /* The viewer's own unrevealed cards for THIS hand, keyed by their user id
+       for the model. The map holds only the caller's rows (RLS), so this is
+       at most one entry. */
+    const ownPrivate = privateByHand?.get(String(row.id));
+    const privateHoleCards: Record<string, Card[]> = {};
+    if (ownPrivate) privateHoleCards[ownPrivate.user_id] = ownPrivate.cards;
+
+    /* ONE MAPPER, EVERY FIELD. This used to hand buildReplay half its inputs
+       (no extra boards, no showdown record, no pots, no per-board winners, no
+       jackpot fee) and keep only `net` from the result. The replay hook read
+       the same row with a different half. The model built here is now THE
+       model every surface renders; see HandRecord.replay. */
+    const replay = buildReplay(
+      replayInputFromRow(row, {
+        discardedCards,
+        privateHoleCards,
+      })
+    );
+    /* The model resolves the button the same way (`replayInputFromRow`); the
+       `players[].isButton` floor above is kept for the position badges on the
+       legacy per-player shape only. */
     const netByUser = new Map(replay.players.map((p) => [p.userId, p.net]));
+
     const buildResult = (userId: string): number => netByUser.get(userId) ?? 0;
 
     const playerCount = jsonbPlayers.length || 1;
@@ -468,6 +607,11 @@ class HandHistoryServiceClass {
       row && typeof (row as any).hole_cards === 'object' && (row as any).hole_cards
         ? ((row as any).hole_cards as Record<string, unknown[]>)
         : {};
+
+    const privateForPlayer = (uid: string): Card[] | undefined =>
+      ownPrivate && ownPrivate.user_id === uid && !holeCardsByUser[uid]?.length
+        ? ownPrivate.cards
+        : undefined;
 
     /* SHOWDOWN POLISH 2026-08-25: the reveal record, keyed by user id. */
     const showdownByUser = new Map<string, any>();
@@ -489,12 +633,15 @@ class HandHistoryServiceClass {
          cards face up, and no further gate is needed or correct.
          `players[].cards` is the legacy fallback; it is `[]` on every
          production row, so it can only ever contribute nothing. */
+      /* `players[].cards` used to be read here as a fallback. The server
+         writes it as `[]` on every row (ServerTableEngineSettlement), so the
+         branch could only ever contribute nothing, and a reader who trusted
+         the shape would have been trusting a field that is never filled.
+         Deleted 2026-09-04. */
       const revealed: unknown[] =
         Array.isArray(holeCardsByUser[uid]) && holeCardsByUser[uid].length
           ? holeCardsByUser[uid]
-          : Array.isArray(p?.cards)
-            ? p.cards
-            : [];
+          : [];
       return {
         seat: Number(p?.seat) || 0,
         user_id: uid,
@@ -511,6 +658,7 @@ class HandHistoryServiceClass {
            screen. The gate is now gone: see `revealed` above for why presence
            in the column is the only reveal check that is actually true. */
         hole_cards: revealed as Card[],
+        private_hole_cards: privateForPlayer(uid),
         final_hand: jsonbWinners.find((w) => w?.userId === uid)?.hand?.name || undefined,
         result: buildResult(uid),
         is_winner: isWinner,
@@ -585,17 +733,29 @@ class HandHistoryServiceClass {
     const bb = Number(row.big_blind) || 0;
     const stakes = sb > 0 && bb > 0 ? `${sb}/${bb}` : '1/2';
 
+    /* The stored pot breakdown, when the row has it: index 0 is the main pot,
+       the rest are side pots. `side_pots` was a hard-coded `[]` while `pots`
+       was selected and ignored. */
+    const storedPots: number[] = Array.isArray((row as any).pots)
+      ? ((row as any).pots as any[]).map((p) => Number(p?.amount) || 0).filter((n) => n > 0)
+      : [];
+
     return {
       id: row.id,
-      serial_number: row.id,
+      /* The hand number is the serial a player quotes; `row.id` (a uuid) was
+         printed as "SN: <uuid>" on the replay. */
+      serial_number: String(Number(row.hand_number) || row.id),
       table_id: row.table_id,
-      table_name: 'Table',
+      table_name: tableNames?.get(String(row.table_id)) || 'Table',
       // Play time, not insert time: a retry-queued row lands minutes later.
       played_at: (row as any).started_at || row.created_at,
       hand_number: Number(row.hand_number) || 1,
-      total_hands: 1,
-      main_pot: Number(row.pot_size) || 0,
-      side_pots: [],
+      /* Unknown from one row. Was the literal 1, which printed "6145364 / 1"
+         on the replay header. 0 means "not known"; readers print the number
+         alone when it is 0. */
+      total_hands: 0,
+      main_pot: storedPots.length > 0 ? storedPots[0] : Number(row.pot_size) || 0,
+      side_pots: storedPots.slice(1),
       community_cards: Array.isArray(row.community_cards) ? row.community_cards : [],
       community_cards2: Array.isArray((row as any).community_cards2)
         ? (row as any).community_cards2
@@ -619,12 +779,14 @@ class HandHistoryServiceClass {
               user_id: String(w.userId),
               amount: Number(w.amount) || 0,
               hand_name: typeof w.handName === 'string' ? w.handName : undefined,
+              low: w.low === true,
             }))
         : [],
       rake: Number(row.rake_amount) || 0,
       bbj_fee: Number((row as any).bbj_amount) || 0,
       game_type: (row.game_variant || 'nlh').toUpperCase(),
       stakes,
+      replay,
     };
   }
 
@@ -660,99 +822,11 @@ class HandHistoryServiceClass {
     return map;
   }
 
-  /**
-   * Save a completed hand to Supabase for cross-device persistence and admin review.
-   * Fire-and-forget — localStorage is the primary real-time store.
-   */
-  async saveHandToSupabase(
-    tableId: string,
-    handData: {
-      handNumber: number;
-      pot: number;
-      communityCards: Array<{ rank: string; suit: string }>;
-      players: Array<{
-        id: string;
-        name: string;
-        seat: number;
-        stack: number;
-        holeCards?: Array<{ rank: string; suit: string }>;
-        isWinner?: boolean;
-        result?: number;
-      }>;
-      actions: Array<{
-        seat: number;
-        action: string;
-        amount?: number;
-        street: string;
-      }>;
-      winners: Array<{
-        playerId: string;
-        amount: number;
-        hand?: string;
-      }>;
-    }
-  ): Promise<void> {
-    try {
-      // 1. Insert the hand record
-      const { data: handRecord, error: handErr } = await supabase
-        .from('hands')
-        .insert({
-          table_id: tableId,
-          hand_number: handData.handNumber,
-          // `hands` names it `pot`. `hand_history` is the table with `pot_size`,
-          // and the two were crossed, so every save here was rejected.
-          pot: handData.pot,
-          community_cards: handData.communityCards,
-          created_at: new Date().toISOString(),
-        })
-        .select('id')
-        .maybeSingle();
-
-      if (handErr || !handRecord) {
-        console.debug('[HandHistory] Failed to save hand:', handErr?.message);
-        return;
-      }
-
-      const handId = handRecord.id;
-
-      // 2. Insert hand_players
-      const playerRows = handData.players.map((p) => ({
-        hand_id: handId,
-        user_id: p.id,
-        seat: p.seat,
-        hole_cards: p.holeCards || [],
-        result: p.result || 0,
-        is_winner: handData.winners.some((w) => w.playerId === p.id),
-        final_hand: handData.winners.find((w) => w.playerId === p.id)?.hand || null,
-      }));
-
-      if (playerRows.length > 0) {
-        await supabase.from('hand_players').insert(playerRows);
-      }
-
-      // 3. Insert hand_actions
-      const actionRows = handData.actions.map((a, idx) => {
-        const player = handData.players.find((p) => p.seat === a.seat);
-        return {
-          hand_id: handId,
-          player_id: player?.id || '',
-          action: a.action,
-          amount: a.amount || 0,
-          street: a.street,
-          created_at: new Date(Date.now() + idx).toISOString(), // Preserve ordering
-        };
-      });
-
-      if (actionRows.length > 0) {
-        await supabase.from('hand_actions').insert(actionRows);
-      }
-
-      console.debug(`[HandHistory] Saved hand #${handData.handNumber} to Supabase (id: ${handId})`);
-    } catch (err: unknown) {
-      // Non-critical — localStorage is the primary store
-      reportError(err, 'HandHistoryService.saveHandToSupabase');
-    }
-  }
+  /* `saveHandToSupabase` was deleted 2026-09-04. It wrote to `hands`,
+     `hand_players` and `hand_actions` - the three legacy tables this file's own
+     header records as EMPTY in production - and had no caller anywhere in the
+     client, the server or the tests beyond an existence assertion. The engine
+     is the only writer of hand history, into `hand_history`. */
 }
 
 export const handHistoryService = new HandHistoryServiceClass();

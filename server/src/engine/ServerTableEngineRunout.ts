@@ -1514,10 +1514,12 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     {
       const byRunWinner = new Map<
         string,
-        { board: number; userId: string; amount: number; handName?: string }
+        { board: number; userId: string; amount: number; handName?: string; low?: boolean }
       >();
       for (const a of this.currentHandPerPotAwards) {
-        const key = `${a.board ?? 1}|${a.userId}`;
+        // One entry per (run, winner, half): a PLO8 scoop on a run is two.
+        const low = a.low === true;
+        const key = `${a.board ?? 1}|${a.userId}|${low ? 'lo' : 'hi'}`;
         const existing = byRunWinner.get(key);
         if (existing) {
           existing.amount += a.amount;
@@ -1527,6 +1529,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
             userId: a.userId,
             amount: a.amount,
             handName: a.hand?.name,
+            ...(low ? { low: true } : {}),
           });
         }
       }

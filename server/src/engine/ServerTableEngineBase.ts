@@ -896,6 +896,8 @@ export abstract class ServerTableEngineBase {
     userId: string;
     amount: number;
     handName?: string;
+    /** HI-LO: the low half's entry (2026-09-04). */
+    low?: boolean;
   }> = [];
   /**
    * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the unmerged per-pot(-half)

@@ -284,6 +284,54 @@ describe('the engine executes at the hand boundary and announces at the start', 
   });
 });
 
+describe('the fleet keeps the promise that opened a feeder (2026-09-05, 04:30 UTC)', () => {
+  /* 36 feeders opened in two hours, 31 abandoned, 2 went live: the fleet ranked
+     an opening feeder LAST among cluster tables and gave it a sparse table's
+     target (which can be 1), so it never reached the two seats that promote it.
+     The controller opened it on this fleet's own count of two buyers. */
+  it('an OPENING feeder is seeded before every other table', () => {
+    const rank = FLEET.slice(
+      FLEET.indexOf('const clusterRank = ('),
+      FLEET.indexOf('const orderedTables')
+    );
+    expect(rank).toMatch(/t\.lifecycle === 'opening'\s*\?\s*-1/);
+    expect(rank).toMatch(/t\.role === 'feeder'\s*\?\s*1000/);
+    // and the order still asks clusterRank between "cluster first" and "id".
+    expect(FLEET).toMatch(
+      /Number\(!!b\.cluster_id\) - Number\(!!a\.cluster_id\) \|\|\s*clusterRank\(a\) - clusterRank\(b\) \|\|/
+    );
+  });
+
+  it('an OPENING feeder is seeded to two in one cycle, whatever the vibe says', () => {
+    expect(FLEET).toMatch(
+      /const openingFeeder = !!table\.cluster_id && table\.lifecycle === 'opening';/
+    );
+    expect(FLEET).toMatch(
+      /if \(openingFeeder\) \{\s*seatTarget = Math\.min\(table\.max_players, Math\.max\(seatTarget, 2\)\);/
+    );
+    // The 1-2 trickle for a sparse table cannot leave the feeder at one.
+    const trickle = FLEET.slice(
+      FLEET.indexOf("if (fill !== 'full' && !humanNeedsRescue) {"),
+      FLEET.indexOf('seatsNeeded = Math.min(seatsNeeded, seatBudget);')
+    );
+    expect(trickle).toMatch(
+      /if \(openingFeeder\) \{\s*seatsNeeded = Math\.max\(seatsNeeded, Math\.min\(seatsAllowed, 2 - currentCount\)\);/
+    );
+  });
+
+  it('an expired one-buyer hold rests five minutes (20260905041557), and the list knows who asks', () => {
+    const REST = read(
+      'supabase/migrations/20260905041557_the_must_move_list_knows_who_asks_and_an_expired_opening_hol.sql'
+    );
+    expect(REST).toMatch(/ADD COLUMN IF NOT EXISTS opening_hold_rested_until timestamptz/);
+    expect(REST).toMatch(/opening_hold_rested_until = v_now \+ interval ''5 minutes''/);
+    expect(REST).toMatch(
+      /g\.opening_hold_rested_until IS NULL OR g\.opening_hold_rested_until <= v_now/
+    );
+    expect(REST).toMatch(/AND \(auth\.uid\(\) IS NOT NULL OR public\.fn_caller_is_engine\(\)\)/);
+  });
+});
+
 describe('the fleet keeps its hands off cluster tables', () => {
   it('a cluster table is in no name family (surplus, spawn)', () => {
     expect(FLEET).toMatch(
@@ -327,8 +375,10 @@ describe('the fleet keeps its hands off cluster tables', () => {
     );
   });
 
-  it('inside a game the mains are seeded before the feeder', () => {
-    expect(FLEET).toMatch(/t\.role === 'feeder' \? 1000 : Number\(t\.main_index \?\? 999\)/);
+  it('inside a game the mains are seeded before a LIVE feeder (an opening one comes first - see above)', () => {
+    expect(FLEET).toMatch(
+      /t\.lifecycle === 'opening'\s*\?\s*-1\s*:\s*t\.role === 'feeder'\s*\?\s*1000\s*:\s*Number\(t\.main_index \?\? 999\)/
+    );
   });
 
   it('the stale-seat sweep and the rotator drain leave cluster tables alone', () => {
@@ -696,5 +746,46 @@ describe('the must move lobby: the roster is the order, the seat change is once,
     for (const stmt of code.match(/\b(UPDATE|DELETE FROM) public\.\w+[\s\S]*?;/g) ?? []) {
       expect(stmt, stmt.slice(0, 80)).toMatch(/\bWHERE\b/);
     }
+  });
+});
+
+/**
+ * GATE 5 - THE SNAPSHOT IS THE RULE (2026-09-05). A game's ruleset_snapshot
+ * is written onto every open table by the tick, every tick; a table can
+ * never carry a rule its game does not have.
+ */
+const GATE5 = read('supabase/migrations/20260905033729_the_snapshot_is_the_rule.sql');
+
+describe('gate 5: the snapshot is the rule on every table', () => {
+  it('the tick reconciles the ruleset before it plans anything', () => {
+    const tick = GATE5.slice(
+      GATE5.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_cluster_tick')
+    );
+    const apply = tick.indexOf('v_n := public.fn_cash_apply_ruleset(g.id);');
+    expect(apply).toBeGreaterThan(0);
+    expect(apply).toBeLessThan(tick.indexOf('MUST-MOVE (1.3 s9.5)'));
+  });
+
+  it('the applier maps the snapshot exactly as the opener does, and touches only rows that differ', () => {
+    const fn = GATE5.slice(
+      GATE5.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_apply_ruleset'),
+      GATE5.indexOf('REVOKE ALL ON FUNCTION public.fn_cash_apply_ruleset')
+    );
+    for (const line of [
+      "v_ante_chips := CASE v_ante WHEN 'sb' THEN g.sb WHEN 'bb' THEN g.bb ELSE 0 END;",
+      "v_vpip_window := coalesce((s->>'vpip_window')::integer, 40);",
+      "WHEN v_bomb_on AND v_bomb_trigger = 'timed_15m' THEN 'timed'",
+      "big_blind_ante_enabled = (v_ante = 'bb')",
+      'maintain_percent_min = v_vpip',
+      "AND t.lifecycle <> 'closed'",
+      't.maintain_percent_min IS DISTINCT FROM v_vpip',
+      "'ruleset_applied'",
+    ]) {
+      expect(fn).toContain(line);
+    }
+    // Never a straddle on a cash game (R2), even if a row somehow got one.
+    expect(fn).toMatch(
+      /straddle_enabled = false, auto_utg_straddle = false, voluntary_straddle = false/
+    );
   });
 });

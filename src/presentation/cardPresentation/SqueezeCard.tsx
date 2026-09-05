@@ -35,6 +35,13 @@ export function squeezeVars(p: CardAnimationProfile, boardIndex = 0): React.CSSP
     '--rs-flip': `${flipMs(p)}ms`,
     '--rs-overshoot': String(p.overshoot),
     '--rs-stagger': `${boardIndex * p.staggerMs}ms`,
+    /* THE PIXELS ARE CLAMPED WHERE THE JS WINDOW IS (2026-09-05 audit).
+       CardPresentationEngine caps a server-paced reveal at speed <= 1 because
+       the engine's equity gate is a fixed wall-clock hold. The CSS multiplies
+       by the same --animation-speed, so without this the markup would be torn
+       out at 1750ms while the card was still turning at 2344ms on Slow. One
+       clamp on each side, or neither is a clamp. */
+    ...(p.serverPaced ? { '--animation-speed': 'min(1, var(--animation-speed, 1))' } : null),
   } as React.CSSProperties;
 }
 
@@ -57,10 +64,23 @@ export function squeezeHostProps(
   'data-rs-sweep': 'on' | 'off';
   'data-rs-3d': 'on' | 'off';
   'data-rs-animating': 'on' | 'off';
+  'data-motion': 'keep';
 } {
   return {
     className: 'card-squeeze-host',
     style: squeezeVars(p, boardIndex),
+    /* AUDIT FIX 2026-09-05. Reduced motion swaps the turn for a cross-fade
+       (cardSqueeze.css) that is supposed to last the reduced profile's 150ms,
+       because the ENGINE holds the markup mounted for exactly that long. But
+       the global rule in src/styles/reducedMotion.css crushes every duration
+       to 1ms with !important at a HIGHER specificity, so the fade finished
+       instantly and the slot then sat there for the rest of the window.
+       `data-motion="keep"` is the exemption that file publishes, and CLAUDE.md
+       10.6 names it for exactly this case: "reduced-motion collapses motion
+       but never meaning (data-motion='keep' for duration-carrying animation)".
+       This animation carries duration by definition - the engine is counting
+       it. The MOTION is still collapsed: it cross-fades, it does not turn. */
+    'data-motion': 'keep',
     'data-rs-animating': animating ? 'on' : 'off',
     'data-rs-profile': p.id,
     'data-rs-sweep': p.lightSweepEnabled ? 'on' : 'off',

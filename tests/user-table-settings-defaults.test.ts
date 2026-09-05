@@ -52,6 +52,11 @@ import { DEFAULT_TABLE_USER_SETTINGS } from '../src/hooks/useTableSettings';
  */
 const DB_COLUMN_DEFAULTS = {
   auto_time_bank: false,
+  // 2026-09-05: ON, and the column is NOT NULL DEFAULT true
+  // (20260905172514_user_table_settings_gain_the_rabbit_hunt_button_toggle).
+  // The switch HIDES an offer the player already had, so a row that predates
+  // the column has to behave exactly as it did the day before.
+  rabbit_hunt_button: true,
   // 2026-09-04: false since 20260905001550_card_slide_is_the_river_squeeze_
   // default_off.sql. Card Slide is the hole-card corner peel and Dan wants it
   // OFF by default. (card_squeeze is retired; its column default stays false.)

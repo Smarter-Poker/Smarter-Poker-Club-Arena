@@ -22,6 +22,8 @@ import {
   stableHandHostCaps,
 } from './StableHandController.js';
 import {
+  MAX_TABLES_PER_HORSE as PLATFORM_MAX_TABLES,
+  MIN_TABLES_PER_HORSE,
   WALLETS_FOR_HOST,
   controllerEnabled,
   isNightWindow,
@@ -1748,7 +1750,9 @@ export class HorseFleetManager {
           // Find candidate horses:
           // 1. Not already at this table
           // 2. Not exceeding 4 max tables
-          const MAX_TABLES_PER_HORSE = 4;
+          /* The platform ceiling and the law's floor both live in StableHand
+             now (Dan 2026-09-05); a second literal here is how the two drift. */
+          const MAX_TABLES_PER_HORSE = PLATFORM_MAX_TABLES;
           /* The game key the door rules are written against (club, variant,
              sb, bb), formatted once per table. See rejoinTableKey. */
           const constraintTableKey = rejoinTableKey(table);
@@ -2030,11 +2034,43 @@ export class HorseFleetManager {
              which is what keeps the fleet's whole roster in play instead of
              the same four hundred names. MAX_TABLES_PER_HORSE still excludes
              anyone at four; this only orders the rest. */
+          /* THE FLOOR IS REACHED BEFORE THE CEILING IS CHASED (Dan 2026-09-05).
+             "100% OF THEM SHOULD BE PLAYING A MINIMUM OF 2 AT A TIME 33%
+             PLAYING 3 AT A TIME AND 33% PLAYING 4 AT A TIME."
+
+             That is two rules, and they rank. A horse on ONE table is short of
+             the floor that applies to every horse, so it outranks a horse on
+             two that is merely short of its own ceiling. The old weight had a
+             single tier - `at > 0 && at < 4` - which scored the one-tabler and
+             the three-tabler identically and let the fleet satisfy the second
+             rule while leaving the first unmet. Measured that morning: 270 of
+             364 seated horses held exactly one table.
+
+             A horse at ZERO stays last of the seated tiers, unchanged and for
+             the same reason as before: it costs a fresh body against the
+             host's occupancy cap, where topping up a horse already on the
+             floor costs none. It is still picked whenever the tiers above run
+             out, which is what keeps the whole roster in play rather than the
+             same four hundred names.
+
+             Weights are multiplied by Math.random(), so a tier is a strong
+             preference and not a queue - two horses in the same tier still
+             arrive in a different order every cycle. */
           const weighted = pool
             .map((h) => {
               const at = horseTables.get(h.id)?.size || 0;
-              const towardFour = at > 0 && at < MAX_TABLES_PER_HORSE ? 4 : 1;
-              return { h, w: Math.random() * towardFour };
+              const wClub = this.resolveSeatClub(membership, table, h.id);
+              const ceiling = tagMaxTables(
+                wClub ? book?.tags.get(tagKey(h.id, wClub)) : undefined,
+                MAX_TABLES_PER_HORSE
+              );
+              const tier =
+                at > 0 && at < MIN_TABLES_PER_HORSE
+                  ? 16 // short of the floor EVERY horse has
+                  : at >= MIN_TABLES_PER_HORSE && at < ceiling
+                    ? 4 // at the floor, short of its own ceiling
+                    : 1; // sitting at nothing: a new body, so last
+              return { h, w: Math.random() * tier };
             })
             .sort((a, b) => b.w - a.w);
           const selectedHorses = weighted.slice(0, emptySeats.length).map((x) => x.h);

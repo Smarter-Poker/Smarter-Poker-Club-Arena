@@ -109,8 +109,12 @@ describe('what a tag actually says', () => {
 
   it('the horse ceiling never exceeds the platform ceiling of four', () => {
     expect(tagMaxTables(tag({ maxTables: 9 }))).toBe(4);
-    expect(tagMaxTables(tag({ maxTables: 1 }))).toBe(1);
-    expect(tagMaxTables(tag({ maxTables: 0 }))).toBe(1);
+    /* THE FLOOR MOVED TO TWO (Dan 2026-09-05). These two pinned 1, which is
+       the number the table-count law exists to abolish: a stale or null row
+       must not hold a horse to one table. See
+       tests/every-horse-plays-at-least-two-tables.law.test.ts. */
+    expect(tagMaxTables(tag({ maxTables: 1 }))).toBe(2);
+    expect(tagMaxTables(tag({ maxTables: 0 }))).toBe(2);
   });
 });
 

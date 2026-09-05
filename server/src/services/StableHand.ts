@@ -256,7 +256,22 @@ export function occupancyTargetForHost(
 /** Section 11 avg-seats-per-active-horse guidance, used by the dashboard
  *  and by the add-seat decision to know whether to widen or deepen. */
 export function seatsPerHorseBand(chicagoHour: number): { min: number; max: number } {
-  return isNightWindow(chicagoHour) ? { min: 1.0, max: 1.3 } : { min: 1.6, max: 2.2 };
+  /* FOLLOWS THE TABLE-COUNT LAW, IT DOES NOT ARGUE WITH IT (2026-09-05).
+     The band was { 1.6, 2.2 } by day and { 1.0, 1.3 } at night, which was an
+     honest reading of a fleet whose ceilings were 1-4 and whose measured
+     average was 1.31. Dan's mix (34% two, 33% three, 33% four) has a mean of
+     2.99, so the OLD day band would have alerted `seats_per_horse_out_of_band`
+     on every cycle of a floor that was finally doing what it was told - and an
+     alert that fires when the rule is being FOLLOWED trains everyone to
+     ignore it.
+
+     The floor is the law's own floor. The ceiling is the mix's mean plus room
+     for a fleet that has not finished ramping, never above four, which is the
+     platform cap. Night keeps the same FLOOR - "minimum 2" carries no hour
+     qualifier - and a lower ceiling, because the night cap already thins the
+     BODIES and `nightTablesNeeded` multiplies this number to decide how many
+     tables to keep open. */
+  return isNightWindow(chicagoHour) ? { min: 2.0, max: 3.0 } : { min: 2.0, max: 3.6 };
 }
 
 /* ------------------------------------------------------------------ */
@@ -573,6 +588,98 @@ export const MTT_PERSONA_MIX: Array<[MttPersona, number]> = [
   ['mtt_late_reg', 0.2],
 ];
 
+/**
+ * ── THE TABLE-COUNT LAW (Dan, 2026-09-05, BINDING) ────────────────────────
+ *
+ * Dan, verbatim: "EVERY HORSE SHOULD 100% BE ABLE TO PLAY 4 TABLES AT ONCE
+ * ... 100% OF THEM SHOULD BE PLAYING A MINIMUM OF 2 AT A TIME 33% PLAYING 3
+ * AT A TIME AND 33% PLAYING 4 AT A TIME."
+ *
+ * So the ceiling is no longer derived from the cash persona, and it is no
+ * longer 1 for a tourney-only horse. Every membership row draws from ONE mix
+ * over the whole fleet: a third at four, a third at three, the rest at two,
+ * and nobody below two.
+ *
+ * WHY THE PERSONA STOPPED OWNING THIS. `MAX_TABLES_BY_PERSONA` gave grinder 4,
+ * regular 3, mixer/night_owl 2 and weekend_heavy 3, and `MAX_TABLES_TOURNEY_ONLY`
+ * pinned 30% of the fleet at ONE. Measured on 2026-09-05, an hour before this
+ * changed: of 364 seated horses, 270 held exactly one table, 76 held two, 17
+ * held three and ONE held four. The seeding weight written for Dan's
+ * 2026-09-02 instruction ("THEY SHOULD BE PLAYING 4 TABLES AT ONCE") was
+ * working correctly and had nothing left to work with - the tag book shipped
+ * two days later and capped 80% of the fleet below four before the weight
+ * was ever consulted. A ceiling and a target that disagree are not two
+ * settings, they are a bug with a config file in front of it.
+ *
+ * The mix is deliberately INDEPENDENT of mode and persona. A tourney-only
+ * horse registers for two MTTs the way a human does; a mixer plays two cash
+ * tables. Persona still owns session length, daily cap, stakes and style -
+ * everything about HOW the horse plays. It no longer owns how many seats it
+ * is permitted to occupy, because that is Dan's number, not a persona's.
+ */
+export const MIN_TABLES_PER_HORSE = 2;
+export const MAX_TABLES_PER_HORSE = 4;
+
+/** Dan's split. Allocated over `tagOrder`, so it is deterministic and the
+ *  same horse keeps the same ceiling across runs. */
+export const TABLE_LOAD_MIX: Array<[string, number]> = [
+  ['two', 0.34],
+  ['three', 0.33],
+  ['four', 0.33],
+];
+
+const TABLE_LOAD_VALUE: Record<string, number> = { two: 2, three: 3, four: 4 };
+
+/**
+ * The table ceiling for every membership row, keyed `horseId:clubId`.
+ *
+ * ── IT HAS ITS OWN ORDERING, AND THAT IS THE POINT ────────────────────────
+ *
+ * Every other allocation in this file is indexed off `tagOrder`, and the
+ * first version of this one was too. That is wrong here, because `assignTags`
+ * hands out MODE by position in exactly that ordering - the first 30% are
+ * cash, the next 30% tourney, the rest both. Sharing the ordering therefore
+ * ties the two together, and the result is not a subtle skew: written that
+ * way and run against the live fleet, all 473 cash-only horses got 2, all 410
+ * tourney horses got 3, and every single horse allowed 4 was mode `both`.
+ *
+ * Dan's split was satisfied ACROSS the fleet and inverted WHERE IT MATTERS -
+ * the cash floor, the thing he was asking about, drew exclusively from the
+ * horses with the lowest ceiling. A global percentage that is right and local
+ * behaviour that is wrong is the harder bug to see, because the summary query
+ * says 34/33/33 and looks finished.
+ *
+ * So the load is drawn from its own digest (`... , 'table_load'`), which is
+ * independent of the mode ordering while staying just as deterministic: the
+ * same horse gets the same ceiling on every run.
+ */
+export function tableLoadFor(
+  memberships: Array<{ horseId: string; clubId: string }>,
+  seed = STABLE_HAND_SEED
+): Map<string, number> {
+  const ordered = memberships
+    .map((m) => ({ ...m, d: shDigest(m.clubId, m.horseId, seed, 'table_load') }))
+    .sort((a, b) => a.d.localeCompare(b.d));
+  const out = new Map<string, number>();
+  let i = 0;
+  allocateByMix(ordered.length, TABLE_LOAD_MIX).forEach(({ key, count }) => {
+    for (let k = 0; k < count; k++) {
+      const m = ordered[i++];
+      if (m) out.set(`${m.horseId}:${m.clubId}`, TABLE_LOAD_VALUE[key]);
+    }
+  });
+  return out;
+}
+
+/**
+ * RETAINED FOR THE STYLE IT STILL DESCRIBES, NOT FOR THE CEILING.
+ *
+ * Nothing reads this for `max_tables` any more - `tableLoadCeilings` does that
+ * for every horse regardless of persona. It is kept because the numbers still
+ * say something true about how eagerly each persona multi-tables, and a
+ * future weighting may want it. `theTableCountLaw.law.test.ts` fails if it is
+ * ever wired back into a tag.
+ */
 export const MAX_TABLES_BY_PERSONA: Record<CashPersona, number> = {
   grinder: 4,
   regular: 3,
@@ -580,8 +687,13 @@ export const MAX_TABLES_BY_PERSONA: Record<CashPersona, number> = {
   night_owl: 2,
   weekend_heavy: 3,
 };
-/** A tourney-only horse holds one MTT slot and never a second table. */
-export const MAX_TABLES_TOURNEY_ONLY = 1;
+/**
+ * A tourney-only horse's floor, which is now the fleet's floor.
+ *
+ * It was 1 - "holds one MTT slot and never a second table" - and that single
+ * line is why 473 of 1,000 horses could never reach two of anything.
+ */
+export const MAX_TABLES_TOURNEY_ONLY = MIN_TABLES_PER_HORSE;
 
 /** Daily cap ranges. The midpoint is stored so the value is sticky and
  *  reproducible; jitter belongs on session start/end, not on the cap. */
@@ -687,6 +799,11 @@ export function assignTags(
     for (let k = 0; k < count; k++) personaMtt.set(mttEligible[t++], key);
   });
 
+  /* THE TABLE-COUNT LAW (Dan 2026-09-05). One mix over the whole fleet, on
+     its OWN ordering so it does not inherit the mode split, and applied to
+     tourney-only horses identically - see MIN_TABLES_PER_HORSE. */
+  const ceilings = tableLoadFor(memberships, seed);
+
   return ordered.map((m, i) => {
     const mode = modes[i];
     const pc = personaCash.get(i) ?? null;
@@ -698,8 +815,7 @@ export function assignTags(
       cashFreeroll: freerollIdx.has(i),
       personaCash: pc,
       personaMtt: pm,
-      maxTables:
-        mode === 'tourney' ? MAX_TABLES_TOURNEY_ONLY : MAX_TABLES_BY_PERSONA[pc ?? 'regular'],
+      maxTables: ceilings.get(`${m.horseId}:${m.clubId}`) ?? MIN_TABLES_PER_HORSE,
       tagSeed: seed,
     };
   });

@@ -305,7 +305,14 @@ describe('planFloor - a cluster table belongs to its ClusterController (R9)', ()
         occupied: 2,
         seatedHorses: [horse('a'), horse('b')],
       }),
-      ...Array.from({ length: 8 }, (_, i) => table({ tableId: `fleet-full-${i}`, occupied: 6 })),
+      /* MORE THAN THE NIGHT KEEPS OPEN, or nothing is parked and this test
+         proves nothing. It was 8, which was comfortably above the old
+         KEEP_OPEN of 7; Dan's table-count law moved that to 15 on 2026-09-05
+         and the fixture silently stopped exercising the park. Derived from
+         nightTablesNeeded now, so it cannot go stale that way again. */
+      ...Array.from({ length: nightTablesNeeded(nightCap(584), 3) + 1 }, (_, i) =>
+        table({ tableId: `fleet-full-${i}`, occupied: 6 })
+      ),
     ];
     const p = planFloor(
       snap({
@@ -775,7 +782,11 @@ describe('planFloor - the night park', () => {
       table({ tableId: `t${i}`, occupied: 1, seatedHorses: [horse(`h${i}`)] })
     );
     const p = nightSnap(thin);
-    expect(KEEP_OPEN).toBe(7);
+    /* 15 since 2026-09-05, not 7: the night seats-per-horse ceiling moved
+       from 1.3 to 3.0 to follow Dan's table-count law, so the same 29 bodies
+       now need fifteen rings rather than seven. KEEP_OPEN is derived from
+       nightTablesNeeded, so this line is the only thing that had to move. */
+    expect(KEEP_OPEN).toBe(15);
     expect(p.park).toHaveLength(20 - KEEP_OPEN);
   });
 

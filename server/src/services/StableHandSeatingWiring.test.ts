@@ -154,6 +154,9 @@ describe('the counters are written once per cycle, and the exits are DIFFED', ()
 describe("the horse table ceiling is the horse's own, inside the platform's", () => {
   it('hands the platform ceiling to the tag rather than replacing it', () => {
     expect(SRC).toContain('tagMaxTables(tag, MAX_TABLES_PER_HORSE)');
-    expect(SRC).toContain('const MAX_TABLES_PER_HORSE = 4');
+    /* The literal 4 became an import (Dan 2026-09-05): the platform ceiling
+       and the law's floor both live in StableHand now, and a second literal
+       here is exactly how the two drift apart. */
+    expect(SRC).toContain('const MAX_TABLES_PER_HORSE = PLATFORM_MAX_TABLES');
   });
 });

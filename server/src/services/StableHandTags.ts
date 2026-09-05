@@ -37,6 +37,7 @@ import { WALLETS_FOR_HOST } from './StableHand.js';
    import nothing but StableHand, so there is no cycle here. */
 import { chicagoDayKey } from './FreeBuy.js';
 import type { CashPersona, HorseMode, MttPersona } from './StableHand.js';
+import { MAX_TABLES_PER_HORSE, MIN_TABLES_PER_HORSE } from './StableHand.js';
 
 /** Tags change only when the tagger runs. */
 export const TAG_TTL_MS = 10 * 60_000;
@@ -173,7 +174,14 @@ export class StableHandTagBook {
               .map((v: unknown) => Number(v))
               .filter((n: number) => Number.isFinite(n))
           : [],
-        maxTables: Number(r.max_tables) || 1,
+        /* THE LAW'S FLOOR SURVIVES A STALE ROW (Dan 2026-09-05). A tag
+           written before the table-count law, or a null, must not put a horse
+           back on one table - the retag fixes the rows, this makes the reader
+           safe in the window before it runs and after any future writer. */
+        maxTables: Math.min(
+          MAX_TABLES_PER_HORSE,
+          Math.max(MIN_TABLES_PER_HORSE, Number(r.max_tables) || 0)
+        ),
       });
     }
     return out;
@@ -329,9 +337,15 @@ export function tagAllowsStake(tag: HorseTag | undefined, bb: number): boolean |
 }
 
 /** The horse's own table ceiling, never above the platform's four. */
-export function tagMaxTables(tag: HorseTag | undefined, hardCeiling = 4): number {
+export function tagMaxTables(
+  tag: HorseTag | undefined,
+  hardCeiling = MAX_TABLES_PER_HORSE
+): number {
   if (!tag) return hardCeiling;
-  return Math.max(1, Math.min(hardCeiling, tag.maxTables));
+  /* NEVER BELOW THE LAW'S FLOOR. The clamp used to be Math.max(1, ...), so a
+     single bad row could hold a horse to one table for as long as it sat
+     there. Two is Dan's minimum for every horse, so two is the floor here. */
+  return Math.max(MIN_TABLES_PER_HORSE, Math.min(hardCeiling, tag.maxTables));
 }
 
 /** Is today this horse's rest day? Unknown state is NOT a rest day. */

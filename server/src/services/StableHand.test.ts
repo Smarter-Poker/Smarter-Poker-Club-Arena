@@ -251,17 +251,27 @@ describe('T8 - the tagger is idempotent, within 1 of target, and matches persona
     tags.filter((t) => t.cashFreeroll).forEach((t) => expect(t.mode).toBe('cash'));
   });
 
-  it('gives every persona its own max_tables and tourney-only exactly one', () => {
+  /* REPLACED 2026-09-05. This pinned the OLD ceiling rule - persona-derived
+     for a cash horse, exactly one for a tourney horse - which Dan retired:
+     "100% OF THEM SHOULD BE PLAYING A MINIMUM OF 2 AT A TIME 33% PLAYING 3 AT
+     A TIME AND 33% PLAYING 4 AT A TIME." The persona still owns the persona;
+     it no longer owns how many seats a horse may hold. The full law lives in
+     tests/every-horse-plays-at-least-two-tables.law.test.ts. */
+  it('keeps the persona for the persona, and no longer for the ceiling', () => {
     const tags = assignTags(memberships);
     tags.forEach((t) => {
       if (t.mode === 'tourney') {
-        expect(t.maxTables).toBe(MAX_TABLES_TOURNEY_ONLY);
         expect(t.personaCash).toBeNull();
       } else {
         expect(t.personaCash).not.toBeNull();
-        expect(t.maxTables).toBe(MAX_TABLES_BY_PERSONA[t.personaCash!]);
       }
+      // Dan's floor and the platform ceiling, for every horse in every mode.
+      expect(t.maxTables).toBeGreaterThanOrEqual(2);
+      expect(t.maxTables).toBeLessThanOrEqual(4);
     });
+    // A tourney-only horse is no longer pinned below the rest of the fleet.
+    const tourney = tags.filter((t) => t.mode === 'tourney');
+    expect(tourney.some((t) => t.maxTables === 4)).toBe(true);
   });
 
   it('allocates the cash persona mix within 1 of target', () => {
@@ -859,14 +869,18 @@ describe('Section 7.2 - variants and stakes', () => {
 
 describe('the night keeps open the tables it still needs', () => {
   it('derives the floor from the cap, not from a fixed number', () => {
-    // Midway Union: 29 bodies at up to 1.3 seats each is 38 seats, which is
-    // seven full rings. Parking down to six would leave the seeder unable to
-    // place everyone the curve allows.
-    expect(nightTablesNeeded(nightCap(584), 4)).toBe(7);
+    /* Midway Union: 29 bodies at up to THREE seats each is 87 seats, which is
+       fifteen full rings. It was 1.3 seats and seven rings until 2026-09-05,
+       when Dan's table-count law moved the night band's ceiling to 3.0 - the
+       arithmetic here is unchanged, its input is not. Parking below this
+       would leave the seeder unable to place everyone the curve allows. */
+    expect(nightTablesNeeded(nightCap(584), 4)).toBe(15);
   });
 
   it('never goes below the hard floor for a small host', () => {
-    expect(nightTablesNeeded(nightCap(416), 4)).toBe(NIGHT_MIN_OPEN_TABLES);
+    // 20 bodies at 3.0 seats is 60 seats, ten rings - above the hard floor of
+    // six, which now only binds a host smaller than this one.
+    expect(nightTablesNeeded(nightCap(416), 4)).toBe(10);
     expect(nightTablesNeeded(0, 4)).toBe(NIGHT_MIN_OPEN_TABLES);
   });
 

@@ -70,7 +70,8 @@ describe('Player Identity Vault interaction semantics', () => {
 
   it('makes public-profile drill-ins and all nested dialogs keyboard operable', () => {
     expect(PUBLIC_PROFILE).toContain('type="button"');
-    expect(PUBLIC_PROFILE).toContain('className="mutual-friend-chip"');
+    // 2026-09-05: this page is a CSS Module now (PR #3077); class names are hashed.
+    expect(PUBLIC_PROFILE).toContain('className={styles.mutualFriendChip}');
     expect(PROFILE_EDIT).toContain('role="dialog"');
     expect(PROFILE_EDIT).toContain('aria-pressed={formData.tags.includes(tag)}');
     // 2026-09-04: the dicebear picker was a control that persisted nothing.

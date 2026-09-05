@@ -11,13 +11,15 @@
  */
 
 import React, { useMemo, useEffect, useRef, useState, useId, memo } from 'react';
-import { CardImage, CardBack, type Card } from './CardImage';
+import { CardImage, CardBack, cardBackImageUrl, getCardImagePath, type Card } from './CardImage';
 import { haptic, soundService } from '../../services/SoundService';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import {
   cardPresentationEngine,
   detectPlatform,
-  flipMs,
+  preloadImage,
+  SqueezeCard,
+  squeezeHostProps,
   type CardAnimationProfile,
   type CardPresentationMode,
   type CommunityStreet,
@@ -123,24 +125,15 @@ export interface CommunityCardsProps {
 export interface SqueezePresentation {
   key: string;
   profile: CardAnimationProfile;
-  /** Board slot the squeeze belongs to (4 for the river, 3 for the all-in turn). */
+  /** Board slot the squeeze belongs to (4 for the river, 3 for the turn). */
   index: number;
 }
 
-/**
- * The profile as inline custom properties. This is the ONLY bridge between
- * the profile table and the stylesheet: the keyframes read these and the
- * :root values in CommunityCards.css are just the desktop-cash defaults.
- */
-function squeezeVars(p: CardAnimationProfile, boardIndex: number): React.CSSProperties {
-  return {
-    '--rs-prepare': `${p.prepareMs}ms`,
-    '--rs-hold': `${p.holdMs}ms`,
-    '--rs-flip': `${flipMs(p)}ms`,
-    '--rs-overshoot': String(p.overshoot),
-    '--rs-stagger': `${boardIndex * p.staggerMs}ms`,
-  } as React.CSSProperties;
-}
+/* The profile reaches the stylesheet through `squeezeHostProps` in
+   src/presentation/cardPresentation/SqueezeCard.tsx - the ONE bridge, shared
+   with every other consumer of the squeeze (the hand replay). It used to be a
+   local helper here, which meant the replay could not have used it without
+   importing the felt's board component. */
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // UTILITIES
@@ -225,15 +218,21 @@ function CardFace({
   const isTurnCard = isNewlyDealt && stage === 'turn' && index === 3;
   const isRiverCard = isNewlyDealt && (stage === 'river' || stage === 'showdown') && index === 4;
   const isFlopDeal = isNewlyDealt && stage === 'flop' && index < 3;
-  // RIVER SQUEEZE 2026-09-04: the river - and the all-in turn - squeeze. The
-  // card materialises FACE DOWN in its slot, holds, and snaps over through
-  // its edge (the reference recording, frame by frame - see the stylesheet).
-  // The old one-sided ccRiverReveal spin and the slow-reveal land-then-flip
-  // are both replaced by this one path; the profile supplies the timing.
+  // RIVER SQUEEZE 2026-09-04 / ROUND 2 2026-09-05: the river AND the turn
+  // squeeze. The card materialises FACE DOWN in its slot, holds, and snaps
+  // over through its edge (the reference recording, frame by frame).
+  //
+  // The turn used to run ccTurnReveal - a ONE-SIDED face flying in from an
+  // offset with a brightness flash, the same shape the river had before the
+  // video was measured. Two streets of one hand animating in two different
+  // visual languages is exactly what spec 123 forbids, and it also meant the
+  // turn had no profile: it ignored the player's table focus and platform.
+  // Both streets are the same mechanism now, sized by the same table.
   const isSqueeze = isNewlyDealt && squeeze !== null && squeeze.index === index;
+  const host = isSqueeze ? squeezeHostProps(squeeze.profile, boardIndex) : null;
   const style = (
-    isSqueeze
-      ? { ...squeezeVars(squeeze.profile, boardIndex), '--card-index': index }
+    host
+      ? { ...host.style, '--card-index': index }
       : { animationDelay: `${index * 100}ms`, '--card-index': index }
   ) as React.CSSProperties;
 
@@ -244,19 +243,41 @@ function CardFace({
         isHighlighted ? 'community-cards__card--highlighted' : '',
         isDimmed ? 'community-cards__card--dimmed' : '',
         isFlopDeal ? 'community-cards__card--flop-deal' : '',
-        isTurnCard && !isSqueeze ? 'community-cards__card--turn' : '',
-        // --river is a MARKER (the e2e beat and the simulation test look for
-        // it); --squeeze is the animation, present only when the engine said so.
+        // --turn and --river are MARKERS the felt's own rules and the e2e
+        // beats look for; `card-squeeze-host` is what animates, and it is
+        // present only when the engine accepted this card for presentation.
+        isTurnCard ? 'community-cards__card--turn' : '',
         isRiverCard ? 'community-cards__card--river' : '',
-        isSqueeze ? 'community-cards__card--squeeze' : '',
+        host ? host.className : '',
       ]
         .filter(Boolean)
         .join(' ')}
       style={style}
-      data-rs-profile={isSqueeze ? squeeze.profile.id : undefined}
-      data-rs-sweep={isSqueeze ? (squeeze.profile.lightSweepEnabled ? 'on' : 'off') : undefined}
+      data-rs-profile={host ? host['data-rs-profile'] : undefined}
+      data-rs-sweep={host ? host['data-rs-sweep'] : undefined}
     >
-      {isFlopDeal || isSqueeze ? (
+      {isSqueeze ? (
+        /* ROUND 2 2026-09-05: the turn and river share ONE piece of markup
+           with every other consumer of the squeeze (the hand replay), so a
+           change to the reveal cannot land on the felt and miss the replay.
+           Two surfaces on a preserve-3d box, plus the edge spine and the
+           shadow layer - see SqueezeCard. */
+        <SqueezeCard
+          back={<CardBack size="lg" style={cardBack} />}
+          face={
+            <CardImage
+              card={card}
+              deckStyle={deckStyle}
+              size="lg"
+              isHighlighted={isHighlighted}
+              /* The board is the most-read thing on the felt and is never
+                 off-screen. See CardImage's `loading` note - lazy cost a beat
+                 of empty boxes when a MultiTablePage tab was brought forward. */
+              loading="eager"
+            />
+          }
+        />
+      ) : isFlopDeal ? (
         /*
          * Dan 2026-08-19, bug list item 5: "flops must deal 3 cards face down
          * then fan open (animation), not just appear."
@@ -271,6 +292,10 @@ function CardFace({
          * hidden, so exactly one is ever visible. CSS then runs it in two
          * phases: all three land face DOWN, and only once they are down do they
          * fan open left to right. See .community-cards__flip in the stylesheet.
+         *
+         * The flop keeps its OWN markup on purpose: it is a three-card fan
+         * with a per-card stagger, not a single-card squeeze, and merging the
+         * two would put a stagger nothing else uses into the shared piece.
          */
         <div className="community-cards__flip">
           <div className="community-cards__flip-face community-cards__flip-face--back">
@@ -282,9 +307,6 @@ function CardFace({
               deckStyle={deckStyle}
               size="lg"
               isHighlighted={isHighlighted}
-              /* The board is the most-read thing on the felt and is never
-                 off-screen. See CardImage's `loading` note - lazy cost a beat
-                 of empty boxes when a MultiTablePage tab was brought forward. */
               loading="eager"
             />
           </div>
@@ -378,6 +400,36 @@ function CommunityCardsComponent({
   const localHandRef = useRef(0);
   /** The key of the squeeze in flight on this board, for interrupts. */
   const activeSqueezeRef = useRef<string | null>(null);
+  /**
+   * ROUND 2 2026-09-05 - THE SNAP LANDS WHEN THE CARD DOES.
+   *
+   * The cue used to fire on the STAGE TRANSITION, which is the moment the
+   * server says the street exists. On a normal street that is close enough to
+   * the card appearing that nobody could tell. On an all-in runout it is a
+   * full second early: the card is still lying face down while the sound says
+   * it landed. In the reference recording the snap belongs to the frame the
+   * face appears - the edge-on instant, where the two surfaces swap.
+   *
+   * So the cue is OWED at the stage transition and PAID at the engine's
+   * `reveal` beat. `snapOwedRef` is what makes that safe: it is set when the
+   * street arrives and cleared only when the sound actually plays, so a
+   * cancelled or interrupted squeeze still pays it (the card is on screen by
+   * then, and the law is that every cue plays every time it is owed).
+   */
+  const snapOwedRef = useRef<{ key: string | null; strength: 'light' | 'medium' } | null>(null);
+  /** The squeeze whose reveal beat the owed snap is waiting on, if any. */
+  const pendingRevealKeyRef = useRef<string | null>(null);
+  const playSoundsRef = useRef(playSounds);
+  playSoundsRef.current = playSounds;
+  const payStreetSnap = () => {
+    const owed = snapOwedRef.current;
+    if (!owed) return;
+    snapOwedRef.current = null;
+    if (!playSoundsRef.current) return;
+    if (owed.strength === 'medium') haptic.medium();
+    else haptic.light();
+    if (soundService.isEnabled()) soundService.playCommunityCard();
+  };
   const [squeeze, setSqueeze] = useState<SqueezePresentation | null>(null);
   const cancelActiveSqueeze = (reason: string) => {
     if (activeSqueezeRef.current) {
@@ -440,14 +492,26 @@ function CommunityCardsComponent({
       for (let i = prevCount; i < visibleCount; i++) {
         newIndices.add(i);
       }
-      // RIVER SQUEEZE 2026-09-04: the river squeezes; so does the turn on an
-      // all-in runout. The engine decides whether THIS card animates at all
-      // (duplicate / stale / hidden table -> the slot renders its final face)
-      // and which profile it gets. It never decides anything about the hand.
+      // The engine decides whether THIS card animates at all (duplicate /
+      // stale / hidden table -> the slot renders its final face) and which
+      // profile it gets. It never decides anything about the hand.
       const street: CommunityStreet =
         visibleCount >= 5 ? 'river' : visibleCount === 4 ? 'turn' : 'flop';
-      const squeezes = street === 'river' || (street === 'turn' && slowReveal);
-      if (squeezes) {
+      // ROUND 2 2026-09-05: the TURN squeezes too, on every hand and not only
+      // an all-in runout. The flop keeps its own three-card fan.
+      //
+      // PHASE 2 2026-09-05: but EVERY street is presented through the engine
+      // now, the flop included. The flop's fan is unchanged - it is still its
+      // own two-phase land-and-open, and it still sounds its three staggered
+      // snaps on the street rather than on a reveal beat that does not match
+      // its shape. What it gains is everything the engine owns and the flop
+      // never had: an identity (so a resync cannot re-fan a flop that is
+      // already on the felt), the hidden-table rule (spec 47 - a board nobody
+      // can see does not animate), the out-of-order guard, and telemetry.
+      // Spec 58 asked for exactly this: the pipeline is street-generic, and
+      // the river was only the first animation to use it.
+      const squeezes = street === 'river' || street === 'turn';
+      {
         const slot = visibleCount - 1;
         const result = cardPresentationEngine.presentCard(
           {
@@ -467,12 +531,38 @@ function CommunityCardsComponent({
           }
         );
         if (result.status === 'started') {
-          activeSqueezeRef.current = result.key;
-          setSqueeze({ key: result.key, profile: result.profile, index: slot });
+          /* PHASE 2 2026-09-05 (spec 41, 42): decode the faces this reveal is
+             about to show, NOW, off to the side. A card face is behind
+             `backface-visibility: hidden` for the first half of a turn, so a
+             warm cache never notices - but a cold one (a deck the player has
+             never been dealt, the first hand after a deploy rehashed every
+             asset) can deliver the bitmap AFTER the surfaces swap, and the
+             card turns over to an empty box. Fire and forget: nothing waits
+             on it, least of all the hand. */
+          for (let i = prevCount; i < visibleCount; i++) {
+            if (cards[i]) preloadImage(getCardImagePath(cards[i], deckStyle));
+          }
+          preloadImage(cardBackImageUrl(cardBack));
           windowMs = Math.max(windowMs, Math.round(result.durationMs * speed));
-        } else {
+          if (squeezes) {
+            activeSqueezeRef.current = result.key;
+            // The stage effect below runs after this one on the same commit
+            // and reads this key: a squeeze in flight owes its snap to the
+            // reveal beat rather than to the street transition.
+            pendingRevealKeyRef.current = result.key;
+            setSqueeze({ key: result.key, profile: result.profile, index: slot });
+          }
+        } else if (squeezes) {
+          // Duplicate / stale / hidden: the card is simply on screen, so the
+          // cue has nothing to wait for.
+          pendingRevealKeyRef.current = null;
           newIndices.delete(slot);
           setSqueeze(null);
+        } else {
+          // The FLOP was refused. Every one of its three cards renders
+          // statically - a fan that plays for a board nobody can see, or
+          // twice for one deal, is the thing the engine exists to stop.
+          newIndices.clear();
         }
       }
       dealtAtRef.current = Date.now();
@@ -536,7 +626,21 @@ function CommunityCardsComponent({
     return () => {
       cancelActiveSqueeze('unmount');
     };
-     
+  }, []);
+
+  /**
+   * ROUND 2 2026-09-05: pay the owed snap on the engine's `reveal` beat - the
+   * edge-on instant where the face appears. `cancelled` pays it too: an
+   * interrupted squeeze renders the authoritative card immediately, and a
+   * card that appears in silence is the cue being dropped (CLAUDE.md 10.6).
+   */
+  useEffect(() => {
+    return cardPresentationEngine.subscribe(({ key, phase }) => {
+      if (key !== pendingRevealKeyRef.current) return;
+      if (phase !== 'reveal' && phase !== 'cancelled' && phase !== 'complete') return;
+      pendingRevealKeyRef.current = null;
+      payStreetSnap();
+    });
   }, []);
 
   // Bible V8 §5.1: Stage label + haptic feedback on stage transitions
@@ -564,12 +668,16 @@ function CommunityCardsComponent({
           setTimeout(() => soundService.playCommunityCard(), 120);
           setTimeout(() => soundService.playCommunityCard(), 240);
         }
-      } else if (stage === 'turn') {
-        if (playSounds) haptic.light();
-        if (playSounds && soundService.isEnabled()) soundService.playCommunityCard();
-      } else if (stage === 'river') {
-        if (playSounds) haptic.medium();
-        if (playSounds && soundService.isEnabled()) soundService.playCommunityCard();
+      } else if (stage === 'turn' || stage === 'river') {
+        // ROUND 2 2026-09-05: OWED here, PAID at the reveal beat (see
+        // snapOwedRef). With no squeeze in flight - a duplicate, a hidden
+        // table, reduced motion collapsing the flip - it is paid on the spot,
+        // so the cue is never dropped and never doubled.
+        snapOwedRef.current = {
+          key: pendingRevealKeyRef.current,
+          strength: stage === 'river' ? 'medium' : 'light',
+        };
+        if (!pendingRevealKeyRef.current) payStreetSnap();
       } else if (stage === 'showdown') {
         // POKERBROS PARITY 2026-08-26 (frame-by-frame of the reference
         // recording): showdown is a HARD CUT. The reference has no screen

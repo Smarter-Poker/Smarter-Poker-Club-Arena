@@ -2332,7 +2332,109 @@ function AnalyticsTab({ clubId }: { clubId: string }) {
           <div className="admin-stat-value">{data.avgSessionMinutes}m</div>
         </div>
       </div>
+      <CardSlideAdoption />
     </div>
+  );
+}
+
+/**
+ * CARD SLIDE ADOPTION — the corner peel, measured (Dan 2026-09-05).
+ *
+ * Two questions and no more: do players turn it on, and once on do they
+ * finish the gesture. The commit threshold was chosen by feel, so the ABANDON
+ * share is the one number that can say the feel was wrong.
+ *
+ * PLATFORM-WIDE, not club-scoped, because a table setting is: the same player
+ * carries it into every club they sit in. Aggregates only - fn_card_slide_
+ * adoption cannot return a per-user row, so this panel can say whether the
+ * feature works and can never say what one player did with their cards.
+ */
+function CardSlideAdoption() {
+  const [row, setRow] = useState<{
+    users_with_setting_on: number;
+    users_with_setting_off: number;
+    active_users: number;
+    peels_started: number;
+    peels_committed: number;
+    peels_abandoned: number;
+    keyboard_opens: number;
+    commit_rate: number | null;
+  } | null>(null);
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const isMounted = useIsMounted();
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data, error } = await supabase.rpc('fn_card_slide_adoption', { p_days: 7 });
+        if (!isMounted.current) return;
+        if (error) throw error;
+        setRow(Array.isArray(data) ? data[0] : data);
+        setState('ready');
+      } catch {
+        if (isMounted.current) setState('error');
+      }
+    })();
+  }, [isMounted]);
+
+  if (state === 'loading') return null;
+  if (state === 'error' || !row) {
+    return (
+      <>
+        <h4 className="admin-card-title" style={{ marginTop: '24px' }}>
+          Card Slide
+        </h4>
+        <div className="admin-stat-label">Usage Could Not Be Read.</div>
+      </>
+    );
+  }
+
+  const on = Number(row.users_with_setting_on) || 0;
+  const off = Number(row.users_with_setting_off) || 0;
+  const started = Number(row.peels_started) || 0;
+  const adoption = on + off > 0 ? Math.round((on / (on + off)) * 100) : 0;
+  const rate = row.commit_rate == null ? null : Number(row.commit_rate);
+
+  return (
+    <>
+      <h4 className="admin-card-title" style={{ marginTop: '24px' }}>
+        Card Slide - Last 7 Days
+      </h4>
+      <div className="admin-stats-grid">
+        <div className="admin-stat-card">
+          <div className="admin-stat-label">Players With It On</div>
+          <div className="admin-stat-value" style={{ color: '#4599FF' }}>
+            {fmt(on)}
+          </div>
+          <div className="admin-stat-label">{adoption}% Of Players</div>
+        </div>
+        <div className="admin-stat-card">
+          <div className="admin-stat-label">Players Peeling</div>
+          <div className="admin-stat-value">{fmt(Number(row.active_users) || 0)}</div>
+        </div>
+        <div className="admin-stat-card">
+          <div className="admin-stat-label">Peels Started</div>
+          <div className="admin-stat-value">{fmt(started)}</div>
+        </div>
+        <div className="admin-stat-card">
+          <div className="admin-stat-label">Completed</div>
+          {/* Under half of peels finishing means the threshold is too far. */}
+          <div
+            className="admin-stat-value"
+            style={{ color: rate == null ? undefined : rate >= 50 ? '#31A24C' : '#F7C52A' }}
+          >
+            {rate == null ? '-' : `${rate}%`}
+          </div>
+          <div className="admin-stat-label">
+            {fmt(Number(row.peels_abandoned) || 0)} Dropped Early
+          </div>
+        </div>
+        <div className="admin-stat-card">
+          <div className="admin-stat-label">Opened By Keyboard</div>
+          <div className="admin-stat-value">{fmt(Number(row.keyboard_opens) || 0)}</div>
+        </div>
+      </div>
+    </>
   );
 }
 

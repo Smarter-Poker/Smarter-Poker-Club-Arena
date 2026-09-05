@@ -472,6 +472,11 @@ export default function MultiTablePage() {
   const homeClubIdRef = useRef<string | null>(null);
   const clubLookupCacheRef = useRef<Map<string, string>>(new Map());
   const navigate = useNavigate();
+  /* Read by bus handlers that fire long after the render they were created
+     in (TABLE_LEFT arrives when a cash-out resolves): the live path, not a
+     captured one. */
+  const pathnameRef = useRef(location.pathname);
+  pathnameRef.current = location.pathname;
   const [searchParams] = useSearchParams();
   const toast = useToast();
 
@@ -1669,10 +1674,32 @@ export default function MultiTablePage() {
             prev.includes(tabId) ? prev.filter((id) => id !== tabId) : [...prev, tabId]
           );
           break;
-        case 'leave':
+        case 'leave': {
+          /* Dan 2026-09-04: "WHEN YOU RIGHT CLICK ON THE ACTION BAR AND 'LEAVE
+             TABLE' THERE IS A LONG DELAY BEFORE YOU ACTUALLY LEAVE THE TABLE
+             AND GO TO THE GAME LOBBY, THAT NEEDS TO HAPPEN IN REAL TIME."
+
+             The lobby used to appear only from the TABLE_LEFT handler, i.e.
+             after the owning TablePage had finished the whole cash-out
+             (engine round trip, seat read, RPC). Leaving the VIEW is not the
+             engine's to grant (TablePage, "the door is never locked"), so
+             when this is the player's last table the lobby goes up NOW, from
+             the gesture, and the cash-out completes behind it: the tables
+             stay mounted while hidden, TABLE_LEFT still closes the tab when
+             the money has moved, and a refusal still lands as a toast with
+             the tab kept as the way back. With other tables open the player
+             stays on them, exactly as before - the pill closes when the seat
+             is really released. */
+          const remaining = tablesRef.current.filter((t) => t.id !== tabId);
+          if (remaining.length === 0) {
+            const club = homeClubIdRef.current;
+            const dest = club ? `/clubs/${club}` : '/';
+            if (pathnameRef.current !== dest) navigate(dest);
+          }
           // The secure cashout path - the owning TablePage handles teardown.
           masterBus.emit('TABLE_MENU_ACTION', { tableId: tabId, action: 'FORCE_LEAVE_TABLE' });
           break;
+        }
         case 'sitout': {
           const res = await setSitOut(tabId, true);
           if (res?.success) {
@@ -1698,7 +1725,7 @@ export default function MultiTablePage() {
         }
       }
     },
-    [toast]
+    [toast, navigate]
   );
 
   // ─── Batch 3: sit out everywhere / back everywhere ────────────────────
@@ -2473,7 +2500,12 @@ export default function MultiTablePage() {
   /** Where to send a player who has no tables left open. */
   const goToLobby = useCallback(() => {
     const club = homeClubIdRef.current;
-    navigate(club ? `/clubs/${club}` : '/');
+    const dest = club ? `/clubs/${club}` : '/';
+    // Already there (the leave gesture put the lobby up before the cash-out
+    // resolved - see handleQuickAction 'leave' and TablePage.showLobbyNow):
+    // pushing the same page again would give Back a duplicate to step through.
+    if (pathnameRef.current === dest) return;
+    navigate(dest);
   }, [navigate]);
 
   const getTableInfoCb = useCallback(

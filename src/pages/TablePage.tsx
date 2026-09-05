@@ -8142,9 +8142,50 @@ export default function TablePage({
    *     only the question of whether the player is allowed to look at the
    *     lobby, and the answer to that is always yes.
    */
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  THE LOBBY COMES FIRST, THE CASH-OUT FOLLOWS (Dan 2026-09-04, binding)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Dan: "WHEN YOU RIGHT CLICK ON THE ACTION BAR AND 'LEAVE TABLE' THERE IS A
+   * LONG DELAY BEFORE YOU ACTUALLY LEAVE THE TABLE AND GO TO THE GAME LOBBY,
+   * THAT NEEDS TO HAPPEN IN REAL TIME, NO 3 SECOND DELAY."
+   *
+   * Where the seconds went: both leave doors AWAITED the whole cash-out before
+   * touching the router - the engine round trip (which itself waits on the
+   * previous hand's settlement writes when you leave right after a hand), the
+   * seat read, the cash-out RPC, and on a tournament seat a result fetch on
+   * top - and only then navigated. The player sat on a felt they had already
+   * left, watching nothing, for as long as those took.
+   *
+   * The rule above ("the door is never locked") already says leaving the VIEW
+   * is not the engine's to grant. So the view leaves first: one synchronous
+   * `navigate` the instant the leave is confirmed, and the cash-out completes
+   * behind it. This component stays mounted while the lobby is showing (the
+   * multi-table container hides tables, it never unmounts them), so every
+   * ref and callback the settlement needs is still alive; the results card is
+   * published by the app-root host and renders over whichever lobby the
+   * player is looking at; TABLE_LEFT closes the tab when the money has moved.
+   * A refusal (stay clock, all-in, engine unreachable) lands as the same
+   * toast as before, with the tab still open as the way back to the seat.
+   *
+   * `showLobbyNow` navigates ONCE per leave: the success and refusal paths
+   * both call it, and the second call must not stack a duplicate history
+   * entry on the one that already happened.
+   */
+  const leaveNavigatedRef = useRef(false);
+  const showLobbyNow = () => {
+    if (leaveNavigatedRef.current) return;
+    leaveNavigatedRef.current = true;
+    const dest = exitDestination();
+    // The container's own last-tab handler may already have put the lobby up
+    // (the tab-strip door); re-navigating onto the page we are on would push a
+    // duplicate entry that Back would have to step through.
+    navigate(dest, { replace: location.pathname === dest });
+  };
   const goToLobbyKeepingSeat = (why: string) => {
     heartbeatToastRef.current?.info?.(why);
-    navigate(exitDestination());
+    showLobbyNow();
   };
   const leaveWithoutCashout = (seatAtLeave: number) => {
     heroSeatRef.current = 0;
@@ -8159,11 +8200,12 @@ export default function TablePage({
       tableId: tableId ?? '',
       action: 'CLOSE_TABLE_TAB',
     });
-    navigate(exitDestination());
+    showLobbyNow();
   };
 
   const handleLeaveTable = async () => {
     setLeaveNotice(null);
+    leaveNavigatedRef.current = false;
 
     // Nothing to cash out: a spectator, a guest, or a session that has not
     // hydrated yet. The door opens (Dan 2026-09-04, above).
@@ -8207,6 +8249,9 @@ export default function TablePage({
      * there is ONE way out of a reserved seat rather than two that disagree.
      */
     if (seatFirstBuyIn && tableState.heroSeat > 0) {
+      // The lobby first (rule above); the refund resolves behind it and its
+      // toast lands over the lobby.
+      showLobbyNow();
       try {
         const { data, error } = await supabase.rpc('fn_leave_seat_and_refund', {
           p_table_id: tableId,
@@ -8237,8 +8282,7 @@ export default function TablePage({
         );
         masterBus.emit('SESSION_ENDED', { tableId, userId });
         playerStatusService.clearPlayingAt(userId);
-        const backTo = lobbyClubIdRef.current;
-        if (backTo) navigate(`/clubs/${backTo}`);
+        showLobbyNow();
       } catch (err) {
         reportError(err as Error, 'TablePage.leave_table_seat_first');
         goToLobbyKeepingSeat(
@@ -8255,6 +8299,9 @@ export default function TablePage({
     // close handler, and by then heroSeat has already been zeroed just below.
     // Capture it while it is still valid.
     const seatAtLeave = tableState.heroSeat;
+
+    // The lobby first (rule above). Everything below completes behind it.
+    showLobbyNow();
 
     try {
       const result = await tableService.leaveTable(tableId, tableState.heroSeat, userId);
@@ -8352,7 +8399,7 @@ export default function TablePage({
           tableId: tableId ?? '',
           action: 'CLOSE_TABLE_TAB',
         });
-        navigate(exitDestination());
+        showLobbyNow();
 
         // Phase E: Route session end to Notifications tab for async review
         if (userId && userId !== 'guest') {
@@ -8412,7 +8459,7 @@ export default function TablePage({
             tableId: tableId ?? '',
             action: 'CLOSE_TABLE_TAB',
           });
-          navigate(exitDestination());
+          showLobbyNow();
         }
       }
     } catch (error) {
@@ -8425,6 +8472,7 @@ export default function TablePage({
 
   // Handle force leave (triggered by closing tab 'X' button or when already cashed out)
   const handleForceLeaveTable = async () => {
+    leaveNavigatedRef.current = false;
     /* Dan 2026-09-04 (the door is never locked): a tab with no seat behind it
        closes without asking the engine anything. That covers the spectator,
        the guest and the not-yet-hydrated session - before this, all three
@@ -8472,6 +8520,12 @@ export default function TablePage({
          down, so there is no session to report — and a card reading "0 hands,
          0 profit" is a claim, not a blank (house rule 5). */
       const forceHadSession = forceHeroSeat > 0;
+      /* THE LOBBY FIRST (rule beside `showLobbyNow`). This door is the tab
+         strip's, so which view replaces the felt is the container's call: it
+         puts the lobby up when this was the last table and otherwise keeps
+         the player on the tables that remain. Either way it has already
+         happened by the time the cash-out below resolves; nothing here waits
+         on the network to leave the view. */
       // (The old "already viewing summary" early-return is gone with the dead
       // in-table SessionSummary modal — the summary now renders in the lobby,
       // after this table is already torn down.)

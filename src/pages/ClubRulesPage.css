@@ -1,18 +1,23 @@
+/* #SMARTERCASINOREALISM - the material layer. Tokens are defined once on :root
+   in src/styles/club-engine.css, which main.tsx loads; this sheet only consumes
+   them. The page is the club's own house rules: members read the panel, club
+   staff swap it for a textarea and save. One panel, one field, three buttons. */
+
 .club-rules-page {
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   width: 100%;
   max-width: 100vw;
-  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+  /* clip, not hidden - see src/styles/design-system.css on body. `hidden` on
      one axis computes the other to `auto`, which makes this a scroll container,
      and WebKit then resolves the fixed ClubBottomNav against IT instead of the
      viewport. The bar leaves the bottom of the screen and rides up the page. */
   overflow-x: hidden;
   overflow-x: clip;
-  background: linear-gradient(180deg, #0a0f18 0%, #0d1520 100%);
-  color: #fff;
+  background: linear-gradient(180deg, var(--realism-panel) 0%, var(--realism-carbon) 100%);
+  color: var(--realism-chrome-hot);
   /* Reserve the fixed bottom nav this page renders (2026-08-23). The bar is
-     out of flow, so whatever it covers is simply unreachable — the token
+     out of flow, so whatever it covers is simply unreachable - the token
      is the bar's height PLUS the home-indicator inset it adds on iOS. */
   padding-bottom: var(--bottom-nav-clearance, 74px);
 }
@@ -25,14 +30,14 @@
 .rules-header h1 {
   font-size: 1.1rem;
   font-weight: 800;
-  color: #00d4ff;
+  color: var(--realism-cyan);
   margin: 0 0 4px;
 }
 
 .rules-header h2 {
   font-size: 0.85rem;
   font-weight: 600;
-  color: #8a9aaa;
+  color: var(--realism-muted);
   margin: 0;
 }
 
@@ -40,18 +45,20 @@
   padding: 0 16px;
 }
 
+/* The rules panel sits IN its frame: a lit top edge, a cavity under it, and a
+   gunmetal edge rather than a white outline. */
 .rules-display {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 12px;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border: 1px solid var(--realism-gunmetal);
+  border-radius: var(--realism-radius);
   padding: 20px;
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
 }
 
 .rules-text p {
-  color: #c0d0e0;
+  color: var(--realism-chrome);
   font-size: 0.85rem;
   line-height: 1.6;
   margin: 4px 0;
@@ -71,13 +78,13 @@
 }
 
 .empty-rules h3 {
-  color: #fff;
+  color: var(--realism-chrome-hot);
   font-size: 1rem;
   margin: 0 0 8px;
 }
 
 .empty-rules p {
-  color: #6a7a8a;
+  color: var(--realism-muted);
   font-size: 0.8rem;
   margin: 0;
 }
@@ -87,36 +94,51 @@
   width: 100%;
 }
 
+/* The press, not a hover: on a phone the tap IS the feedback. The face and its
+   shadow come from the .btn layer in club-engine.css; this is the dip. */
+.edit-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
 .rules-editor {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
+/* The field is the opposite of the panel: cut INTO the surface, so the light
+   falls on the inside of its top edge. */
 .rules-textarea {
   width: 100%;
   padding: 14px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(0, 212, 255, 0.2);
-  border-radius: 10px;
-  color: #e0e8f0;
+  background: var(--realism-obsidian);
+  border: 1px solid var(--realism-gunmetal);
+  border-radius: var(--realism-radius);
+  color: var(--realism-chrome-hot);
   font-size: 0.85rem;
   line-height: 1.6;
   resize: vertical;
   font-family: inherit;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.55);
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
 .rules-textarea:focus {
   outline: none;
-  border-color: #00d4ff;
+  border-color: var(--realism-cyan);
   box-shadow:
     0 0 15px rgba(0, 212, 255, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    var(--realism-bevel);
 }
 
 .rules-textarea::placeholder {
   color: #4a5a6a;
+}
+
+.club-rules-page button:focus-visible,
+.club-rules-page textarea:focus-visible {
+  outline: 2px solid var(--realism-cyan);
+  outline-offset: 2px;
 }
 
 .rules-actions {
@@ -141,12 +163,12 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   RESPONSIVE — Mobile
+   RESPONSIVE - Mobile
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 @media (max-width: 480px) {
   .club-rules-page {
-    /* Side padding only — the shorthand used to wipe out the bottom-nav
+    /* Side padding only - the shorthand used to wipe out the bottom-nav
        clearance and the fixed ClubBottomNav covered the last content. */
     padding: 12px 12px var(--bottom-nav-clearance, 74px);
   }
@@ -174,7 +196,7 @@
 
 @media (max-width: 768px) {
   .club-rules-page {
-    /* Zero the sides but keep the fixed-bottom-nav clearance — `padding: 0`
+    /* Zero the sides but keep the fixed-bottom-nav clearance - `padding: 0`
        here let ClubBottomNav overlay the end of the rules text. */
     padding: 0 !important;
     padding-bottom: var(--bottom-nav-clearance, 74px) !important;
@@ -183,5 +205,18 @@
     border-radius: 0 !important;
     border-left: none !important;
     border-right: none !important;
+  }
+}
+
+/* Motion collapses, the material does not: every border, bevel and colour above
+   survives here, so a reduced-motion player sees the same object held still. */
+@media (prefers-reduced-motion: reduce) {
+  .club-rules-page *,
+  .club-rules-page *::before,
+  .club-rules-page *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

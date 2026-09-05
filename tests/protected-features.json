@@ -191,7 +191,7 @@
     },
     {
       "id": "river-squeeze-presentation",
-      "title": "Card Presentation Engine + River Squeeze (face-down materialise, hold, edge-on flip)",
+      "title": "Card Presentation Engine + Squeeze (face-down materialise, hold, edge-on flip, spine, shadow)",
       "owner": "table",
       "since": "2026-09-04",
       "files": [
@@ -199,31 +199,56 @@
         "src/presentation/cardPresentation/profiles.ts",
         "src/presentation/cardPresentation/resolveProfile.ts",
         "src/presentation/cardPresentation/animationKey.ts",
-        "src/presentation/cardPresentation/index.ts"
+        "src/presentation/cardPresentation/frameSampler.ts",
+        "src/presentation/cardPresentation/SqueezeCard.tsx",
+        "src/presentation/cardPresentation/cardSqueeze.css",
+        "src/presentation/cardPresentation/index.ts",
+        "src/presentation/cardPresentation/environmentInterrupts.ts",
+        "src/presentation/cardPresentation/preload.ts",
+        "src/presentation/cardPresentation/useCardSqueeze.tsx"
       ],
       "contains": {
         "src/components/table/CommunityCards.tsx": [
           "cardPresentationEngine.presentCard(",
-          "community-cards__card--squeeze",
-          "community-cards__slot-reserve"
+          "squeezeHostProps(",
+          "community-cards__slot-reserve",
+          "pendingRevealKeyRef",
+          "preloadImage(",
+          "FLOP_FAN.DEAL_STAGGER_MS"
         ],
-        "src/components/table/CommunityCards.css": [
-          "@keyframes ccRiverSqueeze",
-          "@keyframes ccRiverMaterialize",
-          "--rs-flip"
-        ]
+        "src/presentation/cardPresentation/cardSqueeze.css": [
+          "@keyframes ccCardSqueeze",
+          "@keyframes ccCardMaterialize",
+          "@keyframes ccCardSpine",
+          "@keyframes ccCardShadow",
+          "--rs-flip",
+          "card-squeeze-host.card-squeeze-host"
+        ],
+        "src/presentation/cardPresentation/SqueezeCard.tsx": [
+          "card-squeeze__spine",
+          "card-squeeze__shadow"
+        ],
+        "src/presentation/cardPresentation/engineSingleton.ts": [
+          "installEnvironmentInterrupts(cardPresentationEngine)"
+        ],
+        "src/components/replay/HandReplay.tsx": ["useCardSqueeze({", "<SqueezeCard"],
+        "src/components/replay/HandReplay.css": ["--hr-card-w", "flex: none"],
+        "src/presentation/cardPresentation/profiles.ts": ["FLOP_FAN_TOTAL_MS"]
       },
       "absent": {
         "src/components/table/CommunityCards.css": [
           "@keyframes ccRiverReveal",
+          "@keyframes ccTurnReveal",
           "community-cards__card--slow-reveal"
         ],
         "src/components/table/CommunityCards.tsx": ["isSlowFlip"]
       },
       "bundleMarkers": [
-        "community-cards__card--squeeze",
+        "card-squeeze-host",
         "community-cards__slot-reserve",
-        "--rs-flip"
+        "--rs-flip",
+        "card-squeeze__spine",
+        "hr-felt__card"
       ]
     }
   ]

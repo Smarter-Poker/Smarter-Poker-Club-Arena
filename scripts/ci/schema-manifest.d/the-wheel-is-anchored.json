@@ -1,0 +1,6 @@
+{
+  "_owner": "agent/claude-spins/fix/spins-sit-sound-prize-and-felt",
+  "tables": [],
+  "functions": [],
+  "columns": { "tournaments": ["spin_reveal_at"] }
+}

@@ -136,7 +136,27 @@
   /* The source remains proportional through phones and tablets, then stops at
      the approved 132px desktop footer height from the 1680 x 932 authority.
      The old 263px ceiling produced a 230px footer there and covered the lobby. */
-  --bottom-nav-height: clamp(44px, 13.72vw, 132px);
+  /* THE FOOTER FRAME KEEPS ITS OWN SHAPE (Dan 2026-09-05: the footer "IS
+     DISTORTED").
+     Measured from the approved asset itself (public/images/club-footer/
+     club-arena-footer-v2.webp): a 1916x256 canvas whose opaque frame is the
+     rect x=25 y=14 1866x230, so the frame's aspect is 1866/230 = 8.113:1 and
+     an undistorted full-bleed footer is 100vw / 8.113 = 12.326vw tall.
+     This constant said 13.72vw, which stretched the art 11.3% taller than the
+     frame everywhere below the ceiling, and the 132px ceiling then squashed it
+     the other way on every desktop - measured 11.7% at a 1204px viewport,
+     where the honest height is 147.4px. Distorted at every width, in one
+     direction or the other.
+     The ceiling itself is right and stays: Dan approved a 132px desktop
+     footer, and the 263px ceiling before it "covered the lobby". What was
+     wrong is that only the HEIGHT stopped growing. ClubBottomNav.module.css
+     now stops the artwork's WIDTH at the same moment
+     (132 x 8.113 = 1070.9px) and centres it, so the frame keeps its shape on
+     both sides of the ceiling: proportional and full-bleed through phones and
+     tablets, then a centred bar of the approved height on desktop.
+     This value remains what a PAGE RESERVES; the artwork derives its own
+     height from `aspect-ratio` so it can never disagree with the asset. */
+  --bottom-nav-height: clamp(44px, 12.326vw, 132px);
   /* What a page must actually reserve: the bar plus the phone's home-indicator
      inset, which the bar adds to its own padding on iOS. Reserving the bar
      alone is why content still hid behind it on notched devices. */
@@ -375,10 +395,16 @@ a {
   background: var(--gradient-blue);
   color: var(--pure-white);
 }
-.btn-success {
-  background: var(--gradient-success);
-  color: var(--pure-white);
-}
+/* `.btn-success` intentionally not declared here (2026-09-05).
+   club-engine.css - the ONLY one of these three stylesheets main.tsx actually
+   imports - declares this variant twice: the same background and colour as the
+   line that used to sit here, plus a realism `border-color` added by #3126.
+   Two files declaring one bare class name with different property sets is the
+   leak `tests/global-css-does-not-leak-across-pages.law.test.ts` counts, and
+   this pair took it from 243 to 244, turning main red for everybody.
+   Deleting it is provably behaviour-free: nothing imports globals.css (see the
+   note at club-engine.css:232 - "the legacy, unimported globals.css file"), so
+   the live declaration was always the only one a browser ever saw. */
 .btn-danger {
   background: var(--gradient-danger);
   color: var(--pure-white);

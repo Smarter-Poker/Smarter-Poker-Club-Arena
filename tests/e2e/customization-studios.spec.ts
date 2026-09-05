@@ -139,8 +139,18 @@ async function openStudio(page: Page) {
   await page.goto('/hub/club-arena/dev/customization', { waitUntil: 'domcontentloaded' });
   const studio = page.getByRole('dialog', { name: 'Make The Table Yours' });
   await expect(studio).toBeVisible({ timeout: 20_000 });
+  /* THE TILE CANNOT BE READY BEFORE THE DIALOG, SO ITS BUDGET MUST NOT BE
+     SMALLER (2026-09-05). A tile is disabled while
+     `themeLoadState !== 'ready'` - the catalog fetch - so this wait is on a
+     network round trip that starts only once the line above has passed. Giving
+     it half the dialog's budget meant a loaded runner failed here rather than
+     on the thing that was actually slow, and it did: it took the required CSS
+     Beat E2E check red on a branch whose diff does not touch Table Studio at
+     all. The failing tile carried neither `theme-asset--locked` nor the
+     "Checking Ownership" label, so ownership had already resolved - only the
+     catalog had not arrived. */
   await expect(studio.getByRole('button', { name: 'Carbon Club', exact: true })).toBeEnabled({
-    timeout: 10_000,
+    timeout: 20_000,
   });
   return studio;
 }
@@ -196,10 +206,17 @@ test.describe('real Table Studio browser flows', () => {
     await tapReadyControl(studio.getByRole('button', { name: 'Royal', exact: true }));
     await expect(preview).toHaveAttribute('data-card-back', 'royal');
 
+    /* POLL ALL FOUR, NOT JUST THE FIRST (2026-09-05).
+       These are four independent debounced writes and they do not land in the
+       order they were made, so polling `table_id` and then asserting the other
+       three flat is a race the suite loses intermittently. It lost on
+       2026-09-05 with background_id still reading its default 'midnight'
+       against an expected 'emerald_room' - a red check on a branch that had not
+       touched Table Studio at all. */
     await expect.poll(() => server.saved.table_id).toBe('carbon_red');
-    expect(server.saved.button_id).toBe('red-d-gear');
-    expect(server.saved.background_id).toBe('emerald_room');
-    expect(server.saved.cards_id).toBe('royal');
+    await expect.poll(() => server.saved.button_id).toBe('red-d-gear');
+    await expect.poll(() => server.saved.background_id).toBe('emerald_room');
+    await expect.poll(() => server.saved.cards_id).toBe('royal');
 
     await tapReadyControl(studio.getByRole('button', { name: 'Final Table' }));
     await expect(preview).toHaveAttribute('data-table-theme', 'final_table');

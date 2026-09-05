@@ -124,8 +124,12 @@ const BASELINE = new Map<string, number>([
   // with its reads, and the server fleet is the one seat creator for horses.
   ['src/services/HydraService.ts', 0],
   ['src/services/FinancialExportService.ts', 2],
-  ['src/services/BonusService.ts', 2],
-  ['src/services/AchievementTriggerService.ts', 1],
+  ['src/services/BonusService.ts', 1],
+  /* 0 since 2026-09-05: the last unbound read here was the player_stats
+     lookup in updateUserStats, which is now `const { data, error }` and
+     reports. See the note in that function - it was also asking a per-club
+     table for a single row. */
+  ['src/services/AchievementTriggerService.ts', 0],
   ['src/pages/UnionGamesPage.tsx', 2],
   ['src/pages/RateAuditPage.tsx', 2],
   ['src/pages/MultiTablePage.tsx', 2],
@@ -166,7 +170,7 @@ const BASELINE = new Map<string, number>([
   ['src/pages/SettingsPage.tsx', 1],
   ['src/pages/PromotionsPage.tsx', 0],
   ['src/pages/PromoVaultPage.tsx', 1],
-  ['src/pages/ProfilePage.tsx', 1],
+  ['src/pages/ProfilePage.tsx', 0],
   ['src/pages/PlayerStatsPage.tsx', 0],
   ['src/pages/MemberManagementPage.tsx', 1],
   ['src/pages/MarketplacePage.tsx', 0],

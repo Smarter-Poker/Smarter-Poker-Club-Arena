@@ -1,12 +1,34 @@
 /**
- * MIRROR of tests/helpers/sourceWindow.ts. Keep them byte-identical below the
- * header - tests/unit/sourceWindowMirror.test.ts fails if they drift.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A SOURCE PIN MUST SLICE A STRUCTURE, NOT A FIXED NUMBER OF BYTES
+ * ═══════════════════════════════════════════════════════════════════════════
  *
- * Why a copy rather than an import: the server package sets `rootDir: ./src`
- * and `include: ["src/**\/*"]`, so a reach across into the repo-root tests
- * directory does not type-check, and `server`'s own vitest only globs
- * `src/**\/*.test.ts`. One duplicated file with a guard is a smaller price
- * than loosening the boundary between the two packages.
+ * This repo tests a great deal of behaviour by reading source and asserting on
+ * its text. That is a legitimate technique and it catches real regressions.
+ * What is not legitimate is bounding the window with a magic number.
+ *
+ * 2026-08-28, and it cost a publish outage. `tournamentRakeAndBreaks` read a
+ * 7000-character window from the start of `registerHorses`. Comments were added
+ * inside that method and pushed the asserted code to offsets 7241, 7440, 7471
+ * and 7695 - just past the end of the window. Three pins went red, the code
+ * they guard had not changed by a character, and because a red client suite
+ * skips `sync-to-world-hub`, NOTHING PUBLISHED FOR THE WHOLE ESTATE for 39
+ * minutes until a human noticed.
+ *
+ * The silent direction is worse than the loud one. A window that can drift off
+ * the end of the thing it guards can also drift off it while staying green -
+ * the assertion passes because the code it was watching is no longer inside the
+ * window at all. And the obvious fix for a red window, making the number
+ * bigger, only moves the cliff.
+ *
+ * So bound every window by the structure it is about: a method by its matching
+ * brace, a call by its matching paren, a statement by the block that encloses
+ * it. Then the window grows exactly as fast as the code does, and it can never
+ * be outrun by the body it watches.
+ *
+ * The scanners below ignore braces and parens inside comments and string
+ * literals, because behaviour cannot live in either. Offsets are preserved
+ * while blanking, so every returned slice indexes the ORIGINAL source.
  */
 
 /**
@@ -51,6 +73,14 @@ const matchForward = (cleaned: string, from: number, open: '{' | '('): number =>
  * `}>` and hands back a window containing the signature and nothing else -
  * green on every negative assertion, and blind. Found 2026-08-28 by moving the
  * helper here and running the suites against it.
+ *
+ * PASS THE SIGNATURE WITHOUT ITS LEADING INDENT (found 2026-09-05). The indent
+ * is derived from the text BETWEEN the line start and the match, so a needle
+ * that already carries it - `'  playSpinStart('` - computes an indent of '',
+ * and the closer then matches the CLASS's own `\n}`. The window silently
+ * becomes the rest of the file, which is green on every negative assertion:
+ * exactly the blindness the header of this file is about. Use
+ * `'playSpinStart()'`.
  *
  * So the end is found by indentation instead: the method closes at the first
  * line that is this signature's own indent followed by `}`. Prettier runs on

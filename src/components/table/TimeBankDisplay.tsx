@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { VIP_GOLD_LIMITS, FEATURE_PRICING } from '../../services/VIPService';
+import { VIP_MONTHLY_ALLOWANCES, FEATURE_PRICING } from '../../services/VIPService';
 import './TimeBankDisplay.css';
 
 interface TimeBankDisplayProps {
@@ -32,7 +32,7 @@ export function TimeBankDisplay({
   // (Bible V8 s6.2), so the free allowance is exactly two whole banks. Left at
   // 30 the bar would read 133% full on a fresh non-VIP session.
   const FREE_BASE_SECONDS = 40;
-  const maxSeconds = FREE_BASE_SECONDS + (isVIP ? VIP_GOLD_LIMITS.timeBankSeconds : 0);
+  const maxSeconds = FREE_BASE_SECONDS + (isVIP ? VIP_MONTHLY_ALLOWANCES.timeBankSeconds : 0);
   const percentage = Math.min(100, (remainingSeconds / maxSeconds) * 100);
   const isLow = percentage < 25;
 

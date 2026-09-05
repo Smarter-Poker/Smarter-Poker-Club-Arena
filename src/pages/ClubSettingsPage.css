@@ -1,8 +1,30 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CLUB SETTINGS PAGE — Metal UI Theme
- *  Brushed Steel + Cyan Glow Controls
+ *  CLUB SETTINGS PAGE - #SMARTERCASINOREALISM
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ *  /hub/club-arena/clubs/:club/settings - the owner's control panel: club
+ *  identity and logo, join rules, table defaults, the stats export, handing the
+ *  club over, and deleting it.
+ *
+ *  Vocabulary: src/styles/club-engine.css, the block titled
+ *  "#SMARTERCASINOREALISM - THE MATERIAL LAYER". Panels are a lit top edge over
+ *  a cavity; inputs are the cavity itself; controls press on :active. There is
+ *  no :hover rule in this file and none may be added
+ *  (tests/no-hover-effects.law.test.ts).
+ *
+ *  THIS IS A GLOBAL STYLESHEET, NOT A MODULE. Seven of the names below are also
+ *  declared bare by other sheets - .settings-section (table/SettingsPanel.css),
+ *  .toggle-btn (security/TwoFactorSetup.css), .toggle-label (forms/FormToggle,
+ *  quickactions/AutoRebuyToggle), .form-group, .btn-danger, .btn-secondary,
+ *  .modal-overlay - so a broadened selector here lands on components this page
+ *  has never rendered. Colour and shadow were therefore changed WITHIN the rules
+ *  that already existed, and every rule needing a NEW property is scoped under
+ *  .club-settings-page at the end of the file so it cannot travel.
+ *
+ *  Red stays red and amber stays amber. The delete zone, the conflict bar, the
+ *  degraded-state notice and the handover section are verdicts, not decoration,
+ *  and none of them was retoned.
  */
 
 .club-settings-page {
@@ -16,7 +38,12 @@
      viewport. The bar leaves the bottom of the screen and rides up the page. */
   overflow-x: hidden;
   overflow-x: clip;
-  background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
+  background: linear-gradient(
+    180deg,
+    var(--realism-obsidian) 0%,
+    var(--realism-carbon) 50%,
+    var(--realism-obsidian) 100%
+  );
   /* Reserve the fixed bottom nav this page renders (2026-08-23). The bar is
      out of flow, so whatever it covers is simply unreachable — the token
      is the bar's height PLUS the home-indicator inset it adds on iOS. */
@@ -32,20 +59,17 @@
    SECTIONS — Brushed Metal Panels
    ───────────────────────────────────────────────────────────────────────────── */
 
+/* A panel sits IN its frame, not on the page: lit top edge, cavity under it,
+   gunmetal edge. The 2px border and the 14px radius are unchanged - the 480px
+   block below already steps the radius to 12px, and both are geometry rather
+   than material. */
 .settings-section {
-  background: linear-gradient(
-    145deg,
-    rgba(255, 255, 255, 0.06) 0%,
-    rgba(200, 200, 200, 0.03) 50%,
-    rgba(100, 100, 100, 0.02) 100%
-  );
-  border: 2px solid #2a3a4a;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border: 2px solid var(--realism-gunmetal);
   border-radius: 14px;
   padding: 1.5rem;
   margin-bottom: 1rem;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.15);
+  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
 }
@@ -53,7 +77,7 @@
 .settings-section h3 {
   margin: 0 0 1rem;
   font-size: 0.9rem;
-  color: #00d4ff;
+  color: var(--realism-cyan);
   font-family: 'Rajdhani', 'Rajdhani', sans-serif;
   text-transform: uppercase;
   letter-spacing: 1px;
@@ -72,7 +96,7 @@
 .form-group label {
   display: block;
   font-size: 0.85rem;
-  color: #8a9aaa;
+  color: var(--realism-muted);
   margin-bottom: 0.5rem;
   font-weight: 500;
 }
@@ -81,18 +105,22 @@
 .form-group textarea {
   width: 100%;
   padding: 0.75rem 1rem;
-  background: linear-gradient(180deg, #0d1520 0%, #1a2332 100%);
-  border: 2px solid #2a3a4a;
+  /* The inverse of a panel: a cavity cut into it. Dark at the top where the
+     panel's own bevel casts, and an inset shade so the field reads as recessed
+     rather than printed on. */
+  background: linear-gradient(180deg, var(--realism-obsidian) 0%, var(--realism-panel) 100%);
+  border: 2px solid var(--realism-gunmetal);
   border-radius: 8px;
-  color: #fff;
+  color: var(--realism-chrome-hot);
   font-size: 16px; /* was 0.9rem; under 16px makes iOS zoom the page on focus */
+  box-shadow: inset 0 1px 8px rgba(0, 0, 0, 0.5);
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
 .form-group input:focus,
 .form-group textarea:focus {
   outline: none;
-  border-color: #00d4ff;
+  border-color: var(--realism-cyan);
   box-shadow:
     0 0 20px rgba(0, 212, 255, 0.5),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -136,22 +164,22 @@
 .toggle-label {
   display: block;
   font-weight: 500;
-  color: #fff;
+  color: var(--realism-chrome-hot);
   font-size: 0.9rem;
 }
 
 .toggle-desc {
   font-size: 0.75rem;
-  color: #6a7a8a;
+  color: var(--realism-muted);
   margin-top: 0.25rem;
 }
 
 .toggle-btn {
   padding: 0.4rem 1rem;
   border-radius: 20px;
-  background: linear-gradient(180deg, #1a2332 0%, #0d1520 100%);
-  border: 2px solid #3a4a5a;
-  color: #6a7a8a;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border: 2px solid var(--realism-gunmetal-lit);
+  color: var(--realism-muted);
   font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
@@ -161,12 +189,12 @@
 }
 
 .toggle-btn.on {
-  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
-  border-color: #00d4ff;
+  background: linear-gradient(135deg, var(--realism-cyan) 0%, #0099cc 100%);
+  border-color: var(--realism-cyan);
   color: #fff;
   box-shadow:
     0 0 10px rgba(0, 212, 255, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    var(--realism-bevel);
 }
 
 .toggle-btn:disabled {
@@ -182,7 +210,7 @@
   width: 100%;
   margin-top: 1rem;
   padding: 1rem 2rem;
-  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
+  background: linear-gradient(135deg, var(--realism-cyan) 0%, #0099cc 100%);
   border: none;
   border-radius: 10px;
   color: #fff;
@@ -193,7 +221,8 @@
   letter-spacing: 1px;
   box-shadow:
     0 0 20px rgba(0, 212, 255, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    var(--realism-bevel),
+    var(--realism-lift);
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   position: relative;
   overflow: hidden;
@@ -231,12 +260,12 @@
 .danger-label {
   display: block;
   font-weight: 500;
-  color: #fff;
+  color: var(--realism-chrome-hot);
 }
 
 .danger-desc {
   font-size: 0.75rem;
-  color: #6a7a8a;
+  color: var(--realism-muted);
   margin-top: 0.25rem;
 }
 
@@ -251,7 +280,8 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow:
     0 0 10px rgba(239, 68, 68, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    var(--realism-bevel),
+    var(--realism-lift);
 }
 .btn-danger:disabled {
   opacity: 0.5;
@@ -286,8 +316,10 @@
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
 }
 
+/* The red frame is the verdict and is untouched; only the face inside it
+   changed from glass to a machined panel. */
 .modal-content {
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.08) 0%, rgba(100, 100, 100, 0.04) 100%);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
   border: 2px solid rgba(255, 107, 107, 0.4);
   border-radius: 16px;
   padding: 1.5rem;
@@ -295,7 +327,9 @@
   width: 100%;
   box-shadow:
     0 0 30px rgba(255, 68, 68, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    var(--realism-bevel),
+    var(--realism-cavity),
+    var(--realism-lift);
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
   animation: slideUpSpring 0.4s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
@@ -310,13 +344,13 @@
 
 .modal-content p {
   margin: 0 0 1rem;
-  color: #8a9aaa;
+  color: var(--realism-muted);
   font-size: 0.9rem;
   line-height: 1.6;
 }
 
 .modal-content strong {
-  color: #fff;
+  color: var(--realism-chrome-hot);
 }
 
 .modal-actions {
@@ -327,9 +361,9 @@
 }
 
 .btn-secondary {
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
-  border: 2px solid #3a4a5a;
-  color: #8a9aaa;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border: 2px solid var(--realism-gunmetal-lit);
+  color: var(--realism-chrome);
   padding: 0.5rem 1.25rem;
   border-radius: 8px;
   font-weight: 500;
@@ -433,19 +467,19 @@
   margin-top: 6px;
   font-size: 0.78rem;
   line-height: 1.4;
-  color: var(--text-secondary, #6a7a8a);
+  color: var(--realism-muted);
 }
 
 /* Empty/error states: no club selected, club not found. */
 .settings-empty-state {
   text-align: center;
   padding: 60px 20px;
-  color: var(--text-secondary, #6a7a8a);
+  color: var(--realism-muted);
 }
 .settings-empty-title {
   font-size: 1.15rem;
   font-weight: 600;
-  color: var(--text-primary, #e6edf3);
+  color: var(--realism-chrome-hot);
   margin: 0 0 8px;
 }
 .settings-empty-desc {
@@ -487,13 +521,13 @@
   animation: slideUpFade 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 .unsaved-bar__count {
-  color: #00d4ff;
+  color: var(--realism-cyan);
   font-size: 0.8rem;
   font-weight: 600;
   white-space: nowrap;
 }
 .unsaved-bar__fields {
-  color: #6a7a8a;
+  color: var(--realism-muted);
   font-size: 0.7rem;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -516,10 +550,10 @@
 .unsaved-bar__discard {
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
-  color: #aaa;
+  color: var(--realism-chrome);
 }
 .unsaved-bar__save {
-  background: linear-gradient(135deg, #00d4ff, #0099cc);
+  background: linear-gradient(135deg, var(--realism-cyan), #0099cc);
   border: none;
   color: #000;
   font-weight: 700;
@@ -575,7 +609,7 @@
   padding-left: 18px;
   font-size: 0.82rem;
   line-height: 1.55;
-  color: var(--text-secondary, #6a7a8a);
+  color: var(--realism-muted);
 }
 .delete-impact--blocked {
   list-style: none;
@@ -622,7 +656,7 @@
 }
 
 .conflict-bar__body {
-  color: #8fa0b0;
+  color: var(--realism-muted);
   font-size: 0.7rem;
 }
 
@@ -633,7 +667,7 @@
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 8px;
-  color: #ddd;
+  color: var(--realism-chrome);
   font-size: 0.7rem;
   cursor: pointer;
 }
@@ -716,21 +750,21 @@
   display: block;
   font-size: 0.9rem;
   font-weight: 600;
-  color: #e8eaf0;
+  color: var(--realism-chrome-hot);
 }
 
 .export-desc {
   display: block;
   font-size: 0.78rem;
   line-height: 1.4;
-  color: #8fa0b0;
+  color: var(--realism-muted);
 }
 
 /* Was inherited from SettingsPage.css, a different page. */
 .setting-description {
   font-size: 0.82rem;
   line-height: 1.45;
-  color: #8fa0b0;
+  color: var(--realism-muted);
 }
 
 /* Was inherited from TableConfigPage.css, a different page. */
@@ -748,14 +782,14 @@
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.1);
-  color: #ddd;
+  color: var(--realism-chrome);
   font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
 }
 
 .settings-inline-link:focus-visible {
-  outline: 2px solid #00d4ff;
+  outline: 2px solid var(--realism-cyan);
   outline-offset: 2px;
 }
 
@@ -783,18 +817,20 @@
   margin-top: 1rem;
   margin-bottom: 0.35rem;
   font-size: 0.8rem;
-  color: #9fb0c0;
+  color: var(--realism-muted);
 }
 
+/* Same cavity as the identity fields above, cut into the amber panel. */
 .handover-select,
 .handover-input {
   width: 100%;
   padding: 0.6rem 0.75rem;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(0, 0, 0, 0.35);
-  color: #fff;
+  border: 1px solid var(--realism-gunmetal);
+  background: linear-gradient(180deg, var(--realism-obsidian) 0%, var(--realism-panel) 100%);
+  color: var(--realism-chrome-hot);
   font-size: 0.9rem;
+  box-shadow: inset 0 1px 8px rgba(0, 0, 0, 0.5);
 }
 
 .handover-select:focus-visible,
@@ -811,4 +847,71 @@
   background: rgba(239, 68, 68, 0.1);
   color: #fca5a5;
   font-size: 0.8rem;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   THE MILLED FACE AND THE PRESS - SCOPED, DELIBERATELY
+
+   Everything from here down needed a property the rule above it did not
+   already declare, and .toggle-btn / .btn-secondary / .btn-danger are names
+   four other stylesheets also own. A new declaration on the bare class would
+   have put a bevel on the two-factor setup buttons and on every ErrorBoundary
+   in the app. Scoping to .club-settings-page keeps it on this page without
+   changing what any existing rule matches.
+
+   On a phone there is no hover, so :active is the whole of the feedback -
+   the control drops into its own cavity and the top light goes out.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.club-settings-page .toggle-btn:not(.on),
+.club-settings-page .btn-secondary {
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
+}
+
+.club-settings-page .toggle-btn:active:not(:disabled),
+.club-settings-page .btn-secondary:active:not(:disabled),
+.club-settings-page .btn-danger:active:not(:disabled),
+.club-settings-page .save-btn:active:not(:disabled),
+.club-settings-page .settings-inline-link:active,
+.club-settings-page .conflict-bar__action:active,
+.club-settings-page .unsaved-bar__discard:active,
+.club-settings-page .unsaved-bar__save:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
+  filter: brightness(0.94);
+}
+
+.club-settings-page .toggle-btn:focus-visible,
+.club-settings-page .save-btn:focus-visible,
+.club-settings-page .btn-secondary:focus-visible,
+.club-settings-page .btn-danger:focus-visible,
+.club-settings-page .form-group input:focus-visible,
+.club-settings-page .form-group textarea:focus-visible,
+.club-settings-page .unsaved-bar__discard:focus-visible,
+.club-settings-page .unsaved-bar__save:focus-visible {
+  outline: 2px solid var(--realism-cyan);
+  outline-offset: 2px;
+}
+
+/* Motion collapses, meaning does not (CLAUDE.md 10.6). The panel keeps its
+   bevel, its cavity and its gunmetal edge; only the travel stops. Scoped to
+   this sheet's own selectors so it cannot reach an animation another
+   stylesheet owns. The .unsaved-bar block further up covers that bar. */
+@media (prefers-reduced-motion: reduce) {
+  .club-settings-page .settings-section,
+  .club-settings-page .form-group input,
+  .club-settings-page .form-group textarea,
+  .club-settings-page .toggle-btn,
+  .club-settings-page .save-btn,
+  .club-settings-page .btn-danger,
+  .club-settings-page .btn-secondary {
+    transition: none;
+  }
+
+  .club-settings-page .modal-content,
+  .club-settings-page .fadeInUp {
+    animation: none;
+  }
 }

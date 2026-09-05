@@ -20,7 +20,7 @@
 import React, { useMemo, useState, useEffect, useLayoutEffect, useRef, memo } from 'react';
 import { serverNow } from '../../utils/serverClock';
 import './SeatSlot.css';
-import { CardImage, CardBack } from './CardImage';
+import { CardImage, CardBack, SUIT_COLOR } from './CardImage';
 import MiniHUD, { type MiniHUDStats } from './MiniHUD';
 import { SitOutBadge } from './SitOutBadge';
 import type { PlayerStyleResult } from '../../services/PlayerStyleClassifier';
@@ -38,6 +38,33 @@ import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { startMotionBudget } from '../../utils/motionBudget';
 import { bustArtGain, BUST_ART_GAIN } from './bustArtGain';
 import { displayOrderWithDealtIndex } from '../../lib/tableCardDisplay';
+/**
+ * Suit glyphs for the peel index (text symbols, U+2660-2667, with the text
+ * variation selector so no platform swaps in an emoji). Same characters
+ * CardImage's broken-image fallback uses.
+ */
+/**
+ * The peel index's colour comes from the DECK, never from a literal here: a
+ * second set of hex values in a stylesheet is a second source of truth, and
+ * `tests/gameplay-wears-the-house-colours.test.ts` caught exactly that when
+ * the first version invented #16a34a for clubs (the deck's club green is
+ * #22c55e). Two-colour decks paint hearts and diamonds red and the rest black,
+ * which is what a two-colour deck IS; four-colour uses the suit's own colour.
+ */
+function peelIndexColor(suit: string, deckStyle?: '4color' | '2color'): string {
+  if (deckStyle === '4color') return SUIT_COLOR[suit] ?? SUIT_COLOR.s;
+  return suit === 'h' || suit === 'd' ? SUIT_COLOR.h : SUIT_COLOR.s;
+}
+
+const PEEL_SUIT_GLYPH: Record<string, string> = {
+  s: '\u2660\uFE0E',
+  h: '\u2665\uFE0E',
+  d: '\u2666\uFE0E',
+  c: '\u2663\uFE0E',
+};
+
+import { cardSlideTelemetry } from '../../services/CardSlideTelemetry';
+import { computePeel, flatPeel, liftAtProgress, type PeelFrame } from './cardPeel';
 import { seatCardSide, type CardSide } from '../../lib/tableSeatGeometry';
 import './avatarChoreography.css';
 import { formatStackChips, formatTableChips } from '../../utils/format';
@@ -1441,17 +1468,57 @@ export const SeatSlot = memo(
       }
     }, [player?.showCards, showdownRevealDelayMs]);
 
-    // ── COMPETITOR-PARITY 2026-08-19: Card Squeeze ─────────────────────────
-    // squeezeProgress: 0 = face down, 1 = fully peeled open. Driven by a
-    // drag-up gesture on the hero's cards. squeezeRevealed latches once the
-    // player peels past the threshold (or double-taps) and holds for the
-    // rest of the hand. A quick tap plays a bounce hint teaching the gesture.
-    const [squeezeRevealed, setSqueezeRevealed] = useState(false);
-    const [squeezeProgress, setSqueezeProgress] = useState(0);
+    // ── CARD SLIDE (corner peel) ─────────────────────────────────────────────
+    // COMPETITOR-PARITY 2026-08-19 built this as a hinge: the whole back
+    // rotated up from its top edge by a drag-up distance. Dan 2026-09-04:
+    // "THE CORNERS OF THE CARDS SHOULD BE 'PEELED BACK' LIKE YOUR LOOKING AT
+    // THEM AT A REAL POKER TABLE ... NOT JUST CLICK TO REVEAL, IT NEEDS TO
+    // FEEL AND ACT LIKE THE USER IS ACTUALLY TOUCHING THE SCREEN AND LIFTING
+    // THE CARDS OFF THE FELT."
+    //
+    // So it is a PEEL now. The finger pinches whichever corner it lands
+    // nearest and drags it anywhere; the back folds along the perpendicular
+    // bisector of that drag (cardPeel.ts) with the pinched corner always under
+    // the finger, the face shows through where the back was lifted, and the
+    // whole hand rises off the felt as the peel deepens. Both hero cards peel
+    // together, as a squeezed pair does. Release short of the threshold and
+    // the corner springs back down; past it the peel flies open and the hand
+    // latches revealed for the rest of the hand.
+    //
+    // PERFORMANCE: none of this goes through React state. A pointer move
+    // computes one PeelFrame and writes CSS custom properties on the cards
+    // row inside a single requestAnimationFrame; the stylesheet does the
+    // rest (clip-path, a reflection matrix, shading bands). A phone at 120Hz
+    // never re-renders the seat while the finger is down.
+    //
+    // A tap with no movement bounces the corner to teach the gesture. There
+    // is no double-tap shortcut any more (Dan: not click to reveal); the
+    // keyboard path (Enter / Space) stays, because a peel is not a thing a
+    // screen reader can do.
+    /*
+     * WHY THIS IS "WHICH HAND IS OPEN" AND NOT A BOOLEAN (Dan 2026-09-05:
+     * "CARDS ARE FLASHED BEFORE YOU CAN PEEL THEM, THAT KINDA DEFEATS THE
+     * PURPOSE OF THE PEEL").
+     *
+     * It was `useState(false)` reset by two effects keyed on `handNumber` and
+     * on the hero's card count. An effect runs AFTER the render it belongs to,
+     * so the first render of a NEW hand still carried the PREVIOUS hand's
+     * `true`: the fresh hole cards painted FACE UP - with the hand-strength
+     * label under them - and only flipped face down one commit later. Caught
+     * on video, frames 4.6-5.2s: K-diamond / Q-heart, "King High", then the
+     * backs.
+     *
+     * Storing WHICH hand is open instead makes the reset part of the render
+     * rather than a consequence of it. A hand the latch does not name is face
+     * down in the first painted frame, and there is no window to flash in.
+     */
+    const [squeezeOpenForHand, setSqueezeOpenForHand] = useState<number | null>(null);
+    /**
+     * Double-tap hold, the same shape and for the same reason. Dan: "OR DOUBLE
+     * TAP, THAT LIFTS THEM SLIGHTLY (LIKE IN THE REAL VIDEO I SENT YOU)."
+     */
+    const [holdLiftForHand, setHoldLiftForHand] = useState<number | null>(null);
     const [squeezeHint, setSqueezeHint] = useState(false);
-    const squeezeStartYRef = useRef<number | null>(null);
-    const squeezeMovedRef = useRef(false);
-    const squeezeLastTapRef = useRef(0);
     const squeezeHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     useEffect(
       () => () => {
@@ -1460,6 +1527,117 @@ export const SeatSlot = memo(
       []
     );
     const squeezeProgressRef = useRef(0);
+    /** The cards row - where the peel's CSS variables are written. */
+    const squeezeRowRef = useRef<HTMLDivElement | null>(null);
+    /** The live drag, or null when no finger is down. */
+    const peelRef = useRef<{
+      width: number;
+      height: number;
+      /** Where the finger went down, in client px. */
+      startY: number;
+      pointerId: number;
+      moved: boolean;
+      lifted: boolean;
+      /** How far the near edge is currently lifted, px. */
+      lift: number;
+    } | null>(null);
+    const peelTweenRef = useRef<number | null>(null);
+    const peelTweenTimerRef = useRef<number | null>(null);
+    useEffect(
+      () => () => {
+        if (peelTweenRef.current != null) cancelAnimationFrame(peelTweenRef.current);
+        if (peelTweenTimerRef.current != null) clearTimeout(peelTweenTimerRef.current);
+      },
+      []
+    );
+    /** Paint one frame of the peel onto the row. */
+    const paintPeel = (frame: PeelFrame) => {
+      const row = squeezeRowRef.current;
+      if (!row) return;
+      const st = row.style;
+      st.setProperty('--peel-progress', String(frame.progress));
+      st.setProperty('--peel-back-clip', frame.backClip);
+      st.setProperty('--peel-face-clip', frame.faceClip);
+      st.setProperty('--peel-fold', `${frame.foldPercent}%`);
+      st.setProperty('--peel-bend', `${frame.bendDeg}deg`);
+      squeezeProgressRef.current = frame.progress;
+    };
+    const clearPeelVars = () => {
+      const row = squeezeRowRef.current;
+      if (!row) return;
+      for (const v of [
+        '--peel-progress',
+        '--peel-back-clip',
+        '--peel-face-clip',
+        '--peel-fold',
+        '--peel-bend',
+      ]) {
+        row.style.removeProperty(v);
+      }
+      row.removeAttribute('data-peeling');
+      squeezeProgressRef.current = 0;
+    };
+    /**
+     * Paint the current finger position. Synchronous on purpose: browsers
+     * already coalesce pointermove to one event per frame, and a paint that
+     * waits for requestAnimationFrame lags a finger by a frame at best and
+     * stalls entirely in a throttled tab.
+     */
+    const paintPeelNow = (drag: { width: number; height: number; lift: number }): number => {
+      const frame = computePeel({ width: drag.width, height: drag.height, lift: drag.lift });
+      paintPeel(frame);
+      return frame.progress;
+    };
+    /**
+     * Animate the pinched corner from where it is to a progress target along
+     * the diagonal, then call `done`. Speed-scaled like every other motion.
+     */
+    const tweenPeel = (
+      drag: { width: number; height: number; lift: number },
+      targetProgress: number,
+      ms: number,
+      /* Optional: a settle back to a HELD lift has nothing to clean up, and
+         passing `clearPeelVars` there would wipe the lift it just landed on. */
+      done?: () => void
+    ) => {
+      if (peelTweenRef.current != null) cancelAnimationFrame(peelTweenRef.current);
+      if (peelTweenTimerRef.current != null) clearTimeout(peelTweenTimerRef.current);
+      const target = liftAtProgress(drag.height, targetProgress);
+      const from = drag.lift;
+      const duration = Math.max(1, ms * getAnimationSpeed());
+      const t0 = performance.now();
+      const at = (k: number) =>
+        computePeel({ width: drag.width, height: drag.height, lift: from + (target - from) * k });
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        if (peelTweenRef.current != null) cancelAnimationFrame(peelTweenRef.current);
+        if (peelTweenTimerRef.current != null) clearTimeout(peelTweenTimerRef.current);
+        peelTweenRef.current = null;
+        peelTweenTimerRef.current = null;
+        paintPeel(at(1));
+        done?.();
+      };
+      const step = (now: number) => {
+        if (finished) return;
+        const t = Math.min(1, (now - t0) / duration);
+        if (t >= 1) {
+          finish();
+          return;
+        }
+        // ease-out cubic: a release decelerates, it does not slam.
+        paintPeel(at(1 - Math.pow(1 - t, 3)));
+        peelTweenRef.current = requestAnimationFrame(step);
+      };
+      peelTweenRef.current = requestAnimationFrame(step);
+      // BACKSTOP. requestAnimationFrame is throttled to nothing in a hidden or
+      // background tab, and the commit tween ends in a STATE change (the hand
+      // opens). A hand that opens only if frames arrive is a hand that can
+      // stay face down until the player taps again. The timer lands the
+      // final frame and completes whatever rAF did not.
+      peelTweenTimerRef.current = window.setTimeout(finish, duration + 80);
+    };
     // New hand → cards are face down again.
     // AUDIT-2 FIX 2026-08-20: the ONLY reset used to be hero holeCards hitting
     // 0 (which depends on the HAND_STARTED event landing). If that event was
@@ -1470,82 +1648,431 @@ export const SeatSlot = memo(
     // unmount (showdown / all-in force-reveal), and the stale >0.55 value made
     // the NEXT hand's first bare tap reveal the cards with no gesture at all.
     const heroCardCount = player?.isHero ? (player.holeCards?.length ?? 0) : 0;
-    useEffect(() => {
-      if (heroCardCount === 0) {
-        setSqueezeRevealed(false);
-        squeezeProgressRef.current = 0;
-        setSqueezeProgress(0);
-        squeezeStartYRef.current = null;
-        squeezeLastTapRef.current = 0;
+    /* Derived at RENDER time, never in an effect - see the note on
+       `squeezeOpenForHand`. Both conditions matter: a new hand number retires
+       the latch, and so does the hand being taken away (fold, muck, stand up),
+       which is the case the old card-count effect existed for. */
+    const squeezeRevealed =
+      squeezeOpenForHand !== null && squeezeOpenForHand === handNumber && heroCardCount > 0;
+    const holdLiftActive =
+      holdLiftForHand !== null && holdLiftForHand === handNumber && heroCardCount > 0;
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  THE TUTORIAL — the cards teach the gesture themselves, once
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Dan 2026-09-05: "A TUTORIAL WOULD BE COOL IF ITS ENABLED."
+     *
+     * A player who turns Card Slide on is shown two face-down cards and no
+     * instruction. Tapping only bounces them, so the most likely first move
+     * teaches nothing. The first time a face-down hand appears, the corner
+     * therefore PEELS ITSELF - twice, about a third of the way, then settles -
+     * under one line of text. Nothing to dismiss and nothing to read: the
+     * demonstration IS the instruction.
+     *
+     * It runs ONCE per browser, it is cancelled the instant the player
+     * touches the cards (they already understand), and it never blocks: the
+     * real gesture interrupts it mid-frame and takes over.
+     */
+    const TUTORIAL_SEEN_KEY = 'ca_card_slide_tutorial_v1';
+    /** Bumped when a hidden tab becomes visible, to re-enter the demo effect. */
+    const [tutorialRetry, setTutorialRetry] = useState(0);
+    const [tutorialRunning, setTutorialRunning] = useState(false);
+    const tutorialRafRef = useRef<number | null>(null);
+    const tutorialTimerRef = useRef<number | null>(null);
+    const markTutorialSeen = () => {
+      try {
+        localStorage.setItem(TUTORIAL_SEEN_KEY, '1');
+      } catch {
+        /* private mode: the demo simply plays again next session */
       }
+    };
+    const stopTutorial = (seen: boolean) => {
+      if (tutorialRafRef.current != null) cancelAnimationFrame(tutorialRafRef.current);
+      if (tutorialTimerRef.current != null) clearTimeout(tutorialTimerRef.current);
+      tutorialRafRef.current = null;
+      tutorialTimerRef.current = null;
+      const row = squeezeRowRef.current;
+      if (row) row.removeAttribute('data-peeling');
+      clearPeelVars();
+      setTutorialRunning(false);
+      if (seen) markTutorialSeen();
+    };
+
+    const resetSqueeze = () => {
+      setSqueezeOpenForHand(null);
+      setHoldLiftForHand(null);
+      peelRef.current = null;
+      if (peelTweenRef.current != null) cancelAnimationFrame(peelTweenRef.current);
+      if (peelTweenTimerRef.current != null) clearTimeout(peelTweenTimerRef.current);
+      peelTweenRef.current = null;
+      peelTweenTimerRef.current = null;
+      clearPeelVars();
+    };
+    /* The latch itself is derived above and needs no effect. These clear the
+       IMPERATIVE half - the tween handles and the inline custom properties -
+       which a render cannot do. */
+    useEffect(() => {
+      if (heroCardCount === 0) resetSqueeze();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [heroCardCount]);
     useEffect(() => {
-      setSqueezeRevealed(false);
-      squeezeProgressRef.current = 0;
-      setSqueezeProgress(0);
-      squeezeStartYRef.current = null;
-      squeezeLastTapRef.current = 0;
+      resetSqueeze();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [handNumber]);
     const completeSqueeze = () => {
-      setSqueezeRevealed(true);
-      squeezeProgressRef.current = 0;
-      setSqueezeProgress(0);
-      if (playSounds) soundService.playCardSqueeze();
+      /* Dan 2026-09-05: "YOU SHOULD ALSO BE ABLE TO PEEL THEM ALL THE WAY
+         OPEN. WHEN THAT HAPPENS THEY STAY UP AND LIVE (LIKE A NORMAL RENDER
+         HERO CARD VIEW)." That is what this latch is: the hand is named as
+         open and renders as ordinary hero cards for the rest of it. */
+      setSqueezeOpenForHand(handNumber);
+      setHoldLiftForHand(null);
+      peelRef.current = null;
+      clearPeelVars();
+      // No sound on open either - the whole peel is silent now.
     };
-    const setProgress = (p: number) => {
-      squeezeProgressRef.current = p;
-      setSqueezeProgress(p);
+
+    /**
+     * DOUBLE TAP: a small lift that STAYS, so you can read the indices without
+     * holding a finger on the cards - the way Dan holds a real pair tilted on
+     * the felt while he thinks. Tapping again puts them back down.
+     *
+     * Painted from an effect as well as from the gesture, because the CSS
+     * custom properties live on the row's inline style: a remount (a seat
+     * re-key, a table switch) gives us a fresh node with none of them, and the
+     * lift would silently vanish while the state still said it was held.
+     */
+    const HOLD_LIFT_PROGRESS = 0.34;
+    const toggleHoldLift = () => {
+      setHoldLiftForHand((prev) => (prev === handNumber ? null : handNumber));
     };
+    useEffect(() => {
+      if (peelRef.current) return; // a live drag owns the vars
+      const row = squeezeRowRef.current;
+      if (!row) return;
+      if (holdLiftActive) {
+        const card = row.querySelector('.seat__card--squeeze');
+        const h = card ? card.getBoundingClientRect().height : 0;
+        paintPeel(
+          computePeel({
+            width: 1,
+            height: h || 1,
+            lift: liftAtProgress(h || 1, HOLD_LIFT_PROGRESS),
+          })
+        );
+      } else if (!squeezeRevealed) {
+        clearPeelVars();
+      }
+    }, [holdLiftActive, squeezeRevealed, handNumber]);
+    /**
+     * Progress past which a release OPENS the hand for good instead of
+     * dropping it back on the felt.
+     *
+     * RAISED from 0.45 to 0.9 on 2026-09-05. Dan: "YOU SHOULD ALSO BE ABLE TO
+     * PEEL THEM ALL THE WAY OPEN. WHEN THAT HAPPENS THEY STAY UP AND LIVE."
+     * At 0.45 a glance committed the hand - you could not look without also
+     * turning the cards over, which is the opposite of what a peek is for. The
+     * three gestures now divide cleanly:
+     *
+     *   drag and hold        look, for as long as you hold
+     *   release under 0.9    back down on the felt, still face down
+     *   peel all the way     open and live for the rest of the hand
+     *   double tap           a small lift that stays until you tap again
+     */
+    const PEEL_COMMIT = 0.9;
+    /** Two taps inside this window are a double tap. */
+    const DOUBLE_TAP_MS = 300;
+    const lastTapAtRef = useRef(0);
     const squeezeHandlers: React.HTMLAttributes<HTMLDivElement> = {
       onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => {
-        squeezeStartYRef.current = e.clientY;
-        squeezeMovedRef.current = false;
-        (e.currentTarget as HTMLDivElement).setPointerCapture?.(e.pointerId);
+        if (peelRef.current) return; // a second finger does not start a second peel
+        // The player touched the cards: they do not need to be shown.
+        if (tutorialRunning) stopTutorial(true);
+        if (peelTweenRef.current != null) {
+          cancelAnimationFrame(peelTweenRef.current);
+          peelTweenRef.current = null;
+        }
+        const row = e.currentTarget as HTMLDivElement;
+        // The card under the finger sets the frame; a touch in the gap
+        // between cards pinches the first one. Both cards then peel together.
+        const target = (e.target as Element | null)?.closest?.('.seat__card--squeeze');
+        const cardEl = (target ?? row.querySelector('.seat__card--squeeze')) as Element | null;
+        if (!cardEl) return;
+        const rect = cardEl.getBoundingClientRect();
+        if (rect.width < 1 || rect.height < 1) return;
+        /* Dan 2026-09-05, from his own video with real cards: the NEAR edge
+           lifts and the fold travels UP the card. So the only thing that
+           matters is how far the finger has moved upward from where it went
+           down - not which corner it landed nearest. */
+        /* Continue FROM the double-tap lift if one is being held. Starting at
+           zero would drop the cards flat the instant a finger landed on them,
+           which reads as the app throwing away the look you already had. */
+        const heldLift = holdLiftActive ? liftAtProgress(rect.height, HOLD_LIFT_PROGRESS) : 0;
+        peelRef.current = {
+          width: rect.width,
+          height: rect.height,
+          startY: e.clientY + heldLift,
+          pointerId: e.pointerId,
+          moved: false,
+          lifted: heldLift > 0,
+          lift: heldLift,
+        };
+        row.setAttribute('data-peeling', '');
+        paintPeel(computePeel({ width: rect.width, height: rect.height, lift: heldLift }));
+        // The card is picked up the moment it is touched.
+        /* SILENT PEEL (Dan 2026-09-05: "remove the sound effect when you
+           actually peel your card, its not needed"). The friction voice and
+           the paper tick are gone; the haptic stays, because that is the
+           feedback he asked to keep. */
+        haptic.light();
+        // Capture so the peel keeps tracking a finger that wanders off the
+        // cards. Guarded: a pointer the browser no longer knows (or a
+        // synthetic one) makes this throw, and a throw here must never
+        // strand the peel.
+        try {
+          row.setPointerCapture?.(e.pointerId);
+        } catch {
+          /* no capture: the row still receives moves while the finger is on it */
+        }
       },
       onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => {
-        if (squeezeStartYRef.current == null) return;
-        const dy = squeezeStartYRef.current - e.clientY;
-        if (Math.abs(dy) > 4) squeezeMovedRef.current = true;
-        const p = Math.max(0, Math.min(1, dy / 70));
-        // ENHANCEMENT 2026-08-19: one light haptic as the card starts to
-        // bend — the tactile "grip" of a live squeeze.
-        if (p >= 0.15 && squeezeProgressRef.current < 0.15 && playSounds) haptic.light();
-        setProgress(p);
+        const drag = peelRef.current;
+        if (!drag || e.pointerId !== drag.pointerId) return;
+        /* UP is the gesture. Dragging up lifts the near edge and walks the
+           fold toward the top of the card; dragging back down lays it flat
+           again, which is what a thumb actually does. */
+        const lift = drag.startY - e.clientY;
+        if (!drag.moved && Math.abs(lift) > 4) {
+          drag.moved = true;
+          cardSlideTelemetry.peelStarted();
+        }
+        if (!drag.moved) return;
+        drag.lift = Math.max(0, lift);
+        const before = squeezeProgressRef.current;
+        // Tactile beats: the grip as the corner first bends, and a firmer
+        // one as the peel crosses the point where letting go opens the hand.
+        const after = paintPeelNow(drag);
+        // The card leaving the felt, and the point where letting go opens the
+        // hand. Haptics only - the peel is silent (Dan 2026-09-05).
+        if (!drag.lifted && after >= 0.06) {
+          drag.lifted = true;
+          haptic.light();
+        }
+        if (after >= PEEL_COMMIT && before < PEEL_COMMIT) haptic.medium();
       },
-      onPointerUp: () => {
-        squeezeStartYRef.current = null;
-        if (squeezeProgressRef.current > 0.55) {
-          completeSqueeze();
+      onPointerUp: (e: React.PointerEvent<HTMLDivElement>) => {
+        const drag = peelRef.current;
+        if (!drag || e.pointerId !== drag.pointerId) return;
+        const row = e.currentTarget as HTMLDivElement;
+        try {
+          row.releasePointerCapture?.(e.pointerId);
+        } catch {
+          /* already released */
+        }
+        peelRef.current = null;
+        if (!drag.moved) {
+          const now = Date.now();
+          const isDoubleTap = now - lastTapAtRef.current <= DOUBLE_TAP_MS;
+          lastTapAtRef.current = isDoubleTap ? 0 : now;
+          if (isDoubleTap) {
+            /* Dan 2026-09-05: "OR DOUBLE TAP, THAT LIFTS THEM SLIGHTLY (LIKE
+               IN THE REAL VIDEO I SENT YOU)." Held until it is tapped again or
+               the hand ends; the effect above paints it. */
+            cardSlideTelemetry.peelStarted();
+            haptic.light();
+            toggleHoldLift();
+            return;
+          }
+          // A single tap: bounce the near edge to show what the gesture is.
+          // Never clear the vars while a lift is being held - that would drop
+          // the cards on the first tap of the double tap that raised them.
+          if (!holdLiftActive) clearPeelVars();
+          setSqueezeHint(true);
+          if (squeezeHintTimerRef.current) clearTimeout(squeezeHintTimerRef.current);
+          squeezeHintTimerRef.current = setTimeout(() => {
+            squeezeHintTimerRef.current = null;
+            setSqueezeHint(false);
+          }, 450);
           return;
         }
-        setProgress(0);
-        if (!squeezeMovedRef.current) {
-          // Tap: double-tap opens instantly; single tap bounces a hint.
-          const now = Date.now();
-          if (now - squeezeLastTapRef.current < 300) {
-            completeSqueeze();
-          } else {
-            setSqueezeHint(true);
-            if (squeezeHintTimerRef.current) clearTimeout(squeezeHintTimerRef.current);
-            squeezeHintTimerRef.current = setTimeout(() => {
-              squeezeHintTimerRef.current = null;
-              setSqueezeHint(false);
-            }, 450);
-          }
-          squeezeLastTapRef.current = now;
+        const current = computePeel({
+          width: drag.width,
+          height: drag.height,
+          lift: drag.lift,
+        });
+        row.removeAttribute('data-peeling');
+        if (current.progress >= PEEL_COMMIT) {
+          // Past the point of no return: the corner flies the rest of the way
+          // and the hand opens.
+          cardSlideTelemetry.peelCommitted();
+          tweenPeel(drag, 1, 140, completeSqueeze);
+        } else {
+          // Let go early: the corner settles back onto the felt. The ratio of
+          // this to the line above is the only measure of whether the commit
+          // threshold is set where a hand actually wants to let go.
+          cardSlideTelemetry.peelAbandoned();
+          const restingProgress = holdLiftActive ? HOLD_LIFT_PROGRESS : 0;
+          tweenPeel(drag, restingProgress, 260, holdLiftActive ? undefined : clearPeelVars);
         }
       },
-      onPointerCancel: () => {
-        squeezeStartYRef.current = null;
-        setProgress(0);
+      onPointerCancel: (e: React.PointerEvent<HTMLDivElement>) => {
+        const drag = peelRef.current;
+        if (!drag) return;
+        peelRef.current = null;
+        (e.currentTarget as HTMLDivElement).removeAttribute('data-peeling');
+        const restingProgress = holdLiftActive ? HOLD_LIFT_PROGRESS : 0;
+        tweenPeel(drag, restingProgress, 200, holdLiftActive ? undefined : clearPeelVars);
       },
       onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
+          cardSlideTelemetry.keyboardOpen();
           completeSqueeze();
         }
       },
     };
+
+    /*
+     * The demo's own gate, spelled out here rather than reusing `squeezeDown`.
+     * `squeezeDown` is computed after the empty-seat early return, and a hook
+     * that depends on it would be a hook AFTER a return - which React forbids
+     * and eslint catches (rules-of-hooks, caught on this very file). Same
+     * inputs, read one screen earlier.
+     */
+    const tutorialEligible =
+      !!cardSqueezeActive &&
+      !squeezeRevealed &&
+      !!player &&
+      player.status !== 'all_in' &&
+      !player.showCards &&
+      !isWinner &&
+      !isMucking;
+
+    // Fire the demo on the first face-down hand this browser has ever seen.
+    /*
+     * IDEMPOTENT ON PURPOSE. The first version guarded entry with a
+     * `hasStarted` ref, which React 19's StrictMode turns into a demo that
+     * never plays: mount runs the effect, the double-invoke cleanup cancels
+     * the loop, and the second run sees the ref already set and returns.
+     * Measured in the dev server - the coach mark appeared over cards that
+     * never moved. So there is no entry ref: the effect cancels whatever is
+     * running and starts again, and "once ever" is enforced where it belongs,
+     * in localStorage, which the demo writes when it FINISHES.
+     */
+    useEffect(() => {
+      if (!tutorialEligible) return;
+      let seen = true;
+      try {
+        seen = localStorage.getItem(TUTORIAL_SEEN_KEY) === '1';
+      } catch {
+        seen = false;
+      }
+      if (seen) return;
+      const row = squeezeRowRef.current;
+      const cardEl = row?.querySelector('.seat__card--squeeze') as HTMLElement | null;
+      const rect = cardEl?.getBoundingClientRect();
+      if (!row || !rect || rect.width < 1) return;
+
+      /*
+       * NOT IN A BACKGROUND TAB. requestAnimationFrame does not fire on a
+       * hidden document, so a demo started there would paint nothing, never
+       * reach its own end, and never mark itself seen - leaving the caption
+       * and `data-peeling` welded to the row for the whole session, and
+       * spending the one showing on a tab nobody was looking at. Measured in
+       * the dev server with the pane hidden: the caption appeared over cards
+       * that never moved. Wait for the tab to be looked at instead.
+       */
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        const onVisible = () => {
+          if (document.visibilityState === 'visible') {
+            document.removeEventListener('visibilitychange', onVisible);
+            // Re-enter through the same path, which re-reads every guard.
+            setTutorialRetry((n) => n + 1);
+          }
+        };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => document.removeEventListener('visibilitychange', onVisible);
+      }
+
+      if (tutorialRafRef.current != null) cancelAnimationFrame(tutorialRafRef.current);
+      setTutorialRunning(true);
+
+      // Reduced motion: the line is shown, the cards do not move. The caption
+      // still says what to do, so meaning survives (CLAUDE.md 10.6).
+      if (prefersReducedMotion()) {
+        const t = window.setTimeout(() => stopTutorial(true), 4000);
+        return () => window.clearTimeout(t);
+      }
+
+      const speed = getAnimationSpeed();
+      const RISE = 900 * speed;
+      const HOLD = 420 * speed;
+      const FALL = 700 * speed;
+      const GAP = 380 * speed;
+      const CYCLE = RISE + HOLD + FALL + GAP;
+      const PEAK = 0.34;
+      const t0 = performance.now();
+      row.setAttribute('data-peeling', '');
+
+      const step = (now: number) => {
+        // A real finger outranks the demonstration, always.
+        if (peelRef.current) {
+          stopTutorial(true);
+          return;
+        }
+        const elapsed = now - t0;
+        if (elapsed >= CYCLE * 2) {
+          stopTutorial(true);
+          return;
+        }
+        const inCycle = elapsed % CYCLE;
+        let p: number;
+        if (inCycle < RISE) {
+          const k = inCycle / RISE;
+          p = PEAK * (1 - Math.pow(1 - k, 3));
+        } else if (inCycle < RISE + HOLD) {
+          p = PEAK;
+        } else if (inCycle < RISE + HOLD + FALL) {
+          const k = (inCycle - RISE - HOLD) / FALL;
+          p = PEAK * (1 - k * k);
+        } else {
+          p = 0;
+        }
+        paintPeel(
+          computePeel({
+            width: rect.width,
+            height: rect.height,
+            lift: liftAtProgress(rect.height, p),
+          })
+        );
+        tutorialRafRef.current = requestAnimationFrame(step);
+      };
+      tutorialRafRef.current = requestAnimationFrame(step);
+      /*
+       * THE BACKSTOP. Same reasoning as the commit tween: the demo ends in a
+       * STATE change (the caption goes away, the row is released, the once-
+       * ever flag is written), and a state change that only happens if frames
+       * arrive is a state change that can fail to happen - a tab backgrounded
+       * mid-demo would otherwise keep the caption forever.
+       */
+      tutorialTimerRef.current = window.setTimeout(() => stopTutorial(true), CYCLE * 2 + 600);
+      return () => {
+        if (tutorialRafRef.current != null) cancelAnimationFrame(tutorialRafRef.current);
+        if (tutorialTimerRef.current != null) clearTimeout(tutorialTimerRef.current);
+        tutorialRafRef.current = null;
+        tutorialTimerRef.current = null;
+        row.removeAttribute('data-peeling');
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tutorialEligible, tutorialRetry]);
+
+    useEffect(
+      () => () => {
+        if (tutorialRafRef.current != null) cancelAnimationFrame(tutorialRafRef.current);
+        if (tutorialTimerRef.current != null) clearTimeout(tutorialTimerRef.current);
+      },
+      []
+    );
 
     // Stack glow pulse — when the stack changes by >20%.
     // Same occupant guard as the delta above, and for the same reason: a chair
@@ -2571,16 +3098,12 @@ export const SeatSlot = memo(
                   ? ' seat__cards--squeeze-open'
                   : '')
             }
-            style={
-              cardSqueezeActive
-                ? ({ '--squeeze-progress': squeezeProgress } as React.CSSProperties)
-                : undefined
-            }
+            ref={squeezeRowRef}
             role={squeezeDown ? 'button' : undefined}
             tabIndex={squeezeDown ? 0 : undefined}
             aria-label={
               squeezeDown
-                ? 'Your Cards Are Face Down. Drag Up To Squeeze Them Open, Or Press Enter.'
+                ? 'Your Cards Are Face Down. Slide A Corner To Peel Them Up, Or Press Enter.'
                 : undefined
             }
             {...(squeezeDown
@@ -2613,6 +3136,11 @@ export const SeatSlot = memo(
                   },
                 })}
           >
+            {tutorialRunning && (
+              <div className="seat__peel-coach" aria-hidden="true">
+                Slide The Corner To Look
+              </div>
+            )}
             {player.holeCards.map((card, i) => (
               /* ── Dan 2026-08-18: click a card to show it after the hand ──
                  Wrapping rather than putting the handler on HoleCard keeps the
@@ -2623,7 +3151,17 @@ export const SeatSlot = memo(
                 key={i}
                 className={
                   'seat__card-pick' +
-                  (showPickedCardIndexes?.includes(i) ? ' seat__card-pick--marked' : '')
+                  /* THE BADGE FOLLOWS THE CLICK. `--marked` draws a gold eye on
+                     the card's corner, and it used to render with no reference
+                     to squeeze state while BOTH handlers below early-return on
+                     `squeezeDown`. So a pick that outlived its hand sat there
+                     on the back of a face-down card, visibly on and completely
+                     inert - which is what "the eye ball stays locked, you can
+                     never unlock it" looked like. If you cannot click it, it
+                     does not claim to be clickable. */
+                  (showPickedCardIndexes?.includes(i) && !squeezeDown
+                    ? ' seat__card-pick--marked'
+                    : '')
                 }
                 /* AUDIT-2 FIX 2026-08-20: while the cards are face down in
                    squeeze mode this span must NOT be a focusable button — its
@@ -2674,6 +3212,11 @@ export const SeatSlot = memo(
                      overflow:hidden so the 3D peel is never clipped. */
                   <div className="seat__card seat__card--squeeze">
                     <div className="seat__squeeze-flip">
+                      {/* THE FACE, revealed from the BOTTOM UP as the near
+                          edge lifts (Dan's video, 2026-09-05). Clipped to
+                          everything BELOW the fold line. The real card art -
+                          no synthetic index, because the whole face comes
+                          into view, exactly as it does on a real card. */}
                       <div className="seat__squeeze-face seat__squeeze-face--under">
                         {card ? (
                           <CardImage card={card} deckStyle={deckStyle} size="md" />
@@ -2681,9 +3224,15 @@ export const SeatSlot = memo(
                           <CardBack size="md" style={cardBack} />
                         )}
                       </div>
+                      {/* THE BACK, clipped to everything ABOVE the fold, so it
+                          recedes upward as the face comes up to meet it. */}
                       <div className="seat__squeeze-face seat__squeeze-face--cover">
                         <CardBack size="md" style={cardBack} />
                       </div>
+                      {/* The crease: a soft shadow sitting on the fold line,
+                          which is what sells the card bending rather than a
+                          window sliding open. */}
+                      <div className="seat__peel-crease" aria-hidden="true" />
                     </div>
                   </div>
                 ) : (
@@ -2762,7 +3311,13 @@ export const SeatSlot = memo(
          * evaluates it — see TablePage's `heroHandStrength` — so the arithmetic
          * runs once per board change rather than once per seat render.
          */}
-        {player.isHero && handStrength && !(isWinner && winningHandName) && (
+        {/* CARD SLIDE 2026-09-05: ...and never while the hero's own cards are
+            still face down. This label reads "Pair Of Kings" straight from
+            the hole cards, so with Card Slide on it announced the hand the
+            player had not looked at yet - the peel became decorative and
+            nobody ever had to use it. A card you have not turned over does
+            not tell you what it is. */}
+        {player.isHero && handStrength && !squeezeDown && !(isWinner && winningHandName) && (
           <div className="seat__strength" aria-live="polite">
             {handStrength}
           </div>

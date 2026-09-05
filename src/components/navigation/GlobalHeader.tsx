@@ -20,6 +20,14 @@ import styles from './GlobalHeader.module.css';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
 const BASE = MEDIA_BASE;
+
+/** MultiTablePage publishes how many live TABLE tabs it holds on <body>; a
+ *  World Hub destination with any open goes to a hub tab, never to
+ *  window.location (which would unmount them all). Inline rather than a shared
+ *  module because this header is in the entry chunk and a new import would
+ *  grow it (scripts/ci/entry-chunk-delta.mjs). */
+const liveTablesOpen = (): boolean =>
+  typeof document !== 'undefined' && Number(document.body?.dataset.caLiveTables ?? '0') > 0;
 const APPROVED_HEADER_ASSET = `${BASE}images/global-header/`;
 const DEFAULT_AVATAR = `${BASE}default-avatar.png`;
 
@@ -252,12 +260,21 @@ export default function GlobalHeader({ inTab = null }: { inTab?: InTabLobbyNav |
       // if the container declines - it is not a lobby tab on screen - does
       // this fall through to the full navigation it always did.
       if (inTabHub && inTabHub.openHub(path)) return;
+      // OFF-ROUTE WITH A LIVE TABLE OPEN (Dan 2026-09-05): this header sits
+      // above the pinned table strip. `window.location` here would unmount
+      // every felt the strip is holding, so the page opens as a hub tab
+      // beside the game instead. MultiTablePage publishes the count; with no
+      // table open this is the plain navigation it has always been.
+      if (liveTablesOpen()) {
+        masterBus.emit('OPEN_HUB_TAB', { path, requestedBy: authUser?.id });
+        return;
+      }
       setIsNavigatingAway(true);
       requestAnimationFrame(() => {
         window.location.href = path;
       });
     },
-    [inTabHub]
+    [inTabHub, authUser?.id]
   );
 
   const [prefetchedMessenger, setPrefetchedMessenger] = useState(false);
@@ -279,8 +296,13 @@ export default function GlobalHeader({ inTab = null }: { inTab?: InTabLobbyNav |
   const handleMessagesClick = useCallback(async () => {
     if (authUser?.id) await clearUnreadMessages(authUser.id);
     // /messages is NavigateToMessenger, which leaves for /hub/messenger with
-    // window.location. In a tab, go there as a hub page instead.
+    // window.location. In a tab, or with a live table open, go there as a hub
+    // page instead (see navigateToHub).
     if (inTabHub && inTabHub.openHub('/hub/messenger')) return;
+    if (liveTablesOpen()) {
+      masterBus.emit('OPEN_HUB_TAB', { path: '/hub/messenger', requestedBy: authUser?.id });
+      return;
+    }
     navigate('/messages');
   }, [authUser?.id, clearUnreadMessages, navigate, inTabHub]);
 

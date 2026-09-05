@@ -168,12 +168,41 @@ Settlement calls a documented no-op" - the button now says plainly that agent
 commissions settle through credit invoices and player rakeback through the
 engine settler.
 
+## The cashier stopped contradicting itself
+
+Three hundred lines above its confirmation dialog, the classic cashier shows a
+preview row reading **"Claim Back Window: Ten Minutes"**. The dialog said
+**"This Action Cannot Be Undone."** That is not a scarier warning, it is a
+false one: an operator who believed it would never go looking for the Claim
+Back that could still save them. It now says what is true - the send can be
+claimed back for ten minutes and not after that - and still asks them to check
+the amount and the recipient.
+
+The same page reported every outcome through 35 hand-rolled `setMessage` calls
+in sentence case, bypassing the central popup rule (CLAUDE.md 5.7). Rather than
+rewrite 35 call sites on a working money screen, the three places that RENDER
+that banner now pass the text through `formatPopupText` - the one function the
+law names - so every one of those messages is Title Cased and em-dash free
+without touching a single caller.
+
+## Two things measured and deliberately left
+
+- **`fn_club_cashier_members_page_v3` really does re-run the recursive downline
+  walk on every page** (v3 selects from v2, which selects from v1). It costs
+  241ms cold and 121ms warm for page one of 417 members on the busiest club.
+  Rewriting a working money-adjacent read to save 100ms is not worth the risk;
+  the note in the plan says what to do if a club ever grows into it.
+- **"Execute Settlement calls a documented no-op" is already fixed.** The
+  button says plainly that agent commissions settle through credit invoices and
+  player rakeback through the engine settler, and keeps its success branch as a
+  tripwire. The plan entry was stale; it is marked so.
+
 ## Verified
 
 - Migrations `20260905040100` and `20260905041000`, one transaction each,
   applied and recorded.
 - Every behaviour above proved live inside a rolled-back transaction.
-- 21 pins in `tests/unit/anApprovalCanBeRetried.test.ts`; the amount pins
+- 23 pins in `tests/unit/anApprovalCanBeRetried.test.ts`; the amount pins
   in `CashierAmountValidation.test.ts` moved to the new rule with the measured
   reason, in the same commit.
 - The discarded-error ratchet caught the improvement it should:
@@ -183,8 +212,7 @@ engine settler.
 
 ## Still open in this phase
 
-The rest of section 9 - the classic cashier reporting through `setMessage`
-instead of the Toast layer, and
+The rest of section 9 -
 `fn_club_cashier_members_page_v3` re-running the recursive downline walk on
 every page - plus the two items carried from phase 6 (`fn_ca_rake_by_agent` at
 29.7s, and the bomb pot report's role-dependent slowness).

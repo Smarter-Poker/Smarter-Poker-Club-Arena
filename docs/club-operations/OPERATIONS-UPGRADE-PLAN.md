@@ -620,9 +620,11 @@ subtransaction. What is wrong is the reporting around them.
 - **CONFIRMED - the receipt hardcodes `status="paid"`** for any period marked
   settled, without reading any invoice's payment state. The page can and does
   show a period as paid when the ledger has not said so.
-- **CONFIRMED - "Execute Settlement" calls a documented no-op**, so the
-  double-settle guard above it is currently protecting nothing, while the real
-  closer (`fn_set_settlement_period_status`) has no such guard.
+- **ALREADY FIXED, verified 2026-09-05 - "Execute Settlement" calls a
+  documented no-op.** The button now says so plainly ("Nothing To Pay Out
+  Here. Agent Commissions Settle Through Credit Invoices, And Player Rakeback
+  Through The Engine Settler"), and the success branch is kept as a tripwire
+  for the day a real implementation returns numbers. Left as it is.
 - **CONFIRMED - `disputed` is missing from the page's own period type**, so a
   disputed period renders an unstyled badge with no countdown, no action and
   nothing saying why.
@@ -634,8 +636,13 @@ subtransaction. What is wrong is the reporting around them.
   `setMessage` in sentence case** rather than the Toast layer, and its
   high-value confirmation says "This Action Cannot Be Undone" on a send the
   same page advertises as claimable back for ten minutes.
-- **CONFIRMED - `fn_club_cashier_members_page_v3` re-runs the full recursive
-  downline walk on every page** (it selects from v2, which selects from v1).
+- **MEASURED AND LEFT ALONE - `fn_club_cashier_members_page_v3` re-runs the
+  full recursive downline walk on every page** (it selects from v2, which
+  selects from v1). The nesting is real, and the cost is not: 241ms cold and
+  121ms warm for page one of 417 members on the busiest club. Rewriting a
+  working money-adjacent read to save 100ms is not worth the risk it carries;
+  if a club ever reaches a size where this bites, the fix is to page inside v1
+  rather than to wrap it a third time.
 
 ---
 

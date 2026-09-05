@@ -251,3 +251,24 @@ describe('the settlement period belongs to the club whose page it heads', () => 
     expect(SETTLEMENT).toContain("p.status === 'settled' && p.settledAt");
   });
 });
+
+describe('the cashier stops contradicting itself', () => {
+  it('says the send can be claimed back, because the same screen says so', () => {
+    // The preview three hundred lines above the confirmation reads
+    // "Claim Back Window: Ten Minutes". The warning said "This Action Cannot
+    // Be Undone" - not a scarier warning but a false one: an operator who
+    // believed it would never look for the Claim Back that could save them.
+    expect(CASHIER).toContain('You Can Claim This Back For Ten Minutes, And Not After That.');
+    expect(CASHIER).not.toContain('This Action Cannot Be Undone');
+    expect(CASHIER).toContain('Claim Back Window');
+  });
+
+  it('every banner message goes through the one popup rule', () => {
+    // CLAUDE.md 5.7: popup copy is Title Cased and em-dash free centrally, in
+    // popupStyle.ts, and is never hand-rolled. Applying it at the three render
+    // sites covers all 35 setMessage callers without touching one of them.
+    const banners = CASHIER.match(/\{formatPopupText\(message\.text\)\}/g) ?? [];
+    expect(banners.length).toBe(3);
+    expect(CASHIER).not.toContain('{message.text}');
+  });
+});

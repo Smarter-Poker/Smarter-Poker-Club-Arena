@@ -2195,7 +2195,7 @@ export default function CashierPage() {
               <div
                 className={`${styles.message} ${message.type === 'success' ? styles.messageSuccess : message.type === 'error' ? styles.messageError : styles.messageInfo}`}
               >
-                {message.text}
+                {formatPopupText(message.text)}
               </div>
             )}
 
@@ -2299,7 +2299,7 @@ export default function CashierPage() {
               <div
                 className={`${styles.message} ${message.type === 'success' ? styles.messageSuccess : message.type === 'error' ? styles.messageError : styles.messageInfo}`}
               >
-                {message.text}
+                {formatPopupText(message.text)}
               </div>
             )}
 
@@ -2642,7 +2642,7 @@ export default function CashierPage() {
                 <div
                   className={`${styles.message} ${message.type === 'success' ? styles.messageSuccess : message.type === 'error' ? styles.messageError : styles.messageInfo}`}
                 >
-                  {message.text}
+                  {formatPopupText(message.text)}
                 </div>
               )}
 
@@ -2846,7 +2846,14 @@ export default function CashierPage() {
               <strong>{sendConfirm.recipientName}</strong>.
             </p>
             <p className={styles.confirmWarning}>
-              This Action Cannot Be Undone. Please Verify The Amount And Recipient.
+              {/* THE SAME SCREEN SAYS "Claim Back Window: Ten Minutes" three
+                  hundred lines up. This warning said the opposite - "This
+                  Action Cannot Be Undone" - on a send the page itself
+                  advertises as reversible, which is not a scarier warning, it
+                  is a false one: an operator who believed it would not go
+                  looking for the Claim Back that could still save them. */}
+              You Can Claim This Back For Ten Minutes, And Not After That. Please Verify The Amount
+              And Recipient.
             </p>
             <div className={styles.confirmButtons}>
               <button

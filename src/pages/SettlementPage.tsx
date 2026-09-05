@@ -11,7 +11,7 @@ import { useUnionRouteId } from '../hooks/useUnionRouteId';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { SettlementService } from '../services/SettlementService';
-import { resolveClubUUID } from '../utils/clubIdResolver';
+import { isUUID, resolveClubUUID } from '../utils/clubIdResolver';
 import { exportToCSV } from '../lib/export';
 import styles from './SettlementPage.module.css';
 import '../components/common/ButtonSpinner.css';
@@ -169,17 +169,30 @@ function MondayPayoutCountdown() {
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * DISPUTED IS A STATUS (2026-09-05, phase 7). This type listed three of the
+ * four the column can hold, and the server's value was cast into it in three
+ * places - so a disputed period rendered a badge with no text, no countdown,
+ * no action, and nothing saying why. `settlement_periods` currently holds one:
+ * period 1/2026, 4,719.32 of rake, disputed since March.
+ */
+type PeriodStatus = 'open' | 'processing' | 'settled' | 'disputed';
+
 interface SettlementPeriod {
   id: string;
+  /** 'union' when the club has no period of its own - shown as such. */
+  scope?: 'club' | 'union';
   periodNumber: number;
   year: number;
   startAt: string;
   endAt: string;
-  status: 'open' | 'processing' | 'settled';
+  status: PeriodStatus;
   totalRake: number;
   totalBBJ: number;
   totalHands: number;
   totalPlayers: number;
+  /** When the ledger says it was settled. Absent means it has not been. */
+  settledAt?: string;
 }
 
 interface ClubWire {
@@ -275,8 +288,19 @@ export default function SettlementPage() {
     setIsLoading(true);
     setLoadError(null);
     try {
-      // Get current period
-      const currentPeriod = await SettlementService.getCurrentPeriod();
+      // THE PERIOD THIS CLUB IS IN (2026-09-05, phase 7).
+      //
+      // getCurrentPeriod() takes no club and answers with the newest OPEN
+      // period on the platform, so every club's page was headed by the same
+      // one - today a union-scoped row with club_id NULL, three weeks stale
+      // and belonging to no club at all. On a club route we ask for the club's
+      // own, and a club that has never been settled gets nothing rather than
+      // somebody else's period.
+      const resolvedForPeriod = clubId ? await resolveClubUUID(clubId) : null;
+      const currentPeriod =
+        resolvedForPeriod && isUUID(resolvedForPeriod)
+          ? await SettlementService.getCurrentPeriodForClub(resolvedForPeriod)
+          : await SettlementService.getCurrentPeriod();
 
       // Get period history — scoped to the club this page is showing.
       // 2026-08-19: this was unscoped, so the /clubs/:clubId/settlement route
@@ -288,31 +312,40 @@ export default function SettlementPage() {
         resolvedClubId || undefined
       );
 
-      // Map to our internal format
+      // Map to our internal format. A club with no period of its own and no
+      // union period open contributes nothing here - the page says so rather
+      // than heading itself with another club's week.
       const mappedPeriods: SettlementPeriod[] = [
-        {
-          id: currentPeriod.id,
-          periodNumber: currentPeriod.periodNumber,
-          year: currentPeriod.year,
-          startAt: currentPeriod.startAt,
-          endAt: currentPeriod.endAt,
-          status: currentPeriod.status as 'open' | 'processing' | 'settled',
-          totalRake: currentPeriod.totalRakeCollected,
-          totalBBJ: currentPeriod.totalBBJContributions,
-          totalHands: currentPeriod.totalHandsDealt,
-          totalPlayers: 0, // Not in service type
-        },
+        ...(currentPeriod
+          ? [
+              {
+                id: currentPeriod.id,
+                periodNumber: currentPeriod.periodNumber,
+                year: currentPeriod.year,
+                startAt: currentPeriod.startAt,
+                endAt: currentPeriod.endAt,
+                status: currentPeriod.status as PeriodStatus,
+                scope: currentPeriod.scope,
+                settledAt: currentPeriod.settledAt,
+                totalRake: currentPeriod.totalRakeCollected,
+                totalBBJ: currentPeriod.totalBBJContributions,
+                totalHands: currentPeriod.totalHandsDealt,
+                totalPlayers: 0, // Not in service type
+              },
+            ]
+          : []),
         ...periodHistory.map((p) => ({
           id: p.id,
           periodNumber: p.periodNumber,
           year: p.year,
           startAt: p.startAt,
           endAt: p.endAt,
-          status: p.status as 'open' | 'processing' | 'settled',
+          status: p.status as PeriodStatus,
           totalRake: p.totalRakeCollected,
           totalBBJ: p.totalBBJContributions,
           totalHands: p.totalHandsDealt,
           totalPlayers: 0,
+          settledAt: p.settledAt,
         })),
       ];
 
@@ -360,7 +393,7 @@ export default function SettlementPage() {
       }
 
       // Generate settlements for current period (skip if no real period)
-      if (currentPeriod.id && currentPeriod.id !== 'default') {
+      if (currentPeriod?.id && currentPeriod.id !== 'default') {
         try {
           const settlements = await SettlementService.generateSettlements(currentPeriod.id);
 
@@ -491,7 +524,7 @@ export default function SettlementPage() {
                 year: cp.year,
                 startAt: cp.startAt,
                 endAt: cp.endAt,
-                status: cp.status as 'open' | 'processing' | 'settled',
+                status: cp.status as PeriodStatus,
                 totalRake: cp.totalRakeCollected,
                 totalBBJ: cp.totalBBJContributions,
                 totalHands: cp.totalHandsDealt,
@@ -843,6 +876,7 @@ export default function SettlementPage() {
           {selectedPeriod.status === 'open' && ' Open'}
           {selectedPeriod.status === 'processing' && 'Processing'}
           {selectedPeriod.status === 'settled' && ' Settled'}
+          {selectedPeriod.status === 'disputed' && 'Disputed'}
         </div>
         <SecurityBadge variant="secured" label="Bank-Grade" />
         <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
@@ -1190,7 +1224,12 @@ export default function SettlementPage() {
           settledAt={selectedPeriod.endAt}
           periodStart={selectedPeriod.startAt}
           periodEnd={selectedPeriod.endAt}
-          status="paid"
+          /* A PERIOD MARKED SETTLED IS NOT A RECEIPT MARKED PAID. This was
+             hardcoded "paid" for any settled period, without reading a single
+             invoice's payment state - so the page could show money as paid
+             that the ledger had not said was paid. `settled_at` is what the
+             row actually carries. */
+          status={selectedPeriod.settledAt ? 'paid' : 'pending'}
         />
       )}
 
@@ -1214,7 +1253,7 @@ export default function SettlementPage() {
               netAmount: p.totalRake - (p.totalBBJ || 0),
               settledAt: p.endAt,
               status:
-                p.status === 'settled'
+                p.status === 'settled' && p.settledAt
                   ? ('paid' as const)
                   : p.status === 'processing'
                     ? ('processing' as const)

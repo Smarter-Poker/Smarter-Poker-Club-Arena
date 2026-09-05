@@ -123,11 +123,57 @@ The classic page now accepts two decimal places and refuses a third, which is
 what the column can hold. The exponent rule ("1e9" - a billion chips from four
 keystrokes) and the ceiling stay exactly as they were, because both were real.
 
+## The settlement period was not this club's, and the header proved it
+
+`get_current_settlement_period()` takes no club argument:
+
+```sql
+FROM settlement_periods sp WHERE sp.status = 'open'
+ORDER BY sp.start_at DESC LIMIT 1
+```
+
+the newest open period **on the platform**, whoever is looking. Measured, that
+single open row is `5a9811f0`: **club_id NULL**, union-scoped, running
+2026-08-16 to 2026-08-23 - three weeks stale and belonging to no club. Every
+club's settlement page has been headed by it.
+
+The client then threw away what the row does carry. `period_number`, `year`,
+`total_bbj_contributions`, `total_player_winnings`, `total_player_losses` and
+`total_hands_dealt` are all real columns, and `SettlementService` replaced them
+with `periodNumber: 1`, this year and four zeroes - which is the whole of
+"Period 1/2026 over a grid of zeros". One period in that table carries 4,719.32
+of rake, 259.07 of drop and 267,312 hands.
+
+`get_current_settlement_period(p_club_id)` is a new overload - the no-argument
+one is unchanged and still serves the union surfaces - and answers for one
+club: its own open period, else its own work still in flight (processing or
+disputed), else its union's open period **marked as the union's**, else its
+most recent of any status. It creates nothing: a club that has never been
+settled gets no rows, and the page now says so instead of heading itself with
+someone else's week. Proved before applying: SHARK and JAQK each get their own
+period 33/2026, and the reference club correctly gets nothing.
+
+Two more from the same page, both about telling the truth:
+
+- **`disputed` was missing from the page's own type.** It listed three of the
+  four statuses the column holds and cast the server's value into it in three
+  places, so a disputed period drew a badge with no text at all. There is one
+  in the table, disputed since March.
+- **The receipt hardcoded `status="paid"`** for any period marked settled,
+  without reading a single invoice's payment state. It reads `settled_at` now,
+  and so does the timeline beside it.
+
+One item in the plan is already fixed and I am not touching it: "Execute
+Settlement calls a documented no-op" - the button now says plainly that agent
+commissions settle through credit invoices and player rakeback through the
+engine settler.
+
 ## Verified
 
-- Migration `20260905040100`, one transaction, applied and recorded.
+- Migrations `20260905040100` and `20260905041000`, one transaction each,
+  applied and recorded.
 - Every behaviour above proved live inside a rolled-back transaction.
-- 15 new pins in `tests/unit/anApprovalCanBeRetried.test.ts`; the amount pins
+- 21 pins in `tests/unit/anApprovalCanBeRetried.test.ts`; the amount pins
   in `CashierAmountValidation.test.ts` moved to the new rule with the measured
   reason, in the same commit.
 - The discarded-error ratchet caught the improvement it should:
@@ -137,10 +183,8 @@ keystrokes) and the ceiling stay exactly as they were, because both were real.
 
 ## Still open in this phase
 
-The rest of section 9 - the settlement period that is not this club's, the
-receipt that hardcodes `paid`, "Execute Settlement" calling a documented no-op,
-`disputed` missing from the page's own type, the classic cashier reporting
-through `setMessage` instead of the Toast layer, and
+The rest of section 9 - the classic cashier reporting through `setMessage`
+instead of the Toast layer, and
 `fn_club_cashier_members_page_v3` re-running the recursive downline walk on
 every page - plus the two items carried from phase 6 (`fn_ca_rake_by_agent` at
 29.7s, and the bomb pot report's role-dependent slowness).

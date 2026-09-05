@@ -57,6 +57,11 @@ const MIGRATION = readFileSync(
   'utf8'
 );
 const SETTLEMENT = readFileSync('src/pages/SettlementPage.tsx', 'utf8');
+const SETTLEMENT_SERVICE = readFileSync('src/services/SettlementService.ts', 'utf8');
+const PERIOD_MIGRATION = readFileSync(
+  'supabase/migrations/20260905041000_a_settlement_period_belongs_to_a_club.sql',
+  'utf8'
+);
 const CASHIER = readFileSync('src/pages/CashierPage.tsx', 'utf8');
 
 const fn = (name: string) => {
@@ -190,5 +195,59 @@ describe('one definition of a chip', () => {
   it('and still refuses what it always refused', () => {
     expect(CASHIER).toContain('MAX_CHIP_AMOUNT');
     expect(CASHIER).toContain('Amount exceeds the maximum transfer limit');
+  });
+});
+
+describe('the settlement period belongs to the club whose page it heads', () => {
+  /**
+   * Measured: the single OPEN period on the platform today is `5a9811f0`,
+   * club_id NULL, union-scoped, running 2026-08-16 to 2026-08-23 - so
+   * get_current_settlement_period(), which takes no club and returns the
+   * newest open period, headed EVERY club's settlement page with a period
+   * belonging to no club at all. The client then hardcoded periodNumber 1,
+   * this year and four zeroes over columns the row actually carries
+   * (period_number, year, total_bbj_contributions, total_player_winnings,
+   * total_player_losses, total_hands_dealt), which is what drew the permanent
+   * "Period 1/2026" over a grid of zeros.
+   */
+  it('asks for one club, and says whose period it found', () => {
+    expect(PERIOD_MIGRATION).toContain('get_current_settlement_period(p_club_id uuid)');
+    expect(PERIOD_MIGRATION).toContain("THEN 'club' ELSE 'union' END");
+    expect(PERIOD_MIGRATION).toContain('ca_can_view_club(p_club_id)');
+  });
+
+  it("prefers the club's own period over its union's, and invents nothing", () => {
+    expect(PERIOD_MIGRATION).toContain("WHEN sp.club_id = p_club_id AND sp.status = 'open'");
+    expect(PERIOD_MIGRATION).toContain("sp.status IN ('processing','disputed')");
+    expect(PERIOD_MIGRATION).toContain('ORDER BY c.rank, c.start_at DESC');
+    // No INSERT: the club-scoped lookup never creates a period.
+    expect(PERIOD_MIGRATION).not.toMatch(/INSERT INTO settlement_periods/i);
+  });
+
+  it('the service returns what the row carries instead of hardcoding it', () => {
+    expect(SETTLEMENT_SERVICE).toContain('getCurrentPeriodForClub');
+    expect(SETTLEMENT_SERVICE).toContain('periodNumber: Number(row.period_number) || 0');
+    expect(SETTLEMENT_SERVICE).toContain('totalHandsDealt: Number(row.total_hands_dealt) || 0');
+    expect(SETTLEMENT_SERVICE).toContain('totalBBJContributions: Number(row.total_bbj) || 0');
+  });
+
+  it('the page asks per club and tolerates a club that has never settled', () => {
+    expect(SETTLEMENT).toContain('getCurrentPeriodForClub(resolvedForPeriod)');
+    expect(SETTLEMENT).toContain('...(currentPeriod');
+    expect(SETTLEMENT).toContain('if (currentPeriod?.id');
+  });
+
+  it('a disputed period is a status the page knows', () => {
+    expect(SETTLEMENT).toContain(
+      "type PeriodStatus = 'open' | 'processing' | 'settled' | 'disputed'"
+    );
+    expect(SETTLEMENT).toContain("{selectedPeriod.status === 'disputed' && 'Disputed'}");
+    expect(SETTLEMENT).not.toContain("as 'open' | 'processing' | 'settled'");
+  });
+
+  it('the receipt reports what the ledger says, not "paid" by assumption', () => {
+    expect(SETTLEMENT).toContain("status={selectedPeriod.settledAt ? 'paid' : 'pending'}");
+    expect(SETTLEMENT).not.toContain('status="paid"');
+    expect(SETTLEMENT).toContain("p.status === 'settled' && p.settledAt");
   });
 });

@@ -58,3 +58,17 @@ Four defects found in the phase's own code and fixed before publish:
 - The archive refetched a linked hand by id every time `rows` changed (each
   Load More). It fetches once.
 - The deep link's base path is pinned to the router's own `basename`.
+
+## P0 found by the deep dive: every table on the published build crashed
+
+Opening any table on `ca_sha 63baa151` (which carries #3089) threw
+"Cannot access 'parseTimed' before initialization" into the error boundary.
+The second sweep made `anyTurnLive` in MultiTablePage read `parseTimed(...)`
+during render, and `parseTimed` was a `const` declared further down the
+component body. tsc does not flag a use-before-declare inside a nested
+callback and nothing renders the container under test, so it reached players.
+`parseTimed` is a pure function at module scope now. Reproduced on an
+unminified local build of `main` (browser at `/table/<id>` went to the error
+boundary) and confirmed fixed the same way; the tab-strip Leave Table then took
+55 ms to the lobby. New law `tests/no-tdz-in-table-route.law.test.ts` runs
+`no-use-before-define` on the three table-route files as a ratchet.

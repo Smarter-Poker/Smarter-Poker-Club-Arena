@@ -454,6 +454,28 @@ const dockStateFor = (
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Parse a reported "kind:deadlineMs" channel into its parts.
+ *
+ * MODULE SCOPE, NOT COMPONENT SCOPE (P0, 2026-09-05). The second sweep made
+ * `anyTurnLive` read `parseTimed(t.decision)` so an expired decision is not a
+ * live clock - and `parseTimed` was a `const` declared FURTHER DOWN the
+ * component body. In a plain closure that is fine; here the read happens
+ * synchronously during the same render, before the declaration is reached, so
+ * every table opened on the published build threw "Cannot access 'parseTimed'
+ * before initialization" into the error boundary. tsc does not flag a
+ * use-before-declare inside a nested callback; only rendering does. A pure
+ * function belongs above the component, where there is nothing to be before.
+ * Pinned by tests/unit/multiTablePageRenders.test.tsx.
+ */
+export function parseTimed(v?: string): { kind: string; at: number } | null {
+  if (!v) return null;
+  const i = v.lastIndexOf(':');
+  if (i <= 0) return null;
+  const at = Number(v.slice(i + 1));
+  return Number.isFinite(at) && at > 0 ? { kind: v.slice(0, i), at } : null;
+}
+
 export default function MultiTablePage() {
   const { user } = useAuthUser();
   /** Roadmap batch 2: multi-table behavior toggles (auto-switch, action
@@ -1386,15 +1408,6 @@ export default function MultiTablePage() {
         : undefined,
     [nowMs]
   );
-
-  /** Parse a reported "kind:deadlineMs" channel into its parts. */
-  const parseTimed = (v?: string): { kind: string; at: number } | null => {
-    if (!v) return null;
-    const i = v.lastIndexOf(':');
-    if (i <= 0) return null;
-    const at = Number(v.slice(i + 1));
-    return Number.isFinite(at) && at > 0 ? { kind: v.slice(0, i), at } : null;
-  };
 
   const tabInfos: TabInfo[] = useMemo(
     () =>

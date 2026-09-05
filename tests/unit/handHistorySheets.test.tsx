@@ -146,41 +146,77 @@ describe('at 375px the sheet leaves a backdrop instead of covering the overlay',
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const HERO = 'hero-1';
+const VILLAIN = 'v-1';
 
-function record(over: Partial<HandRecord> = {}): HandRecord {
+/* The row as production stores it, through the adapter - so what these tests
+   render is the same `replay` model the live panel and modal render. Hand
+   #3046089: an all-in on the flop, run three times. */
+const RIT_BOARDS_RAW = [
+  ['7clubs', '2clubs', '9hearts', '6diamonds', '5hearts'],
+  ['7clubs', '2clubs', '9hearts', '7hearts', '9spades'],
+];
+
+function serviceRow(over: Record<string, unknown> = {}) {
   return {
     id: 'h-1',
-    handNumber: 3046089,
-    timestamp: Date.parse('2026-08-27T12:00:00.000Z'),
-    gameType: 'NLH',
-    blinds: '1/2',
+    serial_number: '3046089',
+    table_id: 't-1',
+    table_name: 'Midway 1/2',
+    played_at: '2026-08-27T12:00:00.000Z',
+    hand_number: 3046089,
+    total_hands: 0,
+    main_pot: 1470,
+    side_pots: [],
+    community_cards: ['7clubs', '2clubs', '9hearts', 'Kdiamonds', 'Tclubs'],
     players: [
-      { id: HERO, name: 'kingfish', seat: 1, stack: 0, position: 'BTN', result: 971.27 },
-      { id: 'v-1', name: 'Emerson Blackwell', seat: 2, stack: 0, position: 'BB', result: 485.63 },
-    ],
-    streets: [
       {
-        name: 'flop',
-        cards: ['7c', '2c', '9h'],
-        actions: [{ playerId: HERO, playerName: 'kingfish', action: 'allin', amount: 735 }],
-        pot: 0,
+        seat: 1,
+        user_id: HERO,
+        username: 'kingfish',
+        avatar_url: null,
+        position: 'BTN',
+        hole_cards: [
+          { rank: 'A', suit: 'spades' },
+          { rank: 'A', suit: 'hearts' },
+        ],
+        result: 235,
+        is_winner: true,
+        showdown_reveal: { reveal_order: 1, mucked: false, hand_name: 'Pair' },
       },
-      { name: 'turn', cards: ['Kd'], actions: [], pot: 0 },
-      { name: 'river', cards: ['Tc'], actions: [], pot: 0 },
+      {
+        seat: 2,
+        user_id: VILLAIN,
+        username: 'Emerson Blackwell',
+        avatar_url: null,
+        position: 'BB',
+        hole_cards: [
+          { rank: 'K', suit: 'clubs' },
+          { rank: 'Q', suit: 'clubs' },
+        ],
+        result: -235,
+        is_winner: false,
+        showdown_reveal: { reveal_order: 2, mucked: false, hand_name: 'High Card' },
+      },
     ],
-    winners: [
-      { playerId: HERO, playerName: 'kingfish', amount: 971.27, hand: 'Pair' },
-      { playerId: 'v-1', playerName: 'Emerson Blackwell', amount: 485.63, hand: 'High Card' },
+    actions: [
+      { player_id: HERO, action: 'raise', amount: 6, street: 'preflop', timestamp: 1 },
+      { player_id: VILLAIN, action: 'call', amount: 4, street: 'preflop', timestamp: 2 },
+      { player_id: VILLAIN, action: 'check', amount: 0, street: 'flop', timestamp: 3 },
+      { player_id: HERO, action: 'all_in', amount: 735, street: 'flop', timestamp: 4 },
+      { player_id: VILLAIN, action: 'call', amount: 735, street: 'flop', timestamp: 5 },
     ],
-    heroId: HERO,
-    heroResult: 971.27,
-    potTotal: 1470,
-    wentToShowdown: true,
-    muckedIds: [],
+    winners: [{ user_id: HERO, amount: 1470, pot_index: 0, hand_name: 'Pair' }],
+    winners_by_board: [],
     rake: 0,
-    bbjFee: 0,
+    bbj_fee: 0,
+    game_type: 'NLH',
+    stakes: '1/2',
     ...over,
-  };
+  } as unknown as Parameters<typeof adaptServiceHandToPanel>[0];
+}
+
+function record(over: Record<string, unknown> = {}): HandRecord {
+  return adaptServiceHandToPanel(serviceRow(over), HERO);
 }
 
 describe('the backdrop closes the sheet, and the sheet itself does not', () => {
@@ -235,140 +271,122 @@ describe('the backdrop closes the sheet, and the sheet itself does not', () => {
      community_cards  7c 2c 9h Kd Tc
      rit_boards       [7c 2c 9h 6d 5h], [7c 2c 9h 7h 9s]
    All three share the flop; they diverge from the turn, which is where the
-   all-in locked. */
-
-const RIT_BOARDS_RAW = [
-  ['7clubs', '2clubs', '9hearts', '6diamonds', '5hearts'],
-  ['7clubs', '2clubs', '9hearts', '7hearts', '9spades'],
-];
+   all-in locked. Both surfaces render the ONE model built from that row. */
 
 describe('both surfaces show every board a hand ran', () => {
-  it('Hand Detail badges all three runs', () => {
-    render(
-      <HandDetailModal
-        isOpen
-        onClose={() => {}}
-        hands={[record({ ritBoards: RIT_BOARDS_RAW })]}
-        heroId={HERO}
-      />
-    );
-    const badges = Array.from(document.querySelectorAll('.hdm-run__badge')).map(
+  const rit = () => record({ rit_boards: RIT_BOARDS_RAW });
+
+  it('Hand Summary badges all three runs', () => {
+    render(<HandDetailModal isOpen onClose={() => {}} hands={[rit()]} heroId={HERO} />);
+    const badges = Array.from(document.querySelectorAll('.hdm-board__badge')).map(
       (b) => b.textContent
     );
-    expect(badges).toEqual(['RUN 1', 'RUN 2', 'RUN 3']);
+    expect(badges).toEqual(['Run 1', 'Run 2', 'Run 3']);
   });
 
-  it('Hand Summary shows them too — the tab the glitch was reported from', () => {
-    render(
-      <HandDetailModal
-        isOpen
-        onClose={() => {}}
-        hands={[record({ ritBoards: RIT_BOARDS_RAW })]}
-        heroId={HERO}
-      />
+  it('Hand Detail draws the extra runs on the streets where they diverge', () => {
+    render(<HandDetailModal isOpen onClose={() => {}} hands={[rit()]} heroId={HERO} />);
+    fireEvent.click(document.querySelectorAll('.hdm-tab')[1]);
+    const labels = Array.from(document.querySelectorAll('.hdv__street-run-label')).map(
+      (b) => b.textContent
     );
-    fireEvent.click(document.querySelectorAll('.hdm-tab')[0]);
-    expect(document.querySelectorAll('.hdm-run__badge')).toHaveLength(3);
+    // Every street with cards on it (flop, turn, river, showdown) carries
+    // Run 2 and Run 3 beside board one; preflop has no board to show.
+    expect(labels.filter((l) => l === 'Run 2').length).toBeGreaterThanOrEqual(3);
+    expect(labels.filter((l) => l === 'Run 3').length).toBeGreaterThanOrEqual(3);
+    expect(labels.filter((l) => l === 'Run 2').length).toBe(
+      labels.filter((l) => l === 'Run 3').length
+    );
   });
 
   it('dims the flop the runs share, so the divergence is what reads', () => {
-    render(
-      <HandDetailModal
-        isOpen
-        onClose={() => {}}
-        hands={[record({ ritBoards: RIT_BOARDS_RAW })]}
-        heroId={HERO}
-      />
-    );
+    render(<HandDetailModal isOpen onClose={() => {}} hands={[rit()]} heroId={HERO} />);
     // Three shared cards on each of three boards.
-    expect(document.querySelectorAll('.hdm-runs .hdm-card--shared')).toHaveLength(9);
-    // Two diverging cards on each of three boards, at full contrast.
-    const all = document.querySelectorAll('.hdm-runs .hdm-card');
-    expect(all).toHaveLength(15);
+    expect(document.querySelectorAll('.hdm-boards .hdm-card--shared')).toHaveLength(9);
+    // Fifteen cards in all.
+    expect(document.querySelectorAll('.hdm-boards .card-image')).toHaveLength(15);
   });
 
   it('Hand History renders the boards in the expanded entry', () => {
-    render(
-      <HandHistoryPanel
-        isOpen
-        onClose={() => {}}
-        hands={[record({ ritBoards: RIT_BOARDS_RAW })]}
-        heroId={HERO}
-      />
-    );
+    render(<HandHistoryPanel isOpen onClose={() => {}} hands={[rit()]} heroId={HERO} />);
     fireEvent.click(document.querySelector('.hh-entry__summary') as Element);
-    const badges = Array.from(document.querySelectorAll('.hh-run__badge')).map(
+    const labels = Array.from(document.querySelectorAll('.hh-entry .hdv__street-run-label')).map(
       (b) => b.textContent
     );
-    expect(badges).toEqual(['RUN 1', 'RUN 2', 'RUN 3']);
+    expect(labels).toContain('Run 2');
+    expect(labels).toContain('Run 3');
+    // And the summary row says so before it is even opened.
+    expect(document.querySelector('.hh-entry__tag')?.textContent).toBe('Run 3x');
   });
 
   it('says nothing about runs on an ordinary single-board hand', () => {
     render(<HandDetailModal isOpen onClose={() => {}} hands={[record()]} heroId={HERO} />);
-    expect(document.querySelectorAll('.hdm-run__badge')).toHaveLength(0);
+    expect(document.querySelectorAll('.hdm-board__badge')).toHaveLength(0);
+    expect(document.querySelector('.hdm-section-head')?.textContent).toContain('Board');
   });
 
-  /* THE PATH ITSELF, end to end, because this is where the boards were lost.
-     A registry keyed by hand id used to bridge the service to these screens
-     while another agent owned the adapter; the adapter carries the field now
-     and the registry is gone, so what is pinned here is the real producer:
-     a service row in, a view model with every board out. */
   it('the adapter carries rit_boards from the service row onto the view model', () => {
-    /* The row as production actually stores it: spelled-out suit strings, not
-       the `{ rank, suit }` objects the Card type describes — which is why the
-       cast is here and why the adapter runs every board through toCardCodes. */
-    const serviceRow = {
-      id: 'h-3046089',
-      serial_number: 'h-3046089',
-      table_id: 't-1',
-      table_name: 'Table',
-      played_at: '2026-08-27T12:00:00.000Z',
-      hand_number: 3046089,
-      total_hands: 1,
-      main_pot: 1470,
-      side_pots: [],
-      community_cards: ['7clubs', '2clubs', '9hearts', 'Kdiamonds', 'Tclubs'],
-      rit_boards: RIT_BOARDS_RAW,
-      players: [],
-      actions: [],
-      winners: [],
-      game_type: 'NLH',
-      stakes: '1/2',
-    } as unknown as Parameters<typeof adaptServiceHandToPanel>[0];
-
-    const panelRecord = adaptServiceHandToPanel(serviceRow, HERO);
-
+    const panelRecord = rit();
     expect(panelRecord.ritBoards).toEqual([
       ['7c', '2c', '9h', '6d', '5h'],
       ['7c', '2c', '9h', '7h', '9s'],
     ]);
+    // ...and the model carries them ONCE each, in run order.
+    expect(panelRecord.replay.boards).toHaveLength(3);
   });
 
-  it('renders those adapter-carried boards, all three runs', () => {
-    render(
-      <HandDetailModal
-        isOpen
-        onClose={() => {}}
-        hands={[record({ id: 'h-3046089', ritBoards: RIT_BOARDS_RAW })]}
-        heroId={HERO}
-      />
-    );
-    expect(document.querySelectorAll('.hdm-run__badge')).toHaveLength(3);
+  /* THE SAME BOARD IS NEVER LISTED TWICE. The engine writes a run both as the
+     `rit_boards` column and as a `rit_board_N:` pseudo-action for old readers;
+     the model used to concatenate the two, so every run appeared twice. */
+  it('a run recorded in the column AND as a pseudo-action is one run', () => {
+    const both = record({
+      rit_boards: RIT_BOARDS_RAW,
+      actions: [
+        ...(serviceRow().actions as unknown[]),
+        {
+          player_id: 'system',
+          action: 'rit_board_2:7clubs,2clubs,9hearts,6diamonds,5hearts',
+          amount: 0,
+          street: 'river',
+          timestamp: 9,
+        },
+      ],
+    });
+    expect(both.replay.boards).toHaveLength(3);
   });
 
-  /* Per-run winners are NOT stored: the winner rows carry one aggregate amount
-     and one hand name for the whole hand, with no run index. Both surfaces say
-     the totals cover every run rather than splitting them across the boards,
-     which would be a guess printed as a result. */
-  it('labels the collected totals as covering every run, and attributes none', () => {
-    render(
-      <HandDetailModal
-        isOpen
-        onClose={() => {}}
-        hands={[record({ ritBoards: RIT_BOARDS_RAW })]}
-        heroId={HERO}
-      />
+  /* Per-run winners come from `winners_by_board`. Without them the record
+     cannot say who took which run, and does not: the share column is blank on
+     runs 2 and 3 rather than the whole-hand net repeated three times. */
+  it('with no per-run record, the extra runs carry no invented share', () => {
+    render(<HandDetailModal isOpen onClose={() => {}} hands={[rit()]} heroId={HERO} />);
+    const nets = Array.from(document.querySelectorAll('.hdm-sd__net'));
+    // Two players x three boards.
+    expect(nets).toHaveLength(6);
+    expect(nets.filter((n) => n.classList.contains('is-blank'))).toHaveLength(4);
+  });
+
+  it('with the per-run record, each run names its own winner and share', () => {
+    const attributed = record({
+      rit_boards: RIT_BOARDS_RAW,
+      winners: [
+        { user_id: HERO, amount: 980, pot_index: 0, hand_name: 'Pair' },
+        { user_id: VILLAIN, amount: 490, pot_index: 0, hand_name: 'Two Pair' },
+      ],
+      winners_by_board: [
+        { board: 1, user_id: HERO, amount: 490, hand_name: 'Pair' },
+        { board: 2, user_id: HERO, amount: 490, hand_name: 'Pair' },
+        { board: 3, user_id: VILLAIN, amount: 490, hand_name: 'Two Pair' },
+      ],
+    });
+    render(<HandDetailModal isOpen onClose={() => {}} hands={[attributed]} heroId={HERO} />);
+    const winners = Array.from(document.querySelectorAll('.hdm-sd.is-winner .hdm-sd__pot')).map(
+      (n) => n.textContent
     );
-    expect(document.querySelector('.hdm-runs__note')?.textContent).toContain('Cover Every Run');
+    expect(winners).toEqual(['Board 1', 'Board 2', 'Board 3']);
+    const names = Array.from(document.querySelectorAll('.hdm-sd.is-winner .hdm-sd__handname')).map(
+      (n) => n.textContent
+    );
+    expect(names).toEqual(['Pair', 'Pair', 'Two Pair']);
   });
 });

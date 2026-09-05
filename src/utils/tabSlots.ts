@@ -41,7 +41,7 @@ export const isTournamentRow = (row: TableRowLike | null | undefined): boolean =
 export interface SlotTab {
   id: string;
   /** Optional on purpose: see `isLobbyLike`. Absent means "a table". */
-  kind?: 'table' | 'lobby';
+  kind?: 'table' | 'lobby' | 'hub';
   /** True only for a seat the server has confirmed. */
   seated?: boolean;
 }
@@ -52,6 +52,31 @@ export const isLobbyLike = (t: SlotTab): boolean =>
   t.kind === 'lobby' || t.id.startsWith(LOBBY_TAB_PREFIX);
 
 /**
+ * HUB TABS (Dan 2026-09-04): "when you click the + button from inside the
+ * club lobby I should be able to go anywhere, it's basically opening up a new
+ * browser tab internally, it shouldn't be limited to just poker."
+ *
+ * A hub tab is a World Hub page (Social, Media, Trivia, Training, the Hub
+ * itself) rendered inside one of these slots. Like a lobby tab it holds no
+ * seat and no chips, so it is never pruned and never counted as a live table.
+ * UNLIKE a lobby tab it is not a parking space: TABLE_SEATED replaces the
+ * oldest LOBBY tab, "+" focuses the LOBBY tab, and an observe reuses the LOBBY
+ * tab - a page the player is reading in a hub tab is not free for any of
+ * those to take. That is why `isLobbyLike` stays narrow and this is separate.
+ */
+export const HUB_TAB_PREFIX = 'hub:';
+export const isHubLike = (t: SlotTab): boolean =>
+  t.kind === 'hub' || t.id.startsWith(HUB_TAB_PREFIX);
+
+/**
+ * A tab that is a PAGE rather than a felt: lobby or hub. This is the predicate
+ * for "is it a live table?" (`!isPageTab`) - every count, dock, alert, sound
+ * and URL decision that used to ask `!isLobbyLike` asks this now, because a
+ * hub tab is exactly as much not-a-table as a lobby tab is.
+ */
+export const isPageTab = (t: SlotTab): boolean => isLobbyLike(t) || isHubLike(t);
+
+/**
  * A tab that can be replaced without costing the player anything: a lobby tab,
  * or a table they are only watching. A SEATED tab is never free.
  *
@@ -59,7 +84,8 @@ export const isLobbyLike = (t: SlotTab): boolean =>
  * as-yet-unknown `undefined` read the same, which is what the observer tab
  * (deliberately undefined) relies on.
  */
-export const isFreeSlot = (t: SlotTab): boolean => isLobbyLike(t) || t.seated !== true;
+export const isFreeSlot = (t: SlotTab): boolean =>
+  isLobbyLike(t) || (!isHubLike(t) && t.seated !== true);
 
 /**
  * WHICH SLOT A NEWLY OPENED TABLE TAKES.

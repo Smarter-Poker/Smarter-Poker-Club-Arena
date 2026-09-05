@@ -119,20 +119,37 @@ describe('the hand replay reveals through the shared squeeze', () => {
     expect(replay).toContain('<SqueezeCard');
     expect(replay).toContain('squeezeHostProps(');
     // the card renderer is still the app's own (spec 5, 52)
-    expect(replay).toContain('<CardImage card={toCardImage(card)} size="xs" />');
-    expect(replay).toContain('<CardBack size="xs" />');
+    expect(replay).toContain('<CardImage card={c} size="sm" />');
+    expect(replay).toContain('<CardBack size="sm" />');
   });
 
-  it('the surface id keeps two replays on one page in separate lanes (spec 31)', () => {
-    expect(replay).toMatch(/surfaceId: `replay:\$\{handData\?\.id \?\? handId \?\? 'demo'\}`/);
-  });
-
-  it('the hook sits above the early returns so hook order never changes', () => {
+  it('every board gets its own lane, so run 2 never cancels run 1 (spec 81)', () => {
+    // The hook is called inside ReplayBoard - one component per board - and
+    // is handed that board's index. Calling it once in Felt and reusing the
+    // answer would put every run on one lane.
+    expect(replay).toContain('function ReplayBoard(');
+    expect(replay).toMatch(/boardIndex,\s*\n\s*mode: 'replay',/);
+    expect(replay).toContain('boardIndex={bi}');
+    // and it is NOT called inside a .map(), which React forbids
     const hookAt = replay.indexOf('useCardSqueeze({');
-    const loadingReturn = replay.indexOf('if (isLoading) {');
-    const noDataReturn = replay.indexOf('if (!handData) {');
-    expect(hookAt).toBeGreaterThan(-1);
-    expect(hookAt).toBeLessThan(loadingReturn);
-    expect(hookAt).toBeLessThan(noDataReturn);
+    const boardStart = replay.indexOf('function ReplayBoard(');
+    const feltStart = replay.indexOf('function Felt(');
+    expect(hookAt).toBeGreaterThan(boardStart);
+    expect(hookAt).toBeLessThan(feltStart);
+  });
+
+  it('the wrapper is always rendered, so the row cannot reflow mid-reveal', () => {
+    // `hr-felt__card` wraps the card whether or not it is squeezing.
+    expect(replay).toMatch(
+      /className=\{`hr-felt__card\$\{host \? ` \$\{host\.className\}` : ''\}`\}/
+    );
+    const css = fs.readFileSync(path.join(ROOT, 'src/components/replay/HandReplay.css'), 'utf8');
+    expect(css).toContain('.hr-felt__card {');
+    expect(css).toContain('display: inline-flex');
+    expect(css).toContain('position: relative');
+  });
+
+  it('a different hand resets the lane rather than continuing the last one', () => {
+    expect(replay).toContain("String(model.handNumber ?? model.playedAt ?? 'replay')");
   });
 });

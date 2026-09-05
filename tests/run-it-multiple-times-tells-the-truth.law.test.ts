@@ -31,9 +31,7 @@ describe('the offer is over when consent completes', () => {
     const block = handler('rit_all_accepted');
     expect(block).toContain('ritDeadlineRef.current = 0;');
     expect(block).toContain("setDecisionDeadline((prev) => (prev?.kind === 'rit' ? null : prev));");
-    expect(block).toContain(
-      'setRitFeltBanner((prev) => (prev === RIT_WAITING_BANNER ? null : prev));'
-    );
+    expect(block).toContain('clearRitWaitingStrip();');
   });
 
   it('rit_mandatory and rit_result do the same, whatever path got them there', () => {
@@ -44,9 +42,7 @@ describe('the offer is over when consent completes', () => {
         "setDecisionDeadline((prev) => (prev?.kind === 'rit' ? null : prev));"
       );
     }
-    expect(handler('rit_result')).toContain(
-      'setRitFeltBanner((prev) => (prev === RIT_WAITING_BANNER ? null : prev));'
-    );
+    expect(handler('rit_result')).toContain('clearRitWaitingStrip();');
   });
 
   it('the hand-boundary reset clears the tab clock too', () => {
@@ -111,8 +107,92 @@ describe('the record says who won each run', () => {
     expect(settlement).toContain('winnersByBoard: [...this.currentHandWinnersByBoard],');
     expect(settlement).toContain('winnersByBoard: snap.winnersByBoard,');
     const writer = read('server/src/services/supabase/handHistory.ts');
-    expect(writer).toContain('winners_by_board: params.winnersByBoard?.some((w) => w.board > 1)');
+    expect(writer).toContain(
+      'winners_by_board: params.winnersByBoard?.some((w) => w.board > 1 || w.low)'
+    );
     // NULL on a single-board hand: ordinary rows stay byte-identical.
     expect(writer).toMatch(/winners_by_board:[\s\S]{0,120}: null,/);
+  });
+});
+describe('second sweep (2026-09-04): the parts the first fix missed or broke', () => {
+  it('a scoop banner waits for a RIT reveal ONLY when a RIT was agreed (bomb pots do not stall)', () => {
+    // Regression from the first fix: `|| boardsSeen.length >= 2` inside a block
+    // entered only when boardsSeen.length >= 2 made this constant true, so every
+    // double/triple-board bomb pot polled 8s for a timeline that never comes.
+    expect(page).toContain('const ritExpected = ritExpectedRunsRef.current >= 2;');
+    expect(page).not.toContain('ritExpectedRunsRef.current >= 2 || boardsSeen.length >= 2');
+  });
+
+  it('the scoop timers die at the hand boundary, on their own refs', () => {
+    const started = sliceEnclosingBlock(page, 'if (scoopBannerClearTimerRef.current) {');
+    expect(page).toContain(
+      'const scoopBannerClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);'
+    );
+    expect(started).toContain('clearTimeout(scoopBannerClearTimerRef.current)');
+    expect(page).toContain('scoopBannerClearTimerRef.current = setTimeout(() => {');
+  });
+
+  it('the waiting strip is compared by its rendered form, not a coincidence', () => {
+    expect(page).toContain(
+      'const RIT_WAITING_BANNER_RENDERED = formatPopupText(RIT_WAITING_BANNER);'
+    );
+    expect(page).toContain('clearRitWaitingStrip();');
+  });
+
+  it('the tab strip never alarms or animates for an expired decision', () => {
+    const multi = read('src/pages/MultiTablePage.tsx');
+    expect(multi).toContain('(parseTimed(t.decision)?.at ?? 0) > nowMs ||');
+    expect(multi).toContain('if (left > 5 || left <= 0) continue;');
+    expect(multi).toContain('const d = raw && raw.at > nowMs ? raw : null;');
+  });
+
+  it('the felt shows the engine verdict per board: hi-lo halves named, net shares', () => {
+    expect(page).toContain(
+      'const awardsHere = (ritResult.perBoardAwards || []).filter((a) => a.board === bi + 1);'
+    );
+    expect(page).toContain("${a.low ? ' (Low)' : ''}");
+    expect(page).toContain('const netTotal = ritResult.netPot ?? ritResult.potTotal;');
+    expect(page).not.toContain('const boardPot = Math.floor(ritResult.potTotal / runs);');
+    const runout = read('server/src/engine/ServerTableEngineRunout.ts');
+    expect(runout).toContain('per_board_awards: this.currentHandPerPotAwards.map((a) => ({');
+    expect(runout).toContain('net_pot: netPot,');
+  });
+
+  it('winners_by_board is post-rake on every path that writes it', () => {
+    const hc = read('server/src/engine/HandController.ts');
+    expect(hc).toContain('winnersByBoard: winnersByBoardPostRake,');
+    expect(hc).not.toContain('winnersByBoard: this.pendingWinnersByBoard,');
+  });
+
+  it('a reconnect during a runout sees the tabled hands, like everyone else', () => {
+    const eng = read('server/src/engine/ServerTableEngine.ts');
+    // Three reveal gates, one rule: broadcast, resync, observer.
+    expect(
+      eng.match(/state\.stage === 'showdown' \|\| this\.runoutRevealActive/g)?.length ?? 0
+    ).toBeGreaterThanOrEqual(3);
+  });
+
+  it('an unknown balance is unknown on the normal buy-in and the cashier too', () => {
+    expect(page).not.toContain('accountBalance={accountBalance ?? 0}');
+    const layer = read('src/components/table/TableModalsLayer.tsx');
+    expect(layer).toContain('accountBalance: number | null;');
+    expect(layer).toContain('onRetryBalance={onRetryAccountBalance}');
+    const cashier = read('src/components/table/CashierModal.tsx');
+    expect(cashier).toContain(
+      "balanceKnown ? formatAmount(accountBalance, currency) : 'Unavailable'"
+    );
+  });
+
+  it('a busted seat is not released while its owner is at the rebuy dialog', () => {
+    const dealing = read('server/src/engine/ServerTableEngineDealing.ts');
+    expect(dealing).toContain('static readonly REBUY_PROMPT_HOLD_MS = 12_000;');
+    expect(dealing).toContain(
+      'if (now - promptSeen < ServerTableEngineDealing.REBUY_PROMPT_HOLD_MS) {'
+    );
+    const turns = read('server/src/engine/ServerTableEngineTurns.ts');
+    expect(turns).toContain(
+      'if (opts?.rebuyPromptOpen) this.rebuyPromptOpenAt.set(userId, Date.now());'
+    );
+    expect(page).toContain('rebuyPromptOpen: bustRebuyOpenRef.current,');
   });
 });

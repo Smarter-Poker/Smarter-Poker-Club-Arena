@@ -585,11 +585,28 @@ before and after inside one rolled-back transaction, `EXCEPT` both ways, zero
 rows. Measured through PostgREST as the owner after: **200 in 1.2-1.9s** where
 it was 500 after 8.2s, and 365 days now costs what 30 days costs.
 
+AND THE FIRST VERSION OF THAT ROLLUP WAS ITSELF MEASURED WARM.
+`20260905051000` measured 200 in 1.2-1.9s and then 500'd at 8.7s from a real
+browser fifteen minutes later, because those readings were taken while the
+backfill's pages were still resident. The live half was bounded by the
+REQUESTED window and relied on an anti-join to keep only the unsealed days -
+and an anti-join removes rows from the result, not from the scan: the club
+filter lives on `tables`, so `h.table_id` is wanted for every candidate row and
+is not in the partial index, so all ~20,200 wide rows were still fetched and
+96% discarded. `20260905052000` bounds the scan by the earliest day with no
+completeness marker, which is normally today: **200 in 1.8-3.2s** from the same
+browser session that had just been getting 500s. Verified on production in a
+browser as the club owner: 18,690 bomb pots, 50 tables, the full per-table
+breakdown, where the page said "Could Not Load The Bomb Pot Report".
+
 THE LESSON THAT GENERALISES: a probe run as `postgres` against a
 `SECURITY DEFINER` function that gates on `auth.uid()` is not a faster version
 of the real call, it is a DIFFERENT call - usually a refusal. Set
 `request.jwt.claims` and hold the role constant before concluding anything is
-role-dependent.
+role-dependent. And a second one, learned the hard way in the same hour: A
+COLD PATH MEASURED WARM READS AS FIXED. After a backfill, after an apply, after
+any read of the same rows, the next timing is not evidence. Take it from a
+fresh session, or better from the browser, before writing a number down.
 
 **(b) The rake-by-agent breakdown cannot be read at this club's volume, and
 the page retried it into the ground.** Opening `/clubs/<slug>/data` in a browser:

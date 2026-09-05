@@ -398,6 +398,62 @@ after    p_days=30    200 in 1,916ms then 1,165ms
 The range no longer changes the cost, which is the point: a year costs what a
 month costs, because only the unsealed days are read from the hands.
 
+### The first version of that rollup was measured warm, and it was wrong
+
+`20260905051000` proved itself row-for-row against the old report and then
+measured **200 in 1.2-1.9s**. Fifteen minutes later the same call, from a real
+browser session, took **8,718ms and 8,425ms and 500'd again**.
+
+Those 1.2s readings were taken minutes after the backfill had warmed every page
+it touched. **The rollup had not stopped the expensive read - it had only been
+measured while that read was warm**, which is exactly the mistake this whole
+item exists to correct, made a second time in the same night by the person
+correcting it.
+
+The live half was bounded by the REQUESTED window and made disjoint from the
+sealed days by an anti-join:
+
+```sql
+WHERE t.club_id = p_club_id
+  AND h.bomb_pot IS NOT NULL
+  AND h.created_at >= v_from::timestamptz          -- thirty days
+  AND NOT EXISTS (SELECT 1 FROM ok_days o2 ...)    -- keeps only today
+```
+
+The anti-join removes the sealed days from the RESULT. It cannot stop them
+being READ. The club filter lives on `tables`, so `h.table_id` is wanted for
+every candidate row and is not in `idx_hand_history_bomb_pot_created` - so the
+planner fetched all ~20,200 wide rows, TOASTed `players` and all, and discarded
+96% after the join. The rollup was built, correct, and bypassed.
+
+`20260905052000` adds one more bound: the earliest day in the window with no
+completeness marker. When yesterday and everything before it are sealed that is
+today, and the scan reads ~740 rows instead of 20,200. The anti-join stays, so
+a day the rollup skipped and later filled is still not counted twice. Proved
+equivalent the same way - fifty rows before and after inside one rolled-back
+transaction, `EXCEPT` both ways, zero rows.
+
+Measured from the same browser session that had just been getting 500s:
+
+```
+p_days=30    200 in 3,124ms then 2,153ms
+p_days=90    200 in 1,784ms
+p_days=365   200 in 3,199ms
+```
+
+### Verified in a browser, on production, signed in as the club owner
+
+Both of the reads this phase was handed as broken now render:
+
+- **`/clubs/<slug>/data`** - Rake Produced shows 380,124.56 rake, the five-day
+  chart, and all 34 agent rows, where it showed dashes and "Reading Rollups".
+  (The first paint still showed "That Took Too Long" once and recovered on the
+  next poll; the retry-suppression fix for that is in this branch and not yet
+  published.)
+- **`/clubs/<slug>/bomb-pot-report`** - 18,690 bomb pots, 50 tables, 4.7 players
+  per bomb, 233,370.58 in forced antes, 55,041.77 of rake, and the full
+  per-table breakdown, where the page said "Could Not Load The Bomb Pot Report".
+
 ## Two things measured and deliberately left
 
 - **`fn_club_cashier_members_page_v3` really does re-run the recursive downline
@@ -413,8 +469,8 @@ month costs, because only the unsealed days are read from the hands.
 ## Verified
 
 - Migrations `20260905040100`, `20260905041500`, `20260905042100`,
-  `20260905043000` and `20260905051000`, one transaction each, applied and
-  recorded. `20260905042500` - the index alone -
+  `20260905043000`, `20260905051000` and `20260905052000`, one transaction
+  each, applied and recorded. `20260905042500` - the index alone -
   is queued for the `:55` freeze, because it is the only statement here that
   takes a lock on a table the engine writes on every raked hand.
 - `ca_rake_snapshot` read live through PostgREST as the club owner after the

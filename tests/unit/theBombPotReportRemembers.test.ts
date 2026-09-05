@@ -44,15 +44,35 @@ const MIGRATION = readFileSync(
   'utf8'
 );
 
-const fn = (name: string) => {
-  const start = MIGRATION.indexOf(`FUNCTION public.${name}(`);
+/**
+ * The correction, and the reason it was needed: the first version bounded the
+ * live scan by the REQUESTED window and relied on the anti-join to keep only
+ * the unsealed days. The anti-join removes them from the result; it cannot
+ * stop them being read. The club filter lives on `tables`, so `h.table_id` is
+ * wanted for every candidate row and is not in the partial index - so the
+ * planner still fetched ~20,200 wide rows and threw 96% away.
+ *
+ * It measured 1.2-1.9s anyway, because that measurement was taken minutes
+ * after the backfill had warmed every page it touched. The same call from a
+ * real browser session fifteen minutes later took 8,718ms and 500'd. Measuring
+ * a cold path warm is precisely the mistake this whole item exists to correct,
+ * and it was made twice in one night.
+ */
+const CORRECTION = readFileSync(
+  'supabase/migrations/20260905052000_the_live_edge_is_bounded_by_the_days_that_are_live.sql',
+  'utf8'
+);
+
+const fnIn = (sql: string, name: string) => {
+  const start = sql.indexOf(`FUNCTION public.${name}(`);
   expect(start, `${name} is defined`).toBeGreaterThan(-1);
-  return sliceDollarQuoted(MIGRATION.slice(start), '$function$');
+  return sliceDollarQuoted(sql.slice(start), '$function$');
 };
+const fn = (name: string) => fnIn(MIGRATION, name);
 
 describe('the bomb pot report reads a rollup, not twenty thousand hands', () => {
   it('the report reads the sealed days from the rollup', () => {
-    const body = blankNonCode(fn('fn_club_bomb_pot_report'));
+    const body = blankNonCode(fnIn(CORRECTION, 'fn_club_bomb_pot_report'));
     expect(body).toContain('public.ca_club_bomb_pot_daily d');
     expect(body).toContain('public.ca_club_bomb_pot_complete c');
   });
@@ -61,14 +81,14 @@ describe('the bomb pot report reads a rollup, not twenty thousand hands', () => 
     // The mirror failure of a rollup that misses today is a rollup that is
     // added to a live read of the same day, and it reads as a club producing
     // more bomb pots than it dealt.
-    const body = blankNonCode(fn('fn_club_bomb_pot_report'));
+    const body = blankNonCode(fnIn(CORRECTION, 'fn_club_bomb_pot_report'));
     expect(body).toMatch(/NOT EXISTS \(SELECT 1 FROM ok_days o2/);
   });
 
   it('averages are re-derived from the sums, not averaged again', () => {
     // An average of daily averages is not the average of the range. The
     // rollup stores sums for exactly this reason.
-    const body = blankNonCode(fn('fn_club_bomb_pot_report'));
+    const body = blankNonCode(fnIn(CORRECTION, 'fn_club_bomb_pot_report'));
     expect(body).toContain('round(tt.seats_sum / NULLIF(tt.hands, 0), 2)');
     expect(body).toContain('round(tt.pot_sum   / NULLIF(tt.hands, 0), 2)');
     expect(MIGRATION).toContain('Sums, never averages.');
@@ -131,6 +151,21 @@ describe('the bomb pot report reads a rollup, not twenty thousand hands', () => 
     }
     expect(MIGRATION).toContain(
       'GRANT EXECUTE ON FUNCTION public.fn_club_bomb_pot_report(uuid, integer) TO authenticated, service_role;'
+    );
+  });
+
+  it('the live scan is bounded by the earliest unsealed day, not by the window', () => {
+    // Without this the rollup saves nothing: every call still reads the whole
+    // window's hands and discards them after the join. Measured from a real
+    // browser session: 8,718ms and a 500 before, 1.8-3.2s and 200 after.
+    const body = blankNonCode(fnIn(CORRECTION, 'fn_club_bomb_pot_report'));
+    expect(body).toContain('h.created_at >= v_live_from::timestamptz');
+    expect(body).toContain('public.ca_club_bomb_pot_complete c');
+    // And the anti-join SURVIVES the bound: a day the rollup skipped and later
+    // filled sits inside the live range and would otherwise be counted twice.
+    expect(body).toMatch(/NOT EXISTS \(SELECT 1 FROM ok_days o2/);
+    expect(CORRECTION).toContain(
+      'the live scan is still bounded by the requested window, not by the unsealed days'
     );
   });
 

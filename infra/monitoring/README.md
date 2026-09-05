@@ -138,8 +138,8 @@ Six alerts carry the label `page: sms` (pinned by
 `deploy-monitor.js` already pages. Everything else goes to email only.
 
 The receiver authenticates with the World Hub `CRON_SECRET`, read from
-**`cron_secret`** beside this README - a plain file, mode 600, no trailing
-newline, mounted read-only into the Alertmanager container next to
+**`cron_secret`** beside this README - a plain file owned by `nobody` with mode 400 (the container runs as
+nobody - match `resend_key`), no trailing newline, mounted read-only into the Alertmanager container next to
 `resend_key`. It is gitignored; `cron_secret.example` is the placeholder.
 `deploy.sh` refuses to run if it is missing or empty, because a pager that
 silently fails every notification is worse than none. On a rebuilt host, write

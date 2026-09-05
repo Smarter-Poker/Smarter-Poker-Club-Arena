@@ -84,7 +84,7 @@ done
 # receiver fails every notification and the six alerts Dan asked to be woken
 # for reach email only. Refuse to proceed rather than deploy a silent pager.
 if [[ ! -s "$RUN_DIR/cron_secret" ]]; then
-  echo "   ❌ $RUN_DIR/cron_secret is missing or empty. Write the World Hub CRON_SECRET to it (chmod 600) - the pager receiver reads it."
+  echo "   ❌ $RUN_DIR/cron_secret is missing or empty. Write the World Hub CRON_SECRET to it, then chown nobody + chmod 400 like resend_key - the container runs as nobody."
   exit 1
 fi
 

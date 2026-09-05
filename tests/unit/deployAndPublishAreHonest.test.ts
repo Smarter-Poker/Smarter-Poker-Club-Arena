@@ -126,7 +126,10 @@ describe('the engine deploy tells the truth when it skips', () => {
      * tests/schedule-liveness.test.ts; what is pinned here is that the one
      * tick is still hourly and still lands before :55.
      */
-    expect(HETZNER).toMatch(/cron: '45 \* \* \* \*'/);
+    // :35 since #3070 (2026-09-05): builds grew to 8-18 minutes and the :45
+    // tick's fixed poll gave up 23 s before :55. The range below is the rule;
+    // the minute is whatever lands every observed build length in the window.
+    expect(HETZNER).toMatch(/cron: '35 \* \* \* \*'/);
     expect(cronEveryMinutes(HETZNER)).toBeNull();
 
     const [, minutes, hours] = HETZNER.match(/cron: '([0-9,]+) ([^ ]+) \* \* \*'/)!;

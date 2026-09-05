@@ -694,3 +694,384 @@
   width: 100% !important;
   height: 100% !important;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 3 2026-09-05 - THE REPLAYER MOVES
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Every duration below is `--hr-move` : the felt's Animation Speed multiplier
+   (--animation-speed on :root, 1 normal, 0.25 fastest, 3 slowest) divided by
+   the replay's own rate (--hr-rate on .hand-replay: 0.5, 1 or 2). Neither
+   setting can reach zero, so neither can switch a movement off; the fastest
+   pair is still motion (animation law, CLAUDE.md 10.6).
+
+   Under prefers-reduced-motion the global collapse (styles/reducedMotion.css)
+   lands each of these on its FINAL frame in 1ms: chips at the bet spot, the
+   sweep and the award faded out, cards face-up, the fold gone. Every ending
+   here carries the meaning, so nothing needs the data-motion="keep" hatch. */
+
+.hand-replay {
+  --hr-move: calc(var(--animation-speed, 1) / var(--hr-rate, 1));
+}
+
+/* Chips slide from the seat to its bet spot. The keyframe's start is the
+   seat's own position (custom properties set inline per seat); the end is
+   the element's laid-out left/top. */
+@keyframes hrChipIn {
+  from {
+    left: var(--hr-from-x);
+    top: var(--hr-from-y);
+    opacity: 0.35;
+  }
+}
+
+.hr-bet--in {
+  animation: hrChipIn calc(420ms * var(--hr-move)) cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* A new street: last street's bets travel to the pot and are gone. */
+@keyframes hrChipSweep {
+  to {
+    left: var(--hr-pot-x, 50%);
+    top: var(--hr-pot-y, 38%);
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.7);
+  }
+}
+
+.hr-bet--sweep {
+  pointer-events: none;
+  animation: hrChipSweep calc(520ms * var(--hr-move)) cubic-bezier(0.4, 0, 0.6, 1) forwards;
+}
+
+/* The pot goes to the winner. */
+@keyframes hrPotFly {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.8);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.05);
+  }
+  100% {
+    left: var(--hr-to-x);
+    top: var(--hr-to-y);
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+}
+
+.hr-pot-fly {
+  position: absolute;
+  z-index: 6;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(3, 6, 9, 0.85);
+  border: 1px solid rgba(214, 173, 82, 0.7);
+  color: var(--hr-brass);
+  font-family: var(--hr-display);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  animation: hrPotFly calc(900ms * var(--hr-move)) cubic-bezier(0.3, 0, 0.3, 1) forwards;
+}
+
+@keyframes hrPotAward {
+  0% {
+    box-shadow: 0 0 0 0 rgba(214, 173, 82, 0);
+  }
+  30% {
+    box-shadow: 0 0 0 6px rgba(214, 173, 82, 0.35);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(214, 173, 82, 0);
+  }
+}
+
+.hr-felt__pot--award {
+  animation: hrPotAward calc(900ms * var(--hr-move)) ease-out both;
+}
+
+/* The winner's stack takes the chips. */
+@keyframes hrStackGrow {
+  0% {
+    transform: scale(1);
+    color: inherit;
+  }
+  40% {
+    transform: scale(1.22);
+    color: var(--hr-up);
+  }
+  100% {
+    transform: scale(1);
+    color: var(--hr-up);
+  }
+}
+
+.hr-seat__stack--grow {
+  display: inline-block;
+  transform-origin: center;
+  animation: hrStackGrow calc(900ms * var(--hr-move)) calc(300ms * var(--hr-move)) ease-out both;
+}
+
+/* A shown hand turns face-up. */
+@keyframes hrFlip {
+  from {
+    transform: perspective(300px) rotateY(90deg);
+    opacity: 0.6;
+  }
+  to {
+    transform: perspective(300px) rotateY(0deg);
+    opacity: 1;
+  }
+}
+
+.hr-seat__cards--flip > * {
+  transform-origin: center;
+  backface-visibility: hidden;
+  animation: hrFlip calc(480ms * var(--hr-move)) cubic-bezier(0.2, 0.6, 0.2, 1) both;
+}
+
+.hr-seat__cards--flip > *:nth-child(2) {
+  animation-delay: calc(70ms * var(--hr-move));
+}
+
+.hr-seat__cards--flip > *:nth-child(3) {
+  animation-delay: calc(140ms * var(--hr-move));
+}
+
+.hr-seat__cards--flip > *:nth-child(4) {
+  animation-delay: calc(210ms * var(--hr-move));
+}
+
+/* A fold: the cards go to the muck and stay gone. */
+@keyframes hrFold {
+  to {
+    transform: translateY(-18px) rotate(-8deg) scale(0.8);
+    opacity: 0;
+  }
+}
+
+.hr-seat__cards--fold > * {
+  animation: hrFold calc(380ms * var(--hr-move)) ease-in forwards;
+}
+
+/* The acting seat breathes once. */
+@keyframes hrActPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(58, 168, 255, 0.55);
+  }
+  100% {
+    box-shadow: 0 0 0 7px rgba(58, 168, 255, 0);
+  }
+}
+
+.hr-seat.is-active .hr-seat__plate {
+  animation: hrActPulse calc(700ms * var(--hr-move)) ease-out;
+}
+
+/* The dealer button. */
+.hr-button {
+  position: absolute;
+  z-index: 4;
+  transform: translate(-50%, -50%);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #f6f0e2, #d8ccb0);
+  color: #1b1408;
+  border: 1px solid rgba(0, 0, 0, 0.45);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  font-family: var(--hr-display);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  transition:
+    left calc(400ms * var(--hr-move)),
+    top calc(400ms * var(--hr-move));
+}
+
+/* The made hand under a seat whose cards the viewer can see. */
+.hr-seat__made {
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(3, 6, 9, 0.7);
+  font-family: var(--hr-mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--hr-brass);
+  white-space: nowrap;
+}
+
+.hr-seat.is-folded .hr-seat__made {
+  color: var(--hr-muted);
+}
+
+/* What the acting seat was facing when it decided. */
+.hr-facing {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(3, 6, 9, 0.88);
+  border: 1px solid rgba(185, 202, 215, 0.25);
+  white-space: nowrap;
+  z-index: 5;
+}
+
+.hr-facing__call {
+  font-family: var(--hr-display);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--hr-chrome);
+  font-variant-numeric: tabular-nums;
+}
+
+.hr-facing__odds {
+  font-family: var(--hr-mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--hr-blue-hot);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Labels hang inward on the seats nearest the felt's edges: the felt clips. */
+.hr-seat--right .hr-facing {
+  left: auto;
+  right: 0;
+  transform: none;
+  align-items: flex-end;
+}
+
+.hr-seat--left .hr-facing {
+  left: 0;
+  transform: none;
+  align-items: flex-start;
+}
+
+/* The bottom seat has no room below it and the felt clips at the sides on a
+   phone, so its badge goes ABOVE the cards, and the action label that lived
+   there moves to the plate's right shoulder. */
+.hr-seat--bottom .hr-facing {
+  top: auto;
+  bottom: calc(100% + 2px);
+}
+
+.hr-seat--bottom .hr-seat__act {
+  top: 36px;
+  right: auto;
+  left: calc(100% + 4px);
+}
+
+/* The top seats have no room above them: the action label drops below the plate. */
+.hr-seat--top .hr-seat__act {
+  top: auto;
+  bottom: -10px;
+}
+
+/* The bottom seat has no room below it: its made hand sits beside the plate. */
+.hr-seat--bottom .hr-seat__made {
+  position: absolute;
+  left: calc(100% + 4px);
+  bottom: 4px;
+}
+
+.hr-seat--right .hr-seat__act {
+  right: auto;
+  left: -6px;
+}
+
+/* Street jumps. */
+.hand-replay__jumps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 12px 8px;
+}
+
+.hr-jump {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--hr-line);
+  background: var(--hr-panel);
+  color: var(--hr-steel);
+  font-family: var(--hr-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.hr-jump--current {
+  border-color: var(--hr-blue);
+  color: var(--hr-chrome);
+  background: rgba(58, 168, 255, 0.14);
+}
+
+.hr-jump:focus-visible,
+.hr-rate:focus-visible {
+  outline: 2px solid var(--hr-blue);
+  outline-offset: 1px;
+}
+
+/* Replay speed. */
+.hand-replay__rate {
+  display: inline-flex;
+  border: 1px solid var(--hr-line);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-left: auto;
+}
+
+.hr-rate {
+  padding: 4px 9px;
+  border: 0;
+  background: var(--hr-panel);
+  color: var(--hr-steel);
+  font-family: var(--hr-display);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.hr-rate + .hr-rate {
+  border-left: 1px solid var(--hr-line);
+}
+
+.hr-rate--current {
+  background: var(--hr-blue);
+  color: #041019;
+}
+
+[data-theme='light'] .hr-facing,
+[data-theme='light'] .hr-pot-fly {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+[data-theme='light'] .hr-rate--current {
+  background: #146bb3;
+  color: #ffffff;
+}
+
+@media (max-width: 480px) {
+  .hand-replay__rate {
+    margin-left: 0;
+  }
+
+  .hr-facing {
+    font-size: 10px;
+  }
+}

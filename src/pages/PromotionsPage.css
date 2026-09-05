@@ -1,8 +1,21 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  PROMOTIONS PAGE — Metal UI Theme
- *  Brushed Steel + Cyan Glow Offers
+ *  PROMOTIONS PAGE - #SMARTERCASINOREALISM
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * The club's running offers: the filter chips, one card per promotion with its
+ * prize and countdown, the daily bonus banner that opens the wheel, and the
+ * referral banner.
+ *
+ * Colour and material come from the --realism-* tokens on :root in
+ * src/styles/club-engine.css, so this page has no palette of its own. A card is
+ * a panel gradient inside a gunmetal frame with a lit top edge and a cavity
+ * under it; a control presses on :active, because on a phone the press is the
+ * only confirmation there is. No :hover rules here and none may be added
+ * (tests/no-hover-effects.law.test.ts).
+ *
+ * A red badge stays red and an amber countdown stays amber - those carry
+ * meaning that a token would not.
  */
 
 .promotions-page {
@@ -16,7 +29,12 @@
      viewport. The bar leaves the bottom of the screen and rides up the page. */
   overflow-x: hidden;
   overflow-x: clip;
-  background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
+  background: linear-gradient(
+    180deg,
+    var(--realism-obsidian) 0%,
+    var(--realism-carbon) 50%,
+    var(--realism-obsidian) 100%
+  );
   /* Reserve the fixed bottom nav this page renders (2026-08-23). The bar is
      out of flow, so whatever it covers is simply unreachable — the token
      is the bar's height PLUS the home-indicator inset it adds on iOS. */
@@ -24,7 +42,7 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   FILTERS — Metal Chips
+   FILTERS - Milled Chips
    ───────────────────────────────────────────────────────────────────────────── */
 
 .promo-filters {
@@ -38,10 +56,13 @@
   min-height: 44px;
   touch-action: manipulation;
   padding: 0.75rem;
-  border: 2px solid #2a3a4a;
+  border: 1px solid var(--realism-gunmetal);
   border-radius: 12px;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.04) 0%, rgba(100, 100, 100, 0.02) 100%);
-  color: #6a7a8a;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
+  color: var(--realism-muted);
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
@@ -49,14 +70,27 @@
 }
 
 .promo-filters button.active {
-  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
-  border-color: #00d4ff;
+  background: linear-gradient(135deg, var(--realism-cyan) 0%, #0099cc 100%);
+  border-color: var(--realism-cyan);
   color: #fff;
-  box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+  box-shadow:
+    var(--realism-bevel),
+    0 0 10px rgba(0, 212, 255, 0.3);
+}
+
+/* The press. Not decoration: it is the only feedback a thumb gets. */
+.promo-filters button:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
+}
+
+.promo-filters button:focus-visible {
+  outline: 2px solid var(--realism-cyan);
+  outline-offset: 2px;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   PROMOTIONS LIST — Metal Cards
+   PROMOTIONS LIST - Machined Cards
    ───────────────────────────────────────────────────────────────────────────── */
 
 .promotions-list {
@@ -67,20 +101,20 @@
 }
 
 .promo-card {
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  border: 2px solid #2a3a4a;
-  border-radius: 16px;
+  border: 1px solid var(--realism-gunmetal);
+  border-radius: var(--realism-radius);
   overflow: hidden;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
 }
 
 .promo-image {
   height: 120px;
   overflow: hidden;
-  background: linear-gradient(180deg, #1a2332 0%, #0d1520 100%);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
 }
 
 .promo-image img {
@@ -106,7 +140,7 @@
 
 .promo-type {
   font-size: 0.7rem;
-  color: #00d4ff;
+  color: var(--realism-cyan);
   text-transform: uppercase;
   font-weight: 700;
   letter-spacing: 0.5px;
@@ -115,14 +149,14 @@
 .promo-title {
   margin: 0 0 0.5rem;
   font-size: 1.125rem;
-  color: #fff;
+  color: var(--realism-chrome-hot);
   font-weight: 600;
 }
 
 .promo-desc {
   margin: 0 0 1rem;
   font-size: 0.85rem;
-  color: #8a9aaa;
+  color: var(--realism-chrome);
   line-height: 1.4;
 }
 
@@ -131,16 +165,17 @@
   justify-content: space-between;
   align-items: center;
   font-size: 0.75rem;
-  color: #6a7a8a;
+  color: var(--realism-muted);
 }
 
 .promo-prize {
   font-weight: 700;
-  color: #10b981;
+  color: var(--realism-green);
   font-family: 'Rajdhani', monospace;
   text-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
 }
 
+/* Amber, and it stays amber: this is time running out, not a status tier. */
 .promo-countdown {
   display: inline-block;
   margin-top: 0.75rem;
@@ -164,7 +199,7 @@
   align-items: center;
   justify-content: center;
   padding: 3rem;
-  color: #6a7a8a;
+  color: var(--realism-muted);
   gap: 1rem;
 }
 
@@ -183,17 +218,31 @@
   gap: 0.75rem;
   margin: 1rem;
   padding: 1rem 1.25rem;
-  background: linear-gradient(135deg, #00d4ff 0%, #0066aa 50%, #004488 100%);
+  background: linear-gradient(135deg, var(--realism-cyan) 0%, #0066aa 50%, #004488 100%);
   border: 2px solid rgba(255, 255, 255, 0.2);
   border-radius: 12px;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+  box-shadow:
+    var(--realism-bevel),
+    0 0 20px rgba(0, 212, 255, 0.3),
+    var(--realism-lift);
 }
 
 .daily-bonus-banner {
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
+
+.daily-bonus-banner:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.55);
+}
+
+.daily-bonus-banner:focus-visible {
+  outline: 2px solid var(--realism-chrome-hot);
+  outline-offset: 2px;
+}
+
 .bonus-icon {
   font-size: 1.5rem;
 }
@@ -232,10 +281,10 @@
 
 .bonus-wheel-modal {
   position: relative;
-  background: linear-gradient(180deg, #1a2535 0%, #0d1520 100%);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  border: 2px solid #2a3a4a;
+  border: 1px solid var(--realism-gunmetal);
   border-radius: 20px;
   padding: 1.5rem;
   max-width: 400px;
@@ -243,8 +292,10 @@
   max-height: 90vh;
   overflow-y: auto;
   box-shadow:
-    0 0 40px rgba(0, 212, 255, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    var(--realism-bevel),
+    var(--realism-cavity),
+    var(--realism-lift),
+    0 0 40px rgba(0, 212, 255, 0.2);
 }
 
 .modal-close {
@@ -254,13 +305,26 @@
   width: 44px;
   height: 44px;
   touch-action: manipulation;
-  border: 2px solid #3a4a5a;
+  border: 1px solid var(--realism-gunmetal-lit);
   border-radius: 50%;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
-  color: #8a9aaa;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
+  color: var(--realism-chrome);
   font-size: 1rem;
   cursor: pointer;
   transition: all 0.2s ease;
+}
+
+.modal-close:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
+}
+
+.modal-close:focus-visible {
+  outline: 2px solid var(--realism-cyan);
+  outline-offset: 2px;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -387,6 +451,7 @@
   flex-wrap: wrap;
 }
 
+/* Red, and it stays red: this is the last-call warning, not a tier colour. */
 .ending-soon-badge {
   display: inline-block;
   padding: 3px 10px;
@@ -454,7 +519,20 @@
   gap: 0.75rem;
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);
+  box-shadow:
+    var(--realism-bevel),
+    0 0 15px rgba(16, 185, 129, 0.3),
+    var(--realism-lift);
+}
+
+.referral-banner:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.55);
+}
+
+.referral-banner:focus-visible {
+  outline: 2px solid var(--realism-chrome-hot);
+  outline-offset: 2px;
 }
 @media (max-width: 768px) {
   .promotions-page {
@@ -467,5 +545,34 @@
     border-radius: 0 !important;
     border-left: none !important;
     border-right: none !important;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   REDUCED MOTION
+
+   Scoped to this sheet's own decoration rather than a blanket
+   `.promotions-page *` collapse. The daily bonus wheel renders INSIDE
+   .promotions-page and its spin lives in
+   components/gamification/DailyBonusWheel.css; a universal 0.01ms rule here
+   would reach it and turn the result reveal into a single frame, which is
+   CLAUDE.md 10.6's "motion collapses, meaning never does" broken by a sheet
+   that does not own the animation. The shimmer, the pulse and the chip
+   transitions below carry no information and go.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .promo-filters button,
+  .promo-card,
+  .daily-bonus-banner,
+  .referral-banner,
+  .modal-close {
+    transition: none;
+  }
+
+  .promo-skeleton-card::after,
+  .daily-bonus-banner::after,
+  .ending-soon-badge {
+    animation: none;
   }
 }

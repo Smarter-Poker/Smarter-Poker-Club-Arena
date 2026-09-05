@@ -19,6 +19,12 @@ import { sendJSON } from '../http/respond.js';
 import { authenticateRequest } from '../http/auth.js';
 import { readBody } from '../http/body.js';
 import { checkRateLimit } from '../http/rateLimit.js';
+import {
+  actionFingerprint,
+  isValidActionKey,
+  lookupAction,
+  rememberAction,
+} from '../http/actionIdempotency.js';
 import { reportError } from '../services/errorReporter.js';
 
 /** Structural shape of the game server this handler needs. */
@@ -61,12 +67,45 @@ export async function handleAction(
     }
 
     const body = JSON.parse(await readBody(req));
-    const { tableId, action, amount } = body;
+    const { tableId, action, amount, idempotencyKey } = body;
     // Use authenticated userId from JWT, NOT from request body (prevents spoofing)
     const userId = auth.userId;
 
     if (!tableId || !action) {
       return sendJSON(res, 400, { success: false, error: 'Missing tableId or action' });
+    }
+
+    /* ── AN ACTION APPLIES ONCE (Phase 3, 2026-09-05) ────────────────────────
+       The client stamps one key per intent and reuses it for every retry
+       inside that intent (`GameServerAPI.submitAction`). See
+       `http/actionIdempotency.ts` for why the key is in the body rather than
+       a header, and why a rejection is remembered while a refusal is not.
+
+       ABSENT IS LEGAL AND MEANS THE OLD BEHAVIOUR: bundles from before this
+       shipped are still served from the origin's additive pool and are
+       posting actions right now with no key.
+
+       BEFORE THE RATE LIMITER, DELIBERATELY. A replay is not a new action; a
+       429 on one would send the client back round its ladder and end in "The
+       table is busy" for an action that had already been accepted. */
+    const hasKey = idempotencyKey !== undefined && idempotencyKey !== null;
+    if (hasKey && !isValidActionKey(idempotencyKey)) {
+      // Loudly, not silently: a client that thinks it has exactly-once
+      // protection and does not is worse off than one that knows it has none.
+      return sendJSON(res, 400, { success: false, error: 'Invalid action key' });
+    }
+    const fingerprint = hasKey ? actionFingerprint(action, amount) : '';
+    if (hasKey) {
+      const seen = lookupAction(userId, tableId, idempotencyKey as string, fingerprint);
+      if (seen.kind === 'replay') {
+        return sendJSON(res, seen.status, { ...(seen.body as object), replayed: true });
+      }
+      if (seen.kind === 'conflict') {
+        return sendJSON(res, 409, {
+          success: false,
+          error: 'This action was already submitted with different details',
+        });
+      }
     }
 
     // Bible V8 §9.3: Rate limiting — reject rapid-fire action submissions.
@@ -92,7 +131,16 @@ export async function handleAction(
     // Record to telemetry (broadcast timing tracked inside engine)
     engine.recordActionPerformance(userId, action, actionProcessingMs);
 
-    return sendJSON(res, result.success ? 200 : 400, result);
+    const status = result.success ? 200 : 400;
+    /* Remembered ONLY here, on the one path where the action actually reached
+       the engine. Everything above this line - 401, 404, 429 - means "not
+       processed", and a retry of those must be free to run for real. There is
+       no await between the lookup above and this call, which is what makes
+       two simultaneous posts of one key impossible to both see 'fresh'. */
+    if (hasKey) {
+      rememberAction(userId, tableId, idempotencyKey as string, fingerprint, status, result);
+    }
+    return sendJSON(res, status, result);
   } catch (err: unknown) {
     reportError(err, 'HTTP.action_error');
     return sendJSON(res, 500, { success: false, error: 'Invalid request body' });

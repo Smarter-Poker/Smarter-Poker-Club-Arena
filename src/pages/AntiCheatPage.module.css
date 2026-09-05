@@ -1,6 +1,12 @@
 /* ═══════════════════════════════════════════════════════════════
    Anti-Cheat Dashboard — CSS Module
-   Shared dark-theme admin styling
+   #SMARTERCASINOREALISM - the material layer. The tokens are defined once on
+   :root in src/styles/club-engine.css, which main.tsx loads; this sheet only
+   consumes them. The page is the club's integrity console: collusion pairs,
+   chip-dumping flags and the open-flag review queue, with the modal an operator
+   uses to action or dismiss one. Every red and amber here is a verdict about a
+   player, so those keep their exact colours - only the greys, the surfaces and
+   the accent blue move onto the shared vocabulary.
    ═══════════════════════════════════════════════════════════════ */
 
 .page {
@@ -15,7 +21,7 @@
   overflow-x: hidden;
   overflow-x: clip;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  color: #e4e6eb;
+  color: var(--realism-chrome-hot);
 }
 
 /* ── Header ─────────────────────────────────────────────── */
@@ -35,7 +41,7 @@
 .title {
   font-size: 20px;
   font-weight: 700;
-  color: #e4e6eb;
+  color: var(--realism-chrome-hot);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -67,8 +73,8 @@
 .statusBadge {
   font-size: 11px;
   font-weight: 600;
-  background: #3a3b3c;
-  color: #b0b3b8;
+  background: var(--realism-gunmetal);
+  color: var(--realism-chrome);
   padding: 3px 8px;
   border-radius: 12px;
   text-transform: uppercase;
@@ -80,8 +86,8 @@
 .eventTypeBadge {
   font-size: 11px;
   font-weight: 700;
-  background: #3a3b3c;
-  color: #e4e6eb;
+  background: var(--realism-gunmetal);
+  color: var(--realism-chrome-hot);
   padding: 3px 8px;
   border-radius: 4px;
   text-transform: uppercase;
@@ -109,14 +115,14 @@
   gap: 4px;
   margin-bottom: 20px;
   overflow-x: auto;
-  border-bottom: 1px solid #3a3b3c;
+  border-bottom: 1px solid var(--realism-gunmetal);
   -webkit-overflow-scrolling: touch;
 }
 .tab {
   padding: 10px 16px;
   font-size: 13px;
   font-weight: 600;
-  color: #b0b3b8;
+  color: var(--realism-muted);
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
@@ -130,8 +136,8 @@
     border-color 0.15s;
 }
 .tabActive {
-  color: #4599ff;
-  border-bottom-color: #4599ff;
+  color: var(--realism-cyan);
+  border-bottom-color: var(--realism-cyan);
 }
 .tabBadge {
   font-size: 11px;
@@ -151,17 +157,19 @@
   gap: 12px;
   margin-bottom: 20px;
 }
+/* A tile sits IN its frame, not on the page: lit top edge, cavity under it. */
 .statCard {
-  background: #242526;
-  border: 1px solid #3a3b3c;
-  border-radius: 10px;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border: 1px solid var(--realism-gunmetal);
+  border-radius: var(--realism-radius);
+  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
   padding: 16px;
   text-align: center;
 }
 .statValue {
   font-size: 22px;
   font-weight: 800;
-  color: #e4e6eb;
+  color: var(--realism-chrome-hot);
 }
 .statValueRed {
   font-size: 22px;
@@ -171,21 +179,21 @@
 .statValueGold {
   font-size: 22px;
   font-weight: 800;
-  color: #f7c52a;
+  color: var(--realism-gold);
 }
 .statValueGreen {
   font-size: 22px;
   font-weight: 800;
-  color: #31a24c;
+  color: var(--realism-green);
 }
 .statValueBlue {
   font-size: 22px;
   font-weight: 800;
-  color: #4599ff;
+  color: var(--realism-cyan);
 }
 .statLabel {
   font-size: 12px;
-  color: #b0b3b8;
+  color: var(--realism-muted);
   margin-top: 4px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -201,12 +209,12 @@
 .subsectionTitle {
   font-size: 16px;
   font-weight: 700;
-  color: #e4e6eb;
+  color: var(--realism-chrome-hot);
   margin: 0 0 12px;
 }
 .subsectionDesc {
   font-size: 13px;
-  color: #b0b3b8;
+  color: var(--realism-muted);
   margin: -8px 0 12px;
 }
 
@@ -224,8 +232,8 @@
   text-align: left;
   padding: 10px 12px;
   font-weight: 700;
-  color: #b0b3b8;
-  border-bottom: 1px solid #3a3b3c;
+  color: var(--realism-muted);
+  border-bottom: 1px solid var(--realism-gunmetal);
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -233,17 +241,17 @@
 }
 .dataTable td {
   padding: 10px 12px;
-  border-bottom: 1px solid #2d2e30;
-  color: #e4e6eb;
+  border-bottom: 1px solid var(--realism-gunmetal);
+  color: var(--realism-chrome);
 }
 .timeCell {
   font-size: 12px;
-  color: #b0b3b8;
+  color: var(--realism-muted);
   white-space: nowrap;
 }
 .detailsCell {
   font-size: 12px;
-  color: #b0b3b8;
+  color: var(--realism-muted);
   max-width: 250px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -251,7 +259,7 @@
 }
 .handRank {
   font-weight: 700;
-  color: #f7c52a;
+  color: var(--realism-gold);
   text-transform: capitalize;
 }
 
@@ -275,21 +283,26 @@
   font-size: 12px;
 }
 .receiver {
-  color: #31a24c;
+  color: var(--realism-green);
   font-weight: 600;
   font-size: 12px;
 }
 .arrow {
-  color: #6b7280;
+  color: var(--realism-muted);
 }
 
 /* ── Buttons ────────────────────────────────────────────── */
+/* The milled face: a hairline of light on the top edge over a shallow drop.
+   `border: none` is kept on the primary so the control does not grow by 2px. */
 .btnPrimary {
   padding: 8px 16px;
-  background: #4599ff;
+  background: var(--realism-blue);
   color: #fff;
   border: none;
   border-radius: 8px;
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
   font-weight: 600;
   font-size: 13px;
   cursor: pointer;
@@ -302,10 +315,13 @@
 }
 .btnGhost {
   padding: 8px 16px;
-  background: transparent;
-  color: #b0b3b8;
-  border: 1px solid #3a3b3c;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  color: var(--realism-chrome);
+  border: 1px solid var(--realism-gunmetal);
   border-radius: 8px;
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
   font-weight: 600;
   font-size: 13px;
   cursor: pointer;
@@ -317,7 +333,7 @@
   font-size: 11px;
   font-weight: 600;
   background: rgba(247, 197, 42, 0.12);
-  color: #f7c52a;
+  color: var(--realism-gold);
   border: 1px solid rgba(247, 197, 42, 0.25);
   border-radius: 6px;
   cursor: pointer;
@@ -343,7 +359,7 @@
   padding: 4px 10px;
   font-size: 11px;
   font-weight: 600;
-  color: #d5e3ef;
+  color: var(--realism-chrome);
   background: rgba(146, 173, 194, 0.12);
   border: 1px solid rgba(146, 173, 194, 0.28);
   border-radius: 6px;
@@ -352,6 +368,26 @@
 .btnSmall:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+/* There is no hover in Club Arena (tests/no-hover-effects.law.test.ts), so the
+   press IS the feedback: the control drops into its own cavity and the lit top
+   edge goes out. Keyboard reachability lives in :focus-visible beside it. */
+.btnPrimary:active:not(:disabled),
+.btnGhost:active:not(:disabled),
+.btnSmall:active:not(:disabled),
+.btnSmallGold:active:not(:disabled),
+.btnSmallDanger:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
+}
+.tab:focus-visible,
+.btnPrimary:focus-visible,
+.btnGhost:focus-visible,
+.btnSmall:focus-visible,
+.btnSmallGold:focus-visible,
+.btnSmallDanger:focus-visible {
+  outline: 2px solid var(--realism-cyan);
+  outline-offset: 2px;
 }
 .actionBtns {
   display: flex;
@@ -373,7 +409,7 @@
 }
 .emptyText {
   font-size: 14px;
-  color: #b0b3b8;
+  color: var(--realism-muted);
 }
 
 /* ── Modal ──────────────────────────────────────────────── */
@@ -388,9 +424,10 @@
   padding: 20px;
 }
 .modal {
-  background: #242526;
-  border: 1px solid #3a3b3c;
-  border-radius: 14px;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border: 1px solid var(--realism-gunmetal);
+  border-radius: var(--realism-radius);
+  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
   padding: 24px;
   max-width: 500px;
   width: 100%;
@@ -400,7 +437,7 @@
 .modalTitle {
   font-size: 18px;
   font-weight: 700;
-  color: #e4e6eb;
+  color: var(--realism-chrome-hot);
   margin: 0 0 16px;
 }
 .modalBody {
@@ -419,17 +456,19 @@
   margin-bottom: 8px;
 }
 .flagType {
-  color: #e4e6eb;
+  color: var(--realism-chrome-hot);
   font-weight: 600;
 }
 .reviewPlayer {
   font-size: 13px;
-  color: #b0b3b8;
+  color: var(--realism-muted);
 }
+/* The raw flag payload: a cavity cut into the modal, not another raised face. */
 .detailsBlock {
   font-size: 12px;
-  color: #94a3b8;
-  background: #18191a;
+  color: var(--realism-muted);
+  background: var(--realism-obsidian);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.65);
   padding: 8px;
   border-radius: 6px;
   font-family: monospace;
@@ -446,7 +485,7 @@
   display: block;
   font-size: 12px;
   font-weight: 600;
-  color: #b0b3b8;
+  color: var(--realism-muted);
   margin-bottom: 6px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -454,28 +493,30 @@
 .formInput {
   width: 100%;
   padding: 10px 12px;
-  background: #18191a;
-  border: 1px solid #3a3b3c;
+  background: var(--realism-obsidian);
+  border: 1px solid var(--realism-gunmetal);
   border-radius: 8px;
-  color: #e4e6eb;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.65);
+  color: var(--realism-chrome-hot);
   font-size: 13px;
   outline: none;
 }
 .formInput:focus {
-  border-color: #4599ff;
+  border-color: var(--realism-cyan);
 }
 .formSelect {
   width: 100%;
   padding: 10px 12px;
-  background: #18191a;
-  border: 1px solid #3a3b3c;
+  background: var(--realism-obsidian);
+  border: 1px solid var(--realism-gunmetal);
   border-radius: 8px;
-  color: #e4e6eb;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.65);
+  color: var(--realism-chrome-hot);
   font-size: 13px;
   outline: none;
 }
 .formSelect:focus {
-  border-color: #4599ff;
+  border-color: var(--realism-cyan);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -532,5 +573,26 @@
 
   .actionBtn {
     min-height: 36px;
+  }
+}
+
+/* Motion collapses under the OS setting, meaning never does (CLAUDE.md 10.6).
+   Listed selector by selector rather than through a descendant wildcard, so
+   this block can only reach the controls this sheet owns and never an animation
+   belonging to a component rendered inside the page. The tab still turns cyan
+   and still carries its underline; it just stops fading into it. */
+@media (prefers-reduced-motion: reduce) {
+  .tab,
+  .btnPrimary,
+  .btnGhost {
+    transition: none;
+  }
+
+  .btnPrimary:active:not(:disabled),
+  .btnGhost:active:not(:disabled),
+  .btnSmall:active:not(:disabled),
+  .btnSmallGold:active:not(:disabled),
+  .btnSmallDanger:active:not(:disabled) {
+    transform: none;
   }
 }

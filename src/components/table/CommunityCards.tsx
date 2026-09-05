@@ -741,9 +741,10 @@ function CommunityCardsComponent({
             reducedMotion: prefersReducedMotion(),
             allIn: slowReveal,
             // VIP ALL-IN SQUEEZE 2026-09-05: the viewer's right, AND the
-            // board's - a re-run board never squeezes (Dan: "SHOULD NEVER
-            // APPEAR ON RUN IT 2X OR 3X"), whatever the page computed.
-            squeeze: boardMaySqueeze(squeezeEligible, runs),
+            // board's - a re-run board or a second/third board never
+            // squeezes (Dan: "NEVER APPEAR ON RUN IT 2X OR 3X", and "NOT
+            // ALLOWED ON BOMB POTS"), whatever the page computed.
+            squeeze: boardMaySqueeze(squeezeEligible, runs, boardIndex),
           }
         );
         if (result.status === 'started') {

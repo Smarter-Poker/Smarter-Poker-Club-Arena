@@ -317,8 +317,11 @@ describe('the fleet keeps the promise that opened a feeder (2026-09-05, 04:30 UT
     expect(FLEET).toMatch(
       /const openingFeeder = !!table\.cluster_id && table\.lifecycle === 'opening';/
     );
+    // 2026-09-05 (no lone horse): the floor is DEALABLE_MINIMUM (2) and it
+    // applies to the opening feeder AND to every cluster table at 0 or 1 -
+    // see HorseLoneTable.ts and HorseLoneTable.test.ts.
     expect(FLEET).toMatch(
-      /if \(openingFeeder\) \{\s*seatTarget = Math\.min\(table\.max_players, Math\.max\(seatTarget, 2\)\);/
+      /if \(openingFeeder \|\| seedToDealable\) \{\s*seatTarget = Math\.min\(table\.max_players, Math\.max\(seatTarget, DEALABLE_MINIMUM\)\);/
     );
     // The 1-2 trickle for a sparse table cannot leave the feeder at one.
     const trickle = FLEET.slice(
@@ -326,7 +329,7 @@ describe('the fleet keeps the promise that opened a feeder (2026-09-05, 04:30 UT
       FLEET.indexOf('seatsNeeded = Math.min(seatsNeeded, seatBudget);')
     );
     expect(trickle).toMatch(
-      /if \(openingFeeder\) \{\s*seatsNeeded = Math\.max\(seatsNeeded, Math\.min\(seatsAllowed, 2 - currentCount\)\);/
+      /seatsNeeded = seatsToDealable\(\{\s*clusterTable: !!table\.cluster_id,\s*currentCount,\s*seatsNeeded,\s*seatsAllowed,\s*\}\);/
     );
   });
 

@@ -1421,33 +1421,18 @@ input:checked + .toggle-slider.small::after {
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.55);
 }
 
-/* ── Borrowable primitives, so a page never restates the palette ─────────── */
+/* NO BORROWABLE UTILITY CLASSES HERE, DELIBERATELY.
+   This layer briefly shipped `.realism-frame`, `.realism-readout` and
+   `.realism-label` as a vocabulary future pages could borrow. Measured on
+   2026-09-05: zero consumers across every .tsx and .ts in the app. They were
+   speculative generality - three global class names carried in the one sheet
+   every page loads, on the chance somebody would want them.
 
-.realism-readout {
-  font-family: var(--realism-font-display);
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-  color: var(--realism-chrome-hot);
-  letter-spacing: 0.02em;
-  text-shadow: 0 0 18px rgba(0, 212, 255, 0.25);
-}
-
-.realism-label {
-  font-family: var(--realism-font-label);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--realism-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-}
-
-.realism-frame {
-  position: relative;
-  border: 1px solid var(--realism-gunmetal);
-  border-radius: var(--realism-radius);
-  background: linear-gradient(180deg, var(--realism-panel-raised), var(--realism-panel));
-  box-shadow: var(--realism-bevel), var(--realism-cavity);
-}
+   The VOCABULARY is the tokens, and those are genuinely consumed (club-engine,
+   RewardsSurfaceHeader, RakebackPage). A page that wants a machined frame
+   writes it in its OWN stylesheet from --realism-bevel and --realism-cavity,
+   which also keeps it inside the module boundary that
+   tests/global-css-does-not-leak-across-pages.law.test.ts exists to defend. */
 
 /* ── Loading: brushed metal under a moving light, not a grey rectangle ───── */
 

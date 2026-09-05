@@ -230,6 +230,12 @@ export default function SettlementPage() {
   const [agentPayouts, setAgentPayouts] = useState<AgentPayout[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [autoSettlement, setAutoSettlement] = useState(false);
+  /**
+   * Whether the switch's position was actually READ. False means the read
+   * failed, and a switch drawn from a failed read is a switch that lies about
+   * the club's setting - so the control says so rather than showing OFF.
+   */
+  const [autoSettlementKnown, setAutoSettlementKnown] = useState(false);
   const [togglingAutoSettle, setTogglingAutoSettle] = useState(false);
   const [visibleWires, setVisibleWires] = useState<Set<string>>(new Set());
   const [visiblePayouts, setVisiblePayouts] = useState<Set<string>>(new Set());
@@ -315,30 +321,42 @@ export default function SettlementPage() {
         setSelectedPeriod(mappedPeriods[0]);
       }
 
-      // Load auto-settlement setting from DB
+      // Load auto-settlement setting from DB.
+      //
+      // 2026-09-05 (phase 7): this read `.eq('id', clubId)` with the ROUTE
+      // PARAM, which on every /clubs/<slug>/settlement URL is a club code, not
+      // a uuid - so the read answered 22P02, the catch below swallowed it as
+      // "non-critical", and a club with auto-settlement ON rendered OFF. The
+      // resolved uuid is already in hand a few lines above; use it, and say so
+      // when the read fails instead of quietly showing a switch in the wrong
+      // position.
       try {
         if (unionId) {
-          const { data: unionData } = await supabase
+          const { data: unionData, error: unionErr } = await supabase
             .from('unions')
             .select('auto_settlement')
             .eq('id', unionId)
             .maybeSingle();
+          if (unionErr) throw unionErr;
           if (isMounted.current && unionData) {
             setAutoSettlement(!!unionData.auto_settlement);
+            setAutoSettlementKnown(true);
           }
-        } else if (clubId) {
-          const { data: clubData } = await supabase
+        } else if (resolvedClubId) {
+          const { data: clubData, error: clubErr } = await supabase
             .from('clubs')
             .select('auto_settlement')
-            .eq('id', clubId)
+            .eq('id', resolvedClubId)
             .maybeSingle();
+          if (clubErr) throw clubErr;
           if (isMounted.current && clubData) {
             setAutoSettlement(!!clubData.auto_settlement);
+            setAutoSettlementKnown(true);
           }
         }
       } catch (e) {
-        reportError(e, 'SettlementPage');
-        // Non-critical: default to false if query fails
+        reportError(e, 'SettlementPage.auto_settlement_read');
+        if (isMounted.current) setAutoSettlementKnown(false);
       }
 
       // Generate settlements for current period (skip if no real period)
@@ -707,23 +725,39 @@ export default function SettlementPage() {
 
       const newValue = !autoSettlement;
 
-      // Direct Supabase update — no World Hub API dependency
-      // Detect if targetId refers to a union or club and update accordingly
+      // 2026-09-05 (phase 7): TWO defects in four lines. The filter used the
+      // ROUTE PARAM (a club code on every slug URL) against a uuid column, and
+      // the update had no .select(), so when RLS refused it - `clubs` is
+      // UPDATE-able only by `owner_id = auth.uid()`, which a co-owner or admin
+      // is not - PostgREST returned 204, no error, no rows, and this reported
+      // "Auto-settlement enabled" for a switch that had not moved. A write
+      // that changes nothing must never be reported as success.
       if (unionId) {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('unions')
           .update({ auto_settlement: newValue })
-          .eq('id', unionId);
+          .eq('id', unionId)
+          .select('id');
         if (error) throw error;
-      } else if (clubId) {
-        const { error } = await supabase
+        if (!data || data.length === 0) {
+          throw new Error('You Do Not Have Permission To Change This Setting');
+        }
+      } else {
+        const { resolveClubUUIDStrict } = await import('../utils/strictClubIdResolver');
+        const resolved = await resolveClubUUIDStrict(clubId as string);
+        const { data, error } = await supabase
           .from('clubs')
           .update({ auto_settlement: newValue })
-          .eq('id', clubId);
+          .eq('id', resolved)
+          .select('id');
         if (error) throw error;
+        if (!data || data.length === 0) {
+          throw new Error('Only The Club Owner Can Change Auto-Settlement');
+        }
       }
 
       setAutoSettlement(newValue);
+      setAutoSettlementKnown(true);
       toast.success(`Auto-settlement ${newValue ? 'enabled' : 'disabled'}`);
       // Notify other pages about the settings change
       masterBus.emit('CLUB_SETTINGS_UPDATED', {
@@ -840,7 +874,7 @@ export default function SettlementPage() {
               opacity: togglingAutoSettle ? 0.6 : 1,
             }}
           >
-            {autoSettlement ? 'Auto: ON' : 'Auto: OFF'}
+            {!autoSettlementKnown ? 'Auto: Unknown' : autoSettlement ? 'Auto: ON' : 'Auto: OFF'}
           </button>
         </div>
       </header>

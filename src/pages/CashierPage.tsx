@@ -86,11 +86,19 @@ export const MAX_CHIP_AMOUNT = 1_000_000_000_000;
 /**
  * Validate a typed chip amount.
  *
- * Chips are whole units: the per-club ledger column (club_members.chip_balance)
- * is an integer, so a fractional amount is rounded on write while the sending
- * side is debited the exact decimal — that difference is money created or
- * destroyed. `parseFloat` alone also accepted exponent notation ("1e9"), so the
- * bound is enforced here as well as in the database.
+ * TWO DECIMAL PLACES, because that is what a chip is here (2026-09-05, phase
+ * 7). This used to refuse any fraction, and said why: "the per-club ledger
+ * column (club_members.chip_balance) is an integer, so a fractional amount is
+ * rounded on write while the sending side is debited the exact decimal". That
+ * premise is false and was measured false - the column is `numeric(20,2)`, it
+ * stores 12.34 exactly, and nothing rounds. Meanwhile the Trade cashier on the
+ * same platform accepts 2dp and says "Chips Go To Two Decimal Places", so the
+ * two cashiers disagreed about what a chip IS: an operator could send 0.50
+ * from one screen and be refused it on the other.
+ *
+ * The bound and the exponent rule stay: `parseFloat` accepted "1e9", which is
+ * a billion chips from four keystrokes, and the ceiling mirrors the database's
+ * own AMOUNT_EXCEEDS_LIMIT guard.
  */
 export function parseChipAmount(
   raw: string
@@ -101,8 +109,11 @@ export function parseChipAmount(
   if (!Number.isFinite(value) || value <= 0) {
     return { ok: false, error: 'Please enter a valid amount' };
   }
-  if (!Number.isInteger(value)) {
-    return { ok: false, error: 'Chips must be a whole number' };
+  // numeric(20,2): more than two decimals cannot be stored exactly, and the
+  // difference between what the operator typed and what the ledger keeps is
+  // money created or destroyed.
+  if (Math.round(value * 100) !== value * 100) {
+    return { ok: false, error: 'Chips go to two decimal places' };
   }
   if (value > MAX_CHIP_AMOUNT) {
     return { ok: false, error: 'Amount exceeds the maximum transfer limit' };

@@ -1,0 +1,194 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  AN APPROVAL CAN BE RETRIED, AND A DECLARED FREEZE MEANS SOMETHING
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * WHY THIS EXISTS (2026-09-05, phase 7 of the club operations upgrade)
+ *
+ * The write paths are the best-defended code in this workspace and this phase
+ * does not touch them. What was wrong is what wrapped around them, and every
+ * item below was proved against production inside a transaction that was
+ * rolled back (CLAUDE.md 11.5) before anything changed:
+ *
+ *   - APPROVING A CHIP REQUEST COULD NOT BE RETRIED. It called
+ *     fn_agent_wallet_send with gen_random_uuid() - a fresh retry key every
+ *     time - so a lost response left the chips moved and the request approved
+ *     while the operator's retry was told "request already approved", which
+ *     the client turns into a red toast. Money moved; the person who moved it
+ *     was told it had not. chip_requests has carried an `op_id` column and a
+ *     unique index on (club_id, requester_id, op_id) since requests were made
+ *     idempotent, so the key was designed in and the approval never used one.
+ *
+ *     Proved, rolled back: approve #1 -> {"success": true, "replayed": false};
+ *     the same call again -> {"success": true, "replayed": true,
+ *     "transaction_id": ..., "amount": 12.34}; and exactly ONE send exists
+ *     under the derived key.
+ *
+ *   - A DECLARED SETTLEMENT FREEZE FROZE NOTHING. Measured: the only two
+ *     functions in the database that read clubs.settlement_locked are
+ *     expire_settlement_locks (the sweep that clears it) and
+ *     ca_club_operations_overview (which displays it). No money function read
+ *     it at all. checkSettlementLock exists in the client, fails open by
+ *     design, and is called from the classic cashier only.
+ *
+ *     Proved, rolled back: with a freeze declared, approving a chip request
+ *     answers "this club is squaring its books - approvals resume when the
+ *     settlement freeze lifts"; with it lifted, the same approval succeeds.
+ *
+ *   - THE SETTLEMENT PAGE WROTE WITH THE ROUTE PARAM. `.eq('id', clubId)` with
+ *     a club code against a uuid column, on both the read and the write; the
+ *     read's failure was swallowed as "non-critical" so a club with
+ *     auto-settlement ON rendered OFF, and the write had no .select(), so an
+ *     RLS refusal (clubs is UPDATE-able only by owner_id = auth.uid(), which a
+ *     co-owner or admin is not) returned 204 with no error and the page
+ *     toasted "Auto-settlement enabled".
+ *
+ *   - THE TWO CASHIERS DISAGREED ABOUT WHAT A CHIP IS. The classic page
+ *     refused any fraction, citing an integer ledger column;
+ *     club_members.chip_balance is numeric(20,2). See
+ *     tests/unit/CashierAmountValidation.test.ts.
+ */
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+import { sliceDollarQuoted, sliceMethod } from '../helpers/sourceWindow';
+
+const MIGRATION = readFileSync(
+  'supabase/migrations/20260905040100_an_approval_can_be_retried_and_a_freeze_means_something.sql',
+  'utf8'
+);
+const SETTLEMENT = readFileSync('src/pages/SettlementPage.tsx', 'utf8');
+const CASHIER = readFileSync('src/pages/CashierPage.tsx', 'utf8');
+
+const fn = (name: string) => {
+  const start = MIGRATION.indexOf(`FUNCTION public.${name}(`);
+  expect(start, `${name} is defined`).toBeGreaterThan(-1);
+  return sliceDollarQuoted(MIGRATION.slice(start), '$function$');
+};
+
+describe('the approval carries the same retry key on every attempt', () => {
+  const body = fn('fn_respond_chip_request');
+
+  it('derives the key from the request instead of minting a new one', () => {
+    expect(body).toContain("md5('chip_request_approve:' || p_request_id::text)::uuid");
+    expect(body).not.toContain('gen_random_uuid()');
+    expect(body).toContain("'player_wallet', 'Chip Request Approved', v_op_id");
+  });
+
+  it('a retry after a lost response reports the original receipt, not a failure', () => {
+    expect(body).toContain('if v_req.responded_by = v_me then');
+    expect(body).toContain("'replayed', true");
+    expect(body).toContain("'transaction_id', v_prior.id");
+  });
+
+  it('only claims a replay against a transaction it can actually see', () => {
+    // Approvals made before this migration used a random key, so nothing is
+    // found under the derived one and the honest refusal stands. Re-sending
+    // those is the one outcome that would move money twice.
+    expect(body).toContain("ct.metadata ->> 'op_id' = v_op_id::text");
+    expect(body).toContain(
+      "return jsonb_build_object('success', false, 'error', 'request already '"
+    );
+  });
+
+  it('still refuses what it always refused', () => {
+    expect(body).toContain('only the requester may cancel');
+    expect(body).toContain('this request is not addressed to you');
+    expect(body).toContain('you cannot approve your own request');
+    expect(body).toContain('for update');
+  });
+});
+
+describe('a declared settlement freeze stops operator movement', () => {
+  it('honours the expiry rather than trusting the sweep to have run', () => {
+    const body = fn('fn_club_settlement_frozen');
+    expect(body).toContain('c.settlement_locked');
+    expect(body).toContain('c.settlement_lock_until IS NULL OR c.settlement_lock_until > now()');
+  });
+
+  it('is enforced by a trigger on the money table, not bolted into each function', () => {
+    // The same pattern the platform already uses for the maintenance freeze,
+    // so a money path nobody remembered cannot slip past it.
+    expect(MIGRATION).toContain('CREATE TRIGGER zz_settlement_freeze_guard');
+    expect(MIGRATION).toContain('BEFORE INSERT ON public.chip_transactions');
+  });
+
+  it('freezes operator movement and never a hand being played', () => {
+    const guard = fn('fn_refuse_operator_move_while_settling');
+    for (const t of [
+      'agent_wallet_send',
+      'agent_wallet_claim_back',
+      'club_bank_send',
+      'club_bank_claim',
+      'promo_wallet_send',
+      'commission_claim',
+    ]) {
+      expect(guard, t).toContain(`'${t}'`);
+    }
+    // fn_atomic_buyin writes a 'mint' row: freezing mints would refuse buy-ins
+    // mid-session, and a settlement freeze is not a maintenance break.
+    const list = /NOT IN \(([\s\S]*?)\)/.exec(guard)?.[1] ?? '';
+    for (const t of ['mint', 'buyin', 'cashout', 'topup', 'tournament_buyin']) {
+      expect(list, t).not.toContain(`'${t}'`);
+    }
+  });
+
+  it('lets the settlement runner through, since the freeze exists for its work', () => {
+    const guard = fn('fn_refuse_operator_move_while_settling');
+    expect(guard).toContain("'role') = 'service_role'");
+    expect(guard).toContain("session_user IN ('postgres', 'supabase_admin')");
+  });
+
+  it('says why, in a sentence a person can act on', () => {
+    expect(fn('fn_refuse_operator_move_while_settling')).toContain('SETTLEMENT_FROZEN');
+    expect(fn('fn_respond_chip_request')).toContain(
+      'this club is squaring its books - approvals resume when the settlement freeze lifts'
+    );
+  });
+
+  it('the migration refuses to commit the old shapes', () => {
+    const block = sliceDollarQuoted(MIGRATION.slice(MIGRATION.lastIndexOf('DO $$')), '$$');
+    expect(block).toContain(
+      'approving a chip request still mints a fresh retry key on every attempt'
+    );
+    expect(block).toContain('a declared settlement freeze still stops nothing');
+    expect(block).toContain(
+      'the settlement guard would refuse gameplay, not just operator movement'
+    );
+  });
+});
+
+describe('the settlement page writes to the club it is showing', () => {
+  it('resolves the route param before it reads the setting', () => {
+    expect(SETTLEMENT).toContain(".eq('id', resolvedClubId)");
+    expect(SETTLEMENT).not.toMatch(
+      /from\('clubs'\)\s*\n\s*\.select\('auto_settlement'\)\s*\n\s*\.eq\('id', clubId\)/
+    );
+  });
+
+  it('stops reporting a write that changed nothing as success', () => {
+    const toggle = sliceMethod(SETTLEMENT, 'const handleToggleAutoSettlement = async');
+    expect(toggle).toContain('resolveClubUUIDStrict(clubId as string)');
+    expect(toggle).toContain(".select('id')");
+    expect(toggle).toContain('Only The Club Owner Can Change Auto-Settlement');
+    expect(toggle).toContain('You Do Not Have Permission To Change This Setting');
+  });
+
+  it('a switch drawn from a failed read says it does not know', () => {
+    expect(SETTLEMENT).toContain('autoSettlementKnown');
+    expect(SETTLEMENT).toContain("'Auto: Unknown'");
+    expect(SETTLEMENT).toContain("reportError(e, 'SettlementPage.auto_settlement_read')");
+  });
+});
+
+describe('one definition of a chip', () => {
+  it('the classic cashier accepts the two decimals the ledger column holds', () => {
+    expect(CASHIER).toContain('Chips go to two decimal places');
+    expect(CASHIER).not.toContain('Chips must be a whole number');
+    expect(CASHIER).toContain('Math.round(value * 100) !== value * 100');
+  });
+
+  it('and still refuses what it always refused', () => {
+    expect(CASHIER).toContain('MAX_CHIP_AMOUNT');
+    expect(CASHIER).toContain('Amount exceeds the maximum transfer limit');
+  });
+});

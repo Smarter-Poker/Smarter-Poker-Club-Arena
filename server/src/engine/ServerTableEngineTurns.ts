@@ -1554,6 +1554,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         EngineMetrics.actionsTotal.inc(1, { table_id: this.tableId });
         EngineMetrics.actionsFleetTotal.inc(1, {
           audience: this.humansSeated() > 0 ? 'human' : 'horse',
+          format: this.tableFormat(),
         });
         this.lastActionAcceptedAtMs = Date.now();
       } catch {
@@ -2411,6 +2412,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         try {
           EngineMetrics.actionsFleetTotal.inc(1, {
             audience: this.humansSeated() > 0 ? 'human' : 'horse',
+            format: this.tableFormat(),
           });
           this.lastActionAcceptedAtMs = Date.now();
         } catch {

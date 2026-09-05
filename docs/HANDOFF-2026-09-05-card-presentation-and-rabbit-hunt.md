@@ -334,8 +334,9 @@ it up front.
   Key: **nobody in poker publishes timings**; the numbers come from the
   Material 3 duration ladder - 400ms ceiling, **mobile 300ms vs desktop
   150-200ms** (mobile is the LONGER one).
-- **Rabbit Hunt competitive research, 2026-09-05** (summarised in section 6.7;
-  NOT yet written to a repo file - **the next agent should persist it**).
+- `docs/research/2026-09-05-rabbit-hunt-industry-standards.md` (in the repo).
+  Every claim carries its URL and an OFFICIAL/MEDIA/COMMUNITY confidence tag.
+  Summarised in section 6.7.
 
 ## 6.7 Rabbit Hunt competitive findings (sourced)
 
@@ -797,8 +798,6 @@ this** (a VIP level? an owned card? a subscription?) before writing the check.
 
 - P1: make the rabbit reveal hand-safe (retained board copy, not a snapshot freeze).
 - Play-test on a real table (P2).
-- Persist the Rabbit Hunt competitive research (6.7) into
-  `docs/research/2026-09-05-rabbit-hunt-industry-standards.md`.
 
 **MEDIUM**
 
@@ -951,7 +950,16 @@ curl -s https://engine.smarter.poker/health | python3 -c "import sys,json;print(
    migration, the relay allowlist entry, the VIP check, the upsell. Tests: the
    settings pins + the upsell copy rules.
 4. `fix(ca): a rabbit reveal no longer freezes a live hand` - P1, separately.
-5. `feat(ca): a hotkey for the rabbit hunt` - P4, separately.
+5. `feat(ca): a hotkey for the rabbit hunt` - P4, separately. GGPoker parity;
+   the industry's actual answer to multi-tablers missing the window. Bind a key
+   to the same handler the button calls, and disable it exactly when the button
+   is disabled.
+6. `feat(ca): rabbit hunt from the hand replayer` - P5, separately. ClubWPT Gold
+   parity, and the one thing that makes missing the window survivable. We are
+   closer than it looks: `HandReplay` exists and the server already keeps the
+   offer purchasable for 90s (`RABBIT_HUNT_OFFER_TTL_MS`), so the work is wiring
+   the replayer to `POST /rabbit-hunt` and deciding whether that TTL lengthens
+   for this path.
 
 Never mix these. Each carries its own changelog file.
 

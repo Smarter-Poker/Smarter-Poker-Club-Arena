@@ -327,8 +327,15 @@ export default function HandHistoryPage() {
         players: hand.players.length,
         playedAt: new Date(hand.timestamp).toISOString(),
       };
-      const url = `https://smarter.poker/hub/jarvis?hand=${encodeURIComponent(JSON.stringify(summary))}`;
-      window.open(url, '_blank', 'noopener');
+      const path = `/hub/jarvis?hand=${encodeURIComponent(JSON.stringify(summary))}`;
+      // Dan 2026-09-05: with a live table open, Jarvis opens in a hub tab
+      // beside the game (the strip can see it, swipe reaches it); otherwise
+      // the browser tab it has always been.
+      if (Number(document.body?.dataset.caLiveTables ?? '0') > 0) {
+        masterBus.emit('OPEN_HUB_TAB', { path, requestedBy: userId ?? undefined });
+      } else {
+        window.open(`https://smarter.poker${path}`, '_blank', 'noopener');
+      }
       toast.info('Opening Jarvis Analysis');
     } catch (err) {
       reportError(err, 'HandHistoryPage.Failed_to_send_hand_to_Jarvis');

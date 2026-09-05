@@ -70,6 +70,7 @@ import {
   seatMoveNotice,
 } from '../services/supabase/seatMoves.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { wakeCluster } from '../cluster/ClusterController.js';
 import { ChipContinuityTracker } from './ChipContinuity.js';
 import { claimMovedPresence, depositMovedPresence } from './SeatMovePresence.js';
 import { deadlineScheduler } from './DeadlineScheduler.js';
@@ -2464,6 +2465,24 @@ export abstract class ServerTableEngineBase {
   }
 
   /**
+   * A SEAT CHANGED (or a hand ended) on this table. If the table belongs to a
+   * must-move game, tell the ClusterController so the game is ticked now,
+   * debounced, instead of at the next 5 s pass - and instead of the 30 s rest
+   * a dormant game takes. In-process, leader-only, and a no-op everywhere
+   * else; `wakeCluster` never throws, and this wrapper makes sure of it, so a
+   * controller fault can never become a table fault. 2026-09-05.
+   */
+  protected wakeClusterGame(_reason: string): void {
+    const gameId = this.tableInfo?.cluster_id;
+    if (!gameId || this.isTournamentTable()) return;
+    try {
+      wakeCluster(String(gameId));
+    } catch {
+      /* wakeCluster reports its own errors; nothing reaches the loop */
+    }
+  }
+
+  /**
    * At the END of a hand (announced moves only) and whenever the table is
    * below the minimum to deal (every pending move - there is no hand to
    * finish) the planned moves are executed: chair, chips and session go to
@@ -2555,6 +2574,8 @@ export abstract class ServerTableEngineBase {
     if (movedIds.length > 0) {
       this.seatedPlayers = this.seatedPlayers.filter((sp) => !movedIds.includes(sp.user_id));
       void this.broadcastCurrentState();
+      // The game's seats changed at two tables at once; one wake covers both.
+      this.wakeClusterGame('seat_move');
     }
     return movedIds;
   }

@@ -156,6 +156,40 @@ describe('LAW 5 - every format is measured, not just cash (Dan 2026-09-05)', () 
   });
 });
 
+describe('LAW 6 - the thresholds come from the measurement, and one action cannot alarm', () => {
+  // Measured on production 2026-09-05, first hour of real data, 24.3 actions/s:
+  //   p50 808ms   p90 1541ms   p95 1843ms   p99 3755ms
+  // The first version of these rules guessed 500ms/1500ms before any data
+  // existed - below the MEDIAN and below the normal p95 respectively, so both
+  // would have fired permanently and been muted, which is the exact failure
+  // this programme keeps finding in other people's monitors.
+  const rules = readFileSync(join(ROOT, 'infra', 'monitoring', 'alert-rules.yml'), 'utf8');
+
+  it('warning sits above the normal p95, critical is unambiguous', () => {
+    const deg = sliceYamlEntry(rules, 'alert: ActionLatencyDegraded');
+    const crit = sliceYamlEntry(rules, 'alert: ActionLatencyCritical');
+    const degMs = Number(deg.match(/\)\s*>\s*(\d+)/)![1]);
+    const critMs = Number(crit.match(/\)\s*>\s*(\d+)/)![1]);
+    expect(degMs, 'warning must sit above the measured p95 of 1843ms').toBeGreaterThan(1843);
+    expect(critMs, 'critical must sit above the measured p99 of 3755ms').toBeGreaterThan(3755);
+    expect(critMs).toBeGreaterThan(degMs);
+  });
+
+  it('a single human action cannot raise a p95 alarm', () => {
+    // Humans are rare here: 15 hours with a human seat in 14 days. With a
+    // `> 0` guard, ONE action in the window produced a p95 from a sample of
+    // one and could page on it.
+    for (const name of ['ActionLatencyDegraded', 'ActionLatencyCritical']) {
+      const block = sliceYamlEntry(rules, `alert: ${name}`);
+      const guard = block.match(/ms_count\{audience="human"\}\[10m\]\)\)\s*>\s*([\d.]+)/);
+      expect(guard, `${name} must guard on a minimum action rate`).not.toBeNull();
+      expect(Number(guard![1]), `${name} guard must be more than a single sample`).toBeGreaterThan(
+        0
+      );
+    }
+  });
+});
+
 describe('LAW 3 - the alert reads the human series and respects the break', () => {
   it('two rules, human audience, break-guarded', () => {
     const rules = readFileSync(join(ROOT, 'infra', 'monitoring', 'alert-rules.yml'), 'utf8');

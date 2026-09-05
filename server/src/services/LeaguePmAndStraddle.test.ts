@@ -1,7 +1,7 @@
 /**
  * V23 PLATFORM (2026-08-28): the second daily league window and the fleet's
  * first straddle table. Source-shape pins, the HorseLeagueSchedule.test.ts
- * convention — these guard wiring that regresses silently.
+ * convention - these guard wiring that regresses silently.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -34,65 +34,48 @@ describe('league PM window', () => {
   });
 });
 
-describe('fleet straddle table', () => {
-  it('exactly one straddle config exists and it is NLH', () => {
-    const matches = fleetSrc.match(/straddleEnabled: true/g) ?? [];
-    expect(matches.length).toBe(1);
-    const idx = fleetSrc.indexOf('straddleEnabled: true');
-    const block = fleetSrc.slice(Math.max(0, idx - 600), idx);
-    expect(block).toContain("gameVariant: 'nlh'");
+describe('the straddle lane is retired (R2), so the fleet writes no straddle onto any table', () => {
+  /* Moved 2026-09-05 for Gate 7. This block used to pin the fleet's straddle
+     TABLE: `straddle_enabled: config.straddleEnabled === true` and
+     `auto_utg_straddle: ...` on the boot insert and on the '#2 / #3' overflow
+     clone, and a compare-before-write on the reuse path. All three writers
+     are gone (OPORD 1.4 s2.11: a cash table is opened only by the cluster
+     controller) and ruling R2 retires the lane itself: no straddle on any
+     cash game. A table's rules now come from its game's ruleset_snapshot,
+     which the tick writes onto every open table (Gate 5), and that applier
+     forces the straddle flags OFF. So the pin is inverted: the fleet must
+     never again grow a straddle writer, and the applier must keep saying no. */
+  const gate5 = readFileSync(
+    join(__dirname, '../../../supabase/migrations/20260905033729_the_snapshot_is_the_rule.sql'),
+    'utf8'
+  );
+  const gate7 = readFileSync(
+    join(
+      __dirname,
+      '../../../supabase/migrations/20260905034937_gate_7_every_cash_table_is_a_game.sql'
+    ),
+    'utf8'
+  );
+
+  it('the fleet writes neither straddle flag onto a table, and inserts no table at all', () => {
+    expect(fleetSrc).not.toContain('straddle_enabled:');
+    expect(fleetSrc).not.toContain('auto_utg_straddle:');
+    expect(fleetSrc).not.toMatch(/\.from\(['"]tables['"]\)\s*\.insert\(/);
   });
 
-  it('the insert writes straddle_enabled from the config', () => {
-    expect(fleetSrc).toContain('straddle_enabled: config.straddleEnabled === true');
+  it('the config flag has no reader: nothing in the fleet acts on straddleEnabled', () => {
+    // The TableConfig field may stay declared for the union ladder's history;
+    // the moment code READS it, a straddle is being wired back in.
+    expect(fleetSrc).not.toContain('config.straddleEnabled');
   });
 
-  it('a straddle table actually POSTS a straddle, not merely permits one', () => {
-    // MEASURED 2026-08-28: the table went live, seated 8 horses, dealt 107
-    // hands in two hours - and v18_straddle telemetry stayed at ZERO.
-    // straddle_enabled only grants PERMISSION; the post comes from
-    // StraddleEngine, which needs a player who toggled auto-straddle or
-    // mandatoryUtg. Horses toggle nothing, so nobody ever straddled.
-    expect(fleetSrc).toContain('auto_utg_straddle: config.straddleEnabled === true');
+  it('the snapshot applier forces the straddle off every cash table, every tick', () => {
+    expect(gate5).toMatch(
+      /straddle_enabled = false, auto_utg_straddle = false, voluntary_straddle = false/
+    );
   });
 
-  it('OVERFLOW tables inherit the straddle identity', () => {
-    // "NLH Straddle 1.00/2.00 #2" went live with straddle_enabled FALSE:
-    // a table named for a game it was not running.
-    const overflow = fleetSrc.slice(fleetSrc.indexOf('const name = `${config.name} #'));
-    const insert = overflow.slice(0, overflow.indexOf('});'));
-    expect(insert).toContain('straddle_enabled: config.straddleEnabled === true');
-    expect(insert).toContain('auto_utg_straddle: config.straddleEnabled === true');
-  });
-
-  it('the reuse path COMPARES before writing (an unconditional write would reset current_players every cycle)', () => {
-    // Whitespace-tolerant: the pre-commit Prettier wraps this line, and an
-    // exact-substring pin broke in CI the first time it did (run 33141442420).
-    expect(fleetSrc).toMatch(/straddle_enabled !==\s*\(config\.straddleEnabled === true\)/);
-    // Dan 2026-08-28 (40BB-200BB law): the reuse lookup now also reads
-    // min_buy_in/max_buy_in so a blind bump resyncs the buy-in band instead
-    // of carrying a stale one. Whitespace-tolerant for the same Prettier
-    // reason as the line above — the longer list wraps.
-    // `settings` joined the list 2026-09-03: the reuse path must be able to
-    // see `retire_when_empty` so it does not REOPEN a table a club retired.
-    // Pinned as a set of required columns rather than one exact string, so the
-    // next column to join does not break a pin about comparing before writing.
-    // Anchored on straddle_enabled: that column appears in exactly one select
-    // in this file, and it is the reuse lookup.
-    const reuseSelect = /select\(\s*'([^']*straddle_enabled[^']*)'\s*\)/.exec(fleetSrc)?.[1] ?? '';
-    for (const col of [
-      'id',
-      'status',
-      'union_id',
-      'game_variant',
-      'small_blind',
-      'big_blind',
-      'straddle_enabled',
-      'min_buy_in',
-      'max_buy_in',
-      'settings',
-    ]) {
-      expect(reuseSelect.split(', ')).toContain(col);
-    }
+  it('the cutover snapshot was built with straddle false for every adopted game', () => {
+    expect(gate7).toMatch(/'straddle', false/);
   });
 });

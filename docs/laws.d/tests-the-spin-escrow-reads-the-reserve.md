@@ -1,0 +1,3 @@
+# tests/the-spin-escrow-reads-the-reserve.law.test.ts
+
+Chip standard Phase 5.2 (2026-09-05): a spin's escrow carries reserve_out (the pool leaving for spin_reserve when it fills) and reserve_in (the draw), fed in the same transaction by one trigger on the spin_entry and spin_prize legs through the one door, so its banks are exact and journal-consistent (every closed spin at zero); the supply meter reads the escrow for every event with a row and the counters only for an event with no row yet; the step is a bounded, sign-aware register correction; the shadow comparison adds the reserve terms; spins stay tracked, not refused, until a soak

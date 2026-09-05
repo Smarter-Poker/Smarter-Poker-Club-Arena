@@ -429,6 +429,28 @@ const makeLobbyTab = (): TableInstance => ({
 const MAX_TABLES = typeof window !== 'undefined' && window.innerWidth >= 1024 ? 6 : 4;
 
 /**
+ * Parse a reported "kind:deadlineMs" channel into its parts.
+ *
+ * A MODULE-LEVEL FUNCTION DECLARATION, ON PURPOSE (2026-09-05 outage). This
+ * was a `const` arrow inside the component, declared a few hundred lines
+ * below `anyTurnLive`. On 2026-09-05 the second RIT sweep (#3089) made
+ * `anyTurnLive` call it - a `const` read before its declaration in the same
+ * scope is a ReferenceError ("Cannot access before initialization"), and it
+ * fired on the FIRST render with any table open. Every /table/:id on
+ * production showed "Something Went Wrong" until this moved. A function
+ * declaration is hoisted and has no temporal dead zone, so its position can
+ * never matter again; tests/unit/multiTablePageHelpersAreHoisted.test.ts
+ * pins it here.
+ */
+export function parseTimed(v?: string): { kind: string; at: number } | null {
+  if (!v) return null;
+  const i = v.lastIndexOf(':');
+  if (i <= 0) return null;
+  const at = Number(v.slice(i + 1));
+  return Number.isFinite(at) && at > 0 ? { kind: v.slice(0, i), at } : null;
+}
+
+/**
  * Dan 2026-08-19 (persistence upgrade): what the GLOBAL dock should show while
  * the container is hidden on a non-/table route. Pure so the logic harness
  * can lift it verbatim.
@@ -1505,15 +1527,6 @@ export default function MultiTablePage() {
         : undefined,
     [nowMs]
   );
-
-  /** Parse a reported "kind:deadlineMs" channel into its parts. */
-  const parseTimed = (v?: string): { kind: string; at: number } | null => {
-    if (!v) return null;
-    const i = v.lastIndexOf(':');
-    if (i <= 0) return null;
-    const at = Number(v.slice(i + 1));
-    return Number.isFinite(at) && at > 0 ? { kind: v.slice(0, i), at } : null;
-  };
 
   const tabInfos: TabInfo[] = useMemo(
     () =>

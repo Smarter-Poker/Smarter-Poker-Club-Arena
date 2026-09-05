@@ -91,6 +91,24 @@ import type { TableStatus } from '../types.js';
 export abstract class ServerTableEngineBase {
   protected tableId: string;
   protected running: boolean = false;
+  /**
+   * ═══ READY IS NOT DEALING (2026-09-05) ═══
+   *
+   * `start()` resolves when the DEALING LOOP starts, which is after the table
+   * has its AutoStart figure of players seated - for a one-player table that
+   * is "when a second player arrives", possibly never. Every on-demand caller
+   * (`ensureCashTableEngine`: GET /state, GET /actions, the WS `ensureTable`,
+   * the cluster wake) wants something earlier: the engine exists, has loaded
+   * its row, is configured, and can publish the waiting snapshot. That moment
+   * is the FSM's `waiting` transition, and this promise settles there.
+   *
+   * `true`  - the engine reached `waiting` (it may still be waiting for players).
+   * `false` - start() failed, or the engine was stopped/killed before it got there.
+   *
+   * Settled at most once; later settles are no-ops. Never rejects.
+   */
+  readonly ready: Promise<boolean>;
+  private settleReady: (ok: boolean) => void = () => {};
   /** Bible V8 §3.1: Formal Table State Machine with entry/exit/fail conditions */
   protected tableFSM: StateMachine<TableStatus> = createTableStateMachine('empty');
   /** Bible V8 §3.2: Formal Turn State Machine — unifies timer/timebank/preaction/disconnect */
@@ -1301,6 +1319,9 @@ export abstract class ServerTableEngineBase {
 
   constructor(tableId: string) {
     this.tableId = tableId;
+    this.ready = new Promise<boolean>((resolve) => {
+      this.settleReady = resolve;
+    });
     // CROSS-INSTANCE OWNERSHIP: the newest instance for a tableId is the
     // authoritative one. Any older instance still mid-stop() sees itself
     // superseded and keeps its hands off the shared scheduler.
@@ -1984,6 +2005,10 @@ export abstract class ServerTableEngineBase {
 
       // Bible V8 §3.1: Table FSM — empty → waiting (engine started, waiting for players)
       this.tableFSM.transition('waiting');
+      // READY IS NOT DEALING: the row is loaded, every sub-engine is configured
+      // and the waiting snapshot can be published. On-demand callers may
+      // return now; the wait for players below is this engine's business.
+      this.settleReady(true);
 
       // 2026-08-29: open the manual-bomb listener once the table row is loaded
       // (bomb_pot_enabled is known by now) and before any hand is dealt, so a
@@ -2106,6 +2131,7 @@ export abstract class ServerTableEngineBase {
         this.killForRestart('dealing_loop_threw');
       });
     } catch (err) {
+      this.settleReady(false);
       reportError(err, 'ServerTableEnginethistableId.Failed_to_start');
       // 2026-08-22: was a bare `running = false`, which could leak an armed
       // heartbeat scheduler entry (scheduleHeartbeatCheck runs before the
@@ -2124,6 +2150,8 @@ export abstract class ServerTableEngineBase {
   async stop(): Promise<void> {
     if (!this.running) return;
     this.running = false;
+    // A stop before `waiting` is a "never got there"; after it, a no-op.
+    this.settleReady(false);
 
     // FIX 147 + Phase 1.2 PR-G-real: set the flag first so any heartbeat
     // callback already mid-flight bails before re-arming.
@@ -2614,6 +2642,7 @@ export abstract class ServerTableEngineBase {
     );
     this.recordRecoveryEvent('watchdog_kill_rebuild', reason);
     this.running = false;
+    this.settleReady(false);
     this.heartbeatActive = false;
     this.clearHandSafetyTimer();
     this.clearLooseHandTimers();

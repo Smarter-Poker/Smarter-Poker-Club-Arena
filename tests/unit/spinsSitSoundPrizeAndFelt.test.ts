@@ -232,30 +232,54 @@ describe('a six-handed table is shorter than a nine-handed one', () => {
     );
   });
 
-  it('does not shorten past the measured BBJ-banner clearance', () => {
-    /* THE BOUND, and it is arithmetic rather than taste.
-       `.seat-wrapper--top` records that at --sp-bust-scale 1.05 the TOP-CENTRE
-       seat's crown clears y 0 "with 5px to spare" on the 605x1000 reference
-       frame - and top-centre { x: 50, y: 5 } is the 6-max ring, i.e. exactly
-       the seat this override moves. The seat centre sits at 5% of the canvas,
-       so every point of height removed lifts it 0.05px toward the banner:
+  it('does not shorten past the MEASURED banner clearance', () => {
+    /* This bound was arithmetic once - "0.05 * (1000 - H) <= 5px of spare, so
+       H >= 900" - derived from a prose description of a clearance. Then it was
+       measured in Chromium against the real stylesheet (the harness from
+       tests/e2e/top-rail-seat.spec.ts), and the estimate was optimistic:
 
-           0.05 * (1000 - H) <= 5   ->   H >= 900
+           H = 1000  4.2px     H = 960  2.2px
+           H =  980  3.2px     H = 940  1.2px     H = 920  0.2px
 
-       860 was the first number written here and it would have lifted the
-       crown 7px through a 5px margin - back into the 2026-08-19 bug the top
-       row's 56px cap was introduced to fix. */
+       920 passed the arithmetic and leaves 0.2px, which is a rounding error
+       away from the 2026-08-19 bug the top-row cap exists to prevent. The
+       floor is the measurement, not the formula. */
+    const MEASURED_CLEARANCE_PX: Record<number, number> = {
+      1000: 4.2,
+      980: 3.2,
+      960: 2.2,
+      940: 1.2,
+      920: 0.2,
+    };
     const H = smallRingHeight();
-    const TOP_CENTRE_Y_PCT = 0.05;
-    const MEASURED_SPARE_PX = 5;
-    const lift = TOP_CENTRE_Y_PCT * (1000 - H);
-    expect(lift).toBeLessThanOrEqual(MEASURED_SPARE_PX);
+    const clearance = MEASURED_CLEARANCE_PX[H];
+    expect(
+      clearance,
+      `no measurement on record for a ${H}-unit canvas - re-run the harness before changing it`
+    ).toBeDefined();
+    // 2px of margin, so sub-pixel rounding on a real device cannot cross zero.
+    expect(clearance).toBeGreaterThanOrEqual(2);
   });
 
-  it('the clearance measurement it is bounded by still says what it says', () => {
-    // If either of these moves, the arithmetic above is measuring nothing.
+  it('the top row is capped per CANVAS, because the same cap measures both ways', () => {
+    /* 76px on the full canvas clears by 3.9px; the SAME 76px on the short
+       canvas (shorter, and its top seat sits at y 5 not y 6) measures -8.1px,
+       eight pixels inside the banner. So the cap is two rules, not one
+       literal. */
+    expect(SEAT_CSS).toContain('--seat-avatar-base: min(var(--seat-avatar-full), 76px)');
+    for (const n of [2, 3, 4, 5, 6]) {
+      expect(SEAT_CSS).toContain(`.table-page[data-seats='${n}'] .seat-wrapper--top .seat`);
+    }
+    const shortRule = SEAT_CSS.slice(
+      SEAT_CSS.indexOf(".table-page[data-seats='2'] .seat-wrapper--top .seat")
+    );
+    expect(shortRule.slice(0, shortRule.indexOf('}'))).toContain(
+      '--seat-avatar-base: min(var(--seat-avatar-full), 56px)'
+    );
+  });
+
+  it('the bust scale the clearance was measured at has not moved', () => {
     expect(SEAT_CSS).toContain('--sp-bust-scale: 1.05');
-    expect(SEAT_CSS).toContain('clears with 5px to spare');
   });
 });
 

@@ -146,7 +146,13 @@ test('the whole seat, bust art included, stays inside the table canvas', async (
 
 test('the top-centre avatar is the compact size', async ({ page: p }) => {
   await p.setContent(page(TOP_CENTRE_Y, 'seat-wrapper--top'));
-  expect((await measure(p)).avatarPx).toBe(56);
+  /* 76 since 2026-09-05, measured: the cap was a flat 56 chosen when the slot
+     was a flat 84, and the slot became proportional while the cap did not - so
+     a 720px table halved its top row. Chromium says 76 clears the banner by
+     3.9px and 84 is 0.2px inside it. This harness has no `.table-page`
+     ancestor, so it exercises the FULL-canvas rule; the short-canvas rings
+     (<=6 seats) keep 56 and are pinned in the unit suite. */
+  expect((await measure(p)).avatarPx).toBe(76);
 });
 
 test('CONTROL: a full-size seat at this height would leave the canvas', async ({ page: p }) => {

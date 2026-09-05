@@ -3629,7 +3629,33 @@
      so nothing is capped, and on anything larger the cap binds at 56 just as
      the literal did. A `* 0.667` here would have looked equivalent on a desktop
      and shrunk the top row on every phone. */
-  --seat-avatar-base: min(var(--seat-avatar-full), 56px);
+  /* ── 76, MEASURED (Dan 2026-09-05) ──────────────────────────────────────
+     Dan: "THE AVATARS AT THE TOP DON'T HAVE TO BE SHRUNK OR SQUISHED DOWN."
+
+     This was a flat 56px, and 56 was chosen when the avatar slot was itself a
+     flat 84px - i.e. the cap was 2/3 of full. The slot became PROPORTIONAL
+     (clamp(50px, --table-w * 0.158, 124px)) and the cap did not, so on a
+     720px-wide table the full slot is ~113.8px and this halved the top row
+     while every other seat kept its size. On a phone it is invisible (full is
+     ~56.9px, so the cap barely binds); on a desktop it is the whole
+     complaint.
+
+     Re-measured in Chromium against this stylesheet, 9-max top-cap seats at
+     y 6 on the 1000-unit canvas, bust art clearance above the canvas top:
+
+         cap 56 -> 14.2px      cap 76 -> 3.9px
+         cap 80 ->  1.9px      cap 84 -> -0.2px  (INSIDE the BBJ banner)
+
+     So 84 is the cliff and 76 is the last value with a margin comparable to
+     what the rest of the ring has always had. It is a 36% larger avatar on
+     every table wider than ~480px, and unchanged on a phone.
+
+     THE SMALL RINGS DO NOT GET IT - see the [data-seats] rule below. Their
+     canvas is shorter (960, TablePage.css) and their top seat sits higher
+     (y 5), so 76 there measures -8.1px: eight pixels inside the banner. Same
+     cap, different canvas, opposite answer, which is exactly why this is two
+     rules and not one literal. */
+  --seat-avatar-base: min(var(--seat-avatar-full), 76px);
   /* `--sp-bust-gain-max: 1` was REMOVED here 2026-08-26. It capped the
      PER-CHARACTER correction, so it did not shrink this row evenly — it
      shrank only the characters that needed correcting, each by a different
@@ -3637,6 +3663,23 @@
      neighbours. Banner clearance comes from the smaller slot on the line
      above, which scales every character in the row by the same proportion.
      Uniform in, uniform out. */
+}
+
+/* ── THE SHORT CANVAS KEEPS THE COMPACT CAP (Dan 2026-09-05) ────────────────
+   Rings of 6 or fewer draw on a 960-unit canvas (TablePage.css) and put their
+   only top seat at y 5 rather than y 6, so the crown starts nearer the banner
+   twice over. Measured at 720px wide: cap 56 clears by 2.2px, cap 76 is 8.1px
+   INSIDE the banner. The full-canvas rings (7, 8, 9) keep the 76px above.
+
+   0-3-0, so it beats the `.seat-wrapper--top .seat` pair without touching any
+   other seat. An empty seat is still exempt (the rule below this one): a SIT
+   plate has no character art to overflow. */
+.table-page[data-seats='2'] .seat-wrapper--top .seat,
+.table-page[data-seats='3'] .seat-wrapper--top .seat,
+.table-page[data-seats='4'] .seat-wrapper--top .seat,
+.table-page[data-seats='5'] .seat-wrapper--top .seat,
+.table-page[data-seats='6'] .seat-wrapper--top .seat {
+  --seat-avatar-base: min(var(--seat-avatar-full), 56px);
 }
 
 /* Tournaments have no BBJ banner — top avatars stay standard full size.

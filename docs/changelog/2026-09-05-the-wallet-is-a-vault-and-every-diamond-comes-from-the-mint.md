@@ -108,11 +108,58 @@ Dan, 2026-09-04, three instructions in one session:
 - Migration probed in one self-aborting transaction before apply; asserted
   difference 0 after apply.
 
-## Still open (World Hub, separate branch)
+## The register went red within the hour, and why (`20260905064901`)
 
-- `/api/vip/check-status` turns a DB read error into `{diamonds: 0}` (200),
-  which disables every Buy button with "Insufficient Diamonds" and no error.
-- `pages/api/club-arena/marketplace-items.js` has the same first-membership
-  club resolution; the Hub club shop page cannot pick a club.
-- The Mint panel (`pages/horses/index.js`) should render the new `diamonds`
-  reconciliation block.
+Watching the Mint panel after the migration is what caught this: the register
+read 1,048,622 against a meter of 1,030,622, over by 18,000. Two causes, both
+read from production rather than reasoned about, both now closed.
+
+**Cause 1, and it was mine.** The signup grant already had a register row.
+`fn_ca_diamond_born_with_balance` (the seed door) writes its own `seed:<id>`
+row AND the `signup_bonus` journal row; 654 of 654 archived grants carry that
+seed row. The new trigger then registered the same journal row a second time
+as `promotion/mint`. Both rows read `balance_before 0, balance_after 500` for
+the same holder - one movement, counted twice. 18 duplicate pairs, 9,000
+diamonds.
+
+The guard that should have caught it looks for a register row already linked
+to the journal row (`diamond_tx_id`), and the seed door links none: 0 of 654.
+So the classifier now names the writer, exactly as it already names
+`source = 'the_mint'`. Deliberately narrow - the signup grant only, never
+`promotional` as a class, because the other 7 promotion rows are real earned
+rewards (daily_login, easter_egg) with no other register row.
+
+**Cause 2, and it pre-dates this work.** A certification account is granted
+500, its balance is zeroed by the harness through a path that writes no
+journal row, and it is deleted holding 0. The deletion trigger burned
+`OLD.diamonds` = 0, so the register kept the 500 forever. Ground truth for
+Certobsef369106: one archived journal row (`signup_bonus`, balance_after
+500), `diamonds_at_deletion` 0, two register mints, no burn. 18 x 500 = the
+other 9,000.
+
+Deletion now burns `GREATEST(OLD.diamonds, what the register still attributes
+to that holder since the diamond baseline)`. That is never smaller than the
+previous burn, so the healthy cases are unchanged - probed at
+`GREATEST(1000,1000)=1000` for a player the register agrees with and
+`GREATEST(1000,0)=1000` for a pre-baseline player whose supply sits in the
+baseline lump - while a drained certification account finally retires its 500
+(`GREATEST(0,500)=500`).
+
+Then one labelled correction, sized at apply time rather than hardcoded (the
+harness can run between writing the migration and applying it), and the
+difference asserted at zero.
+
+Verified live after apply: `fn_ca_diamond_register_vs_supply()` returns
+`register_net 1,030,622 / meter_total 1,030,622 / difference 0.00`, and
+`fn_ca_mint_overview()` read as an admin returns `diamonds.balanced: true`.
+Pinned by `tests/theMintOwnsEveryDiamond.test.ts` (13 tests).
+
+## World Hub (shipped separately, PR #1373, merged)
+
+- `/api/vip/check-status`: a profile READ error answers 503 `success:false`
+  instead of 200 `{diamonds: 0}` - the shape that greyed out every Buy button
+  with "Insufficient Diamonds" and no visible error during any database hiccup.
+- `pages/api/club-arena/marketplace-items.js`: with no `clubId`, the storefront
+  club is the membership with the most active stock, not an unordered first row.
+- The Mint panel renders an "Every Diamond Is Accounted For" card from the new
+  `diamonds` block, and the ledger origin filter learns the diamond origins.

@@ -240,6 +240,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Omaha is not hold em: tiered sampler, pressure cap, small ball, tag loop',
     'V40'
   ),
+  flag(
+    'v41Leaks',
+    'the rest of the tag table reaches a decision: hold em stack-off load, river-war load, limp-bloat load, by variant family',
+    'V41'
+  ),
 
   // ─────────────────────────────────────────────────────────────────────────
   // STYLE PARAMS. base style x profile dials x variant overlay x persona.
@@ -259,6 +264,10 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
         'ploStackoffLoad',
         'V40: this horse own Omaha stack-off tag rate (profile leaks / leaksHands)',
       ],
+      ['nlhStackoffLoad', 'V41: this horse own hold em stack-off tag rate (leaksHoldem)'],
+      ['riverWarLoad', 'V41: river raise-war / paid-off tag rate for this hand family'],
+      ['limpBloatLoad', 'V41: limped-pot bloat tag rate for this hand family'],
+      ['tourneyLeakPremium', 'V41: extra ICM survival premium for a horse tagged for event stack-offs (leaksTournament)'],
     ] as const
   ).map(
     ([key, note]): LedgerEntry => ({
@@ -268,7 +277,17 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
       cadence: 'per_action',
       consumer: 'HorseLogic.decide / HorsePreflop.decidePreflopV7',
       note,
-      since: key === 'ploStackoffLoad' ? 'V40' : key === 'familyBias' ? 'V18' : 'V2',
+      since:
+        key === 'ploStackoffLoad'
+          ? 'V40'
+          : key === 'nlhStackoffLoad' ||
+              key === 'riverWarLoad' ||
+              key === 'limpBloatLoad' ||
+              key === 'tourneyLeakPremium'
+            ? 'V41'
+            : key === 'familyBias'
+              ? 'V18'
+              : 'V2',
     })
   ),
 
@@ -290,6 +309,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
       ['sizingMultiplier', 'dial, clamped [0.6, 1.5] (sizing_multiplier accepted)', 'V8'],
       ['leaks', 'V40: this horse leak-tag counts over the tuner window (review verdicts)', 'V40'],
       ['leaksHands', 'V40: reviewed hands the counts were taken over (the denominator)', 'V40'],
+      ['leaksOmaha', 'V41: the Omaha-family share of the counts', 'V41'],
+      ['leaksHandsOmaha', 'V41: reviewed Omaha hands (the denominator)', 'V41'],
+      ['leaksHoldem', 'V41: the hold em-family share of the counts', 'V41'],
+      ['leaksHandsHoldem', 'V41: reviewed hold em hands (the denominator)', 'V41'],
+      ['leaksTournament', 'V41: the tournament-format share, from fn_horse_tournament_leaks', 'V41'],
+      ['leaksHandsTournament', 'V41: reviewed tournament hands (the denominator)', 'V41'],
     ] as const
   ).map(
     ([key, note, since]): LedgerEntry => ({
@@ -297,10 +322,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
       kind: 'profile',
       source: 'profiles.horse_profile (jsonb) via resolveHorseStyle',
       cadence: 'per_sit',
-      consumer:
-        key === 'leaks' || key === 'leaksHands'
-          ? 'HorseLogic.ploStackoffLoad'
-          : 'HorseLogic.decide',
+      consumer: key.startsWith('leaks') ? 'HorseLogic.leakLoad' : 'HorseLogic.decide',
       note,
       since,
     })
@@ -415,6 +437,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseSelfTuner (leak counts -> dials and the V40 leak profile)',
     'per horse/day/variant tag counts',
     'V18',
+    { dayColumn: 'day', freshnessDays: 2 }
+  ),
+  table(
+    'horse_tournament_daily',
+    'nightly',
+    'fn_audit_tournament_results (the daily audit); ca_horse_tournament_card (the panel); compiled by fn_horse_tournament_daily_compile from fn_run_horse_daily_audit',
+    'per horse/day/type/variant tournament results: entries, invested, won, ITM, finish percentile',
+    '2026-09-05',
     { dayColumn: 'day', freshnessDays: 2 }
   ),
   table(
@@ -1016,6 +1046,30 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic (V40)',
     'the horse own review tags changed a decision; needs tuner-written leaks',
     'V40'
+  ),
+  receipt(
+    'v41_nlh_leak_read',
+    'HorseLogic (V41)',
+    'a hold em horse tagged for stack-offs read a single big bet as pressure; needs tuner-written leaksHoldem',
+    'V41'
+  ),
+  receipt(
+    'v41_river_war_read',
+    'HorseLogic (V41)',
+    'a horse tagged for river raise wars gave a river raise more respect; needs tuner-written leaks',
+    'V41'
+  ),
+  receipt(
+    'v41_tourney_leak_read',
+    'HorseLogic (V41)',
+    'a horse tagged for event stack-offs paid extra ICM premium; tournament volume only, needs tuner-written leaksTournament',
+    'V41'
+  ),
+  receipt(
+    'v41_limp_bloat_*',
+    'HorseLogic (V41)',
+    'read / cap: a horse tagged for limped-pot bloat, in a limped pot, facing a big bet; needs tuner-written leaks',
+    'V41'
   ),
 ];
 

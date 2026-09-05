@@ -985,6 +985,10 @@ export default function ProfilePage() {
                 <strong>{VIP_MONTHLY_ALLOWANCES.tags.toLocaleString()}</strong>
                 <span>Player Tags / Mo</span>
               </li>
+              <li>
+                <strong>{VIP_MONTHLY_ALLOWANCES.throwables}</strong>
+                <span>Throwables / Mo</span>
+              </li>
             </ul>
           )}
           <button

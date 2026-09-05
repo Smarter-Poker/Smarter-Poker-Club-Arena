@@ -1,17 +1,17 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  VIP INFO MODAL — Show VIP Benefits (Gold Membership)
+ *  VIP INFO MODAL — What The Membership Includes
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Simplified modal showing:
- * - VIP Gold benefits (from Club Arena membership)
+ * - What a VIP gets, and what a non-VIP pays for it
  * - Current status
  * - Diamond pricing for non-VIP users
  */
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  VIP_GOLD_LIMITS,
+  VIP_MONTHLY_ALLOWANCES,
   FEATURE_PRICING,
   isPurchasable,
   loadFeaturePricing,
@@ -24,28 +24,41 @@ interface VIPInfoModalProps {
   onClose: () => void;
 }
 
+/**
+ * EVERY ROW IS A PROMISE, SO EVERY ROW IS ENFORCED SOMEWHERE.
+ *
+ * Three rows were removed on 2026-09-05 because nothing implemented them:
+ *
+ *   "Available Themes: 3"          nothing reads it; Table Studio sells themes
+ *                                  one at a time and does not meter a VIP.
+ *   "Club Creation Limit: 3"       fn_get_club_creation_eligibility caps
+ *                                  EVERYONE at 4 club memberships. Not a VIP
+ *                                  benefit, and not the number 3.
+ *   "Score Leaderboard Boost: 6%"  LeaderboardService applies no boost at all.
+ */
 const FEATURES = [
-  { key: 'rabbit_hunt', label: 'Rabbit Hunting', vipFree: true },
+  {
+    key: 'rabbit_hunt',
+    label: 'Rabbit Hunting',
+    vipValue: `${VIP_MONTHLY_ALLOWANCES.rabbitHunts} / mo`,
+  },
   { key: 'show_stack_bb', label: 'Show Stack In BBs', vipFree: true },
   { key: 'offline_protection', label: 'Offline Protection', vipFree: true },
   { key: 'auto_time_bank', label: 'Auto Time Bank', vipFree: true },
   {
     key: 'time_bank_seconds',
     label: 'Free Time Bank',
-    vipValue: `${VIP_GOLD_LIMITS.timeBankSeconds}s`,
+    vipValue: `${VIP_MONTHLY_ALLOWANCES.timeBankSeconds}s / mo`,
   },
-  { key: 'theme_unlock', label: 'Available Themes', vipValue: `${VIP_GOLD_LIMITS.themes}` },
   {
-    key: 'club_creation',
-    label: 'Club Creation Limit',
-    vipValue: `${VIP_GOLD_LIMITS.clubCreation}`,
+    key: 'emoji_pack',
+    label: 'Free Emojis',
+    vipValue: `${VIP_MONTHLY_ALLOWANCES.emojis.toLocaleString()} / mo`,
   },
-  { key: 'emoji_pack', label: 'Free Emojis', vipValue: `${VIP_GOLD_LIMITS.emojis}` },
-  { key: 'tag_pack', label: 'Tags', vipValue: `${VIP_GOLD_LIMITS.tags}` },
   {
-    key: 'leaderboard',
-    label: 'Score Leaderboard Boost',
-    vipValue: `${(VIP_GOLD_LIMITS.leaderboardBoost * 100).toFixed(0)}%`,
+    key: 'tag_pack',
+    label: 'Player Tags',
+    vipValue: `${VIP_MONTHLY_ALLOWANCES.tags.toLocaleString()} / mo`,
   },
 ] as const;
 
@@ -98,7 +111,7 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
       <div className="vip-modal" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="vip-modal__header">
-          <h2> VIP GOLD</h2>
+          <h2>VIP</h2>
           <button className="vip-modal__close" onClick={onClose}>
             ×
           </button>
@@ -111,13 +124,13 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
           ) : isVIP ? (
             <div className="vip-status-active">
               <span className="vip-crown"></span>
-              <span>VIP Gold Active</span>
+              <span>Membership Active</span>
               <span className="vip-sub">Included With Club Arena Membership</span>
             </div>
           ) : (
             <div className="vip-status-inactive">
               <span> Pay Per Feature</span>
-              <span className="vip-sub">Or Upgrade To Club Arena For VIP Gold</span>
+              <span className="vip-sub">Or Join Club Arena For A Membership</span>
             </div>
           )}
         </div>
@@ -128,7 +141,7 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
             <thead>
               <tr>
                 <th>Feature</th>
-                <th>VIP Gold</th>
+                <th>VIP</th>
                 <th>Diamond Cost</th>
               </tr>
             </thead>
@@ -157,13 +170,11 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
                     <td className="feature-name">{feature.label}</td>
                     <td className="feature-vip">{vipFree ? ' Free' : vipValue || ''}</td>
                     <td className="feature-cost" data-pricing-revision={pricingRevision}>
-                      {feature.key === 'theme_unlock'
-                        ? 'Table Studio'
-                        : !pricing
-                          ? '-'
-                          : !sellable
-                            ? 'Not For Sale'
-                            : `${pricing.cost.toLocaleString()}/${pricing.usageType.replace('per_', '').replace('_', ' ')}`}
+                      {!pricing
+                        ? '-'
+                        : !sellable
+                          ? 'Not For Sale'
+                          : `${pricing.cost.toLocaleString()}/${pricing.usageType.replace('per_', '').replace('_', ' ')}`}
                     </td>
                   </tr>
                 );
@@ -181,7 +192,7 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
               rel="noopener noreferrer"
               className="vip-upgrade-btn"
             >
-              Get VIP Gold With Club Arena Membership
+              Join Club Arena For A Membership
             </a>
           </div>
         )}

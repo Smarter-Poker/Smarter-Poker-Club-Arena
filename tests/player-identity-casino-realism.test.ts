@@ -76,9 +76,13 @@ describe('VIP is VIP or Lifetime VIP, nothing else', () => {
     ]) {
       expect(PROFILE_CODE, `${ghost} is back on the profile`).not.toContain(ghost);
     }
-    // The benefits it does show are the VIP page's own constants.
-    expect(PROFILE).toContain('VIP_GOLD_LIMITS.rabbitHunts');
-    expect(PROFILE).toContain('VIP_GOLD_LIMITS.timeBankSeconds');
+    /* The benefits it does show are the VIP page's own constants, renamed on
+       2026-09-05: there is no Gold, and the three entries with nothing behind
+       them (leaderboardBoost, themes, clubCreation) went with the ladder. */
+    expect(PROFILE).toContain('VIP_MONTHLY_ALLOWANCES.rabbitHunts');
+    expect(PROFILE).toContain('VIP_MONTHLY_ALLOWANCES.timeBankSeconds');
+    expect(PROFILE_CODE).not.toContain('VIP_GOLD_LIMITS');
+    expect(PROFILE_CODE).not.toContain('leaderboardBoost');
     expect(PROFILE).toContain('resolveVipStatus(profile)');
     expect(PUBLIC_CODE).not.toContain('VIP_LABELS');
     expect(PUBLIC).toContain('vipStatusLabel(profile.vipStatus)');

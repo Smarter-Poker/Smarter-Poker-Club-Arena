@@ -1,0 +1,3 @@
+# tests/union-promo-goes-to-the-promo-wallet.law.test.ts
+
+A send from the union Promo Wallet lands in a promo wallet and nowhere else (Dan 2026-09-05): the union modal routes a club target by the wallet that is open (promo wallet or Promo kind -> unionApi.promoSend into the club Promo Wallet; union bank -> sendToClub into the Club Bank; rake wallet and diamonds refused with a sentence, never silently rerouted through the bank); fn_union_promo_send credits clubs.promo_balance and never chip_treasury; the club Promo Wallet cashier spends the club pot for bank roles and the caller's own float for agents, through the RPC named for each, and every promo wallet (union, club pot, agent float) carries a Ledger tab read from fn_promo_wallet_ledger

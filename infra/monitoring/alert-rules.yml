@@ -210,9 +210,11 @@ groups:
   # poker_act_to_broadcast_ms is the time from a player's action being
   # accepted to the new state reaching every seat - the number that defines
   # how a table FEELS. It had never been scraped in production (the per-table
-  # version is gated off for cardinality). Two series only: audience=human
-  # for tables with a human seated, audience=horse for the rest. The human
-  # series is what pages; a fleet-wide p95 would be a horse number.
+  # version is gated off for cardinality). Labelled audience=human|horse and
+  # format=cash|spin|hu_sng|mtt. The human series is what pages; a fleet-wide
+  # p95 would be a horse number. BOTH RULES GROUP BY format (Dan 2026-09-05:
+  # "not just the cash game tables"), so a Spin, a heads-up SNG and an MTT
+  # each alert on their own p95 instead of hiding inside a cash average.
   # Guarded by the hourly maintenance break (CLAUDE.md 13.6).
   - name: action-latency
     interval: 30s
@@ -220,16 +222,16 @@ groups:
       - alert: ActionLatencyDegraded
         expr: |
           histogram_quantile(0.95,
-            sum by (le) (rate(poker_act_to_broadcast_ms_bucket{audience="human"}[10m]))
+            sum by (le, format) (rate(poker_act_to_broadcast_ms_bucket{audience="human"}[10m]))
           ) > 500
-          and sum(rate(poker_act_to_broadcast_ms_count{audience="human"}[10m])) > 0
+          and sum by (format) (rate(poker_act_to_broadcast_ms_count{audience="human"}[10m])) > 0
           unless max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 10m
         labels:
           severity: warning
           component: engine
         annotations:
-          summary: "Human tables: p95 act-to-broadcast {{ $value | humanize }}ms over 10m"
+          summary: "{{ $labels.format }} tables: p95 act-to-broadcast {{ $value | humanize }}ms over 10m"
           description: |
             A player's action is taking more than half a second to reach the
             other seats, sustained. Compare against the last deploy; check
@@ -239,16 +241,16 @@ groups:
       - alert: ActionLatencyCritical
         expr: |
           histogram_quantile(0.95,
-            sum by (le) (rate(poker_act_to_broadcast_ms_bucket{audience="human"}[10m]))
+            sum by (le, format) (rate(poker_act_to_broadcast_ms_bucket{audience="human"}[10m]))
           ) > 1500
-          and sum(rate(poker_act_to_broadcast_ms_count{audience="human"}[10m])) > 0
+          and sum by (format) (rate(poker_act_to_broadcast_ms_count{audience="human"}[10m])) > 0
           unless max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 5m
         labels:
           severity: critical
           component: engine
         annotations:
-          summary: "Human tables: p95 act-to-broadcast {{ $value | humanize }}ms - the table is unplayable"
+          summary: "{{ $labels.format }} tables: p95 act-to-broadcast {{ $value | humanize }}ms - the table is unplayable"
           description: |
             More than 1.5 s from action to broadcast at p95. At this point
             turn timers are visibly wrong and players are acting on stale
@@ -417,7 +419,9 @@ groups:
   # poker_act_to_broadcast_ms is the time from a player's action being
   # accepted to the new state reaching every seat - the number that defines
   # how a table FEELS. It had never been scraped in production (the per-table
-  # version is gated off for cardinality). Two series only: audience=human
-  # for tables with a human seated, audience=horse for the rest. The human
-  # series is what pages; a fleet-wide p95 would be a horse number.
+  # version is gated off for cardinality). Labelled audience=human|horse and
+  # format=cash|spin|hu_sng|mtt. The human series is what pages; a fleet-wide
+  # p95 would be a horse number. BOTH RULES GROUP BY format (Dan 2026-09-05:
+  # "not just the cash game tables"), so a Spin, a heads-up SNG and an MTT
+  # each alert on their own p95 instead of hiding inside a cash average.
   # Guarded by the hourly maintenance break (CLAUDE.md 13.6).

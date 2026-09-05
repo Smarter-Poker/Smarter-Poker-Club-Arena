@@ -6354,13 +6354,31 @@ export default function TablePage({
         reportError(error, 'TablePage.effective_buyin_reread');
         return;
       }
-      const d = (data ?? null) as { min?: unknown; floor_applied?: unknown } | null;
+      const d = (data ?? null) as {
+        min?: unknown;
+        floor_applied?: unknown;
+        barred_seconds?: unknown;
+      } | null;
+      /* BOOTED FOR LOW VPIP (Dan 2026-09-05): "THEY CAN'T JOIN THAT GAME
+         AGAIN FOR 2 HOURS." The door would refuse the buy-in anyway; the
+         sheet closes and says so first, so nobody drags a slider for nothing. */
+      const barredSecs = Number(d?.barred_seconds ?? 0);
+      if (barredSecs > 0) {
+        setShowBuyInModal(false);
+        toast.warning(
+          cashBuyInRefusalText(`VPIP_BARRED:${Math.ceil(barredSecs)}`) ??
+            'You Cannot Rejoin This Game Yet'
+        );
+        return;
+      }
       const floorMin = Number(d?.min ?? 0);
       setCashoutMinBuyIn(d?.floor_applied === true && floorMin > 0 ? floorMin : 0);
     })();
     return () => {
       live = false;
     };
+    // `toast` is the provider's stable object; the law test pins these three.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showBuyInModal, tableId, userId]);
 
   // Handle cashier add chips (deducts from wallet, adds to table stack)
@@ -20562,7 +20580,10 @@ export default function TablePage({
                               : `BOMB POT IN ${bombClockLabel}`
                             : tableState.bombPotIn === 1
                               ? `${(bombPotRules?.boardCount ?? 0) >= 3 ? 'TRIPLE BOARD ' : bombPotRules?.doubleBoard ? 'DOUBLE BOARD ' : ''}BOMB POT NEXT HAND`
-                              : `BOMB POT IN ${tableState.bombPotIn}`}
+                              : /* Hands, said so (Dan 2026-09-05: inside the
+                                   last three minutes a timed bomb is "IN 1-5
+                                   HANDS" and the clock is gone). */
+                                `BOMB POT IN ${tableState.bombPotIn} HANDS`}
                   </div>
                 )}
 

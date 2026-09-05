@@ -53,6 +53,15 @@ import { beatVerdict, lastBeatAt } from './StableHandBeats.js';
 import { seatBoosts, takeOpenOrders } from './StableHandPlanBus.js';
 import { stakeForBand } from './StableHandController.js';
 import { fetchAllRows } from './supabase/pagination.js';
+import { allocateBuyers, FULL_TABLE_BUYER_PROBE, type BuyerPool } from './HorseBuyerAllocation.js';
+import {
+  applyRejoinFloor,
+  buildRejoinConstraints,
+  EMPTY_REJOIN_CONSTRAINTS,
+  rejoinPlayerKey,
+  rejoinTableKey,
+  type RejoinConstraints,
+} from './HorseRejoinConstraints.js';
 import { reportError } from './errorReporter.js';
 import { clampSeatsForVariant, maxSeatsForVariant } from '../config/tableSeating.js';
 import {
@@ -305,17 +314,8 @@ const DEFAULT_TABLES: TableConfig[] = [
   },
 ];
 
-/**
- * How many live tables a single config may have: the original plus two
- * demand-spawned overflows.
- *
- * This used to be a local inside spawnOverflowTables, so it was a ceiling on
- * CREATING tables and nothing else — nothing ever counted the other way.
- * Production reached 121 rows named 'NLH 1.00/2.00'. It is now also the number
- * retireSurplusTables() drains back down to, and the two must be the same
- * number or the fleet spawns and retires in a loop.
- */
-const MAX_TABLES_PER_CONFIG = 3;
+/* MAX_TABLES_PER_CONFIG is GONE (Gate 7, 2026-09-05): the cap on a game's
+   tables is cash_games.cap_mains, read by the controller. */
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // V8 HUMANIZATION HELPERS (2026-07-24)
@@ -589,222 +589,15 @@ export class HorseFleetManager {
       }
     }
 
-    for (const config of DEFAULT_TABLES) {
-      try {
-        // FIX 201: Check for table by name in ANY status (not just waiting/running).
-        // If a closed table exists, reactivate it instead of creating a duplicate.
-        //
-        // 2026-08-19: this used .maybeSingle() and threw the error away —
-        // `const { data: existing } = ...`. PostgREST answers .maybeSingle()
-        // with PGRST116 when MORE THAN ONE row matches, so the moment a second
-        // row with the same name existed, `existing` came back null and the
-        // code below created a THIRD. Every boot after that added another, and
-        // every one it added made the next boot certain to add one more.
-        //
-        // It ran for months. 120 copies of 'NLH 1.00/2.00', 120 of
-        // 'NLH 2.00/5.00', 83 PLO4, 83 PLO5, 81 PLO6 — 487 duplicate cash
-        // tables in the lobby. The three configs that never got a second row
-        // (PLO8, Short Deck, Pineapple) still had exactly one each, which is
-        // what a self-amplifying bug looks like from the outside.
-        //
-        // .limit(1) cannot error on multiplicity, and the error is now checked:
-        // on ANY read failure this SKIPS the config rather than inserting.
-        // Inserting when you could not find out whether the row exists is the
-        // whole bug, not the .maybeSingle() call.
-        /**
-         * A SOFT-DELETED ROW CAN NEVER BE THE FLEET'S TABLE (2026-08-30).
-         *
-         * This picked the OLDEST row carrying the config's name. For 8 of the 9
-         * cash configs that row was `is_deleted = true`, and a deleted row
-         * cannot be revived: `fn_block_deleted_table_revival` is a BEFORE
-         * UPDATE trigger that silently puts the status back --
-         *
-         *   IF COALESCE(OLD.is_deleted,false) AND NEW.status IN
-         *      ('running','waiting','active','open') THEN
-         *     NEW.status := OLD.status; NEW.is_deleted := true;
-         *
-         * -- and RAISES NOTHING. So the UPDATE below "succeeded", this logged
-         * `[HorseFleet] Reactivated table: X (was closed)`, and `continue`
-         * skipped the insert because a row HAD been found. Every cycle, for
-         * ever. The table never came back and the log said that it had.
-         *
-         * Measured 2026-08-30: 8 of 9 cash configs had ZERO open rows, their
-         * unrevivable stand-in re-touched at 20:28 on each boot. The only
-         * config still on the felt, `NLH Straddle 1.00/2.00`, was the only one
-         * whose oldest row was not deleted - a clean natural control.
-         *
-         * ONE change: exclude soft-deleted rows. They are unrevivable by
-         * construction, so treating one as "the table exists" is always wrong
-         * and silently starves the lobby. The oldest-first ordering is kept
-         * deliberately - it is what makes the choice stable across cycles, and
-         * `HorseFleetNoDuplicateTables` pins the single-row contract.
-         *
-         * Deliberately NOT ordering by status to "prefer an open row": status
-         * is text, so ascending sorts 'closed' < 'running' < 'waiting' and
-         * would prefer a CLOSED row - the exact opposite - while descending
-         * would only work by alphabetical accident. With the deleted rows
-         * excluded there is at most one usable row per name anyway.
-         *
-         * If nothing usable remains, `existing` is null and the insert below
-         * creates a fresh table - the correct outcome, and the one this bug
-         * was suppressing.
-         */
-        const { data: matches, error: lookupError } = await supabase
-          .from('tables')
-          .select(
-            'id, status, union_id, game_variant, small_blind, big_blind, straddle_enabled, min_buy_in, max_buy_in, settings'
-          )
-          .eq('name', config.name)
-          /* THE FLEET'S TABLES ARE THE UNION'S TABLES (2026-09-03).
-             This matched on NAME ALONE, platform-wide, and then reopened
-             whatever it found and stamped MIDWAY_UNION_ID onto it - leaving
-             club_id pointing at the original owner, so rake would route to one
-             club and discovery to another. It also undoes a closure: a club
-             that retires a stake is fought by this every boot.
-
-             Nothing had gone wrong only because no user club happens to name a
-             table the way DEFAULT_TABLES does (checked across production the
-             day this was written: every one of the thirteen config names
-             resolves to a Midway row, and Deep Stack Society uses a different
-             convention entirely). That is a coincidence of naming, not a rule.
-             One club creating "NLH 1.00/2.00" would have had its table annexed.
-
-             The fleet only ever creates union tables (see the insert below), so
-             it may only ever adopt one. */
-          .eq('union_id', MIDWAY_UNION_ID)
-          .is('tournament_id', null)
-          .not('is_deleted', 'is', true)
-          .order('created_at', { ascending: true })
-          .limit(1);
-
-        if (lookupError) {
-          reportError(lookupError, 'HorseFleet.table_lookup_failed');
-          continue;
-        }
-
-        const existing = matches?.[0] ?? null;
-
-        if (existing) {
-          // Table exists — ensure it's active and at Union level
-          const updates: Record<string, any> = {};
-          /* A RETIRED TABLE STAYS RETIRED. Reopening a closed table is right
-             for a table the fleet closed as surplus and now wants back; it is
-             wrong for one a club deliberately retired (2026-09-03, "close any
-             tables over 2/5"), which would otherwise be reopened on the next
-             boot and re-seeded. */
-          /* A RETIRED TABLE STAYS RETIRED; A PARKED ONE COMES BACK IN THE
-             MORNING. The night park drains and closes a thin table exactly as
-             a retirement does, but it is meant to be lifted - so boot reopens
-             it, unless we are still inside the night window, in which case
-             reopening would simply undo the parking every hour when the
-             engine restarts. This is the second, independent way a parked
-             table gets its life back: the executor lifts the flag every cycle
-             after 08:00, and this catches the case where the executor is
-             switched off entirely. */
-          const parkedForNight = isNightParkedTable(existing as { settings?: unknown });
-          const stillNight = isNightWindow(chicagoNow().hour);
-          if (
-            existing.status === 'closed' &&
-            !isRetiringTable(existing as { settings?: unknown }) &&
-            !(parkedForNight && stillNight)
-          )
-            updates.status = 'waiting';
-          if (existing.union_id !== MIDWAY_UNION_ID) updates.union_id = MIDWAY_UNION_ID;
-          // V3: legacy rows can drift from the config (e.g. an old
-          // 'ofc_pineapple' row under the crazy-pineapple table name). The
-          // config is authoritative — resync variant and blinds on reuse.
-          if (existing.game_variant !== config.gameVariant)
-            updates.game_variant = config.gameVariant;
-          if (Number(existing.small_blind) !== config.smallBlind)
-            updates.small_blind = config.smallBlind;
-          if (Number(existing.big_blind) !== config.bigBlind) updates.big_blind = config.bigBlind;
-          // Dan 2026-08-28: buy-ins resync WITH the blinds. This branch used
-          // to carry stale chip buy-ins forever after a blind bump — bump a
-          // config from 1/2 to 25/50 and the reactivated row kept a 40BB
-          // band computed against the OLD big blind (the exact shape of the
-          // "25/50 with buy-in 100-200" bug). 40BB-200BB, always.
-          //
-          // ROUNDED TO CENTS on purpose. bigBlind * 40 on a fractional stake
-          // can land off an exact cent in IEEE754; if a numeric(…,2) column
-          // then rounds it on write, read-back never equals the recomputed
-          // value, this comparison stays true forever, and the update path
-          // below resets current_players every cycle — the exact standing
-          // hazard the V23 note documents. Chips are cents; compare cents.
-          const wantMinBuyIn = Math.round(config.bigBlind * 40 * 100) / 100;
-          const wantMaxBuyIn = Math.round(config.bigBlind * 200 * 100) / 100;
-          if (Number((existing as { min_buy_in?: number }).min_buy_in) !== wantMinBuyIn)
-            updates.min_buy_in = wantMinBuyIn;
-          if (Number((existing as { max_buy_in?: number }).max_buy_in) !== wantMaxBuyIn)
-            updates.max_buy_in = wantMaxBuyIn;
-          // V23: a straddle config re-straddles a reused row. Compared, not
-          // written blind — an unconditional write would make `updates`
-          // non-empty every cycle, and the update path resets
-          // current_players to 0, which would strand a live table.
-          if (
-            (existing as { straddle_enabled?: boolean }).straddle_enabled !==
-            (config.straddleEnabled === true)
-          ) {
-            updates.straddle_enabled = config.straddleEnabled === true;
-            // Keep the POST in step with the permission - see the note on
-            // auto_utg_straddle in the insert above.
-            updates.auto_utg_straddle = config.straddleEnabled === true;
-          }
-          if (Object.keys(updates).length > 0) {
-            updates.current_players = 0;
-            await supabase.from('tables').update(updates).eq('id', existing.id);
-            console.log(`[HorseFleet] Reactivated table: ${config.name} (was ${existing.status})`);
-          }
-          continue;
-        }
-
-        // FIX 201: Tables belong to a club BUT are inside the Union.
-        // Set both club_id (for rake routing) AND union_id (for Union-level discovery).
-        const clubId = this.getNextClubId();
-        const { error } = await supabase.from('tables').insert({
-          club_id: clubId,
-          union_id: MIDWAY_UNION_ID,
-          name: config.name,
-          game_type: 'cash',
-          game_variant: config.gameVariant,
-          stakes: `${config.smallBlind}/${config.bigBlind}`,
-          small_blind: config.smallBlind,
-          big_blind: config.bigBlind,
-          min_buy_in: config.bigBlind * 40,
-          max_buy_in: config.bigBlind * 200,
-          // The law is enforced HERE, not only in the config above, so a
-          // future config edit cannot put an illegal table in the database.
-          max_players: clampSeatsForVariant(config.gameVariant, config.maxPlayers),
-          current_players: 0,
-          status: 'waiting',
-          // ALL-CASH INSURANCE 2026-08-26 (Dan: "publish this for all cash
-          // games") - fleet cash tables are born with insurance on; the
-          // 20260827 migration flipped the existing fleet.
-          insurance_enabled: true,
-          // V23: straddle tables are born straddling (see TableConfig).
-          straddle_enabled: config.straddleEnabled === true,
-          // ═══ 2026-08-28: ENABLED IS NOT THE SAME AS HAPPENING ═══════════
-          // MEASURED: the V23 straddle table went live, seated 8 horses and
-          // dealt 107 hands in two hours - and v18_straddle telemetry stayed
-          // at ZERO. straddle_enabled only means players MAY straddle; the
-          // post itself comes from StraddleEngine, which needs either a
-          // player who toggled auto-straddle or mandatoryUtg. Horses never
-          // toggle anything, so nobody ever straddled and the V18 brain
-          // layer had nothing to read. auto_utg_straddle makes the UTG
-          // straddle mandatory, which is what a "straddle table" means.
-          auto_utg_straddle: config.straddleEnabled === true,
-        });
-
-        if (error) {
-          reportError(error, 'HorseFleet.Failed_to_create_table_confign');
-        } else {
-          console.log(
-            `[HorseFleet] Created table: ${config.name} (club: ${clubId}, union: ${MIDWAY_UNION_ID})`
-          );
-        }
-      } catch (err: any) {
-        reportError(err, 'HorseFleet.Error_creating_table_confignam');
-      }
-    }
+    /* GATE 7 (2026-09-05): this method no longer inserts or reactivates a
+       table. Every DEFAULT_TABLES key is a `cash_games` row now (the union
+       ladder), the ClusterController keeps each game's Main 1 open (R3) and
+       reopens a closed one every tick (RECONCILE), and the database refuses
+       a cash table with no game behind it (tables_cash_needs_a_game). The
+       seat-law check above stays: a wrong config still says so out loud. */
+    console.log(
+      `[HorseFleet] ${DEFAULT_TABLES.length} default keys are cash_games rows; the controller keeps them open`
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────
@@ -1263,6 +1056,61 @@ export class HorseFleetManager {
         reportError(err, 'HorseFleet.bankroll_load_failed');
       }
 
+      /* ── THE DOOR RULES, READ ONCE (2026-09-05) ──────────────────────────
+         A horse booted for low VPIP is barred from that game for two hours
+         (fn_cash_rejoin_floor raises VPIP_BARRED), and a horse that left a
+         game with chips meets a rejoin floor in it (BUYIN_BELOW_FLOOR). A
+         human reads both in the lobby and does not try; the fleet is the
+         horse's browser (10.5) and until today it tried anyway - 341 of 349
+         buy-in refusals in one hour were VPIP_BARRED - and, worse, COUNTED
+         every barred horse as a buyer, so the controller opened feeders for
+         players the door would refuse. One paged read for the whole floor,
+         keyed exactly as the SQL joins (club, variant, sb, bb).
+
+         FAILS OPEN, like the bankroll loader above and for the same reason:
+         the database is the authoritative guard, so an unread row costs one
+         wasted buy-in attempt, whereas treating an unread map as "everyone is
+         barred" would empty the floor. */
+      let rejoin: RejoinConstraints = EMPTY_REJOIN_CONSTRAINTS;
+      try {
+        const nowIsoForRejoin = new Date().toISOString();
+        const rejoinPage = await fetchAllRows<{
+          id: string;
+          player_id: string;
+          club_id: string;
+          variant: string;
+          sb: number | string;
+          bb: number | string;
+          required_stack: number | string | null;
+          barred_until: string | null;
+          expires_at: string;
+        }>(
+          (cursor, want) => {
+            let q = supabase
+              .from('cash_rejoin_constraints')
+              .select(
+                'id, player_id, club_id, variant, sb, bb, required_stack, barred_until, expires_at'
+              )
+              .gt('expires_at', nowIsoForRejoin)
+              .order('id', { ascending: true })
+              .limit(want);
+            if (cursor) q = q.gt('id', cursor);
+            return q;
+          },
+          { label: 'HorseFleet.rejoinConstraints', maxRows: 50_000 }
+        );
+        if (rejoinPage.complete) {
+          rejoin = buildRejoinConstraints(rejoinPage.rows, Date.now());
+        } else {
+          console.warn(
+            '[HorseFleet] rejoin constraints read incomplete - seating this cycle without ' +
+              'the VPIP bar and rejoin floor; the database still refuses at the door.'
+          );
+        }
+      } catch (err) {
+        reportError(err, 'HorseFleet.rejoin_constraints_load_failed');
+      }
+
       // V8: full horse-id set (any status) so we can tell HUMAN seats from
       // horse seats — humans get rescue priority below.
       // Paged: a horse missing from this set reads as a HUMAN, which triggers
@@ -1327,21 +1175,11 @@ export class HorseFleetManager {
         `[HorseFleet] Seeding cycle: ${tables.length} tables found, ${validHorses.length} total horses.`
       );
 
-      // Tables past MAX_TABLES_PER_CONFIG for their config. They are not
-      // seeded — they are being drained — and retireSurplusTables() closes
-      // each one as it empties. Ordered oldest-first so the table that gets
-      // KEPT is the same one ensureAllTablesExist() treats as canonical.
+      // Tables draining under a Stable Hand flag are not seeded. Since Gate 7
+      // every open cash table is a cluster table, which the loop below skips,
+      // so this set is empty on the cash floor and stays for any non-cluster
+      // table the platform may still carry.
       const surplusTableIds = new Set<string>();
-      for (const config of DEFAULT_TABLES) {
-        /* A CLUSTER TABLE IS NOT IN ANY NAME FAMILY (Operation Table Stakes,
-           Slice 6): its life belongs to the ClusterController, never to the
-           surplus count, the overflow spawn or the retirement sweep. */
-        const family = tables
-          .filter((t) => !t.cluster_id)
-          .filter((t) => t.name === config.name || t.name.startsWith(`${config.name} #`))
-          .sort((a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')));
-        for (const t of family.slice(MAX_TABLES_PER_CONFIG)) surplusTableIds.add(t.id);
-      }
       /* A table marked `settings.retire_when_empty` is surplus by declaration
          (Dan 2026-09-03, "close any tables over 2/5"): it gets no new horses,
          HorseSessionRotator walks its horses out, and retireSurplusTables()
@@ -1631,6 +1469,14 @@ export class HorseFleetManager {
       const todayKey = chicagoCounterDay();
       let restDayDropped = 0;
       let dailyCapDropped = 0;
+      /* Horse/table pairs refused at the fleet's own door because the
+         database's door would refuse them: barred for low VPIP from this
+         game, or holding a rejoin floor the horse's wallet cannot cover.
+         Reported with the tag counters, because a barred horse that is still
+         counted as a buyer is exactly the number that opened eleven empty
+         feeders in an hour. */
+      let barredDropped = 0;
+      let floorUnaffordableDropped = 0;
       /* THE TAG BOOK. Null when it could not be read WHOLE, and every gate
          that consults it is written so that null means "today's behaviour,
          unchanged". */
@@ -1688,7 +1534,8 @@ export class HorseFleetManager {
             horseIdSet,
             membership,
             surplusTableIds,
-            seatBudget
+            seatBudget,
+            rejoin
           );
       seatBudget -= claimed;
       beat.seatsFilled += claimed;
@@ -1710,6 +1557,14 @@ export class HorseFleetManager {
          and swapped in whole at the end, so a reader never sees a half-built
          cycle; a withheld cycle honestly reports nothing. */
       const nextEligible = new Map<string, number>();
+      /* A BUYER IS COUNTED ONCE (2026-09-05). For every cluster table the
+         POOL is kept, not its length, and each horse's remaining table
+         capacity is kept beside it; after the loop `allocateBuyers` walks the
+         pools in this same seeding order and hands each horse out once. The
+         same two free horses used to be counted as buyers for every full Main
+         1 on the host at once. See HorseBuyerAllocation. */
+      const clusterPools: BuyerPool[] = [];
+      const capacityByHorse = new Map<string, number>();
       for (const table of tablesToSeed) {
         try {
           // A draining table gets no new horses. Without this the surplus can
@@ -1886,6 +1741,9 @@ export class HorseFleetManager {
           // 1. Not already at this table
           // 2. Not exceeding 4 max tables
           const MAX_TABLES_PER_HORSE = 4;
+          /* The game key the door rules are written against (club, variant,
+             sb, bb), formatted once per table. See rejoinTableKey. */
+          const constraintTableKey = rejoinTableKey(table);
           const candidateHorses = validHorses.filter((h) => {
             /* A HORSE PLAYS INSIDE ITS OWN CLUB (Dan 2026-09-02): only a horse
                whose membership can pay for this table is a candidate for it.
@@ -1900,6 +1758,18 @@ export class HorseFleetManager {
             const seatClub = this.resolveSeatClub(membership, table, h.id);
             if (seatClub === null) {
               clubDropped++;
+              return false;
+            }
+
+            /* ── THE DOOR (2026-09-05). A horse barred from THIS game for low
+               VPIP is not a candidate for it - the database would refuse the
+               seat (VPIP_BARRED) and, until today, did, 341 times an hour,
+               after the fleet had already counted the horse as a buyer. A
+               human sees GAME_BARRED in the lobby and does not try; neither
+               does the fleet. Every table, cluster or not. */
+            const doorKey = rejoinPlayerKey(h.id, constraintTableKey);
+            if (rejoin.barred.has(doorKey)) {
+              barredDropped++;
               return false;
             }
 
@@ -2055,6 +1925,23 @@ export class HorseFleetManager {
                 bankrollEvent('seat_refused_underrolled');
                 return false;
               }
+              /* THE REJOIN FLOOR MUST BE AFFORDABLE. A horse that left this
+                 game with more than its roll now holds cannot meet the floor
+                 the door will demand (fn_cash_effective_buyin clamps it to
+                 the table max, so that is the most it can be asked for). The
+                 database would refuse the buy-in; the fleet does not try, and
+                 does not count the horse as a buyer. Only when the roll is
+                 KNOWN - an unknown roll fails open, as above. */
+              const rejoinFloorForPair = rejoin.rejoinFloor.get(doorKey);
+              if (rejoinFloorForPair !== undefined) {
+                const tableMax = Number((table as any).max_buy_in) || table.big_blind * 200;
+                const effectiveFloor =
+                  tableMax > 0 ? Math.min(rejoinFloorForPair, tableMax) : rejoinFloorForPair;
+                if (effectiveFloor > roll) {
+                  floorUnaffordableDropped++;
+                  return false;
+                }
+              }
             }
             /* THE PER-HOST CAP (Operation Stable Hand). Last of the
                candidate gates, and the only one that reasons about the FLOOR
@@ -2075,6 +1962,17 @@ export class HorseFleetManager {
               return false;
             }
             const tablesForHorse = horseTables.get(h.id);
+            /* THE HORSE'S REMAINING CAPACITY, for the buyer allocation after
+               the loop. Recorded the FIRST time this cycle sees the horse, so
+               the allocator replays the cycle from the position it started in
+               (horseTables grows as this cycle seats; a later table's view is
+               already net of those seats, which the allocator counts itself). */
+            if (!capacityByHorse.has(h.id)) {
+              capacityByHorse.set(
+                h.id,
+                Math.max(0, tagMaxTables(tag, MAX_TABLES_PER_HORSE) - (tablesForHorse?.size ?? 0))
+              );
+            }
             if (!tablesForHorse) return true;
             /* THE HORSE'S OWN CEILING, never above the platform's four. A
                grinder carries four, a mixer one; before the tag was read every
@@ -2108,7 +2006,24 @@ export class HorseFleetManager {
           /* What the ClusterController asks: how many horses COULD sit here
              this cycle. A horse is a buyer (Law 10.5); the open rule in
              OPORD 1.4 18.3 counts them beside the humans on the waitlist. */
-          nextEligible.set(table.id, pool.length);
+          let clusterPool: BuyerPool | null = null;
+          if (table.cluster_id) {
+            /* A cluster table's pool is kept for the allocation after the
+               loop. A FULL table asks for FULL_TABLE_BUYER_PROBE (two: the
+               open rule's threshold), never more, so it cannot eat the
+               capacity a table with real open seats needs. */
+            clusterPool = {
+              tableId: table.id,
+              clusterId: table.cluster_id,
+              pool: pool.map((h) => h.id),
+              seatsWanted: countOnly
+                ? FULL_TABLE_BUYER_PROBE
+                : Math.max(0, Number(table.max_players) - currentCount),
+            };
+            clusterPools.push(clusterPool);
+          } else {
+            nextEligible.set(table.id, pool.length);
+          }
           if (countOnly) continue;
 
           /* FOUR TABLES IS THE TARGET, NOT THE CEILING (Dan 2026-09-02).
@@ -2169,7 +2084,8 @@ export class HorseFleetManager {
               horse.id,
               bankrolls,
               bankrollsLoaded,
-              seatClub
+              seatClub,
+              rejoin.rejoinFloor.get(rejoinPlayerKey(horse.id, constraintTableKey))
             );
             if (buyIn <= 0) continue;
 
@@ -2308,6 +2224,18 @@ export class HorseFleetManager {
             }
           }
 
+          if (seated > 0 && clusterPool) {
+            /* The horses this table actually took go to the front of its
+               pool, so the allocation after the loop hands out the same
+               bodies the cycle did. */
+            const seatedIds = new Set(
+              selectedHorses.filter((h) => horseTables.get(h.id)?.has(table.id)).map((h) => h.id)
+            );
+            clusterPool.pool = [
+              ...clusterPool.pool.filter((id) => seatedIds.has(id)),
+              ...clusterPool.pool.filter((id) => !seatedIds.has(id)),
+            ];
+          }
           if (seated > 0) {
             tablesSeeded++;
             // NOTE: We do NOT update current_players here.
@@ -2328,6 +2256,14 @@ export class HorseFleetManager {
       /* Swapped whole (see nextEligible above). A withheld cycle - the loop
          ran over nothing - leaves an empty map, which is the truth: the fleet
          will seat nobody this cycle, so no game has horse demand. */
+      /* THE ALLOCATION. Cluster tables get the number of horses the floor
+         can actually spare for them, walked in seeding order; a horse is
+         handed out once per table it can still open and never twice within
+         one game. Non-cluster tables keep their pool size (nobody opens a
+         feeder on it). */
+      for (const [tableId, n] of allocateBuyers(clusterPools, capacityByHorse)) {
+        nextEligible.set(tableId, n);
+      }
       this.lastEligibleByTable = nextEligible;
 
       /* ── WHAT THE CONSOLE WILL SEE ─────────────────────────────────────
@@ -2368,6 +2304,13 @@ export class HorseFleetManager {
           `[HorseFleet] tags: ${tagDropped} horse/table pair(s) excluded by the horse's own ` +
             `game, stake or lane; ${restDayDropped} on a rest day; ${dailyCapDropped} at their ` +
             `daily cap. A human short-handed at the table bypasses all three.`
+        );
+      }
+      if (barredDropped > 0 || floorUnaffordableDropped > 0) {
+        console.log(
+          `[HorseFleet] door: ${barredDropped} horse/table pair(s) barred from that game for ` +
+            `low VPIP; ${floorUnaffordableDropped} holding a rejoin floor their roll cannot ` +
+            `cover. Neither is tried, neither is counted as a buyer.`
         );
       }
       if (mutexRefused.size > 0) {
@@ -2430,14 +2373,11 @@ export class HorseFleetManager {
         console.log(`[HorseFleet] Seated ${totalSeated} horses across tables`);
       }
 
-      // V8 DEMAND RESPONSE: when every table of a config is effectively full,
-      // spawn an overflow table so arriving humans always find a seat.
-      await this.spawnOverflowTables(tables, allActiveSeats || []);
+      // GATE 7 (2026-09-05): demand opens a FEEDER through the controller's
+      // OPEN rule and thin tables close through its BREAK rule. The fleet no
+      // longer spawns or retires a table; the Stable Hand's open order is a
+      // game (openPlannedTables asks fn_cash_game_ensure), never a table.
       await this.openPlannedTables(tables, bodiesOnHost, stableHandCaps);
-
-      // ...and the other direction, which never existed until 2026-08-19.
-      // Note it now skips any table carrying `auto_extension` — see there.
-      await this.retireSurplusTables(tables, surplusTableIds, allActiveSeats || []);
 
       /* ══ THE DAY'S COUNTERS, WRITTEN ONCE PER CYCLE ═══════════════════════
          Everything the Stable Hand mutex reads about a horse's day is written
@@ -2762,96 +2702,15 @@ export class HorseFleetManager {
   // TABLE RETIREMENT (2026-08-19)
   // ─────────────────────────────────────────────────────────────────────
 
-  /**
-   * Close surplus tables once they are empty.
-   *
-   * The fleet could only ever ADD tables. spawnOverflowTables() capped
-   * creation at MAX_TABLES_PER_CONFIG and a comment promised that "the
-   * stale-table lifecycle owns closing" — a component that was never written.
-   * Nothing anywhere closed an idle cash table, so when ensureAllTablesExist()
-   * started duplicating rows on every boot, the count only went one way: 121
-   * rows named 'NLH 1.00/2.00', 495 fleet tables in total.
-   *
-   * Empty means EMPTY: no live seat rows, no counted players, and not mid-hand.
-   * A table with anyone at it is left alone and retired on a later cycle, so a
-   * horse — or a human who wandered in — is never closed out from under.
-   *
-   * status = 'closed' rather than DELETE: the DB trigger
-   * trg_auto_cashout_on_table_close cashes out any remaining human seat, and a
-   * delete would bypass it and strand chips. It also keeps the row's history.
-   */
-  private async retireSurplusTables(
-    tables: Array<{ id: string; name: string; current_players?: number | null }>,
-    surplusTableIds: Set<string>,
-    allActiveSeats: Array<{ table_id: string }>
-  ): Promise<void> {
-    if (surplusTableIds.size === 0) return;
-    const occupied = new Set(allActiveSeats.map((s) => s.table_id));
-    const retirable = tables.filter(
-      (t) =>
-        surplusTableIds.has(t.id) && !occupied.has(t.id) && Number(t.current_players ?? 0) === 0
-    );
-    if (retirable.length === 0) return;
-
-    try {
-      // .in('status', [...]) guards the race where the table filled between the
-      // seat fetch and this update: a table that went 'playing' is skipped.
-      const { error } = await supabase
-        .from('tables')
-        .update({ status: 'closed' })
-        .in(
-          'id',
-          retirable.map((t) => t.id)
-        )
-        .is('tournament_id', null)
-        /* AUTO EXTENSION (Dan 2026-08-25, table-creation parity). The toggle
-           says "Extend table automatically" and had no reader at all. This is
-           what it extends: the table's LIFE. A host who switched it on is
-           saying "do not close my table just because it went quiet", so an
-           empty table carrying the flag is skipped here and stays open for
-           business. `.not(...)` rather than a filter on the JS side because
-           this is the query that does the closing - a check anywhere else
-           could be raced past. */
-        /* ...EXCEPT A TABLE MARKED FOR RETIREMENT (2026-09-03). auto_extension
-           is a host saying "do not close my table just because it went
-           quiet". A retirement is the club saying this stake is not offered
-           any more, and that outranks it - otherwise the table is drained to
-           empty by the rotator, refused a re-seat forever by surplusTableIds,
-           and then skipped here: permanently empty, permanently open, and
-           invisible to every sweep. The 2026-09-03 batch all carry
-           auto_extension = false, so this is the trap closing before anyone
-           falls into it. */
-        .or(
-          'auto_extension.is.null,auto_extension.eq.false,' +
-            'settings->>retire_when_empty.eq.true,settings->>night_parked.eq.true'
-        )
-        .in('status', ['waiting', 'running']);
-      if (error) {
-        reportError(error, 'HorseFleet.retireSurplusTables_failed');
-        return;
-      }
-      console.log(
-        `[HorseFleet] Retired ${retirable.length} empty surplus table(s): ` +
-          `${retirable
-            .map((t) => t.name)
-            .slice(0, 5)
-            .join(', ')}${retirable.length > 5 ? ' ...' : ''}`
-      );
-    } catch (err: any) {
-      reportError(err, 'HorseFleet.retireSurplusTables_error');
-    }
-  }
+  /* retireSurplusTables is GONE (Gate 7, 2026-09-05). Every open cash table
+     is a cluster table, and a cluster table is closed by the controller's
+     BREAK rule (balance floor, hysteresis, must-move out) and never by a
+     name-family count. */
 
   // ─────────────────────────────────────────────────────────────────────
   // V8 DEMAND-BASED TABLE SPAWNING
   // ─────────────────────────────────────────────────────────────────────
 
-  /**
-   * If EVERY live table of a config is within one seat of full, create one
-   * overflow table ("<name> #2", "#3" — capped at 3 per config). Overflow
-   * tables are seeded by the normal cycle on the next pass; empty overflow
-   * tables simply idle (the stale-table lifecycle owns closing).
-   */
   /**
    * AUTO RESTART and AUTO CREATE TABLE (Dan 2026-08-25, table-creation
    * parity). Two more switches that had tooltips and no readers.
@@ -2925,9 +2784,6 @@ export class HorseFleetManager {
     if (orders.length === 0) return;
 
     const openedThisCycle = new Set<string>();
-    const existing = new Set(
-      tables.map((t) => `${String(t.club_id ?? '')}|${String(t.name ?? '').toLowerCase()}`)
-    );
 
     for (const order of orders) {
       try {
@@ -2938,38 +2794,29 @@ export class HorseFleetManager {
         const stake = stakeForBand(order.band);
         if (!stake) continue;
         const variant = String(order.variant ?? 'nlh').toLowerCase();
-        const name = `${variantLabel(variant)} ${stake.sb.toFixed(2)}/${stake.bb.toFixed(2)}`;
-        if (existing.has(`${order.hostId}|${name.toLowerCase()}`)) continue;
-
-        const { error } = await supabase.from('tables').insert({
-          club_id: order.hostId,
-          // The union's own board carries both, which is how every club in
-          // that union has always found these games. A standalone club has no
-          // union and must not be given one.
-          union_id: order.hostId === MIDWAY_UNION_ID ? MIDWAY_UNION_ID : null,
-          name,
-          game_type: 'cash',
-          game_variant: variant,
-          stakes: `${stake.sb}/${stake.bb}`,
-          small_blind: stake.sb,
-          big_blind: stake.bb,
-          min_buy_in: Math.round(stake.bb * 40 * 100) / 100,
-          max_buy_in: Math.round(stake.bb * 200 * 100) / 100,
-          max_players: clampSeatsForVariant(variant, 9),
-          current_players: 0,
-          status: 'waiting',
-          insurance_enabled: true,
+        /* GATE 7 (2026-09-05): the Stable Hand plans GAMES. The order used to
+           insert a plain table on the host; the database now refuses a cash
+           table with no game behind it (tables_cash_needs_a_game) and the
+           ClusterController opens, feeds, promotes, breaks and closes the
+           tables of every game. fn_cash_game_ensure returns the key's game -
+           created with Main 1 if absent, re-enabled if a host had closed it -
+           and is idempotent, so a repeated order costs one read. */
+        const { data, error } = await supabase.rpc('fn_cash_game_ensure', {
+          p_club_id: order.hostId,
+          p_variant: variant,
+          p_sb: stake.sb,
+          p_bb: stake.bb,
+          p_template: 'classic',
+          p_handedness: clampSeatsForVariant(variant, 9),
         });
         if (error) {
-          // A name race between cycles is expected and harmless.
-          if (!(error.message || '').includes('duplicate')) {
-            reportError(error, 'HorseFleet.openPlannedTable_failed');
-          }
+          reportError(error, 'HorseFleet.openPlannedGame_failed');
           continue;
         }
         openedThisCycle.add(order.hostId);
         console.log(
-          `[HorseFleet] Stable Hand opened "${name}" on host ${order.hostId.slice(0, 8)} - ` +
+          `[HorseFleet] Stable Hand ensured game ${String(data ?? '').slice(0, 8)} ` +
+            `(${variant} ${stake.sb}/${stake.bb}) on host ${order.hostId.slice(0, 8)} - ` +
             `the ${order.band} band had no ${variant} game and the floor is under its curve`
         );
       } catch (err) {
@@ -2978,64 +2825,10 @@ export class HorseFleetManager {
     }
   }
 
-  private async spawnOverflowTables(
-    tables: Array<{ id: string; name: string; max_players: number; cluster_id?: string | null }>,
-    allActiveSeats: Array<{ table_id: string }>
-  ): Promise<void> {
-    for (const config of DEFAULT_TABLES) {
-      try {
-        // A cluster table is the ClusterController's, never a family member.
-        const family = tables.filter(
-          (t) => !t.cluster_id && (t.name === config.name || t.name.startsWith(`${config.name} #`))
-        );
-        if (family.length === 0 || family.length >= MAX_TABLES_PER_CONFIG) continue;
-        const allNearFull = family.every((t) => {
-          const occ = allActiveSeats.filter((s) => s.table_id === t.id).length;
-          return occ >= t.max_players - 1;
-        });
-        if (!allNearFull) continue;
-
-        const name = `${config.name} #${family.length + 1}`;
-        const clubId = this.getNextClubId();
-        const { error } = await supabase.from('tables').insert({
-          club_id: clubId,
-          union_id: MIDWAY_UNION_ID,
-          name,
-          game_type: 'cash',
-          game_variant: config.gameVariant,
-          stakes: `${config.smallBlind}/${config.bigBlind}`,
-          small_blind: config.smallBlind,
-          big_blind: config.bigBlind,
-          min_buy_in: config.bigBlind * 40,
-          max_buy_in: config.bigBlind * 200,
-          // The law is enforced HERE, not only in the config above, so a
-          // future config edit cannot put an illegal table in the database.
-          max_players: clampSeatsForVariant(config.gameVariant, config.maxPlayers),
-          current_players: 0,
-          status: 'waiting',
-          // ALL-CASH INSURANCE 2026-08-26: overflow cash tables too.
-          insurance_enabled: true,
-          // 2026-08-28: overflow tables inherit the CONFIG'S IDENTITY. The
-          // first straddle overflow ("NLH Straddle 1.00/2.00 #2") went live
-          // with straddle_enabled FALSE - a table named for a game it was
-          // not running, because this insert never learned about the flag
-          // the primary insert had just gained.
-          straddle_enabled: config.straddleEnabled === true,
-          auto_utg_straddle: config.straddleEnabled === true,
-        });
-        if (error) {
-          // Unique-name races between cycles are expected and harmless.
-          if (!(error.message || '').includes('duplicate')) {
-            reportError(error, 'HorseFleet.spawnOverflowTable_failed');
-          }
-        } else {
-          console.log(`[HorseFleet] Demand overflow: created "${name}"`);
-        }
-      } catch (err: any) {
-        reportError(err, 'HorseFleet.spawnOverflowTables_error');
-      }
-    }
-  }
+  /* spawnOverflowTables is GONE (Gate 7, 2026-09-05). The '#2 / #3' overflow
+     clone was a table with no game behind it; the database now refuses one
+     (tables_cash_needs_a_game), and demand opens a FEEDER through the
+     ClusterController's OPEN rule (OPORD 1.4 s18.3) instead. */
 
   // ─────────────────────────────────────────────────────────────────────
   // SEAT A SINGLE HORSE
@@ -3080,7 +2873,10 @@ export class HorseFleetManager {
     surplusTableIds: Set<string>,
     /* How many seats the fleet-wide policy cap leaves this cycle. Infinity
        when there is no cap, which is today's behaviour. */
-    budget: number = Number.POSITIVE_INFINITY
+    budget: number = Number.POSITIVE_INFINITY,
+    /* The door rules read this cycle (VPIP bar, rejoin floor). Empty when
+       the read failed: the database still refuses at the door. */
+    rejoin: RejoinConstraints = EMPTY_REJOIN_CONSTRAINTS
   ): Promise<number> {
     let claimed = 0;
     try {
@@ -3143,12 +2939,18 @@ export class HorseFleetManager {
         // with the club that can pay for it, or does not answer at all.
         const seatClub = this.resolveSeatClub(membership, table, offer.user_id);
         if (seatClub === null) continue;
+        /* The same door rules as the seeding loop: a horse barred from this
+           game does not answer its seat call, and one holding a rejoin floor
+           answers with the floor. */
+        const offerDoorKey = rejoinPlayerKey(offer.user_id, rejoinTableKey(table));
+        if (rejoin.barred.has(offerDoorKey)) continue;
         const buyIn = this.computeHorseBuyIn(
           table,
           offer.user_id,
           bankrolls,
           bankrollsLoaded,
-          seatClub
+          seatClub,
+          rejoin.rejoinFloor.get(offerDoorKey)
         );
         if (buyIn <= 0) continue;
 
@@ -3187,7 +2989,13 @@ export class HorseFleetManager {
     horseId: string,
     bankrolls: Map<string, number>,
     bankrollsLoaded: boolean,
-    seatClub: string | null | undefined
+    seatClub: string | null | undefined,
+    /* The rejoin floor this horse holds in this game, if any (chip
+       continuity: it may not rejoin with less than it left with). Read once
+       per cycle from cash_rejoin_constraints; undefined when there is none
+       or the map did not load, in which case the database's own retry in
+       seatHorse still catches it. */
+    rejoinFloor?: number
   ): number {
     const minB = Number(table.min_buy_in) || table.big_blind * 40;
     const maxB = Number(table.max_buy_in) || table.big_blind * 200;
@@ -3223,7 +3031,14 @@ export class HorseFleetManager {
       const snapped = Math.round(capped / step) * step;
       buyIn = Math.round(Math.max(minB, Math.min(capped, snapped)) * 100) / 100;
     }
-    return buyIn;
+    /* THE FLOOR IS THE LAST WORD, AS IT IS FOR A HUMAN (2026-09-05). The
+       buy-in modal shows a returning player GREATEST(min, floor) clamped to
+       the table max (fn_cash_effective_buyin), and the door refuses less. A
+       horse reads the same number and brings it - the bankroll share above
+       decides what is sensible, the floor decides what is possible, and
+       possible wins or the horse does not sit. The candidate filter has
+       already dropped a horse whose known roll cannot cover it. */
+    return applyRejoinFloor(buyIn, rejoinFloor, maxB);
   }
 
   private async seatHorse(

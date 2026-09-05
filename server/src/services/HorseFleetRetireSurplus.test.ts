@@ -1,146 +1,113 @@
 /**
- * The fleet can retire a table, not only create one.
+ * The fleet spawns and retires nothing. (Gate 7, 2026-09-05)
  *
- * spawnOverflowTables() capped creation at MAX_TABLES_PER_CONFIG and left a
- * comment saying "the stale-table lifecycle owns closing". No such lifecycle
- * was ever written — nothing anywhere closed an idle cash table. So when
- * ensureAllTablesExist() began duplicating rows on every boot, the count only
+ * HISTORY, so the shape of the old bug is not forgotten: spawnOverflowTables()
+ * capped creation at MAX_TABLES_PER_CONFIG and left a comment saying "the
+ * stale-table lifecycle owns closing". No such lifecycle existed, so when
+ * ensureAllTablesExist() began duplicating rows on every boot the count only
  * went one way: 121 rows named 'NLH 1.00/2.00', 495 fleet tables in all.
+ * retireSurplusTables() was written on 2026-08-19 to drain it back down, and
+ * this file used to pin the two halves that made the pair converge.
  *
- * These tests pin the two halves that make it converge:
- *   - a surplus table is not seeded, so it can empty;
- *   - once empty it is closed, and while occupied it is not.
+ * MOVED 2026-09-05 for Gate 7 (Operation Table Stakes). OPORD 1.4 s2.11 forbids
+ * every one of those mechanisms for ever: a cash table is opened and closed
+ * ONLY by the cluster controller (fn_cash_cluster_tick); the cap is
+ * cash_games.cap_mains; there are no '#2 / #3' clones and no
+ * MAX_TABLES_PER_CONFIG. The database refuses a cash table with no game behind
+ * it (tables_cash_needs_a_game). So the pin is inverted: the fleet must never
+ * grow a table writer again, and closing must be the tick's BREAK rule. The
+ * controller's own wiring is pinned in
+ * src/cluster/TheTablesOpenAndCloseThemselves.law.test.ts.
+ *
+ * What SURVIVES from the old file is the one piece that was never a writer: a
+ * non-cluster table draining under a Stable Hand flag is not seeded.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const SRC = readFileSync(join(process.cwd(), 'src/services/HorseFleetManager.ts'), 'utf8');
+const ROOT = join(process.cwd(), '..');
+const TICK = readFileSync(
+  join(
+    ROOT,
+    'supabase/migrations/20260905060000_the_must_move_lobby_a_seat_change_and_the_order_you_joined.sql'
+  ),
+  'utf8'
+);
+const GATE7 = readFileSync(
+  join(ROOT, 'supabase/migrations/20260905034937_gate_7_every_cash_table_is_a_game.sql'),
+  'utf8'
+);
 
-type Table = { id: string; name: string; created_at: string; current_players?: number };
+/** Only CODE counts: the fleet explains its history in prose and names the dead methods there. */
+const CODE = SRC.split('\n')
+  .filter((l) => {
+    const t = l.trimStart();
+    return !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*');
+  })
+  .join('\n');
 
-/** The surplus computation, exactly as seedAllTables performs it. */
-function surplusOf(tables: Table[], configNames: string[], cap: number): Set<string> {
-  const surplus = new Set<string>();
-  for (const name of configNames) {
-    const family = tables
-      .filter((t) => t.name === name || t.name.startsWith(`${name} #`))
-      .sort((a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')));
-    for (const t of family.slice(cap)) surplus.add(t.id);
-  }
-  return surplus;
-}
-
-const mk = (n: number, name: string): Table[] =>
-  Array.from({ length: n }, (_, i) => ({
-    id: `${name}-${i}`,
-    name,
-    created_at: `2026-01-${String(i + 1).padStart(2, '0')}T00:00:00Z`,
-    current_players: 0,
-  }));
-
-describe('surplus identification', () => {
-  it('keeps the three OLDEST and marks the rest surplus', () => {
-    const tables = mk(121, 'NLH 1.00/2.00');
-    const surplus = surplusOf(tables, ['NLH 1.00/2.00'], 3);
-    expect(surplus.size).toBe(118);
-    expect(surplus.has('NLH 1.00/2.00-0')).toBe(false);
-    expect(surplus.has('NLH 1.00/2.00-1')).toBe(false);
-    expect(surplus.has('NLH 1.00/2.00-2')).toBe(false);
-    expect(surplus.has('NLH 1.00/2.00-3')).toBe(true);
+describe('the fleet spawns and retires nothing (Gate 7)', () => {
+  it('has no retirement sweep, no overflow spawn and no per-config cap', () => {
+    expect(SRC).not.toMatch(/private async retireSurplusTables/);
+    expect(SRC).not.toMatch(/private async spawnOverflowTables/);
+    expect(SRC).not.toMatch(/^const MAX_TABLES_PER_CONFIG\b/m);
+    expect(SRC).not.toContain('await this.retireSurplusTables(');
+    expect(SRC).not.toContain('await this.spawnOverflowTables(');
   });
 
-  it('keeps the canonical row ensureAllTablesExist would pick (the oldest)', () => {
-    const tables = mk(5, 'PLO6 1.00/2.00');
-    const surplus = surplusOf(tables, ['PLO6 1.00/2.00'], 3);
-    expect(surplus.has('PLO6 1.00/2.00-0')).toBe(false); // oldest — the canonical one
+  it('never inserts a tables row and never closes one', () => {
+    expect(SRC).not.toMatch(/\.from\(['"]tables['"]\)\s*\.insert\(/);
+    // Marking a table 'running' when a second seat fills is still the fleet's;
+    // marking one 'closed' never is.
+    expect(SRC).not.toContain("status: 'closed'");
+    expect(SRC).not.toMatch(/\.update\(\{[^}]*status:\s*'closed'/);
   });
 
-  it('marks nothing surplus when a config is at or under the cap', () => {
-    expect(surplusOf(mk(3, 'PLO8 1.00/2.00'), ['PLO8 1.00/2.00'], 3).size).toBe(0);
-    expect(surplusOf(mk(1, 'PLO8 1.00/2.00'), ['PLO8 1.00/2.00'], 3).size).toBe(0);
+  it("builds no '#2 / #3' clone name", () => {
+    expect(CODE).not.toMatch(/\$\{config\.name\} #/);
+    expect(CODE).not.toMatch(/name\.startsWith\(`\$\{config\.name\} #`\)/);
   });
 
-  it('counts the "#2"/"#3" overflow names as part of the same family', () => {
-    const tables: Table[] = [
-      { id: 'a', name: 'PLO4 1.00/2.00', created_at: '2026-01-01T00:00:00Z' },
-      { id: 'b', name: 'PLO4 1.00/2.00 #2', created_at: '2026-01-02T00:00:00Z' },
-      { id: 'c', name: 'PLO4 1.00/2.00 #3', created_at: '2026-01-03T00:00:00Z' },
-      { id: 'd', name: 'PLO4 1.00/2.00 #4', created_at: '2026-01-04T00:00:00Z' },
-    ];
-    const surplus = surplusOf(tables, ['PLO4 1.00/2.00'], 3);
-    expect([...surplus]).toEqual(['d']);
+  it('the only table-shaped thing it can ask for is a GAME, through the controller door', () => {
+    expect(SRC).toMatch(/supabase\.rpc\('fn_cash_game_ensure'/);
   });
 
-  it('does not sweep a DIFFERENT config into the family', () => {
-    const tables: Table[] = [...mk(4, 'NLH 1.00/2.00'), ...mk(4, 'NLH 2.00/5.00')];
-    // Each family is capped independently: 1 surplus each, not 5.
-    expect(surplusOf(tables, ['NLH 1.00/2.00', 'NLH 2.00/5.00'], 3).size).toBe(2);
-  });
-});
-
-describe('retirement safety', () => {
-  /** The filter retireSurplusTables applies before closing anything. */
-  const retirable = (tables: Table[], surplus: Set<string>, seats: Array<{ table_id: string }>) => {
-    const occupied = new Set(seats.map((s) => s.table_id));
-    return tables.filter(
-      (t) => surplus.has(t.id) && !occupied.has(t.id) && Number(t.current_players ?? 0) === 0
+  it('the controller law that replaced this file exists', () => {
+    expect(
+      existsSync(join(process.cwd(), 'src/cluster/TheTablesOpenAndCloseThemselves.law.test.ts'))
+    ).toBe(true);
+    expect(readFileSync(join(process.cwd(), 'src/cluster/ClusterController.ts'), 'utf8')).toContain(
+      'fn_cash_cluster_tick'
     );
-  };
-
-  it('retires an empty surplus table', () => {
-    const tables = mk(5, 'PLO5 1.00/2.00');
-    const surplus = surplusOf(tables, ['PLO5 1.00/2.00'], 3);
-    expect(retirable(tables, surplus, []).map((t) => t.id)).toEqual([
-      'PLO5 1.00/2.00-3',
-      'PLO5 1.00/2.00-4',
-    ]);
-  });
-
-  it('leaves a surplus table alone while ANYONE is seated at it', () => {
-    const tables = mk(5, 'PLO5 1.00/2.00');
-    const surplus = surplusOf(tables, ['PLO5 1.00/2.00'], 3);
-    const seats = [{ table_id: 'PLO5 1.00/2.00-3' }];
-    expect(retirable(tables, surplus, seats).map((t) => t.id)).toEqual(['PLO5 1.00/2.00-4']);
-  });
-
-  it('trusts current_players too, not only the seat rows', () => {
-    const tables = mk(5, 'PLO5 1.00/2.00');
-    tables[4].current_players = 2; // counter says occupied, seat fetch missed it
-    const surplus = surplusOf(tables, ['PLO5 1.00/2.00'], 3);
-    expect(retirable(tables, surplus, []).map((t) => t.id)).toEqual(['PLO5 1.00/2.00-3']);
-  });
-
-  it('never touches a table inside the cap, empty or not', () => {
-    const tables = mk(3, 'PLO5 1.00/2.00');
-    expect(retirable(tables, surplusOf(tables, ['PLO5 1.00/2.00'], 3), [])).toEqual([]);
   });
 });
 
-describe('the shipped wiring', () => {
-  it('spawning and retiring share ONE cap constant', () => {
-    // Two different numbers would make the fleet spawn and retire forever.
-    expect(SRC).toMatch(/^const MAX_TABLES_PER_CONFIG = 3;$/m);
-    expect(SRC).not.toMatch(/\s{4}const MAX_TABLES_PER_CONFIG/); // no local shadow
+describe('closing is the tick BREAK rule, in SQL, and the database refuses a table with no game', () => {
+  it('the tick closes a broken table and records table_break_completed', () => {
+    const tick = TICK.slice(TICK.indexOf('CREATE OR REPLACE FUNCTION public.fn_cash_cluster_tick'));
+    const close = tick.indexOf("UPDATE public.tables SET status = 'closed', lifecycle = 'closed'");
+    const event = tick.indexOf("'table_break_completed'");
+    expect(close).toBeGreaterThan(0);
+    expect(event).toBeGreaterThan(close);
   });
 
+  it('a cash table with no game behind it is refused by a CHECK, not by a sweep', () => {
+    expect(GATE7).toMatch(/ADD CONSTRAINT tables_cash_needs_a_game/);
+  });
+});
+
+describe('what survives: a draining non-cluster table is not seeded', () => {
   it('surplus tables are skipped by the seeding loop', () => {
     expect(SRC).toContain('if (surplusTableIds.has(table.id)) continue;');
   });
 
-  it('retireSurplusTables is actually called from the cycle', () => {
-    expect(SRC).toContain('await this.retireSurplusTables(');
+  it('a cluster table is never surplus, whatever flag it carries', () => {
+    expect(SRC).toMatch(/if \(t\.cluster_id\) continue;\s*if \(isRetiringTable\(t/);
   });
 
-  it('closes rather than deletes, and only cash tables', () => {
-    const m = /private async retireSurplusTables[\s\S]*?\n {2}}\n/.exec(SRC);
-    expect(m).not.toBeNull();
-    expect(m![0]).toContain("status: 'closed'");
-    expect(m![0]).toContain("is('tournament_id', null)");
-    expect(m![0]).not.toContain('.delete(');
-  });
-
-  it('selects created_at, without which the family order is undefined', () => {
+  it('selects created_at, so the cluster ordering the fleet seeds in is defined', () => {
     expect(SRC).toContain('current_players, created_at');
   });
 });

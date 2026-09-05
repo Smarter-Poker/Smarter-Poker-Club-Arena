@@ -136,7 +136,21 @@ export const WalletService = {
         .from('club_members')
         .select('chip_balance, promo_balance, locked_chips')
         .eq('user_id', userId),
-      supabase.from('agents').select('agent_wallet_balance').eq('user_id', userId).maybeSingle(),
+      /* AN AGENT IS AN AGENT PER CLUB, SO THERE IS RARELY ONE ROW (2026-09-05).
+         This was `.maybeSingle()`, and `agents` is UNIQUE on (club_id, user_id)
+         - a user who agents for two clubs has two rows, and maybeSingle answers
+         PGRST116 "Results contain 2 rows". The `if (agentRes.error) throw`
+         below then aborted the WHOLE read, so the club_members chips that had
+         already loaded fine were thrown away with it: Playable Now, All
+         Wallets, Player, Promo and Business every one of them rendered 0.
+         Measured on production the day this was found: 16 users held more than
+         one agents row, and every one of them saw an empty wallet. Dan's own
+         account was one - 1,000,744.97 chips across four clubs and an 80,000
+         agent balance, all of it reading zero.
+         Summed, not picked: the Business wallet is "Commissions And
+         Settlements", so it is the sum across the clubs the player agents for,
+         exactly as PLAYER is the sum across their club memberships. */
+      supabase.from('agents').select('agent_wallet_balance').eq('user_id', userId),
     ]);
 
     /* ABSORBED FROM THE CASHIER AUDIT (2026-08-27, P2), whose fix landed on
@@ -157,7 +171,10 @@ export const WalletService = {
     const playerTotal = rows.reduce((sum, r) => sum + num(r.chip_balance), 0);
     const playerLocked = rows.reduce((sum, r) => sum + num(r.locked_chips), 0);
     const promoTotal = rows.reduce((sum, r) => sum + num(r.promo_balance), 0);
-    const businessTotal = num(agentRes.data?.agent_wallet_balance);
+    const businessTotal = (agentRes.data || []).reduce(
+      (sum, r) => sum + num(r.agent_wallet_balance),
+      0
+    );
     const lastUpdated = new Date().toISOString();
 
     const make = (

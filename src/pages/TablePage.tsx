@@ -376,6 +376,8 @@ const RANK_WORD = (r: string): string =>
   })[String(r).toUpperCase()] ?? String(r).toUpperCase();
 import { normalizeCards, seatPctToViewportPx } from '../utils/tableGeometry';
 import { getAnimationSpeed } from '../utils/animationSpeed';
+import { formatChipAward } from '../utils/format';
+import { bountyWinnersOf } from '../utils/bountyBroadcast';
 import { formatPopupText } from '../utils/popupStyle';
 import { ActionErrorToast, ActionErrorData } from '../components/table/ActionErrorToast';
 import { TableModalsLayer } from '../components/table/TableModalsLayer';
@@ -1374,6 +1376,10 @@ export default function TablePage({
    * see the pre-broadcast snapshot and stamp the same seat twice.
    */
   const koSeenRef = useRef<Set<string>>(new Set());
+  /** Who was in the roster on the previous roster change. Only used to spot
+   *  a player COMING BACK (absent, then present), which is the one event that
+   *  releases their `koSeenRef` key. See the roster effect below. */
+  const rosterIdsRef = useRef<Set<string>>(new Set());
   /**
    * WHERE EVERY PLAYER LAST SAT, and the reason this exists.
    *
@@ -2894,8 +2900,10 @@ export default function TablePage({
   const spawnPotWinFloat = useCallback(
     (fromX: number, fromY: number, toX: number, toY: number, amount: number) => {
       if (!(amount > 0)) return;
-      const label =
-        '+' + (amount >= 1 ? Math.round(amount).toLocaleString('en-US') : amount.toFixed(2));
+      // EXACT TO THE CENT (knockout audit 2026-09-04). This used to be
+      // Math.round() for anything >= 1, so a 7.50 bounty floated up as "+8"
+      // beside a seat delta that said "+7.50". One formatter for both now.
+      const label = formatChipAward(amount);
       const id = ++potWinFloatIdRef.current;
       setPotWinFloats((prev) => [...prev, { id, fromX, fromY, toX, toY, label }]);
       // Self-clean after the CSS animation (2.2s) has fully played out.
@@ -11824,8 +11832,17 @@ export default function TablePage({
                   if (b.tableId && b.tableId !== tableId) return;
 
                   const eliminatedUserId = String(b.eliminatedUserId || '');
-                  const knockerUserId = String(b.knockerUserId || '');
-                  const koIsHero = !!knockerUserId && knockerUserId === userId;
+                  /* EVERY WINNER OF THE POT (knockout audit 2026-09-04). On a
+                     tied pot the engine now sends `shares`, one row per
+                     winner with that winner's own cash and head increment;
+                     otherwise the flat knocker fields are the one winner.
+                     `bountyWinnersOf` is the single reader of both shapes so
+                     the glove, the money and the head badge cannot disagree
+                     about who won. Before this, a split knockout flew the
+                     WHOLE bounty to one of the two winners and nothing to the
+                     other (55 such knockouts in production, 08-30..09-04). */
+                  const koWinners = bountyWinnersOf(b);
+                  const koIsHero = koWinners.some((w) => w.userId === userId);
 
                   /* ONE STAMP PER BUSTED PLAYER. A reconnect replays the
                      broadcast and the 5s elimination sweep can re-emit it;
@@ -11862,48 +11879,62 @@ export default function TablePage({
                     }
                   }
 
-                  /* THE MONEY, SUMMED. Busting two players in one hand pays
-                     two bounties and the reference shows ONE number for them.
-                     Accumulate under the knocker and let the first one's timer
-                     ship the total; anything that arrives inside that window
-                     joins it rather than opening a second float on the same
-                     seat. The window IS the stamp beat, so the chips leave as
-                     the KO lands rather than on an unrelated schedule. */
-                  const koAmount = Number(b.amount) || 0;
-                  if (knockerUserId && koAmount > 0) {
-                    const acc = bountyAwardAccRef.current.get(knockerUserId) || {
+                  /* THE MONEY, SUMMED PER WINNER. Busting two players in one
+                     hand pays two bounties and the reference shows ONE number
+                     for them. Accumulate under each winner and let the first
+                     arrival's timer ship that winner's total; anything that
+                     arrives inside that window joins it rather than opening a
+                     second float on the same seat. The window IS the stamp
+                     beat, so the chips leave as the KO lands rather than on
+                     an unrelated schedule.
+
+                     Keyed by WINNER, which is what makes a split knockout
+                     right: two winners of one tied pot are two accumulators,
+                     two chip streams and two floats at two seats, each for
+                     that winner's own share. */
+                  for (const w of koWinners) {
+                    const winnerId = w.userId;
+                    if (!(w.amount > 0)) continue;
+                    const acc = bountyAwardAccRef.current.get(winnerId) || {
                       amount: 0,
                       fromUserIds: [] as string[],
                     };
-                    acc.amount += koAmount;
+                    acc.amount += w.amount;
                     if (eliminatedUserId && !acc.fromUserIds.includes(eliminatedUserId)) {
                       acc.fromUserIds.push(eliminatedUserId);
                     }
-                    bountyAwardAccRef.current.set(knockerUserId, acc);
+                    bountyAwardAccRef.current.set(winnerId, acc);
 
-                    if (!bountyAwardTimersRef.current.has(knockerUserId)) {
+                    if (!bountyAwardTimersRef.current.has(winnerId)) {
                       const t = setTimeout(() => {
-                        bountyAwardTimersRef.current.delete(knockerUserId);
-                        const pending = bountyAwardAccRef.current.get(knockerUserId);
-                        bountyAwardAccRef.current.delete(knockerUserId);
+                        bountyAwardTimersRef.current.delete(winnerId);
+                        const pending = bountyAwardAccRef.current.get(winnerId);
+                        bountyAwardAccRef.current.delete(winnerId);
                         if (!pending || !(pending.amount > 0)) return;
                         setBountyAwardFly({
                           nonce: ++bountyAwardNonceRef.current,
-                          knockerUserId,
+                          knockerUserId: winnerId,
                           amount: pending.amount,
                           fromUserIds: pending.fromUserIds,
-                          isHero: knockerUserId === userId,
+                          isHero: winnerId === userId,
                         });
                       }, SKO_STAMP_AT_MS * getAnimationSpeed());
-                      bountyAwardTimersRef.current.set(knockerUserId, t);
+                      bountyAwardTimersRef.current.set(winnerId, t);
                     }
                   }
                 }
+                /* HEAD BADGES. The busted head is gone; in a PKO each winner's
+                   own share of it lands on their own head. Read through the
+                   same winners list as the money, never the flat field, so a
+                   split knockout cannot put the whole head on one badge. */
+                const headWinners = bountyWinnersOf(b);
                 setTableState((prev) => {
                   const next = { ...prev.bountyMap };
                   if (b.eliminatedUserId) delete next[b.eliminatedUserId];
-                  if (b.knockerUserId && b.addedToHead > 0) {
-                    next[b.knockerUserId] = (next[b.knockerUserId] || 0) + Number(b.addedToHead);
+                  for (const w of headWinners) {
+                    if (w.addedToHead > 0) {
+                      next[w.userId] = (next[w.userId] || 0) + w.addedToHead;
+                    }
                   }
                   return { ...prev, bountyMap: next };
                 });
@@ -16280,15 +16311,44 @@ export default function TablePage({
    */
   useEffect(() => {
     const seen = lastSeatOfUserRef.current;
+    const present = new Set<string>();
     tableState.players.forEach((p, i) => {
-      if (p?.id) seen.set(p.id, i);
+      if (p?.id) {
+        seen.set(p.id, i);
+        present.add(p.id);
+      }
     });
+
+    /* A PLAYER WHO COMES BACK CAN BE KNOCKED OUT AGAIN (knockout audit
+       2026-09-04). `koSeenRef` is the one-stamp-per-bust guard and it used to
+       be released only when the table changed, so a player who busted, was
+       stamped, re-entered and sat back down at THIS table could never be
+       stamped again: the second bust arrived, matched the old key, and the
+       glove stayed in its bag. Release the key on the transition that means
+       "they left and came back": absent from the previous roster, present in
+       this one. Only a transition counts. Two things this must NOT do, and
+       the guards for each:
+         - release on an ordinary roster update while the busted player is
+           still seated (the bounty broadcast precedes `player_eliminated`,
+           so they ARE still seated when the key is written) - hence the
+           previous-roster check rather than a plain "is present";
+         - release on a reconnect that rebuilds the roster from empty - hence
+           `prevRoster.size > 0`: an empty previous roster is a snapshot gap,
+           not an exit. */
+    const prevRoster = rosterIdsRef.current;
+    if (prevRoster.size > 0) {
+      present.forEach((id) => {
+        if (!prevRoster.has(id)) koSeenRef.current.delete(id);
+      });
+    }
+    rosterIdsRef.current = present;
   }, [tableState.players]);
 
   /** A different table is a different set of chairs, and a different event. */
   useEffect(() => {
     lastSeatOfUserRef.current.clear();
     koSeenRef.current.clear();
+    rosterIdsRef.current = new Set();
     setKoHits([]);
   }, [tableId]);
 

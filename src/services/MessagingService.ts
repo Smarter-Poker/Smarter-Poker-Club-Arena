@@ -22,9 +22,10 @@
  *   getNotificationPreferences / setNotificationPreferences
  *                          localStorage, read by NotificationSettingsPanel
  *   isNotificationTypeMuted  localStorage, read by NotificationService
- *   generateProfileQRData    a string, read by PublicProfilePage
  *
- * Those four are what remain. If messaging logic is needed on the Club Arena
+ * Those three are what remain. (generateProfileQRData, the fourth survivor,
+ * went on 2026-09-04: it built an api.qrserver.com URL, and PublicProfilePage
+ * now renders the code locally with qrcode.react.) If messaging logic is needed on the Club Arena
  * side again, it belongs against social_* - not against this tree.
  *
  * Removed 2026-08-21. History is in git; the deleted methods are recoverable
@@ -92,13 +93,6 @@ class MessagingServiceClass {
   isNotificationTypeMuted(type: string): boolean {
     const prefs = this.getNotificationPreferences();
     return prefs[this.mapNotifTypeToCategory(type)] === false;
-  }
-
-  /** A QR image URL pointing at a player's public profile. */
-  generateProfileQRData(userId: string): string {
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const profileUrl = `${origin}/hub/club-arena/profile/${userId}`;
-    return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(profileUrl)}`;
   }
 }
 

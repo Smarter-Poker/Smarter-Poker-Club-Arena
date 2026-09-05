@@ -15,6 +15,8 @@ import { computeEquity, remainingDeck } from '@/utils/equity';
 import { buildReplay } from '@/utils/handReplay';
 import HandDetailView from '@/components/handdetail/HandDetailView';
 import type { HeroHandFacts } from '@/services/HandHistoryService';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 afterEach(cleanup);
 
@@ -272,5 +274,20 @@ describe('the rundown', () => {
     expect(document.querySelector('.hdv__fact-eq')).toBeNull();
     // ...but still names the known hand.
     expect(document.querySelector('.hdv__fact-hand')?.textContent).toBe('Three Of A Kind');
+  });
+});
+
+describe('every rundown surface passes the viewer facts through', () => {
+  const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
+  it.each([
+    ['src/components/table/HandHistoryPanel.tsx', 'viewerFacts={hand.heroFacts}'],
+    ['src/components/table/HandDetailModal.tsx', 'viewerFacts={hand.heroFacts}'],
+    ['src/pages/HandHistoryPage.tsx', 'viewerFacts={hand.heroFacts}'],
+    [
+      'src/components/replay/HandReplay.tsx',
+      'viewerFacts={handData.players.find((p) => p.user_id === heroId)?.facts}',
+    ],
+  ])('%s', (file, needle) => {
+    expect(read(file)).toContain(needle);
   });
 });

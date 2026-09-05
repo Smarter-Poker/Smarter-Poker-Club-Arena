@@ -165,8 +165,16 @@ describe('a disabled or paused fleet seats nobody and removes nobody', () => {
     expect(CYCLE).toMatch(/for \(const table of tablesToSeed\)/);
     expect(AFTER_WITHHOLD).not.toMatch(/\breturn;/);
     expect(AFTER_WITHHOLD).toContain('this.pruneHorseWaitlist(horseIdSet)');
-    expect(AFTER_WITHHOLD).toContain('this.spawnOverflowTables(');
-    expect(AFTER_WITHHOLD).toContain('this.retireSurplusTables(');
+    /* Moved 2026-09-05 for Gate 7. This used to pin `this.spawnOverflowTables(`
+       and `this.retireSurplusTables(` as the passes a withheld cycle still
+       runs. Both writers are deleted (OPORD 1.4 s2.11: a cash table is opened
+       and closed only by the cluster controller). The passes that survive a
+       withhold are now the Stable Hand's GAME order and the lifecycle pass,
+       and the fleet must still not have grown a table writer of its own. */
+    expect(AFTER_WITHHOLD).toContain('this.openPlannedTables(');
+    expect(AFTER_WITHHOLD).toContain('this.runTableLifecyclePass(');
+    expect(AFTER_WITHHOLD).not.toContain('this.spawnOverflowTables(');
+    expect(AFTER_WITHHOLD).not.toContain('this.retireSurplusTables(');
     expect(AFTER_WITHHOLD).toContain('this.publishFleetState(');
   });
 

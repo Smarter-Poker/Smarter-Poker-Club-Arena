@@ -1532,11 +1532,33 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       if (this.timeBankActivatedThisTurn || this.timeBankEngine.isArmed(this.tableId, userId)) {
         this.timeBankEngine.playerActed(this.tableId, userId);
       }
+      // ── THE CLOCK STARTS BEFORE THE ACTION IS APPLIED (2026-09-05) ────
+      //
+      // It used to start AFTER this call, and that made
+      // poker_act_to_broadcast_ms measure the wrong thing entirely.
+      // performAction emits PLAYER_ACTION synchronously, whose handler calls
+      // broadcastCurrentState - so the broadcast for THIS action happened
+      // inside this call, observed the clock left armed by the PREVIOUS
+      // action, and recorded the gap between two actions. The published
+      // "median 808ms act-to-broadcast" was really the median interval
+      // between consecutive actions at a table, which is turn pacing and not
+      // latency at all.
+      //
+      // Armed here, the observation inside performAction measures what the
+      // name says: accepted -> every seat has it. Rejection disarms below,
+      // so a refused action cannot leave a live clock for the next broadcast
+      // to pick up.
+      const actClockWasArmed = this.lastActionAcceptedAtMs;
+      this.lastActionAcceptedAtMs = Date.now();
       const actionApplied = this.handController.performAction(
         seat,
         normalizedAction as any,
         amount
       );
+      if (!actionApplied) {
+        // Restore whatever was pending; this action contributed nothing.
+        this.lastActionAcceptedAtMs = actClockWasArmed;
+      }
       // SWEEP #4 FIX (2026-07-23): performAction returns false (it does NOT throw)
       // when the engine rejects an action the validator let through — most reachably
       // a `raise` that cannot legally reopen betting against a sub-full-raise all-in
@@ -1569,7 +1591,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           audience: this.humansSeated() > 0 ? 'human' : 'horse',
           format: this.tableFormat(),
         });
-        this.lastActionAcceptedAtMs = Date.now();
+        // The act->broadcast clock is NOT armed here: by this line the
+        // broadcast for this action has already gone out (performAction
+        // drains PLAYER_ACTION synchronously). Arming here is what made the
+        // metric measure inter-action gaps. See the note at performAction.
       } catch {
         /* metrics must never affect gameplay */
       }
@@ -2382,7 +2407,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // froze with no clock", Turns.ts SWEEP #4); the horse path was missed.
       // Check the boolean and degrade the same way a rejected human action does:
       // check if free, else fold. A seat must never be left unacted.
+      // Same clock rule as the human path (2026-09-05): armed BEFORE the
+      // action, because the broadcast happens inside performAction.
       let applied = false;
+      const horseClockWasArmed = this.lastActionAcceptedAtMs;
+      this.lastActionAcceptedAtMs = Date.now();
       try {
         applied = handControllerRef.performAction(seat, action as any, amount);
       } catch (err) {
@@ -2399,7 +2428,10 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             ' - falling back to check/fold'
         );
         try {
-          // Bible V8 §1.7.4 preferCheckOverFold.
+          // Bible V8 §1.7.4 preferCheckOverFold. Re-arm: the rejected attempt
+          // above produced no broadcast, so the clock must start again for
+          // whichever of these two lands.
+          this.lastActionAcceptedAtMs = Date.now();
           applied =
             handControllerRef.performAction(seat, 'check' as any) ||
             handControllerRef.performAction(seat, 'fold' as any);
@@ -2427,12 +2459,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             audience: this.humansSeated() > 0 ? 'human' : 'horse',
             format: this.tableFormat(),
           });
-          this.lastActionAcceptedAtMs = Date.now();
         } catch {
           /* metrics must never affect gameplay */
         }
         this.markProgress();
       } else {
+        // Nothing landed, so no broadcast carries this clock. Put back what
+        // was pending; a dead attempt must not become the next sample.
+        this.lastActionAcceptedAtMs = horseClockWasArmed;
         reportError(
           new Error(
             'Horse seat ' + seat + ' could not be acted - leaving stall visible to watchdog'

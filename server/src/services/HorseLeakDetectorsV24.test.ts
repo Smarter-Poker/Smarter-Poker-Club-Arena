@@ -41,7 +41,10 @@ describe('V24 weak_kicker_trips_stackoff', () => {
   it('QJ on J-6-J-T-K (the 440bb hand) reads trip jacks, queen kicker', () => {
     expect(
       detectLeaks(
-        base({ holeCards: [c('Qd'), c('Jh')], board: [c('Js'), c('6d'), c('Jd'), c('Ts'), c('Kh')] })
+        base({
+          holeCards: [c('Qd'), c('Jh')],
+          board: [c('Js'), c('6d'), c('Jd'), c('Ts'), c('Kh')],
+        })
       )
     ).toContain('weak_kicker_trips_stackoff');
   });
@@ -49,7 +52,10 @@ describe('V24 weak_kicker_trips_stackoff', () => {
   it('AJ on A-3-T-Q-A (the 437bb hand) reads trip aces, jack kicker', () => {
     expect(
       detectLeaks(
-        base({ holeCards: [c('Ad'), c('Jd')], board: [c('Ah'), c('3h'), c('Tc'), c('Qh'), c('As')] })
+        base({
+          holeCards: [c('Ad'), c('Jd')],
+          board: [c('Ah'), c('3h'), c('Tc'), c('Qh'), c('As')],
+        })
       )
     ).toContain('weak_kicker_trips_stackoff');
   });
@@ -57,7 +63,10 @@ describe('V24 weak_kicker_trips_stackoff', () => {
   it('an ace kicker cannot be out-kicked, so trips with the ace carry no tag', () => {
     expect(
       detectLeaks(
-        base({ holeCards: [c('Kd'), c('Ah')], board: [c('Ks'), c('6d'), c('Kh'), c('Ts'), c('2h')] })
+        base({
+          holeCards: [c('Kd'), c('Ah')],
+          board: [c('Ks'), c('6d'), c('Kh'), c('Ts'), c('2h')],
+        })
       )
     ).not.toContain('weak_kicker_trips_stackoff');
   });
@@ -65,7 +74,10 @@ describe('V24 weak_kicker_trips_stackoff', () => {
   it('a kicker that pairs the board is a full house, not tagged trips', () => {
     expect(
       detectLeaks(
-        base({ holeCards: [c('Td'), c('5h')], board: [c('2d'), c('Ts'), c('Th'), c('5d'), c('Jh')] })
+        base({
+          holeCards: [c('Td'), c('5h')],
+          board: [c('2d'), c('Ts'), c('Th'), c('5d'), c('Jh')],
+        })
       )
     ).not.toContain('weak_kicker_trips_stackoff');
   });
@@ -73,13 +85,33 @@ describe('V24 weak_kicker_trips_stackoff', () => {
   it('a pocket pair matching the board pair is quads, not tagged', () => {
     expect(
       detectLeaks(
-        base({ holeCards: [c('Td'), c('Th')], board: [c('2d'), c('Ts'), c('Tc'), c('5d'), c('Jh')] })
+        base({
+          holeCards: [c('Td'), c('Th')],
+          board: [c('2d'), c('Ts'), c('Tc'), c('5d'), c('Jh')],
+        })
       )
     ).not.toContain('weak_kicker_trips_stackoff');
   });
 
-  it('wins carry no leak tags', () => {
-    expect(detectLeaks(base({ netBB: 400 }))).toEqual([]);
+  it('wins carry no LEAK NAMES - only _won mirrors', () => {
+    /*
+     * UPDATED 2026-09-05. Every outcome-independent situation is now recorded
+     * on both sides, because 21 of 23 tags used to fire on losses alone and a
+     * one-sided tag cannot be ranked - its total says how often the shape
+     * happens in big pots, not whether the shape is wrong. Measured over 7
+     * days, that ranking put river_aggr_lost first at -1,941,955bb; with its
+     * mirror included river aggression is +609,194bb and profitable in six of
+     * seven variants.
+     *
+     * The invariant that still matters, and the one HorseSelfTuner depends on
+     * (it matches exact loss-side strings): a winning hand never carries a
+     * LEAK name.
+     */
+    const tags = detectLeaks(base({ netBB: 400 }));
+    expect(tags).not.toContain('weak_kicker_trips_stackoff');
+    for (const t of tags) {
+      expect(t, `a winning hand carried the leak name ${t}`).toMatch(/_won$/);
+    }
   });
 
   it('below 40bb invested the pattern is not a stack-off', () => {
@@ -102,7 +134,10 @@ describe('V24 top_pair_weak_kicker_stackoff', () => {
   it('K8 jamming a K-high unpaired board reads top pair, rag kicker', () => {
     expect(
       detectLeaks(
-        base({ holeCards: [c('Kc'), c('8h')], board: [c('2d'), c('Kd'), c('6h'), c('3h'), c('Qc')] })
+        base({
+          holeCards: [c('Kc'), c('8h')],
+          board: [c('2d'), c('Kd'), c('6h'), c('3h'), c('Qc')],
+        })
       )
     ).toContain('top_pair_weak_kicker_stackoff');
   });
@@ -110,7 +145,10 @@ describe('V24 top_pair_weak_kicker_stackoff', () => {
   it('a ten kicker is above the rag bar and carries no tag', () => {
     expect(
       detectLeaks(
-        base({ holeCards: [c('Kc'), c('Th')], board: [c('2d'), c('Kd'), c('6h'), c('3h'), c('Qc')] })
+        base({
+          holeCards: [c('Kc'), c('Th')],
+          board: [c('2d'), c('Kd'), c('6h'), c('3h'), c('Qc')],
+        })
       )
     ).not.toContain('top_pair_weak_kicker_stackoff');
   });
@@ -118,7 +156,10 @@ describe('V24 top_pair_weak_kicker_stackoff', () => {
   it('second pair is not top pair and carries no tag', () => {
     expect(
       detectLeaks(
-        base({ holeCards: [c('Qd'), c('4s')], board: [c('2d'), c('Kd'), c('6h'), c('3h'), c('Qc')] })
+        base({
+          holeCards: [c('Qd'), c('4s')],
+          board: [c('2d'), c('Kd'), c('6h'), c('3h'), c('Qc')],
+        })
       )
     ).not.toContain('top_pair_weak_kicker_stackoff');
   });
@@ -126,7 +167,10 @@ describe('V24 top_pair_weak_kicker_stackoff', () => {
   it('a kicker that pairs the board is two pair, not tagged', () => {
     expect(
       detectLeaks(
-        base({ holeCards: [c('Kc'), c('6s')], board: [c('2d'), c('Kd'), c('6h'), c('3h'), c('Qc')] })
+        base({
+          holeCards: [c('Kc'), c('6s')],
+          board: [c('2d'), c('Kd'), c('6h'), c('3h'), c('Qc')],
+        })
       )
     ).not.toContain('top_pair_weak_kicker_stackoff');
   });

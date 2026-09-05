@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/an-opening-feeder-is-seeded-first-and-to-two",
+  "_comment": "20260905041557: cash_games.opening_hold_rested_until (an expired one-buyer opening hold rests five minutes before the tick may arm another); fn_cash_game_must_move_list gated on auth.uid() / the engine. Applied to production 2026-09-05 04:24 UTC, one transaction, tick patched in place by substring (the live body belongs to feat/gate-5-the-snapshot-is-the-rule).",
+  "columns": {
+    "cash_games": ["opening_hold_rested_until"]
+  }
+}

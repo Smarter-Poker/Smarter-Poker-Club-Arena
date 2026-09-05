@@ -40,7 +40,7 @@ import { reportError } from '../utils/errorReporter';
 import { mediaUrl } from '../utils/mediaBase';
 import { vipStatusLabel } from '../utils/vipStatus';
 import { aggregateArenaRecord, type ArenaRecord } from '../utils/arenaRecord';
-import { formatCount, formatPct } from '../utils/format';
+import { formatCount, formatPct, formatMemberSince } from '../utils/format';
 
 /** Purpose-built hero for this route (public/images/account). */
 const HERO_ART = mediaUrl('images/account/public-dossier-hero-v1.webp');
@@ -365,10 +365,10 @@ export default function PublicProfilePage() {
     );
   }
 
-  const memberSince = new Date(profile.createdAt).toLocaleDateString('en-US', {
-    month: 'long',
-    year: 'numeric',
-  });
+  /* Shared with the owner's credential (utils/format). These two surfaces
+     formatted the same join date differently - "October 2025" here, "Oct 25"
+     there - and neither guarded a null created_at. */
+  const memberSince = formatMemberSince(profile.createdAt);
   const arenaName = profile.displayName || profile.username;
   const profileLink = userId ? playerStatusService.generateProfileLink(userId) : '';
 

@@ -200,8 +200,15 @@ describe('every identity surface ships its own web-sized casino render', () => {
     ]) {
       expect(read(css)).toContain(":global([data-theme='light'])");
     }
-    expect(read('src/pages/PublicProfilePage.css')).toContain(
-      "[data-theme='light'] .public-profile-page"
+    /* 2026-09-05: this page became a CSS Module (PR #3077). `.action-btn`,
+       `.share-btn`, `.vip-badge`, `.level-badge` and six more of its class
+       names were bare globals that seven other stylesheets also define, and
+       with those chunks loaded the Share button left the grid entirely
+       (`.share-btn { position: absolute }` in the hand replayer). Hashed
+       names make that impossible. The light-mode contract is unchanged, so
+       the assertion follows the file. */
+    expect(read('src/pages/PublicProfilePage.module.css')).toContain(
+      ":global([data-theme='light']) .publicProfilePage"
     );
     expect(read('src/pages/NotificationsPage.css')).toContain("[data-theme='light'] .ca-notif");
     // The dead sibling stylesheets are gone, not lingering as a second owner.

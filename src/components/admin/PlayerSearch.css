@@ -110,7 +110,13 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.player-avatar {
+/* SCOPED 2026-09-05. This was a bare selector, and the same class name is
+   defined bare in several other stylesheets. Every stylesheet here is global
+   once imported, so whichever file loaded last won any property the owning
+   page did not itself declare - which is how a 32px admin icon button ended
+   up sizing the public dossier's player actions in production. Scoped to
+   this component's own container; its own appearance is unchanged. */
+.player-search .player-avatar {
   width: 48px;
   height: 48px;
   border-radius: var(--radius-full);
@@ -122,13 +128,13 @@
   flex-shrink: 0;
 }
 
-.player-avatar img {
+.player-search .player-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.player-avatar span {
+.player-search .player-avatar span {
   font-size: var(--fs-lg);
   font-weight: var(--fw-bold);
   color: var(--fb-blue);
@@ -193,7 +199,15 @@
   gap: var(--space-1);
 }
 
-.action-btn {
+/* SCOPED 2026-09-05. This was a bare `.action-btn`, and `.action-btn` is a
+   global class seven other surfaces use - including the public profile's five
+   player actions. Every stylesheet here is global once imported, so a 32px
+   admin icon button was squeezing "Add Friend" / "Message" / "Block" /
+   "Report" / "Share" into 36px boxes on /profile/:userId in production: the
+   dossier's own `.public-profile-page .action-btn` has higher specificity but
+   never declares `width`, so this rule won that one property outright.
+   Scoped to its own container; the admin buttons are unchanged. */
+.player-search .action-btn {
   width: 32px;
   height: 32px;
   background: var(--bg-tertiary);

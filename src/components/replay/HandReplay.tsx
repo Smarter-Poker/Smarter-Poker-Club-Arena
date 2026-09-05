@@ -27,6 +27,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CardImage, CardBack } from '../table/CardImage';
+import type { DeckCard } from '../../utils/deckCards';
+import { SqueezeCard, squeezeHostProps, useCardSqueeze } from '../../presentation/cardPresentation';
 import HandDetailView from '../handdetail/HandDetailView';
 import type { HandRecord as ServiceHandRecord } from '../../services/HandHistoryService';
 import type { ReplayModel } from '../../utils/handReplay';
@@ -85,6 +87,77 @@ function seatLayout(
   return out;
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  ONE REPLAY BOARD — and the card it just turned (spec 35, 81, 123)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * PHASE 2 2026-09-05. The replay used to swap `<CardImage>` elements in as the
+ * step advanced: on the one surface where a player is deliberately STUDYING a
+ * hand, the river simply appeared. It reveals through the same squeeze the
+ * felt uses now, on the `replay` profile - the slowest and most cinematic of
+ * them (spec 118).
+ *
+ * ITS OWN COMPONENT because the hook has to be called once per board and the
+ * boards are a `.map()`. That also gives run-it-twice and bomb-pot boards
+ * their own animation keys, which spec 81 asks for by name: two boards of one
+ * hand must never share a lane, or run 2's river cancels run 1's.
+ *
+ * The wrapper around each card is ALWAYS rendered, not only while squeezing.
+ * `display: inline-flex` makes it hug the CardImage exactly, so the row's
+ * layout is identical either way - a wrapper that appears for one second
+ * would reflow the board in the middle of the reveal.
+ */
+function ReplayBoard({
+  cards,
+  boardIndex,
+  handKey,
+  badge,
+  empty,
+}: {
+  cards: DeckCard[];
+  boardIndex: number;
+  handKey: string;
+  badge: React.ReactNode;
+  empty: React.ReactNode;
+}) {
+  const squeeze = useCardSqueeze({
+    visibleCount: cards.length,
+    handId: handKey,
+    surfaceId: `replay:${handKey}`,
+    boardIndex,
+    mode: 'replay',
+  });
+  return (
+    <div className="hr-felt__board">
+      {badge}
+      {cards.length === 0
+        ? empty
+        : cards.map((c, i) => {
+            const on = squeeze.index === i && squeeze.profile !== null;
+            const host = on ? squeezeHostProps(squeeze.profile!, boardIndex) : null;
+            return (
+              <div
+                key={`${boardIndex}-${i}`}
+                className={`hr-felt__card${host ? ` ${host.className}` : ''}`}
+                style={host ? host.style : undefined}
+                data-rs-profile={host ? host['data-rs-profile'] : undefined}
+              >
+                {on ? (
+                  <SqueezeCard
+                    back={<CardBack size="sm" />}
+                    face={<CardImage card={c} size="sm" />}
+                  />
+                ) : (
+                  <CardImage card={c} size="sm" />
+                )}
+              </div>
+            );
+          })}
+    </div>
+  );
+}
+
 function Felt({
   model,
   frame,
@@ -114,16 +187,25 @@ function Felt({
         </div>
         <div className="hr-felt__boards">
           {[frame.board, ...frame.extraBoards].map((b, bi) => (
-            <div className="hr-felt__board" key={bi}>
-              {frame.extraBoards.length > 0 && (
-                <span className="hr-felt__board-badge">{bi === 0 ? 'Run 1' : `Run ${bi + 1}`}</span>
-              )}
-              {b.length === 0 ? (
+            <ReplayBoard
+              key={bi}
+              cards={b}
+              boardIndex={bi}
+              /* Identity for the lane: the hand this replay is showing. A
+                 different hand resets every board's lane rather than being
+                 taken for a continuation of the last one. */
+              handKey={String(model.handNumber ?? model.playedAt ?? 'replay')}
+              badge={
+                frame.extraBoards.length > 0 ? (
+                  <span className="hr-felt__board-badge">
+                    {bi === 0 ? 'Run 1' : `Run ${bi + 1}`}
+                  </span>
+                ) : null
+              }
+              empty={
                 <span className="hr-felt__board-empty">{bi === 0 ? frame.streetLabel : ''}</span>
-              ) : (
-                b.map((c, i) => <CardImage key={`${bi}-${i}`} card={c} size="sm" />)
-              )}
-            </div>
+              }
+            />
           ))}
         </div>
       </div>

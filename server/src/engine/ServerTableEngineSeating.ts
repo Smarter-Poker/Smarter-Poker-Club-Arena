@@ -1135,6 +1135,25 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
         return { success: false, error: 'No cards to show' };
       }
       const valid = cardIndexes.filter((i) => Number.isInteger(i) && i >= 0 && i < heldCount);
+
+      /* ── AN EMPTY LIST IS A CLEAR, NOT AN ERROR (Dan 2026-09-05) ──────────
+         "THE EYE BALL STAYS LOCKED, YOU CAN NEVER UNLOCK IT OR UNSHOW."
+
+         There was no clear verb. The client sends its full current selection
+         every time, so un-picking the LAST card means sending `[]` - and that
+         landed here, found nothing valid, and returned 'No valid card
+         indexes'. ShowCardsService then made the empty case a local no-op to
+         avoid the error, which meant the client silently kept a selection the
+         player had just taken back: the badge went out, the card still turned
+         over at hand end, and there was no way to stop it.
+
+         Distinguish the two cases. An empty list is a deliberate "show
+         nothing"; a NON-empty list with nothing valid in it is a malformed
+         request and still an error. */
+      if (cardIndexes.length === 0) {
+        this.showHandCards?.delete(userId);
+        return { success: true, shownCardIndexes: [] };
+      }
       if (valid.length === 0) {
         return { success: false, error: 'No valid card indexes' };
       }

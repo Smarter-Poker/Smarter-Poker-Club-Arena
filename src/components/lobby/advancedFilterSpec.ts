@@ -33,6 +33,7 @@ import {
   type FilterableTournament,
 } from '../../utils/tournamentFilters';
 import { SPIN_VARIANT_KEYS, TOURNAMENT_VARIANT_KEYS } from '../../config/tournamentVariants';
+import { CASH_TEMPLATES } from '../../config/cashGames';
 
 export type FilterGameType = 'ALL' | 'HOLDEM' | 'OMAHA' | 'LIMIT' | 'MTT' | 'SPIN' | 'SNG';
 
@@ -60,6 +61,15 @@ export interface GameFilterSpec {
   games?: { key: string; label: string }[];
   /** "Format:" chips. SN only. */
   format?: { key: string; label: string }[];
+  /**
+   * "Game Style" chips - Classic / Action / Madness, the three templates a
+   * cash game is created from (Operation Table Stakes). Cash tabs only. Dan
+   * 2026-09-04: "ADD AN 'ACTION SELECTOR' IN THE STAKES DROP DOWN WHERE USERS
+   * CAN SELECT 'CLASSIC' 'ACTION' OR 'MADNESS'." The Stakes heading's menu
+   * and the Advanced Filters sheet both read and write the same saved
+   * `styles`, so they can never disagree.
+   */
+  styles?: { key: string; label: string }[];
   range: RangeSpec;
   /** Table-size status chips. */
   statuses: { key: string; label: string }[];
@@ -224,6 +234,12 @@ const chipsFor = (
 ): { key: string; label: string }[] =>
   keys.map((key) => ({ key, label: labels[key] ?? key.toUpperCase() }));
 
+/** The three cash templates as chips, in the vocabulary's order. */
+export const CASH_STYLES: { key: string; label: string }[] = CASH_TEMPLATES.map((t) => ({
+  key: t.id,
+  label: t.label,
+}));
+
 export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec> = {
   HOLDEM: {
     games: [
@@ -240,6 +256,7 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
       // tab, which deliberately carries no sub-variant chips.
       { key: 'short_deck', label: '6+' },
     ],
+    styles: CASH_STYLES,
     range: BLIND_RANGE,
     statuses: CASH_STATUSES,
     seats: { min: 2, max: 9 },
@@ -267,6 +284,7 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
       { key: 'plo6', label: 'PLO 6c' },
       { key: 'plo8', label: 'PLO Hi/Lo' },
     ],
+    styles: CASH_STYLES,
     range: BLIND_RANGE,
     statuses: CASH_STATUSES,
     seats: { min: 2, max: 9 },
@@ -284,6 +302,7 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
       { key: 'flh', label: 'FLH' },
       { key: 'flo8', label: 'FLO8' },
     ],
+    styles: CASH_STYLES,
     range: BLIND_RANGE,
     statuses: CASH_STATUSES,
     seats: { min: 2, max: 9 },
@@ -348,6 +367,8 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
 export interface GameFilterValue {
   games: string[];
   format: string[];
+  /** Show ONLY games of these styles (classic / action / madness). Optional: saved values predate it. */
+  styles?: string[];
   rangeMin: number;
   rangeMax: number;
   selectedRanges?: string[];
@@ -364,6 +385,7 @@ export function emptyFilterValue(spec: GameFilterSpec): GameFilterValue {
   return {
     games: [],
     format: [],
+    styles: [],
     rangeMin: spec.range.min,
     rangeMax: spec.range.max,
     selectedRanges: [],
@@ -452,6 +474,13 @@ export interface FilterableRow {
   status?: string | null;
   /** Tournament name, the only place SATS vs REGULAR is expressed today. */
   name?: string | null;
+  /**
+   * Cash: the game's template (classic / action / madness), or null for a
+   * table that belongs to no templated game. Null is a KNOWN answer here -
+   * get_club_home reports it for every row - so a chosen style hides it: a
+   * player who asked for Action games did not ask for the untemplated ones.
+   */
+  style?: string | null;
   /** Raw record for feature lookups. */
   row: Record<string, unknown>;
   settings: Record<string, unknown>;
@@ -515,6 +544,12 @@ export function rowPassesFilter(
      * loosening this would stop every chip from narrowing anything.
      */
     if (key && !v.games.includes(key)) return false;
+  }
+
+  // ── Game Style chips (cash: classic / action / madness) ──────────────────
+  if (v.styles && v.styles.length > 0) {
+    const style = typeof r.style === 'string' ? r.style.toLowerCase() : null;
+    if (!style || !v.styles.includes(style)) return false;
   }
 
   // ── Format chips (SN only: satellite vs regular) ─────────────────────────
@@ -648,6 +683,7 @@ export function isFilterActive(spec: GameFilterSpec, v: GameFilterValue): boolea
   return (
     v.games.length > 0 ||
     v.format.length > 0 ||
+    (v.styles !== undefined && v.styles.length > 0) ||
     v.statuses.length > 0 ||
     v.mustHave.length > 0 ||
     v.hide.length > 0 ||

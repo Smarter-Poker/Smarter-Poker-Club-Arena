@@ -257,7 +257,13 @@
   padding-top: 13px;
   border-top: 1px solid #26313d;
 }
-.action-btn {
+/* SCOPED 2026-09-05. This was a bare selector, and the same class name is
+   defined bare in several other stylesheets. Every stylesheet here is global
+   once imported, so whichever file loaded last won any property the owning
+   page did not itself declare - which is how a 32px admin icon button ended
+   up sizing the public dossier's player actions in production. Scoped to
+   this component's own container; its own appearance is unchanged. */
+.dispute-management-page .action-btn {
   min-height: 44px;
   padding: 9px 15px;
   border: 1px solid;
@@ -271,22 +277,22 @@
   cursor: pointer;
   touch-action: manipulation;
 }
-.action-btn.review {
+.dispute-management-page .action-btn.review {
   border-color: #2f6d9b;
   background: #0a2437;
   color: #8dccfb;
 }
-.action-btn.resolve {
+.dispute-management-page .action-btn.resolve {
   border-color: #335f52;
   background: #10231d;
   color: #8ad0b7;
 }
-.action-btn.escalate {
+.dispute-management-page .action-btn.escalate {
   border-color: #7e3036;
   background: #2c1014;
   color: #ff9a9e;
 }
-.action-btn:disabled {
+.dispute-management-page .action-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }

@@ -384,28 +384,53 @@ describe('ANIMATION 10/16 — flop lands + fans open, WITH sound', () => {
   });
 });
 
-describe('ANIMATION 11/16 — turn card reveal, WITH sound', () => {
-  it('marks the turn card newly-dealt and plays a snap', () => {
+/* ROUND 2 2026-09-05: the turn and the river both SQUEEZE now, and their
+   snap is paid at the engine's reveal beat rather than at the street
+   transition - the card is still face down when the street arrives (a full
+   second of it on an all-in runout), and a sound that says "landed" while
+   the card lies face down is the defect this moved to fix. So these two
+   beats advance the clock to the reveal before asserting the cue, which is
+   the same thing a player experiences. Silence BEFORE the reveal is pinned
+   separately, in tests/components/RiverSqueeze.test.tsx. */
+describe('ANIMATION 11/16 — turn card squeeze, WITH sound', () => {
+  it('squeezes the turn card and plays a snap when the face lands', () => {
     const { container, rerender } = render(
       <CommunityCards cards={BOARD.slice(0, 3)} stage="flop" />
     );
     act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    act(() => {
       rerender(<CommunityCards cards={BOARD.slice(0, 4)} stage="turn" />);
     });
-    expect(container.querySelector('.community-cards__card--turn')).toBeTruthy();
+    const card = container.querySelector('.community-cards__card--turn');
+    expect(card).toBeTruthy();
+    expect(card!.classList.contains('card-squeeze-host')).toBe(true);
+    expect(card!.querySelector('.card-squeeze__face--back')).toBeTruthy();
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
     expect(played).toContain('playCommunityCard');
   });
 });
 
-describe('ANIMATION 12/16 — river card reveal, WITH sound', () => {
-  it('marks the river card newly-dealt and plays a snap', () => {
+describe('ANIMATION 12/16 — river card squeeze, WITH sound', () => {
+  it('squeezes the river card and plays a snap when the face lands', () => {
     const { container, rerender } = render(
       <CommunityCards cards={BOARD.slice(0, 4)} stage="turn" />
     );
     act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    act(() => {
       rerender(<CommunityCards cards={BOARD} stage="river" />);
     });
-    expect(container.querySelector('.community-cards__card--river')).toBeTruthy();
+    const card = container.querySelector('.community-cards__card--river');
+    expect(card).toBeTruthy();
+    expect(card!.classList.contains('card-squeeze-host')).toBe(true);
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
     expect(played).toContain('playCommunityCard');
   });
 });

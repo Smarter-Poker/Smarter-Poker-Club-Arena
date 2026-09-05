@@ -200,7 +200,10 @@ export interface TableTabBarProps {
   /** Batch 3: per-table muted ids (audio only). */
   mutedIds?: string[];
   /** Batch 3: long-press quick actions. */
-  onQuickAction?: (tabId: string, action: 'sitout' | 'back' | 'leave' | 'mute') => void;
+  onQuickAction?: (
+    tabId: string,
+    action: 'sitout' | 'back' | 'leave' | 'mute' | 'reload' | 'open-browser'
+  ) => void;
   /** Batch 3: one-tap sit out / return across every seated table. */
   onSitOutAll?: () => void;
   onBackAll?: () => void;
@@ -1129,6 +1132,14 @@ export function TableTabBar({
                 {onQuickAction &&
                   !isLobby &&
                   item(muted ? 'Unmute Table' : 'Mute Table', () => onQuickAction(tab.id, 'mute'))}
+                {/* Hub tabs (Dan 2026-09-05): what a browser tab's own menu
+                    offers - reload, and open the same page outside the frame. */}
+                {onQuickAction &&
+                  isHubId(tab.id) &&
+                  item('Reload Page', () => onQuickAction(tab.id, 'reload'))}
+                {onQuickAction &&
+                  isHubId(tab.id) &&
+                  item('Open In Browser', () => onQuickAction(tab.id, 'open-browser'))}
                 {onReorder &&
                   item(
                     'Move Left',

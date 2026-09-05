@@ -198,6 +198,14 @@ export interface ActionResult {
   code?: string;
   hint?: Record<string, unknown>;
   /**
+   * Set by the engine when this answer came from its duplicate guard rather
+   * than from applying the action a second time (Phase 3, 2026-09-05). The
+   * verdict itself is identical to the first answer, so nothing in the UI
+   * needs to branch on it - it exists so a replay is legible in a log and in
+   * a test.
+   */
+  replayed?: boolean;
+  /**
    * Dan 2026-08-30: /preaction replies carry this — the price to call that the
    * ENGINE recorded when it armed the pre-action, from its own authoritative
    * state. The client's panel-suppression rule
@@ -293,6 +301,37 @@ const ACTION_MIN_SPACING_MS = 260; // engine window is 250ms; 10ms of slack
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * ONE KEY PER INTENT (Realtime programme, Phase 3 - 2026-09-05).
+ *
+ * Generated once per `submitAction` call and reused by every retry inside it -
+ * the 429 ladder below and the 401 refresh retry in `engineFetch`, which
+ * re-sends the same body. That scope is the whole design: two retries of one
+ * tap share a key and can only apply once; two separate taps are two intents,
+ * get two keys, and the engine's turn logic judges the second on its merits.
+ *
+ * WHY IT IS NEEDED EVEN THOUGH BOTH RETRIES ARE "SAFE". They are safe because
+ * a 429 and a 401 are refusals - a fact about somebody else's status codes,
+ * re-derived by every future reader, guarding a raise that moves real chips.
+ * The backoffs below are 300/450/700ms precisely so they clear the engine's
+ * 250ms window, which means the one thing that would have collapsed a
+ * duplicate is deliberately stepped over. See
+ * `server/src/http/actionIdempotency.ts`.
+ *
+ * `crypto.randomUUID` is present in every browser Club Arena supports; the
+ * fallback exists because it is also absent in a non-secure context, and an
+ * action must never fail for want of a key.
+ */
+function newActionKey(): string {
+  try {
+    const c = globalThis.crypto;
+    if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  } catch {
+    /* fall through to the arithmetic below */
+  }
+  return `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+}
+
+/**
  * Submit a player action.
  *
  * Dan 2026-08-19, bug list item 13: "'Server error (429)' popup must never
@@ -327,13 +366,19 @@ export async function submitAction(
     const since = Date.now() - (lastActionSentAt.get(tableId) ?? 0);
     if (since < ACTION_MIN_SPACING_MS) await sleep(ACTION_MIN_SPACING_MS - since);
 
+    // One key for this intent, carried by every attempt below (see
+    // newActionKey). In the BODY, not a header: the engine is a different
+    // origin and its CORS allows only Content-Type and Authorization, so a
+    // custom request header would fail preflight in every browser.
+    const idempotencyKey = newActionKey();
+
     const BACKOFFS_MS = [300, 450, 700]; // 3 retries after the first attempt
     for (let attempt = 0; attempt <= BACKOFFS_MS.length; attempt++) {
       lastActionSentAt.set(tableId, Date.now());
       const response = await engineFetch(`${GAME_SERVER_URL}/action`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ tableId, action, amount }),
+        body: JSON.stringify({ tableId, action, amount, idempotencyKey }),
       });
 
       if (response.ok) {
@@ -349,6 +394,15 @@ export async function submitAction(
       if (response.status === 429) {
         // Every retry exhausted. Never show the number.
         return { success: false, error: 'The table is busy - please try again' };
+      }
+
+      if (response.status === 409) {
+        // The duplicate guard saw this key carrying a different action, which
+        // can only be a bug on this side - the key is generated fresh above
+        // and never reused. Say it in words (Dan 2026-08-19: a status code is
+        // never a message) and report failure, so nothing is assumed to have
+        // happened at the table.
+        return { success: false, error: 'That action could not be confirmed - please try again' };
       }
 
       return { success: false, error: `Server error (${response.status})` };

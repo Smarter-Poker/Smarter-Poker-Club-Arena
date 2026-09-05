@@ -34,7 +34,20 @@ const ENGINE_BASE_URL =
 /** One beacon per reason per this many ms. */
 export const THROTTLE_MS = 60_000;
 
-export type BeaconReason = 'auth_failed' | 'stale' | 'handshake_timeout' | 'closed' | 'auto_reload';
+/**
+ * `reload_suppressed` (Phase 3, 2026-09-05) is the failsafe NOT firing: the
+ * page would have reloaded, and did not, because the socket died for auth and
+ * a reload cannot fix that. It is the one signal that separates a bad network
+ * from a player who cannot authenticate to a table, which is the distinction
+ * nobody could make during the 2026-09-03 outage.
+ */
+export type BeaconReason =
+  | 'auth_failed'
+  | 'stale'
+  | 'handshake_timeout'
+  | 'closed'
+  | 'auto_reload'
+  | 'reload_suppressed';
 
 const lastSentAt = new Map<BeaconReason, number>();
 

@@ -290,9 +290,18 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   fi
 
   # 1. Merge conflict markers
+  #
+  # `={7,}$` was wrong and it blocked real pushes: git writes the separator as
+  # EXACTLY seven equals signs, while a markdown rule under a heading is a run
+  # of them, and every changelog in docs/ that draws one was read as a
+  # conflicted file. Nothing was conflicted; the push simply could not land
+  # until somebody rewrote another agent's punctuation.
+  #
+  # The three markers git actually writes are `<<<<<<< `, `>>>>>>> ` and a
+  # bare `=======`, each at the start of its own line. Match those.
   for f in $FILES; do
     if [ -f "$f" ]; then
-      if grep -nE '^(<<<<<<< |>>>>>>> |={7,}$)' "$f" >/dev/null 2>&1; then
+      if grep -nE '^(<<<<<<< |>>>>>>> |=======$)' "$f" >/dev/null 2>&1; then
         echo "[club-arena pre-push] BLOCKED: $f contains a merge-conflict marker"
         FAIL=1
       fi

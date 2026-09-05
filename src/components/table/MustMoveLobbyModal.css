@@ -1,0 +1,359 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+   MUST MOVE LOBBY (Dan 2026-09-05) - the frame is TournamentLobbyModal.css
+   (tlm-*); this sheet is only the content. Palette from club-engine.css, the
+   Facebook scheme (.agent/workflows/design-guidelines.md): no gold, no amber.
+   Mobile-first: 375px is the reference width.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.mml-body {
+  overflow-y: auto;
+  padding: 10px 12px calc(16px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mml-body > * {
+  flex: 0 0 auto;
+}
+
+.mml-error,
+.mml-loading {
+  padding: 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary, #b0b8c4);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.mml-error {
+  color: #ff7b7b;
+}
+
+.mml-section-title {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-secondary, #b0b8c4);
+  margin-bottom: 6px;
+}
+
+/* ─── The game ─── */
+.mml-game {
+  padding: 12px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(24, 119, 242, 0.16) 0%, rgba(255, 255, 255, 0.03) 100%);
+  border: 1px solid rgba(24, 119, 242, 0.32);
+}
+
+.mml-game-name {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--text-primary, #fff);
+}
+
+.mml-game-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: var(--text-secondary, #b0b8c4);
+}
+
+.mml-style {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #1877f2;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.mml-stakes {
+  font-weight: 700;
+  color: var(--text-primary, #fff);
+}
+
+.mml-figures {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.mml-figure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 4px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.mml-figure-value {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--text-primary, #fff);
+  line-height: 1;
+}
+
+.mml-figure-label {
+  margin-top: 4px;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary, #b0b8c4);
+}
+
+/* ─── Your seat ─── */
+.mml-me {
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+}
+
+.mml-me-line {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary, #fff);
+}
+
+.mml-me-note {
+  margin-top: 4px;
+  font-size: 0.82rem;
+  color: var(--text-secondary, #b0b8c4);
+}
+
+.mml-me-move {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(24, 119, 242, 0.18);
+  border: 1px solid rgba(24, 119, 242, 0.4);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary, #fff);
+}
+
+.mml-seat-change {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+}
+
+.mml-request-row,
+.mml-listed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+  color: var(--text-primary, #fff);
+}
+
+.mml-hint {
+  font-size: 0.78rem;
+  color: var(--text-secondary, #b0b8c4);
+}
+
+.mml-btn {
+  appearance: none;
+  border: none;
+  border-radius: 10px;
+  background: #1877f2;
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+  min-height: 44px;
+  padding: 0 16px;
+  cursor: pointer;
+}
+
+.mml-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.mml-btn--ghost {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.mml-btn--small {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 0.74rem;
+  margin-left: auto;
+}
+
+/* ─── Tables ─── */
+.mml-tables {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mml-table {
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  overflow: hidden;
+}
+
+.mml-table--here {
+  border-color: rgba(24, 119, 242, 0.6);
+}
+
+.mml-table--closing {
+  opacity: 0.75;
+}
+
+.mml-table-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.mml-table-name {
+  font-weight: 800;
+  font-size: 0.9rem;
+  color: var(--text-primary, #fff);
+}
+
+.mml-table-state {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary, #b0b8c4);
+}
+
+.mml-table--closing .mml-table-state {
+  background: rgba(255, 123, 123, 0.18);
+  color: #ff9b9b;
+}
+
+.mml-table-count {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-secondary, #b0b8c4);
+}
+
+.mml-table-queue {
+  font-size: 0.72rem;
+  color: #79b4ff;
+}
+
+.mml-seats {
+  list-style: none;
+  margin: 0;
+  padding: 6px 10px 8px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 3px 12px;
+}
+
+.mml-seat {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-primary, #fff);
+  min-height: 22px;
+}
+
+.mml-seat--open {
+  color: var(--text-secondary, #8b93a1);
+}
+
+.mml-seat--me .mml-seat-name {
+  color: #79b4ff;
+  font-weight: 800;
+}
+
+.mml-seat-n {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-secondary, #8b93a1);
+}
+
+.mml-seat-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mml-seat-stack {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+/* ─── The list ─── */
+.mml-list-note {
+  font-size: 0.76rem;
+  color: var(--text-secondary, #b0b8c4);
+  margin-bottom: 6px;
+}
+
+.mml-list-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mml-list-row {
+  display: grid;
+  grid-template-columns: 30px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.84rem;
+  color: var(--text-primary, #fff);
+}
+
+.mml-list-row--me {
+  background: rgba(24, 119, 242, 0.2);
+  border: 1px solid rgba(24, 119, 242, 0.45);
+}
+
+.mml-list-pos {
+  font-weight: 800;
+  color: #79b4ff;
+}
+
+.mml-list-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mml-list-table {
+  font-size: 0.74rem;
+  color: var(--text-secondary, #b0b8c4);
+}
+
+@media (min-width: 900px) {
+  .mml-seats {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}

@@ -36,6 +36,7 @@ import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { rankQuickJoinTables, bigBlindFromStakesLabel } from '../lib/quickJoinRanking';
+import { quickJoinSpinRows } from '../lib/quickJoinSpins';
 import { fetchFavoriteTableIds } from '../components/quickactions/favoriteTables';
 import { useUserTableSettings } from '../hooks/useUserTableSettings';
 import { formatGameTitle } from '../utils/formatGameTitle';
@@ -53,7 +54,14 @@ import {
   pickObserveSlot,
   pruneStaleSeatedTabs,
 } from '../utils/tabSlots';
-import { hubTabTitle, isHubPath, readHubTabs, sameHubPage, saveHubTabs } from '../utils/hubTab';
+import {
+  hubTabSubtitle,
+  hubTabTitle,
+  isHubPath,
+  readHubTabs,
+  sameHubPage,
+  saveHubTabs,
+} from '../utils/hubTab';
 import { HubFrame, type HubFrameSwipeHandlers } from '../components/table/HubFrame';
 import GlobalHeader from '../components/navigation/GlobalHeader';
 import { soundService, haptic } from '../services/SoundService';
@@ -381,7 +389,9 @@ const isHubTab = (t: TableInstance): boolean => t.kind === 'hub';
 const makeHubTab = (path: string): TableInstance => ({
   id: `${HUB_TAB_PREFIX}${Date.now()}`,
   name: hubTabTitle(path),
-  stakes: '',
+  // The pill's sub-line, where the stakes go on a table: the page WITHIN the
+  // section, so two Training tabs on different drills read differently.
+  stakes: hubTabSubtitle(path),
   isMyTurn: false,
   pot: 0,
   kind: 'hub',
@@ -426,6 +436,28 @@ const makeLobbyTab = (): TableInstance => ({
    and the <img> together if the artwork is ever re-cut transparent. */
 
 const MAX_TABLES = typeof window !== 'undefined' && window.innerWidth >= 1024 ? 6 : 4;
+
+/**
+ * Parse a reported "kind:deadlineMs" channel into its parts.
+ *
+ * A MODULE-LEVEL FUNCTION DECLARATION, ON PURPOSE (2026-09-05 outage). This
+ * was a `const` arrow inside the component, declared a few hundred lines
+ * below `anyTurnLive`. On 2026-09-05 the second RIT sweep (#3089) made
+ * `anyTurnLive` call it - a `const` read before its declaration in the same
+ * scope is a ReferenceError ("Cannot access before initialization"), and it
+ * fired on the FIRST render with any table open. Every /table/:id on
+ * production showed "Something Went Wrong" until this moved. A function
+ * declaration is hoisted and has no temporal dead zone, so its position can
+ * never matter again; tests/unit/multiTablePageHelpersAreHoisted.test.ts
+ * pins it here.
+ */
+export function parseTimed(v?: string): { kind: string; at: number } | null {
+  if (!v) return null;
+  const i = v.lastIndexOf(':');
+  if (i <= 0) return null;
+  const at = Number(v.slice(i + 1));
+  return Number.isFinite(at) && at > 0 ? { kind: v.slice(0, i), at } : null;
+}
 
 /**
  * Dan 2026-08-19 (persistence upgrade): what the GLOBAL dock should show while
@@ -507,33 +539,6 @@ const dockStateFor = (
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Parse a reported "kind:deadlineMs" channel into its parts.
- *
- * MODULE SCOPE, NOT COMPONENT SCOPE (P0, 2026-09-05). The second sweep made
- * `anyTurnLive` read `parseTimed(t.decision)` so an expired decision is not a
- * live clock - and `parseTimed` was a `const` declared FURTHER DOWN the
- * component body. In a plain closure that is fine; here the read happens
- * synchronously during the same render, before the declaration is reached, so
- * every table opened on the published build threw "Cannot access 'parseTimed'
- * before initialization" into the error boundary. tsc does not flag a
- * use-before-declare inside a nested callback; only rendering does. A pure
- * function belongs above the component, where there is nothing to be before.
- * Pinned by tests/no-tdz-in-table-route.law.test.ts and
- * tests/unit/multiTablePageHelpersAreHoisted.test.ts.
- *
- * ONE COPY (2026-09-05). #3104 and #3106 fixed the same outage in the same
- * hour and both merged, so main carried two declarations of this function
- * and `tsc` was red on every branch (TS2393). The exported one stays.
- */
-export function parseTimed(v?: string): { kind: string; at: number } | null {
-  if (!v) return null;
-  const i = v.lastIndexOf(':');
-  if (i <= 0) return null;
-  const at = Number(v.slice(i + 1));
-  return Number.isFinite(at) && at > 0 ? { kind: v.slice(0, i), at } : null;
-}
 
 export default function MultiTablePage() {
   const { user } = useAuthUser();
@@ -1810,8 +1815,29 @@ export default function MultiTablePage() {
 
   // ─── Batch 3: tab quick actions (long-press menu in the tab bar) ──────
   const handleQuickAction = useCallback(
-    async (tabId: string, action: 'sitout' | 'back' | 'leave' | 'mute') => {
+    async (
+      tabId: string,
+      action: 'sitout' | 'back' | 'leave' | 'mute' | 'reload' | 'open-browser'
+    ) => {
       switch (action) {
+        /* Hub tabs only (Dan 2026-09-05, browser-tab parity). RELOAD remounts
+           the frame at its last known page by giving the tab a fresh id - the
+           frame reads `src` once at mount, so a new key is the reload. OPEN IN
+           BROWSER hands the same page to a real tab, for anything a frame
+           cannot do (checkout, downloads, a page the player wants to keep). */
+        case 'reload': {
+          setTables((prev) =>
+            prev.map((t) =>
+              t.id === tabId && isHubTab(t) ? { ...t, id: `${HUB_TAB_PREFIX}${Date.now()}` } : t
+            )
+          );
+          break;
+        }
+        case 'open-browser': {
+          const t = tablesRef.current.find((x) => x.id === tabId);
+          if (t && isHubTab(t)) window.open(t.hubUrl ?? '/hub', '_blank', 'noopener,noreferrer');
+          break;
+        }
         case 'mute':
           setMutedIds((prev) =>
             prev.includes(tabId) ? prev.filter((id) => id !== tabId) : [...prev, tabId]
@@ -2199,6 +2225,22 @@ export default function MultiTablePage() {
     []
   );
 
+  /* The arguments the SPIN branch of the quick-join sheet last answered with,
+     or null when the sheet is showing cash tables. The live refresh below
+     re-asks exactly this question; it does not re-run the whole loader, which
+     would blank the rows and flash a spinner over a sheet the player is
+     reading.
+
+     STATE, not a ref, and that distinction is the whole subscription: the
+     loader is async, so `quickJoin.open` is true a round trip BEFORE the spin
+     branch knows its scope. An effect keyed on `open` alone reads a ref that is
+     still null, returns, and never runs again - live coverage that is only ever
+     armed on the second opening of the sheet. */
+  const [spinSheetScope, setSpinSheetScope] = useState<{
+    scopeClubIds: string[];
+    activeTableId: string | null;
+  } | null>(null);
+
   /**
    * Escape closes the two sheets this page owns. Both already had a backdrop,
    * so they were dismissible by tap and by nothing else — and the keyboard
@@ -2368,6 +2410,7 @@ export default function MultiTablePage() {
       const openIds = new Set(tablesRef.current.map((t) => t.id));
       const activeStakes = tablesRef.current[activeIndexRef.current]?.stakes || '';
       const activeTableId = tablesRef.current[activeIndexRef.current]?.id || null;
+
       /* Dan 2026-08-23: "quick join should be users favorite games, or similar
          games to the one they are playing."
 
@@ -2401,6 +2444,41 @@ export default function MultiTablePage() {
          viewer may see either way. `club` continues to be the navigation
          answer and is not used for scoping any more. */
       const scopeClubIds = Array.from(new Set([tableClubId, club].filter(Boolean) as string[]));
+      /**
+       * ═══════════════════════════════════════════════════════════════════════
+       *  A SPIN OFFERS MORE SPINS (Dan 2026-09-05)
+       * ═══════════════════════════════════════════════════════════════════════
+       *
+       * Dan: "WHEN YOU ARE INSIDE A SPIN, AND HIT THE + BUTTON, IT SHOULD
+       * RECOMMEND MORE SPINS, NOT CASH GAMES."
+       *
+       * The candidate query below is `.is('tournament_id', null)` - cash
+       * tables, by construction, because that is all this sheet has ever
+       * known how to offer. So a player three-handed in a Spin pressed + and
+       * was shown 1/2 PLO. Not a wrong ANSWER so much as an answer to a
+       * different question.
+       *
+       * A Spin's "another one" is a different shape from a cash table's: you
+       * do not pick a seat off a roster, you pick a STAKE, and the recycler
+       * guarantees an open board at every stake (the supply audit behind
+       * PR #1702's Play Again). So this branch ranks the open spin boards -
+       * this club, this stake first - and hands back the same QuickJoinRow
+       * the sheet already renders.
+       *
+       * Failures fall THROUGH to the cash path rather than to a dead sheet:
+       * an unreadable tournaments table is a reason to offer something, not
+       * nothing.
+       */
+      const spinRows = await quickJoinSpinRows(scopeClubIds, activeTableId, openIds);
+      if (spinRows) {
+        setSpinSheetScope({ scopeClubIds, activeTableId });
+        setQuickJoin((q) => (q.open ? { open: true, loading: false, rows: spinRows } : q));
+        return;
+      }
+      /* Not a spin context (or unreadable). Clear the ref so the live refresh
+         stays inert over the cash sheet rather than replacing its rows with a
+         spin list on the next unrelated table update. */
+      setSpinSheetScope(null);
 
       const [res, favIds] = await Promise.all([
         withTimeout(
@@ -2553,6 +2631,87 @@ export default function MultiTablePage() {
       masterBus.emit('OPEN_LOBBY_TAB', {});
     }
   }, [tables.length, notifyCapReached, withTimeout, commitHomeClub, user?.id]);
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  THE SPIN SHEET IS LIVE WHILE IT IS OPEN (2026-09-05)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * A spin board is not a cash table with seats to browse: it is one open board
+   * per stake, and the recycler replaces it the instant it fills. Two of the
+   * three seats are usually already taken when the sheet renders, and the fleet
+   * takes the last one within 90-350 seconds of a human sitting
+   * (TournamentRecurringService). So a snapshot taken when "+" was pressed goes
+   * stale in seconds, and the player taps a board that has already started.
+   *
+   * `tables` and `tournaments` are both in the supabase_realtime publication,
+   * so the fill is already on the wire. This subscribes to it for exactly as
+   * long as the sheet is on screen.
+   *
+   * IT NEVER TOUCHES `loading`. Re-running the loader would set
+   * `{ loading: true, rows: [] }` and flash a spinner over a list the player is
+   * reading, which is worse than the staleness. This re-asks the SAME question
+   * the spin branch already answered and patches the rows in place; a null
+   * answer (the boards vanished, or the read failed) leaves what is on screen
+   * alone rather than emptying the sheet.
+   */
+  useEffect(() => {
+    if (!quickJoin.open) return;
+    if (!spinSheetScope || spinSheetScope.scopeClubIds.length === 0) return;
+
+    let cancelled = false;
+    let debounce: ReturnType<typeof setTimeout> | null = null;
+
+    const refresh = () => {
+      if (cancelled) return;
+      const openIds = new Set(tablesRef.current.map((t) => t.id));
+      void quickJoinSpinRows(spinSheetScope.scopeClubIds, spinSheetScope.activeTableId, openIds)
+        .then((rows) => {
+          if (cancelled || !rows) return;
+          setQuickJoin((q) => (q.open ? { ...q, loading: false, rows } : q));
+        })
+        .catch(() => {
+          /* the sheet keeps what it has - see the note above */
+        });
+    };
+
+    /* One burst per change storm. A board filling writes both the tournament
+       row and its table row, and the recycler opens the replacement in the
+       same breath: without this the sheet would re-query three times for one
+       event. */
+    const schedule = () => {
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(refresh, 700);
+    };
+
+    /* EVERY LISTENER CARRIES ITS CLUB (tests/no-unfiltered-realtime-firehose).
+       `tables` and `tournaments` are two of the loudest feeds in the database -
+       unfiltered listeners on them were roughly 80% of 86 million realtime
+       messages in one billing cycle - and this effect is mounted for every
+       player who presses "+". One listener per scope club, which is the same
+       shape ClubHomePage uses, keeps it to the boards this sheet can offer. */
+    let channel = supabase.channel(`quick-join-spins-${spinSheetScope.scopeClubIds.join('-')}`);
+    for (const clubId of spinSheetScope.scopeClubIds) {
+      channel = channel
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'tournaments', filter: `club_id=eq.${clubId}` },
+          schedule
+        )
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'tables', filter: `club_id=eq.${clubId}` },
+          schedule
+        );
+    }
+    channel.subscribe();
+
+    return () => {
+      cancelled = true;
+      if (debounce) clearTimeout(debounce);
+      void supabase.removeChannel(channel);
+    };
+  }, [quickJoin.open, spinSheetScope]);
 
   const handleQuickJoinPick = useCallback(
     (row: QuickJoinRow) => {
@@ -2829,7 +2988,12 @@ export default function MultiTablePage() {
       const idx = tabs.findIndex((t) => t.id === tabId);
       if (idx === -1 || tabs[idx].hubUrl === path) return tabs; // same identity: no re-render
       const next = [...tabs];
-      next[idx] = { ...tabs[idx], hubUrl: path, name: hubTabTitle(path) };
+      next[idx] = {
+        ...tabs[idx],
+        hubUrl: path,
+        name: hubTabTitle(path),
+        stakes: hubTabSubtitle(path),
+      };
       return next;
     });
   }, []);
@@ -3650,6 +3814,29 @@ export default function MultiTablePage() {
     });
   }, [tablesReady]);
 
+  /**
+   * HOW MANY LIVE TABLES ARE OPEN, told to the document (Dan 2026-09-05).
+   *
+   * The real GlobalHeader (off-route, above the pinned strip) and pages such
+   * as HandHistory send the player to World Hub URLs with `window.location`
+   * or `window.open`. With a table open the first unmounts every felt and the
+   * second opens a browser tab the strip cannot see. They ask this attribute:
+   * with a live table open they emit OPEN_HUB_TAB instead and the page lands
+   * in a hub tab beside the game; with none open they leave exactly as before.
+   * Counted on TABLE tabs only, because a hub tab opened off-route is shown
+   * by borrowing a real table's URL (revealPageTabOffRoute) - with no table
+   * there is nothing to borrow and the button would appear dead.
+   */
+  const liveTableCount = tables.filter(isTableTab).length;
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const { body } = document;
+    if (!body) return;
+    if (liveTableCount > 0) body.setAttribute('data-ca-live-tables', String(liveTableCount));
+    else body.removeAttribute('data-ca-live-tables');
+    return () => body.removeAttribute('data-ca-live-tables');
+  }, [liveTableCount]);
+
   const pinnedBarVisible = hidden && tables.length >= 1;
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -4114,6 +4301,11 @@ export default function MultiTablePage() {
                           onTableInfoUpdate={getTableInfoCb(table.id)}
                           isMultiTable={true}
                           isActive={idx === activeIndex && !hidden}
+                          /* TILE VIEW: every tile is painted, so every tile is
+                             VISIBLE - only one of them is focused. See
+                             TablePage's isVisible note; without this the three
+                             unfocused tiles would animate nothing at all. */
+                          isVisible={!hidden}
                           muted={mutedIds.includes(table.id)}
                         />
                       </TableErrorBoundary>
@@ -4379,6 +4571,11 @@ export default function MultiTablePage() {
                           // so single-table mode is muted too).
                           isMultiTable={tables.length > 1 || hidden}
                           isActive={idx === activeIndex && !hidden}
+                          /* SINGLE VIEW: an inactive slot carries
+                             `display: none` on its wrapper above, so it is
+                             genuinely off screen and instant is the right
+                             answer (spec 47). */
+                          isVisible={shouldRender && !hidden}
                         />
                       </TableErrorBoundary>
                     )}

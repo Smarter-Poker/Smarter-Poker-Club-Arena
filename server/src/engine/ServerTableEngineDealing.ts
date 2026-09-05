@@ -45,7 +45,11 @@ import { ServerTableEngineRunout } from './ServerTableEngineRunout.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { secureRandomInt } from './CryptoRandom.js';
 import { drawFirstButtonSeat, headsUpButtonSeat } from './headsUpButton.js';
-import { handCompletionHoldMs, boardClearMs } from '../config/handCompletionSpec.js';
+import {
+  HAND_COMPLETION,
+  handCompletionHoldMs,
+  boardClearMs,
+} from '../config/handCompletionSpec.js';
 
 /**
  * The number of award groups the CLIENT will animate for this hand.
@@ -277,6 +281,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // a chance to look at the seat before the deal. On the very first
         // iteration — cold start OR crash recovery — all seated players are
         // treated as the initial roster and none of that applies.
+        // A SEAT CHANGED (2026-09-05): an arrival or a departure seen in the
+        // rows this iteration wakes the game's ClusterController tick.
+        let rosterChanged = false;
         if (this.dealingLoopFirstIteration) {
           // Dan 2026-08-30: BEFORE the veteran seeding below, because that
           // seeding is what used to destroy the hold. Both halves of the fix
@@ -307,6 +314,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         } else {
           for (const p of this.seatedPlayers) {
             if (!this.knownPlayerIds.has(p.user_id)) {
+              rosterChanged = true;
               // CHIP CONTINUITY: a fresh arrival is a fresh session, even if
               // the mirror wrote this player off a moment ago.
               this.chipContinuity.welcome(p.user_id);
@@ -354,6 +362,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         const currentIds = new Set(this.seatedPlayers.map((p) => p.user_id));
         for (const id of this.knownPlayerIds) {
           if (!currentIds.has(id)) {
+            rosterChanged = true;
             this.knownPlayerIds.delete(id);
             this.waitingForBB.delete(id);
             // A held swap side that is gone from the roster: the other table
@@ -364,6 +373,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             this.mustPostBB.delete(id);
           }
         }
+        if (rosterChanged) this.wakeClusterGame('seat_change');
         // POST-TO-ENTER RACE FIX 2026-08-27: a queued intent from someone no
         // longer seated (or never seated) is dead weight - drop it.
         for (const id of this.pendingPostToEnter) {
@@ -913,6 +923,26 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           // Phase 2: board clear (clients animate the card/chip sweep).
           this.broadcastCurrentState(); // Sends clean state (no hand in progress)
           await this.sleep(boardClearMs(wentToShowdown));
+          // Phase 3: the hand RESTS (Dan 2026-09-05, "1.75 ... ON ALL HANDS
+          // UPON COMPLETION, GIVE USERS A CHANCE TO USE THE RABBIT HUNT").
+          //
+          // It sits HERE, after the broadcast above has told every client the
+          // hand is over, and not inside handCompletionHoldMs, for two
+          // reasons that are really one reason. The client renders the Rabbit
+          // Hunt button behind `!tableState.isHandInProgress`, so the offer
+          // it received at settlement is invisible until that clean state
+          // lands; and a reveal freezes the client's snapshot for three
+          // seconds, which is only safe once there is no live hand for the
+          // freeze to starve. Before this beat existed the button's whole
+          // visible life was boardClearMs - half a second on a fold.
+          //
+          // Unconditional. A rest that happened only when a rabbit hunt was
+          // purchasable would tell the whole table, from the rhythm alone,
+          // that the deck still had cards in it (CLAUDE.md 10.5: timing is
+          // part of the treatment). The per-user setting hides the BUTTON and
+          // never touches this sleep.
+          this.setLoopPhase('post_hand_rabbit_window');
+          await this.sleep(HAND_COMPLETION.RABBIT_HUNT_WINDOW_MS);
 
           // ── Dan's Rebuy Pause (2026-08-24) ──
           // Give busted players 5 seconds to process the UI modal and hit rebuy before the next hand starts.
@@ -1044,98 +1074,118 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                       `[ServerTableEngine:${this.tableId}] Tournament bust - rebuy window open, table does NOT pause (Dan 2026-08-30); elimination grace covers the decision`
                     );
                   }
+                }
 
-                  /**
-                   * BUSTED PLAYERS DO NOT LINGER (Dan 2026-08-30, verbatim):
-                   * "THE PLAYER WITH NO CHIPS INSTANTLY REMOVED FROM THE
-                   * TOURNAMENT, AND 'OFFERED THE REBUY' ON THERE SCREEN.
-                   * BUSTED PLAYERS ARE 'LINGERING' WAY TO LONG ON THE TABLE,
-                   * PREVENTING THE NEXT HAND FROM MOVING ON..."
-                   *
-                   * The seat is vacated the moment the hand that busted them
-                   * settles — the felt is clear for the next deal. Their
-                   * TOURNAMENT life is untouched here: the elimination
-                   * sweep's rebuy grace still holds their entry open, the
-                   * client's rebuy offer still stands, and a taken rebuy is
-                   * seatless by design (process_tournament_rebuy) — the
-                   * seating sweep places them wherever a player is needed,
-                   * same table and seat included.
-                   *
-                   * `.lte('stack', 0)` is the race guard: a rebuy that landed
-                   * on this seat between the bust and this write raised the
-                   * stack, and that seat stays exactly where it is.
-                   */
-                  try {
-                    const bustedIds = justBustedPlayers
-                      .map((p) => p.user_id)
-                      .filter(Boolean) as string[];
-                    if (bustedIds.length > 0) {
-                      const { error: vacateErr } = await supabase
-                        .from('table_seats')
-                        .update({ left_at: new Date().toISOString() })
-                        .eq('table_id', this.tableId)
+                /**
+                 * THE BLOCK BELOW USED TO SIT INSIDE THE REBUY BRANCH ABOVE,
+                 * AND THAT MADE IT UNREACHABLE FOR MOST OF THE PRODUCT (Dan
+                 * 2026-09-05: "IM SURE THIS SAME BUG EXISTS IN ALL THE OTHER
+                 * SEATS FOR MTT, SPINS AND HEADS UP AS WELL. CHECK FOR ALL
+                 * SIMILAR BUGS GLOBALLY.").
+                 *
+                 * The gate it sat behind is `is_rebuy || is_reentry`. spinSpec
+                 * and headsUpSpec declare neither, and a freezeout MTT declares
+                 * neither by definition - so a busted Spin, Heads-Up or
+                 * freezeout seat was NEVER vacated here. It sat on the felt
+                 * until the elimination sweep noticed it up to five seconds
+                 * later (ELIMINATION_SWEEP_MS), which is exactly the lingering
+                 * this block was written to end.
+                 *
+                 * The rebuy arithmetic has not moved and is still gated, because
+                 * it is genuinely about rebuy events. Vacating a busted seat is
+                 * not: a seat with no chips in it is finished at every format.
+                 */
+
+                /**
+                 * BUSTED PLAYERS DO NOT LINGER (Dan 2026-08-30, verbatim):
+                 * "THE PLAYER WITH NO CHIPS INSTANTLY REMOVED FROM THE
+                 * TOURNAMENT, AND 'OFFERED THE REBUY' ON THERE SCREEN.
+                 * BUSTED PLAYERS ARE 'LINGERING' WAY TO LONG ON THE TABLE,
+                 * PREVENTING THE NEXT HAND FROM MOVING ON..."
+                 *
+                 * The seat is vacated the moment the hand that busted them
+                 * settles — the felt is clear for the next deal. Their
+                 * TOURNAMENT life is untouched here: the elimination
+                 * sweep's rebuy grace still holds their entry open, the
+                 * client's rebuy offer still stands, and a taken rebuy is
+                 * seatless by design (process_tournament_rebuy) — the
+                 * seating sweep places them wherever a player is needed,
+                 * same table and seat included.
+                 *
+                 * `.lte('stack', 0)` is the race guard: a rebuy that landed
+                 * on this seat between the bust and this write raised the
+                 * stack, and that seat stays exactly where it is.
+                 */
+                try {
+                  const bustedIds = justBustedPlayers
+                    .map((p) => p.user_id)
+                    .filter(Boolean) as string[];
+                  if (bustedIds.length > 0) {
+                    const { error: vacateErr } = await supabase
+                      .from('table_seats')
+                      .update({ left_at: new Date().toISOString() })
+                      .eq('table_id', this.tableId)
+                      .in('user_id', bustedIds)
+                      .is('left_at', null)
+                      .lte('stack', 0);
+                    if (vacateErr) {
+                      reportError(
+                        new Error(
+                          `[ServerTableEngine:${this.tableId}] busted-seat vacate failed: ${vacateErr.message} - the seat lingers one sweep instead`
+                        ),
+                        'ServerTableEngine.busted_seat_vacate_failed'
+                      );
+                    } else {
+                      /**
+                       * THE VACATED BUST MUST ALSO BE VISIBLE TO THE SWEEP
+                       * (2026-08-30, same-day regression fix).
+                       *
+                       * The elimination sweep detects busts ONLY via
+                       * `tournament_players.chips <= 0`, and its chip sync
+                       * reads OPEN seats. Vacating the seat here (the fix
+                       * above, shipped earlier today) removed the 0-stack
+                       * row before the next sync ran, so `chips` froze at
+                       * the last pre-bust positive value and the player was
+                       * never eliminated: 10 of 16 RUNNING MTTs in
+                       * production hung with one seated survivor, blinds
+                       * escalating past level 100, champion never paid.
+                       *
+                       * So the bust writes its own zero, in the same breath
+                       * as the vacate. Guarded on status='playing' so a
+                       * player already eliminated (or finished) is not
+                       * touched. A rebuy that lands later overwrites the 0
+                       * via process_tournament_rebuy exactly as it always
+                       * did, and the sweep's rebuy decision window still
+                       * holds their entry open before eliminating them.
+                       */
+                      const { error: zeroErr } = await supabase
+                        .from('tournament_players')
+                        .update({ chips: 0 })
+                        .eq('tournament_id', this.tableInfo!.tournament_id!)
                         .in('user_id', bustedIds)
-                        .is('left_at', null)
-                        .lte('stack', 0);
-                      if (vacateErr) {
+                        .eq('status', 'playing');
+                      if (zeroErr) {
                         reportError(
                           new Error(
-                            `[ServerTableEngine:${this.tableId}] busted-seat vacate failed: ${vacateErr.message} - the seat lingers one sweep instead`
+                            `[ServerTableEngine:${this.tableId}] busted-player chips-zero failed: ${zeroErr.message} - the seatless-phantom sweep guard will catch them`
                           ),
-                          'ServerTableEngine.busted_seat_vacate_failed'
+                          'ServerTableEngine.busted_chip_zero_failed'
                         );
-                      } else {
-                        /**
-                         * THE VACATED BUST MUST ALSO BE VISIBLE TO THE SWEEP
-                         * (2026-08-30, same-day regression fix).
-                         *
-                         * The elimination sweep detects busts ONLY via
-                         * `tournament_players.chips <= 0`, and its chip sync
-                         * reads OPEN seats. Vacating the seat here (the fix
-                         * above, shipped earlier today) removed the 0-stack
-                         * row before the next sync ran, so `chips` froze at
-                         * the last pre-bust positive value and the player was
-                         * never eliminated: 10 of 16 RUNNING MTTs in
-                         * production hung with one seated survivor, blinds
-                         * escalating past level 100, champion never paid.
-                         *
-                         * So the bust writes its own zero, in the same breath
-                         * as the vacate. Guarded on status='playing' so a
-                         * player already eliminated (or finished) is not
-                         * touched. A rebuy that lands later overwrites the 0
-                         * via process_tournament_rebuy exactly as it always
-                         * did, and the sweep's rebuy decision window still
-                         * holds their entry open before eliminating them.
-                         */
-                        const { error: zeroErr } = await supabase
-                          .from('tournament_players')
-                          .update({ chips: 0 })
-                          .eq('tournament_id', this.tableInfo!.tournament_id!)
-                          .in('user_id', bustedIds)
-                          .eq('status', 'playing');
-                        if (zeroErr) {
-                          reportError(
-                            new Error(
-                              `[ServerTableEngine:${this.tableId}] busted-player chips-zero failed: ${zeroErr.message} - the seatless-phantom sweep guard will catch them`
-                            ),
-                            'ServerTableEngine.busted_chip_zero_failed'
-                          );
-                        }
-                        for (const p of justBustedPlayers) {
-                          if (!p.user_id) continue;
-                          this.hub?.emitEvent(this.tableId, {
-                            type: 'seat_left',
-                            table_id: this.tableId,
-                            user_id: p.user_id,
-                            reason: 'busted_awaiting_rebuy_decision',
-                            timestamp: Date.now(),
-                          } as never);
-                        }
+                      }
+                      for (const p of justBustedPlayers) {
+                        if (!p.user_id) continue;
+                        this.hub?.emitEvent(this.tableId, {
+                          type: 'seat_left',
+                          table_id: this.tableId,
+                          user_id: p.user_id,
+                          reason: 'busted_awaiting_rebuy_decision',
+                          timestamp: Date.now(),
+                        } as never);
                       }
                     }
-                  } catch (vacateThrew) {
-                    reportError(vacateThrew, 'ServerTableEngine.busted_seat_vacate_threw');
                   }
+                } catch (vacateThrew) {
+                  reportError(vacateThrew, 'ServerTableEngine.busted_seat_vacate_threw');
                 }
               } catch (err) {
                 /* FAIL OPEN, not closed (2026-08-27). This read decides whether

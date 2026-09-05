@@ -5,7 +5,7 @@
  * Provides tactile feedback on supported devices (mobile)
  */
 
-import { fireVibration, stopVibration } from '../utils/vibrationGate';
+import { fireVibration, stopVibration, isVibrationCapable } from '../utils/vibrationGate';
 
 export type HapticType =
   | 'light'
@@ -33,7 +33,11 @@ const HAPTIC_PATTERNS: Record<HapticType, number | number[]> = {
  * Check if haptic feedback is supported on this device
  */
 export function isHapticSupported(): boolean {
-  return typeof navigator !== 'undefined' && 'vibrate' in navigator;
+  /* `'vibrate' in navigator` was false on every iPhone and iPad, because Apple
+     has never shipped the Vibration API. Since 2026-09-05 the gate can buzz an
+     iPhone through a native switch control, so support is the gate's question
+     to answer, not a property sniff's. */
+  return isVibrationCapable();
 }
 
 /**

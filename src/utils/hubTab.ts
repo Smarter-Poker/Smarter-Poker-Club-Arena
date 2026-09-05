@@ -95,11 +95,45 @@ export function hubTabTitle(pathAndSearch: string): string {
   if (!segment) return 'Hub';
   const named = NAMED[segment.toLowerCase()];
   if (named) return named;
-  const words = decodeURIComponent(segment)
+  return titleWords(segment) || 'Hub';
+}
+
+/** "hand-of_the day" -> "Hand Of The Day" (First Letter Of Every Word, Dan's rule). */
+function titleWords(segment: string): string {
+  let decoded = segment;
+  try {
+    decoded = decodeURIComponent(segment);
+  } catch {
+    /* a stray % in a path is shown as typed */
+  }
+  return decoded
     .split(/[-_\s]+/)
     .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
-  return words.length > 0 ? words.join(' ') : 'Hub';
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
+/**
+ * The small line under the pill's name: where INSIDE the section the frame is.
+ * `/hub/training/drills/3` -> "Drills / 3"; a top-level page has none. Two
+ * Training tabs open on different drills must not read as twins in the strip,
+ * exactly as two NLH tables are told apart by their stakes. Capped so it can
+ * never widen the pill.
+ */
+export const HUB_SUBTITLE_MAX = 18;
+export function hubTabSubtitle(pathAndSearch: string): string {
+  const { pathname } = splitPath(pathAndSearch);
+  if (!pathname.startsWith(`${HUB_PREFIX}/`)) return '';
+  const rest = pathname
+    .slice(HUB_PREFIX.length + 1)
+    .split('/')
+    .filter(Boolean)
+    .slice(1)
+    .map(titleWords)
+    .filter(Boolean);
+  if (rest.length === 0) return '';
+  const joined = rest.join(' / ');
+  return joined.length > HUB_SUBTITLE_MAX ? `${joined.slice(0, HUB_SUBTITLE_MAX - 1)}…` : joined;
 }
 
 /**
@@ -131,6 +165,14 @@ export const HUB_FRAME_POLL_MS = 250;
  * actually reading never trips it.
  */
 export const HUB_FRAME_IDLE_SUSPEND_MS = 15 * 60 * 1000;
+
+/**
+ * How long a frame may sit on its loading overlay before the player is
+ * offered Reload. A World Hub page boots in two to four seconds on a phone;
+ * twelve is long enough that a slow one is never interrupted and short enough
+ * that a dead one is not a mystery.
+ */
+export const HUB_FRAME_STALL_MS = 12_000;
 
 /**
  * Is this destination somewhere other than smarter.poker? Off-site pages

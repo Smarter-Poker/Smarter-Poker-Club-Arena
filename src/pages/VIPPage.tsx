@@ -9,16 +9,16 @@ import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import {
   vipService,
-  VIP_GOLD_LIMITS,
+  VIP_MONTHLY_ALLOWANCES,
   FEATURE_PRICING,
   type VIPFeature,
+  type VIPMonthlyLimits,
 } from '../services/VIPService';
+import type { VipStatus } from '../utils/vipStatus';
 import { VIPCardsModal } from '../components/vip/VIPCardsModal';
 import { VIPPerksGrid } from '../components/vip/VIPPerksGrid';
 import { DiamondTopUpModal } from '../components/vip/DiamondTopUpModal';
-import { VIPStatsHeader } from '../components/vip/VIPStatsHeader';
-import { TierProgressionCard } from '../components/vip/TierProgressionCard';
-import { VIPBenefitsGrid } from '../components/vip/VIPBenefitsGrid';
+import { VIPMembershipPlate } from '../components/vip/VIPMembershipPlate';
 import { RewardsMarketplace, Reward } from '../components/vip/RewardsMarketplace';
 import { VIPActivityHistory, VIPActivity } from '../components/vip/VIPActivityHistory';
 import { useToast } from '../components/common/Toast';
@@ -36,6 +36,17 @@ export default function VIPPage() {
   });
 
   const [isVIP, setIsVIP] = useState(false);
+  /* Which membership, not which rung. Dan 2026-09-04: "THERE IS NO SUCH THING
+     AS 'PLATINUM VIP' BTW. JUST VIP, AND LIFETIME VIP." */
+  const [vipGrade, setVipGrade] = useState<VipStatus>('none');
+  const [vipExpiresAt, setVipExpiresAt] = useState<Date | null>(null);
+  const [monthlyLimits, setMonthlyLimits] = useState<VIPMonthlyLimits>({
+    rabbitHunts: { used: 0, limit: 0 },
+    timeBankSeconds: { used: 0, limit: 0 },
+    emojis: { used: 0, limit: 0 },
+    tags: { used: 0, limit: 0 },
+    throwables: { used: 0, limit: 0 },
+  });
   const [diamonds, setDiamonds] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showInfoModal, setShowInfoModal] = useState(false);
@@ -127,6 +138,9 @@ export default function VIPPage() {
       const vipStatus = await vipService.checkVIPStatus(user.id);
       if (getIsMounted && !getIsMounted()) return;
       setIsVIP(vipStatus.isVIP);
+      setVipGrade(vipStatus.status);
+      setVipExpiresAt(vipStatus.expiresAt);
+      setMonthlyLimits(vipStatus.monthlyLimits);
 
       const { data: profData } = await supabase
         .from('profiles')
@@ -283,29 +297,18 @@ export default function VIPPage() {
           { label: 'Active Streak', value: `${vipPoints.activeStreak} days` },
         ]}
       />
-      {/* VIP Stats Header */}
+      {/* MEMBERSHIP, ALLOWANCES, POINTS.
+          Replaces VIPStatsHeader + TierProgressionCard + VIPBenefitsGrid, all
+          three deleted with src/constants/vipTiers.ts on 2026-09-05. See the
+          header of VIPMembershipPlate for what those three were promising. */}
       {vipEntranceComplete && (
-        <VIPStatsHeader
-          currentPoints={vipPoints.current}
-          monthlyPoints={vipPoints.monthly}
-          lifetimePoints={vipPoints.lifetime}
-          activeStreak={vipPoints.activeStreak}
-          daysSinceReview={daysSinceReview}
+        <VIPMembershipPlate
+          status={vipGrade}
+          expiresAt={vipExpiresAt}
+          limits={monthlyLimits}
+          points={vipPoints}
         />
       )}
-
-      {/* Tier Progression Hero Section */}
-      {vipEntranceComplete && (
-        <TierProgressionCard
-          currentPoints={vipPoints.current}
-          lifetimePoints={vipPoints.lifetime}
-          monthlyPoints={vipPoints.monthly}
-          activeStreak={vipPoints.activeStreak}
-        />
-      )}
-
-      {/* VIP Benefits Grid */}
-      {vipEntranceComplete && <VIPBenefitsGrid currentPoints={vipPoints.current} />}
 
       {/* Rewards Marketplace */}
       {vipEntranceComplete && (
@@ -374,7 +377,32 @@ export default function VIPPage() {
       {/* Activity History */}
       {vipEntranceComplete && <VIPActivityHistory activities={recentActivities} />}
 
-      {/* Legacy VIP Gold Status Section */}
+      {/* THE CARD, AND ONLY WHAT IT ACTUALLY BUYS.
+          Was headed "VIP Diamond" over a "Diamond Member" label in #ffd700 on a
+          gold-glow card - three names for a membership that has two (Dan
+          2026-09-04), in a colour outside the schema (Dan 2026-09-05).
+
+          Three of the eight perks it listed did not say a true thing, checked
+          against feature_pricing, fn_purchase_feature and the engine:
+
+            "+6% Score Boost"             nothing in either repo applies a
+                                          scoring boost of any kind
+            "All Packs" emojis            the allowance is 1,200 a month
+            "Unlimited" offline protection  the word Dan struck; it is
+                                          included, which is a different claim
+
+          A FOURTH WAS TRUE AND I CUT IT ANYWAY. "500 Free Throws Per Month" is
+          real: fn_use_throwable counts this calendar month's rows in
+          `throw_usage` and charges the 1-diamond price only from the 501st. I
+          removed it on the strength of `feature_pricing.throwable
+          .vip_tiers_included` being empty - a column that is read by NOTHING.
+          Restored the same day, and metered on the plate above rather than
+          asserted here. The lesson is in the law: an empty column is not an
+          absent feature, and the enforcement is whatever the function does.
+
+          What is left is what the server meters, and it now comes from the same
+          VIPMembershipPlate above rather than a second hand-written list that
+          could drift from it. */}
       {isVIP && (
         <section
           className="vip-section vip-card-section"
@@ -384,9 +412,8 @@ export default function VIPPage() {
             transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
           }}
         >
-          <h3> VIP Diamond</h3>
-          <div className="vip-card-active" style={{ borderColor: '#ffd700', textAlign: 'center' }}>
-            {/* VIP Card Image */}
+          <h3>Your Card</h3>
+          <div className="vip-card-active" style={{ textAlign: 'center' }}>
             <div style={{ marginBottom: 16 }}>
               <img
                 /* /vip-card.webp does not exist at the hub root and 404d in
@@ -400,90 +427,96 @@ export default function VIPPage() {
                   maxWidth: 300,
                   height: 'auto',
                   borderRadius: 12,
-                  boxShadow: '0 8px 32px rgba(255, 215, 0, 0.3)',
                 }}
               />
             </div>
             <div className="vip-card-info" style={{ textAlign: 'center' }}>
-              <span
-                className="vip-card-tier"
-                style={{ color: '#ffd700', fontSize: 18, fontWeight: 700 }}
-              >
-                Diamond Member
+              <span className="vip-card-tier">
+                {vipGrade === 'lifetime' ? 'Lifetime VIP' : 'VIP'}
               </span>
-              <span className="vip-card-expiry">Included With Club Arena</span>
+              <span className="vip-card-expiry">
+                {vipGrade === 'lifetime'
+                  ? 'Never Expires'
+                  : vipExpiresAt
+                    ? `Renews ${vipExpiresAt.toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}`
+                    : 'Active'}
+              </span>
             </div>
             <button className="vip-extend-btn" onClick={() => setShowInfoModal(true)}>
               View Benefits
             </button>
           </div>
 
-          {/* VIP Perks Grid */}
           <VIPPerksGrid
-            currentTier="diamond"
+            currentTier="vip"
             perks={[
               {
                 id: 'rabbit',
-                icon: '◆',
+                icon: '\u25C6',
                 title: 'Rabbit Hunt',
                 description: 'See Undealt Cards',
                 // Dan 2026-08-25: 100 a month, then diamonds. This said
-                // "Unlimited" while the server charged from the 101st, which is
-                // a billing promise the product could not keep. Derived from
-                // VIP_GOLD_LIMITS like its sibling below, rather than a third
-                // hardcoded copy of the number — the cap lives in
-                // fn_consume_rabbit_hunt and this is the only place that quotes
-                // it to a customer.
-                value: `${VIP_GOLD_LIMITS.rabbitHunts} / month`,
+                // "Unlimited" while the server charged from the 101st. The cap
+                // lives in fn_consume_rabbit_hunt and this is the only place
+                // that quotes it to a customer.
+                value: `${VIP_MONTHLY_ALLOWANCES.rabbitHunts} / month`,
               },
               {
                 id: 'timebank',
-                icon: '◷',
+                icon: '\u25F7',
                 title: 'Time Bank',
-                description: `${VIP_GOLD_LIMITS.timeBankSeconds}s Free Per Month`,
-                value: `${VIP_GOLD_LIMITS.timeBankSeconds}s`,
-              },
-              {
-                id: 'throwable',
-                icon: '◆',
-                title: 'Throwables',
-                description: '500 Free Throws Per Month',
-                value: '500/mo',
-              },
-              {
-                id: 'offline',
-                icon: '◈',
-                title: 'Offline Protection',
-                description: 'Unlimited Timeout Protection',
-                value: 'Unlimited',
-              },
-              {
-                id: 'autobank',
-                icon: '◷',
-                title: 'Auto Time Bank',
-                description: 'Automatic Time Bank Usage',
-                value: 'Free',
-              },
-              {
-                id: 'themes',
-                icon: '◇',
-                title: 'Themes',
-                description: `${VIP_GOLD_LIMITS.themes} Premium Themes`,
-                value: `${VIP_GOLD_LIMITS.themes}`,
-              },
-              {
-                id: 'boost',
-                icon: '▦',
-                title: 'Leaderboard Boost',
-                description: `${(VIP_GOLD_LIMITS.leaderboardBoost * 100).toFixed(0)}% Score Boost`,
-                value: `+${(VIP_GOLD_LIMITS.leaderboardBoost * 100).toFixed(0)}%`,
+                description: `${VIP_MONTHLY_ALLOWANCES.timeBankSeconds}s Free Per Month`,
+                value: `${VIP_MONTHLY_ALLOWANCES.timeBankSeconds}s`,
               },
               {
                 id: 'emojis',
-                icon: '◆',
+                icon: '\u25C6',
                 title: 'Emojis',
-                description: 'Access To All Emoji Packs',
-                value: 'All Packs',
+                // Was "All Packs". fn_increment_vip_usage counts 'emoji_pack'
+                // against exactly this number.
+                description: `${VIP_MONTHLY_ALLOWANCES.emojis.toLocaleString()} Free Per Month`,
+                value: VIP_MONTHLY_ALLOWANCES.emojis.toLocaleString(),
+              },
+              {
+                id: 'tags',
+                icon: '\u25C6',
+                title: 'Player Tags',
+                description: `${VIP_MONTHLY_ALLOWANCES.tags.toLocaleString()} Free Per Month`,
+                value: VIP_MONTHLY_ALLOWANCES.tags.toLocaleString(),
+              },
+              {
+                id: 'throwable',
+                icon: '\u25C6',
+                title: 'Throwables',
+                /* fn_use_throwable: 500 free per calendar month, counted in
+                   throw_usage, 1 diamond from the 501st. */
+                description: `${VIP_MONTHLY_ALLOWANCES.throwables} Free Per Month`,
+                value: `${VIP_MONTHLY_ALLOWANCES.throwables}`,
+              },
+              {
+                id: 'stack',
+                icon: '\u25A6',
+                title: 'Show Stack In Big Blinds',
+                description: 'Otherwise 5 Diamonds Per Session',
+                value: 'Included',
+              },
+              {
+                id: 'offline',
+                icon: '\u25C8',
+                title: 'Offline Protection',
+                description: 'Otherwise 10 Diamonds Per Session',
+                value: 'Included',
+              },
+              {
+                id: 'autobank',
+                icon: '\u25F7',
+                title: 'Auto Time Bank',
+                description: 'Otherwise 5 Diamonds Per Activation',
+                value: 'Included',
               },
             ]}
           />
@@ -522,7 +555,7 @@ export default function VIPPage() {
         <section className="vip-section">
           <h3> Buy Features</h3>
           <p className="section-desc">
-            Not A Diamond Member? Purchase Features Individually With Diamonds.
+            Not A Member? Purchase Features Individually With Diamonds.
           </p>
 
           <div className="purchase-grid">

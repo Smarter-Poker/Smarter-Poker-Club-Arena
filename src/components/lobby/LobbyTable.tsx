@@ -1443,7 +1443,17 @@ export default function LobbyTable({
   styleCounts,
 }: LobbyTableProps) {
   /* Two heading menus, one open at a time: 'variant' under Variant, 'stakes'
-     under Stakes. Both anchor to the same ref because only one is mounted. */
+     under Stakes.
+
+     THE OLD COMMENT HERE SAID "both anchor to the same ref because only one is
+     mounted", AND THAT WAS FALSE. Each open menu is rendered TWICE - once in
+     the phone sort bar (`--bar`) and once in the desktop heading (`--th`) - and
+     neither copy is conditionally rendered: they are hidden by CSS alone
+     (`.lobby-sortbar { display: none }` above 900px, `.arena-lobby-card-list +
+     .lobby-table-wrap { display: none }` below it). Both nodes therefore exist
+     on a phone, both received `ref={variantMenuRef}`, and React's last commit
+     won - so the ref pointed at the DESKTOP copy, inside a `display: none`
+     table. See the outside-tap handler below for what that cost. */
   const [openMenu, setOpenMenu] = useState<'variant' | 'stakes' | null>(null);
   const variantMenuOpen = openMenu === 'variant';
   const stakesMenuOpen = openMenu === 'stakes';
@@ -1457,14 +1467,31 @@ export default function LobbyTable({
       const open = typeof next === 'function' ? next(cur === 'stakes') : next;
       return open ? 'stakes' : cur === 'stakes' ? null : cur;
     });
-  const variantMenuRef = useRef<HTMLDivElement>(null);
   const hasVariantMenu = Boolean(variantChoices && variantChoices.length > 0 && onVariantsChange);
   const hasStakesMenu = Boolean(styleChoices && styleChoices.length > 0 && onStylesChange);
-  /* Close on outside tap / Escape, the way any menu should. */
+  /* Close on outside tap / Escape, the way any menu should.
+
+     THE BUG THIS FIXES (Dan 2026-09-05: "when you open STAKES or VARIATIONS and
+     get the dropdowns, they aren't clickable. It's like it isn't there, and you
+     click what's behind the page or behind the buttons").
+
+     Containment used to be tested against `variantMenuRef.current`, and that
+     ref resolved to the DESKTOP copy of the menu (see the note on `openMenu`
+     above). So on a phone every tap inside the VISIBLE menu was measured
+     against a hidden node in a `display: none` table, `contains()` answered
+     false, and this handler closed the menu on `pointerdown` - before the
+     item's own `click` could fire. React flushes that discrete update
+     synchronously, so the button under the finger was removed from the DOM and
+     the click retargeted to whatever the menu had been covering: the game card
+     behind it. The menu was never unclickable; it was being unmounted out from
+     under the finger.
+
+     The fix is to stop asking one ref to speak for two nodes. Both copies carry
+     `.lt-variant-menu-anchor`, so `closest()` recognises either one, and there
+     is nothing left to keep in sync. */
   useEffect(() => {
     if (openMenu === null) return;
     const onDown = (e: PointerEvent) => {
-      const root = variantMenuRef.current;
       const target = e.target as Node;
       /* A tap on the Variant heading itself is the heading's own toggle, not
          an outside tap: closing here AND toggling on the click that follows
@@ -1472,7 +1499,9 @@ export default function LobbyTable({
          where it was opened. */
       const onTrigger =
         target instanceof Element && target.closest('[aria-haspopup="menu"]') !== null;
-      if (root && !onTrigger && !root.contains(target)) setOpenMenu(null);
+      const inMenu =
+        target instanceof Element && target.closest('.lt-variant-menu-anchor') !== null;
+      if (!onTrigger && !inMenu) setOpenMenu(null);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpenMenu(null);
@@ -1915,8 +1944,14 @@ export default function LobbyTable({
           </div>
           {hasVariantMenu && variantMenuOpen && (
             <div
+              /* NO stopPropagation HERE. React calls the native
+                 stopPropagation() too, and the Escape handler is a plain
+                 listener on `document` - below the React root - so swallowing
+                 keydown here would make Escape stop closing the menu. The
+                 desktop heading's copy carries it because its ancestor is a
+                 sortable <th> whose click must not fire; this anchor has no
+                 such ancestor, and containment is by closest() now anyway. */
               className="lt-variant-menu-anchor lt-variant-menu-anchor--bar"
-              ref={variantMenuRef}
             >
               <VariantMenu
                 choices={variantChoices!}
@@ -1930,8 +1965,8 @@ export default function LobbyTable({
           )}
           {hasStakesMenu && stakesMenuOpen && (
             <div
+              /* No stopPropagation - see the Variant anchor above. */
               className="lt-variant-menu-anchor lt-variant-menu-anchor--bar"
-              ref={variantMenuRef}
             >
               <StakesMenu
                 choices={styleChoices!}
@@ -2090,7 +2125,6 @@ export default function LobbyTable({
                     {col.key === 'variant' && hasVariantMenu && variantMenuOpen && (
                       <div
                         className="lt-variant-menu-anchor lt-variant-menu-anchor--th"
-                        ref={variantMenuRef}
                         onClick={(e) => e.stopPropagation()}
                         onKeyDown={(e) => e.stopPropagation()}
                       >
@@ -2107,7 +2141,6 @@ export default function LobbyTable({
                     {col.key === 'stakes' && hasStakesMenu && stakesMenuOpen && (
                       <div
                         className="lt-variant-menu-anchor lt-variant-menu-anchor--th"
-                        ref={variantMenuRef}
                         onClick={(e) => e.stopPropagation()}
                         onKeyDown={(e) => e.stopPropagation()}
                       >

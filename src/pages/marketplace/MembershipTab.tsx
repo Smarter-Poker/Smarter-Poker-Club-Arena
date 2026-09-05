@@ -76,55 +76,18 @@ export default function MembershipTab({
    */
   const isLifetime = wallet.loaded && wallet.vipTier === 'lifetime';
 
-  const buyDailyPass = async (cost: number) => {
-    if (inFlightRef.current) return;
-    if (!wallet.loaded) {
-      toast.error('Your Diamond Balance Is Unavailable Right Now');
-      return;
-    }
-    if (isLifetime) {
-      toast.info('Lifetime VIP Already Includes Every Pass');
-      return;
-    }
-    if (wallet.diamonds < cost) {
-      toast.error(`You Need ${fmt(cost)} Diamonds For A Daily Pass`);
-      return;
-    }
-    if (!claimIntent('vip-daily')) return;
-    if (
-      !(await confirmDialog({
-        title: 'Daily VIP Pass',
-        message: wallet.isVip
-          ? `Spend ${fmt(cost)} Diamonds To Extend Your VIP Access By 24 Hours?`
-          : `Spend ${fmt(cost)} Diamonds For 24 Hours Of VIP Access?`,
-        confirmText: 'Activate',
-        variant: 'default',
-      }))
-    ) {
-      releaseIntent();
-      return;
-    }
-    try {
-      const data = await storeFetch<{ success: true; expiresAt?: string; newBalance?: number }>(
-        '/api/store/purchase-daily-vip',
-        { body: { idempotencyKey: intentKeyRef.current } }
-      );
-      toast.success(
-        data.expiresAt ? `VIP Active Until ${formatDate(data.expiresAt)}` : 'VIP Daily Pass Active'
-      );
-      masterBus.emit('BALANCE_UPDATED', { source: 'vip_daily' });
-      masterBus.emit('ENTITLEMENTS_CHANGED', {
-        userId,
-        category: 'vip',
-        source: 'vip-purchase',
-      });
-      onWalletChanged();
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Purchase failed');
-    } finally {
-      releaseIntent();
-    }
+  /* The three terms, spelled for a player. Dan 2026-09-05: "just vip, monthly,
+     yearly or lifetime". */
+  const TERM_LABEL: Record<'monthly' | 'yearly' | 'lifetime', string> = {
+    monthly: 'Monthly',
+    yearly: 'Yearly',
+    lifetime: 'Lifetime',
   };
+
+  /* REMOVED 2026-09-05 with the Daily Pass. Dan: "just vip, monthly, yearly
+     or lifetime". It called /api/store/purchase-daily-vip, which is deleted -
+     nothing was ever sold on it (0 'vip_daily' diamond transactions, 0
+     purchases carrying that redemption intent), so no receipt depends on it. */
 
   const buyWithCard = async (checkoutPlan: string) => {
     if (!claimIntent(`card-${checkoutPlan}`)) return;
@@ -141,7 +104,10 @@ export default function MembershipTab({
     }
   };
 
-  const buyWithDiamonds = async (planKey: 'monthly' | 'annual', priceDiamonds: number) => {
+  const buyWithDiamonds = async (
+    planKey: 'monthly' | 'yearly' | 'lifetime',
+    priceDiamonds: number
+  ) => {
     if (inFlightRef.current) return;
     if (!wallet.loaded) {
       toast.error('Your Diamond Balance Is Unavailable Right Now');
@@ -158,8 +124,11 @@ export default function MembershipTab({
     if (!claimIntent(`diamonds-${planKey}`)) return;
     if (
       !(await confirmDialog({
-        title: `${planKey === 'monthly' ? 'Monthly' : 'Annual'} VIP`,
-        message: `Spend ${fmt(priceDiamonds)} Diamonds For ${planKey === 'monthly' ? 'Monthly' : 'Annual'} VIP Membership?`,
+        title: `${TERM_LABEL[planKey]} VIP`,
+        message:
+          planKey === 'lifetime'
+            ? `Spend ${fmt(priceDiamonds)} Diamonds For Lifetime VIP? Your Membership Stops Having An Expiry Date Rather Than Getting A Longer One, And It Never Renews.`
+            : `Spend ${fmt(priceDiamonds)} Diamonds For ${TERM_LABEL[planKey]} VIP Membership?`,
         confirmText: 'Purchase',
         variant: 'default',
       }))
@@ -224,18 +193,22 @@ export default function MembershipTab({
             <div className={styles.planArt}>
               <VipArt
                 variant={
-                  plan.id === 'vip-annual'
-                    ? 'annual'
-                    : plan.id === 'vip-daily'
-                      ? 'daily'
+                  plan.id === 'vip-lifetime'
+                    ? 'lifetime'
+                    : plan.id === 'vip-yearly'
+                      ? 'yearly'
                       : 'monthly'
                 }
               />
             </div>
             <div className={styles.planName}>{plan.name}</div>
             <div className={styles.planPrice}>
-              {plan.priceUsd != null
-                ? `$${plan.priceUsd.toFixed(2)}`
+              {/* Every term is priced in USD now; the diamond figure is the
+                  same number at 100 per dollar, and for Lifetime it is
+                  currently the ONLY way to pay - its one-time card checkout is
+                  not built yet, which is why `checkoutPlan` is null on it. */}
+              {plan.checkoutPlan
+                ? `$${(plan.priceUsd ?? 0).toFixed(2)}`
                 : `${fmt(plan.priceDiamonds)} Diamonds`}
             </div>
             <div className={styles.planPeriod}>{plan.period}</div>
@@ -248,31 +221,30 @@ export default function MembershipTab({
               <button className={styles.btnGhostWide} disabled aria-disabled="true">
                 Included With Lifetime VIP
               </button>
-            ) : plan.id === 'vip-daily' ? (
-              <button
-                className={styles.btnPrimary}
-                disabled={busy !== null || !wallet.loaded || wallet.diamonds < plan.priceDiamonds}
-                onClick={() => buyDailyPass(plan.priceDiamonds)}
-              >
-                {busy === 'vip-daily'
-                  ? 'Activating...'
-                  : `${wallet.isVip ? 'Extend' : 'Activate'} For ${fmt(plan.priceDiamonds)} Diamonds`}
-              </button>
             ) : (
               <>
+                {/* No card button for a term the checkout would refuse. A
+                    lifetime purchase is one payment, and the World Hub's
+                    session builder has no one-time VIP mode and its webhook no
+                    one-time VIP grant - a session would be paid and grant
+                    nothing. `checkoutPlan` is null on that plan for exactly
+                    this reason; when the card path ships it stops being null
+                    and this button appears with no further change here. */}
+                {plan.checkoutPlan && (
+                  <button
+                    className={styles.btnPrimary}
+                    disabled={busy !== null}
+                    onClick={() => buyWithCard(plan.checkoutPlan as string)}
+                  >
+                    {busy === `card-${plan.checkoutPlan}`
+                      ? 'Opening Checkout...'
+                      : wallet.isVip
+                        ? 'Switch To This Plan'
+                        : 'Subscribe With Card'}
+                  </button>
+                )}
                 <button
-                  className={styles.btnPrimary}
-                  disabled={busy !== null || !plan.checkoutPlan}
-                  onClick={() => plan.checkoutPlan && buyWithCard(plan.checkoutPlan)}
-                >
-                  {busy === `card-${plan.checkoutPlan}`
-                    ? 'Opening Checkout...'
-                    : wallet.isVip
-                      ? 'Switch To This Plan'
-                      : 'Subscribe With Card'}
-                </button>
-                <button
-                  className={styles.btnGhostWide}
+                  className={plan.checkoutPlan ? styles.btnGhostWide : styles.btnPrimary}
                   disabled={busy !== null || !wallet.loaded || wallet.diamonds < plan.priceDiamonds}
                   onClick={() => plan.planKey && buyWithDiamonds(plan.planKey, plan.priceDiamonds)}
                 >
@@ -291,7 +263,7 @@ export default function MembershipTab({
         <a className={styles.inlineLink} href="/hub/diamond-store?tab=vip">
           Manage Subscription
         </a>
-        . Diamond-Paid Plans Do Not Auto-Renew.
+        . Diamond-Paid Plans Do Not Auto-Renew, And Lifetime Never Does.
       </div>
     </>
   );

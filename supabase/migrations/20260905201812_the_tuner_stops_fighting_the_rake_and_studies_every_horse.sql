@@ -158,3 +158,8 @@ begin
   get diagnostics k = row_count;
   return n + m + k;
 end $$;
+
+-- Restated so the definer-authorization gate can read it from this file: the
+-- prune is a daemon sweep, not browser-callable (20260826_daemon_functions_are_not_browser_callable).
+revoke all on function public.sp_prune_horse_hand_reviews() from public, authenticated, anon;
+grant execute on function public.sp_prune_horse_hand_reviews() to service_role;

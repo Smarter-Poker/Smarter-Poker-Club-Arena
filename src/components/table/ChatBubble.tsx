@@ -74,7 +74,12 @@ const EMPTY_SPEAKERS: ReadonlyArray<string> = [];
  * words and a 5s life, voice has neither - it is on while the player holds the
  * button and off the instant they let go.
  */
-export type SeatChatBubbleVariant = 'message' | 'speaking';
+/**
+ * 'notice' (2026-09-04): a table fact about the seat rather than something
+ * the player said — today, "Has Added On For 50.00" from `AddOnBubble.ts`.
+ * Words like a message, gold like a chip so nobody reads it as chat.
+ */
+export type SeatChatBubbleVariant = 'message' | 'speaking' | 'notice';
 
 export interface SeatChatBubble {
   /** Source chat message id, so React keys stay stable across re-renders. */
@@ -130,11 +135,12 @@ export function ChatBubble({
   variant = 'message',
 }: ChatBubbleProps) {
   const isSpeaking = variant === 'speaking';
+  const isNotice = variant === 'notice';
   return (
     <div
       className={`chat-bubble chat-bubble--${placement}${isOwn ? ' chat-bubble--own' : ''}${
         isSpeaking ? ' chat-bubble--speaking' : ''
-      }`}
+      }${isNotice ? ' chat-bubble--notice' : ''}`}
       role="status"
       aria-live="polite"
       aria-label={isSpeaking ? `${playerName || 'Player'} Is Speaking` : undefined}

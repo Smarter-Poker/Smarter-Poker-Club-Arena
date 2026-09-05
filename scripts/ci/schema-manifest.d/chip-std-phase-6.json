@@ -1,5 +1,5 @@
 {
-  "_owner": "fix/union-to-club-money-declares-itself (chip standard Phase 6, controls that enforce, 2026-09-05). Applied as 20260905203123 (6.1), 20260905203905 (6.2), 20260905203427 (6.3), 20260905204835 (6.4).",
+  "_owner": "fix/union-to-club-money-declares-itself (chip standard Phase 6, controls that enforce, 2026-09-05). Applied as 20260905203123 (6.1), 20260905203905 (6.2), 20260905203427 (6.3), 20260905204835 (6.4). Gate: 20260905223231 (no detector is unowned; every leg names its table).",
   "tables": [
     "ca_settle_sources",
     "ca_detector_registry",

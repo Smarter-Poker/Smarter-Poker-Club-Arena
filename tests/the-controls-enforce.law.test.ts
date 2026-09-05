@@ -21,6 +21,13 @@
  *   ca_detector_registry; a retired detector files nothing; a transient
  *   finding auto-resolves when not seen again within its clear window; the
  *   tick marks past_target at the detector's own SLA; v_ca_alert_board.
+ * LAW 3b (gate) - A DETECTOR THAT FILES WITHOUT A REGISTRY ROW REGISTERS
+ *   ITSELF as unassigned: the board is built from the registry, so an
+ *   unregistered source would be invisible, which is the one way this control
+ *   could fail silently.
+ * LAW 4b (gate) - A PRIZE_LIABILITY SIDE IS THE EVENT AND A TABLE_STACK SIDE
+ *   IS THE TABLE, on every category (777 tournament fee settlements and every
+ *   cash buy-in, add-on and cash-out named nothing until the gate).
  * LAW 4 (6.4) - EVERY LEG NAMES ITS HAND OR ITS EVENT. The enrich trigger
  *   reads app.ledger_hand_id / app.ledger_tournament_id, derives the hand from
  *   a bbj:<hand> settlement, and a spin's reserve legs carry the spin; the
@@ -120,6 +127,33 @@ describe('the controls enforce', () => {
     expect(s).toMatch(/WHERE source = 'fn_ca_escrow_vs_counter_check'/);
     expect(s).toMatch(/CREATE OR REPLACE VIEW public\.v_ca_alert_board AS/);
     expect(s).not.toMatch(/fn_ca_escrow_vs_counter_check\(3, 5\)/);
+  });
+
+  it('LAW 3b: a detector that files without a registry row registers itself, so the board cannot miss one', () => {
+    const s = load(/^\d{14}_phase_6_gate_no_detector_is_unowned_and_every_leg_names_its_\.sql$/);
+    const r = fn(s, 'fn_ca_raise_drift_incident');
+    expect(r).toMatch(
+      /INSERT INTO public\.ca_detector_registry \(source, owner, sla_hours, note\)\s+VALUES \(p_source, 'unassigned', 24, 'auto-registered on first sight \(Phase 6 gate\); give it an owner'\)\s+ON CONFLICT \(source\) DO NOTHING;/
+    );
+    // the retired check still comes first: a retired detector registers nothing and files nothing
+    expect(r.indexOf("r.status = 'retired'")).toBeLessThan(
+      r.indexOf('auto-registered on first sight')
+    );
+    expect(s).toMatch(/RAISE EXCEPTION '% incident sources are not on the board'/);
+  });
+
+  it('LAW 4b: a prize_liability side is the event and a table_stack side is the table, on every category', () => {
+    const s = load(/^\d{14}_phase_6_gate_no_detector_is_unowned_and_every_leg_names_its_\.sql$/);
+    const e = fn(s, 'fn_ca_chip_ledger_enrich');
+    expect(e).toMatch(
+      /IF NEW\.from_type = 'prize_liability' THEN NEW\.tournament_id := NEW\.from_entity_id;\s+ELSIF NEW\.to_type = 'prize_liability' THEN NEW\.tournament_id := NEW\.to_entity_id;/
+    );
+    expect(e).toMatch(
+      /IF NEW\.to_type = 'table_stack' THEN NEW\.table_id := NEW\.to_entity_id;\s+ELSIF NEW\.from_type = 'table_stack' THEN NEW\.table_id := NEW\.from_entity_id;/
+    );
+    // the caller's own stamp always wins
+    expect(e).toMatch(/IF NEW\.tournament_id IS NULL THEN/);
+    expect(e).toMatch(/IF NEW\.table_id IS NULL THEN/);
   });
 
   it('LAW 4: every leg names its hand or its event, and dedupe stays on the door', () => {

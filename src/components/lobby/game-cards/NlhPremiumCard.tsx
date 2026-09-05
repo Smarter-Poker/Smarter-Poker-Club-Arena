@@ -21,6 +21,10 @@ interface NlhPremiumCardProps {
    `.arena-premium-text--title` in NlhPremiumCard.css. */
 const TITLE_SCALE_X = 1.04;
 
+/* The buy-in bay's stylesheet stretch. Keep in step with
+   `.agc-nlh-premium__value--buy-in .arena-premium-text` in NlhPremiumCard.css. */
+const BUY_IN_SCALE_X = 1.04;
+
 function ArtLayer({
   src,
   zone,
@@ -69,17 +73,25 @@ function StatusBadge({ data }: { data: ArenaGameCardData }) {
   );
 }
 
-/* Minimum over maximum, no dash, each line centred (Dan 2026-09-03; the
-   shared rule is in layeredCard.tsx / splitBuyInRange). */
+/* ONE LINE, MINIMUM - MAXIMUM (Dan 2026-09-05: "BUY IN SHOULD BE SIDE BY SIDE,
+   ON THE NO LIMIT CARDS, NOT STACKED ON TOP OF EACH OTHER. IT SHOULD SAY 4 - 20
+   ... WE FIXED THE PLO CARD, WHOS FRAME WAS MUCH SMALLER").
+
+   The stack is the right answer for the PLO console, whose buy-in bay is 152
+   units wide in a 1177-unit canvas - 12.9% of the card. This master's bay is
+   302 units wide in a 729-unit canvas - 41.4%, more than three times the share
+   - so the range fits across it with room to spare and stacking only wasted the
+   bay. The two cards read differently because their frames differ; the shared
+   splitBuyInRange helper is untouched and the PLO card keeps its stack. */
 function NlhBuyIn({ value }: { value: string }) {
   const range = splitBuyInRange(value);
-  if (!range) return <ArenaPremiumValueText>{value}</ArenaPremiumValueText>;
-  return (
-    <span className="agc-nlh-premium__buy-in-stack">
-      <ArenaPremiumValueText as="span">{range[0]}</ArenaPremiumValueText>
-      <ArenaPremiumValueText as="span">{range[1]}</ArenaPremiumValueText>
-    </span>
-  );
+  const line = range ? `${range[0]} - ${range[1]}` : value;
+  /* A one-line range is wider than a stacked one, so it fits by measurement
+     rather than by hope: the widest real figure ("2,000 - 10,000") shrinks to
+     the bay instead of being clipped at its edge. Same hook, same reason, as
+     the title. BUY_IN_SCALE_X must track the transform in NlhPremiumCard.css. */
+  const ref = useFitText<HTMLElement>(line, BUY_IN_SCALE_X, 0.55);
+  return <ArenaPremiumValueText ref={ref}>{line}</ArenaPremiumValueText>;
 }
 
 export function NlhPremiumCard({ data, actions }: NlhPremiumCardProps) {

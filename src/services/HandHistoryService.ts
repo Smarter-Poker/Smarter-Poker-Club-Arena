@@ -79,6 +79,12 @@ export interface HandPlayer {
    * merged into `hole_cards`: presence THERE is the table's reveal record.
    */
   private_hole_cards?: Card[];
+  /**
+   * PHASE 2 (2026-09-05): the viewer's own per-hand facts from `ca_hand_facts`
+   * - the engine's all-in equity at the moment the money went in, what came
+   * back, and what the equity said should have. Viewer's row only (RLS).
+   */
+  facts?: HeroHandFacts;
   final_hand?: string;
   result: number;
   is_winner: boolean;
@@ -94,6 +100,31 @@ export interface HandPlayer {
     hand_name?: string;
     hand_description?: string;
   };
+}
+
+/**
+ * The viewer's own row of `ca_hand_facts` for one hand, as the rundown reads
+ * it. `all_in_equity` is a FRACTION (0..1); the writer stores the engine's
+ * exact all-in equity against the known holdings at the first all-in point.
+ * `ev_returned` is that fraction of the pot the viewer could win; `ev_net` is
+ * `ev_returned - invested`; `net` is what actually happened. Null where the
+ * hand had no all-in.
+ */
+export interface HeroHandFacts {
+  was_all_in: boolean;
+  all_in_street: string | null;
+  all_in_at_risk: number | null;
+  all_in_equity: number | null;
+  ev_returned: number | null;
+  ev_net: number;
+  invested: number;
+  returned: number;
+  net: number;
+  vpip: boolean;
+  pfr: boolean;
+  saw_flop: boolean;
+  went_to_showdown: boolean;
+  won_at_showdown: boolean;
 }
 
 export interface HandAction {
@@ -369,14 +400,18 @@ class HandHistoryServiceClass {
    */
   private async fetchOwnHoleCards(
     rows: Array<{ id?: string | null }>
-  ): Promise<Map<string, { user_id: string; cards: Card[] }>> {
-    const out = new Map<string, { user_id: string; cards: Card[] }>();
+  ): Promise<Map<string, { user_id: string; cards: Card[]; facts: HeroHandFacts }>> {
+    const out = new Map<string, { user_id: string; cards: Card[]; facts: HeroHandFacts }>();
     const ids = [...new Set(rows.map((r) => r?.id).filter(Boolean))] as string[];
     if (ids.length === 0) return out;
     try {
+      /* Phase 2: the same row carries the all-in equity and EV facts, so the
+         rundown's "All-In" block costs no extra query. */
       const { data, error } = await supabase
         .from('ca_hand_facts')
-        .select('hand_id, user_id, hole_cards')
+        .select(
+          'hand_id, user_id, hole_cards, was_all_in, all_in_street, all_in_at_risk, all_in_equity, ev_returned, ev_net, invested, returned, net, vpip, pfr, saw_flop, went_to_showdown, won_at_showdown'
+        )
         .in('hand_id', ids);
       if (error) {
         // A rundown without your own folded cards is the pre-2026-09-04 rundown,
@@ -384,12 +419,32 @@ class HandHistoryServiceClass {
         reportError(error, 'HandHistoryService.fetchOwnHoleCards');
         return out;
       }
+      const num = (v: unknown): number | null =>
+        v === null || v === undefined || !Number.isFinite(Number(v)) ? null : Number(v);
       for (const d of data || []) {
         const row = d as any;
-        if (!row?.hand_id || !row?.user_id || !Array.isArray(row.hole_cards)) continue;
-        const cards = (row.hole_cards as any[]).filter((c) => c && c.rank && c.suit) as Card[];
-        if (cards.length === 0) continue;
-        out.set(String(row.hand_id), { user_id: String(row.user_id), cards });
+        if (!row?.hand_id || !row?.user_id) continue;
+        /* A row with cards nulled (folded for free) still carries the facts. */
+        const cards = Array.isArray(row.hole_cards)
+          ? ((row.hole_cards as any[]).filter((c) => c && c.rank && c.suit) as Card[])
+          : [];
+        const facts: HeroHandFacts = {
+          was_all_in: row.was_all_in === true,
+          all_in_street: typeof row.all_in_street === 'string' ? row.all_in_street : null,
+          all_in_at_risk: num(row.all_in_at_risk),
+          all_in_equity: num(row.all_in_equity),
+          ev_returned: num(row.ev_returned),
+          ev_net: num(row.ev_net) ?? 0,
+          invested: num(row.invested) ?? 0,
+          returned: num(row.returned) ?? 0,
+          net: num(row.net) ?? 0,
+          vpip: row.vpip === true,
+          pfr: row.pfr === true,
+          saw_flop: row.saw_flop === true,
+          went_to_showdown: row.went_to_showdown === true,
+          won_at_showdown: row.won_at_showdown === true,
+        };
+        out.set(String(row.hand_id), { user_id: String(row.user_id), cards, facts });
       }
     } catch (e) {
       reportError(e, 'HandHistoryService.fetchOwnHoleCards_threw');
@@ -511,7 +566,7 @@ class HandHistoryServiceClass {
     row: any,
     profileMap: Map<string, { username: string; avatar_url: string | null }>,
     discardsByHand?: Map<string, { seat: number; card: { rank: string; suit: string } }>,
-    privateByHand?: Map<string, { user_id: string; cards: Card[] }>,
+    privateByHand?: Map<string, { user_id: string; cards: Card[]; facts: HeroHandFacts }>,
     tableNames?: Map<string, string>
   ): HandRecord | null {
     if (!row?.id) return null;
@@ -586,7 +641,8 @@ class HandHistoryServiceClass {
        at most one entry. */
     const ownPrivate = privateByHand?.get(String(row.id));
     const privateHoleCards: Record<string, Card[]> = {};
-    if (ownPrivate) privateHoleCards[ownPrivate.user_id] = ownPrivate.cards;
+    if (ownPrivate && ownPrivate.cards.length)
+      privateHoleCards[ownPrivate.user_id] = ownPrivate.cards;
 
     /* ONE MAPPER, EVERY FIELD. This used to hand buildReplay half its inputs
        (no extra boards, no showdown record, no pots, no per-board winners, no
@@ -606,8 +662,6 @@ class HandHistoryServiceClass {
 
     const buildResult = (userId: string): number => netByUser.get(userId) ?? 0;
 
-    const playerCount = jsonbPlayers.length || 1;
-
     /* The hand's hole cards live in their own JSONB column, keyed by user id:
        { "<uuid>": [{ rank: 'A', suit: 'spades' }, ...] }. See the server's
        handHistory.ts `hole_cards: holeCardsPayload`. */
@@ -617,9 +671,14 @@ class HandHistoryServiceClass {
         : {};
 
     const privateForPlayer = (uid: string): Card[] | undefined =>
-      ownPrivate && ownPrivate.user_id === uid && !holeCardsByUser[uid]?.length
+      ownPrivate &&
+      ownPrivate.user_id === uid &&
+      ownPrivate.cards.length &&
+      !holeCardsByUser[uid]?.length
         ? ownPrivate.cards
         : undefined;
+    const factsForPlayer = (uid: string): HeroHandFacts | undefined =>
+      ownPrivate && ownPrivate.user_id === uid ? ownPrivate.facts : undefined;
 
     /* SHOWDOWN POLISH 2026-08-25: the reveal record, keyed by user id. */
     const showdownByUser = new Map<string, any>();
@@ -667,6 +726,7 @@ class HandHistoryServiceClass {
            in the column is the only reveal check that is actually true. */
         hole_cards: revealed as Card[],
         private_hole_cards: privateForPlayer(uid),
+        facts: factsForPlayer(uid),
         final_hand: jsonbWinners.find((w) => w?.userId === uid)?.hand?.name || undefined,
         result: buildResult(uid),
         is_winner: isWinner,

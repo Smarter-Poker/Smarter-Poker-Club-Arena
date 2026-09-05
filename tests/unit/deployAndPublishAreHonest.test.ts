@@ -98,6 +98,40 @@ describe('the engine deploy tells the truth when it skips', () => {
     expect(block).toMatch(/force=true/);
   });
 
+  /**
+   * THE BREAK GATE HAS TWO ANSWERS AND THE SUMMARY MUST NOT PICK ONE BY HAND.
+   *
+   * `steps.drain` was a hands-in-flight drain gate once; it has not had a
+   * hands-in-flight skip path since the maintenance break landed. Its two
+   * skips are "the break never opened" and "the next break is beyond this
+   * run's budget", and on 2026-09-05 run 33991470437 was held by the second
+   * while the summary announced "drain gate - hands are still in flight" and
+   * the database, three steps later, recorded a third story. A wrong reason
+   * costs more than no reason (see the pin above): it is confidently wrong and
+   * it is the first thing anybody reads.
+   *
+   * So the step exports `gate_reason` on BOTH skip paths, and the two places
+   * that report read it rather than guessing.
+   */
+  it('the break gate says which half of it held, in the summary and in the database', () => {
+    const step = sliceYamlBlock(
+      HETZNER,
+      '      - name: Wait for the maintenance break to park every table'
+    );
+    const skips = step.match(/echo "skip=true" >> \$GITHUB_OUTPUT/g) ?? [];
+    const reasons = step.match(/echo "gate_reason=/g) ?? [];
+    expect(skips.length, 'the break gate has skip paths').toBeGreaterThan(0);
+    expect(reasons.length, 'every skip path names itself').toBe(skips.length);
+    // Neither reporter may hard-code one of the two answers.
+    const block = sliceBetween(HETZNER, 'REASON="already serving this commit"', '\n          fi');
+    expect(block).toContain('steps.drain.outputs.gate_reason');
+    expect(block, 'the retired hands-in-flight wording is gone').not.toContain(
+      'hands are still in flight'
+    );
+    const truth = sliceYamlBlock(HETZNER, '          REASON: >-');
+    expect(truth).toContain('steps.drain.outputs.gate_reason');
+  });
+
   it('never restarts on a merge — there is no push trigger', () => {
     const triggers = HETZNER.slice(HETZNER.indexOf('\non:'), HETZNER.indexOf('\nconcurrency:'));
     expect(triggers).not.toMatch(/^\s{2}push:/m);

@@ -1331,6 +1331,35 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     this.handController.markFlopSeen();
     this.handController.settleUncalledBet();
     const pots = this.handController.computeLivePots();
+
+    /**
+     * ── THE POT BREAKDOWN EXISTS ONLY HERE ON A RIT HAND (2026-09-05) ──
+     *
+     * `currentHandPots` is normally captured in the WINNERS handler
+     * (ServerTableEngineHandEvents), guarded by `hasWinners && state.pots`.
+     * Neither holds on this path: `finalizeRunout(true)` emits WINNERS with an
+     * empty array, and `state.pots` is only ever assigned inside
+     * `completeHandInner()`, which RIT skips entirely.
+     *
+     * The consequences were silent and real, on every run-it-twice hand:
+     *   • `hand_history.pots` was written EMPTY, so the knockout sweep could
+     *     not tell which pot held a busted player's last chips, and no audit
+     *     could reconstruct the side-pot structure of the hand;
+     *   • `pot_distributed` shipped `pots: []` (it reads the same capture), so
+     *     the client was told a hand with a main pot and two side pots had no
+     *     pots at all.
+     *
+     * These are the live pots the boards below are actually evaluated against,
+     * with `eligiblePlayers` still intact — the exact shape the WINNERS
+     * capture produces, recorded at the one moment it is knowable.
+     */
+    this.currentHandPots = pots.map((p, index) => ({
+      index,
+      amount: Number(p?.amount) || 0,
+      eligible: Array.isArray(p?.eligiblePlayers)
+        ? p.eligiblePlayers.map((u) => String(u ?? '')).filter(Boolean)
+        : [],
+    }));
     const variant = this.handController.getVariant();
     const dealerSeat = this.handController.getDealerSeat();
     const state = this.handController.getState();

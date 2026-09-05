@@ -1114,7 +1114,30 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
             rank?: string;
             suit?: string;
           }>;
-          const capturedPots = liveState?.pots ?? [];
+          /**
+           * POT ROWS FOR `pot_distributed` (fallback added 2026-09-05).
+           *
+           * `liveState.pots` is assigned in exactly one place —
+           * `completeHandInner()` — which a run-it-twice hand never reaches:
+           * it settles through `finalizeRunout(true)` instead. So on EVERY
+           * multi-board hand this read produced `[]` and the event went out
+           * claiming a hand with a main pot and two side pots had no pots at
+           * all. (HandController.audit.test.ts:158 asserts the emptiness at
+           * the ALL_IN_RUNOUT point; nothing asserted what shipped afterwards.)
+           *
+           * `currentHandPots` is the same breakdown in the persisted shape.
+           * The RIT path now records it from the live pots the boards are
+           * actually evaluated against, so fall back to it and translate
+           * `eligible` back to the `eligiblePlayers` name this consumer reads.
+           */
+          const capturedPots =
+            liveState?.pots && liveState.pots.length > 0
+              ? liveState.pots
+              : this.currentHandPots.map((p) => ({
+                  amount: p.amount,
+                  eligiblePlayers: p.eligible,
+                  eligible: p.eligible,
+                }));
           if (this.running && capturedShowdownResults.length >= 2) {
             await this.sleep(this.showdownSettleMs);
             if (!this.running || this.handCount !== emitHandNumber) {

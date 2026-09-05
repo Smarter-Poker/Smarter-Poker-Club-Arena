@@ -135,6 +135,9 @@ export default function FriendsPage() {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [pendingRequests, setPendingRequests] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(true);
+  /* A failed load and an empty account used to render identically - both were
+     "Build Your Poker Circle". This is what tells them apart. */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [visibleFriendCount, setVisibleFriendCount] = useState(FRIENDS_PAGE_SIZE);
@@ -185,10 +188,15 @@ export default function FriendsPage() {
     }
   }, [user?.id]);
 
-  useEffect(() => {
-    const timeout = window.setTimeout(() => setLoading(false), 5000);
-    return () => window.clearTimeout(timeout);
-  }, []);
+  /* THE SKELETON WAITS FOR THE ANSWER, NOT FOR A CLOCK (2026-09-05).
+     A mount-only `setTimeout(() => setLoading(false), 5000)` used to sit here.
+     It was unconditional, so on any load slower than five seconds - and
+     retryFetch alone can spend 1s + 2s of backoff before it returns - the
+     skeleton was replaced by the "Build Your Poker Circle" empty state while
+     the queries were still in flight. The page told a person with 1,309
+     friends that they had none. Loading now ends when the load ends, in the
+     `finally` of loadFriends, and a load that FAILS says so (loadError below)
+     instead of impersonating an empty account. */
 
   useVisibilityRefresh(() => loadFriendsRef.current());
 
@@ -227,17 +235,30 @@ export default function FriendsPage() {
     };
   }, [user?.id]);
 
-  const handleFriendRequest = useCallback(() => {
-    loadFriendsRef.current();
-    toast.success('New friend request received!');
-  }, [toast]);
+  /* THE ANNOUNCEMENT MATCHES WHAT HAPPENED (2026-09-05).
+     This listened for INSERT only and toasted "New friend request received!"
+     for every one of them - including the row written when somebody ACCEPTS
+     you, which is an insert with status 'accepted'. It also never saw an
+     UPDATE (your outgoing request being accepted) or a DELETE (being removed),
+     so the list silently kept showing people who were no longer there until
+     the tab was refocused. Now every change reloads, and only a genuinely
+     pending row announces itself. */
+  const handleFriendshipChange = useCallback(
+    (payload?: { eventType?: string; new?: { status?: string | null } | null }) => {
+      loadFriendsRef.current();
+      const isNewPendingRequest =
+        payload?.eventType === 'INSERT' && payload?.new?.status === 'pending';
+      if (isNewPendingRequest) toast.success('New Friend Request Received');
+    },
+    [toast]
+  );
 
   useMasterBusChannel({
     channelName: user?.id ? `friend-requests-${user.id}` : null,
     table: 'friendships',
     filter: user?.id ? `friend_id=eq.${user.id}` : null,
-    event: 'INSERT',
-    onPayload: handleFriendRequest,
+    event: '*',
+    onPayload: handleFriendshipChange,
     enabled: !!user?.id,
   });
 
@@ -280,6 +301,16 @@ export default function FriendsPage() {
                 .eq('user_id', user.id)
                 .eq('status', 'accepted')
                 .order('created_at', { ascending: false })
+                /* A TOTAL ORDER, OR .range() LOSES ROWS (2026-09-05).
+                   `created_at` is not unique here: on the founder's account
+                   1,309 accepted rows carry only 485 distinct timestamps and
+                   the largest tie group is 214. Postgres may order tied rows
+                   differently for each OFFSET window, so a tie straddling a
+                   500-row page boundary gets partly skipped and partly
+                   repeated - the page displayed 1,274 of 1,309 friends, and
+                   which 35 went missing changed between loads. The id makes
+                   the sort total, so the windows partition the set exactly. */
+                .order('id', { ascending: false })
                 .range(from, to),
             isMounted
           ),
@@ -292,6 +323,16 @@ export default function FriendsPage() {
                 .eq('friend_id', user.id)
                 .eq('status', 'accepted')
                 .order('created_at', { ascending: false })
+                /* A TOTAL ORDER, OR .range() LOSES ROWS (2026-09-05).
+                   `created_at` is not unique here: on the founder's account
+                   1,309 accepted rows carry only 485 distinct timestamps and
+                   the largest tie group is 214. Postgres may order tied rows
+                   differently for each OFFSET window, so a tie straddling a
+                   500-row page boundary gets partly skipped and partly
+                   repeated - the page displayed 1,274 of 1,309 friends, and
+                   which 35 went missing changed between loads. The id makes
+                   the sort total, so the windows partition the set exactly. */
+                .order('id', { ascending: false })
                 .range(from, to),
             isMounted
           ),
@@ -304,6 +345,16 @@ export default function FriendsPage() {
                 .eq('friend_id', user.id)
                 .eq('status', 'pending')
                 .order('created_at', { ascending: false })
+                /* A TOTAL ORDER, OR .range() LOSES ROWS (2026-09-05).
+                   `created_at` is not unique here: on the founder's account
+                   1,309 accepted rows carry only 485 distinct timestamps and
+                   the largest tie group is 214. Postgres may order tied rows
+                   differently for each OFFSET window, so a tie straddling a
+                   500-row page boundary gets partly skipped and partly
+                   repeated - the page displayed 1,274 of 1,309 friends, and
+                   which 35 went missing changed between loads. The id makes
+                   the sort total, so the windows partition the set exactly. */
+                .order('id', { ascending: false })
                 .range(from, to),
             isMounted
           ),
@@ -379,7 +430,13 @@ export default function FriendsPage() {
         setConnectionDiagnostics({
           unavailableProfiles: nextFriends.filter((friend) => !friend.profile_available).length,
         });
-        hasDataRef.current = nextFriends.length > 0;
+        /* TRUE MEANS "THIS PAGE HAS AN ANSWER", NOT "THE ANSWER WAS NOT
+           EMPTY" (2026-09-05). It used to be `nextFriends.length > 0`, and the
+           effect below only skips a reload when it is true - so for any
+           account with zero friends the guard never latched and every presence
+           `sync` (which builds a fresh Set each time, hence a fresh loadFriends
+           identity) re-ran all three paged friendships queries, forever. */
+        hasDataRef.current = true;
         setPendingRequests(
           pendingRows
             .filter((request) => request.user_id)
@@ -403,9 +460,13 @@ export default function FriendsPage() {
               };
             })
         );
+        setLoadError(null);
       } catch (error) {
         reportError(error, 'FriendsPage.Failed_to_load_friends');
         toast.error('Failed to load friends');
+        if ((!getIsMounted || getIsMounted()) && isMounted.current) {
+          setLoadError('Your Connections Could Not Be Reached');
+        }
       } finally {
         loadingRef.current = false;
         if ((!getIsMounted || getIsMounted()) && isMounted.current) setLoading(false);
@@ -458,11 +519,24 @@ export default function FriendsPage() {
     if (!removeTarget) return;
     setRemovingFriend(true);
     try {
+      /* BOTH DIRECTIONS, OR THE FRIEND COMES BACK (2026-09-05).
+         Every friendship on this platform is stored as a reciprocal pair - one
+         row each way - and the list dedupes them to a single entry keyed by the
+         other person's id, so `removeTarget.id` is whichever row happened to be
+         seen first. Deleting only that row left the mirror behind and the
+         friend reappeared on the next load. Deleting by the PAIR removes the
+         relationship; the user filter keeps it to relationships this account is
+         actually part of, which is what RLS would enforce anyway. */
+      const viewerId = user?.id;
+      if (!viewerId) throw new Error('Not signed in');
+      const otherId = removeTarget.user_id;
       const { error } = await supabase
         .from('friendships')
         .delete()
-        .eq('id', removeTarget.id)
-        .or(`user_id.eq.${user?.id},friend_id.eq.${user?.id}`);
+        .or(
+          `and(user_id.eq.${viewerId},friend_id.eq.${otherId}),` +
+            `and(user_id.eq.${otherId},friend_id.eq.${viewerId})`
+        );
       if (error) throw error;
       setRemoveTarget(null);
       await loadFriends();
@@ -585,7 +659,7 @@ export default function FriendsPage() {
         {activeTab === 'friends' && (
           <div
             id="friends-panel-friends"
-            className="friends-panel"
+            className="friends-tabpanel"
             role="tabpanel"
             aria-labelledby="friends-tab-friends"
           >
@@ -609,9 +683,16 @@ export default function FriendsPage() {
 
             {connectionDiagnostics.unavailableProfiles > 0 && (
               <div className="friends-integrity-notice" role="status">
+                {/* Each branch is a WHOLE phrase. Splitting the word across
+                    the ternary ("Relationship" + "s Need") produced a browser
+                    -painted fragment starting lower-case, which check-title-case
+                    correctly refuses - and it was unreadable in the source
+                    besides. */}
                 <strong>
-                  {connectionDiagnostics.unavailableProfiles} Relationship
-                  {connectionDiagnostics.unavailableProfiles === 1 ? '' : 's'} Need Profile Repair
+                  {connectionDiagnostics.unavailableProfiles}{' '}
+                  {connectionDiagnostics.unavailableProfiles === 1
+                    ? 'Relationship Needs Profile Repair'
+                    : 'Relationships Need Profile Repair'}
                 </strong>
                 <span>
                   These Records Remain Removable, But Profile, Message, And Challenge Actions Stay
@@ -631,6 +712,19 @@ export default function FriendsPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+            ) : loadError && friends.length === 0 ? (
+              /* A LOAD THAT FAILED IS NOT AN EMPTY ACCOUNT (2026-09-05).
+                 Both used to render "Build Your Poker Circle" with a Find
+                 Players button, so a network error told the player their
+                 friends were gone and offered to help them make some. */
+              <div className="friends-empty" role="alert">
+                <span aria-hidden="true">!</span>
+                <h3>{loadError}</h3>
+                <p>Your Connections Are Safe. This Is A Problem Reaching Them, Not Losing Them.</p>
+                <button type="button" onClick={() => void loadFriends()}>
+                  Try Again
+                </button>
               </div>
             ) : filteredFriends.length === 0 ? (
               <div className="friends-empty">
@@ -698,7 +792,7 @@ export default function FriendsPage() {
         {activeTab === 'requests' && (
           <div
             id="friends-panel-requests"
-            className="friends-panel"
+            className="friends-tabpanel"
             role="tabpanel"
             aria-labelledby="friends-tab-requests"
           >
@@ -752,7 +846,7 @@ export default function FriendsPage() {
         {activeTab === 'activity' && (
           <div
             id="friends-panel-activity"
-            className="friends-panel friends-activity"
+            className="friends-tabpanel friends-activity"
             role="tabpanel"
             aria-labelledby="friends-tab-activity"
           >
@@ -773,7 +867,7 @@ export default function FriendsPage() {
         {activeTab === 'challenges' && (
           <div
             id="friends-panel-challenges"
-            className="friends-panel"
+            className="friends-tabpanel"
             role="tabpanel"
             aria-labelledby="friends-tab-challenges"
           >

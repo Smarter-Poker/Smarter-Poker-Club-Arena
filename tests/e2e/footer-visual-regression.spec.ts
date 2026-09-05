@@ -8,6 +8,29 @@ const footerArt = readFileSync(
   join(ROOT, 'public/images/club-footer/club-arena-footer-v2.webp')
 ).toString('base64');
 
+/* READ THE SHIPPED CONSTANT, DO NOT RESTATE IT (2026-09-05).
+   This test used to paste `clamp(44px, 13.72vw, 132px)` into its own :root, so
+   it went on asserting a value the app had stopped using and could never have
+   noticed the difference. It now takes the declaration from the stylesheet the
+   app actually loads. */
+/* club-engine.css, not globals.css: main.tsx imports exactly one of the three
+   stylesheets that declare this constant, and it is this one. Reading either of
+   the other two would have gone on passing while the value the browser
+   actually resolves drifted away underneath. footer-clearance.test.ts is what
+   keeps all three in step. */
+const engineCss = readFileSync(join(ROOT, 'src/styles/club-engine.css'), 'utf8');
+const HEIGHT_DECL = /--bottom-nav-height:\s*([^;]+);/.exec(engineCss)?.[1]?.trim();
+if (!HEIGHT_DECL) throw new Error('club-engine.css no longer declares --bottom-nav-height');
+
+/* The frame inside the approved asset: the rect x=25 y=14 1866x230 of a
+   1916x256 canvas. Everything below is derived from this one number. */
+const FRAME_ASPECT = 1866 / 230;
+const HEIGHT_CEILING = 132;
+const HEIGHT_FLOOR = 44;
+/* Above this width the ceiling binds, and the bar centres instead of growing.
+   Stopping the height without stopping the width IS the distortion. */
+const FULL_BLEED_MAX_WIDTH = HEIGHT_CEILING * FRAME_ASPECT;
+
 const VIEWPORTS = [
   { width: 320, height: 568 },
   { width: 390, height: 844 },
@@ -30,7 +53,7 @@ test.describe('Club Arena footer visual contract', () => {
         <head>
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <style>
-          :root { --bottom-nav-height: clamp(44px, 13.72vw, 132px); }
+          :root { --bottom-nav-height: ${HEIGHT_DECL}; }
           html, body { margin: 0; min-height: 200vh; background: #07101d; }
           ${footerCss}
         </style>
@@ -72,15 +95,53 @@ test.describe('Club Arena footer visual contract', () => {
       expect(Math.abs(navBox!.x)).toBeLessThanOrEqual(1);
       expect(Math.abs(navBox!.y + navBox!.height - viewport.height)).toBeLessThanOrEqual(1);
       expect(navBox!.width).toBeLessThanOrEqual(viewport.width + 1);
-      expect(navBox!.height).toBeGreaterThanOrEqual(44);
-      expect(navBox!.height).toBeLessThanOrEqual(132);
-      const expectedHeight = Math.min(132, Math.max(44, viewport.width * 0.1372));
+      expect(navBox!.height).toBeGreaterThanOrEqual(HEIGHT_FLOOR);
+      expect(navBox!.height).toBeLessThanOrEqual(HEIGHT_CEILING);
+      /* The bar is as tall as the frame's own shape asks for, floored at a
+         touch target and capped at the approved desktop height. */
+      const expectedHeight = Math.min(
+        HEIGHT_CEILING,
+        Math.max(HEIGHT_FLOOR, viewport.width / FRAME_ASPECT)
+      );
       expect(Math.abs(navBox!.height - expectedHeight)).toBeLessThanOrEqual(1);
+
+      /* THE FRAME KEEPS ITS OWN SHAPE AT EVERY WIDTH (Dan 2026-09-05: the
+         footer "IS DISTORTED").
+         This block used to assert one thing - that the image overhangs both
+         edges - which is only the right assertion while the frame is
+         full-bleed. It was true at every viewport because the old constant let
+         the box take any aspect the viewport produced and stretched the image
+         to fill it: 10.2% too tall on phones, and squashed 12% at 1204px, 28%
+         at 1366 and 79% at 1920, where the frame's own shape asks for 237px.
+         The contract is now the SHAPE, which is what a visual regression test
+         should have been guarding, plus the overhang in the range where
+         overhang is what full-bleed means. */
+      const artwork = await page.locator('.artwork').boundingBox();
+      expect(artwork).not.toBeNull();
+      const drawnAspect = artwork!.width / artwork!.height;
+      expect(
+        Math.abs(drawnAspect / FRAME_ASPECT - 1),
+        `frame distorted at ${viewport.width}px: drawn ${drawnAspect.toFixed(3)}:1 ` +
+          `against the asset's ${FRAME_ASPECT.toFixed(3)}:1`
+      ).toBeLessThan(0.01);
 
       const artworkBox = await page.locator('.artworkImage').boundingBox();
       expect(artworkBox).not.toBeNull();
-      expect(artworkBox!.x).toBeLessThan(0);
-      expect(artworkBox!.x + artworkBox!.width).toBeGreaterThan(viewport.width);
+      if (viewport.width <= FULL_BLEED_MAX_WIDTH) {
+        // Full-bleed: the canvas gutter is pushed off both edges so the frame's
+        // chrome reaches x=0 and the far edge.
+        expect(artworkBox!.x).toBeLessThan(0);
+        expect(artworkBox!.x + artworkBox!.width).toBeGreaterThan(viewport.width);
+      } else {
+        // Past the ceiling the bar is a centred dock of the approved height.
+        // Its rounded end caps become visible for the first time - full-bleed
+        // had always cropped them off.
+        expect(artwork!.width).toBeLessThanOrEqual(FULL_BLEED_MAX_WIDTH + 1);
+        const leftGap = artwork!.x;
+        const rightGap = viewport.width - (artwork!.x + artwork!.width);
+        expect(Math.abs(leftGap - rightGap), 'the bar is not centred').toBeLessThanOrEqual(1);
+        expect(leftGap).toBeGreaterThan(0);
+      }
 
       const links = page.locator('[data-footer-control]');
       await expect(links).toHaveCount(6);

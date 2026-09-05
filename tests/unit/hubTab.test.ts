@@ -22,6 +22,7 @@ import {
   HUB_TABS_KEY,
   HUB_TABS_TTL_MS,
   clubArenaPathFromHubUrl,
+  hubTabSubtitle,
   hubTabTitle,
   isHubPath,
   isOffSite,
@@ -62,6 +63,25 @@ describe('hubTabTitle names the pill for where the frame is', () => {
     // No em dashes, no lower-case leading words - the strip is player-facing copy.
     expect(hubTabTitle('/hub/daily_free_roll')).toBe('Daily Free Roll');
     expect(hubTabTitle('/hub/daily_free_roll')).not.toContain('—');
+  });
+});
+
+describe('hubTabSubtitle: where inside the section the frame is', () => {
+  it.each([
+    ['/hub', ''],
+    ['/hub/social', ''],
+    ['/hub/social/', ''],
+    ['/hub/training/drills/3', 'Drills / 3'],
+    ['/hub/media/live-shows?x=1#y', 'Live Shows'],
+    ['/hub/personal-assistant/sandbox', 'Sandbox'],
+  ])('%s -> %s', (path, sub) => {
+    expect(hubTabSubtitle(path)).toBe(sub);
+  });
+
+  it('is capped so it can never widen the pill', () => {
+    const sub = hubTabSubtitle('/hub/training/a-very-long-drill-name/with-more/segments');
+    expect(sub.length).toBeLessThanOrEqual(18);
+    expect(sub.endsWith('…')).toBe(true);
   });
 });
 

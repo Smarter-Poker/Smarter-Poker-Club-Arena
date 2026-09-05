@@ -169,12 +169,10 @@ function Felt({
   frame: ReplayFrame;
   heroId: string | null;
 }) {
-  const seats = frameSeats(model);
+  const seats = useMemo(() => frameSeats(model), [model]);
   const hero = model.players.find((p) => p.userId === heroId);
-  const layout = useMemo(
-    () => seatLayout(seats, hero?.seat ?? null),
-    [seats.join(','), hero?.seat]
-  );
+  const heroSeat = hero?.seat ?? null;
+  const layout = useMemo(() => seatLayout(seats, heroSeat), [seats, heroSeat]);
   const backs = holdingSize(model);
   const winners = new Set(model.showdown.filter((r) => r.isWinner).map((r) => r.seat));
   for (const p of model.players) if (p.won > 0) winners.add(p.seat);

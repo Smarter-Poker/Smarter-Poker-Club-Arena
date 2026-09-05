@@ -90,6 +90,18 @@ export const VIPMembershipPlate: React.FC<VIPMembershipPlateProps> = ({
       limit: limits.tags.limit || VIP_MONTHLY_ALLOWANCES.tags,
       unit: '',
     },
+    {
+      id: 'throwables',
+      label: 'Throwables',
+      /* fn_use_throwable counts this calendar month's rows in `throw_usage`
+         and charges 1 diamond only from the 501st. RESTORED 2026-09-05 - it
+         was cut from this list the same morning on the strength of an empty
+         `feature_pricing.throwable.vip_tiers_included`, a column nothing
+         reads. The function was the enforcement all along. */
+      used: limits.throwables.used,
+      limit: limits.throwables.limit || VIP_MONTHLY_ALLOWANCES.throwables,
+      unit: '',
+    },
   ];
 
   /* Included, not metered. Each is a per-session or per-use diamond charge a

@@ -84,6 +84,24 @@ export type ServerMessage =
   | ServerUserEventMessage;
 
 // WS close codes the server emits (mirrors CLOSE_* constants on server).
+/**
+ * Report a client-side connection failure to the engine.
+ *
+ * DYNAMICALLY IMPORTED ON PURPOSE (2026-09-05). A static import pulled the
+ * beacon - and the auth-token module it needs - into the ENTRY CHUNK, which
+ * every player downloads before first paint. CI caught it
+ * ("2 module(s) entered the entry chunk"). Telemetry about a broken socket
+ * must never be part of what a player waits for to see their first frame, so
+ * it loads only when something has actually gone wrong.
+ */
+function beacon(reason: 'auth_failed' | 'stale' | 'handshake_timeout' | 'closed'): void {
+  void import('./clientConnectionBeacon')
+    .then((m) => m.reportConnectionEvent(reason))
+    .catch(() => {
+      /* telemetry never disturbs the table */
+    });
+}
+
 export const CLOSE_AUTH_FAILED = 4401;
 export const CLOSE_TABLE_NOT_FOUND = 4404;
 export const CLOSE_RATE_LIMITED = 4429;
@@ -383,6 +401,7 @@ export class EngineStateClient {
       this.handshakeTimer = null;
       if (this.ws !== ws) return;
       if (ws.readyState === 0 /* CONNECTING */) {
+        beacon('handshake_timeout');
         try {
           ws.close();
         } catch {
@@ -455,6 +474,9 @@ export class EngineStateClient {
       // Auth failure — bubble up to the host; do not retry with the same token
       if (e.code === CLOSE_AUTH_FAILED) {
         this.setStatus('auth_failed');
+        // Phase 2 (2026-09-05): the server counts what the browser saw.
+        // Throttled and fire-and-forget - it cannot delay the reconnect.
+        beacon('auth_failed');
         this.opts.onError({ code: e.code, reason: e.reason });
         // Still schedule a reconnect — getToken may return a refreshed token next
         this.scheduleReconnect();
@@ -779,6 +801,7 @@ export class EngineStateClient {
         this.opts.onError({
           reason: `engine silent for ${Math.round(silentFor / 1000)}s (${this.unansweredResyncs} unanswered resyncs) - forcing reconnect`,
         });
+        beacon('stale');
         this.lastInboundAt = Date.now(); // don't re-fire while the close lands
         this.unansweredResyncs = 0;
         // 2026-08-22: announce the truth. This path used to leave status at

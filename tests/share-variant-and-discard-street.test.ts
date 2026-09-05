@@ -26,6 +26,8 @@ import { resolve } from 'node:path';
  *    preflop and before the flop, 31 of 31.
  */
 
+import { buildReplay } from '../src/utils/handReplay';
+
 const readSrc = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 
 /* toShareVariant is module-private to the page. Rather than export it purely
@@ -83,7 +85,7 @@ describe('share variant covers the whole live catalogue', () => {
   it('offers no OFC variant at all', () => {
     const share = readSrc('src/components/table/ShareHand.tsx');
     expect(share).not.toContain("'OFC Pineapple'");
-    const page = readSrc('src/pages/HandHistoryPage.tsx');
+    const page = readSrc('src/lib/handHistoryAdapter.ts');
     expect(page).not.toContain("includes('OFC')");
     // A legacy ofc_pineapple row still contains "PINEAPPLE", so it lands on
     // Pineapple - which is what those tables always actually were.
@@ -102,8 +104,14 @@ describe('share variant covers the whole live catalogue', () => {
     }
   });
 
-  it('the page still uses these ordered rules', () => {
-    const page = readSrc('src/pages/HandHistoryPage.tsx');
+  it('the one share mapping still uses these ordered rules, and the page uses it', () => {
+    /* 2026-09-04: the page kept a weaker private copy of this mapping (no
+       separator stripping, no OMAHA8 / HILO). It shares through the adapter's
+       `panelHandToShareable`, which calls the adapter's `toShareVariant`. */
+    const pageSrc = readSrc('src/pages/HandHistoryPage.tsx');
+    expect(pageSrc).toContain('panelHandToShareable(hand,');
+    expect(pageSrc).not.toMatch(/function toShareVariant/);
+    const page = readSrc('src/lib/handHistoryAdapter.ts');
     const order = ['PINEAPPLE', 'SHORT', 'PLO8', 'PLO6', 'PLO5'];
     const positions = order.map((t) => page.indexOf(`includes('${t}')`));
     expect(positions.every((p) => p > -1)).toBe(true);
@@ -111,7 +119,7 @@ describe('share variant covers the whole live catalogue', () => {
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
     // The bare PLO catch-all must come last of the PLO rules; PLO8 landing
     // after it is the original bug in its exact form.
-    const barePlo = page.indexOf("includes('PLO'))");
+    const barePlo = page.indexOf("includes('PLO') ||");
     expect(barePlo).toBeGreaterThan(-1);
     expect(page.indexOf("includes('PLO8')")).toBeLessThan(barePlo);
   });
@@ -129,8 +137,27 @@ describe('pineapple_discard is a street, not a dropped action', () => {
   });
 
   it('the panel can name it', () => {
+    // The panel renders the shared model, whose street table names the street:
+    // behaviour, not text.
+    const model = buildReplay({
+      handNumber: 1,
+      playedAt: null,
+      gameVariant: 'pineapple',
+      smallBlind: 1,
+      bigBlind: 2,
+      potSize: 3,
+      buttonSeat: 1,
+      board: [],
+      players: [
+        { seat: 1, userId: 'a', username: 'A', stack: 0 },
+        { seat: 2, userId: 'b', username: 'B', stack: 0 },
+      ],
+      actions: [{ seat: 1, userId: 'a', action: 'discard', amount: 0, stage: 'pineapple_discard' }],
+      winners: [],
+      holeCards: {},
+    } as never);
+    expect(model.streets.find((s) => s.key === 'pineapple_discard')?.label).toBe('Discard');
     const panel = readSrc('src/components/table/HandHistoryPanel.tsx');
-    expect(panel).toContain("case 'pineapple_discard':");
     expect(panel).toContain("'preflop' | 'pineapple_discard' | 'flop'");
   });
 });

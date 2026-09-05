@@ -23,17 +23,54 @@ import { fetchAllRows } from '../src/utils/fetchAllRows';
 
 const ROOT = join(__dirname, '..');
 
-/** Files whose paged reads represent people, where a lost row is a lost person. */
-const PAGED_PEOPLE_READERS = ['src/pages/FriendsPage.tsx'];
+/**
+ * Files whose paged reads represent people or their money, where a lost row is
+ * a lost person or an unexplained diamond.
+ *
+ * `useDiamondLedger` joined the list on 2026-09-05, the same day and from the
+ * same defect class: the wallet's Receive pane was given real pagination, and
+ * the diamond ledger carries the tie problem in a sharper form than /friends
+ * did. Measured on production - the longest ledger is 390 credits, 41 of them
+ * share a timestamp, the largest tie group is 29 (LARGER THAN A PAGE), and two
+ * of those rows sit exactly on a page seam. Ordering by `created_at` alone
+ * would serve one twice and drop another, and the dropped one is a diamond the
+ * player was paid and can no longer see.
+ *
+ * Added here rather than pinned again in a new law: one rule, one place.
+ */
+const PAGED_PEOPLE_READERS = ['src/pages/FriendsPage.tsx', 'src/hooks/useDiamondLedger.ts'];
+
+/**
+ * Blank out comments, PRESERVING EVERY BYTE OFFSET so the lookback window below
+ * still lands where it should.
+ *
+ * Needed because this law reads for `.range(` and the files it guards explain
+ * themselves: every corrected query here carries a comment saying ".range()
+ * LOSES ROWS", and the diamond ledger's header says it three more times. Match
+ * that prose and the law reports a violation in the very sentence recording the
+ * fix - which is the same false positive the route gate produced, and it is the
+ * dangerous direction to get wrong twice: an agent who "fixes" a comment-driven
+ * failure by narrowing the matcher again re-exempts the real code.
+ */
+const blankComments = (src: string): string =>
+  src
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+    .replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length));
 
 describe('a paged read ends its ordering with a unique column', () => {
   for (const file of PAGED_PEOPLE_READERS) {
     it(`${file} never pages on a tie-prone sort alone`, () => {
-      const source = readFileSync(join(ROOT, file), 'utf8');
+      const source = blankComments(readFileSync(join(ROOT, file), 'utf8'));
 
-      // Every `.range(from, to)` is the tail of a paged query. Walk back to the
-      // ordering that produced it and require a unique tiebreaker.
-      const ranges = [...source.matchAll(/\.range\(from, to\)/g)];
+      /* Every `.range(` is the tail of a paged query. Walk back to the ordering
+         that produced it and require a unique tiebreaker.
+
+         Matched on the CALL, not on one spelling of its arguments. This read
+         `/\.range\(from, to\)/` until 2026-09-05, which silently exempted every
+         paged query that computed its window inline - `.range(from, from + N -
+         1)` is the same query and the same hazard, and a law that only sees one
+         way of writing it passes the other by default. */
+      const ranges = [...source.matchAll(/\.range\(/g)];
       expect(ranges.length, 'no paged reads found - has this file moved?').toBeGreaterThan(0);
 
       for (const match of ranges) {

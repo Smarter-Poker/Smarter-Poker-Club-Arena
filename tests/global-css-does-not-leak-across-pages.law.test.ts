@@ -149,6 +149,10 @@ describe('a global class name has exactly one owner', () => {
       const union = new Set(declared.flatMap((s) => [...s]));
       if ([...union].some((p) => declared.some((s) => !s.has(p)))) leakable += 1;
     }
-    expect(leakable).toBeLessThanOrEqual(164);
+    // 2026-09-05, fourth pass: 162. Main set 164 on the new basis while the
+    // wallet's two fixes were still on a branch; with them merged the tree
+    // measures 162, so the ceiling follows it down. Nothing new was fixed here
+    // - this is the same two leaks being counted where they belong.
+    expect(leakable).toBeLessThanOrEqual(162);
   });
 });

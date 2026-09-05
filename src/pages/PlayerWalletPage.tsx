@@ -46,12 +46,12 @@ import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import { DiamondService } from '../services/DiamondService';
 import { storeFetch } from './marketplace/marketplaceShared';
-import { diamondTxLabel } from '../components/wallet/DiamondWalletModal';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { formatPopupText } from '../utils/popupStyle';
 import { mediaUrl } from '../utils/mediaBase';
 import { reportError } from '../utils/errorReporter';
 import { useRealtimeFinancials } from '../hooks/useRealtimeFinancials';
+import { useDiamondLedger, DIAMOND_LEDGER_PAGE } from '../hooks/useDiamondLedger';
 import './PlayerWalletPage.css';
 
 type WalletTab = 'overview' | 'send' | 'receive' | 'earn' | 'history';
@@ -338,13 +338,8 @@ interface FriendOption {
   name: string;
 }
 
-interface IncomingRow {
-  id: string;
-  label: string;
-  description: string;
-  amount: number;
-  createdAt: string;
-}
+/* The Receive and Send ledgers are one query in two directions; the paging,
+   the unique-key tiebreaker and the merge-on-refresh live in the hook. */
 
 interface RewardsProgress {
   earnedToday: number;
@@ -424,9 +419,27 @@ export default function PlayerWalletPage() {
   const sendInFlightRef = useRef(false);
 
   // ── Receive ──
-  const [incoming, setIncoming] = useState<IncomingRow[] | null>(null);
-  const [incomingError, setIncomingError] = useState(false);
+  const {
+    rows: incoming,
+    error: incomingError,
+    hasMore: incomingHasMore,
+    loadingMore: incomingLoadingMore,
+    load: loadIncoming,
+  } = useDiamondLedger(user?.id, 'in', isMounted);
   const [copied, setCopied] = useState<'id' | 'link' | null>(null);
+
+  /* ── The send side of the same ledger ──
+     A completed transfer used to leave no trace a player could see: the toast
+     is gone in seconds, Receive filters to credits, and the Ledger tab reads
+     the CHIP tables, so a sent diamond appeared on no surface in the wallet.
+     This is the record, and the send handler refreshes it on success. */
+  const {
+    rows: sent,
+    error: sentError,
+    hasMore: sentHasMore,
+    loadingMore: sentLoadingMore,
+    load: loadSent,
+  } = useDiamondLedger(user?.id, 'out', isMounted);
 
   // ── Earn ──
   const [progress, setProgress] = useState<RewardsProgress | null>(null);
@@ -710,6 +723,12 @@ export default function PlayerWalletPage() {
         `Sent ${fmtNum(data.transferred || amount)} Diamonds To ${data.recipientName || friend?.name || 'Your Friend'}`
       );
       if (isMounted.current) setSendAmount('');
+      /* THE SEND CONFIRMS ITSELF. The toast is gone in seconds and the credit
+         landed in someone else's ledger, so without this the player has no
+         standing evidence the transfer happened. `refresh` merges the new row
+         in at the top rather than resetting, so a player who had paged back
+         through their sends keeps their place. */
+      void loadSent('refresh');
       loadDiamonds(user.id, { force: true });
       masterBus.emit('BALANCE_UPDATED', { source: 'diamond_gift_sent', userId: user.id });
       if (typeof data.newBalance === 'number') {
@@ -732,51 +751,24 @@ export default function PlayerWalletPage() {
   };
 
   // ═══════════════════ RECEIVE ═══════════════════
-  const loadIncoming = useCallback(async () => {
-    if (!user?.id) return;
-    try {
-      const { data, error } = await supabase
-        .from('diamond_transactions')
-        /* `type` AND `transaction_type`: the older rows carry their kind in
-           `type` (signup_bonus, reconciliation), the newer in
-           `transaction_type`. Reading one column blanks half the ledger. */
-        .select('id, type, transaction_type, amount, description, created_at')
-        .eq('user_id', user.id)
-        .gt('amount', 0)
-        .order('created_at', { ascending: false })
-        .limit(25);
-      if (error) throw error;
-      const rows: IncomingRow[] = (data || []).map((tx) => {
-        const kind = (tx.transaction_type as string | null) || (tx.type as string | null);
-        return {
-          id: String(tx.id),
-          label: diamondTxLabel(kind),
-          description: String(tx.description || ''),
-          amount: Number(tx.amount) || 0,
-          createdAt: String(tx.created_at),
-        };
-      });
-      if (isMounted.current) {
-        setIncoming(rows);
-        setIncomingError(false);
-      }
-    } catch (err) {
-      reportError(err, 'PlayerWalletPage.loadIncoming');
-      if (isMounted.current) {
-        setIncoming([]);
-        setIncomingError(true);
-      }
-    }
-  }, [user?.id, isMounted]);
+
+  /* The Send pane's own record, loaded when the pane opens. */
+  useEffect(() => {
+    if (activeTab === 'send' && sent === null) void loadSent('reset');
+  }, [activeTab, sent, loadSent]);
 
   useEffect(() => {
-    if (activeTab === 'receive' && incoming === null) void loadIncoming();
+    if (activeTab === 'receive' && incoming === null) void loadIncoming('reset');
   }, [activeTab, incoming, loadIncoming]);
 
   // A credit that lands while the pane is open should appear without a reload.
   useEffect(() => {
     if (activeTab !== 'receive' || !user?.id) return;
-    return masterBus.subscribeDebounced('BALANCE_UPDATED', () => void loadIncoming(), 1500);
+    return masterBus.subscribeDebounced(
+      'BALANCE_UPDATED',
+      () => void loadIncoming('refresh'),
+      1500
+    );
   }, [activeTab, user?.id, loadIncoming]);
 
   const profileLink = useMemo(() => {
@@ -1207,6 +1199,93 @@ export default function PlayerWalletPage() {
                 </div>
               </div>
             </section>
+
+            {/* THE SEND CONFIRMS ITSELF.
+                A completed transfer used to leave no trace the player could
+                go back to: the toast expires, the Receive pane filters to
+                credits, and the Ledger tab reads the CHIP tables, so a sent
+                diamond appeared on no surface in this wallet. */}
+            <section className="vault-panel" aria-labelledby="sent-title">
+              <h3 id="sent-title" className="vault-panel__title">
+                Diamonds You Have Sent
+              </h3>
+              <p className="vault-panel__sub">
+                Every Gift You Have Sent, Newest First. A Refund Appears Here Too, Because A
+                Returned Gift Is Part Of The Same Story.
+              </p>
+              {sent === null && <div className="vault-empty">Loading Your Sends...</div>}
+              {sent !== null && sentError && sent.length === 0 && (
+                <div className="vault-empty" role="alert">
+                  Could Not Load Your Sends.{' '}
+                  <button
+                    type="button"
+                    className="vault-link"
+                    onClick={() => void loadSent('reset')}
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+              {sent !== null && !sentError && sent.length === 0 && (
+                <div className="vault-empty">
+                  You Have Not Sent Any Diamonds Yet. Pick A Friend Above.
+                </div>
+              )}
+              {sent !== null && sent.length > 0 && (
+                <ul className="incoming-list">
+                  {sent.map((row) => (
+                    <li key={row.id} className="incoming-row">
+                      <div className="incoming-row__body">
+                        <span className="incoming-row__label">{formatPopupText(row.label)}</span>
+                        <span className="incoming-row__desc">
+                          {formatPopupText(row.description || row.label)}
+                        </span>
+                      </div>
+                      <div className="incoming-row__side">
+                        {/* The sign comes from the ROW, not from the pane. A
+                            refund sits in this list and is a credit; printing
+                            a bare minus on everything here would tell a player
+                            their returned diamonds had left again. */}
+                        <span
+                          className={`incoming-row__amount${row.amount < 0 ? ' is-outgoing' : ''}`}
+                        >
+                          {row.amount < 0 ? '-' : '+'}
+                          {fmtNum(Math.abs(row.amount))}
+                        </span>
+                        <time className="incoming-row__time" dateTime={row.createdAt}>
+                          {new Date(row.createdAt).toLocaleDateString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </time>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {sent !== null && sentError && sent.length > 0 && (
+                <div className="vault-empty" role="alert">
+                  Could Not Load Older Sends.{' '}
+                  <button
+                    type="button"
+                    className="vault-link"
+                    onClick={() => void loadSent('more')}
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+              {sent !== null && sent.length > 0 && sentHasMore && !sentError && (
+                <button
+                  type="button"
+                  className="vault-btn vault-btn--wide"
+                  onClick={() => void loadSent('more')}
+                  disabled={sentLoadingMore}
+                >
+                  {sentLoadingMore ? 'Loading...' : 'Load Older Sends'}
+                </button>
+              )}
+            </section>
           </div>
         )}
 
@@ -1277,10 +1356,15 @@ export default function PlayerWalletPage() {
                 Every Credit That Landed In Your Diamond Ledger, Newest First.
               </p>
               {incoming === null && <div className="vault-empty">Loading Your Ledger...</div>}
-              {incoming !== null && incomingError && (
+              {/* The FIRST read failed, so there is nothing to show. */}
+              {incoming !== null && incomingError && incoming.length === 0 && (
                 <div className="vault-empty" role="alert">
                   Could Not Load Incoming Diamonds.{' '}
-                  <button type="button" className="vault-link" onClick={() => void loadIncoming()}>
+                  <button
+                    type="button"
+                    className="vault-link"
+                    onClick={() => void loadIncoming('reset')}
+                  >
                     Retry
                   </button>
                 </div>
@@ -1313,6 +1397,40 @@ export default function PlayerWalletPage() {
                   ))}
                 </ul>
               )}
+              {/* A LATER page failed. The pages already read stay on screen. */}
+              {incoming !== null && incomingError && incoming.length > 0 && (
+                <div className="vault-empty" role="alert">
+                  Could Not Load Older Diamonds.{' '}
+                  <button
+                    type="button"
+                    className="vault-link"
+                    onClick={() => void loadIncoming('more')}
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+              {incoming !== null && incoming.length > 0 && incomingHasMore && !incomingError && (
+                <button
+                  type="button"
+                  className="vault-btn vault-btn--wide"
+                  onClick={() => void loadIncoming('more')}
+                  disabled={incomingLoadingMore}
+                >
+                  {incomingLoadingMore ? 'Loading...' : 'Load Older Diamonds'}
+                </button>
+              )}
+              {/* Say the ledger has ended, rather than just running out of
+                  button. Before this the pane simply stopped at 25 rows and a
+                  player could not tell a full ledger from a truncated one. */}
+              {incoming !== null &&
+                incoming.length > DIAMOND_LEDGER_PAGE &&
+                !incomingHasMore &&
+                !incomingError && (
+                  <p className="vault-panel__sub">
+                    That Is Every Diamond You Have Received. {fmtNum(incoming.length)} Credits.
+                  </p>
+                )}
             </section>
           </div>
         )}

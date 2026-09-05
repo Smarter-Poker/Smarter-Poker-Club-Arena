@@ -268,6 +268,14 @@
   outline-offset: 2px;
 }
 
+/* A continuation control belongs to the list above it, so it spans the list
+   rather than sitting beside it as an unrelated action. */
+.vault-btn--wide {
+  display: flex;
+  width: 100%;
+  margin-top: 12px;
+}
+
 .vault-btn:disabled {
   cursor: not-allowed;
   opacity: 0.45;
@@ -868,6 +876,13 @@
   font-size: 1.1rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+/* Diamonds LEAVING. The same row, read the other way, so the colour has to
+   carry the direction: a send rendered in the credit green tells a player
+   their balance went up. Chrome rather than red - a gift is not an error. */
+.incoming-row__amount.is-outgoing {
+  color: var(--vault-chrome);
 }
 
 .incoming-row__time {

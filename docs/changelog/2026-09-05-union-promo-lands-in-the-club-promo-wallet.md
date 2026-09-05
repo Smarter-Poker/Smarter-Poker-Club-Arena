@@ -199,6 +199,27 @@ force_custom_plan` (the generic plan skipped the index: 580 ms in the
   every branch because `fn_cash_game_must_move_list` (the must-move lobby,
   PR #3055) is a browser-callable definer with no allowlist row.
 
+## Follow-Up (Dan: "fully build all of these ... if any are high risk, do not build them")
+
+- **Rake wallet -> club: NOT BUILT, deliberately.** The Rake Treasury is held
+  in trust for the member clubs until the weekly close
+  (`20260820b_rake_only_to_treasury`,
+  `20260903161443_the_weekly_union_close_pays_from_the_rake_treasury_and_only_from_it`;
+  `fn_union_move_rake_to_chips_atomic` is retired for exactly this reason). A
+  manual rake -> club send would spend money that belongs to the clubs, which
+  is the high-risk case. The modal's refusal now states that reason and points
+  at the Union Bank. The pre-existing rake -> MEMBER chip send
+  (`fn_union_send_to_member`, source `rake`) is untouched here and worth a
+  look by whoever owns the weekly close.
+- **Telemetry Exposure red: closed.** `fn_cash_game_must_move_list` had an
+  `authenticated` grant nothing in the client used (the lobby reads
+  `fn_cash_game_lobby`, a definer that calls it as owner).
+  `20260905074022_the_must_move_list_is_read_through_the_lobby_not_by_the_brow.sql`
+  revokes it; `fn_cash_game_lobby` re-read as an authenticated caller after,
+  and `check-telemetry-exposure.mjs` against production: "no unscoped
+  operator routine is reachable from a browser."
+- **World Hub wording: done** (#1372, live as `efba06e8`).
+
 ## Still Open
 
 - The World Hub route `pages/api/club-arena/union-wallet.js` still words its
@@ -206,5 +227,5 @@ force_custom_plan` (the generic plan skipped the index: 580 ms in the
   `club_treasury_after` (now null). The Club Arena modal ignores that message
   and prints its own. A one-line World Hub follow-up will change the wording
   and read `club_promo_after`.
-- The rake wallet has no route into a club. The modal now says so instead of
-  drawing on the union bank; whether one should exist is Dan's call.
+- Whether the rake -> MEMBER chip send should also be closed while the rake is
+  in trust. Pre-existing; not touched here.

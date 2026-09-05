@@ -83,7 +83,7 @@ describe('the union modal routes a club send by the wallet that is open', () => 
   it('the rake wallet has no club route and says so, never drawing on the bank in silence', () => {
     const r = clubSendRoute('rake', 'chips');
     expect(r.kind).toBe('refused');
-    expect(r.kind === 'refused' && r.reason).toMatch(/Rake Wallet/);
+    expect(r.kind === 'refused' && r.reason).toMatch(/Rake Treasury Is Held In Trust/);
   });
 
   it('diamonds never go to a club', () => {

@@ -50,11 +50,22 @@ describe('the drain gate cannot pin production on stale code', () => {
     expect(WF).not.toMatch(/MAX_ENGINE_AGE_SEC/);
     expect(WF).toMatch(/readyForRestart/);
     // And the deploy must never simply give up on the window: a break that
-    // opens has to be acted on, which means polling for long enough to reach
-    // :55 from the earliest tick at :40.
-    const attempts = Number(WF.match(/seq 1 (\d+)/)![1]);
-    const sleepSec = Number(WF.match(/sleep 15\n/) ? 15 : 0);
-    expect(attempts * sleepSec).toBeGreaterThanOrEqual(13 * 60);
+    // opens has to be acted on. #3070 (2026-09-05): the fixed 56 x 15 s poll
+    // gave up 23 s before the :55 break once builds grew past its budget, and
+    // production sat four merges behind while every run reported success.
+    // The poll is now SIZED TO THE NEXT :56 (plus a 90 s margin), capped by
+    // what the job has left after a cutover reserve, and a run that cannot
+    // reach the gate says so and exits rather than sleeping to the same answer.
+    expect(WF).toMatch(/SECS_TO_GATE=\$\(\( \(56 - MIN_NOW\) \* 60 - SEC_NOW \)\)/);
+    expect(WF).toMatch(/ATTEMPTS=\$\(\( \(SECS_TO_GATE \+ 90\) \/ POLL_S \)\)/);
+    expect(WF).toMatch(/for i in \$\(seq 1 \$ATTEMPTS\); do/);
+    expect(WF).toMatch(/sleep 15\n/);
+    expect(WF).toMatch(/BUDGET_CAP_S=\$\(\( JOB_TIMEOUT_S - ELAPSED_S - CUTOVER_RESERVE_S \)\)/);
+    expect(WF).toMatch(/if \[ "\$SECS_TO_GATE" -gt "\$BUDGET_CAP_S" \]; then/);
+    // The job itself leaves room for a full hour's wait plus the cutover: a
+    // tick at :35 with an 18-minute build still reaches :55 inside 40 minutes.
+    const timeout = Number(WF.match(/timeout-minutes: (\d+)/)![1]);
+    expect(timeout).toBeGreaterThanOrEqual(40);
   });
 
   it('proceeding is safe because the engine drains itself first', () => {
@@ -130,7 +141,7 @@ describe('the escape hatch behind that path is reachable', () => {
   };
 
   const pollLoop = (): string => {
-    const start = WF.indexOf('for i in $(seq 1 56)');
+    const start = WF.indexOf('for i in $(seq 1 $ATTEMPTS)');
     expect(start).toBeGreaterThan(0);
     const end = WF.indexOf('done', start);
     expect(end).toBeGreaterThan(start);

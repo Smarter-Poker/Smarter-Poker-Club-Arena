@@ -3,7 +3,7 @@
  *
  * On 2026-08-19 they did not. HorseFleetManager.DEFAULT_TABLES said PLO5
  * 8-max and PLO6 7-max while the law said 7 and 6, and ensureAllTablesExist()
- * re-created those tables on every boot — 83 PLO5 and 81 PLO6 rows had reached
+ * re-created those tables on every boot - 83 PLO5 and 81 PLO6 rows had reached
  * production. The client guard (TableService.createTable) never saw them,
  * because it only guards the club's Create Table modal.
  *
@@ -11,7 +11,7 @@
  * they cannot drift away from what runs.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   maxSeatsForVariant,
@@ -92,13 +92,23 @@ describe('HorseFleetManager cash table configs', () => {
     expect(FLEET_SRC).toContain("from '../config/tableSeating.js'");
   });
 
-  it('clamps at EVERY insert, so a future config edit cannot reach the database', () => {
-    const inserts = [...FLEET_SRC.matchAll(/\.from\('tables'\)\s*\.insert\(/g)].length;
-    const clamped = [...FLEET_SRC.matchAll(/max_players:\s*clampSeatsForVariant\(/g)].length;
-    expect(inserts).toBeGreaterThan(0);
-    expect(clamped).toBe(inserts);
-    // and no raw config value survives at an insert
+  it('inserts no table itself, and the one game it can ask for is born clamped', () => {
+    /* Moved 2026-09-05 for Gate 7. This used to count every
+       `.from('tables').insert(` in the fleet and require a
+       `max_players: clampSeatsForVariant(` beside each. The fleet has no table
+       insert any more (OPORD 1.4 s2.11: a cash table is opened only by the
+       cluster controller), so the count is pinned at ZERO, and the seat law is
+       applied at the one door left: the Stable Hand's game order, whose
+       handedness is clamped before fn_cash_game_ensure ever sees it. */
+    const inserts = [...FLEET_SRC.matchAll(/\.from\(['"]tables['"]\)\s*\.insert\(/g)].length;
+    expect(inserts).toBe(0);
+    expect(FLEET_SRC).toMatch(/p_handedness:\s*clampSeatsForVariant\(variant, 9\)/);
+    // and no raw config value reaches any write
     expect(FLEET_SRC).not.toMatch(/max_players:\s*config\.maxPlayers/);
+    // the controller's law is where table birth is pinned now
+    expect(
+      existsSync(join(process.cwd(), 'src/cluster/TheTablesOpenAndCloseThemselves.law.test.ts'))
+    ).toBe(true);
   });
 
   it('says so out loud when a config disagrees, instead of silently clamping', () => {

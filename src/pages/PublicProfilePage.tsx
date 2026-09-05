@@ -33,12 +33,14 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { PlayerAvatar } from '../components/avatars/PlayerAvatar';
 import PlayerBlockModal from '../components/social/PlayerBlockModal';
-import './PublicProfilePage.css';
+import styles from './PublicProfilePage.module.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { generateDefaultAvatar } from '../utils/avatarGenerator';
 import { reportError } from '../utils/errorReporter';
 import { mediaUrl } from '../utils/mediaBase';
 import { vipStatusLabel } from '../utils/vipStatus';
+import { aggregateArenaRecord, type ArenaRecord } from '../utils/arenaRecord';
+import { formatCount, formatPct } from '../utils/format';
 
 /** Purpose-built hero for this route (public/images/account). */
 const HERO_ART = mediaUrl('images/account/public-dossier-hero-v1.webp');
@@ -51,6 +53,10 @@ export default function PublicProfilePage() {
   const isMounted = useIsMounted();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  /* The public arena record. player_stats is readable by every signed-in
+     player by policy ("Player stats are public"), one row per club; the
+     dossier folds them into one line. Null until it answers, never zeroes. */
+  const [record, setRecord] = useState<ArenaRecord | null>(null);
   const [mutualFriends, setMutualFriends] = useState<
     { id: string; username: string; avatarUrl?: string }[]
   >([]);
@@ -85,16 +91,29 @@ export default function PublicProfilePage() {
     loadingRef.current = true;
     setLoading(true);
     try {
-      const [profileData, mutuals, blocked, friendship, status] = await Promise.all([
+      const [profileData, mutuals, blocked, friendship, status, arenaRecord] = await Promise.all([
         profileService.getPublicProfile(userId),
         friendSuggestionService.getMutualFriends(user.id, userId),
         blockService.isBlocked(user.id, userId),
         checkFriendship(user.id, userId),
         playerStatusService.getPlayerStatus(userId),
+        supabase
+          .from('player_stats')
+          .select('hands_played, vpip, pfr, tournaments_played, tournaments_won')
+          .eq('user_id', userId)
+          .limit(100)
+          .then(({ data, error }) => {
+            if (error) {
+              reportError(error, 'PublicProfilePage.record');
+              return null;
+            }
+            return data && data.length > 0 ? aggregateArenaRecord(data) : null;
+          }),
       ]);
 
       if (!isMounted.current) return;
       setProfile(profileData);
+      setRecord(arenaRecord);
       setMutualFriends(mutuals);
       setIsBlocked(blocked);
       setFriendStatus(friendship);
@@ -321,8 +340,8 @@ export default function PublicProfilePage() {
 
   if (loading) {
     return (
-      <div className="public-profile-page">
-        <div className="public-profile-loading">
+      <div className={styles.publicProfilePage}>
+        <div className={styles.publicProfileLoading}>
           <PageSkeleton variant="default" />
           <p>Loading Profile...</p>
         </div>
@@ -332,13 +351,13 @@ export default function PublicProfilePage() {
 
   if (!profile) {
     return (
-      <div className="public-profile-page">
-        <div className="public-profile-empty">
-          <span className="empty-icon" aria-hidden="true">
+      <div className={styles.publicProfilePage}>
+        <div className={styles.publicProfileEmpty}>
+          <span className={styles.emptyIcon} aria-hidden="true">
             ◉
           </span>
           <h2>Player Not Found</h2>
-          <button type="button" className="action-btn" onClick={() => navigate('/search')}>
+          <button type="button" className={styles.actionBtn} onClick={() => navigate('/search')}>
             Find Players
           </button>
         </div>
@@ -354,16 +373,16 @@ export default function PublicProfilePage() {
   const profileLink = userId ? playerStatusService.generateProfileLink(userId) : '';
 
   return (
-    <article className="public-profile-page">
+    <article className={styles.publicProfilePage}>
       {/* Header with avatar & name */}
-      <header className="public-profile-header">
+      <header className={styles.publicProfileHeader}>
         <div
-          className="public-profile-artwork"
+          className={styles.publicProfileArtwork}
           style={{ backgroundImage: `url("${HERO_ART}")` }}
           aria-hidden="true"
         />
-        <div className="profile-hero">
-          <span className="public-profile-eyebrow">Player Network // Public Credential</span>
+        <div className={styles.profileHero}>
+          <span className={styles.publicProfileEyebrow}>Player Network // Public Credential</span>
           <PlayerAvatar
             src={profile.avatarUrl || generateDefaultAvatar()}
             name={arenaName}
@@ -373,52 +392,81 @@ export default function PublicProfilePage() {
             level={profile.level}
             showVipRing={false}
           />
-          <h1 className="profile-username">{arenaName}</h1>
+          <h1 className={styles.profileUsername}>{arenaName}</h1>
           {profile.playerNumber && (
-            <span className="profile-handle">Player #{profile.playerNumber}</span>
+            <span className={styles.profileHandle}>Player #{profile.playerNumber}</span>
           )}
-          {profile.bio && <p className="profile-bio">{profile.bio}</p>}
-          <div className="profile-badges">
+          {profile.bio && <p className={styles.profileBio}>{profile.bio}</p>}
+          <div className={styles.profileBadges}>
             {/* VIP or Lifetime VIP. There is no tier ladder (utils/vipStatus). */}
             {profile.vipStatus && profile.vipStatus !== 'none' && (
               <span
-                className={`vip-badge${profile.vipStatus === 'lifetime' ? ' vip-badge--lifetime' : ''}`}
+                className={`${styles.vipBadge}${profile.vipStatus === 'lifetime' ? ` ${styles.vipBadge_Lifetime}` : ''}`}
               >
                 {vipStatusLabel(profile.vipStatus)}
               </span>
             )}
-            <span className="level-badge">Level {profile.level}</span>
-            <span className="member-since">Member Since {memberSince}</span>
+            {/* profiles.level is 1 on every row; a "Level 1" badge said
+                nothing. The club count is a real fact about the player. */}
+            {record && record.clubs > 0 && (
+              <span className={styles.levelBadge}>
+                {formatCount(record.clubs)} {record.clubs === 1 ? 'Club' : 'Clubs'}
+              </span>
+            )}
+            <span className={styles.memberSince}>Member Since {memberSince}</span>
           </div>
+
+          <dl className={styles.publicProfileRecord} aria-label="Arena Record">
+            <div>
+              <dt>Hands</dt>
+              <dd>{record ? formatCount(record.hands) : '-'}</dd>
+            </div>
+            <div>
+              <dt>VPIP / PFR</dt>
+              <dd>
+                {record && record.hands > 0
+                  ? `${formatPct(record.vpip, 0)} / ${formatPct(record.pfr, 0)}`
+                  : '-'}
+              </dd>
+            </div>
+            <div>
+              <dt>Tourneys</dt>
+              <dd>{record ? formatCount(record.tournamentsPlayed) : '-'}</dd>
+            </div>
+            <div>
+              <dt>Titles</dt>
+              <dd>{record ? formatCount(record.tournamentsWon) : '-'}</dd>
+            </div>
+          </dl>
 
           {/* Q3: Playing-At & Status */}
           {playerStatus?.playingAt && playerStatus.playingAtTableId ? (
             <button
               type="button"
-              className="playing-at-badge"
+              className={styles.playingAtBadge}
               onClick={() => navigate(`/table/${playerStatus.playingAtTableId}`)}
             >
-              <span className="playing-at-dot" aria-hidden="true" />
+              <span className={styles.playingAtDot} aria-hidden="true" />
               Playing At <strong>{playerStatus.playingAt}</strong>
             </button>
           ) : playerStatus?.playingAt ? (
-            <div className="playing-at-badge playing-at-badge--static">
-              <span className="playing-at-dot" aria-hidden="true" />
+            <div className={`${styles.playingAtBadge} ${styles.playingAtBadge_Static}`}>
+              <span className={styles.playingAtDot} aria-hidden="true" />
               Playing At <strong>{playerStatus.playingAt}</strong>
             </div>
           ) : null}
           {playerStatus?.statusText && (
-            <p className="player-status-text">{playerStatus.statusText}</p>
+            <p className={styles.playerStatusText}>{playerStatus.statusText}</p>
           )}
         </div>
       </header>
 
       {/* Action Buttons */}
-      <div className="profile-actions" role="group" aria-label="Player Actions">
+      <div className={styles.profileActions} role="group" aria-label="Player Actions">
         {isBlocked ? (
           <button
             type="button"
-            className="action-btn unblock-btn"
+            className={`${styles.actionBtn} ${styles.unblockBtn}`}
             onClick={handleUnblock}
             disabled={actionLoading}
           >
@@ -429,7 +477,7 @@ export default function PublicProfilePage() {
             {friendStatus === 'none' && (
               <button
                 type="button"
-                className="action-btn add-friend-btn"
+                className={`${styles.actionBtn} ${styles.addFriendBtn}`}
                 onClick={handleAddFriend}
                 disabled={actionLoading}
               >
@@ -437,14 +485,14 @@ export default function PublicProfilePage() {
               </button>
             )}
             {friendStatus === 'pending_sent' && (
-              <button type="button" className="action-btn pending-btn" disabled>
+              <button type="button" className={`${styles.actionBtn} ${styles.pendingBtn}`} disabled>
                 Request Sent
               </button>
             )}
             {friendStatus === 'pending_received' && (
               <button
                 type="button"
-                className="action-btn accept-btn"
+                className={`${styles.actionBtn} ${styles.acceptBtn}`}
                 onClick={handleAcceptFriend}
                 disabled={actionLoading}
               >
@@ -452,13 +500,13 @@ export default function PublicProfilePage() {
               </button>
             )}
             {friendStatus === 'friends' && (
-              <button type="button" className="action-btn friends-btn" disabled>
+              <button type="button" className={`${styles.actionBtn} ${styles.friendsBtn}`} disabled>
                 ✓ Friends
               </button>
             )}
             <button
               type="button"
-              className="action-btn message-btn"
+              className={`${styles.actionBtn} ${styles.messageBtn}`}
               onClick={handleMessage}
               disabled={actionLoading}
             >
@@ -466,52 +514,58 @@ export default function PublicProfilePage() {
             </button>
             <button
               type="button"
-              className="action-btn block-btn"
+              className={`${styles.actionBtn} ${styles.blockBtn}`}
               onClick={() => setShowBlockModal(true)}
               aria-label={`Block ${arenaName}`}
             >
               Block
             </button>
-            {/*
-              PHASE 7 — the review queue could never receive anything.
-              ReportPlayerPage has always written to user_reports, and
-              clubs/:clubId/reports has always read it, but nothing anywhere
-              linked to the form: user_reports held ZERO rows. This is the
-              missing half - staff could review reports no player could file.
-            */}
-            <button
-              type="button"
-              className="action-btn report-btn"
-              onClick={() => navigate(`/report/${userId}`)}
-              aria-label={`Report ${arenaName}`}
-            >
-              Report
-            </button>
-            <button type="button" className="action-btn share-btn" onClick={handleShare}>
-              Share
-            </button>
           </>
         )}
+        {/*
+          PHASE 7 — the review queue could never receive anything.
+          ReportPlayerPage has always written to user_reports, and
+          clubs/:clubId/reports has always read it, but nothing anywhere
+          linked to the form: user_reports held ZERO rows. This is the
+          missing half - staff could review reports no player could file.
+          Report stays reachable while the player is BLOCKED too: staff
+          review needs the report regardless of who can see whom.
+        */}
+        <button
+          type="button"
+          className={`${styles.actionBtn} ${styles.reportBtn}`}
+          onClick={() => navigate(`/report/${userId}`)}
+          aria-label={`Report ${arenaName}`}
+        >
+          Report
+        </button>
+        {/* No `share-btn` class: this page never styled one, and the bare global
+            `.share-btn` in the hand-replayer is `position: absolute` - with that
+            stylesheet loaded, Share left the grid and floated. `actionBtn` is
+            its real styling. */}
+        <button type="button" className={styles.actionBtn} onClick={handleShare}>
+          Share
+        </button>
       </div>
 
       {/* Mutual Friends */}
       {mutualFriends.length > 0 && (
-        <section className="mutual-friends-section" aria-labelledby="mutual-friends-heading">
+        <section className={styles.mutualFriendsSection} aria-labelledby="mutual-friends-heading">
           <h3 id="mutual-friends-heading">
             {mutualFriends.length} Mutual Friend{mutualFriends.length !== 1 ? 's' : ''}
           </h3>
-          <div className="mutual-friends-list">
+          <div className={styles.mutualFriendsList}>
             {mutualFriends.slice(0, 6).map((friend) => (
               <button
                 type="button"
                 key={friend.id}
-                className="mutual-friend-chip"
+                className={styles.mutualFriendChip}
                 onClick={() => navigate(`/profile/${friend.id}`)}
               >
                 <img
                   src={friend.avatarUrl || generateDefaultAvatar()}
                   alt=""
-                  className="mutual-avatar"
+                  className={styles.mutualAvatar}
                   loading="lazy"
                   onError={(e) => {
                     (e.target as HTMLImageElement).src = generateDefaultAvatar();
@@ -526,12 +580,12 @@ export default function PublicProfilePage() {
 
       {/* Q3: Profile QR Code, rendered locally. */}
       {profileLink && (
-        <section className="profile-qr-section" aria-labelledby="profile-qr-heading">
+        <section className={styles.profileQrSection} aria-labelledby="profile-qr-heading">
           <h3 id="profile-qr-heading">Scan To Connect</h3>
-          <div className="profile-qr-image" role="img" aria-label={`QR Code For ${arenaName}`}>
+          <div className={styles.profileQrImage} role="img" aria-label={`QR Code For ${arenaName}`}>
             <QRCodeSVG value={profileLink} size={160} level="M" marginSize={1} />
           </div>
-          <p className="qr-hint">Scan At The Table To Add As Friend</p>
+          <p className={styles.qrHint}>Scan At The Table To Add As Friend</p>
         </section>
       )}
 

@@ -1754,6 +1754,41 @@
    Child count is no longer read at all here — there is nothing left to vary. */
 .seat__cards--opponent.seat__cards--revealed {
   --vh-reveal: 1.6;
+  /* ═══════════════════════════════════════════════════════════════════════
+     A SHOWN HAND IS THE SAME SIZE AT EVERY SEAT (Dan 2026-09-05, binding)
+     ═══════════════════════════════════════════════════════════════════════
+
+     Dan, verbatim: "THE CARDS, EVEN IF THE AVATAR IS SQUISHED (FOR A 9 HANDED
+     GAME) MUST ALWAYS DISPLAY AT THE SAME HEIGHT AS ANY AND ALL OTHER CARDS
+     AT THE TABLE WHEN 'SHOWN DOWN'."
+
+     The base rule derives the card from THIS SEAT's avatar:
+
+         --vh-card-h: max(17px, --seat-avatar-size * 0.346 * --vh-reveal)
+
+     which is right for the resting rosette - a small marker that says "this
+     player has cards", scaled to the pod it sits on. It is wrong the moment
+     the faces are up. The top row is capped at 56px for BBJ-banner clearance
+     (`.seat-wrapper--top .seat`, and the arithmetic behind it is in that
+     rule), so on a 9-max cash table a top seat showed a 31px hand while every
+     other seat showed 46.5px - a third smaller, at the one moment in the hand
+     when every card on the felt is being compared with every other.
+
+     `--seat-avatar-full` is the fix because it is the table's full-size slot
+     rather than this seat's: it is declared on `.seat` from `--table-w`, so
+     every seat computes the SAME value whatever its own avatar was capped to.
+     A hero seat scales its own avatar UP (1.3333x) and would have been the
+     mirror-image bug at the other end of the ring; hero cards are their own
+     element (`.seat__cards--hero`) and are untouched either way.
+
+     Only on `--revealed`. The resting cluster keeps its proportional size,
+     which is the design.
+
+     0-2-0 with the base rule's 0-1-0, so it wins on specificity; the
+     dependent tokens (`--vh-card-w`, `--vh-step`, `--vh-overlap`,
+     `--vh-fan-w`) all read `var(--vh-card-h)` and therefore resolve against
+     this value, so the whole fan grows with it rather than around it. */
+  --vh-card-h: max(17px, calc(var(--seat-avatar-full, 84px) * 0.346 * var(--vh-reveal)));
   --vh-step-f: 1.06;
   --vh-rot-scale: 0;
   z-index: 14;
@@ -1772,14 +1807,28 @@
 
    THE REASON IT WAS WRITTEN IS NO LONGER TRUE, which is worth stating so it is
    not re-introduced. It was added to stop a top-cap reveal being drawn into the
-   Bad Beat Jackpot banner above it. Measure the reveal as it actually is now: a
-   top-cap seat's avatar token is 56px, so a revealed card is
-   max(17px, 56 * 0.346 * 1.6) = 31px tall, and the cluster's bottom edge is
-   pinned 1px above the plate at 56 - 6 - 1 = 49px down the seat. The row's top
-   edge therefore lands 18px BELOW the seat's own top edge — it does not reach
-   the top of the seat, let alone the banner above it. The collision it was
-   guarding against cannot happen at this size; the collision it CAUSED happens
-   every showdown.
+   Bad Beat Jackpot banner above it. Measure the reveal as it actually is now:
+   the cluster's bottom edge is pinned 1px above the plate, at
+   `--seat-avatar-size - --sp-wrap-overlap - 1` down the seat, and grows upward
+   from there by one card height.
+
+   RE-MEASURED 2026-09-05, when the revealed card stopped being a function of
+   THIS seat's (capped) avatar and became a function of the table's full-size
+   slot, so that a shown hand is the same size at every seat (Dan; see
+   `--vh-card-h` on `.seat__cards--opponent.seat__cards--revealed`). The row is
+   taller here than it used to be, so the arithmetic is worth restating:
+
+     phone, 375px      full slot ~56.9px, cap 56px -> card ~31px. Unchanged:
+                       the cap barely binds at this width.
+     desktop, 720px    full slot ~113.8px, cap 56px -> card ~63px. The row's
+                       top edge now lands ~14px ABOVE the seat box's own top,
+                       which on the 9-max ring (top seats at y 6) is still
+                       ~15px INSIDE the canvas - clear of the banner at y 0.
+
+   So the anchor stays the base one (`top` + translateY(-100%)) and the hand
+   still grows up over the avatar. The collision this rule was once guarding
+   against still cannot happen; the collision it CAUSED happened every
+   showdown, which is why it went.
 
    So the vertical anchor is the base one (`top` + translateY(-100%)), which is
    what makes the hand grow up over the avatar. Only the horizontal centring is
@@ -3026,36 +3075,85 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   CARD SQUEEZE — COMPETITOR-PARITY 2026-08-19 (GG-style marquee feature)
-   Hero cards dealt face down; drag up bends the back away from its top edge,
-   progressively exposing the face beneath. --squeeze-progress (0..1) is set
-   inline by SeatSlot from the live pointer position, so the peel tracks the
-   finger exactly. A quick tap plays the squeezeHintBounce teach animation.
-   ═══════════════════════════════════════════════════════════════════════════════ */
+   CARD SLIDE — the corner peel (Dan 2026-09-04)
+   ═══════════════════════════════════════════════════════════════════════════════
+   "THE CORNERS OF THE CARDS SHOULD BE 'PEELED BACK' LIKE YOUR LOOKING AT THEM
+   AT A REAL POKER TABLE ... NOT JUST CLICK TO REVEAL, IT NEEDS TO FEEL AND ACT
+   LIKE THE USER IS ACTUALLY TOUCHING THE SCREEN AND LIFTING THE CARDS OFF THE
+   FELT."
+
+   Replaces COMPETITOR-PARITY 2026-08-19's hinge (the whole back rotating up
+   from its top edge by a drag-up distance). The hero's cards are dealt face
+   down; the finger pinches a corner and drags it anywhere; the back folds along
+   the perpendicular bisector of that drag and the pinched corner stays under
+   the finger. SeatSlot writes these custom properties on the cards row every
+   frame (cardPeel.ts does the geometry; no React render per move):
+
+     --peel-progress        0 flat .. 1 corner at the opposite corner
+     --peel-cover-clip      polygon: the part of the back still lying flat
+     --peel-flap-clip       polygon: the lifted part (in the flap's own frame)
+     --peel-flap-transform  matrix(): reflection across the fold line
+     --peel-fold-x/-y       the fold's midpoint, card px
+     --peel-fold-angle      the fold's direction
+     --peel-depth           fold-to-corner distance, px
+
+   Layers inside .seat__squeeze-flip, bottom to top:
+     --under   the face, plus a shade band along the fold (the shadow the
+               lifted corner throws on what it has just uncovered)
+     --cover   the back, clip-path'd to the flat part
+     flap      the lifted corner: card stock folded over, clipped to the
+               lifted part and reflected across the fold, with a crease
+               highlight fading into shadow toward the fold, and a drop shadow
+               that deepens as the corner rises
+
+   And the whole card - both cards, together - lifts off the felt as the peel
+   deepens: a small rise, a small grow, and a shadow that spreads underneath.
+   That is the "lifting the cards off the felt" half of the instruction. */
 
 .seat__cards--squeeze {
   touch-action: none; /* the drag must never scroll the page */
   cursor: grab;
+  /* While a finger is down, nothing eases: the corner tracks it exactly. */
 }
-.seat__cards--squeeze:active {
+.seat__cards--squeeze[data-peeling] {
   cursor: grabbing;
 }
 
-/* REVIEW FIX 2026-08-19: the squeeze box IS a .seat__card now (so hero
-   sizing + the cardDealIn / cardFoldOut keyframes apply to it), but the base
-   rule's overflow:hidden would clip the lifting cover — lift it here. The
-   faces carry the radius + shadow instead. */
+/* REVIEW FIX 2026-08-19: the squeeze box IS a .seat__card (so hero sizing +
+   the cardDealIn / cardFoldOut keyframes apply to it); the base rule's
+   overflow:hidden would clip the lifted corner - lift it here. The faces carry
+   the radius + shadow instead. */
+.seat__cards--hero .seat__card--squeeze,
 .seat__card--squeeze {
   overflow: visible;
-  box-shadow: none;
   background: transparent;
+  box-shadow: none;
 }
 
+/* THE LIFT lives on the flip box, not on .seat__card: the hero cluster pins
+   `.seat__cards--hero .seat__card { transform: none }` at (0,2,0) and the
+   deal / fold keyframes animate .seat__card's transform, so a lift written
+   there is either out-specified or fought. The flip box has no other rule.
+   Rises up to 4px and grows 3% by full peel; the shadow under the card
+   spreads with it. Transform + shadow only - nothing on the felt moves. */
 .seat__squeeze-flip {
   position: relative;
   width: 100%;
   height: 100%;
-  perspective: 420px;
+  border-radius: 4px;
+  transform: translateY(calc(var(--peel-progress, 0) * -4px))
+    scale(calc(1 + var(--peel-progress, 0) * 0.03));
+  box-shadow:
+    0 calc(2px + var(--peel-progress, 0) * 10px) calc(8px + var(--peel-progress, 0) * 14px)
+      rgba(0, 0, 0, calc(0.5 + var(--peel-progress, 0) * 0.25)),
+    0 1px 2px rgba(0, 0, 0, 0.35);
+  transition:
+    transform 0.26s cubic-bezier(0.2, 0.8, 0.3, 1),
+    box-shadow 0.26s cubic-bezier(0.2, 0.8, 0.3, 1);
+  will-change: transform;
+}
+.seat__cards--squeeze[data-peeling] .seat__squeeze-flip {
+  transition: none;
 }
 
 .seat__squeeze-face {
@@ -3063,7 +3161,6 @@
   inset: 0;
   border-radius: 4px;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
 .seat__squeeze-face .card-image,
@@ -3077,53 +3174,188 @@
 .seat__squeeze-face--under {
   /* The card face waiting underneath the cover. */
   z-index: 1;
+  background: #fff;
 }
 
 .seat__squeeze-face--cover {
-  /* The card back peeling away. Origin at the TOP edge so dragging up lifts
-     the bottom edge toward the player — how a live squeeze actually looks. */
+  /* The back, minus the lifted corner. */
   z-index: 2;
-  transform-origin: top center;
-  transform: rotateX(calc(var(--squeeze-progress, 0) * -150deg));
-  /* Released: ease home over 0.22s. */
-  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.3, 1);
-  backface-visibility: hidden;
-  will-change: transform;
-  /* Shadow deepens as the card lifts, selling the bend. */
+  clip-path: var(--peel-cover-clip, none);
+  will-change: clip-path;
+}
+
+/* THE FLAP. */
+.seat__peel-flap {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  transform-origin: 0 0;
+  transform: var(--peel-flap-transform, matrix(1, 0, 0, 1, 0, 0));
+  /* Nothing to draw until a corner lifts (the clip is empty at rest). */
   filter: drop-shadow(
-    0 calc(var(--squeeze-progress, 0) * 10px) calc(var(--squeeze-progress, 0) * 8px)
+    0 calc(1px + var(--peel-progress, 0) * 8px) calc(2px + var(--peel-progress, 0) * 8px)
       rgba(0, 0, 0, 0.45)
+  );
+  will-change: transform;
+}
+.seat__peel-flap-inner {
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+  clip-path: var(--peel-flap-clip, polygon(0 0, 0 0, 0 0));
+  /* Card stock: the underside of the back. A warm off-white with a hint of
+     the felt's shadow toward its edges, never the face (the face is what the
+     peel UNCOVERS, beneath), never the back's art mirrored. */
+  background:
+    radial-gradient(120% 120% at 50% 50%, rgba(255, 255, 255, 0) 60%, rgba(0, 0, 0, 0.08) 100%),
+    #f3efe4;
+  will-change: clip-path;
+}
+
+/* THE AFFORDANCE — a corner that is ALWAYS turned up (Dan 2026-09-05).
+   ---------------------------------------------------------------------------
+   Dan asked for a desktop cue: a mouse has no grip feedback, so a player sees
+   two face-down cards and no reason to think they can be picked up. The first
+   version of this was a `:hover` dog-ear behind
+   `@media (hover: hover) and (pointer: fine)`.
+
+   CI refused it, and the law it broke was written about exactly that:
+   `tests/no-hover-effects.law.test.ts` (Dan, 2026-08-29, "Remove hover
+   entirely, everywhere") names the capability-query version as "the most
+   persuasive version of this mistake ... It is still a hover style, it is
+   still invisible to most of the people using this product", and ends "If you
+   are here because this test is red: delete your hover rule. Do not add a file
+   to a list. There is no list."
+
+   So the dog-ear is permanent instead. This is strictly better on the law's
+   own reasoning - Club Arena is mobile-first, and a hover affordance is one
+   only some players can ever see. A corner that is always turned up says "this
+   lifts" to a thumb and a mouse alike, cannot stick after a tap the way iOS's
+   synthetic hover does, and cannot become a hidden affordance because it is
+   never hidden.
+
+   It is drawn on the COVER, so it exists only while a card is face down, and
+   it is suppressed the moment a real peel starts - the flap owns the corner
+   then, and two turned-up corners at once reads as a rendering bug. */
+.seat__squeeze-face--cover::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 22%;
+  height: 16%;
+  /* Card stock, darker along the fold, so it reads as the back lifted rather
+     than a shape painted on it. */
+  background: linear-gradient(45deg, #f3efe4 55%, #ddd7c7 80%, #c9c2b0 100%);
+  clip-path: polygon(0 100%, 100% 100%, 0 0);
+  border-bottom-left-radius: 4px;
+  pointer-events: none;
+}
+.seat__cards--squeeze[data-peeling] .seat__squeeze-face--cover::after {
+  content: none;
+}
+
+/* THE PEEL INDEX - the rank and suit in the bottom-left corner of the face,
+   where the peel opens (Dan 2026-09-04: "the QJ are on the bottom left hand
+   corner when you are peeling them back"). Sized off the card so it reads on
+   a 44px phone card and does not swallow a 60px desktop one. The 2-colour
+   deck is black / red; the 4-colour deck follows CardImage's palette. */
+.seat__peel-index {
+  position: absolute;
+  left: 5%;
+  bottom: 3%;
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.06em;
+  line-height: 0.92;
+  font-family:
+    'Inter',
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-weight: 800;
+  pointer-events: none;
+  z-index: 1;
+  text-shadow: 0 0 2px rgba(255, 255, 255, 0.9);
+}
+/* Rank then suit on ONE line, tucked into the corner: the lifted triangle at
+   a third of the way across is about 25% of the card wide, and the index has
+   to be legible inside it, not stacked up into the artwork above. */
+.seat__peel-index-rank {
+  font-size: calc(var(--sp-hero-card-h, 66px) * 0.26);
+  letter-spacing: -0.03em;
+}
+.seat__peel-index-suit {
+  font-size: calc(var(--sp-hero-card-h, 66px) * 0.2);
+}
+/* No colour here on purpose: SeatSlot sets it inline from CardImage's
+   SUIT_COLOR, so the corner rank and the suit on the card face can never
+   disagree. See peelIndexColor(). */
+
+/* SHADE BANDS. One geometry, used twice: a strip whose top edge lies along
+   the fold and which extends toward the pinched corner (in the card's own
+   frame, that is the lifted region). On the face it is the shadow under the
+   curl; on the flap it is the crease - a hairline of light where the stock
+   bends, falling into shadow toward the fold. --peel-fold-angle rotates local
+   +x along the fold, so local +y points at the corner. Height tracks the
+   flap's depth, capped so a deep peel does not darken half the card. */
+.seat__peel-shade {
+  position: absolute;
+  left: var(--peel-fold-x, -100px);
+  top: var(--peel-fold-y, -100px);
+  width: 400px;
+  height: min(var(--peel-depth, 0px), 26px);
+  transform: rotate(var(--peel-fold-angle, 0deg)) translate(-50%, 0);
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+.seat__peel-shade--under {
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0));
+}
+/* The under-shade must not spill onto the part of the face still covered by
+   the back. clip-path is applied in an element's OWN frame and the band is
+   rotated, so the clip lives on an unrotated, card-sized wrapper around it. */
+.seat__peel-shade-clip {
+  position: absolute;
+  inset: 0;
+  clip-path: var(--peel-flap-clip, polygon(0 0, 0 0, 0 0));
+  pointer-events: none;
+}
+.seat__peel-shade--flap {
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.55) 0,
+    rgba(255, 255, 255, 0.15) 8%,
+    rgba(0, 0, 0, 0.3) 30%,
+    rgba(0, 0, 0, 0) 100%
   );
 }
 
-/* While the finger is DOWN, the cover must track it with zero lag.
-   (AUDIT-2 2026-08-20: this rule was duplicated verbatim; de-duped.) */
-.seat__cards--squeeze:active .seat__squeeze-face--cover {
-  transition: none;
+/* Tap hint - the hand lifts a little and settles, teaching that the cards
+   can be picked up. */
+.seat__cards--squeeze-hint .seat__squeeze-flip {
+  animation: peelHintLift calc(0.45s * var(--animation-speed, 1)) cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-
-/* Tap hint — the cover bounces up ~25% and settles, teaching the gesture. */
-.seat__cards--squeeze-hint .seat__squeeze-face--cover {
-  animation: squeezeHintBounce 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-@keyframes squeezeHintBounce {
+@keyframes peelHintLift {
   0% {
-    transform: rotateX(0deg);
+    transform: translateY(0) scale(1);
   }
   40% {
-    transform: rotateX(-32deg);
+    transform: translateY(-3px) scale(1.02);
   }
   100% {
-    transform: rotateX(0deg);
+    transform: translateY(0) scale(1);
   }
 }
 
-/* The moment the squeeze completes, the real cards pop in.
+/* The moment the peel commits, the real cards pop in.
    AUDIT-2 FIX 2026-08-20: squeezeRevealed latches for the REST of the hand, so
    this class is still applied when the hero later folds or the seat re-deals.
    At equal specificity and a later source position it beat cardFoldOut and
-   cardDealIn — the hero's muck animation simply never played after squeezing.
+   cardDealIn - the hero's muck animation simply never played after squeezing.
    Scope it out of those states so the fold/deal keyframes always win. */
 .seat__cards--squeeze-open:not(.seat__cards--folding):not(.seat__cards--dealing) .seat__card {
   animation: squeezeOpenPop calc(0.32s * var(--animation-speed, 1)) cubic-bezier(0.2, 0.8, 0.3, 1.4);
@@ -3140,11 +3372,26 @@
   }
 }
 
+/* Reduced motion: the peel still tracks the finger (it IS the interaction,
+   and it is finger-paced, not motion the page imposes), but the lift, the
+   flap's shadow and the settle/commit eases collapse, and the hint does not
+   bounce. */
 @media (prefers-reduced-motion: reduce) {
-  .seat__squeeze-face--cover {
+  .seat__squeeze-flip {
     transition: none;
+    transform: none;
   }
-  .seat__cards--squeeze-hint .seat__squeeze-face--cover,
+  /* The hover dog-ear still APPEARS - it is the only thing telling a mouse
+     user the cards can be picked up, and reduced motion collapses movement,
+     never meaning (CLAUDE.md 10.6). It just does not slide into place. */
+  .seat__squeeze-face--cover::after {
+    transition: none;
+    transform: none;
+  }
+  .seat__peel-flap {
+    filter: none;
+  }
+  .seat__cards--squeeze-hint .seat__squeeze-flip,
   .seat__cards--squeeze-open .seat__card {
     animation: none;
   }
@@ -4249,3 +4496,46 @@
    src/components/table/SitOutBadge.tsx). When this comment was first written on
    2026-08-29 it claimed that countdown already existed and it did not — the
    badge was a hardcoded string for another few hours. It exists now. */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CARD SLIDE TUTORIAL — the one line above the self-peeling cards
+   ═══════════════════════════════════════════════════════════════════════════════
+   Dan 2026-09-05: "A TUTORIAL WOULD BE COOL IF ITS ENABLED." It shows once per
+   browser, above the hero's own hand, while the corner demonstrates itself.
+   Absolutely positioned so it cannot move a single pixel of the felt, and
+   pointer-events:none so it can never eat the touch it is asking for. */
+.seat__peel-coach {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(10, 14, 20, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #f3efe4;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+  z-index: 6;
+  animation: peelCoachIn calc(0.3s * var(--animation-speed, 1)) ease-out both;
+}
+
+@keyframes peelCoachIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seat__peel-coach {
+    animation: none;
+  }
+}

@@ -1,0 +1,304 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE EIGHT THINGS DAN REPORTED ABOUT SPINS ON 2026-09-05
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Every block below pins one sentence of his report, and every one of them is
+ * a bug that actually shipped. They are gathered in one file because they are
+ * one session's findings and because six of the eight share a single root
+ * cause - a seat that holds chips before the game starts.
+ *
+ * Source-text pins, bounded by the structure they are about (see
+ * tests/helpers/sourceWindow.ts for why a byte count is not allowed to bound
+ * one of these).
+ */
+
+import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { sliceEnclosingBlock } from '../helpers/sourceWindow';
+
+const ROOT = join(__dirname, '..', '..');
+const read = (...p: string[]) => readFileSync(join(ROOT, ...p), 'utf8');
+
+const TABLE_PAGE = read('src', 'pages', 'TablePage.tsx');
+const TABLE_CSS = read('src', 'pages', 'TablePage.css');
+const SEAT_CSS = read('src', 'components', 'table', 'SeatSlot.css');
+const RANKING_HOST = read('src', 'components', 'tournament', 'TournamentRankingHost.tsx');
+const MULTI_TABLE = read('src', 'pages', 'MultiTablePage.tsx');
+const QUICK_JOIN_SPINS = read('src', 'lib', 'quickJoinSpins.ts');
+const ENGINE_BASE = read('server', 'src', 'tournament', 'TournamentManagerBase.ts');
+
+/* ─────────────────────────────────────────────────────────────────────────
+   1. "WHEN I TRY TO JOIN A SPIN THAT ALREADY HAS HORSES REGISTERED, I DON'T
+       GET OR HAVE A 'SIT +' BUTTON AVAILABLE."
+   ───────────────────────────────────────────────────────────────────────── */
+describe('a paid seat is not a started game', () => {
+  it('the begun-latch reads the button and the hand, never a stack', () => {
+    const m = /const begun =\s*([^;]+);/.exec(TABLE_PAGE);
+    expect(m, 'the playHasBegun latch moved - re-point this pin').toBeTruthy();
+    const expr = m![1];
+    expect(expr).toContain('dealerSeat > 0');
+    expect(expr).toContain('handNumber');
+    /* THE WHOLE BUG. `players.some(p => p.stack > 0)` was decisive when a
+       seat-first seat held zero chips until the wheel landed. Migration
+       20260901154500 made both seating paths write starting_chips at
+       purchase, so from that day the first seat SOLD latched the game as
+       started - and on a horse-seeded Spin that happened before the player
+       ever opened the table. canSit went false and every chair rendered as
+       an inert EMPTY plate. */
+    expect(expr).not.toContain('stack');
+  });
+
+  it('the mount read latches it from the tournament row instead', () => {
+    /* A player arriving at a game already in progress used to latch off the
+       stacks. The row says it directly, and earlier.
+
+       Bounded by the `if` block itself, never by a byte count - a comment
+       added inside it would walk the assertions off the end of a fixed
+       window, silently, which is what tests/helpers/sourceWindow exists to
+       prevent (and what noFixedSizeSourceWindows caught me doing). */
+    expect(TABLE_PAGE).toContain('if (!openForSeats) {');
+    const latch = sliceEnclosingBlock(TABLE_PAGE, 'if (!openForSeats) {', 0, 1);
+    expect(latch).toContain('playHasBegunRef.current = true');
+    expect(latch).toContain('setPlayHasBegun(true)');
+  });
+
+  it('canSit still opens the seat for a seat-first game', () => {
+    // The gate itself is unchanged and must stay that way: it is what turns
+    // the fixed latch back into a visible SIT plate.
+    expect(TABLE_PAGE).toContain('(!tableState.isTournament || !!seatFirstBuyIn)');
+  });
+});
+
+/* ─────────────────────────────────────────────────────────────────────────
+   2. "THERE IS NO SOUND EFFECT OR COUNT DOWN FOR THE SPIN ANIMATION."
+   ───────────────────────────────────────────────────────────────────────── */
+describe('the wheel is anchored to the instant the engine chose', () => {
+  it('the client prefers spin_reveal_at over started_at', () => {
+    expect(TABLE_PAGE).toContain('row?.spin_reveal_at ? Date.parse(row.spin_reveal_at)');
+    // started_at survives as the fallback for rows drawn before the column.
+    expect(TABLE_PAGE).toContain('Number.isFinite(anchorMs)');
+    expect(TABLE_PAGE).toContain('Number.isFinite(startedAtMs)');
+  });
+
+  it('every read that builds the wheel asks for the column', () => {
+    // Two call sites feed buildSpinDrawFromRow: the mount read and the D2
+    // post-start recheck. A select that omits it silently reverts this fix.
+    const selects = TABLE_PAGE.match(/\.select\(\s*'[^']*spin_multiplier[^']*'/g) ?? [];
+    expect(selects.length).toBeGreaterThanOrEqual(2);
+    for (const sel of selects) expect(sel).toContain('spin_reveal_at');
+  });
+
+  it('the engine writes the anchor on the row that already carries the lag', () => {
+    expect(ENGINE_BASE).toContain('spin_reveal_lag_ms: Math.round(this.spinRevealLagMs)');
+    expect(ENGINE_BASE).toContain('spin_reveal_at:');
+    // Zero means never stamped; null then, so the client keeps its fallback
+    // rather than being handed the epoch and skipping the whole sequence.
+    expect(ENGINE_BASE).toContain(
+      'this.spinRevealAt > 0 ? new Date(this.spinRevealAt).toISOString() : null'
+    );
+  });
+});
+
+/* ─────────────────────────────────────────────────────────────────────────
+   3. "THE TOTAL PRIZE OR MULTIPLIER FOR THE SPIN NEEDS TO BE PRESENT ON THE
+       FELT AFTER THE SPIN RUNS."
+   ───────────────────────────────────────────────────────────────────────── */
+describe('the badge outlives the wheel', () => {
+  it('the live SPIN_REVEAL path writes the multiplier into table state', () => {
+    const i = TABLE_PAGE.indexOf("case 'SPIN_REVEAL':");
+    expect(i).toBeGreaterThan(0);
+    const window = TABLE_PAGE.slice(i, TABLE_PAGE.indexOf("case 'SPIN_CHIPS':", i));
+    /* Before today only the MOUNT read set this, so the badge appeared for
+       somebody who refreshed into a running spin and never for the three
+       players who actually watched the wheel. */
+    expect(window).toContain('spinMultiplier: mult');
+    expect(window).toContain('prize_pool');
+  });
+
+  it('the felt badge renders the prize beside the multiplier', () => {
+    expect(TABLE_PAGE).toContain('spinMultiplierPrize');
+    expect(TABLE_PAGE).toContain('(tableState.spinPrizePool ?? 0) > 0');
+    expect(TABLE_CSS).toContain('.spinMultiplierPrize');
+  });
+
+  it('a rejoin reads the prize off the tournament row', () => {
+    expect(TABLE_PAGE).toContain('spinPrizePool: Number(tournData.prize_pool) || undefined');
+  });
+});
+
+/* ─────────────────────────────────────────────────────────────────────────
+   4. "YOUR RESULT CARD SHOULD ONLY DISPLAY ON THE ... LOBBY TAB YOU ARE IN,
+       NOT EVERY SINGLE PAGE INSIDE THE CLUB ARENA."
+   ───────────────────────────────────────────────────────────────────────── */
+describe('the result card belongs to the page it landed on', () => {
+  it('anchors on a route and clears when the player leaves it', () => {
+    expect(RANKING_HOST).toContain('useLocation');
+    expect(RANKING_HOST).toContain('cardRouteRef');
+    expect(RANKING_HOST).toContain('clearSessionSummary()');
+  });
+
+  it('never anchors on the table route it was published from', () => {
+    /* TablePage publishes and THEN navigates, so the card's first render is
+       on /table/<id>. Anchoring there would clear it on the exit navigation
+       and Dan would never see the card at all. */
+    expect(RANKING_HOST).toContain("location.pathname.includes('/table/')");
+  });
+
+  it('is not on a timer - Dan 2026-08-30: it never auto-closes', () => {
+    expect(RANKING_HOST).not.toContain('setTimeout(() => clearSessionSummary');
+    expect(RANKING_HOST).not.toContain('setInterval');
+  });
+});
+
+/* ─────────────────────────────────────────────────────────────────────────
+   6. "WHEN YOU ARE INSIDE A SPIN, AND HIT THE + BUTTON, IT SHOULD RECOMMEND
+       MORE SPINS, NOT CASH GAMES."
+   ───────────────────────────────────────────────────────────────────────── */
+describe('a spin offers more spins', () => {
+  it('quick join asks the spin branch before the cash query', () => {
+    /* The first `.is('tournament_id', null)` in this file is inside the
+       comment explaining WHY the branch exists, so the pin has to find the
+       CALL - the one preceded by a `.` on its own line inside the query
+       chain - rather than the first textual match. */
+    const i = MULTI_TABLE.indexOf('quickJoinSpinRows(scopeClubIds');
+    const j = MULTI_TABLE.indexOf("\n            .is('tournament_id', null)");
+    expect(i, 'the spin branch call moved').toBeGreaterThan(0);
+    expect(j, 'the cash candidate query moved').toBeGreaterThan(0);
+    expect(i).toBeLessThan(j);
+  });
+
+  it('scopes to the same club pair the cash path uses', () => {
+    // The 2026-08-26 scope bug emptied this sheet for every union player by
+    // filtering on the entry club alone. Same pair, same reason.
+    expect(MULTI_TABLE).toContain('quickJoinSpinRows(scopeClubIds, activeTableId, openIds)');
+    expect(QUICK_JOIN_SPINS).toContain("q.in('club_id', scopeClubIds)");
+  });
+
+  it('only fires for a real spin, and both columns decide that', () => {
+    expect(QUICK_JOIN_SPINS).toContain("String(t.variant ?? '').toLowerCase() === 'spin'");
+    expect(QUICK_JOIN_SPINS).toContain("String(t.tournament_type ?? '').toUpperCase() === 'SPIN'");
+  });
+
+  it('falls through to the cash sheet rather than showing an empty one', () => {
+    // null on every failure path AND on a readable-but-empty result.
+    expect(QUICK_JOIN_SPINS).toContain('if (rows.length === 0) return null;');
+    expect(QUICK_JOIN_SPINS).toContain("reportError(err as Error, 'QuickJoinSpins.unexpected')");
+  });
+
+  it('offers only boards that are open and not already in a tab', () => {
+    expect(QUICK_JOIN_SPINS).toContain("in('status', ['REGISTERING', 'ANNOUNCED'])");
+    expect(QUICK_JOIN_SPINS).toContain('openTableIds.has(live.id)');
+  });
+});
+
+/* ─────────────────────────────────────────────────────────────────────────
+   7. "THE 6 HANDED TABLE SHOULDN'T BE AS TALL AS THE 9 HANDED TABLE."
+   ───────────────────────────────────────────────────────────────────────── */
+describe('a six-handed table is shorter than a nine-handed one', () => {
+  const smallRingHeight = () => {
+    const m = /data-seats='6'\]\s*\.table-scaler\s*\{\s*--sp-table-ar-h:\s*(\d+)/.exec(TABLE_CSS);
+    expect(m, 'the small-ring canvas override moved - re-point this pin').toBeTruthy();
+    return Number(m![1]);
+  };
+
+  it('publishes the seat count so CSS can see it', () => {
+    expect(TABLE_PAGE).toContain('data-seats={Math.min(');
+    expect(TABLE_PAGE).toContain('MAX_SUPPORTED_SEATS');
+  });
+
+  it('shortens the canvas for every ring below seven', () => {
+    for (const n of [2, 3, 4, 5, 6]) {
+      expect(TABLE_CSS).toContain(`.table-page[data-seats='${n}'] .table-scaler`);
+    }
+    expect(smallRingHeight()).toBeLessThan(1000);
+  });
+
+  it('leaves seven, eight and nine on the full canvas', () => {
+    for (const n of [7, 8, 9]) {
+      expect(TABLE_CSS).not.toContain(`.table-page[data-seats='${n}'] .table-scaler`);
+    }
+  });
+
+  it('the width derivation and the aspect ratio read the same two tokens', () => {
+    /* 605/1000 used to be written into both. Shortening one without the other
+       re-engages the max-height clamp that the width derivation exists to
+       avoid, and the seat ring is then measured against a box of a shape it
+       was never measured on. */
+    expect(TABLE_CSS).toContain('aspect-ratio: var(--sp-table-ar-w) / var(--sp-table-ar-h)');
+    expect(TABLE_CSS).toContain(
+      'calc(var(--sp-table-h, 100dvh) * var(--sp-table-ar-w) / var(--sp-table-ar-h))'
+    );
+  });
+
+  it('does not shorten past the measured BBJ-banner clearance', () => {
+    /* THE BOUND, and it is arithmetic rather than taste.
+       `.seat-wrapper--top` records that at --sp-bust-scale 1.05 the TOP-CENTRE
+       seat's crown clears y 0 "with 5px to spare" on the 605x1000 reference
+       frame - and top-centre { x: 50, y: 5 } is the 6-max ring, i.e. exactly
+       the seat this override moves. The seat centre sits at 5% of the canvas,
+       so every point of height removed lifts it 0.05px toward the banner:
+
+           0.05 * (1000 - H) <= 5   ->   H >= 900
+
+       860 was the first number written here and it would have lifted the
+       crown 7px through a 5px margin - back into the 2026-08-19 bug the top
+       row's 56px cap was introduced to fix. */
+    const H = smallRingHeight();
+    const TOP_CENTRE_Y_PCT = 0.05;
+    const MEASURED_SPARE_PX = 5;
+    const lift = TOP_CENTRE_Y_PCT * (1000 - H);
+    expect(lift).toBeLessThanOrEqual(MEASURED_SPARE_PX);
+  });
+
+  it('the clearance measurement it is bounded by still says what it says', () => {
+    // If either of these moves, the arithmetic above is measuring nothing.
+    expect(SEAT_CSS).toContain('--sp-bust-scale: 1.05');
+    expect(SEAT_CSS).toContain('clears with 5px to spare');
+  });
+});
+
+/* ─────────────────────────────────────────────────────────────────────────
+   10. "THE CARDS, EVEN IF THE AVATAR IS SQUISHED (FOR A 9 HANDED GAME) MUST
+        ALWAYS DISPLAY AT THE SAME HEIGHT AS ANY AND ALL OTHER CARDS AT THE
+        TABLE WHEN 'SHOWN DOWN'."
+   ───────────────────────────────────────────────────────────────────────── */
+describe('a shown hand is the same size at every seat', () => {
+  const revealBlock = () => {
+    const i = SEAT_CSS.indexOf('.seat__cards--opponent.seat__cards--revealed {');
+    expect(i).toBeGreaterThan(0);
+    return SEAT_CSS.slice(i, SEAT_CSS.indexOf('\n}', i));
+  };
+
+  it('the revealed card is sized from the table slot, not this seat', () => {
+    /* --seat-avatar-full is declared on .seat from --table-w, so every seat
+       computes the SAME number whatever its own avatar was capped to. The top
+       row is capped at 56px for banner clearance and was therefore showing a
+       31px hand beside everyone else's 46.5px. */
+    expect(revealBlock()).toContain(
+      '--vh-card-h: max(17px, calc(var(--seat-avatar-full, 84px) * 0.346 * var(--vh-reveal)))'
+    );
+  });
+
+  it('the resting rosette still scales with its own pod', () => {
+    // Only the reveal is equalised; the face-down marker is meant to be small
+    // and proportional to the seat it sits on.
+    const i = SEAT_CSS.indexOf('.seat__cards--opponent {');
+    const base = SEAT_CSS.slice(i, SEAT_CSS.indexOf('\n}', i));
+    expect(base).toContain('--seat-avatar-size, 84px) * 0.346');
+  });
+
+  it('the top row keeps its own vertical anchor', () => {
+    // The row's BOTTOM edge is pinned 1px above the plate, and where the plate
+    // is depends on this seat's real avatar. Equalising that too would float
+    // the hand off the pod.
+    expect(SEAT_CSS).toContain(
+      '.seat-wrapper--top .seat .seat__cards--opponent.seat__cards--revealed'
+    );
+    const i = SEAT_CSS.indexOf(
+      '.seat-wrapper--top .seat .seat__cards--opponent.seat__cards--revealed'
+    );
+    expect(SEAT_CSS.slice(i, SEAT_CSS.indexOf('\n}', i))).toContain('--seat-avatar-size');
+  });
+});

@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/community-search-rebuild",
+  "functions": ["fn_community_search", "fn_community_search_score"]
+}

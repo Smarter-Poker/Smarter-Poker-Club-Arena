@@ -89,7 +89,11 @@ const engineWs = new EngineWebSocketServer({
   // cards for the current hand (public state alone leaves reconnecting players
   // blind and auto-folded).
   onResync: (tableId, userId) => {
-    void gameServer.getTableEngine(tableId)?.rePushHoleCards(userId);
+    const engine = gameServer.getTableEngine(tableId);
+    void engine?.rePushHoleCards(userId);
+    // 2026-09-04 (disconnect audit item 11): and the engine's copy of this
+    // player's pre-action, so a reconnected bar shows what is actually armed.
+    engine?.rePushPreAction(userId);
   },
   // CONNECTIVITY UPGRADE (2026-08-22): wire transport presence straight into
   // the engine's DisconnectEngine. The transport knows a player dropped within

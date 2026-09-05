@@ -24,7 +24,7 @@ import { useSearchParams } from 'react-router-dom';
 import { unionRouteRef } from '../utils/unionIdResolver';
 /* Dan 2026-08-28: HomePage is the in-tab lobby's fallback branch when no home
    club is resolved, so it inherits the same rule. See InTabLobbyContext.tsx. */
-import { useAppNavigate } from '../context/InTabLobbyContext';
+import { useAppNavigate, useInTabLobby } from '../context/InTabLobbyContext';
 import { SHARK_CLUB_ID } from '../lib/constants';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { ClubsService } from '../services/ClubsService';
@@ -138,6 +138,11 @@ function HomePageInner() {
   }, []);
 
   const navigate = useAppNavigate();
+  /* Inside a "+" tab MultiTablePage already renders the header (inTab mode,
+     with Hub/VIP/Messages opening in the tab). A second copy here would claim
+     #global-header, publish the root height variable the pinned strip reads,
+     and leave for /hub with window.location - unmounting every table. */
+  const renderedInTab = useInTabLobby() !== null;
   const toast = useToast();
 
   // Component-level mount guard — prevents setState after unmount in user-triggered handlers
@@ -1118,8 +1123,8 @@ function HomePageInner() {
       {/* Enhancement #1 & P4-1: 100% Random Floating Orbs replacing static dust/neurons */}
       <FloatingOrbs count={20} color="rgba(0, 212, 255, 0.8)" />
 
-      {/* GLOBAL HEADER */}
-      <GlobalHeader />
+      {/* GLOBAL HEADER (the container supplies it inside a "+" tab) */}
+      {!renderedInTab && <GlobalHeader />}
 
       {/* #15: Offline indicator banner */}
       {!isOnline && (

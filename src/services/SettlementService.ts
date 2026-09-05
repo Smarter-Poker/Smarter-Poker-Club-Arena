@@ -38,6 +38,14 @@ export type SettlementStatus = 'open' | 'processing' | 'settled' | 'disputed';
 
 export interface SettlementPeriod {
   id: string;
+  /**
+   * Whose period this is. 'club' is the club's own; 'union' means the club has
+   * none of its own and this is the union's open period, shown as such.
+   * Undefined for the unscoped platform-wide lookup.
+   */
+  scope?: 'club' | 'union';
+  clubId?: string | null;
+  unionId?: string | null;
   periodNumber: number;
   year: number;
   startAt: string;
@@ -114,7 +122,54 @@ export const SettlementService = {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Get or create the current settlement period
+   * THE PERIOD THIS CLUB IS IN (2026-09-05, phase 7).
+   *
+   * `get_current_settlement_period(club)` answers for one club: its own open
+   * period, else its own work still in flight, else its union's open period
+   * marked as the union's. Null when the club has none - which is the honest
+   * answer for a club that has never been settled, and is what the reference
+   * club returns today.
+   *
+   * The no-argument `getCurrentPeriod()` below is unchanged and still serves
+   * the union surfaces. It asks for the newest OPEN period on the platform
+   * regardless of club, which is why heading a club page with it showed every
+   * club the same period - one that today belongs to no club at all
+   * (club_id NULL, union-scoped, three weeks stale).
+   */
+  async getCurrentPeriodForClub(clubId: string): Promise<SettlementPeriod | null> {
+    const { data, error } = await supabase.rpc('get_current_settlement_period', {
+      p_club_id: clubId,
+    });
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row?.id) return null;
+    return {
+      id: row.id,
+      scope: row.scope === 'union' ? 'union' : 'club',
+      clubId: row.club_id ?? null,
+      unionId: row.union_id ?? null,
+      // Every one of these is a real column on settlement_periods. They used
+      // to be hardcoded here - periodNumber 1, this year, and four zeroes -
+      // which is what drew "Period 1/2026" over a grid of zeros.
+      periodNumber: Number(row.period_number) || 0,
+      year: Number(row.year) || new Date().getFullYear(),
+      startAt: row.period_start,
+      endAt: row.period_end,
+      status: (row.status || 'open') as SettlementStatus,
+      totalRakeCollected: Number(row.total_rake) || 0,
+      totalBBJContributions: Number(row.total_bbj) || 0,
+      totalPlayerWinnings: Number(row.total_player_winnings) || 0,
+      totalPlayerLosses: Number(row.total_player_losses) || 0,
+      totalHandsDealt: Number(row.total_hands_dealt) || 0,
+      settledAt: row.settled_at ?? undefined,
+    };
+  },
+
+  /**
+   * Get or create the current settlement period, platform-wide.
+   *
+   * NOT club-scoped: it returns the newest open period whoever asks. Use
+   * getCurrentPeriodForClub() on any club surface.
    */
   async getCurrentPeriod(): Promise<SettlementPeriod> {
     const { data, error } = await retryAsync(

@@ -23,7 +23,7 @@ import {
   actionsFleetTotal,
   alwaysOnPrometheusLines,
 } from './engineInstruments.js';
-import { sliceYamlEntry } from '../testHelpers/sourceWindow.js';
+import { sliceYamlEntry, sliceMethod } from '../testHelpers/sourceWindow.js';
 import { deriveContext, seatsAtOneTable } from '../services/TournamentBrainContext.js';
 
 const ROOT = join(__dirname, '..', '..', '..');
@@ -90,6 +90,62 @@ describe('LAW 1/2/4 - the always-on registry', () => {
     // And it must be in the same block that marks progress.
     const progressAt = afterHorse.indexOf('this.markProgress();');
     expect(Math.abs(progressAt - countAt)).toBeLessThan(900);
+  });
+});
+
+describe('LAW 7 - the clock measures action-to-broadcast, not the gap between actions', () => {
+  // THE BUG THIS PINS (2026-09-05). performAction emits PLAYER_ACTION
+  // synchronously and its handler calls broadcastCurrentState, so the
+  // broadcast for an action happens INSIDE performAction. The clock used to
+  // be armed AFTER that call, so every broadcast observed the clock left by
+  // the PREVIOUS action and the histogram recorded the interval between two
+  // actions. Production reported "median 808ms act-to-broadcast" for a day;
+  // it was really the median turn pacing, and the event loop was healthy the
+  // whole time (p99 54ms), which is what made the number look like a mystery.
+  const turns = readFileSync(
+    join(ROOT, 'server', 'src', 'engine', 'ServerTableEngineTurns.ts'),
+    'utf8'
+  );
+
+  it('the human path arms the clock BEFORE performAction', () => {
+    const seg = sliceMethod(turns, 'protected _handlePlayerActionInner');
+    const arm = seg.indexOf('this.lastActionAcceptedAtMs = Date.now();');
+    const act = seg.indexOf('const actionApplied = this.handController.performAction(');
+    expect(arm).toBeGreaterThan(0);
+    expect(act).toBeGreaterThan(0);
+    expect(
+      arm,
+      'arming must precede performAction, or the sample is the previous action'
+    ).toBeLessThan(act);
+  });
+
+  it('a rejected action does not leave a live clock behind', () => {
+    const seg = sliceMethod(turns, 'protected _handlePlayerActionInner');
+    expect(seg).toContain('if (!actionApplied) {');
+    expect(seg).toMatch(/this\.lastActionAcceptedAtMs = actClockWasArmed;/);
+  });
+
+  it('the horse path arms before its action and restores when nothing lands', () => {
+    const seg = sliceMethod(turns, 'protected scheduleHorseAction(');
+    expect(seg).toContain('const horseClockWasArmed');
+    const arm = seg.indexOf('this.lastActionAcceptedAtMs = Date.now();');
+    const act = seg.indexOf('handControllerRef.performAction(seat, action as any, amount)');
+    expect(arm).toBeLessThan(act);
+    // the degrade re-arms, and total failure restores
+    expect(seg).toContain("performAction(seat, 'fold' as any)");
+    expect(turns).toMatch(/this\.lastActionAcceptedAtMs = horseClockWasArmed;/);
+  });
+
+  it('the counter blocks no longer re-arm the clock after the broadcast', () => {
+    // Both counter sites sit after the broadcast has gone out. If either one
+    // arms the clock, the bug is back.
+    // Bound by the method, not a byte count: within the human action method,
+    // the ONLY arming may be the one before performAction.
+    const human = sliceMethod(turns, 'protected _handlePlayerActionInner');
+    expect(human.split('this.lastActionAcceptedAtMs = Date.now();').length - 1).toBe(1);
+    const horse = sliceMethod(turns, 'protected scheduleHorseAction(');
+    // Horse arms once before the action and once before the check/fold degrade.
+    expect(horse.split('this.lastActionAcceptedAtMs = Date.now();').length - 1).toBe(2);
   });
 });
 

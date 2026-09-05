@@ -74,10 +74,14 @@ describe('every dead write now names a column that exists', () => {
     expect(src).not.toMatch(/longest_streak:\s*longestStreak/);
   });
 
-  it('a hand is saved with pot, which is what the hands table calls it', () => {
+  it('the client no longer writes hands at all - the engine is the only writer', () => {
+    // `saveHandToSupabase` wrote to the empty legacy `hands` / `hand_players` /
+    // `hand_actions` tables and had no caller. Deleted 2026-09-04.
     const src = read('src/services/HandHistoryService.ts');
-    expect(src).toContain('pot: handData.pot');
-    expect(src).not.toContain('pot_size: handData.pot');
+    expect(src).not.toMatch(/async saveHandToSupabase/);
+    expect(src).not.toMatch(/\.from\('hands'\)/);
+    expect(src).not.toMatch(/\.from\('hand_players'\)/);
+    expect(src).not.toMatch(/\.from\('hand_actions'\)/);
   });
 
   it('leaving a table is recorded with action and metadata', () => {

@@ -537,6 +537,176 @@ club 200, a club he is not a member of 403/42501, anon 401.
 
 ## 9. Phase 7 - Money movement
 
+**FIRST, AND MEASURED BY THE PHASE 6 GATE (2026-09-04): two reads on the
+finance pages are still too slow to answer, and one of them is not yet
+explained.**
+
+**(a) The bomb pot report. Half fixed, and the half that remains is a
+mystery worth solving before anything is built on it.** The missing index is
+in (`idx_hand_history_bomb_pot_created`, applied inside the freeze) and it did
+what it should: the report's core scan went from **46 seconds to 489ms**, and
+the whole function runs in **684ms** when called as `postgres`. Called as
+`authenticated` - same session, same data, same warm cache - the same function
+takes **9.7 and 17.3 seconds**, and through PostgREST it still times out at
+8.2s, so the page still says "Could Not Load The Bomb Pot Report".
+
+Ruled out by measurement, not by reasoning: it is not the missing index (added,
+and the scan is fast); not RLS inside the function (`SET row_security TO 'off'`
+on the function changed nothing); not a second overload (there is one); not the
+`safeupdate` preload (absent in the psql test that was still slow). What is
+left is something role-dependent about how this function is planned or
+executed, and the honest position is that I do not yet know what. It needs a
+plan captured from inside the function as the real caller (`auto_explain`, or
+an `EXPLAIN` executed inside the body), not another guess.
+
+**DONE, 2026-09-05** - `20260905051000_the_bomb_pot_report_remembers_and_stops_reading_the_hands.sql`.
+**The paragraph above is wrong and the way it is wrong is worth keeping.** It
+was never role-dependent: the 684ms baseline was the function REFUSING. Its
+first statement raises `not_authenticated` when `auth.uid()` is NULL, and a
+psql session as `postgres` carries no `request.jwt.claims` - so that figure was
+the timing of an error, not of a report. Holding the role constant and changing
+only the claims: no claims, `ERROR not_authenticated` in 88ms; the owner's
+claims, 50 rows in **31,715ms**; the same call again, **384ms**. It is a cold
+cache. Across sessions the same call has measured 0.4s, 1.8s, 3.5s, 5.1s and
+31.7s depending only on what was resident, and the 8s PostgREST timeout meant
+the read that would have warmed it could never finish.
+
+A second defect turned up while measuring: the report reads `hand_history`, and
+`sp_prune_hand_history` removes horse-only hands after seven days, so **asking
+for 365 days returned seven** - silently, as a number rather than a gap.
+
+Both are fixed by one rollup, `ca_club_bomb_pot_daily` plus a
+`ca_club_bomb_pot_complete` marker, grouped exactly as the report already
+grouped, storing sums rather than averages, sealed fifteen minutes after a day
+ends (an award unit can land late and a sealed day is never recomputed), and
+caught up lazily from inside the report - no trigger on `hand_history`, no new
+scheduler. Proved equivalent before applying: the report's fifty rows captured
+before and after inside one rolled-back transaction, `EXCEPT` both ways, zero
+rows. Measured through PostgREST as the owner after: **200 in 1.2-1.9s** where
+it was 500 after 8.2s, and 365 days now costs what 30 days costs.
+
+AND THE FIRST VERSION OF THAT ROLLUP WAS ITSELF MEASURED WARM.
+`20260905051000` measured 200 in 1.2-1.9s and then 500'd at 8.7s from a real
+browser fifteen minutes later, because those readings were taken while the
+backfill's pages were still resident. The live half was bounded by the
+REQUESTED window and relied on an anti-join to keep only the unsealed days -
+and an anti-join removes rows from the result, not from the scan: the club
+filter lives on `tables`, so `h.table_id` is wanted for every candidate row and
+is not in the partial index, so all ~20,200 wide rows were still fetched and
+96% discarded. `20260905052000` bounds the scan by the earliest day with no
+completeness marker, which is normally today: **200 in 1.8-3.2s** from the same
+browser session that had just been getting 500s. Verified on production in a
+browser as the club owner: 18,690 bomb pots, 50 tables, the full per-table
+breakdown, where the page said "Could Not Load The Bomb Pot Report".
+
+**AND THE PHASE 7 GATE FOUND THAT THE FIX ONLY HELD UNTIL MID-MORNING.**
+`fn_ca_rake_by_agent` measured 490-983ms at 03:55 UTC and **3,402ms at 07:37**
+the same day, on the same club, with nothing changed - the live edge is the
+part of the window the daily rollup has not sealed, and today gets bigger every
+hour (9,288 rows on 09-01; 328,535 on 09-03). Bounding the scan to one day is
+only a fix while that day is small; the panel would have healed every morning
+and failed every evening.
+
+Fixed by giving the per-player figure what phase 6 gave the club-level one:
+`ca_club_rake_daily_user` in integer cents, kept exact by three statement-level
+triggers on `rake_attributions` (`20260905073943` for the table and backfill,
+which takes no lock; `20260905074228` for the triggers and the read together,
+inside the 07:55 freeze, because CREATE TRIGGER locks a table the engine writes
+on every raked hand). Measured after: **200 in 694-724ms from the browser on
+every range**, and the rollup agrees with the attributions to the cent on every
+day including the open one. Full account, with the off-by-one the snapshot
+comparison caught and the probe of mine that committed itself, in
+`docs/changelog/2026-09-05-club-operations-phase-7-gate.md`.
+
+THE LESSON THAT GENERALISES: a probe run as `postgres` against a
+`SECURITY DEFINER` function that gates on `auth.uid()` is not a faster version
+of the real call, it is a DIFFERENT call - usually a refusal. Set
+`request.jwt.claims` and hold the role constant before concluding anything is
+role-dependent. And a second one, learned the hard way in the same hour: A
+COLD PATH MEASURED WARM READS AS FIXED. After a backfill, after an apply, after
+any read of the same rows, the next timing is not evidence. Take it from a
+fresh session, or better from the browser, before writing a number down.
+
+**(b) The rake-by-agent breakdown cannot be read at this club's volume, and
+the page retried it into the ground.** Opening `/clubs/<slug>/data` in a browser:
+
+```
+ca_club_data_snapshot   200 in  300-1,000ms
+ca_rake_snapshot        500 in  ~8,200ms   (57014 statement timeout)  x7 in 14s
+```
+
+The tiles sit on dashes and "Reading Rollups" for ever. Inside
+`ca_rake_snapshot`, `fn_ca_rake_window` is 0.6s and `fn_ca_rake_series` 0.13s;
+**`fn_ca_rake_by_agent` is 29.7 seconds**. Its `from_live` CTE recomputes
+per-player rake for every day not yet in `club_rake_rollup_complete` - which is
+always today - by calling `fn_rake_shares_for_record` once per raked hand:
+61,156 hands today, each doing an indexed lookup into `rake_attributions` plus
+a NOT EXISTS. Expanding the same rows set-based instead of per-hand still costs
+11.5 seconds, so this is not a query to tune: **the per-player live edge has to
+stop being recomputed on every page load**, exactly as the club-level figure
+did in phase 6 (`ca_club_rake_daily`).
+
+The shape that fits: `rake_attributions` already carries the per-player credit
+the engine wrote at hand time, and `club_rake_daily_user` (the completed-day
+rollup) is built from it - so one grouped read of `rake_attributions` over the
+incomplete days, behind an index on `(club_id, created_at)`, replaces 61,156
+lookups with one range scan AND makes the live edge agree with the rolled-up
+days by construction. It belongs here rather than in phase 6 because it is the
+agent breakdown, and because it needs an index build on a hot table inside a
+maintenance freeze.
+
+The retry storm itself is already fixed (`RakeSnapshotPanel` no longer lets the
+money-event firehose re-issue a read that is failing), so the page now fails
+once a minute instead of seven times in fourteen seconds - but it still fails.
+
+**DONE, 2026-09-05** - `20260905042100_the_agent_breakdown_reads_the_attributions.sql`.
+`from_live` is one grouped read of `rake_attributions` for the days not yet
+complete. Measured through PostgREST as the club owner, with the function
+changed and the index NOT yet built: `ca_rake_snapshot` 200 in 2,128ms and
+2,577ms for the page's default month range, 2,554ms and 2,362ms for the year -
+where it was 500 after 8,200ms. The panel renders 5 daily series points, 34
+agent rows, 351,310.13 of direct rake and 183,266.92 of commission.
+
+The index is a second migration, `20260905042500_and_an_index_for_the_range_it_reads.sql`,
+**applied inside the 03:55 UTC maintenance freeze on 2026-09-05** (74 MB). It is the only statement
+of the two that takes a lock (1,131,048 rows / 456 MB, written on every raked
+hand), and the function change needed none - holding the fix back until the
+freeze would have left the panel failing for no reason. With the index and the
+live-edge bound below, `fn_ca_rake_by_agent` settled at **~500ms** and
+`ca_rake_snapshot` from the browser at **591-1,157ms on every range** - month,
+quarter and year alike - where the page had been getting 500 after 8.2s.
+
+The first apply FAILED and the reason is worth carrying forward: the migration
+asserted the new body no longer names `fn_rake_shares_for_record`, and the new
+body names it in the comment explaining what it replaced. It strips `--` lines
+from `prosrc` before the check now. Third occurrence of that class in this
+programme.
+
+It also shipped behind the WRONG GRANT for twelve minutes:
+`20260905042100` granted `fn_ca_rake_by_agent` to `authenticated`, and that
+helper is ungated - its gate is `ca_rake_snapshot`, one level up, which is why
+all four of its siblings are `service_role` only. Any signed-in user could have
+read any club's per-agent rake and commission totals in that window. Caught by
+`the-rake-snapshot-denominator-is-not-double-counted.law.test.ts` in the
+full-suite run before the commit, closed against production at once, and
+re-issued correctly in `20260905043000`. Verified after: 403/42501 calling the
+helper directly as a signed-in user, 200 through `ca_rake_snapshot`.
+
+AND THE SAME BOUNDING DEFECT WAS HERE TOO, fixed in `20260905052500` once the
+bomb pot report showed what it costs: the live scan was bounded by the
+REQUESTED window with an anti-join to keep only the incomplete days, and an
+anti-join removes rows from the result rather than from the scan - 573,468 rows
+read to keep 14,091, 2.8s of the 4.8s the function took. Bounded by the
+earliest incomplete day now: the month range went from 3.7-5.2s to **983ms**,
+and `ca_rake_snapshot` from the browser to **1.3-1.6s**. Proved equivalent
+under REPEATABLE READ - the first READ COMMITTED comparison showed a difference
+that was the club earning rake between two statements, not the change.
+
+One thing measured on the way and deliberately left: `agent_commissions` has no
+`(club_id, created_at)` index either, and its CTE bitmap-scans 694,941 rows for
+a seven-day window at 1.14s. That is a second index on a second hot table; it
+belongs in a freeze of its own, after the first one has been observed landing.
+
 The write paths are the best-defended code in the workspace and this phase must
 not "improve" them: `fn_agent_wallet_send` and its claim-back take a mandatory
 `p_op_id`, take an advisory lock, replay on the op id, and refuse a retry key
@@ -566,9 +736,11 @@ subtransaction. What is wrong is the reporting around them.
 - **CONFIRMED - the receipt hardcodes `status="paid"`** for any period marked
   settled, without reading any invoice's payment state. The page can and does
   show a period as paid when the ledger has not said so.
-- **CONFIRMED - "Execute Settlement" calls a documented no-op**, so the
-  double-settle guard above it is currently protecting nothing, while the real
-  closer (`fn_set_settlement_period_status`) has no such guard.
+- **ALREADY FIXED, verified 2026-09-05 - "Execute Settlement" calls a
+  documented no-op.** The button now says so plainly ("Nothing To Pay Out
+  Here. Agent Commissions Settle Through Credit Invoices, And Player Rakeback
+  Through The Engine Settler"), and the success branch is kept as a tripwire
+  for the day a real implementation returns numbers. Left as it is.
 - **CONFIRMED - `disputed` is missing from the page's own period type**, so a
   disputed period renders an unstyled badge with no countdown, no action and
   nothing saying why.
@@ -580,8 +752,13 @@ subtransaction. What is wrong is the reporting around them.
   `setMessage` in sentence case** rather than the Toast layer, and its
   high-value confirmation says "This Action Cannot Be Undone" on a send the
   same page advertises as claimable back for ten minutes.
-- **CONFIRMED - `fn_club_cashier_members_page_v3` re-runs the full recursive
-  downline walk on every page** (it selects from v2, which selects from v1).
+- **MEASURED AND LEFT ALONE - `fn_club_cashier_members_page_v3` re-runs the
+  full recursive downline walk on every page** (it selects from v2, which
+  selects from v1). The nesting is real, and the cost is not: 241ms cold and
+  121ms warm for page one of 417 members on the busiest club. Rewriting a
+  working money-adjacent read to save 100ms is not worth the risk it carries;
+  if a club ever reaches a size where this bites, the fix is to page inside v1
+  rather than to wrap it a third time.
 
 ---
 

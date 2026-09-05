@@ -109,6 +109,14 @@ describe('a global class name has exactly one owner', () => {
       const union = new Set(declared.flatMap((s) => [...s]));
       if ([...union].some((p) => declared.some((s) => !s.has(p)))) leakable += 1;
     }
-    expect(leakable).toBeLessThanOrEqual(243);
+    // 2026-09-05, second pass: 242. The tree measured 244 against a ceiling of
+    // 243 - main was RED on this law - and two of the leaks were the wallet's
+    // own. `.message` was declared bare by BOTH PlayerWalletPage.css and
+    // ChipTransferModal.css with different padding, weight and error red, so
+    // the send banner took whichever the player had loaded last; it is scoped
+    // to `.wallet-page .message` now. `.wallet-page` stopped being a second
+    // bare owner when RewardsCircuitSurfaces.css gave up overpainting the
+    // wallet's ground with `!important`. Ratcheted down to lock both in.
+    expect(leakable).toBeLessThanOrEqual(242);
   });
 });

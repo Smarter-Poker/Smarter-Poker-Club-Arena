@@ -3,8 +3,24 @@
  * These rules alter presentation only. Live wallet, checkout, settlement,
  * reward, promotion, and inventory handlers remain owned by their pages.
  */
+/*
+ * THE WALLET IS NOT IN THIS LIST, AND THAT IS THE POINT (2026-09-05).
+ *
+ * It was, and the `!important` below meant the wallet's own ground - the
+ * cyan-lit vault written in PlayerWalletPage.css as the #SMARTERCASINOREALISM
+ * reference - HAD NEVER ONCE RENDERED. Measured on the live published page:
+ *
+ *   computed background-image   radial-gradient(... rgba(58,168,255,.09) ...)
+ *   the wallet's own rule       radial-gradient(... rgba(0,212,255,.08) ...)
+ *
+ * Both were in the cascade; this one won on `!important` alone. So the page the
+ * rest of the family is converging TOWARD was being repainted in the family's
+ * older blue, and every realism pass over it was invisible.
+ *
+ * The wallet owns its ground now. The other six destinations keep the shared
+ * convergence exactly as it was.
+ */
 :is(
-  .wallet-page,
   .transaction-history-page,
   .vip-page,
   .rakeback-page,
@@ -18,10 +34,23 @@
     linear-gradient(180deg, #05080c 0%, #020407 100%) !important;
 }
 
+/* The wallet takes the family's TEXT colour and nothing else, so it stays part
+   of the set without having its designed ground overpainted. */
+.wallet-page {
+  color: #eaf3f9;
+}
+
+/* The wallet's three entries are gone from this list and the two below. They
+   named `.wallet-hero`, `.wallet-card-premium`, `.transfer-section`,
+   `.hero-btn` and `.transfer-btn` - the markup the wallet had BEFORE its
+   2026-09-05 rebuild. It renders `vault-hero`, `vault-panel` and `vault-btn`
+   now, so all five selectors had matched nothing since that day: dead rules
+   left behind by a rename.
+   They are not remapped onto the new names on purpose. These rules are
+   `!important`, and pointing them at `.vault-panel` would overpaint the
+   machined realism surface with the generic one - the same defect as the
+   ground above, one level down. The wallet's own sheet owns its panels. */
 :is(
-  .wallet-page .wallet-hero,
-  .wallet-page .wallet-card-premium,
-  .wallet-page .transfer-section,
   .transaction-history-page .summary-card,
   .transaction-history-page .transaction-row,
   .vip-page .current-status,
@@ -54,7 +83,6 @@
 }
 
 :is(
-  .wallet-page .wallet-card-premium,
   .transaction-history-page .transaction-row,
   .rakeback-page .period-row,
   .promotions-page .promo-card,
@@ -66,7 +94,6 @@
 }
 
 :is(
-  .wallet-page .wallet-card-premium,
   .transaction-history-page .transaction-row,
   .rakeback-page .period-row,
   .promotions-page .promo-card,
@@ -82,8 +109,6 @@
 }
 
 :is(
-  .wallet-page .hero-btn,
-  .wallet-page .transfer-btn,
   .transaction-history-page .export-btn,
   .transaction-history-page .load-more-btn,
   .vip-page .vip-purchase-btn,
@@ -113,7 +138,6 @@
 
 @media (max-width: 640px) {
   :is(
-    .wallet-page .wallet-hero,
     .transaction-history-page .tx-summary,
     .vip-page .vip-section,
     .rakeback-page .rakeback-summary,

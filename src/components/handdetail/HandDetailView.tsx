@@ -88,10 +88,25 @@ function ActionRow({
       <span className={`hdv__act hdv__act--${row.verb}`}>{row.label}</span>
 
       <span className="hdv__cards">
-        {row.showsMuck &&
+        {/* YOUR OWN FOLD SHOWS YOUR OWN CARDS (2026-09-04). The record's
+            hole_cards column is showdown-only, so a fold drew backs even for
+            the viewer's own hand. `privateCards` is filled from the viewer's
+            own ca_hand_facts row - RLS returns nobody else's - so this is
+            face-up for you and backs for everyone else, marked as private so
+            a face-up fold is never read as a reveal. */}
+        {row.showsMuck && row.privateCards && row.privateCards.length > 0 ? (
+          <>
+            {row.privateCards.map((c, i) => (
+              <CardImage key={`p-${row.key}-${i}`} card={c} size="xs" className="hdv-private" />
+            ))}
+            <span className="hdv__private-tag">Yours</span>
+          </>
+        ) : (
+          row.showsMuck &&
           Array.from({ length: muckCount }).map((_, i) => (
             <CardBack key={`m-${row.key}-${i}`} size="xs" />
-          ))}
+          ))
+        )}
         {row.shownCards?.map((c, i) => (
           <CardImage key={`s-${row.key}-${i}`} card={c} size="xs" />
         ))}
@@ -127,11 +142,19 @@ function ShowdownRow({
 }) {
   const net = row.net;
   return (
-    <div className={`hdv__sd${row.isWinner ? ' is-winner' : ''}${isBadBeat ? ' is-badbeat' : ''}`}>
+    <div
+      className={`hdv__sd${row.isWinner ? ' is-winner' : ''}${isBadBeat ? ' is-badbeat' : ''}${
+        row.low ? ' is-low' : ''
+      }`}
+    >
       <div className="hdv__sd-who">
         <span className={`hdv__name${isYou ? ' is-you' : ''}`}>
           {row.name}
           {isBadBeat && <span className="hdv__sd-tag">BAD BEAT</span>}
+          {/* HI-LO: the half this row is for. A PLO8 scoop is two rows. */}
+          {row.low && <span className="hdv__sd-tag hdv__sd-tag--low">LOW</span>}
+          {/* Your own mucked cards, drawn face-up for you alone. */}
+          {row.holePrivate && <span className="hdv__private-tag">Yours, Not Shown</span>}
         </span>
         <span className="hdv__sd-holerow">
           <span className="hdv__pos">{row.position}</span>
@@ -147,7 +170,7 @@ function ShowdownRow({
                        two agreed only by accident of upstream normalisation —
                        the day a card arrives un-normalised the "which five
                        played" highlight fails silently. */
-                    className={row.playing.has(cardKey(c)) ? 'hdv-plays' : 'hdv-idle'}
+                    className={`${row.playing.includes(cardKey(c)) ? 'hdv-plays' : 'hdv-idle'}${row.holePrivate ? ' hdv-private' : ''}`}
                   />
                 ))
               : Array.from({ length: muckCount }).map((_, i) => (

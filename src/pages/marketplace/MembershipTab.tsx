@@ -58,10 +58,32 @@ export default function MembershipTab({
     setBusy(null);
   };
 
+  /*
+   * A LIFETIME MEMBER CANNOT BUY MORE VIP, AND THE SERVER SAYS SO WITH A 409.
+   *
+   * Dan 2026-09-04: "you can't actually buy anything with diamonds anywhere,
+   * you get an error message from any and all pages." His account is
+   * lifetime VIP. This tab rendered "Extend For 150 Diamonds", "Pay 1,999
+   * Diamonds" and "Pay 19,999 Diamonds" to him regardless, and every press
+   * went to the server, which refused each one - correctly - with
+   * "Lifetime VIP already includes this pass". `storeFetch` turns that into
+   * a thrown error and the catch below turned it into a red toast. Three
+   * buttons, three purchases that could never succeed, three errors.
+   *
+   * The World Hub's own store page already short-circuits this case
+   * (diamond-store.js). So does this tab now: a lifetime member sees the
+   * plans as included, not for sale.
+   */
+  const isLifetime = wallet.loaded && wallet.vipTier === 'lifetime';
+
   const buyDailyPass = async (cost: number) => {
     if (inFlightRef.current) return;
     if (!wallet.loaded) {
       toast.error('Your Diamond Balance Is Unavailable Right Now');
+      return;
+    }
+    if (isLifetime) {
+      toast.info('Lifetime VIP Already Includes Every Pass');
       return;
     }
     if (wallet.diamonds < cost) {
@@ -123,6 +145,10 @@ export default function MembershipTab({
     if (inFlightRef.current) return;
     if (!wallet.loaded) {
       toast.error('Your Diamond Balance Is Unavailable Right Now');
+      return;
+    }
+    if (isLifetime) {
+      toast.info('Lifetime VIP Already Includes Every Plan');
       return;
     }
     if (wallet.diamonds < priceDiamonds) {
@@ -218,7 +244,11 @@ export default function MembershipTab({
                 <li key={f}>{f}</li>
               ))}
             </ul>
-            {plan.id === 'vip-daily' ? (
+            {isLifetime ? (
+              <button className={styles.btnGhostWide} disabled aria-disabled="true">
+                Included With Lifetime VIP
+              </button>
+            ) : plan.id === 'vip-daily' ? (
               <button
                 className={styles.btnPrimary}
                 disabled={busy !== null || !wallet.loaded || wallet.diamonds < plan.priceDiamonds}

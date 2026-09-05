@@ -34,6 +34,7 @@ import { useToast } from '../components/common/Toast';
 import { masterBus } from '../core/MasterBus';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useIsMounted } from '../hooks/useIsMounted';
+import { useUserStore } from '../stores/useUserStore';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { fmt } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
@@ -281,13 +282,47 @@ export default function MarketplacePage() {
         }
       }
       if (!targetClub) {
-        const { data: mem } = await supabase
+        /*
+         * WHICH CLUB'S SHOP? Not "the first membership row PostgREST hands
+         * back". That read was `.limit(1)` with no ORDER BY, so a player in
+         * five clubs landed on whichever one the planner returned first - for
+         * Dan, Deep Stack Society with zero items, while Shark Club had twelve
+         * on sale. The page then said "The Club Shop Is Currently Empty" and
+         * he concluded diamonds could not buy anything (2026-09-04).
+         *
+         * Order of preference: the club the player is currently inside; then
+         * the club with the most active stock; then any membership at all.
+         */
+        const { data: mems, error: memsError } = await supabase
           .from('club_members')
           .select('club_id')
-          .eq('user_id', user.id)
-          .limit(1)
-          .maybeSingle();
-        targetClub = mem?.club_id || null;
+          .eq('user_id', user.id);
+        if (memsError) reportError(memsError, 'MarketplacePage.resolveClub.memberships');
+        const memberClubIds = (mems || [])
+          .map((m) => m.club_id as string)
+          .filter((id): id is string => Boolean(id));
+        const insideClub = useUserStore.getState().currentClubId;
+        if (insideClub && memberClubIds.includes(insideClub)) {
+          targetClub = insideClub;
+        } else if (memberClubIds.length > 0) {
+          const { data: stock, error: stockError } = await supabase
+            .from('club_shop_items')
+            .select('club_id')
+            .in('club_id', memberClubIds)
+            .eq('is_active', true);
+          // A failed stock read is not a reason to have no shop: report it and
+          // fall through to the first membership, which is what the page did
+          // before it learned to prefer stock.
+          if (stockError) reportError(stockError, 'MarketplacePage.resolveClub.stock');
+          const counts = new Map<string, number>();
+          for (const row of stock || []) {
+            const id = row.club_id as string;
+            counts.set(id, (counts.get(id) || 0) + 1);
+          }
+          targetClub =
+            memberClubIds.slice().sort((a, b) => (counts.get(b) || 0) - (counts.get(a) || 0))[0] ||
+            null;
+        }
       }
       if (!isMounted) return;
       if (targetClub && !isUuid(targetClub)) {

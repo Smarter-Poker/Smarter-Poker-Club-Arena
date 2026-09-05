@@ -177,11 +177,12 @@ export const HAND_COMPLETION = {
    * face up, which tells the player how the hand ends and then shows them the
    * card as a formality.
    *
-   * Sized from the board animation itself, in slow-reveal mode (what a paced
-   * all-in run-out uses), per CommunityCards.css: the card lands face down at
-   * 0.30s, holds to 0.75s, and its flip completes at 1.25s. Turn (0.55s) and
-   * river (0.70s) are quicker, so this one number covers every street with the
-   * flop as the worst case.
+   * Sized from the board animation itself: the all-in turn and river run the
+   * RIVER SQUEEZE (CommunityCards.css, 2026-09-04) with the `all-in` profile -
+   * the card materialises face down, holds, and snaps over through its edge.
+   * The profile (src/presentation/cardPresentation/profiles.ts) derives its
+   * hold FROM this number, so the face is up exactly when this gate opens;
+   * the flop's land-and-fan (~1.22s) fits inside it too.
    *
    * This is the REVEAL gate and is separate from allInStreetPauseMs, the beat
    * AFTER the equity settles and before the next card. Both are needed: the

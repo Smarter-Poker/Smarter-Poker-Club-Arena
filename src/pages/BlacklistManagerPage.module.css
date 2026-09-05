@@ -1,10 +1,21 @@
+/* #SMARTERCASINOREALISM - the material layer. The tokens live once on :root in
+   src/styles/club-engine.css, which main.tsx loads; this sheet only consumes
+   them. The page is the club's exclusion register: an operator names a member,
+   records a reason and an optional expiry, and the ledger below lists every
+   exclusion the club has written. The reds here carry meaning rather than
+   decoration - an active exclusion, the remove control and the failure panel
+   all stay red - so only the greys, the surfaces and the blue accents move onto
+   the shared vocabulary. The cut corners are this page's own idiom and stay: a
+   clip-path clips outer shadows away, so the clipped panels carry the bevel and
+   cavity insets rather than the lift. */
+
 .page {
   min-height: 100vh;
   min-height: 100dvh;
   padding-bottom: var(--bottom-nav-clearance, 74px);
   overflow-x: clip;
-  background: #05070a;
-  color: #edf5fb;
+  background: var(--realism-obsidian);
+  color: var(--realism-chrome-hot);
   font-family: 'Roboto Condensed', system-ui, sans-serif;
 }
 .workspace {
@@ -35,7 +46,7 @@
   min-height: 44px;
   display: inline-flex;
   align-items: center;
-  color: #85bcea;
+  color: var(--realism-cyan);
   font-size: 0.82rem;
   text-decoration: none;
 }
@@ -43,12 +54,12 @@
 .page button:focus-visible,
 .page input:focus-visible,
 .tableScroll:focus-visible {
-  outline: 2px solid #75bdff;
+  outline: 2px solid var(--realism-cyan);
   outline-offset: 3px;
 }
 .kicker {
   margin: 0 0 3px;
-  color: #657c8f;
+  color: var(--realism-muted);
   font-family: 'Rajdhani', system-ui, sans-serif;
   font-size: 0.7rem;
   font-weight: 700;
@@ -62,8 +73,11 @@
 .errorPanel button {
   min-height: 44px;
   padding: 9px 15px;
-  border: 1px solid #324250;
+  border: 1px solid var(--realism-gunmetal);
   border-radius: 2px;
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
   font-family: 'Rajdhani', system-ui, sans-serif;
   font-size: 0.8rem;
   font-weight: 700;
@@ -72,19 +86,31 @@
   cursor: pointer;
   touch-action: manipulation;
 }
+/* On a phone the press is the only feedback there is (no-hover-effects.law):
+   the control drops into its own cavity and the lit top edge goes out. */
+.addButton:active:not(:disabled),
+.dangerButton:active:not(:disabled),
+.secondaryButton:active:not(:disabled),
+.removeButton:active:not(:disabled),
+.errorPanel button:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
+}
 .addButton {
-  border-color: #3ba7ff;
+  border-color: var(--realism-cyan);
   background: #0a2740;
-  color: #e7f5ff;
+  color: var(--realism-chrome-hot);
   box-shadow:
-    inset 0 -2px 0 #3ba7ff,
+    var(--realism-bevel),
+    inset 0 -2px 0 var(--realism-cyan),
     0 0 16px rgba(59, 167, 255, 0.16);
 }
 .formPanel,
 .ledger,
 .errorPanel {
-  border: 1px solid #26313d;
-  background: #0d1218;
+  border: 1px solid var(--realism-gunmetal);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  box-shadow: var(--realism-bevel), var(--realism-cavity);
   clip-path: polygon(
     0 0,
     calc(100% - 10px) 0,
@@ -103,10 +129,10 @@
 }
 .panelHeader {
   padding-bottom: 15px;
-  border-bottom: 1px solid #26313d;
+  border-bottom: 1px solid var(--realism-gunmetal);
 }
 .panelHeader > span {
-  color: #6f8597;
+  color: var(--realism-muted);
   font-size: 0.76rem;
   text-transform: uppercase;
 }
@@ -122,7 +148,7 @@
   min-width: 0;
 }
 .field label {
-  color: #9bb0bf;
+  color: var(--realism-chrome);
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.07em;
@@ -133,10 +159,13 @@
   min-height: 46px;
   padding: 10px 12px;
   box-sizing: border-box;
-  border: 1px solid #334351;
+  border: 1px solid var(--realism-gunmetal);
   border-radius: 2px;
-  background: #070b0f;
-  color: #edf5fb;
+  /* The inverse of a panel: a cavity cut into it, so the field reads as a slot
+     rather than another raised face. */
+  background: var(--realism-obsidian);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.65);
+  color: var(--realism-chrome-hot);
   font: inherit;
   font-size: 16px;
 }
@@ -155,8 +184,8 @@
   color: #ffb7ba;
 }
 .secondaryButton {
-  background: #141c23;
-  color: #b5c2cb;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  color: var(--realism-chrome);
 }
 .removeButton {
   border-color: #543039;
@@ -184,8 +213,8 @@
   color: #ad9295;
 }
 .errorPanel button {
-  background: #1b242c;
-  color: #eef6fb;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  color: var(--realism-chrome-hot);
 }
 .state {
   min-height: 180px;
@@ -193,11 +222,11 @@
   place-content: center;
   gap: 6px;
   padding: 25px;
-  color: #8395a3;
+  color: var(--realism-muted);
   text-align: center;
 }
 .state strong {
-  color: #d9e5ed;
+  color: var(--realism-chrome-hot);
   font-family: 'Rajdhani', system-ui, sans-serif;
   text-transform: uppercase;
 }
@@ -217,22 +246,22 @@
 .tableScroll th,
 .tableScroll td {
   padding: 13px 11px;
-  border-bottom: 1px solid #202b34;
+  border-bottom: 1px solid var(--realism-gunmetal);
   text-align: left;
   vertical-align: middle;
 }
 .tableScroll th {
-  color: #718697;
+  color: var(--realism-muted);
   font-size: 0.68rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 .tableScroll td {
-  color: #bdcad3;
+  color: var(--realism-chrome);
   font-size: 0.85rem;
 }
 .tableScroll code {
-  color: #8fc7f1;
+  color: var(--realism-cyan);
   font-family: ui-monospace, monospace;
   font-size: 0.72rem;
 }
@@ -251,9 +280,9 @@
   background: #2c1014;
 }
 .expiredBadge {
-  border-color: #36444f;
-  color: #8293a0;
-  background: #141a1f;
+  border-color: var(--realism-gunmetal-lit);
+  color: var(--realism-muted);
+  background: var(--realism-panel-raised);
 }
 .srOnly {
   position: absolute;
@@ -302,8 +331,9 @@
   }
   .tableScroll tr {
     margin-bottom: 12px;
-    border: 1px solid #26313d;
-    background: #090d12;
+    border: 1px solid var(--realism-gunmetal);
+    background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+    box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
   }
   .tableScroll td {
     display: grid;
@@ -314,7 +344,7 @@
   }
   .tableScroll td::before {
     content: attr(data-label);
-    color: #657b8c;
+    color: var(--realism-muted);
     font-size: 0.67rem;
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -330,7 +360,7 @@
    exclusion is a decision about a person, so both ends now name them. */
 .fieldHelp {
   margin: 6px 0 0;
-  color: #8495a2;
+  color: var(--realism-muted);
   font-size: 0.78rem;
   letter-spacing: 0.02em;
 }
@@ -350,21 +380,29 @@
   justify-content: space-between;
   gap: 10px;
   padding: 9px 12px;
-  color: #dbe7ef;
+  color: var(--realism-chrome);
   font: inherit;
   text-align: left;
-  background: #101821;
-  border: 1px solid #26313d;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border: 1px solid var(--realism-gunmetal);
   border-radius: 4px;
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
   cursor: pointer;
 }
 
 /* No :hover anywhere in Club Arena (tests/no-hover-effects.law.test.ts): a
    hover state on a touch surface either never fires or sticks after a tap. */
 .memberOptions button:focus-visible {
-  border-color: #4a86b8;
-  outline: 2px solid #75beff;
+  border-color: var(--realism-cyan);
+  outline: 2px solid var(--realism-cyan);
   outline-offset: -2px;
+}
+
+.memberOptions button:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
 }
 
 .horseTag {
@@ -385,10 +423,11 @@
   justify-content: space-between;
   gap: 10px;
   padding: 9px 12px;
-  color: #dbe7ef;
-  background: #101821;
-  border: 1px solid #2f5f85;
+  color: var(--realism-chrome-hot);
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border: 1px solid var(--realism-cyan);
   border-radius: 4px;
+  box-shadow: var(--realism-bevel), var(--realism-cavity);
 }
 
 .playerCell {
@@ -397,7 +436,7 @@
 }
 
 .playerCell code {
-  color: #7d8d9a;
+  color: var(--realism-muted);
   font-size: 0.72rem;
 }
 
@@ -435,4 +474,20 @@
   margin: 0;
   color: #cdb896;
   font-size: 0.86rem;
+}
+
+/* Motion collapses under the OS setting, meaning never does (CLAUDE.md 10.6).
+   Listed selector by selector rather than through a descendant wildcard, so
+   this block can only reach the controls this sheet owns and never an animation
+   belonging to a component rendered inside the page. The 1px press travel goes;
+   the pressed cavity that confirms the tap stays. */
+@media (prefers-reduced-motion: reduce) {
+  .addButton:active:not(:disabled),
+  .dangerButton:active:not(:disabled),
+  .secondaryButton:active:not(:disabled),
+  .removeButton:active:not(:disabled),
+  .errorPanel button:active:not(:disabled),
+  .memberOptions button:active {
+    transform: none;
+  }
 }

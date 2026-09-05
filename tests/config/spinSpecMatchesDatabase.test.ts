@@ -24,11 +24,49 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { SPIN_TIERS, SPIN_FREQ_DENOMINATOR, expectedMultiplier } from '../../src/config/spinSpec';
 
-const MIGRATION = resolve(__dirname, '../../supabase/migrations/20260831_spin_fairness_guard.sql');
+/**
+ * THE LATEST MIGRATION THAT SEEDS THE LADDER, not a hard-coded filename.
+ *
+ * This was pinned to `20260831_spin_fairness_guard.sql`, and on 2026-09-05 the
+ * ladder was reseeded by a newer migration to put E[m] exactly on 2.76. The
+ * test went on parsing the 2026-08-31 file and reported that spinSpec.ts had
+ * "drifted" from a table that no longer existed anywhere - the assertion still
+ * red, but for the wrong reason and pointing at the wrong file. Its own header
+ * says "if the ladder moved somewhere else, move this test with it"; following
+ * the newest seed means it moves itself.
+ */
+const MIGRATIONS_DIR = resolve(__dirname, '../../supabase/migrations');
+function latestLadderMigration(): string {
+  const seeds = readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+    .filter((f) =>
+      readFileSync(join(MIGRATIONS_DIR, f), 'utf8').includes('INSERT INTO public.spin_tier_spec')
+    );
+  expect(seeds.length, 'no migration seeds spin_tier_spec').toBeGreaterThan(0);
+  return join(MIGRATIONS_DIR, seeds[seeds.length - 1]);
+}
+
+/**
+ * The latest migration DEFINING fn_spin_fairness_check. A different question
+ * from "who seeded the ladder last", and conflating the two is how the two
+ * guard-body assertions below started reading a migration that only reseeds
+ * rows. Same shape, different needle.
+ */
+function latestFairnessCheckMigration(): string {
+  const defs = readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+    .filter((f) =>
+      readFileSync(join(MIGRATIONS_DIR, f), 'utf8').includes('FUNCTION public.fn_spin_fairness_check')
+    );
+  expect(defs.length, 'no migration defines fn_spin_fairness_check').toBeGreaterThan(0);
+  return join(MIGRATIONS_DIR, defs[defs.length - 1]);
+}
 
 /** The (multiplier, freq, reserveThresholdX) triples seeded by the migration. */
 function ladderFromMigration(): Array<{
@@ -36,7 +74,7 @@ function ladderFromMigration(): Array<{
   freq: number;
   reserveThresholdX: number;
 }> {
-  const sql = readFileSync(MIGRATION, 'utf8');
+  const sql = readFileSync(latestLadderMigration(), 'utf8');
 
   const insertAt = sql.indexOf('INSERT INTO public.spin_tier_spec');
   expect(
@@ -92,10 +130,17 @@ describe('the database ladder is the spinSpec ladder', () => {
     expect(totalFreq, 'total frequency must match SPIN_FREQ_DENOMINATOR').toBe(
       SPIN_FREQ_DENOMINATOR
     );
-    expect(totalFreq).toBe(10_000_099);
+    /* MOVED 2026-09-05 with the rebalance that put E[m] exactly on 2.76 - the
+       ladder expected 2.763772x, so the product charged 7.874% while booking
+       8.00%. Only the 2x/3x split changed; every tier from 4x up holds its
+       exact frequency. */
+    expect(totalFreq).toBe(10_000_000);
     expect(units, 'weighted units — moving mass between tiers must hold this total').toBe(
-      27_638_000
+      27_600_000
     );
+    // The equality the whole product rests on, asserted where the DB copy is
+    // read rather than only where the TS copy is.
+    expect(units / totalFreq).toBeCloseTo(3 * (1 - 0.08), 10);
     expect(units / totalFreq).toBeCloseTo(expectedMultiplier(), 6);
   });
 
@@ -115,7 +160,7 @@ describe('the guard measures Spins, and only Spins', () => {
     // 13,709 of them since 2026-08-22, every one carrying spin_multiplier = 0.
     // A population built on spin_type is one third non-Spins, and every
     // percentage computed from it is wrong. Measured 2026-08-31.
-    const sql = readFileSync(MIGRATION, 'utf8');
+    const sql = readFileSync(latestFairnessCheckMigration(), 'utf8');
 
     expect(sql).toContain("t.variant = 'spin'");
 
@@ -136,7 +181,7 @@ describe('the guard measures Spins, and only Spins', () => {
     // measuring a few hundred draws a week and blind to the fleet the wheel
     // actually deals to — and excluding a horse from anything a human gets is
     // the bug this law exists to prevent.
-    const sql = readFileSync(MIGRATION, 'utf8');
+    const sql = readFileSync(latestFairnessCheckMigration(), 'utf8');
     const offending = sql
       .split('\n')
       .filter((line) => !line.trim().startsWith('--'))

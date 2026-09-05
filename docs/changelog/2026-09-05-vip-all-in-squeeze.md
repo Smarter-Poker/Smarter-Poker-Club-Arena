@@ -51,9 +51,9 @@ boards drew.
 ### Who sees it
 
 `viewerMaySqueeze()` (`src/presentation/cardPresentation/squeezeEligibility.ts`)
-is Dan's sentence as four booleans: the viewer is seated and `all_in` this
-hand, holds a VIP card, has `all_in_squeeze` on, and the hand is not being run
-more than once. TablePage computes it from what the client already knows and
+is Dan's sentence as five booleans: the viewer is in the run-out this hand,
+holds a VIP card, has `all_in_squeeze` on, the hand is not being run more than
+once, and it is not a bomb pot. TablePage computes it from what the client already knows and
 passes it to the board as `squeezeEligible`. **Nothing is broadcast for it** -
 a wire field saying who is squeezing would tell the table who is a VIP, and
 the test pins that `ServerTableEngineRunout.ts` mentions neither squeeze nor
@@ -154,11 +154,13 @@ gaps and three stale sentences, all fixed on this branch before it merged:
    been denied the perk in every heads-up all-in they covered. `heroInRunout`
    is now: status all-in OR named in `allInEquities` (by id, or by seat where
    an entry has no id).
-2. **Bomb-pot boards 2 and 3 did not squeeze.** Only board 1 was passed
-   `squeezeEligible`, so on a double or triple board the squeezer's second
-   board flipped on its own while the first sat under their hand. Every board
-   is eligible now, each reports its hold, and the displayed equity waits for
-   the UNION of boards still face down (`holdingBoards`).
+2. **Bomb pots.** The audit first wired boards 2 and 3 to squeeze too. Dan,
+   the same hour: "THIS ISN'T ALLOWED ON BOMB POTS OR ANY RUN IT 2 OR 3 TIMES
+   RUN OUTS." Reversed before it merged: a bomb pot - single or multi board -
+   is not a squeeze hand. `viewerMaySqueeze` takes a `bombPot` clause
+   (`bombPotActive`, or a second board on the felt), only board 1 is ever
+   handed the right, and `boardMaySqueeze` refuses any `boardIndex > 0`
+   outright, so a second board could not squeeze even if the page slipped.
 3. **No keyboard path.** The host announced itself as a button with no way to
    press it. `tabIndex=0`; Enter or Space opens the card from flat.
 4. `ALL_IN_STREET_REVEAL_MS`'s doc (both mirrors) still promised "the face is

@@ -167,6 +167,19 @@ describe('a global class name has exactly one owner', () => {
     //
     // The merge rule, either way: take the LOWER of the two sides. Both only
     // ever move down, so picking the higher hands back ceiling already earned.
-    expect(leakable).toBeLessThanOrEqual(161);
+    // 2026-09-05, fifth pass: 155, and this one was earned rather than merged.
+    // src/components/notifications/NotificationCenter.css and
+    // src/components/social/NotificationCenter.css were ORPHANS - two files of
+    // the same name, in different folders, imported by nothing (the real
+    // src/pages/NotificationCenter.tsx imports no stylesheet at all). They were
+    // still colliding with each other and with their neighbours on bare
+    // `.notification-backdrop`, `.notification-header` and `.close-btn`, so
+    // dead code was holding six leak pairs on the books. Deleting both took the
+    // measured count from 161 to 155.
+    //
+    // They were last edited on 2026-08-29 by a sweeping hover removal that
+    // changed them mechanically without noticing that nothing loads them -
+    // which is how an orphan survives: every pass treats it as real.
+    expect(leakable).toBeLessThanOrEqual(155);
   });
 });

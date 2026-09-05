@@ -536,7 +536,6 @@ function CommunityCardsComponent({
     return () => {
       cancelActiveSqueeze('unmount');
     };
-     
   }, []);
 
   // Bible V8 §5.1: Stage label + haptic feedback on stage transitions

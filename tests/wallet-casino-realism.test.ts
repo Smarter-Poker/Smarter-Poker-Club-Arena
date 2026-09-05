@@ -89,6 +89,28 @@ describe('wallets can send, receive and earn - wired to the real doors', () => {
   });
 });
 
+describe('one sub-read must not zero the whole wallet', () => {
+  const SERVICE = readFileSync(resolve(ROOT, 'src/services/WalletService.ts'), 'utf8');
+
+  it('reads every agents row, because an agent is an agent per club', () => {
+    // `agents` is UNIQUE on (club_id, user_id). `.maybeSingle()` answered
+    // PGRST116 "Results contain 2 rows" for anyone agenting two clubs, the
+    // throw below aborted the whole read, and Playable Now / All Wallets /
+    // Player / Promo / Business all rendered 0 over real money. 16 users on
+    // production, Dan among them (1,000,744.97 chips reading as zero).
+    const agentsRead = sliceBetween(SERVICE, "from('agents')", '),');
+    expect(agentsRead).not.toContain('maybeSingle');
+    expect(agentsRead).not.toContain('.single(');
+  });
+
+  it('sums the agent wallets rather than picking one', () => {
+    // Business is "Commissions And Settlements" - the sum across the clubs the
+    // player agents for, exactly as PLAYER sums their club memberships.
+    expect(SERVICE).toContain('const businessTotal = (agentRes.data || []).reduce(');
+    expect(SERVICE).toContain('num(r.agent_wallet_balance)');
+  });
+});
+
 describe('the header wallet button opens the wallet', () => {
   it('navigates to /wallet, not the diamond store tab', () => {
     // Dan 2026-09-04: "when you click the wallet from the global header it

@@ -60,6 +60,21 @@ whichever test the next agent notices first.
   `noCardsForHandsNobodyPaidInto.law.test.ts`.
 - **Horses are players (2026-08-27):** no `is_horse` exclusion anywhere except
   identification and the horse's input device. See CLAUDE.md 10.5.
+- **A VIP-gated, per-user squeeze does not break Animation Law 10.6 (resolved
+  2026-09-05, Dan):** 10.6 forbids "a toggle that disables an animation
+  outright". The VIP all-in squeeze (`user_table_settings.all_in_squeeze`,
+  the perk that lets an all-in VIP drag or touch a run-out card open) is a
+  DIFFERENT PROFILE for one viewer, not the absence of one: with it off, or
+  for a non-VIP, or for every other seat at the table, the card still lands,
+  still animates its full ordinary reveal for its full duration, and still
+  makes its sound. That is the same mechanism `resolveCardAnimationProfile`
+  already uses for spectator, background and mobile, and 10.6 has never
+  objected to those. What 10.6 WOULD forbid is a setting under which the card
+  appears with no animation at all, and no such setting exists (`off` is
+  still never a user choice). Pinned by `tests/unit/vipAllInSqueeze.test.ts`
+  ("Animation Law 10.6 is intact"). Do not read the perk toggle as a 10.6
+  violation and remove it; do not read 10.6 as a reason to give the squeeze
+  to seats Dan excluded.
 
 ## Registry
 

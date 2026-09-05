@@ -1127,6 +1127,9 @@ class HorseOrchestrator {
       const { error: insertErr } = await supabase.from('unions').insert({
         id: this.unionId,
         name: MIDWAY_UNION.name,
+        // unions.slug is NOT NULL with no default (live schema, 2026-09-05);
+        // without it this insert has never been able to land.
+        slug: 'midway-union',
         description: MIDWAY_UNION.description,
         owner_id: MIDWAY_UNION.ownerId,
         is_public: MIDWAY_UNION.isPublic,

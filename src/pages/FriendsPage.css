@@ -385,11 +385,23 @@
     sans-serif;
 }
 
+/* THE BUST ART IS A PORTRAIT, SO THE CIRCLE FRAMES THE HEAD (Dan 2026-09-05:
+   avatars must "either be inside the circle, or remove the circle").
+   The avatar library is table-seat bust art - measured, /avatars/table/
+   free_viking@2x.webp is 250x340 - and `object-fit: cover` in a square box
+   scales it to 48x65 and throws away 26% of its height from BOTH ends, then the
+   circle clips 31% of what is left. Centred, that removes the top of the head:
+   the viking lost his horns, the wizard his hat, the space commander his crown.
+   Anchoring to the top keeps the head and crops the shoulders instead, which is
+   what a head-and-shoulders portrait is for.
+   This is a no-op for square or landscape sources - there is no vertical
+   overflow to position - so it is safe on every avatar these rules can receive. */
 .friend-avatar img {
   width: 100%;
   height: 100%;
   border-radius: inherit;
   object-fit: cover;
+  object-position: 50% 0%;
 }
 
 .friend-avatar i {

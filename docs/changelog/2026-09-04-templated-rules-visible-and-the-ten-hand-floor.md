@@ -166,6 +166,31 @@ Tests: `AddOnAppliedIsAnnounced.test.ts` (engine: applied amount, seat, kind,
 the two silences) and `tests/unit/addOnBubble.test.tsx` (words, seat, expiry,
 replace-not-stack, wiring pins).
 
+## Third commit: the masthead reads like a placard
+
+Dan 2026-09-05, with a screenshot of the felt reading `NLH 0.10/0.25 -
+HAND #6225600` in the club-line type: "ALL TABLES NEED TO SEE IF THEY ARE
+CLASSIC, ACTION OR MADNESS ON THEM. IF THEY HAVE AN ANTE OR VPIP REQUIREMENT
+THAT SHOULD ALSO BE ON THE TABLE. AND THE GAME NAME AND BLINDS ARE WAY TOO
+SMALL FONT. WE NEED TO MAKE THAT LARGER."
+
+The cash masthead is now, top to bottom:
+
+    SHARK CLUB - MIDWAY UNION        (club line, unchanged, 0.48rem)
+    NLH 0.10/0.25                    (0.98rem, weight 800, brighter - twice the club line)
+    ACTION                           (gold badge, 0.62rem)
+    ANTE 0.25 · VPIP 40% MIN · 10 HANDS   (rules row, 0.54rem; absent with neither)
+    HAND #6225600                    (0.44rem, its own row - can never be cut off)
+
+The VPIP floor is read off the same table columns `fn_nit_evictions` judges by
+(`nit_game`, `maintain_percent_min`, `maintain_hands`), added to the bootstrap
+select, and printed for everyone; the hero's own number stays in the tracker
+to the left of their seat. The ante moved off the blinds line onto the rules
+row. Tournament tables keep their level row as it was (level + blinds + clock
+has no room to grow). A fleet table (no `cluster_id`) has no style to print;
+the ladder is cluster games, so on the board Dan sees, every table says what
+it is.
+
 ## Still true after this PR
 
 - The eviction is a between-hands database query, as designed

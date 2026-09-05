@@ -567,6 +567,15 @@ interface TableState {
    */
   gameStyle: string | null;
   /**
+   * THE VPIP FLOOR (Dan 2026-09-05): "IF THEY HAVE AN ANTE OR VPIP
+   * REQUIREMENT THAT SHOULD ALSO BE ON THE TABLE." The career VPIP a seat must
+   * keep (tables.maintain_percent_min) on a nit-game table, and the window it
+   * is judged over. Null when the table has no floor. Printed for everyone -
+   * the hero's tracker shows their own number; this is the rule of the game.
+   */
+  vpipFloor: number | null;
+  vpipWindow: number | null;
+  /**
    * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant THIS hand is played
    * as — differs from gameType on a variant-override bomb pot (e.g. a PLO4
    * bomb at an NLH table). Null until the engine reports one; every consumer
@@ -2031,6 +2040,8 @@ export default function TablePage({
       ante: 0,
       anteMode: null,
       gameStyle: null,
+      vpipFloor: null,
+      vpipWindow: null,
       handVariant: null,
       boardStage: 'preflop',
       engineStage: 'preflop',
@@ -10108,6 +10119,10 @@ export default function TablePage({
         bomb_pot_button_policy: string | null;
         /** The must-move game this table belongs to (Operation Table Stakes), or null. */
         cluster_id: string | null;
+        /** THE VPIP FLOOR (Dan 2026-09-05): the rule the felt prints. */
+        nit_game: boolean | null;
+        maintain_percent_min: number | null;
+        maintain_hands: number | null;
       };
       let table: TableBootstrapRow | null = null;
       let error: unknown = null;
@@ -10119,7 +10134,7 @@ export default function TablePage({
         const res = await supabase
           .from('tables')
           .select(
-            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_announce_seconds, bomb_pot_ante_fixed, bomb_pot_min_players, bomb_pot_button_policy, cluster_id'
+            'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, settings, min_buy_in, max_buy_in, straddle_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_variant, bomb_pot_announce_seconds, bomb_pot_ante_fixed, bomb_pot_min_players, bomb_pot_button_policy, cluster_id, nit_game, maintain_percent_min, maintain_hands'
           )
           .eq('id', tableId)
           .maybeSingle();
@@ -10217,6 +10232,16 @@ export default function TablePage({
                   ? formatBlindPair(table.small_blind, table.big_blind)
                   : '?/?',
           maxPlayers: table.max_players || 6,
+          /* THE VPIP FLOOR (Dan 2026-09-05): only a nit-game table has one;
+             a floor of 0 is no floor. Same columns fn_nit_evictions judges by. */
+          vpipFloor:
+            table.nit_game === true && Number(table.maintain_percent_min) > 0
+              ? Number(table.maintain_percent_min)
+              : null,
+          vpipWindow:
+            table.nit_game === true && Number(table.maintain_hands) > 0
+              ? Number(table.maintain_hands)
+              : null,
           players: createEmptySeats(table.max_players || 6),
           positions: Array(table.max_players || 6).fill(null),
           lastActions: Array(table.max_players || 6).fill(null),
@@ -20015,23 +20040,15 @@ export default function TablePage({
                               </span>
                             </span>
                           )}
+                          {/* Dan 2026-09-05: "THE GAME NAME AND BLINDS ARE WAY
+                              TOO SMALL FONT." Line 2 is now the game and the
+                              blinds alone, twice the size of the club line;
+                              the hand number moves to its own row below so it
+                              still can never be cut off (2026-08-26 item 5). */}
                           <span className="table-brand__line table-brand__line--level">
                             <span className="table-brand__game">
                               {gameShort} {tableState.blinds || '1/2'}
-                              {/* THE REGULAR ANTE (Dan 2026-09-04: "ANTES ...
-                                  ARE NOT DISPLAYING"). Beside the blinds, in
-                                  chips, the way a card room prints it. */}
-                              {tableState.ante > 0 && (
-                                <span className="table-brand__ante">
-                                  {'\u00B7 '}Ante {formatChipFigure(tableState.ante)}
-                                </span>
-                              )}
                             </span>
-                            {(tableState.handNumber ?? 0) > 0 && (
-                              <span className="table-brand__hand">
-                                {'\u00B7 '}Hand #{tableState.handNumber}
-                              </span>
-                            )}
                           </span>
                           {/* THE GAME STYLE (Dan 2026-09-04): "IF THE GAME IS
                               CLASSIC, ACTION OR MADNESS, IT MUST SAY IT ON THE
@@ -20039,6 +20056,39 @@ export default function TablePage({
                           {tableState.gameStyle && (
                             <span className="table-brand__line table-brand__line--style">
                               <span className="table-brand__style">{tableState.gameStyle}</span>
+                            </span>
+                          )}
+                          {/* THE RULES OF THE GAME (Dan 2026-09-04/05: "ANTES
+                              ... ARE NOT DISPLAYING"; "IF THEY HAVE AN ANTE OR
+                              VPIP REQUIREMENT THAT SHOULD ALSO BE ON THE
+                              TABLE"). One row, in chips and percent, the way a
+                              card room's placard prints it. Absent on a table
+                              with neither. */}
+                          {(tableState.ante > 0 || tableState.vpipFloor != null) && (
+                            <span className="table-brand__line table-brand__line--rules">
+                              {tableState.ante > 0 && (
+                                <span className="table-brand__ante">
+                                  Ante {formatChipFigure(tableState.ante)}
+                                </span>
+                              )}
+                              {tableState.ante > 0 && tableState.vpipFloor != null && (
+                                <span className="table-brand__rules-sep">{'\u00B7'}</span>
+                              )}
+                              {tableState.vpipFloor != null && (
+                                <span className="table-brand__vpip">
+                                  VPIP {tableState.vpipFloor}% Min
+                                  {tableState.vpipWindow
+                                    ? ` \u00B7 ${tableState.vpipWindow} Hands`
+                                    : ''}
+                                </span>
+                              )}
+                            </span>
+                          )}
+                          {(tableState.handNumber ?? 0) > 0 && (
+                            <span className="table-brand__line table-brand__line--hand">
+                              <span className="table-brand__hand">
+                                Hand #{tableState.handNumber}
+                              </span>
                             </span>
                           )}
                         </>

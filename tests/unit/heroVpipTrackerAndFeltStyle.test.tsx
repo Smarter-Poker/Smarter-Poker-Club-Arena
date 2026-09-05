@@ -221,25 +221,59 @@ describe('the regular ante reaches the felt', () => {
     expect(junk.anteMode).toBeNull();
   });
 
-  it('the masthead prints the ante beside the blinds and the style under them', () => {
+  /* Dan 2026-09-05: "ALL TABLES NEED TO SEE IF THEY ARE CLASSIC, ACTION OR
+     MADNESS ON THEM. IF THEY HAVE AN ANTE OR VPIP REQUIREMENT THAT SHOULD ALSO
+     BE ON THE TABLE. AND THE GAME NAME AND BLINDS ARE WAY TOO SMALL FONT." */
+  it('the masthead: big game + blinds, then the style, then the rules row (ante · VPIP floor), then the hand', () => {
     const page = read('src/pages/TablePage.tsx');
+    // The CASH masthead: the tournament branch above it uses the same row class.
     const brand = page.slice(
-      page.indexOf('className="table-brand__line table-brand__line--level"'),
+      page.indexOf('// Cash tables keep the two-line masthead.'),
       page.indexOf('{/* Dan 2026-08-19 item 15: the pot moved OUT of .table-surface.')
     );
-    expect(brand).toMatch(/tableState\.ante > 0 && \(/);
-    expect(brand).toMatch(/Ante \{formatChipFigure\(tableState\.ante\)\}/);
-    expect(brand).toMatch(/tableState\.gameStyle && \(/);
-    expect(brand).toMatch(/className="table-brand__style">\{tableState\.gameStyle\}/);
-    // The ante sits on the blinds line; the style is the line after it.
-    expect(brand.indexOf('table-brand__ante')).toBeLessThan(
+    // Line 2 is the game and the blinds ALONE - nothing else shares the big row.
+    const levelRow = brand.slice(
+      brand.indexOf('table-brand__line--level"'),
       brand.indexOf('table-brand__line--style')
     );
+    expect(levelRow).toMatch(/\{gameShort\} \{tableState\.blinds \|\| '1\/2'\}/);
+    expect(levelRow).not.toContain('table-brand__ante');
+    expect(levelRow).not.toContain('table-brand__hand');
+    expect(brand).toMatch(/tableState\.gameStyle && \(/);
+    expect(brand).toMatch(/className="table-brand__style">\{tableState\.gameStyle\}/);
+    // The rules row carries the ante and the VPIP floor, and is absent with neither.
+    expect(brand).toMatch(/\(tableState\.ante > 0 \|\| tableState\.vpipFloor != null\) && \(/);
+    expect(brand).toMatch(/Ante \{formatChipFigure\(tableState\.ante\)\}/);
+    expect(brand).toMatch(/VPIP \{tableState\.vpipFloor\}% Min/);
+    expect(brand).toMatch(/\$\{tableState\.vpipWindow\} Hands/);
+    // Order: level, style, rules, hand.
+    const at = (s: string) => brand.indexOf(s);
+    expect(at('table-brand__line--level')).toBeLessThan(at('table-brand__line--style'));
+    expect(at('table-brand__line--style')).toBeLessThan(at('table-brand__line--rules'));
+    expect(at('table-brand__line--rules')).toBeLessThan(at('table-brand__line--hand'));
+  });
+
+  it('the VPIP floor comes off the same table columns fn_nit_evictions judges by', () => {
+    const page = read('src/pages/TablePage.tsx');
+    expect(page).toMatch(/cluster_id, nit_game, maintain_percent_min, maintain_hands'/);
+    expect(page).toMatch(
+      /vpipFloor:\s*table\.nit_game === true && Number\(table\.maintain_percent_min\) > 0\s*\?\s*Number\(table\.maintain_percent_min\)\s*:\s*null/
+    );
+  });
+
+  it('the game and blinds are twice the club line on a cash table; the style is a badge', () => {
+    const css = read('src/pages/TablePage.css');
+    expect(css).toMatch(/\.table-brand__line \{\s*font-size: 0\.48rem;/);
+    expect(css).toMatch(
+      /\.table-page:not\(\.table-page--tournament\) \.table-brand__line--level \{\s*font-size: 0\.98rem;/
+    );
+    expect(css).toMatch(/\.table-brand__line--style \{[^}]*font-size: 0\.62rem;/);
+    expect(css).toMatch(/\.table-brand__line--rules \{[^}]*font-size: 0\.54rem;/);
   });
 
   it("the table page reads the game's template through the table's cluster_id", () => {
     const page = read('src/pages/TablePage.tsx');
-    expect(page).toMatch(/bomb_pot_min_players, bomb_pot_button_policy, cluster_id'/);
+    expect(page).toMatch(/bomb_pot_min_players, bomb_pot_button_policy, cluster_id, nit_game/);
     expect(page).toMatch(
       /\.from\('cash_games'\)\s*\.select\('template_name'\)\s*\.eq\('id', table\.cluster_id\)/
     );

@@ -47,7 +47,7 @@ write. Three cluster tables were in this state when I looked (two old FLO8
 Main 1s and this feeder), and a player on a closed table is invisible to the
 census, so nothing would ever have planned them out.
 
-Fix, two parts, both in `20260905040000_the_break_keeps_a_seat_open_and_the_door_refuses_a_closed_table.sql`:
+Fix, two parts, both in `20260905040500_the_break_keeps_a_seat_open_and_the_door_refuses_a_closed_table.sql`:
 
 - A `BEFORE INSERT` trigger on `table_seats` refuses a seat on a cluster
   table whose lifecycle is `breaking` (18.3: no new sit-ins) or `closed`,

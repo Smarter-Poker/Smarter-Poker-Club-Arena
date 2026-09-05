@@ -1,0 +1,12 @@
+{
+  "_owner": "fix/cluster-break-boundary-and-closed-door",
+  "_comment": "20260905053000: the game door (fn_cash_game_join, fn_cash_game_leave_waitlist, fn_cash_game_waitlist_position, fn_cash_game_open_seats). Applied to production 2026-09-05 02:03 UTC.",
+  "tables": [],
+  "functions": [
+    "fn_cash_game_join",
+    "fn_cash_game_leave_waitlist",
+    "fn_cash_game_waitlist_position",
+    "fn_cash_game_open_seats"
+  ],
+  "columns": {}
+}

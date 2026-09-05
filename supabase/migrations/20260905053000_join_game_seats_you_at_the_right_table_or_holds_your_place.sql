@@ -1,120 +1,173 @@
 -- ═══════════════════════════════════════════════════════════════════════════════
--- A MOVE WITHIN ONE GAME IS NOT A FIFTH GAME, AND A REFUSED MOVE GETS A MINUTE
--- (Operation Table Stakes, first live self-heal; 2026-09-05 00:00 UTC)
+-- JOIN GAME SEATS YOU AT THE RIGHT TABLE, OR HOLDS YOUR PLACE
+-- (Operation Table Stakes, Gate 4 - the game door; 2026-09-05)
 -- ═══════════════════════════════════════════════════════════════════════════════
 --
--- 20260905040500 turned the closed NLH 0.10/0.25 Madness feeder back into
--- `breaking` and the tick planned its one player onto Main 1 at 00:00:06. The
--- engine executed the move at once and the seat insert on Main 1 was refused:
+-- Until tonight JOIN on a game's lobby card always sent the player to Main 1
+-- - full or not - and nothing on the platform wrote `cash_game_waitlist`, so
+-- a human could never be a buyer for the OPEN rule (only horses were). OPORD
+-- 1.3 section 9.4 / the Gate 4 handoff: seat the player at the shortest live
+-- Main with an unreserved open seat, then the feeder; if none, hold their
+-- place on the GAME's list (one row per game per player) and the tick counts
+-- them when it decides whether to open a feeder.
 --
---     FOUR TABLE LIMIT: user a7bdfc35-… is already committed to 4 games
+-- `fn_cash_game_join(game)` is the one door. It seats nobody itself - the
+-- browser's only money door is still atomic_table_buyin - it decides WHERE:
 --
--- Two defects, one visible in the note and one in the event log.
+--   seated      the caller already holds a chair in this game (table returned)
+--   seat        a chair is open: table_id to buy in at; the caller's waitlist
+--               row, if any, becomes `notified` (a three-minute hold on the
+--               count, not on a chair number)
+--   waitlisted  no chair anywhere: a `waiting` row, with position and count
 --
--- 1. THE COUNT. `fn_enforce_four_table_limit` counts the player's live seats
---    at every table whose status is not `closed` - including the seat on the
---    BREAKING table they are being moved OFF. A must-move or break move is
---    one player changing chairs inside one game; it never adds a game. The
---    trigger now subtracts the player's other live seats in the destination
---    table's own cluster. Fleet and tournament seats are unaffected
---    (cluster_id is NULL there, nothing is subtracted).
+-- A `notified` row that is not a seat inside three minutes expires (the tick);
+-- a row whose player is seated becomes `seated` (the tick, and this door).
+-- `fn_cash_game_leave_waitlist(game)` cancels. Both derive the player from
+-- auth.uid() and never from a parameter.
 --
--- 2. THE CHURN. The planner skips a player with a PENDING move. A refused
---    move is `cancelled`, not pending, so the same player was re-planned on
---    every 5 s tick - 14 rows in the first 70 s, ~17,000 a day per stuck
---    player - each one a seat insert the engine attempted and the trigger
---    refused. The planner (must-move and break alike) now leaves a player
---    alone for 60 s after a cancelled move: long enough for whatever refused
---    it to change, short enough that nobody notices the wait.
+-- A chair is "unreserved open" when max_players minus live seats minus
+-- notified table-waitlist holds minus pending seat moves TO the table is
+-- positive - the same arithmetic the census and the executor use, so the
+-- door never points a player at a chair the game has promised to a mover.
 --
--- The tick body is 20260905040500's plus exactly the two back-off predicates;
--- the assertions pin all three edits.
+-- ROLLBACK:
+--   DROP FUNCTION IF EXISTS public.fn_cash_game_join(uuid);
+--   DROP FUNCTION IF EXISTS public.fn_cash_game_leave_waitlist(uuid);
+--   DROP FUNCTION IF EXISTS public.fn_cash_game_waitlist_position(uuid);
+--   -- re-apply 20260905050000 for the previous fn_cash_cluster_tick body
 
 BEGIN;
 
--- ─────────────────────────────────────────────────────────────────────────────
--- 1. The four-table count does not count the chair being left
--- ─────────────────────────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION public.fn_cash_game_open_seats(p_table_id uuid)
+RETURNS integer
+LANGUAGE sql
+STABLE SECURITY DEFINER
+SET search_path TO 'public', 'pg_temp'
+AS $$
+  SELECT GREATEST(0,
+           coalesce(t.max_players, 9)
+           - (SELECT count(*) FROM public.table_seats ts WHERE ts.table_id = t.id AND ts.left_at IS NULL)
+           - (SELECT count(*) FROM public.table_waitlist w
+               WHERE w.table_id = t.id AND w.status = 'notified' AND w.hold_expires_at > clock_timestamp())
+           - (SELECT count(*) FROM public.cash_seat_moves m WHERE m.to_table_id = t.id AND m.state = 'pending'))::integer
+    FROM public.tables t WHERE t.id = p_table_id;
+$$;
 
-CREATE OR REPLACE FUNCTION public.fn_enforce_four_table_limit()
-RETURNS trigger
+CREATE OR REPLACE FUNCTION public.fn_cash_game_join(p_game_id uuid)
+RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path TO 'public'
+SET search_path TO 'public', 'pg_temp'
 AS $$
 DECLARE
-  v_live       int;
-  v_is_closed  boolean;
-  v_tournament uuid;
-  v_cluster    uuid;
+  v_uid uuid := auth.uid();
+  g record; s record; t record;
+  v_position integer; v_count integer;
 BEGIN
-  IF NEW.left_at IS NOT NULL THEN
-    RETURN NEW;
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'NOT_AUTHENTICATED: sign in to join a game' USING ERRCODE = '28000';
   END IF;
-  IF NEW.user_id IS NULL THEN
-    RETURN NEW;
-  END IF;
-
-  SELECT (t.status = 'closed'), t.tournament_id, t.cluster_id
-    INTO v_is_closed, v_tournament, v_cluster
-    FROM public.tables t
-   WHERE t.id = NEW.table_id;
-  IF COALESCE(v_is_closed, false) THEN
-    RETURN NEW;
+  SELECT * INTO g FROM public.cash_games WHERE id = p_game_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'GAME_NOT_FOUND: %', p_game_id; END IF;
+  IF NOT g.enabled THEN
+    RAISE EXCEPTION 'GAME_CLOSED: this game is not taking players' USING ERRCODE = 'check_violation';
   END IF;
 
-  -- A MOVE WITHIN ONE GAME IS NOT A FIFTH GAME (2026-09-05). A player who
-  -- already holds a live seat on another table of this same must-move game
-  -- (the feeder or breaking table they are leaving) is changing chairs, not
-  -- entering a game. The cap does not apply to a move at all: refusing one
-  -- strands the player on a breaking table, which is worse than anything
-  -- the cap protects (the horse this was found on held 5 - two seats and
-  -- three bookings - so subtracting the chair being left was not enough).
-  IF v_cluster IS NOT NULL AND EXISTS (
-       SELECT 1
-         FROM public.table_seats ts
-         JOIN public.tables t ON t.id = ts.table_id
-        WHERE ts.user_id = NEW.user_id
-          AND ts.left_at IS NULL
-          AND t.status <> 'closed'
-          AND t.cluster_id = v_cluster
-          AND t.id <> NEW.table_id) THEN
-    RETURN NEW;
+  -- Already in the game: say where.
+  SELECT ts.table_id, ts.seat_number, tb.name, tb.role, tb.main_index
+    INTO s
+    FROM public.table_seats ts JOIN public.tables tb ON tb.id = ts.table_id
+   WHERE ts.user_id = v_uid AND ts.left_at IS NULL AND tb.cluster_id = g.id AND tb.lifecycle <> 'closed'
+   LIMIT 1;
+  IF FOUND THEN
+    UPDATE public.cash_game_waitlist SET status = 'seated', updated_at = now()
+     WHERE game_id = g.id AND user_id = v_uid AND status IN ('waiting', 'notified');
+    RETURN jsonb_build_object('ok', true, 'action', 'seated', 'table_id', s.table_id,
+                              'seat_number', s.seat_number, 'table_name', s.name,
+                              'role', s.role, 'main_index', s.main_index);
   END IF;
 
-  PERFORM pg_advisory_xact_lock(hashtextextended('table_cap:' || NEW.user_id::text, 0));
-
-  v_live := public.fn_concurrent_game_load(NEW.user_id, NEW.id, NEW.table_id, v_tournament);
-
-  IF v_live >= 4 THEN
-    RAISE EXCEPTION
-      'FOUR TABLE LIMIT: user % is already committed to % games and may not take another',
-      NEW.user_id, v_live
-      USING ERRCODE = '23514',
-            HINT = 'Leave a table or unregister before joining another. A game is a live seat or a booking for a tournament that has not started. This limit applies to players and horses alike.';
+  -- The shortest live Main with an unreserved open chair, then the feeder
+  -- (opening or live). Never a breaking or closed table.
+  SELECT tb.id, tb.name, tb.role, tb.main_index, public.fn_cash_game_open_seats(tb.id) AS open_seats,
+         (SELECT count(*) FROM public.table_seats ts WHERE ts.table_id = tb.id AND ts.left_at IS NULL) AS seated
+    INTO t
+    FROM public.tables tb
+   WHERE tb.cluster_id = g.id AND coalesce(tb.is_deleted, false) = false
+     AND tb.status IN ('waiting', 'running', 'active') AND tb.lifecycle IN ('live', 'opening')
+     AND public.fn_cash_game_open_seats(tb.id) > 0
+   ORDER BY (tb.role = 'feeder') ASC, seated ASC, tb.main_index ASC NULLS LAST, tb.created_at ASC
+   LIMIT 1;
+  IF FOUND THEN
+    UPDATE public.cash_game_waitlist SET status = 'notified', updated_at = now()
+     WHERE game_id = g.id AND user_id = v_uid AND status IN ('waiting', 'notified');
+    RETURN jsonb_build_object('ok', true, 'action', 'seat', 'table_id', t.id, 'table_name', t.name,
+                              'role', t.role, 'main_index', t.main_index, 'open_seats', t.open_seats);
   END IF;
 
-  RETURN NEW;
+  -- Nothing open anywhere: hold the place. One live row per game per player.
+  INSERT INTO public.cash_game_waitlist (game_id, user_id, status)
+  VALUES (g.id, v_uid, 'waiting')
+  ON CONFLICT DO NOTHING;
+  SELECT count(*) + 1 INTO v_position FROM public.cash_game_waitlist w
+   WHERE w.game_id = g.id AND w.status IN ('waiting', 'notified')
+     AND w.created_at < (SELECT created_at FROM public.cash_game_waitlist x
+                          WHERE x.game_id = g.id AND x.user_id = v_uid AND x.status IN ('waiting', 'notified') LIMIT 1);
+  SELECT count(*) INTO v_count FROM public.cash_game_waitlist w
+   WHERE w.game_id = g.id AND w.status IN ('waiting', 'notified');
+  RETURN jsonb_build_object('ok', true, 'action', 'waitlisted', 'position', v_position, 'waiting', v_count,
+                            'opening_hold_since', g.opening_hold_since,
+                            'tables', (SELECT count(*) FROM public.tables tb WHERE tb.cluster_id = g.id AND tb.lifecycle <> 'closed'
+                                          AND coalesce(tb.is_deleted, false) = false));
 END;
 $$;
 
--- ─────────────────────────────────────────────────────────────────────────────
--- 2. The closed-table door also watches a REVIVED seat row
--- ─────────────────────────────────────────────────────────────────────────────
--- 20260905040500's guard is BEFORE INSERT. table_seats keeps departed rows and
--- (table_id, seat_number) is unique, so most sit-downs are an UPDATE that
--- sets left_at back to NULL - the four-table guard has always fired on that
--- too. Same shape as zz_restriction_seat_revive_guard.
+CREATE OR REPLACE FUNCTION public.fn_cash_game_leave_waitlist(p_game_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public', 'pg_temp'
+AS $$
+DECLARE v_uid uuid := auth.uid(); v_n integer;
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'NOT_AUTHENTICATED: sign in first' USING ERRCODE = '28000';
+  END IF;
+  UPDATE public.cash_game_waitlist SET status = 'cancelled', updated_at = now()
+   WHERE game_id = p_game_id AND user_id = v_uid AND status IN ('waiting', 'notified');
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  RETURN jsonb_build_object('ok', true, 'cancelled', v_n);
+END;
+$$;
 
-DROP TRIGGER IF EXISTS trg_refuse_seat_revive_on_closed_cluster_table ON public.table_seats;
-CREATE TRIGGER trg_refuse_seat_revive_on_closed_cluster_table
-  BEFORE UPDATE OF user_id, left_at, table_id ON public.table_seats
-  FOR EACH ROW
-  WHEN (NEW.left_at IS NULL AND (OLD.left_at IS NOT NULL OR OLD.user_id IS DISTINCT FROM NEW.user_id OR OLD.table_id IS DISTINCT FROM NEW.table_id))
-  EXECUTE FUNCTION public.fn_refuse_seat_on_closed_cluster_table();
+CREATE OR REPLACE FUNCTION public.fn_cash_game_waitlist_position(p_game_id uuid)
+RETURNS jsonb
+LANGUAGE sql
+STABLE SECURITY DEFINER
+SET search_path TO 'public', 'pg_temp'
+AS $$
+  SELECT jsonb_build_object(
+    'waiting', (SELECT count(*) FROM public.cash_game_waitlist w WHERE w.game_id = p_game_id AND w.status IN ('waiting', 'notified')),
+    'position', (SELECT count(*) + 1 FROM public.cash_game_waitlist w
+                  WHERE w.game_id = p_game_id AND w.status IN ('waiting', 'notified')
+                    AND w.created_at < (SELECT created_at FROM public.cash_game_waitlist x
+                                         WHERE x.game_id = p_game_id AND x.user_id = auth.uid() AND x.status IN ('waiting', 'notified') LIMIT 1)),
+    'on_list', EXISTS (SELECT 1 FROM public.cash_game_waitlist x
+                        WHERE x.game_id = p_game_id AND x.user_id = auth.uid() AND x.status IN ('waiting', 'notified')));
+$$;
+
+REVOKE ALL ON FUNCTION public.fn_cash_game_open_seats(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_cash_game_open_seats(uuid) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_cash_game_join(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_cash_game_join(uuid) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_cash_game_leave_waitlist(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_cash_game_leave_waitlist(uuid) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_cash_game_waitlist_position(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_cash_game_waitlist_position(uuid) TO authenticated, service_role;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- 3. The tick: a refused move gets a minute before it is planned again
+-- The tick reconciles the game waitlist (20260905050000's body plus exactly
+-- the two statements after moves_expired)
 -- ─────────────────────────────────────────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION public.fn_cash_cluster_tick(p_game_id uuid, p_eligible_horses integer DEFAULT 0)
@@ -145,6 +198,7 @@ DECLARE
   v_idx integer;
   v_shortest uuid;
   v_table_cap integer;
+  v_res jsonb;
 BEGIN
   IF public.fn_platform_frozen() THEN
     RETURN jsonb_build_object('ok', false, 'skipped', 'frozen');
@@ -160,6 +214,18 @@ BEGIN
   GET DIAGNOSTICS v_n = ROW_COUNT;
   IF v_n > 0 THEN v_actions := v_actions || jsonb_build_object('moves_expired', v_n); END IF;
 
+  -- THE GAME WAITLIST (Gate 4, 2026-09-05). A row whose player now holds a
+  -- seat in the game is `seated`; a `notified` row (the join door told them
+  -- a seat was open) that has not turned into a seat in three minutes is
+  -- `expired` - their browser asks again if they are still there, and the
+  -- OPEN rule stops counting a buyer who left.
+  UPDATE public.cash_game_waitlist w SET status = 'seated', updated_at = v_now
+   WHERE w.game_id = g.id AND w.status IN ('waiting', 'notified')
+     AND EXISTS (SELECT 1 FROM public.table_seats ts JOIN public.tables tb ON tb.id = ts.table_id
+                  WHERE ts.user_id = w.user_id AND ts.left_at IS NULL AND tb.cluster_id = g.id AND tb.lifecycle <> 'closed');
+  UPDATE public.cash_game_waitlist w SET status = 'expired', updated_at = v_now
+   WHERE w.game_id = g.id AND w.status = 'notified' AND w.updated_at < v_now - interval '3 minutes';
+
   -- A CLOSED TABLE WITH SOMEONE ON IT (2026-09-05). The census excludes
   -- closed tables, so a player who reached one (the seat guard below now
   -- refuses; this covers what got through before it, and any future hole)
@@ -174,6 +240,24 @@ BEGIN
      WHERE id = t.id;
     INSERT INTO public.cash_cluster_events (game_id, table_id, kind) VALUES (g.id, t.id, 'closed_table_reopened_to_break');
     v_actions := v_actions || jsonb_build_object('reopened_to_break', t.id);
+  END LOOP;
+
+  -- AN OPENING FEEDER NOBODY CAME TO (2026-09-05). It was opened for two
+  -- buyers; three minutes with nobody on it means they went elsewhere. It
+  -- closes, the live feeder it was going to promote stays the feeder, and
+  -- OPEN below waits two minutes before trying again.
+  FOR t IN SELECT tb.id FROM public.tables tb
+            WHERE tb.cluster_id = g.id AND tb.lifecycle = 'opening'
+              AND coalesce(tb.is_deleted, false) = false
+              AND coalesce(tb.opened_at, tb.created_at) < v_now - interval '3 minutes'
+              AND NOT EXISTS (SELECT 1 FROM public.table_seats ts WHERE ts.table_id = tb.id AND ts.left_at IS NULL)
+  LOOP
+    UPDATE public.tables SET status = 'closed', lifecycle = 'closed', current_players = 0, updated_at = now()
+     WHERE id = t.id;
+    UPDATE public.tables SET promote_pending = false
+     WHERE cluster_id = g.id AND role = 'feeder' AND promote_pending;
+    INSERT INTO public.cash_cluster_events (game_id, table_id, kind) VALUES (g.id, t.id, 'feeder_abandoned');
+    v_actions := v_actions || jsonb_build_object('feeder_abandoned', t.id);
   END LOOP;
 
   v_census := public.fn_cash_cluster_census(g.id, v_now);
@@ -217,6 +301,12 @@ BEGIN
        WHERE ts.left_at IS NULL AND ts.user_id IS NOT NULL
          AND (c.role = 'feeder' OR c.breaking)
          AND c.id <> t.id
+         -- NOT WITH NOTHING, NOT WHILE LEAVING (2026-09-05): a busted seat is
+         -- in its rebuy window, a leave_pending seat is on its way out.
+         AND coalesce(ts.stack, 0) > 0
+         AND coalesce(ts.leave_pending, false) = false
+         -- Never onto a table they are already sitting at.
+         AND NOT EXISTS (SELECT 1 FROM public.table_seats d WHERE d.table_id = t.id AND d.user_id = ts.user_id AND d.left_at IS NULL)
          AND NOT EXISTS (SELECT 1 FROM public.cash_seat_moves m WHERE m.player_id = ts.user_id AND m.state = 'pending')
          -- BACK-OFF (2026-09-05): a move the engine just refused (cancelled
          -- with a note) is not re-planned every 5 s; the refusal gets a minute.
@@ -246,7 +336,10 @@ BEGIN
 
   IF g.enabled AND v_open_unreserved = 0 AND v_live_tables > 0
      AND NOT EXISTS (SELECT 1 FROM unnest(v_census) c WHERE c.lifecycle = 'opening')
-     AND v_live_tables < v_table_cap THEN
+     AND v_live_tables < v_table_cap
+     -- Two minutes after a feeder was abandoned, not before.
+     AND NOT EXISTS (SELECT 1 FROM public.cash_cluster_events e
+                      WHERE e.game_id = g.id AND e.kind = 'feeder_abandoned' AND e.at > v_now - interval '2 minutes') THEN
     IF v_buyers >= 2 THEN
       UPDATE public.tables SET promote_pending = true
        WHERE cluster_id = g.id AND role = 'feeder' AND lifecycle = 'live';
@@ -362,8 +455,36 @@ BEGIN
       v_actions := v_actions || jsonb_build_object('closed', t.id);
       CONTINUE;
     END IF;
+    -- A SECOND CHAIR IN ONE GAME (2026-09-05). Before the door refused it, the
+    -- fleet could seat the same horse at two tables of one game; found live
+    -- with one of the two chairs on this breaking table. There is nowhere to
+    -- move that chair to (they are already at the other table), so it goes
+    -- home: the stack returns to the wallet through the forced cash-out the
+    -- table-close path uses. Nothing is lost; the other chair is untouched.
+    FOR r IN SELECT ts.user_id, ts.seat_number, ts.stack,
+                    coalesce(ts.club_id, public.fn_player_home_club(ts.user_id, NULL)) AS club_id
+               FROM public.table_seats ts
+              WHERE ts.table_id = t.id AND ts.left_at IS NULL AND ts.user_id IS NOT NULL
+                AND coalesce(ts.stack, 0) > 0
+                AND EXISTS (SELECT 1 FROM public.table_seats o JOIN public.tables ot ON ot.id = o.table_id
+                             WHERE o.user_id = ts.user_id AND o.left_at IS NULL AND o.table_id <> t.id
+                               AND ot.cluster_id = g.id AND ot.lifecycle IN ('live', 'opening'))
+    LOOP
+      CONTINUE WHEN r.club_id IS NULL;
+      -- The same three calls fn_cashout_seats_for_closing_table makes, per seat.
+      PERFORM public.fn_ensure_club_wallet(r.user_id, r.club_id);
+      PERFORM public.fn_ca_declare_ledger('table_cashout', 'table_stack', t.id);
+      v_res := public.atomic_seat_cashout_locked(r.user_id, t.id, r.seat_number, 'forced');
+      INSERT INTO public.cash_cluster_events (game_id, table_id, kind, payload)
+      VALUES (g.id, t.id, 'second_chair_cashed_out',
+              jsonb_build_object('player_id', r.user_id, 'seat', r.seat_number, 'stack', r.stack,
+                                 'club_id', r.club_id, 'credited', v_res->'credited', 'key', v_res->'idempotency_key'));
+      v_actions := v_actions || jsonb_build_object('second_chair_cashed_out', r.user_id);
+    END LOOP;
     FOR r IN SELECT ts.user_id FROM public.table_seats ts
               WHERE ts.table_id = t.id AND ts.left_at IS NULL AND ts.user_id IS NOT NULL
+                AND coalesce(ts.stack, 0) > 0
+                AND coalesce(ts.leave_pending, false) = false
                 AND NOT EXISTS (SELECT 1 FROM public.cash_seat_moves m WHERE m.player_id = ts.user_id AND m.state = 'pending')
                 AND NOT EXISTS (SELECT 1 FROM public.cash_seat_moves m WHERE m.player_id = ts.user_id AND m.state = 'cancelled' AND m.created_at > v_now - interval '60 seconds')
               ORDER BY ts.joined_at
@@ -371,6 +492,7 @@ BEGIN
       SELECT c.id INTO v_shortest FROM unnest(v_census) c
        WHERE c.id <> t.id AND NOT c.breaking AND c.lifecycle IN ('live', 'opening')
          AND c.open_unreserved - (SELECT count(*) FROM public.cash_seat_moves m WHERE m.to_table_id = c.id AND m.state = 'pending') > 0
+         AND NOT EXISTS (SELECT 1 FROM public.table_seats d WHERE d.table_id = c.id AND d.user_id = r.user_id AND d.left_at IS NULL)
        ORDER BY c.seated ASC, c.main_index ASC NULLS LAST LIMIT 1;
       EXIT WHEN v_shortest IS NULL;
       INSERT INTO public.cash_seat_moves (game_id, player_id, from_table_id, to_table_id, reason)
@@ -433,28 +555,18 @@ $$;
 REVOKE ALL ON FUNCTION public.fn_cash_cluster_tick(uuid, integer) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_cash_cluster_tick(uuid, integer) TO service_role;
 
--- ─────────────────────────────────────────────────────────────────────────────
--- 4. Assertions
--- ─────────────────────────────────────────────────────────────────────────────
-
 DO $$
-DECLARE src text; n int;
+DECLARE v_tick text; v_join text;
 BEGIN
-  SELECT prosrc INTO src FROM pg_proc WHERE proname = 'fn_cash_cluster_tick' AND pronamespace = 'public'::regnamespace;
-  SELECT count(*) INTO n FROM regexp_matches(src, 'm\.state = ''cancelled'' AND m\.created_at > v_now - interval ''60 seconds''', 'g');
-  IF n <> 2 THEN
-    RAISE EXCEPTION 'fn_cash_cluster_tick should back off a cancelled move in both planners (found % of 2)', n;
-  END IF;
-  IF src NOT LIKE '%v_seated_total < v_remaining_capacity%' OR src NOT LIKE '%closed_table_reopened_to_break%' THEN
-    RAISE EXCEPTION 'fn_cash_cluster_tick lost an edit from 20260905040500';
-  END IF;
-  SELECT prosrc INTO src FROM pg_proc WHERE proname = 'fn_enforce_four_table_limit' AND pronamespace = 'public'::regnamespace;
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_refuse_seat_revive_on_closed_cluster_table' AND tgrelid = 'public.table_seats'::regclass) THEN
-    RAISE EXCEPTION 'the revive door is missing';
-  END IF;
-  IF src NOT LIKE '%AND t.cluster_id = v_cluster%' OR src NOT LIKE '%A MOVE WITHIN ONE GAME IS NOT A FIFTH GAME%' THEN
-    RAISE EXCEPTION 'fn_enforce_four_table_limit still counts the chair being left';
-  END IF;
+  SELECT pg_get_functiondef(p.oid) INTO v_tick FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = 'fn_cash_cluster_tick';
+  SELECT pg_get_functiondef(p.oid) INTO v_join FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = 'fn_cash_game_join';
+  IF v_tick NOT LIKE '%SET status = ''seated'', updated_at = v_now%' THEN RAISE EXCEPTION 'tick: waitlist seated step missing'; END IF;
+  IF v_tick NOT LIKE '%SET status = ''expired'', updated_at = v_now%' THEN RAISE EXCEPTION 'tick: waitlist expiry missing'; END IF;
+  IF v_tick NOT LIKE '%second_chair_cashed_out%' OR v_tick NOT LIKE '%feeder_abandoned%' THEN RAISE EXCEPTION 'tick: 050000 body lost'; END IF;
+  IF v_join NOT LIKE '%auth.uid()%' THEN RAISE EXCEPTION 'join: must derive the player from auth.uid()'; END IF;
+  IF v_join NOT LIKE '%fn_cash_game_open_seats%' THEN RAISE EXCEPTION 'join: must use the shared open-seat arithmetic'; END IF;
 END $$;
 
 COMMIT;

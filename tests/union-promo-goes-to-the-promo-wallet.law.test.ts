@@ -29,7 +29,11 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { clubSendRoute, UNION_WALLET_COLUMN } from '../src/components/union/unionWalletRoutes';
+import {
+  clubSendRoute,
+  clubPullRoute,
+  UNION_WALLET_COLUMN,
+} from '../src/components/union/unionWalletRoutes';
 import {
   cashierTabs,
   cashierRefusesSelfSend,
@@ -114,6 +118,45 @@ describe('the union modal routes a club send by the wallet that is open', () => 
     expect(unionModal).toContain("'Into The Club Promo Wallet'");
     expect(unionModal).toContain("'Into The Club Bank'");
     expect(unionModal).toContain("'CLUB PROMO WALLET'");
+  });
+});
+
+describe('a pull comes back to the wallet that is open', () => {
+  it('the promo wallet pulls from the club promo wallet; the bank from the club bank', () => {
+    expect(clubPullRoute('promo')).toEqual({ kind: 'promo' });
+    expect(clubPullRoute('chips')).toEqual({ kind: 'bank' });
+    for (const w of ['rake', 'bbj', 'spin_reserve'] as const) {
+      expect(clubPullRoute(w).kind).toBe('refused');
+    }
+  });
+
+  it('the modal routes the pull and keys both calls on an op id', () => {
+    expect(unionModal).toContain(
+      "isPromoPull ? 'fn_union_clawback_promo_from_club' : 'fn_union_clawback_from_club'"
+    );
+    const pull = unionModal.slice(
+      unionModal.indexOf('const pr = clubPullRoute(walletKey);'),
+      unionModal.indexOf('if (onSent) onSent();')
+    );
+    expect(pull).toContain('p_op_id: opId');
+    expect(pull).toContain("if (pr.kind === 'refused') throw new Error(pr.reason);");
+    expect(pull).toMatch(/isPromoPull \? cb\.promo_after : cb\.union_balance/);
+  });
+
+  it('fn_union_clawback_promo_from_club is the inverse of the send, keyed and declared', () => {
+    const PULL = migration('a_promo_pull_comes_back_from_the_club_promo_wallet');
+    const b = fnBody(PULL, 'fn_union_clawback_promo_from_club');
+    expect(b).toMatch(/SET promo_balance = COALESCE\(promo_balance, 0\) - v_amt/);
+    expect(b).toMatch(/AND COALESCE\(promo_balance, 0\) >= v_amt/);
+    expect(b).toMatch(/SET promo_wallet = COALESCE\(promo_wallet, 0\) \+ v_amt/);
+    expect(b).not.toMatch(/chip_treasury/);
+    expect(b).toMatch(/fn_ca_declare_ledger\('promo', 'union_wallet', p_union_id/);
+    expect(b).toContain("'promo_wallet', 'credit', v_amt, v_after, 'promo_clawback', v_op");
+    expect(b).toContain("'union_promo_clawback'");
+    expect(b).toContain("'union lead access required'");
+    expect(PULL).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_union_clawback_promo_from_club\([^)]*\) FROM PUBLIC, anon;/
+    );
   });
 });
 

@@ -21,7 +21,7 @@
  * ADDITIONAL RAKE IS ADDED."
  *
  * The frequency table below is arithmetic proof of that pricing. Its
- * expectation is 2.7638, and (3 − 2.7638) / 3 = 7.87% — the advertised 8%, at
+ * expectation is 2.76, and (3 − 2.76) / 3 = 8.00% — the advertised 8%, at
  * every stake. Had the player been charged buy-in PLUS 8% on top,
  * the true edge would have been 14.7%, which is not what any room advertises.
  * So the buy-in is the whole charge, and `buy_in_fee` MUST be 0 on a Spin.
@@ -76,7 +76,8 @@ export const SPIN_SEATS = 3;
  * There used to be four buy-in bands here, booking 8 / 7 / 6 / 5% as the stake
  * rose. They were fiction, and expensive fiction, for the reason stated at the
  * top of this file: on a Spin the rake IS the multiplier distribution. There is
- * exactly ONE `SPIN_TIERS` table, its expectation is 2.7638, and the invariant
+ * exactly ONE `SPIN_TIERS` table, its expectation is 2.76 (2.7638 until the
+ * 2026-09-05 rebalance below), and the invariant
  *
  *     E[multiplier] = seats × (1 − rake_rate)
  *
@@ -148,7 +149,8 @@ export interface SpinTierSpec {
  * is an equality: E[multiplier] = seats × (1 − rake). The 500x carried
  * 100 × 500 = 50,000 weighted units out of 27,638,000, so simply dropping it
  * would have moved the expectation to 2.7588 — an 8.04% edge on a product
- * advertised at 7.87%. Taking 0.17% more from every player as a side effect of
+ * advertised at 8.00% (7.87% until the 2026-09-05 rebalance). Taking more
+ * from every player as a side effect of
  * a wheel change is exactly the failure this file exists to make impossible.
  *
  * So the mass was MOVED, not deleted, holding both totals invariant:
@@ -157,9 +159,11 @@ export interface SpinTierSpec {
  *   2x   4,772,497 → 4,772,073  (−424)
  *   3x   3,968,502 → 3,968,518  (+16)
  *
- *   total freq   10,000,099  (unchanged)
+ *   total freq   10,000,099  (unchanged BY THE RETIREMENT; 10,000,000 since
+ *                             the 2026-09-05 rebalance)
  *   Σ mult×freq  27,638,000  (unchanged)
- *   E            2.763773    (unchanged to every digit the tests assert)
+ *   E            2.763773    (unchanged BY THE RETIREMENT; 2.76 exactly
+ *                             since the 2026-09-05 rebalance)
  *
  * The visible consequence is real and intended: a 100x now lands about 1 in
  * 9,921 games instead of 1 in 20,000. The top prize got smaller, so it has to
@@ -176,16 +180,35 @@ export const SPIN_TIERS: SpinTierSpec[] = [
   // the level clock is one number a player can internalise across the ladder.
   {
     multiplier: 2,
-    // 4_772_497 before the 500x retirement; see the note above the array.
-    freq: 4_772_073,
+    /* REBALANCED 2026-09-05 (Dan: the ladder is mine to fix).
+       4_772_497 before the 500x retirement, then 4_772_073, and that table
+       expected 2.763772x - so the house actually charged 7.874%, not the 8.00%
+       SPIN_RAKE_RATE books and fn_spin_settle_game deducts. The 0.126pp
+       difference was paid to players in prizes and taken from the reserve,
+       which is why spin_bonus_pools kept drifting away from the seed.
+
+       assertSpinRakeInvariant did not catch it because driftPerBuyIn rounds
+       BOTH sides to cents, and 2.7638 and 2.7600 both round to 2.76. A guard
+       that rounds away the quantity it exists to measure is not a guard; it
+       has an exact check beside it now.
+
+       Only the 2x/3x split moves, by 0.38 of a percentage point. Every tier
+       from 4x up keeps its frequency to the unit, so the big-win experience is
+       byte-identical - and because the denominator is now exactly 10,000,000
+       their probabilities read cleaner too (9.000000% rather than 8.999911%).
+       Solved as an equality, not fitted: with the upper ladder fixed,
+       f2 + f3 = 8,740,492 and 2*f2 + 3*f3 = 21,411,700 has exactly one integer
+       solution, and it lands E[m] on 2.76 to the last bit a double holds. */
+    freq: 4_809_776,
     payouts: [1],
     levelMinutes: 3,
     reserveThresholdX: 0,
   },
   {
     multiplier: 3,
-    // 3_968_502 before the 500x retirement.
-    freq: 3_968_518,
+    // 3_968_502 before the 500x retirement, then 3_968_518. See the 2x tier
+    // for why this pair moved on 2026-09-05: they are the only two that did.
+    freq: 3_930_716,
     payouts: [1],
     levelMinutes: 3,
     reserveThresholdX: 0,
@@ -243,8 +266,10 @@ export const SPIN_TIERS: SpinTierSpec[] = [
  * Denominator for `freq` — DERIVED FROM THE LADDER, never written by hand.
  *
  * It was the literal `10_000_000` while the tiers below actually sum to
- * 10,000,099 (this file's own 500x-retirement note says so in as many words:
- * "total freq 10,000,099 (unchanged)"). Anything dividing a `freq` by the
+ * 10,000,099 (this file's own 500x-retirement note said so in as many words).
+ * Since the 2026-09-05 rebalance they sum to exactly 10,000,000 - which is
+ * precisely why this constant is DERIVED: the literal would have been wrong
+ * twice now. Anything dividing a `freq` by a literal
  * literal therefore described a distribution totalling 100.00099%, and the
  * only reason no money moved is that the one real consumer
  * (TournamentService's SPEC_TOTAL_FREQ) re-totals the array itself and treats
@@ -466,7 +491,7 @@ export function impliedHouseEdge(
  * This is that sentence, executable. It compares the two sides TO THE CENT,
  * which is the finest money numeric(15,2) can store and therefore the finest
  * difference that can ever reach a ledger row. Anything coarser would have let
- * the 5% band through (2.85 vs 2.76 is nine cents, but 8.04% vs 7.87% is only
+ * the 5% band through (2.85 vs 2.76 is nine cents, but 8.04% vs 8.00% is only
  * 0.0017 of edge — a tolerance loose enough to be "close" is loose enough to
  * be wrong).
  *
@@ -509,7 +534,15 @@ export function assertSpinRakeInvariant(
   rakeRate: number = SPIN_RAKE_RATE
 ): void {
   const inv = spinRakeInvariant(tiers, seats, rakeRate);
-  if (inv.driftPerBuyIn !== 0) {
+  /* CENTS ARE NOT ENOUGH (2026-09-05). driftPerBuyIn rounds both sides to two
+     decimals, so the table that expected 2.763772x against an implied 2.76
+     satisfied this check for weeks while charging 7.874% instead of the booked
+     8.00%. Rounding away the quantity the guard exists to measure is how a
+     0.126pp edge survives a green suite. The exact comparison is the real
+     invariant; EPSILON only absorbs the last bit or two of double arithmetic
+     (3 * (1 - 0.08) is 2.7600000000000002, not 2.76). */
+  const EXACT_EPSILON = 1e-9;
+  if (Math.abs(inv.expected - inv.implied) > EXACT_EPSILON) {
     throw new Error(
       `SPIN RAKE INVARIANT BROKEN: the multiplier table expects ${inv.expected.toFixed(6)}x ` +
         `but a ${(rakeRate * 100).toFixed(2)}% rake over ${seats} seats implies ` +

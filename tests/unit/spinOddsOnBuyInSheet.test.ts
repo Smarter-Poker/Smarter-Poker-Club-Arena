@@ -26,6 +26,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SPIN_TIERS, SPIN_FREQ_DENOMINATOR, spinOddsTable } from '../../src/config/spinSpec';
+import { SPIN_TIERS } from '../../src/config/spinSpec';
 
 const SRC_DIR = join(__dirname, '..', '..', 'src');
 const TABLE_PAGE = readFileSync(join(SRC_DIR, 'pages', 'TablePage.tsx'), 'utf8');
@@ -92,10 +93,30 @@ describe('no player-facing surface shows the odds (Dan 2026-09-05)', () => {
   });
 
   it('no frequency from the ladder is printed anywhere on the page', () => {
-    // The two the previous version of this spec already guarded, plus the
-    // human-readable phrasing the ladder rendered.
-    expect(TABLE_PAGE).not.toContain('4_772_073');
-    expect(TABLE_PAGE).not.toContain('3_968_518');
+    /* DERIVED, NOT LISTED (2026-09-05). This named `4_772_073` and `3_968_518`
+       verbatim. The 2026-09-05 rebalance retired both, so the guard went on
+       asserting that two numbers which exist nowhere are absent - green, and
+       blind to the frequencies that actually ship. Dan's rule is about the
+       LADDER ("NOBODY SHOULD EVER VISIBLY SEE THAT"), so the ladder is what it
+       reads. */
+    for (const tier of SPIN_TIERS) {
+      const plain = String(tier.freq);
+      const underscored = plain.replace(/\B(?=(\d{3})+(?!\d))/g, '_');
+      /* Only the two seven-figure rungs. The rest of the ladder is round -
+         100000, 250000, 1000, 7500, 1008 - and both `1_000` and `100000` are
+         ordinary timeouts, widths and z-indexes in this file. A guard that
+         fails on a z-index gets deleted by the next agent, which is worse than
+         a guard with a stated edge. The two big rungs cannot appear by
+         accident, and they are the ones that change when the ladder is
+         retuned, so they are what this watches; the odds SURFACE is pinned
+         separately above by 'oneIn', '1 In ' and the deleted CSS. */
+      if (tier.freq >= 1_000_000) {
+        expect(TABLE_PAGE, `${tier.multiplier}x frequency is on the page`).not.toContain(plain);
+        expect(TABLE_PAGE, `${tier.multiplier}x freq literal is on the page`).not.toContain(
+          underscored
+        );
+      }
+    }
     expect(TABLE_PAGE).not.toContain('1 In ');
     expect(TABLE_PAGE).not.toContain('oneIn');
   });

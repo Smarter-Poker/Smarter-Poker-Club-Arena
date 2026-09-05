@@ -2220,11 +2220,6 @@ export default function MultiTablePage() {
     loading: boolean;
     rows: QuickJoinRow[];
   }>({ open: false, loading: false, rows: [] });
-  const closeQuickJoin = useCallback(
-    () => setQuickJoin((q) => (q.open ? { ...q, open: false } : q)),
-    []
-  );
-
   /* The arguments the SPIN branch of the quick-join sheet last answered with,
      or null when the sheet is showing cash tables. The live refresh below
      re-asks exactly this question; it does not re-run the whole loader, which
@@ -2240,6 +2235,16 @@ export default function MultiTablePage() {
     scopeClubIds: string[];
     activeTableId: string | null;
   } | null>(null);
+
+  const closeQuickJoin = useCallback(() => {
+    setQuickJoin((q) => (q.open ? { ...q, open: false } : q));
+    /* And forget which spin the sheet was answering for. Leaving it set meant
+       the NEXT press re-opened the sheet with a stale scope still live (the
+       loader is async and only clears it after several round trips), so a
+       realtime event landing inside that window painted the previous table's
+       spin rows - and `loading: false` - over a sheet that was still loading. */
+    setSpinSheetScope(null);
+  }, []);
 
   /**
    * Escape closes the two sheets this page owns. Both already had a backdrop,
@@ -2406,6 +2411,10 @@ export default function MultiTablePage() {
       return;
     }
     setQuickJoin({ open: true, loading: true, rows: [] });
+    /* Before the first await, not after it. The spin branch re-arms this a few
+       round trips down; until it does there is no scope, so the live refresh
+       stays inert rather than answering for the table the player just left. */
+    setSpinSheetScope(null);
     try {
       const openIds = new Set(tablesRef.current.map((t) => t.id));
       const activeStakes = tablesRef.current[activeIndexRef.current]?.stakes || '';
@@ -2700,7 +2709,12 @@ export default function MultiTablePage() {
         )
         .on(
           'postgres_changes',
-          { event: 'UPDATE', schema: 'public', table: 'tables', filter: `club_id=eq.${clubId}` },
+          /* '*', not 'UPDATE'. The recycler opens a replacement board by
+             INSERTing the tournament row and then its table row; on UPDATE-only
+             the tournament INSERT woke the refresh, the table row did not exist
+             yet, quickJoinSpinRows dropped the board for having no table, and
+             nothing ever re-triggered. */
+          { event: '*', schema: 'public', table: 'tables', filter: `club_id=eq.${clubId}` },
           schedule
         );
     }

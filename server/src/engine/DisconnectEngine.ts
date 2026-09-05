@@ -51,6 +51,14 @@ export interface PlayerConnectionState {
   /** Hands dealt at this table since the sit-out began (button-pass proxy). */
   sitOutOrbits?: number;
   /**
+   * 2026-09-04 (disconnect audit item 3): WHY the current sit-out began.
+   * 'forced' is three consecutive timeouts; 'voluntary' is the player's own
+   * Sit Out. The client shows a different sentence for each; until today it
+   * could not tell them apart and told a player who never chose to sit out
+   * that they were "sitting out".
+   */
+  sitOutReason?: 'voluntary' | 'forced' | null;
+  /**
    * Dan 2026-08-23: BLIND CAP WHILE AWAY.
    * "You can't keep blinding out a player who has disconnected." An away
    * player at a CASH table may be charged at most one small blind and one
@@ -130,6 +138,22 @@ export interface DisconnectFsmEntry {
   state: DisconnectFsmState;
   sinceMs: number;
   graceDeadlineMs: number | null;
+  /* ═══ 2026-09-04 (disconnect audit items 2, 3, 4): THE ENTRY CARRIES WHAT
+     THE RESTORE NEEDS. Until today it was three fields, `sinceMs` was
+     `lastHeartbeat` for a sat-out player (so a restore reset their 5-minute
+     eviction clock to the moment of the crash), and the strike count, the
+     away-blind budget, the sit-out reason and the /away stamp were dropped
+     on every restart. All optional: an older snapshot without them restores
+     exactly as it did before. */
+  /** Epoch ms the CURRENT sit-out began (SAT_OUT only). */
+  sitOutSinceMs?: number | null;
+  sitOutOrbits?: number;
+  sitOutReason?: 'voluntary' | 'forced' | null;
+  /** consecutiveTimeouts - the strikes toward a forced sit-out. */
+  strikes?: number;
+  awayBlindSbCharged?: boolean;
+  awayBlindBbCharged?: boolean;
+  pageLeftAtMs?: number | null;
 }
 
 export interface DisconnectAction {
@@ -486,6 +510,24 @@ export class DisconnectEngine {
   }
 
   /**
+   * THE CLOCK THE ENGINE ACTUALLY ARMED for a seat onPlayerTurn declined to
+   * hand the turn to (2026-09-04, disconnect audit item 1).
+   *
+   * When onPlayerTurn returns false it has scheduled one of two things under
+   * `disconnect:<playerId>`: the 30s timeout countdown for a MISSING seat, or
+   * the 350/1250ms beat for a sat-out one. Until today the engine broadcast
+   * neither - ServerTableEngineHandEvents had already stamped the ordinary
+   * 15s deadline before handleTurnChange ran, so every client drew a full
+   * 15s ring for a seat the engine would act for in 1s, or watched the ring
+   * hit zero and then waited another 15s for the 30s clock. The table looked
+   * hung for the difference. This returns the real deadline so the caller can
+   * re-stamp the published one; 0 when nothing is armed.
+   */
+  armedAutoActionDeadlineMs(tableId: string, playerId: string): number {
+    return this.preciseTimer.getDeadline(tableId, `disconnect:${playerId}`) || 0;
+  }
+
+  /**
    * Cancel any active timeout for a player (e.g., they reconnected and acted)
    */
   cancelTimeout(tableId: string, playerId: string): void {
@@ -718,6 +760,42 @@ export class DisconnectEngine {
     return evict;
   }
 
+  /**
+   * ABANDONED SEATS (2026-09-04, the disconnect audit's first finding).
+   *
+   * A player who is gone but never sat out fell through every eviction rule:
+   * the sit-out clock needs `isSittingOut`, the away-blind cap needs blinds to
+   * actually be charged, and the forced sit-out needs three TURNS to time out.
+   * At a table below the deal minimum, or heads-up after the other player
+   * left, none of those ever happen - so a phone that died at a quiet table
+   * held its seat, and its chips, forever. `isAway()` was true the whole
+   * time and nothing consumed it.
+   *
+   * Dan's rule for a sat-out seat is "2 orbits or 5 minutes, whichever comes
+   * first". A seat nobody is behind gets the same 5 minutes, measured from
+   * the moment the engine concluded they were gone (`disconnectedAt`, or the
+   * /away beacon's `pageLeftAt`, whichever is older). A sat-out player is
+   * excluded here because the sit-out rule already owns them, and a player
+   * whose heartbeat lands before the sweep is not away, so presence wins at
+   * the moment of the decision exactly as it does for the blind cap.
+   */
+  collectAbandonedSeatEvictions(tableId: string, playerIds: string[]): string[] {
+    const evict: string[] = [];
+    const now = Date.now();
+    for (const playerId of playerIds) {
+      const state = this.playerStates.get(`${tableId}:${playerId}`);
+      if (!state || state.isSittingOut) continue;
+      if (!this.isAway(tableId, playerId)) continue;
+      const stamps = [state.disconnectedAt, state.pageLeftAt].filter(
+        (t): t is number => typeof t === 'number' && Number.isFinite(t)
+      );
+      if (stamps.length === 0) continue; // AFK-by-timeouts alone: the strike path owns it
+      const goneSince = Math.min(...stamps);
+      if (now - goneSince >= DisconnectEngine.SITOUT_MAX_MS) evict.push(playerId);
+    }
+    return evict;
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
   // SIT OUT MANAGEMENT
   // ═══════════════════════════════════════════════════════════════════════════
@@ -771,6 +849,7 @@ export class DisconnectEngine {
     if (!state.isSittingOut) {
       state.sitOutSince = Number.isFinite(sinceMs as number) ? (sinceMs as number) : Date.now();
       state.sitOutOrbits = 0;
+      state.sitOutReason = reason;
     } else if (Number.isFinite(sinceMs as number)) {
       /* A restore for somebody already marked sitting out in memory must not
          push the clock FORWARD, but it may pull it back to the persisted truth:
@@ -800,6 +879,7 @@ export class DisconnectEngine {
     state.consecutiveTimeouts = 0;
     state.sitOutSince = null;
     state.sitOutOrbits = 0;
+    state.sitOutReason = null;
     // Sitting back in is a return to the game — the away-blind budget resets
     // with everything else. Without this, a player who went away, paid a
     // blind, sat out and sat back in would carry the charge into their next
@@ -908,6 +988,10 @@ export class DisconnectEngine {
     for (const [key, state] of this.playerStates) {
       if (key.startsWith(`${tableId}:`)) {
         this.preciseTimer.cancelTimer(tableId, `disconnect:${state.playerId}`);
+        // 2026-09-04 (audit item 10): the 8s transport-grace timer was left
+        // running for a disposed table; it fired markDisconnected against a
+        // key that no longer existed. Harmless, and a leak all the same.
+        this.cancelTransportGrace(key);
         this.playerStates.delete(key);
       }
     }
@@ -944,18 +1028,36 @@ export class DisconnectEngine {
     if (!s) return null;
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
 
+    // Everything a restore needs to continue rather than restart (item 2/4).
+    const carried = {
+      sitOutSinceMs: s.sitOutSince ?? null,
+      sitOutOrbits: s.sitOutOrbits ?? 0,
+      sitOutReason: s.sitOutReason ?? null,
+      strikes: s.consecutiveTimeouts,
+      awayBlindSbCharged: s.awayBlindSbCharged === true,
+      awayBlindBbCharged: s.awayBlindBbCharged === true,
+      pageLeftAtMs: s.pageLeftAt ?? null,
+    };
     if (s.isSittingOut) {
-      return { state: 'SAT_OUT', sinceMs: s.lastHeartbeat, graceDeadlineMs: null };
+      // sinceMs is the sit-out's own start (item 4). It used to be
+      // lastHeartbeat, so a crash-recovered sit-out restarted its 5-minute
+      // eviction clock at the moment of the crash.
+      return {
+        state: 'SAT_OUT',
+        sinceMs: s.sitOutSince ?? s.lastHeartbeat,
+        graceDeadlineMs: null,
+        ...carried,
+      };
     }
     if (s.isConnected) {
-      return { state: 'CONNECTED', sinceMs: s.lastHeartbeat, graceDeadlineMs: null };
+      return { state: 'CONNECTED', sinceMs: s.lastHeartbeat, graceDeadlineMs: null, ...carried };
     }
     const dAt = s.disconnectedAt ?? s.lastHeartbeat;
     const graceDeadlineMs = dAt + config.disconnectTimeoutSeconds * 1000;
     if (Date.now() < graceDeadlineMs) {
-      return { state: 'MISSING', sinceMs: dAt, graceDeadlineMs };
+      return { state: 'MISSING', sinceMs: dAt, graceDeadlineMs, ...carried };
     }
-    return { state: 'DISCONNECTED', sinceMs: dAt, graceDeadlineMs };
+    return { state: 'DISCONNECTED', sinceMs: dAt, graceDeadlineMs, ...carried };
   }
 
   /**
@@ -1010,7 +1112,11 @@ export class DisconnectEngine {
         tableId,
         isConnected: connected || sittingOut,
         lastHeartbeat: entry.sinceMs || Date.now(),
-        consecutiveTimeouts: 0,
+        // 2026-09-04 (item 2): strikes, the blind budget, the sit-out reason
+        // and the /away stamp survive a restart when the snapshot carries
+        // them. A restart used to be a free reset of all four.
+        consecutiveTimeouts: Number.isFinite(entry.strikes) ? (entry.strikes as number) : 0,
+        sitOutReason: sittingOut ? (entry.sitOutReason ?? 'voluntary') : null,
         isSittingOut: sittingOut,
         disconnectedAt: connected || sittingOut ? undefined : entry.sinceMs || Date.now(),
         // These five were omitted, and one of them mattered. Dan's rule is "a
@@ -1021,11 +1127,14 @@ export class DisconnectEngine {
         // be evicted by the orbit counter, so on a table that stopped dealing
         // they sat there forever. Seeded from when the sit-out actually began,
         // not from now, or every restart would restart their clock.
-        sitOutSince: sittingOut ? entry.sinceMs || Date.now() : null,
-        sitOutOrbits: 0,
-        awayBlindSbCharged: false,
-        awayBlindBbCharged: false,
-        pageLeftAt: null,
+        // Item 4: the entry's own sitOutSinceMs when present (sinceMs is
+        // now the same number for SAT_OUT, but an older snapshot's sinceMs
+        // was the last heartbeat, so the dedicated field is preferred).
+        sitOutSince: sittingOut ? (entry.sitOutSinceMs ?? entry.sinceMs ?? Date.now()) : null,
+        sitOutOrbits: sittingOut ? (entry.sitOutOrbits ?? 0) : 0,
+        awayBlindSbCharged: entry.awayBlindSbCharged === true,
+        awayBlindBbCharged: entry.awayBlindBbCharged === true,
+        pageLeftAt: connected || sittingOut ? null : (entry.pageLeftAtMs ?? null),
       });
       restored++;
     }

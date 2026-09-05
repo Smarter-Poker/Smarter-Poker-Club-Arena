@@ -36,10 +36,20 @@
 
 import { supabase } from './supabase.js';
 import { logBBJCollection } from './supabase.js';
+import { processBBJPayout, setBBJPayoutQueueWriter } from './supabase/bbj.js';
+import type { BBJPayoutParams } from './supabase/bbj.js';
 import { reportError } from './errorReporter.js';
 import { raiseFinancialAlert } from './financialAlerts.js';
 
-export type PendingFeeKind = 'rake' | 'bbj_contribution';
+/**
+ * 'bbj_payout' (BBJ audit 2026-09-05): a jackpot the engine DETECTED but could
+ * not PAY - every attempt at bbj_atomic_payout_v2 failed. The payout's full
+ * parameter set rides in `contributions` (the row's free jsonb column); rake
+ * and bbj are 0 because no fee is at stake, the pool's money is. The drain
+ * re-drives it through processBBJPayout, which is idempotent on (pool, table,
+ * hand). See processBBJPayout for why a one-shot payout was a defect.
+ */
+export type PendingFeeKind = 'rake' | 'bbj_contribution' | 'bbj_payout';
 
 export interface UnbankedFee {
   tableId: string;
@@ -115,6 +125,78 @@ const QUEUE_BACKOFF_MS = (attempt: number): number => 100 * 3 ** attempt;
  * which re-drives idempotently without the per-row HTTP round trip.
  */
 const RECONCILE_BATCH = 250;
+
+/**
+ * Durably record a jackpot payout the engine could not land (BBJ audit
+ * 2026-09-05). Same table, same drain loop, same dedupe indexes as the fee
+ * queue; the difference is what the row carries and what re-driving it calls.
+ *
+ * `hand_id` is resolved from hand_history here rather than trusted from the
+ * caller: postHandTasks writes the hand BEFORE the payout step, so it is
+ * normally present, and the (hand_id, kind) index then makes a second queue
+ * attempt for the same hand a no-op. When the hand row is missing too (the
+ * outage took both), the (table_id, hand_number, kind) index covers it.
+ *
+ * Registered with bbj.ts below so processBBJPayout can call it without a
+ * static import in the other direction (bbj.ts is imported by this module).
+ */
+export async function queueUnpaidBBJPayout(
+  params: BBJPayoutParams,
+  lastError: string
+): Promise<void> {
+  let handId: string | null = null;
+  try {
+    const { data: hh } = await supabase
+      .from('hand_history')
+      .select('id')
+      .eq('table_id', params.tableId)
+      .eq('hand_number', params.handNumber)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (hh?.id) handId = hh.id as string;
+  } catch {
+    /* the (table_id, hand_number, kind) index dedupes a null hand_id */
+  }
+
+  let queueError = '';
+  for (let attempt = 1; attempt <= QUEUE_INSERT_ATTEMPTS; attempt++) {
+    const { error } = await supabase.from('pending_fee_distributions').insert({
+      table_id: params.tableId,
+      club_id: params.clubId,
+      hand_id: handId,
+      hand_number: params.handNumber,
+      rake: 0,
+      bbj: 0,
+      pot: 0,
+      num_players: params.dealtInPlayerIds.length,
+      contributions: params as unknown as Record<string, unknown>,
+      kind: 'bbj_payout',
+      last_error: lastError.slice(0, 500),
+    });
+    if (!error) {
+      console.warn(
+        `[BBJ] Queued unpaid jackpot for table ${params.tableId} hand #${params.handNumber} ` +
+          `(${params.dealtInPlayerIds.length} recipients) - the reconciler will re-drive it`
+      );
+      return;
+    }
+    if (/duplicate|unique/i.test(error.message || '')) return; // already queued
+    queueError = error.message || String(error);
+    if (!TRANSIENT_DB_ERROR.test(queueError) || attempt === QUEUE_INSERT_ATTEMPTS) break;
+    await new Promise((r) => setTimeout(r, QUEUE_BACKOFF_MS(attempt)));
+  }
+  // The caller (processBBJPayout) raises the CRITICAL alert with every
+  // parameter; this one says the durable copy is missing too.
+  reportError(
+    new Error(
+      `[BBJ] Could not queue the unpaid jackpot for table ${params.tableId} hand #${params.handNumber}: ` +
+        `${queueError}. The financial alert is now the only record of it.`
+    ),
+    'FeeReconciler.bbj_payout_queue_failed'
+  );
+}
+setBBJPayoutQueueWriter(queueUnpaidBBJPayout);
 
 /**
  * Durably record a fee that left the pot but could not be banked.
@@ -383,6 +465,67 @@ export async function reconcilePendingFees(): Promise<{
         });
         ok = !rdErr;
         failureMessage = rdErr?.message ?? '';
+      } else if (row.kind === 'bbj_payout') {
+        // BBJ AUDIT 2026-09-05: re-drive a jackpot payout the live path could
+        // not land. The parameter set was frozen at hit time (who was dealt
+        // in, who took the beat, who beat them, the tier's percent). The ONE
+        // thing re-read live is who is still seated: the RPC credits a seat
+        // that is still there and the club wallet of anyone who has left, and
+        // "still there" is a fact about NOW, not about the moment the hit was
+        // queued. Both routes are durable and both are keyed, so a recipient
+        // is paid exactly once whichever one they land on.
+        const p = row.contributions as unknown as Partial<BBJPayoutParams> | null;
+        if (
+          !p ||
+          !p.tableId ||
+          !p.clubId ||
+          !p.loserUserId ||
+          !p.winnerUserId ||
+          !Array.isArray(p.dealtInPlayerIds) ||
+          typeof p.payoutTotalPercent !== 'number'
+        ) {
+          ok = false;
+          failureMessage = 'bbj_payout row is missing its parameters';
+        } else {
+          const { data: seats } = await supabase
+            .from('table_seats')
+            .select('user_id')
+            .eq('table_id', p.tableId)
+            .is('left_at', null);
+          const seatedNow = new Set((seats ?? []).map((s) => s.user_id as string));
+          const result = await processBBJPayout(
+            {
+              tableId: p.tableId,
+              clubId: p.clubId,
+              handNumber: Number(p.handNumber ?? row.hand_number),
+              loserUserId: p.loserUserId,
+              winnerUserId: p.winnerUserId,
+              loserHandName: p.loserHandName || 'Unknown',
+              winnerHandName: p.winnerHandName || 'Unknown',
+              dealtInPlayerIds: p.dealtInPlayerIds,
+              seatedUserIds: p.dealtInPlayerIds.filter((id) => seatedNow.has(id)),
+              payoutTotalPercent: p.payoutTotalPercent,
+            },
+            { fromQueue: true }
+          );
+          // null here is EITHER "already paid" (the live attempt succeeded and
+          // only its response was lost - the RPC re-drove any missing credit)
+          // OR a repeat failure. Tell them apart by the ledger, not the return.
+          if (result) {
+            ok = true;
+          } else {
+            const { data: paid } = await supabase
+              .from('bbj_payouts')
+              .select('id')
+              .eq('table_id', p.tableId)
+              .eq('hand_number', Number(p.handNumber ?? row.hand_number))
+              .limit(1)
+              .maybeSingle();
+            ok = !!paid?.id;
+            if (!ok)
+              failureMessage = 'processBBJPayout returned null and no bbj_payouts row exists';
+          }
+        }
       } else {
         ok = await logBBJCollection(
           row.table_id,
@@ -456,18 +599,66 @@ export async function reconcilePendingFees(): Promise<{
 }
 
 /**
- * Independent drift alarm.
+ * A CONDITION IS ONE ALERT, HOWEVER LONG IT STAYS TRUE (BBJ build plan phase 1).
  *
- * The queue only catches failures the engine noticed. This catches the rest by
- * comparing the two ledgers against each other: every chip `rake_records` books
- * as a BBJ contribution should have reached `bbj_contributions`. A persistent
- * gap means chips are being destroyed somewhere the queue is not seeing, which
- * is exactly the condition that went unnoticed for a week.
+ * For a periodic audit that re-measures the same fact every cycle. While the
+ * condition holds, exactly one unresolved financial_alerts row exists for
+ * `source`: raised the first time, refreshed (message + context) on later
+ * cycles so the operator sees the CURRENT figures, and resolved automatically
+ * - with a note - the first cycle the condition is false. Sentry hears about
+ * it once, when it is raised.
  *
- * Read-only — it reports, it does not try to heal, because the per-player
- * contribution split needed to re-drive correctly is not recoverable from these
- * two tables alone and guessing it would corrupt rakeback attribution.
+ * Never throws: bookkeeping about an alarm must not fail the audit.
  */
+export async function raiseOrRefreshCondition(
+  source: string,
+  isTrue: boolean,
+  message: string,
+  context: Record<string, unknown>
+): Promise<'raised' | 'refreshed' | 'resolved' | 'quiet'> {
+  try {
+    const { data: open } = await supabase
+      .from('financial_alerts')
+      .select('id, message')
+      .eq('source', source)
+      .eq('resolved', false)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (isTrue) {
+      if (open?.id) {
+        if (open.message !== message) {
+          await supabase
+            .from('financial_alerts')
+            .update({ message, context: { ...context, refreshed_at: new Date().toISOString() } })
+            .eq('id', open.id);
+        }
+        return 'refreshed';
+      }
+      reportError(new Error(message), source);
+      await raiseFinancialAlert('warning', source, message, context);
+      return 'raised';
+    }
+
+    if (open?.id) {
+      await supabase
+        .from('financial_alerts')
+        .update({
+          resolved: true,
+          resolved_at: new Date().toISOString(),
+          resolution: `Cleared by the next audit cycle: the condition is no longer true. ${JSON.stringify(context)}`,
+        })
+        .eq('id', open.id);
+      return 'resolved';
+    }
+    return 'quiet';
+  } catch (e) {
+    console.warn(`[FeeReconciler] raiseOrRefreshCondition(${source}) failed:`, e);
+    return 'quiet';
+  }
+}
+
 /**
  * SELF-HEAL 2026-08-18: bank BBJ fees that rake_records proves were withheld
  * from pots but that never reached a pool.
@@ -520,6 +711,19 @@ export async function repairUnbankedBBJFees(
   }
 }
 
+/**
+ * Independent drift alarm.
+ *
+ * The queue only catches failures the engine noticed. This catches the rest by
+ * comparing the two ledgers against each other: every chip `rake_records` books
+ * as a BBJ contribution should have reached `bbj_contributions`. A persistent
+ * gap means chips are being destroyed somewhere the queue is not seeing, which
+ * is exactly the condition that went unnoticed for a week.
+ *
+ * Read-only — it reports, it does not try to heal, because the per-player
+ * contribution split needed to re-drive correctly is not recoverable from these
+ * two tables alone and guessing it would corrupt rakeback attribution.
+ */
 export async function auditBBJDrift(
   windowDays = 1,
   toleranceChips = 0.05
@@ -560,33 +764,32 @@ export async function auditBBJDrift(
      */
     const unlinkableRows = Number(row?.unlinkable_rows ?? 0);
     const unlinkableChips = Number(row?.unlinkable_chips ?? 0);
-    if (unlinkableChips > toleranceChips) {
-      const detail =
-        `[A5] ${unlinkableChips} chips of BBJ contribution over the last ${windowDays}d sit on ` +
+    /* ONE OPEN ROW PER CONDITION (BBJ build plan phase 1, 2026-09-05).
+       This audit runs hourly and used to raise a NEW warning every hour for
+       the same 3.5 chips - 24 identical rows a day, each also a Sentry event
+       - which is precisely the pattern that buried the nine real alerts on
+       2026-08-22 under 988 duplicates. A condition that is still true is
+       still ONE fact: the open row is refreshed with the current figures, a
+       new row is raised only when there is none, and when the condition
+       clears the row is resolved with a note saying so. */
+    await raiseOrRefreshCondition(
+      'FeeReconciler.bbj_unlinkable',
+      unlinkableChips > toleranceChips,
+      `[A5] ${unlinkableChips} chips of BBJ contribution over the last ${windowDays}d sit on ` +
         `${unlinkableRows} rake_records row(s) with NO hand_id, so they can be reconciled ` +
         `against the jackpot pool by neither this audit nor fn_bbj_repair_unbanked. ` +
-        `Rising numbers here mean logHandHistory is failing and returning a null id.`;
-      reportError(new Error(detail), 'FeeReconciler.bbj_unlinkable');
-      await raiseFinancialAlert('warning', 'FeeReconciler.bbj_unlinkable', detail, {
-        windowDays,
-        unlinkableRows,
-        unlinkableChips,
-      });
-    }
+        `Rising numbers here mean logHandHistory is failing and returning a null id.`,
+      { windowDays, unlinkableRows, unlinkableChips }
+    );
 
-    if (Math.abs(drift) > toleranceChips) {
-      const detail =
-        `[A5] BBJ ledger drift over the last ${windowDays}d: rake_records booked ${booked} ` +
+    await raiseOrRefreshCondition(
+      'FeeReconciler.bbj_drift',
+      Math.abs(drift) > toleranceChips,
+      `[A5] BBJ ledger drift over the last ${windowDays}d: rake_records booked ${booked} ` +
         `of BBJ contribution, bbj_contributions received ${received} (drift ${drift}). ` +
-        `A positive drift means chips left pots and never reached the jackpot pool.`;
-      reportError(new Error(detail), 'FeeReconciler.bbj_drift');
-      await raiseFinancialAlert('warning', 'FeeReconciler.bbj_drift', detail, {
-        windowDays,
-        booked,
-        received,
-        drift,
-      });
-    }
+        `A positive drift means chips left pots and never reached the jackpot pool.`,
+      { windowDays, booked, received, drift }
+    );
     return { booked, received, drift, unlinkableRows, unlinkableChips };
   } catch (err) {
     reportError(err, 'FeeReconciler.drift_threw');

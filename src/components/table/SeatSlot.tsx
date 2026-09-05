@@ -244,12 +244,14 @@ export interface SeatSlotProps {
   bigBlind?: number;
   isTournament?: boolean;
   bountyValue?: number;
-  /**
-   * BOMB POT 2026-08-20: true while a bomb pot's forced ante round is live.
-   * Shows the magenta "BOMB" pill over the seat (competitor-parity — every
-   * seated player is marked while the antes post and the flop plays out).
+  /*
+   * `bombPotAnte` — REMOVED 2026-09-04. It hung a magenta "BOMB" pill under
+   * every live seat for the length of a bomb-pot hand. Dan: "THERE SHOULDN'T
+   * BE 'BOMB POT PILL BUTTONS' UNDER THE PLAYERS. THERE SHOULD JUST BE
+   * SOMETHING ON THE TABLE THAT SAYS 'BOMB POT'." The one marker is now the
+   * on-felt pill (`.bomb-pot-eta--live`, TablePage.tsx), which reads
+   * "BOMB POT" for the hand itself. Do not add a per-seat bomb marker back.
    */
-  bombPotAnte?: boolean;
   isWinner?: boolean;
   winningHandName?: string; // e.g. "Straight", "Full House"
   /**
@@ -768,7 +770,6 @@ export const SeatSlot = memo(
       // removing it from every call site is a bigger change than it is worth.
       sitOutAt,
       bountyValue,
-      bombPotAnte,
       isWinner = false,
       netWinAmount,
       bbjCreditAmount,
@@ -2816,12 +2817,9 @@ export const SeatSlot = memo(
         {/* All-In Badge */}
         {player.status === 'all_in' && !isWinner && <div className="seat__allin-badge">ALL IN</div>}
 
-        {/* Bomb Pot ante badge — every live seat is tagged while the bomb
-            pot's forced antes are in play (BOMB POT 2026-08-20). All-in
-            takes the slot if both apply; folded seats drop the pill. */}
-        {bombPotAnte && player.status !== 'all_in' && player.status !== 'folded' && !isWinner && (
-          <div className="seat__bombpot-badge">BOMB</div>
-        )}
+        {/* The per-seat "BOMB" pill that used to sit here is gone (Dan
+            2026-09-04, see the `bombPotAnte` tombstone on the props). The
+            bomb pot is announced ONCE, on the felt. */}
 
         {/* Bounty Badge.
 
@@ -2906,7 +2904,6 @@ export const SeatSlot = memo(
     if (prev.isTournament !== next.isTournament) return false;
     if (prev.bigBlind !== next.bigBlind) return false;
     if (prev.bountyValue !== next.bountyValue) return false;
-    if (prev.bombPotAnte !== next.bombPotAnte) return false;
     if (prev.isWinner !== next.isWinner) return false;
     if (prev.winningHandName !== next.winningHandName) return false;
     if (prev.handStrength !== next.handStrength) return false;

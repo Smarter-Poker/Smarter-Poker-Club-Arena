@@ -66,7 +66,10 @@ export interface PreActionResult {
 export type PreActionEventType =
   | 'PRE_ACTION_SET'
   | 'PRE_ACTION_EXECUTED'
-  | 'PRE_ACTION_INVALIDATED';
+  | 'PRE_ACTION_INVALIDATED'
+  /** 2026-09-04: the player (or a new hand) cleared it. Emitted so the
+   *  engine's copy can be pushed to the player's sockets like the others. */
+  | 'PRE_ACTION_CLEARED';
 
 export interface PreActionEvent {
   type: PreActionEventType;
@@ -156,7 +159,8 @@ export class PreActionEngine {
       fsm.transition('idle');
     }
 
-    this.queuedActions.delete(key);
+    const had = this.queuedActions.delete(key);
+    if (had) this.onEvent?.({ type: 'PRE_ACTION_CLEARED', tableId, playerId });
   }
 
   /**

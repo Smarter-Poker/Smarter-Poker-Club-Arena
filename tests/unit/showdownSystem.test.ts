@@ -355,7 +355,9 @@ describe('polish: deterministic event ordering + consumed reveal event', () => {
   it('hub EVENTs carry a per-table seq', () => {
     const HUB = strip(read('server/src/transport/TableStateHub.ts'));
     expect(HUB).toMatch(/eventSeqs/);
-    expect(HUB).toMatch(/type: 'EVENT', tableId, seq, payload/);
+    // BBJ build plan phase 1 (2026-09-05): the envelope also carries the
+    // engine's clock (`ts`) between seq and payload; the seq pin is unchanged.
+    expect(HUB).toMatch(/type: 'EVENT', tableId, seq, ts: Date\.now\(\), payload/);
   });
 
   it('inbound frames drain through ONE ordered FIFO (the reveal race fix, review revision)', () => {

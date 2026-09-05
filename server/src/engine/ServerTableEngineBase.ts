@@ -50,13 +50,21 @@ import {
   saveHandStateSnapshot,
   completeHandSnapshot,
   getActiveHandSnapshotFull,
+  savePresenceAtPark,
+  loadPresenceFromPark,
   supabase,
   atomicCashout,
   markSeatAsLeft,
 } from '../services/supabase.js';
-import { collectNitEvictions } from '../services/supabase/nitGame.js';
+import {
+  collectNitEvictions,
+  collectNitStatus,
+  type NitSeatStatus,
+} from '../services/supabase/nitGame.js';
+import { INSTANCE_ID } from '../services/tableLease.js';
 import { evaluateCashSessions, atomicCashoutVoluntary } from '../services/supabase/cashSessions.js';
 import {
+  announceSeatMoves,
   executePendingSeatMoves,
   pendingSeatMoves,
   seatMoveNotice,
@@ -88,6 +96,24 @@ import type { TableStatus } from '../types.js';
 export abstract class ServerTableEngineBase {
   protected tableId: string;
   protected running: boolean = false;
+  /**
+   * ═══ READY IS NOT DEALING (2026-09-05) ═══
+   *
+   * `start()` resolves when the DEALING LOOP starts, which is after the table
+   * has its AutoStart figure of players seated - for a one-player table that
+   * is "when a second player arrives", possibly never. Every on-demand caller
+   * (`ensureCashTableEngine`: GET /state, GET /actions, the WS `ensureTable`,
+   * the cluster wake) wants something earlier: the engine exists, has loaded
+   * its row, is configured, and can publish the waiting snapshot. That moment
+   * is the FSM's `waiting` transition, and this promise settles there.
+   *
+   * `true`  - the engine reached `waiting` (it may still be waiting for players).
+   * `false` - start() failed, or the engine was stopped/killed before it got there.
+   *
+   * Settled at most once; later settles are no-ops. Never rejects.
+   */
+  readonly ready: Promise<boolean>;
+  private settleReady: (ok: boolean) => void = () => {};
   /** Bible V8 §3.1: Formal Table State Machine with entry/exit/fail conditions */
   protected tableFSM: StateMachine<TableStatus> = createTableStateMachine('empty');
   /** Bible V8 §3.2: Formal Turn State Machine — unifies timer/timebank/preaction/disconnect */
@@ -578,6 +604,38 @@ export abstract class ServerTableEngineBase {
   /** Is this instance still the authoritative engine for its table? */
   protected isCurrentEngine(): boolean {
     return ServerTableEngineBase.isCurrentEngineFor(this.tableId, this);
+  }
+
+  /**
+   * BBJ AUDIT 2026-09-05: every live CASH table whose club is in `clubIds`,
+   * other than `excludeTableId`.
+   *
+   * A Bad Beat Jackpot hit is announced to "everyone currently playing in the
+   * club or union" (Dan). The client used to learn about a hit at another
+   * table only through a Supabase Realtime subscription on the pool row - a
+   * stream this platform has measured a minute or more behind at peak - and
+   * then refused anything older than 90 seconds as a replay. So at other
+   * tables the announcement raced its own freshness gate and could lose.
+   *
+   * The engine already holds a socket to every one of those tables. This is
+   * the fan-out list for `bbj_hit_global`, read from the same registry that
+   * decides which engine instance is authoritative, so a zombie engine mid
+   * teardown is never on it. Tournament tables are excluded: a jackpot is a
+   * cash-game feature and a tournament table's players are not in the pool.
+   */
+  protected static liveCashTableIdsInClubs(
+    clubIds: ReadonlySet<string>,
+    excludeTableId: string
+  ): string[] {
+    const out: string[] = [];
+    for (const [tableId, engine] of ServerTableEngineBase.liveEngines) {
+      if (tableId === excludeTableId) continue;
+      const info = engine.tableInfo;
+      if (!info?.club_id || !clubIds.has(info.club_id)) continue;
+      if (info.tournament_id) continue;
+      out.push(tableId);
+    }
+    return out;
   }
 
   /**
@@ -1298,6 +1356,9 @@ export abstract class ServerTableEngineBase {
 
   constructor(tableId: string) {
     this.tableId = tableId;
+    this.ready = new Promise<boolean>((resolve) => {
+      this.settleReady = resolve;
+    });
     // CROSS-INSTANCE OWNERSHIP: the newest instance for a tableId is the
     // authoritative one. Any older instance still mid-stop() sees itself
     // superseded and keeps its hands off the shared scheduler.
@@ -1417,6 +1478,14 @@ export abstract class ServerTableEngineBase {
       console.log(
         `[ServerTableEngine:${tableId}] PreAction: ${event.type} player=${event.playerId}`
       );
+      /* 2026-09-04 (disconnect audit item 11): THE ENGINE'S COPY IS THE ONE
+         THE BAR SHOWS. Pre-actions were one-way - the client pushed them and
+         nothing ever read the armed state back - so a reconnect could leave
+         the bar dark while the engine was armed, or lit while the engine had
+         invalidated it. Every change to the engine's copy now goes to the
+         player's own sockets as a private frame; the client reconciles its
+         bar to it, and asks for it again on RESYNC (rePushPreAction). */
+      this.pushPreActionToPlayer(event.playerId);
     });
     this.atomicStackService = new AtomicStackService((event) => {
       console.log(`[ServerTableEngine:${tableId}] Stack: ${event.type}`);
@@ -1947,8 +2016,36 @@ export abstract class ServerTableEngineBase {
         );
       }
 
+      /* ═══ PRESENCE SURVIVES THE SCHEDULED RESTART (2026-09-04, audit item 2) ═══
+         checkCrashRecovery restores the presence FSM only from an INCOMPLETE
+         hand snapshot, and the :55 park guarantees there is none: every table
+         finishes its hand before the cut-over. So on the one restart that
+         happens every hour, every seat booted CONNECTED with its strikes,
+         away-blind budget, sit-out reason and /away stamp wiped. The park
+         writes the FSM to engine_presence_parked (see the dealing loop) and
+         this reads it back, once, while it is fresh. restoreFsmStates never
+         clobbers a seat that has already re-registered, so a player who is
+         genuinely back loses nothing to a stale row. */
+      if (!recovered) {
+        try {
+          const parked = await loadPresenceFromPark(this.tableId);
+          if (parked && Object.keys(parked).length > 0) {
+            const restored = this.disconnectEngine.restoreFsmStates(this.tableId, parked);
+            console.log(
+              `[ServerTableEngine:${this.tableId}] presence restored from the park: ${restored}/${Object.keys(parked).length} seats`
+            );
+          }
+        } catch (err) {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.presence_restore');
+        }
+      }
+
       // Bible V8 §3.1: Table FSM — empty → waiting (engine started, waiting for players)
       this.tableFSM.transition('waiting');
+      // READY IS NOT DEALING: the row is loaded, every sub-engine is configured
+      // and the waiting snapshot can be published. On-demand callers may
+      // return now; the wait for players below is this engine's business.
+      this.settleReady(true);
 
       // 2026-08-29: open the manual-bomb listener once the table row is loaded
       // (bomb_pot_enabled is known by now) and before any hand is dealt, so a
@@ -2019,6 +2116,20 @@ export abstract class ServerTableEngineBase {
         await this.evictExpiredSitOuts({ countOrbit: false }).catch((err) =>
           reportError(err, 'ServerTableEngine.' + this.tableId + '.wait_loop_sitout_evict')
         );
+        // MUST-MOVE (2026-09-05). The same shape, the same reason: a lone
+        // player on a feeder waits HERE, and the move the controller planned
+        // for them was executed only from the dealing loop, which this table
+        // never reaches. Production 00:28-00:45 UTC: seventeen must-move rows
+        // for one horse, one a minute, every one expired, while Main 1 sat one
+        // short beside it. A table below the minimum is at a hand boundary
+        // all the time; every pending move lands now.
+        await this.executePendingSeatMoves().catch((err) =>
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.wait_loop_seat_moves')
+        );
+        await this.stopIfClusterTableClosed().catch((err) =>
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.wait_loop_cluster_closed')
+        );
+        if (!this.running) break;
         // IDLE BROADCAST (2026-08-22): publish the waiting-state snapshot so
         // a client joining an idle table gets a real SNAPSHOT (seats, stacks,
         // 'waiting' stage) instead of an eternal spinner. The hub drops
@@ -2071,6 +2182,7 @@ export abstract class ServerTableEngineBase {
         this.killForRestart('dealing_loop_threw');
       });
     } catch (err) {
+      this.settleReady(false);
       reportError(err, 'ServerTableEnginethistableId.Failed_to_start');
       // 2026-08-22: was a bare `running = false`, which could leak an armed
       // heartbeat scheduler entry (scheduleHeartbeatCheck runs before the
@@ -2089,6 +2201,8 @@ export abstract class ServerTableEngineBase {
   async stop(): Promise<void> {
     if (!this.running) return;
     this.running = false;
+    // A stop before `waiting` is a "never got there"; after it, a no-op.
+    this.settleReady(false);
 
     // FIX 147 + Phase 1.2 PR-G-real: set the flag first so any heartbeat
     // callback already mid-flight bails before re-arming.
@@ -2266,11 +2380,23 @@ export abstract class ServerTableEngineBase {
    * MUST-MOVE, the engine's half (OPORD 1.3 s9.5, OPORD 1.4 s18.3). At the
    * START of a hand every player with a planned move is told, once:
    * "Seat Open On Main 2. Moving After This Hand." Nothing is asked.
+   *
+   * THE PROMISE IS WRITTEN DOWN (2026-09-05): the row is stamped announced_at
+   * and its expiry extended to cover the hand, so settlement executes exactly
+   * the moves the deal promised, and a slow hand cannot expire one from under
+   * the player who was told. Called immediately before dealHand, so it only
+   * ever speaks of a hand that is about to be dealt.
    */
   protected async announcePendingSeatMoves(): Promise<void> {
     if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return;
     const pending = await pendingSeatMoves(this.tableId);
+    const live = new Set(pending.map((m) => m.move_id));
+    for (const id of this.announcedSeatMoves) {
+      if (!live.has(id)) this.announcedSeatMoves.delete(id);
+    }
+    const fresh: string[] = [];
     for (const m of pending) {
+      if (m.announced_at == null) fresh.push(m.move_id);
       if (this.announcedSeatMoves.has(m.move_id)) continue;
       this.announcedSeatMoves.add(m.move_id);
       this.hub?.emitEvent(this.tableId, {
@@ -2285,19 +2411,24 @@ export abstract class ServerTableEngineBase {
         timestamp: Date.now(),
       });
     }
+    if (fresh.length > 0) await announceSeatMoves(fresh);
   }
 
   /**
-   * At the END of a hand (and on every idle tick) the planned moves are
-   * executed: chair, chips and session go to the other table in one SQL
-   * transaction; this engine forgets the player the way it forgets a leaver,
-   * except that nothing is cashed out and no clock is closed. The destination
-   * engine sees the new seat on its next deal (loadSeatedPlayers) and the
-   * controller wakes a dealer for a table that has none.
+   * At the END of a hand (announced moves only) and whenever the table is
+   * below the minimum to deal (every pending move - there is no hand to
+   * finish) the planned moves are executed: chair, chips and session go to
+   * the other table in one SQL transaction; this engine forgets the player
+   * the way it forgets a leaver, except that nothing is cashed out and no
+   * clock is closed. The destination engine sees the new seat on its next
+   * deal (loadSeatedPlayers) and the controller wakes a dealer for a table
+   * that has none.
    */
-  protected async executePendingSeatMoves(): Promise<string[]> {
+  protected async executePendingSeatMoves(
+    opts: { announcedOnly: boolean } = { announcedOnly: false }
+  ): Promise<string[]> {
     if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return [];
-    const done = await executePendingSeatMoves(this.tableId);
+    const done = await executePendingSeatMoves(this.tableId, opts);
     const movedIds: string[] = [];
     for (const m of done) {
       movedIds.push(m.player_id);
@@ -2331,6 +2462,40 @@ export abstract class ServerTableEngineBase {
       void this.broadcastCurrentState();
     }
     return movedIds;
+  }
+
+  /** Last time the empty-cluster-table check read the row. See below. */
+  private lastClusterClosedCheckAt = 0;
+
+  /**
+   * AN ENGINE ON A CLOSED CLUSTER TABLE STOPS (2026-09-05). The controller
+   * closes a breaking table the moment its last chair empties, and nothing
+   * on the engine side read that: the engine sat in the idle branch for ever,
+   * asking for seats, add-ons, leavers and moves every three seconds on a
+   * table no one can join. Asked once a minute, only while the table is
+   * empty; a closed row ends this engine, the reaper drops it from the map,
+   * and discovery would rebuild it if a seat ever appeared (it cannot: the
+   * door refuses a closed table).
+   */
+  protected async stopIfClusterTableClosed(): Promise<void> {
+    if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return;
+    if (this.seatedPlayers.length > 0) return;
+    const now = Date.now();
+    if (now - this.lastClusterClosedCheckAt < 60_000) return;
+    this.lastClusterClosedCheckAt = now;
+    const { data, error } = await supabase
+      .from('tables')
+      .select('lifecycle, status')
+      .eq('id', this.tableId)
+      .maybeSingle();
+    if (error || !data) return;
+    const row = data as { lifecycle?: string | null; status?: string | null };
+    if (row.lifecycle === 'closed' || row.status === 'closed') {
+      console.log(
+        `[ServerTableEngine:${this.tableId}] cluster table is ${row.lifecycle ?? row.status} and empty - stopping the engine`
+      );
+      await this.stop();
+    }
   }
 
   protected isContinuityActive(userId: string): boolean {
@@ -2579,6 +2744,7 @@ export abstract class ServerTableEngineBase {
     );
     this.recordRecoveryEvent('watchdog_kill_rebuild', reason);
     this.running = false;
+    this.settleReady(false);
     this.heartbeatActive = false;
     this.clearHandSafetyTimer();
     this.clearLooseHandTimers();
@@ -2777,12 +2943,57 @@ export abstract class ServerTableEngineBase {
   pauseForMaintenance(maxWaitMs: number): void {
     this.maintenancePaused = true;
     this.holdBeforeNextHand = true;
+    // 2026-09-04 (audit item 2): the break is the restart. Persist the
+    // presence FSM now, and again when the loop actually parks (a seat can
+    // drop between the announcement and the park). Fire-and-forget: the
+    // break must not wait on a write.
+    void this.persistPresenceForRestart('announced');
     if (maxWaitMs > 0) {
       // Take the LONGER of the two budgets. A hand-for-hand pause armed a
       // moment ago must not shorten the break's safety window.
       this.pauseMaxWaitMs = Math.max(this.pauseMaxWaitMs ?? 0, maxWaitMs);
     }
     if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
+  }
+
+  /**
+   * Write this table's presence FSM to engine_presence_parked so the next
+   * boot (loadPresenceFromPark in start()) continues it rather than
+   * resetting it. Called when the break is announced and when the loop
+   * parks. Never throws; a miss costs exactly what every boot cost before.
+   */
+  protected async persistPresenceForRestart(when: 'announced' | 'parked'): Promise<void> {
+    try {
+      const states = this.disconnectEngine.getFsmStatesForTable(this.tableId);
+      if (Object.keys(states).length === 0) return;
+      await savePresenceAtPark({
+        tableId: this.tableId,
+        disconnectStates: states,
+        engineInstance: `${INSTANCE_ID}:${when}`,
+      });
+    } catch (err) {
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.presence_persist');
+    }
+  }
+
+  /**
+   * Send this player the engine's current pre-action (or its absence) as a
+   * private frame. Called on every PreActionEngine event and on RESYNC.
+   */
+  protected pushPreActionToPlayer(userId: string): void {
+    if (!this.hub || !userId) return;
+    const entry = this.preActionEngine.getPreAction(this.tableId, userId);
+    this.hub.sendToUser(this.tableId, userId, {
+      kind: 'pre_action',
+      hand_number: this.handCount,
+      action: entry?.action ?? null,
+      to_call_at_set: entry?.toCallAtSet ?? null,
+    });
+  }
+
+  /** RESYNC / reconnect: re-send the engine's pre-action for this player. */
+  public rePushPreAction(userId: string): void {
+    this.pushPreActionToPlayer(userId);
   }
 
   /** Lift the maintenance break. Leaves any hand-for-hand pause in place. */
@@ -3463,6 +3674,23 @@ export abstract class ServerTableEngineBase {
   protected bombPotScheduler = new BombPotScheduler();
 
   /**
+   * THE JUDGED VPIP OF EVERY SEAT (Dan 2026-09-04), refreshed at each hand
+   * boundary on a table that runs the floor. Read by the horse brain for its
+   * OWN row, so a horse at an Action / Madness table widens toward the floor
+   * instead of being stood up every ten hands (10.5: a horse obeys the floor
+   * identically, and obeying it means staying above it). Empty on a table
+   * with no rule, and after a failed read - the brain then plays its prior.
+   */
+  protected nitStatus: Map<string, NitSeatStatus> = new Map();
+
+  /** The floor a seat at this table must keep, percent; 0 when there is none. */
+  protected vpipFloor(): number {
+    if (this.tableInfo?.nit_game !== true) return 0;
+    const min = Number(this.tableInfo?.maintain_percent_min ?? 0);
+    return Number.isFinite(min) && min > 0 ? min : 0;
+  }
+
+  /**
    * FULL SCHEDULER PERSISTENCE (2026-08-28): last serialized scheduler state
    * written to tables.bomb_pot_sched_state — the change detector that keeps
    * the per-hand write down to one row only when something actually moved.
@@ -3940,6 +4168,10 @@ export abstract class ServerTableEngineBase {
     // eviction reasons live — including the start-up wait loop.
     const nitEvictable: string[] = [];
     if (this.tableInfo?.nit_game === true) {
+      // The board every seat is judged on, kept for the brain (Dan
+      // 2026-09-04). Read beside the eviction, at the same boundary, from the
+      // same rows, so what a horse steers by is what it is stood up on.
+      this.nitStatus = await collectNitStatus(this.tableId);
       const nits = await collectNitEvictions(this.tableId);
       for (const n of nits) {
         console.log(
@@ -3950,9 +4182,20 @@ export abstract class ServerTableEngineBase {
       }
     }
 
+    // 2026-09-04: a seat nobody is behind for five minutes, never sat out and
+    // never charged a blind (a quiet table), is released on the same clock
+    // as a sit-out. See DisconnectEngine.collectAbandonedSeatEvictions.
+    const abandonedEvictable = this.disconnectEngine.collectAbandonedSeatEvictions(
+      this.tableId,
+      seatedIds
+    );
+
     const blindEvictSet = new Set(blindEvictable);
     const nitEvictSet = new Set(nitEvictable);
-    const evictable = Array.from(new Set([...sitOutEvictable, ...blindEvictable, ...nitEvictable]));
+    const abandonedEvictSet = new Set(abandonedEvictable);
+    const evictable = Array.from(
+      new Set([...sitOutEvictable, ...blindEvictable, ...nitEvictable, ...abandonedEvictable])
+    );
     if (evictable.length === 0) return;
 
     // Dan 2026-08-26, binding: "a player can never leave the table while they
@@ -3975,12 +4218,19 @@ export abstract class ServerTableEngineBase {
       }
       const awayBlindEvict = blindEvictSet.has(userId);
       const nitEvict = !awayBlindEvict && nitEvictSet.has(userId);
+      const abandonedEvict =
+        !awayBlindEvict &&
+        !nitEvict &&
+        !sitOutEvictable.includes(userId) &&
+        abandonedEvictSet.has(userId);
       console.log(
         awayBlindEvict
           ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - away, already charged one SB and one BB`
           : nitEvict
             ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - below this nit game's VPIP floor`
-            : `[ServerTableEngine:${this.tableId}] evicting ${userId} - sat out past the 2-orbit / 5-minute limit`
+            : abandonedEvict
+              ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - gone for 5 minutes with nobody behind the seat`
+              : `[ServerTableEngine:${this.tableId}] evicting ${userId} - sat out past the 2-orbit / 5-minute limit`
       );
       this.hub?.emitEvent(this.tableId, {
         type: 'seat_left',
@@ -3988,7 +4238,13 @@ export abstract class ServerTableEngineBase {
         seat: seated.seat_number,
         user_id: userId,
         mid_hand: false,
-        reason: awayBlindEvict ? 'away_blind_cap' : nitEvict ? 'nit_game_vpip' : 'sit_out_timeout',
+        reason: awayBlindEvict
+          ? 'away_blind_cap'
+          : nitEvict
+            ? 'nit_game_vpip'
+            : abandonedEvict
+              ? 'abandoned_seat'
+              : 'sit_out_timeout',
         timestamp: Date.now(),
       });
       try {

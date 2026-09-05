@@ -139,6 +139,9 @@ export const MAX_WIND_DOWN_PER_HOST_PER_CYCLE = 4;
  */
 export const MAX_TABLE_FLAG_WRITES_PER_CYCLE = 25;
 
+/** How often the guarantee banks are read. Two indexed single-row reads. */
+export const BANK_CHECK_EVERY_MS = 15 * 60_000;
+
 /**
  * THE TWO FLAGS, AND WHY THEY MUST NEVER BE THE SAME ONE.
  *
@@ -336,9 +339,9 @@ export class StableHandExecutor {
    */
   private async setTableFlag(ids: string[], flag: string, budget: number): Promise<number> {
     if (ids.length === 0 || budget <= 0) return 0;
-    const rows = await selectInChunks<{ id: string; settings: unknown }>(
+    const rows = await selectInChunks<{ id: string; settings: unknown; cluster_id: string | null }>(
       ids,
-      (batch) => supabase.from('tables').select('id, settings').in('id', batch),
+      (batch) => supabase.from('tables').select('id, settings, cluster_id').in('id', batch),
       `StableHand.readSettings.${flag}`
     );
     // A partial read is not "none of them are flagged": writing on a failed
@@ -353,6 +356,11 @@ export class StableHandExecutor {
           ? (row.settings as Record<string, unknown>)
           : {};
       if (settings[flag] === true) continue;
+      /* A CLUSTER TABLE IS NEVER FLAGGED (Operation Table Stakes, R9). The
+         planner already leaves them out; this is the door itself refusing,
+         because a flag on a must-move Main 1 is a fight with the
+         ClusterController that neither side can win (2026-09-05). */
+      if (row.cluster_id) continue;
       const { error } = await supabase
         .from('tables')
         .update({ settings: { ...settings, [flag]: true } })
@@ -407,6 +415,88 @@ export class StableHandExecutor {
     }
     if (lifted > 0) console.log(`[StableHand] morning: unparked ${lifted} table(s)`);
     return lifted;
+  }
+
+  /**
+   * ── THE BANK THAT FUNDS THE GUARANTEES ─────────────────────────────────
+   *
+   * The Free Buy board commits 1,500 chips a day per host in guarantees, and
+   * `fn_ca_fund_overlay_on_lock` draws the shortfall from `union_wallets` for
+   * a union-owned event and from `clubs.chip_treasury` for a standalone one.
+   * Nothing anywhere said how much runway was left, so the first anybody would
+   * have known is an event refusing to start.
+   *
+   * MEASURED IN DAYS, NOT CHIPS. A chip threshold has to be re-chosen every
+   * time the board changes; a runway does not.
+   *
+   * Alerts ON CHANGE only. A warning re-filed every thirty seconds is a
+   * warning somebody mutes, and the row stays open until it is resolved.
+   */
+  private async checkBanks(snap: FloorSnapshot, nowMs: number): Promise<void> {
+    if (nowMs - this.lastBankCheckAt < BANK_CHECK_EVERY_MS) return;
+    this.lastBankCheckAt = nowMs;
+    const daily = dailyGuaranteePerHost();
+
+    for (const host of snap.hosts) {
+      try {
+        let bank: number | null = null;
+        let store = '';
+        if (host.hostId === MIDWAY_UNION_ID) {
+          const { data } = await supabase
+            .from('union_wallets')
+            .select('chip_balance')
+            .eq('union_id', host.hostId)
+            .maybeSingle();
+          if (data) {
+            bank = Number((data as { chip_balance?: unknown }).chip_balance) || 0;
+            store = 'union_wallets.chip_balance';
+          }
+        } else {
+          const { data } = await supabase
+            .from('clubs')
+            .select('chip_treasury')
+            .eq('id', host.hostId)
+            .maybeSingle();
+          if (data) {
+            bank = Number((data as { chip_treasury?: unknown }).chip_treasury) || 0;
+            store = 'clubs.chip_treasury';
+          }
+        }
+        // An unreadable bank is not an empty one.
+        if (bank === null) continue;
+
+        const verdict = bankVerdict({ bank, dailyGuarantee: daily });
+        const previous = this.lastBankVerdict.get(host.hostId);
+        this.lastBankVerdict.set(host.hostId, verdict);
+        if (verdict === 'ok' || verdict === previous) continue;
+
+        const days = daily > 0 ? (bank / daily).toFixed(1) : 'unbounded';
+        await supabase.rpc('fn_raise_server_financial_alert', {
+          p_severity: verdict === 'critical' ? 'critical' : 'warning',
+          p_source: 'StableHandExecutor.checkBanks',
+          p_message:
+            `The bank that funds guarantees for host ${host.hostId} holds ${bank} chips in ` +
+            `${store}, which is ${days} days of the board's own ${daily} a day. Refill it ` +
+            `before an event refuses to start.`,
+          p_context: {
+            kind: 'stable_hand_bank_runway',
+            host_id: host.hostId,
+            store,
+            bank,
+            daily_guarantee: daily,
+            runway_days: Number(days),
+            verdict,
+          },
+          p_entity_id: host.hostId,
+        });
+        console.warn(
+          `[StableHand] bank ${verdict}: host ${host.hostId.slice(0, 8)} holds ${bank} in ` +
+            `${store} - ${days} days of guarantees`
+        );
+      } catch (err) {
+        reportError(err, 'StableHandExecutor.checkBanks');
+      }
+    }
   }
 
   /** Both table-flag passes for one cycle. */
@@ -598,6 +688,30 @@ export class StableHandExecutor {
          it once EMPTY. Run after the stands so the plan the flags come from is
          the same one that was just acted on. */
       await this.applyTableFlags(orders.plan, isNightWindow(chicagoNow().hour));
+
+      /* ══ THE HEARTBEAT ═══════════════════════════════════════════════════
+         Written after the work, so it records what was actually DONE and not
+         what was merely intended - the gap between the two is the only way to
+         see a controller that decides correctly and cannot act.
+
+         THIS CALL WENT MISSING ONCE. A refactor on 2026-09-04 rewrote the
+         block above it and took the beat write and the bank check with it. The
+         imports stayed, `checkBanks` stayed defined, typecheck stayed clean,
+         5,371 tests stayed green - and `stable_hand_beats` held ZERO rows for
+         four hours of live running while every other order executed normally.
+         The feature that exists to notice silence was itself silent. Two pins
+         in StableHandExecutor.test.ts now assert both calls by name. */
+      await writeBeats(
+        buildBeats(snap, orders.plan, {
+          yieldsByHost: this.executedYields,
+          windDownsByHost: this.executedWindDowns,
+        }),
+        now
+      );
+      this.executedYields.clear();
+      this.executedWindDowns.clear();
+
+      await this.checkBanks(snap, now);
 
       if (this.noEngine > 0) {
         console.warn(

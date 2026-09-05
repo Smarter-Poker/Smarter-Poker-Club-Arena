@@ -26,7 +26,11 @@ function ruleBody(selector: string): string {
   return CSS.slice(i + selector.length, CSS.indexOf('}', i)).replace(/\s+/g, ' ');
 }
 
-const PANEL = '.club-entry-message-modal.modal-fullscreen';
+/* `.ca-modal--fullscreen`, not `.modal-fullscreen` (2026-09-04): the shared
+   Modal's classes are namespaced now, because its `.modal-overlay` backdrop
+   was being restyled by nine other stylesheets and ended up painted OVER this
+   card. See tests/the-shared-modal-owns-its-class-names.law.test.ts. */
+const PANEL = '.club-entry-message-modal.ca-modal--fullscreen';
 
 describe('the greeting is a contained popup', () => {
   it('is sized by its content, never by the viewport', () => {
@@ -66,9 +70,9 @@ describe('the greeting is a contained popup', () => {
   it('a long message scrolls inside the card', () => {
     // The card fills its own height, and the wrapper scrolls its overflow —
     // together that is what keeps a long greeting from pushing the card off
-    // screen. Without the .modal-content link, `flex: 1` has no flex parent
+    // screen. Without the .ca-modal-content link, `flex: 1` has no flex parent
     // (the shared Modal wraps children) and the content collapses (#2899).
-    const inner = ruleBody(`${PANEL} > .modal-content`);
+    const inner = ruleBody(`${PANEL} > .ca-modal-content`);
     expect(inner).toContain('display: flex');
     expect(inner).toContain('flex: 1');
     expect(inner).toContain('flex-direction: column');

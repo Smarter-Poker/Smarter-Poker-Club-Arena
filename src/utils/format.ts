@@ -252,9 +252,13 @@ export const formatChips = (value: unknown, digits = 2): string => {
 export const formatCount = (value: unknown): string =>
   finite(value) ? Math.trunc(value).toLocaleString('en-US') : '0';
 
-/** "-305.6" - BB/100, aggression factor and other ratios, truncated. */
-export const formatRatio = (value: unknown, digits = 1): string =>
-  finite(value) ? truncFixed(value, digits) : truncFixed(0, digits);
+/*
+ * REMOVED 2026-09-05: `formatRatio`. It had no caller. Every ratio on the
+ * credential (BB/100, aggression factor, per-variant BB/100) needs a leading
+ * sign, which this did not add, so the page used its own `signed(...)` around
+ * a truncation and always would have. A tested export that nothing calls reads
+ * as covered while being unreachable, which is worse than no export at all.
+ */
 
 /** "9.9h" / "48m" - hours played, compact, truncated. */
 export const formatHours = (hours: unknown): string => {

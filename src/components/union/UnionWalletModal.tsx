@@ -51,7 +51,6 @@ import '../wallet/WalletCashierModal.css';
 import './UnionWalletModal.css';
 
 export type UnionWalletKey = 'chips' | 'rake' | 'bbj' | 'promo' | 'spin_reserve';
-export { clubSendRoute, UNION_WALLET_COLUMN };
 
 export interface UnionWalletModalProps {
   isOpen: boolean;
@@ -117,6 +116,13 @@ function titleCase(raw: string): string {
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .join(' ');
 }
+
+/**
+ * The union-wallet API refuses a note carrying ; ' " or a backslash
+ * (SafeNotes in the World Hub contract). A club called "Dan's Room" would
+ * otherwise turn a valid send into a 400 with nothing on screen to say why.
+ */
+const apiNote = (s: string) => s.replace(/[;'"\\]/g, '').slice(0, 500);
 
 /** Ledger money, always to the hundredth: 5,000.00, never 5,000 beside 32,482.58. */
 const money = (n: number | null | undefined) =>
@@ -240,7 +246,12 @@ export function UnionWalletModal({
       }
       setLoading(false);
     });
-  }, [isOpen, unionId, walletKey, balance, readOnly]);
+    /* `balance` is deliberately NOT a dependency: onSent makes the dashboard
+       reload and pass a fresh balance, and re-running this reset on that would
+       wipe the success notice and the picked target the moment a send lands.
+       The live figure comes from the send's own response instead. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, unionId, walletKey]);
 
   /**
    * THE LEDGER TAB. fn_promo_wallet_ledger scope 'union' reads
@@ -273,8 +284,11 @@ export function UnionWalletModal({
           setLedger([]);
           return;
         }
-        setLedgerTotal(Number(res.total) || 0);
-        setLedgerTotals(res.totals ?? null);
+        /* Totals and the count are computed for the FIRST page only (a
+           million-row rake wallet does not re-sum on every Load More); a later
+           page answers null for both and the figures already on screen stand. */
+        if (offset === 0 || res.total != null) setLedgerTotal(Number(res.total) || 0);
+        if (offset === 0 || res.totals) setLedgerTotals(res.totals ?? null);
         setLedger((prev) => (offset === 0 ? res.rows || [] : [...prev, ...(res.rows || [])]));
       } catch (e) {
         reportError(e, 'UnionWalletModal.ledger_load_failed');
@@ -323,6 +337,14 @@ export function UnionWalletModal({
       setNotice({ ok: false, text: 'Diamonds Must Be A Whole Number.' });
       return;
     }
+    /* The union-wallet API contract (PositiveChipAmount) FLOORS a club
+       amount. 250.5 would leave as 250 while this screen subtracted 250.5,
+       so a club send is whole chips here, before anything is sent. A member
+       send goes straight to the RPC, which accepts hundredths. */
+    if (target.type === 'club' && !Number.isInteger(amt)) {
+      setNotice({ ok: false, text: 'Club Sends Move In Whole Chips.' });
+      return;
+    }
     setBusy(true);
     setNotice(null);
 
@@ -366,30 +388,35 @@ export function UnionWalletModal({
             /* THE PROMO ROUTE. Union promo wallet -> the club's PROMO WALLET
                (clubs.promo_balance), through fn_union_promo_send. Never the
                chip bank, never the club treasury: that is the 2026-09-05 bug. */
-            await unionApi.promoSend(
+            const sent = (await unionApi.promoSend(
               unionId,
               amt,
               'club',
               target.data.id,
-              `${walletLabel} To ${target.data.name} Promo Wallet`
-            );
+              apiNote(`${walletLabel} To ${target.data.name} Promo Wallet`)
+            )) as { promoAfter?: number | null };
             setNotice({
               ok: true,
               text: `Sent ${fmt(amt)} Promo Chips Into The ${target.data.name} Promo Wallet.`,
             });
+            // The wallet's figure after the send, from the row that moved it,
+            // rather than a subtraction on this screen.
+            if (typeof sent?.promoAfter === 'number') setLiveBalance(sent.promoAfter);
+            else setLiveBalance((prev) => prev - amt);
           } else {
-            await unionApi.sendToClub(
+            const sent = (await unionApi.sendToClub(
               unionId,
               target.data.id,
               amt,
-              `${walletLabel} To ${target.data.name} Club Bank`
-            );
+              apiNote(`${walletLabel} To ${target.data.name} Club Bank`)
+            )) as { unionBalanceAfter?: number | null };
             setNotice({
               ok: true,
               text: `Sent ${fmt(amt)} Chips Into The ${target.data.name} Club Bank.`,
             });
+            if (typeof sent?.unionBalanceAfter === 'number') setLiveBalance(sent.unionBalanceAfter);
+            else setLiveBalance((prev) => prev - amt);
           }
-          setLiveBalance((prev) => prev - amt);
         }
       } else {
         if (target.type === 'member') {

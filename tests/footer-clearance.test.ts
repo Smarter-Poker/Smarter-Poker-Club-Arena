@@ -46,7 +46,14 @@ describe('global Club Arena footer mounting and clearance', () => {
       'src/styles/design-system.css',
     ]) {
       const css = readFileSync(join(ROOT, sheet), 'utf8');
-      expect(css).toContain('--bottom-nav-height: clamp(44px, 13.72vw, 132px)');
+      /* 12.326vw, not 13.72vw. The frame inside the approved asset measures
+         1866 x 230 (canvas 1916 x 256), so an undistorted full-bleed footer is
+         100 / (1866/230) = 12.326vw tall. 13.72vw stretched the art 11.3%
+         taller than the frame at every width below the ceiling; the ceiling
+         then squashed it 11.7% at a 1204px viewport. Dan 2026-09-05: the
+         footer "IS DISTORTED". The 132px ceiling itself is unchanged and
+         still approved. */
+      expect(css).toContain('--bottom-nav-height: clamp(44px, 12.326vw, 132px)');
       expect(css).toContain(
         '--bottom-nav-clearance: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px))'
       );
@@ -57,8 +64,22 @@ describe('global Club Arena footer mounting and clearance', () => {
     const css = readFileSync(join(ROOT, 'src/components/club/ClubBottomNav.module.css'), 'utf8');
 
     expect(css).toMatch(/\.viewport\s*\{[\s\S]*?overflow:\s*hidden/);
-    expect(css).toMatch(/\.artwork\s*\{[\s\S]*?width:\s*100%/);
-    expect(css).toMatch(/\.artwork\s*\{[\s\S]*?height:\s*var\(--bottom-nav-height/);
+
+    /* PIN MOVED 2026-09-05, same commit as the mechanism it follows.
+       This used to require `.artwork { width: 100% }` and
+       `height: var(--bottom-nav-height) }`. That pair is exactly what let the
+       box take any aspect the viewport produced while the image stretched to
+       fill it, which is the distortion Dan reported. The box now takes its
+       shape from the asset (`aspect-ratio: 1866 / 230`) and stops its WIDTH at
+       the same moment the height ceiling stops its height - because stopping
+       one dimension and not the other IS the distortion. The old pin is not
+       weakened, it is replaced by a stricter one: the ratio is stated, so a
+       future edit cannot reintroduce a free-floating height. */
+    expect(css).toMatch(/\.artwork\s*\{[\s\S]*?aspect-ratio:\s*1866\s*\/\s*230/);
+    expect(css).toMatch(
+      /\.artwork\s*\{[\s\S]*?width:\s*min\(100%,\s*calc\(var\(--bottom-nav-height[^)]*\)\s*\*\s*1866\s*\/\s*230\)\)/
+    );
+    expect(css).toMatch(/\.artwork\s*\{[\s\S]*?margin-inline:\s*auto/);
     // The measured frame (x=25 y=14 1866x230 of a 1916x256 canvas) is scaled
     // until it covers the footer box on BOTH axes, pushing the canvas's black
     // gutter off every edge. The horizontal pair has always been here as

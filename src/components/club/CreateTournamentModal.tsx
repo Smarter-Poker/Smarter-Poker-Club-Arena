@@ -1182,7 +1182,7 @@ export default function CreateTournamentModal({
                     control changed nothing an operator could observe. It also
                     advertised two different expected values, 2.24X and 2.33X,
                     for one distribution whose real expectation is
-                    seats x (1 - rake_rate) = 2.7638. 2.24 is verbatim the
+                    seats x (1 - rake_rate) = 2.76. 2.24 is verbatim the
                     retired table that spinSpec was written to kill, so the
                     screen told an operator the house edge was 25.3% when it is
                     8%.

@@ -974,21 +974,48 @@ export async function deleteClub(clubId: string): Promise<void> {
   }
 
   // Delete all members first (cascade should handle this, but explicit is safer)
-  const { error: memberErr } = await supabase
+  /* The member sweep is best-effort by design (the club DELETE cascades), so a
+     zero-row result here is legitimate - a club with no members has none to
+     remove. What was NOT legitimate was being unable to tell that from a
+     refusal, so the count is read and a refusal is reported rather than
+     assumed successful. The club delete below is the one that must have
+     removed a row. */
+  const { data: removedMembers, error: memberErr } = await supabase
     .from('club_members')
     .delete()
-    .eq('club_id', resolvedId);
+    .eq('club_id', resolvedId)
+    .select('user_id');
   if (memberErr) {
     reportError(memberErr, 'ClubsService.Failed_to_remove_members_before_club_del');
     throw new Error('Failed to remove club members');
   }
+  if (!removedMembers) {
+    reportError(
+      new Error('club_members delete returned no rows array'),
+      'ClubsService.Member_sweep_returned_nothing'
+    );
+  }
 
-  // Delete the club
-  const { error } = await supabase.from('clubs').delete().eq('id', resolvedId);
+  /* THE ONE THAT MATTERS: the club DELETE asks for the row it removed.
+     Without that, a zero-row delete - a policy narrower than the owner check
+     above, a foreign key that refuses, a row already gone - returned 204 with
+     no error, and the caller then toasted "Club deleted successfully" and
+     navigated to /clubs, away from the only screen that could have shown the
+     club still sitting there. The returned row is the only evidence. */
+  const { data: deleted, error } = await supabase
+    .from('clubs')
+    .delete()
+    .eq('id', resolvedId)
+    .select('id');
 
   if (error) {
     reportError(error, 'ClubsService.Delete_club_failed');
     throw new Error('Failed to delete club');
+  }
+  if (!deleted || deleted.length === 0) {
+    throw new Error(
+      'The club was not deleted. Nothing was removed - check that you still own it and that it has no rows blocking removal.'
+    );
   }
 
   // Emit bus events so all open lobby/carousel tabs refresh immediately

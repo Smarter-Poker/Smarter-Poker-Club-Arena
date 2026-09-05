@@ -5308,6 +5308,22 @@ export default function TablePage({
      */
     boardHandNames?: [string, string] | [string, string, string] | null;
     /**
+     * THE SEAT LABEL FOLLOWS THE FEATURED RUN (2026-09-05).
+     *
+     * `handNames` above is ONE name per player for the whole hand. On a
+     * run-it-twice hand that is a mislabel waiting to happen: a player can win
+     * run 1 with Two Pair and run 3 with a Flush, and the seat then shows
+     * whichever name the merge happened to write first — for both runs, while
+     * the board row beside it correctly names the other hand.
+     *
+     * This is the per-run breakdown, indexed by board (0 = run 1), built from
+     * the `winners_by_board` the engine already sends. The seat reads the
+     * entry for the run currently on stage (`ritRevealedRuns`) and falls back
+     * to the merged name, so single-board hands and older payloads are
+     * untouched.
+     */
+    boardHandNamesByPlayer?: Array<Record<string, string>> | null;
+    /**
      * WHICH HAND THESE WINNERS BELONG TO (Dan 2026-08-27: "cards dim like you
      * folded even though you are live in a hand").
      *
@@ -15532,6 +15548,26 @@ export default function TablePage({
               ]
             : null;
 
+        /* PER-RUN SEAT LABELS 2026-09-05: the same record, keyed by player
+           instead of collapsed to one name per board. `boardHandNames` above
+           answers "what won board 2" — fine for a board row, useless for a
+           SEAT, because on a chop two players won board 2 with different
+           hands. This answers "what did THIS player have on run N", which is
+           what the seat is actually claiming when it prints a hand name. */
+        const boardHandNamesByPlayer: Array<Record<string, string>> | null =
+          winnersByBoard.length > 0
+            ? (() => {
+                const byBoard: Array<Record<string, string>> = [];
+                for (const wb of winnersByBoard) {
+                  const idx = (Number(wb.board) || 1) - 1;
+                  if (idx < 0) continue;
+                  if (!byBoard[idx]) byBoard[idx] = {};
+                  if (wb.hand_name && wb.user_id) byBoard[idx][wb.user_id] = wb.hand_name;
+                }
+                return byBoard;
+              })()
+            : null;
+
         /* SCOOP LABELS (spec §9.2/§13.3, 2026-08-28): derived AFTER settlement
            from the per-board winner record — one player sole-winning every
            board is a SCOOP (TRIPLE SCOOP on three boards); sole-winning two of
@@ -15733,6 +15769,7 @@ export default function TablePage({
             handNames: { ...prevWin.handNames, ...handNamesNow },
             amounts: mergedAmounts,
             boardHandNames: boardHandNames ?? prevWin.boardHandNames,
+            boardHandNamesByPlayer: boardHandNamesByPlayer ?? prevWin.boardHandNamesByPlayer,
           };
           setWinnerInfo(merged);
           // Write the mirror synchronously too. POT_WIN and HAND_COMPLETE can
@@ -21927,9 +21964,19 @@ export default function TablePage({
                      labels both seats with their (identical) rank, and a
                      double-board split names each winner's hand. Falls back
                      to the shared name for older payloads. */
+                  /* PER-RUN SEAT LABELS 2026-09-05: on a run-it-twice hand the
+                     seat names the hand this player made on the run currently
+                     on stage. A player who takes run 1 with Two Pair and run 3
+                     with a Flush used to show one of those for both, beside a
+                     board row naming the other. `ritRevealedRuns` is 1-based
+                     and gates each run's own turn; before any run has taken
+                     the stage, and on every single-board hand, this falls
+                     through to the merged name exactly as before. */
                   winningHandName={
                     player && winnerInfo.playerIds.includes(player.id)
-                      ? winnerInfo.handNames[player.id] || winnerInfo.handName
+                      ? winnerInfo.boardHandNamesByPlayer?.[ritRevealedRuns - 1]?.[player.id] ||
+                        winnerInfo.handNames[player.id] ||
+                        winnerInfo.handName
                       : undefined
                   }
                   /* SHOWDOWN SYSTEM 2026-08-25 (spec section 15): light

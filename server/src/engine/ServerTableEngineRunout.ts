@@ -29,6 +29,42 @@ import { reportError } from '../services/errorReporter.js';
 import { HAND_COMPLETION } from '../config/handCompletionSpec.js';
 import { ServerTableEngineTurns } from './ServerTableEngineTurns.js';
 
+/**
+ * ── DAN'S RUN-IT-TWICE RATES (2026-09-05, BINDING) ────────────────────────
+ *
+ * Dan, verbatim: "HORSES SHOULD ALWAYS OFFER TO RUN IT TWICE (WHEN AHEAD
+ * 'RANDOMLY SELECTED) 75% OF THE TIME, AND AGREE TO RUN IT TWICE OR 3X 75% OF
+ * THE TIME ('RANDOMLY SELECTED)."
+ *
+ * Two decisions, two constants, even though they hold the same value today.
+ *
+ * WHO IS "AHEAD" IS NOT A JUDGEMENT CALL HERE. `checkAllInRunout` already
+ * picks the chooser by evaluating every all-in hand against the board (or by
+ * preflop strength when the board is empty) and hands the offer to the best
+ * one. The chooser IS the player who is ahead, so Dan's "when ahead" maps
+ * onto the chooser role exactly, with nothing to infer.
+ *
+ * IT WAS 70, AND IT COULD NOT HAVE BEEN 75. The old rule was
+ * `(h + handCount * 7) % 10 < 3` - a per-TEN resolution, which can express 70
+ * and 80 and nothing between them. Moving to per-hundred is what makes the
+ * number Dan asked for sayable.
+ *
+ * INSURANCE STILL HAS ITS BRANCH. `checkAllInRunout` asks the RIT question
+ * FIRST and only reaches `startInsuranceFlow()` on the single-run branch, so
+ * a horse that always agrees turns insurance off across the whole floor -
+ * that is exactly what happened before 2026-08-31, when the answer was a
+ * constant 'accept' and `insurance_offer_events` recorded zero rows against
+ * 270 qualifying hands in 24 hours. One hand in four still runs once at these
+ * rates, which keeps the branch alive and busy.
+ *
+ * DETERMINISTIC, NOT RANDOM. `Math.random` is banned in the engine's decision
+ * paths - a replayed hand must answer the same way twice, and a test must be
+ * able to assert it. The hash of (player, hand) is the "random selection"
+ * Dan is describing: unpredictable from the outside, stable from the inside.
+ */
+export const HORSE_RIT_OFFER_WHEN_AHEAD_PCT = 75;
+export const HORSE_RIT_AGREE_PCT = 75;
+
 export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   /**
    * All-in run-out pacing (Dan 2026-08-19, item 16). Chosen so a player can
@@ -995,7 +1031,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     if (horseIds.has(chooserPlayerId)) {
       // A chooser who never picks 1 is a chooser who never runs it once.
       const runs =
-        this.horseRitVerdict(chooserPlayerId) === 'once'
+        this.horseRitVerdict(chooserPlayerId, 'chooser') === 'once'
           ? (1 as const)
           : ((this.handCount % 3 === 0 ? 3 : 2) as 2 | 3);
       respond(1200 + (this.handCount % 5) * 240, () => {
@@ -1004,7 +1040,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     }
     for (const pid of allPlayerIds) {
       if (pid === chooserPlayerId || !horseIds.has(pid)) continue;
-      const answer = this.horseRitVerdict(pid) === 'once' ? 'decline' : 'accept';
+      const answer = this.horseRitVerdict(pid, 'responder') === 'once' ? 'decline' : 'accept';
       respond(2500 + ((pid.charCodeAt(0) + this.handCount) % 4) * 400, () => {
         this.respondToRIT(pid, answer);
       });
@@ -1052,12 +1088,19 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
    * anything a human gets. It is the horse's input device choosing between
    * two answers a human chooses between, instead of being wired to one.
    */
-  protected horseRitVerdict(playerId: string): 'once' | 'multi' {
+  protected horseRitVerdict(playerId: string, role: 'chooser' | 'responder'): 'once' | 'multi' {
     let h = 0;
     for (let i = 0; i < playerId.length; i++) {
       h = (h * 31 + playerId.charCodeAt(i)) % 100000;
     }
-    return (h + this.handCount * 7) % 10 < 3 ? 'once' : 'multi';
+    /* Dan's two rates, 2026-09-05. They are the same number today and are
+       still written separately, because they are two different decisions -
+       "do I offer this" and "do I take it" - and the next time one moves it
+       will not be both. Resolution is per-hundred rather than per-ten so a
+       75 can be expressed at all; the old rule was `% 10 < 3`, which could
+       only ever say 70. */
+    const wantMulti = role === 'chooser' ? HORSE_RIT_OFFER_WHEN_AHEAD_PCT : HORSE_RIT_AGREE_PCT;
+    return (h + this.handCount * 7) % 100 < 100 - wantMulti ? 'once' : 'multi';
   }
 
   protected waitForRITResponse(onComplete: () => void): void {

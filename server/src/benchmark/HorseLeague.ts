@@ -776,6 +776,24 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // tiered aggressor sampler, the pair/two-pair/trips pressure cap and the
   // small-ball betting law, measured where the naked-aces call-down
   // happened (plo6) and on the widest-played Omaha card (plo4).
+  /* ── THE TWO DEFAULT-OFF FLAGS OF 2026-09-05 ────────────────────────
+     Both ship OFF and both must earn their default here, three significant
+     positive runs apart, exactly as the promotion rule requires.
+
+     `v41_session` is the session read: a horse with a table image (30+ hands
+     at this table) balances toward its own baseline, because its patterns are
+     visible to anybody watching. It is measurable in the league ONLY because
+     league seats play thousands of hands against each other - the image gate
+     is reached almost immediately, which is the opposite of the live floor
+     and worth remembering when reading the result.
+
+     `v42_table` is the table read: loose game, thinner value and more
+     look-ups; tight game, the reverse. In self-play both sides drift together,
+     so a NULL result here means "the adjustment is symmetric", not "the read
+     is worthless" - the honest test of it is against the b-side playing
+     blind, which is what this matchup is. */
+  { name: 'v41_session', pairs: 12000, a: { v41Session: true }, b: {} },
+  { name: 'v42_table', pairs: 12000, a: { v42Table: true }, b: {} },
   { name: 'plo6_v40_omaha', variant: 'plo6', pairs: 6000, a: {}, b: { v40Omaha: false } },
   { name: 'plo4_v40_omaha', variant: 'plo4', pairs: 6000, a: {}, b: { v40Omaha: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip

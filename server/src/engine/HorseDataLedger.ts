@@ -236,6 +236,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   flag('v37Satellite', 'satellite survival play', 'V37'),
   flag('v38Ev', 'the EV engine arbiter for solverless games and the MDF river', 'V38'),
   flag(
+    'v42Table',
+    'DEFAULT OFF. The table-level read: is this GAME loose or tight, as opposed to what each opponent is relative to themselves. Needs three sampled seats; the receipt v42_table_read fires regardless of the flag',
+    'V42'
+  ),
+  flag(
     'v41Session',
     'DEFAULT OFF. Session awareness: a horse with a table image balances toward its own baseline. The DATA is always read and always counted (v41_session_read, v41_table_image); only the behaviour waits for a league matchup',
     'V41'
@@ -616,7 +621,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   receipt(
     'icm_*',
     'HorseLogic.icmRisk',
-    'icm_real / icm_spin_cev / icm_warming / icm_legacy; tournament volume only',
+    'icm_real / icm_spin_cev / icm_table_relative / icm_warming / icm_legacy; tournament volume only',
     'V16'
   ),
   receipt(
@@ -994,6 +999,14 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
      They fire whether or not `v41Session` is on - a receipt gated behind a
      default-off flag proves nothing, which is the whole reason the receipt
      exists. `v41_table_image` is the subset past TABLE_IMAGE_HANDS. */
+  receipt(
+    'v42_table_read',
+    'HorseLogic (V42)',
+    'a table-level looseness read with at least three sampled seats behind it',
+    'V42',
+    'decide',
+    0.02
+  ),
   receipt(
     'v41_session_read',
     'HorseLogic (V41)',

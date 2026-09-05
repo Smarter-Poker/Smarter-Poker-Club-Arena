@@ -26,7 +26,11 @@ const SEED = SRC.slice(
   SRC.indexOf('\n  private async ', SRC.indexOf('private async seedAllTables(') + 1)
 );
 const FILTER = SEED.slice(
-  SEED.indexOf('const candidateHorses'),
+  /* The candidate filter became `passFilter(relaxPreferences)` on 2026-09-05
+     so a tagged preference can be dropped when a seat would otherwise sit
+     empty. Every gate this file asserts is a HARD one and lives inside it
+     unchanged - which is exactly what slicing here proves. */
+  SEED.indexOf('const passFilter = (relaxPreferences: boolean) =>'),
   SEED.indexOf('const tablesForHorse')
 );
 const CLAIM = SRC.slice(
@@ -85,7 +89,7 @@ describe('the candidate filter', () => {
   it('keys the table the way the SQL joins it, once per table', () => {
     expect(SEED).toContain('const constraintTableKey = rejoinTableKey(table);');
     expect(SEED.indexOf('const constraintTableKey')).toBeLessThan(
-      SEED.indexOf('const candidateHorses')
+      SEED.indexOf('const passFilter = (relaxPreferences: boolean) =>')
     );
   });
 
@@ -163,7 +167,7 @@ describe('a buyer is counted once', () => {
 
   it('capacity is the tag ceiling minus the tables the horse already sits at, recorded once per horse', () => {
     const cand = SEED.slice(
-      SEED.indexOf('const candidateHorses'),
+      SEED.indexOf('const passFilter = (relaxPreferences: boolean) =>'),
       SEED.indexOf('// V8 ACTIVITY WINDOWS')
     );
     expect(cand).toMatch(

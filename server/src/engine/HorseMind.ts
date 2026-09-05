@@ -41,6 +41,26 @@ import type { OppPostflopRead } from './HorseEval.js';
 // OPPONENT STATS
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** What the table as a whole looks like. See HorseMind.tableProfile. */
+export interface TableProfile {
+  /** Mean VPIP of the sampled seats, 0-1. ~0.5 is an ordinary game. */
+  looseness: number;
+  /** Mean postflop aggression share of the sampled seats, 0-1. */
+  aggression: number;
+  /** How many seats had ten hands or more behind them. */
+  sample: number;
+  /** How many seats were at the table at all. */
+  seats: number;
+}
+
+/** A table of strangers: exactly what a human sitting down knows about it. */
+export const NEUTRAL_TABLE: TableProfile = {
+  looseness: 0.5,
+  aggression: 0.5,
+  sample: 0,
+  seats: 0,
+};
+
 export interface OpponentStats {
   /** distinct hands this player has been observed in */
   hands: number;
@@ -1528,6 +1548,58 @@ export class HorseMind {
     const s = this.stats.get(id);
     if (!s || s.bigBetSD < 5) return null;
     return s.bigBetSDStrong / s.bigBetSD;
+  }
+
+  /**
+   * ── THE TABLE, NOT THE SEATS (2026-09-05) ────────────────────────────
+   *
+   * `tableExploit` below blends the individual opponents present - the min of
+   * their bluff mods, the mean of their call-downs. That is a per-VILLAIN
+   * read pooled at the last moment, and it was the only table-scoped thing
+   * the brain had. There was no answer at all to the question every human at
+   * a table answers within an orbit: IS THIS GAME LOOSE OR TIGHT?
+   *
+   * The difference matters. Five opponents each at 22% VPIP and five each at
+   * 45% pool to very different games, and a horse should open wider and
+   * c-bet less into the second. Pooling exploit mods cannot express that,
+   * because a mod is relative to a player's own baseline.
+   *
+   * `looseness` is the mean VPIP of the seats that have a real sample, on a
+   * 0-1 scale where 0.5 is an ordinary game; `aggression` is the mean
+   * postflop aggression factor normalised the same way. `sample` is how many
+   * of the seats actually contributed, and a caller with fewer than three is
+   * looking at noise - the confidence gate is the caller's to apply, and
+   * `NEUTRAL_TABLE` is what it should fall back to.
+   *
+   * The per-player gate is the SAME ten hands `exploit()` uses. A table of
+   * strangers reads neutral, which is correct: it is what a human sitting
+   * down knows about it.
+   */
+  static tableProfile(heroSeat: number, players: SeatPlayer[]): TableProfile {
+    const opps = players.filter((p) => p.seat !== heroSeat && !p.is_sitting_out);
+    if (opps.length === 0) return NEUTRAL_TABLE;
+    let vpipSum = 0;
+    let afSum = 0;
+    let sample = 0;
+    for (const o of opps) {
+      const st = this.stats.get(o.user_id);
+      if (!st || st.hands < 10) continue;
+      vpipSum += st.vpip / st.hands;
+      const aggr = st.postAggr ?? st.aggr ?? 0;
+      const passive = st.postPassive ?? st.passive ?? 0;
+      /* AF as a 0-1 share rather than the classic unbounded ratio: a player
+         who has never called divides by zero in the ratio form, and the share
+         degrades gracefully at every sample size. */
+      afSum += aggr + passive > 0 ? aggr / (aggr + passive) : 0.5;
+      sample += 1;
+    }
+    if (sample === 0) return NEUTRAL_TABLE;
+    return {
+      looseness: Math.max(0, Math.min(1, vpipSum / sample)),
+      aggression: Math.max(0, Math.min(1, afSum / sample)),
+      sample,
+      seats: opps.length,
+    };
   }
 
   static tableExploit(

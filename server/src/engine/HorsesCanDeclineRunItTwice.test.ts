@@ -32,25 +32,37 @@ function verdict(playerId: string, handCount: number): 'once' | 'multi' {
   for (let i = 0; i < playerId.length; i++) {
     h = (h * 31 + playerId.charCodeAt(i)) % 100000;
   }
-  return (h + handCount * 7) % 10 < 3 ? 'once' : 'multi';
+  return (h + handCount * 7) % 100 < 25 ? 'once' : 'multi';
 }
 
 describe('a horse can decline run it twice', () => {
   it('the verdict function exists and both branches are reachable', () => {
-    expect(SRC).toContain("protected horseRitVerdict(playerId: string): 'once' | 'multi'");
+    /* The verdict gained a ROLE on 2026-09-05 (Dan: offer-when-ahead and
+       agree are two decisions at 75% each), so the signature carries it. Both
+       branches must still be reachable - which is what this file is for, and
+       why it caught the signature change. */
+    expect(SRC).toContain(
+      "protected horseRitVerdict(playerId: string, role: 'chooser' | 'responder'): 'once' | 'multi'"
+    );
     // The exact body, so the reimplementation above stays honest.
     expect(SRC).toContain('h = (h * 31 + playerId.charCodeAt(i)) % 100000;');
-    expect(SRC).toContain("return (h + this.handCount * 7) % 10 < 3 ? 'once' : 'multi';");
+    /* Per HUNDRED since 2026-09-05: per-ten could express 70 and 80 and
+       nothing between, and Dan asked for 75. The rate itself is pinned in
+       HorseRunItTwiceRates.test.ts; what matters here is only that BOTH
+       branches are still reachable. */
+    expect(SRC).toContain(
+      "return (h + this.handCount * 7) % 100 < 100 - wantMulti ? 'once' : 'multi';"
+    );
   });
 
   it('the chooser can pick one board', () => {
-    expect(SRC).toContain("this.horseRitVerdict(chooserPlayerId) === 'once'");
+    expect(SRC).toContain("this.horseRitVerdict(chooserPlayerId, 'chooser') === 'once'");
     expect(SRC).toContain('? (1 as const)');
   });
 
   it('the responder can decline', () => {
     expect(SRC).toContain(
-      "const answer = this.horseRitVerdict(pid) === 'once' ? 'decline' : 'accept';"
+      "const answer = this.horseRitVerdict(pid, 'responder') === 'once' ? 'decline' : 'accept';"
     );
     expect(SRC).toContain('this.respondToRIT(pid, answer);');
     // The old constant must be gone. A bare accept here is the regression.

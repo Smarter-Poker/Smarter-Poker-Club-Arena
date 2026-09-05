@@ -369,16 +369,104 @@ export function resolveHorseStyle(
 
   let style = styleName ? legacyMap[styleName] : undefined;
   if (!style) {
-    // Deterministic per-horse fallback: hash the id onto the 5 styles so the
-    // fleet is diverse even when horse_profile is {} for every row.
-    let h = 0;
-    for (let i = 0; i < horseId.length; i++) {
-      h = (h * 31 + horseId.charCodeAt(i)) >>> 0;
-    }
-    const styles: HorseStyle[] = ['tag', 'lag', 'balanced', 'tricky', 'grinder'];
-    style = styles[h % styles.length];
+    /* ── THE PERSONA DECIDES, AND ONLY THEN THE HASH (2026-09-05) ────────
+       This was a bare `styles[hash % 5]` - the fleet was diverse, and nobody
+       had CHOSEN anything. Every horse also carries a lifestyle persona from
+       the tagger (grinder / regular / mixer / night_owl / weekend_heavy), and
+       `HorseDataLedger` claimed the decision was "base style x profile dials
+       x variant overlay x persona" while `persona` had ZERO occurrences
+       anywhere in server/src/engine. The comment was aspirational; the hash
+       was what actually ran.
+
+       A persona is not a poker style, and pretending one maps cleanly onto
+       the other would be inventing meaning. What it legitimately carries is
+       how the horse APPROACHES the game, and that does correlate with style
+       in a way anybody who has sat in a card room recognises: someone who
+       plays four tables for ten hours grinds; someone who dips in for an hour
+       on a Saturday gambles more. So the persona names a WEIGHTED PREFERENCE
+       over the same five styles rather than picking one, and the id hash then
+       chooses inside that preference - which keeps the assignment
+       deterministic and keeps every style represented in every persona.
+
+       The fleet stays diverse. What changes is that the diversity now means
+       something, and the ledger's sentence becomes true. */
+    style = styleForPersona(personaOf(profile), horseId);
   }
   return { style, mods };
+}
+
+/**
+ * The lifestyle persona a horse was tagged with, if the profile carries one.
+ *
+ * `horse_profile` is written by HorseOnboarding and the self-tuner; the
+ * persona is written by the Stable Hand tagger into
+ * `stable_hand_membership_tags` and mirrored here when it is known. Absent is
+ * the ordinary case for an untagged horse and reads as `null`.
+ */
+export function personaOf(profile: unknown): CashPersonaName | null {
+  if (!profile || typeof profile !== 'object') return null;
+  const obj = profile as Record<string, unknown>;
+  const raw = obj.persona ?? obj.persona_cash ?? obj.personaCash;
+  const name = typeof raw === 'string' ? raw.toLowerCase() : '';
+  return (PERSONA_STYLE_WEIGHTS as Record<string, unknown>)[name]
+    ? (name as CashPersonaName)
+    : null;
+}
+
+export type CashPersonaName = 'grinder' | 'regular' | 'mixer' | 'night_owl' | 'weekend_heavy';
+
+/**
+ * How each persona leans across the five poker styles.
+ *
+ * Every persona can be any style - these are weights, not assignments, and
+ * none is zero. A grinder is most often a grinder or a TAG and occasionally a
+ * LAG, because grinders are people and some of them are aggressive; a mixer
+ * leans loose because someone playing one table for fun is not there to fold.
+ *
+ * THE COLUMNS SUM TO ROUGHLY THE OLD UNIFORM FLEET, deliberately: the point
+ * is to make the assignment meaningful, not to quietly re-weight the whole
+ * fleet toward tight play and call it a bug fix. `theStyleIsChosen.test.ts`
+ * pins the resulting fleet-wide distribution inside a band of the uniform 20%.
+ */
+export const PERSONA_STYLE_WEIGHTS: Record<CashPersonaName, Record<HorseStyle, number>> = {
+  //              tag  lag  balanced tricky grinder
+  grinder: { tag: 3, lag: 1, balanced: 2, tricky: 1, grinder: 4 },
+  regular: { tag: 3, lag: 2, balanced: 3, tricky: 2, grinder: 2 },
+  mixer: { tag: 1, lag: 4, balanced: 2, tricky: 3, grinder: 1 },
+  night_owl: { tag: 2, lag: 3, balanced: 2, tricky: 3, grinder: 1 },
+  weekend_heavy: { tag: 2, lag: 3, balanced: 3, tricky: 2, grinder: 1 },
+};
+
+/** The uniform fallback, for a horse with no persona at all. */
+const NO_PERSONA_WEIGHTS: Record<HorseStyle, number> = {
+  tag: 1,
+  lag: 1,
+  balanced: 1,
+  tricky: 1,
+  grinder: 1,
+};
+
+/**
+ * Pick a style for this horse from its persona's weights, deterministically.
+ *
+ * The same horse always gets the same style, with or without a persona - the
+ * hash is the same one the old fallback used, so a horse whose persona is
+ * unknown lands exactly where it always did.
+ */
+export function styleForPersona(persona: CashPersonaName | null, horseId: string): HorseStyle {
+  const weights = persona ? PERSONA_STYLE_WEIGHTS[persona] : NO_PERSONA_WEIGHTS;
+  let h = 0;
+  for (let i = 0; i < horseId.length; i++) {
+    h = (h * 31 + horseId.charCodeAt(i)) >>> 0;
+  }
+  const order: HorseStyle[] = ['tag', 'lag', 'balanced', 'tricky', 'grinder'];
+  const total = order.reduce((sum, k) => sum + weights[k], 0);
+  let pick = h % total;
+  for (const k of order) {
+    pick -= weights[k];
+    if (pick < 0) return k;
+  }
+  return 'balanced';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -781,7 +869,11 @@ function isTournamentMode(gs: HorseGameStateV2): boolean {
  */
 /** PROOF OF RECEIPT: which path the last icmRisk call took. Module-level is
  *  safe for the same reason difficultyHint is: decisions are synchronous. */
-let lastIcmPath: 'real' | 'legacy' | 'spin_cev' | 'warming' | 'none' = 'none';
+/* `table_relative` added 2026-09-05: the cold-cache path now reads the horse's
+   own table instead of two constants. It is reported separately from
+   `warming` so the audit can tell "the cache has not answered yet" from "the
+   cache has not answered yet AND we had nothing to reason from". */
+let lastIcmPath: 'real' | 'legacy' | 'table_relative' | 'spin_cev' | 'warming' | 'none' = 'none';
 
 /**
  * ═══ V23 TOURNAMENT ENDGAME (2026-08-28) ═══ adjustments the MH bubble
@@ -1107,7 +1199,51 @@ function icmRisk(
     }
   }
 
+  /* ── THE COLD-CACHE FALLBACK READS THE TABLE (2026-09-05) ─────────────
+     This was two constants: `stackBB < 40 ? 0.04 : 0.02`. It is reached far
+     more often than it looks, because `TournamentBrainContext` is a 20-second
+     cache refreshed asynchronously and `ServerTableEngineTurns` returns
+     `{ format, tournament: {} }` on a miss - an EMPTY object still satisfies
+     `isTournamentMode`, so the first ~20 seconds of every tournament table,
+     and every failed or slow refresh after that, decided ICM pressure from a
+     number that knew nothing at all.
+
+     The horse cannot see the tournament from here, but it can always see ITS
+     OWN TABLE, and at a redraw-balanced table that is a real sample of the
+     field. Stack relative to the table average is the same signal the explicit
+     model uses `avgStackChips` for, and it is available with no cache, no
+     network and no database.
+
+     It stays deliberately modest - the band is 0.015 to 0.055, barely wider
+     than the two constants it replaces - because this is a stand-in for the
+     real model and must never out-shout it. The moment the cache warms,
+     `explicit` takes over below and this line is irrelevant. */
   let risk = stackBB < 40 ? 0.04 : 0.02;
+  /* SCOPED TO A REAL COLD CACHE, not to every path that reaches here.
+     `ServerTableEngineTurns` returns `tournament: {}` on a cache miss - an
+     EMPTY OBJECT, which is truthy - so `explicit` being present is exactly
+     "the engine says this is a tournament and the context has not arrived".
+     `explicit` ABSENT means nobody said tournament at all and we are here via
+     the legacy `bb >= 10` self-detection, which fires on synthetic states and
+     on nothing the live engine produces (it always passes gameMode). Reading
+     a table-relative ICM premium into those is inventing a tournament, so
+     they keep the old constants. */
+  if (explicit) {
+    const live = (gs.players ?? []).filter((p) => !p.is_sitting_out);
+    const chips = live.map((p) => (Number(p.stack) || 0) + (Number(p.bet) || 0));
+    const total = chips.reduce((a, b) => a + b, 0);
+    if (live.length >= 3 && total > 0) {
+      const avg = total / live.length;
+      const hero = gs.bigBlind > 0 ? stackBB * gs.bigBlind : 0;
+      if (avg > 0 && hero > 0) {
+        /* Short of average: more to lose by busting, so survival is worth
+           more. Deep: chips are worth closer to face value. */
+        const rel = Math.max(0.25, Math.min(3, hero / avg));
+        risk = rel <= 1 ? 0.055 - 0.02 * rel : Math.max(0.015, 0.035 - 0.01 * (rel - 1));
+        lastIcmPath = 'table_relative';
+      }
+    }
+  }
   if (explicit) {
     const pl = explicit.playersLeft ?? 0;
     const paid = explicit.spotsPaid ?? 0;
@@ -1390,6 +1526,8 @@ export interface HorseDecideOpts {
   /** V41 SESSION AWARENESS. DEFAULT OFF - a strategy change waits for a
    *  league matchup. The telemetry beside it fires regardless. */
   v41Session?: boolean;
+  /** V42 THE TABLE READ. DEFAULT OFF, same contract as V41. */
+  v42Table?: boolean;
   /** V40 (Dan 2026-09-04): Omaha is not hold'em. Aggressors are sampled
    *  toward a made category that scales with their line (a pot-sized third
    *  barrel is a boat, not "something that connects"), pair/two-pair/trips
@@ -2696,6 +2834,37 @@ export class HorseLogic {
           if (oppReads && oppReads.some((r) => r?.bigBet)) noteFire('v16_sizecond_bigbet');
         }
         exploit = HorseMind.tableExploit(player.seat, gs.players, useCounterAdapt);
+        /* ── V42 THE TABLE READ (2026-09-05) ────────────────────────────
+           `tableExploit` above pools per-VILLAIN mods, which are each
+           relative to that player's own baseline - so it cannot express "this
+           whole game is loose". Five opponents at 22% VPIP and five at 45%
+           pool to very different games and a horse should play them
+           differently.
+
+           Three sampled seats is the gate. Below it the profile is neutral
+           and this does nothing, which is the correct answer at a table of
+           strangers: it is what a human sitting down knows about it.
+
+           BEHAVIOUR IS DEFAULT OFF (`v42Table`) - it is a strategy change and
+           this house makes those earn a league run. The RECEIPT fires either
+           way, because a receipt behind a default-off flag proves nothing and
+           proving the read is real is the entire point. */
+        const tableRead = HorseMind.tableProfile(player.seat, gs.players);
+        if (tableRead.sample >= 3) {
+          if (tele15) noteFire('v42_table_read');
+          if (opts.v42Table === true) {
+            /* Loose game: more hands see flops, so value is thinner and
+               bluffs get looked up. Tight game: the reverse. Bounded to
+               +/-12%, which is smaller than the mood swing already applied
+               to the same dial. */
+            const loose = (tableRead.looseness - 0.5) * 2; // -1..1
+            exploit = {
+              bluffMod: exploit.bluffMod * (1 - 0.12 * loose),
+              callDownMod: exploit.callDownMod * (1 + 0.12 * loose),
+              valueThinMod: exploit.valueThinMod * (1 + 0.12 * loose),
+            };
+          }
+        }
         const tex = HorseMind.texture(gs.communityCards);
         wetness = tex.wetness;
         blocker = HorseMind.hasBlocker(player.cards, gs.communityCards);

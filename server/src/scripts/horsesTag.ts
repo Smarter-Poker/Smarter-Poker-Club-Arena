@@ -11,7 +11,10 @@
  * Math.random anywhere in this path.
  *
  * THIS SCRIPT MOVES NO MONEY. It reads `club_members` for identity only and
- * writes exclusively to the two stable_hand_* tables. Section 8.1 seeding is
+ * writes to the two stable_hand_* tables plus ONE key of
+ * `profiles.horse_profile` - the persona mirror, added 2026-09-05, which is
+ * how a persona reaches the engine at all (see the block that writes it).
+ * That merge preserves every other key in the profile. Section 8.1 seeding is
  * retired (Dan 2026-09-04: use current balances), so there is no funding
  * branch to get wrong.
  */
@@ -227,6 +230,70 @@ export async function runTagger(opts: { force: boolean; dryRun: boolean; clubs: 
       .from('stable_hand_horse_state')
       .upsert(chunk, { onConflict: 'horse_id', ignoreDuplicates: !opts.force });
     if (error) throw new Error(`state upsert failed: ${error.message}`);
+  }
+
+  /* ── THE PERSONA HAS TO REACH THE FELT (2026-09-05) ──────────────────
+     The engine decides from `profiles.horse_profile`, which it loads with the
+     seat. The persona lives in `stable_hand_membership_tags`, which the engine
+     never reads and must not read - `HorseDataLedger` forbids a database call
+     at decision time, and rightly, because the decision runs inside the turn
+     timer.
+
+     So a horse's persona had ZERO occurrences anywhere in server/src/engine
+     while `HorseDataLedger` described the decision as "base style x profile
+     dials x variant overlay x persona". The sentence was aspirational and the
+     brain fell back to `styles[hash % 5]` - the fleet was diverse and nobody
+     had chosen anything.
+
+     Mirroring it into `horse_profile` here is the bridge, and it belongs here
+     because this is the only process that knows the persona. It is a MERGE,
+     not a write: every other key in `horse_profile` - the self-tuner's dials,
+     the nightly leak counts, an explicitly chosen style - is preserved, and a
+     horse whose style was set deliberately keeps it, because `resolveHorseStyle`
+     consults the persona only when no style is named.
+
+     One row per BODY, not per membership: a horse's personality does not
+     change with the wallet that pays for the seat. Where the two tags
+     disagree the cash-lane one wins, and a tourney-only horse contributes
+     nothing. */
+  const personaByBody = new Map<string, string>();
+  for (const r of tagRows) {
+    const persona = r.persona_cash as string | null;
+    if (persona && !personaByBody.has(r.horse_id as string)) {
+      personaByBody.set(r.horse_id as string, persona);
+    }
+  }
+  if (personaByBody.size > 0) {
+    const ids = [...personaByBody.keys()];
+    let mirrored = 0;
+    for (let i = 0; i < ids.length; i += 200) {
+      const chunk = ids.slice(i, i + 200);
+      const { data: rows, error: readErr } = await supabase
+        .from('profiles')
+        .select('id, horse_profile')
+        .in('id', chunk);
+      if (readErr) throw new Error(`persona mirror read failed: ${readErr.message}`);
+      for (const row of rows ?? []) {
+        const id = String((row as { id: string }).id);
+        const existing = ((row as { horse_profile?: unknown }).horse_profile ?? {}) as Record<
+          string,
+          unknown
+        >;
+        const persona = personaByBody.get(id);
+        if (!persona || typeof existing !== 'object') continue;
+        if (existing.persona === persona) continue; // already correct
+        const { error: writeErr } = await supabase
+          .from('profiles')
+          .update({ horse_profile: { ...existing, persona } })
+          .eq('id', id);
+        if (writeErr) throw new Error(`persona mirror write failed: ${writeErr.message}`);
+        mirrored++;
+      }
+    }
+    console.log(
+      `[stable-hand:tag] mirrored persona onto ${mirrored} horse_profile row(s) ` +
+        `(${personaByBody.size} bodies carry one)`
+    );
   }
 
   /* SAY SO IF IT DID NOT ALL LAND. Every write above throws on an error it

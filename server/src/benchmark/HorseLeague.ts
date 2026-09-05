@@ -675,7 +675,20 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // shape hu_mind_layer uses.
   { name: 'v29_gto_flop', seats: 2, pairs: 6000, a: {}, b: { v29GtoFlop: false } },
   { name: 'v30_gto_turn_river', seats: 2, pairs: 6000, a: {}, b: { v30GtoTurnRiver: false } },
-  { name: 'v31_gto_suit_aware', seats: 2, pairs: 6000, a: {}, b: { v31GtoSuitAware: false } },
+  /*
+   * v31_gto_suit_aware is NOT on the card. Measured 2026-09-01: it returned
+   * 0.00 bb100 with 0.00 stderr over 12,000 hands, which is not "no edge" -
+   * an exact zero with zero variance means the flag changed no decision at
+   * all. Live telemetry says why: v31_gto_open fired 195 times against
+   * 924,871 decides on the same day, so at 6,000 pairs the matchup expects
+   * roughly TWO firings, and observing zero difference is the likely
+   * outcome rather than a surprising one. The league cannot resolve a layer
+   * this rare at any sample size it can afford, and a matchup that always
+   * reports 0.00 +/- 0.00 spends 12,000 hands teaching us nothing while the
+   * card is only completing one matchup a night. Ablate it deliberately with
+   * a temporary pairs bump if it ever needs a verdict.
+   */
+  // { name: 'v31_gto_suit_aware', seats: 2, pairs: 6000, a: {}, b: { v31GtoSuitAware: false } },
   { name: 'v32_facing_defense', seats: 2, pairs: 6000, a: {}, b: { v32FacingDefense: false } },
   // The depth ceiling only changes a decision ABOVE it, so dealing this at
   // the standard 100bb would measure exactly nothing and report 0.00 +/- 0.00
@@ -690,7 +703,28 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
     b: { v33DepthCeiling: false },
   },
   { name: 'v18_self_image', pairs: 6000, a: {}, b: { v18SelfImage: false } },
-  { name: 'v18_exploit_size', pairs: 6000, a: {}, b: { v18ExploitSize: false } },
+  /*
+   * v18_exploit_size is NOT on the card, and this one is impossible by
+   * CONSTRUCTION rather than merely underpowered - it reported 0.00 +/- 0.00
+   * on 2026-09-01 and 2026-08-31 both.
+   *
+   * The layer multiplies its river raise by (exploit.valueThinMod - 1), and
+   * only counts a firing when abs(valueThinMod - 1) > 0.03. HorseMind.exploit
+   * moves valueThinMod off 1 ONLY when the opponent's fold-vs-aggression rate
+   * leaves the middle band - above 0.62 (a folder) or below 0.35 (a station).
+   * A league matchup is a MIRROR: both arms are the same brain, differing
+   * only in the flag under test, so each arm's opponent folds at the brain's
+   * own middling rate and valueThinMod stays exactly 1. The multiplier is
+   * then exactly 1, the telemetry gate never opens, and the two arms play
+   * byte-identical poker. 0.00 +/- 0.00 is the correct answer to the question
+   * this matchup was asking; the question was just unanswerable.
+   *
+   * Measuring it needs an exploitable opponent, which self-play cannot
+   * produce. It is pinned deterministically instead, where the effect is
+   * exact and costs no hands at all:
+   * server/src/engine/V18ExploitSizingIsMeasurable.test.ts
+   */
+  // { name: 'v18_exploit_size', pairs: 6000, a: {}, b: { v18ExploitSize: false } },
   // 2026-08-27: the bet-ratio scale repair. There is no "off" for a fixed
   // arithmetic bug, so this measures the sizing-read layer as a whole
   // against playing without size reads at all - if the repair helps, this
@@ -825,6 +859,31 @@ const LEAGUE_BOOT_DELAY_MS = 90 * 1000;
 const PAIRS_PER_MATCHUP = 4000;
 /** Wall-clock ceiling for a whole run. See the note in runLeague. */
 const MAX_RUN_MS = 90 * 60 * 1000;
+/**
+ * Milliseconds left in the run window that `date`'s attempt belongs to.
+ *
+ * 2026-09-04: a partial card is resumable again (see alreadyRanToday), so the
+ * per-ATTEMPT budget is no longer the only thing bounding a night. Each new
+ * attempt would otherwise start a fresh 90 minutes, and with an engine that
+ * restarts hourly that is an unbounded amount of league work on a host whose
+ * event loop is the reason a matchup is slow in the first place. Clipping to
+ * the window makes the night's total cost the window itself, which is what a
+ * window is for.
+ */
+export function msLeftInRunWindow(now: Date = new Date()): number {
+  const hour = now.getUTCHours();
+  const startHour =
+    hour >= LEAGUE_PM_HOUR_UTC && hour < LEAGUE_PM_HOUR_UTC + LEAGUE_CATCHUP_HOURS
+      ? LEAGUE_PM_HOUR_UTC
+      : LEAGUE_HOUR_UTC;
+  const end = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+    startHour + LEAGUE_CATCHUP_HOURS
+  );
+  return Math.max(0, end - now.getTime());
+}
 
 let leagueTimer: NodeJS.Timeout | null = null;
 let lastLeagueDate: string | null = null;
@@ -924,10 +983,53 @@ const CLAIM_EVIDENCE: Record<string, { table: string; column: string; dateColumn
   self_tuner: { table: 'horse_self_tune_log', column: 'id', dateColumn: 'run_date' },
 };
 
+/**
+ * Jobs whose output row is PARTIAL progress rather than proof of completion.
+ *
+ * ── 2026-09-04, found by the daily audit three days running ──
+ * For `daily_audit` and `self_tuner` one row IS the night's whole output, so
+ * "a row exists" correctly means "this claim delivered". A league row is ONE
+ * MATCHUP out of 38. Treating it as delivery meant that the moment the first
+ * matchup landed, the claim became permanently untakeable and the night was
+ * over - which stopped mattering only in theory until the hourly maintenance
+ * break landed on 2026-09-01 and started killing the engine at :55 of every
+ * hour. A run that opens at 04:04 now has 51 minutes against a 90-minute
+ * budget, so it is ALWAYS killed mid-card, and every night since has recorded
+ * exactly one matchup, a stale card and a `nightly_job_lost` finding.
+ *
+ * For these jobs the honest question is not "did anything land" but "is this
+ * claim still producing". A live run writes a matchup every 9-22 minutes; a
+ * corpse writes nothing. So freshness, not existence, is the evidence - which
+ * keeps the anti-duplicate protection the existence check was really giving
+ * us (two league runs at once would double the load on an engine that is
+ * already the reason a matchup takes 22 minutes).
+ */
+const CLAIM_EVIDENCE_IS_PARTIAL: Record<string, { timeColumn: string }> = {
+  league: { timeColumn: 'created_at' },
+  league_pm: { timeColumn: 'created_at' },
+};
+
 /** Rows already written for this job+date - the proof a claim did work. */
 async function claimProducedRows(job: string, date: string): Promise<boolean | null> {
   const evidence = CLAIM_EVIDENCE[job];
   if (evidence === undefined) return null;
+  const partial = CLAIM_EVIDENCE_IS_PARTIAL[job];
+  if (partial !== undefined) {
+    // Still producing? Only the NEWEST row can answer that.
+    const { data, error } = await supabase
+      .from(evidence.table)
+      .select(partial.timeColumn)
+      .eq(evidence.dateColumn, date)
+      .order(partial.timeColumn, { ascending: false })
+      .limit(1);
+    if (error) throw new Error(error.message);
+    const rows = data as unknown as Array<Record<string, string>> | null;
+    const newest = rows?.[0]?.[partial.timeColumn];
+    if (newest === undefined) return false; // nothing at all - a plain corpse
+    const ageMs = Date.now() - Date.parse(newest);
+    if (!isFinite(ageMs)) return true; // unreadable stamp - do not take it over
+    return ageMs < CLAIM_STALE_MS; // fresh row = alive; stale row = abandoned
+  }
   const { data, error } = await supabase
     .from(evidence.table)
     .select(evidence.column)
@@ -998,15 +1100,29 @@ async function alreadyRanToday(date: string): Promise<boolean> {
       .from('horse_league_results')
       .select('matchup')
       .eq('run_date', date)
-      .limit(LEAGUE_MATCHUPS.length);
+      .limit(LEAGUE_MATCHUPS.length * 2);
     if (error) throw new Error(error.message);
-    // A partial run (fewer rows than matchups) SHOULD be resumed, so only a
-    // complete card counts as done.
-    // 2026-08-27: with a rotating card the budget legitimately leaves the
-    // tail unrun, so "complete" can no longer mean every matchup. A run
-    // counts as done for the day once ANY rows exist for it - the rotation,
-    // not a same-night retry, is what covers the rest.
-    return (data?.length ?? 0) > 0;
+    /*
+     * ── 2026-09-04: "any rows = done" is retired, and this comment with it ──
+     *
+     * The 2026-08-27 note below was right for the platform it was written on.
+     * It said: with a rotating card the budget legitimately leaves the tail
+     * unrun, so a run counts as done once ANY rows exist, and the ROTATION
+     * (not a same-night retry) covers the rest. That reasoning depends on a
+     * run getting its full 90-minute budget, which stopped being true on
+     * 2026-09-01 when the engine began restarting at :55 of every hour. The
+     * 04:00 window now yields at most 51 minutes before the process dies, and
+     * this line then told the replacement the night was finished. Measured
+     * result: 2026-09-02 and 2026-09-03 each recorded ONE matchup, the card
+     * went stale, and the audit raised `nightly_job_lost` for 'league' both
+     * days. Rotation cannot cover a tail when every night is one matchup long.
+     *
+     * So a partial card is resumable again. Runaway work is bounded by the
+     * WINDOW rather than by this flag - see the budget clip in runLeague,
+     * which stops a resumed attempt at the window edge.
+     */
+    const distinct = new Set((data ?? []).map((r) => (r as { matchup: string }).matchup));
+    return distinct.size >= LEAGUE_MATCHUPS.length;
   } catch (err) {
     // Never let a failed lookup silently skip the night; the upsert on
     // (run_date, matchup) makes a duplicate run harmless.
@@ -1071,8 +1187,16 @@ async function maybeRunLeague(): Promise<void> {
       );
       return;
     }
-    lastLeagueDate = today;
+    /*
+     * 2026-09-04: latch only when the day is genuinely FINISHED. This used to
+     * be set before the run, which is the same defect PR #2628 fixed in
+     * HorseDailyAudit and HorseSelfTuner: a run that dies leaves the flag
+     * saying the day is settled, so no later tick inside the window can
+     * resume it. With a partial card now resumable, latching here would undo
+     * the entire fix above.
+     */
     await runLeague(today);
+    if (await alreadyRanToday(today)) lastLeagueDate = today;
     return;
   }
 
@@ -1090,8 +1214,17 @@ async function maybeRunLeague(): Promise<void> {
       );
       return;
     }
-    lastLeaguePmDate = today;
-    await runLeague(today);
+    /*
+     * 2026-09-04: latch AFTER the run, not before it - the same defect PR
+     * #2628 fixed in HorseDailyAudit and HorseSelfTuner. It is deliberately
+     * NOT gated on alreadyRanToday: LeaguePmAndStraddle.test.ts pins that the
+     * PM window never consults it, because the night run's rows exist by
+     * design and the claim is the dedup here. Reaching this line at all means
+     * runLeague returned rather than dying mid-card, and rows mean it did
+     * real work; a run that produced nothing leaves the day open to retry.
+     */
+    const pmResults = await runLeague(today);
+    if (pmResults.length > 0) lastLeaguePmDate = today;
   }
 }
 
@@ -1117,6 +1250,8 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
   const date = runDate ?? new Date().toISOString().slice(0, 10);
   const results: LeagueResult[] = [];
   const startedAt = Date.now();
+  // Whichever runs out first: this attempt's own budget, or the window.
+  const runBudgetMs = Math.min(MAX_RUN_MS, msLeftInRunWindow());
   // V13: SAY THAT IT STARTED. Rows are only written as each matchup finishes,
   // and a matchup yields the event loop every 16 hands on a host that is also
   // dealing live poker — so a run in progress and a run that never began were
@@ -1162,7 +1297,8 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
   }
   console.log(
     `[HorseLeague] run ${date} starting: ${card.length} matchups x ` +
-      `${PAIRS_PER_MATCHUP} pairs (budget ${Math.round(MAX_RUN_MS / 60000)} min), ` +
+      `${PAIRS_PER_MATCHUP} pairs (budget ${Math.round(runBudgetMs / 60000)} min ` +
+      `of a possible ${Math.round(MAX_RUN_MS / 60000)}, clipped to the window), ` +
       `rotation offset ${rotateBy} -> first up ${card[0]?.name}`
   );
   try {
@@ -1173,9 +1309,9 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
       // not on its own CPU cost — an unbounded run could still be going when
       // the next night's window opens. Stop cleanly and keep what completed;
       // partial results are still valid measurements.
-      if (Date.now() - startedAt > MAX_RUN_MS) {
+      if (Date.now() - startedAt > runBudgetMs) {
         console.warn(
-          `[HorseLeague] run ${date} hit its ${Math.round(MAX_RUN_MS / 60000)}-minute budget ` +
+          `[HorseLeague] run ${date} hit its ${Math.round(runBudgetMs / 60000)}-minute budget ` +
             `after ${results.length}/${card.length} matchups - stopping cleanly. ` +
             `Unrun tonight: ${card
               .slice(results.length)

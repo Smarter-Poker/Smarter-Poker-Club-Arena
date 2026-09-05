@@ -278,6 +278,20 @@ export interface ReplayStreet {
   /** Pot after every action on this street. */
   potAfter: number;
   rows: ReplayRow[];
+  /**
+   * PHASE 2 (2026-09-05). Who was still in the hand when this street began
+   * (nobody who had folded on an earlier street), in seat order. The equity
+   * pricing prices a street only when every one of these has known cards.
+   */
+  contenders: string[];
+  /**
+   * The made hand, on THIS street's board, for every contender whose cards the
+   * record shows this viewer - a showdown-revealed holding, or the viewer's
+   * own private cards. Empty preflop (nothing to make yet) and for players
+   * whose cards are not known. Named by the same evaluator that names the
+   * showdown, so the two cannot disagree.
+   */
+  madeHands: Array<{ userId: string; name: string }>;
 }
 
 export interface ReplayShowdownRow {
@@ -871,13 +885,35 @@ export function buildReplay(input: ReplayInput): ReplayModel {
     }
   }
 
+  /* Phase 2: who is still in when each street begins, and what each known
+     hand has made on it. Folds are cumulative across streets. */
+  const foldedBefore = new Set<string>();
+  const knownHole = (uid: string): DeckCard[] | null =>
+    holeByUser.get(uid) || privateByUser.get(uid) || null;
   const builtStreets = STREET_ORDER.map((street, i) => {
     const prev = i === 0 ? 0 : STREET_ORDER[i - 1].boardTo;
+    const contenders = players.map((p) => p.userId).filter((uid) => !foldedBefore.has(uid));
+    const streetBoard = board.slice(0, street.boardTo);
+    const madeHands: Array<{ userId: string; name: string }> = [];
+    if (streetBoard.length >= 3) {
+      for (const uid of contenders) {
+        const hole = knownHole(uid);
+        if (!hole) continue;
+        const made = bestFive(hole, streetBoard, input.gameVariant);
+        if (made) madeHands.push({ userId: uid, name: titleCase(made.name) });
+      }
+    }
+    for (const r of rows) {
+      if (r.stage === street.key && (r.verb === 'fold' || r.verb === 'muck') && r.userId)
+        foldedBefore.add(r.userId);
+    }
     return {
       key: street.key,
       label: street.label,
-      board: board.slice(0, street.boardTo),
+      board: streetBoard,
       newCards: board.slice(prev, street.boardTo),
+      contenders,
+      madeHands,
       /**
        * EVERY EXTRA BOARD, sliced to the same street. A run-it-twice hand and a
        * double-board bomb pot both deal a second board street by street, and

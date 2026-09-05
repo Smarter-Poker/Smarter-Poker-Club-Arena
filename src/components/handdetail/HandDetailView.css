@@ -529,3 +529,105 @@
   outline-offset: 1px;
   border-radius: 3px;
 }
+
+/* ── PHASE 2 (2026-09-05): made hands and equity per street, the all-in block ── */
+.hdv__street-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 4px 10px 6px;
+  background: rgba(58, 168, 255, 0.04);
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.hdv__fact {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.hdv__fact.is-you .hdv__fact-name {
+  color: #d6ad52;
+}
+
+.hdv__fact-name {
+  font-weight: 700;
+}
+
+.hdv__fact-hand {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.hdv__fact-eq {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  color: #8ad2ff;
+}
+
+.hdv__fact-note {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.hdv__allin {
+  padding: 8px 10px 10px;
+  border-radius: 8px;
+  background: rgba(214, 173, 82, 0.06);
+  border: 1px solid rgba(214, 173, 82, 0.28);
+}
+
+.hdv__allin-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.hdv__allin-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.hdv__allin-label {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.hdv__allin-value {
+  font-size: 14px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
+.hdv__allin-value.is-up,
+.hdv__allin-luck.is-up {
+  color: #3fb950;
+}
+
+.hdv__allin-value.is-down,
+.hdv__allin-luck.is-down {
+  color: #ff6b6b;
+}
+
+.hdv__allin-luck {
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+@media (max-width: 380px) {
+  .hdv__allin-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

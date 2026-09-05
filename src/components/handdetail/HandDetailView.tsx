@@ -35,9 +35,12 @@
  * wrong — the same rule the running-pot column already followed.
  */
 
+import { useMemo } from 'react';
 import CardImage, { CardBack } from '../table/CardImage';
 import { cardKey } from '../../utils/handEvaluator';
 import type { ReplayModel, ReplayRow, ReplayShowdownRow } from '../../utils/handReplay';
+import type { HeroHandFacts } from '../../services/HandHistoryService';
+import { computeEquity, type EquityResult } from '../../utils/equity';
 import './HandDetailView.css';
 import { blindLabel, money, stamp } from '../../utils/handFormat';
 
@@ -56,6 +59,121 @@ export interface HandDetailViewProps {
    * for this from the start and had no writer.
    */
   badBeatUserId?: string | null;
+  /**
+   * PHASE 2 (2026-09-05): the viewer's own all-in equity and EV facts for this
+   * hand (`ca_hand_facts`, RLS-scoped to the viewer). Renders the "All-In"
+   * block when the hand had one; nothing otherwise.
+   */
+  viewerFacts?: HeroHandFacts | null;
+}
+
+const STREET_WORD: Record<string, string> = {
+  preflop: 'Preflop',
+  flop: 'On The Flop',
+  turn: 'On The Turn',
+  river: 'On The River',
+};
+
+/**
+ * The engine's own all-in equity and what it said the hand was worth, beside
+ * what actually happened. `all_in_equity` is a fraction; every chip figure is
+ * money. Nothing here is computed on the client; it is the record.
+ */
+function AllInFacts({ facts }: { facts: HeroHandFacts }) {
+  if (!facts.was_all_in || facts.all_in_equity === null) return null;
+  const pct = Math.round(facts.all_in_equity * 1000) / 10;
+  const luck = facts.ev_returned === null ? null : money(facts.net - facts.ev_net);
+  const above = facts.net - facts.ev_net;
+  return (
+    <section className="hdv__allin" aria-label="All In">
+      <header className="hdv__section-head">
+        All In {STREET_WORD[facts.all_in_street || ''] || ''}
+      </header>
+      <div className="hdv__allin-grid">
+        <div className="hdv__allin-cell">
+          <span className="hdv__allin-label">Your Equity</span>
+          <span className="hdv__allin-value">{pct}%</span>
+        </div>
+        {facts.all_in_at_risk !== null && (
+          <div className="hdv__allin-cell">
+            <span className="hdv__allin-label">At Risk</span>
+            <span className="hdv__allin-value">{money(facts.all_in_at_risk)}</span>
+          </div>
+        )}
+        {facts.ev_returned !== null && (
+          <div className="hdv__allin-cell">
+            <span className="hdv__allin-label">Expected Back</span>
+            <span className="hdv__allin-value">{money(facts.ev_returned)}</span>
+          </div>
+        )}
+        <div className="hdv__allin-cell">
+          <span className="hdv__allin-label">Got Back</span>
+          <span className="hdv__allin-value">{money(facts.returned)}</span>
+        </div>
+        <div className="hdv__allin-cell">
+          <span className="hdv__allin-label">Expected Net</span>
+          <span className={`hdv__allin-value${facts.ev_net >= 0 ? ' is-up' : ' is-down'}`}>
+            {facts.ev_net >= 0 ? '+' : '-'}
+            {money(Math.abs(facts.ev_net))}
+          </span>
+        </div>
+        <div className="hdv__allin-cell">
+          <span className="hdv__allin-label">Actual Net</span>
+          <span className={`hdv__allin-value${facts.net >= 0 ? ' is-up' : ' is-down'}`}>
+            {facts.net >= 0 ? '+' : '-'}
+            {money(Math.abs(facts.net))}
+          </span>
+        </div>
+      </div>
+      {luck !== null && (
+        <div className={`hdv__allin-luck${above >= 0 ? ' is-up' : ' is-down'}`}>
+          {above >= 0 ? 'Ran Above Expectation By ' : 'Ran Below Expectation By '}
+          {money(Math.abs(above))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Per-street equity, priced only where every contender's cards are known.
+ * Exact where the runout can be enumerated; sampled preflop and marked so.
+ */
+function useStreetEquities(model: ReplayModel): Map<string, EquityResult> {
+  return useMemo(() => {
+    const out = new Map<string, EquityResult>();
+    const holeOf = new Map<string, ReplayModel['players'][number]['hole']>();
+    for (const p of model.players) holeOf.set(p.userId, p.hole || p.privateHole || null);
+    for (const street of model.streets) {
+      if (street.key === 'showdown' || street.key === 'pineapple_discard') continue;
+      if (street.contenders.length < 2) continue;
+      const players: Array<{
+        userId: string;
+        hole: NonNullable<ReplayModel['players'][number]['hole']>;
+      }> = [];
+      let allKnown = true;
+      for (const uid of street.contenders) {
+        const hole = holeOf.get(uid);
+        if (!hole || hole.length < 2) {
+          allKnown = false;
+          break;
+        }
+        players.push({ userId: uid, hole });
+      }
+      if (!allKnown) continue;
+      /* Omaha evaluates 60 five-card hands per holding per runout; a sampled
+         preflop there is capped lower so an expanded row cannot stall a phone. */
+      const omaha = /plo|flo|omaha/i.test(String(model.gameVariant || ''));
+      const r = computeEquity({
+        players,
+        board: street.board,
+        variant: model.gameVariant,
+        samples: omaha ? 600 : 1500,
+      });
+      if (r) out.set(street.key, r);
+    }
+    return out;
+  }, [model]);
 }
 
 /** How many face-down cards a muck shows — the variant's own holding size. */
@@ -208,7 +326,10 @@ export function HandDetailView({
   footer,
   badge,
   badBeatUserId,
+  viewerFacts,
 }: HandDetailViewProps) {
+  const equities = useStreetEquities(model);
+  const nameOf = (uid: string) => model.players.find((p) => p.userId === uid)?.username || 'Player';
   // Id first: two players can share a display name, and lighting the wrong row
   // on a money surface is not a cosmetic mistake.
   const isYou = (userId: string, name: string) => {
@@ -270,6 +391,50 @@ export function HandDetailView({
             ) : null
           )}
 
+          {/* PHASE 2: what each known hand had made on this street, and - when
+              every player still in had known cards - each one's chance to win
+              from here. Exact where the runout was enumerated; a sampled
+              preflop figure carries a tilde. */}
+          {street.key !== 'showdown' &&
+            (street.madeHands.length > 0 || equities.has(street.key)) && (
+              <div className="hdv__street-facts">
+                {street.madeHands.map((m) => {
+                  const eq = equities.get(street.key)?.equities.find((e) => e.userId === m.userId);
+                  return (
+                    <span
+                      key={`mh-${street.key}-${m.userId}`}
+                      className={`hdv__fact${isYou(m.userId, nameOf(m.userId)) ? ' is-you' : ''}`}
+                    >
+                      <span className="hdv__fact-name">{nameOf(m.userId)}</span>
+                      <span className="hdv__fact-hand">{m.name}</span>
+                      {eq && (
+                        <span className="hdv__fact-eq">
+                          {equities.get(street.key)?.exact ? '' : '~'}
+                          {eq.pct}%
+                        </span>
+                      )}
+                    </span>
+                  );
+                })}
+                {street.madeHands.length === 0 &&
+                  equities.get(street.key)?.equities.map((e) => (
+                    <span
+                      key={`eq-${street.key}-${e.userId}`}
+                      className={`hdv__fact${isYou(e.userId, nameOf(e.userId)) ? ' is-you' : ''}`}
+                    >
+                      <span className="hdv__fact-name">{nameOf(e.userId)}</span>
+                      <span className="hdv__fact-eq">
+                        {equities.get(street.key)?.exact ? '' : '~'}
+                        {e.pct}%
+                      </span>
+                    </span>
+                  ))}
+                {equities.get(street.key)?.highOnly && (
+                  <span className="hdv__fact-note">High Half</span>
+                )}
+              </div>
+            )}
+
           {street.rows.map((row) => (
             <ActionRow
               key={row.key}
@@ -321,6 +486,8 @@ export function HandDetailView({
           <span className="hdv__drop-note">Taken From The Pot</span>
         </div>
       )}
+
+      {viewerFacts && <AllInFacts facts={viewerFacts} />}
 
       {model.showdown.length > 0 && (
         <section className="hdv__showdown">

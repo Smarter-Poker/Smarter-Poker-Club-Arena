@@ -1880,6 +1880,25 @@ export abstract class TournamentManagerBase {
              carries the draw, so it costs no extra round trip, and
              v_spin_reveal_latency reads it back. */
           spin_reveal_lag_ms: Math.round(this.spinRevealLagMs),
+          /* THE OTHER HALF OF THE LAG NUMBER (Dan 2026-09-05): "THERE IS NO
+             SOUND EFFECT OR COUNT DOWN FOR THE SPIN ANIMATION."
+
+             `spin_reveal_lag_ms` above says HOW LATE the wheel went out; this
+             says WHEN it was anchored, which is the number a client needs to
+             animate it. Without it `buildSpinDrawFromRow` had to key on
+             `started_at`, and the lag beside it measures exactly how wrong
+             that is - a 4.2s p50 against a 1000ms lead-in and a 3000ms
+             countdown, so every client on the DB fallback path skipped both
+             and watched a silent spinner. See the migration
+             20260905065304_the_wheel_is_anchored_to_the_instant_the_engine_chose.
+
+             `spinRevealAt` is already frozen by here: resolveSpinReveal ran in
+             the early-emit block above and set `spinRevealEmitted`, so this is
+             the SAME instant the packet carries and the two can never
+             disagree. Zero means the anchor was never stamped (no seat-first
+             table to emit to); null then, and the client keeps its
+             started_at fallback rather than being handed the epoch. */
+          spin_reveal_at: this.spinRevealAt > 0 ? new Date(this.spinRevealAt).toISOString() : null,
           ...(redrawnLockedTiers ? { spin_locked_tiers: redrawnLockedTiers } : {}),
         };
         let spinRowWritten = false;

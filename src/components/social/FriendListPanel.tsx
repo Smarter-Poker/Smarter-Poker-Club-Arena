@@ -16,6 +16,27 @@ import type { VipTier, PresenceStatus } from '../avatars/PlayerAvatar';
 import styles from './FriendListPanel.module.css';
 import { reportError } from '../../utils/errorReporter';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
+import { resolveVipStatus, type VipColumns } from '../../utils/vipStatus';
+
+/**
+ * The avatar's status ring, from the only VIP truth there is.
+ *
+ * Dan, 2026-09-04: "THERE IS NO SUCH THING AS 'PLATINUM VIP' BTW. JUST VIP,
+ * AND LIFETIME VIP." So this is a two-state fact rendered in the ring
+ * vocabulary `PlayerAvatar.css` already paints - it is NOT a revived ladder,
+ * and nothing here derives a tier from points, level or diamonds.
+ *
+ * Before this, the panel passed `profiles.tier` through an `as VipTier` cast.
+ * That column reads 'Newcomer' on all 1,310 production rows, so every friend
+ * got `tier-Newcomer` - a class with no colour - and no player ever saw a
+ * ring, VIP or not. The cast is what hid it from the compiler.
+ */
+const ringTier = (row: VipColumns | null | undefined): VipTier | undefined => {
+  const status = resolveVipStatus(row);
+  if (status === 'lifetime') return 'diamond';
+  if (status === 'vip') return 'gold';
+  return undefined;
+};
 
 interface Friend {
   id: string;
@@ -122,7 +143,11 @@ function FriendListPanelInner({
         try {
           const { data: profiles } = await supabase
             .from('profiles')
-            .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url, level, tier`)
+            // `tier` is NOT a VIP column - it reads 'Newcomer' on every row.
+            // VIP is the three columns utils/vipStatus resolves. See ringTier.
+            .select(
+              `id, ${PLAYER_NAME_COLUMNS}, avatar_url, level, is_vip, vip_tier, vip_expires_at`
+            )
             .in('id', allFriendIds);
           if (profiles) {
             for (const p of profiles) profileMap[p.id] = p;
@@ -146,7 +171,7 @@ function FriendListPanelInner({
           status: 'offline' as PresenceStatus,
           tableName: undefined,
           level: p?.level || 1,
-          vipTier: (p?.tier as VipTier) || 'bronze',
+          vipTier: ringTier(p),
         };
       });
 
@@ -163,7 +188,7 @@ function FriendListPanelInner({
           status: 'offline' as PresenceStatus,
           tableName: undefined,
           level: p?.level || 1,
-          vipTier: (p?.tier as VipTier) || 'bronze',
+          vipTier: ringTier(p),
         };
       });
 

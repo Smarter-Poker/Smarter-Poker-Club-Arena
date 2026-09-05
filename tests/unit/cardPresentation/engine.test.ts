@@ -14,6 +14,7 @@ import {
   CARD_PRESENTATION_PROFILES,
   MOUNT_WINDOW_MARGIN_MS,
 } from '../../../src/presentation/cardPresentation/profiles';
+import { noopFrameSampler } from '../../../src/presentation/cardPresentation/frameSampler';
 import type {
   CardPresentationTelemetry,
   CommunityCardDealPresentation,
@@ -235,5 +236,135 @@ describe('CardPresentationEngine', () => {
     l.mockClear();
     engine.presentCard(river({ handId: 300 }), focused);
     expect(l).not.toHaveBeenCalled();
+  });
+});
+
+describe('the reveal beat and the frame sampler (ROUND 2)', () => {
+  let now = 0;
+  let events: CardPresentationTelemetry[];
+
+  const build = (over: Record<string, unknown> = {}) =>
+    new CardPresentationEngine({
+      telemetry: (t) => events.push(t),
+      now: () => now,
+      speed: () => 1,
+      frameSampler: noopFrameSampler,
+      frameSampleRate: 0,
+      ...over,
+    });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    now = 0;
+    events = [];
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('notifies `reveal` at the edge-on instant, not at the street', () => {
+    const engine = build();
+    const seen: Array<{ phase: string; at: number }> = [];
+    engine.subscribe((c) => seen.push({ phase: c.phase, at: now }));
+    const p = CARD_PRESENTATION_PROFILES.allIn;
+    const r = engine.presentCard(river(), { ...focused, allIn: true });
+    expect(seen.map((s) => s.phase)).toEqual(['prepare']);
+
+    // Still face down through prepare + hold: no reveal yet.
+    now += p.prepareMs + p.holdMs;
+    vi.advanceTimersByTime(p.prepareMs + p.holdMs);
+    expect(seen.some((s) => s.phase === 'reveal')).toBe(false);
+
+    // The surfaces swap at the END of the squeeze beat.
+    now += p.squeezeMs;
+    vi.advanceTimersByTime(p.squeezeMs);
+    const reveal = seen.find((s) => s.phase === 'reveal');
+    expect(reveal, 'the face appears and says so').toBeTruthy();
+    expect(reveal!.at).toBe(p.prepareMs + p.holdMs + p.squeezeMs);
+    expect(engine.isActive(r.key)).toBe(true);
+    engine.dispose();
+  });
+
+  it('a cancelled presentation never fires its reveal beat', () => {
+    const engine = build();
+    const seen: string[] = [];
+    engine.subscribe((c) => seen.push(c.phase));
+    const r = engine.presentCard(river(), focused);
+    engine.cancel(r.key, 'new-hand');
+    vi.advanceTimersByTime(10_000);
+    expect(seen).toEqual(['prepare', 'cancelled']);
+    engine.dispose();
+  });
+
+  it('samples frames only as often as it is told to', () => {
+    const starts: number[] = [];
+    const sampler = (durationMs: number) => {
+      starts.push(durationMs);
+      return () => {};
+    };
+    const never = build({ frameSampler: sampler, frameSampleRate: 0, random: () => 0.5 });
+    never.presentCard(river(), focused);
+    expect(starts).toHaveLength(0);
+    never.dispose();
+
+    starts.length = 0;
+    const always = build({ frameSampler: sampler, frameSampleRate: 1, random: () => 0 });
+    always.presentCard(river({ handId: 999 }), focused);
+    expect(starts).toHaveLength(1);
+    // it samples the whole visible presentation, not just the flip
+    expect(starts[0]).toBe(CARD_PRESENTATION_PROFILES.cashDesktop.durationMs);
+    always.dispose();
+  });
+
+  it('reports a stuttering flip once, with the measured rate', () => {
+    let report:
+      | ((s: { frames: number; fps: number; elapsedMs: number; droppedFrames: number }) => void)
+      | null = null;
+    const engine = build({
+      frameSampler: (_d: number, done: (s: never) => void) => {
+        report = done as never;
+        return () => {};
+      },
+      frameSampleRate: 1,
+      random: () => 0,
+    });
+    engine.presentCard(river(), focused);
+    report!({ frames: 12, fps: 21.4, elapsedMs: 560, droppedFrames: 22 });
+    const degraded = events.find((e) => e.event === 'animation_performance_degraded');
+    expect(degraded).toBeTruthy();
+    expect(degraded!.reason).toContain('fps=21.4');
+    expect(degraded!.durationActual).toBe(560);
+    engine.dispose();
+  });
+
+  it('a flip that held its frame rate reports nothing', () => {
+    let report: ((s: never) => void) | null = null;
+    const engine = build({
+      frameSampler: (_d: number, done: (s: never) => void) => {
+        report = done;
+        return () => {};
+      },
+      frameSampleRate: 1,
+      random: () => 0,
+    });
+    engine.presentCard(river(), focused);
+    report!({ frames: 34, fps: 60.7, elapsedMs: 560, droppedFrames: 0 } as never);
+    expect(events.some((e) => e.event === 'animation_performance_degraded')).toBe(false);
+    engine.dispose();
+  });
+
+  it('cancelling stops the sampler too (spec 99)', () => {
+    let stopped = false;
+    const engine = build({
+      frameSampler: () => () => {
+        stopped = true;
+      },
+      frameSampleRate: 1,
+      random: () => 0,
+    });
+    const r = engine.presentCard(river(), focused);
+    engine.cancel(r.key, 'hidden');
+    expect(stopped).toBe(true);
+    engine.dispose();
   });
 });

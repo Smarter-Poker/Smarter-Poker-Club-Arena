@@ -49,6 +49,13 @@ const SimPage: React.FC = () => {
       new URLSearchParams(window.location.search).get('slide') === '1',
     []
   );
+  /* `&cards=4|5|6` gives the hero a PLO hand, so the peel can be checked
+     against the overlapped row where each card shows only a left slice. */
+  const heroCardCountOverride = useMemo(() => {
+    if (typeof window === 'undefined') return 0;
+    const n = Number(new URLSearchParams(window.location.search).get('cards'));
+    return n >= 4 && n <= 6 ? n : 0;
+  }, []);
   const step: SimStep = scenario.steps[stepIdx];
   const state: SimViewState = step.state;
 
@@ -179,7 +186,21 @@ const SimPage: React.FC = () => {
               >
                 <SeatSlot
                   seatNumber={dataIdx + 1}
-                  player={player}
+                  player={
+                    heroCardCountOverride && player?.isHero && player.holeCards?.length
+                      ? {
+                          ...player,
+                          holeCards: Array.from({ length: heroCardCountOverride }, (_, i) =>
+                            i < player.holeCards!.length
+                              ? player.holeCards![i]
+                              : (['2c', '9d', 'Th', 'Ks'] as const).map((c) => ({
+                                  rank: c[0] as never,
+                                  suit: c[1] as never,
+                                }))[(i - player.holeCards!.length) % 4]
+                          ),
+                        }
+                      : player
+                  }
                   position={position}
                   isActive={isActive}
                   lastAction={lastAction}

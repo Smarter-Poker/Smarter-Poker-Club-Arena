@@ -1518,6 +1518,12 @@ export const SeatSlot = memo(
       /** Where the pinched corner is now, card px. */
       x: number;
       y: number;
+      /** Last sample, for the drag speed the friction voice is fed. */
+      lastT: number;
+      lastX: number;
+      lastY: number;
+      /** True once the paper tick for this drag has fired. */
+      lifted: boolean;
     } | null>(null);
     const peelTweenRef = useRef<number | null>(null);
     const peelTweenTimerRef = useRef<number | null>(null);
@@ -1525,6 +1531,11 @@ export const SeatSlot = memo(
       () => () => {
         if (peelTweenRef.current != null) cancelAnimationFrame(peelTweenRef.current);
         if (peelTweenTimerRef.current != null) clearTimeout(peelTweenTimerRef.current);
+        // THE THIRD PATH. pointerup and pointercancel close the friction
+        // voice; an unmount mid-drag (table closed, hand ended, seat rebuilt)
+        // reaches neither, and a looping noise source with nobody left to
+        // stop it plays until the tab dies.
+        soundService.stopPeelFriction();
       },
       []
     );
@@ -1711,13 +1722,23 @@ export const SeatSlot = memo(
           fy: y,
           x: cx,
           y: cy,
+          lastT: performance.now(),
+          lastX: cx,
+          lastY: cy,
+          lifted: false,
         };
         // Pin the pinched corner exactly where it is: the flat frame.
         row.setAttribute('data-peeling', '');
         row.setAttribute('data-peel-corner', corner);
         paintPeel(flatPeel(rect.width, rect.height, corner));
         // The card is picked up the moment it is touched.
-        if (playSounds) haptic.light();
+        if (playSounds) {
+          haptic.light();
+          // Open the friction voice now, silent, so the first millimetre of
+          // movement already has a sound to modulate. Opening it on the first
+          // MOVE would put an audible attack a frame late, every time.
+          soundService.startPeelFriction();
+        }
         // Capture so the peel keeps tracking a finger that wanders off the
         // cards. Guarded: a pointer the browser no longer knows (or a
         // synthetic one) makes this throw, and a throw here must never
@@ -1744,7 +1765,21 @@ export const SeatSlot = memo(
         // one as the peel crosses the point where letting go opens the hand.
         const after = paintPeelNow(drag);
         if (playSounds) {
-          if (after >= 0.12 && before < 0.12) haptic.light();
+          // Drag speed in card-widths per second - what the friction voice is
+          // modulated by, because paper is silent when nothing is moving.
+          const now = performance.now();
+          const dt = Math.max(8, now - drag.lastT);
+          const moved = Math.hypot(drag.x - drag.lastX, drag.y - drag.lastY);
+          drag.lastT = now;
+          drag.lastX = drag.x;
+          drag.lastY = drag.y;
+          soundService.updatePeelFriction(after, (moved / drag.width / dt) * 1000);
+          // The corner leaving the felt: one soft tick and a light haptic,
+          // once per drag.
+          if (!drag.lifted && after >= 0.06) {
+            drag.lifted = true;
+            soundService.playPeelLift();
+          }
           if (after >= PEEL_COMMIT && before < PEEL_COMMIT) haptic.medium();
         }
       },
@@ -1758,6 +1793,7 @@ export const SeatSlot = memo(
           /* already released */
         }
         peelRef.current = null;
+        if (playSounds) soundService.stopPeelFriction();
         if (!drag.moved) {
           // A tap: bounce the corner to show what the gesture is.
           clearPeelVars();
@@ -1790,6 +1826,7 @@ export const SeatSlot = memo(
         const drag = peelRef.current;
         if (!drag) return;
         peelRef.current = null;
+        if (playSounds) soundService.stopPeelFriction();
         (e.currentTarget as HTMLDivElement).removeAttribute('data-peeling');
         tweenPeel(drag, 0, 200, clearPeelVars);
       },

@@ -97,6 +97,7 @@ import { gtoFacingDefense, realizationFactor } from './GtoFacingDefenseV32.js';
 // V7 split: evaluators + Monte Carlo equity + preflop scores live in
 // HorseEval.ts (extracted verbatim; zero behavior change).
 import {
+  setEquityDepth,
   fastRandom,
   variantInfo,
   type VariantInfo,
@@ -1569,6 +1570,12 @@ export interface HorseDecideOpts {
    *  was made against what this player's bets at that tempo have shown down
    *  as. Disable to ablate (default: enabled). */
   v43Tempo?: boolean;
+  /** V44 (2026-09-05): the SECOND LOOK. When set above 1, every Monte Carlo
+   *  read in this decision runs at that multiple of its budgeted sample. The
+   *  engine uses it to replay a close decision inside the think time it was
+   *  already going to spend; see ServerTableEngineTurns.scheduleHorseAction.
+   *  Never set on the fast path. */
+  deepEquity?: number;
 }
 
 /**
@@ -1700,6 +1707,17 @@ export class HorseLogic {
           HorseMind.observe(gameState.actionHistory, gameState.players);
         } catch {
           /* observation is best-effort */
+        }
+      }
+      // V44 SECOND LOOK: a deep replay runs the same path at a larger
+      // sample. Bracketed so a throw cannot leave the depth raised for the
+      // next horse to act.
+      if (opts.deepEquity !== undefined && opts.deepEquity > 1) {
+        setEquityDepth(opts.deepEquity);
+        try {
+          return this.decideInternal(player, gameState, style, mods, opts);
+        } finally {
+          setEquityDepth(1);
         }
       }
       return this.decideInternal(player, gameState, style, mods, opts);

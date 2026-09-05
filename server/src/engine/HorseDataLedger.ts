@@ -241,6 +241,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V40'
   ),
   flag(
+    'deepEquity',
+    'V44 second look: every Monte Carlo read at this multiple of its sample; set only by the engine replay inside the think time',
+    'V44'
+  ),
+  flag(
     'v43Tempo',
     'tempo reads: a river big bet priced by how fast it was made against what this player shows down at that tempo',
     'V43'
@@ -1090,6 +1095,20 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'HorseLogic (V41)',
     'a horse tagged for river raise wars gave a river raise more respect; needs tuner-written leaks',
     'V41'
+  ),
+  receipt(
+    'v44_second_look',
+    'ServerTableEngineTurns.scheduleHorseAction',
+    'a close call/fold/all-in was replayed at 6x the equity sample inside the think time',
+    'V44',
+    'decide',
+    0.005
+  ),
+  receipt(
+    'v44_second_look_flipped',
+    'ServerTableEngineTurns.scheduleHorseAction',
+    'the deeper read overturned the fast answer',
+    'V44'
   ),
   receipt(
     'v43_tempo_read',

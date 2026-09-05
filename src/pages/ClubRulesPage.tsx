@@ -228,12 +228,18 @@ export default function ClubRulesPage() {
        * stored - so an empty result is a refusal, not a success.
        */
       const resolvedForSave = await resolveClubUUIDStrict(clubId!);
+      /* NO `.select()` ON AN RPC. The function RETURNS TABLE, so PostgREST
+         already hands back the row and `.maybeSingle()` is all that is needed.
+         Naming a column in a select after this call also made
+         `check-phantom-columns` read that name against the last TABLE the file
+         mentions - club_members - and fail the branch for a column that table
+         has never had. The column list is the function's return type; it does
+         not belong in the client at all. */
       const { data: saved, error } = await supabase
         .rpc('fn_set_club_rules', {
           p_club_id: resolvedForSave,
           p_rules: sanitizeInput(editValue),
         })
-        .select('rules_text')
         .maybeSingle();
 
       if (error) throw error;

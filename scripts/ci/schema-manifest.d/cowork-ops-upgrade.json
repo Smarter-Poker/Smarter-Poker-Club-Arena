@@ -47,5 +47,8 @@
     "ca_club_commission_daily",
     "ca_club_rake_daily",
     "ca_club_rake_daily_user"
-  ]
+  ],
+  "columns": {
+    "promo_vault_records": ["op_id", "delivered_ref"]
+  }
 }

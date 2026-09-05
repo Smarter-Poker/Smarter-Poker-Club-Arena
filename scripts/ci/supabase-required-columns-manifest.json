@@ -418,6 +418,10 @@
       "window_hour",
       "action"
     ],
+    "ca_detector_registry": [
+      "source",
+      "owner"
+    ],
     "ca_diamond_balance_audit": [
       "user_id"
     ],
@@ -596,6 +600,10 @@
     "ca_incident_recipients": [
       "user_id"
     ],
+    "ca_kill_switch_policy": [
+      "detector",
+      "threshold_chips"
+    ],
     "ca_ledger_accounts": [
       "account_type",
       "side",
@@ -754,6 +762,10 @@
       "db_before",
       "engine_after",
       "written"
+    ],
+    "ca_settle_sources": [
+      "source",
+      "note"
     ],
     "ca_settlements": [
       "settlement_type",
@@ -2209,6 +2221,10 @@
     "horse_topic_cooldowns": [
       "author_id",
       "topic"
+    ],
+    "horse_tournament_daily": [
+      "horse_user_id",
+      "day"
     ],
     "idempotency_keys": [
       "key",

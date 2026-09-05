@@ -36,7 +36,8 @@
     "check:painted-text": "node scripts/ci/check-painted-text-case.mjs",
     "fix:painted-text": "node scripts/ci/check-painted-text-case.mjs --fix",
     "fix:title-case": "node scripts/ci/check-title-case.mjs --fix",
-    "check:club-entry-budgets": "node scripts/check-club-entry-budgets.mjs"
+    "check:club-entry-budgets": "node scripts/check-club-entry-budgets.mjs",
+    "probe:cluster": "bash scripts/dev/probe-cluster-boards.sh"
   },
   "dependencies": {
     "@rive-app/canvas": "^2.40.1",

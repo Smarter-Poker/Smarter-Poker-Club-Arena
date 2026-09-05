@@ -218,6 +218,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // moment enough players are seated and never runs again — so a player
         // who was mid-buy-in at boot, or who joined during the wait, would be
         // dealt in despite the database saying they are sitting out.
+        //
+        // PRESENCE FOLLOWS THE PLAYER (2026-09-05): a mover's presence is
+        // adopted BEFORE the sit-out restore, because that restore registers
+        // the player and restoreFsmStates never clobbers a live entry. See
+        // ServerTableEngineBase.adoptMovedPresence.
+        this.adoptMovedPresence();
         this.restoreSitOutsFromSeats();
         await this.withStepBudget(
           'refresh_blinds',

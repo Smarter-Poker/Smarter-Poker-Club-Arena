@@ -51,6 +51,8 @@ class AchievementTriggerServiceClass {
       potSize: number;
       handRank?: string; // e.g., 'Royal Flush', 'Full House'
       showdown: boolean;
+      /** The club that dealt the hand. `player_stats` is keyed per club. */
+      clubId?: string;
     }
   ): Promise<TriggerResult> {
     const result: TriggerResult = {
@@ -93,11 +95,15 @@ class AchievementTriggerServiceClass {
       }
     }
 
-    // 4. Update user stats
-    await this.updateUserStats(userId, {
-      handsPlayed: 1,
-      wins: handData.won ? 1 : 0,
-    });
+    // 4. Update user stats, against the club whose table dealt the hand.
+    await this.updateUserStats(
+      userId,
+      {
+        handsPlayed: 1,
+        wins: handData.won ? 1 : 0,
+      },
+      handData.clubId
+    );
 
     // 5. Announce unlocked achievements.
     //
@@ -328,11 +334,38 @@ class AchievementTriggerServiceClass {
     // NOTE: player_stats has no total_wins column (win count is not tracked) and
     // friends_count lives on `profiles`, not here. tournament_wins is aliased from
     // the real column tournaments_won. Absent stats default to 0.
-    const { data, error } = await supabase
+    /**
+     * `player_stats` IS PER (user_id, club_id), NOT PER PLAYER (2026-09-05).
+     *
+     * This asked for `.eq('user_id', userId).maybeSingle()`. The table's unique
+     * key is `(user_id, club_id)`, so ANY player who belongs to two or more
+     * clubs returns two or more rows, and PostgREST answers `maybeSingle()`
+     * with PGRST116 - an ERROR, not a row. `data` was then null and every
+     * field below coalesced to 0.
+     *
+     * Measured on production 2026-09-05: 963 of 1,310 players hold more than
+     * one `player_stats` row, so for 73% of the platform this function
+     * reported ZERO HANDS, ZERO TOURNAMENTS, FOREVER. That is why only 12
+     * achievements have ever unlocked platform-wide across 23 definitions,
+     * and why `profiles.total_hands_played >= 100` matched nobody at all.
+     * Achievements are platform-wide, so the honest answer is the SUM of the
+     * player's club rows, not one of them.
+     *
+     * Same PGRST116 shape as the reciprocal-friendship read fixed on
+     * PublicProfilePage: a bounded multi-row read asked for a single row.
+     */
+    const { data: rows, error } = await supabase
       .from('player_stats')
-      .select('hands_played, tournaments_played, tournament_wins:tournaments_won')
-      .eq('user_id', userId)
-      .maybeSingle();
+      .select('hands_played, tournaments_played, tournaments_won')
+      .eq('user_id', userId);
+    const data = (rows || []).reduce(
+      (acc, row) => ({
+        hands_played: acc.hands_played + (Number(row.hands_played) || 0),
+        tournaments_played: acc.tournaments_played + (Number(row.tournaments_played) || 0),
+        tournament_wins: acc.tournament_wins + (Number(row.tournaments_won) || 0),
+      }),
+      { hands_played: 0, tournaments_played: 0, tournament_wins: 0 }
+    );
 
     /**
      * A FAILED READ IS NOT A PLAYER WITH NO HISTORY (2026-08-29).
@@ -367,7 +400,9 @@ class AchievementTriggerServiceClass {
       wins?: number;
       tournaments?: number;
       tournamentWins?: number;
-    }
+    },
+    /** The club whose table produced these hands. `player_stats` is per club. */
+    clubId?: string
   ): Promise<void> {
     // FIX: Previous check-then-act pattern had a race condition — two concurrent
     // hands could both read the same stats, compute incremented values locally,
@@ -378,41 +413,55 @@ class AchievementTriggerServiceClass {
       // the real tournament-wins column is `tournaments_won`. Writing phantom columns
       // would 42703-error the whole request, so we only touch real columns here.
       // Step 1: Ensure row exists (idempotent upsert with zero defaults)
-      const { error: upsertErr } = await supabase.from('player_stats').upsert(
-        {
-          user_id: userId,
-          hands_played: increments.handsPlayed || 0,
-          tournaments_played: increments.tournaments || 0,
-          tournaments_won: increments.tournamentWins || 0,
-        },
-        { onConflict: 'user_id', ignoreDuplicates: true }
-      );
-      if (upsertErr) {
-        console.debug('[AchievementTrigger] Stats upsert failed:', upsertErr);
+      /**
+       * THE KEY IS (user_id, club_id), AND BOTH HALVES OF THIS WERE WRONG.
+       *
+       * 2026-09-05. `onConflict: 'user_id'` names a constraint that does not
+       * exist - the unique index is `player_stats_user_id_club_id_key` - and
+       * the row was inserted with NO club_id at all. Then step 2 read the row
+       * back with `.maybeSingle()`, which PGRST116s for any multi-club player
+       * (963 of 1,310), so `existing` was null and THE INCREMENT NEVER RAN.
+       * A player's counters simply stopped the day they joined a second club.
+       *
+       * Worse, had that read succeeded it would have written one club's total
+       * across EVERY club row for the player: the update was scoped
+       * `.eq('user_id', userId)` with no club filter.
+       *
+       * A per-club table needs a club. `clubId` is passed from the table that
+       * dealt the hand; without one there is nothing truthful to write, so
+       * this reports and returns rather than guessing a row.
+       */
+      if (!clubId) {
+        reportError(
+          new Error('player_stats increment attempted with no clubId'),
+          'AchievementTriggerService.Stats_update_missing_club',
+          { userId }
+        );
         return;
       }
 
-      // Step 2: Atomic increment — uses raw SQL-like update to avoid read-modify-write race
-      // PostgREST doesn't support SET col = col + N natively, so we read-then-update
-      // but scope the update to this user's row (single-row lock in Postgres)
-      const { data: existing } = await supabase
+      const { data: existing, error: readErr } = await supabase
         .from('player_stats')
         .select('hands_played, tournaments_played, tournaments_won')
         .eq('user_id', userId)
+        .eq('club_id', clubId)
         .maybeSingle();
-
-      if (existing) {
-        const { error: updateErr } = await supabase
-          .from('player_stats')
-          .update({
-            hands_played: (existing.hands_played || 0) + (increments.handsPlayed || 0),
-            tournaments_played: (existing.tournaments_played || 0) + (increments.tournaments || 0),
-            tournaments_won: (existing.tournaments_won || 0) + (increments.tournamentWins || 0),
-          })
-          .eq('user_id', userId);
-
-        if (updateErr) reportError(updateErr, 'AchievementTriggerService.Stats_update_failed');
+      if (readErr) {
+        reportError(readErr, 'AchievementTriggerService.Stats_read_failed');
+        return;
       }
+
+      const { error: writeErr } = await supabase.from('player_stats').upsert(
+        {
+          user_id: userId,
+          club_id: clubId,
+          hands_played: (existing?.hands_played || 0) + (increments.handsPlayed || 0),
+          tournaments_played: (existing?.tournaments_played || 0) + (increments.tournaments || 0),
+          tournaments_won: (existing?.tournaments_won || 0) + (increments.tournamentWins || 0),
+        },
+        { onConflict: 'user_id,club_id' }
+      );
+      if (writeErr) reportError(writeErr, 'AchievementTriggerService.Stats_update_failed');
     } catch (err) {
       console.debug('[AchievementTrigger] Stats update unexpected error:', err);
     }

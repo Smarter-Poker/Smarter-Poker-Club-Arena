@@ -44,7 +44,13 @@
   gap: 10px;
 }
 
-.action-btn {
+/* SCOPED 2026-09-05. This was a bare selector, and the same class name is
+   defined bare in several other stylesheets. Every stylesheet here is global
+   once imported, so whichever file loaded last won any property the owning
+   page did not itself declare - which is how a 32px admin icon button ended
+   up sizing the public dossier's player actions in production. Scoped to
+   this component's own container; its own appearance is unchanged. */
+.action-card .action-btn {
   flex: 1;
   padding: 12px;
   border-radius: 10px;
@@ -54,18 +60,18 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.action-btn.variant-primary {
+.action-card .action-btn.variant-primary {
   background: linear-gradient(135deg, #ffd700, #ff8c00);
   border: none;
   color: #000;
 }
-.action-btn.variant-secondary {
+.action-card .action-btn.variant-secondary {
   background: rgba(255, 255, 255, 0.1);
   border: none;
   color: #fff;
 }
 
-.action-btn.variant-danger {
+.action-card .action-btn.variant-danger {
   background: rgba(248, 113, 113, 0.15);
   border: none;
   color: #f87171;

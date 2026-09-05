@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Tests:
- * - Milestone definitions (5→2500, 10→5000, 25→15000, 50→50000)
+ * - Milestone definitions in DIAMONDS (5->250, 10->500, 25->1500, 50->5000)
  * - getMilestones unlock logic
  * - Code generation character set (excludes I/O/0/1)
  */
@@ -59,9 +59,14 @@ describe('ReferralService', () => {
       expect(milestones).toHaveLength(4);
     });
 
-    it('should have correct rewards: 2500, 5000, 15000, 50000', () => {
+    /* DIAMONDS since 2026-09-05. Dan: "NOTHING EVER EARNS CHIPS ONLY EVER
+       DIAMONDS." These four must equal the CASE in fn_claim_referral_milestone
+       (migration 20260905103510) - the panel may not promise more than the RPC
+       pays. The old chip figures were 2,500 / 5,000 / 15,000 / 50,000 and did
+       not carry over: the diamond economy runs 8-800 per daily challenge. */
+    it('should have correct rewards: 250, 500, 1500, 5000 diamonds', () => {
       const milestones = referralService.getMilestones(0);
-      expect(milestones.map((m) => m.reward)).toEqual([2500, 5000, 15000, 50000]);
+      expect(milestones.map((m) => m.reward)).toEqual([250, 500, 1500, 5000]);
     });
 
     it('should have correct thresholds: 5, 10, 25, 50', () => {

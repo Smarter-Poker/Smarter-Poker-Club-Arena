@@ -171,7 +171,12 @@ describe('mandatory run-it modes are additive, never subtractive', () => {
     );
   });
 
-  it('builds the state dealDualBoards actually requires', () => {
+  /* Was "builds the state dealDualBoards actually requires" until 2026-09-05,
+     when that function was deleted as dead code. The state shape is still
+     load-bearing, for a better reason: getChosenRuns() reports 1 unless the
+     offer is accepted AND the chooser has decided, so a mandatory table that
+     skipped either field would deal ONE board while announcing two. */
+  it('builds the state a mandatory run actually requires', () => {
     const fn = rit.slice(rit.indexOf('forceRuns('));
     expect(fn).toContain("status: 'accepted'");
     expect(fn).toContain('chooserDecided: true');

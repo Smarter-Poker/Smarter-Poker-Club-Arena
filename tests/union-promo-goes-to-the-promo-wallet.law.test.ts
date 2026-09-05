@@ -208,7 +208,10 @@ describe('every promo wallet carries a ledger', () => {
   });
 
   it('fn_promo_wallet_ledger knows all three promo accounts', () => {
-    const b = fnBody(LANDING, 'fn_promo_wallet_ledger');
+    // The definition production runs is the newest one (the verification
+    // pass re-shaped it so a million-row rake wallet is not re-summed).
+    const LEDGER = migration('the_union_ledger_totals_do_not_rescan_a_million_rake_rows');
+    const b = fnBody(LEDGER, 'fn_promo_wallet_ledger');
     expect(b).toContain("if p_scope = 'union' then");
     expect(b).toContain("if p_scope = 'club' then");
     expect(b).toContain("elsif p_scope = 'agent' then");
@@ -216,6 +219,18 @@ describe('every promo wallet carries a ledger', () => {
     expect(b).toContain('from chip_ledger l');
     // the club scope is gated on the Club Bank roles; the agent scope on membership
     expect(b).toContain('fn_can_use_club_bank(p_scope_id)');
+    // the rake wallet's totals ride the reconciliation checkpoint, and only
+    // the first page pays for totals at all
+    expect(b).toContain('from union_rake_ledger_checkpoint c');
+    expect(b).toMatch(/if v_offset = 0 then/);
+    expect(LEDGER).toContain("SET plan_cache_mode = 'force_custom_plan'");
+    expect(LEDGER).toContain('idx_uwt_union_wallet_created');
+    expect(LEDGER).toContain('idx_chip_ledger_promo_to');
+  });
+
+  it('a Load More page never wipes the totals the first page put on screen', () => {
+    expect(unionModal).toMatch(/if \(offset === 0 \|\| res\.totals\) setLedgerTotals/);
+    expect(cashier).toMatch(/if \(offset === 0 \|\| res\.totals\) setPromoLedgerTotals/);
   });
 });
 

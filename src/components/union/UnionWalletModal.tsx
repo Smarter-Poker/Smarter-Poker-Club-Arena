@@ -284,8 +284,11 @@ export function UnionWalletModal({
           setLedger([]);
           return;
         }
-        setLedgerTotal(Number(res.total) || 0);
-        setLedgerTotals(res.totals ?? null);
+        /* Totals and the count are computed for the FIRST page only (a
+           million-row rake wallet does not re-sum on every Load More); a later
+           page answers null for both and the figures already on screen stand. */
+        if (offset === 0 || res.total != null) setLedgerTotal(Number(res.total) || 0);
+        if (offset === 0 || res.totals) setLedgerTotals(res.totals ?? null);
         setLedger((prev) => (offset === 0 ? res.rows || [] : [...prev, ...(res.rows || [])]));
       } catch (e) {
         reportError(e, 'UnionWalletModal.ledger_load_failed');

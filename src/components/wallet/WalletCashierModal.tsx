@@ -686,8 +686,10 @@ export default function WalletCashierModal({
           setPromoLedger([]);
           return;
         }
-        setPromoLedgerTotal(Number(res.total) || 0);
-        setPromoLedgerTotals(res.totals ?? null);
+        // First page only carries the count and the totals (see
+        // fn_promo_wallet_ledger); a Load More page answers null for both.
+        if (offset === 0 || res.total != null) setPromoLedgerTotal(Number(res.total) || 0);
+        if (offset === 0 || res.totals) setPromoLedgerTotals(res.totals ?? null);
         setPromoLedger((prev) => (offset === 0 ? res.rows || [] : [...prev, ...(res.rows || [])]));
       } catch (e) {
         reportError(e, 'WalletCashierModal.loadPromoLedger');

@@ -3149,6 +3149,54 @@
   will-change: clip-path;
 }
 
+/* THE PEEL INDEX - the rank and suit in the bottom-left corner of the face,
+   where the peel opens (Dan 2026-09-04: "the QJ are on the bottom left hand
+   corner when you are peeling them back"). Sized off the card so it reads on
+   a 44px phone card and does not swallow a 60px desktop one. The 2-colour
+   deck is black / red; the 4-colour deck follows CardImage's palette. */
+.seat__peel-index {
+  position: absolute;
+  left: 5%;
+  bottom: 3%;
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.06em;
+  line-height: 0.92;
+  font-family:
+    'Inter',
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-weight: 800;
+  pointer-events: none;
+  z-index: 1;
+  text-shadow: 0 0 2px rgba(255, 255, 255, 0.9);
+}
+/* Rank then suit on ONE line, tucked into the corner: the lifted triangle at
+   a third of the way across is about 25% of the card wide, and the index has
+   to be legible inside it, not stacked up into the artwork above. */
+.seat__peel-index-rank {
+  font-size: calc(var(--sp-hero-card-h, 66px) * 0.26);
+  letter-spacing: -0.03em;
+}
+.seat__peel-index-suit {
+  font-size: calc(var(--sp-hero-card-h, 66px) * 0.2);
+}
+.seat__peel-index--black {
+  color: #111;
+}
+.seat__peel-index--red {
+  color: #d21f2c;
+}
+.seat__peel-index--4c-d {
+  color: #2563eb;
+}
+.seat__peel-index--4c-c {
+  color: #16a34a;
+}
+
 /* SHADE BANDS. One geometry, used twice: a strip whose top edge lies along
    the fold and which extends toward the pinched corner (in the card's own
    frame, that is the lifted region). On the face it is the shadow under the

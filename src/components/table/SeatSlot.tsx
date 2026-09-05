@@ -38,6 +38,18 @@ import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { startMotionBudget } from '../../utils/motionBudget';
 import { bustArtGain, BUST_ART_GAIN } from './bustArtGain';
 import { displayOrderWithDealtIndex } from '../../lib/tableCardDisplay';
+/**
+ * Suit glyphs for the peel index (text symbols, U+2660-2667, with the text
+ * variation selector so no platform swaps in an emoji). Same characters
+ * CardImage's broken-image fallback uses.
+ */
+const PEEL_SUIT_GLYPH: Record<string, string> = {
+  s: '\u2660\uFE0E',
+  h: '\u2665\uFE0E',
+  d: '\u2666\uFE0E',
+  c: '\u2663\uFE0E',
+};
+
 import {
   computePeel,
   flatPeel,
@@ -2919,6 +2931,35 @@ export const SeatSlot = memo(
                         ) : (
                           <CardBack size="md" style={cardBack} />
                         )}
+                        {/* THE PEEL INDEX. Dan 2026-09-04: "THINK ABOUT HOW IT
+                            WOULD LOOK IF YOU WERE REALLY AT THE TABLE AND THE
+                            CARDS WERE FACE DOWN, THE QJ ARE ON THE BOTTOM LEFT
+                            HAND CORNER WHEN YOU ARE PEELING THEM BACK." The
+                            deck art carries ONE index, top-left, so peeling
+                            the bottom-left corner uncovered artwork. A real
+                            card's corner shows its rank the moment it lifts:
+                            this draws the rank and suit, upright, in the
+                            bottom-left corner of the face, exactly where the
+                            peel opens. Under the shade band, over the art. */}
+                        {card ? (
+                          <div
+                            className={
+                              'seat__peel-index' +
+                              (card.suit === 'h' || card.suit === 'd'
+                                ? ' seat__peel-index--red'
+                                : ' seat__peel-index--black') +
+                              (deckStyle === '4color' ? ` seat__peel-index--4c-${card.suit}` : '')
+                            }
+                            aria-hidden="true"
+                          >
+                            <span className="seat__peel-index-rank">
+                              {card.rank === 'T' ? '10' : card.rank}
+                            </span>
+                            <span className="seat__peel-index-suit">
+                              {PEEL_SUIT_GLYPH[card.suit] ?? ''}
+                            </span>
+                          </div>
+                        ) : null}
                         {/* The shadow the lifted corner throws onto the face
                             it has just uncovered - a band along the fold,
                             clipped to the lifted region. */}

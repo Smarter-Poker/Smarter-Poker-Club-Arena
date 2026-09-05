@@ -268,6 +268,30 @@ describe('the markup', () => {
     }
   });
 
+  it('draws the rank and suit in the bottom-left corner of the face, under the peel', () => {
+    // Dan 2026-09-04: "THE QJ ARE ON THE BOTTOM LEFT HAND CORNER WHEN YOU
+    // ARE PEELING THEM BACK." The deck art has one index, top-left; a real
+    // card shows its rank at whichever corner you lift.
+    const { container } = renderHero();
+    const idx = Array.from(container.querySelectorAll('.seat__peel-index'));
+    expect(idx.length).toBe(2);
+    expect(idx[0].querySelector('.seat__peel-index-rank')?.textContent).toBe('A');
+    expect(idx[0].className).toContain('seat__peel-index--black');
+    expect(idx[1].querySelector('.seat__peel-index-rank')?.textContent).toBe('K');
+    expect(idx[1].className).toContain('seat__peel-index--red');
+    // Inside the face layer (revealed by the peel), never on the cover.
+    for (const el of idx) {
+      expect(el.closest('.seat__squeeze-face--under')).toBeTruthy();
+    }
+  });
+
+  it('spells ten as 10', () => {
+    const { container } = renderHero({
+      player: { ...hero, holeCards: [{ rank: 'T', suit: 'c' }] },
+    });
+    expect(container.querySelector('.seat__peel-index-rank')?.textContent).toBe('10');
+  });
+
   it('is announced as a peel, not a drag-up', () => {
     const { row } = renderHero();
     expect(row.getAttribute('aria-label')).toMatch(/Peel/);

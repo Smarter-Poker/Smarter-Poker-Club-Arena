@@ -26,6 +26,15 @@ A tap is a hint (the hand lifts and settles), never a reveal. The double-tap
 shortcut is gone: there is no click to reveal. Enter / Space still opens the
 hand, because a peel is not something a screen reader can do.
 
+**The corner shows its rank.** Dan, after the first cut: "THINK ABOUT HOW IT
+WOULD LOOK IF YOU WERE REALLY AT THE TABLE AND THE CARDS WERE FACE DOWN, THE
+QJ ARE ON THE BOTTOM LEFT HAND CORNER WHEN YOU ARE PEELING THEM BACK." The
+deck art carries one index, top-left, so the bottom-left peel was uncovering
+artwork. `.seat__peel-index` now draws the rank and suit, upright, on one
+line, tucked into the bottom-left corner of the face under the back (black /
+red for the 2-colour deck, CardImage's palette for 4-colour; ten spelled 10),
+so the corner reads the moment it lifts.
+
 ## What it replaced
 
 COMPETITOR-PARITY 2026-08-19's `card_squeeze`: a hinge. The whole back rotated

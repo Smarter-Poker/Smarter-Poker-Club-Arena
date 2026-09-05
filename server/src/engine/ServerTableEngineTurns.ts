@@ -1033,6 +1033,15 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     connected: boolean;
     gracePeriodRemaining: number;
   } {
+    /* 2026-09-04 (disconnect audit item 5): a SEATED player the FSM has never
+       met is registered here rather than ignored. registerPlayer() runs at
+       the deal, so a seat taken since boot at a table below the deal minimum
+       was untracked: every heartbeat returned early, /heartbeat answered
+       `connected: true` for a key it did not have, and the abandoned-seat
+       rule (which reads disconnectedAt) could never see them go. The same
+       on-demand registration sitOut() and notifyPageLeft() already do. A
+       spectator's heartbeat still registers nothing. */
+    this.registerSeatedPlayerOnDemand(userId);
     this.disconnectEngine.heartbeat(this.tableId, userId);
     if (opts?.turnRendered) {
       this.disconnectEngine.noteTurnRendered(this.tableId, userId);
@@ -1061,6 +1070,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * it is spent. Coming back (any heartbeat) clears it at no cost.
    */
   public notifyPageLeft(userId: string): void {
+    /* 2026-09-04: register on demand, as sitOut() does (DisconnectEngine.ts,
+       "chicken-and-egg deadlock"). markPageLeft() silently returned for a
+       player the FSM had never met - a seat taken since boot at a table that
+       has not dealt (registerPlayer runs at the deal), which is exactly the
+       quiet table where an abandoned seat matters most. The beacon was
+       answered {tracked: true} and nothing was tracked. Only a SEATED player
+       is registered; a spectator's beacon is still a no-op. */
+    this.registerSeatedPlayerOnDemand(userId);
     this.disconnectEngine.markPageLeft(this.tableId, userId);
   }
 
@@ -1069,7 +1086,25 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // not the player leaving — their HTTP heartbeat is a second transport, and
     // concluding on the first one alone fired a disconnect banner, a sound and
     // a haptic buzz at players who never went anywhere.
+    // 2026-09-04: registered on demand for the same reason as heartbeat() -
+    // the socket of a seat taken since boot at a quiet table closing was
+    // invisible to the FSM, so the seat could never become MISSING.
+    this.registerSeatedPlayerOnDemand(userId);
     this.disconnectEngine.markTransportGone(this.tableId, userId);
+  }
+
+  /**
+   * Register a player with the presence FSM if - and only if - they hold a
+   * seat at this table. The FSM normally meets a player at the deal
+   * (registerPlayer in dealHand); every signal that can arrive BEFORE a deal
+   * (heartbeat, socket close, /away, /sitout) routes through here so a quiet
+   * table tracks its seats the way a dealing one does. Idempotent:
+   * registerPlayer is a no-op for a known key.
+   */
+  protected registerSeatedPlayerOnDemand(userId: string): void {
+    if (this.seatedPlayers.some((p) => p.user_id === userId)) {
+      this.disconnectEngine.registerPlayer(this.tableId, userId);
+    }
   }
 
   /**
@@ -1886,7 +1921,23 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       canCheckForPreAction
     );
     if (!playerCanAct) {
-      // Player is disconnected or sitting out — DisconnectEngine will handle auto-action via callback
+      // Player is disconnected or sitting out — DisconnectEngine will handle
+      // auto-action via callback.
+      //
+      // 2026-09-04 (disconnect audit, item 1): PUBLISH THE CLOCK THAT IS
+      // REALLY RUNNING. The caller stamped the ordinary action_time deadline
+      // before invoking us, and the broadcast that follows this return read
+      // it - so every client drew a 15s ring for a seat the engine was about
+      // to act for in 350ms (sat out), or watched a 15s ring hit zero and
+      // then sat through the rest of a 30s countdown (disconnected). This
+      // runs synchronously before that broadcast (nothing above yields on
+      // this path), so the snapshot carries the deadline the engine holds.
+      const armed = this.disconnectEngine.armedAutoActionDeadlineMs(this.tableId, player.user_id);
+      if (armed > 0) {
+        const now = Date.now();
+        this.playerTurnStartTime = now;
+        this.playerTurnDuration = Math.max(0, (armed - now) / 1000);
+      }
       return;
     }
 
@@ -2053,6 +2104,15 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // AoF: tell the brain, instead of rewriting its answer afterwards. The
       // coercion below stays as the legality guarantee.
       allInOrFold: this.tableInfo?.all_in_or_fold === true,
+      // THE VPIP FLOOR (Dan 2026-09-04). A floored table stands a seat up
+      // after ten hands under the floor, horses included (10.5). The brain
+      // gets the floor and ITS OWN judged figure - the same numbers the
+      // eviction reads - and widens toward the floor like a regular would.
+      vpipFloor: this.vpipFloor(),
+      ownVpip: (() => {
+        const row = this.nitStatus.get(enginePlayer.user_id);
+        return row ? { hands: row.hands, vpip: row.vpip } : undefined;
+      })(),
       // V18 STRADDLE (2026-08-26): straddle posts are not ActionRecords, so
       // a straddled pot's preflop currentBet (2xBB) with an empty history
       // read as an OPEN RAISE and the fleet folded to dead money. Tell the

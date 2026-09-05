@@ -27,19 +27,51 @@ describe('profile editor account mutation states', () => {
     expect(screen.getByRole('dialog', { name: 'Edit Profile' })).toBeInTheDocument();
   });
 
-  it('submits a keyboard-operable avatar choice and closes after success', async () => {
+  it('submits a keyboard-operable tag choice and closes after success', async () => {
     const onClose = vi.fn();
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(<UserProfileEdit isOpen onClose={onClose} initialData={profile} onSave={onSave} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Choose Profile Avatar' }));
-    const choices = screen.getAllByRole('button', { name: 'Select This Avatar' });
-    fireEvent.click(choices[1]);
+    const shark = screen.getByRole('button', { name: 'Shark' });
+    expect(shark).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(shark);
+    expect(shark).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(screen.getByRole('button', { name: 'Save Profile' }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
-    expect(onSave.mock.calls[0][0].avatarUrl).toContain('seed=Aneka');
+    expect(onSave.mock.calls[0][0].tags).toEqual(['Grinder', 'Shark']);
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  /* 2026-09-04: the dialog used to offer six external cartoon avatars that
+     were never persisted. The real avatar flow is the caller's; the dialog
+     only hands off to it. */
+  it('no longer offers a fake avatar picker and hands off to the real flow', () => {
+    const onChangeAvatar = vi.fn();
+    render(
+      <UserProfileEdit
+        isOpen
+        onClose={vi.fn()}
+        initialData={profile}
+        onSave={vi.fn()}
+        onChangeAvatar={onChangeAvatar}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: 'Select This Avatar' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Change Table Avatar' }));
+    expect(onChangeAvatar).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses an alias the arena would refuse, before any network call', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<UserProfileEdit isOpen onClose={vi.fn()} initialData={profile} onSave={onSave} />);
+
+    fireEvent.change(screen.getByLabelText('Poker Alias'), { target: { value: 'ab' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Profile' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('at least 3 characters');
+    expect(onSave).not.toHaveBeenCalled();
   });
 });
 

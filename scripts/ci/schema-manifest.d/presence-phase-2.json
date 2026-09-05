@@ -1,0 +1,6 @@
+{
+  "_owner": "fix/presence-phase-2",
+  "tables": ["engine_presence_parked"],
+  "functions": [],
+  "columns": {}
+}

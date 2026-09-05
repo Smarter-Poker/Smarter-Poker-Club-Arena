@@ -21,8 +21,16 @@
   --ca-popup-muted: #9aa8bb;
 }
 
-/* Backdrops: dark, quiet, and deep enough to separate the active task. */
+/* Backdrops: dark, quiet, and deep enough to separate the active task.
+
+   `.ca-modal-overlay` is the shared common/Modal backdrop (renamed from
+   `.modal-overlay` on 2026-09-04 - that plain name is defined by nine other
+   stylesheets and one of them was winning `position` and `z-index` on it,
+   which put the backdrop on top of its own card). This sheet may paint that
+   backdrop; it must never position it or give it a z-index - the law test
+   `tests/the-shared-modal-owns-its-class-names.law.test.ts` checks. */
 :where(
+  .ca-modal-overlay,
   .modal-overlay,
   .base-modal-overlay,
   .confirm-modal-overlay,
@@ -70,6 +78,7 @@
  * popup surfaces used across shared, club, table, wallet, social and admin UI.
  */
 :where(
+  .ca-modal,
   .modal,
   .base-modal,
   .confirm-modal,
@@ -208,6 +217,7 @@
 :where([role='dialog'], [aria-modal='true'], .drawer, .side-panel, .afx-sheet, .glp)
   > :where(
     header,
+    .ca-modal-header,
     .modal-header,
     .base-modal__header,
     .afx-head,
@@ -324,6 +334,7 @@
 /* Close controls read like small steel hardware instead of bare glyphs. */
 :where([role='dialog'], [aria-modal='true'], .drawer, .side-panel, .afx-sheet, .glp)
   :where(
+    .ca-modal-close,
     .modal-close,
     [class*='__close'],
     [class*='-close'],
@@ -346,6 +357,7 @@
 
 @media (max-width: 640px) {
   :where(
+    .ca-modal,
     .modal,
     .base-modal,
     .confirm-modal,

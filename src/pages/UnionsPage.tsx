@@ -16,6 +16,7 @@ import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
 import { reportError } from '../utils/errorReporter';
 import { mediaUrl } from '../utils/mediaBase';
+import { useCanCreateUnion } from '../hooks/useCanCreateUnion';
 
 const unionCardAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -148,6 +149,9 @@ export default function UnionsPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  /* Union creation is an allowlist (Dan 2026-09-04). The database refuses the
+     insert for everyone else; this stops the app offering it. */
+  const { canCreateUnion } = useCanCreateUnion();
 
   const loadUnions = useCallback(() => {
     setLoading(true);
@@ -197,9 +201,11 @@ export default function UnionsPage() {
           <h1>Union Command</h1>
           <p>Coordinate Clubs, Shared Games And Network-Level Events.</p>
         </div>
-        <button type="button" className="union-create-button" onClick={() => setIsCreating(true)}>
-          Create Union
-        </button>
+        {canCreateUnion && (
+          <button type="button" className="union-create-button" onClick={() => setIsCreating(true)}>
+            Create Union
+          </button>
+        )}
       </header>
 
       <div className="unions-grid">
@@ -218,7 +224,11 @@ export default function UnionsPage() {
               eyebrow="No Networks Yet"
               title="Build The First Union"
               description="Connect Clubs Under One Network To Coordinate Games, Liquidity And Events."
-              action={{ label: 'Create Union', onClick: () => setIsCreating(true) }}
+              action={
+                canCreateUnion
+                  ? { label: 'Create Union', onClick: () => setIsCreating(true) }
+                  : undefined
+              }
             />
           </div>
         ) : (
@@ -226,22 +236,24 @@ export default function UnionsPage() {
         )}
       </div>
 
-      <section className="create-union-cta">
-        <h2>Create Your Own Union</h2>
-        <p>
-          Bring Together Multiple Clubs Under One Network For Shared Player Pools And Coordinated
-          Events.
-        </p>
-        <button
-          type="button"
-          className="union-secondary-button"
-          onClick={() => setIsCreating(true)}
-        >
-          Start A Union
-        </button>
-      </section>
+      {canCreateUnion && (
+        <section className="create-union-cta">
+          <h2>Create Your Own Union</h2>
+          <p>
+            Bring Together Multiple Clubs Under One Network For Shared Player Pools And Coordinated
+            Events.
+          </p>
+          <button
+            type="button"
+            className="union-secondary-button"
+            onClick={() => setIsCreating(true)}
+          >
+            Start A Union
+          </button>
+        </section>
+      )}
 
-      {isCreating && (
+      {isCreating && canCreateUnion && (
         <CreateUnionModal
           onClose={() => setIsCreating(false)}
           onSuccess={() => {

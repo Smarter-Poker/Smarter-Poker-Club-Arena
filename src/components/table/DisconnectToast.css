@@ -1,45 +1,56 @@
 /*
- * DisconnectToast — floats at top-center above the table. Mobile-first
- * (375px width target); scales up by not constraining width on larger
- * viewports. No tap interactivity — purely informational.
+ * DisconnectToast — ON THE FELT (Dan 2026-09-04: "all disconnection,
+ * reconnecting messages should be on the table, not at the top of the page").
+ *
+ * Was `position: fixed; top: 0` over the page chrome. It is now an absolute
+ * child of `.table-surface`, hung from the same `--sp-brand-top` line as
+ * TableConnectionBanner (the two never show at once: this one defers to the
+ * socket banner whenever the socket is not connected). Same pill, same
+ * z-index band, so the felt has ONE place a player looks for "what is the
+ * connection doing".
  */
 
 .disconnect-toast {
-  position: fixed;
-  top: env(safe-area-inset-top, 0px);
+  position: absolute;
+  top: calc(var(--sp-brand-top, 58%) - 6%);
   left: 50%;
-  transform: translate(-50%, 12px);
+  transform: translate(-50%, -100%);
+  z-index: 70;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 14px;
-  border-radius: 18px;
+  max-width: min(92%, 420px);
+  padding: 7px 14px;
+  border-radius: 999px;
   font-size: 0.8125rem;
   font-weight: 600;
   letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: #fff;
-  z-index: 1000;
   pointer-events: none;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
-  animation: disconnect-toast-slide 220ms ease-out;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+  animation: disconnect-toast-fade 220ms ease-out;
 }
 
 .disconnect-toast--missing {
-  background: linear-gradient(135deg, #b25a00, #f19b2a);
-  color: #111;
+  background: rgba(14, 18, 28, 0.92);
+  border: 1px solid rgba(249, 115, 22, 0.55);
 }
 
 .disconnect-toast--disconnected {
-  background: #c62828;
-  color: #fff;
+  background: rgba(14, 18, 28, 0.92);
+  border: 1px solid rgba(248, 81, 73, 0.6);
 }
 
 .disconnect-toast__spinner {
   width: 12px;
   height: 12px;
+  flex: 0 0 12px;
   border-radius: 50%;
-  border: 2px solid rgba(0, 0, 0, 0.25);
-  border-top-color: #111;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #fff;
   animation: disconnect-toast-spin 700ms linear infinite;
 }
 
@@ -49,13 +60,20 @@
   }
 }
 
-@keyframes disconnect-toast-slide {
+@keyframes disconnect-toast-fade {
   from {
     opacity: 0;
-    transform: translate(-50%, -8px);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, 12px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .disconnect-toast {
+    animation: none;
+  }
+  .disconnect-toast__spinner {
+    animation-duration: 1.4s;
   }
 }

@@ -6,10 +6,17 @@ import {
   STATS_INDEX_LAG_ALERT,
   STATS_TRIGGER_GAP_ALERT,
   STATS_WITNESS_ALERT,
+  STATS_EV_COVERAGE_ALERT,
+  STATS_EV_COVERAGE_MIN_RATIO,
+  STATS_EV_COVERAGE_MIN_SAMPLE,
   STATS_HEALTH_COMPONENT,
   STATS_INDEX_LAG_THRESHOLD_S,
   STATS_HEALTH_PERIOD_MS,
 } from './StatsHealthMonitor.js';
+
+// What the phase 3 migrations add to the payload: the 7-day all-in runout
+// equity coverage as ca_stats_health() returned it on 2026-09-04 22:48 UTC.
+const LIVE_EV = { allInShowdowns: 715, withoutEquity: 1, ratio: 0.9986 };
 
 // The jsonb ca_stats_health() returned in production on 2026-09-04 08:55 UTC,
 // verbatim, so the parser is pinned to the real shape and not to a guess.
@@ -183,6 +190,67 @@ describe('StatsHealthMonitor', () => {
     expect(witness?.[0].labels?.player_hands_without_idx).toBe('1050');
     expect(witness?.[0].summary).toContain('1050 no-index');
     expect(mon.prometheusLines().join('\n')).toContain('poker_stats_player_hands_without_idx 1050');
+  });
+
+  it('parses the phase 3 EV coverage block and exposes it as gauges', async () => {
+    const s = parseStatsHealth({ ...LIVE_SAMPLE, evCoverage7d: LIVE_EV }, 'fb');
+    expect(s.evCoverage7d).toEqual(LIVE_EV);
+    expect(parseStatsHealth(LIVE_SAMPLE, 'fb').evCoverage7d).toBeNull();
+    const { mon } = harness([{ ...LIVE_SAMPLE, evCoverage7d: LIVE_EV }]);
+    await mon.tick();
+    const lines = mon.prometheusLines().join('\n');
+    expect(lines).toContain('poker_stats_ev_coverage_7d 0.9986');
+    expect(lines).toContain('poker_stats_allin_showdowns_7d 715');
+  });
+
+  it('the measured 99.86% coverage raises nothing and resolves the EV alert', async () => {
+    const { mon, raise, resolve } = harness([{ ...LIVE_SAMPLE, evCoverage7d: LIVE_EV }]);
+    await mon.tick();
+    expect(raise.mock.calls.some((c) => c[0]?.alertname === STATS_EV_COVERAGE_ALERT)).toBe(false);
+    expect(resolve).toHaveBeenCalledWith(
+      STATS_EV_COVERAGE_ALERT,
+      STATS_HEALTH_COMPONENT,
+      expect.any(String)
+    );
+  });
+
+  it('raises the EV alert below the bar once the sample is big enough, never on a quiet week', async () => {
+    const low = { allInShowdowns: STATS_EV_COVERAGE_MIN_SAMPLE, withoutEquity: 10, ratio: 0.8 };
+    expect(low.ratio).toBeLessThan(STATS_EV_COVERAGE_MIN_RATIO);
+    const { mon, raise } = harness([
+      {
+        ...LIVE_SAMPLE,
+        evCoverage7d: { ...low, allInShowdowns: STATS_EV_COVERAGE_MIN_SAMPLE - 1 },
+      },
+      { ...LIVE_SAMPLE, evCoverage7d: low },
+    ]);
+    await mon.tick();
+    expect(raise.mock.calls.some((c) => c[0]?.alertname === STATS_EV_COVERAGE_ALERT)).toBe(false);
+    await mon.tick();
+    const ev = raise.mock.calls.find((c) => c[0]?.alertname === STATS_EV_COVERAGE_ALERT);
+    expect(ev).toBeTruthy();
+    expect(ev?.[0].labels?.ratio).toBe('0.8000');
+    expect(ev?.[0].labels?.without_equity_7d).toBe('10');
+    expect(ev?.[0].summary).toContain('80.0%');
+    expect(ev?.[0].description).toContain('all_in_equity IS NULL');
+  });
+
+  it('the first cut of the measure (98.46%, side pots counted as gaps) WOULD have paged: that is why the audit was refined', async () => {
+    const { mon, raise } = harness([
+      { ...LIVE_SAMPLE, evCoverage7d: { allInShowdowns: 715, withoutEquity: 11, ratio: 0.9846 } },
+    ]);
+    await mon.tick();
+    expect(raise.mock.calls.some((c) => c[0]?.alertname === STATS_EV_COVERAGE_ALERT)).toBe(true);
+  });
+
+  it('does not touch the EV alert when the week had no all-in showdowns (ratio null)', async () => {
+    const { mon, raise, resolve } = harness([
+      { ...LIVE_SAMPLE, evCoverage7d: { allInShowdowns: 0, withoutEquity: 0, ratio: null } },
+    ]);
+    await mon.tick();
+    expect(raise.mock.calls.some((c) => c[0]?.alertname === STATS_EV_COVERAGE_ALERT)).toBe(false);
+    expect(resolve.mock.calls.some((c) => c[0] === STATS_EV_COVERAGE_ALERT)).toBe(false);
+    expect(mon.prometheusLines().join('\n')).toContain('poker_stats_ev_coverage_7d NaN');
   });
 
   it('does not touch the witness alert at all when no audit has run yet', async () => {

@@ -357,6 +357,10 @@ export class HorseFleetManager {
   /** When the Stable Hand controller's heartbeat was last checked. */
   private lastBeatCheckAt = 0;
   private lastBeatComplaint: string | null = null;
+  /** When the unread-tag-book alert was last raised. Throttled to hourly. */
+  private lastTagBookComplaintAt = 0;
+  /** When the failing-counter-write alert was last raised. Throttled to hourly. */
+  private lastStateWriteComplaintAt = 0;
   private seeding = false; // Prevents concurrent seeding
   /** Per table, how many horses the last cycle found able to sit there.
    *  Read by the ClusterController (OPORD 1.4 18.3): a horse is a buyer. */
@@ -1309,6 +1313,10 @@ export class HorseFleetManager {
       let retiring = 0;
       let parked = 0;
       for (const t of tables) {
+        /* A cluster table is never surplus, whatever flag it carries: its
+           ClusterController opens and closes it (R3 keeps Main 1 open), so
+           draining it here is a fight the fleet would lose every tick. */
+        if (t.cluster_id) continue;
         if (isRetiringTable(t as { settings?: unknown })) {
           surplusTableIds.add(t.id);
           retiring++;
@@ -1465,9 +1473,18 @@ export class HorseFleetManager {
          is stable, opaque and spreads the populated set across variants and
          stakes rather than favouring whatever the database happened to return
          first. */
+      /* A MUST-MOVE GAME'S TABLES COME FIRST (OPORD 1.4 18.4: "an enabled
+         game's Main 1 is the fleet's responsibility ... seeded to the horse
+         occupancy target"). The fleet runs out of horses partway down this
+         list; a cluster table at the back sat at 0 for an hour on 2026-09-04
+         while a dozen fleet clones were filled ahead of it. Dan: "you have to
+         add horses to the game, or show them it's available". Humans still
+         first, then the clusters, then everything else by id. */
       const orderedTables = [...tables].sort(
         (a, b) =>
-          Number(humanShort(b)) - Number(humanShort(a)) || String(a.id).localeCompare(String(b.id))
+          Number(humanShort(b)) - Number(humanShort(a)) ||
+          Number(!!b.cluster_id) - Number(!!a.cluster_id) ||
+          String(a.id).localeCompare(String(b.id))
       );
 
       /* ── A HORSE ANSWERS A SEAT CALL ────────────────────────────────────
@@ -1552,6 +1569,7 @@ export class HorseFleetManager {
       /* THE TAG BOOK. Null when it could not be read WHOLE, and every gate
          that consults it is written so that null means "today's behaviour,
          unchanged". */
+      const nowMs2 = Date.now();
       const book = controllerEnabled() ? await tagBook.load() : null;
       const chicagoWeekday = chicagoNow().weekday;
       if (book) {
@@ -1562,6 +1580,32 @@ export class HorseFleetManager {
         console.warn(
           '[HorseFleet] Tag book unread this cycle - seating from the hash rules, unchanged.'
         );
+        /* AND SAY SO WHERE SOMEBODY WILL SEE IT. A console line on a box
+           nobody is tailing is not an observable: this exact failure ran for
+           four hours on 2026-09-04 - the book read fine from a laptop with the
+           same key and returned null on the engine - and the only reason it
+           was found was a hand query against the counters it should have
+           written. Failing open is correct; failing open SILENTLY is not.
+           Throttled to once an hour and raised on change only. */
+        if (nowMs2 - this.lastTagBookComplaintAt >= 60 * 60_000) {
+          this.lastTagBookComplaintAt = nowMs2;
+          await supabase
+            .rpc('fn_raise_server_financial_alert', {
+              p_severity: 'warning',
+              p_source: 'HorseFleet.tagBook',
+              p_message:
+                'The Stable Hand tag book could not be read whole this cycle, so seating is ' +
+                'running on the old hash rules and no daily counter is being written. The ' +
+                'fleet is unharmed - every gate fails open - but the tag layer is switched ' +
+                'off until this reads clean.',
+              p_context: { kind: 'stable_hand_tag_book_unread' },
+              p_entity_id: 'stable_hand',
+            })
+            .then(
+              () => undefined,
+              (err: unknown) => reportError(err, 'HorseFleet.tagBookAlert')
+            );
+        }
       }
 
       /* A seat call is still a NEW seating, so it obeys the switch and the
@@ -2267,47 +2311,52 @@ export class HorseFleetManager {
          somebody remembered to hook would fire a listener. The key set each
          horse held last cycle minus the set it holds now IS the exit list,
          whatever caused it. */
-      const currentSeatKeys = new Map<string, Set<string>>();
-      for (const seat of allActiveSeats) {
-        if (!horseIdSet.has(seat.user_id)) continue;
-        // Reuses the lookup built for the seat-club scope above.
-        const t = tableById.get(seat.table_id) as any;
-        if (!t) continue;
-        const key = gameKey({
-          hostId: String(t.club_id ?? ''),
-          template: String(t.name ?? ''),
-          variant: String(t.game_variant ?? ''),
-          sb: Number(t.small_blind) || 0,
-          bb: Number(t.big_blind) || 0,
-        });
-        if (!currentSeatKeys.has(seat.user_id)) currentSeatKeys.set(seat.user_id, new Set());
-        currentSeatKeys.get(seat.user_id)!.add(key);
-      }
-      for (const [horseId, was] of this.previousSeatKeys) {
-        const nowKeys = currentSeatKeys.get(horseId);
-        for (const key of was) {
-          if (!nowKeys?.has(key)) stateMutations.push({ horseId, closedKey: key });
+      /* WRAPPED, because everything below is bookkeeping and NONE of it is
+         worth losing a seeding cycle over - but equally, a throw here used to
+         be swallowed by the outer catch and take the counters, the heartbeat
+         watch and the flush with it, leaving no trace at all. */
+      try {
+        const currentSeatKeys = new Map<string, Set<string>>();
+        for (const seat of allActiveSeats) {
+          if (!horseIdSet.has(seat.user_id)) continue;
+          // Reuses the lookup built for the seat-club scope above.
+          const t = tableById.get(seat.table_id) as any;
+          if (!t) continue;
+          const key = gameKey({
+            hostId: String(t.club_id ?? ''),
+            template: String(t.name ?? ''),
+            variant: String(t.game_variant ?? ''),
+            sb: Number(t.small_blind) || 0,
+            bb: Number(t.big_blind) || 0,
+          });
+          if (!currentSeatKeys.has(seat.user_id)) currentSeatKeys.set(seat.user_id, new Set());
+          currentSeatKeys.get(seat.user_id)!.add(key);
         }
-      }
-      this.previousSeatKeys = currentSeatKeys;
+        for (const [horseId, was] of this.previousSeatKeys) {
+          const nowKeys = currentSeatKeys.get(horseId);
+          for (const key of was) {
+            if (!nowKeys?.has(key)) stateMutations.push({ horseId, closedKey: key });
+          }
+        }
+        this.previousSeatKeys = currentSeatKeys;
 
-      /* MINUTES PLAYED, accrued on its own clock rather than every cycle: a
+        /* MINUTES PLAYED, accrued on its own clock rather than every cycle: a
          thousand rows twice a minute to move a counter by 0.5 is not a
          measurement, it is a write storm. The elapsed time is CAPPED so an
          engine that was down for two hours does not credit every seated horse
          with two hours it did not play. */
-      const nowMs = Date.now();
-      if (this.lastMinutesAccrualAt === 0) {
-        this.lastMinutesAccrualAt = nowMs;
-      } else if (nowMs - this.lastMinutesAccrualAt >= MINUTES_ACCRUAL_MS) {
-        const minutes = Math.min(30, (nowMs - this.lastMinutesAccrualAt) / 60_000);
-        for (const horseId of currentSeatKeys.keys()) {
-          stateMutations.push({ horseId, addMinutes: minutes });
+        const nowMs = Date.now();
+        if (this.lastMinutesAccrualAt === 0) {
+          this.lastMinutesAccrualAt = nowMs;
+        } else if (nowMs - this.lastMinutesAccrualAt >= MINUTES_ACCRUAL_MS) {
+          const minutes = Math.min(30, (nowMs - this.lastMinutesAccrualAt) / 60_000);
+          for (const horseId of currentSeatKeys.keys()) {
+            stateMutations.push({ horseId, addMinutes: minutes });
+          }
+          this.lastMinutesAccrualAt = nowMs;
         }
-        this.lastMinutesAccrualAt = nowMs;
-      }
 
-      /* ══ IS THE CONTROLLER STILL RUNNING? ═════════════════════════════
+        /* ══ IS THE CONTROLLER STILL RUNNING? ═════════════════════════════
          Read here, in the SEEDING cycle, rather than in the controller that
          writes it: a watcher inside the thing it watches reports nothing when
          the thing stops. This catches an executor throwing every cycle, or one
@@ -2318,52 +2367,96 @@ export class HorseFleetManager {
          and the deploy watchdogs own that from outside the box. Said plainly,
          because a watchdog whose limits are not written down gets trusted for
          things it never covered. */
-      if (nowMs - this.lastBeatCheckAt >= 10 * 60_000) {
-        this.lastBeatCheckAt = nowMs;
-        try {
-          const verdict = beatVerdict({
-            lastBeatAtMs: await lastBeatAt(),
-            nowMs,
-            enabled: controllerEnabled(),
-          });
-          if (verdict === 'ok') {
-            this.lastBeatComplaint = null;
-          } else if (this.lastBeatComplaint !== verdict) {
-            // Complain ON CHANGE. A warning re-filed every ten minutes is a
-            // warning somebody mutes.
-            this.lastBeatComplaint = verdict;
-            const why =
-              verdict === 'never_beat'
-                ? 'has never written a heartbeat - the controller looks installed but is not running'
-                : 'has not written a heartbeat in over ten minutes - it was running and stopped';
-            await supabase.rpc('fn_raise_server_financial_alert', {
-              p_severity: 'warning',
-              p_source: 'HorseFleet.stableHandHeartbeat',
-              p_message: `The Stable Hand controller ${why}. The floor is being seeded but nobody is holding it to its curve.`,
-              p_context: { kind: 'stable_hand_controller_silent', verdict },
-              p_entity_id: 'stable_hand',
+        if (nowMs - this.lastBeatCheckAt >= 10 * 60_000) {
+          this.lastBeatCheckAt = nowMs;
+          try {
+            const verdict = beatVerdict({
+              lastBeatAtMs: await lastBeatAt(),
+              nowMs,
+              enabled: controllerEnabled(),
             });
-            console.warn(`[HorseFleet] Stable Hand controller ${verdict}`);
+            if (verdict === 'ok') {
+              this.lastBeatComplaint = null;
+            } else if (this.lastBeatComplaint !== verdict) {
+              // Complain ON CHANGE. A warning re-filed every ten minutes is a
+              // warning somebody mutes.
+              this.lastBeatComplaint = verdict;
+              const why =
+                verdict === 'never_beat'
+                  ? 'has never written a heartbeat - the controller looks installed but is not running'
+                  : 'has not written a heartbeat in over ten minutes - it was running and stopped';
+              await supabase.rpc('fn_raise_server_financial_alert', {
+                p_severity: 'warning',
+                p_source: 'HorseFleet.stableHandHeartbeat',
+                p_message: `The Stable Hand controller ${why}. The floor is being seeded but nobody is holding it to its curve.`,
+                p_context: { kind: 'stable_hand_controller_silent', verdict },
+                p_entity_id: 'stable_hand',
+              });
+              console.warn(`[HorseFleet] Stable Hand controller ${verdict}`);
+            }
+          } catch (err) {
+            reportError(err, 'HorseFleet.stableHandHeartbeat');
           }
-        } catch (err) {
-          reportError(err, 'HorseFleet.stableHandHeartbeat');
         }
-      }
 
-      if (book && stateMutations.length > 0) {
-        const folded = foldMutations(book.states, stateMutations, todayKey, nowMs);
-        const written = await writeStateRows(folded.rows);
-        // Fold back into the cached book so the NEXT cycle reads the counter
-        // this one wrote, rather than waiting for the cache to expire.
-        for (const [id, st] of folded.next) book.states.set(id, st);
-        if (written > 0) {
-          console.log(
-            `[HorseFleet] Stable Hand state: ${written} horse row(s) updated ` +
-              `(${stateMutations.filter((m) => m.sitOnKey).length} sit(s), ` +
-              `${stateMutations.filter((m) => m.closedKey).length} seat(s) given up, ` +
-              `${stateMutations.filter((m) => m.addMinutes).length} minute accrual(s))`
+        if (book && stateMutations.length > 0) {
+          const folded = foldMutations(book.states, stateMutations, todayKey, nowMs);
+          const written = await writeStateRows(folded.rows);
+          // Fold back into the cached book so the NEXT cycle reads the counter
+          // this one wrote, rather than waiting for the cache to expire.
+          for (const [id, st] of folded.next) book.states.set(id, st);
+          if (written > 0) {
+            console.log(
+              `[HorseFleet] Stable Hand state: ${written} horse row(s) updated ` +
+                `(${stateMutations.filter((m) => m.sitOnKey).length} sit(s), ` +
+                `${stateMutations.filter((m) => m.closedKey).length} seat(s) given up, ` +
+                `${stateMutations.filter((m) => m.addMinutes).length} minute accrual(s))`
+            );
+          }
+          if (folded.skippedUntagged > 0) {
+            console.warn(
+              `[HorseFleet] ${folded.skippedUntagged} counter update(s) skipped - ` +
+                `the tagger has never assigned those horses a rest day or a daily cap`
+            );
+          }
+          /* A WRITE THAT WROTE NOTHING IS THE FAILURE THAT HID ALL DAY.
+             writeStateRows deliberately swallows its error and returns 0, so
+             that a bad counter write can never take the floor down with it -
+             which is right, and which is also why nobody saw 23502 repeating
+             every cycle from 08:42 to 23:07 on 2026-09-04. reportError was not
+             the backstop it looked like: Sentry's own budget was dropping
+             hundreds of events an hour that day. So the zero is raised HERE,
+             where it is a fact about the platform rather than a log line, and
+             throttled to once an hour so it stays readable. */
+          if (folded.rows.length > 0 && written === 0) {
+            if (nowMs - this.lastStateWriteComplaintAt >= 60 * 60_000) {
+              this.lastStateWriteComplaintAt = nowMs;
+              await supabase
+                .rpc('fn_raise_server_financial_alert', {
+                  p_severity: 'warning',
+                  p_source: 'HorseFleet.stableHandState',
+                  p_message:
+                    `The Stable Hand counter write is failing: ${folded.rows.length} row(s) ` +
+                    'were folded and none were accepted. Sit counts, the daily minute cap and ' +
+                    'the two-hour re-buy window are all reading zero, so those three gates are ' +
+                    'passing everything. The fleet is otherwise unaffected.',
+                  p_context: { kind: 'stable_hand_state_write_failing', rows: folded.rows.length },
+                  p_entity_id: 'stable_hand',
+                })
+                .then(
+                  () => undefined,
+                  (err: unknown) => reportError(err, 'HorseFleet.stateWriteAlert')
+                );
+            }
+          }
+        } else if (controllerEnabled() && stateMutations.length > 0 && !book) {
+          console.warn(
+            `[HorseFleet] ${stateMutations.length} Stable Hand counter update(s) DROPPED - ` +
+              `the tag book was unread this cycle`
           );
         }
+      } catch (err) {
+        reportError(err, 'HorseFleet.stableHandBookkeeping');
       }
 
       // The same two directions for a HOST's own table, from the switches on

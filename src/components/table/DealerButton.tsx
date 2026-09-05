@@ -16,10 +16,10 @@ import {
   markerGapWidthPct,
   isOnFeltText,
   overlapsTopSeatBox,
+  overlapsBoard,
   clampIntoFelt,
   feltCenter,
   BUTTON_FELT_MARGIN_WIDTH_PCT,
-  FELT_MARKER_MARGIN_WIDTH_PCT,
   MARKER_MIN_GAP_WIDTH_PCT,
   FELT_WINDOW,
   NOMINAL_SCALER,
@@ -105,37 +105,10 @@ export function overlapsSeatPlate(
   return !(clearOnX || clearOnY);
 }
 
-/**
- * True when the puck's disc intersects the community board.
- *
- * The same rectangle tests/table-seat-ring-integrity.test.ts measures the puck
- * against - the middle 95% of the felt's width, five cards at 64:92 with 2px
- * gaps, hung at 42.5% of the felt's height. Restated rather than imported
- * because that file deliberately owns its own copy; the numbers must be kept
- * in step, and the test in tests/unit/seatCardsAndPlate.test.tsx re-runs the
- * assertion against THIS function so a drift is caught rather than assumed
- * away.
- *
- * Checked here because pushing the puck off a plate pushes it toward the middle
- * of the table, which is where the cards are. A fix for one overlap that
- * creates another is not a fix.
- */
-export function overlapsBoard(cand: Pos, size: Size = NOMINAL_SCALER): boolean {
-  const BOARD_FELT_FRACTION = 0.95;
-  const BOARD_GAP_PX = 2;
-  const BOARD_TOP_FELT_PCT = 42.5;
-  const centreX = FELT_WINDOW.left + FELT_WINDOW.width / 2;
-  const centreY = FELT_WINDOW.top + (BOARD_TOP_FELT_PCT / 100) * FELT_WINDOW.height;
-  const halfW = (BOARD_FELT_FRACTION * FELT_WINDOW.width) / 2;
-  const gapPct = (BOARD_GAP_PX / size.w) * 100;
-  const cardW = (BOARD_FELT_FRACTION * FELT_WINDOW.width - 4 * gapPct) / 5;
-  const halfH = (cardW * (92 / 64) * (size.w / size.h)) / 2;
-  const puckHalf = FELT_MARKER_MARGIN_WIDTH_PCT;
-  return (
-    Math.abs(cand.x - centreX) < halfW + puckHalf &&
-    Math.abs(cand.y - centreY) < halfH + puckHalf * (size.w / size.h)
-  );
-}
+/* `overlapsBoard` moved into tableGeometry.ts on 2026-09-04 so the module's
+   own placement refuses the board; re-exported here because the wrapper's
+   tests read it from this file. */
+export { overlapsBoard };
 
 /**
  * Where this seat's dealer button actually stands.

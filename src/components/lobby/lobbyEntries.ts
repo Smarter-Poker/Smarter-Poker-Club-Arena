@@ -28,6 +28,7 @@ import { cashBuyInLabel, cashBuyInRange } from '../../lib/cashBuyIn';
 import { spinMultiplierLabel } from '../../utils/spinReveal';
 import { lateRegEndMs } from './lateRegWindow';
 import { SPIN_TIERS } from '../../config/spinSpec';
+import { CASH_TEMPLATES } from '../../config/cashGames';
 
 // ─── Raw row shapes (subset the lobby queries actually select) ─────────────
 /* Extends CashFeatureSource so the medallion columns travel on the same row
@@ -54,6 +55,20 @@ export interface LobbyTableRow extends CashFeatureSource {
   is_featured?: boolean | null;
   hide_club_name?: boolean | null;
   settings?: unknown;
+  /* ── THE GAME THIS TABLE BELONGS TO (Operation Table Stakes) ───────────
+     Null on a pre-cutover fleet table. On a cluster table get_club_home also
+     carries the GAME-wide figures, because R10 (Dan 2026-09-04) says a
+     must-move game counts its players like a tournament - "0/6 should never
+     be a thing" - and the board shows one row per game, never per table. */
+  cluster_id?: string | null;
+  role?: 'main' | 'feeder' | null;
+  main_index?: number | null;
+  lifecycle?: string | null;
+  cluster_must_move?: boolean | null;
+  cluster_template?: string | null;
+  cluster_state?: string | null;
+  cluster_players?: number | null;
+  cluster_tables?: number | null;
 }
 
 export interface LobbyTournamentRow {
@@ -150,6 +165,19 @@ export interface LobbyEntry {
   guaranteeValue: number;
   players: number;
   capacity: number;
+  /**
+   * Set on the ONE row a must-move game gets on the board (R10). `players`
+   * is then the count inside the whole game and `capacity` is 0: the game
+   * has no ceiling a single table would have, and the meter must never print
+   * "x/6" for it. `tables` is how many are open right now.
+   */
+  game?: {
+    id: string;
+    mustMove: boolean;
+    template: string | null;
+    tables: number;
+    state: string | null;
+  };
   startTime: string | null;
   startValue: number; // ms epoch, Infinity when none — numeric sort key
   speedLabel: string | null;
@@ -962,9 +990,39 @@ export function tournamentStatus(t: LobbyTournamentRow): { key: LobbyStatusKey; 
    question the lobby actually asks. */
 
 // ─── Adapters ──────────────────────────────────────────────────────────────
+/** The one table of a cluster that stands for the whole game on the board. */
+export function isClusterFront(
+  t: Pick<LobbyTableRow, 'cluster_id' | 'role' | 'main_index'>
+): boolean {
+  return !!t.cluster_id && t.role === 'main' && Number(t.main_index) === 1;
+}
+
+/** A cluster table that is NOT the front is never its own row (R10). */
+export function isHiddenClusterMember(
+  t: Pick<LobbyTableRow, 'cluster_id' | 'role' | 'main_index'>
+): boolean {
+  return !!t.cluster_id && !isClusterFront(t);
+}
+
 export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
   const v = variantDisplay(t.game_variant);
-  const st = cashStatus(t, waiting);
+  const cluster = t.cluster_id
+    ? {
+        id: t.cluster_id,
+        mustMove: t.cluster_must_move !== false,
+        template: t.cluster_template ?? null,
+        tables: Number(t.cluster_tables ?? 1) || 1,
+        state: t.cluster_state ?? null,
+      }
+    : null;
+  const gamePlayers = cluster ? Number(t.cluster_players ?? t.current_players ?? 0) : 0;
+  /* R10: a game is never "full" - a full Main opens a feeder - so its status
+     is running or open, from the game-wide count, never from one table. */
+  const st = cluster
+    ? gamePlayers > 0
+      ? { key: 'running' as LobbyStatusKey, label: 'Running' }
+      : { key: 'open' as LobbyStatusKey, label: 'Open' }
+    : cashStatus(t, waiting);
   /* Dan 2026-08-25: the lobby used to print tables.max_buy_in raw, which on 42
      of 46 live tables is 200bb — a ceiling the table's own BuyInModal will not
      sell. cashBuyInRange reports what a player can actually bring. */
@@ -1000,15 +1058,28 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
     buyInValue: range.unknown ? Infinity : minBuy,
     guaranteeLabel: null,
     guaranteeValue: 0,
-    players: t.current_players || 0,
-    capacity: t.max_players || 0,
+    players: cluster ? gamePlayers : t.current_players || 0,
+    capacity: cluster ? 0 : t.max_players || 0,
+    ...(cluster ? { game: cluster } : {}),
     startTime: null,
     startValue: Infinity,
     speedLabel: null,
     status: st.key,
     statusLabel: st.label,
-    live: (t.current_players || 0) > 0,
-    rules: cashRuleMedallions(t),
+    live: (cluster ? gamePlayers : t.current_players || 0) > 0,
+    rules: cluster
+      ? [
+          {
+            key: cluster.mustMove ? 'must_move' : 'manual_table',
+            label: cluster.mustMove ? 'MUST MOVE' : 'MANUAL',
+            detail: cluster.template ? cluster.template.toUpperCase() : undefined,
+            tip: cluster.mustMove
+              ? 'One Game, Many Tables. Seats Open On A Main Pull Players Off The Feeder.'
+              : 'One Table The Host Runs By Hand.',
+          },
+          ...cashRuleMedallions(t),
+        ]
+      : cashRuleMedallions(t),
     ...lobbyFlags(t),
     clubLabel: null,
     raw: t,
@@ -1321,10 +1392,32 @@ export function seatsTakenLabel(entry: LobbyEntry): string {
  */
 const VARIANT_HEAD =
   /^\s*(nlhe?|no[\s-]?limit[\s-]?hold(?:'|’)?em|plo[4568]?|pot[\s-]?limit[\s-]?omaha|flh|flo8?|limit[_\s-]?(?:holdem|omaha)|pineapple|short[\s_-]?deck|6\+)(?!\w)/i;
-const STAKES_HEAD = /^\s*\$?\d+(?:\.\d+)?\s*\/\s*\$?\d+(?:\.\d+)?/;
+/**
+ * A stake is `1/2`, `$1/$2`, `0.10/0.25` - or `.10/.25`, because `entry.name`
+ * has already been through formatGameTitle, which drops the leading zero of
+ * every sub-dollar blind. `\d+` required that zero, so on the desktop board
+ * every micro table's second line began with the stakes its first line had
+ * just given: "NLH 0.10/0.25" over ".10/.25 Classic" (Dan, 2026-09-04).
+ */
+const STAKES_HEAD = /^\s*\$?(?:\d+(?:\.\d+)?|\.\d+)\s*\/\s*\$?(?:\d+(?:\.\d+)?|\.\d+)/;
+
+/** The template's display name; the vocabulary is `src/config/cashGames.ts`. */
+function cashTemplateLabel(template: string | null | undefined): string | null {
+  if (!template) return null;
+  return CASH_TEMPLATES.find((t) => t.id === template)?.label ?? null;
+}
 
 export function cashTitleLines(entry: LobbyEntry): { headline: string; subtitle: string | null } {
   const headline = [entry.gameLabel, entry.stakesLabel].filter(Boolean).join(' ').trim();
+  /* A templated game (Operation Table Stakes) says what KIND of game it is on
+     line two - Classic, Action or Madness - straight from the game row, not
+     parsed back out of a table name. Dan 2026-09-04: "UNDER ALL THE GAMES
+     TITLES INSTEAD OF REPEATING THE STAKES AGAIN, SHOULD JUST SAY 'CLASSIC'
+     'ACTION' OR 'MADNESS'." */
+  const templateLabel = cashTemplateLabel(entry.game?.template);
+  if (templateLabel) {
+    return { headline: headline || String(entry.name || ''), subtitle: templateLabel };
+  }
   /* Strip in BOTH orders. A host may type "NLH 1/2 Late Night" or
      "1/2 NLH Late Night", and stripping only variant-then-stakes left the
      variant in the subtitle for the second one, so the card said NLH twice. */

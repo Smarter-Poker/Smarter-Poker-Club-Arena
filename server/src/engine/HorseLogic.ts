@@ -61,7 +61,7 @@ import { SUITS, RANKS, RANK_VALUES, validateAction, calculateBettingState } from
 // V3 (2026-07-23): real-time opponent intelligence — live stats, range reading,
 // exploit adjustments, board texture, blockers. See HorseMind.ts.
 import { bestPineappleDiscard } from './pineappleDiscardChoice.js';
-import { HorseMind } from './HorseMind.js';
+import { HorseMind, SNAP_MS, TANK_MS } from './HorseMind.js';
 // V7 (2026-07-24): position-pair preflop mastery — 3-bet/4-bet bluffs, blind
 // vs blind, squeezes, stack depth, reshoves, ICM. See HorsePreflop.ts.
 import {
@@ -1565,6 +1565,10 @@ export interface HorseDecideOpts {
    *  load into a cap for limped pots. Disable to ablate (default: enabled).
    *  A horse with no leak profile is byte-identical either way. */
   v41Leaks?: boolean;
+  /** V43 (2026-09-05): tempo reads - a river big bet priced by how fast it
+   *  was made against what this player's bets at that tempo have shown down
+   *  as. Disable to ablate (default: enabled). */
+  v43Tempo?: boolean;
 }
 
 /**
@@ -5129,6 +5133,45 @@ export class HorseLogic {
               if (tell >= 0.75) respect += 0.12;
               else if (tell <= 0.4) respect -= 0.1;
               if (telemetryOn(opts)) noteFire('v16_reads_tell');
+            }
+          }
+          // ═══ V43 TEMPO (2026-09-05) ═══ the action log has carried a
+          // timestamp on every record since the engine was written, and no
+          // read ever looked at it. How fast THIS bet was made, against what
+          // this player's bets at that tempo have shown down as. Same gate
+          // as the V16 tell: river, big sizing, a real sample. A human's
+          // snap-bet is the oldest tell in the game; a horse's tempo is
+          // randomised (V14), so the read learns nothing from the fleet and
+          // everything from a person.
+          if ((opts.v43Tempo ?? true) !== false && isRiver && potFrac >= 0.75) {
+            let betTs: number | null = null;
+            let prevTs: number | null = null;
+            for (const a of hist) {
+              const ts =
+                typeof a.timestamp === 'number' && isFinite(a.timestamp) ? a.timestamp : null;
+              if (
+                a.stage === street &&
+                a.userId === bettorId &&
+                (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
+              ) {
+                betTs = ts;
+                break;
+              }
+              if (ts !== null) prevTs = ts;
+            }
+            const gap = betTs !== null && prevTs !== null ? betTs - prevTs : null;
+            if (gap !== null && gap >= 0) {
+              const tendency =
+                gap <= SNAP_MS
+                  ? HorseMind.snapBetValueTendency(bettorId)
+                  : gap >= TANK_MS
+                    ? HorseMind.tankBetValueTendency(bettorId)
+                    : null;
+              if (tendency !== null) {
+                if (tendency >= 0.75) respect += 0.08;
+                else if (tendency <= 0.4) respect -= 0.08;
+                if (telemetryOn(opts)) noteFire('v43_tempo_read');
+              }
             }
           }
         }

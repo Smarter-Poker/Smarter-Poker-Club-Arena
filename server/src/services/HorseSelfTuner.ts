@@ -560,8 +560,22 @@ const RUN_HOUR_UTC = 8;
 // window depending on boot offset — and a throw inside that single tick lost
 // the whole night with no retry. Ten minutes guarantees several attempts.
 const CHECK_INTERVAL_MS = 10 * 60 * 1000;
-/** Hours after RUN_HOUR_UTC during which a missed run is still picked up. */
-const TUNER_CATCHUP_HOURS = 3;
+/**
+ * Hours after RUN_HOUR_UTC during which a missed run is still picked up.
+ *
+ * FOUR, NOT THREE (2026-09-05), for the reason set out over
+ * LEAGUE_CATCHUP_HOURS: a claim made in the last thirty minutes of the window
+ * cannot be taken over, because CLAIM_STALE_MS is thirty minutes and the
+ * window shuts before the corpse goes cold. This tuner has the same shape and
+ * the same scar - joining claims to output, it claimed twelve nights and
+ * produced nothing on five of them (2026-08-24, 08-26, 08-30, 09-01, 09-02).
+ *
+ * It matters more here than for the league. HorseSelfTuner is the ONLY writer
+ * of profiles.horse_profile.leaks, so every night it dies the horse's own
+ * review verdicts never reach the brain, and v40_leak_profile_read - the layer
+ * that reads them at decision time - stays at zero fires.
+ */
+const TUNER_CATCHUP_HOURS = 4;
 /** Settle time before the boot check. */
 const TUNER_BOOT_DELAY_MS = 120 * 1000;
 // V12.3: the window is now HONEST. It was declared as 7 days while

@@ -1937,8 +1937,30 @@ export class HorseFleetManager {
                starve: Midway Union carries 438 NLH horses, 110 PLO4 and 45 of
                the thinnest limit variant, against 20 NLH tables and a limit
                board trimmed to two. */
+            /* ── THE TAG IS ABSOLUTE (Dan, 2026-09-05) ──────────────────
+               These four checks used to yield to `humanNeedsRescue`, on the
+               reasoning that a human waiting at a short table outranks a
+               texture rule. Dan overruled it, and the arithmetic is on his
+               side: "THERE ARE LIKE 4 HUMAN PLAYERS CURRENTLY... NOTHING
+               REALLY MATTERS EXCEPT GETTING THIS RIGHT, SO WHEN HUMAN PLAYERS
+               DO COME, THEY DON'T SLAUGHTER THE HORSES."
+
+               The bypass was not cheap. Measured 2026-09-05 against live
+               seats, club-scoped, counting only seats taken AFTER the horse
+               was tagged: 124 of 327 (38%) sat at a big blind the tag forbids
+               and 79 (24%) played a variant it forbids. A rule obeyed 62% of
+               the time is not a rule, it is a preference - and the shape it
+               produced is the one a human WOULD notice, a 10/25 name in a
+               0.50/1 game.
+
+               With four humans on the platform the trade is one-sided: a table
+               that sits short for a minute costs almost nothing today, and a
+               fleet that ignores its own tags costs everything the day real
+               players arrive. Revisit when the human count makes short tables
+               expensive - and revisit it here, deliberately, rather than by
+               reintroducing a bypass. */
             const variantOk = tagAllowsVariant(tag, String(table.game_variant ?? ''));
-            if (variantOk === false && !humanNeedsRescue) {
+            if (variantOk === false) {
               tagDropped++;
               return false;
             }
@@ -1949,7 +1971,7 @@ export class HorseFleetManager {
                horses sat across multiple stakes in 48 hours, one at 0.10/0.20
                and 25.00/50.00 both. */
             const stakeOk = tagAllowsStake(tag, Number(table.big_blind));
-            if (stakeOk === false && !humanNeedsRescue) {
+            if (stakeOk === false) {
               tagDropped++;
               return false;
             }
@@ -1961,11 +1983,11 @@ export class HorseFleetManager {
                tagger and read by nobody. A human short-handed at this table
                outranks both: a rest day is a texture, a person waiting is not. */
             const st = book?.states.get(h.id);
-            if (!humanNeedsRescue && isRestDayFor(st, chicagoWeekday)) {
+            if (isRestDayFor(st, chicagoWeekday)) {
               restDayDropped++;
               return false;
             }
-            if (!humanNeedsRescue && dailyCapReached(st, todayKey)) {
+            if (dailyCapReached(st, todayKey)) {
               dailyCapDropped++;
               return false;
             }

@@ -24,6 +24,21 @@ whichever test the next agent notices first.
 
 ## Resolved conflicts — do not reopen
 
+- **The tag versus a waiting human (resolved 2026-09-05, Dan):** the horse tag
+  (variant, preferred stakes, rest day, daily cap) is ABSOLUTE. It used to yield
+  to `humanNeedsRescue` in `HorseFleetManager`, and `StableHandSeatingWiring`
+  pinned that bypass under the heading "A WAITING HUMAN OUTRANKS EVERY TEXTURE
+  RULE". Dan reversed it: _"THERE ARE LIKE 4 HUMAN PLAYERS CURRENTLY... NOTHING
+  REALLY MATTERS EXCEPT GETTING THIS RIGHT, SO WHEN HUMAN PLAYERS DO COME, THEY
+  DON'T SLAUGHTER THE HORSES AND WIN ALL THE CHIPS!"_ The measurement behind it:
+  of 327 live seats governed by a tag and taken after tagging, 124 (38%) sat at
+  a forbidden big blind and 79 (24%) played a forbidden variant, with one horse
+  on 6 tables against a tagged max of 4. `humanNeedsRescue` still sizes the fill
+  and widens the candidate pool; it no longer decides whether a horse may be in
+  the game. The law is `server/src/services/TheTagIsAbsolute.law.test.ts`.
+  **Revisit only when the human count makes short tables expensive, and revisit
+  it deliberately - not by reintroducing a bypass.**
+
 - **Where union promo to a club lands (resolved 2026-09-05, Dan):** in the
   club's **PROMO WALLET** (`clubs.promo_balance`), not the Club Bank. The
   2026-09-03 promo model (`promo-is-disbursed-by-the-owner.law.test.ts`) had it

@@ -844,8 +844,33 @@ const LEAGUE_HOUR_UTC = 4;
 // nightly run was skipped with nothing reporting it. Ten minutes, plus the
 // catch-up window below, closes that hole.
 const LEAGUE_CHECK_MS = 10 * 60 * 1000;
-/** Hours after LEAGUE_HOUR_UTC during which a missed run is still picked up. */
-const LEAGUE_CATCHUP_HOURS = 3;
+/**
+ * Hours after LEAGUE_HOUR_UTC during which a missed run is still picked up.
+ *
+ * FOUR, NOT THREE (2026-09-05, measured). The takeover below needs TWO things
+ * true at once: the claim must be older than CLAIM_STALE_MS (30 minutes) AND
+ * the clock must still be in this window. Those cannot both hold for a claim
+ * made in the final thirty minutes of the window - the corpse goes cold only
+ * after the door has shut - so a crash at the edge loses the whole day with a
+ * claim row sitting there saying it was handled.
+ *
+ * It happened today, to the minute:
+ *
+ *   06:56:50  instance 2e17d62b3874 claims 'league' for 2026-09-05
+ *   06:59:43  the container is replaced (routine: server/** merges deploy)
+ *   07:00:00  the window shuts
+ *   ~07:01:43 the replacement finishes its boot delay, is out of window, and
+ *             never reaches the claim logic at all
+ *
+ * Result: zero league rows for 2026-09-05, and fn_horse_job_health reports the
+ * night hollow. The window has to outlast the staleness timer by enough to
+ * take a corpse over and still have runway, so it is CLAIM_STALE_MS plus room
+ * rather than a round number that happens to be too small. The league is
+ * synthetic matchups against a sandboxed HorseMind - it spends compute, not
+ * chips - so starting one an hour later costs nothing and losing the day costs
+ * the only benchmark a strategy change can be validated against.
+ */
+const LEAGUE_CATCHUP_HOURS = 4;
 /** V23 (2026-08-28): a SECOND daily window. One 90-minute budget covers 4-6
  *  matchups against a ~30-matchup card — even staleness-first, a matchup got
  *  measured every ~5 nights and a new layer waited most of a week for its

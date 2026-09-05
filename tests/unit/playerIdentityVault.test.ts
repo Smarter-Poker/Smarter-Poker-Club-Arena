@@ -72,7 +72,11 @@ describe('Player Identity Vault interaction semantics', () => {
     expect(PUBLIC_PROFILE).toContain('type="button"');
     expect(PUBLIC_PROFILE).toContain('className="mutual-friend-chip"');
     expect(PROFILE_EDIT).toContain('role="dialog"');
-    expect(PROFILE_EDIT).toContain('aria-pressed={formData.avatarUrl === url}');
+    expect(PROFILE_EDIT).toContain('aria-pressed={formData.tags.includes(tag)}');
+    // 2026-09-04: the dicebear picker was a control that persisted nothing.
+    expect(PROFILE_EDIT).not.toContain('api.dicebear.com');
+    expect(PROFILE).toContain('<AvatarGallery');
+    expect(PROFILE).not.toContain("window.open('https://smarter.poker/hub/avatars'");
     expect(BLOCK_MODAL).toContain('role="dialog"');
     expect(BLOCK_MODAL).toContain('htmlFor={reasonId}');
   });

@@ -39,6 +39,56 @@ Rules every phase obeys:
 - AGENT-PLAYBOOK: own worktree, branch -> push -> PR, never merge yourself,
   never --no-verify, never leave work unpushed.
 
+## DEFECT QUEUE (Dan's live observations; cleared at the START of the next phase, before any feature work)
+
+Every item here is a defect (a wrong action a human saw), not a strategy
+question, so it ships default-on with the measurement that found it, a
+scenario test built from the recorded hand, and a review-tag detector where
+the pattern was untagged. Diagnoses below are from the recorded actions in
+hand_history; the branch named is the one to open first.
+
+D1. MIN-RAISE OPENS IN ANTE CASH GAMES (Dan 2026-09-04, hands #6199941 and
+#6201937, 0.10/0.25 NLH with a 0.25 ante = one big blind per player).
+Both opens were exactly 0.50 (2x). HorsePreflop V28 open ladder sets
+baseOpen 2.05-2.40x when ctx.anteInPlay and takes 0.15 off in late
+position, so the button lands under 2x and legalize() floors it to the
+min-raise; MP lands at 2.05-2.4x which the engine records as 0.50 too
+(trace the rounding in raiseTo/legalize against a 0.25 blind). The rule
+itself is wrong for big antes: with six antes of one BB already dead,
+a 2x open is a quarter-pot raise. Fix: size the open off the DEAD MONEY
+when antes are in play (raise so the raise is ~0.7-1.0x the pot before
+it, floor 2.5x BB), never below 2.5x in cash, and pin it with a test at
+0.10/0.25 + 0.25 ante. Detector: open_min_raise (cash, raise <= 2.0x BB
+when the pot before the open exceeds 3 BB). "You said you fixed this
+already": the earlier fix was HorseNoOpenLimp (open-limps), not sizing.
+
+D2. RAISE-FOLD TO A SHORT JAM AT 6:1 (hand #6201937: BTN opened 0.50, SB
+jammed 1.04, BTN folded facing 0.54 into ~3.3). Required equity ~14%;
+any two cards clear it. Trace HorsePreflop facing-3-bet / facing-jam:
+the range gate is applied before the price gate for a full-raise jam
+(isFullRaise true) - the V38 preflop all-in price fires 27k/day but did
+not own this node. Fix: a call that costs less than ~25% of the pot
+against an all-in is priced by equity vs the jamming range and never
+folded by range alone; the V28 commitment law (money already in) applies
+preflop to the opener as it does postflop. Detector: preflop_cheap_jam_fold
+(folded facing an all-in at <= 0.25 pot). Same hand also shows the open
+from D1.
+
+D3. RIVER BET OUT OF POSITION WITH THE BOARD (hand #6199941: 8h 4h 9h 2h Jh
+river, MP bet 5.34 into 7.02 holding Td Js, no heart). The classifier
+scored a flush (cat 6) because the BOARD is a flush; hero's hole cards
+contribute nothing, the hand is a chop at best and loses to any heart
+(~35% of hands). The value branch fired a three-quarter-pot bet OOP into
+a range that only continues with a heart. Fix: a "plays the board"
+read in nlhNutStatus / omahaNutStatus (hero's best five equals the board
+five, or hero's cards do not improve the board's made hand): such a hand
+has SHOWDOWN VALUE ONLY - never value bets, never bluffs without a
+blocker to the nuts, checks and calls at the chop price. Four-flush
+boards (turn) get the same read for a hand with no card of the suit.
+Detector: board_plays_bet (bet or raise on a street where hero plays the
+board). Dan's wider point stands and is the rest of this plan: a human
+saw three of these in five minutes.
+
 ## Phase 1 - THE HORSE DATA LEDGER (foundation; proves what is consumed)
 
 - server/src/engine/HorseDataLedger.ts: typed registry of every input the brain

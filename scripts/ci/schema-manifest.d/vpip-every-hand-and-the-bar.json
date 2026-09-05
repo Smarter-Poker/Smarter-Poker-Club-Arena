@@ -1,0 +1,7 @@
+{
+  "_owner": "feat/vpip-every-hand-and-the-bomb-that-cannot-be-tanked-for",
+  "_comment": "20260905064000: booted for low VPIP is barred for two hours (barred_until, the floor read raises, the game door refuses). 20260905063000 is DML only (bomb pots count as VPIP). Both applied to production 2026-09-05 03:20 UTC.",
+  "tables": [],
+  "functions": ["fn_cash_game_barred_seconds"],
+  "columns": { "cash_rejoin_constraints": ["barred_until"] }
+}

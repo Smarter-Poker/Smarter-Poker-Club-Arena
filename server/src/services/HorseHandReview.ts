@@ -26,8 +26,13 @@
 
 import { supabase } from './supabase/client.js';
 import { reportError } from './errorReporter.js';
-import { variantInfo, omahaNutStatus, nlhNutStatus } from '../engine/HorseEval.js';
-import { RANK_VALUES } from '../engine/PokerEngine.js';
+import {
+  variantInfo,
+  omahaNutStatus,
+  nlhNutStatus,
+  scoreOmahaHiPartial,
+} from '../engine/HorseEval.js';
+import { RANK_VALUES, RANKS, SUITS } from '../engine/PokerEngine.js';
 import type { Card } from '../types.js';
 
 export interface HorseReviewInput {
@@ -52,6 +57,9 @@ export interface HorseReviewInput {
     action: string;
     amount?: number;
     stage: string;
+    /** HandController's discriminator on an all_in: true = full raise,
+     *  false = short raise, UNDEFINED = a call-off that never moved the bet. */
+    isFullRaise?: boolean;
   }>;
   roster: Array<{ userId: string; isHorse: boolean }>;
 }
@@ -118,12 +126,42 @@ export function parseCards(v: unknown): Card[] | null {
  * denominator.
  */
 function riverAggressiveActions(row: {
-  heroActions: Array<{ action: string; stage: string }>;
+  heroActions: Array<{ action: string; stage: string; isFullRaise?: boolean }>;
 }): number {
-  return row.heroActions.filter(
-    (a) =>
-      a.stage === 'river' && (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
-  ).length;
+  return row.heroActions.filter((a) => a.stage === 'river' && isAggressiveAction(a)).length;
+}
+
+/**
+ * ═══ A CALL-OFF ALL-IN IS A CALL (2026-09-05) ═══
+ *
+ * HandController records every all_in with `isFullRaise`: true when it is a
+ * full raise, false when it raised currentBet by less than the minimum, and
+ * UNDEFINED when the stack did not reach currentBet at all - a call for
+ * everything the player had. HorseLogic has read that discriminator since
+ * the V28 audit fix (routing: "an all-in call-off is a caller of the price").
+ * These detectors never did: every all_in counted as a bet or raise.
+ *
+ * Measured on 2026-09-04: 450 of 952 river_raise_war tags were a hero bet
+ * followed by a hero CALL-off of a shove (the river_raise_paidoff shape, not
+ * a war), and 941 of 7,569 river_aggr_lost tags were hands whose only river
+ * action by the hero was a call-off. The win-side mirrors (river_aggr_won,
+ * river_raise_war_won) share the same function, so the river_aggression_ev
+ * headline was contaminated in both directions. Preflop, a call-off looked
+ * like a raise and suppressed coldcall_stackoff / limped_pot_bloat.
+ *
+ * Aggression is bet, raise, or an all_in that MOVED the bet. An all_in with
+ * no isFullRaise is a call wherever a detector asks.
+ */
+export function isAggressiveAction(a: { action: string; isFullRaise?: boolean }): boolean {
+  return (
+    a.action === 'bet' ||
+    a.action === 'raise' ||
+    (a.action === 'all_in' && a.isFullRaise !== undefined)
+  );
+}
+
+function isCallAction(a: { action: string; isFullRaise?: boolean }): boolean {
+  return a.action === 'call' || (a.action === 'all_in' && a.isFullRaise === undefined);
 }
 
 /**
@@ -141,6 +179,55 @@ const PLO_STACKOFF_BB = 100;
  */
 const CAT_ONE_PAIR = 2;
 const CAT_TRIPS = 4;
+const CAT_FULL_HOUSE = 7;
+const CAT_QUADS = 8;
+
+/** Does the board carry a pair (or better) of any rank? */
+export function boardHasPair(board: Card[]): boolean {
+  const seen = new Set<string>();
+  for (const c of board) {
+    if (seen.has(c.rank)) return true;
+    seen.add(c.rank);
+  }
+  return false;
+}
+
+/**
+ * Omaha: is hero's full house the NUT full house on this board? Enumerates
+ * every two-card holding from the cards hero cannot see (52 minus the board
+ * minus hero's hole cards) and asks whether any of them makes a bigger full
+ * house or quads - two hole cards and three board cards, the Omaha rule,
+ * which is exactly what scoreOmahaHiPartial does with a two-card hand. A
+ * straight flush also beats a boat but is a different leak and is ignored
+ * here. ~800 evaluations of a five-card board; only called for a made boat
+ * with a full stack in, a few hundred hands a day.
+ */
+export function omahaBoatIsNut(hole: Card[], board: Card[]): boolean {
+  const heroScore = scoreOmahaHiPartial(hole, board);
+  const heroCat = Math.floor(heroScore / 0x100000);
+  if (heroCat < CAT_FULL_HOUSE) return false;
+  const seen = new Set<string>();
+  for (const c of hole) seen.add(c.rank + c.suit);
+  for (const c of board) seen.add(c.rank + c.suit);
+  const unseen: Card[] = [];
+  for (const rank of RANKS) {
+    for (const suit of SUITS) {
+      if (!seen.has(rank + suit)) unseen.push({ rank, suit } as Card);
+    }
+  }
+  const combo: Card[] = new Array(2);
+  for (let i = 0; i < unseen.length; i++) {
+    combo[0] = unseen[i];
+    for (let j = i + 1; j < unseen.length; j++) {
+      combo[1] = unseen[j];
+      const s = scoreOmahaHiPartial(combo, board);
+      if (s <= heroScore) continue;
+      const cat = Math.floor(s / 0x100000);
+      if (cat === CAT_FULL_HOUSE || cat === CAT_QUADS) return false;
+    }
+  }
+  return true;
+}
 
 /**
  * What the FINAL board makes available to somebody else. Omaha plays exactly
@@ -201,7 +288,7 @@ export function detectLeaks(row: {
   variant: string;
   holeCards: Card[] | null;
   board: Card[] | null;
-  heroActions: Array<{ action: string; stage: string; amount?: number }>;
+  heroActions: Array<{ action: string; stage: string; amount?: number; isFullRaise?: boolean }>;
   wentToShowdown: boolean;
 }): string[] {
   const tags: string[] = [];
@@ -210,10 +297,7 @@ export function detectLeaks(row: {
 
   const folded = row.heroActions.some((a) => a.action === 'fold');
   const raisedOrBet = (stage: string) =>
-    row.heroActions.some(
-      (a) =>
-        a.stage === stage && (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
-    );
+    row.heroActions.some((a) => a.stage === stage && isAggressiveAction(a));
 
   /*
    * ═══ THE WIN SIDE OF RIVER AGGRESSION (2026-09-01) ═══
@@ -285,14 +369,12 @@ export function detectLeaks(row: {
   // reads are from the hero side: the amounts say whether the entry was a
   // limp or a cold-call of a raise.
   const heroPre = row.heroActions.filter((a) => a.stage === 'preflop');
-  const heroPreRaised = heroPre.some(
-    (a) => a.action === 'bet' || a.action === 'raise' || a.action === 'all_in'
-  );
+  const heroPreRaised = heroPre.some((a) => isAggressiveAction(a));
   const bb = row.bigBlind || 1;
-  if (!heroPreRaised && heroPre.some((a) => a.action === 'call') && investedBB >= 2 * FLAG_BB) {
+  if (!heroPreRaised && heroPre.some((a) => isCallAction(a)) && investedBB >= 2 * FLAG_BB) {
     const maxPreCall = Math.max(
       0,
-      ...heroPre.filter((a) => a.action === 'call').map((a) => a.amount ?? 0)
+      ...heroPre.filter((a) => isCallAction(a)).map((a) => a.amount ?? 0)
     );
     if (maxPreCall <= bb * 1.05) {
       // Entered for one big blind and lost 40bb+ — limped pots are supposed
@@ -348,10 +430,8 @@ export function detectLeaks(row: {
     // The V21 war tag needs two aggressive actions; this catches the
     // bet-then-call shape that pays a raise without escalating.
     const acts = row.heroActions.filter((a) => a.stage === 'river');
-    const betIdx = acts.findIndex(
-      (a) => a.action === 'bet' || a.action === 'raise' || a.action === 'all_in'
-    );
-    if (betIdx >= 0 && acts.slice(betIdx + 1).some((a) => a.action === 'call')) {
+    const betIdx = acts.findIndex((a) => isAggressiveAction(a));
+    if (betIdx >= 0 && acts.slice(betIdx + 1).some((a) => isCallAction(a))) {
       tags.push('river_raise_paidoff');
     }
   }
@@ -472,7 +552,38 @@ export function detectLeaks(row: {
       if (st.category === CAT_TRIPS) {
         const threats = omahaBoardThreats(row.board);
         if (threats.fullHouseLive || threats.flushLive || threats.straightLive) {
-          tags.push('plo_naked_trips_stackoff');
+          // ── TRIPS AND SETS ARE NOT THE SAME LEAK (2026-09-05) ──
+          // Three of a kind is one category number, but the two shapes are
+          // different decisions: TRIPS is one hole card on a board pair (the
+          // #5428599 shape, and the 09-02 panel's hand 103011 - both of
+          // which this tag was written for); a SET is a pocket pair on an
+          // unpaired board, hidden, with boat and straight redraws of its
+          // own. Measured 2026-09-04: 275 of 419 plo_naked_trips_stackoff
+          // tags were sets on unpaired boards (review 235357: top set on
+          // Q-J-T), and HorseLogic's PLO_STACKOFF_TAGS reads this tag as a
+          // rate into ploStackoffLoad, so V40 was being pushed by a hand it
+          // was never meant to count. The board decides which is which: a
+          // category-4 hand on a paired board is trips (a pocket pair on a
+          // paired board would be a boat or quads, never trips); on an
+          // unpaired board it can only be a set.
+          tags.push(boardHasPair(row.board) ? 'plo_naked_trips_stackoff' : 'plo_set_stackoff');
+        }
+      } else if (st.category === CAT_FULL_HOUSE) {
+        // ── THE PLO UNDER-FULL (2026-09-05) ──
+        // The V15 nut block knows flushes and straights; nlhNutStatus's
+        // `underfull` is hold'em only; and HorseLogic's dominated21 brake
+        // excludes Omaha for full houses. So the day's three biggest PLO
+        // losses on 2026-09-04 carried no Omaha tag at all: sixes full
+        // re-raising a river on 7-4-2-7-6 into sevens full (review 190517,
+        // -527bb), fives full of THREES - the worst boat on 5-6-8-3-5 -
+        // raising and then shoving over a river 3-bet (182170, -523bb),
+        // sixes full of nines 3-betting a paired turn (190109, -519bb).
+        // This is the Omaha mirror of the sixes-full-on-JJ66x incident V21
+        // was written for. The test is exhaustive and cheap at this rate:
+        // is there ANY two-card holding, from the cards hero cannot see,
+        // that makes a bigger full house or quads on this exact board.
+        if (!omahaBoatIsNut(row.holeCards, row.board)) {
+          tags.push('plo_underfull_stackoff');
         }
       } else if (st.category <= CAT_ONE_PAIR) {
         // At most one pair with a full stack in. By the river every redraw has
@@ -515,7 +626,12 @@ export function buildReviewRows(input: HorseReviewInput): HorseReviewRow[] {
     const seatInfo = input.holeCardsAll.get(uid);
     const heroActions = (input.actions ?? [])
       .filter((a) => a.userId === uid)
-      .map((a) => ({ action: a.action, stage: a.stage, amount: a.amount }));
+      .map((a) => ({
+        action: a.action,
+        stage: a.stage,
+        amount: a.amount,
+        isFullRaise: a.isFullRaise,
+      }));
     const folded = heroActions.some((a) => a.action === 'fold');
     const holeCards = seatInfo ? parseCards(seatInfo.cards) : null;
     const board = input.board ? parseCards(input.board) : null;

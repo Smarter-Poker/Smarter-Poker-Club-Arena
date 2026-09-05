@@ -64,6 +64,7 @@ import {
 import { INSTANCE_ID } from '../services/tableLease.js';
 import { evaluateCashSessions, atomicCashoutVoluntary } from '../services/supabase/cashSessions.js';
 import {
+  announceSeatMoves,
   executePendingSeatMoves,
   pendingSeatMoves,
   seatMoveNotice,
@@ -603,6 +604,38 @@ export abstract class ServerTableEngineBase {
   /** Is this instance still the authoritative engine for its table? */
   protected isCurrentEngine(): boolean {
     return ServerTableEngineBase.isCurrentEngineFor(this.tableId, this);
+  }
+
+  /**
+   * BBJ AUDIT 2026-09-05: every live CASH table whose club is in `clubIds`,
+   * other than `excludeTableId`.
+   *
+   * A Bad Beat Jackpot hit is announced to "everyone currently playing in the
+   * club or union" (Dan). The client used to learn about a hit at another
+   * table only through a Supabase Realtime subscription on the pool row - a
+   * stream this platform has measured a minute or more behind at peak - and
+   * then refused anything older than 90 seconds as a replay. So at other
+   * tables the announcement raced its own freshness gate and could lose.
+   *
+   * The engine already holds a socket to every one of those tables. This is
+   * the fan-out list for `bbj_hit_global`, read from the same registry that
+   * decides which engine instance is authoritative, so a zombie engine mid
+   * teardown is never on it. Tournament tables are excluded: a jackpot is a
+   * cash-game feature and a tournament table's players are not in the pool.
+   */
+  protected static liveCashTableIdsInClubs(
+    clubIds: ReadonlySet<string>,
+    excludeTableId: string
+  ): string[] {
+    const out: string[] = [];
+    for (const [tableId, engine] of ServerTableEngineBase.liveEngines) {
+      if (tableId === excludeTableId) continue;
+      const info = engine.tableInfo;
+      if (!info?.club_id || !clubIds.has(info.club_id)) continue;
+      if (info.tournament_id) continue;
+      out.push(tableId);
+    }
+    return out;
   }
 
   /**
@@ -2083,6 +2116,20 @@ export abstract class ServerTableEngineBase {
         await this.evictExpiredSitOuts({ countOrbit: false }).catch((err) =>
           reportError(err, 'ServerTableEngine.' + this.tableId + '.wait_loop_sitout_evict')
         );
+        // MUST-MOVE (2026-09-05). The same shape, the same reason: a lone
+        // player on a feeder waits HERE, and the move the controller planned
+        // for them was executed only from the dealing loop, which this table
+        // never reaches. Production 00:28-00:45 UTC: seventeen must-move rows
+        // for one horse, one a minute, every one expired, while Main 1 sat one
+        // short beside it. A table below the minimum is at a hand boundary
+        // all the time; every pending move lands now.
+        await this.executePendingSeatMoves().catch((err) =>
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.wait_loop_seat_moves')
+        );
+        await this.stopIfClusterTableClosed().catch((err) =>
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.wait_loop_cluster_closed')
+        );
+        if (!this.running) break;
         // IDLE BROADCAST (2026-08-22): publish the waiting-state snapshot so
         // a client joining an idle table gets a real SNAPSHOT (seats, stacks,
         // 'waiting' stage) instead of an eternal spinner. The hub drops
@@ -2333,11 +2380,23 @@ export abstract class ServerTableEngineBase {
    * MUST-MOVE, the engine's half (OPORD 1.3 s9.5, OPORD 1.4 s18.3). At the
    * START of a hand every player with a planned move is told, once:
    * "Seat Open On Main 2. Moving After This Hand." Nothing is asked.
+   *
+   * THE PROMISE IS WRITTEN DOWN (2026-09-05): the row is stamped announced_at
+   * and its expiry extended to cover the hand, so settlement executes exactly
+   * the moves the deal promised, and a slow hand cannot expire one from under
+   * the player who was told. Called immediately before dealHand, so it only
+   * ever speaks of a hand that is about to be dealt.
    */
   protected async announcePendingSeatMoves(): Promise<void> {
     if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return;
     const pending = await pendingSeatMoves(this.tableId);
+    const live = new Set(pending.map((m) => m.move_id));
+    for (const id of this.announcedSeatMoves) {
+      if (!live.has(id)) this.announcedSeatMoves.delete(id);
+    }
+    const fresh: string[] = [];
     for (const m of pending) {
+      if (m.announced_at == null) fresh.push(m.move_id);
       if (this.announcedSeatMoves.has(m.move_id)) continue;
       this.announcedSeatMoves.add(m.move_id);
       this.hub?.emitEvent(this.tableId, {
@@ -2352,19 +2411,24 @@ export abstract class ServerTableEngineBase {
         timestamp: Date.now(),
       });
     }
+    if (fresh.length > 0) await announceSeatMoves(fresh);
   }
 
   /**
-   * At the END of a hand (and on every idle tick) the planned moves are
-   * executed: chair, chips and session go to the other table in one SQL
-   * transaction; this engine forgets the player the way it forgets a leaver,
-   * except that nothing is cashed out and no clock is closed. The destination
-   * engine sees the new seat on its next deal (loadSeatedPlayers) and the
-   * controller wakes a dealer for a table that has none.
+   * At the END of a hand (announced moves only) and whenever the table is
+   * below the minimum to deal (every pending move - there is no hand to
+   * finish) the planned moves are executed: chair, chips and session go to
+   * the other table in one SQL transaction; this engine forgets the player
+   * the way it forgets a leaver, except that nothing is cashed out and no
+   * clock is closed. The destination engine sees the new seat on its next
+   * deal (loadSeatedPlayers) and the controller wakes a dealer for a table
+   * that has none.
    */
-  protected async executePendingSeatMoves(): Promise<string[]> {
+  protected async executePendingSeatMoves(
+    opts: { announcedOnly: boolean } = { announcedOnly: false }
+  ): Promise<string[]> {
     if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return [];
-    const done = await executePendingSeatMoves(this.tableId);
+    const done = await executePendingSeatMoves(this.tableId, opts);
     const movedIds: string[] = [];
     for (const m of done) {
       movedIds.push(m.player_id);
@@ -2398,6 +2462,40 @@ export abstract class ServerTableEngineBase {
       void this.broadcastCurrentState();
     }
     return movedIds;
+  }
+
+  /** Last time the empty-cluster-table check read the row. See below. */
+  private lastClusterClosedCheckAt = 0;
+
+  /**
+   * AN ENGINE ON A CLOSED CLUSTER TABLE STOPS (2026-09-05). The controller
+   * closes a breaking table the moment its last chair empties, and nothing
+   * on the engine side read that: the engine sat in the idle branch for ever,
+   * asking for seats, add-ons, leavers and moves every three seconds on a
+   * table no one can join. Asked once a minute, only while the table is
+   * empty; a closed row ends this engine, the reaper drops it from the map,
+   * and discovery would rebuild it if a seat ever appeared (it cannot: the
+   * door refuses a closed table).
+   */
+  protected async stopIfClusterTableClosed(): Promise<void> {
+    if (this.isTournamentTable() || !this.tableInfo?.cluster_id) return;
+    if (this.seatedPlayers.length > 0) return;
+    const now = Date.now();
+    if (now - this.lastClusterClosedCheckAt < 60_000) return;
+    this.lastClusterClosedCheckAt = now;
+    const { data, error } = await supabase
+      .from('tables')
+      .select('lifecycle, status')
+      .eq('id', this.tableId)
+      .maybeSingle();
+    if (error || !data) return;
+    const row = data as { lifecycle?: string | null; status?: string | null };
+    if (row.lifecycle === 'closed' || row.status === 'closed') {
+      console.log(
+        `[ServerTableEngine:${this.tableId}] cluster table is ${row.lifecycle ?? row.status} and empty - stopping the engine`
+      );
+      await this.stop();
+    }
   }
 
   protected isContinuityActive(userId: string): boolean {

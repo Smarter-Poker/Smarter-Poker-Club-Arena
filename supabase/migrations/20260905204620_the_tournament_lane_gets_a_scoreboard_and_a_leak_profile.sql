@@ -194,6 +194,11 @@ begin
      order by 3 desc;
 end $$;
 
+-- A console card needs an account; the function then gates on
+-- fn_is_horse_admin() like the rest of the ca_horse_* family.
+revoke all on function public.ca_horse_tournament_card(integer) from public, anon;
+grant execute on function public.ca_horse_tournament_card(integer) to authenticated, service_role;
+
 insert into public.ca_browser_definer_allowlist (proname, reason)
 values ('ca_horse_tournament_card', 'Horse tournament scoreboard, read from the horse pages. Gates itself on fn_is_horse_admin() like the other ca_horse_* console functions.')
 on conflict (proname) do nothing;

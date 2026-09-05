@@ -776,6 +776,7 @@ export function accumulateHorseNets(input: HorseReviewInput): void {
       netAcc.set(key, acc);
     }
     accumulateHorsePlay(input, day, format);
+    touchHorseSeats(input);
     if (netAcc.size > NET_ACC_MAX_KEYS) {
       // An outage has backed us up far beyond a realistic key space
       // (584 horses x variants x formats x a few days). Drop oldest-first
@@ -832,9 +833,12 @@ export function drainHorseNets(max: number = NET_BATCH_MAX): HorseNetRow[] {
 }
 
 async function flushHorseNets(): Promise<void> {
-  // Both aggregates ride one timer; a quiet minute on one must not starve
-  // the other.
+  // The aggregates ride one timer; a quiet minute on one must not starve
+  // the others.
   await flushHorsePlay().catch((err: unknown) => reportError(err, 'HorseHandReview.playFlush'));
+  await flushSeatTouches().catch((err: unknown) =>
+    reportError(err, 'HorseHandReview.seatTouchFlush')
+  );
   const rows = drainHorseNets();
   if (rows.length === 0) return;
   const { error } = await supabase.rpc('fn_horse_daily_nets_add', { p_rows: rows });
@@ -1075,5 +1079,83 @@ export async function recordHorseHandReviews(input: HorseReviewInput): Promise<v
     }
   } catch (err) {
     reportError(err, 'HorseHandReview.record');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SEAT TOUCH (2026-09-05) - the fleet state says when a horse last acted
+// ═══════════════════════════════════════════════════════════════════════════
+// ca_horse_fleet_state.last_action_at was NULL on all 1,000 rows, and
+// hands_this_session 0 on all, while 564 rows said "seated": the fleet
+// manager's minute upsert never carried them and overwrote them with
+// nothing. Settlement is the one place that sees every horse-hand, so it
+// touches the seat here: one small row per horse per table per flush,
+// through fn_ca_fleet_seat_touch, which adds hands and keeps the newest
+// timestamp. The upsert now preserves what the touch wrote.
+
+interface SeatTouch {
+  hands: number;
+  at: string;
+}
+
+const touchAcc = new Map<string, SeatTouch>();
+
+const touchEnabled = (): boolean => process.env.HORSE_SEAT_TOUCH_ENABLED !== 'false';
+
+function touchHorseSeats(input: HorseReviewInput): void {
+  try {
+    if (!touchEnabled() || !input.tableId) return;
+    for (const p of input.roster) {
+      if (!p.isHorse || !p.userId) continue;
+      const key = `${p.userId}|${input.tableId}`;
+      const acc = touchAcc.get(key) ?? { hands: 0, at: input.playedAt };
+      acc.hands += 1;
+      if (input.playedAt > acc.at) acc.at = input.playedAt;
+      touchAcc.set(key, acc);
+    }
+    if (touchAcc.size > NET_ACC_MAX_KEYS) {
+      let toDrop = touchAcc.size - NET_ACC_MAX_KEYS;
+      for (const k of touchAcc.keys()) {
+        if (toDrop-- <= 0) break;
+        touchAcc.delete(k);
+      }
+    }
+  } catch (err) {
+    reportError(err, 'HorseHandReview.touchSeats');
+  }
+}
+
+export interface SeatTouchRow {
+  horse_id: string;
+  table_id: string;
+  hands: number;
+  at: string;
+}
+
+/** Drain accumulated seat touches into RPC row shapes (exported for tests). */
+export function drainSeatTouches(max: number = NET_BATCH_MAX): SeatTouchRow[] {
+  const rows: SeatTouchRow[] = [];
+  for (const [key, acc] of touchAcc) {
+    if (rows.length >= max) break;
+    const [horse, table] = key.split('|');
+    rows.push({ horse_id: horse, table_id: table, hands: acc.hands, at: acc.at });
+    touchAcc.delete(key);
+  }
+  return rows;
+}
+
+async function flushSeatTouches(): Promise<void> {
+  const rows = drainSeatTouches();
+  if (rows.length === 0) return;
+  const { error } = await supabase.rpc('fn_ca_fleet_seat_touch', { p_rows: rows });
+  if (error) {
+    reportError(new Error(error.message), 'HorseHandReview.seatTouchRpc');
+    for (const row of rows) {
+      const key = `${row.horse_id}|${row.table_id}`;
+      const acc = touchAcc.get(key) ?? { hands: 0, at: row.at };
+      acc.hands += row.hands;
+      if (row.at > acc.at) acc.at = row.at;
+      touchAcc.set(key, acc);
+    }
   }
 }

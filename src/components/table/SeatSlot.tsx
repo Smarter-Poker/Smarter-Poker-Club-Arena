@@ -1763,7 +1763,6 @@ export const SeatSlot = memo(
       } else if (!squeezeRevealed) {
         clearPeelVars();
       }
-       
     }, [holdLiftActive, squeezeRevealed, handNumber]);
     /**
      * Progress past which a release OPENS the hand for good instead of

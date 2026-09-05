@@ -142,9 +142,9 @@ const REGISTER = {
     why: 'Horse-ONLY paths, where the negation SELECTS horses rather than excluding them: scheduling a horse\'s pineapple discard, and its insurance response. Both hand a horse a feature it would otherwise sit out of, which is the opposite of an exclusion.',
   },
   'server/src/services/HorseHandReview.ts': {
-    allowed: 1,
+    allowed: 2,
     kind: 'IDENTIFICATION',
-    why: 'Horse-ONLY again: writes the per-hand leak review rows for the fleet. Horses get MORE here than humans do, not less.',
+    why: 'Horse-ONLY again: writes the per-hand leak review rows for the fleet, and (2026-09-05) touches ca_horse_fleet_state - a table that has a row per horse and none per human - with the settlement time. Horses get MORE here than humans do, not less.',
   },
 };
 

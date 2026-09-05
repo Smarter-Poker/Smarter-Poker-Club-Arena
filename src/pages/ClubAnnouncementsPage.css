@@ -1,24 +1,28 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  CLUB ANNOUNCEMENTS PAGE — Metal UI Theme
- *  Brushed Steel + Cyan Glow Announcements
- * ═══════════════════════════════════════════════════════════════════════════════
- */
+/* #SMARTERCASINOREALISM - the material layer. Tokens are defined once on :root
+   in src/styles/club-engine.css, which main.tsx loads; this sheet only consumes
+   them. The page is the club's announcement feed: staff post from the composer
+   at the top, everyone reads the cards below, and a pinned card holds first
+   place with a gold edge. */
 
 .announcements-page {
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   width: 100%;
   max-width: 100vw;
-  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+  /* clip, not hidden - see src/styles/design-system.css on body. `hidden` on
      one axis computes the other to `auto`, which makes this a scroll container,
      and WebKit then resolves the fixed ClubBottomNav against IT instead of the
      viewport. The bar leaves the bottom of the screen and rides up the page. */
   overflow-x: hidden;
   overflow-x: clip;
-  background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
+  background: linear-gradient(
+    180deg,
+    var(--realism-panel) 0%,
+    var(--realism-carbon) 50%,
+    var(--realism-panel) 100%
+  );
   /* Reserve the fixed bottom nav this page renders (2026-08-23). The bar is
-     out of flow, so whatever it covers is simply unreachable — the token
+     out of flow, so whatever it covers is simply unreachable - the token
      is the bar's height PLUS the home-indicator inset it adds on iOS. */
   padding-bottom: var(--bottom-nav-clearance, 74px);
 }
@@ -31,82 +35,105 @@
   padding: 1rem;
 }
 
+/* The one lit control on the page. It keeps its cyan face - that is what says
+   "post" - and gains the machined top edge and the cavity under it. */
 .admin-bar button {
   width: 100%;
   padding: 0.75rem;
-  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
+  background: linear-gradient(135deg, var(--realism-cyan) 0%, #0099cc 100%);
   border: none;
-  border-radius: 10px;
-  color: #fff;
+  border-radius: var(--realism-radius);
+  color: var(--realism-chrome-hot);
   font-weight: 700;
   cursor: pointer;
   box-shadow:
+    var(--realism-bevel),
+    var(--realism-cavity),
     0 0 15px rgba(0, 212, 255, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    var(--realism-lift);
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   position: relative;
   overflow: hidden;
 }
+
+/* The press, not a hover: on a phone the tap IS the feedback. The button drops
+   into its own cavity and the top light goes out. */
+.admin-bar button:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
+}
 /* ─────────────────────────────────────────────────────────────────────────────
-   COMPOSER — Metal Editor
+   COMPOSER - Metal Editor
    ───────────────────────────────────────────────────────────────────────────── */
 
 .composer {
   padding: 1rem;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
-  border: 2px solid #2a3a4a;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border: 1px solid var(--realism-gunmetal);
   margin: 0 1rem 1rem;
-  border-radius: 12px;
+  border-radius: var(--realism-radius);
+  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
 }
 
+/* Both fields are cut INTO the composer, so the light falls on the inside of
+   their top edge rather than on top of it. */
 .composer-title {
   width: 100%;
   padding: 0.75rem;
-  border: 2px solid #2a3a4a;
-  border-radius: 8px;
-  background: linear-gradient(180deg, #0d1520 0%, #1a2332 100%);
-  color: #fff;
+  border: 1px solid var(--realism-gunmetal);
+  border-radius: var(--realism-radius);
+  background: linear-gradient(180deg, var(--realism-panel) 0%, var(--realism-panel-raised) 100%);
+  color: var(--realism-chrome-hot);
   font-size: 1rem;
   font-weight: 700;
   margin-bottom: 0.75rem;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.55);
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
 .composer-title:focus {
   outline: none;
-  border-color: #00d4ff;
+  border-color: var(--realism-cyan);
   box-shadow:
     0 0 15px rgba(0, 212, 255, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    var(--realism-bevel);
 }
 
 .composer-content {
   width: 100%;
   padding: 0.75rem;
-  border: 2px solid #2a3a4a;
-  border-radius: 8px;
-  background: linear-gradient(180deg, #0d1520 0%, #1a2332 100%);
-  color: #fff;
+  border: 1px solid var(--realism-gunmetal);
+  border-radius: var(--realism-radius);
+  background: linear-gradient(180deg, var(--realism-panel) 0%, var(--realism-panel-raised) 100%);
+  color: var(--realism-chrome-hot);
   font-size: 0.875rem;
   resize: vertical;
   margin-bottom: 0.75rem;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.55);
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
 .composer-content:focus {
   outline: none;
-  border-color: #00d4ff;
+  border-color: var(--realism-cyan);
   box-shadow:
     0 0 15px rgba(0, 212, 255, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    var(--realism-bevel);
 }
 
 .composer-actions {
   display: flex;
   gap: 0.75rem;
   justify-content: flex-end;
+}
+
+.announcements-page button:focus-visible,
+.announcements-page input:focus-visible,
+.announcements-page textarea:focus-visible {
+  outline: 2px solid var(--realism-cyan);
+  outline-offset: 2px;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -120,29 +147,35 @@
   gap: 0.75rem;
 }
 
+/* Each announcement is a plate sitting in the page, not a translucent tile
+   floating on it. */
 .announcement-card {
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
-  border: 2px solid #2a3a4a;
-  border-radius: 12px;
+  background: linear-gradient(180deg, var(--realism-panel-raised) 0%, var(--realism-panel) 100%);
+  border: 1px solid var(--realism-gunmetal);
+  border-radius: var(--realism-radius);
   padding: 1rem;
+  box-shadow: var(--realism-bevel), var(--realism-cavity), var(--realism-lift);
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
 }
 
+/* Pinned keeps its gold edge: the stripe is the status, so it stays 4px. */
 .announcement-card.pinned {
-  border-left: 4px solid #ffd700;
-  background: linear-gradient(145deg, rgba(255, 215, 0, 0.08) 0%, rgba(100, 100, 100, 0.03) 100%);
+  border-left: 4px solid var(--realism-gold);
+  background: linear-gradient(145deg, rgba(255, 201, 60, 0.08) 0%, var(--realism-panel) 100%);
   box-shadow:
-    0 0 12px rgba(255, 215, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    var(--realism-bevel),
+    var(--realism-cavity),
+    0 0 12px rgba(255, 201, 60, 0.3),
+    var(--realism-lift);
 }
 
 .pin-badge {
   display: inline-block;
   font-size: 0.625rem;
-  color: #ffd700;
-  background: rgba(255, 215, 0, 0.15);
+  color: var(--realism-gold);
+  background: rgba(255, 201, 60, 0.15);
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
   margin-bottom: 0.5rem;
@@ -154,7 +187,7 @@
 .announcement-title {
   margin: 0 0 0.5rem;
   font-size: 1rem;
-  color: #00d4ff;
+  color: var(--realism-cyan);
   font-weight: 700;
   overflow-wrap: break-word;
   word-break: break-word;
@@ -163,7 +196,7 @@
 .announcement-content {
   margin: 0 0 0.75rem;
   font-size: 0.875rem;
-  color: #8a9aaa;
+  color: var(--realism-chrome);
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: break-word;
@@ -174,7 +207,7 @@
   display: flex;
   justify-content: space-between;
   font-size: 0.75rem;
-  color: #4a5a6a;
+  color: var(--realism-muted);
 }
 
 .announcement-admin-actions {
@@ -182,7 +215,7 @@
   gap: 0.5rem;
   margin-top: 0.75rem;
   padding-top: 0.75rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--realism-gunmetal);
 }
 
 .announcement-admin-actions .btn-sm {
@@ -191,14 +224,22 @@
   border-radius: 6px;
   cursor: pointer;
   font-weight: 600;
+  box-shadow:
+    var(--realism-bevel),
+    0 1px 2px rgba(0, 0, 0, 0.55);
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   touch-action: manipulation;
 }
 
+.announcement-admin-actions .btn-sm:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
+}
+
 .announcement-admin-actions .btn-ghost {
-  background: rgba(255, 215, 0, 0.12);
-  border: 1px solid rgba(255, 215, 0, 0.3);
-  color: #ffd700;
+  background: rgba(255, 201, 60, 0.12);
+  border: 1px solid rgba(255, 201, 60, 0.3);
+  color: var(--realism-gold);
 }
 
 .announcement-admin-actions .btn-danger {
@@ -218,7 +259,7 @@
   align-items: center;
   justify-content: center;
   padding: 3rem;
-  color: #6a7a8a;
+  color: var(--realism-muted);
   gap: 1rem;
 }
 
@@ -285,5 +326,18 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* Motion collapses, the material does not: every border, bevel and colour above
+   survives here, so a reduced-motion player sees the same object held still. */
+@media (prefers-reduced-motion: reduce) {
+  .announcements-page *,
+  .announcements-page *::before,
+  .announcements-page *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

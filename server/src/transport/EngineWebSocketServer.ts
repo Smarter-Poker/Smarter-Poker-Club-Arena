@@ -38,7 +38,16 @@ import { authorizeTableViewer, type TableViewerAccess } from '../services/TableV
 import type { TableStateHub, HubSubscriber } from './TableStateHub.js';
 // Round 70: blacklist gate + Round 67/190: connection audit log both use
 // the supabase client imported above. No additional import needed.
-import { parseTableIdFromPath, extractBearerToken } from './wsHelpers.js';
+import {
+  parseTableIdFromPath,
+  extractBearerToken,
+  verifySupabaseToken,
+  authRejectionReason,
+  tokenDenial,
+  recordWsAuthRefusal,
+  type TokenVerdict,
+  type TokenDenial,
+} from './wsHelpers.js';
 
 // Re-export helpers so existing imports keep working. Tests pull them from
 // wsHelpers.js directly to avoid the Supabase-at-import-time side effect.
@@ -122,7 +131,7 @@ export interface EngineWebSocketServerOptions {
    */
   ensureTable?: EnsureTableCheck;
   /** Optional override for auth, used by tests to inject fake tokens. */
-  verifyToken?: (token: string) => Promise<{ userId: string } | null>;
+  verifyToken?: (token: string) => Promise<TokenVerdict | null>;
   /** Optional override for the authoritative club-membership gate in tests. */
   authorizeViewer?: (tableId: string, userId: string) => Promise<TableViewerAccess>;
   /**
@@ -201,21 +210,56 @@ function cacheToken(token: string, userId: string): void {
   tokenCache.set(token, { userId, verifiedAt: Date.now() });
 }
 
-async function defaultVerifyToken(token: string): Promise<{ userId: string } | null> {
-  if (!token) return null;
+async function defaultVerifyToken(token: string): Promise<TokenVerdict> {
+  if (!token) return { denied: 'invalid', code: 'missing' };
   const hit = tokenCache.get(token);
   if (hit && Date.now() - hit.verifiedAt < TOKEN_CACHE_TTL_MS) {
     return { userId: hit.userId };
   }
   if (hit) tokenCache.delete(token);
-  try {
-    const { data, error } = await supabase.auth.getUser(token);
-    if (error || !data?.user) return null;
-    cacheToken(token, data.user.id);
-    return { userId: data.user.id };
-  } catch {
-    return null;
+  // 2026-09-04: the verdict says WHY (see wsHelpers). Only successes are
+  // cached, as before - a 30s cache of "invalid" would lock a player out for
+  // 30s after they sign back in.
+  const verdict = await verifySupabaseToken(supabase.auth, token);
+  if (verdict.userId) cacheToken(token, verdict.userId);
+  return verdict;
+}
+
+/**
+ * 2026-09-04: refuse an upgrade in the one way a browser can actually read.
+ *
+ * An HTTP status written before the handshake reaches JavaScript as close
+ * code 1006 - indistinguishable from a dropped link - so a revoked session
+ * looked like a network blip and the client retried it for 22 hours. An
+ * INVALID token now completes the handshake and is closed with 4401 and an
+ * `auth:<code>` reason; the client has handled 4401 as CLOSE_AUTH_FAILED
+ * since it was written. A token we merely could not CHECK keeps the
+ * pre-handshake 503: the client sees 1006 and keeps retrying, which is the
+ * right response to an auth outage that is not the player's fault.
+ */
+function refuseUpgrade(
+  wss: WebSocketServer,
+  req: IncomingMessage,
+  socket: import('stream').Duplex,
+  head: Buffer,
+  verdict: TokenDenial,
+  path: 'table' | 'multi'
+): void {
+  recordWsAuthRefusal(path, verdict.denied);
+  if (verdict.denied === 'unavailable') {
+    socket.write(
+      'HTTP/1.1 503 Service Unavailable\r\nRetry-After: 5\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+    );
+    socket.destroy();
+    return;
   }
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    try {
+      ws.close(CLOSE_AUTH_FAILED, authRejectionReason(verdict.code));
+    } catch {
+      ws.terminate();
+    }
+  });
 }
 
 // ─── EngineWebSocketServer ────────────────────────────────────────────────────
@@ -227,7 +271,7 @@ export class EngineWebSocketServer {
   private readonly hub: TableStateHub;
   private readonly tableExists: TableExistsCheck;
   private readonly ensureTable?: EnsureTableCheck;
-  private readonly verifyToken: (token: string) => Promise<{ userId: string } | null>;
+  private readonly verifyToken: (token: string) => Promise<TokenVerdict | null>;
   private readonly authorizeViewer: (tableId: string, userId: string) => Promise<TableViewerAccess>;
   private readonly onResync?: (tableId: string, userId: string) => void;
   private readonly onConnect?: (tableId: string, userId: string) => void;
@@ -280,15 +324,22 @@ export class EngineWebSocketServer {
         const muxClientIp = extractClientIp(req);
         this.verifyToken(muxToken)
           .then((auth) => {
-            if (!auth) {
-              socket.write(
-                'HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+            const muxDenial = tokenDenial(auth);
+            if (muxDenial || !auth?.userId) {
+              // 2026-09-04: 4401 + reason, never a silent pre-handshake 401.
+              refuseUpgrade(
+                this.wss,
+                req,
+                socket,
+                head,
+                muxDenial ?? { denied: 'invalid', code: 'invalid' },
+                'multi'
               );
-              socket.destroy();
               return;
             }
+            const userId = auth.userId;
             this.wss.handleUpgrade(req, socket, head, (ws) => {
-              this.onUpgradedMux(ws, auth.userId, muxClientIp);
+              this.onUpgradedMux(ws, userId, muxClientIp);
             });
           })
           .catch(() => {
@@ -325,15 +376,21 @@ export class EngineWebSocketServer {
       // Finish the handshake asynchronously after auth + table check pass.
       this.verifyToken(token)
         .then(async (auth) => {
-          if (!auth) {
-            // Pre-handshake failure — cannot use WS close codes yet.
-            // Return 401 by writing a short HTTP/1.1 response. Browsers
-            // surface this as a handshake error; client wrapper retries
-            // after refreshing the token.
-            socket.write(
-              'HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+          const denial = tokenDenial(auth);
+          if (denial || !auth?.userId) {
+            // 2026-09-04: this used to be a bare pre-handshake 401, which a
+            // browser reports as 1006 - a network blip - so a revoked session
+            // was retried with the same dead token for 22 hours. An invalid
+            // token now gets the handshake and close 4401 with an auth:<code>
+            // reason; an auth outage stays a 503 the client keeps retrying.
+            refuseUpgrade(
+              this.wss,
+              req,
+              socket,
+              head,
+              denial ?? { denied: 'invalid', code: 'invalid' },
+              'table'
             );
-            socket.destroy();
             return;
           }
           /* THE FOUR GATES RUN TOGETHER (2026-09-02). They were awaited one

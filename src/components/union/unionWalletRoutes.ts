@@ -68,3 +68,35 @@ export function clubSendRoute(walletKey: UnionWalletKey, kind: UnionSendKind): C
   }
   return { kind: 'bank' };
 }
+
+export type ClubPullRoute =
+  | { kind: 'promo' }
+  | { kind: 'bank' }
+  | { kind: 'refused'; reason: string };
+
+/**
+ * Where a PULL (clawback) from a club comes from, by the wallet that is open.
+ * The Pull tab used to call fn_union_clawback_from_club for every wallet, and
+ * that function knows one route: club Club Bank -> union bank. Opened on the
+ * promo wallet it emptied the club's Club Bank and grew the promo figure on
+ * screen. Same wrong-account shape as the send bug, one tab over.
+ *
+ *   promo wallet  -> 'promo'   fn_union_clawback_promo_from_club
+ *                              club Promo Wallet -> union promo wallet
+ *   union bank    -> 'bank'    fn_union_clawback_from_club
+ *                              club Club Bank -> union bank
+ *   bbj / rake    -> refused   a pull lands in the union BANK, and this
+ *                              wallet is not the bank; open the bank
+ *   spin reserve  -> refused
+ */
+export function clubPullRoute(walletKey: UnionWalletKey): ClubPullRoute {
+  if (walletKey === 'promo') return { kind: 'promo' };
+  if (walletKey === 'chips') return { kind: 'bank' };
+  if (walletKey === 'spin_reserve') {
+    return { kind: 'refused', reason: 'The Spin Reserve Does Not Pull From Clubs.' };
+  }
+  return {
+    kind: 'refused',
+    reason: 'A Pull From A Club Bank Lands In The Union Bank. Open The Union Bank To Pull.',
+  };
+}

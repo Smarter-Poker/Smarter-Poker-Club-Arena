@@ -127,7 +127,6 @@ const BASELINE = new Map<string, number>([
   ['src/services/BonusService.ts', 2],
   ['src/services/AchievementTriggerService.ts', 1],
   ['src/pages/UnionGamesPage.tsx', 2],
-  ['src/pages/SettlementPage.tsx', 2],
   ['src/pages/RateAuditPage.tsx', 2],
   ['src/pages/MultiTablePage.tsx', 2],
   ['src/pages/FlashPoolPage.tsx', 2],
@@ -201,6 +200,10 @@ const AUDITED_ZERO = [
   // error; the reads that used to discard one (rake, rakeback, invoices) are
   // gone with the browser aggregation they fed.
   'src/pages/ClubFinancialsPage.tsx',
+  // 2026-09-05, phase 7: the auto-settlement read no longer swallows its
+  // failure ("non-critical: default to false" drew the switch OFF for a club
+  // whose setting was ON), and the write asks for the row it changed.
+  'src/pages/SettlementPage.tsx',
   'src/services/TournamentService.ts',
   'src/services/TableService.ts',
   'src/pages/TablePage.tsx',

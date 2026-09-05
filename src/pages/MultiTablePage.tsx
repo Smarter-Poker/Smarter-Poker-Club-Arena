@@ -2225,6 +2225,22 @@ export default function MultiTablePage() {
     []
   );
 
+  /* The arguments the SPIN branch of the quick-join sheet last answered with,
+     or null when the sheet is showing cash tables. The live refresh below
+     re-asks exactly this question; it does not re-run the whole loader, which
+     would blank the rows and flash a spinner over a sheet the player is
+     reading.
+
+     STATE, not a ref, and that distinction is the whole subscription: the
+     loader is async, so `quickJoin.open` is true a round trip BEFORE the spin
+     branch knows its scope. An effect keyed on `open` alone reads a ref that is
+     still null, returns, and never runs again - live coverage that is only ever
+     armed on the second opening of the sheet. */
+  const [spinSheetScope, setSpinSheetScope] = useState<{
+    scopeClubIds: string[];
+    activeTableId: string | null;
+  } | null>(null);
+
   /**
    * Escape closes the two sheets this page owns. Both already had a backdrop,
    * so they were dismissible by tap and by nothing else — and the keyboard
@@ -2455,9 +2471,14 @@ export default function MultiTablePage() {
        */
       const spinRows = await quickJoinSpinRows(scopeClubIds, activeTableId, openIds);
       if (spinRows) {
+        setSpinSheetScope({ scopeClubIds, activeTableId });
         setQuickJoin((q) => (q.open ? { open: true, loading: false, rows: spinRows } : q));
         return;
       }
+      /* Not a spin context (or unreadable). Clear the ref so the live refresh
+         stays inert over the cash sheet rather than replacing its rows with a
+         spin list on the next unrelated table update. */
+      setSpinSheetScope(null);
 
       const [res, favIds] = await Promise.all([
         withTimeout(
@@ -2610,6 +2631,87 @@ export default function MultiTablePage() {
       masterBus.emit('OPEN_LOBBY_TAB', {});
     }
   }, [tables.length, notifyCapReached, withTimeout, commitHomeClub, user?.id]);
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  THE SPIN SHEET IS LIVE WHILE IT IS OPEN (2026-09-05)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * A spin board is not a cash table with seats to browse: it is one open board
+   * per stake, and the recycler replaces it the instant it fills. Two of the
+   * three seats are usually already taken when the sheet renders, and the fleet
+   * takes the last one within 90-350 seconds of a human sitting
+   * (TournamentRecurringService). So a snapshot taken when "+" was pressed goes
+   * stale in seconds, and the player taps a board that has already started.
+   *
+   * `tables` and `tournaments` are both in the supabase_realtime publication,
+   * so the fill is already on the wire. This subscribes to it for exactly as
+   * long as the sheet is on screen.
+   *
+   * IT NEVER TOUCHES `loading`. Re-running the loader would set
+   * `{ loading: true, rows: [] }` and flash a spinner over a list the player is
+   * reading, which is worse than the staleness. This re-asks the SAME question
+   * the spin branch already answered and patches the rows in place; a null
+   * answer (the boards vanished, or the read failed) leaves what is on screen
+   * alone rather than emptying the sheet.
+   */
+  useEffect(() => {
+    if (!quickJoin.open) return;
+    if (!spinSheetScope || spinSheetScope.scopeClubIds.length === 0) return;
+
+    let cancelled = false;
+    let debounce: ReturnType<typeof setTimeout> | null = null;
+
+    const refresh = () => {
+      if (cancelled) return;
+      const openIds = new Set(tablesRef.current.map((t) => t.id));
+      void quickJoinSpinRows(spinSheetScope.scopeClubIds, spinSheetScope.activeTableId, openIds)
+        .then((rows) => {
+          if (cancelled || !rows) return;
+          setQuickJoin((q) => (q.open ? { ...q, loading: false, rows } : q));
+        })
+        .catch(() => {
+          /* the sheet keeps what it has - see the note above */
+        });
+    };
+
+    /* One burst per change storm. A board filling writes both the tournament
+       row and its table row, and the recycler opens the replacement in the
+       same breath: without this the sheet would re-query three times for one
+       event. */
+    const schedule = () => {
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(refresh, 700);
+    };
+
+    /* EVERY LISTENER CARRIES ITS CLUB (tests/no-unfiltered-realtime-firehose).
+       `tables` and `tournaments` are two of the loudest feeds in the database -
+       unfiltered listeners on them were roughly 80% of 86 million realtime
+       messages in one billing cycle - and this effect is mounted for every
+       player who presses "+". One listener per scope club, which is the same
+       shape ClubHomePage uses, keeps it to the boards this sheet can offer. */
+    let channel = supabase.channel(`quick-join-spins-${spinSheetScope.scopeClubIds.join('-')}`);
+    for (const clubId of spinSheetScope.scopeClubIds) {
+      channel = channel
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'tournaments', filter: `club_id=eq.${clubId}` },
+          schedule
+        )
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'tables', filter: `club_id=eq.${clubId}` },
+          schedule
+        );
+    }
+    channel.subscribe();
+
+    return () => {
+      cancelled = true;
+      if (debounce) clearTimeout(debounce);
+      void supabase.removeChannel(channel);
+    };
+  }, [quickJoin.open, spinSheetScope]);
 
   const handleQuickJoinPick = useCallback(
     (row: QuickJoinRow) => {
@@ -4199,6 +4301,11 @@ export default function MultiTablePage() {
                           onTableInfoUpdate={getTableInfoCb(table.id)}
                           isMultiTable={true}
                           isActive={idx === activeIndex && !hidden}
+                          /* TILE VIEW: every tile is painted, so every tile is
+                             VISIBLE - only one of them is focused. See
+                             TablePage's isVisible note; without this the three
+                             unfocused tiles would animate nothing at all. */
+                          isVisible={!hidden}
                           muted={mutedIds.includes(table.id)}
                         />
                       </TableErrorBoundary>
@@ -4464,6 +4571,11 @@ export default function MultiTablePage() {
                           // so single-table mode is muted too).
                           isMultiTable={tables.length > 1 || hidden}
                           isActive={idx === activeIndex && !hidden}
+                          /* SINGLE VIEW: an inactive slot carries
+                             `display: none` on its wrapper above, so it is
+                             genuinely off screen and instant is the right
+                             answer (spec 47). */
+                          isVisible={shouldRender && !hidden}
                         />
                       </TableErrorBoundary>
                     )}

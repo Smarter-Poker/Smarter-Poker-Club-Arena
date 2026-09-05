@@ -142,6 +142,8 @@ function ReplayBoard({
                 className={`hr-felt__card${host ? ` ${host.className}` : ''}`}
                 style={host ? host.style : undefined}
                 data-rs-profile={host ? host['data-rs-profile'] : undefined}
+                data-rs-3d={host ? host['data-rs-3d'] : undefined}
+                data-rs-animating={host ? host['data-rs-animating'] : undefined}
               >
                 {on ? (
                   <SqueezeCard

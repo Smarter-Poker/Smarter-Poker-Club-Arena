@@ -279,3 +279,45 @@ describe('the public dossier', () => {
     expect(PUBLIC_PROFILE).toContain("from './PublicProfilePage.module.css'");
   });
 });
+
+describe('the VIP ring shows VIP, and only when there is one', () => {
+  /**
+   * Absence pins have to read CODE, not prose. Each removal below is recorded
+   * in a comment that names the thing it removed, so a plain substring search
+   * finds the tombstone and passes nothing.
+   */
+  const code = (path: string) =>
+    read(path)
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+
+  const AVATAR = read('src/components/avatars/PlayerAvatar.tsx');
+  const FRIENDS = code('src/components/social/FriendListPanel.tsx');
+  const PROFILE_SERVICE = code('src/services/ProfileService.ts');
+
+  it('validates the tier before painting a ring (CLAUDE.md 5.4)', () => {
+    // `'Newcomer' !== 'bronze'` was true, so the ring rendered as
+    // `tier-Newcomer` - a class with no colour anywhere in the stylesheet.
+    // Every friend avatar carried an invisible ring and no real VIP got one.
+    expect(AVATAR).toContain('isPaintedVipTier(vipTier)');
+    expect(AVATAR).toContain('const PAINTED_VIP_TIERS');
+  });
+
+  it('never reads `profiles.tier` as a VIP tier - it is a rank label', () => {
+    // 1,310 of 1,310 production rows read 'Newcomer'. The `as VipTier` cast is
+    // what stopped the compiler seeing it.
+    expect(FRIENDS).not.toContain('as VipTier');
+    expect(FRIENDS).not.toMatch(/select\([^)]*\blevel, tier\b/);
+    expect(FRIENDS).toContain('resolveVipStatus');
+    expect(FRIENDS).toContain('vipTier: ringTier(p)');
+  });
+
+  it('keeps exactly one VIP truth and no points ladder', () => {
+    // Dan 2026-09-04: "THERE IS NO SUCH THING AS 'PLATINUM VIP' BTW. JUST VIP,
+    // AND LIFETIME VIP." addVIPPoints derived a tier from a vip_points column
+    // that does not exist and wrote it to the wrong column. Both are gone.
+    expect(PROFILE_SERVICE).not.toContain('addVIPPoints(');
+    expect(PROFILE_SERVICE).not.toMatch(/const VIP_THRESHOLDS\s*=/);
+    expect(PROFILE_SERVICE).not.toContain('update({ tier:');
+  });
+});

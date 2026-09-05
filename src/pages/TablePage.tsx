@@ -93,6 +93,7 @@ import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cache
 import { formatGameTitle } from '../utils/formatGameTitle';
 import { SeatSlot } from '../components/table/SeatSlot';
 import { PotDisplay } from '../components/table/PotDisplay';
+import type { CardPresentationMode } from '../presentation/cardPresentation';
 import { CommunityCards } from '../components/table/CommunityCards';
 import { DealerButton } from '../components/table/DealerButton';
 import { DealAnimation } from '../components/table/DealAnimation';
@@ -7012,6 +7013,21 @@ export default function TablePage({
 
   // All-in dramatic mode
   const [isAllInMode, setIsAllInMode] = useState(false);
+
+  /**
+   * PHASE 2 2026-09-05 (spec 36, 94, 115): which timing profile the board's
+   * reveals resolve to. A SPECTATOR is watching and nothing else - there is
+   * no action cadence to stay out of the way of - so they get the full
+   * presentation under their own profile id, which also keeps watched hands
+   * and played hands apart in the telemetry (their device mixes differ, and
+   * averaging them hides both).
+   *
+   * This is the ONLY thing the presentation layer is allowed to learn about
+   * the game (spec 28, 115): a mode name. No payout, blind level or wallet
+   * reaches it.
+   */
+  const boardPresentationMode: CardPresentationMode =
+    tableState.heroSeat > 0 ? (tableState.isTournament ? 'tournament' : 'cash') : 'spectator';
 
   // FIX 89: All-in equity display — shows equity percentages for all all-in players
   // Populated by server's 'all_in_equity' Realtime event, visible to all players/observers
@@ -14821,6 +14837,10 @@ export default function TablePage({
                 potSize: outcome.potWon,
                 handRank: outcome.handRank || undefined,
                 showdown: outcome.showdown,
+                /* player_stats is keyed (user_id, club_id). Without the club
+                   the counter cannot be incremented truthfully - see the note
+                   in AchievementTriggerService.updateUserStats. */
+                clubId: actualClubIdRef.current || undefined,
               })
               .catch((e) => reportError(e, 'TablePage.achievementOnHandComplete'));
           }
@@ -20752,7 +20772,7 @@ export default function TablePage({
                           tableId={tableId}
                           handId={tableState.handNumber}
                           boardIndex={board.boardIndex}
-                          gameMode={tableState.isTournament ? 'tournament' : 'cash'}
+                          gameMode={boardPresentationMode}
                           isFocused={isActive}
                         />
                       </div>
@@ -20796,7 +20816,7 @@ export default function TablePage({
                         tableId={tableId}
                         handId={tableState.handNumber}
                         boardIndex={0}
-                        gameMode={tableState.isTournament ? 'tournament' : 'cash'}
+                        gameMode={boardPresentationMode}
                         isFocused={isActive}
                       />
                       {/* DOUBLE-BOARD BOMB POT 2026-08-20: board 2, stacked
@@ -20829,7 +20849,7 @@ export default function TablePage({
                             tableId={tableId}
                             handId={tableState.handNumber}
                             boardIndex={1}
-                            gameMode={tableState.isTournament ? 'tournament' : 'cash'}
+                            gameMode={boardPresentationMode}
                             isFocused={isActive}
                           />
                         </div>
@@ -20855,7 +20875,7 @@ export default function TablePage({
                             tableId={tableId}
                             handId={tableState.handNumber}
                             boardIndex={2}
-                            gameMode={tableState.isTournament ? 'tournament' : 'cash'}
+                            gameMode={boardPresentationMode}
                             isFocused={isActive}
                           />
                         </div>

@@ -883,12 +883,14 @@ export class HorseFleetManager {
         union_id: string | null;
         cluster_id?: string | null;
         lifecycle?: string | null;
+        role?: string | null;
+        main_index?: number | null;
       }>(
         (cursor, want) => {
           let q = supabase
             .from('tables')
             .select(
-              'id, name, max_players, small_blind, big_blind, game_variant, club_id, union_id, min_buy_in, max_buy_in, current_players, created_at, settings, cluster_id, lifecycle'
+              'id, name, max_players, small_blind, big_blind, game_variant, club_id, union_id, min_buy_in, max_buy_in, current_players, created_at, settings, cluster_id, lifecycle, role, main_index'
             )
             .is('tournament_id', null)
             .in('status', ['waiting', 'running'])
@@ -1040,6 +1042,39 @@ export class HorseFleetManager {
         return;
       }
       const allActiveSeats = seatPage.rows;
+
+      /* A PLANNED MOVE HOLDS ITS SEAT (2026-09-05). The ClusterController plans
+         a feeder player onto a Main's open seat and the engine lands them at
+         the next hand boundary - up to a hand later. In between, this loop
+         used to see the seat as empty and fill it with a fresh horse, the
+         executor found `destination_full`, and the feeder player waited for
+         the NEXT seat, which the fleet took too. One read per cycle; a table
+         with N pending arrivals has N fewer seats to fill. */
+      const pendingMovesByTable = new Map<string, number>();
+      {
+        const { data: pm, error: pmErr } = await supabase
+          .from('cash_seat_moves')
+          .select('to_table_id')
+          .eq('state', 'pending');
+        if (pmErr) {
+          reportError(pmErr, 'HorseFleet.pending_moves_read_failed');
+        } else {
+          for (const row of (pm ?? []) as Array<{ to_table_id: string }>) {
+            pendingMovesByTable.set(
+              row.to_table_id,
+              (pendingMovesByTable.get(row.to_table_id) ?? 0) + 1
+            );
+          }
+        }
+      }
+
+      /* Which game each cluster table belongs to, for the one-seat-per-game
+         rule below (the database refuses it too - ALREADY_IN_GAME - but a
+         refusal the fleet can avoid should not be tried every 30 s). */
+      const clusterByTableId = new Map<string, string>();
+      for (const t of tables) {
+        if (t.cluster_id) clusterByTableId.set(t.id, t.cluster_id);
+      }
 
       const horseTables = new Map<string, Set<string>>();
       /**
@@ -1480,10 +1515,19 @@ export class HorseFleetManager {
          while a dozen fleet clones were filled ahead of it. Dan: "you have to
          add horses to the game, or show them it's available". Humans still
          first, then the clusters, then everything else by id. */
+      /* Inside a game, the mains before the feeder and Main 1 before Main 2:
+         a horse seated on a feeder while a main has a seat open is a horse
+         the controller must then move (2026-09-05). */
+      const clusterRank = (t: {
+        cluster_id?: string | null;
+        role?: string | null;
+        main_index?: number | null;
+      }) => (!t.cluster_id ? 0 : t.role === 'feeder' ? 1000 : Number(t.main_index ?? 999));
       const orderedTables = [...tables].sort(
         (a, b) =>
           Number(humanShort(b)) - Number(humanShort(a)) ||
           Number(!!b.cluster_id) - Number(!!a.cluster_id) ||
+          clusterRank(a) - clusterRank(b) ||
           String(a.id).localeCompare(String(b.id))
       );
 
@@ -1636,6 +1680,15 @@ export class HorseFleetManager {
       const tablesToSeed = cycleWithheld ? [] : orderedTables;
       let tablesSeeded = 0;
       let firstTableWithheld: string | null = null;
+      /* THE CLUSTER'S DEMAND IS COUNTED EVERY CYCLE, FULL TABLE OR NOT
+         (2026-09-05). `lastEligibleByTable` used to be written only for a
+         table this loop reached the candidate filter for - i.e. one with a
+         seat to fill - and was never cleared, so a FULL Main 1 (the one state
+         in which the controller needs the number, to open a feeder) reported
+         whatever it had the last time it had room, for ever. Built fresh here
+         and swapped in whole at the end, so a reader never sees a half-built
+         cycle; a withheld cycle honestly reports nothing. */
+      const nextEligible = new Map<string, number>();
       for (const table of tablesToSeed) {
         try {
           // A draining table gets no new horses. Without this the surplus can
@@ -1648,7 +1701,12 @@ export class HorseFleetManager {
           // Determine currently occupied seats for THIS table from our in-memory map
           const tableOccupiedSeats = allActiveSeats.filter((s) => s.table_id === table.id);
           const occupiedNumbers = new Set(tableOccupiedSeats.map((s) => s.seat_number));
-          const currentCount = occupiedNumbers.size;
+          /* A planned arrival holds its seat (see pendingMovesByTable). */
+          const currentCount = occupiedNumbers.size + (pendingMovesByTable.get(table.id) ?? 0);
+          /* A cluster table with nothing to fill still answers the
+             controller's question (how many horses COULD sit in this game);
+             it runs the candidate filter and seats nobody. */
+          let countOnly = false;
 
           // ── V14 OCCUPANCY (Dan 2026-08-23) ────────────────────────────────
           // Every table used to carry ONE fixed target from DEFAULT_TABLES, so
@@ -1750,8 +1808,11 @@ export class HorseFleetManager {
             seatTarget = Math.min(table.max_players, Math.max(seatTarget, currentCount + boost));
           }
           const seatsAllowed = capBySeatedCount(seatTarget, currentCount, policy.maxPerTable);
-          if (seatsAllowed <= 0) continue;
-          let seatsNeeded = seatsAllowed;
+          if (seatsAllowed <= 0) {
+            if (!table.cluster_id) continue;
+            countOnly = true;
+          }
+          let seatsNeeded = Math.max(0, seatsAllowed);
 
           /* A FULL TABLE FILLS IN ONE GO; A SPARSE ONE STILL TRICKLES.
              The 1-2 per cycle stagger was there so a game did not appear out
@@ -1769,14 +1830,20 @@ export class HorseFleetManager {
           /* The fleet-wide cap, spent down as the floor fills. Last, so it
              cannot be undone by anything above it. */
           seatsNeeded = Math.min(seatsNeeded, seatBudget);
-          if (seatsNeeded <= 0) continue;
+          if (seatsNeeded <= 0) {
+            if (!table.cluster_id) continue;
+            countOnly = true;
+          }
 
           // Find empty seat numbers
           const emptySeats: number[] = [];
           for (let s = 1; s <= table.max_players && emptySeats.length < seatsNeeded; s++) {
             if (!occupiedNumbers.has(s)) emptySeats.push(s);
           }
-          if (emptySeats.length === 0) continue;
+          if (emptySeats.length === 0) {
+            if (!table.cluster_id) continue;
+            countOnly = true;
+          }
 
           // Find candidate horses:
           // 1. Not already at this table
@@ -1955,6 +2022,15 @@ export class HorseFleetManager {
                horse carried four. */
             if (tablesForHorse.size >= tagMaxTables(tag, MAX_TABLES_PER_HORSE)) return false;
             if (tablesForHorse.has(table.id)) return false;
+            /* ONE SEAT PER GAME (2026-09-05). A must-move game is one game
+               however many tables it has. A horse already at any of its
+               tables is not a candidate for another of them - the controller
+               moves players between a game's tables; the fleet never does. */
+            if (table.cluster_id) {
+              for (const tid of tablesForHorse) {
+                if (clusterByTableId.get(tid) === table.cluster_id) return false;
+              }
+            }
             return true;
           });
 
@@ -1973,7 +2049,8 @@ export class HorseFleetManager {
           /* What the ClusterController asks: how many horses COULD sit here
              this cycle. A horse is a buyer (Law 10.5); the open rule in
              OPORD 1.4 18.3 counts them beside the humans on the waitlist. */
-          this.lastEligibleByTable.set(table.id, pool.length);
+          nextEligible.set(table.id, pool.length);
+          if (countOnly) continue;
 
           /* FOUR TABLES IS THE TARGET, NOT THE CEILING (Dan 2026-09-02).
              "THEY SHOULD BE PLAYING 4 TABLES AT ONCE."
@@ -2189,6 +2266,10 @@ export class HorseFleetManager {
           reportError(err, 'HorseFleet.Error_seeding_table_tablename');
         }
       }
+      /* Swapped whole (see nextEligible above). A withheld cycle - the loop
+         ran over nothing - leaves an empty map, which is the truth: the fleet
+         will seat nobody this cycle, so no game has horse demand. */
+      this.lastEligibleByTable = nextEligible;
 
       /* ── WHAT THE CONSOLE WILL SEE ─────────────────────────────────────
          Built from what this cycle already read - no extra query. `reason` is

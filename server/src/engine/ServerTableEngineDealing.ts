@@ -219,13 +219,6 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // who was mid-buy-in at boot, or who joined during the wait, would be
         // dealt in despite the database saying they are sitting out.
         this.restoreSitOutsFromSeats();
-        // MUST-MOVE (Slice 2): a player with a planned move is told now, once,
-        // that they move after this hand. Bounded like every other step.
-        await this.withStepBudget(
-          'announce_seat_moves',
-          ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
-          this.announcePendingSeatMoves()
-        );
         await this.withStepBudget(
           'refresh_blinds',
           ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
@@ -584,8 +577,6 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                   (sp) => !cashedOutIds.includes(sp.user_id)
                 );
               }
-              // MUST-MOVE (Slice 2): an idle table is at a hand boundary too.
-              await this.executePendingSeatMoves();
             })()
           );
         } else {
@@ -720,6 +711,23 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             this.tableFSM.transition('waiting');
           }
           this.setLoopPhase('idle_not_enough_players');
+          // MUST-MOVE (Slice 2; moved here 2026-09-05): a table with no hand
+          // to finish is at a hand boundary all the time, so every pending
+          // move lands now, announced or not. This used to run in the
+          // leave_pending sweep above, on EVERY iteration - which executed a
+          // move milliseconds after the deal had announced "Moving After
+          // This Hand", before the hand.
+          await this.withStepBudget(
+            'idle_seat_moves',
+            ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+            this.executePendingSeatMoves()
+          );
+          await this.withStepBudget(
+            'idle_cluster_closed',
+            ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+            this.stopIfClusterTableClosed()
+          );
+          if (!this.running) break;
           await this.sleep(3000);
           continue;
         }
@@ -755,6 +763,17 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           this.tableFSM.transition('seating');
           this.tableFSM.transition('running');
         }
+
+        // MUST-MOVE (Slice 2): a player with a planned move is told now, once,
+        // that they move after this hand - HERE, immediately before the deal,
+        // so the notice only ever speaks of a hand that is about to be dealt
+        // (2026-09-05: it used to run at load_seats, on idle iterations too).
+        // Bounded like every other step.
+        await this.withStepBudget(
+          'announce_seat_moves',
+          ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+          this.announcePendingSeatMoves()
+        );
 
         // Deal hand (self-transition: running → running for next hand)
         this.setLoopPhase('dealing');

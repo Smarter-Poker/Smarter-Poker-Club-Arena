@@ -142,3 +142,111 @@ describe('stopVibration', () => {
     expect(fired).toEqual([0]);
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  iOS: THE PLATFORM WITH NO VIBRATION API (2026-09-05)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Apple has never shipped `navigator.vibrate` in WebKit, so before this every
+ * haptic in Club Arena was silently dead on iPhone and iPad - the turn alert,
+ * the keypad, the card-slide peel. The gate refused at the capability check
+ * before any fallback could run.
+ *
+ * The fallback is the one thing that does buzz on iOS: toggling a native
+ * `<input type="checkbox" switch>`. It is the mechanism behind
+ * ios-vibrator-pro-max (ISC) WITHOUT that library's global body reparent and
+ * MutationObservers, which this app cannot afford.
+ */
+describe('iOS, where navigator.vibrate does not exist', () => {
+  const IPHONE =
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1';
+
+  function asIphone() {
+    // No `vibrate` key at all - that is what an iPhone actually looks like.
+    vi.stubGlobal('navigator', { userAgent: IPHONE, maxTouchPoints: 5 });
+  }
+
+  function switchClicks(): number {
+    const el = document.querySelector('input[type="checkbox"][switch]');
+    return el ? Number((el as HTMLElement).dataset.clicks || 0) : -1;
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    __resetVibrationCoalescing();
+  });
+
+  it('buzzes through the switch element instead of giving up', () => {
+    asIphone();
+    // Count real clicks on whatever element the gate creates.
+    const observed: string[] = [];
+    const realClick = HTMLElement.prototype.click;
+    HTMLElement.prototype.click = function () {
+      observed.push(this.tagName);
+    };
+    try {
+      expect(fireVibration(10)).toBe(true);
+      expect(observed).toContain('INPUT');
+      const input = document.querySelector('input[type="checkbox"][switch]');
+      expect(input).toBeTruthy();
+      expect(input?.getAttribute('switch')).toBe('');
+    } finally {
+      HTMLElement.prototype.click = realClick;
+    }
+    void switchClicks;
+  });
+
+  it('still obeys BOTH switches - either one off means silent', () => {
+    asIphone();
+    for (const key of ['vibrationsEnabled', 'ca_vibration_enabled']) {
+      document.body.innerHTML = '';
+      __resetVibrationCoalescing();
+      localStorage.clear();
+      localStorage.setItem(key, 'false');
+      expect(fireVibration(10), key).toBe(false);
+      expect(document.querySelector('input[switch]'), key).toBeNull();
+    }
+    localStorage.clear();
+  });
+
+  it('does not build the element on a desktop, which has the real API', () => {
+    // Desktop Chromium HAS navigator.vibrate; it just returns false (no motor).
+    vi.stubGlobal('navigator', {
+      userAgent:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141 Safari/537.36',
+      maxTouchPoints: 0,
+      vibrate: () => false,
+    });
+    expect(fireVibration(10)).toBe(true); // took the native path
+    expect(document.querySelector('input[switch]')).toBeNull();
+  });
+
+  it('an Android phone keeps using the real API, untouched', () => {
+    const calls: (number | number[])[] = [];
+    vi.stubGlobal('navigator', {
+      userAgent:
+        'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/141 Mobile Safari/537.36',
+      maxTouchPoints: 5,
+      vibrate: (p: number | number[]) => {
+        calls.push(p);
+        return true;
+      },
+    });
+    expect(fireVibration([15, 30, 15])).toBe(true);
+    expect(calls).toEqual([[15, 30, 15]]);
+    expect(document.querySelector('input[switch]')).toBeNull();
+  });
+
+  it('never throws, even with no body to attach to', () => {
+    asIphone();
+    const body = document.body;
+    Object.defineProperty(document, 'body', { value: null, configurable: true });
+    try {
+      expect(() => fireVibration(10)).not.toThrow();
+      expect(fireVibration(10)).toBe(false);
+    } finally {
+      Object.defineProperty(document, 'body', { value: body, configurable: true });
+    }
+  });
+});

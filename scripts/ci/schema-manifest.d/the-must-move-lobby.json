@@ -1,0 +1,18 @@
+{
+  "_owner": "feat/the-must-move-lobby",
+  "_comment": "20260905060000: the game roster (join order = must-move order), seat-change requests and swaps, entry by reason, the winner-only rejoin floor, the lobby read. Applied to production 2026-09-05 02:43 UTC in five lock-timed transactions (two ALTERs, tables, trigger, functions).",
+  "tables": ["cash_game_roster", "cash_seat_change_requests"],
+  "functions": [
+    "fn_cash_game_roster_track",
+    "fn_cash_game_must_move_list",
+    "fn_cash_game_lobby",
+    "fn_cash_seat_change_plan",
+    "fn_cash_seat_change_request",
+    "fn_cash_seat_change_status",
+    "fn_cash_seat_change_cancel",
+    "fn_cash_seat_swap_execute"
+  ],
+  "columns": {
+    "cash_seat_moves": ["swap_move_id", "ready_at"]
+  }
+}

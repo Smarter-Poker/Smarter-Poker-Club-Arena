@@ -193,7 +193,15 @@
   gap: var(--space-1);
 }
 
-.action-btn {
+/* SCOPED 2026-09-05. This was a bare `.action-btn`, and `.action-btn` is a
+   global class seven other surfaces use - including the public profile's five
+   player actions. Every stylesheet here is global once imported, so a 32px
+   admin icon button was squeezing "Add Friend" / "Message" / "Block" /
+   "Report" / "Share" into 36px boxes on /profile/:userId in production: the
+   dossier's own `.public-profile-page .action-btn` has higher specificity but
+   never declares `width`, so this rule won that one property outright.
+   Scoped to its own container; the admin buttons are unchanged. */
+.player-search .action-btn {
   width: 32px;
   height: 32px;
   background: var(--bg-tertiary);

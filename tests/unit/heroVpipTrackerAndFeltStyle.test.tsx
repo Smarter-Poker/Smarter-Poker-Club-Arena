@@ -240,7 +240,11 @@ describe('the regular ante reaches the felt', () => {
     expect(levelRow).not.toContain('table-brand__ante');
     expect(levelRow).not.toContain('table-brand__hand');
     expect(brand).toMatch(/tableState\.gameStyle && \(/);
-    expect(brand).toMatch(/className="table-brand__style">\{tableState\.gameStyle\}/);
+    // Dan 2026-09-05: the style carries its own colour class (Classic teal,
+    // Action green, Madness red), so the span is keyed by the style itself.
+    expect(brand).toMatch(
+      /className=\{`table-brand__style table-brand__style--\$\{tableState\.gameStyle\.toLowerCase\(\)\}`\}[\s\S]{0,120}\{tableState\.gameStyle\}/
+    );
     // The rules row carries the ante and the VPIP floor, and is absent with neither.
     expect(brand).toMatch(/\(tableState\.ante > 0 \|\| tableState\.vpipFloor != null\) && \(/);
     expect(brand).toMatch(/Ante \{formatChipFigure\(tableState\.ante\)\}/);

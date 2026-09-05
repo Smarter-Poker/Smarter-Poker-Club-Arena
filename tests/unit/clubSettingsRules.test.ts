@@ -103,10 +103,44 @@ describe('toCSV', () => {
 });
 
 describe('WATCHED_COLUMNS', () => {
-  it('covers every editable settings column and no hot-path column', () => {
-    expect(WATCHED_COLUMNS).toContain('name');
-    expect(WATCHED_COLUMNS).toContain('default_rake_percent');
-    expect(WATCHED_COLUMNS).toContain('max_buyin_bb');
+  /**
+   * THE LIST IS EXACTLY WHAT THE SETTINGS FORM RENDERS AND SAVES, and this pin
+   * moved on 2026-09-05 (phase 8) because the list had drifted from the page in
+   * BOTH directions.
+   *
+   * It carried `max_buyin_bb`, `min_buyin_bb`, `allow_straddle`,
+   * `allow_run_it_twice` and `allow_rabbit_hunt` - the buy-in bounds live in
+   * `settings` now and the three flags moved to table settings, so the form
+   * has not shown any of them for months. And it omitted `tagline` and
+   * `lobby_message`, which the form does show and does write: a co-owner
+   * setting the day's message from the lobby left this form displaying the old
+   * one with nothing to say it was stale.
+   *
+   * So the rule this pins is the RULE, not the membership: a column belongs
+   * here when the page both shows it and writes it.
+   */
+  it('watches what the form shows, and nothing the form cannot show', () => {
+    for (const shown of [
+      'name',
+      'description',
+      'tagline',
+      'lobby_message',
+      'is_public',
+      'requires_approval',
+      'default_rake_percent',
+      'rake_cap',
+    ]) {
+      expect(WATCHED_COLUMNS, `${shown} is rendered and saved by the form`).toContain(shown);
+    }
+    for (const gone of [
+      'max_buyin_bb',
+      'min_buyin_bb',
+      'allow_straddle',
+      'allow_run_it_twice',
+      'allow_rabbit_hunt',
+    ]) {
+      expect(WATCHED_COLUMNS, `${gone} is not on the form any more`).not.toContain(gone);
+    }
     // chip_pool / member_count are rewritten constantly by the engine and the
     // membership trigger; reacting to them refetched the page nonstop.
     expect(WATCHED_COLUMNS).not.toContain('chip_pool');
@@ -208,8 +242,7 @@ describe('privateClubNeedsApproval', () => {
 });
 
 describe('clubAssetPathFromPublicUrl', () => {
-  const base =
-    'https://kuklfnapbkmacvwxktbh.supabase.co/storage/v1/object/public/club-assets/';
+  const base = 'https://kuklfnapbkmacvwxktbh.supabase.co/storage/v1/object/public/club-assets/';
 
   it('extracts the storage path from a URL we issued', () => {
     expect(clubAssetPathFromPublicUrl(`${base}club-logos/abc-123.png`)).toBe(

@@ -26,6 +26,8 @@ import { resolve } from 'node:path';
  *    preflop and before the flop, 31 of 31.
  */
 
+import { buildReplay } from '../src/utils/handReplay';
+
 const readSrc = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 
 /* toShareVariant is module-private to the page. Rather than export it purely
@@ -135,9 +137,26 @@ describe('pineapple_discard is a street, not a dropped action', () => {
   });
 
   it('the panel can name it', () => {
-    // The panel renders the shared model, whose street table names the street.
-    const replay = readSrc('src/utils/handReplay.ts');
-    expect(replay).toMatch(/key: 'pineapple_discard', label: 'Discard'/);
+    // The panel renders the shared model, whose street table names the street:
+    // behaviour, not text.
+    const model = buildReplay({
+      handNumber: 1,
+      playedAt: null,
+      gameVariant: 'pineapple',
+      smallBlind: 1,
+      bigBlind: 2,
+      potSize: 3,
+      buttonSeat: 1,
+      board: [],
+      players: [
+        { seat: 1, userId: 'a', username: 'A', stack: 0 },
+        { seat: 2, userId: 'b', username: 'B', stack: 0 },
+      ],
+      actions: [{ seat: 1, userId: 'a', action: 'discard', amount: 0, stage: 'pineapple_discard' }],
+      winners: [],
+      holeCards: {},
+    } as never);
+    expect(model.streets.find((s) => s.key === 'pineapple_discard')?.label).toBe('Discard');
     const panel = readSrc('src/components/table/HandHistoryPanel.tsx');
     expect(panel).toContain("'preflop' | 'pineapple_discard' | 'flop'");
   });

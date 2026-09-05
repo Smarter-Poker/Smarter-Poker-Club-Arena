@@ -107,7 +107,9 @@ describe('the record says who won each run', () => {
     expect(settlement).toContain('winnersByBoard: [...this.currentHandWinnersByBoard],');
     expect(settlement).toContain('winnersByBoard: snap.winnersByBoard,');
     const writer = read('server/src/services/supabase/handHistory.ts');
-    expect(writer).toContain('winners_by_board: params.winnersByBoard?.some((w) => w.board > 1)');
+    expect(writer).toContain(
+      'winners_by_board: params.winnersByBoard?.some((w) => w.board > 1 || w.low)'
+    );
     // NULL on a single-board hand: ordinary rows stay byte-identical.
     expect(writer).toMatch(/winners_by_board:[\s\S]{0,120}: null,/);
   });

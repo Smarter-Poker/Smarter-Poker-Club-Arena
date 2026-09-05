@@ -38,7 +38,7 @@
   --hdm-blue-hot: #8ad2ff;
   --hdm-brass: #d6ad52;
   --hdm-muted: #8391a1;
-  --hdm-up: #4cd07d;
+  --hdm-up: #3fb950;
   --hdm-down: #ff6b6b;
   --hdm-line: rgba(185, 202, 215, 0.12);
   --hdm-display: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
@@ -359,7 +359,7 @@
 }
 
 .hdm-sd.is-winner {
-  border-color: rgba(76, 208, 125, 0.4);
+  border-color: rgba(63, 185, 80, 0.4);
   box-shadow: inset 3px 0 0 var(--hdm-up);
 }
 
@@ -702,7 +702,7 @@
   --hdm-blue-hot: #0f5a99;
   --hdm-brass: #8a6a24;
   --hdm-muted: #5f7181;
-  --hdm-up: #1f8a4c;
+  --hdm-up: #4dc660;
   --hdm-down: #c0392b;
   --hdm-line: rgba(20, 35, 50, 0.14);
   background:

@@ -25,7 +25,7 @@
   --hha-blue-hot: #8ad2ff;
   --hha-brass: #d6ad52;
   --hha-muted: #8391a1;
-  --hha-up: #4cd07d;
+  --hha-up: #3fb950;
   --hha-down: #ff6b6b;
   --hha-line: rgba(185, 202, 215, 0.12);
   --hha-display: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
@@ -560,7 +560,7 @@
   --hha-blue-hot: #0f5a99;
   --hha-brass: #8a6a24;
   --hha-muted: #5f7181;
-  --hha-up: #1f8a4c;
+  --hha-up: #4dc660;
   --hha-down: #c0392b;
   --hha-line: rgba(20, 35, 50, 0.14);
 }

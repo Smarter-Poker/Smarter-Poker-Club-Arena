@@ -3714,18 +3714,80 @@ export default function TablePage({
    */
   const [shownCardIndexes, setShownCardIndexes] = useState<number[]>([]);
 
+  /**
+   * ─── TWO BUGS FIXED HERE ON 2026-09-05 ────────────────────────────────────
+   * Dan: "IT ONLY ALLOWS YOU TO SHOW 1, NEVER BOTH."
+   *
+   * 1. THE POST WAS INSIDE THE STATE UPDATER. A `setState` reducer must be
+   *    pure - React is free to call it more than once for one click, and does
+   *    under StrictMode - so a single tap could fire two unordered POSTs. The
+   *    engine REPLACES its stored set on each one, so when `[0]` landed after
+   *    `[0,1]` the player had marked two cards and one was shown. The
+   *    selection is computed from the ref here and sent exactly once, after.
+   *
+   * 2. THE INDEX WAS THE WRONG ARRAY'S. The click gives an index into what
+   *    SeatSlot RENDERED, and `cards_pre_sort` (default true, in code and in
+   *    the column) re-orders the hero's hand for display. The engine applies
+   *    the index to `player.cards` in DEALT order. So on essentially every
+   *    table, clicking the ace queued the deuce.
+   *
+   *    This repo has already fixed exactly this once - see
+   *    `handlePineappleDiscard` above and
+   *    `tests/pineapple-discard-picks-the-right-card.test.ts`: "Two different
+   *    arrays, one index. Clicking the six threw away the ace." The
+   *    translation ref it introduced was never wired to this second caller.
+   *    It is now, by identity, with the same display-index fallback for a
+   *    mid-hand mount that has no recorded order.
+   *
+   * State stays in DISPLAY space, because that is what paints the badge; only
+   * the payload is translated.
+   */
+  const shownCardIndexesRef = useRef<number[]>([]);
+  /**
+   * PER-HAND RESET, keyed on server truth rather than on one event.
+   *
+   * `tableState.handNumber` is maintained from every engine snapshot, so this
+   * fires for a reload, a mid-hand join, an observer becoming a player, and a
+   * dropped or coalesced HAND_STARTED - all the cases that left the previous
+   * hand's pick marked, and untouchable behind a face-down Card Slide hand.
+   * SeatSlot's own squeeze latch was already keyed this way; this is the same
+   * signal, so the badge and the cards can no longer disagree about which hand
+   * they belong to.
+   */
+  const shownPicksHandRef = useRef<number | null>(null);
+  useEffect(() => {
+    const hand = tableState.handNumber ?? 0;
+    if (shownPicksHandRef.current === hand) return;
+    shownPicksHandRef.current = hand;
+    shownCardIndexesRef.current = [];
+    setShownCardIndexes((prev) => (prev.length === 0 ? prev : []));
+  }, [tableState.handNumber]);
   const handleToggleShowCard = useCallback(
     (cardIndex: number) => {
-      setShownCardIndexes((prev) => {
-        const next = prev.includes(cardIndex)
-          ? prev.filter((i) => i !== cardIndex)
-          : [...prev, cardIndex].sort((a, b) => a - b);
-        // Fire-and-forget: the engine stores the full selection each time, so
-        // an un-click is expressed by sending the smaller list. A failure here
-        // costs a reveal, never the hand, so it must not block the UI.
-        if (tableId) void setShownCards(tableId, next);
-        return next;
-      });
+      const prev = shownCardIndexesRef.current;
+      const next = prev.includes(cardIndex)
+        ? prev.filter((i) => i !== cardIndex)
+        : [...prev, cardIndex].sort((a, b) => a - b);
+      shownCardIndexesRef.current = next;
+      setShownCardIndexes(next);
+      if (!tableId) return;
+
+      const display = tableStateRef.current.players.find((pl) => pl?.isHero)?.holeCards;
+      const engineOrder = heroEngineCardOrderRef.current;
+      const toEngineIndex = (di: number): number => {
+        const card = display?.[di];
+        if (!card || !engineOrder) return di;
+        const at = engineOrder.indexOf(`${card.rank}${card.suit}`);
+        return at < 0 ? di : at;
+      };
+      // Fire-and-forget: the engine stores the full selection each time, so an
+      // un-click is expressed by sending the smaller list - and an empty one,
+      // which is now a clear rather than an error. A failure here costs a
+      // reveal, never the hand, so it must not block the UI.
+      void setShownCards(
+        tableId,
+        next.map(toEngineIndex).sort((a, b) => a - b)
+      );
     },
     [tableId]
   );
@@ -14301,9 +14363,17 @@ export default function TablePage({
         }
         setShowHandRevealModal(false);
         // Fresh hand → reset the accumulated achievement outcome.
-        // Dan 2026-08-18: show-card picks are per hand. Clear them here so a
-        // card marked last hand is not still marked when the new one is dealt.
-        setShownCardIndexes([]);
+        /* The show-card picks used to be cleared HERE and only here. That is
+           the single-place-on-one-event shape this file has already been
+           burned by twice - see the note on `heroHandRef` (2026-09-01: "every
+           client that never receives that event - a mid-hand join, a reload, a
+           dropped frame, the websocket sequence gap that fires GAME_START -
+           sat on 0 for the rest of the hand") and DealAnimation's re-key. Both
+           moved onto `tableState.handNumber`, which is maintained from every
+           engine snapshot; this one was left behind, so a missed HAND_STARTED
+           left last hand's pick marked and untouchable. Dan: "IT STAYS LOCKED
+           FOR FUTURE HANDS AS WELL." The reset now lives in an effect keyed on
+           the hand number, below. */
         heroHandOutcomeRef.current = {
           dealtIn: false,
           showdown: false,

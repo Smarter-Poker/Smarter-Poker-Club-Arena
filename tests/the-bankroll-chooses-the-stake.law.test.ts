@@ -60,7 +60,7 @@ import {
   canSit,
   referenceBuyIn,
 } from '../server/src/services/HorseBankroll.js';
-import { STAKE_LADDER } from '../server/src/services/StableHand.js';
+import { PHASE_MAX_BB, STAKE_LADDER } from '../server/src/services/StableHand.js';
 
 const ROOT = join(__dirname, '..');
 const LADDER = STAKE_LADDER.map((s) => s.bb);
@@ -115,11 +115,17 @@ describe('the bankroll chooses the stake', () => {
   });
 
   it('never licenses a rung above the phase clamp', () => {
-    // STAKE_LADDER stops at PHASE_MAX_BB by construction, so an unlimited roll
-    // still cannot reach 5.00. This is what makes the 5.00 tables unseatable.
+    /* The ladder stops at PHASE_MAX_BB by construction, so an unlimited roll
+       cannot climb past it however rich it is. That ceiling moved from 2 to
+       Dan's 25/50 on 2026-09-05 (see
+       the-floor-offers-what-it-lets-you-play.law.test.ts) - this assertion is
+       about the RELATIONSHIP, which is why it did not need to change with it,
+       and it is deliberately written against the constant rather than a
+       literal so the next move cannot slip past it either. */
     const w = affordableStakeWindow(Number.MAX_SAFE_INTEGER, LADDER, std);
-    expect(Math.max(...w)).toBeLessThanOrEqual(Math.max(...LADDER));
-    expect(LADDER).not.toContain(5);
+    expect(Math.max(...w)).toBe(Math.max(...LADDER));
+    expect(Math.max(...LADDER)).toBe(PHASE_MAX_BB);
+    expect(LADDER.some((bb) => bb > PHASE_MAX_BB)).toBe(false);
   });
 
   it('the seeding loop asks the ROLL for the stake, not the tag', () => {

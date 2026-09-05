@@ -187,6 +187,60 @@ export function nightTablesNeeded(maxBodies: number, chicagoHour: number): numbe
   return Math.max(NIGHT_MIN_OPEN_TABLES, Math.ceil(seats / NIGHT_SEATS_PER_TABLE));
 }
 
+/**
+ * ── THE FLOOR IS SIZED FOR THE HOUR, NOT ONLY FOR THE NIGHT (2026-09-05) ──
+ *
+ * Dan wrote the night rule on 2026-09-04: "fewer tables, more players at each
+ * table. late night shouldn't have any 2-3 handed games." It was implemented
+ * for the night window ONLY, and the daytime floor was left to whatever the
+ * table config happened to build.
+ *
+ * That is the whole of why the room looked dead in daylight. The occupancy
+ * curve caps BODIES by the hour - 18% mid-morning, 40% at peak - and on
+ * 2026-09-05 that was 202 bodies of 964 eligible at 10:44 Chicago. Those 202
+ * bodies were spread across 152 open cash tables. The head count was exactly
+ * what the curve asked for and every table still looked empty, which is the
+ * precise failure Dan described at night, happening at eleven in the morning.
+ *
+ * The principle does not belong to the night. A floor of 202 bodies holding
+ * three tables each is roughly six hundred seats; at six to a ring that is a
+ * hundred rings, not a hundred and fifty. The surplus fifty are not extra
+ * choice for a player, they are fifty tables with two people at them.
+ *
+ * THIS CHANGES NO PERCENTAGE OF DAN'S CURVE. The curve still decides how many
+ * horses are awake; this decides how thinly they are spread. `nightTablesNeeded`
+ * is kept as the night's own name for the same arithmetic so the night
+ * behaviour and its law test are untouched.
+ *
+ * The DAY floor is higher than the night's - a daytime room with six tables
+ * would be a different kind of wrong, and a human arriving needs somewhere to
+ * sit in every variant the floor advertises.
+ */
+export const DAY_MIN_OPEN_TABLES = 24;
+
+/** Seats per ring the sizing assumes. Six is a comfortable game, not a full
+ *  nine: sizing to nine would keep the floor permanently one bad hour from
+ *  looking thin again. */
+export const SEATS_PER_TABLE_TARGET = NIGHT_SEATS_PER_TABLE;
+
+export function tablesNeededForHour(maxBodies: number, chicagoHour: number): number {
+  const seats = Math.max(0, maxBodies) * seatsPerHorseBand(chicagoHour).max;
+  const floor = isNightWindow(chicagoHour) ? NIGHT_MIN_OPEN_TABLES : DAY_MIN_OPEN_TABLES;
+  return Math.max(floor, Math.ceil(seats / SEATS_PER_TABLE_TARGET));
+}
+
+/**
+ * The smallest table the floor tolerates at this hour.
+ *
+ * Four at night is Dan's number ("shouldn't have any 2-3 handed games"). By
+ * day it is three: a daytime floor carries more tables and more variants, and
+ * a three-handed game in daylight is a game somebody can still join, where at
+ * two in the morning it is the only game and it looks abandoned.
+ */
+export function minPlayersForHour(chicagoHour: number): number {
+  return isNightWindow(chicagoHour) ? NIGHT_MIN_PLAYERS : 3;
+}
+
 /** Night hard cap applies 03:00-08:00 Chicago inclusive of 03, exclusive of 08
  *  per the OPORD ("night hard cap starts" at 03:00, "ends" at 08:00). */
 export function isNightWindow(chicagoHour: number): boolean {
@@ -378,12 +432,54 @@ export const STAKE_LADDER: Stake[] = [
   { sb: 0.25, bb: 0.5 },
   { sb: 0.5, bb: 1 },
   { sb: 1, bb: 2 },
+  /* THE HIGH RUNGS, ADDED 2026-09-05. These are not new stakes - they are the
+     four `DEFAULT_TABLES` entries the fleet has been building since
+     2026-09-03, finally given a rung each. See PHASE_MAX_BB. */
+  { sb: 2, bb: 5 },
+  { sb: 5, bb: 10 },
+  { sb: 10, bb: 20 },
+  { sb: 25, bb: 50 },
 ];
 
-/** Section 8.3 phase clamp. NOTHING sits above 1/2 this phase, however rich
- *  the wallet. 10,000 chips would license 2/5 on the 20-buy-in rule; the
- *  clamp still forbids it, and the clamp wins. */
-export const PHASE_MAX_BB = 2;
+/**
+ * ── THE PHASE CLAMP, AND WHY IT MOVED FROM 2 TO 50 (2026-09-05) ───────────
+ *
+ * It read 2, with this note: "NOTHING sits above 1/2 this phase, however rich
+ * the wallet. 10,000 chips would license 2/5 on the 20-buy-in rule; the clamp
+ * still forbids it, and the clamp wins."
+ *
+ * It was contradicting Dan directly, and had been for two days.
+ *
+ * Dan, 2026-09-03: **"ADD THE HIGHER STAKES FOR MIDWAY UNION, CAP IT AT
+ * 25-50"**. `HorseFleetManager.DEFAULT_TABLES` carries that instruction out -
+ * NLH 2/5, 5/10, 10/20 and 25/50, plus PLO4 5/10 - and its own comment records
+ * the supply check behind it: 48 high-band horses, every one rolled for 5/10
+ * and 10/20, 35 of them for 25/50.
+ *
+ * `STAKE_LADDER` stopped at 2 and `stakeIsLegalThisPhase` refused everything
+ * above it, so NOT ONE of those tables could ever seat a horse. Sixteen 2/5
+ * tables were live on 2026-09-05 - ninety-nine seats, ZERO horses ever, not
+ * rarely but zero since creation - and the seeder logged
+ * `No available horses ... band mid` at them on every cycle, forever. The
+ * higher rungs never even got that far.
+ *
+ * THE FLEET IS ROLLED FOR IT, measured rather than assumed. Bankrolls across
+ * the 1,000 horses on 2026-09-05: median 73,873, p90 385,614, max 5,626,482.
+ * At the standard 20-buy-in rule that is 822 of 1,000 clearing 2/5, 593
+ * clearing 5/10 and 557 clearing 25/50. The old note's worked example -
+ * 10,000 chips licensing 2/5 - is the fleet MEDIAN times seven.
+ *
+ * SO THE CLAMP IS NOW DAN'S CEILING, exactly: 25/50 and not a rung higher.
+ * It has not stopped being a clamp; it has stopped disagreeing with the floor
+ * it governs. `the-floor-offers-what-it-lets-you-play.law.test.ts` asserts the
+ * two can never diverge again - every big blind in DEFAULT_TABLES must be a
+ * rung, and every rung must be legal this phase.
+ *
+ * NOT EVERYTHING FOLLOWS IT UP. `EXOTIC_MAX_BB` stays at 2: short deck and
+ * pineapple are thin enough at 1/2, and that cap is deliberately the stricter
+ * of the two now rather than a duplicate of this one.
+ */
+export const PHASE_MAX_BB = 50;
 
 export function stakeIsLegalThisPhase(bb: number): boolean {
   return bb <= PHASE_MAX_BB;
@@ -394,7 +490,14 @@ export type StakeBand = 'micro' | 'low' | 'top';
 export function stakeBandOf(bb: number): StakeBand | null {
   if (bb <= 0.1) return 'micro';
   if (bb <= 0.5) return 'low';
-  if (bb <= PHASE_MAX_BB) return 'top';
+  /* 'top' USED TO MEAN "up to the clamp", which was 1/2. With the clamp at
+     25/50 that would make one band span 1 through 50 - a horse tagged 'top'
+     could be pointed at 1/2 and at 25/50 by the same label, which is the
+     scatter Dan's 2026-08-29 one-stake-level ruling exists to prevent. The
+     band now names the rungs it always meant, and everything above it is the
+     high ladder, which the BANKROLL selects (affordableStakeWindow) rather
+     than a band label. */
+  if (bb <= 2) return 'top';
   return null;
 }
 

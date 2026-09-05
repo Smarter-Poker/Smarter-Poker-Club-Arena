@@ -9,6 +9,7 @@ import {
   type TableSnapshot,
 } from './StableHandController.js';
 import {
+  DAY_MIN_OPEN_TABLES,
   MIDWAY_UNION_ID,
   DSS_CLUB_ID,
   SEAT_HOLD_MS,
@@ -668,7 +669,9 @@ describe('planFloor - shape reads seats, not tables.status', () => {
   });
 
   it('still excludes a table above the phase clamp', () => {
-    const tables = [waitingButFull('ok'), table({ tableId: 'big', status: 'waiting', bb: 50 })];
+    /* 100 rather than 50: 25/50 is inside the clamp since 2026-09-05 (Dan
+       2026-09-03, "CAP IT AT 25-50"), so 50/100 is the first illegal rung. */
+    const tables = [waitingButFull('ok'), table({ tableId: 'big', status: 'waiting', bb: 100 })];
     const p = planFloor(
       snap({ hosts: [{ hostId: MIDWAY_UNION_ID, n: 584, uniqueLive: 180, tables }] })
     );
@@ -779,7 +782,11 @@ describe('planFloor - the night park', () => {
     expect(p.park).toHaveLength(20 - KEEP_OPEN);
   });
 
-  it('parks nothing in the daytime', () => {
+  /* THE DAYTIME FLOOR IS SIZED TOO, SINCE 2026-09-05. This test used to read
+     "parks nothing in the daytime" and was passing for the wrong reason after
+     the change - twenty tables is below DAY_MIN_OPEN_TABLES, so nothing was
+     parked whatever the rule said. Both halves are pinned now. */
+  it('leaves a small daytime floor alone - the day minimum protects it', () => {
     const thin = Array.from({ length: 20 }, (_, i) =>
       table({ tableId: `t${i}`, occupied: 1, seatedHorses: [horse(`h${i}`)] })
     );
@@ -790,6 +797,41 @@ describe('planFloor - the night park', () => {
       hosts: [{ hostId: MIDWAY_UNION_ID, n: 584, uniqueLive: 150, tables: thin }],
     });
     expect(p.park).toHaveLength(0);
+  });
+
+  it('thins a daytime floor spread far past what the hour can fill', () => {
+    /* The 2026-09-05 measurement, in a test: 202 bodies across 152 open cash
+       tables at 10:44 Chicago. The head count was exactly what the curve
+       asked for and every table still looked empty. */
+    const spread = Array.from({ length: 200 }, (_, i) =>
+      table({ tableId: `t${i}`, occupied: 1, seatedHorses: [horse(`h${i}`)] })
+    );
+    const p = planFloor({
+      chicagoHour: 14,
+      chicagoMinute: 0,
+      killed: false,
+      hosts: [{ hostId: MIDWAY_UNION_ID, n: 584, uniqueLive: 150, tables: spread }],
+    });
+    expect(p.park.length).toBeGreaterThan(0);
+    // ...and never below what the hour actually needs.
+    expect(200 - p.park.length).toBeGreaterThanOrEqual(DAY_MIN_OPEN_TABLES);
+    expect(p.alerts.some((a) => a.startsWith('day_parking'))).toBe(true);
+  });
+
+  it('never parks a daytime table that has a human on it or waiting for it', () => {
+    const spread = Array.from({ length: 200 }, (_, i) =>
+      table({ tableId: `t${i}`, occupied: 1, seatedHorses: [horse(`h${i}`)] })
+    );
+    spread[150] = table({ tableId: 'human-seated', occupied: 1, humansSeated: 1 });
+    spread[151] = table({ tableId: 'human-waiting', occupied: 1, humansWaiting: 1 });
+    const p = planFloor({
+      chicagoHour: 14,
+      chicagoMinute: 0,
+      killed: false,
+      hosts: [{ hostId: MIDWAY_UNION_ID, n: 584, uniqueLive: 150, tables: spread }],
+    });
+    expect(p.park).not.toContain('human-seated');
+    expect(p.park).not.toContain('human-waiting');
   });
 
   it('a table being closed for good is never ALSO parked', () => {

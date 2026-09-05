@@ -35,7 +35,9 @@ import {
   isNightWindow,
   STAKE_LADDER,
   NIGHT_MIN_PLAYERS,
+  minPlayersForHour,
   nightTablesNeeded,
+  tablesNeededForHour,
   MIDWAY_UNION_ID,
   DSS_CLUB_ID,
   type ShapeBucket,
@@ -489,25 +491,34 @@ export function planFloor(snap: FloorSnapshot): FloorPlan {
            parked, and the host has nowhere to seat anybody. The number is
            derived from the cap rather than fixed - 29 bodies at up to 1.3
            seats each is 38 seats and needs seven full rings, not six. */
-    if (isNightWindow(snap.chicagoHour)) {
+    /* EVERY HOUR, NOT ONLY THE NIGHT (2026-09-05). The block below used to be
+       gated on `isNightWindow`. It is the same arithmetic and the same three
+       protections; what changed is that the daytime floor is now sized to the
+       daytime body cap instead of being left at whatever the table config
+       built. See tablesNeededForHour - the day keeps a much higher floor
+       (DAY_MIN_OPEN_TABLES) and tolerates a smaller table (minPlayersForHour),
+       so this thins a spread-too-thin room without ever emptying it. */
+    {
       /* ...and never a cluster table: a must-move game thins itself (its
          controller breaks the newest table when everyone fits in the rest)
          and Main 1 is always open while the game is enabled (R3). */
       const parkable = running
         .filter((t) => t.humansSeated === 0 && t.humansWaiting === 0 && !t.clusterId)
         .sort((a, b) => b.occupied - a.occupied);
-      const keepOpen = nightTablesNeeded(occ.max, snap.chicagoHour);
+      const keepOpen = tablesNeededForHour(occ.max, snap.chicagoHour);
       const keep = new Set(parkable.slice(0, keepOpen).map((t) => t.tableId));
+      const minPlayers = minPlayersForHour(snap.chicagoHour);
       let parkedHere = 0;
       for (const t of parkable) {
         if (keep.has(t.tableId)) continue;
-        if (t.occupied >= NIGHT_MIN_PLAYERS) continue;
+        if (t.occupied >= minPlayers) continue;
         plan.park.push(t.tableId);
         parkedHere++;
       }
       if (parkedHere > 0) {
         plan.alerts.push(
-          `night_parking host=${host.hostId} parking=${parkedHere} of=${running.length}`
+          `${isNightWindow(snap.chicagoHour) ? 'night' : 'day'}_parking ` +
+            `host=${host.hostId} parking=${parkedHere} of=${running.length} keep=${keepOpen}`
         );
       }
     }

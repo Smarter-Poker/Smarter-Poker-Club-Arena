@@ -123,6 +123,11 @@ describe('the stake a new table opens at', () => {
     // grows into.
     expect(stakeForBand('micro')).toEqual({ sb: 0.05, bb: 0.1 });
     expect(stakeForBand('low')).toEqual({ sb: 0.25, bb: 0.5 });
+    /* Still 1/2. The clamp moved to 25/50 on 2026-09-05, but `stakeBandOf`
+       deliberately did NOT follow it up: a 'top' band spanning 1 through 50
+       would let one label point a horse at both, which is the scatter Dan's
+       one-stake-level ruling forbids. The high rungs are reached by the
+       BANKROLL (affordableStakeWindow), not by a band label. */
     expect(stakeForBand('top')).toEqual({ sb: 1, bb: 2 });
   });
 

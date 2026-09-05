@@ -196,11 +196,16 @@ describe('T6/T7 - exotics are capped at 2 per variant per host and 1/2', () => {
     expect(plan.doNotAutoReopen).toEqual(['hi']);
   });
 
-  it('T7 cannot open a third table of a variant, nor anything above 1/2', () => {
+  it('T7 cannot open a third table of a variant, nor an exotic above 1/2', () => {
     const plan = planExoticTrim([mk('a', 2, 6), mk('b', 2, 6)], 500);
     expect(plan.mayOpen).toBe(0);
+    /* EXOTIC_MAX_BB is its own cap and stays at 2: short deck and pineapple
+       are thin enough at 1/2. The PHASE clamp moved to 5 on 2026-09-05 for
+       the core games, which is why these two numbers now differ - the exotic
+       ceiling is deliberately the stricter of the two. */
     expect(EXOTIC_MAX_BB).toBe(2);
-    expect(stakeIsLegalThisPhase(5)).toBe(false);
+    expect(stakeIsLegalThisPhase(50)).toBe(true); // the phase runs to 25/50 now
+    expect(stakeIsLegalThisPhase(100)).toBe(false); // and stops at Dan's cap
   });
 
   it('leaves the floor empty when there are fewer than four tagged legal horses', () => {
@@ -350,16 +355,23 @@ describe('T11/T12 - seat cap and the phase clamp', () => {
       })
     ).toBe('seat_cap');
   });
-  it('T12 rejects 2/5 and 5/10 however rich the wallet', () => {
-    expect(evaluateSit({ ...baseSit, bb: 5, available: 10_000_000, buyIn: 500 })).toBe(
+  /* THE CLAMP MOVED TO 2/5 ON 2026-09-05, so this now pins the new ceiling
+     rather than the old one. It used to reject 2/5 "however rich the wallet",
+     which contradicted the sixteen 2/5 tables the fleet builds and Dan's own
+     2026-09-03 ceiling ("close any tables over 2/5"). Those tables had seated
+     nobody, ever. 5/10 is still refused, and that is still the point of the
+     clamp: money alone never opens a rung the floor does not offer. */
+  it('T12 allows the ladder Dan asked for, and still stops above 25/50', () => {
+    expect(evaluateSit({ ...baseSit, bb: 5, available: 10_000_000, buyIn: 500 })).toBe('ok');
+    expect(evaluateSit({ ...baseSit, bb: 50, available: 10_000_000, buyIn: 5000 })).toBe('ok');
+    // "CAP IT AT 25-50" (Dan 2026-09-03). 50/100 is above the cap, and money
+    // has never been what opens a rung the floor does not offer.
+    expect(evaluateSit({ ...baseSit, bb: 100, available: 10_000_000, buyIn: 10_000 })).toBe(
       'stake_above_phase_cap'
     );
-    expect(evaluateSit({ ...baseSit, bb: 10, available: 10_000_000, buyIn: 1000 })).toBe(
-      'stake_above_phase_cap'
-    );
-    // 10,000 licenses 2/5 on the 20-buy-in rule. The clamp still wins.
-    expect(isLicensed(10_000, 5)).toBe(false);
-    expect(isLicensed(10_000, 2)).toBe(true);
+    expect(isLicensed(10_000, 5)).toBe(true); // exactly 20 BI at 2/5
+    expect(isLicensed(9_999, 5)).toBe(false); // one chip short
+    expect(isLicensed(10_000_000, 100)).toBe(false); // above the cap, not money
   });
 });
 
@@ -703,7 +715,9 @@ describe('bankroll arithmetic (Sections 8.3 - 8.10)', () => {
     expect(isLicensed(10_000, 0.1)).toBe(true); // 200
     expect(isLicensed(10_000, 0.5)).toBe(true); // 1,000
     expect(isLicensed(10_000, 2)).toBe(true); // 4,000
-    expect(isLicensed(10_000, 5)).toBe(false); // phase clamp, not money
+    expect(isLicensed(10_000, 5)).toBe(true); // 10,000 = exactly 20 BI at 2/5
+    expect(isLicensed(10_000, 10)).toBe(false); // 5/10 needs 20,000
+    expect(isLicensed(10_000_000, 100)).toBe(false); // above the cap, not money
     expect(isLicensed(3_999, 2)).toBe(false); // one chip short of 20 BI
   });
   it('allows four 100bb tables at 1/2 inside the 50 percent commit cap', () => {
@@ -806,7 +820,8 @@ describe('the bankroll-unknown policy keeps the 2026-08-31 fix intact', () => {
     // atomic_table_buyin checks solvency. It does not know the licence, the
     // commit cap, the phase clamp, the sit cap or the mutex.
     expect(evaluateSit({ ...baseSit, available: 3_999 })).toBe('brm');
-    expect(evaluateSit({ ...baseSit, bb: 5, available: 10_000_000, buyIn: 500 })).toBe(
+    // 50/100 rather than 2/5: the clamp moved to Dan's 25/50 cap 2026-09-05.
+    expect(evaluateSit({ ...baseSit, bb: 100, available: 10_000_000, buyIn: 10_000 })).toBe(
       'stake_above_phase_cap'
     );
     expect(evaluateSit({ ...baseSit, sitsOnKeyToday: 99 })).toBe('sit_cap');

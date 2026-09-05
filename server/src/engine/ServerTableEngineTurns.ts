@@ -2374,6 +2374,22 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       } catch (err) {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.horse_action_threw');
       }
+      // Realtime programme Phase 1 (2026-09-04): a horse's action is timed
+      // exactly like a human's. This path bypasses _handlePlayerActionInner,
+      // so before this the act-to-broadcast clock started only for HTTP
+      // actions and the horse series could never fill - which also meant the
+      // engine's own baseline latency was invisible whenever no human sat.
+      // Same instrument, same clock, same treatment (CLAUDE.md 10.5).
+      if (applied) {
+        try {
+          EngineMetrics.actionsFleetTotal.inc(1, {
+            audience: this.humansSeated() > 0 ? 'human' : 'horse',
+          });
+          this.lastActionAcceptedAtMs = Date.now();
+        } catch {
+          /* metrics must never affect gameplay */
+        }
+      }
       if (!applied) {
         console.warn(
           '[ServerTableEngine:' +

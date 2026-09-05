@@ -405,6 +405,13 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
     // instead: seats from seatedPlayers, no board, no clock, stage 'waiting'
     // (a first-class stage in the client contract - mapEngineSnapshot).
     if (!this.handController) {
+      // Phase 1 (2026-09-04), measured on production: the first 33 human
+      // samples included four over 5 s. They were not slow broadcasts - they
+      // were the LAST action of a hand: the hand ended, this branch published
+      // idle without observing, the clock stayed armed, and the next hand's
+      // first broadcast observed the whole gap between hands. That is not
+      // act-to-broadcast latency. Disarm the clock here; the sample is void.
+      this.lastActionAcceptedAtMs = 0;
       this.publishIdleState();
       return Promise.resolve();
     }

@@ -1,7 +1,22 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * 🪟 MODAL — Dialog & Modal Components
+ * MODAL — Dialog & Modal Components
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * EVERY CLASS THIS COMPONENT EMITS IS NAMESPACED `ca-modal` (2026-09-04).
+ *
+ * It used to emit `.modal-overlay`, `.modal`, `.modal-content` and friends -
+ * plain global names that nine, sixteen and five OTHER stylesheets in this
+ * repo also define for their own dialogs. Whichever chunk loaded last owned
+ * this component's backdrop, and on the live Midway Union lobby it computed to
+ * `position: fixed; z-index: 1000`: inside the portal's stacking context that
+ * put the backdrop ABOVE the card, so the club greeting was an 82%-black,
+ * 9px-blurred smear over the whole page. Dan: "IT BLOCKS THE ENTIRE PAGE, EVEN
+ * WHEN ITS 'SMALL'. YOU CAN SEE IT SLIGHTLY STILL."
+ *
+ * The names below are unique in `src/` and a law keeps them that way:
+ * `tests/the-shared-modal-owns-its-class-names.law.test.ts`. Do not add a
+ * class here without the prefix, and do not "simplify" one back to `.modal`.
  */
 
 import React, { useEffect, useCallback, useRef } from 'react';
@@ -147,9 +162,9 @@ export function Modal({
   const content = (
     <AnimatePresence>
       {isOpen && (
-        <div className="modal-portal">
+        <div className="ca-modal-portal">
           <motion.div
-            className="modal-overlay"
+            className="ca-modal-overlay"
             variants={overlayVariants}
             initial="hidden"
             animate="visible"
@@ -158,7 +173,7 @@ export function Modal({
           />
           <motion.div
             ref={modalRef}
-            className={`modal modal-${size} ${className}`}
+            className={`ca-modal ca-modal--${size} ${className}`}
             variants={modalVariants}
             initial="hidden"
             animate="visible"
@@ -166,13 +181,13 @@ export function Modal({
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
-            aria-labelledby={title ? 'modal-title' : undefined}
+            aria-labelledby={title ? 'ca-modal-title' : undefined}
             aria-label={!title && ariaLabel ? ariaLabel : undefined}
           >
             {(title || showCloseButton) && (
-              <div className="modal-header">
+              <div className="ca-modal-header">
                 {title && (
-                  <h2 id="modal-title" className="modal-title">
+                  <h2 id="ca-modal-title" className="ca-modal-title">
                     {title}
                   </h2>
                 )}
@@ -183,12 +198,12 @@ export function Modal({
                     variant="ghost"
                     size="small"
                     onClick={onClose}
-                    className="modal-close"
+                    className="ca-modal-close"
                   />
                 )}
               </div>
             )}
-            <div className="modal-content">{children}</div>
+            <div className="ca-modal-content">{children}</div>
           </motion.div>
         </div>
       )}
@@ -208,7 +223,7 @@ export function ModalFooter({
   children: React.ReactNode;
   align?: 'left' | 'center' | 'right' | 'space-between';
 }) {
-  return <div className={`modal-footer modal-footer-${align}`}>{children}</div>;
+  return <div className={`ca-modal-footer ca-modal-footer--${align}`}>{children}</div>;
 }
 
 /**
@@ -235,8 +250,8 @@ export function AlertDialog({
 }) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="small" title={title}>
-      <div className="alert-dialog-content">
-        <p className="alert-dialog-message">{message}</p>
+      <div className="ca-modal-alert-content">
+        <p className="ca-modal-alert-message">{message}</p>
       </div>
       <ModalFooter align="right">
         <button className="btn btn-secondary btn-medium" onClick={onClose}>
@@ -296,9 +311,9 @@ export function Drawer({
   const content = (
     <AnimatePresence>
       {isOpen && (
-        <div className="drawer-portal">
+        <div className="ca-modal-drawer-portal">
           <motion.div
-            className="drawer-overlay"
+            className="ca-modal-drawer-overlay"
             variants={overlayVariants}
             initial="hidden"
             animate="visible"
@@ -306,7 +321,7 @@ export function Drawer({
             onClick={onClose}
           />
           <motion.div
-            className={`drawer drawer-${position} drawer-${size}`}
+            className={`ca-modal-drawer ca-modal-drawer--${position} ca-modal-drawer--${size}`}
             variants={drawerVariants}
             initial="hidden"
             animate="visible"
@@ -314,8 +329,8 @@ export function Drawer({
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
           >
             {(title || showCloseButton) && (
-              <div className="drawer-header">
-                {title && <h2 className="drawer-title">{title}</h2>}
+              <div className="ca-modal-drawer-header">
+                {title && <h2 className="ca-modal-drawer-title">{title}</h2>}
                 {showCloseButton && (
                   <IconButton
                     icon="✕"
@@ -327,7 +342,7 @@ export function Drawer({
                 )}
               </div>
             )}
-            <div className="drawer-content">{children}</div>
+            <div className="ca-modal-drawer-content">{children}</div>
           </motion.div>
         </div>
       )}

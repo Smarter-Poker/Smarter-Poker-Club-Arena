@@ -13,9 +13,15 @@ import { reportError } from '../services/errorReporter.js';
 
 export interface HeartbeatDeps {
   gameServer: {
-    getTableEngine(
-      tableId: string
-    ): { heartbeat(userId: string, opts?: { turnRendered?: boolean }): unknown } | null | undefined;
+    getTableEngine(tableId: string):
+      | {
+          heartbeat(
+            userId: string,
+            opts?: { turnRendered?: boolean; rebuyPromptOpen?: boolean }
+          ): unknown;
+        }
+      | null
+      | undefined;
   };
 }
 
@@ -36,7 +42,7 @@ export async function handleHeartbeat(
        Optional — older clients omit it, and the silent-client canary is built
        to work without it. Coerced rather than trusted as a shape: it arrives
        from a browser, and only its truthiness is ever read. */
-    const { tableId, turnRendered } = body;
+    const { tableId, turnRendered, rebuyPromptOpen } = body;
     const userId = auth.userId;
 
     if (!tableId) {
@@ -48,7 +54,10 @@ export async function handleHeartbeat(
       return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
     }
 
-    const result = engine.heartbeat(userId, { turnRendered: turnRendered === true });
+    const result = engine.heartbeat(userId, {
+      turnRendered: turnRendered === true,
+      rebuyPromptOpen: rebuyPromptOpen === true,
+    });
     return sendJSON(res, 200, result);
   } catch (err: unknown) {
     reportError(err, 'HTTP.heartbeat_error');

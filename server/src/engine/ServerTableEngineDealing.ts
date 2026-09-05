@@ -2775,6 +2775,14 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
   /** How long a seat must sit at zero before it is released. */
   static readonly BUSTED_GRACE_MS = 10_000;
+  /**
+   * A heartbeat carrying `rebuyPromptOpen` within this window means the
+   * player is at the bust-rebuy dialog; the seat is not released while they
+   * are (2026-09-04 second sweep). Heartbeats run every few seconds, so this
+   * is two missed beats, not one. The map itself lives on the base class,
+   * because the heartbeat (Turns) writes it and this sweep (Dealing) reads it.
+   */
+  static readonly REBUY_PROMPT_HOLD_MS = 12_000;
 
   protected async standUpBustedCashPlayers(): Promise<void> {
     if (this.isTournamentTable()) return;
@@ -2811,6 +2819,15 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
          DEBITED already and is owed their chips, not their seat taken away. */
       if (this.pendingAddOns.has(player.user_id) || owed.has(player.user_id)) {
         this.bustedSince.delete(player.user_id);
+        continue;
+      }
+
+      /* The player is standing at the cashier. A fresh rebuy-prompt heartbeat
+         restarts the grace: the clock measures how long a seat sat at zero
+         with NOBODY minding it, not how long a human took to decide. */
+      const promptSeen = this.rebuyPromptOpenAt.get(player.user_id) ?? 0;
+      if (now - promptSeen < ServerTableEngineDealing.REBUY_PROMPT_HOLD_MS) {
+        this.bustedSince.set(player.user_id, now);
         continue;
       }
 
@@ -2853,6 +2870,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         this.straddleEngine.removePlayer(this.tableId, player.user_id);
         this.preActionEngine.removePlayer(this.tableId, player.user_id);
         this.bustedSince.delete(player.user_id);
+        this.rebuyPromptOpenAt.delete(player.user_id);
         removed.push(player.user_id);
         console.log(
           `[ServerTableEngine:${this.tableId}] ${player.username} busted and did not rebuy - seat ${player.seat_number} released`

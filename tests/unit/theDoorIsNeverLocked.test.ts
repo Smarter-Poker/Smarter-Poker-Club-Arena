@@ -100,9 +100,17 @@ describe('the tab X (the other door)', () => {
 });
 
 describe('the helpers that make it true', () => {
+  it('showLobbyNow navigates to the exit destination, once per leave', () => {
+    const helper = slice('const showLobbyNow = ', 'const goToLobbyKeepingSeat = ');
+    expect(helper).toMatch(/if \(leaveNavigatedRef\.current\) return;/);
+    expect(helper).toMatch(/leaveNavigatedRef\.current = true;/);
+    expect(helper).toMatch(/exitDestination\(\)/);
+    expect(helper).toMatch(/navigate\(dest/);
+  });
+
   it('goToLobbyKeepingSeat navigates and does NOT close the tab (the seat is live)', () => {
     const helper = slice('const goToLobbyKeepingSeat = ', 'const leaveWithoutCashout = ');
-    expect(helper).toMatch(/navigate\(exitDestination\(\)\)/);
+    expect(helper).toMatch(/showLobbyNow\(\)/);
     expect(helper).not.toMatch(/CLOSE_TABLE_TAB/);
     expect(helper).not.toMatch(/heroSeatRef\.current = 0/);
   });
@@ -110,7 +118,7 @@ describe('the helpers that make it true', () => {
   it('leaveWithoutCashout closes the tab and navigates, and moves no chips', () => {
     const helper = slice('const leaveWithoutCashout = ', 'const handleLeaveTable = async');
     expect(helper).toMatch(/CLOSE_TABLE_TAB/);
-    expect(helper).toMatch(/navigate\(exitDestination\(\)\)/);
+    expect(helper).toMatch(/showLobbyNow\(\)/);
     expect(helper).not.toMatch(/tableService\.leaveTable\(|atomic_table_cashout|supabase\.rpc\(/);
   });
 
@@ -122,5 +130,73 @@ describe('the helpers that make it true', () => {
     );
     expect(fn).toMatch(/supabase\.auth\.refreshSession\(\)/);
     expect(fn.indexOf('getSession()')).toBeLessThan(fn.indexOf('refreshSession()'));
+  });
+});
+
+/**
+ * THE LOBBY COMES FIRST, THE CASH-OUT FOLLOWS (Dan 2026-09-04)
+ *
+ * "When you right click on the action bar and 'Leave Table' there is a long
+ * delay before you actually leave the table and go to the game lobby, that
+ * needs to happen in real time, no 3 second delay."
+ *
+ * Both doors awaited the whole cash-out (engine round trip, which itself
+ * waits on the previous hand's settlement writes, the seat read, the RPC, and
+ * a tournament result fetch) before touching the router. Leaving the view is
+ * not the engine's to grant, so the navigation now precedes the await and
+ * the cash-out completes behind the lobby.
+ */
+describe('the lobby comes first, the cash-out follows', () => {
+  it('the menu door navigates BEFORE it awaits the cash-out', () => {
+    const body = slice(
+      'const handleLeaveTable = async () => {',
+      'const handleForceLeaveTable = async'
+    );
+    const engine = body.indexOf('await tableService.leaveTable(');
+    expect(engine).toBeGreaterThan(-1);
+    const before = body.slice(0, engine);
+    const nav = before.lastIndexOf('showLobbyNow();');
+    expect(nav, 'showLobbyNow() must run before the cash-out is awaited').toBeGreaterThan(-1);
+    // and nothing between the navigation and the await is another await
+    expect(before.slice(nav)).not.toMatch(/\bawait\b/);
+    // the old ordering is gone: no navigate() after the engine call
+    expect(body.slice(engine)).not.toMatch(/navigate\(/);
+  });
+
+  it('the seat-first refund door navigates before its RPC too', () => {
+    const body = slice(
+      'if (seatFirstBuyIn && tableState.heroSeat > 0) {',
+      'const heroPlayer = tableState.players'
+    );
+    const rpc = body.indexOf("supabase.rpc('fn_leave_seat_and_refund'");
+    expect(rpc).toBeGreaterThan(-1);
+    expect(body.slice(0, rpc)).toMatch(/showLobbyNow\(\);/);
+    expect(body).not.toMatch(/navigate\(`\/clubs\/\$\{backTo\}`\)/);
+  });
+
+  it('each door arms a fresh navigation so the second door of a session is not swallowed', () => {
+    const menu = slice('const handleLeaveTable = async () => {', 'const liveSeat = ');
+    expect(menu).toMatch(/leaveNavigatedRef\.current = false;/);
+    const force = slice('const handleForceLeaveTable = async () => {', 'const forceLiveSeat = ');
+    expect(force).toMatch(/leaveNavigatedRef\.current = false;/);
+  });
+
+  it('the tab strip door puts the lobby up from the gesture when it is the last table', () => {
+    const multi = strip(read('src/pages/MultiTablePage.tsx'));
+    const from = multi.indexOf("case 'leave': {");
+    expect(from).toBeGreaterThan(-1);
+    const body = multi.slice(from, multi.indexOf("case 'sitout'", from));
+    const nav = body.indexOf('navigate(dest)');
+    const emit = body.indexOf("action: 'FORCE_LEAVE_TABLE'");
+    expect(nav).toBeGreaterThan(-1);
+    expect(emit).toBeGreaterThan(-1);
+    expect(nav, 'the lobby goes up before the cash-out is even requested').toBeLessThan(emit);
+    expect(body).toMatch(/remaining\.length === 0/);
+    // goToLobby (the TABLE_LEFT tail) is idempotent against that early navigation
+    const lobby = multi.slice(
+      multi.indexOf('const goToLobby = useCallback('),
+      multi.indexOf('}, [navigate]);', multi.indexOf('const goToLobby = useCallback('))
+    );
+    expect(lobby).toMatch(/if \(pathnameRef\.current === dest\) return;/);
   });
 });

@@ -856,6 +856,10 @@ const COL_ACTIONS: ColumnDef = {
     if (e.kind === 'cash') {
       const seated = ctx.seatedIds.has(e.id);
       const headsUp = e.capacity === 2;
+      /* GATE 6 (OPORD 1.4 s2.9): a must-move game is joined and viewed as a
+         GAME. `full` is already impossible for one (capacity 0) - a full
+         Main opens a feeder - so the waitlist branch never shows for it. */
+      const game = Boolean(e.game);
       /* A seat the player already holds beats every other consideration: a
          full table is still THEIR table, and Return To Table has to win over
          the waitlist offer. */
@@ -869,9 +873,9 @@ const COL_ACTIONS: ColumnDef = {
               className="lt-act lt-act--ghost"
               data-act="view"
               onClick={run}
-              aria-label={`View Table ${e.name}`}
+              aria-label={`${game ? 'View Game' : 'View Table'} ${e.name}`}
             >
-              View Table
+              {game ? 'View Game' : 'View Table'}
             </button>
           )}
           {full && ctx.onWaitlistToggle && (
@@ -893,7 +897,15 @@ const COL_ACTIONS: ColumnDef = {
               onClick={run}
               aria-label={`${seated ? 'Return To' : headsUp ? 'Sit Down At' : 'Join'} ${e.name}`}
             >
-              {seated ? 'Return To Table' : headsUp ? 'Sit Down' : 'Join Table'}
+              {seated
+                ? game
+                  ? 'Return To Game'
+                  : 'Return To Table'
+                : headsUp
+                  ? 'Sit Down'
+                  : game
+                    ? 'Join Game'
+                    : 'Join Table'}
             </button>
           )}
         </span>

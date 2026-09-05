@@ -26,6 +26,7 @@ import {
   spinPrizeLabel,
   stackDepthLabel,
   stackFormatRank,
+  styleCountsLine,
 } from './lobbyEntries';
 import { prefetchIntent } from '../../utils/ChunkPreloader';
 import { useSpinTierAvailability } from '../../hooks/useSpinTierAvailability';
@@ -1297,6 +1298,7 @@ function VariantMenu({
 function StakesMenu({
   choices,
   selected,
+  counts,
   onToggle,
   sortDir,
   onSort,
@@ -1304,6 +1306,13 @@ function StakesMenu({
 }: {
   choices: readonly { key: string; label: string }[];
   selected: readonly string[];
+  /**
+   * THE COUNTS (Dan 2026-09-05): how many games of each style the tab holds,
+   * keyed by style, from rows already loaded. Printed under the eyebrow as
+   * "Classic 12 / Action 4 / Madness 2" and beside each item. Omit and the
+   * menu is as it was.
+   */
+  counts?: Readonly<Record<string, number>>;
   onToggle: (key: string | null) => void;
   /** The current stakes sort direction, or null when the board is sorted by something else. */
   sortDir: SortDir | null;
@@ -1316,6 +1325,11 @@ function StakesMenu({
       <span className="lt-variant-menu__eyebrow" aria-hidden="true">
         Game Style
       </span>
+      {counts && (
+        <span className="lt-stakes-menu__counts" data-testid="lt-style-counts">
+          {styleCountsLine(choices, counts)}
+        </span>
+      )}
       <button
         type="button"
         className={`lt-variant-menu__item${allOn ? ' is-on' : ''}`}
@@ -1336,10 +1350,16 @@ function StakesMenu({
             type="button"
             className={`lt-variant-menu__item${on ? ' is-on' : ''}`}
             aria-pressed={on}
+            aria-label={
+              counts
+                ? `${c.label}, ${counts[c.key] ?? 0} ${(counts[c.key] ?? 0) === 1 ? 'Game' : 'Games'}`
+                : undefined
+            }
             onClick={() => onToggle(c.key)}
           >
             <span className="lt-variant-menu__check" aria-hidden="true" />
             {c.label}
+            {counts && <span className="lt-variant-menu__count">{counts[c.key] ?? 0}</span>}
           </button>
         );
       })}
@@ -1401,6 +1421,8 @@ interface LobbyTableProps {
   styleChoices?: readonly { key: string; label: string }[];
   selectedStyles?: readonly string[];
   onStylesChange?: (keys: string[]) => void;
+  /** Games per style on this tab (countStylesOnBoard), shown inside the Stakes menu. */
+  styleCounts?: Readonly<Record<string, number>>;
 }
 
 export default function LobbyTable({
@@ -1418,6 +1440,7 @@ export default function LobbyTable({
   styleChoices,
   selectedStyles,
   onStylesChange,
+  styleCounts,
 }: LobbyTableProps) {
   /* Two heading menus, one open at a time: 'variant' under Variant, 'stakes'
      under Stakes. Both anchor to the same ref because only one is mounted. */
@@ -1913,6 +1936,7 @@ export default function LobbyTable({
               <StakesMenu
                 choices={styleChoices!}
                 selected={selectedStyles ?? []}
+                counts={styleCounts}
                 onToggle={toggleStyle}
                 sortDir={sort?.key === 'stakes' ? sort.dir : null}
                 onSort={(dir) => applySort(COL_STAKES, dir)}
@@ -2090,6 +2114,7 @@ export default function LobbyTable({
                         <StakesMenu
                           choices={styleChoices!}
                           selected={selectedStyles ?? []}
+                          counts={styleCounts}
                           onToggle={toggleStyle}
                           sortDir={sort?.key === 'stakes' ? sort.dir : null}
                           onSort={(dir) => applySort(COL_STAKES, dir)}

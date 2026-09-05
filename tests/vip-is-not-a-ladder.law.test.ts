@@ -30,9 +30,36 @@
  *
  * VIP is three columns: `is_vip`, `vip_tier` ('lifetime' | 'monthly' | null)
  * and `vip_expires_at`, resolved by `src/utils/vipStatus.ts` and nothing else.
+ *
+ * ───────────────────────────────────────────────────────────────────────────
+ * 2026-09-05: AND THE LADDER ITSELF IS GONE
+ *
+ * `src/constants/vipTiers.ts` held six rungs - bronze, silver, gold, platinum,
+ * diamond and an invented "royal" - each with a rakeback percentage (5 to 30),
+ * a point multiplier (1x to 10x) and monthly tournament tickets. Three
+ * components rendered it: VIPStatsHeader, TierProgressionCard and
+ * VIPBenefitsGrid, which between them promised private high-stakes tables, 24/7
+ * dedicated support and invitations to exclusive tournaments.
+ *
+ * NONE OF IT WAS IMPLEMENTED. The top rung was reachable, too: the largest
+ * `vip_points.current_points` on production is 426,490 against a 150,000
+ * threshold, so real members were being told they were Royal.
+ *
+ * Deleted with the constant, and with three unbacked allowances beside it:
+ *
+ *   leaderboardBoost 0.06   LeaderboardService applies no boost of any kind.
+ *   themes 3                nothing reads it; Table Studio sells themes singly.
+ *   clubCreation 3          fn_get_club_creation_eligibility caps EVERYONE at
+ *                           4 club memberships. Not a VIP benefit, not 3.
+ *
+ * What a VIP gets is now exactly what the server meters: 100 rabbit hunts
+ * (fn_consume_rabbit_hunt), 120 time-bank seconds (fn_time_bank_allowance),
+ * 1,200 emojis and 1,000 tags (fn_increment_vip_usage), and three per-use
+ * charges waived. VIP points remain real - 1,005 holders, 5.1M ledger rows -
+ * they are simply not a tier.
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { resolveVipStatus } from '../src/utils/vipStatus';
 
@@ -49,6 +76,9 @@ const USER_STORE = strip(read('src/stores/useUserStore.ts'));
 const COMPLETE_PROFILE = strip(read('src/components/modals/CompleteProfileModal.tsx'));
 const LEADERBOARD = strip(read('src/services/LeaderboardService.ts'));
 const FRIEND_LIST = strip(read('src/components/social/FriendListPanel.tsx'));
+const VIP_SERVICE = strip(read('src/services/VIPService.ts'));
+const VIP_PAGE = strip(read('src/pages/VIPPage.tsx'));
+const VIP_MODAL = strip(read('src/components/vip/VIPCardsModal.tsx'));
 
 describe('the VIP resolver is the only answer to "is this player a VIP"', () => {
   it('reads the three real columns and treats lifetime as never expiring', () => {
@@ -96,5 +126,47 @@ describe('no entitlement is gated on profiles.tier', () => {
   it('neither list still asks the database for the dead column', () => {
     expect(LEADERBOARD).not.toMatch(/avatar_url:arena_avatar_url, level, tier/);
     expect(FRIEND_LIST).not.toMatch(/avatar_url, level, tier/);
+  });
+});
+
+describe('there is no tier ladder, and no rung of one survives', () => {
+  it('the ladder constant is deleted, not merely unused', () => {
+    expect(existsSync(resolve(ROOT, 'src/constants/vipTiers.ts'))).toBe(false);
+    for (const gone of [
+      'src/components/vip/TierProgressionCard.tsx',
+      'src/components/vip/VIPBenefitsGrid.tsx',
+      'src/components/vip/VIPStatsHeader.tsx',
+      'src/components/vip/VIPStatusCard.tsx',
+    ]) {
+      expect(existsSync(resolve(ROOT, gone)), `${gone} is back`).toBe(false);
+    }
+  });
+
+  it('no VIP surface names a rung', () => {
+    // 'diamond' on its own is the CURRENCY and stays; these are the rung names.
+    for (const [name, src] of [
+      ['VIPService', VIP_SERVICE],
+      ['VIPPage', VIP_PAGE],
+      ['VIPCardsModal', VIP_MODAL],
+    ] as const) {
+      for (const rung of ['platinum', 'Platinum', 'royal', 'Royal', 'VIP Gold', 'VIP GOLD']) {
+        expect(src, `${name} still says "${rung}"`).not.toContain(rung);
+      }
+    }
+  });
+
+  it('the allowances are only the ones the server meters', () => {
+    expect(VIP_SERVICE).toContain('VIP_MONTHLY_ALLOWANCES');
+    expect(VIP_SERVICE).not.toContain('VIP_GOLD_LIMITS');
+    for (const unbacked of ['leaderboardBoost', 'clubCreation']) {
+      expect(VIP_SERVICE, `${unbacked} is back`).not.toContain(unbacked);
+    }
+  });
+
+  it('nothing promises an unlimited allowance', () => {
+    // Dan 2026-09-04: "THERE IS NOTHING UNLIMITED LIKE THROWABLES OR TIME BANKS."
+    expect(VIP_PAGE).not.toContain('Unlimited');
+    expect(VIP_PAGE).not.toContain('All Packs');
+    expect(VIP_PAGE).not.toContain('500 Free Throws');
   });
 });

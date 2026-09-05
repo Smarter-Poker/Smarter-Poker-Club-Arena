@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Tests VIP constants and pure lookup methods:
- * - VIP_GOLD_LIMITS constant integrity
+ * - VIP_MONTHLY_ALLOWANCES constant integrity
  * - FEATURE_PRICING constant integrity
  * - getFeaturePricing / getAllPricing / getGoldBenefits pure lookups
  */
@@ -40,7 +40,7 @@ vi.mock('../../src/utils/retryAsync', () => ({
 
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 
-import { vipService, VIP_GOLD_LIMITS, FEATURE_PRICING } from '../../src/services/VIPService';
+import { vipService, VIP_MONTHLY_ALLOWANCES, FEATURE_PRICING } from '../../src/services/VIPService';
 
 describe('VIPService', () => {
   beforeEach(() => {
@@ -48,35 +48,43 @@ describe('VIPService', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // VIP_GOLD_LIMITS
+  // VIP_MONTHLY_ALLOWANCES
   // ─────────────────────────────────────────────────────────────────────────
 
-  describe('VIP_GOLD_LIMITS', () => {
+  describe('VIP_MONTHLY_ALLOWANCES', () => {
     it('gives VIP 100 free rabbit hunts a month, not unlimited', () => {
       // Dan 2026-08-25, verbatim: "vip members get 100 rabbit hunts a month for
       // free, and they cost 5 diamonds each after that." This asserted Infinity
       // until that day, so the UI promised unlimited free hunts while the
       // server's fn_consume_rabbit_hunt starts charging at the 101st.
-      expect(VIP_GOLD_LIMITS.rabbitHunts).toBe(100);
+      expect(VIP_MONTHLY_ALLOWANCES.rabbitHunts).toBe(100);
     });
 
     it('should enable showStackBB, offlineProtection, autoTimeBank', () => {
-      expect(VIP_GOLD_LIMITS.showStackBB).toBe(true);
-      expect(VIP_GOLD_LIMITS.offlineProtection).toBe(true);
-      expect(VIP_GOLD_LIMITS.autoTimeBank).toBe(true);
+      expect(VIP_MONTHLY_ALLOWANCES.showStackBB).toBe(true);
+      expect(VIP_MONTHLY_ALLOWANCES.offlineProtection).toBe(true);
+      expect(VIP_MONTHLY_ALLOWANCES.autoTimeBank).toBe(true);
     });
 
     it('should have 120 time bank seconds', () => {
-      expect(VIP_GOLD_LIMITS.timeBankSeconds).toBe(120);
+      expect(VIP_MONTHLY_ALLOWANCES.timeBankSeconds).toBe(120);
     });
 
     it('should have 1200 emojis and 1000 tags', () => {
-      expect(VIP_GOLD_LIMITS.emojis).toBe(1200);
-      expect(VIP_GOLD_LIMITS.tags).toBe(1000);
+      expect(VIP_MONTHLY_ALLOWANCES.emojis).toBe(1200);
+      expect(VIP_MONTHLY_ALLOWANCES.tags).toBe(1000);
     });
 
-    it('should have 6% leaderboard boost', () => {
-      expect(VIP_GOLD_LIMITS.leaderboardBoost).toBe(0.06);
+    it('advertises nothing the platform does not implement', () => {
+      // Removed 2026-09-05 with src/constants/vipTiers.ts. Each was quoted to
+      // members on /vip and /profile, and none of the three existed:
+      //   leaderboardBoost 0.06  LeaderboardService applies no boost.
+      //   themes 3               nothing reads it; Table Studio sells singly.
+      //   clubCreation 3         fn_get_club_creation_eligibility caps EVERYONE
+      //                          at 4 club memberships, VIP or not.
+      expect(VIP_MONTHLY_ALLOWANCES).not.toHaveProperty('leaderboardBoost');
+      expect(VIP_MONTHLY_ALLOWANCES).not.toHaveProperty('themes');
+      expect(VIP_MONTHLY_ALLOWANCES).not.toHaveProperty('clubCreation');
     });
   });
 
@@ -155,9 +163,9 @@ describe('VIPService', () => {
   });
 
   describe('getGoldBenefits', () => {
-    it('should return VIP_GOLD_LIMITS', () => {
+    it('should return VIP_MONTHLY_ALLOWANCES', () => {
       const benefits = vipService.getGoldBenefits();
-      expect(benefits).toEqual(VIP_GOLD_LIMITS);
+      expect(benefits).toEqual(VIP_MONTHLY_ALLOWANCES);
     });
   });
 });

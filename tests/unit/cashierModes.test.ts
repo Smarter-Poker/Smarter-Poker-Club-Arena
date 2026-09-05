@@ -81,8 +81,10 @@ describe('cashierTabs', () => {
     expect(cashierTabs('agent_wallet')).toEqual(['send', 'claim']);
   });
 
-  it('gives the promo wallet a send tab only, because a promo has no inverse', () => {
-    expect(cashierTabs('promo_wallet')).toEqual(['send']);
+  it('gives the promo wallet a send tab and a ledger, and no claim, because a promo has no inverse', () => {
+    // Dan 2026-09-05: "A TRANSACTION LEDGER ATTACHED TO EVERY PROMO WALLET."
+    expect(cashierTabs('promo_wallet')).toEqual(['send', 'ledger']);
+    expect(cashierTabs('promo_wallet')).not.toContain('claim');
   });
 });
 

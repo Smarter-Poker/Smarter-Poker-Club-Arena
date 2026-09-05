@@ -145,7 +145,14 @@ describe('no control that cannot do anything', () => {
        buzzing. The identical bug on TOGGLE_SOUNDS was fixed the day before and
        this branch was left carrying it. */
     expect(TABLE_PAGE).not.toMatch(/setting:\s*'vibrations'/);
-    expect(TABLE_PAGE).toMatch(/updateSetting\('isHapticEnabled', !isVibrationAllowed\(\)\)/);
+    /* CHANGED 2026-09-05, deliberately, and the old pin is asserted against
+       below rather than just deleted. It read `!isVibrationAllowed()`, which is
+       preference AND "can this device vibrate". `navigator.vibrate` does not
+       exist on any iPhone, so the capability half was false forever there and
+       this menu item computed its new value as `!false` on every tap: it could
+       turn haptics ON and never OFF. A toggle inverts a PREFERENCE. */
+    expect(TABLE_PAGE).toMatch(/updateSetting\('isHapticEnabled', !isVibrationPreferred\(\)\)/);
+    expect(TABLE_PAGE).not.toMatch(/updateSetting\('isHapticEnabled', !isVibrationAllowed\(\)\)/);
   });
 
   it('the zustand store keeps only the interface mode it actually owns', () => {
@@ -404,5 +411,33 @@ describe('the felt colour is not the interface mode', () => {
     // which is how the copies audited above came to disagree in the first place.
     expect(TABLE_SETTINGS).toMatch(/: DEFAULT_SETTINGS\.theme;/);
     expect(DEFAULT_TABLE_USER_SETTINGS.theme).toBe('black');
+  });
+
+  it('FELT_THEMES lists exactly the felt palettes the CSS defines, and nothing else', () => {
+    /*
+     * The coercion is only safe while its list matches reality. Add a sixth
+     * felt palette to design-tokens.css and forget this Set, and every player
+     * who picks it is silently reset to black on their next load - the same
+     * silent-reset class of bug the Set exists to stop, pointed the other way.
+     *
+     * Derived from the CSS rather than retyped, so the two cannot drift.
+     * `light` is excluded deliberately: it is the INTERFACE mode, it lives on
+     * `data-theme`, and that separation is the whole point of the fix above.
+     */
+    const declared = new Set(
+      [...DESIGN_TOKENS.matchAll(/\[data-color-theme='([a-z]+)'\]/g)].map((m) => m[1])
+    );
+    declared.delete('light');
+
+    const guarded = new Set(
+      (TABLE_SETTINGS.match(/const FELT_THEMES = new Set\(\[([^\]]*)\]/)?.[1] ?? '')
+        .split(',')
+        .map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
+        .filter(Boolean)
+    );
+
+    expect([...guarded].sort()).toEqual([...declared].sort());
+    // A non-empty set, because an empty one coerces every player to black.
+    expect(guarded.size).toBeGreaterThan(0);
   });
 });

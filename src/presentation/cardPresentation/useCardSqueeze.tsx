@@ -24,7 +24,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { cardPresentationEngine } from './engineSingleton';
 import { detectPlatform } from './resolveProfile';
-import { prefersReducedMotion } from '../../utils/animationSpeed';
+import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import type { CardAnimationProfile, CardPresentationMode, CommunityStreet } from './types';
 
 export interface CardSqueezeState {
@@ -124,12 +124,39 @@ export function useCardSqueeze({
     }
     activeKeyRef.current = result.key;
     setState({ index: slot, profile: result.profile });
-    const timer = setTimeout(() => {
+    /*
+     * AUDIT FIX 2026-09-05 - SCALE THE WINDOW BY THE PLAYER'S SPEED.
+     *
+     * `result.durationMs` is BASE milliseconds, at animation speed 1 (see
+     * PresentResult). Every duration in cardSqueeze.css is
+     * `calc(... * var(--animation-speed))`, so a player on the sanctioned
+     * maximum of 3 got a 2.88s animation and a 1.06s window: the markup was
+     * torn out mid-flip and the card snapped face up. That is verbatim the
+     * defect the felt's own window comment documents, reintroduced on the
+     * surface where the player is deliberately studying the board.
+     */
+    const timer = setTimeout(
+      () => {
+        activeKeyRef.current = null;
+        setState(IDLE);
+      },
+      Math.round(result.durationMs * getAnimationSpeed())
+    );
+    return () => clearTimeout(timer);
+  }, [visibleCount, handId, laneId, boardIndex, mode, isVisible, streets]);
+
+  /**
+   * AUDIT FIX 2026-09-05: a cancel from anywhere else - the environment
+   * interrupts, or a supersede - has to reach this surface's markup too, or
+   * the engine drops its entry while the browser keeps flipping the card.
+   */
+  useEffect(() => {
+    return cardPresentationEngine.subscribe(({ key, phase }) => {
+      if (phase !== 'cancelled' || key !== activeKeyRef.current) return;
       activeKeyRef.current = null;
       setState(IDLE);
-    }, result.durationMs);
-    return () => clearTimeout(timer);
-  }, [visibleCount, handId, laneId, boardIndex, mode, isVisible]);
+    });
+  }, []);
 
   // Unmount: never leave a timer or an engine reference behind (spec 99).
   useEffect(() => {

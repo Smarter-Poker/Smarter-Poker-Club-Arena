@@ -145,7 +145,27 @@
 
   /* Runtime chrome dimensions. This is the entry stylesheet imported by
      main.tsx, so shared layout components resolve these values in production. */
-  --bottom-nav-height: clamp(44px, 13.72vw, 132px);
+  /* THE FOOTER FRAME KEEPS ITS OWN SHAPE (Dan 2026-09-05: the footer "IS
+     DISTORTED").
+     Measured from the approved asset itself (public/images/club-footer/
+     club-arena-footer-v2.webp): a 1916x256 canvas whose opaque frame is the
+     rect x=25 y=14 1866x230, so the frame's aspect is 1866/230 = 8.113:1 and
+     an undistorted full-bleed footer is 100vw / 8.113 = 12.326vw tall.
+     This constant said 13.72vw, which stretched the art 11.3% taller than the
+     frame everywhere below the ceiling, and the 132px ceiling then squashed it
+     the other way on every desktop - measured 11.7% at a 1204px viewport,
+     where the honest height is 147.4px. Distorted at every width, in one
+     direction or the other.
+     The ceiling itself is right and stays: Dan approved a 132px desktop
+     footer, and the 263px ceiling before it "covered the lobby". What was
+     wrong is that only the HEIGHT stopped growing. ClubBottomNav.module.css
+     now stops the artwork's WIDTH at the same moment
+     (132 x 8.113 = 1070.9px) and centres it, so the frame keeps its shape on
+     both sides of the ceiling: proportional and full-bleed through phones and
+     tablets, then a centred bar of the approved height on desktop.
+     This value remains what a PAGE RESERVES; the artwork derives its own
+     height from `aspect-ratio` so it can never disagree with the asset. */
+  --bottom-nav-height: clamp(44px, 12.326vw, 132px);
   --bottom-nav-clearance: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
   /* Live occupied height (see globals.css); clearance is the designed reserve. */
   --bottom-nav-stack-base: var(--ca-bottom-chrome-h, var(--bottom-nav-clearance));
@@ -1401,33 +1421,18 @@ input:checked + .toggle-slider.small::after {
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.55);
 }
 
-/* ── Borrowable primitives, so a page never restates the palette ─────────── */
+/* NO BORROWABLE UTILITY CLASSES HERE, DELIBERATELY.
+   This layer briefly shipped `.realism-frame`, `.realism-readout` and
+   `.realism-label` as a vocabulary future pages could borrow. Measured on
+   2026-09-05: zero consumers across every .tsx and .ts in the app. They were
+   speculative generality - three global class names carried in the one sheet
+   every page loads, on the chance somebody would want them.
 
-.realism-readout {
-  font-family: var(--realism-font-display);
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-  color: var(--realism-chrome-hot);
-  letter-spacing: 0.02em;
-  text-shadow: 0 0 18px rgba(0, 212, 255, 0.25);
-}
-
-.realism-label {
-  font-family: var(--realism-font-label);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--realism-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-}
-
-.realism-frame {
-  position: relative;
-  border: 1px solid var(--realism-gunmetal);
-  border-radius: var(--realism-radius);
-  background: linear-gradient(180deg, var(--realism-panel-raised), var(--realism-panel));
-  box-shadow: var(--realism-bevel), var(--realism-cavity);
-}
+   The VOCABULARY is the tokens, and those are genuinely consumed (club-engine,
+   RewardsSurfaceHeader, RakebackPage). A page that wants a machined frame
+   writes it in its OWN stylesheet from --realism-bevel and --realism-cavity,
+   which also keeps it inside the module boundary that
+   tests/global-css-does-not-leak-across-pages.law.test.ts exists to defend. */
 
 /* ── Loading: brushed metal under a moving light, not a grey rectangle ───── */
 

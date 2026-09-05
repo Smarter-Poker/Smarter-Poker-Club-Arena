@@ -120,6 +120,65 @@ vocabulary and the shared header and deliberately asserts nothing about
 per-page coverage, because a law that pinned a fiction would be worse than no
 law.
 
+## 4. The app was running in LIGHT MODE on production, via the felt attribute
+
+Auditing the VIP page's palette found it styled against `var(--bg-primary)`
+and `var(--bg-secondary)`. Asking the live page what those resolve to:
+
+```
+data-color-theme="light"     data-theme  (unset)
+club-arena-table-settings.theme === "light"
+club-arena-user-settings.theme  === "dark"
+--bg-primary  #f0f4f0        --bg-secondary  #e8ede8
+```
+
+Near-white, on the platform whose standing rule is "THE WHOLE BACKGROUND
+SHOULD BE SOLID BLACK AND ALL THE SAME COLOR", for a player whose interface
+setting says **dark**.
+
+This is the same one-thing-two-meanings shape `settingsHaveOneOwner.test.ts`
+was written about, and it **survived the fix meant to end it**. `data-theme`
+once carried both the table FELT colour and the light/dark interface MODE;
+useTableSettings.ts documents that fight, splits them, and states the intent:
+"`data-theme` itself now belongs exclusively to the light/dark interface mode."
+
+Two things were left behind:
+
+1. `design-tokens.css` gave **both** attributes to every palette - including
+   `light`, which is not a felt palette at all. So `data-color-theme="light"`
+   still selected the whole light token set.
+2. `theme` is typed `string` with no validation, so the stale value written by
+   the very bug the split repaired kept being stamped onto the DOM on every
+   page load, forever.
+
+**Fixed at both ends.** The light rule is `[data-theme='light']` only (the five
+felt palettes keep both attributes, so no skin changed). `useTableSettings`
+gained `FELT_THEMES` and coerces at both doors - on load, and in
+`applySideEffects`, which matters because a bus message from another tab and a
+server settings row never pass through load().
+
+**Verified on the live page**, all three states:
+
+| `<html>` state                         | `--bg-primary` | `--text-primary` |
+| -------------------------------------- | -------------- | ---------------- |
+| `data-color-theme="light"` (the bug)   | `#f0f4f0`      | `#1a2e1a`        |
+| `data-color-theme="black"` (coerced)   | `#0a0e17`      | `#f3f4f6`        |
+| `data-theme="light"` (the real toggle) | `#f0f4f0`      | `#1a2e1a`        |
+
+Dark is restored, and light mode still works from the attribute that owns it.
+Pinned by four new assertions in `tests/unit/settingsHaveOneOwner.test.ts`
+(28 -> 32).
+
+## 5. RakebackPage joins the vocabulary
+
+One tab from the wallet, and it had independently reached the right idea - it
+already lit its figures `#00d4ff` and already had a bevel. What it did not
+share was the greys: `#2a3a4a` borders against the family's `#27313c`,
+`#6a7a8a`/`#8a9aaa` labels against `#7f8c9b`. Each correct alone, mismatched
+side by side. Now sourced from `--realism-*` with the previous literals as
+fallbacks, and its summary cards gained the cavity and lift so they sit IN the
+page rather than on it.
+
 ## Verification
 
 - `npx tsc --noEmit`: exit 0.

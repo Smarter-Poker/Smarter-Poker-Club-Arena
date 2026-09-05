@@ -91,6 +91,44 @@ describe('the last-hand window is the same window everywhere', () => {
   });
 });
 
+describe('the resume arrives in installments, inside the :00 minute (2026-09-05)', () => {
+  /**
+   * The engine is one core. At 04:00 UTC on 2026-09-05, 720 tables resumed
+   * in a 25-per-750ms stagger in adoption order (tournaments first), the core
+   * saturated within thirty seconds and the container was replaced at 04:07.
+   * The resume is now RESUME_WAVES waves, RESUME_WAVE_GAP_MS apart, and the
+   * whole spread must stay a small fraction of the minute: CLAUDE.md 13 says
+   * every table resumes "together" at :00, read as "within the same few
+   * seconds". A spread that grows toward the minute is a second break.
+   */
+  const waves = Number(ENGINE.match(/RESUME_WAVES = (\d+);/)![1]);
+  const gapMs = Number(ENGINE.match(/RESUME_WAVE_GAP_MS = (\d+);/)![1]);
+  const minTables = Number(ENGINE.match(/RESUME_WAVE_MIN_TABLES = (\d+);/)![1]);
+
+  it('spreads the fleet over more than one wave', () => {
+    expect(waves).toBeGreaterThanOrEqual(4);
+    expect(gapMs).toBeGreaterThanOrEqual(500);
+  });
+
+  it('finishes the last wave within 15 seconds of the first', () => {
+    expect((waves - 1) * gapMs).toBeLessThanOrEqual(15_000);
+  });
+
+  it('brings a small fleet up in one wave, so a test fleet never waits on a timer', () => {
+    expect(minTables).toBeGreaterThanOrEqual(10);
+  });
+
+  it('the plan reads nothing about who is seated (CLAUDE.md 10.5)', () => {
+    const start = ENGINE.indexOf('static planResumeWaves');
+    const body = ENGINE.slice(start, ENGINE.indexOf('\n  }\n', start));
+    expect(body).not.toMatch(/humansSeated|is_horse|isHorse/);
+  });
+
+  it('publishes the rollout on /health as maintenance.resumeWaves', () => {
+    expect(ENGINE).toMatch(/resumeWaves: this\.resumeWaves,/);
+  });
+});
+
 describe('the break duration is five minutes, once', () => {
   it('engine and tournament break agree at 5 minutes', () => {
     expect(ENGINE).toMatch(/BREAK_DURATION_MS = 5 \* 60 \* 1000/);
